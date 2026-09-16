@@ -23048,6 +23048,100 @@ TEST_F(TranslateTest, CoreV2CstdintRequiresTheExactAngleHeader) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2NumericLimitsFoldAtBothOptimizations) {
+  const auto Source = tmpFile("limits.cpp");
+  const auto Output = tmpFile("limits.nc");
+  writeFile(Source, R"cpp(
+#include <limits>
+using I = std::numeric_limits<int>;
+using U = std::numeric_limits<unsigned long long>;
+using F = std::numeric_limits<float>;
+using D = std::numeric_limits<double>;
+static_assert(I::digits == 31 && I::is_signed && I::is_integer && I::is_exact);
+static_assert(I::radix == 2 && I::min() + I::max() == -1);
+static_assert(I::lowest() == I::min());
+static_assert(U::min() == 0 && U::lowest() == 0 && U::max() > 0);
+static_assert(F::digits == 24 && F::min() > 0.0f && F::epsilon() > 0.0f);
+static_assert(D::digits == 53 && D::round_error() == 0.5);
+static_assert(D::infinity() > D::max() && D::denorm_min() > 0.0);
+static_assert(D::quiet_NaN() != D::quiet_NaN());
+static_assert(D::signaling_NaN() != D::signaling_NaN());
+int main() {
+  double quiet = D::quiet_NaN();
+  double signaling = D::signaling_NaN();
+  return I::max() == 2147483647 && U::max() > 0 &&
+                 F::lowest() < 0.0f && F::epsilon() > 0.0f &&
+                 D::infinity() > D::max() && quiet != quiet &&
+                 signaling != signaling
+             ? 0
+             : 1;
+}
+)cpp");
+  auto Result = translate(
+      Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest = llvm::json::parse(
+      readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *SDK = Manifest->getAsObject()->getObject("sdk");
+  ASSERT_NE(SDK, nullptr);
+  const auto *Dependencies = SDK->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 103u);
+  bool FoundLimits = false;
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+    FoundLimits |= Dependency->getString("root") == "libcxx" &&
+                   Dependency->getString("path") == "limits";
+  }
+  EXPECT_TRUE(FoundLimits);
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("limits" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NumericLimitsKeepsRuntimeIdentityOut) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Rejection Cases[] = {
+      {"quoted", "#include \"limits\"\nint main(){return 0;}", "TR0201"},
+      {"runtime-object",
+       "#include <limits>\nint main(){std::numeric_limits<int> n;return n.max();}",
+       "TR0203"},
+      {"constant-address",
+       "#include <limits>\nint main(){auto p=&std::numeric_limits<int>::digits;return *p;}",
+       "TR0201"},
+      {"method-address",
+       "#include <limits>\nint main(){auto p=&std::numeric_limits<int>::max;return p();}",
+       "TR0201"},
+      {"object-method",
+       "#include <limits>\nint main(){return std::numeric_limits<int>{}.max();}",
+       "TR0203"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("limits-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("limits-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(translate(Source,
+                         {"--profile", "cpp-core-v2", "-o", Output.string()}),
+               Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2RejectsUnsupportedErasedDeclarations) {
   struct Rejection {
     const char *Name;

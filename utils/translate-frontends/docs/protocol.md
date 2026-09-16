@@ -1453,7 +1453,8 @@ v2 responses lacking the two carrier entries must be regenerated.
 
 A core v2 request may add the same two-field immutable SDK envelope used by the
 built-in driver: `distribution_id` and `catalog_sha256`. When present, the
-source may include exact angle forms of `<type_traits>` and `<cstdint>`. A
+source may include exact angle forms of `<type_traits>`, `<cstdint>` and
+`<limits>`. A
 successful response adds
 `sdk_distribution_id`, `sdk_catalog_sha256` and `sdk_dependencies`. Core v2
 dependencies may use only the `libcxx` and `resource` roots; each normalized
@@ -1465,7 +1466,8 @@ identity, verifies the response before and after semantic-IR processing, and
 copies the authenticated dependency closure into the manifest's built-in SDK
 record. Frontend claims cannot authorize an SDK. Runtime calls or object/storage
 identity from these declarations are rejected before lowering; only resolved
-type aliases and integral/enum constants reach semantic IR.
+type aliases, integral/enum constants and folded `numeric_limits` scalar queries
+reach semantic IR.
 
 ## Gated mathematics extension
 

@@ -12790,11 +12790,16 @@ public:
                    "TR0203");
         return true;
       }
+      APValue NumericLimit;
+      if (A.S.coreV2() &&
+          approvedNumericLimitsConstant(A.S, A.Sources, C, A.Context,
+                                        NumericLimit))
+        return true;
       if (A.S.coreV2() && F &&
           approvedStandardSDKDeclaration(A.S, A.Sources, F)) {
         A.reject(S->getBeginLoc(), "standard library runtime call",
-                 "The approved <type_traits> surface currently provides "
-                 "compile-time aliases and constants only.",
+                 "Approved standard headers provide only their documented "
+                 "compile-time aliases, constants and folded queries.",
                  "TR0203");
         return true;
       }
@@ -12839,8 +12844,8 @@ public:
           approvedStandardSDKDeclaration(A.S, A.Sources,
                                          C->getConstructor()))
         A.reject(L, "standard library runtime object",
-                 "The approved <type_traits> surface currently provides "
-                 "compile-time aliases and constants only.",
+                 "Approved standard headers provide only their documented "
+                 "compile-time aliases, constants and folded queries.",
                  "TR0203");
       else
         checkConstruction(C, L);
@@ -13405,10 +13410,11 @@ public:
         return;
       }
       if (S.owns(SM, L) &&
-          (!Angled || (Name != "type_traits" && Name != "cstdint"))) {
+          (!Angled || (Name != "type_traits" && Name != "cstdint" &&
+                       Name != "limits"))) {
         reject(L, "include",
-               "Only exact #include <type_traits> and #include <cstdint> "
-               "entries are admitted in cpp-core-v2.");
+               "Only exact #include <type_traits>, #include <cstdint> and "
+               "#include <limits> entries are admitted in cpp-core-v2.");
         return;
       }
       if (!S.owns(SM, L) && !S.sdkFile(SM, L))

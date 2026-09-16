@@ -18,6 +18,7 @@
 #include <vector>
 
 namespace clang {
+class APValue;
 class CallExpr;
 class ArrayTypeTraitExpr;
 class CastExpr;
@@ -219,6 +220,11 @@ std::optional<llvm::APSInt>
 approvedSDKIntegerConstant(const State &S, const clang::SourceManager &SM,
                            const clang::VarDecl *D,
                            const clang::ASTContext &Context);
+bool approvedNumericLimitsConstant(const State &S,
+                                   const clang::SourceManager &SM,
+                                   const clang::CallExpr *Call,
+                                   clang::ASTContext &Context,
+                                   clang::APValue &Value);
 
 std::string digest(llvm::StringRef Text);
 bool validExportName(llvm::StringRef Name);

@@ -205,6 +205,69 @@ int main() { return 0; }
     check("v2-cstdint-c-header", "#include <stdint.h>\nint f(){return 0;}",
           "TR0201", profile="cpp-core-v2", sdk=True)
 
+    limits_source = """\
+#include <limits>
+using I = std::numeric_limits<int>;
+using U = std::numeric_limits<unsigned long long>;
+using F = std::numeric_limits<float>;
+using D = std::numeric_limits<double>;
+template<class T> constexpr bool bounded_integer() {
+  using N = std::numeric_limits<T>;
+  return N::is_specialized && N::is_integer && N::is_bounded &&
+         N::radix == 2 && N::lowest() == N::min() && N::max() >= N::min();
+}
+static_assert(bounded_integer<bool>() && bounded_integer<char>());
+static_assert(bounded_integer<signed char>() && bounded_integer<unsigned char>());
+static_assert(bounded_integer<short>() && bounded_integer<unsigned short>());
+static_assert(bounded_integer<int>() && bounded_integer<unsigned>());
+static_assert(bounded_integer<long>() && bounded_integer<unsigned long>());
+static_assert(bounded_integer<long long>() && bounded_integer<unsigned long long>());
+static_assert(bounded_integer<wchar_t>() && bounded_integer<char16_t>() &&
+              bounded_integer<char32_t>());
+static_assert(std::numeric_limits<const int>::max() == I::max());
+static_assert(I::digits == 31 && I::is_signed && I::is_integer && I::is_exact);
+static_assert(I::radix == 2 && I::min() + I::max() == -1);
+static_assert(I::lowest() == I::min());
+static_assert(U::min() == 0 && U::lowest() == 0 && U::max() > 0);
+static_assert(F::digits == 24 && F::min() > 0.0f && F::epsilon() > 0.0f);
+static_assert(D::digits == 53 && D::round_error() == 0.5);
+static_assert(D::infinity() > D::max() && D::denorm_min() > 0.0);
+static_assert(D::quiet_NaN() != D::quiet_NaN());
+static_assert(D::signaling_NaN() != D::signaling_NaN());
+int main() {
+  double quiet = D::quiet_NaN();
+  return I::max() > 0 && U::max() > 0 && F::lowest() < 0.0f &&
+                 D::infinity() > D::max() && quiet != quiet
+             ? 0
+             : 1;
+}
+"""
+    limits = check("v2-limits", limits_source,
+                   profile="cpp-core-v2", sdk=True)
+    assert len(limits["sdk_dependencies"]) == 103, limits
+    assert any(dependency["path"] == "limits"
+               for dependency in limits["sdk_dependencies"]), limits
+    for target in sdk_targets:
+        check("v2-limits-" + target, limits_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    for name, source, code in (
+        ("quoted", '#include "limits"\nint main(){return 0;}', "TR0201"),
+        ("runtime-object",
+         "#include <limits>\nint main(){std::numeric_limits<int> n;return n.max();}",
+         "TR0203"),
+        ("constant-address",
+         "#include <limits>\nint main(){auto p=&std::numeric_limits<int>::digits;return *p;}",
+         "TR0201"),
+        ("method-address",
+         "#include <limits>\nint main(){auto p=&std::numeric_limits<int>::max;return p();}",
+         "TR0201"),
+        ("object-method",
+         "#include <limits>\nint main(){return std::numeric_limits<int>{}.max();}",
+         "TR0203"),
+    ):
+        check("v2-limits-" + name, source, code,
+              profile="cpp-core-v2", sdk=True)
+
     # Windows driver defaults must not change core-v2 source visibility or
     # standard diagnostics. Exercise both MSVC architectures on every CI host.
     standard_template_parsing = {

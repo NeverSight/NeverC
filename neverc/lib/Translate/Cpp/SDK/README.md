@@ -13,7 +13,9 @@ Core v2 uses only the catalog's `libcxx` and `resource` roots for its
 compile-time `<type_traits>` and fixed-width `<cstdint>` surfaces. The
 standalone closures contain 101 and nine files respectively; their deduplicated
 union is recorded when both headers are included. Every consumed path and hash
-is verified against this catalog. Core v2 never admits the `platform` root.
+is verified against this catalog. The `<limits>` surface has a 103-file closure
+and folds its supported `numeric_limits` members without a runtime libc++ link.
+Core v2 never admits the `platform` root.
 Math v1 continues to use its separately checked libc++, resource and Darwin
 platform closure for `<cmath>`.
 

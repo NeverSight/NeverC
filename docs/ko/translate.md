@@ -8,6 +8,8 @@ Core v2는 컴파일 시간 형식 별칭과 정수·열거형 상수를 위해 
 
 Core v2는 내장된 고정 버전 `<cstdint>`도 지원합니다. 고정폭, least, fast, 포인터 폭, 최대 폭 형식 별칭과 표준 한계·상수 매크로는 선택한 대상의 C++17 형식과 값을 유지합니다. 드라이버는 단독 사용 시 9개 헤더의 폐쇄 집합을 기록하고 따옴표 형식과 C 헤더 형식을 거부합니다. `<cstdint>`와 `<type_traits>`는 어느 순서로든 함께 사용할 수 있습니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#fixed-width-integers-from-cstdint).
 
+Core v2는 고정 버전 `<limits>`도 지원합니다. 지원되는 정수, `float`, `double`의 `numeric_limits` 정수·열거형 데이터 멤버와 표준 무인수 질의는 무한대와 NaN을 포함한 정확한 리터럴로 접힙니다. 103개 파일 폐쇄 집합은 모든 대상에서 인증되며 런타임 객체, 저장소 또는 메서드 식별, 객체 한정 호출과 `long double`은 지원되지 않습니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#numeric-bounds-from-limits).
+
 Core v2 형식 메타데이터는 소유한 소스의 불완전한 비공용체 클래스를 지원합니다. 전방 선언과 인스턴스화되지 않은 템플릿 형식의 분류 및 배열 차원을 저장소 생성 없이 검사합니다. 실행 시 형식과 콜백에는 여전히 지원되는 완전한 형식이 필요합니다. 참조·포인터 연산 질의는 정확한 소스 증거와 함께 이러한 형식 식별을 사용하며, 선택된 지연 메서드의 반환 형식은 완전성 검사를 유지합니다. 네이티브 검증은 구현 리비전의 CI에서 수행합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#incomplete-record-type-metadata).
 
 Core v2 연산 질의는 길이가 정해지지 않은 배열의 형식 정보를 검사합니다. 생성과 소멸의 조기 결과, 정확한 참조 바인딩, 배열에서 포인터로의 변환은 해당 소스 증거를 유지합니다. 실행 시 저장소 제한은 계속 적용되며 네이티브 검증은 구현 리비전의 CI에서 수행합니다. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unknown-bound-array-operation-types).

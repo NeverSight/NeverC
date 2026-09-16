@@ -8,6 +8,8 @@ Core v2 现支持内置且固定版本的 `<type_traits>`，用于编译期类�
 
 Core v2 也支持内置且固定版本的 `<cstdint>`。固定、least、fast、指针和最大宽度类型别名，以及标准上下界与常量宏，都会保留所选目标的 C++17 类型和值。驱动会记录独立使用时的 9 个头文件闭包，拒绝引号形式和 C 头文件形式，并允许 `<cstdint>` 与 `<type_traits>` 按任意顺序组合。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#fixed-width-integers-from-cstdint).
 
+Core v2 也支持固定版本的 `<limits>`。已支持整数、`float` 和 `double` 的 `numeric_limits` 整数／枚举数据成员与标准零参数查询会折叠为精确字面量，包括无穷值和 NaN。103 个文件的闭包会在所有目标上经过认证；运行时对象、存储或方法身份、对象限定调用及 `long double` 仍不受支持。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#numeric-bounds-from-limits).
+
 Core v2 类型元数据现支持自有源码中的不完整非联合类，包括前置声明与未实例化模板类型。分类和数组维度查询保留精确源码身份，不生成类存储；运行时类型与回调仍要求完整的已支持类型。引用／指针操作查询可使用这些身份，并保留精确操作源码证明；实际选中的惰性方法返回签名仍须通过完整类型检查。原生验证须由实现版本的 CI 完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#incomplete-record-type-metadata).
 
 Core v2 操作查询现可检查未知长度数组的类型信息。构造与析构的直接返回、精确引用绑定及数组到指针转换均保留对应源码证据；运行时存储仍受原有限制。原生验证须由实现版本的 CI 完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unknown-bound-array-operation-types).

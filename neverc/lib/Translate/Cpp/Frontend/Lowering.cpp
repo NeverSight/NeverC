@@ -628,6 +628,10 @@ class FunctionLowering {
         // Explicit destruction never cancels an eventual automatic cleanup.
         return {};
       }
+      APValue NumericLimit;
+      if (approvedNumericLimitsConstant(A.S, A.Sources, Call, A.Context,
+                                        NumericLimit))
+        return A.constant(NumericLimit, Call->getType(), L);
     }
     auto Mapping = A.mapping(Call);
     if (!Mapping.empty()) {

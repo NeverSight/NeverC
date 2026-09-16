@@ -18,6 +18,13 @@ macros preserve the selected target's C++17 types and values. The driver records
 the nine-file standalone closure, rejects quoted or C-header spellings, and
 composes `<cstdint>` with `<type_traits>` in either include order. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#fixed-width-integers-from-cstdint).
 
+Core v2 also accepts the pinned `<limits>` header. Integral/enum data members
+and the standard zero-argument `numeric_limits` queries for admitted integers,
+`float` and `double` fold to exact literals, including infinities and NaNs.
+The 103-file closure is authenticated on all supported targets; runtime objects,
+storage or method identity, object-qualified calls and `long double` remain
+excluded. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#numeric-bounds-from-limits).
+
 Core v2 type metadata now accepts owned incomplete non-union classes, including forward declarations and uninstantiated template types. Classification and array dimensions retain exact source identity without generating record storage; runtime carriers and callbacks still require complete admitted types. Reference/pointer operation queries can use these identities with exact retained source proof; selected lazy method return signatures keep their complete-carrier checks. Native verification requires the implementing revision’s CI. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#incomplete-record-type-metadata).
 
 Core v2 operation queries now inspect unknown-bound arrays through checked type metadata. Construction/destruction short circuits, exact reference bindings and array-to-pointer conversions preserve their retained source evidence; runtime storage remains restricted. Native verification requires the implementing revision’s CI. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#unknown-bound-array-operation-types).

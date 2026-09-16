@@ -80,6 +80,36 @@ each supported target. Including `<type_traits>` and `<cstdint>` together is
 order independent and records their deduplicated union. Quoted `"cstdint"`, the
 C header `<stdint.h>`, platform headers and user shadow headers are rejected.
 
+## Numeric bounds from `<limits>`
+
+Core v2 accepts an exact top-level `#include <limits>` and exposes
+`std::numeric_limits<T>` for the admitted integer, `float` and `double` types.
+Its integral/enum static data members are compile-time constants. The zero-argument
+`min`, `max`, `lowest`, `epsilon`, `round_error`, `infinity`, `quiet_NaN`,
+`signaling_NaN` and `denorm_min` queries are evaluated by pinned Clang and
+lowered to exact integer or IEEE bit-pattern literals.
+
+```cpp
+#include <limits>
+using I = std::numeric_limits<int>;
+using D = std::numeric_limits<double>;
+static_assert(I::digits == 31 && I::min() + I::max() == -1);
+
+int main() {
+  double quiet = D::quiet_NaN();
+  return I::max() == 2147483647 && D::infinity() > D::max() &&
+                 quiet != quiet
+             ? 0
+             : 1;
+}
+```
+
+The authenticated closure contains 103 libc++/resource files on every supported
+target. Standard-library objects, data-member storage identity, method addresses,
+object-qualified method calls, `long double` results, quoted `"limits"` and user
+shadow headers remain rejected. The generated program contains only the folded
+values; it does not call or link libc++ at runtime.
+
 ## Standard template parsing across targets
 
 The embedded frontend disables MSVC compatibility extensions and delayed template parsing for `cpp-core-v2` on every supported target, including Windows x64 and ARM64. Definitions use standard C++17 parsing and lookup rules. Duplicate explicit instantiation definitions, late specializations and incompatible exception specifications retain language diagnostics (`TR0202`); parsed source still receives the existing support checks (`TR0201`). Unused dependent bodies remain lazy until instantiation is needed. This setting does not change project/math profile configuration or the target data layout, and requires no external Clang executable. Full C++/STL support remains unfinished.

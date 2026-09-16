@@ -210,6 +210,51 @@ approvedSDKIntegerConstant(const State &S, const SourceManager &SM,
              : std::nullopt;
 }
 
+bool approvedNumericLimitsConstant(const State &S, const SourceManager &SM,
+                                   const CallExpr *Call, ASTContext &Context,
+                                   APValue &Value) {
+  if (!Call || Call->getNumArgs() || !Call->isPRValue() ||
+      Call->isTypeDependent() || Call->isValueDependent() ||
+      Call->isInstantiationDependent())
+    return false;
+  const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
+  if (!Method || !Method->isStatic() || !Method->isConstexpr() ||
+      Method->getNumParams() || Method->isVariadic() ||
+      Method->getParent()->getName() != "numeric_limits" ||
+      !approvedStandardSDKDeclaration(S, SM, Method))
+    return false;
+  auto Origin = S.sdkFile(SM, Method->getLocation());
+  if (!Origin || Origin->Root != "libcxx" || Origin->Path != "limits")
+    return false;
+  auto Name = Method->getName();
+  if (Name != "min" && Name != "max" && Name != "lowest" &&
+      Name != "epsilon" && Name != "round_error" && Name != "infinity" &&
+      Name != "quiet_NaN" && Name != "signaling_NaN" &&
+      Name != "denorm_min")
+    return false;
+  const auto *Reference =
+      dyn_cast<DeclRefExpr>(Call->getCallee()->IgnoreParenImpCasts());
+  const auto *Qualifier = Reference ? Reference->getQualifier() : nullptr;
+  const auto *QualifierType = Qualifier ? Qualifier->getAsType() : nullptr;
+  const auto *QualifierRecord =
+      QualifierType ? QualifierType->getAsCXXRecordDecl() : nullptr;
+  if (!Reference || Reference->getDecl() != Method ||
+      !S.owns(SM, Reference->getExprLoc()) || !QualifierRecord ||
+      QualifierRecord->getName() != "numeric_limits" ||
+      !approvedStandardSDKDeclaration(S, SM, QualifierRecord))
+    return false;
+  auto Result = Call->getType();
+  if (Result.isNull() ||
+      !(Result->isIntegralOrEnumerationType() ||
+        Result->isSpecificBuiltinType(BuiltinType::Float) ||
+        Result->isSpecificBuiltinType(BuiltinType::Double)) ||
+      !Context.hasSameType(Result, Method->getReturnType()) ||
+      !Call->isCXX11ConstantExpr(Context, &Value))
+    return false;
+  return Result->isIntegralOrEnumerationType() ? Value.isInt()
+                                                : Value.isFloat();
+}
+
 bool State::consumeSDKFile(const SourceManager &SM, FileID ID) {
   auto Entry = sdkFile(SM, SM.getLocForStartOfFile(ID));
   bool Invalid = false;

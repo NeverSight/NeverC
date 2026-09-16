@@ -54,10 +54,13 @@ metadata and runtime carriers.
 
 Core v2 also admits exact angle includes of
 [`<type_traits>`](../docs/cpp-core-v2.md#compile-time-type_traits) and
-[`<cstdint>`](../docs/cpp-core-v2.md#fixed-width-integers-from-cstdint). The
+[`<cstdint>`](../docs/cpp-core-v2.md#fixed-width-integers-from-cstdint), plus
+[`<limits>`](../docs/cpp-core-v2.md#numeric-bounds-from-limits). The
 frontend uses the pinned embedded libc++/resource VFS and exposes resolved type
 aliases plus integral/enum constant results. It records all consumed header
-hashes: 101 for the `<type_traits>` closure and nine for standalone `<cstdint>`.
+hashes: 101 for the `<type_traits>` closure, nine for standalone `<cstdint>` and
+103 for `<limits>`. Numeric limits additionally fold the documented zero-argument
+integer and IEEE floating queries to literals.
 The driver authenticates that closure before emitting output. Standard-library
 runtime objects, calls and storage identities, other standard headers and full
 C++/STL remain unfinished.
