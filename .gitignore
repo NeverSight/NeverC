@@ -6,6 +6,11 @@
 # as most of those are useless.
 #==============================================================================#
 
+# Brainstorm / visual companion session artifacts
+.superpowers/
+# Local planning documents
+/docs/superpowers/
+
 #==============================================================================#
 # File extensions to be ignored anywhere in the tree.
 #==============================================================================#
