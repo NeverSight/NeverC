@@ -1503,7 +1503,7 @@ Every math unit includes these fields:
 ```json
 {
   "fp_contract": "cpp.math.binary64.masked.v1",
-  "sdk_distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r4",
+  "sdk_distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r5",
   "sdk_catalog_sha256": "<64 lowercase hex digits>",
   "sdk_dependencies": [
     {"root":"platform","path":"usr/include/math.h","sha256":"<64 lowercase hex digits>"}

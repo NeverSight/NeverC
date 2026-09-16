@@ -1293,8 +1293,8 @@ int main() {
   return 0;
 }
 )cpp");
-  auto Result = translate(
-      Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
   ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
   for (const std::string &Optimization : {"-O0", "-O2"}) {
     SCOPED_TRACE(Optimization);
@@ -22731,8 +22731,8 @@ int main() {
 )cpp");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
   ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
-  auto Manifest = llvm::json::parse(
-      readFile(fs::path(Output.string() + ".manifest.json")));
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
   ASSERT_TRUE(static_cast<bool>(Manifest))
       << llvm::toString(Manifest.takeError()).str().str();
   const auto *Object = Manifest->getAsObject();
@@ -23561,6 +23561,49 @@ TEST_F(TranslateTest, CoreV2ArrayRequiresPinnedOperations) {
                Case.Code);
     expectNoArtifacts(Output);
   }
+}
+
+TEST_F(TranslateTest, CoreV2IteratorHeaderUsesPlatformFreeClosure) {
+  const auto Source = tmpFile("iterator-metadata.cpp");
+  const auto Output = tmpFile("iterator-metadata.nc");
+  writeFile(Source, R"cpp(
+#include <iterator>
+using Value = std::iterator_traits<int *>::value_type;
+using Difference = std::iterator_traits<int *>::difference_type;
+static_assert(sizeof(Value) == sizeof(int));
+static_assert(sizeof(Difference) == sizeof(void *));
+int main() { return 0; }
+)cpp");
+  auto Result = translate(
+      Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest = llvm::json::parse(
+      readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *SDK = Manifest->getAsObject()->getObject("sdk");
+  ASSERT_NE(SDK, nullptr);
+  const auto *Dependencies = SDK->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 171u);
+  bool FoundIterator = false;
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+    FoundIterator |= Dependency->getString("root") == "libcxx" &&
+                     Dependency->getString("path") == "iterator";
+  }
+  EXPECT_TRUE(FoundIterator);
+
+  const auto Quoted = tmpFile("iterator-quoted.cpp");
+  const auto QuotedOutput = tmpFile("iterator-quoted.nc");
+  writeFile(Quoted, "#include \"iterator\"\nint main(){return 0;}");
+  expectCode(translate(Quoted, {"--profile", "cpp-core-v2", "-o",
+                                QuotedOutput.string()}),
+             "TR0201");
+  expectNoArtifacts(QuotedOutput);
 }
 
 TEST_F(TranslateTest, CoreV2RejectsUnsupportedErasedDeclarations) {

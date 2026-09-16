@@ -2,7 +2,7 @@
   "schema": "neverc.cpp.sdk.provenance",
   "version": 1,
   "source_distribution_id": "clang20.1.8-libcxx200100-macos15.5",
-  "scope": "370 approved header files; upstream references document source and license provenance, not a claim that every SDK export is byte-identical to that upstream revision.",
+  "scope": "381 approved header files; upstream references document source and license provenance, not a claim that every SDK export is byte-identical to that upstream revision.",
   "headers": [
     {
       "root": "libcxx",
@@ -942,6 +942,18 @@
     },
     {
       "root": "libcxx",
+      "path": "__iterator/back_insert_iterator.h",
+      "sha256": "030a46012beecdec63237c1af2c54190965d2fb1c82b33acaa025692cb054edb",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__iterator/back_insert_iterator.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__iterator/back_insert_iterator.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
       "path": "__iterator/concepts.h",
       "sha256": "1721ad75d27e4f4ebaf2bc6fcfc3bae8fe35c5fdbdea282c45ebabc92d8361e8",
       "license": "Apache-2.0 WITH LLVM-exception",
@@ -990,6 +1002,18 @@
     },
     {
       "root": "libcxx",
+      "path": "__iterator/front_insert_iterator.h",
+      "sha256": "66b41c762530420c9981a508d3bd0da6c31775e22d63a53e4dc0530ae8e99706",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__iterator/front_insert_iterator.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__iterator/front_insert_iterator.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
       "path": "__iterator/incrementable_traits.h",
       "sha256": "d4415a6e50f0e94dc6e9344ad3fd768ad280ada3c46630eaca7ca4543605437a",
       "license": "Apache-2.0 WITH LLVM-exception",
@@ -998,6 +1022,42 @@
       "upstream_revision": "llvmorg-20.1.8",
       "upstream_path": "libcxx/include/__iterator/incrementable_traits.h",
       "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__iterator/incrementable_traits.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "__iterator/insert_iterator.h",
+      "sha256": "837b2d569fb024314a6b77b9d05db3c9cf0cc6865d408a3a3cd500d67fd76a99",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__iterator/insert_iterator.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__iterator/insert_iterator.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "__iterator/istream_iterator.h",
+      "sha256": "73ec088387fbe496cba72b611b59adf9d13dbe46be7057a34c51791ea77622a7",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__iterator/istream_iterator.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__iterator/istream_iterator.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "__iterator/istreambuf_iterator.h",
+      "sha256": "0cc1c3f38ca485e6c19147cc56769968aeefa8be712ca7d2412082aa4627df89",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__iterator/istreambuf_iterator.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__iterator/istreambuf_iterator.h",
       "upstream_relationship": "source-reference"
     },
     {
@@ -1050,6 +1110,30 @@
     },
     {
       "root": "libcxx",
+      "path": "__iterator/move_iterator.h",
+      "sha256": "fc69c4a83c20eb194431c8ecf939111f51265cfacd4051374b24c3da49a042bf",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__iterator/move_iterator.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__iterator/move_iterator.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "__iterator/move_sentinel.h",
+      "sha256": "4a3baccd3006f858aa0e70a7e40af8c8d5fcabb5dc0a2e9758ff882d01ddf644",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__iterator/move_sentinel.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__iterator/move_sentinel.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
       "path": "__iterator/next.h",
       "sha256": "baf15882892e812c01fe62ed5b32af5366e5417315d53ae6b43ed12005cb0f0e",
       "license": "Apache-2.0 WITH LLVM-exception",
@@ -1058,6 +1142,30 @@
       "upstream_revision": "llvmorg-20.1.8",
       "upstream_path": "libcxx/include/__iterator/next.h",
       "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__iterator/next.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "__iterator/ostream_iterator.h",
+      "sha256": "4aafdea8a19e3e95e5ce053a2a1d26f9bd4fe3121d17b1d4f03b1d9056469e38",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__iterator/ostream_iterator.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__iterator/ostream_iterator.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "__iterator/ostreambuf_iterator.h",
+      "sha256": "5e4734d457b5d2e5e42a4c40a85350de9c715100c698266fcbefe921236fe7cc",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__iterator/ostreambuf_iterator.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__iterator/ostreambuf_iterator.h",
       "upstream_relationship": "source-reference"
     },
     {
@@ -3186,6 +3294,18 @@
     },
     {
       "root": "libcxx",
+      "path": "concepts",
+      "sha256": "37b58082f551b9a1664c399d8cfcba244198e1a59241c1515042f8683954e96e",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/concepts",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/concepts",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
       "path": "cstddef",
       "sha256": "53c4fc868f6439e48e52bbc9445a48eab1e597bbfad037ab7480216cb0c6832f",
       "license": "Apache-2.0 WITH LLVM-exception",
@@ -3218,6 +3338,18 @@
       "upstream_revision": "llvmorg-20.1.8",
       "upstream_path": "libcxx/include/initializer_list",
       "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/initializer_list",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "iterator",
+      "sha256": "e4070c0360d2d0575e6dcda18dbb2ac65a84676663272359c97d8c3f77a9af76",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/iterator",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/iterator",
       "upstream_relationship": "source-reference"
     },
     {
@@ -4461,7 +4593,7 @@
       "sha256": "58a133735f0a55a624a1703067059f6e78925e51725ec6e1f966072e142c9c42"
     }
   ],
-  "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r4",
+  "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r5",
   "metadata": [
     {
       "root": "platform",

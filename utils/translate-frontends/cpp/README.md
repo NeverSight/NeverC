@@ -72,6 +72,9 @@ comparisons, `make_pair` and `get`; and `tuple_size`, `tuple_element` and
 integer-sequence size queries. Array directly lowers nonempty fixed scalar,
 trivial-record and nested-array storage, iterators, element access, fill, swap,
 scalar and recursive nested-array comparisons and tuple access.
+Iterator exposes the pinned public header and pointer `iterator_traits` metadata
+through a platform-free 171-file closure. Stream iterators remain disabled until
+their C runtime character-state ABI is available on every target.
 The driver authenticates each closure before
 emitting output. Standard-library objects and operations beyond these documented
 surfaces, other standard headers and full C++/STL remain unfinished.
@@ -195,9 +198,9 @@ signaling-NaN builtin argument is not silently mapped to a dynamic runtime call.
 Dynamic binary64 parameters can still carry NaNs and infinities.
 
 The immutable translation headers are embedded in NeverC as distribution
-`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r4`. The
+`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r5`. The
 [SDK catalog](../../../neverc/lib/Translate/Cpp/SDK/catalog.json) records all
-370 approved header files and separate SDK metadata. The original header bytes
+381 approved header files and separate SDK metadata. The original header bytes
 are preserved, including observable macros such as `M_PI` and `_LIBCPP_VERSION`.
 The [SDK notices](../../../neverc/lib/Translate/Cpp/SDK/README.md) document
 origins, redistribution terms and the minimal owned SDK configuration.

@@ -199,6 +199,20 @@ nontrivial record elements, record comparisons, reverse iterators, dynamic or
 out-of-range `at`, function addresses, quoted `"array"`, user shadows and forged
 declarations remain outside this boundary.
 
+## Iterator metadata from `<iterator>`
+
+Core v2 admits the exact angled `<iterator>` entry and pointer
+`std::iterator_traits` metadata. Its authenticated 171-file libc++/resource
+closure is identical across all eight targets and contains no platform headers.
+The upstream `iterator` header and directly included component headers retain
+their original bytes.
+
+Runtime iterator adapters are not part of this first boundary. In particular,
+the four stream-iterator component headers remain authenticated in the VFS but
+their declarations are disabled because libc++ obtains `mbstate_t` from a target
+C runtime header. Quoted includes, forged declarations, runtime utility calls
+and stream iterators remain rejected.
+
 ## Standard template parsing across targets
 
 The embedded frontend disables MSVC compatibility extensions and delayed template parsing for `cpp-core-v2` on every supported target, including Windows x64 and ARM64. Definitions use standard C++17 parsing and lookup rules. Duplicate explicit instantiation definitions, late specializations and incompatible exception specifications retain language diagnostics (`TR0202`); parsed source still receives the existing support checks (`TR0201`). Unused dependent bodies remain lazy until instantiation is needed. This setting does not change project/math profile configuration or the target data layout, and requires no external Clang executable. Full C++/STL support remains unfinished.

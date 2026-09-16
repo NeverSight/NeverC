@@ -29,8 +29,8 @@ def main():
     repository = Path(__file__).resolve().parents[4]
     count = 0
     sdk_identity = {
-        "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r4",
-        "catalog_sha256": "d5ba5430aa0ed1fb15d8efabd4296137c00c5878d2f2957929b1b67db83a2508",
+        "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r5",
+        "catalog_sha256": "bbe031f08a09a485c5fffacedc19e4da605dc7de7f06da464d1bd22d83f5cc5f",
     }
 
     def check(name, source, code=None, options=(), root=None, profile="cpp-core-v1",
@@ -538,6 +538,29 @@ extern "C" int array_composition() {
     ):
         check("v2-array-" + name, source, code,
               profile="cpp-core-v2", sdk=True)
+
+    iterator_metadata_source = """\
+#include <iterator>
+using Value = std::iterator_traits<int*>::value_type;
+using Difference = std::iterator_traits<int*>::difference_type;
+static_assert(sizeof(Value) == sizeof(int));
+static_assert(sizeof(Difference) == sizeof(void*));
+extern "C" int iterator_metadata() { return 0; }
+"""
+    iterator_metadata = check("v2-iterator-metadata", iterator_metadata_source,
+                              profile="cpp-core-v2", sdk=True)
+    assert len(iterator_metadata["sdk_dependencies"]) == 171, iterator_metadata
+    assert any(dependency["root"] == "libcxx" and
+               dependency["path"] == "iterator"
+               for dependency in iterator_metadata["sdk_dependencies"]), iterator_metadata
+    assert not any(dependency["root"] == "platform"
+                   for dependency in iterator_metadata["sdk_dependencies"]), iterator_metadata
+    for target in sdk_targets:
+        check("v2-iterator-metadata-" + target, iterator_metadata_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-iterator-quoted",
+          '#include "iterator"\nint main(){return 0;}', "TR0201",
+          profile="cpp-core-v2", sdk=True)
 
     # Windows driver defaults must not change core-v2 source visibility or
     # standard diagnostics. Exercise both MSVC architectures on every CI host.

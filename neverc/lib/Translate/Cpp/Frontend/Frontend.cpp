@@ -13603,13 +13603,15 @@ public:
         return;
       }
       if (S.owns(SM, L) &&
-          (!Angled || (Name != "type_traits" && Name != "cstdint" &&
-                       Name != "limits" && Name != "cstddef" &&
-                       Name != "utility" && Name != "array"))) {
+          (!Angled ||
+           (Name != "type_traits" && Name != "cstdint" && Name != "limits" &&
+            Name != "cstddef" && Name != "utility" && Name != "array" &&
+            Name != "iterator"))) {
         reject(L, "include",
                "Only exact #include <type_traits>, #include <cstdint> and "
                "#include <limits>, #include <cstddef>, #include <utility> and "
-               "#include <array> entries are admitted in cpp-core-v2.");
+               "#include <array> and #include <iterator> entries are admitted "
+               "in cpp-core-v2.");
         return;
       }
       if (!S.owns(SM, L) && !S.sdkFile(SM, L))
@@ -14654,10 +14656,18 @@ extern "C" int neverc_cpp_frontend_main(int Argc, const char **Argv) {
       // target's default Microsoft compatibility options.
       Args.insert(Args.end(), {"-Wc++20-extensions", "-Wc++23-extensions",
                                "-Wc++26-extensions", "-Werror=writable-strings",
-                               "-fno-ms-compatibility",
-                               "-fno-ms-extensions",
+                               "-fno-ms-compatibility", "-fno-ms-extensions",
                                "-fno-delayed-template-parsing",
                                "-D_LIBCPP_REMOVE_TRANSITIVE_INCLUDES",
+                               // Stream iterators require platform C runtime
+                               // types that the core SDK does not carry yet.
+                               // Their exact headers remain authenticated, but
+                               // their declarations stay absent until the I/O
+                               // ABI boundary supplies mbstate_t everywhere.
+                               "-D_LIBCPP___ITERATOR_ISTREAM_ITERATOR_H",
+                               "-D_LIBCPP___ITERATOR_ISTREAMBUF_ITERATOR_H",
+                               "-D_LIBCPP___ITERATOR_OSTREAM_ITERATOR_H",
+                               "-D_LIBCPP___ITERATOR_OSTREAMBUF_ITERATOR_H",
                                "-D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS",
                                "-fno-fast-math", "-ffp-contract=off"});
     }

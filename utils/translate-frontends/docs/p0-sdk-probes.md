@@ -127,7 +127,7 @@ inventory with the assumption that every file has one license. See the
 
 The Apple SDK was an external prerequisite for these probes. The experiment did
 not distribute SDK content. The later built-in implementation inventories the
-370 approved headers individually under their LLVM, APSL and Berkeley licenses,
+381 approved headers individually under their LLVM, APSL and Berkeley licenses,
 retains their original notices, and supplies corresponding source provenance.
 See the [embedded SDK license inventory](../../../neverc/lib/Translate/Cpp/SDK/README.md),
 including the three project-level license sources and the APSL-2.0 selection for
