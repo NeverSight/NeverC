@@ -699,8 +699,10 @@ class FunctionLowering {
       return nullptr;
     };
     auto ArrayElement = [&](Expression Base, const UtilityArrayRecord &Array,
-                            Expression Position, QualType ResultType) {
-      auto PointerType = type(A.Context.getPointerType(ResultType), L);
+                            Expression Position, QualType ResultType,
+                            bool ReadOnly = false) {
+      auto PointeeType = ReadOnly ? ResultType.withConst() : ResultType;
+      auto PointerType = type(A.Context.getPointerType(PointeeType), L);
       auto Elements = fieldStorage(std::move(Base), Array.Elements, L);
       return index(decay(std::move(Elements), PointerType, L),
                    std::move(Position), type(ResultType, L), L);
@@ -1035,7 +1037,8 @@ class FunctionLowering {
       auto SizeType = type(A.Context.getSizeType(), L);
       auto Element = [&](const Expression &Base, uint64_t I) {
         return ArrayElement(json::Object(Base), *Array,
-                            quantity(I, SizeType, L), Array->ElementType);
+                            quantity(I, SizeType, L), Array->ElementType,
+                            true);
       };
       auto Equal = [&](const Expression &First, const Expression &Second) {
         auto Result = temporary("bool", L);
