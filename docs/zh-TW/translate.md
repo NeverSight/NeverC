@@ -12,7 +12,7 @@ Core v2 支援未求值呼叫中經過檢查的命名空間範本宣告簽章，
 
 Core v2 支援預設 sized delete 轉送：未經原始碼重新宣告的隱含全域 sized delete/delete[] 可呼叫對應的 unsized 定義。明確的 sized 定義優先，陣列保留原運算式的 cookie 配置。此項不提供預設配置器或例外執行環境；原生驗證須由實作版本的 CI 完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#single-object-allocation-and-placement-reuse).
 
-Core v2 現支援範本與別名中的一般裸函式型別，包括從函式指標推導型別。原始簽章、調整前陣列界限與 noexcept 相依來源仍會檢查；執行期回呼沿用既有契約，原生驗證須由 CI 完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#bare-function-type-metadata).
+Core v2 現支援範本、別名、查詢與轉換中的一般函式型別及其直接左值／右值參考，包括從函式指標推導型別。原始簽章、調整前陣列界限與 noexcept 相依來源仍會檢查；執行期回呼沿用既有契約，函式參考的執行期載體仍不受支援，原生驗證須由 CI 完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#bare-function-type-metadata).
 
 Core v2 一元型別轉換現檢查原始輸入、實際替換後的原始碼與結果，包括最終型別中消失的別名範本參數。固定版本的十六種轉換沿用既有型別中繼資料與執行期型別，原生驗證仍僅在 CI 執行。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unary-type-transforms).
 

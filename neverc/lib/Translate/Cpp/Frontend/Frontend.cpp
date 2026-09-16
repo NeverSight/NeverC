@@ -1781,8 +1781,18 @@ static bool incompleteRecordMetadataIdentity(Adapter &A, const CXXRecordDecl *D)
          isa<TranslationUnitDecl, NamespaceDecl, CXXRecordDecl>(D->getLexicalDeclContext());
 }
 
+static QualType functionMetadataType(QualType T) {
+  if (T.isNull())
+    return {};
+  // A function reference has no runtime carrier in the C23 protocol, but its
+  // direct referent is still a complete type-trait and transform operand.
+  if (T->isReferenceType())
+    T = T->getPointeeType();
+  return !T.isNull() && T->isFunctionType() ? T : QualType{};
+}
+
 void Adapter::checkTypeOnly(QualType T, SourceLocation L) {
-  if ((!T.isNull() && T->isFunctionType()) || incompleteArrayMetadataType(T) ||
+  if (!functionMetadataType(T).isNull() || incompleteArrayMetadataType(T) ||
       incompleteRecordMetadataType(T))
     checkQueryType(T, L, true, true);
   else
@@ -1838,15 +1848,19 @@ void Adapter::checkQueryType(QualType T, SourceLocation L,
     }
     return;
   }
-  if (T->isFunctionType()) {
-    // Bare function aliases already use this signature contract. Check the
-    // prototype before forming a pointer to reject cv/ref-qualified functions.
-    if (T.hasQualifiers() ||
-        !ordinaryCallbackPrototype(T->getAs<FunctionProtoType>())) {
+  if (auto Function = functionMetadataType(T); !Function.isNull()) {
+    // Bare functions and their direct references share one signature
+    // contract. Check the prototype before forming a pointer to reject
+    // cv/ref-qualified functions without admitting a runtime reference.
+    if (T.isVolatileQualified() || T->isAtomicType() || T.isRestrictQualified() ||
+        T.getAddressSpace() != LangAS::Default || Function.hasQualifiers() ||
+        Function.getAddressSpace() != LangAS::Default ||
+        !ordinaryCallbackPrototype(Function->getAs<FunctionProtoType>())) {
       reject(L, "queried function type", "Type queries require an ordinary admitted callback signature.");
       throw Failure{};
     }
-    if (functionPointerType(Context.getPointerType(T), L, Depth).empty())
+    if (functionPointerType(Context.getPointerType(Function), L,
+                            Depth + unsigned(T->isReferenceType())).empty())
       throw Failure{};
   } else if (type(T, L, true, Depth).empty()) {
     throw Failure{};
@@ -6559,19 +6573,19 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   }
   bool retainFunctionTypeSource(QualType Type, const TypeSourceInfo *Source,
                                 SourceLocation L) {
-    if (Type.isNull() || !Type->isFunctionType() || Type->isInstantiationDependentType())
+    if (functionMetadataType(Type).isNull() || Type->isInstantiationDependentType())
       return true;
     if (!Source || Source->getType().isNull() ||
         Source->getType()->isInstantiationDependentType() ||
         !A.Context.hasSameType(Source->getType(), Type)) {
       A.reject(L, "function type source",
-               "Bare function metadata requires its actual resolved signature source.");
+               "Function metadata requires its actual resolved signature source.");
       return false;
     }
     const auto Location = Source->getTypeLoc();
     if (!A.S.owns(A.Sources, Location.getBeginLoc())) {
       A.reject(Location.getBeginLoc(), "function type source",
-               "Bare function metadata requires its actual owned signature source.");
+               "Function metadata requires its actual owned signature source.");
       return false;
     }
     // Registration does not traverse or complete a node. The existing source
@@ -10998,7 +11012,7 @@ public:
         return false;
       }
     }
-    // Type transforms and bare function metadata consume source even without a
+    // Type transforms and function metadata consume source even without a
     // surrounding query. Only normal traversal can complete these exact roots.
     for (const auto &[Type, Location] : TypeSourceRoots) {
       OperationSourceChecker SourceCheck(A, &CompletedOperationDefinitions,

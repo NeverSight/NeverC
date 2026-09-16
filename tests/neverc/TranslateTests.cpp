@@ -5047,6 +5047,7 @@ TEST_F(TranslateTest, CoreV2ArrayTypeQueriesRetainTypesAndDimensions) {
       {"aliases", "using A=const int[2][3];bool f(){return __array_rank(A)==2&&__array_extent(A,1)==3;}"},
       {"non-array", "bool f(){return __array_rank(int*)==0&&__array_rank(int(&)[2])==0&&__array_extent(int,0)==0&&__array_rank(void)==0;}"},
       {"function-type", "using F=int(int);bool f(){return __array_rank(F)==0&&__array_extent(F,0)==0;}"},
+      {"function-reference", "using F=int(int);static_assert(__array_rank(F&)==0&&__array_extent(F&&,0)==0);"},
       {"constant-index", "constexpr int value=1;enum Index{one=1};bool f(){return __array_extent(int[2][3],value)==3&&__array_extent(int[2][3],one)==3&&__array_extent(int[2][3],true)==3;}"},
       {"constexpr-index-call", "constexpr int index(){return 1;}bool f(){return __array_extent(int[2][3],index())==3;}"},
       {"fixed-type-dependent-index", "template<int I>constexpr auto f(){return __array_extent(int[2][3],I);}static_assert(f<0>()==2&&f<1>()==3&&f<2>()==0);"},
@@ -5227,6 +5228,8 @@ TEST_F(TranslateTest, CoreV2BareFunctionMetadataRetainsSignatures) {
       {"erased", "template<class F>using I=int;I<int(int)> f(){return 3;}"},
       {"erased-pack", "template<class... F>using I=int;I<int(int),void()> f(){return 3;}"},
       {"erased-default", "template<class F=int(int)>using I=int;I<> f(){return 3;}"},
+      {"erased-function-reference", "template<class T>using I=int;I<int(&)(int)> f(){return 3;}"},
+      {"reference-alias", "using F=int(int);using L=F&;using R=F&&;static_assert(__is_reference(L)&&__is_lvalue_reference(L)&&__is_rvalue_reference(R)&&__is_same(__remove_reference_t(L),F));"},
       {"complete-record-pointer", "struct R{int n;};template<class F>using D=__decay(F);static_assert(__is_same(D<R*(R&)>,R*(*)(R&)));"},
       {"adjusted-array-parameter", "template<class F>using D=__decay(F);static_assert(__is_same(D<int(int[3])>,int(*)(int*)));"},
       {"deduced-function", "int identity(int n){return n;}template<class F>F* pointer(F* value){return value;}int f(){auto p=pointer(&identity);return p(3);}"},
@@ -5259,10 +5262,12 @@ TEST_F(TranslateTest, CoreV2BareFunctionMetadataChecksErasedSource) {
       {"wide-parameter", "template<class T>using I=int;I<int(long double)> f(){return 3;}"},
       {"cv-function", "template<class T>using I=int;I<int()const> f(){return 3;}"},
       {"ref-function", "template<class T>using I=int;I<int()&> f(){return 3;}"},
+      {"hidden-function-reference", "template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};template<class T>using I=int;I<int(&)()noexcept(noexcept(Mid()))> f(){return 3;}"},
+      {"variadic-function-reference", "template<class T>using I=int;I<int(&)(int,...)> f(){return 3;}"},
+      {"wide-function-reference", "template<class T>using I=int;I<long double(&)(int)> f(){return 3;}"},
       {"record-result", "struct R{int n;};template<class T>using I=int;I<R()> f(){return 3;}"},
       {"record-parameter", "struct R{int n;};template<class T>using I=int;I<int(R)> f(){return 3;}"},
       {"incomplete-signature", "struct R;template<class T>using I=int;I<int(R*)> f(){return 3;}"},
-      {"function-reference", "template<class T>using I=int;I<int(&)(int)> f(){return 3;}"},
       {"wide-default", "template<class T=int(long double)>using I=int;I<> f(){return 3;}"},
       {"wide-noexcept", "template<class T>using I=int;I<int()noexcept(sizeof(long double)>0)> f(){return 3;}"},
       {"wide-adjusted-array", "template<class T>using I=int;I<int(char[sizeof(long double)])> f(){return 3;}"},
@@ -5348,6 +5353,9 @@ TEST_F(TranslateTest, CoreV2UnaryTransformsRetainOperandSources) {
       {"void-reference", "static_assert(__is_same(__add_lvalue_reference(void),void)&&__is_same(__add_rvalue_reference(const void),const void));"},
       {"bare-function", "using F=int(int);static_assert(__is_same(__decay(F),int(*)(int))&&__is_same(__add_pointer(F),int(*)(int)));"},
       {"noexcept-function", "using F=int(int)noexcept;static_assert(__is_same(__decay(F),int(*)(int)noexcept));"},
+      {"function-reference-input", "using F=int(&)(int);using R=__remove_reference_t(F);static_assert(__is_same(R,int(int)));"},
+      {"function-reference-output", "using R=__add_lvalue_reference(int(int));static_assert(__is_same(R,int(&)(int)));"},
+      {"function-reference-transforms", "using F=int(int);using L=F&;using X=F&&;static_assert(__is_same(__remove_reference_t(L),F)&&__is_same(__remove_cvref(L),F)&&__is_same(__decay(L),F*)&&__is_same(__add_pointer(L),F*)&&__is_same(__add_lvalue_reference(X),L)&&__is_same(__add_rvalue_reference(L),L));"},
       {"qualified-transform", "using R=const __remove_cv(const int);static_assert(__is_same(R,const int));"},
       {"incomplete", "struct R;static_assert(__is_same(__add_pointer(R),R*)&&__is_same(__remove_pointer(R*),R)&&__is_same(__remove_cv(const R),R));"},
       {"unknown-array", "struct R;static_assert(__is_same(__remove_extent(R[][3]),R[3])&&__is_same(__decay(R[]),R*)&&__is_same(__remove_all_extents(R[][3]),R));"},
@@ -5393,8 +5401,6 @@ TEST_F(TranslateTest, CoreV2UnaryTransformsCheckErasedSources) {
       {"wide-erased-decltype", "using R=__remove_cv(decltype(sizeof(long double)?int():int()));R f(){return 0;}"},
       {"erased-alias-source", "template<class T>using I=int;template<class T>using R=__remove_cv(I<decltype(sizeof(long double)+sizeof(T))>);R<int> f(){return 0;}"},
       {"erased-alias-default", "template<class T=decltype(sizeof(long double))>using I=int;using R=__remove_cv(I<>);R f(){return 0;}"},
-      {"function-reference-input", "using F=int(&)(int);using R=__remove_reference_t(F);"},
-      {"function-reference-output", "using R=__add_lvalue_reference(int(int));"},
       {"function-variadic", "using R=__decay(int(int,...));"},
       {"function-wide", "using R=__decay(long double(int));"},
       {"member-pointer", "struct S{int value;};using R=__remove_pointer(int S::*);"},
@@ -5852,6 +5858,9 @@ TEST_F(TranslateTest, CoreV2OperationTraitsAdmitCheckedTypes) {
       {"incomplete-operation-variable", "struct R;template<class T>inline constexpr bool value=__is_convertible(T*,void*);static_assert(value<R>);"},
       {"incomplete-operation-pack", "struct R;struct S;template<class...T>constexpr bool f(){return (__is_nothrow_destructible(T)&&...);}static_assert(f<>()&&f<R&,S*,R(&)[]>()&&!f<R[]>());"},
       {"incomplete-operation-lazy-element", "template<class T>struct R{typename T::missing value;};static_assert(__is_constructible(R<int>*)&&__is_nothrow_destructible(R<int>&));"},
+      {"record-reference-unmaterialized-nothrow-destruction", "template<class T>struct R{~R()noexcept(T::missing){T::body();}};static_assert(__is_nothrow_destructible(R<int>&)&&__is_nothrow_destructible(R<int>(&)[2]));"},
+      {"pointer-unmaterialized-record", "template<class T>struct R{T n;R(){T::missing();}};static_assert(__is_constructible(R<int>*)&&__is_nothrow_destructible(R<int>*));"},
+      {"function-reference-destruction", "using F=int();static_assert(__is_destructible(F&)&&__is_trivially_destructible(F&&)&&__is_nothrow_destructible(F&));"},
       {"incomplete-operation-selected-parameter", "struct R;template<bool,class T>struct Enable{};template<class T>struct Enable<true,T>{using type=T;};template<class T,typename Enable<__is_convertible(T,R*),int>::type N=7>constexpr int f(){return N;}static_assert(f<R*>()==7);"},
       {"incomplete-operation-bound-effects", "struct R;int effects;static_assert(__is_constructible(R(&)[sizeof(++effects)],R(&)[sizeof(int)]));"},
       {"incomplete-operation-reference", "struct R;static_assert(__is_nothrow_destructible(R&));"},
@@ -6784,7 +6793,6 @@ TEST_F(TranslateTest, CoreV2OperationTraitsRetainSourceAndRecordRestrictions) {
       {"type-source-hidden-record-reference-size-nothrow", "template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};struct Value{char bytes[noexcept(Mid())?1:2];};constexpr bool value(const Value&v){return sizeof(v)==1;}struct R{R()noexcept(value(Value{})){}};static_assert(__is_nothrow_constructible(R));"},
       {"type-source-hidden-selected-record-layout", "template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};struct R{char bytes[noexcept(Mid())?1:2];R()noexcept{}};static_assert(__is_constructible(R));"},
       {"type-source-hidden-selected-record-layout-nothrow", "template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};struct R{char bytes[noexcept(Mid())?1:2];R()noexcept{}};static_assert(__is_nothrow_constructible(R));"},
-      {"record-reference-unmaterialized-nothrow-destruction", "template<class T>struct R{~R()noexcept(T::missing){T::body();}};static_assert(__is_nothrow_destructible(R<int>&)&&__is_nothrow_destructible(R<int>(&)[2]));"},
       {"value-source-hidden-constexpr-variable", "template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};constexpr bool flag=noexcept(Mid());struct R{R()noexcept(flag){}};static_assert(__is_constructible(R));"},
       {"value-source-hidden-constexpr-variable-nothrow", "template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};constexpr bool flag=noexcept(Mid());struct R{R()noexcept(flag){}};static_assert(__is_nothrow_constructible(R));"},
       {"value-source-hidden-const-variable", "template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};const bool flag=noexcept(Mid());struct R{R()noexcept(flag){}};static_assert(__is_constructible(R));"},
@@ -6868,7 +6876,6 @@ TEST_F(TranslateTest, CoreV2OperationTraitsRetainSourceAndRecordRestrictions) {
       {"default-hidden-initializer", "struct R{R(int=sizeof(long double)){}};bool f(){return __is_constructible(R);}"},
       {"default-hidden-callee-body", "int get(){long double hidden=0;return 3;}struct R{R(int=get()){}};bool f(){return __is_constructible(R);}"},
       {"default-hidden-temporary-destruction", "struct S{~S(){long double hidden=0;}};struct R{R(const S& =S{}){}};bool f(){return __is_constructible(R);}"},
-      {"pointer-unmaterialized-record", "template<class T>struct R{T n;R(){T::missing();}};static_assert(__is_constructible(R<int>*)&&__is_nothrow_destructible(R<int>*));"},
       {"record-reference-nothrow-hidden-type", "struct R{int n;};bool f(){return __is_nothrow_destructible(decltype((sizeof(long double),R{}))&);}"},
       {"record-reference-nothrow-used-body", "template<class T>struct R{~R(){long double hidden=0;}};static_assert(__is_nothrow_destructible(R<int>&));int main(){R<int>value;}"},
       {"record-query-before-runtime-body", "template<class T>struct R{T n;R(){long double hidden=0;}};static_assert(__is_constructible(R<int>,R<int>));int main(){R<int>value;return 0;}"},
@@ -6883,7 +6890,6 @@ TEST_F(TranslateTest, CoreV2OperationTraitsRetainSourceAndRecordRestrictions) {
       {"unsupported-pointee", "bool f(){return __is_destructible(long double*);}"},
       {"volatile", "bool f(){return __is_assignable(volatile int&,int);}"},
       {"member-pointer", "struct R{int n;};bool f(){return __is_constructible(int R::*);}"},
-      {"function-reference", "using F=int();bool f(){return __is_destructible(F&);}"},
       {"function-noexcept-source", "bool f(){return __is_convertible(int(*)()noexcept(sizeof(long double)>0),int(*)());}"},
       {"adjusted-parameter-source", "bool f(){return __is_constructible(int(*)(int*),int(int[sizeof(long double)]));}"},
       {"array-bound-source", "bool f(){return __is_trivially_destructible(int[sizeof(long double)]);}"},
@@ -9782,6 +9788,7 @@ TEST_F(TranslateTest, CoreV2MemberAliasesAcceptConcreteTypes) {
       {"chain-member", "struct R{template<class T>using I=T;template<class T>using P=I<T>*;};int main(){int n=3;R::P<int> p=&n;return *p;}"},
       {"chain-namespace", "template<class T>using I=T;struct R{template<class T>using A=I<T>;};template<class T>using B=R::A<T>;int main(){B<int> n=3;return n;}"},
       {"cross-member", "struct A{template<class T>using I=T;};struct B{template<class T>using I=A::I<T>;};int main(){B::I<int> n=3;return n;}"},
+      {"unevaluated-declared-function", "template<class T>int f();struct R{template<class T>using I=decltype(f<T>());};int main(){R::I<int> n=3;return n;}"},
       {"record-result", "struct V{int n;};struct R{template<class T>using I=T;};int main(){R::I<V> v{3};return v.n;}"},
       {"const-pointer", "struct R{template<class T>using I=const T*;};int main(){int n=3;R::I<int> p=&n;return *p;}"},
       {"lvalue-reference", "struct R{template<class T>using I=T&;};int main(){int n=3;R::I<int> ref=n;ref=4;return n;}"},
@@ -9882,21 +9889,6 @@ TEST_F(TranslateTest, CoreV2MemberAliasesRetainLanguageDiagnostics) {
     writeFile(Source, Code);
     auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
     expectCode(Result, "TR0202");
-    expectNoArtifacts(Output);
-  }
-}
-
-TEST_F(TranslateTest, CoreV2MemberAliasesRetainRequiredDefinitions) {
-  const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"unevaluated-required-definition", "template<class T>int f();struct R{template<class T>using I=decltype(f<T>());};int main(){R::I<int> n=3;return n;}"},
-  };
-  for (const auto &[Name, Code] : Cases) {
-    SCOPED_TRACE(Name);
-    const auto Source = tmpFile("member-alias-missing-" + Name + ".cpp");
-    const auto Output = tmpFile("member-alias-missing-" + Name + ".nc");
-    writeFile(Source, Code);
-    auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
-    expectCode(Result, "TR0203");
     expectNoArtifacts(Output);
   }
 }
@@ -13998,6 +13990,7 @@ TEST_F(TranslateTest, CoreV2DelegatingConstructorsAcceptSelectedTargets) {
       {"callback-fields", "int f(){return 3;}using F=int(*)();struct R{F p;R():R(f){}R(F v):p(v){}};int main(){R r;return r.p()-3;}"},
       {"lazy-body", "template<class T>struct R{int n;R():R(T::missing){}R(int v):n(v){}};int main(){R<int>r(3);return r.n-3;}"},
       {"explicit-instance", "template<class T>struct R{T n;R():R(T(3)){}R(T v):n(v){}};template R<int>::R();int main(){R<int>r;return r.n-3;}"},
+      {"empty-base-target", "struct B{B(int){}};struct R:B{R():R(3){}R(int n):B(n){}};int main(){R r;}"},
   };
   for (const auto &[Name, Code] : Cases) {
     SCOPED_TRACE(Name);
@@ -14016,7 +14009,6 @@ TEST_F(TranslateTest, CoreV2DelegatingConstructorsRetainSourceBoundaries) {
       {"floating-argument", "struct R{int n;R():R(sizeof(long double)){}R(int v):n(v){}};", "TR0201"},
       {"constant-hidden-argument", "struct R{int n;constexpr R():R(sizeof(long double)){}constexpr R(int v):n(v){}};constexpr R r;", "TR0201"},
       {"dead-body", "struct R{int n;R():R(3){if(false)(void)1.0L;}R(int v):n(v){}};", "TR0201"},
-      {"base", "struct B{B(int){}};struct R:B{R():R(3){}R(int n):B(n){}};", "TR0201"},
       {"virtual", "struct R{R():R(3){}R(int){}virtual void f(){}};", "TR0201"},
       {"variadic", "struct R{R():R(3){}R(int,...){}};", "TR0201"},
       {"exception-body", "struct R{R():R(3){throw 1;}R(int){}};", "TR0201"},
@@ -16599,6 +16591,8 @@ TEST_F(TranslateTest, CoreV2ScalarTemplateDefaultsAcceptConcreteValues) {
       {"substitution-fallback", "template<class T,int N=T::missing>int f(T){return 1;}int f(int){return 2;}int main(){return f(3)-2;}"},
       {"conversion-fallback", "template<class T,int N=T{}>int f(T){return 1;}int f(int*){return 2;}int main(){int*p=nullptr;return f(p)-2;}"},
       {"inherited-lazy", "template<class T,int N=T::missing>int f();template<class T,int N>int f(){return N;}int main(){return f<int,4>()-4;}"},
+      {"sizeof-declared-function", "template<class T>int missing();template<class T,int N=sizeof(missing<T>())>int f(){return N;}int main(){return f<int>()-sizeof(int);}"},
+      {"noexcept-declared-function", "template<class T>int missing()noexcept;template<class T,bool B=noexcept(missing<T>())>int f(){return B;}int main(){return f<int>()-1;}"},
       {"protocol-source", "template<int N=3>int&slot(){static int n=N;return n;}\nint&omitted(){return slot();}\nint&explicitSame(){return slot<3>();}\nint&different(){return slot<4>();}\ntemplate<auto N=3u>auto tick(){static decltype(N)n=N;return ++n;}\nunsigned defaultTick(){return tick();}\nunsigned explicitTick(){return tick<3u>();}\nint signedTick(){return tick<3>();}\ntemplate<class T=int,int N=3,int M=N+2>struct Box{\n T values[N];\n inline static int shared=M;\n};\nint sizeDefault(){return sizeof(Box<>);}\nint sizeSame(){return sizeof(Box<int,3,5>);}\nint sizeDifferent(){return sizeof(Box<int,4>);}\nint staticDefault(){return Box<>::shared;}\nint staticSame(){return Box<int,3,5>::shared;}\nint staticDifferent(){return Box<int,4>::shared;}\nBox<>make(){return Box<>{{1,2,3}};}\nint&alias(Box<int,3,5>&r){return r.values[1];}\nstruct Token{int n;};\ntemplate<int N=4>int operator+(Token r,int n){return r.n+n+N;}\nint operatorDefault(){return Token{3}+2;}\nint operatorExplicit(){return operator+<4>(Token{3},2);}\nint operatorDifferent(){return operator+<5>(Token{3},2);}\nstruct Constant{constexpr operator int()const{return 3;}};\ntemplate<class T,int N=T{}>int converted(){return N;}\nint convertedDefault(){return converted<Constant>();}\ntemplate<int N>int inherited();\ntemplate<int N=6>int inherited(){return N;}\nint inheritedDefault(){return inherited();}\nint inheritedSame(){return inherited<6>();}\n"},
   };
   for (const auto &[Name, Code] : Cases) {
@@ -16665,8 +16659,6 @@ TEST_F(TranslateTest, CoreV2ScalarTemplateDefaultsRetainLanguageDiagnostics) {
 
 TEST_F(TranslateTest, CoreV2ScalarTemplateDefaultsRequireSelectedDefinitions) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"sizeof-missing-function", "template<class T>int missing();template<class T,int N=sizeof(missing<T>())>int f(){return N;}int main(){return f<int>();}"},
-      {"noexcept-missing-function", "template<class T>int missing()noexcept;template<class T,bool B=noexcept(missing<T>())>int f(){return B;}int main(){return f<int>();}"},
       {"sizeof-missing-static", "template<class T>struct R{static int n;};template<class T,int N=sizeof(R<T>::n)>int f(){return N;}int main(){return f<int>();}"},
   };
   for (const auto &[Name, Code] : Cases) {
@@ -17066,6 +17058,7 @@ TEST_F(TranslateTest, CoreV2FreeOperatorTemplatesAcceptConcreteOperators) {
       {"static-isolation", "struct R{int n;};template<class T>int operator+(R r,T n){static int count=0;return r.n+n+(++count);}int f(){R r{3};return (r+4)+(r+4u);}"},
       {"noexcept", "struct R{int n;};template<class T>int operator+(R r,T n)noexcept(sizeof(T)>0){return r.n+n;}static_assert(noexcept(R{3}+4));int f(){return R{3}+4;}"},
       {"constexpr-query", "struct R{int n;};template<class T>constexpr int operator+(R r,T n){return r.n+n;}static_assert(R{3}+4==7);int f(){return sizeof(R{3}+4);}"},
+      {"declaration-only-noexcept-query", "struct R{int n;};template<class T>int operator+(R,T)noexcept;static_assert(noexcept(R{3}+4));"},
       {"enum-operand", "enum class E:int{v=3};template<class T>int operator+(E e,T n){return int(e)+n;}int f(){return E::v+4;}"},
       {"iterator-range", "template<class T>struct Iterator{T*p;};template<class T>T&operator*(const Iterator<T>&r){return *r.p;}template<class T>Iterator<T>&operator++(Iterator<T>&r){++r.p;return r;}template<class T>bool operator!=(const Iterator<T>&a,const Iterator<T>&b){return a.p!=b.p;}template<class T,int N>struct Range{T data[N];Iterator<T>begin(){return Iterator<T>{data};}Iterator<T>end(){return Iterator<T>{data+N};}};int f(){Range<int,3>r{{1,2,3}};int sum=0;for(int&n:r){++n;sum+=n;}return sum;}"},
       {"protocol-source", "template<class T,int N>struct Cursor{T*p;};\ntemplate<class T,int N>T&operator*(const Cursor<T,N>&r){return *r.p;}\ntemplate<class T,int N>Cursor<T,N>&operator++(Cursor<T,N>&r){++r.p;return r;}\ntemplate<class T,int N>Cursor<T,N>operator++(Cursor<T,N>&r,int){T*p=r.p;++r.p;return Cursor<T,N>{p};}\ntemplate<class T,int N>Cursor<T,N>operator+(const Cursor<T,N>&r,int n){return Cursor<T,N>{r.p+n};}\ntemplate<class T,int N>Cursor<T,N>&operator+=(Cursor<T,N>&r,int n){r.p+=n;return r;}\ntemplate<class T,int N>bool operator&&(const Cursor<T,N>&a,const Cursor<T,N>&b){return a.p&&b.p;}\ntemplate<class T,int N>bool operator||(const Cursor<T,N>&a,const Cursor<T,N>&b){return a.p||b.p;}\ntemplate<class T,int N>Cursor<T,N>&operator,(Cursor<T,N>&a,Cursor<T,N>&b){return b;}\ntemplate<class T,int N>int operator<<(const Cursor<T,N>&r,int n){return n;}\nint&dereference(const Cursor<int,3>&r){return *r;}\nCursor<int,3>&prefix(Cursor<int,3>&r){return ++r;}\nCursor<int,3>postfix(Cursor<int,3>&r){return r++;}\nCursor<int,3>result(const Cursor<int,3>&r){return r+1;}\nCursor<int,3>&left(Cursor<int,3>&r){return r;}\nint right(){return 1;}\nCursor<int,3>&assign(Cursor<int,3>&r){return left(r)+=right();}\nCursor<int,3>&explicitAssign(Cursor<int,3>&r){return operator+=(left(r),right());}\nbool bothAnd(Cursor<int,3>&a,Cursor<int,3>&b){return left(a)&&left(b);}\nbool bothOr(Cursor<int,3>&a,Cursor<int,3>&b){return left(a)||left(b);}\nCursor<int,3>&comma(Cursor<int,3>&a,Cursor<int,3>&b){return (left(a),left(b));}\nint shift(Cursor<int,3>&r){return left(r)<<right();}\nextern template int&operator*<int,3>(const Cursor<int,3>&);\ntemplate int&operator*<int,3>(const Cursor<int,3>&);\nstruct Count{int n;};\ntemplate<auto N>int operator+(Count r){\n struct Local{int n;int get()const{return n;}};\n Local l{N};static int count=0;return r.n+l.get()+(++count);\n}\nint countA(Count r){return operator+<3>(r);}\nint countAlias(Count r){return operator+<1+2>(r);}\nint countB(Count r){return operator+<3u>(r);}\nextern template int operator+<3>(Count);\nextern template int operator+<3>(Count);\ntemplate int operator+<1+2>(Count);\ntemplate<class T>int operator-(Cursor<T,3>&r){static int count=0;return ++count;}\ntemplate<class T>int operator-(const Cursor<T,3>&r){static int count=0;return ++count;}\nint mutableCount(Cursor<int,3>&r){return -r;}\nint constCount(const Cursor<int,3>&r){return -r;}\nstruct Build{int n;};\nstruct Life{int n;Life(int v):n(v){}~Life(){}};\ntemplate<class T>Life operator+(Build r,T n){return Life(r.n+n);}\nLife create(Build r,int n){return r+n;}\nint extended(Build r){const Life&v=r+3;return v.n;}\n"},
@@ -17133,7 +17126,6 @@ TEST_F(TranslateTest, CoreV2FreeOperatorTemplatesRetainLanguageDiagnostics) {
 TEST_F(TranslateTest, CoreV2FreeOperatorTemplatesRequireSelectedDefinitions) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
       {"selected-definition", "struct R{int n;};template<class T>int operator+(R,T);int f(){return R{3}+4;}"},
-      {"query-definition", "struct R{int n;};template<class T>int operator+(R,T)noexcept;static_assert(noexcept(R{3}+4));"},
       {"extern-definition", "struct R{int n;};template<class T>int operator+(R,T);extern template int operator+<int>(R,int);"},
   };
   for (const auto &[Name, Code] : Cases) {

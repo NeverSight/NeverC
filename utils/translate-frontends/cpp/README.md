@@ -41,9 +41,11 @@ Clang/LLVM or C++ standard-library dependency.
 
 ## Scope and semantic handling
 
-[Bare function type metadata](../docs/cpp-core-v2.md#bare-function-type-metadata)
-can pass through core v2 templates and aliases into existing callback pointers.
-Original signature sources remain checked through deduction and type erasure.
+[Function type metadata](../docs/cpp-core-v2.md#bare-function-type-metadata),
+including direct lvalue/rvalue references, can pass through core v2 templates,
+aliases, queries and transforms into existing callback pointers. Original
+signature sources remain checked through deduction and type erasure; runtime
+function-reference carriers remain unsupported.
 
 Core v2 [unary type transforms](../docs/cpp-core-v2.md#unary-type-transforms)
 check the original input, exact substituted source and result, including erased

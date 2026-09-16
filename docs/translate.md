@@ -12,7 +12,7 @@ Core v2 accepts checked declaration-only namespace template signatures in uneval
 
 Core v2 implements default sized-delete forwarding: an untouched implicit global sized delete/delete[] can call the corresponding source-defined unsized operator. Explicit sized definitions and original array cookie layout remain authoritative. This adds no default allocator or exception runtime; native verification requires the implementing revision’s CI. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#single-object-allocation-and-placement-reuse).
 
-Core v2 now accepts ordinary bare function types in templates and aliases, including function-pointer deduction. Original signature sources, adjusted array bounds and noexcept dependencies remain checked. Runtime callbacks retain their existing contract; native verification requires CI. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#bare-function-type-metadata).
+Core v2 now accepts ordinary function types and their direct lvalue/rvalue references in templates, aliases, queries and transforms, including function-pointer deduction. Original signature sources, adjusted array bounds and noexcept dependencies remain checked. Runtime callbacks retain their existing contract; function-reference carriers remain unsupported and native verification requires CI. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#bare-function-type-metadata).
 
 Core v2 unary type transforms now check original inputs, actual substituted sources and results, including aliases whose template parameters disappear from the final type. Sixteen pinned kinds reuse existing type metadata and runtime carriers. Native verification remains CI-only. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#unary-type-transforms).
 

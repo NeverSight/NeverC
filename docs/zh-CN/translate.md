@@ -12,7 +12,7 @@ Core v2 支持未求值调用中经过检查的命名空间模板声明签名，
 
 Core v2 支持默认 sized delete 转发：未被源码重声明的隐式全局 sized delete/delete[] 可调用对应的源码 unsized 定义。显式 sized 定义优先，数组仍使用原表达式的 cookie 布局。此项不提供默认分配器或异常运行时；原生验证须由实现版本的 CI 完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#single-object-allocation-and-placement-reuse).
 
-Core v2 现支持模板与别名中的普通裸函数类型，包括从函数指针推导类型。原始签名、调整前数组边界与 noexcept 依赖仍会检查；运行时回调沿用现有契约，原生验证须由 CI 完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#bare-function-type-metadata).
+Core v2 现支持模板、别名、查询与变换中的普通函数类型及其直接左值／右值引用，包括从函数指针推导类型。原始签名、调整前数组边界与 noexcept 依赖仍会检查；运行时回调沿用现有契约，函数引用运行时载体仍不受支持，原生验证须由 CI 完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#bare-function-type-metadata).
 
 Core v2 一元类型变换现检查原始输入、实际替换后的源码与结果，包括最终类型中消失的别名模板参数。固定版本的十六种变换复用现有类型元数据与运行时类型，原生验证仍仅在 CI 执行。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unary-type-transforms).
 

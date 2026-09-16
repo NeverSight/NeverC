@@ -1651,19 +1651,24 @@ Standard headers and complete C++/STL support remain unfinished.
 
 ## Bare function type metadata
 
-Core v2 permits ordinary bare function types in type-only template arguments,
-selected defaults, packs and alias results. For example,
+Core v2 permits ordinary bare function types and direct lvalue/rvalue references
+to them in type-only template arguments, selected defaults, packs, aliases,
+queries and transforms. For example,
 `template<class T> using D = __decay(T);` accepts `D<int(int)>` and preserves the
-existing callback pointer type. No function declaration or body is invented by a
-type-only use. Actual callback targets, stored pointers and invocations retain
-their existing definition, lifetime and ABI checks.
+existing callback pointer type; `D<int(&)(int)>` produces the same pointer type.
+No function declaration, reference carrier or body is invented by a type-only
+use. Actual callback targets, stored pointers and invocations retain their
+existing definition, lifetime and ABI checks.
 
 Each function type uses the same bounded default-ABI callback signature check
-as a direct function query. Noexcept type identity is preserved. Variadic,
+as a direct function query. A direct function reference is unwrapped only for
+this check; lvalue/rvalue identity remains available to classification and
+transform builtins. Noexcept type identity is preserved. Variadic,
 cv/ref-qualified, unsupported calling-convention and wide signatures remain
-excluded, as do function references and record/array values in callback
-parameters or results. Supported complete-record pointers/references keep their
-existing carrier contract; incomplete record signatures do not gain a carrier.
+excluded, as do record/array values in callback parameters or results. Supported
+complete-record pointers/references keep their existing carrier contract;
+incomplete record signatures do not gain a carrier. Runtime function-reference
+variables, fields, parameters and results remain outside the carrier contract.
 
 Actual written function-type template arguments, retained alias underlying
 sources and ordinary typedef/using sources register exact source roots. Normal
@@ -1677,13 +1682,14 @@ selected resolved prototypes retain their separate existing checks. Function
 bodies and unselected defaults do not become signature dependencies.
 
 Paired controls cover free/member/constructor deduction, conversion targets,
-aliases/defaults/partials/packs and erased signatures. Eight ABI protocol checks
-verify eight boolean exports plus a native pointer-size export without extra
-functions or storage. A seventeen-checkpoint runtime fixture verifies callback
-invocation, noexcept conversion, deduction, stored callbacks and zero source
-expression effects. O0/O2 and relocation require the implementing revision's CI.
-This work adds no runtime type, IR operation or helper. Standard headers and
-complete C++/STL remain unfinished.
+aliases/defaults/partials/packs, erased signatures and direct function
+references. Eight ABI protocol checks verify fourteen boolean exports, including
+zero reference rank, plus native pointer size without extra storage. A 23-checkpoint
+runtime fixture verifies metadata identities, callback invocation, noexcept
+conversion, deduction, stored callbacks and zero source expression effects.
+O0/O2 and relocation require the implementing revision's CI. This work adds no
+runtime type, IR operation or helper. Standard headers and complete C++/STL
+remain unfinished.
 
 ## Unary type transforms
 
@@ -1699,11 +1705,12 @@ admitted inputs. C++ itself diagnoses invalid transforms, such as making `bool`
 signed or obtaining the underlying type of `int`.
 
 Type-only unknown-bound arrays and incomplete non-union record identities use
-their existing contracts. Ordinary bare function types can decay directly to
-admitted callback pointers. Bare function template arguments follow the [function metadata contract](#bare-function-type-metadata).
-Function-reference inputs and results retain their existing restrictions. Runtime objects and
-signatures still require actual admitted storage; a transformed pointer to an
-incomplete record does not create a runtime carrier.
+their existing contracts. Ordinary bare function types and direct function
+references can decay to admitted callback pointers or retain reference identity
+through the reference transforms. Their template arguments follow the
+[function metadata contract](#bare-function-type-metadata). Runtime objects and
+signatures still require actual admitted storage; a transformed function
+reference or pointer to an incomplete record does not create a runtime carrier.
 
 The private `TreeTransform.h` repair retains the actual transformed operand's
 `TypeSourceInfo` and also substitutes inputs that are instantiation-dependent

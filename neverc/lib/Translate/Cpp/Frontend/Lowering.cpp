@@ -1909,6 +1909,18 @@ class FunctionLowering {
       initializeEmptyBase(std::move(Place), W->getSubExpr(), L);
       return;
     }
+    if (const auto *Cast = dyn_cast<CastExpr>(Init);
+        Cast && Cast->getCastKind() == CK_ConstructorConversion) {
+      const auto *Construction = constructorConversion(Cast, A.Context);
+      if (!Construction)
+        reject(L, "base constructor conversion",
+               "The selected constructor conversion must retain its exact construction.");
+      // Aggregate initialization of a derived object wraps a selected base
+      // constructor in CK_ConstructorConversion. The construction still owns
+      // the base destination; do not materialize a separate temporary.
+      initializeEmptyBase(std::move(Place), Construction, L);
+      return;
+    }
     if (const auto *C = dyn_cast<CXXConstructExpr>(Init)) {
       if (C->getConstructionKind() != CXXConstructionKind::NonVirtualBase)
         reject(L, "base construction", "The selected construction must identify its nonvirtual base operation.");
