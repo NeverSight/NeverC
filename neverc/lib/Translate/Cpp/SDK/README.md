@@ -21,7 +21,10 @@ folded layout queries and directly lowered `std::byte` operations. The
 `move`, `forward`, `move_if_noexcept`, `as_const`, `exchange` and `swap`, plus
 scalar `pair` construction, assignment, swaps, comparisons, `make_pair`, `get`,
 `tuple_size`, `tuple_element` and integer-sequence size queries. These surfaces
-do not require a runtime libc++ link.
+do not require a runtime libc++ link. The `<array>` surface has a 217-file
+libc++/resource closure and directly lowers nonempty fixed scalar arrays,
+including capacity, pointer iterators, element access, fill, swap, comparisons
+and index-based `get`, without a runtime libc++ link.
 Core v2 never admits the `platform` root.
 Math v1 continues to use its separately checked libc++, resource and Darwin
 platform closure for `<cmath>`.

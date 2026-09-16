@@ -1858,6 +1858,14 @@ void Adapter::checkQueryType(QualType T, SourceLocation L,
       checkQueryType(Arguments.get(1).getAsType(), L, AllowIncompleteArrays,
                      AllowIncompleteRecords, Depth + 1);
     } else if (AllowIncompleteRecords &&
+               approvedUtilityArrayMetadata(S, Sources,
+                                            T->getAsCXXRecordDecl())) {
+      const auto *Array = dyn_cast<ClassTemplateSpecializationDecl>(
+          T->getAsCXXRecordDecl());
+      const auto &Arguments = Array->getTemplateArgs();
+      checkQueryType(Arguments.get(0).getAsType(), L, AllowIncompleteArrays,
+                     AllowIncompleteRecords, Depth + 1);
+    } else if (AllowIncompleteRecords &&
                incompleteRecordMetadataIdentity(*this, T->getAsCXXRecordDecl())) {
       // Identity requires no size, field traversal, operation or IR record.
     } else {
@@ -3648,9 +3656,13 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
     const auto *D = dyn_cast<CXXRecordDecl>(R->getDecl());
     if (D && D->getDefinition() && !D->isUnion()) {
       D = D->getDefinition();
-      if (approvedUtilityPairMetadata(S, Sources, D) &&
-          !requireUtilityPair(D, L, Depth + 1))
+      if (approvedUtilityPairMetadata(S, Sources, D)) {
+        if (!requireUtilityPair(D, L, Depth + 1))
+          return {};
+      } else if (approvedUtilityArrayMetadata(S, Sources, D) &&
+                 !requireUtilityArray(D, L, Depth + 1)) {
         return {};
+      }
       return name(D);
     }
   }
@@ -3681,6 +3693,30 @@ bool Adapter::requireUtilityPair(const CXXRecordDecl *Record,
     if (type(Field->getType(), Location, false, Depth + 1).empty())
       return false;
   Records.push_back(const_cast<CXXRecordDecl *>(Pair->Record));
+  return true;
+}
+
+bool Adapter::requireUtilityArray(const CXXRecordDecl *Record,
+                                  SourceLocation Location, unsigned Depth) {
+  if (Depth > 64) {
+    reject(Location, "utility array type",
+           "Nested std::array element types exceed the protocol limit.");
+    return false;
+  }
+  auto Array = approvedUtilityArrayRecord(S, Sources, Record, Context);
+  if (!Array) {
+    reject(Location, "standard library record",
+           "Only the pinned nonempty scalar std::array<T, N> layout is "
+           "admitted.",
+           "TR0203");
+    return false;
+  }
+  const auto *Canonical = Array->Record->getCanonicalDecl();
+  if (!RequiredUtilityArrays.insert(Canonical).second)
+    return true;
+  if (type(Array->Elements->getType(), Location, false, Depth + 1).empty())
+    return false;
+  Records.push_back(const_cast<CXXRecordDecl *>(Array->Record));
   return true;
 }
 
@@ -6464,7 +6500,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return;
     const auto *Constructor = C->getConstructor();
     if (A.S.coreV2() &&
-        approvedUtilityPairConstruction(A.S, A.Sources, C, A.Context)) {
+        (approvedUtilityPairConstruction(A.S, A.Sources, C, A.Context) ||
+         approvedUtilityArrayConstruction(A.S, A.Sources, C, A.Context))) {
       for (unsigned I = 0; I < C->getNumArgs() &&
                            I < Constructor->getNumParams(); ++I) {
         checkDefaultArgument(C->getArg(I), Constructor, I, L);
@@ -12488,6 +12525,10 @@ public:
               approvedUtilityPairAssignment(
                   A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call),
                   A.Context)
+                  .has_value() ||
+              approvedUtilityArrayAssignment(
+                  A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call),
+                  A.Context)
                   .has_value();
           // BuildOverloadedCallExpr ranks candidates at the complete callee's
           // expression location, which can be a parenthesis before the name.
@@ -12863,6 +12904,10 @@ public:
           A.S.coreV2() &&
           approvedUtilityPairAssignment(A.S, A.Sources, Operator, A.Context)
               .has_value();
+      const bool UtilityArrayAssignment =
+          A.S.coreV2() &&
+          approvedUtilityArrayAssignment(A.S, A.Sources, Operator, A.Context)
+              .has_value();
       unsigned ArgumentOffset = Operator && Method && !Method->isStatic() ? 1 : 0;
       // This inline operator form already supports materialized temporaries.
       // Keep its narrow boundary while sharing reference capture and stores.
@@ -12875,7 +12920,8 @@ public:
                                  Operator->getNumArgs() == 2;
         const bool Ordinary = ordinaryOperator(F) &&
             F->getOverloadedOperator() == Operator->getOperator();
-        if (!TrivialAssignment && !UtilityPairAssignment && !Ordinary &&
+        if (!TrivialAssignment && !UtilityPairAssignment &&
+            !UtilityArrayAssignment && !Ordinary &&
             !(supportedAssignment(Method) && Operator->getOperator() == OO_Equal &&
               Operator->getNumArgs() == 2))
           A.reject(L, "overloaded operator", "Unsupported selected operator function.");
@@ -12934,6 +12980,8 @@ public:
         return true;
       if (A.S.coreV2() && UtilityPairAssignment)
         return true;
+      if (A.S.coreV2() && UtilityArrayAssignment)
+        return true;
       if (A.S.coreV2() && F &&
           approvedStandardSDKDeclaration(A.S, A.Sources, F)) {
         A.reject(S->getBeginLoc(), "standard library runtime call",
@@ -12982,13 +13030,14 @@ public:
       if (A.S.coreV2() && C->getConstructor() &&
           approvedStandardSDKDeclaration(A.S, A.Sources,
                                          C->getConstructor())) {
-        if (approvedUtilityPairConstruction(A.S, A.Sources, C, A.Context))
+        if (approvedUtilityPairConstruction(A.S, A.Sources, C, A.Context) ||
+            approvedUtilityArrayConstruction(A.S, A.Sources, C, A.Context))
           checkConstruction(C, L);
         else
           A.reject(L, "standard library runtime object",
                    "Approved standard headers provide only their documented "
                    "compile-time aliases, constants, folded queries and "
-                   "scalar std::pair construction.",
+                   "scalar std::pair and std::array construction.",
                    "TR0203");
       }
       else
@@ -13556,11 +13605,11 @@ public:
       if (S.owns(SM, L) &&
           (!Angled || (Name != "type_traits" && Name != "cstdint" &&
                        Name != "limits" && Name != "cstddef" &&
-                       Name != "utility"))) {
+                       Name != "utility" && Name != "array"))) {
         reject(L, "include",
                "Only exact #include <type_traits>, #include <cstdint> and "
-               "#include <limits>, #include <cstddef> and #include <utility> "
-               "entries are admitted in cpp-core-v2.");
+               "#include <limits>, #include <cstddef>, #include <utility> and "
+               "#include <array> entries are admitted in cpp-core-v2.");
         return;
       }
       if (!S.owns(SM, L) && !S.sdkFile(SM, L))

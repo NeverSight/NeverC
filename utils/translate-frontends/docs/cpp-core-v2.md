@@ -173,6 +173,29 @@ authenticated closure contains 87 libc++/resource files on all eight supported
 targets. Generated programs do not call or link libc++ for these operations;
 quoted `"utility"`, user shadow headers and platform header roots remain rejected.
 
+## Fixed scalar arrays from `<array>`
+
+Core v2 accepts an exact top-level `#include <array>` from the pinned embedded
+VFS. Nonempty `std::array<T, N>` objects use libc++'s checked single fixed-array
+field and the existing aggregate carrier. `T` may be an admitted integral or
+enum scalar up to 64 bits, `float`, `double`, `nullptr_t`, or a non-function
+object pointer; `N` is limited to 65536.
+
+`size`, `max_size`, `empty`, `data`, `begin`, `end`, `cbegin`, `cend`, indexed
+access, `front`, `back`, compile-time in-range `at`, `fill`, member and free
+`swap`, all six C++17 comparisons and index-based `get` lower directly to
+existing array, pointer, assignment and control-flow operations. Aggregate
+initialization, trivial copy/move construction and copy/move assignment retain
+ordinary value semantics. `tuple_size` and `tuple_element` remain checked
+compile-time metadata.
+
+The standalone authenticated closure contains 217 libc++/resource files on all
+eight supported targets and contains no platform headers. Generated programs do
+not call or link libc++ for these operations. Zero-length, nested and
+record-valued arrays, reverse iterators, dynamic or out-of-range `at`, function
+addresses, quoted `"array"`, user shadows and forged declarations remain outside
+this boundary.
+
 ## Standard template parsing across targets
 
 The embedded frontend disables MSVC compatibility extensions and delayed template parsing for `cpp-core-v2` on every supported target, including Windows x64 and ARM64. Definitions use standard C++17 parsing and lookup rules. Duplicate explicit instantiation definitions, late specializations and incompatible exception specifications retain language diagnostics (`TR0202`); parsed source still receives the existing support checks (`TR0201`). Unused dependent bodies remain lazy until instantiation is needed. This setting does not change project/math profile configuration or the target data layout, and requires no external Clang executable. Full C++/STL support remains unfinished.

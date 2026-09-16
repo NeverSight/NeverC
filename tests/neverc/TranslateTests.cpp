@@ -23362,6 +23362,124 @@ TEST_F(TranslateTest, CoreV2UtilityRequiresPinnedScalarOperations) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ArrayOperationsRunAtBothOptimizations) {
+  const auto Source = tmpFile("array.cpp");
+  const auto Output = tmpFile("array.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+static_assert(std::tuple_size<std::array<int, 4>>::value == 4);
+static_assert(sizeof(std::tuple_element<2, std::array<int, 4>>::type)
+              == sizeof(int));
+int main() {
+  std::array<int, 4> value{{1, 2, 3, 4}};
+  if (value.size() != 4 || value.max_size() != 4 || value.empty())
+    return 1;
+  if (value.data() != value.begin() || value.end() - value.begin() != 4 ||
+      value.cend() - value.cbegin() != 4)
+    return 2;
+  value[1] = 7;
+  std::get<2>(value) = 8;
+  if (value.front() != 1 || value.back() != 4 || value.at(1) != 7)
+    return 3;
+  const std::array<int, 4> &view = value;
+  if (view.data()[2] != 8 || view.begin()[0] != 1 ||
+      view.end()[-1] != 4 || view.cbegin()[1] != 7 ||
+      view.cend()[-2] != 8 || view[2] != 8 || view.at(2) != 8 ||
+      view.front() != 1 || view.back() != 4 || std::get<1>(view) != 7)
+    return 4;
+  std::array<int, 4> copied = value;
+  std::array<int, 4> assigned{{9, 10, 11, 12}};
+  assigned = copied;
+  if (assigned[0] != 1 || assigned[1] != 7 || assigned[2] != 8 ||
+      assigned[3] != 4)
+    return 5;
+  value.fill(5);
+  copied.fill(6);
+  value.swap(copied);
+  std::swap(value, copied);
+  if (value[0] != 5 || value[3] != 5 || copied[0] != 6 || copied[3] != 6)
+    return 6;
+  std::array<int, 3> left{{1, 9, 0}}, right{{2, 3, 0}}, equal = left;
+  int comparison = (left == right) + 2 * (left != right) +
+                   4 * (left < right) + 8 * (left > right) +
+                   16 * (left <= right) + 32 * (left >= right);
+  if (comparison != 22 || !(left == equal) || left != equal ||
+      left < equal || left > equal || !(left <= equal) || !(left >= equal))
+    return 7;
+  int sum = 0;
+  for (int element : value)
+    sum += element;
+  return sum == 20 ? 0 : 8;
+}
+)cpp");
+  auto Result = translate(
+      Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest = llvm::json::parse(
+      readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *SDK = Manifest->getAsObject()->getObject("sdk");
+  ASSERT_NE(SDK, nullptr);
+  const auto *Dependencies = SDK->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 217u);
+  bool FoundArray = false;
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+    FoundArray |= Dependency->getString("root") == "libcxx" &&
+                  Dependency->getString("path") == "array";
+  }
+  EXPECT_TRUE(FoundArray);
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("array" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ArrayRequiresPinnedScalarOperations) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Rejection Cases[] = {
+      {"quoted", "#include \"array\"\nint main(){return 0;}", "TR0201"},
+      {"zero",
+       "#include <array>\nint main(){std::array<int,0>a{};return a.size();}",
+       "TR0203"},
+      {"record-element",
+       "#include <array>\nstruct R{int n;};int main(){"
+       "std::array<R,2>a{{{1},{2}}};return a[0].n;}", "TR0203"},
+      {"nested-element",
+       "#include <array>\nint main(){std::array<std::array<int,2>,2>"
+       "a{{{{1,2}},{{3,4}}}};return a[0][0];}", "TR0203"},
+      {"dynamic-at",
+       "#include <array>\nint f(int i){std::array<int,2>a{{1,2}};"
+       "return a.at(i);}", "TR0203"},
+      {"reverse-iterator",
+       "#include <array>\nint main(){std::array<int,2>a{{1,2}};"
+       "return *a.rbegin();}", "TR0203"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("array-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("array-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(translate(Source,
+                         {"--profile", "cpp-core-v2", "-o", Output.string()}),
+               Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2RejectsUnsupportedErasedDeclarations) {
   struct Rejection {
     const char *Name;

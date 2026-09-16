@@ -530,6 +530,139 @@ approvedUtilityPairAssignment(const State &S, const SourceManager &SM,
   return Pair;
 }
 
+bool approvedUtilityArrayMetadata(const State &S, const SourceManager &SM,
+                                  const CXXRecordDecl *Record) {
+  const auto *Specialization =
+      dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+  const auto *Template =
+      Specialization ? Specialization->getSpecializedTemplate() : nullptr;
+  const auto *CanonicalTemplate =
+      Template ? Template->getCanonicalDecl() : nullptr;
+  if (!Specialization || !Template || !CanonicalTemplate ||
+      Specialization->isUnion() || Specialization->isDependentContext() ||
+      Specialization->getName() != "array" ||
+      !approvedStandardSDKDeclaration(S, SM, Template) ||
+      !approvedStandardSDKDeclaration(S, SM, CanonicalTemplate) ||
+      !cstddefOrigin(S, SM, Template->getLocation(), "libcxx", "array") ||
+      !cstddefOrigin(S, SM, CanonicalTemplate->getLocation(), "libcxx",
+                     "__fwd/array.h"))
+    return false;
+  const auto &Arguments = Specialization->getTemplateArgs();
+  if (Arguments.size() != 2 ||
+      Arguments.get(0).getKind() != TemplateArgument::Type ||
+      Arguments.get(1).getKind() != TemplateArgument::Integral)
+    return false;
+  const auto Size = Arguments.get(1).getAsIntegral();
+  return !Size.isNegative() && Size.getLimitedValue(65537) <= 65536;
+}
+
+std::optional<UtilityArrayRecord>
+approvedUtilityArrayRecord(const State &S, const SourceManager &SM,
+                           const CXXRecordDecl *Record,
+                           const ASTContext &Context) {
+  const auto *Specialization =
+      dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+  Specialization = Specialization
+                       ? dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+                             Specialization->getDefinition())
+                       : nullptr;
+  const auto *Template =
+      Specialization ? Specialization->getSpecializedTemplate() : nullptr;
+  const auto *CanonicalTemplate =
+      Template ? Template->getCanonicalDecl() : nullptr;
+  if (!approvedUtilityArrayMetadata(S, SM, Specialization) ||
+      !Specialization || !Template || !CanonicalTemplate ||
+      Specialization->getSpecializationKind() != TSK_ImplicitInstantiation ||
+      Specialization->getNumBases() || !Specialization->isStandardLayout() ||
+      !approvedStandardSDKDeclaration(S, SM, Specialization) ||
+      !approvedStandardSDKDeclaration(S, SM, Template) ||
+      !approvedStandardSDKDeclaration(S, SM, CanonicalTemplate) ||
+      !cstddefOrigin(S, SM, Specialization->getLocation(), "libcxx", "array") ||
+      !cstddefOrigin(S, SM, Template->getLocation(), "libcxx", "array") ||
+      !cstddefOrigin(S, SM, CanonicalTemplate->getLocation(), "libcxx",
+                     "__fwd/array.h"))
+    return std::nullopt;
+  const auto &Arguments = Specialization->getTemplateArgs();
+  const auto SizeValue = Arguments.get(1).getAsIntegral();
+  const uint64_t Size = SizeValue.getLimitedValue(65537);
+  if (!Size || Size > 65536)
+    return std::nullopt;
+  auto Fields = Specialization->fields();
+  auto It = Fields.begin();
+  const auto *Elements = It == Fields.end() ? nullptr : *It++;
+  const auto *Array =
+      Elements ? Context.getAsConstantArrayType(Elements->getType()) : nullptr;
+  auto Element = Arguments.get(0).getAsType();
+  if (!Elements || It != Fields.end() || Elements->getName() != "__elems_" ||
+      Elements->getAccess() != AS_public || Elements->isBitField() ||
+      Elements->isMutable() || Elements->hasAttrs() || !Array ||
+      Array->getSize().getLimitedValue(65537) != Size ||
+      !Context.hasSameType(Array->getElementType(), Element) ||
+      !utilityScalar(Context, Element) ||
+      !approvedStandardSDKDeclaration(S, SM, Elements) ||
+      !cstddefOrigin(S, SM, Elements->getLocation(), "libcxx", "array"))
+    return std::nullopt;
+  return UtilityArrayRecord{Specialization, Elements, Element, Size};
+}
+
+bool approvedUtilityArrayConstruction(const State &S, const SourceManager &SM,
+                                      const CXXConstructExpr *Construction,
+                                      const ASTContext &Context) {
+  if (!Construction || Construction->isTypeDependent() ||
+      Construction->isValueDependent() ||
+      Construction->isInstantiationDependent() ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete)
+    return false;
+  const auto *Constructor = Construction->getConstructor();
+  const auto Array = approvedUtilityArrayRecord(
+      S, SM, Construction->getType()->getAsCXXRecordDecl(), Context);
+  if (!Constructor || !Array || !Constructor->isImplicit() ||
+      !Constructor->isTrivial() || Constructor->isVariadic() ||
+      Constructor->getParent()->getCanonicalDecl() !=
+          Array->Record->getCanonicalDecl() ||
+      Construction->getNumArgs() != Constructor->getNumParams())
+    return false;
+  return (!Construction->getNumArgs() && Constructor->isDefaultConstructor()) ||
+         (Construction->getNumArgs() == 1 &&
+          Constructor->isCopyOrMoveConstructor());
+}
+
+std::optional<UtilityArrayRecord>
+approvedUtilityArrayAssignment(const State &S, const SourceManager &SM,
+                               const CXXOperatorCallExpr *Assignment,
+                               const ASTContext &Context) {
+  if (!Assignment || Assignment->isTypeDependent() ||
+      Assignment->isValueDependent() ||
+      Assignment->isInstantiationDependent() ||
+      Assignment->getOperator() != OO_Equal || Assignment->getNumArgs() != 2 ||
+      !Assignment->isLValue())
+    return std::nullopt;
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Assignment->getDirectCallee());
+  const auto Array = approvedUtilityArrayRecord(
+      S, SM, Method ? Method->getParent() : nullptr, Context);
+  if (!Method || !Array || !Method->isImplicit() || !Method->isTrivial() ||
+      !Method->isDefaulted() || Method->isStatic() || Method->isVariadic() ||
+      Method->getNumParams() != 1 ||
+      Method->getOverloadedOperator() != OO_Equal ||
+      !(Method->isCopyAssignmentOperator() ||
+        Method->isMoveAssignmentOperator()))
+    return std::nullopt;
+  const auto Parameter = Method->getParamDecl(0)->getType();
+  const auto Result = Method->getReturnType();
+  const auto ArrayType = Context.getRecordType(Array->Record);
+  if (!Parameter->isReferenceType() || !Result->isLValueReferenceType() ||
+      !Context.hasSameUnqualifiedType(Parameter->getPointeeType(), ArrayType) ||
+      !Context.hasSameUnqualifiedType(Result->getPointeeType(), ArrayType) ||
+      !Context.hasSameUnqualifiedType(Assignment->getArg(0)->getType(),
+                                      ArrayType) ||
+      !Context.hasSameUnqualifiedType(Assignment->getArg(1)->getType(),
+                                      ArrayType) ||
+      !Context.hasSameUnqualifiedType(Assignment->getType(), ArrayType))
+    return std::nullopt;
+  return Array;
+}
+
 static const DeclRefExpr *approvedUtilityReference(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const FunctionDecl *Function) {
@@ -550,6 +683,118 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Call->isInstantiationDependent())
     return std::nullopt;
   const auto *Function = Call->getDirectCallee();
+  const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
+  const auto Array = approvedUtilityArrayRecord(
+      S, SM, Method ? Method->getParent() : nullptr, Context);
+  if (Method && Array) {
+    const auto *Reference = directMethodReference(Call);
+    const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+    const auto *MemberCall = dyn_cast<CXXMemberCallExpr>(Call);
+    const Expr *Object = Operator && Call->getNumArgs()
+                             ? Call->getArg(0)
+                             : MemberCall
+                                   ? MemberCall->getImplicitObjectArgument()
+                                   : nullptr;
+    const unsigned Offset = Operator ? 1 : 0;
+    auto Same = [&](QualType Left, QualType Right) {
+      return !Left.isNull() && !Right.isNull() &&
+             Context.hasSameType(Left, Right);
+    };
+    auto SameArray = [&](QualType Type) {
+      return !Type.isNull() &&
+             Context.hasSameUnqualifiedType(
+                 Type, Context.getRecordType(Array->Record));
+    };
+    auto ReferenceResult = [&] {
+      auto Result = Method->getReturnType();
+      return Result->isReferenceType() &&
+             Context.hasSameUnqualifiedType(Result->getPointeeType(),
+                                            Array->ElementType) &&
+             Context.hasSameType(Call->getType(),
+                                 Result->getPointeeType()) &&
+             (Result->isLValueReferenceType() ? Call->isLValue()
+                                              : Call->isXValue());
+    };
+    if (!Reference || !Object || Method->isStatic() || Method->isVariadic() ||
+        Method->getParent()->getCanonicalDecl() !=
+            Array->Record->getCanonicalDecl() ||
+        Call->getNumArgs() != Method->getNumParams() + Offset ||
+        !SameArray(Object->getType()) ||
+        !approvedStandardSDKDeclaration(S, SM, Method) ||
+        !cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "array") ||
+        !S.owns(SM, Reference->getExprLoc()) || !Method->hasBody())
+      return std::nullopt;
+    const llvm::StringRef Name = Method->getIdentifier()
+                                     ? Method->getIdentifier()->getName()
+                                     : llvm::StringRef();
+    if (!Operator && !Method->getNumParams() && Call->getNumArgs() == 0) {
+      if ((Name == "size" || Name == "max_size") &&
+          Method->isConstexpr() && Call->isPRValue() &&
+          Method->getReturnType()->isIntegralType(Context) &&
+          Same(Call->getType(), Method->getReturnType()))
+        return Name == "size" ? UtilityOperation::ArraySize
+                              : UtilityOperation::ArrayMaxSize;
+      if (Name == "empty" && Method->isConstexpr() && Call->isPRValue() &&
+          Method->getReturnType()->isBooleanType() &&
+          Same(Call->getType(), Method->getReturnType()))
+        return UtilityOperation::ArrayEmpty;
+      if ((Name == "data" || Name == "begin" || Name == "cbegin" ||
+           Name == "end" || Name == "cend") &&
+          Call->isPRValue() && Method->getReturnType()->isPointerType() &&
+          Context.hasSameUnqualifiedType(
+              Method->getReturnType()->getPointeeType(), Array->ElementType) &&
+          Same(Call->getType(), Method->getReturnType())) {
+        if (Name == "data")
+          return UtilityOperation::ArrayData;
+        if (Name == "begin" || Name == "cbegin")
+          return UtilityOperation::ArrayBegin;
+        return UtilityOperation::ArrayEnd;
+      }
+      if ((Name == "front" || Name == "back") && ReferenceResult())
+        return Name == "front" ? UtilityOperation::ArrayFront
+                               : UtilityOperation::ArrayBack;
+    }
+    if (Operator && Operator->getOperator() == OO_Subscript &&
+        Method->getNumParams() == 1 && Call->getNumArgs() == 2 &&
+        Method->getParamDecl(0)->getType()->isIntegralType(Context) &&
+        Call->getArg(1)->getType()->isIntegralType(Context) &&
+        ReferenceResult())
+      return UtilityOperation::ArraySubscript;
+    if (!Operator && Name == "at" && Method->getNumParams() == 1 &&
+        Call->getNumArgs() == 1 &&
+        Method->getParamDecl(0)->getType()->isIntegralType(Context) &&
+        Call->getArg(0)->getType()->isIntegralType(Context) &&
+        ReferenceResult()) {
+      APValue Index;
+      if (Call->getArg(0)->isCXX11ConstantExpr(Context, &Index) &&
+          Index.isInt() && !Index.getInt().isNegative() &&
+          Index.getInt().getLimitedValue(Array->Size) < Array->Size)
+        return UtilityOperation::ArrayAt;
+    }
+    if (!Operator && Name == "fill" && Method->getNumParams() == 1 &&
+        Call->getNumArgs() == 1 && Method->getReturnType()->isVoidType() &&
+        !Object->getType().isConstQualified() &&
+        !Array->ElementType.isConstQualified()) {
+      auto Parameter = Method->getParamDecl(0)->getType();
+      if (Parameter->isLValueReferenceType() &&
+          Parameter->getPointeeType().isConstQualified() &&
+          Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                         Array->ElementType) &&
+          Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
+                                         Array->ElementType))
+        return UtilityOperation::ArrayFill;
+    }
+    if (!Operator && Name == "swap" && Method->getNumParams() == 1 &&
+        Call->getNumArgs() == 1 && Method->getReturnType()->isVoidType() &&
+        !Object->getType().isConstQualified() &&
+        !Array->ElementType.isConstQualified()) {
+      auto Parameter = Method->getParamDecl(0)->getType();
+      if (Parameter->isLValueReferenceType() &&
+          SameArray(Parameter->getPointeeType()) &&
+          SameArray(Call->getArg(0)->getType()))
+        return UtilityOperation::ArrayMemberSwap;
+    }
+  }
   if (const auto *MemberCall = dyn_cast<CXXMemberCallExpr>(Call)) {
     const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
     const auto *Reference = directMethodReference(Call);
@@ -635,6 +880,74 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       default: break;
       }
     }
+  }
+  if (Origin->Path == "array" && Call->getNumArgs() == 2 &&
+      Call->isPRValue() && Function->getReturnType()->isBooleanType() &&
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+    const auto Left = approvedUtilityArrayRecord(
+        S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
+    const auto Right = approvedUtilityArrayRecord(
+        S, SM, Call->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
+    if (Operator && Left && Right &&
+        Left->Record->getCanonicalDecl() == Right->Record->getCanonicalDecl() &&
+        !Left->ElementType.isVolatileQualified()) {
+      switch (Operator->getOperator()) {
+      case OO_EqualEqual: return UtilityOperation::ArrayEqual;
+      case OO_ExclaimEqual: return UtilityOperation::ArrayNotEqual;
+      case OO_Less: return UtilityOperation::ArrayLess;
+      case OO_Greater: return UtilityOperation::ArrayGreater;
+      case OO_LessEqual: return UtilityOperation::ArrayLessEqual;
+      case OO_GreaterEqual: return UtilityOperation::ArrayGreaterEqual;
+      default: break;
+      }
+    }
+  }
+  if (Origin->Path == "array" && Name == "swap" &&
+      Call->getNumArgs() == 2 && Function->getReturnType()->isVoidType()) {
+    auto LeftType = Function->getParamDecl(0)->getType();
+    auto RightType = Function->getParamDecl(1)->getType();
+    const auto Left = approvedUtilityArrayRecord(
+        S, SM, LeftType->isReferenceType()
+                   ? LeftType->getPointeeType()->getAsCXXRecordDecl()
+                   : nullptr,
+        Context);
+    const auto Right = approvedUtilityArrayRecord(
+        S, SM, RightType->isReferenceType()
+                   ? RightType->getPointeeType()->getAsCXXRecordDecl()
+                   : nullptr,
+        Context);
+    if (LeftType->isLValueReferenceType() &&
+        RightType->isLValueReferenceType() && Left && Right &&
+        Left->Record->getCanonicalDecl() == Right->Record->getCanonicalDecl() &&
+        !Left->ElementType.isConstQualified() &&
+        Same(Call->getArg(0)->getType(), LeftType->getPointeeType()) &&
+        Same(Call->getArg(1)->getType(), RightType->getPointeeType()))
+      return UtilityOperation::ArraySwap;
+  }
+  if (Origin->Path == "array" && Name == "get" &&
+      Call->getNumArgs() == 1) {
+    const auto *Arguments = Function->getTemplateSpecializationArgs();
+    auto Parameter = Function->getParamDecl(0)->getType();
+    auto Result = Function->getReturnType();
+    const auto Array = approvedUtilityArrayRecord(
+        S, SM, Parameter->isReferenceType()
+                   ? Parameter->getPointeeType()->getAsCXXRecordDecl()
+                   : nullptr,
+        Context);
+    if (Arguments && Arguments->size() == 3 &&
+        Arguments->get(0).getKind() == TemplateArgument::Integral &&
+        Parameter->isReferenceType() && Result->isReferenceType() && Array &&
+        !Arguments->get(0).getAsIntegral().isNegative() &&
+        Arguments->get(0).getAsIntegral().getLimitedValue(Array->Size) <
+            Array->Size &&
+        Same(Call->getArg(0)->getType(), Parameter->getPointeeType()) &&
+        Same(Call->getType(), Result->getPointeeType()) &&
+        Context.hasSameUnqualifiedType(Result->getPointeeType(),
+                                       Array->ElementType) &&
+        (Result->isLValueReferenceType() ? Call->isLValue()
+                                         : Call->isXValue()))
+      return UtilityOperation::ArrayGet;
   }
   const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
   if (!Prototype || !Prototype->isNothrow())

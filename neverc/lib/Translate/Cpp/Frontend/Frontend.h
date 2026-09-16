@@ -262,6 +262,26 @@ enum class UtilityOperation {
   PairGreaterEqual,
   PairGetFirst,
   PairGetSecond,
+  ArraySize,
+  ArrayMaxSize,
+  ArrayEmpty,
+  ArrayData,
+  ArrayBegin,
+  ArrayEnd,
+  ArraySubscript,
+  ArrayAt,
+  ArrayFront,
+  ArrayBack,
+  ArrayFill,
+  ArraySwap,
+  ArrayMemberSwap,
+  ArrayEqual,
+  ArrayNotEqual,
+  ArrayLess,
+  ArrayGreater,
+  ArrayLessEqual,
+  ArrayGreaterEqual,
+  ArrayGet,
 };
 struct UtilityPairRecord {
   const clang::CXXRecordDecl *Record;
@@ -289,6 +309,28 @@ approvedUtilityPairAssignment(const State &S,
                               const clang::SourceManager &SM,
                               const clang::CXXOperatorCallExpr *Assignment,
                               const clang::ASTContext &Context);
+struct UtilityArrayRecord {
+  const clang::CXXRecordDecl *Record;
+  const clang::FieldDecl *Elements;
+  clang::QualType ElementType;
+  uint64_t Size;
+};
+bool approvedUtilityArrayMetadata(const State &S,
+                                  const clang::SourceManager &SM,
+                                  const clang::CXXRecordDecl *Record);
+std::optional<UtilityArrayRecord>
+approvedUtilityArrayRecord(const State &S, const clang::SourceManager &SM,
+                           const clang::CXXRecordDecl *Record,
+                           const clang::ASTContext &Context);
+bool approvedUtilityArrayConstruction(const State &S,
+                                      const clang::SourceManager &SM,
+                                      const clang::CXXConstructExpr *Construction,
+                                      const clang::ASTContext &Context);
+std::optional<UtilityArrayRecord>
+approvedUtilityArrayAssignment(const State &S,
+                               const clang::SourceManager &SM,
+                               const clang::CXXOperatorCallExpr *Assignment,
+                               const clang::ASTContext &Context);
 std::optional<UtilityOperation>
 approvedUtilityOperation(const State &S, const clang::SourceManager &SM,
                          const clang::CallExpr *Call,
@@ -444,6 +486,7 @@ public:
   std::map<std::string, json::Object> MappedFunctions;
   std::map<const clang::CXXRecordDecl *, std::size_t> StorageUnits;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityPairs;
+  std::set<const clang::CXXRecordDecl *> RequiredUtilityArrays;
   std::map<const clang::CXXRecordDecl *, CheckedEmptyBase> EmptyBases;
   std::map<const clang::VarDecl *, const clang::CXXForRangeStmt *> RangeDeclarations;
   std::size_t ExpandedNodes = 0;
@@ -462,6 +505,9 @@ public:
   bool requireUtilityPair(const clang::CXXRecordDecl *Record,
                           clang::SourceLocation Location,
                           unsigned Depth = 0);
+  bool requireUtilityArray(const clang::CXXRecordDecl *Record,
+                           clang::SourceLocation Location,
+                           unsigned Depth = 0);
   std::string functionPointerType(clang::QualType T, clang::SourceLocation L,
                                   unsigned Depth = 0);
   bool typeClassificationValue(const clang::TypeTraitExpr *Query);

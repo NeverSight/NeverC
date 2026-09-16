@@ -410,6 +410,77 @@ extern "C" int utility_get() {
         check("v2-utility-" + name, source, code,
               profile="cpp-core-v2", sdk=True)
 
+    array_source = """\
+#include <array>
+static_assert(std::tuple_size<std::array<int, 4>>::value == 4);
+static_assert(sizeof(std::tuple_element<2, std::array<int, 4>>::type)
+              == sizeof(int));
+extern "C" int array_all() {
+  std::array<int, 4> value{{1, 2, 3, 4}};
+  if (value.size() != 4 || value.max_size() != 4 || value.empty()) return 1;
+  if (value.data() != value.begin() || value.end() - value.begin() != 4 ||
+      value.cend() - value.cbegin() != 4) return 2;
+  value[1] = 7;
+  std::get<2>(value) = 8;
+  if (value.front() != 1 || value.back() != 4 || value.at(1) != 7) return 3;
+  const std::array<int, 4>& view = value;
+  if (view[2] != 8 || view.at(2) != 8 || std::get<1>(view) != 7) return 4;
+  std::array<int, 4> copied = value;
+  std::array<int, 4> assigned{{9, 10, 11, 12}};
+  assigned = copied;
+  value.fill(5);
+  copied.fill(6);
+  value.swap(copied);
+  std::swap(value, copied);
+  std::array<int, 3> left{{1, 9, 0}}, right{{2, 3, 0}}, equal = left;
+  int comparison = (left == right) + 2 * (left != right) +
+                   4 * (left < right) + 8 * (left > right) +
+                   16 * (left <= right) + 32 * (left >= right);
+  return assigned[2] == 8 && value[0] == 5 && copied[0] == 6 &&
+                 comparison == 22 && left == equal && !(left != equal) &&
+                 !(left < equal) && !(left > equal) && left <= equal &&
+                 left >= equal
+             ? 0
+             : 5;
+}
+"""
+    array = check("v2-array", array_source,
+                  profile="cpp-core-v2", sdk=True)
+    assert len(array["sdk_dependencies"]) == 217, array
+    assert any(dependency["root"] == "libcxx" and
+               dependency["path"] == "array"
+               for dependency in array["sdk_dependencies"]), array
+    assert not any(dependency["root"] == "platform"
+                   for dependency in array["sdk_dependencies"]), array
+    exports = {function["name"]: function for function in array["functions"]
+               if function["c_export"]}
+    assert set(exports) == {"array_all"}, exports
+    assert not [node for node in walk(array["functions"])
+                if node.get("op") in ("call", "mapped_call")], array
+    for target in sdk_targets:
+        check("v2-array-" + target, array_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    for name, source, code in (
+        ("quoted", '#include "array"\nint main(){return 0;}', "TR0201"),
+        ("zero",
+         '#include <array>\nint main(){std::array<int,0>a{};return a.size();}',
+         "TR0203"),
+        ("record-element",
+         '#include <array>\nstruct R{int n;};int main(){std::array<R,2>a{{{1},{2}}};return a[0].n;}',
+         "TR0203"),
+        ("nested-element",
+         '#include <array>\nint main(){std::array<std::array<int,2>,2>a{{{{1,2}},{{3,4}}}};return a[0][0];}',
+         "TR0203"),
+        ("dynamic-at",
+         '#include <array>\nint f(int i){std::array<int,2>a{{1,2}};return a.at(i);}',
+         "TR0203"),
+        ("reverse-iterator",
+         '#include <array>\nint main(){std::array<int,2>a{{1,2}};return *a.rbegin();}',
+         "TR0203"),
+    ):
+        check("v2-array-" + name, source, code,
+              profile="cpp-core-v2", sdk=True)
+
     # Windows driver defaults must not change core-v2 source visibility or
     # standard diagnostics. Exercise both MSVC architectures on every CI host.
     standard_template_parsing = {

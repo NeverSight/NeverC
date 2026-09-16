@@ -686,6 +686,25 @@ class FunctionLowering {
   Expression utilityOperation(const CallExpr *Call, UtilityOperation Operation,
                               std::optional<Expression> Destination) {
     auto L = Call->getExprLoc();
+    auto ArrayFor = [&](QualType Type) {
+      return approvedUtilityArrayRecord(
+          A.S, A.Sources,
+          Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(), A.Context);
+    };
+    auto MemberObject = [&]() -> const Expr * {
+      if (const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call))
+        return Operator->getNumArgs() ? Operator->getArg(0) : nullptr;
+      if (const auto *Member = dyn_cast<CXXMemberCallExpr>(Call))
+        return Member->getImplicitObjectArgument();
+      return nullptr;
+    };
+    auto ArrayElement = [&](Expression Base, const UtilityArrayRecord &Array,
+                            Expression Position, QualType ResultType) {
+      auto PointerType = type(A.Context.getPointerType(ResultType), L);
+      auto Elements = fieldStorage(std::move(Base), Array.Elements, L);
+      return index(decay(std::move(Elements), PointerType, L),
+                   std::move(Position), type(ResultType, L), L);
+    };
     switch (Operation) {
     case UtilityOperation::Move:
     case UtilityOperation::Forward:
@@ -873,6 +892,227 @@ class FunctionLowering {
       default:
         reject(L, "utility pair comparison",
                "Unknown approved std::pair comparison.");
+      }
+      if (!Negate)
+        return Result;
+      return snapshot(Expression{{"kind", "unary"},
+                                 {"type", "bool"},
+                                 {"operator", "!"},
+                                 {"args", json::Array{std::move(Result)}},
+                                 {"loc", A.loc(L)}},
+                      L);
+    }
+    case UtilityOperation::ArraySize:
+    case UtilityOperation::ArrayMaxSize:
+    case UtilityOperation::ArrayEmpty: {
+      const auto *Object = MemberObject();
+      auto Array = Object ? ArrayFor(Object->getType())
+                          : std::optional<UtilityArrayRecord>();
+      if (!Object || !Array)
+        reject(L, "utility array capacity",
+               "The selected std::array layout is unavailable.");
+      // The receiver still evaluates even though these results depend only on
+      // the template extent.
+      lvalue(Object);
+      if (Operation == UtilityOperation::ArrayEmpty)
+        return boolean(false, L);
+      return quantity(Array->Size, type(Call->getType(), L), L);
+    }
+    case UtilityOperation::ArrayData:
+    case UtilityOperation::ArrayBegin:
+    case UtilityOperation::ArrayEnd: {
+      const auto *Object = MemberObject();
+      auto Array = Object ? ArrayFor(Object->getType())
+                          : std::optional<UtilityArrayRecord>();
+      if (!Object || !Array)
+        reject(L, "utility array iterator",
+               "The selected std::array layout is unavailable.");
+      auto Elements = fieldStorage(lvalue(Object), Array->Elements, L);
+      auto Pointer = decay(std::move(Elements), type(Call->getType(), L), L);
+      if (Operation != UtilityOperation::ArrayEnd)
+        return Pointer;
+      auto SizeType = type(A.Context.getSizeType(), L);
+      return binary("+", std::move(Pointer),
+                    quantity(Array->Size, SizeType, L),
+                    type(Call->getType(), L), L);
+    }
+    case UtilityOperation::ArraySubscript:
+    case UtilityOperation::ArrayAt:
+    case UtilityOperation::ArrayFront:
+    case UtilityOperation::ArrayBack: {
+      const auto *Object = MemberObject();
+      auto Array = Object ? ArrayFor(Object->getType())
+                          : std::optional<UtilityArrayRecord>();
+      if (!Object || !Array)
+        reject(L, "utility array element",
+               "The selected std::array layout is unavailable.");
+      auto Base = lvalue(Object);
+      Expression Position;
+      if (Operation == UtilityOperation::ArraySubscript)
+        Position = expression(Call->getArg(1));
+      else if (Operation == UtilityOperation::ArrayAt)
+        Position = expression(Call->getArg(0));
+      else
+        Position = quantity(Operation == UtilityOperation::ArrayFront
+                                ? 0
+                                : Array->Size - 1,
+                            type(A.Context.getSizeType(), L), L);
+      return ArrayElement(std::move(Base), *Array, std::move(Position),
+                          Call->getType());
+    }
+    case UtilityOperation::ArrayGet: {
+      auto Array = ArrayFor(Call->getArg(0)->getType());
+      const auto *Function = Call->getDirectCallee();
+      const auto *Arguments =
+          Function ? Function->getTemplateSpecializationArgs() : nullptr;
+      if (!Array || !Arguments || Arguments->size() != 3 ||
+          Arguments->get(0).getKind() != TemplateArgument::Integral)
+        reject(L, "utility array get",
+               "The selected std::array element is unavailable.");
+      auto Index = Arguments->get(0).getAsIntegral().getLimitedValue(Array->Size);
+      return ArrayElement(
+          lvalue(Call->getArg(0)), *Array,
+          quantity(Index, type(A.Context.getSizeType(), L), L),
+          Call->getType());
+    }
+    case UtilityOperation::ArrayFill: {
+      const auto *Object = MemberObject();
+      auto Array = Object ? ArrayFor(Object->getType())
+                          : std::optional<UtilityArrayRecord>();
+      if (!Object || !Array)
+        reject(L, "utility array fill",
+               "The selected std::array layout is unavailable.");
+      auto ObjectAddress = snapshot(
+          address(lvalue(Object), Object->getType(), L), L);
+      auto Value = snapshot(expression(Call->getArg(0)), L);
+      auto SizeType = type(A.Context.getSizeType(), L);
+      for (uint64_t I = 0; I < Array->Size; ++I) {
+        A.chargeExpansion(1, L);
+        auto Base = dereference(json::Object(ObjectAddress), L);
+        assign(ArrayElement(std::move(Base), *Array,
+                            quantity(I, SizeType, L), Array->ElementType),
+               json::Object(Value), L);
+      }
+      return {};
+    }
+    case UtilityOperation::ArraySwap:
+    case UtilityOperation::ArrayMemberSwap: {
+      const Expr *LeftSource = Operation == UtilityOperation::ArrayMemberSwap
+                                   ? MemberObject()
+                                   : Call->getArg(0);
+      const Expr *RightSource = Operation == UtilityOperation::ArrayMemberSwap
+                                    ? Call->getArg(0)
+                                    : Call->getArg(1);
+      if (!LeftSource || !RightSource || !ArrayFor(LeftSource->getType()))
+        reject(L, "utility array swap",
+               "The selected std::array layout is unavailable.");
+      auto LeftAddress = snapshot(
+          address(lvalue(LeftSource), LeftSource->getType(), L), L);
+      auto RightAddress = snapshot(
+          address(lvalue(RightSource), RightSource->getType(), L), L);
+      auto OldLeft = snapshot(dereference(json::Object(LeftAddress), L), L);
+      auto OldRight = snapshot(dereference(json::Object(RightAddress), L), L);
+      assign(dereference(std::move(LeftAddress), L), std::move(OldRight), L);
+      assign(dereference(std::move(RightAddress), L), std::move(OldLeft), L);
+      return {};
+    }
+    case UtilityOperation::ArrayEqual:
+    case UtilityOperation::ArrayNotEqual:
+    case UtilityOperation::ArrayLess:
+    case UtilityOperation::ArrayGreater:
+    case UtilityOperation::ArrayLessEqual:
+    case UtilityOperation::ArrayGreaterEqual: {
+      auto Array = ArrayFor(Call->getArg(0)->getType());
+      if (!Array)
+        reject(L, "utility array comparison",
+               "The selected std::array layout is unavailable.");
+      auto LeftAddress = snapshot(
+          address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
+      auto RightAddress = snapshot(
+          address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
+      auto Left = dereference(std::move(LeftAddress), L);
+      auto Right = dereference(std::move(RightAddress), L);
+      auto SizeType = type(A.Context.getSizeType(), L);
+      auto Element = [&](const Expression &Base, uint64_t I) {
+        return ArrayElement(json::Object(Base), *Array,
+                            quantity(I, SizeType, L), Array->ElementType);
+      };
+      auto Equal = [&](const Expression &First, const Expression &Second) {
+        auto Result = temporary("bool", L);
+        auto True = labelName(), False = labelName(), End = labelName();
+        std::vector<std::string> Next;
+        Next.reserve(Array->Size - 1);
+        for (uint64_t I = 1; I < Array->Size; ++I)
+          Next.push_back(labelName());
+        for (uint64_t I = 0; I < Array->Size; ++I) {
+          auto Success = I + 1 == Array->Size ? True : Next[I];
+          branch(binary("==", Element(First, I), Element(Second, I),
+                        "bool", L),
+                 Success, False, L);
+          if (I + 1 != Array->Size)
+            label(Next[I], L);
+        }
+        label(True, L);
+        assign(Result, boolean(true, L), L);
+        jump(End, L);
+        label(False, L);
+        assign(Result, boolean(false, L), L);
+        jump(End, L);
+        label(End, L);
+        return Result;
+      };
+      auto Less = [&](const Expression &First, const Expression &Second) {
+        auto Result = temporary("bool", L);
+        auto True = labelName(), False = labelName(), End = labelName();
+        for (uint64_t I = 0; I < Array->Size; ++I) {
+          auto Reverse = labelName();
+          auto Next = labelName();
+          branch(binary("<", Element(First, I), Element(Second, I),
+                        "bool", L),
+                 True, Reverse, L);
+          label(Reverse, L);
+          branch(binary("<", Element(Second, I), Element(First, I),
+                        "bool", L),
+                 False, Next, L);
+          label(Next, L);
+        }
+        jump(False, L);
+        label(True, L);
+        assign(Result, boolean(true, L), L);
+        jump(End, L);
+        label(False, L);
+        assign(Result, boolean(false, L), L);
+        jump(End, L);
+        label(End, L);
+        return Result;
+      };
+      Expression Result;
+      bool Negate = false;
+      switch (Operation) {
+      case UtilityOperation::ArrayEqual:
+        Result = Equal(Left, Right);
+        break;
+      case UtilityOperation::ArrayNotEqual:
+        Result = Equal(Left, Right);
+        Negate = true;
+        break;
+      case UtilityOperation::ArrayLess:
+        Result = Less(Left, Right);
+        break;
+      case UtilityOperation::ArrayGreater:
+        Result = Less(Right, Left);
+        break;
+      case UtilityOperation::ArrayLessEqual:
+        Result = Less(Right, Left);
+        Negate = true;
+        break;
+      case UtilityOperation::ArrayGreaterEqual:
+        Result = Less(Left, Right);
+        Negate = true;
+        break;
+      default:
+        reject(L, "utility array comparison",
+               "Unknown approved std::array comparison.");
       }
       if (!Negate)
         return Result;

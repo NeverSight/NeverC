@@ -57,17 +57,21 @@ Core v2 also admits exact angle includes of
 [`<cstdint>`](../docs/cpp-core-v2.md#fixed-width-integers-from-cstdint), plus
 [`<limits>`](../docs/cpp-core-v2.md#numeric-bounds-from-limits) and
 [`<cstddef>`](../docs/cpp-core-v2.md#fundamental-types-and-bytes-from-cstddef), and
-the bounded `<utility>` surface. The
+the bounded [`<utility>`](../docs/cpp-core-v2.md#scalar-utilities-and-pairs-from-utility)
+and [`<array>`](../docs/cpp-core-v2.md#fixed-scalar-arrays-from-array) surfaces. The
 frontend uses the pinned embedded libc++/resource VFS and exposes resolved type
 aliases plus integral/enum constant results. It records all consumed header
 hashes: 101 for the `<type_traits>` closure, nine for standalone `<cstdint>`,
-16 for `<limits>`, 29 for `<cstddef>` and 87 for `<utility>`. Numeric limits fold the documented
+16 for `<limits>`, 29 for `<cstddef>`, 87 for `<utility>` and 217 for `<array>`.
+Numeric limits fold the documented
 zero-argument integer and IEEE floating queries to literals. Cstddef aliases,
 layout queries and direct `std::byte` operations lower to existing scalar IR.
 Utility directly lowers scalar `move`, `forward`, `move_if_noexcept`, `as_const`,
 `exchange` and `swap`; scalar `pair` construction, assignment, swaps,
 comparisons, `make_pair` and `get`; and `tuple_size`, `tuple_element` and
-integer-sequence size queries. The driver authenticates each closure before
+integer-sequence size queries. Array directly lowers nonempty fixed scalar
+storage, iterators, element access, fill, swap, comparisons and tuple access.
+The driver authenticates each closure before
 emitting output. Standard-library objects and operations beyond these documented
 surfaces, other standard headers and full C++/STL remain unfinished.
 
