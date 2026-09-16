@@ -55,6 +55,7 @@ const char *nativeHeapName(NativeHeapOperation Operation) {
   switch (Operation) {
   case NativeHeapOperation::Malloc: return "malloc";
   case NativeHeapOperation::Calloc: return "calloc";
+  case NativeHeapOperation::Realloc: return "realloc";
   case NativeHeapOperation::Free: return "free";
   case NativeHeapOperation::None: return nullptr;
   }
@@ -403,6 +404,7 @@ public:
       I.Op = InstructionKind::NativeHeapCall;
       if (Operation == "malloc") I.HeapOperation = NativeHeapOperation::Malloc;
       else if (Operation == "calloc") I.HeapOperation = NativeHeapOperation::Calloc;
+      else if (Operation == "realloc") I.HeapOperation = NativeHeapOperation::Realloc;
       else if (Operation == "free") I.HeapOperation = NativeHeapOperation::Free;
       else return error("Unknown native heap operation.");
       return expressionField(O, "target", I.Target, false) &&
@@ -1519,12 +1521,17 @@ class Verifier {
           if (I.Target || I.Args.size() != 1 || I.Args[0].ValueType != Pointer)
             return error(I.Loc, "Native free requires one void pointer and no result.");
         } else {
-          if (I.Args.size() != (I.HeapOperation == NativeHeapOperation::Calloc ? 2u : 1u) ||
-              !I.Target || I.Target->Kind != ExprKind::Var || !Locals.count(I.Target->Name) ||
-              I.Target->ValueType != Pointer)
-            return error(I.Loc, "Native allocation requires exact size arguments and a local void-pointer result.");
-          for (const auto &A : I.Args)
-            if (A.ValueType.Kind != TypeKind::UInt || A.ValueType.integerBits() != Context.PointerBits)
+          if (!I.Target || I.Target->Kind != ExprKind::Var ||
+              !Locals.count(I.Target->Name) || I.Target->ValueType != Pointer)
+            return error(I.Loc, "Native allocation requires a local void-pointer result.");
+          const bool Reallocate = I.HeapOperation == NativeHeapOperation::Realloc;
+          const auto Expected = I.HeapOperation == NativeHeapOperation::Malloc ? 1u : 2u;
+          if (I.Args.size() != Expected ||
+              (Reallocate && I.Args[0].ValueType != Pointer))
+            return error(I.Loc, "Native allocation requires exact pointer and size arguments.");
+          for (std::size_t A = Reallocate ? 1u : 0u; A < I.Args.size(); ++A)
+            if (I.Args[A].ValueType.Kind != TypeKind::UInt ||
+                I.Args[A].ValueType.integerBits() != Context.PointerBits)
               return error(I.Loc, "Native allocation arguments must match the independently checked unsigned size_t.");
         }
         const auto Definition = Functions.find(Symbol);

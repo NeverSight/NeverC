@@ -5258,7 +5258,7 @@ remain unfinished.
 
 ## Native C heap calls
 
-Core v2 admits direct native `malloc`, `calloc` and `free` calls declared in
+Core v2 admits direct native `malloc`, `calloc`, `realloc` and `free` calls declared in
 source with these exact global C signatures. `Size` denotes the target's native
 unsigned `size_t` type; parameter top-level const and compatible redeclarations
 retain their ordinary C++ meaning.
@@ -5267,6 +5267,7 @@ retain their ordinary C++ meaning.
 using Size = decltype(sizeof(0));
 extern "C" void *malloc(Size);
 extern "C" void *calloc(Size, Size);
+extern "C" void *realloc(void *, Size);
 extern "C" void free(void *);
 ```
 
@@ -5295,20 +5296,22 @@ void free result, and rejects collisions with source C exports. Saved NC declare
 only used operations, uses the native CRT, retains Win32 cdecl and recorded
 Windows ABI guards, and rejects DynCode/non-hosted compilation. The process's
 normal allocator remains authoritative, including legitimate allocator overrides.
+`realloc` uses a private volatile function-pointer bridge initialized from the
+native CRT symbol. The indirect call survives O0/O2, so the generated C23
+compilation cannot replace a zero-size call with its own direct builtin inference.
 
-Zero-size results, null free and allocation failure retain the native C contract;
-there is no extra allocation, private heap, invented C++ exception, or promise
-about unobservable allocator calls or additional interposer behavior. `realloc`
-is deferred because its zero-size contract differs between C++17/C11 and C23;
-a wrapper alone does not remove native compiler allocation inference. Standard
-headers and complete C++/STL remain unfinished.
+Zero-size results, null free, resize failure and ownership of the original block
+retain the process allocator's actual contract; there is no extra allocation,
+private heap, invented C++ exception, or promise about unobservable allocator
+calls or additional interposer behavior. Standard headers and complete C++/STL
+remain unfinished.
 
 Paired accepted/rejected source cases, raw protocol relocation, malformed IR,
 eight-target width/calling-convention checks and an independent C client at O0/O2
-cover the boundary. The C client allocates memory released by translated code and
-releases memory allocated by translated code. Both the native CRT and the default
-program-entry-owned allocator are tested; a helper translation unit never chooses
-its caller's allocator. Source-defined class allocators exercise object/array
+cover the boundary. The C client allocates, grows and releases translated
+allocations in both directions while checking the preserved prefix. Both the
+native CRT and the default program-entry-owned allocator are tested; a helper
+translation unit never chooses its caller's allocator. Source-defined class allocators exercise object/array
 construction and destruction on the native heap. Native
 compilation and execution require CI of the implementing revision.
 

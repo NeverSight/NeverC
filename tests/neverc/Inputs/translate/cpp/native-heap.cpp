@@ -1,10 +1,12 @@
 using Size = decltype(sizeof(0));
 extern "C" void *malloc(Size);
 extern "C" void *calloc(Size, Size);
+extern "C" void *realloc(void *, Size);
 extern "C" void free(void *);
 
 extern "C" void *native_heap_allocate(Size n) { return malloc(n); }
 extern "C" void *native_heap_zero(Size n, Size width) { return calloc(n, width); }
+extern "C" void *native_heap_resize(void *p, Size n) { return realloc(p, n); }
 extern "C" void native_heap_release(void *p) { free(p); }
 extern "C" void native_heap_fill(void *p, Size n) {
   auto *bytes = static_cast<unsigned char *>(p);

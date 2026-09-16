@@ -103,6 +103,12 @@ static unsigned nativeHeapDeclaration(const FunctionDecl *F) {
     return F->getNumParams() == 1 && Same(F->getReturnType(), Context.VoidTy) &&
                    Same(F->getParamDecl(0)->getType(), Context.VoidPtrTy)
                ? Builtin::BIfree : 0;
+  if (Name == "realloc")
+    return F->getNumParams() == 2 &&
+                   Same(F->getReturnType(), Context.VoidPtrTy) &&
+                   Same(F->getParamDecl(0)->getType(), Context.VoidPtrTy) &&
+                   Same(F->getParamDecl(1)->getType(), Context.getSizeType())
+               ? Builtin::BIrealloc : 0;
   const unsigned Count = Name == "malloc" ? 1 : Name == "calloc" ? 2 : 0;
   if (!Count || F->getNumParams() != Count || !Same(F->getReturnType(), Context.VoidPtrTy))
     return 0;
@@ -140,7 +146,8 @@ static bool supportedDeclarationAttributes(const Decl *D) {
         continue;
       if (const auto *Size = dyn_cast<AllocSizeAttr>(Attribute);
           Size && ID != Builtin::BIfree && Size->getElemSizeParam().isValid() &&
-          Size->getElemSizeParam().getSourceIndex() == 1 &&
+          Size->getElemSizeParam().getSourceIndex() ==
+              (ID == Builtin::BIrealloc ? 2u : 1u) &&
           (ID == Builtin::BIcalloc
                ? Size->getNumElemsParam().isValid() && Size->getNumElemsParam().getSourceIndex() == 2
                : !Size->getNumElemsParam().isValid()))

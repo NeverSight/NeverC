@@ -3347,7 +3347,12 @@ Module nativeHeapModule(NativeHeapOperation Operation = NativeHeapOperation::Mal
     I.Args = {pointerExpr(ExprKind::Null, Pointer)};
   } else {
     I.Target = variable("nct_memory", Pointer);
-    I.Args = {literal("4", integerType(Bits, true))};
+    if (Operation == NativeHeapOperation::Realloc)
+      I.Args = {pointerExpr(ExprKind::Null, Pointer),
+                literal("4", integerType(Bits, true))};
+    else {
+      I.Args = {literal("4", integerType(Bits, true))};
+    }
     if (Operation == NativeHeapOperation::Calloc)
       I.Args.push_back(literal("8", integerType(Bits, true)));
   }
@@ -3358,12 +3363,12 @@ Module nativeHeapModule(NativeHeapOperation Operation = NativeHeapOperation::Mal
 
 TEST(TranslateIR, NativeHeapRequiresIndependentCapabilityAndExactOperands) {
   for (auto Operation : {NativeHeapOperation::Malloc, NativeHeapOperation::Calloc,
-                         NativeHeapOperation::Free}) {
+                         NativeHeapOperation::Realloc, NativeHeapOperation::Free}) {
     auto M = nativeHeapModule(Operation);
     Diagnostics D;
     EmittedSource Out;
     ASSERT_TRUE(emitNC(M, context(M), Out, D));
-    for (const std::string Name : {"malloc", "calloc", "free"})
+    for (const std::string Name : {"malloc", "calloc", "realloc", "free"})
       EXPECT_EQ(Out.Text.find("nct_emit_native_" + Name) != std::string::npos,
                 Name == nativeHeapName(Operation));
     EXPECT_NE(Out.Text.find("defined(__NEVERC_DYNCODE__)"), std::string::npos);
@@ -3409,9 +3414,18 @@ TEST(TranslateIR, NativeHeapRequiresIndependentCapabilityAndExactOperands) {
   M.Functions[0].Body[1].Target.reset();
   M.Functions[0].Body[1].Args = {pointerExpr(ExprKind::Null, pointerType(intType()))};
   invalid(M, "one void pointer");
-  M = nativeHeapModule();
-  M.Functions[0].Name = "malloc";
-  invalid(M, "collides with a source C export");
+  M = nativeHeapModule(NativeHeapOperation::Realloc);
+  M.Functions[0].Body[1].Args[0] = pointerExpr(ExprKind::Null, pointerType(intType()));
+  invalid(M, "exact pointer and size arguments");
+  M = nativeHeapModule(NativeHeapOperation::Realloc);
+  M.Functions[0].Body[1].Args[1] = literal("4", integerType(64));
+  invalid(M, "unsigned size_t");
+  for (auto Operation : {NativeHeapOperation::Malloc, NativeHeapOperation::Calloc,
+                         NativeHeapOperation::Realloc, NativeHeapOperation::Free}) {
+    M = nativeHeapModule(Operation);
+    M.Functions[0].Name = nativeHeapName(Operation);
+    invalid(M, "collides with a source C export");
+  }
 }
 
 TEST(TranslateIR, NativeHeapChecksPointerWidthAndWindowsCallingConvention) {
@@ -3439,6 +3453,24 @@ TEST(TranslateIR, NativeHeapChecksPointerWidthAndWindowsCallingConvention) {
     M.Functions[0].Body[1].Args[0] = literal("4", integerType(Bits == 32 ? 64 : 32, true));
     D.clear();
     EXPECT_FALSE(verifyModule(M, C, D));
+
+    M = nativeHeapModule(NativeHeapOperation::Realloc, Bits);
+    M.Target.Triple = Target;
+    M.Target.PointerBits = Bits;
+    M.Target.Carriers->Carriers[9] = {Bits, Bits};
+    D.clear();
+    ASSERT_TRUE(emitNC(M, C, Out, D));
+    EXPECT_EQ(Out.Text.find("__attribute__((cdecl)) realloc") != std::string::npos,
+              Bits == 32);
+    EXPECT_EQ(Out.Text.find("__attribute__((cdecl)) nct_emit_native_realloc") !=
+                  std::string::npos,
+              Bits == 32);
+    EXPECT_EQ(Out.Text.find("static void *(__attribute__((cdecl)) *volatile "
+                            "nct_emit_native_realloc_pointer)") != std::string::npos,
+              Bits == 32);
+    EXPECT_NE(Out.Text.find("nct_emit_native_realloc_pointer(nct_emit_pointer, "
+                            "nct_emit_size)"),
+              std::string::npos);
   }
   for (const std::string Target : {"x86_64-unknown-freebsd", "aarch64-linux-android",
                                   "x86_64-pc-windows-cygnus", "x86_64-pc-windows-itanium"}) {
@@ -3466,13 +3498,24 @@ TEST(TranslateIR, NativeHeapWireRejectsUnknownOperationsAndExtraFields) {
     Diagnostics Errors;
     EXPECT_FALSE(parseModule(Bad, Parsed, Errors));
   }
-  for (const std::string Operation : {"realloc", "aligned_alloc", "system", "", "FREE"}) {
+  for (const std::string Operation : {"aligned_alloc", "system", "", "FREE"}) {
     auto Bad = JSON;
     replaceOnce(Bad, "\"operation\":\"free\"", "\"operation\":\"" + Operation + "\"");
     Module Parsed;
     Diagnostics Errors;
     EXPECT_FALSE(parseModule(Bad, Parsed, Errors));
   }
+  auto ReallocJSON = wireModule(true);
+  ReallocJSON.insert(1, "\"native_heap\":true,\"memory_lifetimes\":true,");
+  replaceOnce(ReallocJSON, "\"locals\": []",
+              "\"locals\":[{\"name\":\"nct_memory\",\"type\":\"ptr:void\","
+              "\"loc\":{\"file\":\"input.cpp\",\"line\":2,\"column\":1}}]");
+  const std::string ReallocCall = R"json({"op":"native_heap_call","operation":"realloc","target":{"kind":"var","type":"ptr:void","name":"nct_memory","loc":{"file":"input.cpp","line":2,"column":1}},"args":[{"kind":"null","type":"ptr:void","loc":{"file":"input.cpp","line":2,"column":1}},{"kind":"literal","type":"u64","value":"4","loc":{"file":"input.cpp","line":2,"column":1}}],"loc":{"file":"input.cpp","line":2,"column":1}})json";
+  replaceOnce(ReallocJSON, "{\"op\": \"return\",", ReallocCall + ", {\"op\": \"return\",");
+  Module ParsedRealloc;
+  Diagnostics ReallocErrors;
+  ASSERT_TRUE(parseModule(ReallocJSON, ParsedRealloc, ReallocErrors));
+  EXPECT_TRUE(verifyModule(ParsedRealloc, context(ParsedRealloc), ReallocErrors));
   for (bool CoreV2 : {false, true})
     for (const std::string Value : {"true", "false", "null", "0", "\"true\""}) {
       auto Metadata = wireModule(CoreV2);

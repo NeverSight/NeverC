@@ -100,7 +100,7 @@ enum class InstructionKind {
   RegisterStaticDestructor,
   NativeHeapCall
 };
-enum class NativeHeapOperation { None, Malloc, Calloc, Free };
+enum class NativeHeapOperation { None, Malloc, Calloc, Realloc, Free };
 const char *nativeHeapName(NativeHeapOperation Operation);
 struct Instruction {
   InstructionKind Op = InstructionKind::Return;

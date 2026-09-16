@@ -7246,6 +7246,9 @@ TEST_F(TranslateTest, CoreV2NativeHeapAcceptsCheckedDirectDeclarations) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
       {"malloc", "using Size=decltype(sizeof(0));extern \"C\" void*malloc(Size);void*f(Size n){return malloc(n);}"},
       {"calloc", "using Size=decltype(sizeof(0));extern \"C\" void*calloc(Size,Size);void*f(Size n){return calloc(n,4);}"},
+      {"realloc", "using Size=decltype(sizeof(0));extern \"C\" void*realloc(void*,Size);void*f(void*p,Size n){return realloc(p,n);}"},
+      {"realloc-null", "using Size=decltype(sizeof(0));extern \"C\" void*realloc(void*,Size);void*f(Size n){return realloc(nullptr,n);}"},
+      {"realloc-zero", "using Size=decltype(sizeof(0));extern \"C\" void*realloc(void*,Size);void*f(void*p){return realloc(p,0);}"},
       {"free", "extern \"C\" void free(void*);void f(void*p){free(p);}"},
       {"free-null", "extern \"C\" void free(void*);void f(){free(nullptr);}"},
       {"declaration-only", "using Size=decltype(sizeof(0));extern \"C\" void*malloc(Size);int main(){return 0;}"},
@@ -7261,6 +7264,7 @@ TEST_F(TranslateTest, CoreV2NativeHeapAcceptsCheckedDirectDeclarations) {
       {"noexcept-prototype", "using Size=decltype(sizeof(0));extern \"C\" void*malloc(Size)noexcept;void*f(Size n){return malloc(n);}"},
       {"redeclarations", "using Size=decltype(sizeof(0));extern \"C\" void*malloc(Size);extern \"C\" void*malloc(Size);void*f(Size n){return malloc(n);}"},
       {"definition-wins", "using Size=decltype(sizeof(0));extern \"C\" void*malloc(Size);extern \"C\" void free(void*);unsigned char bytes[64]{};void*f(){void*p=malloc(4);free(p);return p;}extern \"C\" void*malloc(Size){return bytes;}extern \"C\" void free(void*){}"},
+      {"realloc-definition-wins", "using Size=decltype(sizeof(0));extern \"C\" void*realloc(void*,Size);extern \"C\" void*realloc(void*p,Size){return p;}void*f(void*p){return realloc(p,4);}"},
       {"class-array", "using Size=decltype(sizeof(0));extern \"C\" void*malloc(Size);extern \"C\" void free(void*);struct R{int n;R():n(3){}~R(){}static void*operator new[](Size n)noexcept{return malloc(n);}static void operator delete[](void*p)noexcept{free(p);}};R*f(int n){return new R[n];}void g(R*p){delete[]p;}"},
   };
   for (const auto &[Name, Code] : Cases) {
@@ -7292,7 +7296,9 @@ TEST_F(TranslateTest, CoreV2NativeHeapRejectsUnverifiedDeclarationsAndFunctionVa
       {"default-parameter", "using Size=decltype(sizeof(0));extern \"C\" void*malloc(Size=4);void*f(){return malloc();}", "TR0201"},
       {"unsupported-argument", "using Size=decltype(sizeof(0));extern \"C\" void*malloc(Size);void*f(){return malloc(sizeof(long double));}", "TR0201"},
       {"unknown-function", "using Size=decltype(sizeof(0));extern \"C\" void*allocate(Size);void*f(){return allocate(4);}", "TR0203"},
-      {"realloc", "using Size=decltype(sizeof(0));extern \"C\" void*realloc(void*,Size);void*f(void*p){return realloc(p,0);}", "TR0201"},
+      {"wrong-realloc-pointer", "using Size=decltype(sizeof(0));extern \"C\" void*realloc(const void*,Size);void*f(const void*p){return realloc(p,4);}", "TR0203"},
+      {"wrong-realloc-size", "extern \"C\" void*realloc(void*,unsigned);void*f(void*p){return realloc(p,4);}", "TR0203"},
+      {"written-realloc-size-attribute", "using Size=decltype(sizeof(0));extern \"C\" __attribute__((alloc_size(2))) void*realloc(void*,Size);", "TR0201"},
   };
   for (const auto &[Name, Code, Diagnostic] : Cases) {
     SCOPED_TRACE(Name);

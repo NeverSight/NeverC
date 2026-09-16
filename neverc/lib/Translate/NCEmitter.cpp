@@ -722,14 +722,22 @@ class Emitter {
     for (const auto &Name : NativeHeapSymbols) {
       const auto Result = Name == "free" ? "void " : "void *";
       const auto Parameters = Name == "free" ? "void *nct_emit_pointer"
+                              : Name == "realloc" ? "void *nct_emit_pointer, __SIZE_TYPE__ nct_emit_size"
                               : Name == "calloc" ? "__SIZE_TYPE__ nct_emit_count, __SIZE_TYPE__ nct_emit_size"
                                                  : "__SIZE_TYPE__ nct_emit_size";
       const auto Arguments = Name == "free" ? "nct_emit_pointer"
+                             : Name == "realloc" ? "nct_emit_pointer, nct_emit_size"
                              : Name == "calloc" ? "nct_emit_count, nct_emit_size"
                                                 : "nct_emit_size";
       line("extern " + std::string(Result) + CC + Name + "(" + Parameters + ");");
+      if (Name == "realloc") {
+        line("static void *(" + CC + "*volatile nct_emit_native_realloc_pointer)"
+             "(void *, __SIZE_TYPE__) = realloc;");
+      }
       line("static " + std::string(Result) + CC + "nct_emit_native_" + Name + "(" + Parameters + ") {");
-      line(std::string(Name == "free" ? "  " : "  return ") + Name + "(" + Arguments + ");");
+      line(std::string(Name == "free" ? "  " : "  return ") +
+           (Name == "realloc" ? "nct_emit_native_realloc_pointer" : Name) +
+           "(" + Arguments + ");");
       line("}");
     }
     if (!NativeHeapSymbols.empty()) line("");
