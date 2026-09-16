@@ -178,7 +178,7 @@ FP contract `cpp.math.binary64.masked.v1` requires masked traps and the document
 binary64 environment; it does not authorize arbitrary FP options or operations.
 
 Math requires an explicit x86_64 or arm64 macOS 15.0 target and the approved
-`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r3` distribution. Equivalent Darwin
+`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r4` distribution. Equivalent Darwin
 target spellings are accepted only when their effective deployment is macOS
 15.0. The immutable built-in catalog approves 266 original headers and
 NeverC-authored version metadata; there is no external SDK selection or host

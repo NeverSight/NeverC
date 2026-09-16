@@ -29,8 +29,8 @@ def main():
     repository = Path(__file__).resolve().parents[4]
     count = 0
     sdk_identity = {
-        "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r3",
-        "catalog_sha256": "4449e9fe805222c3d410f38ba5b03a9c6a73f540517b9979a3915a3b1148b022",
+        "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r4",
+        "catalog_sha256": "d5ba5430aa0ed1fb15d8efabd4296137c00c5878d2f2957929b1b67db83a2508",
     }
 
     def check(name, source, code=None, options=(), root=None, profile="cpp-core-v1",

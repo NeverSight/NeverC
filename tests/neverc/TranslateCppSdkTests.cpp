@@ -41,10 +41,10 @@ TEST_F(TranslateCppSdkTest, BuiltinSdkLoadsBothTargetsWithoutExternalInputs) {
     SCOPED_TRACE(Triple);
     ASSERT_TRUE(load(Triple)) << (Errors.empty() ? "" : Errors.front().Reason);
     EXPECT_EQ(Context.DistributionID,
-              "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r3");
+              "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r4");
     EXPECT_EQ(Context.TargetTriple, Triple);
     EXPECT_EQ(Context.CatalogSHA256, approvedCppSdkCatalogSHA256());
-    EXPECT_EQ(Context.ApprovedFiles.size(), 266u);
+    EXPECT_EQ(Context.ApprovedFiles.size(), 370u);
     EXPECT_TRUE(
         verifyCppSdkDependencies(Context, Context.ApprovedFiles, Errors));
     EXPECT_TRUE(Errors.empty());
@@ -134,9 +134,9 @@ TEST_F(TranslateCppSdkTest,
   ASSERT_NE(Object, nullptr);
   EXPECT_EQ(Object->getString("distribution_id"), CppMathSDKID);
   ASSERT_NE(Object->getArray("headers"), nullptr);
-  EXPECT_EQ(Object->getArray("headers")->size(), 266u);
+  EXPECT_EQ(Object->getArray("headers")->size(), 370u);
   EXPECT_EQ(approvedCppSdkCatalogSHA256(),
-            "4449e9fe805222c3d410f38ba5b03a9c6a73f540517b9979a3915a3b1148b022");
+            "d5ba5430aa0ed1fb15d8efabd4296137c00c5878d2f2957929b1b67db83a2508");
   EXPECT_EQ(approvedCppSdkCatalog().find("/Users/"), llvm::StringRef::npos);
   EXPECT_EQ(approvedCppSdkCatalog().find("/Library/"), llvm::StringRef::npos);
   EXPECT_EQ(approvedCppSdkCatalog().find("/opt/"), llvm::StringRef::npos);
@@ -152,7 +152,7 @@ TEST_F(TranslateCppSdkTest, CompiledCatalogPreservesSourceBytesAndTrailingNul) {
   EXPECT_EQ(Compiled, llvm::StringRef(Source));
   EXPECT_EQ(Compiled.data()[Compiled.size()], '\0');
   EXPECT_EQ(approvedCppSdkCatalogSHA256(),
-            "4449e9fe805222c3d410f38ba5b03a9c6a73f540517b9979a3915a3b1148b022");
+            "d5ba5430aa0ed1fb15d8efabd4296137c00c5878d2f2957929b1b67db83a2508");
 }
 
 TEST_F(TranslateCppSdkTest,

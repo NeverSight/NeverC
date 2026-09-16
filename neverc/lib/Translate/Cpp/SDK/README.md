@@ -2,9 +2,9 @@
 
 This directory supplies the immutable header inputs for NeverC's built-in C++
 frontend. The distribution is
-`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r3`. It contains the 266 header
+`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r4`. It contains the 370 header
 files admitted by the current
-`clang20.1.8-libcxx200100-macos15.5` catalog: 172 libc++ headers, 13 Clang resource
+`clang20.1.8-libcxx200100-macos15.5` catalog: 276 libc++ headers, 13 Clang resource
 headers, and 81 Darwin platform headers. Their contents, including copyright and
 license notices, are preserved byte for byte. This is a fixed input set for the
 supported translation profiles, not a complete Apple SDK.
@@ -39,7 +39,7 @@ the exact header bytes supplied here.
 
 | Header group | Files | Applicable notices |
 | --- | ---: | --- |
-| libc++ and Clang resource headers | 185 | Apache-2.0 with LLVM exceptions |
+| libc++ and Clang resource headers | 289 | Apache-2.0 with LLVM exceptions |
 | Darwin headers with an APSL notice | 63 | APSL-2.0 |
 | Darwin headers with APSL and Berkeley notices | 12 | APSL-2.0 and BSD-4-Clause |
 | `arm/endian.h`, `arm/types.h` | 2 | BSD-4-Clause |
