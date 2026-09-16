@@ -904,6 +904,90 @@ class FunctionLowering {
                                  {"loc", A.loc(L)}},
                       L);
     }
+    case UtilityOperation::IteratorBegin:
+    case UtilityOperation::IteratorEnd:
+    case UtilityOperation::IteratorSize:
+    case UtilityOperation::IteratorEmpty:
+    case UtilityOperation::IteratorData: {
+      const auto *Source = Call->getArg(0);
+      const auto *Native = A.Context.getAsConstantArrayType(Source->getType());
+      auto Array = ArrayFor(Source->getType());
+      if (!Native && !Array)
+        reject(L, "iterator range access",
+               "The selected fixed range layout is unavailable.");
+      const uint64_t Count =
+          Native ? Native->getSize().getLimitedValue() : Array->Size;
+      if (Operation == UtilityOperation::IteratorSize ||
+          Operation == UtilityOperation::IteratorEmpty) {
+        // Capacity queries still evaluate the range expression exactly once.
+        lvalue(Source);
+        if (Operation == UtilityOperation::IteratorEmpty)
+          return boolean(false, L);
+        return quantity(Count, type(Call->getType(), L), L);
+      }
+      auto Base = lvalue(Source);
+      auto Storage = Native ? std::move(Base)
+                            : fieldStorage(std::move(Base), Array->Elements, L);
+      auto Pointer = decay(std::move(Storage), type(Call->getType(), L), L);
+      if (Operation != UtilityOperation::IteratorEnd)
+        return Pointer;
+      return binary("+", std::move(Pointer),
+                    quantity(Count, type(A.Context.getSizeType(), L), L),
+                    type(Call->getType(), L), L);
+    }
+    case UtilityOperation::IteratorAdvance: {
+      // Bind the iterator object before evaluating the distance, choosing the
+      // left-to-right argument order permitted by C++17.
+      auto IteratorType = Call->getArg(0)->getType();
+      auto IteratorAddress =
+          snapshot(address(lvalue(Call->getArg(0)), IteratorType, L), L);
+      const auto *Distance = Call->getArg(1);
+      if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Distance))
+        Distance = selectedDefaultArgument(Default, A.Context);
+      if (!Distance)
+        reject(L, "iterator advance",
+               "The selected iterator distance is unavailable.");
+      auto Offset = snapshot(cast(expression(Distance),
+                                  type(A.Context.getPointerDiffType(), L), L),
+                             L);
+      auto Iterator = dereference(std::move(IteratorAddress), L);
+      auto Current = snapshot(Iterator, L);
+      assign(Iterator,
+             binary("+", std::move(Current), std::move(Offset),
+                    type(IteratorType, L), L),
+             L);
+      return {};
+    }
+    case UtilityOperation::IteratorDistance: {
+      auto First = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      return snapshot(binary("-", std::move(Last), std::move(First),
+                             type(Call->getType(), L), L),
+                      L);
+    }
+    case UtilityOperation::IteratorNext:
+    case UtilityOperation::IteratorPrev: {
+      auto Iterator = snapshot(expression(Call->getArg(0)), L);
+      Expression Offset;
+      if (Call->getNumArgs() == 1) {
+        Offset = quantity(1, type(A.Context.getPointerDiffType(), L), L);
+      } else {
+        const auto *Distance = Call->getArg(1);
+        if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Distance))
+          Distance = selectedDefaultArgument(Default, A.Context);
+        if (!Distance)
+          reject(L, "iterator offset",
+                 "The selected iterator distance is unavailable.");
+        Offset = snapshot(cast(expression(Distance),
+                               type(A.Context.getPointerDiffType(), L), L),
+                          L);
+      }
+      return snapshot(
+          binary(Operation == UtilityOperation::IteratorNext ? "+" : "-",
+                 std::move(Iterator), std::move(Offset),
+                 type(Call->getType(), L), L),
+          L);
+    }
     case UtilityOperation::ArraySize:
     case UtilityOperation::ArrayMaxSize:
     case UtilityOperation::ArrayEmpty: {

@@ -23606,6 +23606,125 @@ int main() { return 0; }
   expectNoArtifacts(QuotedOutput);
 }
 
+TEST_F(TranslateTest, CoreV2IteratorPointerOperationsRunAtBothOptimizations) {
+  const auto Source = tmpFile("iterator-operations.cpp");
+  const auto Output = tmpFile("iterator-operations.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <iterator>
+int main() {
+  int native[4]{1, 2, 3, 4};
+  std::array<int, 4> boxed{{5, 6, 7, 8}};
+  int effects = 0;
+  if (std::begin((++effects, native)) != native || effects != 1)
+    return 1;
+  if (std::end((++effects, native)) - native != 4 || effects != 2)
+    return 2;
+  if (std::size((++effects, native)) != 4 || effects != 3)
+    return 3;
+  bool native_empty = std::empty((++effects, native));
+  if (native_empty || effects != 4)
+    return 4;
+  if (std::data((++effects, native)) != native || effects != 5)
+    return 5;
+  if (std::cbegin(native)[1] != 2 || std::cend(native)[-1] != 4)
+    return 6;
+
+  if (std::begin((++effects, boxed)) != boxed.data() || effects != 6)
+    return 7;
+  if (std::end((++effects, boxed)) - boxed.data() != 4 || effects != 7)
+    return 8;
+  if (std::size((++effects, boxed)) != 4 || effects != 8)
+    return 9;
+  bool boxed_empty = std::empty((++effects, boxed));
+  if (boxed_empty || effects != 9)
+    return 10;
+  if (std::data((++effects, boxed))[2] != 7 || effects != 10)
+    return 11;
+  const std::array<int, 4> &view = boxed;
+  if (std::cbegin(view)[1] != 6 || std::cend(view)[-1] != 8 ||
+      std::distance(std::cbegin(view), std::cend(view)) != 4)
+    return 12;
+
+  int *first = std::begin(native);
+  int *last = std::end(native);
+  std::advance(first, static_cast<short>(2));
+  if (*first != 3)
+    return 13;
+  std::advance(first, -1);
+  if (*first != 2 || std::distance(first, last) != 3)
+    return 14;
+  if (*std::next(first) != 3 || *std::next(first, 2) != 4 ||
+      *std::prev(last) != 4 || *std::prev(last, 2) != 3)
+    return 15;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *SDK = Manifest->getAsObject()->getObject("sdk");
+  ASSERT_NE(SDK, nullptr);
+  const auto *Dependencies = SDK->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 228u);
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+  }
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("iterator-operations" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2IteratorRequiresPinnedPointerOperations) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Rejection Cases[] = {
+      {"function-address",
+       "#include <iterator>\nauto f(){return &std::distance<int*>;}", "TR0201"},
+      {"custom-range",
+       "#include <iterator>\nstruct R{int a[2];int*begin(){return a;}"
+       "int*end(){return a+2;}};int main(){R r;return *std::begin(r);}",
+       "TR0203"},
+      {"custom-iterator",
+       "#include <iterator>\nstruct I{using difference_type=int;using "
+       "value_type=int;using pointer=int*;using reference=int&;using "
+       "iterator_category=std::input_iterator_tag;int*p;I&operator++(){++p;"
+       "return *this;}};int main(){int a[2];I i{a};std::advance(i,1);"
+       "return 0;}",
+       "TR0203"},
+      {"reverse-native",
+       "#include <iterator>\nint main(){int a[2]{1,2};"
+       "return *std::rbegin(a);}",
+       "TR0203"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("iterator-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("iterator-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2RejectsUnsupportedErasedDeclarations) {
   struct Rejection {
     const char *Name;

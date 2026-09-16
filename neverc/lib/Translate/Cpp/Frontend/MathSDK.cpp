@@ -719,6 +719,51 @@ static const DeclRefExpr *approvedUtilityReference(
              : nullptr;
 }
 
+bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
+                                    const CXXDefaultArgExpr *Default,
+                                    const FunctionDecl *Function,
+                                    unsigned Index, ASTContext &Context) {
+  if (!S.coreV2())
+    return false;
+  const auto *Parameter = Default ? Default->getParam() : nullptr;
+  const auto *Owner =
+      Parameter ? dyn_cast<FunctionDecl>(Parameter->getDeclContext()) : nullptr;
+  const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+  const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+  if (!Default || !Parameter || !Owner || !Function || !Primary || !Pattern ||
+      Owner->getCanonicalDecl() != Function->getCanonicalDecl() || Index != 1 ||
+      Function->getNumParams() != 2 ||
+      Parameter != Function->getParamDecl(Index) ||
+      Parameter->getFunctionScopeIndex() != Index || Function->isVariadic() ||
+      !Function->isInlined() || !Pattern->hasBody() ||
+      !approvedStandardSDKDeclaration(S, SM, Function) ||
+      !approvedStandardSDKDeclaration(S, SM, Primary) ||
+      !S.owns(SM, Default->getExprLoc()) || !Function->getIdentifier() ||
+      Function->getIdentifier()->getName() != "next")
+    return false;
+  auto Origin = S.sdkFile(SM, Primary->getLocation());
+  auto Iterator = Function->getParamDecl(0)->getType();
+  auto Distance = Parameter->getType();
+  const auto *Init = selectedDefaultArgument(Default, Context);
+  if (!Origin || Origin->Root != "libcxx" ||
+      Origin->Path != "__iterator/next.h" || !Iterator->isPointerType() ||
+      Iterator->isFunctionPointerType() ||
+      Iterator->getPointeeType()->isVoidType() ||
+      !Distance->isIntegralType(Context) ||
+      Context.getTypeSize(Distance) > 64 ||
+      !Context.hasSameType(Distance, Context.getPointerDiffType()) ||
+      !Context.hasSameType(Function->getReturnType(), Iterator) || !Init ||
+      !Context.hasSameType(Init->getType(), Distance) ||
+      Init->isTypeDependent() || Init->isValueDependent() ||
+      Init->isInstantiationDependent())
+    return false;
+  Init = Init->IgnoreParenImpCasts();
+  while (const auto *Constant = dyn_cast<ConstantExpr>(Init))
+    Init = Constant->getSubExpr()->IgnoreParenImpCasts();
+  const auto *Literal = dyn_cast<IntegerLiteral>(Init);
+  return Literal && Literal->getValue() == 1;
+}
+
 std::optional<UtilityOperation>
 approvedUtilityOperation(const State &S, const SourceManager &SM,
                          const CallExpr *Call, const ASTContext &Context) {
@@ -879,6 +924,112 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   const llvm::StringRef Name = Function->getIdentifier()
                                    ? Function->getIdentifier()->getName()
                                    : llvm::StringRef();
+  auto IteratorRange =
+      [&](QualType Type) -> std::optional<std::pair<QualType, uint64_t>> {
+    if (Type.isNull())
+      return std::nullopt;
+    if (const auto *Native = Context.getAsConstantArrayType(Type)) {
+      const auto Size = Native->getSize().getLimitedValue(65537);
+      if (Size && Size <= 65536)
+        return std::pair{Native->getElementType(), Size};
+      return std::nullopt;
+    }
+    const auto Array =
+        approvedUtilityArrayRecord(S, SM, Type->getAsCXXRecordDecl(), Context);
+    if (!Array)
+      return std::nullopt;
+    return std::pair{Array->ElementType, Array->Size};
+  };
+  if ((Origin->Path == "__iterator/access.h" ||
+       Origin->Path == "__iterator/data.h" ||
+       Origin->Path == "__iterator/size.h" ||
+       Origin->Path == "__iterator/empty.h") &&
+      Call->getNumArgs() == 1 && Function->getNumParams() == 1) {
+    auto Parameter = Function->getParamDecl(0)->getType();
+    auto Result = Function->getReturnType();
+    const auto Range =
+        IteratorRange(Parameter->isReferenceType() ? Parameter->getPointeeType()
+                                                   : QualType());
+    if (Parameter->isLValueReferenceType() && Range &&
+        Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
+                                       Parameter->getPointeeType()) &&
+        Same(Call->getType(), Result)) {
+      auto Element = Range->first;
+      if (Parameter->getPointeeType().isConstQualified())
+        Element = Element.withConst();
+      if (Origin->Path == "__iterator/access.h" &&
+          (Name == "begin" || Name == "cbegin" || Name == "end" ||
+           Name == "cend") &&
+          Result->isPointerType() && Same(Result->getPointeeType(), Element))
+        return Name == "end" || Name == "cend"
+                   ? UtilityOperation::IteratorEnd
+                   : UtilityOperation::IteratorBegin;
+      if (Origin->Path == "__iterator/data.h" && Name == "data" &&
+          Result->isPointerType() && Same(Result->getPointeeType(), Element))
+        return UtilityOperation::IteratorData;
+      if (Origin->Path == "__iterator/size.h" && Name == "size" &&
+          Call->isPRValue() && Same(Result, Context.getSizeType()))
+        return UtilityOperation::IteratorSize;
+      if (Origin->Path == "__iterator/empty.h" && Name == "empty" &&
+          Call->isPRValue() && Result->isBooleanType())
+        return UtilityOperation::IteratorEmpty;
+    }
+  }
+  auto ObjectPointer = [&](QualType Type) {
+    return !Type.isNull() && Type->isPointerType() &&
+           !Type->isFunctionPointerType() &&
+           !Type->getPointeeType()->isVoidType();
+  };
+  if (Origin->Path == "__iterator/advance.h" && Name == "advance" &&
+      Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
+      Function->getReturnType()->isVoidType()) {
+    auto Iterator = Function->getParamDecl(0)->getType();
+    auto Distance = Function->getParamDecl(1)->getType();
+    if (Iterator->isLValueReferenceType() &&
+        ObjectPointer(Iterator->getPointeeType()) &&
+        !Iterator->getPointeeType().isConstQualified() &&
+        Distance->isIntegralType(Context) &&
+        Context.getTypeSize(Distance) <= 64 &&
+        Same(Call->getArg(0)->getType(), Iterator->getPointeeType()) &&
+        Same(Call->getArg(1)->getType(), Distance))
+      return UtilityOperation::IteratorAdvance;
+  }
+  if (Origin->Path == "__iterator/distance.h" && Name == "distance" &&
+      Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
+      Call->isPRValue() &&
+      Same(Function->getReturnType(), Context.getPointerDiffType()) &&
+      Same(Call->getType(), Function->getReturnType())) {
+    auto First = Function->getParamDecl(0)->getType();
+    auto Last = Function->getParamDecl(1)->getType();
+    if (ObjectPointer(First) && Same(First, Last) &&
+        Same(Call->getArg(0)->getType(), First) &&
+        Same(Call->getArg(1)->getType(), Last))
+      return UtilityOperation::IteratorDistance;
+  }
+  if ((Origin->Path == "__iterator/next.h" ||
+       Origin->Path == "__iterator/prev.h") &&
+      (Name == "next" || Name == "prev") && Call->getNumArgs() == 2 &&
+      Function->getNumParams() == 2 && Call->isPRValue()) {
+    auto Iterator = Function->getParamDecl(0)->getType();
+    auto Distance = Function->getParamDecl(1)->getType();
+    if (ObjectPointer(Iterator) &&
+        Same(Distance, Context.getPointerDiffType()) &&
+        Same(Call->getType(), Iterator) &&
+        Same(Function->getReturnType(), Iterator) &&
+        Same(Call->getArg(0)->getType(), Iterator) &&
+        Same(Call->getArg(1)->getType(), Distance))
+      return Name == "next" ? UtilityOperation::IteratorNext
+                            : UtilityOperation::IteratorPrev;
+  }
+  if (Origin->Path == "__iterator/prev.h" && Name == "prev" &&
+      Call->getNumArgs() == 1 && Function->getNumParams() == 1 &&
+      Call->isPRValue()) {
+    auto Iterator = Function->getParamDecl(0)->getType();
+    if (ObjectPointer(Iterator) && Same(Call->getType(), Iterator) &&
+        Same(Function->getReturnType(), Iterator) &&
+        Same(Call->getArg(0)->getType(), Iterator))
+      return UtilityOperation::IteratorPrev;
+  }
   if (Origin->Path == "__utility/pair.h" && Name == "make_pair" &&
       Call->getNumArgs() == 2 && Call->isPRValue() &&
       !Function->getReturnType()->isReferenceType() &&

@@ -282,6 +282,15 @@ enum class UtilityOperation {
   ArrayLessEqual,
   ArrayGreaterEqual,
   ArrayGet,
+  IteratorBegin,
+  IteratorEnd,
+  IteratorSize,
+  IteratorEmpty,
+  IteratorData,
+  IteratorAdvance,
+  IteratorDistance,
+  IteratorNext,
+  IteratorPrev,
 };
 struct UtilityPairRecord {
   const clang::CXXRecordDecl *Record;
@@ -335,6 +344,11 @@ std::optional<UtilityOperation>
 approvedUtilityOperation(const State &S, const clang::SourceManager &SM,
                          const clang::CallExpr *Call,
                          const clang::ASTContext &Context);
+bool approvedUtilityDefaultArgument(const State &S,
+                                    const clang::SourceManager &SM,
+                                    const clang::CXXDefaultArgExpr *Default,
+                                    const clang::FunctionDecl *Function,
+                                    unsigned Index, clang::ASTContext &Context);
 bool approvedUtilityConstant(const State &S, const clang::SourceManager &SM,
                              const clang::CallExpr *Call,
                              clang::ASTContext &Context,

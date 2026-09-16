@@ -6445,6 +6445,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     const auto *Default = dyn_cast<CXXDefaultArgExpr>(E->IgnoreParens());
     if (!Default)
       return;
+    if (approvedUtilityDefaultArgument(A.S, A.Sources, Default, F, Index,
+                                       A.Context))
+      return;
     const auto *P = Default->getParam();
     const auto *Owner = P ? dyn_cast<FunctionDecl>(P->getDeclContext()) : nullptr;
     if (!selectedDefaultArgument(Default, A.Context) || !owned(P) || !Owner ||
@@ -11328,6 +11331,14 @@ public:
     if (!WalkUpFromCXXDefaultArgExpr(Default))
       return false;
     const auto *Init = selectedDefaultArgument(Default, A.Context);
+    const bool UtilityDefault = approvedUtilityDefaultArgument(
+        A.S, A.Sources, Default, Function, P ? P->getFunctionScopeIndex() : 0,
+        A.Context);
+    if (UtilityDefault) {
+      A.chargeExpansion(1, L);
+      A.type(Init->getType(), L);
+      return true;
+    }
     if (!A.S.coreV2() || !Init || !owned(P) || !A.S.owns(A.Sources, L)) {
       A.reject(L, "default argument",
                "A resolved source-owned parameter default is required.");

@@ -558,9 +558,55 @@ extern "C" int iterator_metadata() { return 0; }
     for target in sdk_targets:
         check("v2-iterator-metadata-" + target, iterator_metadata_source,
               profile="cpp-core-v2", target=target, sdk=True)
+    iterator_operations_source = """\
+#include <array>
+#include <iterator>
+extern "C" int iterator_operations() {
+  int native[4]{1, 2, 3, 4};
+  std::array<int, 4> boxed{{5, 6, 7, 8}};
+  int* first = std::begin(native);
+  int* last = std::end(native);
+  std::advance(first, static_cast<short>(2));
+  std::advance(first, -1);
+  const std::array<int, 4>& view = boxed;
+  return *first + std::distance(first, last) + *std::next(first)
+      + *std::next(first, 2) + *std::prev(last) + *std::prev(last, 2)
+      + int(std::size(native)) + int(std::empty(native))
+      + *std::data(native) + *std::cbegin(native) + std::cend(native)[-1]
+      + int(std::size(view)) + int(std::empty(view)) + *std::data(view)
+      + *std::begin(view) + std::end(view)[-1]
+      + *std::cbegin(view) + std::cend(view)[-1];
+}
+"""
+    iterator_operations = check("v2-iterator-operations",
+                                iterator_operations_source,
+                                profile="cpp-core-v2", sdk=True)
+    assert len(iterator_operations["sdk_dependencies"]) == 228, iterator_operations
+    assert not [node for node in walk(iterator_operations["functions"])
+                if node.get("op") in ("call", "mapped_call")], iterator_operations
+    for target in sdk_targets:
+        check("v2-iterator-operations-" + target,
+              iterator_operations_source, profile="cpp-core-v2",
+              target=target, sdk=True)
     check("v2-iterator-quoted",
           '#include "iterator"\nint main(){return 0;}', "TR0201",
           profile="cpp-core-v2", sdk=True)
+    for name, source, code in (
+        ("function-address",
+         '#include <iterator>\nauto f(){return &std::distance<int*>;}',
+         "TR0201"),
+        ("custom-range",
+         '#include <iterator>\nstruct R{int a[2];int*begin(){return a;}int*end(){return a+2;}};int main(){R r;return *std::begin(r);}',
+         "TR0203"),
+        ("custom-iterator",
+         '#include <iterator>\nstruct I{using difference_type=int;using value_type=int;using pointer=int*;using reference=int&;using iterator_category=std::input_iterator_tag;int*p;I&operator++(){++p;return *this;}};int main(){int a[2];I i{a};std::advance(i,1);return 0;}',
+         "TR0203"),
+        ("reverse-native",
+         '#include <iterator>\nint main(){int a[2]{1,2};return *std::rbegin(a);}',
+         "TR0203"),
+    ):
+        check("v2-iterator-" + name, source, code,
+              profile="cpp-core-v2", sdk=True)
 
     # Windows driver defaults must not change core-v2 source visibility or
     # standard diagnostics. Exercise both MSVC architectures on every CI host.
