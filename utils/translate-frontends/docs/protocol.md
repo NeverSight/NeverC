@@ -1449,6 +1449,23 @@ See the [floating contract](cpp-core-v2.md#binary-floating-point-values) for the
 default floating environment and remaining source restrictions. Older experimental
 v2 responses lacking the two carrier entries must be regenerated.
 
+## Core v2 `<type_traits>` SDK evidence
+
+A core v2 request may add the same two-field immutable SDK envelope used by the
+built-in driver: `distribution_id` and `catalog_sha256`. When present, the
+source may include exactly `<type_traits>`. A successful response adds
+`sdk_distribution_id`, `sdk_catalog_sha256` and `sdk_dependencies`. Core v2
+dependencies may use only the `libcxx` and `resource` roots; each normalized
+relative path must be unique and its lowercase SHA-256 must match the embedded
+catalog. Platform roots, mappings and `fp_contract` are invalid in core v2.
+
+The driver supplies a `VerificationContext` containing the exact approved SDK
+identity, verifies the response before and after semantic-IR processing, and
+copies the authenticated dependency closure into the manifest's built-in SDK
+record. Frontend claims cannot authorize an SDK. Runtime calls or object/storage
+identity from these declarations are rejected before lowering; only resolved
+type aliases and integral/enum constants reach semantic IR.
+
 ## Gated mathematics extension
 
 `cpp-math-v1` uses project schema 1 and the same owned declaration/ODR envelope

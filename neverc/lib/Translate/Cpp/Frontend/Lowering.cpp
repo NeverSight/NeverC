@@ -1180,6 +1180,18 @@ class FunctionLowering {
           Value.setIsUnsigned(unsignedInteger(T));
           return A.literal(Value, T, L);
         }
+      if (A.S.coreV2())
+        if (const auto *Variable = dyn_cast<VarDecl>(R->getDecl()))
+          if (auto Value = approvedSDKIntegerConstant(
+                  A.S, A.Sources, Variable, A.Context)) {
+            if (R->isNonOdrUse() == NOUR_None)
+              reject(L, "standard trait storage",
+                     "An approved standard trait may be lowered only as a "
+                     "constant value.");
+            *Value = Value->extOrTrunc(integerBits(T));
+            Value->setIsUnsigned(unsignedInteger(T));
+            return A.literal(*Value, T, L);
+          }
       return storage(R->getDecl(), L);
     }
     if (const auto *C = dyn_cast<CastExpr>(E)) {

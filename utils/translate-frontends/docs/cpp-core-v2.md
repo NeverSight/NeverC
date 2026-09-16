@@ -13,10 +13,45 @@ neverc output.nc -c -o output.o
 ```
 
 The frontend remains statically built into NeverC. There is no external Clang
-selection or installation requirement. The profile accepts one self-contained
-C++17 source without includes and uses the existing native hosted target rules.
+selection or installation requirement. The profile accepts one C++17 source,
+the bounded standard-header surface below, and the existing native hosted target rules.
 `--check`, output ownership, diagnostics and artifact validation follow the
 [existing design](design.md).
+
+## Compile-time `<type_traits>`
+
+Core v2 accepts an exact top-level `#include <type_traits>` using the immutable
+libc++ 20.1.8 and Clang resource headers embedded in NeverC. The header closure
+is read from the built-in VFS and recorded as exact `libcxx`/`resource` paths and
+SHA-256 hashes in the semantic module and output manifest. Platform headers,
+host include directories and environment-selected SDKs cannot participate.
+
+Aliases and integral or enum constant results are available when their resolved
+types and operands already satisfy core v2. This includes forms such as
+`std::remove_cv_t`, `std::is_same_v`, `std::is_constructible_v`,
+`std::is_nothrow_destructible_v` and `std::integral_constant<T, V>::value`.
+Clang performs normal C++17 substitution and constant evaluation; the translator
+then emits the concrete type or literal and does not copy libc++ declarations
+into generated C23.
+
+```cpp
+#include <type_traits>
+using Raw = std::remove_cv_t<const int>;
+using Three = std::integral_constant<int, 3>;
+static_assert(std::is_same_v<Raw, int>);
+
+int main() {
+  return Three::value + std::is_constructible_v<int, int> == 4 ? 0 : 1;
+}
+```
+
+This surface is compile-time-only. Constructing a standard-library object,
+calling a standard-library function or taking the address/reference identity of
+a trait constant is rejected. Quoted `"type_traits"`, every other standard
+header, platform headers and user shadow headers remain outside this boundary.
+The same closure is checked on the supported macOS, Linux and Windows x86-32,
+x86-64 and AArch64 targets. Broader standard-library and STL support remains in
+development.
 
 ## Standard template parsing across targets
 

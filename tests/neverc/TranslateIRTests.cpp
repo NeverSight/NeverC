@@ -2548,7 +2548,7 @@ TEST(TranslateIR, CoreV2RetainsSingleUnitAndNoMathContract) {
   invalid(M, "Math metadata");
   M = Base;
   M.SDKDistributionID = "unapproved-sdk";
-  invalid(M, "Math metadata");
+  invalid(M, "driver-approved SDK");
   M = Base;
   Instruction Call;
   Call.Op = InstructionKind::MappedCall;
@@ -2556,6 +2556,55 @@ TEST(TranslateIR, CoreV2RetainsSingleUnitAndNoMathContract) {
   Call.MappingID = "cpp.math.fabs.f64.v1";
   M.Functions.front().Body.insert(M.Functions.front().Body.begin() + 1, Call);
   invalid(M, "Mapped call");
+}
+
+TEST(TranslateIR, CoreV2AcceptsOnlyDriverApprovedHeaderSdkEvidence) {
+  Module M = module(true);
+  M.SDKDistributionID = "approved-header-sdk";
+  M.SDKCatalogSHA256 = std::string(64, 'c');
+  M.SDKDependencies = {
+      {"libcxx", "type_traits", std::string(64, 'd')},
+      {"resource", "include/stddef.h", std::string(64, 'e')}};
+  auto C = context(M);
+  C.ApprovedSDKIDs = {M.SDKDistributionID};
+  Diagnostics D;
+  ASSERT_TRUE(verifyModule(M, C, D));
+  EmittedSource Output;
+  ASSERT_TRUE(emitNC(M, C, Output, D));
+  EXPECT_FALSE(Output.Text.empty());
+
+  auto Bad = M;
+  Bad.SDKDependencies.push_back(Bad.SDKDependencies.front());
+  EXPECT_FALSE(verifyModule(Bad, C, D));
+  Bad = M;
+  Bad.SDKDependencies.front().Root = "platform";
+  EXPECT_FALSE(verifyModule(Bad, C, D));
+  Bad = M;
+  Bad.SDKDependencies.front().Path = "../type_traits";
+  EXPECT_FALSE(verifyModule(Bad, C, D));
+  Bad = M;
+  Bad.SDKCatalogSHA256 = "not-a-hash";
+  EXPECT_FALSE(verifyModule(Bad, C, D));
+  C.ApprovedSDKIDs.clear();
+  EXPECT_FALSE(verifyModule(M, C, D));
+}
+
+TEST(TranslateIR, CoreV2ParsesCompleteHeaderSdkWireEvidence) {
+  auto JSON = wireModule(true);
+  const std::string Evidence =
+      "\"sdk_distribution_id\":\"approved-header-sdk\","
+      "\"sdk_catalog_sha256\":\"cccccccccccccccccccccccccccccccc"
+      "cccccccccccccccccccccccccccccccc\","
+      "\"sdk_dependencies\":[{\"root\":\"libcxx\","
+      "\"path\":\"type_traits\",\"sha256\":\"dddddddddddddddddddddddddddddddd"
+      "dddddddddddddddddddddddddddddddd\"}],";
+  replaceOnce(JSON, "\"records\": []", Evidence + "\"records\": []");
+  Module M;
+  Diagnostics D;
+  ASSERT_TRUE(parseModule(JSON, M, D));
+  auto C = context(M);
+  C.ApprovedSDKIDs = {"approved-header-sdk"};
+  EXPECT_TRUE(verifyModule(M, C, D));
 }
 
 TEST(TranslateIR, CoreV2WireRejectsMathEvidenceBeforeEmission) {

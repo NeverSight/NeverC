@@ -4,6 +4,8 @@
 
 # Tradurre C++ in NeverC
 
+Core v2 supporta ora il `<type_traits>` integrato e a versione fissa per alias di tipo e costanti intere o enum in fase di compilazione. `std::remove_cv_t`, `std::is_same_v`, i trait supportati di costruzione e distruzione e `std::integral_constant::value` vengono abbassati ai tipi e letterali core esistenti. Il driver verifica e registra gli hash dei 101 header libc++/resource usati sui target macOS, Linux e Windows supportati. Oggetti, chiamate e identità di storage della libreria standard, header di piattaforma e altri header STL non sono ancora supportati. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#compile-time-type_traits).
+
 I metadati di tipo Core v2 supportano classi incomplete non union del sorgente posseduto, incluse dichiarazioni anticipate e template non istanziati. Classificazione e dimensioni degli array mantengono l’identità del sorgente senza creare storage. Tipi a runtime e callback richiedono ancora tipi completi supportati. Le query su riferimenti e puntatori usano queste identità con prove esatte del sorgente; i tipi restituiti dai metodi selezionati non istanziati mantengono il controllo di completezza. La verifica nativa richiede la CI della revisione. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#incomplete-record-type-metadata).
 
 Le query di operazione Core v2 esaminano array di lunghezza sconosciuta tramite tipi verificati. I risultati immediati di costruzione e distruzione, i legami dei riferimenti e le conversioni a puntatori conservano le prove del sorgente. Lo storage resta limitato; la verifica nativa richiede la CI della revisione. [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unknown-bound-array-operation-types).

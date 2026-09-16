@@ -50,7 +50,15 @@ function-reference carriers remain unsupported.
 Core v2 [unary type transforms](../docs/cpp-core-v2.md#unary-type-transforms)
 check the original input, exact substituted source and result, including erased
 aliases and consumed enum layout. Sixteen pinned kinds reuse existing type
-metadata and runtime carriers. Standard headers and full C++/STL remain unfinished.
+metadata and runtime carriers.
+
+Core v2 also admits an exact angle include of
+[`<type_traits>`](../docs/cpp-core-v2.md#compile-time-type_traits). The frontend
+uses the pinned embedded libc++/resource VFS and exposes only resolved aliases
+and integral/enum constant results. It records all 101 consumed header hashes;
+the driver authenticates that closure before emitting output. Standard-library
+runtime objects, calls and storage identities, other standard headers and full
+C++/STL remain unfinished.
 
 The adapter first inspects every owned declaration and expression, including
 unused functions and unreachable statements. It accepts supported 32-bit integer,

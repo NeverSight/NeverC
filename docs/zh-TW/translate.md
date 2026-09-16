@@ -4,6 +4,8 @@
 
 # 將 C++ 轉譯為 NeverC
 
+Core v2 現支援內建且固定版本的 `<type_traits>`，用於編譯期型別別名以及整數／列舉常數。`std::remove_cv_t`、`std::is_same_v`、已支援的建構／解構 traits 與 `std::integral_constant::value` 會降為現有核心型別及常值。驅動程式會驗證並記錄 101 個 libc++／resource 標頭雜湊，涵蓋支援的 macOS、Linux 與 Windows 目標。標準函式庫執行期物件、呼叫、儲存身分、平台標頭及其他 STL 標頭仍不受支援。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#compile-time-type_traits).
+
 Core v2 型別中繼資料現支援自有原始碼中的不完整非聯合類別，包括前置宣告與未實例化範本型別。分類和陣列維度查詢保留精確原始碼身分，不產生類別儲存；執行期型別與回呼仍要求完整的已支援型別。參考／指標操作查詢可使用這些身分，並保留精確操作原始碼證明；實際選取的惰性方法回傳簽章仍須通過完整型別檢查。原生驗證須由實作版本的 CI 完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#incomplete-record-type-metadata).
 
 Core v2 操作查詢現可檢查未知長度陣列的型別資訊。建構與解構的直接回傳、精確參考繫結及陣列至指標轉換均保留對應原始碼證據；執行期儲存仍受原有限制。原生驗證須由實作版本的 CI 完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unknown-bound-array-operation-types).

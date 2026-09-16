@@ -4,6 +4,8 @@
 
 # 将 C++ 转译为 NeverC
 
+Core v2 现支持内置且固定版本的 `<type_traits>`，用于编译期类型别名以及整数／枚举常量。`std::remove_cv_t`、`std::is_same_v`、已支持的构造／析构 traits 和 `std::integral_constant::value` 会降为现有核心类型与字面量。驱动会验证并记录 101 个 libc++／resource 头文件的哈希，覆盖受支持的 macOS、Linux 与 Windows 目标。标准库运行时对象、调用、存储身份、平台头文件及其他 STL 头文件仍不受支持。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#compile-time-type_traits).
+
 Core v2 类型元数据现支持自有源码中的不完整非联合类，包括前置声明与未实例化模板类型。分类和数组维度查询保留精确源码身份，不生成类存储；运行时类型与回调仍要求完整的已支持类型。引用／指针操作查询可使用这些身份，并保留精确操作源码证明；实际选中的惰性方法返回签名仍须通过完整类型检查。原生验证须由实现版本的 CI 完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#incomplete-record-type-metadata).
 
 Core v2 操作查询现可检查未知长度数组的类型信息。构造与析构的直接返回、精确引用绑定及数组到指针转换均保留对应源码证据；运行时存储仍受原有限制。原生验证须由实现版本的 CI 完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unknown-bound-array-operation-types).

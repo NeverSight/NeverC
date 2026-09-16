@@ -136,10 +136,10 @@ bool validateCppMathTarget(llvm::StringRef Target, Diagnostics &D) {
   return true;
 }
 
-bool loadBuiltinCppSdk(llvm::StringRef Target, CppSdkContext &Result,
-                       Diagnostics &D) {
+static bool loadBuiltinCppSdkImpl(llvm::StringRef Target, bool Math,
+                                  CppSdkContext &Result, Diagnostics &D) {
   Result = {};
-  if (!validateCppMathTarget(Target, D))
+  if (Math && !validateCppMathTarget(Target, D))
     return false;
   CppSdkContext Parsed;
   std::vector<SDKDependency> Metadata;
@@ -159,19 +159,29 @@ bool loadBuiltinCppSdk(llvm::StringRef Target, CppSdkContext &Result,
   return true;
 }
 
+bool loadBuiltinCppSdk(llvm::StringRef Target, CppSdkContext &Result,
+                       Diagnostics &D) {
+  return loadBuiltinCppSdkImpl(Target, true, Result, D);
+}
+
+bool loadBuiltinCppHeaderSdk(llvm::StringRef Target, CppSdkContext &Result,
+                             Diagnostics &D) {
+  return loadBuiltinCppSdkImpl(Target, false, Result, D);
+}
+
 llvm::json::Object cppSdkRequestJSON(const CppSdkContext &C) {
   return llvm::json::Object{{"distribution_id", jsonString(C.DistributionID)},
                             {"catalog_sha256", jsonString(C.CatalogSHA256)}};
 }
 
-bool verifyCppSdkDependencies(const CppSdkContext &C,
-                              llvm::ArrayRef<SDKDependency> Dependencies,
-                              Diagnostics &D) {
+static bool verifyCppSdkDependenciesImpl(
+    const CppSdkContext &C, llvm::ArrayRef<SDKDependency> Dependencies,
+    bool Math, Diagnostics &D) {
   if (C.DistributionID != CppMathSDKID || C.CatalogSHA256 != digest(Catalog))
     return error(D, "<sdk>",
                  "SDK context was not approved by this implementation",
                  "TR0103");
-  if (!validateCppMathTarget(C.TargetTriple, D))
+  if (Math && !validateCppMathTarget(C.TargetTriple, D))
     return false;
   // Reconstruct immutable authority instead of trusting caller-owned lists.
   CppSdkContext Approved;
@@ -227,6 +237,23 @@ bool verifyCppSdkMappings(const CppSdkContext &C,
       return false;
   }
   return true;
+}
+
+bool verifyCppSdkDependencies(const CppSdkContext &C,
+                              llvm::ArrayRef<SDKDependency> Dependencies,
+                              Diagnostics &D) {
+  return verifyCppSdkDependenciesImpl(C, Dependencies, true, D);
+}
+
+bool verifyCppHeaderSdkDependencies(
+    const CppSdkContext &C, llvm::ArrayRef<SDKDependency> Dependencies,
+    Diagnostics &D) {
+  for (const auto &Input : Dependencies)
+    if (Input.Root == "platform")
+      return error(D, Input.Path,
+                   "header-only core SDK cannot consume platform headers",
+                   "TR0103");
+  return verifyCppSdkDependenciesImpl(C, Dependencies, false, D);
 }
 
 } // namespace neverc::translate

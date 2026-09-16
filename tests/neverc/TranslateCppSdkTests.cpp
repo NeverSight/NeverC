@@ -2,6 +2,7 @@
 #include "NeverCTestFixture.h"
 #include "llvm/Support/JSON.h"
 #include <algorithm>
+#include <iterator>
 
 namespace {
 using namespace neverc::translate;
@@ -14,6 +15,10 @@ protected:
   bool load(const std::string &Triple = Target) {
     Errors.clear();
     return loadBuiltinCppSdk(Triple, Context, Errors);
+  }
+  bool loadHeaders(const std::string &Triple = Target) {
+    Errors.clear();
+    return loadBuiltinCppHeaderSdk(Triple, Context, Errors);
   }
   MappingEvidence mapping(const std::string &ID = "cpp.math.fabs.f64.v1") {
     MappingEvidence M;
@@ -56,6 +61,38 @@ TEST_F(TranslateCppSdkTest, InvalidTargetClearsPreviouslyApprovedContext) {
   EXPECT_TRUE(Context.CatalogSHA256.empty());
   EXPECT_TRUE(Context.TargetTriple.empty());
   EXPECT_TRUE(Context.ApprovedFiles.empty());
+}
+
+TEST_F(TranslateCppSdkTest,
+       BuiltinHeaderSdkLoadsEveryCoreTargetWithoutPlatformHeaders) {
+  for (const std::string &Triple : {
+           "x86_64-apple-macosx15.0.0", "arm64-apple-macosx15.0.0",
+           "x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu",
+           "i686-unknown-linux-gnu", "x86_64-pc-windows-msvc",
+           "aarch64-pc-windows-msvc", "i686-pc-windows-msvc"}) {
+    SCOPED_TRACE(Triple);
+    ASSERT_TRUE(loadHeaders(Triple))
+        << (Errors.empty() ? "" : Errors.front().Reason);
+    EXPECT_EQ(Context.TargetTriple, Triple);
+    std::vector<SDKDependency> Headers;
+    std::copy_if(Context.ApprovedFiles.begin(), Context.ApprovedFiles.end(),
+                 std::back_inserter(Headers),
+                 [](const SDKDependency &D) { return D.Root != "platform"; });
+    ASSERT_FALSE(Headers.empty());
+    EXPECT_TRUE(verifyCppHeaderSdkDependencies(Context, Headers, Errors));
+    EXPECT_TRUE(Errors.empty());
+  }
+}
+
+TEST_F(TranslateCppSdkTest, HeaderSdkRejectsPlatformDependencies) {
+  ASSERT_TRUE(loadHeaders());
+  const auto Platform =
+      std::find_if(Context.ApprovedFiles.begin(), Context.ApprovedFiles.end(),
+                   [](const SDKDependency &D) { return D.Root == "platform"; });
+  ASSERT_NE(Platform, Context.ApprovedFiles.end());
+  EXPECT_FALSE(verifyCppHeaderSdkDependencies(Context, {*Platform}, Errors));
+  ASSERT_FALSE(Errors.empty());
+  EXPECT_EQ(Errors.front().Code, "TR0103");
 }
 
 TEST_F(TranslateCppSdkTest, RequestContainsOnlyImmutableDistributionIdentity) {

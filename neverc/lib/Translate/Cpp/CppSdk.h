@@ -24,6 +24,8 @@ bool validateCppMathTarget(llvm::StringRef Target, Diagnostics &Errors);
 /// caller-supplied descriptor can select different headers.
 bool loadBuiltinCppSdk(llvm::StringRef Target, CppSdkContext &Result,
                        Diagnostics &Errors);
+bool loadBuiltinCppHeaderSdk(llvm::StringRef Target, CppSdkContext &Result,
+                             Diagnostics &Errors);
 llvm::json::Object cppSdkRequestJSON(const CppSdkContext &Context);
 
 /// Checks admitted root/path/hash identities against the embedded bytes.
@@ -31,6 +33,10 @@ llvm::json::Object cppSdkRequestJSON(const CppSdkContext &Context);
 bool verifyCppSdkDependencies(const CppSdkContext &Context,
                               llvm::ArrayRef<SDKDependency> Dependencies,
                               Diagnostics &Errors);
+bool verifyCppHeaderSdkDependencies(
+    const CppSdkContext &Context,
+    llvm::ArrayRef<SDKDependency> Dependencies,
+    Diagnostics &Errors);
 bool verifyCppSdkMappings(const CppSdkContext &Context,
                           llvm::ArrayRef<MappingEvidence> Mappings,
                           Diagnostics &Errors);

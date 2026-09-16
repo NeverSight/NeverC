@@ -472,9 +472,8 @@ public:
     return string(O, "name", V.Name) && type(O, "type", V.ValueType) &&
            location(O, V.Loc);
   }
-  bool mathMetadata(const llvm::json::Object &O, Module &M) {
-    if (!string(O, "fp_contract", M.FPContractID) ||
-        !string(O, "sdk_distribution_id", M.SDKDistributionID) ||
+  bool sdkMetadata(const llvm::json::Object &O, Module &M) {
+    if (!string(O, "sdk_distribution_id", M.SDKDistributionID) ||
         !string(O, "sdk_catalog_sha256", M.SDKCatalogSHA256))
       return false;
     return array(O, "sdk_dependencies", M.SDKDependencies,
@@ -482,8 +481,12 @@ public:
                    return string(V, "root", Dep.Root) &&
                           string(V, "path", Dep.Path) &&
                           string(V, "sha256", Dep.SHA256);
-                 }) &&
-           array(O, "mappings", M.Mappings,
+                 });
+  }
+  bool mathMetadata(const llvm::json::Object &O, Module &M) {
+    if (!string(O, "fp_contract", M.FPContractID) || !sdkMetadata(O, M))
+      return false;
+    return array(O, "mappings", M.Mappings,
                  [&](const auto &V, MappingEvidence &Mapping) {
                    if (!string(V, "id", Mapping.ID) ||
                        !string(V, "declaration_id", Mapping.DeclarationID) ||
@@ -563,14 +566,17 @@ public:
     const auto *Diags = O.getArray("diagnostics");
     if (!Mappings || !Diags)
       return error("Missing mapping or diagnostic array.");
+    const bool HasSDK = O.get("sdk_distribution_id") ||
+                        O.get("sdk_catalog_sha256") ||
+                        O.get("sdk_dependencies");
     if (!Math && (!Mappings->empty() || O.get("fp_contract") ||
-                  O.get("sdk_distribution_id") || O.get("sdk_catalog_sha256") ||
-                  O.get("sdk_dependencies")))
-      return error(
-          "The selected profile admits no math mappings or SDK evidence.");
+                  (HasSDK && !CoreV2)))
+      return error("The selected profile admits no math mappings or SDK evidence.");
     if (!Diags->empty())
       return error("A successful module cannot contain error diagnostics.");
     if (Math && !mathMetadata(O, M))
+      return false;
+    if (!Math && CoreV2 && HasSDK && !sdkMetadata(O, M))
       return false;
     if (!array(O, "dependencies", M.Dependencies,
                [&](const auto &V, Dependency &Dep) {
@@ -1642,11 +1648,6 @@ class Verifier {
   }
 
   bool mathMetadata(const SourceLocation &L, const llvm::Triple &T) {
-    if (!Math)
-      return (M.FPContractID.empty() && M.SDKDistributionID.empty() &&
-              M.SDKCatalogSHA256.empty() && M.SDKDependencies.empty() &&
-              M.Mappings.empty()) ||
-             error(L, "Math metadata is forbidden outside cpp-math-v1.");
     auto Hash = [](llvm::StringRef S) {
       return S.size() == 64 && std::all_of(S.begin(), S.end(), [](char C) {
                return (C >= '0' && C <= '9') || (C >= 'a' && C <= 'f');
@@ -1656,6 +1657,27 @@ class Verifier {
                        const std::string &ID) {
       return std::find(IDs.begin(), IDs.end(), ID) != IDs.end();
     };
+    if (!Math) {
+      if (!M.FPContractID.empty() || !M.Mappings.empty())
+        return error(L, "Math metadata is forbidden outside cpp-math-v1.");
+      const bool HasSDK = !M.SDKDistributionID.empty() ||
+                          !M.SDKCatalogSHA256.empty() ||
+                          !M.SDKDependencies.empty();
+      if (!HasSDK)
+        return true;
+      if (M.Profile != "cpp-core-v2" || M.SDKDistributionID.empty() ||
+          M.SDKCatalogSHA256.empty() ||
+          !Approved(Context.ApprovedSDKIDs, M.SDKDistributionID) ||
+          !Hash(M.SDKCatalogSHA256))
+        return error(L, "Core v2 header use requires the driver-approved SDK.");
+      std::set<std::pair<std::string, std::string>> Seen;
+      for (const auto &Dep : M.SDKDependencies)
+        if ((Dep.Root != "libcxx" && Dep.Root != "resource") ||
+            !relativePath(Dep.Path) || !Hash(Dep.SHA256) ||
+            !Seen.insert({Dep.Root, Dep.Path}).second)
+          return error(L, "Invalid or duplicate core v2 SDK dependency.");
+      return true;
+    }
     if (M.FPContractID != CppMathFPContractID ||
         M.FPContractID != Context.FPContractID || M.SDKDistributionID.empty() ||
         !Approved(Context.ApprovedSDKIDs, M.SDKDistributionID) ||

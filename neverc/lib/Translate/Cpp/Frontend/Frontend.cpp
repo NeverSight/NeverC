@@ -8013,6 +8013,20 @@ public:
                         bool DeferredDeclaration = false) {
     const auto L = Source.Location;
     A.chargeExpansion(1, L);
+    if (approvedStandardSDKDeclaration(A.S, A.Sources, Source.Template)) {
+      if (DeferredDeclaration || !Source.Written || !Source.Canonical ||
+          !Source.Sugared || Source.Canonical->size() != Source.Sugared->size() ||
+          Written.size() != Source.Written->NumTemplateArgs) {
+        A.reject(L, "standard template source",
+                 "The approved standard template use is missing its exact "
+                 "concrete argument source.");
+        return true;
+      }
+      for (const auto &Argument : Written)
+        if (!TraverseTemplateArgumentLoc(Argument))
+          return false;
+      return true;
+    }
     const bool PartialDeclaration = Source.Kind == TemplateSourceKind::PartialDeclaration;
     const bool OriginalClassFull = Source.Kind == TemplateSourceKind::ClassFullDeclaration &&
         !Source.Origin && classFullDeclarationIdentity(Source) &&
@@ -9679,6 +9693,14 @@ public:
   bool VisitDeclRefExpr(DeclRefExpr *Reference) {
     if (!A.S.coreV2() || !A.S.owns(A.Sources, Reference->getLocation()))
       return true;
+    if (auto *Variable = dyn_cast<VarDecl>(Reference->getDecl());
+        approvedSDKIntegerConstant(A.S, A.Sources, Variable, A.Context)) {
+      if (Reference->isNonOdrUse() == NOUR_None)
+        A.reject(Reference->getLocation(), "standard trait storage",
+                 "An approved standard trait may be consumed as a constant "
+                 "value, but its storage identity is unavailable.");
+      return true;
+    }
     if (auto *Variable = dyn_cast<VarTemplateSpecializationDecl>(Reference->getDecl())) {
       if (!checkVariableTemplateUse(Variable, Reference->getLocation(), Reference->template_arguments()))
         return false;
@@ -10239,6 +10261,13 @@ public:
     return !A.S.Diagnostics.empty() || traverseOperationException(Expression);
   }
   bool TraverseDecl(Decl *D) {
+    // The embedded standard headers are immutable semantic inputs. Their
+    // declarations are not source definitions to reproduce in the output;
+    // user-owned references below retain and validate the concrete results
+    // selected by Clang.
+    if (A.S.coreV2() && D && !isa<TranslationUnitDecl>(D) && !owned(D) &&
+        A.S.sdkFile(A.Sources, D->getLocation()))
+      return true;
     registerOperationValueRoots(D);
     // A referenced function's signature/body is checked in its own context.
     // Actual default uses and selected exception expressions supply graph edges;
@@ -12760,6 +12789,14 @@ public:
                    "TR0203");
         return true;
       }
+      if (A.S.coreV2() && F &&
+          approvedStandardSDKDeclaration(A.S, A.Sources, F)) {
+        A.reject(S->getBeginLoc(), "standard library runtime call",
+                 "The approved <type_traits> surface currently provides "
+                 "compile-time aliases and constants only.",
+                 "TR0203");
+        return true;
+      }
       if (!A.nativeHeapImport(F, L).empty()) {
         if (!directFunctionReference(C) || C->getNumArgs() != F->getNumParams())
           A.reject(L, "native heap call", "A checked direct call with exact arguments is required.");
@@ -12796,8 +12833,17 @@ public:
                    "A used inline variable requires a definition in this "
                    "translation unit.",
                    "TR0203");
-    if (const auto *C = dyn_cast<CXXConstructExpr>(S))
-      checkConstruction(C, L);
+    if (const auto *C = dyn_cast<CXXConstructExpr>(S)) {
+      if (A.S.coreV2() && C->getConstructor() &&
+          approvedStandardSDKDeclaration(A.S, A.Sources,
+                                         C->getConstructor()))
+        A.reject(L, "standard library runtime object",
+                 "The approved <type_traits> surface currently provides "
+                 "compile-time aliases and constants only.",
+                 "TR0203");
+      else
+        checkConstruction(C, L);
+    }
     if (A.S.coreV2())
       if (const auto *I = dyn_cast<InitListExpr>(S))
         if (!checkSemanticInitializers(I, L))
@@ -13196,8 +13242,9 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
                  "Use an approved math target.");
       return;
     }
-    S.addSDKMetadata();
   }
+  if (S.sdk())
+    S.addSDKMetadata();
   if (!S.Diagnostics.empty())
     return;
   json::Object TargetData{
@@ -13333,12 +13380,39 @@ class PreprocessorPolicy : public PPCallbacks {
 public:
   PreprocessorPolicy(State &S, Preprocessor &PP)
       : S(S), SM(PP.getSourceManager()), PP(PP) {}
-  void InclusionDirective(SourceLocation L, const Token &, llvm::StringRef,
-                          bool, CharSourceRange, OptionalFileEntryRef File,
+  void InclusionDirective(SourceLocation L, const Token &, llvm::StringRef Name,
+                          bool Angled, CharSourceRange, OptionalFileEntryRef File,
                           llvm::StringRef, llvm::StringRef, const Module *,
                           bool, SrcMgr::CharacteristicKind) override {
-    if (!S.project()) {
+    if (!S.project() && !S.sdk()) {
       reject(L, "include");
+      return;
+    }
+    if (S.coreV2()) {
+      const auto Included = File ? S.sdkFile(*File) : std::nullopt;
+      if (!Included || Included->Root == "platform") {
+        if (S.owns(SM, L))
+          reject(L, "include",
+                 "Only the approved embedded <type_traits> header is available "
+                 "in cpp-core-v2.");
+        else
+          S.diagnose("TR0203", "SDK include",
+                     !Included ? "A required SDK header is missing."
+                               : "Platform headers are unavailable to "
+                                 "cpp-core-v2.",
+                     "Restore the exact approved SDK header distribution.");
+        return;
+      }
+      if (S.owns(SM, L) && (!Angled || Name != "type_traits")) {
+        reject(L, "include",
+               "Only an exact #include <type_traits> entry is admitted in "
+               "cpp-core-v2.");
+        return;
+      }
+      if (!S.owns(SM, L) && !S.sdkFile(SM, L))
+        S.diagnose("TR0203", "SDK include",
+                   "SDK include is outside the compiled approved header catalog.",
+                   "Restore the exact approved SDK header distribution.");
       return;
     }
     if (!File) {
@@ -13374,11 +13448,12 @@ public:
   void LexedFileChanged(FileID FID, LexedFileChangeReason Reason,
                         SrcMgr::CharacteristicKind, FileID,
                         SourceLocation) override {
-    if (!S.project() || Reason != LexedFileChangeReason::EnterFile)
+    if ((!S.project() && !S.sdk()) ||
+        Reason != LexedFileChangeReason::EnterFile)
       return;
     auto L = SM.getLocForStartOfFile(FID);
     auto Path = S.sourcePath(SM, L);
-    if (Path.empty() && S.math() && S.sdkFile(SM, L)) {
+    if (Path.empty() && S.sdk() && S.sdkFile(SM, L)) {
       S.consumeSDKFile(SM, FID);
       return;
     }
@@ -13449,7 +13524,7 @@ public:
       if (AfterHash && Text != "define" && Text != "undef" && Text != "if" &&
           Text != "ifdef" && Text != "ifndef" && Text != "elif" &&
           Text != "else" && Text != "endif" && Text != "error" &&
-          !(S.project() && Text == "include"))
+          !((S.project() || S.sdk()) && Text == "include"))
         reject(T.getLocation(), Text);
       AfterHash = false;
     }
@@ -14185,7 +14260,8 @@ static bool request(State &S, llvm::StringRef Path) {
   S.Module["profile"] = S.Profile;
   // Required keys are checked below. An exact count also rejects unknown keys
   // and project/SDK context accidentally attached to a different profile.
-  const size_t ExpectedFields = S.math() ? 10 : (S.project() ? 9 : 6);
+  const bool HeaderSDK = S.coreV2() && O->getObject("sdk");
+  const size_t ExpectedFields = S.math() ? 10 : (S.project() ? 9 : HeaderSDK ? 7 : 6);
   if (O->size() != ExpectedFields)
     return false;
   auto Root = O->getString("root"), Source = O->getString("source"),
@@ -14249,6 +14325,8 @@ static bool request(State &S, llvm::StringRef Path) {
     }
     if (!SDK || !S.configureSDK(*SDK))
       return false;
+  } else if (HeaderSDK && !S.configureSDK(*O->getObject("sdk"))) {
+    return false;
   }
   if ((T.getArch() != llvm::Triple::aarch64 &&
        T.getArch() != llvm::Triple::x86_64 &&
@@ -14310,7 +14388,7 @@ extern "C" int neverc_cpp_frontend_main(int Argc, const char **Argv) {
                                              {"version", "20.1.8"},
                                              {"build", NEVERC_CPP_BUILD_ID}}}};
   bool Valid = request(S, Request);
-  if (Valid && S.project() && !isolateProjectEnvironment()) {
+  if (Valid && S.sdk() && !isolateProjectEnvironment()) {
     S.diagnose(
         "TR0101", "frontend environment",
         "Cannot isolate implicit compiler configuration from the environment.",
@@ -14339,14 +14417,16 @@ extern "C" int neverc_cpp_frontend_main(int Argc, const char **Argv) {
                                "-fno-delayed-template-parsing",
                                "-fno-fast-math", "-ffp-contract=off"});
     }
-    if (S.math()) {
+    if (S.sdk()) {
       Args.insert(Args.end(),
                   {"-fno-fast-math", "-ffp-contract=off", "-resource-dir",
                    S.SDKRoots.at("resource"), "-isystem",
                    S.SDKRoots.at("libcxx"), "-isystem",
-                   S.SDKRoots.at("resource") + "/include", "-isystem",
-                   S.SDKRoots.at("platform") + "/usr/include", "-isysroot",
-                   S.SDKRoots.at("platform")});
+                   S.SDKRoots.at("resource") + "/include"});
+      if (S.math())
+        Args.insert(Args.end(),
+                    {"-isystem", S.SDKRoots.at("platform") + "/usr/include",
+                     "-isysroot", S.SDKRoots.at("platform")});
     }
     if (auto FileSystem = S.createFileSystem()) {
       tooling::FixedCompilationDatabase Database(S.WorkingDirectory, Args);

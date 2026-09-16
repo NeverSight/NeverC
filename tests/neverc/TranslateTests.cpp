@@ -1,4 +1,5 @@
 #include "../../neverc/lib/Translate/ArtifactWriter.h"
+#include "../../neverc/lib/Translate/Cpp/CppSdk.h"
 #include "../../neverc/lib/Translate/FrontendProcess.h"
 #include "NeverCTestFixture.h"
 #include "neverc/Translate/TranslateDriver.h"
@@ -22883,6 +22884,91 @@ TEST_F(TranslateTest, CoreV2CheckAcceptsDeclarationsWithoutOutput) {
   EXPECT_TRUE(Object->getString("profile") == "cpp-core-v2");
   EXPECT_TRUE(Object->getString("status") == "success");
   EXPECT_FALSE(fs::exists(tmpFile("assertions.nc")));
+}
+
+TEST_F(TranslateTest, CoreV2TypeTraitsAliasesAndConstantsRunAtBothOptimizations) {
+  const auto Source = tmpFile("type-traits.cpp");
+  const auto Output = tmpFile("type-traits.nc");
+  writeFile(Source, R"cpp(
+#include <type_traits>
+using Raw = std::remove_cv_t<const int>;
+using Three = std::integral_constant<int, 3>;
+static_assert(std::is_same_v<Raw, int>);
+static_assert(std::is_constructible_v<int, int>);
+static_assert(std::is_nothrow_destructible_v<int>);
+int main() {
+  return Three::value + std::is_same_v<Raw, int> +
+                 std::is_constructible_v<int, int> +
+                 std::is_nothrow_destructible_v<int> ==
+             6
+         ? 0
+         : 1;
+}
+)cpp");
+  auto Result = translate(
+      Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest = llvm::json::parse(
+      readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *SDK = Manifest->getAsObject()->getObject("sdk");
+  ASSERT_NE(SDK, nullptr);
+  EXPECT_EQ(SDK->getString("distribution_id"),
+            neverc::translate::CppMathSDKID);
+  EXPECT_EQ(SDK->getString("delivery"), "builtin");
+  const auto *Dependencies = SDK->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  ASSERT_FALSE(Dependencies->empty());
+  bool FoundTypeTraits = false;
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+    FoundTypeTraits |= Dependency->getString("root") == "libcxx" &&
+                       Dependency->getString("path") == "type_traits";
+  }
+  EXPECT_TRUE(FoundTypeTraits);
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("type-traits" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2TypeTraitsKeepsTheHeaderBoundaryCompileTimeOnly) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Rejection Cases[] = {
+      {"quoted", "#include \"type_traits\"\nint main(){return 0;}",
+       "TR0201"},
+      {"other-header", "#include <vector>\nint main(){return 0;}",
+       "TR0201"},
+      {"runtime-object",
+       "#include <type_traits>\nint main(){return std::true_type{} ? 0 : 1;}",
+       "TR0203"},
+      {"storage-identity",
+       "#include <type_traits>\nint main(){auto p=&std::is_same_v<int,int>;"
+       "return *p?0:1;}",
+       "TR0201"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("type-traits-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("type-traits-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(translate(Source,
+                         {"--profile", "cpp-core-v2", "-o", Output.string()}),
+               Case.Code);
+    expectNoArtifacts(Output);
+  }
 }
 
 TEST_F(TranslateTest, CoreV2RejectsUnsupportedErasedDeclarations) {

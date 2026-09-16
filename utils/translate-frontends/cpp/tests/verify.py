@@ -28,8 +28,13 @@ def main():
     args.output_dir.mkdir(parents=True, exist_ok=False)
     repository = Path(__file__).resolve().parents[4]
     count = 0
+    sdk_identity = {
+        "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5",
+        "catalog_sha256": "e9e2be353baded7be350900ae52d5c1a5f0fc7724e29c2dbe18c9c5fdef5dbe3",
+    }
 
-    def check(name, source, code=None, options=(), root=None, profile="cpp-core-v1", target=None):
+    def check(name, source, code=None, options=(), root=None, profile="cpp-core-v1",
+              target=None, sdk=False):
         nonlocal count
         request_target = args.target if target is None else target
         directory = root or (args.output_dir / name)
@@ -38,9 +43,12 @@ def main():
         file.write_text(source)
         request = directory / "request.json"
         response = directory / "response.json"
-        request.write_text(json.dumps({"protocol": 1, "profile": profile,
+        request_data = {"protocol": 1, "profile": profile,
             "root": str(directory.resolve()), "source": str(file.resolve()),
-            "target": request_target, "arguments": ["-std=c++17", *options]}))
+            "target": request_target, "arguments": ["-std=c++17", *options]}
+        if sdk:
+            request_data["sdk"] = sdk_identity
+        request.write_text(json.dumps(request_data))
         result = subprocess.run([str(args.neverc), "__neverc_cpp_frontend", "--request", str(request),
             "--output", str(response)], text=True, capture_output=True, timeout=120)
         assert response.exists(), (name, result.returncode, result.stderr)
@@ -52,6 +60,17 @@ def main():
             assert result.returncode == 0 and not codes, (name, result.returncode, data)
             assert data["profile"] == profile
             assert data["target"]["triple"] == request_target
+            if sdk:
+                assert data["sdk_distribution_id"] == sdk_identity["distribution_id"]
+                assert data["sdk_catalog_sha256"] == sdk_identity["catalog_sha256"]
+                assert data["sdk_dependencies"], data
+                assert {dependency["root"] for dependency in data["sdk_dependencies"]} <= {
+                    "libcxx", "resource"
+                }
+            else:
+                assert "sdk_distribution_id" not in data
+                assert "sdk_catalog_sha256" not in data
+                assert "sdk_dependencies" not in data
             if profile == "cpp-core-v2":
                 layout = data["target"]["carrier_layout"]
                 widths = {"i8": 8, "u8": 8, "i16": 16, "u16": 16,
@@ -97,6 +116,47 @@ def main():
     pointer_function = next(f for f in pointer_metadata["functions"]
                             if f["name"] == "exported_pointer_function_with_persistent_metadata")
     assert pointer_function["result"] == "ptr:" * 6 + "int", pointer_function
+
+    # The first standard-library surface is intentionally compile-time-only:
+    # retain concrete Clang results for type aliases and integral/enum traits,
+    # but do not copy libc++ objects or runtime calls into the portable module.
+    type_traits_source = """\
+#include <type_traits>
+using R = std::remove_cv_t<const int>;
+using Three = std::integral_constant<int, 3>;
+static_assert(std::is_same_v<R, int>);
+extern "C" int traits() {
+  return Three::value + std::is_constructible_v<int, int>
+      + std::is_nothrow_destructible_v<int>;
+}
+"""
+    type_traits = check("v2-type-traits", type_traits_source,
+                        profile="cpp-core-v2", sdk=True)
+    assert any(dependency["path"] == "type_traits"
+               for dependency in type_traits["sdk_dependencies"]), type_traits
+    sdk_targets = (
+        "x86_64-apple-macosx15.0.0",
+        "arm64-apple-macosx15.0.0",
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+        "i686-unknown-linux-gnu",
+        "x86_64-pc-windows-msvc",
+        "aarch64-pc-windows-msvc",
+        "i686-pc-windows-msvc",
+    )
+    for target in sdk_targets:
+        check("v2-type-traits-" + target, type_traits_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-type-traits-quoted", '#include "type_traits"\nint f(){return 0;}',
+          "TR0201", profile="cpp-core-v2", sdk=True)
+    check("v2-type-traits-other-header", "#include <vector>\nint f(){return 0;}",
+          "TR0201", profile="cpp-core-v2", sdk=True)
+    check("v2-type-traits-runtime-object",
+          "#include <type_traits>\nusing T=std::integral_constant<int,3>; int f(){return T{};}",
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-type-traits-storage-identity",
+          "#include <type_traits>\nusing T=std::integral_constant<int,3>; const int*f(){return &T::value;}",
+          "TR0201", profile="cpp-core-v2", sdk=True)
 
     # Windows driver defaults must not change core-v2 source visibility or
     # standard diagnostics. Exercise both MSVC architectures on every CI host.

@@ -119,8 +119,20 @@
         "required": [
           "sdk"
         ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "profile": {
+            "enum": [
+              "cpp-core-v1",
+              "cpp-project-v1"
+            ]
+          }
+        }
       },
-      "else": {
+      "then": {
         "not": {
           "required": [
             "sdk"

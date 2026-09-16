@@ -9,6 +9,12 @@ header, and 81 Darwin platform headers. Their contents, including copyright and
 license notices, are preserved byte for byte. This is a fixed input set for the
 supported translation profiles, not a complete Apple SDK.
 
+Core v2 uses only the catalog's `libcxx` and `resource` roots for its
+compile-time `<type_traits>` surface. Its current closure is 101 files; every
+consumed path and hash is verified against this catalog. Core v2 never admits
+the `platform` root. Math v1 continues to use its separately checked libc++,
+resource and Darwin platform closure for `<cmath>`.
+
 [catalog.json](catalog.json) pins the distribution's contents.
 [provenance.json](provenance.json) lists each header's catalog root, relative path,
 SHA-256, license basis, and public upstream source reference. Upstream references

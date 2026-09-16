@@ -919,11 +919,6 @@
             },
             {
               "required": [
-                "sdk"
-              ]
-            },
-            {
-              "required": [
                 "runtime_capabilities"
               ]
             },
@@ -932,6 +927,57 @@
                 "builtin_std_enabled"
               ]
             }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "profile": {
+            "const": "cpp-core-v2"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "sdk"
+        ],
+        "properties": {
+          "sdk": {
+            "properties": {
+              "dependencies": {
+                "items": {
+                  "properties": {
+                    "root": {
+                      "enum": [
+                        "libcxx",
+                        "resource"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "profile": {
+            "enum": [
+              "cpp-core-v1",
+              "cpp-project-v1"
+            ]
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "required": [
+            "sdk"
           ]
         }
       }

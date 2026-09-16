@@ -125,7 +125,7 @@ llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> State::createFileSystem() {
       llvm::vfs::createPhysicalFileSystem().release());
   if (Physical->setCurrentWorkingDirectory(WorkingDirectory))
     return fail();
-  if (!math())
+  if (!sdk())
     return Physical;
   auto Memory = llvm::makeIntrusiveRefCnt<llvm::vfs::InMemoryFileSystem>();
   if (Memory->setCurrentWorkingDirectory(WorkingDirectory))
@@ -148,7 +148,7 @@ llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> State::createFileSystem() {
 }
 
 std::optional<SDKFile> State::sdkFile(llvm::StringRef Path) const {
-  if (!math() || Path.empty() || Path.starts_with("<"))
+  if (!sdk() || Path.empty() || Path.starts_with("<"))
     return std::nullopt;
   auto Name = virtualPath(Path);
   for (const auto &Root : SDKRoots) {
@@ -179,6 +179,32 @@ std::optional<SDKFile> State::sdkFile(const SourceManager &SM,
   return File ? sdkFile(*File) : std::nullopt;
 }
 
+bool approvedStandardSDKDeclaration(const State &S, const SourceManager &SM,
+                                    const Decl *D) {
+  if (!D || !S.sdkFile(SM, D->getLocation()))
+    return false;
+  for (const DeclContext *Context = D->getDeclContext(); Context;
+       Context = Context->getParent())
+    if (const auto *Namespace = dyn_cast<NamespaceDecl>(Context);
+        Namespace && Namespace->isStdNamespace())
+      return true;
+  return false;
+}
+
+std::optional<llvm::APSInt>
+approvedSDKIntegerConstant(const State &S, const SourceManager &SM,
+                           const VarDecl *D, const ASTContext &Context) {
+  if (!approvedStandardSDKDeclaration(S, SM, D) ||
+      !D->isUsableInConstantExpressions(Context) || D->getType().isNull() ||
+      D->getType().isVolatileQualified() ||
+      !D->getType()->isIntegralOrEnumerationType())
+    return std::nullopt;
+  const auto *Value = D->evaluateValue();
+  return Value && Value->isInt()
+             ? std::optional<llvm::APSInt>(Value->getInt())
+             : std::nullopt;
+}
+
 bool State::consumeSDKFile(const SourceManager &SM, FileID ID) {
   auto Entry = sdkFile(SM, SM.getLocForStartOfFile(ID));
   bool Invalid = false;
@@ -195,7 +221,8 @@ bool State::consumeSDKFile(const SourceManager &SM, FileID ID) {
 }
 
 void State::addSDKMetadata() {
-  Module["fp_contract"] = "cpp.math.binary64.masked.v1";
+  if (math())
+    Module["fp_contract"] = "cpp.math.binary64.masked.v1";
   Module["sdk_distribution_id"] = SDKDistribution;
   Module["sdk_catalog_sha256"] = SDKCatalogHash;
   json::Array Deps;

@@ -616,13 +616,14 @@ std::string manifest(const Invocation &I, const Module &M,
     Manifest["translation_units"] = std::move(Units);
     Manifest["required_headers"] = json::Array{jsonString(Writer.headerName())};
   }
-  if (SDK && Capabilities) {
-    Manifest["fp_contract"] = jsonString(M.FPContractID);
+  if (SDK)
     Manifest["sdk"] =
         json::Object{{"distribution_id", jsonString(SDK->DistributionID)},
                      {"catalog_sha256", jsonString(SDK->CatalogSHA256)},
                      {"delivery", "builtin"},
                      {"dependencies", sdkDependenciesJSON(M.SDKDependencies)}};
+  if (Capabilities) {
+    Manifest["fp_contract"] = jsonString(M.FPContractID);
     json::Array Modules, RequiredModules;
     for (const auto &Module : Capabilities->Modules) {
       RequiredModules.push_back(jsonString(Module.Name));
@@ -745,15 +746,20 @@ int runTranslate(int Argc, const char **Argv, const char *ExecutablePath) {
     Jobs.push_back(std::move(Unit));
   }
   const bool Math = I.Profile == "cpp-math-v1";
+  const bool HeaderSDK = I.Profile == "cpp-core-v2";
+  const bool UsesSDK = Math || HeaderSDK;
   CppSdkContext SDK;
   MathRuntimeCapabilities Capabilities;
   std::string ResourceDirectory;
-  if (Math) {
+  if (UsesSDK) {
     Stage = "sdk";
-    if (!loadBuiltinCppSdk(Context.TargetTriple, SDK, D))
+    if (!(Math ? loadBuiltinCppSdk(Context.TargetTriple, SDK, D)
+               : loadBuiltinCppHeaderSdk(Context.TargetTriple, SDK, D)))
       return failed();
-    Context.FPContractID = CppMathFPContractID;
     Context.ApprovedSDKIDs = {SDK.DistributionID};
+  }
+  if (Math) {
+    Context.FPContractID = CppMathFPContractID;
     Stage = "runtime";
     auto R =
         runProcess({*Compiler, "--no-default-config", "-print-resource-dir"},
@@ -827,7 +833,7 @@ int runTranslate(int Argc, const char **Argv, const char *ExecutablePath) {
       Request["configuration_id"] = jsonString(Job.ConfigurationID);
       Request["working_directory"] = jsonString(Job.WorkingDirectoryAbsolute);
     }
-    if (Math)
+    if (UsesSDK)
       Request["sdk"] = cppSdkRequestJSON(SDK);
     const std::string Prefix =
         I.Artifacts.Project ? "unit-" + std::to_string(Index) + "-" : "";
@@ -919,6 +925,13 @@ int runTranslate(int Argc, const char **Argv, const char *ExecutablePath) {
     } else {
       if (!parseModule(*Response, M, D))
         return failed();
+      if (HeaderSDK) {
+        Stage = "sdk";
+        if (M.SDKDistributionID != SDK.DistributionID ||
+            M.SDKCatalogSHA256 != SDK.CatalogSHA256 ||
+            !verifyCppHeaderSdkDependencies(SDK, M.SDKDependencies, D))
+          return failed();
+      }
       Stage = "ir";
       if (!verifyModule(M, Context, D))
         return failed();
@@ -1076,11 +1089,14 @@ int runTranslate(int Argc, const char **Argv, const char *ExecutablePath) {
     return failed();
   if (I.Artifacts.Project && !verifyProjectContextInputs(Project, D))
     return failed();
-  if (Math) {
+  if (UsesSDK) {
     Stage = "sdk";
-    if (!verifyCppSdkDependencies(SDK, M.SDKDependencies, D) ||
-        !verifyCppSdkMappings(SDK, M.Mappings, D))
+    if (!(Math ? verifyCppSdkDependencies(SDK, M.SDKDependencies, D)
+               : verifyCppHeaderSdkDependencies(SDK, M.SDKDependencies, D)) ||
+        (Math && !verifyCppSdkMappings(SDK, M.Mappings, D)))
       return failed();
+  }
+  if (Math) {
     Stage = "runtime";
     if (!inspectMathRuntime(Context.TargetTriple, ResourceDirectory,
                             Context.ApprovedMappingIDs, I.BuiltinStdEnabled,
@@ -1089,7 +1105,7 @@ int runTranslate(int Argc, const char **Argv, const char *ExecutablePath) {
   }
   auto Manifest = manifest(
       I, M, *Writer, Emitted, MapText, I.Artifacts.Project ? &Project : nullptr,
-      Header, Math ? &SDK : nullptr, Math ? &Capabilities : nullptr);
+      Header, UsesSDK ? &SDK : nullptr, Math ? &Capabilities : nullptr);
   Stage = "publication";
   std::vector<Artifact> Artifacts{{Writer->sourceName().str(), Emitted.Text}};
   if (!Header.empty())

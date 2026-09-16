@@ -195,6 +195,7 @@ struct State {
   bool coreV2() const { return Profile == "cpp-core-v2"; }
   bool project() const { return Profile == "cpp-project-v1" || math(); }
   bool math() const { return Profile == "cpp-math-v1"; }
+  bool sdk() const { return math() || (coreV2() && !SDKDistribution.empty()); }
   bool configureSDK(const json::Object &SDK);
   llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> createFileSystem();
   std::optional<SDKFile> sdkFile(llvm::StringRef Path) const;
@@ -208,6 +209,14 @@ struct State {
                          clang::SourceLocation L) const;
   bool owns(const clang::SourceManager &SM, clang::SourceLocation L) const;
 };
+
+bool approvedStandardSDKDeclaration(const State &S,
+                                    const clang::SourceManager &SM,
+                                    const clang::Decl *D);
+std::optional<llvm::APSInt>
+approvedSDKIntegerConstant(const State &S, const clang::SourceManager &SM,
+                           const clang::VarDecl *D,
+                           const clang::ASTContext &Context);
 
 std::string digest(llvm::StringRef Text);
 bool validExportName(llvm::StringRef Name);
