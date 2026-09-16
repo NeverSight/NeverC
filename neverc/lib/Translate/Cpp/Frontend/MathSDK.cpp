@@ -375,6 +375,34 @@ static bool utilityScalar(const ASTContext &Context, QualType Type) {
          Type->isNullPtrType();
 }
 
+static bool utilityArrayValue(const State &S, const SourceManager &SM,
+                              const ASTContext &Context, QualType Type) {
+  if (utilityScalar(Context, Type))
+    return true;
+  Type = Type.getUnqualifiedType();
+  const auto *Record = Type->getAsCXXRecordDecl();
+  if (!Record)
+    return false;
+  if (approvedUtilityArrayMetadata(S, SM, Record))
+    return approvedUtilityArrayRecord(S, SM, Record, Context).has_value();
+  Record = Record->getDefinition();
+  return Record && S.owns(SM, Record->getLocation()) && !Record->isUnion() &&
+         Record->isStandardLayout() && Record->isTrivial() &&
+         Record->hasTrivialDestructor();
+}
+
+static bool utilityArrayTriviallyAssignable(const ASTContext &Context,
+                                            QualType Type) {
+  if (Type.isConstQualified())
+    return false;
+  if (utilityScalar(Context, Type))
+    return true;
+  const auto *Record = Type->getAsCXXRecordDecl();
+  Record = Record ? Record->getDefinition() : nullptr;
+  return Record && Record->hasTrivialCopyAssignment() &&
+         Record->hasTrivialDestructor();
+}
+
 bool approvedUtilityPairMetadata(const State &S, const SourceManager &SM,
                                  const CXXRecordDecl *Record) {
   const auto *Specialization =
@@ -598,7 +626,7 @@ approvedUtilityArrayRecord(const State &S, const SourceManager &SM,
       Elements->isMutable() || Elements->hasAttrs() || !Array ||
       Array->getSize().getLimitedValue(65537) != Size ||
       !Context.hasSameType(Array->getElementType(), Element) ||
-      !utilityScalar(Context, Element) ||
+      !utilityArrayValue(S, SM, Context, Element) ||
       !approvedStandardSDKDeclaration(S, SM, Elements) ||
       !cstddefOrigin(S, SM, Elements->getLocation(), "libcxx", "array"))
     return std::nullopt;
@@ -774,7 +802,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if (!Operator && Name == "fill" && Method->getNumParams() == 1 &&
         Call->getNumArgs() == 1 && Method->getReturnType()->isVoidType() &&
         !Object->getType().isConstQualified() &&
-        !Array->ElementType.isConstQualified()) {
+        utilityArrayTriviallyAssignable(Context, Array->ElementType)) {
       auto Parameter = Method->getParamDecl(0)->getType();
       if (Parameter->isLValueReferenceType() &&
           Parameter->getPointeeType().isConstQualified() &&
@@ -787,7 +815,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if (!Operator && Name == "swap" && Method->getNumParams() == 1 &&
         Call->getNumArgs() == 1 && Method->getReturnType()->isVoidType() &&
         !Object->getType().isConstQualified() &&
-        !Array->ElementType.isConstQualified()) {
+        utilityArrayTriviallyAssignable(Context, Array->ElementType)) {
       auto Parameter = Method->getParamDecl(0)->getType();
       if (Parameter->isLValueReferenceType() &&
           SameArray(Parameter->getPointeeType()) &&
@@ -891,7 +919,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         S, SM, Call->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
     if (Operator && Left && Right &&
         Left->Record->getCanonicalDecl() == Right->Record->getCanonicalDecl() &&
-        !Left->ElementType.isVolatileQualified()) {
+        !Left->ElementType.isVolatileQualified() &&
+        utilityScalar(Context, Left->ElementType)) {
       switch (Operator->getOperator()) {
       case OO_EqualEqual: return UtilityOperation::ArrayEqual;
       case OO_ExclaimEqual: return UtilityOperation::ArrayNotEqual;
@@ -920,7 +949,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if (LeftType->isLValueReferenceType() &&
         RightType->isLValueReferenceType() && Left && Right &&
         Left->Record->getCanonicalDecl() == Right->Record->getCanonicalDecl() &&
-        !Left->ElementType.isConstQualified() &&
+        utilityArrayTriviallyAssignable(Context, Left->ElementType) &&
         Same(Call->getArg(0)->getType(), LeftType->getPointeeType()) &&
         Same(Call->getArg(1)->getType(), RightType->getPointeeType()))
       return UtilityOperation::ArraySwap;

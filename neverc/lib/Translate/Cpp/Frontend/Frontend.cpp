@@ -3706,7 +3706,7 @@ bool Adapter::requireUtilityArray(const CXXRecordDecl *Record,
   auto Array = approvedUtilityArrayRecord(S, Sources, Record, Context);
   if (!Array) {
     reject(Location, "standard library record",
-           "Only the pinned nonempty scalar std::array<T, N> layout is "
+           "Only the pinned nonempty trivial-value std::array<T, N> layout is "
            "admitted.",
            "TR0203");
     return false;

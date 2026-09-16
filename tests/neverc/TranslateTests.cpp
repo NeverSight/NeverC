@@ -23445,7 +23445,74 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2ArrayRequiresPinnedScalarOperations) {
+TEST_F(TranslateTest, CoreV2ArrayComposesTrivialRecordsAndNestedArrays) {
+  const auto Source = tmpFile("array-composition.cpp");
+  const auto Output = tmpFile("array-composition.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+struct Point { int x; int y; };
+int main() {
+  std::array<Point, 2> points{{{1, 2}, {3, 4}}};
+  Point replacement{7, 8};
+  points.fill(replacement);
+  points[0].x = 13;
+  points[1].y = 14;
+  Point &aliased = points[0];
+  points.fill(aliased);
+  if (points[1].x != 13 || points[1].y != 8)
+    return 1;
+  std::array<Point, 2> copied = points;
+  std::array<Point, 2> assigned{{{9, 10}, {11, 12}}};
+  assigned = copied;
+  std::get<1>(points).y = 15;
+  points.swap(copied);
+  std::swap(points, copied);
+  if (points.data() != points.begin() || points.end() - points.begin() != 2 ||
+      points[1].y != 15 || copied[1].y != 8 || assigned[1].x != 13)
+    return 2;
+  int sum = 0;
+  for (Point &point : points)
+    sum += point.x + point.y;
+  const std::array<Point, 2> &view = points;
+  if (view.front().x != 13 || view.back().y != 15 ||
+      std::get<0>(view).y != 8)
+    return 3;
+
+  using Row = std::array<int, 2>;
+  std::array<Row, 2> matrix{{{{1, 2}}, {{3, 4}}}};
+  Row row{{5, 6}};
+  matrix.fill(row);
+  matrix[0][1] = 9;
+  Row &rowAlias = matrix[0];
+  matrix.fill(rowAlias);
+  std::array<Row, 2> other = matrix;
+  other[1][0] = 11;
+  matrix.swap(other);
+  std::swap(matrix, other);
+  std::get<1>(std::get<0>(matrix)) = 10;
+  const std::array<Row, 2> &matrixView = matrix;
+  if (matrixView[0][0] != 5 || matrixView[0][1] != 10 ||
+      matrixView[1].front() != 5 || matrixView[1].back() != 9 ||
+      other[1][0] != 11)
+    return 4;
+  return sum == 49 ? 0 : 5;
+}
+)cpp");
+  auto Result = translate(
+      Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const auto *Optimization : {"-O0", "-O2"}) {
+    const auto Executable = tmpFile(std::string("array-composition-") +
+                                    Optimization + ".out");
+    auto Compile = ncc({Output.string(), Optimization, "-o",
+                        Executable.string()});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Optimization << "\n" << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ArrayRequiresPinnedOperations) {
   struct Rejection {
     const char *Name;
     const char *Source;
@@ -23456,12 +23523,16 @@ TEST_F(TranslateTest, CoreV2ArrayRequiresPinnedScalarOperations) {
       {"zero",
        "#include <array>\nint main(){std::array<int,0>a{};return a.size();}",
        "TR0203"},
-      {"record-element",
-       "#include <array>\nstruct R{int n;};int main(){"
+      {"nontrivial-element",
+       "#include <array>\nstruct R{int n;~R(){}};int main(){"
        "std::array<R,2>a{{{1},{2}}};return a[0].n;}", "TR0203"},
-      {"nested-element",
-       "#include <array>\nint main(){std::array<std::array<int,2>,2>"
-       "a{{{{1,2}},{{3,4}}}};return a[0][0];}", "TR0203"},
+      {"record-comparison",
+       "#include <array>\nstruct R{int n;};bool operator==(const R&a,const R&b){"
+       "return a.n==b.n;}int main(){"
+       "std::array<R,2>a{{{1},{2}}},b=a;return a==b;}", "TR0203"},
+      {"nested-comparison",
+       "#include <array>\nusing R=std::array<int,2>;int main(){"
+       "std::array<R,2>a{{{{1,2}},{{3,4}}}},b=a;return a<b;}", "TR0203"},
       {"dynamic-at",
        "#include <array>\nint f(int i){std::array<int,2>a{{1,2}};"
        "return a.at(i);}", "TR0203"},

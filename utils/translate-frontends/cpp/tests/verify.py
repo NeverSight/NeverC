@@ -460,16 +460,69 @@ extern "C" int array_all() {
     for target in sdk_targets:
         check("v2-array-" + target, array_source,
               profile="cpp-core-v2", target=target, sdk=True)
+    array_composition_source = """\
+#include <array>
+struct Point { int x; int y; };
+extern "C" int array_composition() {
+  std::array<Point, 2> points{{{1, 2}, {3, 4}}};
+  Point replacement{7, 8};
+  points.fill(replacement);
+  Point& alias = points[0];
+  points.fill(alias);
+  std::array<Point, 2> copied = points;
+  std::array<Point, 2> assigned{{{9, 10}, {11, 12}}};
+  assigned = copied;
+  points.swap(copied);
+  std::swap(points, copied);
+  int sum = 0;
+  for (Point& point : points) sum += point.x + point.y;
+  using Row = std::array<int, 2>;
+  std::array<Row, 2> matrix{{{{1, 2}}, {{3, 4}}}};
+  Row row{{5, 6}};
+  matrix.fill(row);
+  Row& row_alias = matrix[0];
+  matrix.fill(row_alias);
+  std::array<Row, 2> other = matrix;
+  matrix.swap(other);
+  std::swap(matrix, other);
+  std::get<1>(std::get<0>(matrix)) = 9;
+  return sum + assigned[1].y + matrix[0][1];
+}
+"""
+    array_composition = check("v2-array-composition", array_composition_source,
+                              profile="cpp-core-v2", sdk=True)
+    assert len(array_composition["sdk_dependencies"]) == 217, array_composition
+    assert len(array_composition["records"]) == 4, array_composition["records"]
+    point = next(record for record in array_composition["records"]
+                 if [field["type"] for field in record["fields"]]
+                 == ["int", "int"])
+    row = next(record for record in array_composition["records"]
+               if [field["type"] for field in record["fields"]]
+               == ["arr:2:int"])
+    assert any([field["type"] for field in record["fields"]]
+               == ["arr:2:" + point["id"]]
+               for record in array_composition["records"]), array_composition
+    assert any([field["type"] for field in record["fields"]]
+               == ["arr:2:" + row["id"]]
+               for record in array_composition["records"]), array_composition
+    assert not [node for node in walk(array_composition["functions"])
+                if node.get("op") in ("call", "mapped_call")], array_composition
+    for target in sdk_targets:
+        check("v2-array-composition-" + target, array_composition_source,
+              profile="cpp-core-v2", target=target, sdk=True)
     for name, source, code in (
         ("quoted", '#include "array"\nint main(){return 0;}', "TR0201"),
         ("zero",
          '#include <array>\nint main(){std::array<int,0>a{};return a.size();}',
          "TR0203"),
-        ("record-element",
-         '#include <array>\nstruct R{int n;};int main(){std::array<R,2>a{{{1},{2}}};return a[0].n;}',
+        ("nontrivial-element",
+         '#include <array>\nstruct R{int n;~R(){}};int main(){std::array<R,2>a{{{1},{2}}};return a[0].n;}',
          "TR0203"),
-        ("nested-element",
-         '#include <array>\nint main(){std::array<std::array<int,2>,2>a{{{{1,2}},{{3,4}}}};return a[0][0];}',
+        ("record-comparison",
+         '#include <array>\nstruct R{int n;};bool operator==(const R&a,const R&b){return a.n==b.n;}int main(){std::array<R,2>a{{{1},{2}}},b=a;return a==b;}',
+         "TR0203"),
+        ("nested-comparison",
+         '#include <array>\nusing R=std::array<int,2>;int main(){std::array<R,2>a{{{{1,2}},{{3,4}}}},b=a;return a<b;}',
          "TR0203"),
         ("dynamic-at",
          '#include <array>\nint f(int i){std::array<int,2>a{{1,2}};return a.at(i);}',

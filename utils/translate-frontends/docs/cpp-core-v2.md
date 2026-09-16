@@ -173,13 +173,15 @@ authenticated closure contains 87 libc++/resource files on all eight supported
 targets. Generated programs do not call or link libc++ for these operations;
 quoted `"utility"`, user shadow headers and platform header roots remain rejected.
 
-## Fixed scalar arrays from `<array>`
+## Fixed value arrays from `<array>`
 
 Core v2 accepts an exact top-level `#include <array>` from the pinned embedded
 VFS. Nonempty `std::array<T, N>` objects use libc++'s checked single fixed-array
 field and the existing aggregate carrier. `T` may be an admitted integral or
 enum scalar up to 64 bits, `float`, `double`, `nullptr_t`, or a non-function
-object pointer; `N` is limited to 65536.
+object pointer, a source-owned trivial standard-layout record, or another
+admitted `std::array`; `N` is limited to 65536. Nested arrays and record arrays
+retain their recursive field layout and ordinary aggregate access.
 
 `size`, `max_size`, `empty`, `data`, `begin`, `end`, `cbegin`, `cend`, indexed
 access, `front`, `back`, compile-time in-range `at`, `fill`, member and free
@@ -192,9 +194,9 @@ compile-time metadata.
 The standalone authenticated closure contains 217 libc++/resource files on all
 eight supported targets and contains no platform headers. Generated programs do
 not call or link libc++ for these operations. Zero-length, nested and
-record-valued arrays, reverse iterators, dynamic or out-of-range `at`, function
-addresses, quoted `"array"`, user shadows and forged declarations remain outside
-this boundary.
+nontrivial record elements, record/nested-array comparisons, reverse iterators,
+dynamic or out-of-range `at`, function addresses, quoted `"array"`, user shadows
+and forged declarations remain outside this boundary.
 
 ## Standard template parsing across targets
 

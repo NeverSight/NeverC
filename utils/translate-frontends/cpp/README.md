@@ -58,7 +58,7 @@ Core v2 also admits exact angle includes of
 [`<limits>`](../docs/cpp-core-v2.md#numeric-bounds-from-limits) and
 [`<cstddef>`](../docs/cpp-core-v2.md#fundamental-types-and-bytes-from-cstddef), and
 the bounded [`<utility>`](../docs/cpp-core-v2.md#scalar-utilities-and-pairs-from-utility)
-and [`<array>`](../docs/cpp-core-v2.md#fixed-scalar-arrays-from-array) surfaces. The
+and [`<array>`](../docs/cpp-core-v2.md#fixed-value-arrays-from-array) surfaces. The
 frontend uses the pinned embedded libc++/resource VFS and exposes resolved type
 aliases plus integral/enum constant results. It records all consumed header
 hashes: 101 for the `<type_traits>` closure, nine for standalone `<cstdint>`,
@@ -69,8 +69,9 @@ layout queries and direct `std::byte` operations lower to existing scalar IR.
 Utility directly lowers scalar `move`, `forward`, `move_if_noexcept`, `as_const`,
 `exchange` and `swap`; scalar `pair` construction, assignment, swaps,
 comparisons, `make_pair` and `get`; and `tuple_size`, `tuple_element` and
-integer-sequence size queries. Array directly lowers nonempty fixed scalar
-storage, iterators, element access, fill, swap, comparisons and tuple access.
+integer-sequence size queries. Array directly lowers nonempty fixed scalar,
+trivial-record and nested-array storage, iterators, element access, fill, swap,
+scalar comparisons and tuple access.
 The driver authenticates each closure before
 emitting output. Standard-library objects and operations beyond these documented
 surfaces, other standard headers and full C++/STL remain unfinished.
