@@ -593,6 +593,96 @@ class FunctionLowering {
     return Result;
   }
 
+  Expression cstddefOperation(const CallExpr *Call, CstddefOperation Operation) {
+    auto L = Call->getExprLoc();
+    auto ResultType = type(Call->getType(), L);
+    auto ByteComputation = [&](llvm::StringRef Operator, Expression Left,
+                               Expression Right) {
+      auto Value = binary(Operator, cast(std::move(Left), "uint", L),
+                          cast(std::move(Right), "uint", L), "uint", L);
+      return cast(std::move(Value), "u8", L);
+    };
+    auto ShiftComputation = [&](llvm::StringRef Operator, Expression Left,
+                                Expression Right) {
+      auto Value = binary(Operator, cast(std::move(Left), "uint", L),
+                          std::move(Right), "uint", L);
+      return cast(std::move(Value), "u8", L);
+    };
+    auto ShiftArgument = [&] {
+      auto Type = Call->getArg(1)->getType();
+      if (A.Context.isPromotableIntegerType(Type))
+        Type = A.Context.getPromotedIntegerType(Type);
+      return cast(expression(Call->getArg(1)), type(Type, L), L);
+    };
+    switch (Operation) {
+    case CstddefOperation::ToInteger:
+      return cast(expression(Call->getArg(0)), ResultType, L);
+    case CstddefOperation::BitNot: {
+      auto Argument = cast(expression(Call->getArg(0)), "uint", L);
+      auto Value = Expression{{"kind", "unary"},
+                              {"type", "uint"},
+                              {"operator", "~"},
+                              {"args", json::Array{std::move(Argument)}},
+                              {"loc", A.loc(L)}};
+      return snapshot(cast(std::move(Value), ResultType, L), L);
+    }
+    case CstddefOperation::BitOr:
+      return snapshot(ByteComputation("|", expression(Call->getArg(0)),
+                                      expression(Call->getArg(1))),
+                      L);
+    case CstddefOperation::BitAnd:
+      return snapshot(ByteComputation("&", expression(Call->getArg(0)),
+                                      expression(Call->getArg(1))),
+                      L);
+    case CstddefOperation::BitXor:
+      return snapshot(ByteComputation("^", expression(Call->getArg(0)),
+                                      expression(Call->getArg(1))),
+                      L);
+    case CstddefOperation::ShiftLeft:
+      return snapshot(ShiftComputation("<<", expression(Call->getArg(0)),
+                                       ShiftArgument()),
+                      L);
+    case CstddefOperation::ShiftRight:
+      return snapshot(ShiftComputation(">>", expression(Call->getArg(0)),
+                                       ShiftArgument()),
+                      L);
+    default:
+      break;
+    }
+    // C++17 assignment-operator syntax evaluates the right operand before
+    // the left operand. Preserve that order while implementing libc++'s
+    // byte-reference result directly in the scalar carrier.
+    const bool ShiftAssignment =
+        Operation == CstddefOperation::ShiftLeftAssign ||
+        Operation == CstddefOperation::ShiftRightAssign;
+    auto Right = ShiftAssignment ? ShiftArgument()
+                                 : expression(Call->getArg(1));
+    auto Left = lvalue(Call->getArg(0));
+    auto Read = snapshot(Left, L);
+    Expression Value;
+    switch (Operation) {
+    case CstddefOperation::BitOrAssign:
+      Value = ByteComputation("|", std::move(Read), std::move(Right));
+      break;
+    case CstddefOperation::BitAndAssign:
+      Value = ByteComputation("&", std::move(Read), std::move(Right));
+      break;
+    case CstddefOperation::BitXorAssign:
+      Value = ByteComputation("^", std::move(Read), std::move(Right));
+      break;
+    case CstddefOperation::ShiftLeftAssign:
+      Value = ShiftComputation("<<", std::move(Read), std::move(Right));
+      break;
+    case CstddefOperation::ShiftRightAssign:
+      Value = ShiftComputation(">>", std::move(Read), std::move(Right));
+      break;
+    default:
+      reject(L, "cstddef operation", "Unknown approved cstddef operation.");
+    }
+    assign(Left, std::move(Value), L);
+    return Left;
+  }
+
   Expression call(const CallExpr *Call,
                   std::optional<Expression> Destination = std::nullopt) {
     auto L = Call->getExprLoc();
@@ -632,6 +722,9 @@ class FunctionLowering {
       if (approvedNumericLimitsConstant(A.S, A.Sources, Call, A.Context,
                                         NumericLimit))
         return A.constant(NumericLimit, Call->getType(), L);
+      if (auto Operation =
+              approvedCstddefOperation(A.S, A.Sources, Call, A.Context))
+        return cstddefOperation(Call, *Operation);
     }
     auto Mapping = A.mapping(Call);
     if (!Mapping.empty()) {
@@ -1142,6 +1235,12 @@ class FunctionLowering {
       return A.literal(llvm::APSInt(I->getValue(), unsignedInteger(T)), T, L);
     if (A.S.coreV2() && isa<CXXNullPtrLiteralExpr>(E))
       return A.zero(E->getType(), L);
+    if (A.S.coreV2() && approvedCstddefNull(A.S, A.Sources, E))
+      return A.zero(E->getType(), L);
+    if (A.S.coreV2())
+      if (auto Offset =
+              approvedCstddefOffset(A.S, A.Sources, E, A.Context))
+        return A.literal(*Offset, T, L);
     if (const auto *C = dyn_cast<CharacterLiteral>(E); C && A.S.coreV2())
       return A.literal(llvm::APSInt(llvm::APInt(integerBits(T), C->getValue()),
                                    unsignedInteger(T)), T, L);

@@ -1,6 +1,7 @@
 #include "Frontend.h"
 #include "BuiltinCppSdkData.h"
 #include "clang/AST/Expr.h"
+#include "clang/AST/ExprCXX.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Index/USRGeneration.h"
 #include "llvm/ADT/SmallString.h"
@@ -253,6 +254,197 @@ bool approvedNumericLimitsConstant(const State &S, const SourceManager &SM,
     return false;
   return Result->isIntegralOrEnumerationType() ? Value.isInt()
                                                 : Value.isFloat();
+}
+
+static bool cstddefOrigin(const State &S, const SourceManager &SM,
+                          SourceLocation Location, llvm::StringRef Root,
+                          llvm::StringRef Path) {
+  auto Origin = S.sdkFile(SM, Location);
+  return Origin && Origin->Root == Root && Origin->Path == Path;
+}
+
+static const EnumDecl *approvedByteType(const State &S,
+                                        const SourceManager &SM, QualType Type) {
+  const auto *Enum = Type.isNull() ? nullptr : Type->getAs<EnumType>();
+  const auto *Declaration = Enum ? Enum->getDecl()->getDefinition() : nullptr;
+  if (!Declaration || Declaration->getName() != "byte" ||
+      !Declaration->isScoped() || !Declaration->isFixed() ||
+      !Declaration->getIntegerType()->isSpecificBuiltinType(
+          BuiltinType::UChar) ||
+      !approvedStandardSDKDeclaration(S, SM, Declaration) ||
+      !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx",
+                     "__cstddef/byte.h"))
+    return nullptr;
+  return Declaration;
+}
+
+std::optional<CstddefOperation>
+approvedCstddefOperation(const State &S, const SourceManager &SM,
+                         const CallExpr *Call, const ASTContext &Context) {
+  if (!Call || Call->isTypeDependent() || Call->isValueDependent() ||
+      Call->isInstantiationDependent())
+    return std::nullopt;
+  const auto *Function = Call->getDirectCallee();
+  if (!Function || Function->isVariadic() || !Function->isConstexpr() ||
+      !approvedStandardSDKDeclaration(S, SM, Function) ||
+      !cstddefOrigin(S, SM, Function->getLocation(), "libcxx",
+                     "__cstddef/byte.h"))
+    return std::nullopt;
+  const auto *Reference =
+      dyn_cast<DeclRefExpr>(Call->getCallee()->IgnoreParenImpCasts());
+  if (!Reference || Reference->getDecl() != Function ||
+      !S.owns(SM, Reference->getExprLoc()))
+    return std::nullopt;
+  auto Same = [&](QualType Left, QualType Right) {
+    return !Left.isNull() && !Right.isNull() &&
+           Context.hasSameType(Left, Right);
+  };
+  auto Byte = [&](QualType Type) { return approvedByteType(S, SM, Type); };
+  auto ByteReference = [&](QualType Type) {
+    return !Type.isNull() && Type->isLValueReferenceType() &&
+           Byte(Type->getPointeeType());
+  };
+  const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+  if (Operator) {
+    if (Call->getNumArgs() != Function->getNumParams())
+      return std::nullopt;
+    const auto Kind = Operator->getOperator();
+    const bool Unary = Kind == OO_Tilde;
+    const bool Compound =
+        Kind == OO_PipeEqual || Kind == OO_AmpEqual ||
+        Kind == OO_CaretEqual || Kind == OO_LessLessEqual ||
+        Kind == OO_GreaterGreaterEqual;
+    const bool Shift =
+        Kind == OO_LessLess || Kind == OO_GreaterGreater ||
+        Kind == OO_LessLessEqual || Kind == OO_GreaterGreaterEqual;
+    if (Call->getNumArgs() != (Unary ? 1u : 2u) ||
+        (Compound ? !ByteReference(Function->getParamDecl(0)->getType())
+                  : !Byte(Function->getParamDecl(0)->getType())) ||
+        (Compound ? !ByteReference(Function->getReturnType())
+                  : !Byte(Function->getReturnType())) ||
+        !Same(Call->getArg(0)->getType(),
+              Compound ? Function->getParamDecl(0)->getType()->getPointeeType()
+                       : Function->getParamDecl(0)->getType()) ||
+        (Unary && !Same(Call->getType(), Function->getReturnType())))
+      return std::nullopt;
+    if (!Unary) {
+      auto Right = Function->getParamDecl(1)->getType();
+      if ((Shift ? !Right->isIntegralType(Context) : !Byte(Right)) ||
+          !Same(Call->getArg(1)->getType(), Right) ||
+          !Same(Call->getType(),
+                Compound ? Function->getReturnType()->getPointeeType()
+                         : Function->getReturnType()) ||
+          (Compound ? !Call->isLValue() : !Call->isPRValue()))
+        return std::nullopt;
+    }
+    switch (Kind) {
+    case OO_Pipe: return CstddefOperation::BitOr;
+    case OO_Amp: return CstddefOperation::BitAnd;
+    case OO_Caret: return CstddefOperation::BitXor;
+    case OO_Tilde: return CstddefOperation::BitNot;
+    case OO_PipeEqual: return CstddefOperation::BitOrAssign;
+    case OO_AmpEqual: return CstddefOperation::BitAndAssign;
+    case OO_CaretEqual: return CstddefOperation::BitXorAssign;
+    case OO_LessLess: return CstddefOperation::ShiftLeft;
+    case OO_GreaterGreater: return CstddefOperation::ShiftRight;
+    case OO_LessLessEqual: return CstddefOperation::ShiftLeftAssign;
+    case OO_GreaterGreaterEqual: return CstddefOperation::ShiftRightAssign;
+    default: return std::nullopt;
+    }
+  }
+  if (Function->getName() != "to_integer" || Call->getNumArgs() != 1 ||
+      Function->getNumParams() != 1 ||
+      !Byte(Function->getParamDecl(0)->getType()) ||
+      !Same(Call->getArg(0)->getType(), Function->getParamDecl(0)->getType()) ||
+      Function->getReturnType().isNull() ||
+      !Function->getReturnType()->isIntegralType(Context) ||
+      !Same(Call->getType(), Function->getReturnType()))
+    return std::nullopt;
+  return CstddefOperation::ToInteger;
+}
+
+bool approvedCstddefNull(const State &S, const SourceManager &SM,
+                        const Expr *Expression) {
+  const auto *Null = dyn_cast_or_null<GNUNullExpr>(Expression);
+  return Null && Null->isPRValue() && !Null->getType().isNull() &&
+         Null->getType()->isIntegerType() && S.owns(SM, Null->getExprLoc()) &&
+         cstddefOrigin(S, SM, SM.getSpellingLoc(Null->getExprLoc()),
+                       "resource", "include/__stddef_null.h");
+}
+
+bool approvedCstddefTypeQuery(const State &S, const SourceManager &SM,
+                             const UnaryExprOrTypeTraitExpr *Query,
+                             ASTContext &Context) {
+  if (!Query || !Query->isArgumentType() ||
+      (Query->getKind() != UETT_SizeOf &&
+       Query->getKind() != UETT_AlignOf) ||
+      Query->isTypeDependent() || Query->isValueDependent() ||
+      Query->isInstantiationDependent() || !Query->isPRValue() ||
+      !S.owns(SM, Query->getExprLoc()))
+    return false;
+  const auto *Info = Query->getArgumentTypeInfo();
+  const auto *Typedef = Query->getTypeOfArgument()->getAs<TypedefType>();
+  const auto *Declaration = Typedef ? Typedef->getDecl() : nullptr;
+  APValue Value;
+  return Info && S.owns(SM, Info->getTypeLoc().getBeginLoc()) && Declaration &&
+         Declaration->getName() == "max_align_t" &&
+         approvedSDKDeclaration(S, SM, Declaration) &&
+         cstddefOrigin(S, SM, Declaration->getLocation(), "resource",
+                       "include/__stddef_max_align_t.h") &&
+         Query->isCXX11ConstantExpr(Context, &Value) && Value.isInt();
+}
+
+std::optional<llvm::APSInt>
+approvedCstddefOffset(const State &S, const SourceManager &SM,
+                      const Expr *Expression, ASTContext &Context) {
+  const auto *Offset = dyn_cast_or_null<OffsetOfExpr>(Expression);
+  if (!Offset || Offset->isTypeDependent() || Offset->isValueDependent() ||
+      Offset->isInstantiationDependent() || !Offset->isPRValue() ||
+      Offset->getType().isNull() ||
+      !Offset->getType()->isIntegralType(Context) ||
+      !S.owns(SM, Offset->getOperatorLoc()) ||
+      !cstddefOrigin(S, SM, SM.getSpellingLoc(Offset->getOperatorLoc()),
+                     "resource", "include/__stddef_offsetof.h") ||
+      !Offset->getTypeSourceInfo())
+    return std::nullopt;
+  auto Object = Offset->getTypeSourceInfo()->getType();
+  if (Object.isNull() ||
+      !S.owns(SM, Offset->getTypeSourceInfo()->getTypeLoc().getBeginLoc()))
+    return std::nullopt;
+  auto Current = Object;
+  for (unsigned I = 0; I < Offset->getNumComponents(); ++I) {
+    const auto &Component = Offset->getComponent(I);
+    if (Component.getKind() == OffsetOfNode::Array) {
+      const auto *Array = Context.getAsConstantArrayType(Current);
+      const auto *Index = Offset->getIndexExpr(Component.getArrayExprIndex());
+      APValue IndexValue;
+      if (!Array || !Index || Index->isTypeDependent() ||
+          Index->isValueDependent() || Index->isInstantiationDependent() ||
+          !S.owns(SM, Index->getExprLoc()) ||
+          !Index->isCXX11ConstantExpr(Context, &IndexValue) ||
+          !IndexValue.isInt() || IndexValue.getInt().isNegative() ||
+          IndexValue.getInt().getLimitedValue() >=
+              Array->getSize().getLimitedValue())
+        return std::nullopt;
+      Current = Array->getElementType();
+      continue;
+    }
+    if (Component.getKind() != OffsetOfNode::Field)
+      return std::nullopt;
+    auto *Record = Current->getAsCXXRecordDecl();
+    Record = Record ? Record->getDefinition() : nullptr;
+    const auto *Field = Component.getField();
+    if (!Record || Record->isUnion() || !Record->isStandardLayout() ||
+        !S.owns(SM, Record->getLocation()) || !Field ||
+        !S.owns(SM, Field->getLocation()) ||
+        Field->getParent()->getCanonicalDecl() != Record->getCanonicalDecl())
+      return std::nullopt;
+    Current = Field->getType();
+  }
+  Expr::EvalResult Result;
+  if (!Offset->EvaluateAsInt(Result, Context) || !Result.Val.isInt())
+    return std::nullopt;
+  return Result.Val.getInt();
 }
 
 bool State::consumeSDKFile(const SourceManager &SM, FileID ID) {

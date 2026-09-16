@@ -2,7 +2,7 @@
   "schema": "neverc.cpp.sdk.provenance",
   "version": 1,
   "source_distribution_id": "clang20.1.8-libcxx200100-macos15.5",
-  "scope": "209 approved header files; upstream references document source and license provenance, not a claim that every SDK export is byte-identical to that upstream revision.",
+  "scope": "227 approved header files; upstream references document source and license provenance, not a claim that every SDK export is byte-identical to that upstream revision.",
   "headers": [
     {
       "root": "libcxx",
@@ -90,6 +90,30 @@
     },
     {
       "root": "libcxx",
+      "path": "__cstddef/byte.h",
+      "sha256": "af9370c761519dc4190454992a53f22cbcc69bba8f7b02fba7d44a02dc30ffb7",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__cstddef/byte.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__cstddef/byte.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "__cstddef/max_align_t.h",
+      "sha256": "5d1eb26e300760b356991bd88e735ef1d9bf6cf62007470e49fbc02eedf465a1",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__cstddef/max_align_t.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__cstddef/max_align_t.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
       "path": "__cstddef/nullptr_t.h",
       "sha256": "b9f85c012045849937ca4f4d84fde347c0dc88dd4149b7ba6d55816214cbd10d",
       "license": "Apache-2.0 WITH LLVM-exception",
@@ -102,6 +126,18 @@
     },
     {
       "root": "libcxx",
+      "path": "__cstddef/ptrdiff_t.h",
+      "sha256": "c16b4a1bc83107bdd4d5e2d96ae094459fa291084fb977495e2ea51970e86705",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__cstddef/ptrdiff_t.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__cstddef/ptrdiff_t.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
       "path": "__cstddef/size_t.h",
       "sha256": "24fcce5e6d3c4a731254461a28148abe1f571c2e8790ab50442446ded352846b",
       "license": "Apache-2.0 WITH LLVM-exception",
@@ -110,6 +146,18 @@
       "upstream_revision": "llvmorg-20.1.8",
       "upstream_path": "libcxx/include/__cstddef/size_t.h",
       "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__cstddef/size_t.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "__fwd/byte.h",
+      "sha256": "cfef94d1e55cfcd5c6caeec9abb49066cebe32c8591bf5f1bff87ddd9eaab526",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__fwd/byte.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__fwd/byte.h",
       "upstream_relationship": "source-reference"
     },
     {
@@ -1458,6 +1506,18 @@
     },
     {
       "root": "libcxx",
+      "path": "cstddef",
+      "sha256": "53c4fc868f6439e48e52bbc9445a48eab1e597bbfad037ab7480216cb0c6832f",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/cstddef",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/cstddef",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
       "path": "cstdint",
       "sha256": "5df941a16c69b0ceab18c14d3ca9a59fabe25f42bed98eba74a7a1315eb2badb",
       "license": "Apache-2.0 WITH LLVM-exception",
@@ -1490,6 +1550,18 @@
       "upstream_revision": "llvmorg-20.1.8",
       "upstream_path": "libcxx/include/math.h",
       "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/math.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "stddef.h",
+      "sha256": "31d900d6916b90696290f7191b6135d397e1a0fc6f3218b408b9f2abd87ffa48",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/stddef.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/stddef.h",
       "upstream_relationship": "source-reference"
     },
     {
@@ -2511,6 +2583,150 @@
     },
     {
       "root": "resource",
+      "path": "include/__stddef_header_macro.h",
+      "sha256": "4cf46e8fbb809df048eecbbd63686fa741da27afa8db4245bd1f61c1fb1611dc",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "clang/lib/Headers/__stddef_header_macro.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/clang/lib/Headers/__stddef_header_macro.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "resource",
+      "path": "include/__stddef_max_align_t.h",
+      "sha256": "3c1e4de47f4f06b35e2c5890d670052e84f716760505ff51b022fc8b21a9400f",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "clang/lib/Headers/__stddef_max_align_t.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/clang/lib/Headers/__stddef_max_align_t.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "resource",
+      "path": "include/__stddef_null.h",
+      "sha256": "b1d71b08563ab3d2c22a1e4f8ddf4d9a1111c89e9404b859a45c307e8ebc6c69",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "clang/lib/Headers/__stddef_null.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/clang/lib/Headers/__stddef_null.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "resource",
+      "path": "include/__stddef_nullptr_t.h",
+      "sha256": "898b4465c5d3040d27e760e82983a751b1b0cae23ba280b18a1b81451841f9eb",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "clang/lib/Headers/__stddef_nullptr_t.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/clang/lib/Headers/__stddef_nullptr_t.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "resource",
+      "path": "include/__stddef_offsetof.h",
+      "sha256": "e5f0f4ff8ff5fc6a1cc8b535f5065f1728eadd2bf1e1401f021f803ec7b4222f",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "clang/lib/Headers/__stddef_offsetof.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/clang/lib/Headers/__stddef_offsetof.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "resource",
+      "path": "include/__stddef_ptrdiff_t.h",
+      "sha256": "b4178a57f3711b7013cba747a72a2f178c29fa9364e77d75b2159754072ced43",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "clang/lib/Headers/__stddef_ptrdiff_t.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/clang/lib/Headers/__stddef_ptrdiff_t.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "resource",
+      "path": "include/__stddef_rsize_t.h",
+      "sha256": "132339d4f07e852bf2d879bc91c4ccdfcf08c581c7c97f6f3794510e0bdda7bd",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "clang/lib/Headers/__stddef_rsize_t.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/clang/lib/Headers/__stddef_rsize_t.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "resource",
+      "path": "include/__stddef_size_t.h",
+      "sha256": "d86ddc0238da09b385846ebef814ffc50a44e40cf85d4e3793f485952b7e73ad",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "clang/lib/Headers/__stddef_size_t.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/clang/lib/Headers/__stddef_size_t.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "resource",
+      "path": "include/__stddef_unreachable.h",
+      "sha256": "bba07c327f8168f37b266a19aed625e0fa633a25cabef4f54f21faf3df5522b8",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "clang/lib/Headers/__stddef_unreachable.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/clang/lib/Headers/__stddef_unreachable.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "resource",
+      "path": "include/__stddef_wchar_t.h",
+      "sha256": "1900d4998aef3698b06399ed686db0c21e26509b08638a25734fb97ae89b1001",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "clang/lib/Headers/__stddef_wchar_t.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/clang/lib/Headers/__stddef_wchar_t.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "resource",
+      "path": "include/__stddef_wint_t.h",
+      "sha256": "f2ededa38c5454397242aceaefa65b42b292a1b3cc258e7ca6e216f146e51f0d",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "clang/lib/Headers/__stddef_wint_t.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/clang/lib/Headers/__stddef_wint_t.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "resource",
+      "path": "include/stddef.h",
+      "sha256": "b3e62a046ddf28d09eedebe6eb9461cb7060e47cad2c69964b222c4eea10347e",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "clang/lib/Headers/stddef.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/clang/lib/Headers/stddef.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "resource",
       "path": "include/stdint.h",
       "sha256": "655616d8fcb2c92b38c039019685c658c2346b3dd0021aed4ea057b43f621247",
       "license": "Apache-2.0 WITH LLVM-exception",
@@ -2529,7 +2745,7 @@
       "sha256": "58a133735f0a55a624a1703067059f6e78925e51725ec6e1f966072e142c9c42"
     }
   ],
-  "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5",
+  "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r2",
   "metadata": [
     {
       "root": "platform",

@@ -2,10 +2,10 @@
 
 This directory supplies the immutable header inputs for NeverC's built-in C++
 frontend. The distribution is
-`neverc-embedded-clang20.1.8-libcxx200100-macos15.5`. It contains the 209 header
+`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r2`. It contains the 227 header
 files admitted by the former
-`clang20.1.8-libcxx200100-macos15.5` catalog: 127 libc++ headers, one Clang resource
-header, and 81 Darwin platform headers. Their contents, including copyright and
+`clang20.1.8-libcxx200100-macos15.5` catalog: 133 libc++ headers, 13 Clang resource
+headers, and 81 Darwin platform headers. Their contents, including copyright and
 license notices, are preserved byte for byte. This is a fixed input set for the
 supported translation profiles, not a complete Apple SDK.
 
@@ -15,6 +15,9 @@ standalone closures contain 101 and nine files respectively; their deduplicated
 union is recorded when both headers are included. Every consumed path and hash
 is verified against this catalog. The `<limits>` surface has a 103-file closure
 and folds its supported `numeric_limits` members without a runtime libc++ link.
+The `<cstddef>` surface has a 29-file closure and provides its target aliases,
+folded layout queries and directly lowered `std::byte` operations without a
+runtime libc++ link.
 Core v2 never admits the `platform` root.
 Math v1 continues to use its separately checked libc++, resource and Darwin
 platform closure for `<cmath>`.
@@ -32,7 +35,7 @@ the exact header bytes supplied here.
 
 | Header group | Files | Applicable notices |
 | --- | ---: | --- |
-| libc++ and Clang resource headers | 128 | Apache-2.0 with LLVM exceptions |
+| libc++ and Clang resource headers | 146 | Apache-2.0 with LLVM exceptions |
 | Darwin headers with an APSL notice | 63 | APSL-2.0 |
 | Darwin headers with APSL and Berkeley notices | 12 | APSL-2.0 and BSD-4-Clause |
 | `arm/endian.h`, `arm/types.h` | 2 | BSD-4-Clause |

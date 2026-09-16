@@ -23142,6 +23142,105 @@ TEST_F(TranslateTest, CoreV2NumericLimitsKeepsRuntimeIdentityOut) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CstddefTypesQueriesAndByteOperationsRunAtBothOptimizations) {
+  const auto Source = tmpFile("cstddef.cpp");
+  const auto Output = tmpFile("cstddef.nc");
+  writeFile(Source, R"cpp(
+#include <cstddef>
+struct LayoutRecord { char first; int second; unsigned tail[3]; };
+static_assert(sizeof(std::size_t) == sizeof(void *));
+static_assert(sizeof(std::ptrdiff_t) == sizeof(void *));
+static_assert(__is_same(std::nullptr_t, decltype(nullptr)));
+static_assert(alignof(std::max_align_t) >= alignof(void *));
+static_assert(offsetof(LayoutRecord, second) == 4);
+static_assert(offsetof(LayoutRecord, tail[2]) > offsetof(LayoutRecord, second));
+static_assert(std::to_integer<unsigned>(std::byte{0x3c}) == 0x3c);
+int main() {
+  std::size_t size = sizeof(LayoutRecord);
+  std::ptrdiff_t offset = offsetof(LayoutRecord, tail[2]);
+  std::nullptr_t null = nullptr;
+  int *pointer = NULL;
+  std::byte value{0x32};
+  std::byte mask{0x0f};
+  std::byte shifted = std::byte{1} << static_cast<short>(3);
+  shifted = shifted >> false;
+  value = (value | mask) ^ (value & mask);
+  value = ~value;
+  value >>= static_cast<unsigned char>(2);
+  value <<= true;
+  value |= std::byte{1};
+  value &= std::byte{0x7f};
+  value ^= std::byte{3};
+  return size >= offset && null == nullptr && pointer == nullptr &&
+                 std::to_integer<unsigned>(value) == 98u &&
+                 std::to_integer<unsigned char>(shifted) == 8
+             ? 0
+             : 1;
+}
+)cpp");
+  auto Result = translate(
+      Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest = llvm::json::parse(
+      readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *SDK = Manifest->getAsObject()->getObject("sdk");
+  ASSERT_NE(SDK, nullptr);
+  const auto *Dependencies = SDK->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 29u);
+  bool FoundCstddef = false;
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+    FoundCstddef |= Dependency->getString("root") == "libcxx" &&
+                    Dependency->getString("path") == "cstddef";
+  }
+  EXPECT_TRUE(FoundCstddef);
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("cstddef" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CstddefRequiresPinnedSyntaxAndDirectOperations) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+  };
+  const Rejection Cases[] = {
+      {"quoted", "#include \"cstddef\"\nint main(){return 0;}"},
+      {"c-header", "#include <stddef.h>\nint main(){return 0;}"},
+      {"raw-null", "int main(){return __null;}"},
+      {"raw-offset",
+       "#include <cstddef>\nstruct R{int n;};"
+       "int main(){return __builtin_offsetof(R,n);}"},
+      {"union-offset",
+       "#include <cstddef>\nunion U{int n;unsigned u;};"
+       "int main(){return offsetof(U,u);}"},
+      {"function-address",
+       "#include <cstddef>\nint main(){auto p=&std::to_integer<unsigned>;"
+       "return p(std::byte{1});}"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("cstddef-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("cstddef-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(translate(Source,
+                         {"--profile", "cpp-core-v2", "-o", Output.string()}),
+               "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2RejectsUnsupportedErasedDeclarations) {
   struct Rejection {
     const char *Name;

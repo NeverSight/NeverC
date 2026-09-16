@@ -55,15 +55,17 @@ metadata and runtime carriers.
 Core v2 also admits exact angle includes of
 [`<type_traits>`](../docs/cpp-core-v2.md#compile-time-type_traits) and
 [`<cstdint>`](../docs/cpp-core-v2.md#fixed-width-integers-from-cstdint), plus
-[`<limits>`](../docs/cpp-core-v2.md#numeric-bounds-from-limits). The
+[`<limits>`](../docs/cpp-core-v2.md#numeric-bounds-from-limits) and
+[`<cstddef>`](../docs/cpp-core-v2.md#fundamental-types-and-bytes-from-cstddef). The
 frontend uses the pinned embedded libc++/resource VFS and exposes resolved type
 aliases plus integral/enum constant results. It records all consumed header
-hashes: 101 for the `<type_traits>` closure, nine for standalone `<cstdint>` and
-103 for `<limits>`. Numeric limits additionally fold the documented zero-argument
-integer and IEEE floating queries to literals.
+hashes: 101 for the `<type_traits>` closure, nine for standalone `<cstdint>`,
+103 for `<limits>` and 29 for `<cstddef>`. Numeric limits fold the documented
+zero-argument integer and IEEE floating queries to literals. Cstddef aliases,
+layout queries and direct `std::byte` operations lower to existing scalar IR.
 The driver authenticates that closure before emitting output. Standard-library
-runtime objects, calls and storage identities, other standard headers and full
-C++/STL remain unfinished.
+runtime objects, calls and storage identities beyond the documented byte
+operations, other standard headers and full C++/STL remain unfinished.
 
 The adapter first inspects every owned declaration and expression, including
 unused functions and unreachable statements. It accepts supported 32-bit integer,
@@ -184,7 +186,7 @@ signaling-NaN builtin argument is not silently mapped to a dynamic runtime call.
 Dynamic binary64 parameters can still carry NaNs and infinities.
 
 The immutable translation headers are embedded in NeverC as distribution
-`neverc-embedded-clang20.1.8-libcxx200100-macos15.5`. The
+`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r2`. The
 [SDK catalog](../../../neverc/lib/Translate/Cpp/SDK/catalog.json) records all
 209 approved header files and separate SDK metadata. The original header bytes
 are preserved, including observable macros such as `M_PI` and `_LIBCPP_VERSION`.

@@ -34,6 +34,7 @@ class InitListExpr;
 class StringLiteral;
 class TypeTraitExpr;
 class Expr;
+class UnaryExprOrTypeTraitExpr;
 struct ASTTemplateArgumentListInfo;
 class DeclContext;
 class FriendDecl;
@@ -225,6 +226,34 @@ bool approvedNumericLimitsConstant(const State &S,
                                    const clang::CallExpr *Call,
                                    clang::ASTContext &Context,
                                    clang::APValue &Value);
+enum class CstddefOperation {
+  BitOr,
+  BitAnd,
+  BitXor,
+  BitNot,
+  BitOrAssign,
+  BitAndAssign,
+  BitXorAssign,
+  ShiftLeft,
+  ShiftRight,
+  ShiftLeftAssign,
+  ShiftRightAssign,
+  ToInteger,
+};
+std::optional<CstddefOperation>
+approvedCstddefOperation(const State &S, const clang::SourceManager &SM,
+                         const clang::CallExpr *Call,
+                         const clang::ASTContext &Context);
+bool approvedCstddefNull(const State &S, const clang::SourceManager &SM,
+                        const clang::Expr *Expression);
+bool approvedCstddefTypeQuery(const State &S,
+                             const clang::SourceManager &SM,
+                             const clang::UnaryExprOrTypeTraitExpr *Query,
+                             clang::ASTContext &Context);
+std::optional<llvm::APSInt>
+approvedCstddefOffset(const State &S, const clang::SourceManager &SM,
+                      const clang::Expr *Expression,
+                      clang::ASTContext &Context);
 
 std::string digest(llvm::StringRef Text);
 bool validExportName(llvm::StringRef Name);

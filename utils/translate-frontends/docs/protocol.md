@@ -1453,8 +1453,8 @@ v2 responses lacking the two carrier entries must be regenerated.
 
 A core v2 request may add the same two-field immutable SDK envelope used by the
 built-in driver: `distribution_id` and `catalog_sha256`. When present, the
-source may include exact angle forms of `<type_traits>`, `<cstdint>` and
-`<limits>`. A
+source may include exact angle forms of `<type_traits>`, `<cstdint>`, `<limits>`
+and `<cstddef>`. A
 successful response adds
 `sdk_distribution_id`, `sdk_catalog_sha256` and `sdk_dependencies`. Core v2
 dependencies may use only the `libcxx` and `resource` roots; each normalized
@@ -1466,8 +1466,9 @@ identity, verifies the response before and after semantic-IR processing, and
 copies the authenticated dependency closure into the manifest's built-in SDK
 record. Frontend claims cannot authorize an SDK. Runtime calls or object/storage
 identity from these declarations are rejected before lowering; only resolved
-type aliases, integral/enum constants and folded `numeric_limits` scalar queries
-reach semantic IR.
+type aliases, integral/enum constants, folded `numeric_limits` scalar queries,
+checked cstddef layout constants and direct `std::byte` scalar operations reach
+semantic IR.
 
 ## Gated mathematics extension
 
@@ -1502,7 +1503,7 @@ Every math unit includes these fields:
 ```json
 {
   "fp_contract": "cpp.math.binary64.masked.v1",
-  "sdk_distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5",
+  "sdk_distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r2",
   "sdk_catalog_sha256": "<64 lowercase hex digits>",
   "sdk_dependencies": [
     {"root":"platform","path":"usr/include/math.h","sha256":"<64 lowercase hex digits>"}

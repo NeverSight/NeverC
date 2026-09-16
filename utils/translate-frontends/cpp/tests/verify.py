@@ -29,8 +29,8 @@ def main():
     repository = Path(__file__).resolve().parents[4]
     count = 0
     sdk_identity = {
-        "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5",
-        "catalog_sha256": "e9e2be353baded7be350900ae52d5c1a5f0fc7724e29c2dbe18c9c5fdef5dbe3",
+        "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r2",
+        "catalog_sha256": "1da4e1da725c9adeb81be6f980df4118556134ae8636a414b25c686faf6135b1",
     }
 
     def check(name, source, code=None, options=(), root=None, profile="cpp-core-v1",
@@ -266,6 +266,67 @@ int main() {
          "TR0203"),
     ):
         check("v2-limits-" + name, source, code,
+              profile="cpp-core-v2", sdk=True)
+
+    cstddef_source = """\
+#include <cstddef>
+struct layout_record { char first; int second; unsigned tail[3]; };
+static_assert(sizeof(std::size_t) == sizeof(void *));
+static_assert(sizeof(std::ptrdiff_t) == sizeof(void *));
+static_assert(__is_same(std::nullptr_t, decltype(nullptr)));
+static_assert(alignof(std::max_align_t) >= alignof(void *));
+static_assert(offsetof(layout_record, second) == 4);
+static_assert(offsetof(layout_record, tail[2]) > offsetof(layout_record, second));
+static_assert(std::to_integer<unsigned>(std::byte{0x3c}) == 0x3c);
+static_assert(std::to_integer<unsigned>((std::byte{0x33} | std::byte{0x0f}) ^
+                                       (std::byte{0x33} & std::byte{0x0f})) == 0x3c);
+int main() {
+  std::size_t size = sizeof(layout_record);
+  std::ptrdiff_t offset = offsetof(layout_record, tail[2]);
+  std::nullptr_t null = nullptr;
+  int *pointer = NULL;
+  std::byte value{0x32};
+  std::byte mask{0x0f};
+  std::byte shifted = std::byte{1} << static_cast<short>(3);
+  shifted = shifted >> false;
+  value = (value | mask) ^ (value & mask);
+  value = ~value;
+  value >>= static_cast<unsigned char>(2);
+  value <<= true;
+  value |= std::byte{1};
+  value &= std::byte{0x7f};
+  value ^= std::byte{3};
+  return size >= offset && null == nullptr && pointer == nullptr &&
+                 std::to_integer<unsigned>(value) == 98u &&
+                 std::to_integer<unsigned char>(shifted) == 8
+             ? 0
+             : 1;
+}
+"""
+    cstddef = check("v2-cstddef", cstddef_source,
+                    profile="cpp-core-v2", sdk=True)
+    assert len(cstddef["sdk_dependencies"]) == 29, cstddef
+    assert any(dependency["root"] == "libcxx" and
+               dependency["path"] == "cstddef"
+               for dependency in cstddef["sdk_dependencies"]), cstddef
+    for target in sdk_targets:
+        check("v2-cstddef-" + target, cstddef_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    for name, source, code in (
+        ("quoted", '#include "cstddef"\nint main(){return 0;}', "TR0201"),
+        ("c-header", '#include <stddef.h>\nint main(){return 0;}', "TR0201"),
+        ("raw-null", 'int main(){return __null;}', "TR0201"),
+        ("raw-offset",
+         '#include <cstddef>\nstruct R{int n;};int main(){return __builtin_offsetof(R,n);}',
+         "TR0201"),
+        ("union-offset",
+         '#include <cstddef>\nunion U{int n;unsigned u;};int main(){return offsetof(U,u);}',
+         "TR0201"),
+        ("function-address",
+         '#include <cstddef>\nint main(){auto p=&std::to_integer<unsigned>;return p(std::byte{1});}',
+         "TR0201"),
+    ):
+        check("v2-cstddef-" + name, source, code,
               profile="cpp-core-v2", sdk=True)
 
     # Windows driver defaults must not change core-v2 source visibility or

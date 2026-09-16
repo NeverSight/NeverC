@@ -4095,7 +4095,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   unsigned OperationSourceDepth = 0;
   std::map<const CXXRecordDecl *, bool> HasArray;
   std::map<const CXXRecordDecl *, bool> FlatReferenceLayouts;
-  std::set<const Expr *> DirectFunctionCallees, GeneratedBuiltinCallees, FunctionValueDesignators;
+  std::set<const Expr *> DirectFunctionCallees, GeneratedBuiltinCallees,
+      FunctionValueDesignators, ApprovedCstddefCallees;
   std::map<const Expr *, SourceLocation> DirectTemplateCallLocations;
   std::set<const CallExpr *> GeneratedArrayAssignments;
   std::map<const OpaqueValueExpr *, const Expr *> ArraySources;
@@ -6615,9 +6616,27 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       }
       A.chargeExpansion(1, L);
       const auto *Raw = T.getTypePtr();
-      if (const auto *Alias = dyn_cast<TypedefType>(Raw);
-          Alias && !approvedSDKDeclaration(A.S, A.Sources, Alias->getDecl()))
-        operationTypeDependency(Alias->getDecl()->getTypeSourceInfo());
+      if (const auto *Alias = dyn_cast<TypedefType>(Raw)) {
+        if (approvedSDKDeclaration(A.S, A.Sources, Alias->getDecl())) {
+          // These pinned metadata aliases spell their underlying type with an
+          // SDK expression or target record. Their authenticated declaration
+          // is the source evidence; do not invent a project traversal of the
+          // SDK-only source. Runtime/type admission remains a separate A.type
+          // check, except for the narrow max_align_t query helper.
+          const auto Origin =
+              A.S.sdkFile(A.Sources, Alias->getDecl()->getLocation());
+          const bool Nullptr = Alias->getDecl()->getName() == "nullptr_t" &&
+                               Alias->desugar()->isNullPtrType();
+          const bool MaxAlign =
+              Alias->getDecl()->getName() == "max_align_t" && Origin &&
+              Origin->Root == "resource" &&
+              Origin->Path == "include/__stddef_max_align_t.h";
+          if (Nullptr || MaxAlign)
+            return;
+        } else {
+          operationTypeDependency(Alias->getDecl()->getTypeSourceInfo());
+        }
+      }
       if (const auto *Deduced = dyn_cast<DecltypeType>(Raw)) {
         registerDecltypeCallResult(Deduced->getUnderlyingExpr());
         operationExpressionDependency(Deduced->getUnderlyingExpr());
@@ -9678,10 +9697,14 @@ public:
     // unevaluated address may lack a body, but its written arguments still
     // require inspection before that diagnostic suppresses further traversal.
     if (const auto *Function = dyn_cast<FunctionDecl>(Reference->getDecl());
-        concreteFunctionTemplate(Function))
-      if (!checkFunctionTemplateUse(Function, Reference->getLocation(), Reference->template_arguments(),
-          Reference->hasQualifier() ? Reference->getBeginLoc() : SourceLocation(),
-          directTemplateCallLocation(Reference)))
+        concreteFunctionTemplate(Function) &&
+        !ApprovedCstddefCallees.count(Reference))
+      if (!checkFunctionTemplateUse(
+              Function, Reference->getLocation(),
+              Reference->template_arguments(),
+              Reference->hasQualifier() ? Reference->getBeginLoc()
+                                        : SourceLocation(),
+              directTemplateCallLocation(Reference)))
         return false;
     // Each source event owns argument traversal before the callee's frame.
     // RAV's normal argument traversal would visit nested template uses again
@@ -12406,6 +12429,8 @@ public:
             else
               E = cast<ImplicitCastExpr>(E)->getSubExpr();
           }
+          if (approvedCstddefOperation(A.S, A.Sources, Call, A.Context))
+            ApprovedCstddefCallees.insert(Leaf);
         }
       }
     if (const auto *Reference = dyn_cast<DeclRefExpr>(S))
@@ -12550,7 +12575,8 @@ public:
               CXXNoexceptExpr, CXXThisExpr,
               CXXDefaultInitExpr, CXXDefaultArgExpr, CXXForRangeStmt,
               SubstNonTypeTemplateParmExpr, SizeOfPackExpr,
-              CXXPseudoDestructorExpr, CXXNewExpr, CXXDeleteExpr>(S)) &&
+              CXXPseudoDestructorExpr, CXXNewExpr, CXXDeleteExpr, GNUNullExpr,
+              OffsetOfExpr>(S)) &&
         !isa<CompoundStmt, DeclStmt, NullStmt, ReturnStmt, IfStmt, WhileStmt,
              DoStmt, ForStmt, BreakStmt, ContinueStmt, IntegerLiteral,
              CXXBoolLiteralExpr, DeclRefExpr, ParenExpr, ImplicitCastExpr,
@@ -12562,6 +12588,19 @@ public:
       A.reject(S->getBeginLoc(), S->getStmtClassName(),
                "Expression or statement is outside the selected profile.");
     if (A.S.coreV2()) {
+      if (const auto *Null = dyn_cast<GNUNullExpr>(S);
+          Null && !approvedCstddefNull(A.S, A.Sources, Null))
+        A.reject(L, "GNU null expression",
+                 "Only NULL from the pinned <cstddef> header is supported.");
+      if (const auto *Offset = dyn_cast<OffsetOfExpr>(S)) {
+        if (!approvedCstddefOffset(A.S, A.Sources, Offset, A.Context))
+          A.reject(L, "offsetof expression",
+                   "Only a pinned offsetof query over checked fields and "
+                   "constant array elements of owned standard-layout records "
+                   "is supported.");
+        else
+          A.type(Offset->getTypeSourceInfo()->getType(), L);
+      }
       if (const auto *N = dyn_cast<CXXNewExpr>(S)) {
         auto Object = N->getAllocatedType();
         if ((!N->isArray() && Object->isArrayType()) || !Object->isObjectType() ||
@@ -12669,7 +12708,8 @@ public:
             Operand->isVariablyModifiedType() || Operand->isDependentType())
           A.reject(Query->getExprLoc(), "size/alignment query",
                    "Only standard constant sizeof and type-form alignof are supported.");
-        else
+        else if (!approvedCstddefTypeQuery(A.S, A.Sources, Query,
+                                           A.Context))
           A.type(Operand, Query->getExprLoc());
       }
       if (const auto *C = dyn_cast<CaseStmt>(S); C && C->getRHS())
@@ -12794,6 +12834,9 @@ public:
       if (A.S.coreV2() &&
           approvedNumericLimitsConstant(A.S, A.Sources, C, A.Context,
                                         NumericLimit))
+        return true;
+      if (A.S.coreV2() &&
+          approvedCstddefOperation(A.S, A.Sources, C, A.Context))
         return true;
       if (A.S.coreV2() && F &&
           approvedStandardSDKDeclaration(A.S, A.Sources, F)) {
@@ -13411,10 +13454,11 @@ public:
       }
       if (S.owns(SM, L) &&
           (!Angled || (Name != "type_traits" && Name != "cstdint" &&
-                       Name != "limits"))) {
+                       Name != "limits" && Name != "cstddef"))) {
         reject(L, "include",
                "Only exact #include <type_traits>, #include <cstdint> and "
-               "#include <limits> entries are admitted in cpp-core-v2.");
+               "#include <limits> and #include <cstddef> entries are admitted "
+               "in cpp-core-v2.");
         return;
       }
       if (!S.owns(SM, L) && !S.sdkFile(SM, L))

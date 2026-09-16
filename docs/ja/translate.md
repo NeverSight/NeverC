@@ -10,6 +10,8 @@ Core v2 は組み込みの固定版 `<cstdint>` もサポートします。固�
 
 Core v2 は固定版 `<limits>` もサポートします。対応する整数、`float`、`double` の `numeric_limits` にある整数・列挙データメンバーと標準のゼロ引数クエリは、無限大と NaN を含む正確なリテラルへ畳み込まれます。103 ファイルの閉包は全ターゲットで認証され、実行時オブジェクト、記憶域またはメソッドの識別、オブジェクト修飾呼び出し、`long double` は未対応です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#numeric-bounds-from-limits).
 
+Core v2 は固定版 `<cstddef>` もサポートします。ターゲット固有の `size_t`、`ptrdiff_t`、`nullptr_t` エイリアス、`NULL`、検査済みの `offsetof`、`max_align_t` レイアウトクエリは libc++ なしで変換されます。`std::byte` の記憶域、ビット／シフト演算、`to_integer` はスカラー演算へ直接変換されます。29 ファイルの閉包は全ターゲットで認証され、引用符／C ヘッダー形式、生の組み込み式、標準関数アドレスは拒否されます。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#fundamental-types-and-bytes-from-cstddef).
+
 Core v2 の型メタデータは、所有ソース内の不完全な非共用体クラスに対応します。前方宣言や未インスタンス化のテンプレート型も、レコードの記憶域を生成せずに分類と配列次元を検査できます。実行時型とコールバックには引き続き完全な対応型が必要です。参照・ポインターの操作クエリでは厳密なソース証拠を伴ってこれらの型識別を使用し、選択した遅延メソッドの戻り値型は完全性を検査します。ネイティブ検証は実装リビジョンの CI で行います。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#incomplete-record-type-metadata).
 
 Core v2 の操作クエリは、長さが未確定の配列の型情報を検査できます。構築・破棄の早期結果、厳密な参照束縛、配列からポインターへの変換は、対応するソースの証拠を保持します。実行時ストレージの制限は引き続き適用され、ネイティブ検証は実装リビジョンの CI で行います。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unknown-bound-array-operation-types).

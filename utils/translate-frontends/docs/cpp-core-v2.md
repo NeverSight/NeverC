@@ -110,6 +110,45 @@ object-qualified method calls, `long double` results, quoted `"limits"` and user
 shadow headers remain rejected. The generated program contains only the folded
 values; it does not call or link libc++ at runtime.
 
+## Fundamental types and bytes from `<cstddef>`
+
+Core v2 accepts an exact top-level `#include <cstddef>` from the pinned embedded
+VFS. `std::size_t`, `std::ptrdiff_t` and `std::nullptr_t` retain the selected
+target's concrete types. Type-form `sizeof` and `alignof` queries on
+`std::max_align_t` are folded by pinned Clang, including targets where its
+carrier is otherwise outside core v2. `NULL` is accepted only when it expands
+from the pinned header.
+
+`offsetof` folds fields of an owned non-union standard-layout record, including
+nested fields and in-bounds constant indices into fixed arrays. The record,
+fields, array bounds and index expressions still receive ordinary source and
+type checks. Raw `__builtin_offsetof`, unions, bases, dependent designators and
+nonconstant or out-of-bounds indices are rejected.
+
+```cpp
+#include <cstddef>
+struct Packet { char tag; unsigned words[3]; };
+static_assert(alignof(std::max_align_t) >= alignof(void *));
+static_assert(offsetof(Packet, words[2]) > offsetof(Packet, words));
+
+int main() {
+  std::byte value{0x32};
+  value = ~((value | std::byte{0x0f}) ^ (value & std::byte{0x0f}));
+  value >>= static_cast<unsigned char>(2);
+  return std::to_integer<unsigned>(value) == 48u ? 0 : 1;
+}
+```
+
+`std::byte` has ordinary scalar storage. Its `|`, `&`, `^`, `~`, `<<`, `>>`
+and compound-assignment operators, plus `std::to_integer<T>`, lower directly to
+checked integer operations. The selected function must be the exact pinned
+libc++ declaration and must be called directly; function addresses and forged
+lookalikes are rejected. The standalone authenticated closure contains 29
+libc++/resource files on all eight supported targets. Quoted `"cstddef"`, the C
+header `<stddef.h>`, raw GNU null expressions, platform headers and user shadow
+headers remain outside this boundary. Generated programs do not call or link
+libc++ for these operations.
+
 ## Standard template parsing across targets
 
 The embedded frontend disables MSVC compatibility extensions and delayed template parsing for `cpp-core-v2` on every supported target, including Windows x64 and ARM64. Definitions use standard C++17 parsing and lookup rules. Duplicate explicit instantiation definitions, late specializations and incompatible exception specifications retain language diagnostics (`TR0202`); parsed source still receives the existing support checks (`TR0201`). Unused dependent bodies remain lazy until instantiation is needed. This setting does not change project/math profile configuration or the target data layout, and requires no external Clang executable. Full C++/STL support remains unfinished.
