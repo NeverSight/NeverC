@@ -12,6 +12,8 @@ Core v2 支援未求值呼叫中經過檢查的命名空間範本宣告簽章，
 
 Core v2 支援預設 sized delete 轉送：未經原始碼重新宣告的隱含全域 sized delete/delete[] 可呼叫對應的 unsized 定義。明確的 sized 定義優先，陣列保留原運算式的 cookie 配置。此項不提供預設配置器或例外執行環境；原生驗證須由實作版本的 CI 完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#single-object-allocation-and-placement-reuse).
 
+Core v2 現支援範本與別名中的一般裸函式型別，包括從函式指標推導型別。原始簽章、調整前陣列界限與 noexcept 相依來源仍會檢查；執行期回呼沿用既有契約，原生驗證須由 CI 完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#bare-function-type-metadata).
+
 Core v2 一元型別轉換現檢查原始輸入、實際替換後的原始碼與結果，包括最終型別中消失的別名範本參數。固定版本的十六種轉換沿用既有型別中繼資料與執行期型別，原生驗證仍僅在 CI 執行。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unary-type-transforms).
 
 Core v2 也支援經過檢查的 `__array_rank` 和 `__array_extent`，維度索引為非負常數整數，也支援固定陣列型別搭配模板索引。折疊前仍檢查型別和索引原始碼；不支援的陣列型別與隱含類別轉換索引仍被拒絕。原生結果須由實作版本的 CI 驗證。 未知長度陣列（如 `int[][3]`）的型別中繼資料、別名和範本引數現可保留維度、為零的外層長度及已知內層界限。執行時期型別和操作查詢仍遵循各自限制；標準標頭及完整 C++／STL 尚未完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#array-type-queries).

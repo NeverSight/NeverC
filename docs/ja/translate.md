@@ -12,6 +12,8 @@ Core v2 は未評価呼び出しで、定義のない名前空間テンプレー
 
 Core v2 は既定の sized delete 転送に対応します。ソースで再宣言されていない暗黙のグローバル sized delete/delete[] は、対応するソース定義の unsized 演算子を呼び出せます。明示的な sized 定義と元の配列 cookie レイアウトを保持します。既定のアロケーターや例外ランタイムは追加せず、ネイティブ検証には実装版の CI が必要です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#single-object-allocation-and-placement-reuse).
 
+Core v2 はテンプレートとエイリアス内の通常の関数型と、関数ポインターからの推論に対応します。元のシグネチャ、調整前の配列境界、noexcept の依存元を検査します。実行時コールバックの契約は従来どおりで、ネイティブ検証は CI で行います。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#bare-function-type-metadata).
+
 Core v2 の単項型変換は、元の入力、実際に置換されたソースと結果を検査します。最終型から消えるエイリアスのテンプレート引数も対象です。固定版の十六種類は既存の型メタデータと実行時型を使い、ネイティブ検証は CI で行います。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#unary-type-transforms).
 
 Core v2 は検証済みの `__array_rank` と `__array_extent` にも対応し、固定配列型に対するテンプレート引数を含む非負の定数整数インデックスを扱います。定数化の前に型とインデックスのソースを検査します。未対応の配列型と暗黙のクラス変換によるインデックスは対象外です。ネイティブ結果には実装リビジョンの CI が必要です。 `int[][3]` などの長さ不明の配列も、型だけのメタデータ、別名、テンプレート引数で次元数、不明な外側の長さを示すゼロ、既知の内側の長さを保持します。実行時の型と操作クエリには各契約の制限が残り、標準ヘッダーと完全な C++／STL は未完成です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#array-type-queries).

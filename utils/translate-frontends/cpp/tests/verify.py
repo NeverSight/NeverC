@@ -6316,6 +6316,123 @@ extern "C" void run(){D value;}
                           root=Path(temporary)/"project", profile="cpp-core-v2")
         assert relocated == array_queries
 
+    bare_function_positive = {
+        'ordinary-signature': 'struct Mid{int n;};int h()noexcept(noexcept(Mid())){return 0;}',
+        'deduced-free': 'struct Mid{int n;};int h()noexcept(noexcept(Mid())){return 0;}template<class F>bool ignore(F*){return true;}bool g(){return ignore(&h);}',
+        'deduced-member': 'struct Mid{int n;};int h()noexcept(noexcept(Mid())){return 0;}struct R{template<class F>bool ignore(F*){return true;}};bool g(){R r;return r.ignore(&h);}',
+        'deduced-constructor': 'struct Mid{int n;};int h()noexcept(noexcept(Mid())){return 0;}struct R{template<class F>R(F*){}};bool g(){R r(&h);return true;}',
+        'deduced-conversion-target': 'struct Mid{int n;};struct R{template<class F>operator F*(){return nullptr;}};int(*pointer)()noexcept(noexcept(Mid()))=R{};bool g(){return pointer==nullptr;}',
+        'deduced-conversion-bound': 'struct Mid{int n;};struct R{template<class F>operator F*(){return nullptr;}};int(*pointer)(char[noexcept(Mid())?1:2])=R{};bool g(){return pointer==nullptr;}',
+        'alias-argument': 'template<class T>using I=T;using F=I<int(int)>;static_assert(__is_function(F));',
+        'alias-result': 'template<class T>using F=int(T);static_assert(__is_same(F<int>,int(int)));',
+        'decay': 'template<class T>using D=__decay(T);static_assert(__is_same(D<int(int)>,int(*)(int)));',
+        'add-pointer': 'template<class T>using P=__add_pointer(T);static_assert(__is_same(P<void()>,void(*)()));',
+        'noexcept': 'template<class T>using D=__decay(T);static_assert(__is_same(D<int(int)noexcept>,int(*)(int)noexcept)&&!__is_same(D<int(int)noexcept>,int(*)(int)));',
+        'function-template': 'template<class F>bool classify(){return __is_function(F);}bool f(){return classify<int(int)>();}',
+        'function-default': 'template<class F=int(int)>bool classify(){return __is_function(F);}bool f(){return classify<>();}',
+        'class-member': 'template<class F>struct R{using type=F;};static_assert(__is_same(R<int(int)>::type,int(int)));',
+        'class-default': 'template<class F=int(int)>struct R{using type=F;};static_assert(__is_same(R<>::type,int(int)));',
+        'member-alias': 'struct R{template<class F>using type=__decay(F);};static_assert(__is_same(R::type<int(int)>,int(*)(int)));',
+        'copied-member-alias': 'template<class T>struct R{template<class F>using type=__decay(F);};static_assert(__is_same(R<int>::type<int(int)>,int(*)(int)));',
+        'partial': 'template<class T>struct R{using type=void;};template<class Result,class Arg>struct R<Result(Arg)>{using type=Result;};static_assert(__is_same(R<int(char)>::type,int));',
+        'variable-template': 'template<class F>constexpr bool value=__is_function(F);static_assert(value<int(int)>&&!value<int>);',
+        'pack': 'template<class... F>constexpr bool all(){return (__is_function(F)&&...);}static_assert(all<>()&&all<int(int),void()>()&&!all<int(int),int>());',
+        'erased': 'template<class F>using I=int;I<int(int)> f(){return 3;}',
+        'erased-pack': 'template<class... F>using I=int;I<int(int),void()> f(){return 3;}',
+        'erased-default': 'template<class F=int(int)>using I=int;I<> f(){return 3;}',
+        'complete-record-pointer': 'struct R{int n;};template<class F>using D=__decay(F);static_assert(__is_same(D<R*(R&)>,R*(*)(R&)));',
+        'adjusted-array-parameter': 'template<class F>using D=__decay(F);static_assert(__is_same(D<int(int[3])>,int(*)(int*)));',
+        'deduced-function': 'int identity(int n){return n;}template<class F>F* pointer(F* value){return value;}int f(){auto p=pointer(&identity);return p(3);}',
+        'declaration-only': 'template<class F>using D=__decay(F);using P=D<int(int)>;static_assert(__is_pointer(P));',
+        'checked-noexcept-source': 'struct Mid{int n;};template<class F>using I=int;using R=I<int()noexcept(noexcept(Mid()))>;R f(){return 3;}',
+        'checked-alias-source': 'struct Mid{int n;};using F=int()noexcept(noexcept(Mid()));static_assert(__is_function(F));',
+        'checked-default-source': 'struct Mid{int n;};template<class F=int()noexcept(noexcept(Mid()))>using I=int;I<> f(){return 3;}',
+        'unused-dependent': 'template<class T>using F=int(typename T::missing);int f(){return 3;}',
+    }
+    for name, source in bare_function_positive.items():
+        check("v2-bare-function-positive-" + name, source, profile="cpp-core-v2")
+    bare_function_negative = {
+        'hidden-ordinary-signature': 'template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};int h()noexcept(noexcept(Mid())){return 0;}',
+        'hidden-deduced-free': 'template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};int h()noexcept(noexcept(Mid())){return 0;}template<class F>bool ignore(F*){return true;}bool g(){return ignore(&h);}',
+        'hidden-deduced-member': 'template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};int h()noexcept(noexcept(Mid())){return 0;}struct R{template<class F>bool ignore(F*){return true;}};bool g(){R r;return r.ignore(&h);}',
+        'hidden-deduced-constructor': 'template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};int h()noexcept(noexcept(Mid())){return 0;}struct R{template<class F>R(F*){}};bool g(){R r(&h);return true;}',
+        'hidden-deduced-conversion-target': 'template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};struct R{template<class F>operator F*(){return nullptr;}};int(*pointer)()noexcept(noexcept(Mid()))=R{};bool g(){return pointer==nullptr;}',
+        'hidden-deduced-conversion-bound': 'template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};struct R{template<class F>operator F*(){return nullptr;}};int(*pointer)(char[noexcept(Mid())?1:2])=R{};bool g(){return pointer==nullptr;}',
+        'variadic': 'template<class T>using I=int;I<int(int,...)> f(){return 3;}',
+        'wide-result': 'template<class T>using I=int;I<long double(int)> f(){return 3;}',
+        'wide-parameter': 'template<class T>using I=int;I<int(long double)> f(){return 3;}',
+        'cv-function': 'template<class T>using I=int;I<int()const> f(){return 3;}',
+        'ref-function': 'template<class T>using I=int;I<int()&> f(){return 3;}',
+        'record-result': 'struct R{int n;};template<class T>using I=int;I<R()> f(){return 3;}',
+        'record-parameter': 'struct R{int n;};template<class T>using I=int;I<int(R)> f(){return 3;}',
+        'incomplete-signature': 'struct R;template<class T>using I=int;I<int(R*)> f(){return 3;}',
+        'function-reference': 'template<class T>using I=int;I<int(&)(int)> f(){return 3;}',
+        'wide-default': 'template<class T=int(long double)>using I=int;I<> f(){return 3;}',
+        'wide-noexcept': 'template<class T>using I=int;I<int()noexcept(sizeof(long double)>0)> f(){return 3;}',
+        'wide-adjusted-array': 'template<class T>using I=int;I<int(char[sizeof(long double)])> f(){return 3;}',
+        'wide-alias-result': 'template<class T>using F=int(char[sizeof(long double)+sizeof(T)]);using R=F<int>;',
+        'wide-alias-default': 'template<class T=int>using F=int(char[sizeof(long double)+sizeof(T)]);using R=F<>;',
+        'volatile-pointer-signature': 'template<class T>using I=int;I<int(volatile int*)> f(){return 3;}',
+        'ordinary-alias-qualifier': 'using F=int()const;',
+        'runtime-function-reference': 'int identity(int n){return n;}template<class T>using I=T;I<int(int)>& f(){return identity;}',
+        'hidden-erased-argument': 'template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};template<class T>using I=int;I<int()noexcept(noexcept(Mid()))> f(){return 3;}',
+        'hidden-erased-pack': 'template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};template<class...T>using I=int;I<void(),int()noexcept(noexcept(Mid()))> f(){return 3;}',
+        'hidden-erased-default': 'template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};template<class T=int()noexcept(noexcept(Mid()))>using I=int;I<> f(){return 3;}',
+        'hidden-alias-result': 'template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};template<class T>using F=int(T)noexcept(noexcept(Mid()));using R=F<int>;',
+        'hidden-ordinary-alias': 'template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};using F=int()noexcept(noexcept(Mid()));',
+        'hidden-ordinary-typedef': 'template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};typedef int F()noexcept(noexcept(Mid()));',
+        'hidden-adjusted-argument': 'template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};template<class T>using I=int;I<int(char[noexcept(Mid())?1:2])> f(){return 3;}',
+        'hidden-alias-default': 'template<class T>struct Inner{Inner()noexcept(sizeof(long double)>0)=default;};struct Mid{Inner<int> field;};template<class T=int>using F=int(T)noexcept(noexcept(Mid()));using R=F<>;',
+    }
+    for name, source in bare_function_negative.items():
+        check("v2-bare-function-negative-" + name, source, 'TR0201', profile="cpp-core-v2")
+    bare_function_invalid = {
+        'function-object': 'template<class T>struct R{T value;};R<int(int)> r;',
+        'function-array': 'template<class T>using A=T[2];using R=A<int(int)>;',
+        'bad-assertion': 'template<class T>using D=__decay(T);static_assert(__is_same(D<int(int)>,int));',
+        'function-return': 'template<class T>T f(){return 0;}int g(){return f<int(int)>();}',
+    }
+    for name, source in bare_function_invalid.items():
+        check("v2-bare-function-invalid-" + name, source, 'TR0202', profile="cpp-core-v2")
+
+    bare_function_identity_source = 'using Size=decltype(sizeof(0));\ntemplate<class F>using Decay=__decay(F);\ntemplate<class T>using Function=T(int);\ntemplate<class F>using Erased=int;\nextern "C" bool function_type(){return __is_function(Function<int>);}\nextern "C" bool function_pointer(){return __is_same(Decay<int(int)>,int(*)(int));}\nextern "C" bool function_noexcept(){return __is_same(Decay<int(int)noexcept>,int(*)(int)noexcept);}\nextern "C" bool function_different(){return __is_same(Decay<int(int)noexcept>,int(*)(int));}\nextern "C" bool function_erased(){return __is_same(Erased<int(int)>,int);}\nextern "C" bool function_void(){return __is_same(Decay<void()>,void(*)());}\nextern "C" bool function_construction(){return __is_constructible(Decay<int(int)>,int(int));}\nextern "C" bool function_conversion(){return __is_convertible(int(int),Decay<int(int)>);}\nextern "C" Size function_pointer_size(){return sizeof(Decay<int(int)>);}\n'
+    bare_function_identity_expected = {'function_type': True, 'function_pointer': True, 'function_noexcept': True, 'function_different': False, 'function_erased': True, 'function_void': True, 'function_construction': True, 'function_conversion': True}
+    for target in ("x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu",
+                   "x86_64-apple-macosx", "aarch64-apple-macosx",
+                   "x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc",
+                   "i686-pc-windows-msvc", "i686-w64-windows-gnu"):
+        identities = check("v2-bare-function-identities-" + target,
+                           bare_function_identity_source, profile="cpp-core-v2", target=target)
+        assert not identities["records"] and not identities["globals"]
+        expected = bare_function_identity_expected
+        assert {f["name"] for f in identities["functions"]} == expected.keys() | {"function_pointer_size"}
+        for function in identities["functions"]:
+            assert not function["params"] and function["c_export"]
+            returns = [node["value"] for node in function["body"] if node["op"] == "return"]
+            assert len(returns) == 1
+            bindings = {node["target"]["name"]: node["value"] for node in function["body"]
+                        if node["op"] == "assign" and node["target"]["kind"] == "var"}
+            returned, seen = returns[0], set()
+            while returned["kind"] == "var":
+                assert returned["name"] not in seen
+                seen.add(returned["name"])
+                returned = bindings[returned["name"]]
+            assert returned["kind"] == "literal"
+            if function["name"] in expected:
+                assert function["result"] == "bool" and returned["type"] == "bool"
+                assert returned["value"] is expected[function["name"]]
+            else:
+                size_type = "uint" if target.startswith("i686") else "u64"
+                assert function["result"] == size_type and returned["type"] == size_type
+                assert returned["value"] == ("4" if target.startswith("i686") else "8")
+    bare_function_runtime_source = (repository / "tests/neverc/Inputs/translate/cpp/bare-function-metadata.cpp").read_text()
+    bare_function_runtime = check("v2-bare-function-runtime", bare_function_runtime_source, profile="cpp-core-v2")
+    assert {f["name"] for f in bare_function_runtime["functions"] if f["c_export"]} == bare_function_identity_expected.keys() | {"function_pointer_size"}
+    with tempfile.TemporaryDirectory(prefix="neverc-bare-function-relocated-") as temporary:
+        relocated = check("v2-bare-function-relocated", bare_function_runtime_source,
+                          root=Path(temporary)/"project", profile="cpp-core-v2")
+        assert relocated == bare_function_runtime
+
     unary_transform_positive = {
         'unused-parameter-source': 'template<class T,__remove_cv(T) N>int f(){return T::missing;}int g(){return 3;}',
         'concrete-parameter-source': 'template<class T,__remove_cv(T) N>int f(){return N;}int g(){return f<const int,3>();}',

@@ -1649,6 +1649,42 @@ destruction order and independent member storage are checked;
 relocation must preserve the protocol. Native results require implementing CI.
 Standard headers and complete C++/STL support remain unfinished.
 
+## Bare function type metadata
+
+Core v2 permits ordinary bare function types in type-only template arguments,
+selected defaults, packs and alias results. For example,
+`template<class T> using D = __decay(T);` accepts `D<int(int)>` and preserves the
+existing callback pointer type. No function declaration or body is invented by a
+type-only use. Actual callback targets, stored pointers and invocations retain
+their existing definition, lifetime and ABI checks.
+
+Each function type uses the same bounded default-ABI callback signature check
+as a direct function query. Noexcept type identity is preserved. Variadic,
+cv/ref-qualified, unsupported calling-convention and wide signatures remain
+excluded, as do function references and record/array values in callback
+parameters or results. Supported complete-record pointers/references keep their
+existing carrier contract; incomplete record signatures do not gain a carrier.
+
+Actual written function-type template arguments, retained alias underlying
+sources and ordinary typedef/using sources register exact source roots. Normal
+traversal also retains each owned concrete function prototype as a root. This
+covers function types deduced from pointer arguments and conversion destinations,
+which need not have written template arguments. Original adjusted parameter
+bounds and noexcept dependencies remain checked even when an alias erases the
+function type. Registration never synthesizes a type source, traverses a source
+a second time, or instantiates a body. Dependent pattern signatures remain lazy;
+selected resolved prototypes retain their separate existing checks. Function
+bodies and unselected defaults do not become signature dependencies.
+
+Paired controls cover free/member/constructor deduction, conversion targets,
+aliases/defaults/partials/packs and erased signatures. Eight ABI protocol checks
+verify eight boolean exports plus a native pointer-size export without extra
+functions or storage. A seventeen-checkpoint runtime fixture verifies callback
+invocation, noexcept conversion, deduction, stored callbacks and zero source
+expression effects. O0/O2 and relocation require the implementing revision's CI.
+This work adds no runtime type, IR operation or helper. Standard headers and
+complete C++/STL remain unfinished.
+
 ## Unary type transforms
 
 Core v2 checks the sixteen unary type transforms in the pinned frontend:
@@ -1664,8 +1700,8 @@ signed or obtaining the underlying type of `int`.
 
 Type-only unknown-bound arrays and incomplete non-union record identities use
 their existing contracts. Ordinary bare function types can decay directly to
-admitted callback pointers. Function-reference inputs/results and bare functions
-as template arguments retain their existing restrictions. Runtime objects and
+admitted callback pointers. Bare function template arguments follow the [function metadata contract](#bare-function-type-metadata).
+Function-reference inputs and results retain their existing restrictions. Runtime objects and
 signatures still require actual admitted storage; a transformed pointer to an
 incomplete record does not create a runtime carrier.
 

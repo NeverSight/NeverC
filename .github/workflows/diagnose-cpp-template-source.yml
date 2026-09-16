@@ -16,6 +16,7 @@ on:
       - tests/neverc/Inputs/translate/cpp/defined-operation-traits.cpp
       - tests/neverc/Inputs/translate/cpp/array-type-queries.cpp
       - tests/neverc/Inputs/translate/cpp/unary-type-transforms.cpp
+      - tests/neverc/Inputs/translate/cpp/bare-function-metadata.cpp
       - tests/neverc/Inputs/translate/cpp/empty-base-chains.cpp
 
 permissions:
@@ -120,7 +121,7 @@ jobs:
         if: ${{ !cancelled() && steps.build_probe.outcome == 'success' }}
         run: |
           status=0
-          for fixture in nullptr-template-values builtin-type-classification scalar-operation-traits trivial-record-operation-traits defined-operation-traits array-type-queries unary-type-transforms empty-base-chains runtime-aggregate-array; do
+          for fixture in nullptr-template-values builtin-type-classification scalar-operation-traits trivial-record-operation-traits defined-operation-traits array-type-queries unary-type-transforms bare-function-metadata empty-base-chains runtime-aggregate-array; do
             for optimization in 0 2; do
               if clang++-20 -std=c++17 -O"$optimization" -fstrict-aliasing \
                 "tests/neverc/Inputs/translate/cpp/$fixture.cpp" -o "$RUNNER_TEMP/$fixture"; then

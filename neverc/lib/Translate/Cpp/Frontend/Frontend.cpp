@@ -1782,7 +1782,8 @@ static bool incompleteRecordMetadataIdentity(Adapter &A, const CXXRecordDecl *D)
 }
 
 void Adapter::checkTypeOnly(QualType T, SourceLocation L) {
-  if (incompleteArrayMetadataType(T) || incompleteRecordMetadataType(T))
+  if ((!T.isNull() && T->isFunctionType()) || incompleteArrayMetadataType(T) ||
+      incompleteRecordMetadataType(T))
     checkQueryType(T, L, true, true);
   else
     type(T, L, true);
@@ -4156,7 +4157,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   OperationExpressionSources CheckedOperationExpressions;
   OperationTypeSources CheckedOperationTypes;
   std::set<const Expr *> TypeSourceQueries;
-  std::map<OperationTypeSourceKey, SourceLocation> TypeSourceTransforms;
+  std::map<OperationTypeSourceKey, SourceLocation> TypeSourceRoots;
   std::set<const Stmt *> OperationValueRoots;
   std::set<const Expr *> DecltypeCallResults;
   std::set<const Expr *> CheckedSemanticInitializers;
@@ -6556,6 +6557,30 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     if (Source)
       operationTypeDependency(Source->getTypeLoc());
   }
+  bool retainFunctionTypeSource(QualType Type, const TypeSourceInfo *Source,
+                                SourceLocation L) {
+    if (Type.isNull() || !Type->isFunctionType() || Type->isInstantiationDependentType())
+      return true;
+    if (!Source || Source->getType().isNull() ||
+        Source->getType()->isInstantiationDependentType() ||
+        !A.Context.hasSameType(Source->getType(), Type)) {
+      A.reject(L, "function type source",
+               "Bare function metadata requires its actual resolved signature source.");
+      return false;
+    }
+    const auto Location = Source->getTypeLoc();
+    if (!A.S.owns(A.Sources, Location.getBeginLoc())) {
+      A.reject(Location.getBeginLoc(), "function type source",
+               "Bare function metadata requires its actual owned signature source.");
+      return false;
+    }
+    // Registration does not traverse or complete a node. The existing source
+    // owner keeps its template frame and normal first traversal; final closure
+    // checks the exact node even when an alias erases this function type.
+    if (TypeSourceRoots.emplace(operationTypeSourceKey(Location), Location.getBeginLoc()).second)
+      A.chargeExpansion(1, Location.getBeginLoc());
+    return true;
+  }
   void collectOperationTypeSource(QualType InputType, SourceLocation L, bool Layout) {
     if (ActiveOperationSources.empty() || InputType.isNull())
       return;
@@ -6931,9 +6956,16 @@ public:
     if (Root && OperationValueRoots.insert(Root).second)
       A.chargeExpansion(1, Root->getExprLoc());
     collectOperationTypeSource(TL.getType(), TL.getBeginLoc(), false);
-    if (RootLocation.getAs<UnaryTransformTypeLoc>() &&
-        !(TemplateParameterTypeSource && TL.getType()->isInstantiationDependentType()) &&
-        TypeSourceTransforms.emplace(operationTypeSourceKey(TL), TL.getBeginLoc()).second)
+    const bool TransformRoot = RootLocation.getAs<UnaryTransformTypeLoc>() &&
+        !(TemplateParameterTypeSource && TL.getType()->isInstantiationDependentType());
+    // A function type can be deduced from an actual declaration or conversion
+    // destination without a written template argument. Keep that signature's
+    // own source root, including adjusted parameter bounds and noexcept input.
+    const bool FunctionRoot = RootLocation.getAs<FunctionProtoTypeLoc>() &&
+        !TL.getType()->isInstantiationDependentType() &&
+        A.S.owns(A.Sources, TL.getBeginLoc());
+    if ((TransformRoot || FunctionRoot) &&
+        TypeSourceRoots.emplace(operationTypeSourceKey(TL), TL.getBeginLoc()).second)
       A.chargeExpansion(1, TL.getBeginLoc());
     // QualifiedTypeLoc's base traversal deliberately bypasses this override
     // for its unqualified inner location. The observed outer node covers it.
@@ -8272,7 +8304,8 @@ public:
         return true;
       }
       A.checkTypeOnly(Source.Underlying->getType(), L);
-      return TraverseTypeLoc(Source.Underlying->getTypeLoc());
+      return retainFunctionTypeSource(Source.Underlying->getType(), Source.Underlying, L) &&
+             TraverseTypeLoc(Source.Underlying->getTypeLoc());
     }
     return true;
   }
@@ -10049,8 +10082,11 @@ public:
       // RAV visits a written builtin TypeLoc without admitting its type. This
       // also covers nondependent defaults of otherwise unused templates.
       if (!Type.isNull() && !Type->isDependentType() &&
-          !Type->isInstantiationDependentType())
+          !Type->isInstantiationDependentType()) {
         A.checkTypeOnly(Type, Argument.getLocation());
+        if (!retainFunctionTypeSource(Type, Argument.getTypeSourceInfo(), Argument.getLocation()))
+          return false;
+      }
     }
     if (A.S.coreV2() && Argument.getArgument().getKind() == TemplateArgument::Integral)
       if (auto *Written = Argument.getSourceIntegralExpression())
@@ -10962,15 +10998,15 @@ public:
         return false;
       }
     }
-    // A transform consumes source even when no surrounding expression queries
-    // its result. Use only the exact TypeLoc roots reached by normal traversal.
-    for (const auto &[Type, Location] : TypeSourceTransforms) {
+    // Type transforms and bare function metadata consume source even without a
+    // surrounding query. Only normal traversal can complete these exact roots.
+    for (const auto &[Type, Location] : TypeSourceRoots) {
       OperationSourceChecker SourceCheck(A, &CompletedOperationDefinitions,
           &CheckedOperationExpressions, &CheckedOperationTypes, &CompletedGeneratedOperations,
           &CompletedQueryDestructorSignatures);
       if (!SourceCheck.requireType(Type) || !SourceCheck.finish(Location)) {
-        A.reject(Location, "unary transform source",
-                 "Every consumed type transform requires completed original source dependencies.");
+        A.reject(Location, "type metadata source",
+                 "Every consumed type metadata root requires completed original source dependencies.");
         return false;
       }
     }
@@ -11503,10 +11539,9 @@ public:
   }
   bool VisitTypedefNameDecl(TypedefNameDecl *D) {
     if (owned(D) && A.S.coreV2()) {
-      if (D->getUnderlyingType()->isFunctionType())
-        A.functionPointerType(A.Context.getPointerType(D->getUnderlyingType()), D->getLocation());
-      else
-        A.checkTypeOnly(D->getUnderlyingType(), D->getLocation());
+      A.checkTypeOnly(D->getUnderlyingType(), D->getLocation());
+      if (!retainFunctionTypeSource(D->getUnderlyingType(), D->getTypeSourceInfo(), D->getLocation()))
+        return false;
     }
     return true;
   }
