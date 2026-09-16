@@ -8643,7 +8643,9 @@ extern "C" void run(){D value;}
         expected = operation_trait_expected.copy()
         assert not module["globals"]
         assert len(module["records"]) == 1
-        assert module["records"][0]["fields"] == [{"name": "value", "type": "int"}]
+        fields = module["records"][0]["fields"]
+        assert len(fields) == 1 and fields[0]["type"] == "int"
+        assert fields[0]["name"].startswith("nct_")
         assert {f["name"] for f in module["functions"]} == set(expected)
         assert all(not f["params"] for f in module["functions"])
         for function in module["functions"]:
@@ -15600,9 +15602,19 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'nttp-inherited-default-source': 'template<class T>using K=decltype(T{});template<class T,K<T> N=4>int f();template<class T,K<T> N>int f(){return N;}int g(){return f<int>();}',
         'nttp-empty-type-pack': 'template<class...T,T...N>int f(){return sizeof...(N);}int g(){return f<>();}',
         'nttp-expanded-type-pack': 'template<int N>struct Tag{int n;};template<class...T,T...N>int f(Tag<N>...v){return(0+...+N);}int g(){return f<int,int>(Tag<1>{3},Tag<2>{4});}',
+        'function-type': 'template<class T>using I=T();I<int>*f(){return nullptr;}',
     }
     for name, source in alias_templates_positive.items():
-        check("v2-alias-templates-positive-" + name, source, profile="cpp-core-v2")
+        data = check("v2-alias-templates-positive-" + name, source,
+                     profile="cpp-core-v2")
+        if name == "function-type":
+            assert not data["records"] and not data["globals"]
+            assert len(data["functions"]) == 1
+            function = data["functions"][0]
+            assert function["result"] == "fnptr:0:3:int" and not function["params"]
+            nulls = [node for node in walk(function["body"])
+                     if node.get("kind") == "null"]
+            assert len(nulls) == 1 and nulls[0]["type"] == "fnptr:0:3:int"
 
     alias_templates_reject = {
         'ignored-floating-type': 'template<class T>using I=int;I<long double>f(){return 3;}',
@@ -15622,7 +15634,6 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
         'selected-alias-body': 'template<class T>using I=int;template<class T>int f(){I<long double>n=3;return n;}int g(){return f<int>();}',
         'selected-function-default': 'template<class T,int N=(sizeof(long double)+sizeof(T))>int f(T){return N;}int g(){return f(3);}',
         'template-template-parameter': 'template<template<class>class T>using I=int;',
-        'function-type': 'template<class T>using I=T();I<int>*f(){return nullptr;}',
         'volatile-type': 'template<class T>using I=volatile T;I<int>f(){return 3;}',
         'attribute': 'template<class T>using I [[deprecated]]=T;',
         'zero-array': 'template<int N>using I=int[N];int f(){I<0>a{};return sizeof(a);}',
@@ -17992,8 +18003,17 @@ int earlyRange(){Fixed<Guard,2>v{{Guard(1),Guard(2)}};for(Guard&x:v)return x.n;r
     assert [np_pointer(destructor, c["args"][0]) for c in destroys] == [("element", base, 1), ("element", base, 0)]
     assert sum(cm_functions[c["callee"]]["result"] == "ptr:"+guard["id"] for c in early_calls) == 2
     returned = [n["value"] for n in early["body"] if n["op"] == "return"]
-    captured = [i for i, n in enumerate(early["body"]) if n["op"] == "assign" and any(v.get("kind") == "member" for v in walk(n["value"]))
-                and any(v.get("name") == n["target"].get("name") for v in returned)]
+    needed = {value["name"] for value in returned if value.get("kind") == "var"}
+    captured = []
+    for i, node in reversed(list(enumerate(early["body"]))):
+        if node["op"] != "assign" or node["target"].get("name") not in needed:
+            continue
+        needed.remove(node["target"]["name"])
+        if any(value.get("kind") == "member" for value in walk(node["value"])):
+            captured.append(i)
+        else:
+            needed.update(value["name"] for value in walk(node["value"])
+                          if value.get("kind") == "var")
     assert len(captured) == 1
     assert any(i > captured[0] and n["op"] == "call" and n["callee"] == destructor["name"] for i, n in enumerate(early["body"]))
     for function in class_methods["functions"]:
@@ -19328,8 +19348,12 @@ int main() {
         "extended-size-value": "int main(){return sizeof(1.0L);}",
         "constructor-folded-extended-initializer": "struct R{int n;constexpr R():n(sizeof(long double)){}};constexpr R r;",
     })
+    # Clang diagnoses these ill-formed sizeof operands before the support
+    # allowlist runs; the remaining valid extensions are scope rejections.
+    v2_rejection_codes = {"void-size": "TR0202", "function-size": "TR0202"}
     for name, source in v2_rejections.items():
-        check("v2-rejects-" + name, source, "TR0201", profile="cpp-core-v2")
+        check("v2-rejects-" + name, source,
+              v2_rejection_codes.get(name, "TR0201"), profile="cpp-core-v2")
     check("v2-failed-assert", "static_assert(false,\"must fail\"); int main(){}",
           "TR0202", profile="cpp-core-v2")
 

@@ -440,6 +440,59 @@ def fix_pseudo_destructor_exception_spec(path):
         path.write_text(text.replace(before, after, 1), encoding="utf-8")
 
 
+def fix_partial_specialization_argument_bounds(path):
+    before = '''  TemplateParameterList *TemplateParams =
+      PrimaryTemplate->getTemplateParameters();
+  for (unsigned I = 0, N = TemplateParams->size(); I != N; ++I) {
+    NonTypeTemplateParmDecl *Param
+      = dyn_cast<NonTypeTemplateParmDecl>(TemplateParams->getParam(I));
+    if (!Param)
+      continue;
+
+    if (CheckNonTypeTemplatePartialSpecializationArgs(*this, TemplateNameLoc,
+                                                      Param, &TemplateArgs[I],
+                                                      1, I >= NumExplicit))
+      return true;
+  }
+'''
+    after = '''  TemplateParameterList *TemplateParams =
+      PrimaryTemplate->getTemplateParameters();
+  for (unsigned I = 0, N = TemplateParams->size(); I != N; ++I) {
+    // NeverC invalid pack frontiers can leave the converted list shorter than
+    // the fixed primary parameter list. Later partial ordering diagnoses them.
+    if (I >= TemplateArgs.size())
+      continue;
+    NonTypeTemplateParmDecl *Param
+      = dyn_cast<NonTypeTemplateParmDecl>(TemplateParams->getParam(I));
+    if (!Param)
+      continue;
+
+    if (CheckNonTypeTemplatePartialSpecializationArgs(*this, TemplateNameLoc,
+                                                      Param, &TemplateArgs[I],
+                                                      1, I >= NumExplicit))
+      return true;
+  }
+'''
+    error_message = ("Unexpected pinned Clang partial-specialization argument "
+                     "source in " + str(path))
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise SystemExit(error_message) from error
+    counts = (text.count(before), text.count(after))
+    if counts == (1, 0):
+        state = 0
+    elif counts == (0, 1):
+        state = 1
+    else:
+        raise SystemExit(error_message)
+    remainder = text.replace((before, after)[state], "", 1)
+    if "NeverC invalid pack frontiers" in remainder:
+        raise SystemExit(error_message)
+    if state == 0:
+        path.write_text(text.replace(before, after, 1), encoding="utf-8")
+
+
 def fix_array_type_query_dimensions(source_root):
     # Validate every exact producer state before changing any file.
     patches = (('clang/lib/Sema/SemaExprCXX.cpp',
@@ -1360,6 +1413,7 @@ fix_array_type_query_dimensions(args.source)
 preserve_unary_transform_source(args.source / "clang/lib/Sema/TreeTransform.h")
 preserve_operation_trait_source(args.source)
 fix_pseudo_destructor_exception_spec(args.source / "clang/lib/Sema/SemaExceptionSpec.cpp")
+fix_partial_specialization_argument_bounds(args.source / "clang/lib/Sema/SemaTemplate.cpp")
 fix_deduced_reference_conversions(args.source / "clang/lib/Sema/SemaInit.cpp")
 fix_deduced_reference_arguments(args.source / "clang/lib/Sema/SemaOverload.cpp")
 fix_copied_full_initializers(args.source / "clang/lib/Sema/SemaExpr.cpp")

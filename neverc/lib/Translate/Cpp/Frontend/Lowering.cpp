@@ -1452,6 +1452,27 @@ class FunctionLowering {
     if (const auto *Call = dyn_cast<CallExpr>(E))
       return Call->isPRValue() && recordValue(Call->getType())
                  ? materialize(Call, L) : call(Call);
+    if (const auto *B = dyn_cast<BinaryOperator>(E);
+        A.S.coreV2() && B && B->isComparisonOp()) {
+      std::vector<const ArrayTypeTraitExpr *> Queries;
+      for (const auto *Operand : {B->getLHS(), B->getRHS()})
+        if (const auto *Query = dyn_cast<ArrayTypeTraitExpr>(
+                Operand->IgnoreParenImpCasts()))
+          Queries.push_back(Query);
+      if (!Queries.empty()) {
+        APValue Value;
+        if (!B->isCXX11ConstantExpr(A.Context, &Value) || !Value.isInt())
+          reject(L, "array query comparison",
+                 "A comparison containing an array type query must be a "
+                 "checked constant expression.");
+        // Validate every query through the same source/type boundary as a
+        // standalone query, then retain Clang's target-specific comparison
+        // result as one literal. No operand is evaluated at runtime.
+        for (const auto *Query : Queries)
+          A.arrayTypeQueryValue(Query);
+        return boolean(!Value.getInt().isZero(), L);
+      }
+    }
     if (const auto *U = dyn_cast<UnaryOperator>(E)) {
       if (A.S.coreV2() && U->getOpcode() == UO_Plus &&
           U->getSubExpr()->getType()->isFunctionPointerType())
@@ -2027,13 +2048,17 @@ class FunctionLowering {
     if (const auto *Cast = dyn_cast<CastExpr>(Init);
         Cast && Cast->getCastKind() == CK_ConstructorConversion) {
       const auto *Construction = constructorConversion(Cast, A.Context);
-      if (!Construction)
+      if (!Construction ||
+          Construction->getConstructionKind() !=
+              CXXConstructionKind::Complete)
         reject(L, "base constructor conversion",
-               "The selected constructor conversion must retain its exact construction.");
+               "The selected constructor conversion must retain its exact "
+               "complete construction.");
       // Aggregate initialization of a derived object wraps a selected base
-      // constructor in CK_ConstructorConversion. The construction still owns
-      // the base destination; do not materialize a separate temporary.
-      initializeEmptyBase(std::move(Place), Construction, L);
+      // constructor in CK_ConstructorConversion. The wrapper, rather than the
+      // inner complete-object node, proves that this construction owns the
+      // base destination; do not materialize a separate temporary.
+      construct(std::move(Place), Cast->getType(), Construction, L, true);
       return;
     }
     if (const auto *C = dyn_cast<CXXConstructExpr>(Init)) {

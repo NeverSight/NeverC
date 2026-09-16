@@ -11,6 +11,15 @@ nonthrowing, while receiver calls retain their exception specifications and
 dependency. Exact original/rewritten source blocks, idempotence and rejection of
 missing, duplicate, drifted or orphaned blocks are audited before source writes.
 
+A checked private SemaTemplate.cpp repair bounds the converted argument list
+before inspecting each fixed primary non-type parameter. An invalid partial
+specialization whose trailing pack occupies one converted slot can otherwise
+leave that list shorter than the primary parameter list and trip ArrayRef's
+index assertion. Missing entries skip only this per-argument restriction check;
+the existing partial-ordering path still rejects the specialization and produces
+the ordinary compiler diagnostic. Exact original/rewritten blocks, idempotence
+and missing, duplicate, mixed, drifted or orphaned states are audited.
+
 The archive is fetched and verified during the NeverC build. An offline copy
 can be selected with CMake's NEVERC_CPP_LLVM_SOURCE_ARCHIVE option; the same
 SHA256 is required. No upstream executable or shared library is installed.

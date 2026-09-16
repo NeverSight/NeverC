@@ -11655,7 +11655,15 @@ public:
       }
       checkTemplateArguments(templateSourceParameters(Primary), *Arguments, D->getLocation());
     }
-    A.type(D->getReturnType(), D->getLocation(), true);
+    // A declaration selected only by decltype/noexcept can return a function
+    // reference as type metadata even though the C23 protocol has no runtime
+    // carrier for that reference. Do not extend this exception to incomplete
+    // records or arrays. Definitions and evaluated calls are still rejected by
+    // their lowering/signature carrier checks.
+    if (!functionMetadataType(D->getReturnType()).isNull())
+      A.checkTypeOnly(D->getReturnType(), D->getLocation());
+    else
+      A.type(D->getReturnType(), D->getLocation(), true);
     const auto *Method = dyn_cast<CXXMethodDecl>(D);
     const bool Deleted = A.S.coreV2() && deletedFunctionDeclaration(D);
     const bool Defaulted = A.S.coreV2() &&
