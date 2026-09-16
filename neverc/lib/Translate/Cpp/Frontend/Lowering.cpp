@@ -2662,7 +2662,7 @@ public:
                       Function->getFormalLinkage() != Linkage::Internal);
   }
   json::Object runConstructorEntry(bool BaseObject) {
-    const auto *Constructor = cast<CXXConstructorDecl>(Function);
+    const auto *Constructor = llvm::cast<CXXConstructorDecl>(Function);
     const auto L = Constructor->getLocation();
     if (!A.BaseConstructorRecords.count(Constructor->getParent()->getCanonicalDecl()))
       reject(L, "constructor entry", "A shared body requires an already checked base record.");
