@@ -13675,8 +13675,9 @@ TEST(ParallelFrontendTiming, MultiFileTimePassesUsesExclusiveOptionLease) {
 // still creates NamedRegionTimer objects that share one Timer per name. Their
 // start/stop operations are not synchronized, so ParallelSafe frontends must
 // upgrade from the shared option lease to a plain exclusive lease without
-// resetting the embedder's option state. First verify that one frontend waits
-// for an exclusive lease behind a host reader. Only after that succeeds, run
+// resetting the embedder's option state, and timed codegen must keep its own
+// partitions on one thread. First verify that one frontend waits for an
+// exclusive lease behind a host reader. Only after that succeeds, run
 // concurrent ordinary frontends and check their output and ambient state.
 TEST(ParallelFrontendTiming,
      AmbientTimePassesSerializesOtherwiseParallelSafeFrontends) {

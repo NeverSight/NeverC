@@ -244,6 +244,59 @@ std::optional<CstddefOperation>
 approvedCstddefOperation(const State &S, const clang::SourceManager &SM,
                          const clang::CallExpr *Call,
                          const clang::ASTContext &Context);
+enum class UtilityOperation {
+  Move,
+  Forward,
+  MoveIfNoexcept,
+  AsConst,
+  Exchange,
+  Swap,
+  MakePair,
+  PairSwap,
+  PairMemberSwap,
+  PairEqual,
+  PairNotEqual,
+  PairLess,
+  PairGreater,
+  PairLessEqual,
+  PairGreaterEqual,
+  PairGetFirst,
+  PairGetSecond,
+};
+struct UtilityPairRecord {
+  const clang::CXXRecordDecl *Record;
+  const clang::FieldDecl *First, *Second;
+};
+bool approvedUtilityPairMetadata(const State &S,
+                                 const clang::SourceManager &SM,
+                                 const clang::CXXRecordDecl *Record);
+enum class UtilityPairConstruction {
+  Default,
+  Elements,
+  CopyOrMove,
+};
+std::optional<UtilityPairRecord>
+approvedUtilityPairRecord(const State &S, const clang::SourceManager &SM,
+                          const clang::CXXRecordDecl *Record,
+                          const clang::ASTContext &Context);
+std::optional<UtilityPairConstruction>
+approvedUtilityPairConstruction(const State &S,
+                                const clang::SourceManager &SM,
+                                const clang::CXXConstructExpr *Construction,
+                                const clang::ASTContext &Context);
+std::optional<UtilityPairRecord>
+approvedUtilityPairAssignment(const State &S,
+                              const clang::SourceManager &SM,
+                              const clang::CXXOperatorCallExpr *Assignment,
+                              const clang::ASTContext &Context);
+std::optional<UtilityOperation>
+approvedUtilityOperation(const State &S, const clang::SourceManager &SM,
+                         const clang::CallExpr *Call,
+                         const clang::ASTContext &Context);
+bool approvedUtilityConstant(const State &S, const clang::SourceManager &SM,
+                             const clang::CallExpr *Call,
+                             clang::ASTContext &Context,
+                             clang::APValue &Value);
 bool approvedCstddefNull(const State &S, const clang::SourceManager &SM,
                         const clang::Expr *Expression);
 bool approvedCstddefTypeQuery(const State &S,
@@ -390,6 +443,7 @@ public:
   std::map<const clang::Decl *, clang::VarDecl *> GlobalDeclarations;
   std::map<std::string, json::Object> MappedFunctions;
   std::map<const clang::CXXRecordDecl *, std::size_t> StorageUnits;
+  std::set<const clang::CXXRecordDecl *> RequiredUtilityPairs;
   std::map<const clang::CXXRecordDecl *, CheckedEmptyBase> EmptyBases;
   std::map<const clang::VarDecl *, const clang::CXXForRangeStmt *> RangeDeclarations;
   std::size_t ExpandedNodes = 0;
@@ -405,6 +459,9 @@ public:
   void addProjectMetadata();
   std::string type(clang::QualType T, clang::SourceLocation L,
                    bool AllowVoid = false, unsigned Depth = 0);
+  bool requireUtilityPair(const clang::CXXRecordDecl *Record,
+                          clang::SourceLocation Location,
+                          unsigned Depth = 0);
   std::string functionPointerType(clang::QualType T, clang::SourceLocation L,
                                   unsigned Depth = 0);
   bool typeClassificationValue(const clang::TypeTraitExpr *Query);

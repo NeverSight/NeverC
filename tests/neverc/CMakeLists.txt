@@ -2893,7 +2893,7 @@ target_compile_definitions(neverc-translate-tests PRIVATE
 neverc_tests_link_neverc(neverc-translate-tests)
 gtest_discover_tests(neverc-translate-tests
   TEST_PREFIX "neverc-translate."
-  PROPERTIES TIMEOUT 180
+  PROPERTIES TIMEOUT 600
   DISCOVERY_TIMEOUT 300
 )
 

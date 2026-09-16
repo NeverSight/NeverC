@@ -43,7 +43,7 @@
       "type": "object",
       "properties": {
         "distribution_id": {
-          "const": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r2"
+          "const": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r3"
         },
         "catalog_sha256": {
           "type": "string",

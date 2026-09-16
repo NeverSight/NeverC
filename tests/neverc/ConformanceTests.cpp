@@ -84,6 +84,30 @@ TEST_F(ConformanceTest, N3042_Nullptr) {
   syntaxSmoke("n3042", cTestDir() / "C2x" / "n3042.c", "c2x");
 }
 
+TEST_F(ConformanceTest, NullptrExplicitBoolPreservesValueAndEffects) {
+  auto source = tmpFile("nullptr-explicit-bool.c");
+  writeFile(
+      source,
+      R"c(
+int calls;
+
+typeof(nullptr) get_null(void) {
+  ++calls;
+  return nullptr;
+}
+
+int main(void) {
+  bool runtime = (bool)get_null();
+  if (runtime || calls != 1)
+    return 1;
+  if ((bool)nullptr)
+    return 2;
+  return 0;
+}
+)c");
+  compileRunAndCheck("nullptr-explicit-bool", source.string(), "-std=c23");
+}
+
 // ---- C99 / C11 feature files ----
 
 TEST_F(ConformanceTest, N636_ImplicitFunctionDecl) {

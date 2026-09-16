@@ -8,9 +8,11 @@ Core v2 现支持内置且固定版本的 `<type_traits>`，用于编译期类�
 
 Core v2 也支持内置且固定版本的 `<cstdint>`。固定、least、fast、指针和最大宽度类型别名，以及标准上下界与常量宏，都会保留所选目标的 C++17 类型和值。驱动会记录独立使用时的 9 个头文件闭包，拒绝引号形式和 C 头文件形式，并允许 `<cstdint>` 与 `<type_traits>` 按任意顺序组合。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#fixed-width-integers-from-cstdint).
 
-Core v2 也支持固定版本的 `<limits>`。已支持整数、`float` 和 `double` 的 `numeric_limits` 整数／枚举数据成员与标准零参数查询会折叠为精确字面量，包括无穷值和 NaN。103 个文件的闭包会在所有目标上经过认证；运行时对象、存储或方法身份、对象限定调用及 `long double` 仍不受支持。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#numeric-bounds-from-limits).
+Core v2 也支持固定版本的 `<limits>`。已支持整数、`float` 和 `double` 的 `numeric_limits` 整数／枚举数据成员与标准零参数查询会折叠为精确字面量，包括无穷值和 NaN。16 个文件的闭包会在所有目标上经过认证；运行时对象、存储或方法身份、对象限定调用及 `long double` 仍不受支持。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#numeric-bounds-from-limits).
 
 Core v2 也支持固定版本的 `<cstddef>`。目标相关的 `size_t`、`ptrdiff_t` 和 `nullptr_t` 别名、`NULL`、受检查的 `offsetof` 以及 `max_align_t` 布局查询无需 libc++ 即可降低；`std::byte` 存储、位／移位运算和 `to_integer` 会直接降低为标量运算。29 个文件的闭包会在所有目标上经过认证；引号／C 头文件形式、原始内建表达式和标准函数地址仍会被拒绝。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#fundamental-types-and-bytes-from-cstddef).
+
+Core v2 也支持固定版本的 `<utility>`。标量 `move`、`forward`、`move_if_noexcept`、`as_const`、`exchange` 和 `swap` 会直接降低；标量 `std::pair` 的构造、赋值、交换、比较、`make_pair` 和 `get` 也同样支持。元组元数据及 `integer_sequence::size()` 保持为编译期值。经过认证的 87 个文件闭包不会增加 libc++ 运行时依赖；嵌套 pair、记录值 pair 和标准函数地址仍会被拒绝。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#scalar-utilities-and-pairs-from-utility).
 
 Core v2 类型元数据现支持自有源码中的不完整非联合类，包括前置声明与未实例化模板类型。分类和数组维度查询保留精确源码身份，不生成类存储；运行时类型与回调仍要求完整的已支持类型。引用／指针操作查询可使用这些身份，并保留精确操作源码证明；实际选中的惰性方法返回签名仍须通过完整类型检查。原生验证须由实现版本的 CI 完成。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#incomplete-record-type-metadata).
 

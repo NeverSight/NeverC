@@ -93,7 +93,8 @@ these checks but does not replace translation differential tests.
 ## SDK and runtime capabilities
 
 [CppSdk.cpp](../../../neverc/lib/Translate/Cpp/CppSdk.cpp) loads the built-in SDK
-only for math, validates its immutable 209-header inventory and version metadata,
+for the standard-header and math profiles, validates its immutable 266-header
+inventory and version metadata,
 and separately verifies every consumed SDK dependency. The frontend and consumer
 use the same catalog and embedded bytes. Caller-supplied context or hashes cannot
 approve a different SDK. Source, owned headers, compilation database, response

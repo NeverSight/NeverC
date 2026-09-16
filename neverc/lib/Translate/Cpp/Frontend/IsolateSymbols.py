@@ -10,6 +10,26 @@ parser.add_argument("--source", required=True, type=Path)
 parser.add_argument("--output", required=True, type=Path)
 args = parser.parse_args()
 
+# LLVM 20.1.8 defines these implementation records/functions in the global
+# namespace. Renaming only the llvm namespace leaves their emitted constructors,
+# destructors and helpers available to bind the host LLVM ABI. The source
+# archive hash pins this exact inventory; keep the generated attribute helpers
+# together with the file-local implementation types.
+LLVM_GLOBAL_IDENTIFIERS = {
+    "AliasScopeTracker", "ApproxFuncFPMathAttr", "BinopElts",
+    "DebugifyStatistics", "ExitFunctionBodyRAII", "FlowStringRef",
+    "LessPreciseFPMADAttr", "LoadOps", "MustProgressAttr",
+    "NoImplicitFloatAttr", "NoInfsFPMathAttr", "NoJumpTablesAttr",
+    "NoNansFPMathAttr", "NoProfileAttr", "NoSignedZerosFPMathAttr",
+    "ProfileSampleAccurateAttr", "SafeStackAttr", "SanitizeAddressAttr",
+    "SanitizeHWAddressAttr", "SanitizeMemTagAttr", "SanitizeMemoryAttr",
+    "SanitizeNumericalStabilityAttr", "SanitizeRealtimeAttr",
+    "SanitizeRealtimeBlockingAttr", "SanitizeThreadAttr", "SanitizeTypeAttr",
+    "ShadowCallStackAttr", "SpeculativeLoadHardeningAttr", "SymMap",
+    "UnsafeFPMathAttr", "UseSampleProfileAttr", "WeightInfo", "getCIEId",
+    "isKnownV5SectionID",
+}
+
 # These global C++ identifiers need file-specific handling: the intrinsic
 # helper shares a spelling with a class member, Debugify's type occurs in public
 # signatures, and PointerBounds shares a spelling with unrelated analysis
@@ -1464,12 +1484,22 @@ symbols.update({
     # expansion of the SID_SUrlHistory alias, into the private frontend ABI.
     "CLSID_CUrlHistory", "CLSID_CUrlHistoryBoth",
 })
+symbols.update(LLVM_GLOBAL_IDENTIFIERS)
 if len(symbols) < 900:
     raise SystemExit("Unexpected LLVM 20.1.8 symbol inventory; review the pinned source")
 text = [
     "// Generated for the SHA256-pinned LLVM 20.1.8 source. Do not edit.",
     "#ifndef NEVERC_CPP_PRIVATE_PREFIX_H",
     "#define NEVERC_CPP_PRIVATE_PREFIX_H",
+    # Keep staged bounds annotations out of the private compiler build, and
+    # prevent Darwin's ctype header from emitting external inline definitions.
+    # The private compiler only needs the platform C ABI for both surfaces.
+    "#ifdef __APPLE__",
+    "#undef __LIBC_STAGED_BOUNDS_SAFETY_ATTRIBUTES",
+    "#ifndef _DONT_USE_CTYPE_INLINE_",
+    "#define _DONT_USE_CTYPE_INLINE_ 1",
+    "#endif",
+    "#endif",
     "#define llvm neverc_cpp_llvm",
 ]
 text.extend(f"#define {name} neverc_cpp_{name}" for name in sorted(symbols))

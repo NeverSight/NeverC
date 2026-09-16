@@ -452,6 +452,49 @@ def microsoft_string_literal(name, demangled):
                          demangled))
 
 
+def itanium_libcpp_c_overload(name, demangled):
+    # libc++ supplies the const-correct C++ overloads missing from Darwin's C
+    # string header in the global namespace. _LIBCPP_HIDE_FROM_ABI gives each
+    # inline definition a hidden ODR tag containing the hardening mode,
+    # assertion semantic, exception mode and libc++ version. An identical raw
+    # name therefore identifies an equivalent standard-header definition.
+    match = re.fullmatch(
+        r"_Z(?:6(?P<six>memchr|strchr|strstr)|"
+        r"7(?P<seven>strpbrk|strrchr))"
+        r"B(?P<tag_length>[1-9][0-9]*)(?P<tag>[fsdn][oqei][ne][0-9]+)"
+        r"Ua9enable_ifILb1EE"
+        r"(?P<parameters>PKvi[jm]|Pvi[jm]|PKci|Pci|PKcS0_|PcPKc)",
+        name)
+    if not match:
+        return False
+    tag = match.group("tag")
+    if int(match.group("tag_length")) != len(tag):
+        return False
+    function = match.group("six") or match.group("seven")
+    parameters = match.group("parameters")
+    signatures = {
+        "memchr": {
+            "PKvij": "void const*, int, unsigned int",
+            "PKvim": "void const*, int, unsigned long",
+            "Pvij": "void*, int, unsigned int",
+            "Pvim": "void*, int, unsigned long",
+        },
+        "strchr": {"PKci": "char const*, int", "Pci": "char*, int"},
+        "strrchr": {"PKci": "char const*, int", "Pci": "char*, int"},
+        "strpbrk": {
+            "PKcS0_": "char const*, char const*",
+            "PcPKc": "char*, char const*",
+        },
+        "strstr": {
+            "PKcS0_": "char const*, char const*",
+            "PcPKc": "char*, char const*",
+        },
+    }
+    signature = signatures[function].get(parameters)
+    return (signature is not None and
+            demangled == f"{function}[abi:{tag}]({signature}) [enable_if:true]")
+
+
 def standard_shared_symbol(name, demangled=""):
     # Mach-O adds one underscore to the Itanium mangling and C identifiers.
     normalized = name[1:] if name.startswith("__Z") else name
@@ -461,6 +504,14 @@ def standard_shared_symbol(name, demangled=""):
         if re.match(r"^_Z(?:N[KVrRO]*St|St|(?:TV|TT|TI|TS)N?St|"
                     r"(?:GV|GR)?ZN[KVrRO]*St|(?:GV|GR)N[KVrRO]*St)",
                     normalized):
+            return True
+        # Non-virtual and virtual adjustment thunks encode their target after
+        # the offset payload. Admit only a target whose outer namespace is std;
+        # a host thunk merely taking a std parameter remains outside this rule.
+        if re.match(r"^_ZT(?:h[n]?\d+_|v[n]?\d+_[n]?\d+_)N[KVrRO]*St",
+                    normalized):
+            return True
+        if itanium_libcpp_c_overload(normalized, demangled):
             return True
         # Standard global allocation/deallocation overloads, including sized,
         # nothrow and aligned forms. Do not exempt arbitrary operator symbols.

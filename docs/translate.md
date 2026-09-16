@@ -21,7 +21,7 @@ composes `<cstdint>` with `<type_traits>` in either include order. [C++17](../ut
 Core v2 also accepts the pinned `<limits>` header. Integral/enum data members
 and the standard zero-argument `numeric_limits` queries for admitted integers,
 `float` and `double` fold to exact literals, including infinities and NaNs.
-The 103-file closure is authenticated on all supported targets; runtime objects,
+The 16-file closure is authenticated on all supported targets; runtime objects,
 storage or method identity, object-qualified calls and `long double` remain
 excluded. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#numeric-bounds-from-limits).
 
@@ -31,6 +31,14 @@ queries lower without libc++; `std::byte` storage, bitwise/shift operations and
 `to_integer` lower directly to scalar operations. The 29-file closure is
 authenticated on all supported targets, while quoted/C-header spellings, raw
 builtins and standard-function addresses remain rejected. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#fundamental-types-and-bytes-from-cstddef).
+
+Core v2 also accepts the pinned `<utility>` header. Scalar `move`, `forward`,
+`move_if_noexcept`, `as_const`, `exchange` and `swap` lower directly, as do
+scalar `std::pair` construction, assignment, swapping, comparison, `make_pair`
+and `get`. Tuple metadata and `integer_sequence::size()` remain compile-time
+values. The authenticated 87-file closure adds no libc++ runtime dependency;
+nested or record-valued pairs and standard-function addresses remain rejected.
+[C++17](../utils/translate-frontends/docs/cpp-core-v2.md#scalar-utilities-and-pairs-from-utility).
 
 Core v2 type metadata now accepts owned incomplete non-union classes, including forward declarations and uninstantiated template types. Classification and array dimensions retain exact source identity without generating record storage; runtime carriers and callbacks still require complete admitted types. Reference/pointer operation queries can use these identities with exact retained source proof; selected lazy method return signatures keep their complete-carrier checks. Native verification requires the implementing revision’s CI. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#incomplete-record-type-metadata).
 

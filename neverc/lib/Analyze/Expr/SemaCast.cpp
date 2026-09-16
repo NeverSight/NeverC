@@ -579,7 +579,8 @@ void CastOperation::CheckCStyleCast() {
     if (!DestType->isNullPtrType()) {
       // Implicitly cast from the null pointer type to the type of the
       // destination.
-      CastKind CK = DestType->isPointerType() ? CK_NullToPointer : CK_BitCast;
+      CastKind CK = DestType->isPointerType() ? CK_NullToPointer
+                                              : CK_PointerToBoolean;
       SrcExpr =
           ImplicitCastExpr::Create(Self.Context, DestType, CK, SrcExpr.get(),
                                    VK_PRValue, Self.CurFPFeatureOverrides());

@@ -34,21 +34,22 @@ source `fenv` API is implied by the runtime probes.
 ## Built-in SDK and approved catalog
 
 `cpp-math-v1` always uses distribution
-`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r2`. No SDK descriptor, host SDK
+`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r3`. No SDK descriptor, host SDK
 discovery or external root selection is involved. The removed `--cpp-sdk` option
 is rejected; `NEVERC_CPP_SDK` is ignored. Failed built-in SDK integrity checks use
 `TR0101` with the required distribution identity.
 
 The implementation-owned [catalog.json](../../../neverc/lib/Translate/Cpp/SDK/catalog.json)
-and its source files are compiled into NeverC. The `<cmath>` dependency union
-contains 209 original headers: 127 libc++ headers, one Clang resource header and
+and its source files are compiled into NeverC. The catalog contains 266 approved
+headers; the `<cmath>` dependency union remains 209 headers: 127 libc++ headers,
+one Clang resource header and
 81 platform headers. The original full Apple `SDKSettings.json` is not distributed.
 NeverC supplies only `Version: "15.5"` and
 `MaximumDeploymentTarget: "15.5.99"`, the required version facts for the admitted
 macOS targets. Its metadata SHA-256 is
 `58499bbeb3eb1aa9ca96358a097bc237a9beb14cfd3db9876d986534e59ea17e`.
 Catalog SHA-256 is
-`1da4e1da725c9adeb81be6f980df4118556134ae8636a414b25c686faf6135b1`.
+`4449e9fe805222c3d410f38ba5b03a9c6a73f540517b9979a3915a3b1148b022`.
 The [SDK provenance and license inventory](../../../neverc/lib/Translate/Cpp/SDK/README.md)
 records original byte hashes, public upstream sources and retained notices.
 This is a bounded header distribution, not a complete Apple SDK.
@@ -80,7 +81,7 @@ The request adds a single SDK envelope:
 ```json
 {
   "sdk": {
-    "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r2",
+    "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r3",
     "catalog_sha256": "<compiled catalog SHA-256>"
   }
 }
@@ -109,8 +110,8 @@ distribution ID, root name, relative path, canonical Clang USR, `double(double)`
 
 | Operation | Canonical USR | Declaration ID |
 | --- | --- | --- |
-| fabs | `c:@F@fabs` | `3b5582378dc6c99969ded4259e116878bc30c63d238676286b4729b7ab12a5ce` |
-| floor | `c:@F@floor` | `60841fa6c87218b07cc6556af6e977abac151c2cc1ca59104bb25cb8006df30a` |
+| fabs | `c:@F@fabs` | `0ae3b1a4dea93d3e01097510741e59c9038e646e90e3c9b404ac892b516f78cf` |
+| floor | `c:@F@floor` | `c8a274f78f02089f4b6c9427b461ce75fb964adfb10c25a6e25d0f7cae12fdfa` |
 
 The consumer checks these fixed origins/signatures/IDs, requires matching SDK
 dependency evidence, then independently constructs a runtime capability ID.

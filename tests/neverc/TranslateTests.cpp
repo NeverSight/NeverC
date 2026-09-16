@@ -15943,6 +15943,7 @@ TEST_F(TranslateTest, CoreV2AliasTemplatesAcceptConcreteTypesAndSelectedDefaults
       {"nttp-inherited-default-source", "template<class T>using K=decltype(T{});template<class T,K<T> N=4>int f();template<class T,K<T> N>int f(){return N;}int g(){return f<int>();}"},
       {"nttp-empty-type-pack", "template<class...T,T...N>int f(){return sizeof...(N);}int g(){return f<>();}"},
       {"nttp-expanded-type-pack", "template<int N>struct Tag{int n;};template<class...T,T...N>int f(Tag<N>...v){return(0+...+N);}int g(){return f<int,int>(Tag<1>{3},Tag<2>{4});}"},
+      {"function-type", "template<class T>using I=T();I<int>*f(){return nullptr;}"},
   };
   for (const auto &[Name, Code] : Cases) {
     SCOPED_TRACE(Name);
@@ -15973,7 +15974,6 @@ TEST_F(TranslateTest, CoreV2AliasTemplatesRetainSourceAndResourceChecks) {
       {"selected-alias-body", "template<class T>using I=int;template<class T>int f(){I<long double>n=3;return n;}int g(){return f<int>();}"},
       {"selected-function-default", "template<class T,int N=(sizeof(long double)+sizeof(T))>int f(T){return N;}int g(){return f(3);}"},
       {"template-template-parameter", "template<template<class>class T>using I=int;"},
-      {"function-type", "template<class T>using I=T();I<int>*f(){return nullptr;}"},
       {"volatile-type", "template<class T>using I=volatile T;I<int>f(){return 3;}"},
       {"attribute", "template<class T>using I [[deprecated]]=T;"},
       {"zero-array", "template<int N>using I=int[N];int f(){I<0>a{};return sizeof(a);}"},
@@ -18962,7 +18962,7 @@ TEST_F(TranslateTest, CoreV2FunctionTemplatesRetainInstanceAndLanguageBoundaries
       {"constexpr-static", "template<class T>constexpr int f(){static int n=1;return n;}int main(){return f<int>();}", "TR0201"},
       {"attribute", "template<class T>[[nodiscard]]T f(T v){return v;}", "TR0201"},
       {"parameter-attribute", "template<class T>T f([[maybe_unused]]T v){return v;}", "TR0201"},
-      {"active-include", "#include <utility>\ntemplate<class T>T f(T v){return v;}", "TR0201"},
+      {"active-include", "#include <vector>\ntemplate<class T>T f(T v){return v;}", "TR0201"},
       {"inactive-include", "#if 0\n#include <utility>\n#endif\ntemplate<class T>T f(T v){return v;}", "TR0201"},
       {"non-template-discarded", "int f(){if constexpr(true)return 1;else return static_cast<int>(1.0L);}", "TR0201"},
       {"unused-consteval", "template<class T>int f(){if consteval{return 1;}else{return 2;}}", "TR0202"},
@@ -23089,7 +23089,7 @@ int main() {
   ASSERT_NE(SDK, nullptr);
   const auto *Dependencies = SDK->getArray("dependencies");
   ASSERT_NE(Dependencies, nullptr);
-  EXPECT_EQ(Dependencies->size(), 103u);
+  EXPECT_EQ(Dependencies->size(), 16u);
   bool FoundLimits = false;
   for (const auto &Entry : *Dependencies) {
     const auto *Dependency = Entry.getAsObject();
@@ -23237,6 +23237,127 @@ TEST_F(TranslateTest, CoreV2CstddefRequiresPinnedSyntaxAndDirectOperations) {
     expectCode(translate(Source,
                          {"--profile", "cpp-core-v2", "-o", Output.string()}),
                "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UtilityOperationsRunAtBothOptimizations) {
+  const auto Source = tmpFile("utility.cpp");
+  const auto Output = tmpFile("utility.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+static_assert(std::integer_sequence<int, 2, 4, 6>::size() == 3);
+static_assert(std::tuple_size<std::pair<int, double>>::value == 2);
+static_assert(sizeof(std::tuple_element<1, std::pair<int, double>>::type)
+              == sizeof(double));
+int utility_scalar() {
+  int value = 5;
+  int other = 9;
+  int old = std::exchange(value, 7);
+  std::swap(value, other);
+  const int &view = std::as_const(value);
+  int &&moved = std::move(other);
+  int &forwarded = std::forward<int &>(value);
+  int &&conditional = std::move_if_noexcept(other);
+  return old + view + moved + forwarded + conditional;
+}
+int utility_pair() {
+  std::pair<int, int> zero{};
+  std::pair<int, int> original{1, 2};
+  std::pair<int, int> copied = original;
+  std::pair<int, int> moved(std::move(copied));
+  zero = moved;
+  auto made = std::make_pair(3, 4);
+  zero.swap(made);
+  std::swap(zero, made);
+  return zero.first * 1000 + zero.second * 100
+       + made.first * 10 + made.second;
+}
+int utility_compare() {
+  std::pair<int, int> left{1, 9}, right{2, 3};
+  return (left == right) + 2 * (left != right) + 4 * (left < right)
+       + 8 * (left > right) + 16 * (left <= right)
+       + 32 * (left >= right);
+}
+int utility_get() {
+  std::pair<int, double> value{3, 4.0};
+  std::get<0>(value) = 7;
+  return std::get<int>(value) + int(std::get<1>(value));
+}
+int main() {
+  return utility_scalar() == 37 && utility_pair() == 1234 &&
+                 utility_compare() == 22 && utility_get() == 11
+             ? 0
+             : 1;
+}
+)cpp");
+  auto Result = translate(
+      Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest = llvm::json::parse(
+      readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *SDK = Manifest->getAsObject()->getObject("sdk");
+  ASSERT_NE(SDK, nullptr);
+  const auto *Dependencies = SDK->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 87u);
+  bool FoundUtility = false;
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+    FoundUtility |= Dependency->getString("root") == "libcxx" &&
+                    Dependency->getString("path") == "utility";
+  }
+  EXPECT_TRUE(FoundUtility);
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("utility" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UtilityRequiresPinnedScalarOperations) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Rejection Cases[] = {
+      {"quoted", "#include \"utility\"\nint main(){return 0;}", "TR0201"},
+      {"function-address",
+       "#include <utility>\nauto f(){return &std::move<int>;}", "TR0201"},
+      {"nested-pair",
+       "#include <utility>\nint f(){std::pair<std::pair<int,int>,int> "
+       "p{{1,2},3};return p.first.first;}",
+       "TR0201"},
+      {"record-pair",
+       "#include <utility>\nstruct R{int n;};int f(){std::pair<R,int> "
+       "p{{1},2};return p.first.n;}",
+       "TR0201"},
+      {"array-swap",
+       "#include <utility>\nint f(){int a[2]{1,2},b[2]{3,4};"
+       "std::swap(a,b);return a[0];}",
+       "TR0203"},
+      {"ambiguous-type-get",
+       "#include <utility>\nint f(){std::pair<int,int>p{1,2};"
+       "return std::get<int>(p);}",
+       "TR0202"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("utility-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("utility-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(translate(Source,
+                         {"--profile", "cpp-core-v2", "-o", Output.string()}),
+               Case.Code);
     expectNoArtifacts(Output);
   }
 }

@@ -1612,8 +1612,16 @@ public:
                 self.assertEqual(path.read_text(encoding="utf-8"), expected_math[name], name)
             prefix = output.read_text(encoding="utf-8")
             for name in ("llvm", "LLVMFixture0000", "LLVMFixture0899", "LLVMIsAArgument",
-                         "llvm_blake3_compress_in_place"):
+                         "llvm_blake3_compress_in_place", "AliasScopeTracker",
+                         "DebugifyStatistics", "FlowStringRef", "NoProfileAttr",
+                         "SanitizeRealtimeBlockingAttr", "WeightInfo", "getCIEId",
+                         "isKnownV5SectionID"):
                 self.assertIn(f"#define {name} neverc_cpp_{name}\n", prefix)
+            self.assertIn("#ifdef __APPLE__\n"
+                          "#undef __LIBC_STAGED_BOUNDS_SAFETY_ATTRIBUTES\n"
+                          "#ifndef _DONT_USE_CTYPE_INLINE_\n"
+                          "#define _DONT_USE_CTYPE_INLINE_ 1\n"
+                          "#endif\n#endif\n", prefix)
             self.assertNotIn("#define PointerBounds", prefix)
             self.assertNotRegex(prefix, r"(?m)^\s*#\s*(?:define|undef)\s+_?bstr_t\b")
             notices = output.parent / "NeverCCppThirdPartyNotices.txt"
@@ -3077,6 +3085,8 @@ public:
         for name in ("_ZNSt3__16vectorIiNS_9allocatorIiEEE5clearEv",
                      "__ZNKSt3__16vectorIiNS_9allocatorIiEEE4sizeEv",
                      "_ZGVZNSt3__112__some_std_fnEvE5value",
+                     "__ZThn16_NSt3__118basic_stringstreamIcNS_11char_traitsIcEENS_9allocatorIcEEED1Ev",
+                     "__ZTv0_n24_NSt3__114basic_ifstreamIcNS_11char_traitsIcEEED1Ev",
                      "_ZTINSt3__19exceptionE", "_Znwm", "__ZdlPvm",
                      "_malloc", "__clang_call_terminate",
                      "DW.ref.__gxx_personality_v0"):
@@ -3085,11 +3095,64 @@ public:
         for name in ("_Z3fooNSt3__112basic_stringIcEE",
                      "_ZN4host3fooENSt3__16vectorIiEE",
                      "_ZN5clang4Decl4kindEv", "LLVMCreateMessage",
+                     "__ZThn16_N4host18basic_stringstreamD1Ev",
+                     "__ZTv0_n24_N4host14basic_ifstreamD1Ev",
                      "malloc_wrong_abi", "strdup", "_strdup", "strdup_custom", "_strdup_custom",
                      "neverc_cpp_strdup", "__Znwcustom", "DW.ref.host_llvm",
                      "_DW.ref.__gxx_personality_v0"):
             with self.subTest(name=name):
                 self.assertFalse(AuditArchive.standard_shared_symbol(name))
+
+    def test_libcpp_global_c_overloads_require_exact_odr_tags_and_signatures(self):
+        tag = "nqn220106"
+        cases = (
+            ("6memchr", "PKvim", "void const*, int, unsigned long"),
+            ("6memchr", "Pvim", "void*, int, unsigned long"),
+            ("6strchr", "PKci", "char const*, int"),
+            ("6strchr", "Pci", "char*, int"),
+            ("6strstr", "PKcS0_", "char const*, char const*"),
+            ("6strstr", "PcPKc", "char*, char const*"),
+            ("7strpbrk", "PKcS0_", "char const*, char const*"),
+            ("7strpbrk", "PcPKc", "char*, char const*"),
+            ("7strrchr", "PKci", "char const*, int"),
+            ("7strrchr", "Pci", "char*, int"),
+        )
+        for encoded_function, parameters, signature in cases:
+            function = encoded_function[1:]
+            normalized = (f"_Z{encoded_function}B{len(tag)}{tag}"
+                          f"Ua9enable_ifILb1EE{parameters}")
+            decoded = f"{function}[abi:{tag}]({signature}) [enable_if:true]"
+            for raw in (normalized, "_" + normalized):
+                with self.subTest(raw=raw):
+                    self.assertTrue(AuditArchive.standard_shared_symbol(raw, decoded))
+                    self.audit_inventory([(raw, "T", decoded)],
+                                         [(raw, "T", decoded)])
+
+    def test_libcpp_global_c_overloads_reject_near_matches(self):
+        raw = "__Z6strchrB9nqn220106Ua9enable_ifILb1EEPKci"
+        decoded = "strchr[abi:nqn220106](char const*, int) [enable_if:true]"
+        cases = (
+            (raw.replace("B9", "B8"), decoded),
+            (raw.replace("nqn", "nxn"), decoded),
+            (raw.replace("220106", ""), decoded.replace("220106", "")),
+            (raw.replace("ILb1EE", "ILb0EE"), decoded.replace("true", "false")),
+            (raw.replace("Ua9enable_ifILb1EE", ""),
+             "strchr[abi:nqn220106](char const*, int)"),
+            (raw.replace("PKci", "PKcl"),
+             decoded.replace("int)", "long)")),
+            (raw, decoded.replace("nqn220106", "nqe220106")),
+            (raw, decoded.replace("char const*", "char*")),
+            (raw + "suffix", decoded),
+            ("__Z4hostB9nqn220106Ua9enable_ifILb1EEPKci", decoded),
+        )
+        for malformed_raw, malformed_decoded in cases:
+            with self.subTest(raw=malformed_raw, decoded=malformed_decoded):
+                self.assertFalse(AuditArchive.standard_shared_symbol(
+                    malformed_raw, malformed_decoded))
+                with self.assertRaisesRegex(ValueError,
+                                            "private/host symbol intersection"):
+                    self.audit_inventory([(malformed_raw, "T", malformed_decoded)],
+                                         [(malformed_raw, "T", malformed_decoded)])
 
     def test_microsoft_global_allocation_ci_references_allow_exact_comma_spacing(self):
         # Exact raw/decoded pairs from a551 MSVC ARM64 diagnostics at lines

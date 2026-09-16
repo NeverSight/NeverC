@@ -2,9 +2,9 @@
 
 This directory supplies the immutable header inputs for NeverC's built-in C++
 frontend. The distribution is
-`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r2`. It contains the 227 header
-files admitted by the former
-`clang20.1.8-libcxx200100-macos15.5` catalog: 133 libc++ headers, 13 Clang resource
+`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r3`. It contains the 266 header
+files admitted by the current
+`clang20.1.8-libcxx200100-macos15.5` catalog: 172 libc++ headers, 13 Clang resource
 headers, and 81 Darwin platform headers. Their contents, including copyright and
 license notices, are preserved byte for byte. This is a fixed input set for the
 supported translation profiles, not a complete Apple SDK.
@@ -13,11 +13,15 @@ Core v2 uses only the catalog's `libcxx` and `resource` roots for its
 compile-time `<type_traits>` and fixed-width `<cstdint>` surfaces. The
 standalone closures contain 101 and nine files respectively; their deduplicated
 union is recorded when both headers are included. Every consumed path and hash
-is verified against this catalog. The `<limits>` surface has a 103-file closure
+is verified against this catalog. The `<limits>` surface has a 16-file closure
 and folds its supported `numeric_limits` members without a runtime libc++ link.
 The `<cstddef>` surface has a 29-file closure and provides its target aliases,
-folded layout queries and directly lowered `std::byte` operations without a
-runtime libc++ link.
+folded layout queries and directly lowered `std::byte` operations. The
+`<utility>` surface has an 87-file closure and directly lowers scalar
+`move`, `forward`, `move_if_noexcept`, `as_const`, `exchange` and `swap`, plus
+scalar `pair` construction, assignment, swaps, comparisons, `make_pair`, `get`,
+`tuple_size`, `tuple_element` and integer-sequence size queries. These surfaces
+do not require a runtime libc++ link.
 Core v2 never admits the `platform` root.
 Math v1 continues to use its separately checked libc++, resource and Darwin
 platform closure for `<cmath>`.
@@ -35,7 +39,7 @@ the exact header bytes supplied here.
 
 | Header group | Files | Applicable notices |
 | --- | ---: | --- |
-| libc++ and Clang resource headers | 146 | Apache-2.0 with LLVM exceptions |
+| libc++ and Clang resource headers | 185 | Apache-2.0 with LLVM exceptions |
 | Darwin headers with an APSL notice | 63 | APSL-2.0 |
 | Darwin headers with APSL and Berkeley notices | 12 | APSL-2.0 and BSD-4-Clause |
 | `arm/endian.h`, `arm/types.h` | 2 | BSD-4-Clause |
@@ -95,6 +99,6 @@ resource array alone is not a substitute for that source distribution.
 The original Apple `SDKSettings.json` is not redistributed. The embedded
 `platform/SDKSettings.json` is a NeverC-authored declaration of two version facts:
 `Version` is `15.5` and `MaximumDeploymentTarget` is `15.5.99`. Its own hash is in
-the new catalog. The former metadata hash appears only as migration provenance
+the current catalog. The former metadata hash appears only as migration provenance
 in `provenance.json`; the header license inventory does not claim to license the
 former SDK configuration file.

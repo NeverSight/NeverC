@@ -220,6 +220,18 @@ else:
         self.assertEqual(str(sysroot), calls[0][sysroot_index + 1])
         self.assertNotIn(f"-isysroot={sysroot}", calls[0])
 
+    def test_forces_reproducible_compiler_configuration_and_value_names(self):
+        self.write_sources("stable.c")
+
+        result = self.run_generator()
+
+        self.assertEqual(0, result.returncode, self.process_diagnostics(result))
+        calls = self.compiler_calls()
+        self.assertEqual(1, len(calls))
+        self.assertEqual(1, calls[0].count("--no-default-config"))
+        self.assertEqual(1, calls[0].count("-fdiscard-value-names"))
+        self.assertNotIn("-fno-discard-value-names", calls[0])
+
     def test_last_translation_unit_failure_preserves_existing_output(self):
         sources = self.write_sources("00_first.c", "99_last.c")
         self.output.parent.mkdir(parents=True)

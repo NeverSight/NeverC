@@ -444,6 +444,15 @@ if(NEVERC_PLUGIN_SUPPORT)
   set(support_plugins SUPPORT_PLUGINS)
 endif()
 
+if(APPLE AND TARGET nevercCppFrontend)
+  # HandleLLVMOptions enables this LLD-only cosmetic option in the parent
+  # directory. The built-in C++ frontend selects Apple's linker because
+  # ld64.lld misreads its >4 GiB __.SYMDEF_64 archive, so keep that option out
+  # of the NeverC directory's executable link commands.
+  string(REPLACE "-Wl,--color-diagnostics" ""
+    CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS}")
+endif()
+
 add_neverc_tool(neverc
   Driver/ArgumentHandlers.cpp
   Driver/SubcommandHandlers.cpp

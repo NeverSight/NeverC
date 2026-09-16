@@ -1572,11 +1572,15 @@ void GenAssemblyHelper::genAssembly(BackendAction Action,
     return;
   }
   const bool WritesDwarfPackage = CodeGenOpts.SplitDwarfOutputIsPackage;
+  // LLVM's legacy NamedRegionTimer registry reuses one Timer for each machine
+  // pass name. Parallel partitions would start that same Timer concurrently,
+  // even though the enclosing frontend holds the process-global option gate
+  // exclusively. Keep timed code generation on this thread.
   bool UseParallel =
       RequiresCodeGen && !UseCoarseObjectProvider &&
       Action == Backend_EmitObj && !CodeGenOpts.PrepareForLTO &&
       ParallelN != 1 && !EmbedsSplitDwarf && !MCComponentProvider &&
-      !MCEmissionHooks &&
+      !MCEmissionHooks && !llvm::TimePassesIsEnabled &&
       (!MachinePasses || !MachinePasses->requiresSerialCodeGen());
 
   std::unique_ptr<llvm::ToolOutputFile> SplitDwarfOS;

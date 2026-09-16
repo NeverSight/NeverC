@@ -1550,7 +1550,8 @@ const Expr *directFunctionReference(const CallExpr *Call) {
     if (const auto *P = dyn_cast<ParenExpr>(E))
       E = P->getSubExpr();
     else if (const auto *C = dyn_cast<ImplicitCastExpr>(E);
-             C && C->getCastKind() == CK_FunctionToPointerDecay)
+             C && (C->getCastKind() == CK_FunctionToPointerDecay ||
+                   C->getCastKind() == CK_BuiltinFnToFnPtr))
       E = C->getSubExpr();
     else
       break;
@@ -1845,6 +1846,16 @@ void Adapter::checkQueryType(QualType T, SourceLocation L,
         throw Failure{};
       }
       checkQueryType(T->getPointeeType(), L, AllowIncompleteArrays,
+                     AllowIncompleteRecords, Depth + 1);
+    } else if (AllowIncompleteRecords &&
+               approvedUtilityPairMetadata(S, Sources,
+                                           T->getAsCXXRecordDecl())) {
+      const auto *Pair = dyn_cast<ClassTemplateSpecializationDecl>(
+          T->getAsCXXRecordDecl());
+      const auto &Arguments = Pair->getTemplateArgs();
+      checkQueryType(Arguments.get(0).getAsType(), L, AllowIncompleteArrays,
+                     AllowIncompleteRecords, Depth + 1);
+      checkQueryType(Arguments.get(1).getAsType(), L, AllowIncompleteArrays,
                      AllowIncompleteRecords, Depth + 1);
     } else if (AllowIncompleteRecords &&
                incompleteRecordMetadataIdentity(*this, T->getAsCXXRecordDecl())) {
@@ -3635,13 +3646,42 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
     }
   if (const auto *R = C->getAs<RecordType>()) {
     const auto *D = dyn_cast<CXXRecordDecl>(R->getDecl());
-    if (D && D->getDefinition() && !D->isUnion())
+    if (D && D->getDefinition() && !D->isUnion()) {
+      D = D->getDefinition();
+      if (approvedUtilityPairMetadata(S, Sources, D) &&
+          !requireUtilityPair(D, L, Depth + 1))
+        return {};
       return name(D);
+    }
   }
   reject(L, "type",
          "Only the documented scalar, record and core v2 pointer/reference "
          "types are admitted.");
   return {};
+}
+
+bool Adapter::requireUtilityPair(const CXXRecordDecl *Record,
+                                 SourceLocation Location, unsigned Depth) {
+  if (Depth > 64) {
+    reject(Location, "utility pair type",
+           "Nested std::pair element types exceed the protocol limit.");
+    return false;
+  }
+  auto Pair = approvedUtilityPairRecord(S, Sources, Record, Context);
+  if (!Pair) {
+    reject(Location, "standard library record",
+           "Only the pinned std::pair<T, U> record layout is admitted.",
+           "TR0203");
+    return false;
+  }
+  const auto *Canonical = Pair->Record->getCanonicalDecl();
+  if (!RequiredUtilityPairs.insert(Canonical).second)
+    return true;
+  for (const auto *Field : {Pair->First, Pair->Second})
+    if (type(Field->getType(), Location, false, Depth + 1).empty())
+      return false;
+  Records.push_back(const_cast<CXXRecordDecl *>(Pair->Record));
+  return true;
 }
 
 json::Object Adapter::literal(const llvm::APSInt &V, llvm::StringRef T,
@@ -4096,7 +4136,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::map<const CXXRecordDecl *, bool> HasArray;
   std::map<const CXXRecordDecl *, bool> FlatReferenceLayouts;
   std::set<const Expr *> DirectFunctionCallees, GeneratedBuiltinCallees,
-      FunctionValueDesignators, ApprovedCstddefCallees;
+      FunctionValueDesignators, ApprovedCstddefCallees,
+      ApprovedUtilityCallees;
   std::map<const Expr *, SourceLocation> DirectTemplateCallLocations;
   std::set<const CallExpr *> GeneratedArrayAssignments;
   std::map<const OpaqueValueExpr *, const Expr *> ArraySources;
@@ -6422,6 +6463,16 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     if (!CheckedConstructions.insert(C).second)
       return;
     const auto *Constructor = C->getConstructor();
+    if (A.S.coreV2() &&
+        approvedUtilityPairConstruction(A.S, A.Sources, C, A.Context)) {
+      for (unsigned I = 0; I < C->getNumArgs() &&
+                           I < Constructor->getNumParams(); ++I) {
+        checkDefaultArgument(C->getArg(I), Constructor, I, L);
+        if (Constructor->getParamDecl(I)->getType()->isReferenceType())
+          checkBinding(C->getArg(I), true);
+      }
+      return;
+    }
     if (A.S.coreV2() && concreteMemberFunctionTemplate(Constructor))
       checkSelectedTemplateCall(C, Constructor, L);
     if (A.S.coreV2() && supportedConstructor(Constructor)) {
@@ -8446,9 +8497,15 @@ public:
         Selected = Call->getDirectCallee();
       else if (const auto *Allocation = dyn_cast_or_null<CXXNewExpr>(Source.Expression))
         Selected = Allocation->getOperatorNew();
+      const auto *Construction =
+          dyn_cast_or_null<CXXConstructExpr>(Source.Expression);
+      const bool UtilityPair =
+          Construction && approvedUtilityPairConstruction(
+                              A.S, A.Sources, Construction, A.Context);
       if (!Selected || Selected != Source.Function ||
           !(isa<CXXNewExpr>(Source.Expression) ? concreteFunctionTemplate(Selected)
-                                              : concreteMemberFunctionTemplate(Selected)) || !owned(Selected) ||
+                                              : concreteMemberFunctionTemplate(Selected)) ||
+          (!UtilityPair && !owned(Selected)) ||
           !A.S.owns(A.Sources, Source.Location)) {
         A.reject(Source.Location, "selected member template source", "A retained record requires its actual direct source-owned template call.");
         continue;
@@ -9698,7 +9755,8 @@ public:
     // require inspection before that diagnostic suppresses further traversal.
     if (const auto *Function = dyn_cast<FunctionDecl>(Reference->getDecl());
         concreteFunctionTemplate(Function) &&
-        !ApprovedCstddefCallees.count(Reference))
+        !ApprovedCstddefCallees.count(Reference) &&
+        !ApprovedUtilityCallees.count(Reference))
       if (!checkFunctionTemplateUse(
               Function, Reference->getLocation(),
               Reference->template_arguments(),
@@ -12424,12 +12482,21 @@ public:
         if (!Leaf)
           Leaf = scalarDestruction(Call, A.Context);
         if (Leaf) {
+          const bool Utility =
+              approvedUtilityOperation(A.S, A.Sources, Call, A.Context)
+                  .has_value() ||
+              approvedUtilityPairAssignment(
+                  A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call),
+                  A.Context)
+                  .has_value();
           // BuildOverloadedCallExpr ranks candidates at the complete callee's
           // expression location, which can be a parenthesis before the name.
           DirectTemplateCallLocations.emplace(Leaf, Call->getCallee()->getExprLoc());
           const Expr *E = Call->getCallee();
           while (true) {
             DirectFunctionCallees.insert(E);
+            if (Utility)
+              ApprovedUtilityCallees.insert(E);
             if (E == Leaf)
               break;
             if (const auto *P = dyn_cast<ParenExpr>(E))
@@ -12467,7 +12534,8 @@ public:
       if (const auto *WrittenCast = dyn_cast<ExplicitCastExpr>(E))
         A.type(WrittenCast->getTypeAsWritten(), E->getExprLoc(), true);
       if (A.S.coreV2())
-        if (const auto *C = dyn_cast<CastExpr>(E); C && !GeneratedBuiltinCallees.count(C)) {
+        if (const auto *C = dyn_cast<CastExpr>(E);
+            C && !GeneratedBuiltinCallees.count(C)) {
           // Enum initializers and static assertions are erased after checking.
           // Validate their operations before erasure, not only in lowering.
           switch (C->getCastKind()) {
@@ -12483,6 +12551,12 @@ public:
           case CK_NullToPointer:
           case CK_PointerToBoolean:
           case CK_ArrayToPointerDecay:
+            break;
+          case CK_BuiltinFnToFnPtr:
+            if (!ApprovedUtilityCallees.count(C))
+              A.reject(E->getExprLoc(), "builtin function cast",
+                       "Only an approved direct utility adapter may use this "
+                       "compiler builtin call path.");
             break;
           case CK_ToVoid:
             if (!C->isPRValue() || !C->getType()->isVoidType() ||
@@ -12785,6 +12859,10 @@ public:
           return true; // A trivial defaulted destructor need not have a body.
         }
       const auto *Operator = dyn_cast<CXXOperatorCallExpr>(C);
+      const bool UtilityPairAssignment =
+          A.S.coreV2() &&
+          approvedUtilityPairAssignment(A.S, A.Sources, Operator, A.Context)
+              .has_value();
       unsigned ArgumentOffset = Operator && Method && !Method->isStatic() ? 1 : 0;
       // This inline operator form already supports materialized temporaries.
       // Keep its narrow boundary while sharing reference capture and stores.
@@ -12797,7 +12875,7 @@ public:
                                  Operator->getNumArgs() == 2;
         const bool Ordinary = ordinaryOperator(F) &&
             F->getOverloadedOperator() == Operator->getOperator();
-        if (!TrivialAssignment && !Ordinary &&
+        if (!TrivialAssignment && !UtilityPairAssignment && !Ordinary &&
             !(supportedAssignment(Method) && Operator->getOperator() == OO_Equal &&
               Operator->getNumArgs() == 2))
           A.reject(L, "overloaded operator", "Unsupported selected operator function.");
@@ -12846,6 +12924,16 @@ public:
       if (A.S.coreV2() &&
           approvedCstddefOperation(A.S, A.Sources, C, A.Context))
         return true;
+      APValue UtilityValue;
+      if (A.S.coreV2() &&
+          approvedUtilityConstant(A.S, A.Sources, C, A.Context,
+                                  UtilityValue))
+        return true;
+      if (A.S.coreV2() &&
+          approvedUtilityOperation(A.S, A.Sources, C, A.Context))
+        return true;
+      if (A.S.coreV2() && UtilityPairAssignment)
+        return true;
       if (A.S.coreV2() && F &&
           approvedStandardSDKDeclaration(A.S, A.Sources, F)) {
         A.reject(S->getBeginLoc(), "standard library runtime call",
@@ -12893,11 +12981,16 @@ public:
     if (const auto *C = dyn_cast<CXXConstructExpr>(S)) {
       if (A.S.coreV2() && C->getConstructor() &&
           approvedStandardSDKDeclaration(A.S, A.Sources,
-                                         C->getConstructor()))
-        A.reject(L, "standard library runtime object",
-                 "Approved standard headers provide only their documented "
-                 "compile-time aliases, constants and folded queries.",
-                 "TR0203");
+                                         C->getConstructor())) {
+        if (approvedUtilityPairConstruction(A.S, A.Sources, C, A.Context))
+          checkConstruction(C, L);
+        else
+          A.reject(L, "standard library runtime object",
+                   "Approved standard headers provide only their documented "
+                   "compile-time aliases, constants, folded queries and "
+                   "scalar std::pair construction.",
+                   "TR0203");
+      }
       else
         checkConstruction(C, L);
     }
@@ -13462,11 +13555,12 @@ public:
       }
       if (S.owns(SM, L) &&
           (!Angled || (Name != "type_traits" && Name != "cstdint" &&
-                       Name != "limits" && Name != "cstddef"))) {
+                       Name != "limits" && Name != "cstddef" &&
+                       Name != "utility"))) {
         reject(L, "include",
                "Only exact #include <type_traits>, #include <cstdint> and "
-               "#include <limits> and #include <cstddef> entries are admitted "
-               "in cpp-core-v2.");
+               "#include <limits>, #include <cstddef> and #include <utility> "
+               "entries are admitted in cpp-core-v2.");
         return;
       }
       if (!S.owns(SM, L) && !S.sdkFile(SM, L))
@@ -13538,6 +13632,45 @@ public:
         N == "__COUNTER__" || N == "__INCLUDE_LEVEL__" ||
         N == "__has_include" || N == "__has_include_next")
       reject(T.getLocation(), N);
+  }
+  void SourceRangeSkipped(SourceRange Range, SourceLocation) override {
+    // InclusionDirective is called only for directives that the preprocessor
+    // actually takes.  Scan skipped conditional regions as raw tokens so an
+    // inactive include cannot bypass the same source policy.  SDK headers are
+    // outside the owned source boundary and remain governed by the catalog.
+    auto Begin = SM.getSpellingLoc(Range.getBegin());
+    auto End = SM.getSpellingLoc(Range.getEnd());
+    if (Begin.isInvalid() || End.isInvalid())
+      return;
+    const auto [BeginFile, BeginOffset] = SM.getDecomposedLoc(Begin);
+    const auto [EndFile, EndOffset] = SM.getDecomposedLoc(End);
+    if (BeginFile != EndFile)
+      return;
+    Lexer Raw(BeginFile, SM.getBufferOrFake(BeginFile), SM,
+              PP.getLangOpts());
+    Token T;
+    bool AfterHash = false;
+    while (!Raw.LexFromRawLexer(T)) {
+      const auto [TokenFile, TokenOffset] =
+          SM.getDecomposedLoc(SM.getSpellingLoc(T.getLocation()));
+      if (TokenFile != BeginFile || TokenOffset < BeginOffset)
+        continue;
+      if (TokenOffset > EndOffset)
+        break;
+      if (T.isAtStartOfLine())
+        AfterHash = false;
+      if (T.is(tok::hash) && T.isAtStartOfLine()) {
+        AfterHash = true;
+        continue;
+      }
+      if (!AfterHash || !T.is(tok::raw_identifier))
+        continue;
+      if (Lexer::getSpelling(T, SM, PP.getLangOpts()) == "include") {
+        reject(T.getLocation(), "include");
+        return;
+      }
+      AfterHash = false;
+    }
   }
   void checkDirectives(Preprocessor &PP, FileID FID = FileID()) {
     if (FID.isInvalid())
@@ -14475,6 +14608,8 @@ extern "C" int neverc_cpp_frontend_main(int Argc, const char **Argv) {
                                "-fno-ms-compatibility",
                                "-fno-ms-extensions",
                                "-fno-delayed-template-parsing",
+                               "-D_LIBCPP_REMOVE_TRANSITIVE_INCLUDES",
+                               "-D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS",
                                "-fno-fast-math", "-ffp-contract=off"});
     }
     if (S.sdk()) {

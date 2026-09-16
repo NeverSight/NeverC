@@ -8,9 +8,11 @@ Core v2 は、コンパイル時の型エイリアスと整数・列挙定数向
 
 Core v2 は組み込みの固定版 `<cstdint>` もサポートします。固定幅、least、fast、ポインター幅、最大幅の型エイリアスと、標準の上限・定数マクロは、選択したターゲットの C++17 型と値を保持します。ドライバーは単独利用時の 9 ファイルの閉包を記録し、引用形式と C ヘッダー形式を拒否します。`<cstdint>` と `<type_traits>` はどちらの順序でも組み合わせられます。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#fixed-width-integers-from-cstdint).
 
-Core v2 は固定版 `<limits>` もサポートします。対応する整数、`float`、`double` の `numeric_limits` にある整数・列挙データメンバーと標準のゼロ引数クエリは、無限大と NaN を含む正確なリテラルへ畳み込まれます。103 ファイルの閉包は全ターゲットで認証され、実行時オブジェクト、記憶域またはメソッドの識別、オブジェクト修飾呼び出し、`long double` は未対応です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#numeric-bounds-from-limits).
+Core v2 は固定版 `<limits>` もサポートします。対応する整数、`float`、`double` の `numeric_limits` にある整数・列挙データメンバーと標準のゼロ引数クエリは、無限大と NaN を含む正確なリテラルへ畳み込まれます。16 ファイルの閉包は全ターゲットで認証され、実行時オブジェクト、記憶域またはメソッドの識別、オブジェクト修飾呼び出し、`long double` は未対応です。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#numeric-bounds-from-limits).
 
 Core v2 は固定版 `<cstddef>` もサポートします。ターゲット固有の `size_t`、`ptrdiff_t`、`nullptr_t` エイリアス、`NULL`、検査済みの `offsetof`、`max_align_t` レイアウトクエリは libc++ なしで変換されます。`std::byte` の記憶域、ビット／シフト演算、`to_integer` はスカラー演算へ直接変換されます。29 ファイルの閉包は全ターゲットで認証され、引用符／C ヘッダー形式、生の組み込み式、標準関数アドレスは拒否されます。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#fundamental-types-and-bytes-from-cstddef).
+
+Core v2 は固定版 `<utility>` もサポートします。スカラーの `move`、`forward`、`move_if_noexcept`、`as_const`、`exchange`、`swap` は直接変換され、スカラー `std::pair` の構築、代入、交換、比較、`make_pair`、`get` も同様です。タプルのメタデータと `integer_sequence::size()` はコンパイル時の値として保持されます。認証済みの 87 ファイルの閉包は libc++ の実行時依存を追加しません。入れ子またはレコード値の pair と標準関数のアドレスは引き続き拒否されます。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#scalar-utilities-and-pairs-from-utility).
 
 Core v2 の型メタデータは、所有ソース内の不完全な非共用体クラスに対応します。前方宣言や未インスタンス化のテンプレート型も、レコードの記憶域を生成せずに分類と配列次元を検査できます。実行時型とコールバックには引き続き完全な対応型が必要です。参照・ポインターの操作クエリでは厳密なソース証拠を伴ってこれらの型識別を使用し、選択した遅延メソッドの戻り値型は完全性を検査します。ネイティブ検証は実装リビジョンの CI で行います。 [C++17](../../utils/translate-frontends/docs/cpp-core-v2.md#incomplete-record-type-metadata).
 

@@ -104,7 +104,7 @@ int main() {
 }
 ```
 
-The authenticated closure contains 103 libc++/resource files on every supported
+The authenticated closure contains 16 libc++/resource files on every supported
 target. Standard-library objects, data-member storage identity, method addresses,
 object-qualified method calls, `long double` results, quoted `"limits"` and user
 shadow headers remain rejected. The generated program contains only the folded
@@ -148,6 +148,30 @@ libc++/resource files on all eight supported targets. Quoted `"cstddef"`, the C
 header `<stddef.h>`, raw GNU null expressions, platform headers and user shadow
 headers remain outside this boundary. Generated programs do not call or link
 libc++ for these operations.
+
+## Scalar utilities and pairs from `<utility>`
+
+Core v2 accepts an exact top-level `#include <utility>` from the pinned embedded
+VFS. `std::move`, `std::forward`, `std::move_if_noexcept`, `std::as_const`,
+`std::exchange` and scalar `std::swap` lower to the existing typed value,
+reference and assignment operations. The selected function must be the exact
+pinned libc++ declaration and must be called directly; function addresses,
+forged declarations and array overloads are rejected.
+
+`std::pair` supports default, value, converting and copy/move construction,
+copy/move assignment, member and free `swap`, all six C++17 comparisons,
+`std::make_pair`, index-based `std::get`, `tuple_size` and `tuple_element`.
+Elements may be admitted integral or enum scalars up to 64 bits, `float`,
+`double`, `nullptr_t`, or non-function object pointers. Pair objects retain
+their two fields and ordinary value or reference behavior. Type-based `get`
+is accepted only when libc++ resolves it unambiguously. Nested, user-record and
+reference-valued pairs remain outside this boundary.
+
+`std::integer_sequence`, `index_sequence`, their generator aliases and
+`integer_sequence::size()` remain compile-time types and values. The standalone
+authenticated closure contains 87 libc++/resource files on all eight supported
+targets. Generated programs do not call or link libc++ for these operations;
+quoted `"utility"`, user shadow headers and platform header roots remain rejected.
 
 ## Standard template parsing across targets
 

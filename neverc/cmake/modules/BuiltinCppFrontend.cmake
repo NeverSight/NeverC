@@ -239,6 +239,14 @@ function(neverc_setup_builtin_cpp_frontend)
     find_package(Threads REQUIRED)
     target_link_libraries(nevercCppFrontend INTERFACE Threads::Threads ${CMAKE_DL_LIBS} m)
   endif()
+  if(APPLE)
+    # A Debug bundle can exceed 4 GiB and therefore uses __.SYMDEF_64. Current
+    # ld64.lld reads valid 64-bit ranlib offsets as different archive members,
+    # leaving Clang AST definitions unresolved. Apple's linker consumes the
+    # same archive map correctly. Propagate the selection to every executable
+    # that embeds this private frontend; other targets may continue using LLD.
+    target_link_options(nevercCppFrontend INTERFACE "-fuse-ld=ld")
+  endif()
   install(FILES "${_source}/LICENSE.TXT"
     DESTINATION "share/neverc/licenses/llvm-project-20.1.8" COMPONENT neverc)
   install(FILES "${_source}/llvm/lib/Support/BLAKE3/LICENSE"

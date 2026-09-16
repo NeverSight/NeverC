@@ -22,7 +22,7 @@ evidence and accepted translation inputs.
 3. Start with one native, hosted C++17 translation unit and the immutable
    `cpp-core-v1` profile. No standard library, includes, allocator, or foreign
    runtime is needed by this scalar/aggregate profile.
-4. The embedded distribution contains 209 original approved SDK headers and
+4. The embedded distribution contains 266 original approved SDK headers and
    NeverC-authored SDK version metadata. Its immutable catalog, source provenance
    and license notices are under [Cpp/SDK](../../../neverc/lib/Translate/Cpp/SDK/README.md).
    The [P0 SDK probes](p0-sdk-probes.md) retain the historical external-toolchain

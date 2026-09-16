@@ -683,6 +683,210 @@ class FunctionLowering {
     return Left;
   }
 
+  Expression utilityOperation(const CallExpr *Call, UtilityOperation Operation,
+                              std::optional<Expression> Destination) {
+    auto L = Call->getExprLoc();
+    switch (Operation) {
+    case UtilityOperation::Move:
+    case UtilityOperation::Forward:
+    case UtilityOperation::MoveIfNoexcept:
+    case UtilityOperation::AsConst:
+      // These adapters change only the C++ value category or cv view. The
+      // portable IR keeps the same storage designator; the selected outer
+      // constructor/binding still observes Clang's checked result category.
+      return lvalue(Call->getArg(0));
+    case UtilityOperation::Exchange: {
+      // Function arguments are bound before exchange reads the old value.
+      // Capture the destination address and converted new scalar first, then
+      // perform the header's move/read, assignment and value return directly.
+      auto ObjectType = Call->getArg(0)->getType();
+      auto ObjectAddress = snapshot(
+          address(lvalue(Call->getArg(0)), ObjectType, L), L);
+      auto NewValue = snapshot(expression(Call->getArg(1)), L);
+      auto Object = dereference(std::move(ObjectAddress), L);
+      auto OldValue = snapshot(Object, L);
+      assign(Object,
+             cast(std::move(NewValue), type(ObjectType, L), L), L);
+      return OldValue;
+    }
+    case UtilityOperation::Swap: {
+      // Choose the left-to-right order permitted for C++17 call arguments,
+      // retaining both bound objects before executing swap's scalar body.
+      auto ObjectType = Call->getArg(0)->getType();
+      auto LeftAddress = snapshot(
+          address(lvalue(Call->getArg(0)), ObjectType, L), L);
+      auto RightAddress = snapshot(
+          address(lvalue(Call->getArg(1)), ObjectType, L), L);
+      auto Left = dereference(std::move(LeftAddress), L);
+      auto Right = dereference(std::move(RightAddress), L);
+      auto OldLeft = snapshot(Left, L);
+      auto OldRight = snapshot(Right, L);
+      assign(Left, std::move(OldRight), L);
+      assign(Right, std::move(OldLeft), L);
+      return {};
+    }
+    case UtilityOperation::MakePair: {
+      auto Pair = approvedUtilityPairRecord(
+          A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+      if (!Pair)
+        reject(L, "utility make_pair",
+               "The selected std::pair layout is unavailable.");
+      auto Place = Destination ? std::move(*Destination)
+                               : objectTemporary(Call->getType(), L);
+      if (Place.getString("type") != type(Call->getType(), L))
+        reject(L, "utility make_pair",
+               "The std::make_pair destination type differs from its result.");
+      initialize(fieldStorage(json::Object(Place), Pair->First, L),
+                 Call->getArg(0), L);
+      initialize(fieldStorage(json::Object(Place), Pair->Second, L),
+                 Call->getArg(1), L);
+      return Place;
+    }
+    case UtilityOperation::PairSwap: {
+      auto LeftAddress = snapshot(
+          address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
+      auto RightAddress = snapshot(
+          address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
+      auto OldLeft = snapshot(dereference(json::Object(LeftAddress), L), L);
+      auto OldRight = snapshot(dereference(json::Object(RightAddress), L), L);
+      assign(dereference(std::move(LeftAddress), L), std::move(OldRight), L);
+      assign(dereference(std::move(RightAddress), L), std::move(OldLeft), L);
+      return {};
+    }
+    case UtilityOperation::PairMemberSwap: {
+      const auto *MemberCall = llvm::cast<CXXMemberCallExpr>(Call);
+      const auto *Object = MemberCall->getImplicitObjectArgument();
+      auto LeftAddress =
+          snapshot(address(lvalue(Object), Object->getType(), L), L);
+      auto RightAddress = snapshot(
+          address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
+      auto OldLeft = snapshot(dereference(json::Object(LeftAddress), L), L);
+      auto OldRight = snapshot(dereference(json::Object(RightAddress), L), L);
+      assign(dereference(std::move(LeftAddress), L), std::move(OldRight), L);
+      assign(dereference(std::move(RightAddress), L), std::move(OldLeft), L);
+      return {};
+    }
+    case UtilityOperation::PairGetFirst:
+    case UtilityOperation::PairGetSecond: {
+      auto Pair = approvedUtilityPairRecord(
+          A.S, A.Sources,
+          Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
+      if (!Pair)
+        reject(L, "utility pair get",
+               "The selected std::pair layout is unavailable.");
+      auto Base = lvalue(Call->getArg(0));
+      return fieldStorage(
+          std::move(Base),
+          Operation == UtilityOperation::PairGetFirst ? Pair->First
+                                                      : Pair->Second,
+          L);
+    }
+    case UtilityOperation::PairEqual:
+    case UtilityOperation::PairNotEqual:
+    case UtilityOperation::PairLess:
+    case UtilityOperation::PairGreater:
+    case UtilityOperation::PairLessEqual:
+    case UtilityOperation::PairGreaterEqual: {
+      auto Pair = approvedUtilityPairRecord(
+          A.S, A.Sources,
+          Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
+      if (!Pair)
+        reject(L, "utility pair comparison",
+               "The selected std::pair layout is unavailable.");
+      auto LeftAddress = snapshot(
+          address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
+      auto RightAddress = snapshot(
+          address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
+      auto Left = dereference(std::move(LeftAddress), L);
+      auto Right = dereference(std::move(RightAddress), L);
+      auto Member = [&](const Expression &Base, const FieldDecl *Field) {
+        return fieldStorage(json::Object(Base), Field, L);
+      };
+      auto Equal = [&](const Expression &A, const Expression &B) {
+        auto Result = temporary("bool", L);
+        auto Second = labelName(), False = labelName(), End = labelName();
+        branch(binary("==", Member(A, Pair->First),
+                      Member(B, Pair->First), "bool", L),
+               Second, False, L);
+        label(False, L);
+        assign(Result, boolean(false, L), L);
+        jump(End, L);
+        label(Second, L);
+        assign(Result,
+               binary("==", Member(A, Pair->Second),
+                      Member(B, Pair->Second), "bool", L),
+               L);
+        jump(End, L);
+        label(End, L);
+        return Result;
+      };
+      auto Less = [&](const Expression &A, const Expression &B) {
+        auto Result = temporary("bool", L);
+        auto True = labelName(), CheckReverse = labelName(), False = labelName();
+        auto CheckSecond = labelName(), End = labelName();
+        branch(binary("<", Member(A, Pair->First),
+                      Member(B, Pair->First), "bool", L),
+               True, CheckReverse, L);
+        label(CheckReverse, L);
+        branch(binary("<", Member(B, Pair->First),
+                      Member(A, Pair->First), "bool", L),
+               False, CheckSecond, L);
+        label(CheckSecond, L);
+        assign(Result,
+               binary("<", Member(A, Pair->Second),
+                      Member(B, Pair->Second), "bool", L),
+               L);
+        jump(End, L);
+        label(True, L);
+        assign(Result, boolean(true, L), L);
+        jump(End, L);
+        label(False, L);
+        assign(Result, boolean(false, L), L);
+        jump(End, L);
+        label(End, L);
+        return Result;
+      };
+      Expression Result;
+      bool Negate = false;
+      switch (Operation) {
+      case UtilityOperation::PairEqual:
+        Result = Equal(Left, Right);
+        break;
+      case UtilityOperation::PairNotEqual:
+        Result = Equal(Left, Right);
+        Negate = true;
+        break;
+      case UtilityOperation::PairLess:
+        Result = Less(Left, Right);
+        break;
+      case UtilityOperation::PairGreater:
+        Result = Less(Right, Left);
+        break;
+      case UtilityOperation::PairLessEqual:
+        Result = Less(Right, Left);
+        Negate = true;
+        break;
+      case UtilityOperation::PairGreaterEqual:
+        Result = Less(Left, Right);
+        Negate = true;
+        break;
+      default:
+        reject(L, "utility pair comparison",
+               "Unknown approved std::pair comparison.");
+      }
+      if (!Negate)
+        return Result;
+      return snapshot(Expression{{"kind", "unary"},
+                                 {"type", "bool"},
+                                 {"operator", "!"},
+                                 {"args", json::Array{std::move(Result)}},
+                                 {"loc", A.loc(L)}},
+                      L);
+    }
+    }
+    reject(L, "utility operation", "Unknown approved utility operation.");
+  }
+
   Expression call(const CallExpr *Call,
                   std::optional<Expression> Destination = std::nullopt) {
     auto L = Call->getExprLoc();
@@ -725,6 +929,27 @@ class FunctionLowering {
       if (auto Operation =
               approvedCstddefOperation(A.S, A.Sources, Call, A.Context))
         return cstddefOperation(Call, *Operation);
+      APValue UtilityValue;
+      if (approvedUtilityConstant(A.S, A.Sources, Call, A.Context,
+                                  UtilityValue))
+        return A.constant(UtilityValue, Call->getType(), L);
+      if (auto Operation =
+              approvedUtilityOperation(A.S, A.Sources, Call, A.Context))
+        return utilityOperation(Call, *Operation, std::move(Destination));
+      if (auto Pair = approvedUtilityPairAssignment(
+              A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call), A.Context)) {
+        if (Destination)
+          reject(L, "utility pair assignment",
+                 "std::pair assignment cannot initialize a record result.");
+        auto RightAddress = snapshot(
+            address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
+        auto LeftAddress = snapshot(
+            address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
+        auto Left = dereference(std::move(LeftAddress), L);
+        auto Right = dereference(std::move(RightAddress), L);
+        assign(Left, std::move(Right), L);
+        return Left;
+      }
     }
     auto Mapping = A.mapping(Call);
     if (!Mapping.empty()) {
@@ -1242,7 +1467,12 @@ class FunctionLowering {
               approvedCstddefOffset(A.S, A.Sources, E, A.Context))
         return A.literal(*Offset, T, L);
     if (const auto *C = dyn_cast<CharacterLiteral>(E); C && A.S.coreV2())
-      return A.literal(llvm::APSInt(llvm::APInt(integerBits(T), C->getValue()),
+      // Clang exposes negative ordinary character literals such as '\xff'
+      // through the unsigned CharacterLiteral API (for example UINT_MAX on
+      // a signed-char target).  Preserve the target character's low bits
+      // instead of asking APInt to prove that the widened spelling fits.
+      return A.literal(llvm::APSInt(llvm::APInt(integerBits(T), C->getValue(),
+                                               false, true),
                                    unsignedInteger(T)), T, L);
     if (const auto *Query = dyn_cast<CXXNoexceptExpr>(E); Query && A.S.coreV2()) {
       if (!Query->getOperand() || Query->isTypeDependent() ||
@@ -1891,6 +2121,34 @@ class FunctionLowering {
             Constructor->getParent()->getCanonicalDecl() ||
         Place.getString("type") != type(T, L))
       reject(L, "construction", "Constructor and destination types differ.");
+    if (auto Kind = approvedUtilityPairConstruction(
+            A.S, A.Sources, C, A.Context)) {
+      auto Pair = approvedUtilityPairRecord(
+          A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context);
+      if (!Pair)
+        reject(L, "utility pair construction",
+               "The selected std::pair layout is unavailable.");
+      auto Member = [&](const FieldDecl *Field) {
+        return fieldStorage(json::Object(Place), Field, L);
+      };
+      switch (*Kind) {
+      case UtilityPairConstruction::Default:
+        initializeZero(Member(Pair->First), Pair->First->getType(), L);
+        initializeZero(Member(Pair->Second), Pair->Second->getType(), L);
+        return;
+      case UtilityPairConstruction::Elements:
+        initialize(Member(Pair->First), C->getArg(0), L);
+        initialize(Member(Pair->Second), C->getArg(1), L);
+        return;
+      case UtilityPairConstruction::CopyOrMove: {
+        auto Source = expression(C->getArg(0));
+        assign(std::move(Place), std::move(Source), L);
+        return;
+      }
+      }
+      reject(L, "utility pair construction",
+             "Unknown approved std::pair construction.");
+    }
     const auto ZeroCompleteObject = [&] {
       if (!C->requiresZeroInitialization() || BaseObject)
         return;

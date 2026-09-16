@@ -29,8 +29,8 @@ def main():
     repository = Path(__file__).resolve().parents[4]
     count = 0
     sdk_identity = {
-        "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r2",
-        "catalog_sha256": "1da4e1da725c9adeb81be6f980df4118556134ae8636a414b25c686faf6135b1",
+        "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r3",
+        "catalog_sha256": "4449e9fe805222c3d410f38ba5b03a9c6a73f540517b9979a3915a3b1148b022",
     }
 
     def check(name, source, code=None, options=(), root=None, profile="cpp-core-v1",
@@ -244,7 +244,7 @@ int main() {
 """
     limits = check("v2-limits", limits_source,
                    profile="cpp-core-v2", sdk=True)
-    assert len(limits["sdk_dependencies"]) == 103, limits
+    assert len(limits["sdk_dependencies"]) == 16, limits
     assert any(dependency["path"] == "limits"
                for dependency in limits["sdk_dependencies"]), limits
     for target in sdk_targets:
@@ -327,6 +327,87 @@ int main() {
          "TR0201"),
     ):
         check("v2-cstddef-" + name, source, code,
+              profile="cpp-core-v2", sdk=True)
+
+    utility_source = """\
+#include <utility>
+static_assert(std::integer_sequence<int, 2, 4, 6>::size() == 3);
+static_assert(std::tuple_size<std::pair<int, double>>::value == 2);
+static_assert(sizeof(std::tuple_element<1, std::pair<int, double>>::type)
+              == sizeof(double));
+extern "C" int utility_scalar() {
+  int value = 5;
+  int other = 9;
+  int old = std::exchange(value, 7);
+  std::swap(value, other);
+  const int &view = std::as_const(value);
+  int &&moved = std::move(other);
+  int &forwarded = std::forward<int &>(value);
+  int &&conditional = std::move_if_noexcept(other);
+  return old + view + moved + forwarded + conditional;
+}
+extern "C" int utility_pair() {
+  std::pair<int, int> zero{};
+  std::pair<int, int> original{1, 2};
+  std::pair<int, int> copied = original;
+  std::pair<int, int> moved(std::move(copied));
+  zero = moved;
+  auto made = std::make_pair(3, 4);
+  zero.swap(made);
+  std::swap(zero, made);
+  return zero.first * 1000 + zero.second * 100
+       + made.first * 10 + made.second;
+}
+extern "C" int utility_compare() {
+  std::pair<int, int> left{1, 9}, right{2, 3};
+  return (left == right) + 2 * (left != right) + 4 * (left < right)
+       + 8 * (left > right) + 16 * (left <= right)
+       + 32 * (left >= right);
+}
+extern "C" int utility_get() {
+  std::pair<int, double> value{3, 4.0};
+  std::get<0>(value) = 7;
+  return std::get<int>(value) + int(std::get<1>(value));
+}
+"""
+    utility = check("v2-utility", utility_source,
+                    profile="cpp-core-v2", sdk=True)
+    assert len(utility["sdk_dependencies"]) == 87, utility
+    assert any(dependency["root"] == "libcxx" and
+               dependency["path"] == "utility"
+               for dependency in utility["sdk_dependencies"]), utility
+    assert sorted([field["type"] for field in record["fields"]]
+                  for record in utility["records"]) == [
+                      ["int", "double"], ["int", "int"]
+                  ], utility["records"]
+    exports = {function["name"]: function for function in utility["functions"]
+               if function["c_export"]}
+    assert set(exports) == {
+        "utility_scalar", "utility_pair", "utility_compare", "utility_get"
+    }, exports
+    assert not [node for node in walk(utility["functions"])
+                if node.get("op") in ("call", "mapped_call")], utility
+    for target in sdk_targets:
+        check("v2-utility-" + target, utility_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    for name, source, code in (
+        ("quoted", '#include "utility"\nint main(){return 0;}', "TR0201"),
+        ("function-address",
+         '#include <utility>\nauto f(){return &std::move<int>;}', "TR0201"),
+        ("nested-pair",
+         '#include <utility>\nint f(){std::pair<std::pair<int,int>,int> p{{1,2},3};return p.first.first;}',
+         "TR0201"),
+        ("record-pair",
+         '#include <utility>\nstruct R{int n;};int f(){std::pair<R,int> p{{1},2};return p.first.n;}',
+         "TR0201"),
+        ("array-swap",
+         '#include <utility>\nint f(){int a[2]{1,2},b[2]{3,4};std::swap(a,b);return a[0];}',
+         "TR0203"),
+        ("ambiguous-type-get",
+         '#include <utility>\nint f(){std::pair<int,int>p{1,2};return std::get<int>(p);}',
+         "TR0202"),
+    ):
+        check("v2-utility-" + name, source, code,
               profile="cpp-core-v2", sdk=True)
 
     # Windows driver defaults must not change core-v2 source visibility or

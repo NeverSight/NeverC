@@ -145,10 +145,16 @@ def main():
 
             cmd = [
                 args.neverc,
+                "--no-default-config",
                 "-c", "-emit-llvm", "-O2",
                 "-gline-tables-only",
                 "-fno-builtin-std",
                 "-fno-lto",
+                # Assertions-enabled builds preserve LLVM value names by
+                # default while release builds discard them.  The approved
+                # runtime identity intentionally fingerprints printed IR, so
+                # make that policy explicit and independent of build profile.
+                "-fdiscard-value-names",
                 "-ffreestanding", "-std=gnu11", "-w",
                 f"--target={args.target}",
                 f"-I{inc_dir_abs}",

@@ -363,6 +363,467 @@ approvedCstddefOperation(const State &S, const SourceManager &SM,
   return CstddefOperation::ToInteger;
 }
 
+static bool utilityScalar(const ASTContext &Context, QualType Type) {
+  if (Type.isNull() || Type->isReferenceType())
+    return false;
+  Type = Type.getUnqualifiedType();
+  if (Type->isIntegralOrEnumerationType())
+    return Context.getTypeSize(Type) <= 64;
+  return Type->isSpecificBuiltinType(BuiltinType::Float) ||
+         Type->isSpecificBuiltinType(BuiltinType::Double) ||
+         (Type->isPointerType() && !Type->isFunctionPointerType()) ||
+         Type->isNullPtrType();
+}
+
+bool approvedUtilityPairMetadata(const State &S, const SourceManager &SM,
+                                 const CXXRecordDecl *Record) {
+  const auto *Specialization =
+      dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+  const auto *Template =
+      Specialization ? Specialization->getSpecializedTemplate() : nullptr;
+  const auto *CanonicalTemplate =
+      Template ? Template->getCanonicalDecl() : nullptr;
+  if (!Specialization || !Template || !CanonicalTemplate ||
+      Specialization->isUnion() || Specialization->isDependentContext() ||
+      Specialization->getName() != "pair" ||
+      !approvedStandardSDKDeclaration(S, SM, Template) ||
+      !approvedStandardSDKDeclaration(S, SM, CanonicalTemplate) ||
+      !cstddefOrigin(S, SM, Template->getLocation(), "libcxx",
+                     "__utility/pair.h") ||
+      !cstddefOrigin(S, SM, CanonicalTemplate->getLocation(), "libcxx",
+                     "__fwd/pair.h"))
+    return false;
+  const auto &Arguments = Specialization->getTemplateArgs();
+  return Arguments.size() == 2 &&
+         Arguments.get(0).getKind() == TemplateArgument::Type &&
+         Arguments.get(1).getKind() == TemplateArgument::Type;
+}
+
+std::optional<UtilityPairRecord>
+approvedUtilityPairRecord(const State &S, const SourceManager &SM,
+                          const CXXRecordDecl *Record,
+                          const ASTContext &Context) {
+  const auto *Specialization =
+      dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+  Specialization = Specialization
+                       ? dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+                             Specialization->getDefinition())
+                       : nullptr;
+  const auto *Template =
+      Specialization ? Specialization->getSpecializedTemplate() : nullptr;
+  const auto *CanonicalTemplate = Template ? Template->getCanonicalDecl() : nullptr;
+  if (!approvedUtilityPairMetadata(S, SM, Specialization) ||
+      !Specialization || !Template || Specialization->isUnion() ||
+      Specialization->isDependentContext() ||
+      Specialization->getSpecializationKind() != TSK_ImplicitInstantiation ||
+      Specialization->getName() != "pair" ||
+      Specialization->getNumBases() || !Specialization->isStandardLayout() ||
+      !approvedStandardSDKDeclaration(S, SM, Specialization) ||
+      !approvedStandardSDKDeclaration(S, SM, Template) || !CanonicalTemplate ||
+      !approvedStandardSDKDeclaration(S, SM, CanonicalTemplate) ||
+      !cstddefOrigin(S, SM, Specialization->getLocation(), "libcxx",
+                     "__utility/pair.h") ||
+      !cstddefOrigin(S, SM, Template->getLocation(), "libcxx",
+                     "__utility/pair.h") ||
+      !cstddefOrigin(S, SM, CanonicalTemplate->getLocation(), "libcxx",
+                     "__fwd/pair.h"))
+    return std::nullopt;
+  const auto &Arguments = Specialization->getTemplateArgs();
+  if (Arguments.size() != 2 ||
+      Arguments.get(0).getKind() != TemplateArgument::Type ||
+      Arguments.get(1).getKind() != TemplateArgument::Type)
+    return std::nullopt;
+  auto Fields = Specialization->fields();
+  auto It = Fields.begin();
+  const auto *First = It == Fields.end() ? nullptr : *It++;
+  const auto *Second = It == Fields.end() ? nullptr : *It++;
+  if (!First || !Second || It != Fields.end() || First->getName() != "first" ||
+      Second->getName() != "second" || First->getAccess() != AS_public ||
+      Second->getAccess() != AS_public || First->isBitField() ||
+      Second->isBitField() || First->isMutable() || Second->isMutable() ||
+      First->hasAttrs() || Second->hasAttrs() ||
+      !approvedStandardSDKDeclaration(S, SM, First) ||
+      !approvedStandardSDKDeclaration(S, SM, Second) ||
+      !cstddefOrigin(S, SM, First->getLocation(), "libcxx",
+                     "__utility/pair.h") ||
+      !cstddefOrigin(S, SM, Second->getLocation(), "libcxx",
+                     "__utility/pair.h") ||
+      !Context.hasSameType(First->getType(), Arguments.get(0).getAsType()) ||
+      !Context.hasSameType(Second->getType(), Arguments.get(1).getAsType()))
+    return std::nullopt;
+  return UtilityPairRecord{Specialization, First, Second};
+}
+
+std::optional<UtilityPairConstruction>
+approvedUtilityPairConstruction(const State &S, const SourceManager &SM,
+                                const CXXConstructExpr *Construction,
+                                const ASTContext &Context) {
+  if (!Construction || Construction->isTypeDependent() ||
+      Construction->isValueDependent() ||
+      Construction->isInstantiationDependent() ||
+      Construction->getConstructionKind() !=
+          CXXConstructionKind::Complete)
+    return std::nullopt;
+  const auto *Constructor = Construction->getConstructor();
+  const auto Pair = approvedUtilityPairRecord(
+      S, SM, Construction->getType()->getAsCXXRecordDecl(), Context);
+  if (!Constructor || !Pair || Constructor->isVariadic() ||
+      Constructor->getParent()->getCanonicalDecl() !=
+          Pair->Record->getCanonicalDecl() ||
+      Construction->getNumArgs() != Constructor->getNumParams() ||
+      !approvedStandardSDKDeclaration(S, SM, Constructor) ||
+      !cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx",
+                     "__utility/pair.h") ||
+      !utilityScalar(Context, Pair->First->getType()) ||
+      !utilityScalar(Context, Pair->Second->getType()))
+    return std::nullopt;
+  if (!Construction->getNumArgs() && Constructor->isDefaultConstructor())
+    return UtilityPairConstruction::Default;
+  if (Construction->getNumArgs() == 1 &&
+      Constructor->isCopyOrMoveConstructor() && Constructor->isDefaulted() &&
+      Constructor->isTrivial())
+    return UtilityPairConstruction::CopyOrMove;
+  const auto *Primary = Constructor->getPrimaryTemplate();
+  if (Construction->getNumArgs() == 2 && Primary &&
+      approvedStandardSDKDeclaration(S, SM, Primary) &&
+      cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
+                     "__utility/pair.h"))
+    return UtilityPairConstruction::Elements;
+  return std::nullopt;
+}
+
+std::optional<UtilityPairRecord>
+approvedUtilityPairAssignment(const State &S, const SourceManager &SM,
+                              const CXXOperatorCallExpr *Assignment,
+                              const ASTContext &Context) {
+  if (!Assignment || Assignment->isTypeDependent() ||
+      Assignment->isValueDependent() ||
+      Assignment->isInstantiationDependent() ||
+      Assignment->getOperator() != OO_Equal ||
+      Assignment->getNumArgs() != 2 || !Assignment->isLValue())
+    return std::nullopt;
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Assignment->getDirectCallee());
+  const auto Pair = approvedUtilityPairRecord(
+      S, SM, Method ? Method->getParent() : nullptr, Context);
+  if (!Method || !Pair || Method->isStatic() || Method->isVariadic() ||
+      Method->getNumParams() != 1 ||
+      Method->getOverloadedOperator() != OO_Equal || !Method->hasBody() ||
+      !approvedStandardSDKDeclaration(S, SM, Method) ||
+      !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
+                     "__utility/pair.h") ||
+      !utilityScalar(Context, Pair->First->getType()) ||
+      !utilityScalar(Context, Pair->Second->getType()))
+    return std::nullopt;
+  const auto Parameter = Method->getParamDecl(0)->getType();
+  const auto Result = Method->getReturnType();
+  const auto PairType = Context.getRecordType(Pair->Record);
+  if (!Parameter->isReferenceType() || !Result->isLValueReferenceType() ||
+      !Context.hasSameUnqualifiedType(Parameter->getPointeeType(), PairType) ||
+      !Context.hasSameUnqualifiedType(Result->getPointeeType(), PairType) ||
+      !Context.hasSameUnqualifiedType(Assignment->getArg(0)->getType(),
+                                      PairType) ||
+      !Context.hasSameUnqualifiedType(Assignment->getArg(1)->getType(),
+                                      PairType) ||
+      !Context.hasSameUnqualifiedType(Assignment->getType(), PairType))
+    return std::nullopt;
+  return Pair;
+}
+
+static const DeclRefExpr *approvedUtilityReference(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const FunctionDecl *Function) {
+  const auto *Reference = Call && Call->getCallee()
+                              ? dyn_cast<DeclRefExpr>(
+                                    Call->getCallee()->IgnoreParenImpCasts())
+                              : nullptr;
+  return Reference && Function && Reference->getDecl() == Function &&
+                 S.owns(SM, Reference->getExprLoc())
+             ? Reference
+             : nullptr;
+}
+
+std::optional<UtilityOperation>
+approvedUtilityOperation(const State &S, const SourceManager &SM,
+                         const CallExpr *Call, const ASTContext &Context) {
+  if (!Call || Call->isTypeDependent() || Call->isValueDependent() ||
+      Call->isInstantiationDependent())
+    return std::nullopt;
+  const auto *Function = Call->getDirectCallee();
+  if (const auto *MemberCall = dyn_cast<CXXMemberCallExpr>(Call)) {
+    const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
+    const auto *Reference = directMethodReference(Call);
+    const auto Pair = approvedUtilityPairRecord(
+        S, SM, Method ? Method->getParent() : nullptr, Context);
+    if (Method && Reference && Pair && Method->getIdentifier() &&
+        Method->getName() == "swap" && !Method->isStatic() &&
+        !Method->isVariadic() && Method->getNumParams() == 1 &&
+        Call->getNumArgs() == 1 && Function->getReturnType()->isVoidType() &&
+        Method->hasBody() && approvedStandardSDKDeclaration(S, SM, Method) &&
+        cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
+                      "__utility/pair.h") &&
+        S.owns(SM, Reference->getExprLoc()) &&
+        utilityScalar(Context, Pair->First->getType()) &&
+        utilityScalar(Context, Pair->Second->getType()) &&
+        Context.hasSameUnqualifiedType(
+            MemberCall->getImplicitObjectArgument()->getType(),
+            Context.getRecordType(Pair->Record)) &&
+        Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
+                                       Context.getRecordType(Pair->Record)))
+      return UtilityOperation::PairMemberSwap;
+  }
+  const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+  const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+  if (!Function || !Primary || !Pattern || Function->isVariadic() ||
+      !Function->isInlined() || !Pattern->hasBody() ||
+      !approvedStandardSDKDeclaration(S, SM, Function) ||
+      !approvedStandardSDKDeclaration(S, SM, Primary) ||
+      !approvedUtilityReference(S, SM, Call, Function) ||
+      Call->getNumArgs() != Function->getNumParams())
+    return std::nullopt;
+  auto Origin = S.sdkFile(SM, Primary->getLocation());
+  if (!Origin || Origin->Root != "libcxx")
+    return std::nullopt;
+  auto Same = [&](QualType Left, QualType Right) {
+    return !Left.isNull() && !Right.isNull() &&
+           Context.hasSameType(Left, Right);
+  };
+  const llvm::StringRef Name = Function->getIdentifier()
+                                   ? Function->getIdentifier()->getName()
+                                   : llvm::StringRef();
+  if (Origin->Path == "__utility/pair.h" && Name == "make_pair" &&
+      Call->getNumArgs() == 2 && Call->isPRValue() &&
+      !Function->getReturnType()->isReferenceType() &&
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto Pair = approvedUtilityPairRecord(
+        S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
+    if (!Pair || !utilityScalar(Context, Pair->First->getType()) ||
+        !utilityScalar(Context, Pair->Second->getType()))
+      return std::nullopt;
+    for (unsigned I = 0; I != 2; ++I) {
+      auto Parameter = Function->getParamDecl(I)->getType();
+      if (!Parameter->isReferenceType() ||
+          !Context.hasSameUnqualifiedType(Call->getArg(I)->getType(),
+                                          Parameter->getPointeeType()))
+        return std::nullopt;
+    }
+    return UtilityOperation::MakePair;
+  }
+  if (Origin->Path == "__utility/pair.h" && Call->getNumArgs() == 2 &&
+      Call->isPRValue() && Function->getReturnType()->isBooleanType() &&
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+    const auto *LeftRecord =
+        Call->getArg(0)->getType()->getAsCXXRecordDecl();
+    const auto *RightRecord =
+        Call->getArg(1)->getType()->getAsCXXRecordDecl();
+    const auto Left = approvedUtilityPairRecord(S, SM, LeftRecord, Context);
+    const auto Right = approvedUtilityPairRecord(S, SM, RightRecord, Context);
+    if (Operator && Left && Right &&
+        Left->Record->getCanonicalDecl() == Right->Record->getCanonicalDecl() &&
+        utilityScalar(Context, Left->First->getType()) &&
+        utilityScalar(Context, Left->Second->getType()) &&
+        !Left->First->getType().isVolatileQualified() &&
+        !Left->Second->getType().isVolatileQualified()) {
+      switch (Operator->getOperator()) {
+      case OO_EqualEqual: return UtilityOperation::PairEqual;
+      case OO_ExclaimEqual: return UtilityOperation::PairNotEqual;
+      case OO_Less: return UtilityOperation::PairLess;
+      case OO_Greater: return UtilityOperation::PairGreater;
+      case OO_LessEqual: return UtilityOperation::PairLessEqual;
+      case OO_GreaterEqual: return UtilityOperation::PairGreaterEqual;
+      default: break;
+      }
+    }
+  }
+  const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
+  if (!Prototype || !Prototype->isNothrow())
+    return std::nullopt;
+  auto ReferenceResult = [&] {
+    auto Result = Function->getReturnType();
+    if (!Result->isReferenceType() ||
+        !Same(Call->getType(), Result->getPointeeType()) ||
+        (Result->isLValueReferenceType() ? !Call->isLValue()
+                                         : !Call->isXValue()))
+      return false;
+    auto Parameter = Function->getParamDecl(0)->getType();
+    return Parameter->isReferenceType() &&
+           Same(Call->getArg(0)->getType(), Parameter->getPointeeType()) &&
+           Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
+                                          Call->getType());
+  };
+  if (Call->getNumArgs() == 1 && ReferenceResult()) {
+    if (Origin->Path == "__utility/move.h" && Name == "move" &&
+        Function->getReturnType()->isRValueReferenceType())
+      return UtilityOperation::Move;
+    if (Origin->Path == "__utility/forward.h" && Name == "forward")
+      return UtilityOperation::Forward;
+    if (Origin->Path == "__utility/move.h" &&
+        Name == "move_if_noexcept" &&
+        Function->getParamDecl(0)->getType()->isLValueReferenceType())
+      return UtilityOperation::MoveIfNoexcept;
+    if (Origin->Path == "__utility/as_const.h" && Name == "as_const" &&
+        Function->getParamDecl(0)->getType()->isLValueReferenceType() &&
+        Function->getReturnType()->isLValueReferenceType() &&
+        Function->getReturnType()->getPointeeType().isConstQualified())
+      return UtilityOperation::AsConst;
+  }
+  if (Origin->Path == "__utility/exchange.h" && Name == "exchange" &&
+      Call->getNumArgs() == 2 && Call->isPRValue()) {
+    auto Object = Function->getParamDecl(0)->getType();
+    auto Value = Function->getParamDecl(1)->getType();
+    if (Object->isLValueReferenceType() && Value->isReferenceType() &&
+        !Object->getPointeeType().isConstQualified() &&
+        !Object->getPointeeType().isVolatileQualified() &&
+        utilityScalar(Context, Object->getPointeeType()) &&
+        utilityScalar(Context, Value->getPointeeType()) &&
+        Same(Call->getArg(0)->getType(), Object->getPointeeType()) &&
+        Same(Call->getArg(1)->getType(), Value->getPointeeType()) &&
+        Same(Call->getType(), Object->getPointeeType()) &&
+        Same(Function->getReturnType(), Object->getPointeeType()))
+      return UtilityOperation::Exchange;
+  }
+  if (Origin->Path == "__utility/swap.h" && Name == "swap" &&
+      Call->getNumArgs() == 2 && Function->getReturnType()->isVoidType()) {
+    auto Left = Function->getParamDecl(0)->getType();
+    auto Right = Function->getParamDecl(1)->getType();
+    if (Left->isLValueReferenceType() && Right->isLValueReferenceType() &&
+        !Left->getPointeeType().isConstQualified() &&
+        !Left->getPointeeType().isVolatileQualified() &&
+        utilityScalar(Context, Left->getPointeeType()) &&
+        Same(Left->getPointeeType(), Right->getPointeeType()) &&
+        Same(Call->getArg(0)->getType(), Left->getPointeeType()) &&
+        Same(Call->getArg(1)->getType(), Right->getPointeeType()))
+      return UtilityOperation::Swap;
+  }
+  if (Origin->Path == "__utility/pair.h" && Name == "swap" &&
+      Call->getNumArgs() == 2 && Function->getReturnType()->isVoidType()) {
+    auto LeftType = Function->getParamDecl(0)->getType();
+    auto RightType = Function->getParamDecl(1)->getType();
+    const auto Left = approvedUtilityPairRecord(
+        S, SM, LeftType->isReferenceType()
+                   ? LeftType->getPointeeType()->getAsCXXRecordDecl()
+                   : nullptr,
+        Context);
+    const auto Right = approvedUtilityPairRecord(
+        S, SM, RightType->isReferenceType()
+                   ? RightType->getPointeeType()->getAsCXXRecordDecl()
+                   : nullptr,
+        Context);
+    if (LeftType->isLValueReferenceType() &&
+        RightType->isLValueReferenceType() && Left && Right &&
+        Left->Record->getCanonicalDecl() == Right->Record->getCanonicalDecl() &&
+        utilityScalar(Context, Left->First->getType()) &&
+        utilityScalar(Context, Left->Second->getType()) &&
+        Same(Call->getArg(0)->getType(), LeftType->getPointeeType()) &&
+        Same(Call->getArg(1)->getType(), RightType->getPointeeType()))
+      return UtilityOperation::PairSwap;
+  }
+  if (Origin->Path == "__utility/pair.h" && Name == "get" &&
+      Call->getNumArgs() == 1) {
+    const auto *Arguments = Function->getTemplateSpecializationArgs();
+    auto Parameter = Function->getParamDecl(0)->getType();
+    auto Result = Function->getReturnType();
+    const auto Pair = approvedUtilityPairRecord(
+        S, SM, Parameter->isReferenceType()
+                   ? Parameter->getPointeeType()->getAsCXXRecordDecl()
+                   : nullptr,
+        Context);
+    if (Arguments && (Arguments->size() == 2 || Arguments->size() == 3) &&
+        Parameter->isReferenceType() &&
+        Result->isReferenceType() && Pair &&
+        Same(Call->getArg(0)->getType(), Parameter->getPointeeType()) &&
+        Same(Call->getType(), Result->getPointeeType()) &&
+        (Result->isLValueReferenceType() ? Call->isLValue()
+                                         : Call->isXValue())) {
+      if (Arguments->size() == 3 &&
+          Arguments->get(0).getKind() == TemplateArgument::Integral) {
+        const auto Index = Arguments->get(0).getAsIntegral();
+        if (Index == 0 &&
+            Context.hasSameUnqualifiedType(Result->getPointeeType(),
+                                           Pair->First->getType()))
+          return UtilityOperation::PairGetFirst;
+        if (Index == 1 &&
+            Context.hasSameUnqualifiedType(Result->getPointeeType(),
+                                           Pair->Second->getType()))
+          return UtilityOperation::PairGetSecond;
+      }
+      if (Arguments->size() == 2 &&
+          Arguments->get(0).getKind() == TemplateArgument::Type &&
+          Arguments->get(1).getKind() == TemplateArgument::Type) {
+        auto Selected = Result->getPointeeType().getUnqualifiedType();
+        const bool First =
+            Context.hasSameType(Selected, Pair->First->getType());
+        const bool Second =
+            Context.hasSameType(Selected, Pair->Second->getType());
+        if (First != Second &&
+            Context.hasSameUnqualifiedType(Result->getPointeeType(),
+                                           Selected))
+          return First ? UtilityOperation::PairGetFirst
+                       : UtilityOperation::PairGetSecond;
+      }
+    }
+  }
+  return std::nullopt;
+}
+
+bool approvedUtilityConstant(const State &S, const SourceManager &SM,
+                             const CallExpr *Call, ASTContext &Context,
+                             APValue &Value) {
+  if (!Call || Call->getNumArgs() || !Call->isPRValue() ||
+      Call->isTypeDependent() || Call->isValueDependent() ||
+      Call->isInstantiationDependent())
+    return false;
+  const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
+  const auto *Record =
+      Method ? dyn_cast<ClassTemplateSpecializationDecl>(Method->getParent())
+             : nullptr;
+  const auto *Template = Record ? Record->getSpecializedTemplate() : nullptr;
+  const auto *Reference =
+      Method ? approvedUtilityReference(S, SM, Call, Method) : nullptr;
+  const auto *Qualifier = Reference ? Reference->getQualifier() : nullptr;
+  const auto *QualifierType = Qualifier ? Qualifier->getAsType() : nullptr;
+  const auto *QualifierRecord =
+      QualifierType ? QualifierType->getAsCXXRecordDecl() : nullptr;
+  if (!Method || !Record || !Template || !Reference || !QualifierRecord ||
+      QualifierRecord->getCanonicalDecl() != Record->getCanonicalDecl() ||
+      Method->getName() != "size" || !Method->isStatic() ||
+      !Method->isConstexpr() || Method->getNumParams() ||
+      Method->isVariadic() || Template->getName() != "integer_sequence" ||
+      !approvedStandardSDKDeclaration(S, SM, Method) ||
+      !approvedStandardSDKDeclaration(S, SM, Template) ||
+      !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
+                     "__utility/integer_sequence.h") ||
+      !cstddefOrigin(S, SM, Template->getLocation(), "libcxx",
+                     "__utility/integer_sequence.h") ||
+      Method->getReturnType().isNull() ||
+      !Method->getReturnType()->isIntegralType(Context) ||
+      !Context.hasSameType(Call->getType(), Method->getReturnType()) ||
+      !Call->isCXX11ConstantExpr(Context, &Value) || !Value.isInt())
+    return false;
+  const auto &Arguments = Record->getTemplateArgs();
+  if (!Arguments.size() || Arguments.get(0).getKind() != TemplateArgument::Type)
+    return false;
+  auto Element = Arguments.get(0).getAsType();
+  if (Element.isNull() || !Element->isIntegralOrEnumerationType())
+    return false;
+  auto Integral = [&](const TemplateArgument &Argument) {
+    return Argument.getKind() == TemplateArgument::Integral &&
+           Context.hasSameType(Argument.getIntegralType(), Element);
+  };
+  for (unsigned I = 1; I < Arguments.size(); ++I) {
+    const auto &Argument = Arguments.get(I);
+    if (Argument.getKind() == TemplateArgument::Pack) {
+      for (const auto &Packed : Argument.pack_elements())
+        if (!Integral(Packed))
+          return false;
+    } else if (!Integral(Argument)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 bool approvedCstddefNull(const State &S, const SourceManager &SM,
                         const Expr *Expression) {
   const auto *Null = dyn_cast_or_null<GNUNullExpr>(Expression);
