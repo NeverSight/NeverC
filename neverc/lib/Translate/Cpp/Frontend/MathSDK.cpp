@@ -1382,6 +1382,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
        Name == "partition_copy") ||
       (Origin->Path == "__algorithm/partition_point.h" &&
        Name == "partition_point") ||
+      (Origin->Path == "__algorithm/is_permutation.h" &&
+       Name == "is_permutation") ||
       (Origin->Path == "__algorithm/equal_range.h" && Name == "equal_range") ||
       (Origin->Path == "__algorithm/set_union.h" && Name == "set_union") ||
       (Origin->Path == "__algorithm/set_symmetric_difference.h" &&
@@ -1517,6 +1519,32 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Context.hasSameUnqualifiedType(Parameter,
                                           Iterator->getPointeeType());
   };
+  auto AlgorithmBinaryPredicateParameter = [&](unsigned PredicateIndex,
+                                               unsigned LeftIteratorIndex,
+                                               unsigned RightIteratorIndex) {
+    if (PredicateIndex >= Function->getNumParams() ||
+        PredicateIndex >= Call->getNumArgs() ||
+        LeftIteratorIndex >= Function->getNumParams() ||
+        RightIteratorIndex >= Function->getNumParams())
+      return false;
+    auto Left = Function->getParamDecl(LeftIteratorIndex)->getType();
+    auto Right = Function->getParamDecl(RightIteratorIndex)->getType();
+    if (!utilityAlgorithmScalarPointer(Context, Left) ||
+        !utilityAlgorithmScalarPointer(Context, Right))
+      return false;
+    const auto *Prototype = AlgorithmCallbackPrototype(PredicateIndex);
+    if (!Prototype || Prototype->getNumParams() != 2 ||
+        !Prototype->getReturnType()->isBooleanType())
+      return false;
+    auto LeftParameter = Prototype->getParamType(0);
+    auto RightParameter = Prototype->getParamType(1);
+    return utilityScalar(Context, LeftParameter) &&
+           utilityScalar(Context, RightParameter) &&
+           Context.hasSameUnqualifiedType(LeftParameter,
+                                          Left->getPointeeType()) &&
+           Context.hasSameUnqualifiedType(RightParameter,
+                                          Right->getPointeeType());
+  };
   if ((Origin->Path == "__algorithm/find.h" ||
        Origin->Path == "__algorithm/count.h") &&
       (Name == "find" || Name == "count") && Call->getNumArgs() == 3 &&
@@ -1538,22 +1566,34 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     }
   }
   if (Origin->Path == "__algorithm/equal.h" && Name == "equal" &&
-      (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
+      Call->getNumArgs() >= 3 && Call->getNumArgs() <= 5 &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
       Function->getReturnType()->isBooleanType() &&
       Same(Call->getType(), Function->getReturnType()) &&
-      AlgorithmEqualityPointerParameter(0) &&
-      AlgorithmEqualityPointerParameter(1) &&
-      AlgorithmEqualityPointerParameter(2) &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      AlgorithmPointerParameter(2) &&
       Same(Function->getParamDecl(0)->getType(),
-           Function->getParamDecl(1)->getType()) &&
-      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
-                           Function->getParamDecl(2)->getType())) {
-    if (Call->getNumArgs() == 3)
+           Function->getParamDecl(1)->getType())) {
+    const bool DefaultElements =
+        AlgorithmEqualityPointerParameter(0) &&
+        AlgorithmEqualityPointerParameter(1) &&
+        AlgorithmEqualityPointerParameter(2) &&
+        SameAlgorithmElement(Function->getParamDecl(0)->getType(),
+                             Function->getParamDecl(2)->getType());
+    if (Call->getNumArgs() == 3 && DefaultElements)
       return UtilityOperation::AlgorithmEqual;
-    if (AlgorithmEqualityPointerParameter(3) &&
+    if (Call->getNumArgs() == 4) {
+      if (DefaultElements && AlgorithmEqualityPointerParameter(3) &&
+          Same(Function->getParamDecl(2)->getType(),
+               Function->getParamDecl(3)->getType()))
+        return UtilityOperation::AlgorithmEqual;
+      if (AlgorithmBinaryPredicateParameter(3, 0, 2))
+        return UtilityOperation::AlgorithmEqual;
+    }
+    if (Call->getNumArgs() == 5 && AlgorithmPointerParameter(3) &&
         Same(Function->getParamDecl(2)->getType(),
-             Function->getParamDecl(3)->getType()))
+             Function->getParamDecl(3)->getType()) &&
+        AlgorithmBinaryPredicateParameter(4, 0, 2))
       return UtilityOperation::AlgorithmEqual;
   }
   if ((Origin->Path == "__algorithm/copy.h" ||
@@ -1690,15 +1730,20 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return UtilityOperation::AlgorithmIsSortedUntil;
   }
   if (Origin->Path == "__algorithm/adjacent_find.h" &&
-      Name == "adjacent_find" && Call->getNumArgs() == 2 &&
-      Function->getNumParams() == 2 && Call->isPRValue() &&
-      AlgorithmEqualityPointerParameter(0) &&
-      AlgorithmEqualityPointerParameter(1) &&
+      Name == "adjacent_find" &&
+      (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
+      Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
-      Same(Call->getType(), Function->getReturnType()))
-    return UtilityOperation::AlgorithmAdjacentFind;
+      Same(Call->getType(), Function->getReturnType())) {
+    if (Call->getNumArgs() == 2 && AlgorithmEqualityPointerParameter(0) &&
+        AlgorithmEqualityPointerParameter(1))
+      return UtilityOperation::AlgorithmAdjacentFind;
+    if (Call->getNumArgs() == 3 && AlgorithmBinaryPredicateParameter(2, 0, 0))
+      return UtilityOperation::AlgorithmAdjacentFind;
+  }
   if (Origin->Path == "__algorithm/remove.h" && Name == "remove" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
       Call->isPRValue() && AlgorithmEqualityPointerParameter(0) &&
@@ -1809,26 +1854,40 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmSearchN;
   if (Origin->Path == "__algorithm/mismatch.h" && Name == "mismatch" &&
-      (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
+      Call->getNumArgs() >= 3 && Call->getNumArgs() <= 5 &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      AlgorithmEqualityPointerParameter(0) &&
-      AlgorithmEqualityPointerParameter(1) &&
-      AlgorithmEqualityPointerParameter(2) &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      AlgorithmPointerParameter(2) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
-                           Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
     auto Pair = approvedUtilityPairRecord(
         S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);
     if (Pair &&
         Same(Pair->First->getType(), Function->getParamDecl(0)->getType()) &&
-        Same(Pair->Second->getType(), Function->getParamDecl(2)->getType()) &&
-        (Call->getNumArgs() == 3 ||
-         (AlgorithmEqualityPointerParameter(3) &&
+        Same(Pair->Second->getType(), Function->getParamDecl(2)->getType())) {
+      const bool DefaultElements =
+          AlgorithmEqualityPointerParameter(0) &&
+          AlgorithmEqualityPointerParameter(1) &&
+          AlgorithmEqualityPointerParameter(2) &&
+          SameAlgorithmElement(Function->getParamDecl(0)->getType(),
+                               Function->getParamDecl(2)->getType());
+      if (Call->getNumArgs() == 3 && DefaultElements)
+        return UtilityOperation::AlgorithmMismatch;
+      if (Call->getNumArgs() == 4) {
+        if (DefaultElements && AlgorithmEqualityPointerParameter(3) &&
+            Same(Function->getParamDecl(2)->getType(),
+                 Function->getParamDecl(3)->getType()))
+          return UtilityOperation::AlgorithmMismatch;
+        if (AlgorithmBinaryPredicateParameter(3, 0, 2))
+          return UtilityOperation::AlgorithmMismatch;
+      }
+      if (Call->getNumArgs() == 5 && AlgorithmPointerParameter(3) &&
           Same(Function->getParamDecl(2)->getType(),
-               Function->getParamDecl(3)->getType()))))
-      return UtilityOperation::AlgorithmMismatch;
+               Function->getParamDecl(3)->getType()) &&
+          AlgorithmBinaryPredicateParameter(4, 0, 2))
+        return UtilityOperation::AlgorithmMismatch;
+    }
   }
   if (Origin->Path == "__algorithm/copy_n.h" && Name == "copy_n" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
@@ -2111,23 +2170,34 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                ? UtilityOperation::AlgorithmNextPermutation
                : UtilityOperation::AlgorithmPrevPermutation;
   if (Origin->Path == "__algorithm/is_permutation.h" &&
-      Name == "is_permutation" &&
-      (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
+      Name == "is_permutation" && Call->getNumArgs() >= 3 &&
+      Call->getNumArgs() <= 5 &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
       Function->getReturnType()->isBooleanType() &&
       Same(Call->getType(), Function->getReturnType()) &&
-      AlgorithmEqualityPointerParameter(0) &&
-      AlgorithmEqualityPointerParameter(1) &&
-      AlgorithmEqualityPointerParameter(2) &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      AlgorithmPointerParameter(2) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       SameAlgorithmElement(Function->getParamDecl(0)->getType(),
                            Function->getParamDecl(2)->getType())) {
-    if (Call->getNumArgs() == 3)
+    const bool DefaultElements = AlgorithmEqualityPointerParameter(0) &&
+                                 AlgorithmEqualityPointerParameter(1) &&
+                                 AlgorithmEqualityPointerParameter(2);
+    if (Call->getNumArgs() == 3 && DefaultElements)
       return UtilityOperation::AlgorithmIsPermutation;
-    if (AlgorithmEqualityPointerParameter(3) &&
+    if (Call->getNumArgs() == 4) {
+      if (DefaultElements && AlgorithmEqualityPointerParameter(3) &&
+          Same(Function->getParamDecl(2)->getType(),
+               Function->getParamDecl(3)->getType()))
+        return UtilityOperation::AlgorithmIsPermutation;
+      if (AlgorithmBinaryPredicateParameter(3, 0, 2))
+        return UtilityOperation::AlgorithmIsPermutation;
+    }
+    if (Call->getNumArgs() == 5 && AlgorithmPointerParameter(3) &&
         Same(Function->getParamDecl(2)->getType(),
-             Function->getParamDecl(3)->getType()))
+             Function->getParamDecl(3)->getType()) &&
+        AlgorithmBinaryPredicateParameter(4, 0, 2))
       return UtilityOperation::AlgorithmIsPermutation;
   }
   const bool UnaryPredicateQuery =

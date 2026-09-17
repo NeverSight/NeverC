@@ -99,8 +99,11 @@ algorithms. Checked by-value unary boolean function-pointer predicates admit
 `find_if`, `find_if_not`, `count_if`, `all_of`, `any_of`, `none_of`,
 `copy_if`, `remove_if`, `remove_copy_if`, `replace_if`, `replace_copy_if`,
 `is_partitioned`, `partition`, `partition_copy` and `partition_point`. Exact
-function-pointer callbacks also admit `for_each`, `for_each_n`, unary and binary
-`transform`, `generate` and `generate_n`.
+function-pointer binary predicates additionally admit `adjacent_find`, three-
+and four-iterator `equal`, three- and four-iterator `mismatch`, and three- and
+four-iterator `is_permutation`. Exact function-pointer callbacks also admit
+`for_each`, `for_each_n`, unary and binary `transform`, `generate` and
+`generate_n`.
 Predicate mutation and ordered output algorithms require writable destinations,
 and `copy_n`, `fill_n` and `search_n` accept integral or non-scoped enum counts
 through 64 bits after integer promotion.

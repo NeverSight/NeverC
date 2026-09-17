@@ -25121,8 +25121,8 @@ TEST_F(TranslateTest, CoreV2AlgorithmPermutationRequirePinnedScalarForms) {
        "bool operator==(const R&a,const R&b){return a.n==b.n;}"
        "int main(){R a[2]{{1},{2}};"
        "return std::is_permutation(a,a+2,a,a+2)?0:1;}"},
-      {"predicate-is-permutation",
-       "#include <algorithm>\nbool equal(int a,int b){return a==b;}"
+      {"converted-predicate-is-permutation",
+       "#include <algorithm>\nbool equal(long a,long b){return a==b;}"
        "int main(){int a[2]{1,2};"
        "return std::is_permutation(a,a+2,a,&equal)?0:1;}"}};
   for (const auto &Case : Cases) {
@@ -25135,6 +25135,172 @@ TEST_F(TranslateTest, CoreV2AlgorithmPermutationRequirePinnedScalarForms) {
     expectCode(
         translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
         "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmBinaryPredicatesRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-binary-predicates.cpp");
+  const auto Output = tmpFile("algorithm-binary-predicates.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int calls;
+enum Level : unsigned char { low, high };
+bool high_then_low(Level left, Level right) {
+  ++calls;
+  return left == high && right == low;
+}
+bool same_last_digit(int left, long right) {
+  ++calls;
+  return left == right % 10;
+}
+bool same_parity(int left, int right) {
+  ++calls;
+  return left % 2 == right % 2;
+}
+int main() {
+  Level levels[3]{low, high, low};
+  bool (*adjacent_predicate)(Level, Level) = high_then_low;
+  int effects = 0;
+  calls = 0;
+  if (std::adjacent_find((++effects, levels), (++effects, levels + 3),
+                         (++effects, adjacent_predicate)) != levels + 1 ||
+      effects != 3 || calls != 2)
+    return 1;
+  calls = 0;
+  if (std::adjacent_find(levels, levels, high_then_low) != levels || calls != 0)
+    return 2;
+
+  int left[3]{1, 2, 3};
+  long good[3]{11, 12, 13};
+  long bad[3]{11, 99, 13};
+  calls = 0;
+  if (!std::equal(left, left + 3, good, same_last_digit) || calls != 3)
+    return 3;
+  calls = 0;
+  if (!std::equal(left, left + 3, good, good + 3, same_last_digit) ||
+      calls != 3)
+    return 4;
+  calls = 0;
+  if (std::equal(left, left + 3, bad, same_last_digit) || calls != 2)
+    return 5;
+  calls = 0;
+  if (std::equal(left, left + 3, good, good + 2, same_last_digit) ||
+      calls != 2)
+    return 6;
+
+  calls = 0;
+  auto mismatch1 = std::mismatch(left, left + 3, bad, same_last_digit);
+  if (mismatch1.first != left + 1 || mismatch1.second != bad + 1 ||
+      calls != 2)
+    return 7;
+  calls = 0;
+  auto mismatch2 =
+      std::mismatch(left, left + 3, good, good + 1, same_last_digit);
+  if (mismatch2.first != left + 1 || mismatch2.second != good + 1 ||
+      calls != 1)
+    return 8;
+
+  int first[4]{1, 3, 2, 4};
+  int second[4]{6, 8, 5, 7};
+  int wrong[4]{6, 5, 7, 9};
+  calls = 0;
+  if (!std::is_permutation(first, first + 4, second, same_parity) ||
+      calls == 0)
+    return 9;
+  calls = 0;
+  if (!std::is_permutation(first, first + 4, second, second + 4,
+                           same_parity) ||
+      calls == 0)
+    return 10;
+  calls = 0;
+  if (std::is_permutation(first, first + 4, wrong, wrong + 4,
+                          same_parity) ||
+      calls == 0)
+    return 11;
+  calls = 0;
+  if (std::is_permutation(first, first + 4, second, second + 3,
+                          same_parity) ||
+      calls != 0)
+    return 12;
+  calls = 0;
+  if (!std::is_permutation(first, first, second, second, same_parity) ||
+      calls != 0)
+    return 13;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Dependencies =
+      Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 354u);
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+  }
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("algorithm-binary-predicates" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmBinaryPredicatesRequireExactFunctions) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code = "TR0203";
+  };
+  const Rejection Cases[] = {
+      {"reference-parameter",
+       "bool p(const int&a,int b){return a==b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,1};"
+       "return std::adjacent_find(a,a+2,p)==a?0:1;}"},
+      {"non-bool-result",
+       "int p(int a,long b){return a==b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,2};long b[2]{1,2};"
+       "return std::equal(a,a+2,b,p)?0:1;}"},
+      {"converted-parameter",
+       "bool p(int a,int b){return a==b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,2};long b[2]{1,2};"
+       "auto r=std::mismatch(a,a+2,b,p);return r.first==a+2?0:1;}"},
+      {"function-object",
+       "struct P{bool operator()(int a,int b)const{return a==b;}};\n"
+       "#include <algorithm>\nint main(){int a[2]{1,2};"
+       "return std::is_permutation(a,a+2,a,P{})?0:1;}"},
+      {"heterogeneous-permutation",
+       "bool p(int a,long b){return a==b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,2};long b[2]{2,1};"
+       "return std::is_permutation(a,a+2,b,b+2,p)?0:1;}"},
+      {"variadic-predicate",
+       "bool p(int a,int b,...){return a==b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,1};"
+       "return std::adjacent_find(a,a+2,p)==a?0:1;}",
+       "TR0201"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("algorithm-binary-predicates-") +
+                                Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("algorithm-binary-predicates-") +
+                                Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
     expectNoArtifacts(Output);
   }
 }

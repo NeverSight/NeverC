@@ -1008,8 +1008,63 @@ extern "C" int algorithm_permutation(int *first, int *last,
     check("v2-algorithm-permutation-heterogeneous",
           '#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{2,1};return std::is_permutation(a,a+2,b,b+2)?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
-    check("v2-algorithm-permutation-predicate",
-          '#include <algorithm>\nbool equal(int a,int b){return a==b;}int main(){int a[2]{1,2};return std::is_permutation(a,a+2,a,&equal)?0:1;}',
+    check("v2-algorithm-permutation-converted-predicate",
+          '#include <algorithm>\nbool equal(long a,long b){return a==b;}int main(){int a[2]{1,2};return std::is_permutation(a,a+2,a,&equal)?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
+    algorithm_binary_predicates_source = """\
+#include <algorithm>
+enum Level : unsigned char { low, high };
+extern "C" long algorithm_binary_predicates(
+    const int *first, const int *last, const long *second,
+    const long *second_last, const Level *levels, const Level *levels_last,
+    bool (*heterogeneous)(int, long), bool (*same)(int, int),
+    bool (*level_predicate)(Level, Level)) {
+  const Level *adjacent =
+      std::adjacent_find(levels, levels_last, level_predicate);
+  bool equal_unbounded = std::equal(first, last, second, heterogeneous);
+  bool equal_bounded =
+      std::equal(first, last, second, second_last, heterogeneous);
+  auto mismatch_unbounded = std::mismatch(first, last, second, heterogeneous);
+  auto mismatch_bounded =
+      std::mismatch(first, last, second, second_last, heterogeneous);
+  bool permutation_unbounded = std::is_permutation(first, last, first, same);
+  bool permutation_bounded =
+      std::is_permutation(first, last, first, last, same);
+  return (adjacent - levels) + equal_unbounded + equal_bounded +
+         (mismatch_unbounded.first - first) +
+         (mismatch_unbounded.second - second) +
+         (mismatch_bounded.first - first) +
+         (mismatch_bounded.second - second) + permutation_unbounded +
+         permutation_bounded;
+}
+"""
+
+    def assert_binary_predicates(data):
+        assert len(data["sdk_dependencies"]) == 354, data
+        nodes = list(walk(data["functions"]))
+        assert not [node for node in nodes
+                    if node.get("op") in ("call", "mapped_call")], data
+        assert sum(node.get("op") == "indirect_call"
+                   for node in nodes) == 11, data
+
+    algorithm_binary_predicates = check(
+        "v2-algorithm-binary-predicates", algorithm_binary_predicates_source,
+        profile="cpp-core-v2", sdk=True)
+    assert_binary_predicates(algorithm_binary_predicates)
+    for target in sdk_targets:
+        target_result = check("v2-algorithm-binary-predicates-" + target,
+                              algorithm_binary_predicates_source,
+                              profile="cpp-core-v2", target=target, sdk=True)
+        assert_binary_predicates(target_result)
+    check("v2-algorithm-binary-predicates-reference",
+          'bool p(const int&a,int b){return a==b;}\n#include <algorithm>\nint main(){int a[2]{1,1};return std::adjacent_find(a,a+2,p)==a?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-binary-predicates-result",
+          'int p(int a,long b){return a==b;}\n#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{1,2};return std::equal(a,a+2,b,p)?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-binary-predicates-conversion",
+          'bool p(int a,int b){return a==b;}\n#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{1,2};auto r=std::mismatch(a,a+2,b,p);return r.first==a+2?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
     algorithm_predicate_queries_source = """\

@@ -252,6 +252,22 @@ Value references remain live through the loop, including when they alias an
 element that an earlier iteration changes. Enum elements stay outside this
 default-equality boundary because ADL can select a user-defined `operator==`.
 
+The exact binary-predicate overloads of `std::adjacent_find`, three- and
+four-iterator `std::equal`, three- and four-iterator `std::mismatch`, and three-
+and four-iterator `std::is_permutation` accept checked ordinary function
+pointers. Each predicate takes the two compared unqualified scalar element
+types by value and returns `bool` exactly. This admits enums and the other
+scalar carriers; `equal` and `mismatch` may compare two different element types
+when both callback parameters match exactly. `adjacent_find` and
+`is_permutation` require one common element type because they compare elements
+within the first range. The callback value is evaluated and retained once.
+Adjacent and equality scans stop on their first decisive comparison, mismatch
+returns its authenticated pointer pair, and bounded permutation checks unequal
+lengths before invoking the predicate. Empty ranges perform no predicate calls.
+Reference or converted parameters, variadic functions, non-boolean results,
+callable objects and heterogeneous permutation ranges stay outside this
+boundary.
+
 The exact three-argument `std::find_if`, `std::find_if_not`, `std::count_if`,
 `std::all_of`, `std::any_of` and `std::none_of` templates accept the same raw
 scalar-pointer ranges plus a checked ordinary function-pointer predicate. The
@@ -367,11 +383,13 @@ returning false.
 
 The exact default-equality three- and four-iterator `std::is_permutation`
 templates use the equality element boundary, so const ranges and object-pointer
-elements are accepted while enums and records remain excluded. The
-three-iterator form compares a second range of the first range's length. The
-four-iterator form checks both lengths before inspecting elements. Distinct
-values are counted at most once, preserving the standard quadratic comparison
-bound and duplicate multiplicities without allocating storage.
+elements are accepted while enums and records remain excluded. Their checked
+binary-predicate overloads use the scalar predicate boundary above and therefore
+also admit same-element enum ranges. The three-iterator form compares a second
+range of the first range's length. The four-iterator form checks both lengths
+before inspecting elements. Distinct equivalence classes are counted at most
+once, preserving the standard quadratic comparison bound and duplicate
+multiplicities without allocating storage.
 
 The exact four-iterator `std::lexicographical_compare` and `std::includes`
 templates and exact five-iterator `std::merge`, `std::set_union`,
@@ -406,9 +424,10 @@ first descending element. Heap queries scan parent-child relationships; heap
 mutation uses index-based upward or downward filtering with target
 `ptrdiff_t`. Sorting and partial sorting share those checked heap operations;
 selection uses pointer-width partition indexes. Generated programs do not call
-or link libc++ for these operations. Heterogeneous value types, other predicate
-or comparator overloads, custom iterators, record elements, callable objects
-and addresses of standard algorithms remain rejected, as do calls outside a
+or link libc++ for these operations. Heterogeneous value types outside the
+documented binary-predicate `equal` and `mismatch` forms, other predicate or
+comparator overloads, custom iterators, record elements, callable objects and
+addresses of standard algorithms remain rejected, as do calls outside a
 documented direct lowering.
 
 The `shuffle` and `sample` component headers are authenticated but their

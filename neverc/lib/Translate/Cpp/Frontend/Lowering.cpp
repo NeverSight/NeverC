@@ -607,6 +607,21 @@ class FunctionLowering {
     return emitAlgorithmCallback(std::move(Callable), PredicateType,
                                  std::move(Arguments), L);
   }
+  Expression emitBinaryPredicate(Expression Callable, QualType PredicateType,
+                                 Expression Left, Expression Right,
+                                 SourceLocation L) {
+    const auto *Prototype =
+        PredicateType->getPointeeType()->getAs<FunctionProtoType>();
+    if (!Prototype || Prototype->getNumParams() != 2 ||
+        !Prototype->getReturnType()->isBooleanType())
+      reject(L, "algorithm predicate",
+             "A checked binary boolean callback is required.");
+    json::Array Arguments;
+    Arguments.push_back(std::move(Left));
+    Arguments.push_back(std::move(Right));
+    return emitAlgorithmCallback(std::move(Callable), PredicateType,
+                                 std::move(Arguments), L);
+  }
   Expression indirectCall(const CallExpr *Call) {
     auto L = Call->getExprLoc();
     auto Pointer = Call->getCallee()->getType();
@@ -980,8 +995,18 @@ class FunctionLowering {
       auto Last = snapshot(expression(Call->getArg(1)), L);
       auto Second = snapshot(expression(Call->getArg(2)), L);
       std::optional<Expression> SecondLast;
-      if (Call->getNumArgs() == 4)
+      std::optional<unsigned> PredicateIndex;
+      if (Call->getNumArgs() == 4 &&
+          Call->getArg(3)->getType()->isFunctionPointerType())
+        PredicateIndex = 3;
+      else if (Call->getNumArgs() == 5)
+        PredicateIndex = 4;
+      if ((Call->getNumArgs() == 4 && !PredicateIndex) ||
+          Call->getNumArgs() == 5)
         SecondLast = snapshot(expression(Call->getArg(3)), L);
+      std::optional<Expression> Predicate;
+      if (PredicateIndex)
+        Predicate = snapshot(expression(Call->getArg(*PredicateIndex)), L);
       auto Result = temporary("bool", L);
       const auto Check = labelName(), CheckSecond = labelName();
       const auto Compare = labelName(), Next = labelName();
@@ -997,8 +1022,13 @@ class FunctionLowering {
                L);
       }
       label(Compare, L);
-      branch(binary("==", dereference(First, L), dereference(Second, L),
-                    "bool", L),
+      branch(Predicate
+                 ? emitBinaryPredicate(json::Object(*Predicate),
+                                       Call->getArg(*PredicateIndex)->getType(),
+                                       dereference(json::Object(First), L),
+                                       dereference(json::Object(Second), L), L)
+                 : binary("==", dereference(First, L), dereference(Second, L),
+                          "bool", L),
              Next, False, L);
       label(Next, L);
       assign(First,
@@ -1339,6 +1369,9 @@ class FunctionLowering {
     case UtilityOperation::AlgorithmAdjacentFind: {
       auto First = snapshot(expression(Call->getArg(0)), L);
       auto Last = snapshot(expression(Call->getArg(1)), L);
+      std::optional<Expression> Predicate;
+      if (Call->getNumArgs() == 3)
+        Predicate = snapshot(expression(Call->getArg(2)), L);
       auto Current = snapshot(json::Object(First), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto PointerType = type(Call->getArg(0)->getType(), L);
@@ -1354,8 +1387,13 @@ class FunctionLowering {
       label(Check, L);
       branch(binary("!=", Current, Last, "bool", L), Compare, Exhausted, L);
       label(Compare, L);
-      branch(binary("==", dereference(First, L), dereference(Current, L),
-                    "bool", L),
+      branch(Predicate
+                 ? emitBinaryPredicate(json::Object(*Predicate),
+                                       Call->getArg(2)->getType(),
+                                       dereference(json::Object(First), L),
+                                       dereference(json::Object(Current), L), L)
+                 : binary("==", dereference(First, L), dereference(Current, L),
+                          "bool", L),
              End, Next, L);
       label(Next, L);
       assign(First, json::Object(Current), L);
@@ -1720,8 +1758,18 @@ class FunctionLowering {
       auto Last = snapshot(expression(Call->getArg(1)), L);
       auto Second = snapshot(expression(Call->getArg(2)), L);
       std::optional<Expression> SecondLast;
-      if (Call->getNumArgs() == 4)
+      std::optional<unsigned> PredicateIndex;
+      if (Call->getNumArgs() == 4 &&
+          Call->getArg(3)->getType()->isFunctionPointerType())
+        PredicateIndex = 3;
+      else if (Call->getNumArgs() == 5)
+        PredicateIndex = 4;
+      if ((Call->getNumArgs() == 4 && !PredicateIndex) ||
+          Call->getNumArgs() == 5)
         SecondLast = snapshot(expression(Call->getArg(3)), L);
+      std::optional<Expression> Predicate;
+      if (PredicateIndex)
+        Predicate = snapshot(expression(Call->getArg(*PredicateIndex)), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto FirstType = type(Call->getArg(0)->getType(), L);
       const auto SecondType = type(Call->getArg(2)->getType(), L);
@@ -1737,8 +1785,13 @@ class FunctionLowering {
         branch(binary("!=", Second, *SecondLast, "bool", L), Compare, End, L);
       }
       label(Compare, L);
-      branch(binary("==", dereference(First, L), dereference(Second, L), "bool",
-                    L),
+      branch(Predicate
+                 ? emitBinaryPredicate(json::Object(*Predicate),
+                                       Call->getArg(*PredicateIndex)->getType(),
+                                       dereference(json::Object(First), L),
+                                       dereference(json::Object(Second), L), L)
+                 : binary("==", dereference(First, L), dereference(Second, L),
+                          "bool", L),
              Advance, End, L);
       label(Advance, L);
       assign(First,
@@ -2814,9 +2867,19 @@ class FunctionLowering {
       auto First = snapshot(expression(Call->getArg(0)), L);
       auto Last = snapshot(expression(Call->getArg(1)), L);
       auto Second = snapshot(expression(Call->getArg(2)), L);
+      std::optional<unsigned> PredicateIndex;
+      if (Call->getNumArgs() == 4 &&
+          Call->getArg(3)->getType()->isFunctionPointerType())
+        PredicateIndex = 3;
+      else if (Call->getNumArgs() == 5)
+        PredicateIndex = 4;
       std::optional<Expression> ExplicitSecondLast;
-      if (Call->getNumArgs() == 4)
+      if ((Call->getNumArgs() == 4 && !PredicateIndex) ||
+          Call->getNumArgs() == 5)
         ExplicitSecondLast = snapshot(expression(Call->getArg(3)), L);
+      std::optional<Expression> Predicate;
+      if (PredicateIndex)
+        Predicate = snapshot(expression(Call->getArg(*PredicateIndex)), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto FirstType = type(Call->getArg(0)->getType(), L);
       const auto SecondType = type(Call->getArg(2)->getType(), L);
@@ -2842,7 +2905,7 @@ class FunctionLowering {
       const auto AdvanceSecondScan = labelName(), CompareCounts = labelName();
       const auto AdvanceCurrent = labelName(), TrueResult = labelName();
       const auto FalseResult = labelName(), End = labelName();
-      if (Call->getNumArgs() == 4) {
+      if (ExplicitSecondLast) {
         branch(binary("==", Length,
                       binary("-", SecondLast, Second, DifferenceType, L),
                       "bool", L),
@@ -2860,8 +2923,13 @@ class FunctionLowering {
       branch(binary("!=", Previous, Current, "bool", L), ComparePrevious,
              BeginFirstCount, L);
       label(ComparePrevious, L);
-      branch(binary("==", dereference(Previous, L), dereference(Current, L),
-                    "bool", L),
+      branch(Predicate
+                 ? emitBinaryPredicate(json::Object(*Predicate),
+                                       Call->getArg(*PredicateIndex)->getType(),
+                                       dereference(json::Object(Previous), L),
+                                       dereference(json::Object(Current), L), L)
+                 : binary("==", dereference(Previous, L),
+                          dereference(Current, L), "bool", L),
              AdvanceCurrent, AdvancePrevious, L);
       label(AdvancePrevious, L);
       assign(
@@ -2877,8 +2945,13 @@ class FunctionLowering {
       branch(binary("!=", FirstScan, Last, "bool", L), CompareFirst,
              BeginSecondCount, L);
       label(CompareFirst, L);
-      branch(binary("==", dereference(FirstScan, L), dereference(Current, L),
-                    "bool", L),
+      branch(Predicate
+                 ? emitBinaryPredicate(json::Object(*Predicate),
+                                       Call->getArg(*PredicateIndex)->getType(),
+                                       dereference(json::Object(FirstScan), L),
+                                       dereference(json::Object(Current), L), L)
+                 : binary("==", dereference(FirstScan, L),
+                          dereference(Current, L), "bool", L),
              IncrementFirst, AdvanceFirstScan, L);
       label(IncrementFirst, L);
       assign(FirstCount,
@@ -2900,8 +2973,13 @@ class FunctionLowering {
       branch(binary("!=", SecondScan, SecondLast, "bool", L), CompareSecond,
              CompareCounts, L);
       label(CompareSecond, L);
-      branch(binary("==", dereference(SecondScan, L), dereference(Current, L),
-                    "bool", L),
+      branch(Predicate ? emitBinaryPredicate(
+                             json::Object(*Predicate),
+                             Call->getArg(*PredicateIndex)->getType(),
+                             dereference(json::Object(Current), L),
+                             dereference(json::Object(SecondScan), L), L)
+                       : binary("==", dereference(SecondScan, L),
+                                dereference(Current, L), "bool", L),
              IncrementSecond, AdvanceSecondScan, L);
       label(IncrementSecond, L);
       assign(SecondCount,
