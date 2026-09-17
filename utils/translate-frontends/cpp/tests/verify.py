@@ -1046,6 +1046,74 @@ extern "C" int optional_composite() {
         assert not [node for node in walk(target_result["functions"])
                     if node.get("op") in ("call", "mapped_call")], target_result
 
+    recursive_comparison_source = """\
+#include <array>
+#include <optional>
+#include <tuple>
+#include <utility>
+extern "C" int recursive_composite_comparisons() {
+  using Inner = std::pair<int, int>;
+  using Pair = std::pair<std::array<int, 2>, Inner>;
+  Pair low{{{1, 2}}, {3, 4}};
+  Pair high{{{1, 2}}, {3, 5}};
+  std::pair<short, int> narrow{short(1), 2};
+  std::pair<int, long> wide{1, long(3)};
+
+  using Tuple = std::tuple<Pair, std::array<int, 2>>;
+  Tuple tuple_low(Pair{{{1, 2}}, {3, 4}}, std::array<int, 2>{{5, 6}});
+  Tuple tuple_high(Pair{{{1, 2}}, {3, 5}}, std::array<int, 2>{{5, 6}});
+
+  using EmptyPair =
+      std::pair<std::array<int, 0>, std::array<int, 0>>;
+  EmptyPair empty_first{{}, {}}, empty_second{{}, {}};
+  std::optional<Pair> none;
+  std::optional<Pair> left(low), right(high);
+  std::optional<EmptyPair> optional_empty_first(empty_first);
+  std::optional<EmptyPair> optional_empty_second(empty_second);
+
+  return int(low == high) + int(low != high) + int(low < high) +
+         int(low > high) + int(low <= high) + int(low >= high) +
+         int(narrow == wide) + int(narrow != wide) + int(narrow < wide) +
+         int(narrow > wide) + int(narrow <= wide) + int(narrow >= wide) +
+         int(tuple_low == tuple_high) + int(tuple_low != tuple_high) +
+         int(tuple_low < tuple_high) + int(tuple_low > tuple_high) +
+         int(tuple_low <= tuple_high) + int(tuple_low >= tuple_high) +
+         int(left == right) + int(left != right) + int(left < right) +
+         int(left > right) + int(left <= right) + int(left >= right) +
+         int(none == left) + int(left != none) + int(left < high) +
+         int(high > left) + int(left <= high) + int(high >= left) +
+         int(empty_first == empty_second) +
+         int(empty_first != empty_second) +
+         int(empty_first < empty_second) + int(empty_first > empty_second) +
+         int(empty_first <= empty_second) + int(empty_first >= empty_second) +
+         int(optional_empty_first == optional_empty_second) +
+         int(optional_empty_first != optional_empty_second) +
+         int(optional_empty_first < optional_empty_second) +
+         int(optional_empty_first > optional_empty_second) +
+         int(optional_empty_first <= optional_empty_second) +
+         int(optional_empty_first >= optional_empty_second);
+}
+"""
+    recursive_comparison = check(
+        "v2-recursive-composite-comparisons", recursive_comparison_source,
+        profile="cpp-core-v2", sdk=True)
+    recursive_comparison_dependencies = recursive_comparison["sdk_dependencies"]
+    assert len(recursive_comparison_dependencies) == 253, recursive_comparison
+    assert {dependency["path"]
+            for dependency in recursive_comparison_dependencies} >= {
+                "array", "optional", "tuple", "utility"
+            }, recursive_comparison
+    assert not [node for node in walk(recursive_comparison["functions"])
+                if node.get("op") in ("call", "mapped_call")], recursive_comparison
+    for target in sdk_targets:
+        target_result = check(
+            "v2-recursive-composite-comparisons-" + target,
+            recursive_comparison_source, profile="cpp-core-v2", target=target,
+            sdk=True)
+        assert target_result["sdk_dependencies"] == recursive_comparison_dependencies, target_result
+        assert not [node for node in walk(target_result["functions"])
+                    if node.get("op") in ("call", "mapped_call")], target_result
+
     optional_operations_source = """\
 #include <optional>
 extern "C" int optional_operations(int value) {

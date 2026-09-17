@@ -969,6 +969,222 @@ class FunctionLowering {
       return index(decay(std::move(Elements), PointerType, L),
                    std::move(Position), type(ResultType, L), L);
     };
+    using UtilityComparisonLeaves =
+        std::vector<std::pair<Expression, Expression>>;
+    auto CollectUtilityComparisonLeaves =
+        [&](auto &&Collect, const Expression &LeftValue, QualType LeftType,
+            const Expression &RightValue, QualType RightType, bool Ordered,
+            UtilityComparisonLeaves &Leaves, unsigned Depth) -> bool {
+      if (Depth > 64 || LeftType.isNull() || RightType.isNull())
+        return false;
+      if (const auto Common = utilityScalarComparisonType(A.Context, LeftType,
+                                                          RightType, Ordered)) {
+        const auto CommonType = type(*Common, L);
+        Leaves.emplace_back(cast(json::Object(LeftValue), CommonType, L),
+                            cast(json::Object(RightValue), CommonType, L));
+        return true;
+      }
+
+      const auto LeftArray = ArrayFor(LeftType);
+      const auto RightArray = ArrayFor(RightType);
+      if (LeftArray || RightArray) {
+        if (!LeftArray || !RightArray ||
+            LeftArray->Record->getCanonicalDecl() !=
+                RightArray->Record->getCanonicalDecl() ||
+            LeftArray->Size != RightArray->Size)
+          return false;
+        const auto SizeType = type(A.Context.getSizeType(), L);
+        for (uint64_t I = 0; I < LeftArray->Size; ++I) {
+          auto LeftElement = ArrayElement(json::Object(LeftValue), *LeftArray,
+                                          quantity(I, SizeType, L),
+                                          LeftArray->ElementType, true);
+          auto RightElement = ArrayElement(
+              json::Object(RightValue), *RightArray, quantity(I, SizeType, L),
+              RightArray->ElementType, true);
+          if (!Collect(Collect, LeftElement, LeftArray->ElementType,
+                       RightElement, RightArray->ElementType, Ordered, Leaves,
+                       Depth + 1))
+            return false;
+        }
+        return true;
+      }
+
+      const auto LeftPair = approvedUtilityPairRecord(
+          A.S, A.Sources, LeftType.getUnqualifiedType()->getAsCXXRecordDecl(),
+          A.Context);
+      const auto RightPair = approvedUtilityPairRecord(
+          A.S, A.Sources, RightType.getUnqualifiedType()->getAsCXXRecordDecl(),
+          A.Context);
+      if (LeftPair || RightPair) {
+        if (!LeftPair || !RightPair)
+          return false;
+        auto LeftFirst =
+            fieldStorage(json::Object(LeftValue), LeftPair->First, L);
+        auto RightFirst =
+            fieldStorage(json::Object(RightValue), RightPair->First, L);
+        if (!Collect(Collect, LeftFirst, LeftPair->First->getType(), RightFirst,
+                     RightPair->First->getType(), Ordered, Leaves, Depth + 1))
+          return false;
+        auto LeftSecond =
+            fieldStorage(json::Object(LeftValue), LeftPair->Second, L);
+        auto RightSecond =
+            fieldStorage(json::Object(RightValue), RightPair->Second, L);
+        return Collect(Collect, LeftSecond, LeftPair->Second->getType(),
+                       RightSecond, RightPair->Second->getType(), Ordered,
+                       Leaves, Depth + 1);
+      }
+
+      const auto LeftTuple = TupleFor(LeftType);
+      const auto RightTuple = TupleFor(RightType);
+      if (!LeftTuple && !RightTuple)
+        return false;
+      if (!LeftTuple || !RightTuple ||
+          LeftTuple->Elements.size() != RightTuple->Elements.size())
+        return false;
+      for (unsigned I = 0; I < LeftTuple->Elements.size(); ++I) {
+        auto LeftElement =
+            fieldStorage(json::Object(LeftValue), LeftTuple->Elements[I], L);
+        auto RightElement =
+            fieldStorage(json::Object(RightValue), RightTuple->Elements[I], L);
+        if (!Collect(Collect, LeftElement, LeftTuple->Elements[I]->getType(),
+                     RightElement, RightTuple->Elements[I]->getType(), Ordered,
+                     Leaves, Depth + 1))
+          return false;
+      }
+      return true;
+    };
+    auto CompareUtilityValues =
+        [&](llvm::StringRef Operator, const Expression &LeftValue,
+            QualType LeftType, const Expression &RightValue,
+            QualType RightType) -> Expression {
+      const bool Ordered = Operator != "==" && Operator != "!=";
+      UtilityComparisonLeaves Leaves;
+      if (!CollectUtilityComparisonLeaves(CollectUtilityComparisonLeaves,
+                                          LeftValue, LeftType, RightValue,
+                                          RightType, Ordered, Leaves, 0))
+        reject(L, "utility value comparison",
+               "The selected values have no approved recursive comparison.");
+      auto Equal = [&]() -> Expression {
+        if (Leaves.empty())
+          return boolean(true, L);
+        auto Result = temporary("bool", L);
+        const auto True = labelName(), False = labelName(), End = labelName();
+        std::vector<std::string> Next;
+        Next.reserve(Leaves.size() - 1);
+        for (std::size_t I = 1; I < Leaves.size(); ++I)
+          Next.push_back(labelName());
+        for (std::size_t I = 0; I < Leaves.size(); ++I) {
+          const auto Success = I + 1 == Leaves.size() ? True : Next[I];
+          branch(binary("==", json::Object(Leaves[I].first),
+                        json::Object(Leaves[I].second), "bool", L),
+                 Success, False, L);
+          if (I + 1 != Leaves.size())
+            label(Next[I], L);
+        }
+        label(True, L);
+        assign(Result, boolean(true, L), L);
+        jump(End, L);
+        label(False, L);
+        assign(Result, boolean(false, L), L);
+        jump(End, L);
+        label(End, L);
+        return Result;
+      };
+      auto Less = [&](bool ReverseOrder) -> Expression {
+        if (Leaves.empty())
+          return boolean(false, L);
+        auto Result = temporary("bool", L);
+        const auto True = labelName(), False = labelName(), End = labelName();
+        for (const auto &Leaf : Leaves) {
+          const auto Reverse = labelName(), Next = labelName();
+          const auto &First = ReverseOrder ? Leaf.second : Leaf.first;
+          const auto &Second = ReverseOrder ? Leaf.first : Leaf.second;
+          branch(
+              binary("<", json::Object(First), json::Object(Second), "bool", L),
+              True, Reverse, L);
+          label(Reverse, L);
+          branch(
+              binary("<", json::Object(Second), json::Object(First), "bool", L),
+              False, Next, L);
+          label(Next, L);
+        }
+        jump(False, L);
+        label(True, L);
+        assign(Result, boolean(true, L), L);
+        jump(End, L);
+        label(False, L);
+        assign(Result, boolean(false, L), L);
+        jump(End, L);
+        label(End, L);
+        return Result;
+      };
+      Expression Result;
+      bool Negate = false;
+      if (Operator == "==")
+        Result = Equal();
+      else if (Operator == "!=") {
+        Result = Equal();
+        Negate = true;
+      } else if (Operator == "<")
+        Result = Less(false);
+      else if (Operator == ">")
+        Result = Less(true);
+      else if (Operator == "<=") {
+        Result = Less(true);
+        Negate = true;
+      } else if (Operator == ">=") {
+        Result = Less(false);
+        Negate = true;
+      } else {
+        reject(L, "utility value comparison",
+               "Unknown approved recursive comparison.");
+      }
+      if (!Negate)
+        return Result;
+      return snapshot(Expression{{"kind", "unary"},
+                                 {"type", "bool"},
+                                 {"operator", "!"},
+                                 {"args", json::Array{std::move(Result)}},
+                                 {"loc", A.loc(L)}},
+                      L);
+    };
+    auto UtilityComparisonOperator = [&](UtilityOperation Comparison) {
+      switch (Comparison) {
+      case UtilityOperation::PairEqual:
+      case UtilityOperation::TupleEqual:
+      case UtilityOperation::ArrayEqual:
+      case UtilityOperation::OptionalEqual:
+        return llvm::StringRef("==");
+      case UtilityOperation::PairNotEqual:
+      case UtilityOperation::TupleNotEqual:
+      case UtilityOperation::ArrayNotEqual:
+      case UtilityOperation::OptionalNotEqual:
+        return llvm::StringRef("!=");
+      case UtilityOperation::PairLess:
+      case UtilityOperation::TupleLess:
+      case UtilityOperation::ArrayLess:
+      case UtilityOperation::OptionalLess:
+        return llvm::StringRef("<");
+      case UtilityOperation::PairGreater:
+      case UtilityOperation::TupleGreater:
+      case UtilityOperation::ArrayGreater:
+      case UtilityOperation::OptionalGreater:
+        return llvm::StringRef(">");
+      case UtilityOperation::PairLessEqual:
+      case UtilityOperation::TupleLessEqual:
+      case UtilityOperation::ArrayLessEqual:
+      case UtilityOperation::OptionalLessEqual:
+        return llvm::StringRef("<=");
+      case UtilityOperation::PairGreaterEqual:
+      case UtilityOperation::TupleGreaterEqual:
+      case UtilityOperation::ArrayGreaterEqual:
+      case UtilityOperation::OptionalGreaterEqual:
+        return llvm::StringRef(">=");
+      default:
+        reject(L, "utility value comparison",
+               "Unknown approved comparison operation.");
+      }
+    };
     auto ReverseFor = [&](QualType Type) {
       return approvedUtilityReverseIteratorRecord(
           A.S, A.Sources, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(),
@@ -4283,101 +4499,25 @@ class FunctionLowering {
     case UtilityOperation::PairGreater:
     case UtilityOperation::PairLessEqual:
     case UtilityOperation::PairGreaterEqual: {
-      auto Pair = approvedUtilityPairRecord(
-          A.S, A.Sources,
-          Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
-      if (!Pair)
+      const auto LeftPair = approvedUtilityPairRecord(
+          A.S, A.Sources, Call->getArg(0)->getType()->getAsCXXRecordDecl(),
+          A.Context);
+      const auto RightPair = approvedUtilityPairRecord(
+          A.S, A.Sources, Call->getArg(1)->getType()->getAsCXXRecordDecl(),
+          A.Context);
+      if (!LeftPair || !RightPair)
         reject(L, "utility pair comparison",
-               "The selected std::pair layout is unavailable.");
+               "A selected std::pair layout is unavailable.");
       auto LeftAddress = snapshot(
           address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
       auto RightAddress = snapshot(
           address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
       auto Left = dereference(std::move(LeftAddress), L);
       auto Right = dereference(std::move(RightAddress), L);
-      auto Member = [&](const Expression &Base, const FieldDecl *Field) {
-        return fieldStorage(json::Object(Base), Field, L);
-      };
-      auto Equal = [&](const Expression &A, const Expression &B) {
-        auto Result = temporary("bool", L);
-        auto Second = labelName(), False = labelName(), End = labelName();
-        branch(binary("==", Member(A, Pair->First),
-                      Member(B, Pair->First), "bool", L),
-               Second, False, L);
-        label(False, L);
-        assign(Result, boolean(false, L), L);
-        jump(End, L);
-        label(Second, L);
-        assign(Result,
-               binary("==", Member(A, Pair->Second),
-                      Member(B, Pair->Second), "bool", L),
-               L);
-        jump(End, L);
-        label(End, L);
-        return Result;
-      };
-      auto Less = [&](const Expression &A, const Expression &B) {
-        auto Result = temporary("bool", L);
-        auto True = labelName(), CheckReverse = labelName(), False = labelName();
-        auto CheckSecond = labelName(), End = labelName();
-        branch(binary("<", Member(A, Pair->First),
-                      Member(B, Pair->First), "bool", L),
-               True, CheckReverse, L);
-        label(CheckReverse, L);
-        branch(binary("<", Member(B, Pair->First),
-                      Member(A, Pair->First), "bool", L),
-               False, CheckSecond, L);
-        label(CheckSecond, L);
-        assign(Result,
-               binary("<", Member(A, Pair->Second),
-                      Member(B, Pair->Second), "bool", L),
-               L);
-        jump(End, L);
-        label(True, L);
-        assign(Result, boolean(true, L), L);
-        jump(End, L);
-        label(False, L);
-        assign(Result, boolean(false, L), L);
-        jump(End, L);
-        label(End, L);
-        return Result;
-      };
-      Expression Result;
-      bool Negate = false;
-      switch (Operation) {
-      case UtilityOperation::PairEqual:
-        Result = Equal(Left, Right);
-        break;
-      case UtilityOperation::PairNotEqual:
-        Result = Equal(Left, Right);
-        Negate = true;
-        break;
-      case UtilityOperation::PairLess:
-        Result = Less(Left, Right);
-        break;
-      case UtilityOperation::PairGreater:
-        Result = Less(Right, Left);
-        break;
-      case UtilityOperation::PairLessEqual:
-        Result = Less(Right, Left);
-        Negate = true;
-        break;
-      case UtilityOperation::PairGreaterEqual:
-        Result = Less(Left, Right);
-        Negate = true;
-        break;
-      default:
-        reject(L, "utility pair comparison",
-               "Unknown approved std::pair comparison.");
-      }
-      if (!Negate)
-        return Result;
-      return snapshot(Expression{{"kind", "unary"},
-                                 {"type", "bool"},
-                                 {"operator", "!"},
-                                 {"args", json::Array{std::move(Result)}},
-                                 {"loc", A.loc(L)}},
-                      L);
+      return CompareUtilityValues(UtilityComparisonOperator(Operation), Left,
+                                  A.Context.getRecordType(LeftPair->Record),
+                                  Right,
+                                  A.Context.getRecordType(RightPair->Record));
     }
     case UtilityOperation::TupleEqual:
     case UtilityOperation::TupleNotEqual:
@@ -4385,8 +4525,8 @@ class FunctionLowering {
     case UtilityOperation::TupleGreater:
     case UtilityOperation::TupleLessEqual:
     case UtilityOperation::TupleGreaterEqual: {
-      auto LeftTuple = TupleFor(Call->getArg(0)->getType());
-      auto RightTuple = TupleFor(Call->getArg(1)->getType());
+      const auto LeftTuple = TupleFor(Call->getArg(0)->getType());
+      const auto RightTuple = TupleFor(Call->getArg(1)->getType());
       if (!LeftTuple || !RightTuple ||
           LeftTuple->Elements.size() != RightTuple->Elements.size())
         reject(L, "utility tuple comparison",
@@ -4397,119 +4537,10 @@ class FunctionLowering {
           address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
       auto Left = dereference(std::move(LeftAddress), L);
       auto Right = dereference(std::move(RightAddress), L);
-      if (LeftTuple->Elements.empty()) {
-        const bool Value = Operation == UtilityOperation::TupleEqual ||
-                           Operation == UtilityOperation::TupleLessEqual ||
-                           Operation == UtilityOperation::TupleGreaterEqual;
-        return boolean(Value, L);
-      }
-      auto Member = [&](const Expression &Base, const FieldDecl *Field) {
-        return fieldStorage(json::Object(Base), Field, L);
-      };
-      auto Compare = [&](llvm::StringRef Operator, const Expression &FirstValue,
-                         const FieldDecl *FirstField,
-                         const Expression &SecondValue,
-                         const FieldDecl *SecondField, bool Ordered) {
-        const auto ComparisonType = utilityScalarComparisonType(
-            A.Context, FirstField->getType(), SecondField->getType(), Ordered);
-        if (!ComparisonType)
-          reject(L, "utility tuple comparison",
-                 "The selected tuple elements have no approved converted "
-                 "type.");
-        const auto Converted = type(*ComparisonType, L);
-        return binary(
-            Operator, cast(Member(FirstValue, FirstField), Converted, L),
-            cast(Member(SecondValue, SecondField), Converted, L), "bool", L);
-      };
-      auto Equal = [&](const Expression &A, const Expression &B) {
-        auto Result = temporary("bool", L);
-        const auto False = labelName(), True = labelName(), End = labelName();
-        std::vector<std::string> Next;
-        for (unsigned I = 1; I < LeftTuple->Elements.size(); ++I)
-          Next.push_back(labelName());
-        for (unsigned I = 0; I < LeftTuple->Elements.size(); ++I) {
-          branch(Compare("==", A, LeftTuple->Elements[I], B,
-                         RightTuple->Elements[I], false),
-                 I + 1 == LeftTuple->Elements.size() ? True : Next[I], False,
-                 L);
-          if (I + 1 != LeftTuple->Elements.size())
-            label(Next[I], L);
-        }
-        label(False, L);
-        assign(Result, boolean(false, L), L);
-        jump(End, L);
-        label(True, L);
-        assign(Result, boolean(true, L), L);
-        jump(End, L);
-        label(End, L);
-        return Result;
-      };
-      auto Less = [&](const Expression &A, const UtilityTupleRecord &ATuple,
-                      const Expression &B, const UtilityTupleRecord &BTuple) {
-        auto Result = temporary("bool", L);
-        const auto True = labelName(), False = labelName(), End = labelName();
-        std::vector<std::string> Reverse, Next;
-        for (unsigned I = 0; I < ATuple.Elements.size(); ++I) {
-          Reverse.push_back(labelName());
-          if (I + 1 != ATuple.Elements.size())
-            Next.push_back(labelName());
-        }
-        for (unsigned I = 0; I < ATuple.Elements.size(); ++I) {
-          branch(
-              Compare("<", A, ATuple.Elements[I], B, BTuple.Elements[I], true),
-              True, Reverse[I], L);
-          label(Reverse[I], L);
-          branch(
-              Compare("<", B, BTuple.Elements[I], A, ATuple.Elements[I], true),
-              False, I + 1 == ATuple.Elements.size() ? False : Next[I], L);
-          if (I + 1 != ATuple.Elements.size())
-            label(Next[I], L);
-        }
-        label(True, L);
-        assign(Result, boolean(true, L), L);
-        jump(End, L);
-        label(False, L);
-        assign(Result, boolean(false, L), L);
-        jump(End, L);
-        label(End, L);
-        return Result;
-      };
-      Expression Result;
-      bool Negate = false;
-      switch (Operation) {
-      case UtilityOperation::TupleEqual:
-        Result = Equal(Left, Right);
-        break;
-      case UtilityOperation::TupleNotEqual:
-        Result = Equal(Left, Right);
-        Negate = true;
-        break;
-      case UtilityOperation::TupleLess:
-        Result = Less(Left, *LeftTuple, Right, *RightTuple);
-        break;
-      case UtilityOperation::TupleGreater:
-        Result = Less(Right, *RightTuple, Left, *LeftTuple);
-        break;
-      case UtilityOperation::TupleLessEqual:
-        Result = Less(Right, *RightTuple, Left, *LeftTuple);
-        Negate = true;
-        break;
-      case UtilityOperation::TupleGreaterEqual:
-        Result = Less(Left, *LeftTuple, Right, *RightTuple);
-        Negate = true;
-        break;
-      default:
-        reject(L, "utility tuple comparison",
-               "Unknown approved std::tuple comparison.");
-      }
-      if (!Negate)
-        return Result;
-      return snapshot(Expression{{"kind", "unary"},
-                                 {"type", "bool"},
-                                 {"operator", "!"},
-                                 {"args", json::Array{std::move(Result)}},
-                                 {"loc", A.loc(L)}},
-                      L);
+      return CompareUtilityValues(UtilityComparisonOperator(Operation), Left,
+                                  A.Context.getRecordType(LeftTuple->Record),
+                                  Right,
+                                  A.Context.getRecordType(RightTuple->Record));
     }
     case UtilityOperation::IteratorBegin:
     case UtilityOperation::IteratorEnd:
@@ -4846,23 +4877,11 @@ class FunctionLowering {
           (!RightOptional && !RightNullopt && !LeftOptional) ||
           (!LeftOptional && !RightOptional))
         reject(L, "utility optional comparison",
-               "The selected scalar std::optional operands are unavailable.");
-      std::optional<QualType> ComparisonType;
-      if (!LeftNullopt && !RightNullopt) {
-        const auto LeftType = LeftOptional ? LeftOptional->ElementType
-                                           : Call->getArg(0)->getType();
-        const auto RightType = RightOptional ? RightOptional->ElementType
-                                             : Call->getArg(1)->getType();
-        const bool RequireOrderedObject =
-            Operation != UtilityOperation::OptionalEqual &&
-            Operation != UtilityOperation::OptionalNotEqual;
-        ComparisonType = utilityScalarComparisonType(
-            A.Context, LeftType, RightType, RequireOrderedObject);
-        if (!ComparisonType)
-          reject(
-              L, "utility optional comparison",
-              "The selected scalar operands have no approved converted type.");
-      }
+               "The selected std::optional operands are unavailable.");
+      const auto LeftValueType =
+          LeftOptional ? LeftOptional->ElementType : Call->getArg(0)->getType();
+      const auto RightValueType = RightOptional ? RightOptional->ElementType
+                                                : Call->getArg(1)->getType();
 
       auto CaptureOptional = [&](const Expr *Source) {
         auto Address =
@@ -4889,12 +4908,8 @@ class FunctionLowering {
       };
       auto CompareValues = [&](llvm::StringRef Operator, Expression Left,
                                Expression Right) {
-        if (!ComparisonType)
-          reject(L, "utility optional comparison",
-                 "The selected scalar comparison type is unavailable.");
-        const auto Converted = type(*ComparisonType, L);
-        return binary(Operator, cast(std::move(Left), Converted, L),
-                      cast(std::move(Right), Converted, L), "bool", L);
+        return CompareUtilityValues(Operator, Left, LeftValueType, Right,
+                                    RightValueType);
       };
       auto Negate = [&](Expression Result) {
         return snapshot(Expression{{"kind", "unary"},
@@ -5333,140 +5348,21 @@ class FunctionLowering {
     case UtilityOperation::ArrayGreater:
     case UtilityOperation::ArrayLessEqual:
     case UtilityOperation::ArrayGreaterEqual: {
-      auto Array = ArrayFor(Call->getArg(0)->getType());
-      if (!Array)
+      const auto LeftArray = ArrayFor(Call->getArg(0)->getType());
+      const auto RightArray = ArrayFor(Call->getArg(1)->getType());
+      if (!LeftArray || !RightArray)
         reject(L, "utility array comparison",
-               "The selected std::array layout is unavailable.");
+               "A selected std::array layout is unavailable.");
       auto LeftAddress = snapshot(
           address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
       auto RightAddress = snapshot(
           address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
-      if (!Array->Size) {
-        const bool Value = Operation == UtilityOperation::ArrayEqual ||
-                           Operation == UtilityOperation::ArrayLessEqual ||
-                           Operation == UtilityOperation::ArrayGreaterEqual;
-        return boolean(Value, L);
-      }
       auto Left = dereference(std::move(LeftAddress), L);
       auto Right = dereference(std::move(RightAddress), L);
-      auto SizeType = type(A.Context.getSizeType(), L);
-      std::vector<std::pair<Expression, Expression>> Elements;
-      auto CollectElements =
-          [&](auto &&Collect, const Expression &First, const Expression &Second,
-              const UtilityArrayRecord &Current, unsigned Depth) -> void {
-        if (Depth > 64)
-          reject(L, "utility array comparison",
-                 "Nested std::array comparisons exceed the protocol limit.");
-        auto Nested = ArrayFor(Current.ElementType);
-        for (uint64_t I = 0; I < Current.Size; ++I) {
-          auto FirstElement =
-              ArrayElement(json::Object(First), Current,
-                           quantity(I, SizeType, L), Current.ElementType, true);
-          auto SecondElement =
-              ArrayElement(json::Object(Second), Current,
-                           quantity(I, SizeType, L), Current.ElementType, true);
-          if (Nested)
-            Collect(Collect, FirstElement, SecondElement, *Nested, Depth + 1);
-          else
-            Elements.emplace_back(std::move(FirstElement),
-                                  std::move(SecondElement));
-        }
-      };
-      CollectElements(CollectElements, Left, Right, *Array, 0);
-      if (Elements.empty()) {
-        const bool Value = Operation == UtilityOperation::ArrayEqual ||
-                           Operation == UtilityOperation::ArrayLessEqual ||
-                           Operation == UtilityOperation::ArrayGreaterEqual;
-        return boolean(Value, L);
-      }
-      auto Equal = [&] {
-        auto Result = temporary("bool", L);
-        auto True = labelName(), False = labelName(), End = labelName();
-        std::vector<std::string> Next;
-        Next.reserve(Elements.size() - 1);
-        for (std::size_t I = 1; I < Elements.size(); ++I)
-          Next.push_back(labelName());
-        for (std::size_t I = 0; I < Elements.size(); ++I) {
-          auto Success = I + 1 == Elements.size() ? True : Next[I];
-          const auto &Pair = Elements[I];
-          branch(binary("==", json::Object(Pair.first),
-                        json::Object(Pair.second), "bool", L),
-                 Success, False, L);
-          if (I + 1 != Elements.size())
-            label(Next[I], L);
-        }
-        label(True, L);
-        assign(Result, boolean(true, L), L);
-        jump(End, L);
-        label(False, L);
-        assign(Result, boolean(false, L), L);
-        jump(End, L);
-        label(End, L);
-        return Result;
-      };
-      auto Less = [&](bool ReverseOrder) {
-        auto Result = temporary("bool", L);
-        auto True = labelName(), False = labelName(), End = labelName();
-        for (const auto &Pair : Elements) {
-          auto Reverse = labelName();
-          auto Next = labelName();
-          const auto &FirstElement = ReverseOrder ? Pair.second : Pair.first;
-          const auto &SecondElement = ReverseOrder ? Pair.first : Pair.second;
-          branch(binary("<", json::Object(FirstElement),
-                        json::Object(SecondElement), "bool", L),
-                 True, Reverse, L);
-          label(Reverse, L);
-          branch(binary("<", json::Object(SecondElement),
-                        json::Object(FirstElement), "bool", L),
-                 False, Next, L);
-          label(Next, L);
-        }
-        jump(False, L);
-        label(True, L);
-        assign(Result, boolean(true, L), L);
-        jump(End, L);
-        label(False, L);
-        assign(Result, boolean(false, L), L);
-        jump(End, L);
-        label(End, L);
-        return Result;
-      };
-      Expression Result;
-      bool Negate = false;
-      switch (Operation) {
-      case UtilityOperation::ArrayEqual:
-        Result = Equal();
-        break;
-      case UtilityOperation::ArrayNotEqual:
-        Result = Equal();
-        Negate = true;
-        break;
-      case UtilityOperation::ArrayLess:
-        Result = Less(false);
-        break;
-      case UtilityOperation::ArrayGreater:
-        Result = Less(true);
-        break;
-      case UtilityOperation::ArrayLessEqual:
-        Result = Less(true);
-        Negate = true;
-        break;
-      case UtilityOperation::ArrayGreaterEqual:
-        Result = Less(false);
-        Negate = true;
-        break;
-      default:
-        reject(L, "utility array comparison",
-               "Unknown approved std::array comparison.");
-      }
-      if (!Negate)
-        return Result;
-      return snapshot(Expression{{"kind", "unary"},
-                                 {"type", "bool"},
-                                 {"operator", "!"},
-                                 {"args", json::Array{std::move(Result)}},
-                                 {"loc", A.loc(L)}},
-                      L);
+      return CompareUtilityValues(UtilityComparisonOperator(Operation), Left,
+                                  A.Context.getRecordType(LeftArray->Record),
+                                  Right,
+                                  A.Context.getRecordType(RightArray->Record));
     }
     }
     reject(L, "utility operation", "Unknown approved utility operation.");

@@ -529,21 +529,6 @@ static bool utilityArrayTriviallyAssignable(const ASTContext &Context,
          Record->hasTrivialDestructor();
 }
 
-static bool utilityArrayComparable(const State &S, const SourceManager &SM,
-                                   const ASTContext &Context, QualType Type,
-                                   unsigned Depth = 0) {
-  if (Depth > 64 || Type.isNull() || Type.isVolatileQualified())
-    return false;
-  if (utilityScalar(Context, Type))
-    return true;
-  const auto *Record = Type.getUnqualifiedType()->getAsCXXRecordDecl();
-  if (!Record || !approvedUtilityArrayMetadata(S, SM, Record))
-    return false;
-  const auto Array = approvedUtilityArrayRecord(S, SM, Record, Context);
-  return Array &&
-         utilityArrayComparable(S, SM, Context, Array->ElementType, Depth + 1);
-}
-
 bool approvedUtilityPairMetadata(const State &S, const SourceManager &SM,
                                  const CXXRecordDecl *Record) {
   const auto *Specialization =
@@ -1668,19 +1653,14 @@ approvedUtilityOptionalRecord(const State &S, const SourceManager &SM,
   const auto *CtorSFINAE =
       Base == Bases.end() ? nullptr : definedRecord(Base->getType());
   const bool CtorBase = Base != Bases.end() && !Base->isVirtual() &&
-                        Base->getAccessSpecifier() == AS_private &&
-                        CtorSFINAE &&
-                        TopLayout.getBaseClassOffset(CtorSFINAE) ==
-                            (MicrosoftABI ? MainSize : CharUnits::Zero());
+                        Base->getAccessSpecifier() == AS_private && CtorSFINAE;
   if (Base != Bases.end())
     ++Base;
   const auto *AssignSFINAE =
       Base == Bases.end() ? nullptr : definedRecord(Base->getType());
-  const bool AssignBase =
-      Base != Bases.end() && !Base->isVirtual() &&
-      Base->getAccessSpecifier() == AS_private && AssignSFINAE &&
-      TopLayout.getBaseClassOffset(AssignSFINAE) ==
-          (MicrosoftABI ? MainSize + CharUnits::One() : CharUnits::Zero());
+  const bool AssignBase = Base != Bases.end() && !Base->isVirtual() &&
+                          Base->getAccessSpecifier() == AS_private &&
+                          AssignSFINAE;
   if (Base != Bases.end())
     ++Base;
   auto BooleanArguments = [](const CXXRecordDecl *Value) {
@@ -1694,7 +1674,24 @@ approvedUtilityOptionalRecord(const State &S, const SourceManager &SM,
         return false;
     return true;
   };
+  const auto CtorOffset =
+      CtorSFINAE ? TopLayout.getBaseClassOffset(CtorSFINAE) : CharUnits::Zero();
+  const auto AssignOffset = AssignSFINAE
+                                ? TopLayout.getBaseClassOffset(AssignSFINAE)
+                                : CharUnits::Zero();
+  const bool SharedSFINAEStorage =
+      !MicrosoftABI && CtorOffset.isZero() && AssignOffset.isZero();
+  const bool SeparateSFINAEStorage =
+      MicrosoftABI && CtorOffset == MainSize &&
+      AssignOffset == MainSize + CharUnits::One();
+  // MS record layout inserts one byte before the empty SFINAE bases when the
+  // main base ends in a zero-sized subobject (for example array<T, 0>).
+  const bool PaddedSFINAEStorage =
+      MicrosoftABI && CtorOffset == MainSize + CharUnits::One() &&
+      AssignOffset == MainSize + CharUnits::fromQuantity(2);
   if (Base != Bases.end() || !MainBase || !CtorBase || !AssignBase ||
+      (!SharedSFINAEStorage && !SeparateSFINAEStorage &&
+       !PaddedSFINAEStorage) ||
       !optionalInternalRecord(S, SM, Main, "__optional_move_assign_base") ||
       !optionalInternalRecord(S, SM, CtorSFINAE, "__sfinae_ctor_base",
                               "__tuple/sfinae_helpers.h") ||
@@ -1796,12 +1793,13 @@ approvedUtilityOptionalRecord(const State &S, const SourceManager &SM,
   const uint64_t BoolBits = Context.getTypeSize(Context.BoolTy);
   const uint64_t ExpectedBits =
       ((ValueBits + BoolBits + ValueAlign - 1) / ValueAlign) * ValueAlign;
+  const uint64_t SFINAEStorageBits = (SeparateSFINAEStorage ? 2
+                                      : PaddedSFINAEStorage ? 3
+                                                            : 0) *
+                                     Context.getCharWidth();
   const uint64_t ExpectedTopBits =
-      MicrosoftABI
-          ? ((ExpectedBits + 2 * Context.getCharWidth() + ValueAlign - 1) /
-             ValueAlign) *
-                ValueAlign
-          : ExpectedBits;
+      ((ExpectedBits + SFINAEStorageBits + ValueAlign - 1) / ValueAlign) *
+      ValueAlign;
   if (MainLayout.getSize() != StorageLayout.getSize() ||
       TopLayout.getAlignment() != MainLayout.getAlignment() ||
       TopLayout.getAlignment() != StorageLayout.getAlignment() ||
@@ -2475,6 +2473,58 @@ static const DeclRefExpr *approvedUtilityReference(
              : nullptr;
 }
 
+static bool utilityComparableValue(const State &S, const SourceManager &SM,
+                                   const ASTContext &Context, QualType Left,
+                                   QualType Right, bool Ordered,
+                                   unsigned Depth = 0) {
+  if (Depth > 64 || Left.isNull() || Right.isNull() ||
+      Left->isReferenceType() || Right->isReferenceType() ||
+      Left.isVolatileQualified() || Right.isVolatileQualified())
+    return false;
+  if (utilityScalarComparisonType(Context, Left, Right, Ordered))
+    return true;
+
+  const auto LeftArray = approvedUtilityArrayRecord(
+      S, SM, Left.getUnqualifiedType()->getAsCXXRecordDecl(), Context);
+  const auto RightArray = approvedUtilityArrayRecord(
+      S, SM, Right.getUnqualifiedType()->getAsCXXRecordDecl(), Context);
+  if (LeftArray || RightArray)
+    return LeftArray && RightArray &&
+           LeftArray->Record->getCanonicalDecl() ==
+               RightArray->Record->getCanonicalDecl() &&
+           utilityComparableValue(S, SM, Context, LeftArray->ElementType,
+                                  RightArray->ElementType, Ordered, Depth + 1);
+
+  const auto LeftPair = approvedUtilityPairRecord(
+      S, SM, Left.getUnqualifiedType()->getAsCXXRecordDecl(), Context);
+  const auto RightPair = approvedUtilityPairRecord(
+      S, SM, Right.getUnqualifiedType()->getAsCXXRecordDecl(), Context);
+  if (LeftPair || RightPair)
+    return LeftPair && RightPair &&
+           utilityComparableValue(S, SM, Context, LeftPair->First->getType(),
+                                  RightPair->First->getType(), Ordered,
+                                  Depth + 1) &&
+           utilityComparableValue(S, SM, Context, LeftPair->Second->getType(),
+                                  RightPair->Second->getType(), Ordered,
+                                  Depth + 1);
+
+  const auto LeftTuple = approvedUtilityTupleRecord(
+      S, SM, Left.getUnqualifiedType()->getAsCXXRecordDecl(), Context);
+  const auto RightTuple = approvedUtilityTupleRecord(
+      S, SM, Right.getUnqualifiedType()->getAsCXXRecordDecl(), Context);
+  if (!LeftTuple && !RightTuple)
+    return false;
+  if (!LeftTuple || !RightTuple ||
+      LeftTuple->Elements.size() != RightTuple->Elements.size())
+    return false;
+  for (unsigned I = 0; I < LeftTuple->Elements.size(); ++I)
+    if (!utilityComparableValue(
+            S, SM, Context, LeftTuple->Elements[I]->getType(),
+            RightTuple->Elements[I]->getType(), Ordered, Depth + 1))
+      return false;
+  return true;
+}
+
 bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
                                     const CXXDefaultArgExpr *Default,
                                     const FunctionDecl *Function,
@@ -3062,20 +3112,19 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            approvedUtilityNulloptExpression(S, SM, Call->getArg(Index),
                                             Context);
   };
-  auto ScalarParameter = [&](unsigned Index, QualType Element,
-                             bool RequireOrderedObject) {
+  auto ComparableParameter = [&](unsigned Index, QualType Element,
+                                 bool RequireOrderedObject) {
     if (Index >= Function->getNumParams() || Index >= Call->getNumArgs())
       return false;
     const auto Parameter = Function->getParamDecl(Index)->getType();
     return Parameter->isLValueReferenceType() &&
            Parameter->getPointeeType().isConstQualified() &&
            !Parameter->getPointeeType().isVolatileQualified() &&
-           utilityScalar(Context, Parameter->getPointeeType()) &&
            Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
                                           Call->getArg(Index)->getType()) &&
-           utilityScalarComparisonType(Context, Element,
-                                       Parameter->getPointeeType(),
-                                       RequireOrderedObject);
+           utilityComparableValue(S, SM, Context, Element,
+                                  Parameter->getPointeeType(),
+                                  RequireOrderedObject);
   };
   if (Origin->Path == "optional" && Call->getNumArgs() == 2 &&
       Function->getNumParams() == 2 && Call->isPRValue() &&
@@ -3117,18 +3166,18 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       const bool RightNullopt = NulloptParameter(1);
       if (Left && Right && OptionalParameter(0, *Left, true) &&
           OptionalParameter(1, *Right, true) &&
-          utilityScalarComparisonType(Context, Left->ElementType,
-                                      Right->ElementType, RequireOrderedObject))
+          utilityComparableValue(S, SM, Context, Left->ElementType,
+                                 Right->ElementType, RequireOrderedObject))
         return Comparison;
       if (Left && RightNullopt && OptionalParameter(0, *Left, true))
         return Comparison;
       if (LeftNullopt && Right && OptionalParameter(1, *Right, true))
         return Comparison;
       if (Left && OptionalParameter(0, *Left, true) &&
-          ScalarParameter(1, Left->ElementType, RequireOrderedObject))
+          ComparableParameter(1, Left->ElementType, RequireOrderedObject))
         return Comparison;
       if (Right &&
-          ScalarParameter(0, Right->ElementType, RequireOrderedObject) &&
+          ComparableParameter(0, Right->ElementType, RequireOrderedObject) &&
           OptionalParameter(1, *Right, true))
         return Comparison;
     }
@@ -4713,12 +4762,24 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Call->getArg(1)->getType()->getAsCXXRecordDecl();
     const auto Left = approvedUtilityPairRecord(S, SM, LeftRecord, Context);
     const auto Right = approvedUtilityPairRecord(S, SM, RightRecord, Context);
-    if (Operator && Left && Right &&
-        Left->Record->getCanonicalDecl() == Right->Record->getCanonicalDecl() &&
-        utilityScalar(Context, Left->First->getType()) &&
-        utilityScalar(Context, Left->Second->getType()) &&
-        !Left->First->getType().isVolatileQualified() &&
-        !Left->Second->getType().isVolatileQualified()) {
+    const auto LeftParameter = Function->getParamDecl(0)->getType();
+    const auto RightParameter = Function->getParamDecl(1)->getType();
+    if (Operator && Left && Right && LeftParameter->isLValueReferenceType() &&
+        RightParameter->isLValueReferenceType() &&
+        LeftParameter->getPointeeType().isConstQualified() &&
+        RightParameter->getPointeeType().isConstQualified() &&
+        !LeftParameter->getPointeeType().isVolatileQualified() &&
+        !RightParameter->getPointeeType().isVolatileQualified() &&
+        Context.hasSameUnqualifiedType(LeftParameter->getPointeeType(),
+                                       Call->getArg(0)->getType()) &&
+        Context.hasSameUnqualifiedType(RightParameter->getPointeeType(),
+                                       Call->getArg(1)->getType())) {
+      const auto Kind = Operator->getOperator();
+      const bool Ordered = Kind != OO_EqualEqual && Kind != OO_ExclaimEqual;
+      if (!utilityComparableValue(
+              S, SM, Context, Context.getRecordType(Left->Record),
+              Context.getRecordType(Right->Record), Ordered))
+        return std::nullopt;
       switch (Operator->getOperator()) {
       case OO_EqualEqual: return UtilityOperation::PairEqual;
       case OO_ExclaimEqual: return UtilityOperation::PairNotEqual;
@@ -4749,13 +4810,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Left->Elements.size() == Right->Elements.size()) {
       const auto Kind = Operator->getOperator();
       const bool Ordered = Kind != OO_EqualEqual && Kind != OO_ExclaimEqual;
-      bool Comparable = true;
-      for (unsigned I = 0; I < Left->Elements.size(); ++I)
-        Comparable &=
-            utilityScalarComparisonType(Context, Left->Elements[I]->getType(),
-                                        Right->Elements[I]->getType(), Ordered)
-                .has_value();
-      if (Comparable)
+      if (utilityComparableValue(S, SM, Context,
+                                 Context.getRecordType(Left->Record),
+                                 Context.getRecordType(Right->Record), Ordered))
         switch (Kind) {
         case OO_EqualEqual:
           return UtilityOperation::TupleEqual;
@@ -4784,7 +4841,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         S, SM, Call->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
     if (Operator && Left && Right &&
         Left->Record->getCanonicalDecl() == Right->Record->getCanonicalDecl() &&
-        utilityArrayComparable(S, SM, Context, Left->ElementType)) {
+        utilityComparableValue(
+            S, SM, Context, Context.getRecordType(Left->Record),
+            Context.getRecordType(Right->Record),
+            Operator->getOperator() != OO_EqualEqual &&
+                Operator->getOperator() != OO_ExclaimEqual)) {
       switch (Operator->getOperator()) {
       case OO_EqualEqual: return UtilityOperation::ArrayEqual;
       case OO_ExclaimEqual: return UtilityOperation::ArrayNotEqual;

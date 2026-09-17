@@ -78,11 +78,12 @@ zero-argument integer and IEEE floating queries to literals. Cstddef aliases,
 layout queries and direct `std::byte` operations lower to existing scalar IR.
 Utility directly lowers scalar `move`, `forward`, `move_if_noexcept`, `as_const`,
 `exchange` and `swap`; scalar or recursively composite `pair` construction,
-assignment, swaps, `make_pair` and `get`; scalar-pair comparisons; and
+assignment, swaps, `make_pair` and `get`; recursive standard-composite pair
+comparisons; and
 `tuple_size`, `tuple_element` and integer-sequence size queries. Tuple directly
 lowers authenticated empty and nonempty scalar or recursively composite tuple
 construction, compatible scalar or exact composite per-element construction
-and assignment from tuples or pairs, factories, swaps, scalar same-length
+and assignment from tuples or pairs, factories, swaps, recursive same-length
 heterogeneous lexicographic comparisons and index or unique-type access. Array
 directly lowers nonempty fixed scalar,
 trivial-record and nested-array storage, iterators, element access, fill, swap,
@@ -99,8 +100,9 @@ default, value, in-place, copy/move and converting
 construction, assignment, emplacement, fallback, factories, engagement and
 access, reset and swap without libc++. Composite conversion requires exact
 unqualified element types, and mutation requires recursive assignability;
-value comparisons remain on the scalar boundary while `nullopt` comparisons
-work for every admitted element.
+value comparisons recurse through authenticated arrays, pairs and tuples to
+the scalar leaf boundary, while `nullopt` comparisons work for every admitted
+element.
 Iterator exposes the pinned public header and pointer `iterator_traits` metadata
 through a platform-free 171-file closure, and directly lowers bounded pointer,
 array-range and reverse-iterator operations. Stream iterators remain disabled

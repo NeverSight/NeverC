@@ -168,10 +168,13 @@ requires every recursive leaf to be assignable. Pair objects retain their two
 fields and ordinary value behavior. Type-based `get` is accepted only when
 libc++ resolves it unambiguously.
 
-All six C++17 comparisons remain available when both elements are admitted
-scalars. Record, array and nested-pair comparisons stay rejected because their
-selected element operations are not yet part of this direct-lowering boundary.
-Reference-valued pairs also remain outside the ordinary pair surface.
+All six C++17 comparisons recurse through authenticated arrays and nested pairs
+and compare their scalar leaves in lexicographic order. Corresponding scalar
+leaves may use the documented heterogeneous arithmetic or compatible
+object-pointer comparison type. Empty recursive leaves retain the standard
+equality and ordering results. Source-owned record comparisons stay rejected
+because their user-defined element operations are outside this direct-lowering
+boundary. Reference-valued pairs also remain outside the ordinary pair surface.
 The sole reference-pair exception is the exact `std::minmax` result documented
 under the algorithm surface; ordinary construction, assignment, comparison,
 swap, `make_pair` and `get` remain unavailable for that pair type.
@@ -220,18 +223,19 @@ has an authenticated, platform-free 108-file union closure. The composite
 array-plus-tuple-plus-utility fixture has a 231-file union closure on all eight
 targets.
 
-All six C++17 comparisons accept same-length heterogeneous scalar tuples when
-each element pair has an approved arithmetic or compatible object-pointer
-comparison type. Equality also admits `nullptr_t` against an object pointer.
-Lexicographic ordering short-circuits at the first unequal element. Generated
-programs contain no tuple helper calls and do not link libc++.
+All six C++17 comparisons accept same-length heterogeneous tuples when each
+corresponding value recursively reaches an approved arithmetic or compatible
+object-pointer scalar comparison. Authenticated arrays, pairs and nested tuples
+retain their field or row-major order; equality also admits `nullptr_t` against
+an object pointer. Lexicographic ordering short-circuits at the first unequal
+leaf. Generated programs contain no tuple helper calls and do not link libc++.
 
 The standalone empty tuple remains supported, but empty-base-optimized record
 or tuple elements do not have the authenticated one-field leaf representation
 and remain rejected. References, nontrivial records, `long double`, function
-pointers and composite tuple comparisons also remain outside this surface.
-`tie`, `forward_as_tuple`, `tuple_cat` and `apply` are rejected. Quoted includes,
-user shadows, function addresses and forged declarations remain rejected.
+pointers and source-record comparisons also remain outside this surface. `tie`,
+`forward_as_tuple`, `tuple_cat` and `apply` are rejected. Quoted includes, user
+shadows, function addresses and forged declarations remain rejected.
 
 ## Fixed value arrays from `<array>`
 
@@ -331,24 +335,24 @@ top-level `const` element remains constructible and readable. Scalar operations
 retain the directly representable conversion boundary, including the standard
 conversion from `nullptr_t` to an object pointer.
 
-All six C++17 comparison forms remain on the scalar value boundary. Comparisons
-with `nullopt` on either side inspect only engagement and therefore work for
-every admitted element. Other comparisons cover exact scalar types,
-heterogeneous arithmetic operands and qualification-compatible object pointers.
-Arithmetic optional or value operands receive the C++17 integer promotions and
-usual arithmetic conversions before comparison. Pointer operands receive a common
+All six C++17 comparison forms recurse through authenticated array, pair and
+tuple values and preserve their lexicographic leaf order. Composite operands
+must have corresponding authenticated shapes; each corresponding scalar leaf
+uses the existing comparison boundary. That boundary covers exact scalar
+types, heterogeneous arithmetic operands and qualification-compatible object
+pointers. Arithmetic leaves receive the C++17 integer promotions and usual
+arithmetic conversions before comparison. Pointer leaves receive a common
 pointer type by combining pointee `const`; equality also admits an object
 pointer with a compatibly qualified `void *`. Ordered pointer comparisons
-require a complete object pointee. Exact `nullptr_t` and enumeration
-comparisons retain their existing scalar path; object pointers additionally
-compare for equality with `nullptr_t`. The selected comparison operator is
-emitted directly, preserving unordered floating-point behavior such as NaN for
-`<=` and `>=`. Generated programs do not call or link libc++ for these
-operations.
+require a complete object pointee. Exact `nullptr_t` and enumeration leaves
+retain their existing scalar path; object pointers additionally compare for
+equality with `nullptr_t`. Comparisons with `nullopt` on either side inspect
+only engagement and therefore work for every admitted element. Generated
+programs do not call or link libc++.
 
 Reference, incomplete, volatile, restricted-address-space, nontrivially
 destructible, `long double` and function-pointer elements remain outside this
-boundary. Composite value comparisons, throwing `value`, base-adjusting or
+boundary. Source-record value comparisons, throwing `value`, base-adjusting or
 otherwise incompatible pointer comparisons, heterogeneous enumeration
 comparisons, initializer-list emplacement and the `in_place_type`/
 `in_place_index` tags are not admitted. The authenticated `in_place` tag is

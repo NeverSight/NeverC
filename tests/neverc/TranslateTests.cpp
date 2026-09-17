@@ -28956,6 +28956,149 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2RecursiveCompositeComparisonsRunAtBothOptimizations) {
+  const auto Source = tmpFile("recursive-composite-comparisons.cpp");
+  const auto Output = tmpFile("recursive-composite-comparisons.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <optional>
+#include <tuple>
+#include <utility>
+int main() {
+  using Inner = std::pair<int, int>;
+  using Pair = std::pair<std::array<int, 2>, Inner>;
+  Pair low{{{1, 2}}, {3, 4}};
+  Pair high{{{1, 2}}, {3, 5}};
+  Pair equal = low;
+  int pair_less = int(low == high) + 2 * int(low != high) +
+                  4 * int(low < high) + 8 * int(low > high) +
+                  16 * int(low <= high) + 32 * int(low >= high);
+  int pair_greater = int(high == low) + 2 * int(high != low) +
+                     4 * int(high < low) + 8 * int(high > low) +
+                     16 * int(high <= low) + 32 * int(high >= low);
+  int pair_equal = int(low == equal) + 2 * int(low != equal) +
+                   4 * int(low < equal) + 8 * int(low > equal) +
+                   16 * int(low <= equal) + 32 * int(low >= equal);
+  if (pair_less != 22 || pair_greater != 42 || pair_equal != 49)
+    return 1;
+
+  std::pair<short, int> narrow{short(1), 2};
+  std::pair<int, long> wide{1, long(3)};
+  int heterogeneous = int(narrow == wide) + 2 * int(narrow != wide) +
+                      4 * int(narrow < wide) + 8 * int(narrow > wide) +
+                      16 * int(narrow <= wide) + 32 * int(narrow >= wide);
+  if (heterogeneous != 22)
+    return 2;
+
+  using Tuple = std::tuple<Pair, std::array<int, 2>>;
+  Tuple tuple_low(Pair{{{1, 2}}, {3, 4}}, std::array<int, 2>{{5, 6}});
+  Tuple tuple_high(Pair{{{1, 2}}, {3, 5}}, std::array<int, 2>{{5, 6}});
+  Tuple tuple_equal(tuple_low);
+  int tuple_less = int(tuple_low == tuple_high) +
+                   2 * int(tuple_low != tuple_high) +
+                   4 * int(tuple_low < tuple_high) +
+                   8 * int(tuple_low > tuple_high) +
+                   16 * int(tuple_low <= tuple_high) +
+                   32 * int(tuple_low >= tuple_high);
+  int tuple_greater = int(tuple_high == tuple_low) +
+                      2 * int(tuple_high != tuple_low) +
+                      4 * int(tuple_high < tuple_low) +
+                      8 * int(tuple_high > tuple_low) +
+                      16 * int(tuple_high <= tuple_low) +
+                      32 * int(tuple_high >= tuple_low);
+  int tuple_same = int(tuple_low == tuple_equal) +
+                   2 * int(tuple_low != tuple_equal) +
+                   4 * int(tuple_low < tuple_equal) +
+                   8 * int(tuple_low > tuple_equal) +
+                   16 * int(tuple_low <= tuple_equal) +
+                   32 * int(tuple_low >= tuple_equal);
+  if (tuple_less != 22 || tuple_greater != 42 || tuple_same != 49)
+    return 3;
+
+  using EmptyPair =
+      std::pair<std::array<int, 0>, std::array<int, 0>>;
+  EmptyPair empty_first{{}, {}}, empty_second{{}, {}};
+  int empty_same = int(empty_first == empty_second) +
+                   2 * int(empty_first != empty_second) +
+                   4 * int(empty_first < empty_second) +
+                   8 * int(empty_first > empty_second) +
+                   16 * int(empty_first <= empty_second) +
+                   32 * int(empty_first >= empty_second);
+  if (empty_same != 49)
+    return 4;
+
+  std::optional<Pair> none;
+  std::optional<Pair> left(low), right(high), same(low);
+  int optional_less = int(left == right) + 2 * int(left != right) +
+                      4 * int(left < right) + 8 * int(left > right) +
+                      16 * int(left <= right) + 32 * int(left >= right);
+  int optional_greater = int(right == left) + 2 * int(right != left) +
+                         4 * int(right < left) + 8 * int(right > left) +
+                         16 * int(right <= left) +
+                         32 * int(right >= left);
+  int optional_same = int(left == same) + 2 * int(left != same) +
+                      4 * int(left < same) + 8 * int(left > same) +
+                      16 * int(left <= same) + 32 * int(left >= same);
+  int empty_left = int(none == left) + 2 * int(none != left) +
+                   4 * int(none < left) + 8 * int(none > left) +
+                   16 * int(none <= left) + 32 * int(none >= left);
+  int left_empty = int(left == none) + 2 * int(left != none) +
+                   4 * int(left < none) + 8 * int(left > none) +
+                   16 * int(left <= none) + 32 * int(left >= none);
+  int value_right = int(left == high) + 2 * int(left != high) +
+                    4 * int(left < high) + 8 * int(left > high) +
+                    16 * int(left <= high) + 32 * int(left >= high);
+  int value_left = int(high == left) + 2 * int(high != left) +
+                   4 * int(high < left) + 8 * int(high > left) +
+                   16 * int(high <= left) + 32 * int(high >= left);
+  if (optional_less != 22 || optional_greater != 42 || optional_same != 49 ||
+      empty_left != 22 || left_empty != 42 || value_right != 22 ||
+      value_left != 42)
+    return 5;
+
+  std::optional<EmptyPair> optional_empty_first(empty_first);
+  std::optional<EmptyPair> optional_empty_second(empty_second);
+  int optional_empty_same =
+      int(optional_empty_first == optional_empty_second) +
+      2 * int(optional_empty_first != optional_empty_second) +
+      4 * int(optional_empty_first < optional_empty_second) +
+      8 * int(optional_empty_first > optional_empty_second) +
+      16 * int(optional_empty_first <= optional_empty_second) +
+      32 * int(optional_empty_first >= optional_empty_second);
+  return optional_empty_same == 49 ? 0 : 6;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *SDK = Manifest->getAsObject()->getObject("sdk");
+  ASSERT_NE(SDK, nullptr);
+  const auto *Dependencies = SDK->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 253u);
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+  }
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("recursive-composite-comparisons" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Optimization << "\n" << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2OptionalRequiresPinnedOperations) {
   struct Rejection {
     const char *Name;

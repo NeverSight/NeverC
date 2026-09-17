@@ -22,8 +22,9 @@ folded layout queries and directly lowered `std::byte` operations. The
 `<utility>` surface has an 87-file closure and directly lowers scalar
 `move`, `forward`, `move_if_noexcept`, `as_const`, `exchange` and `swap`, plus
 scalar or recursively composite `pair` construction, assignment, swaps,
-`make_pair` and `get`, scalar-pair comparisons, `tuple_size`, `tuple_element`
-and integer-sequence size queries. Pair elements may be source-owned trivial
+`make_pair` and `get`, recursive standard-composite pair comparisons,
+`tuple_size`, `tuple_element` and integer-sequence size queries. Pair elements
+may be source-owned trivial
 records, admitted arrays or nested pairs; the array-plus-utility union has a
 222-file closure. These surfaces do not require a runtime libc++ link. The
 `<array>` surface has a 217-file libc++/resource closure and directly lowers
@@ -36,7 +37,7 @@ target. It authenticates libc++'s private implementation and indexed leaf
 offsets for nonempty tuples and the dedicated empty specialization, then
 directly lowers scalar or recursively composite construction, compatible
 per-element converting construction and assignment from tuples or pairs,
-factories, swaps, scalar same-length heterogeneous comparisons and index or
+factories, swaps, recursive same-length heterogeneous comparisons and index or
 unique-type access without a runtime libc++ link. Composite elements may be
 source-owned nonempty trivial standard-layout records, admitted arrays or
 pairs, or nonempty nested tuples; their conversions keep the exact unqualified
@@ -60,9 +61,10 @@ factories. Elements may be admitted scalars, source-owned trivial
 standard-layout records, arrays, pairs or tuples; construction and
 conversion use exact composite types, while mutation additionally requires
 recursive assignability. Scalar conversions include the standard
-`nullptr_t`-to-object-pointer conversion. C++17 value comparisons remain on the
-same scalar, heterogeneous arithmetic and qualification-compatible pointer
-boundary; comparisons with `nullopt` work for every admitted element. The
+`nullptr_t`-to-object-pointer conversion. C++17 value comparisons recurse
+through authenticated arrays, pairs and tuples to the same scalar,
+heterogeneous arithmetic and qualification-compatible pointer leaf boundary;
+comparisons with `nullopt` work for every admitted element. The
 array-plus-tuple-plus-utility-plus-optional composite fixture has a 253-file
 platform-free union closure on all eight targets, with no runtime libc++ link.
 The `<iterator>` surface has a 171-file libc++/resource closure on every core-v2
