@@ -23324,6 +23324,72 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2UtilityCompositePairsRunAtBothOptimizations) {
+  const auto Source = tmpFile("utility-composite-pair.cpp");
+  const auto Output = tmpFile("utility-composite-pair.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <utility>
+struct Point { int x; int y; };
+int main() {
+  using PointPair = std::pair<Point, int>;
+  PointPair first{{1, 2}, 3};
+  PointPair zero{};
+  if (zero.first.x != 0 || zero.first.y != 0 || zero.second != 0)
+    return 1;
+  PointPair copied(first);
+  PointPair moved(static_cast<PointPair &&>(copied));
+  zero = moved;
+  std::get<0>(zero).x = 4;
+  std::get<Point>(zero).y = 5;
+  auto made = std::make_pair(Point{6, 7}, 8);
+  zero.swap(made);
+  std::swap(zero, made);
+  if (zero.first.x != 4 || zero.first.y != 5 || zero.second != 3 ||
+      made.first.x != 6 || made.first.y != 7 || made.second != 8)
+    return 2;
+
+  using Inner = std::pair<int, int>;
+  using Nested = std::pair<Inner, std::array<int, 2>>;
+  Nested nested{{9, 10}, {{11, 12}}};
+  Nested nestedCopy(nested);
+  nestedCopy = nested;
+  std::get<1>(std::get<0>(nestedCopy)) = 13;
+  nested.swap(nestedCopy);
+  std::swap(nested, nestedCopy);
+  auto &values = std::get<std::array<int, 2>>(nested);
+  if (nested.first.first != 9 || nested.first.second != 10 ||
+      values[0] != 11 || values[1] != 12 ||
+      nestedCopy.first.second != 13)
+    return 3;
+  return 0;
+}
+)cpp");
+  auto Result = translate(
+      Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest = llvm::json::parse(
+      readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *SDK = Manifest->getAsObject()->getObject("sdk");
+  ASSERT_NE(SDK, nullptr);
+  const auto *Dependencies = SDK->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 222u);
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("utility-composite-pair" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2UtilityRequiresPinnedScalarOperations) {
   struct Rejection {
     const char *Name;
@@ -23334,13 +23400,18 @@ TEST_F(TranslateTest, CoreV2UtilityRequiresPinnedScalarOperations) {
       {"quoted", "#include \"utility\"\nint main(){return 0;}", "TR0201"},
       {"function-address",
        "#include <utility>\nauto f(){return &std::move<int>;}", "TR0201"},
-      {"nested-pair",
-       "#include <utility>\nint f(){std::pair<std::pair<int,int>,int> "
-       "p{{1,2},3};return p.first.first;}",
-       "TR0201"},
-      {"record-pair",
-       "#include <utility>\nstruct R{int n;};int f(){std::pair<R,int> "
+      {"nontrivial-record-pair",
+       "#include <utility>\nstruct R{int n;~R(){}};int f(){std::pair<R,int> "
        "p{{1},2};return p.first.n;}",
+       "TR0201"},
+      {"record-pair-comparison",
+       "#include <utility>\nstruct R{int n;};bool operator==(const R&a,"
+       "const R&b){return a.n==b.n;}int f(){std::pair<R,int> a{{1},2},"
+       "b=a;return a==b;}",
+       "TR0203"},
+      {"reference-pair",
+       "#include <utility>\nint f(){int a=1,b=2;std::pair<int&,int&> "
+       "p{a,b};return p.first;}",
        "TR0201"},
       {"array-swap",
        "#include <utility>\nint f(){int a[2]{1,2},b[2]{3,4};"

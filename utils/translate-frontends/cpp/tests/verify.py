@@ -390,15 +390,71 @@ extern "C" int utility_get() {
     for target in sdk_targets:
         check("v2-utility-" + target, utility_source,
               profile="cpp-core-v2", target=target, sdk=True)
+    pair_composite_source = """\
+#include <array>
+#include <utility>
+struct Point { int x; int y; };
+extern "C" int pair_composite() {
+  using PointPair = std::pair<Point, int>;
+  PointPair first{{1, 2}, 3}, zero{};
+  PointPair copied(first);
+  zero = copied;
+  std::get<Point>(zero).x = 4;
+  auto made = std::make_pair(Point{5, 6}, 7);
+  zero.swap(made);
+  std::swap(zero, made);
+  using Inner = std::pair<int, int>;
+  using Nested = std::pair<Inner, std::array<int, 2>>;
+  Nested nested{{8, 9}, {{10, 11}}}, other(nested);
+  other = nested;
+  nested.swap(other);
+  std::swap(nested, other);
+  return zero.first.x + zero.first.y + zero.second +
+         made.first.x + made.first.y + made.second +
+         nested.first.first + nested.first.second +
+         nested.second[0] + nested.second[1];
+}
+"""
+    pair_composite = check("v2-utility-composite-pair",
+                           pair_composite_source,
+                           profile="cpp-core-v2", sdk=True)
+    assert len(pair_composite["sdk_dependencies"]) == 222, pair_composite
+    assert not [node for node in walk(pair_composite["functions"])
+                if node.get("op") in ("call", "mapped_call")], pair_composite
+    int_pairs = [record for record in pair_composite["records"]
+                 if [field["type"] for field in record["fields"]]
+                 == ["int", "int"]]
+    assert len(int_pairs) == 2, pair_composite["records"]
+    point_pair = next(record for record in pair_composite["records"]
+                      if record["fields"][1]["type"] == "int" and
+                      record["fields"][0]["type"] in
+                      {candidate["id"] for candidate in int_pairs})
+    point = next(record for record in int_pairs
+                 if record["id"] == point_pair["fields"][0]["type"])
+    inner = next(record for record in int_pairs
+                 if record["id"] != point["id"])
+    array = next(record for record in pair_composite["records"]
+                 if [field["type"] for field in record["fields"]]
+                 == ["arr:2:int"])
+    assert any([field["type"] for field in record["fields"]]
+               == [inner["id"], array["id"]]
+               for record in pair_composite["records"]), pair_composite["records"]
+    for target in sdk_targets:
+        check("v2-utility-composite-pair-" + target,
+              pair_composite_source, profile="cpp-core-v2",
+              target=target, sdk=True)
     for name, source, code in (
         ("quoted", '#include "utility"\nint main(){return 0;}', "TR0201"),
         ("function-address",
          '#include <utility>\nauto f(){return &std::move<int>;}', "TR0201"),
-        ("nested-pair",
-         '#include <utility>\nint f(){std::pair<std::pair<int,int>,int> p{{1,2},3};return p.first.first;}',
+        ("nontrivial-record-pair",
+         '#include <utility>\nstruct R{int n;~R(){}};int f(){std::pair<R,int> p{{1},2};return p.first.n;}',
          "TR0201"),
-        ("record-pair",
-         '#include <utility>\nstruct R{int n;};int f(){std::pair<R,int> p{{1},2};return p.first.n;}',
+        ("record-pair-comparison",
+         '#include <utility>\nstruct R{int n;};bool operator==(const R&a,const R&b){return a.n==b.n;}int f(){std::pair<R,int>a{{1},2},b=a;return a==b;}',
+         "TR0203"),
+        ("reference-pair",
+         '#include <utility>\nint f(){int a=1,b=2;std::pair<int&,int&>p{a,b};return p.first;}',
          "TR0201"),
         ("array-swap",
          '#include <utility>\nint f(){int a[2]{1,2},b[2]{3,4};std::swap(a,b);return a[0];}',

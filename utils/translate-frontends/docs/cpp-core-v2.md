@@ -159,13 +159,19 @@ pinned libc++ declaration and must be called directly; function addresses,
 forged declarations and array overloads are rejected.
 
 `std::pair` supports default, value, converting and copy/move construction,
-copy/move assignment, member and free `swap`, all six C++17 comparisons,
-`std::make_pair`, index-based `std::get`, `tuple_size` and `tuple_element`.
-Elements may be admitted integral or enum scalars up to 64 bits, `float`,
-`double`, `nullptr_t`, or non-function object pointers. Pair objects retain
-their two fields and ordinary value or reference behavior. Type-based `get`
-is accepted only when libc++ resolves it unambiguously. Nested, user-record and
-reference-valued pairs remain outside this boundary.
+copy/move assignment, member and free `swap`, `std::make_pair`, index-based
+`std::get`, `tuple_size` and `tuple_element`. Elements may be admitted integral
+or enum scalars up to 64 bits, `float`, `double`, `nullptr_t`, non-function
+object pointers, source-owned trivial standard-layout records, admitted
+`std::array` values, or recursively admitted `std::pair` values. Mutation
+requires every recursive leaf to be assignable. Pair objects retain their two
+fields and ordinary value behavior. Type-based `get` is accepted only when
+libc++ resolves it unambiguously.
+
+All six C++17 comparisons remain available when both elements are admitted
+scalars. Record, array and nested-pair comparisons stay rejected because their
+selected element operations are not yet part of this direct-lowering boundary.
+Reference-valued pairs also remain outside the ordinary pair surface.
 The sole reference-pair exception is the exact `std::minmax` result documented
 under the algorithm surface; ordinary construction, assignment, comparison,
 swap, `make_pair` and `get` remain unavailable for that pair type.
@@ -173,8 +179,10 @@ swap, `make_pair` and `get` remain unavailable for that pair type.
 `std::integer_sequence`, `index_sequence`, their generator aliases and
 `integer_sequence::size()` remain compile-time types and values. The standalone
 authenticated closure contains 87 libc++/resource files on all eight supported
-targets. Generated programs do not call or link libc++ for these operations;
-quoted `"utility"`, user shadow headers and platform header roots remain rejected.
+targets. Combining `<array>` and `<utility>` for composite pairs has a 222-file
+platform-free union closure on those targets. Generated programs do not call or
+link libc++ for these operations; quoted `"utility"`, user shadow headers and
+platform header roots remain rejected.
 
 ## Scalar tuples from `<tuple>`
 

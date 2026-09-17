@@ -21,14 +21,16 @@ The `<cstddef>` surface has a 29-file closure and provides its target aliases,
 folded layout queries and directly lowered `std::byte` operations. The
 `<utility>` surface has an 87-file closure and directly lowers scalar
 `move`, `forward`, `move_if_noexcept`, `as_const`, `exchange` and `swap`, plus
-scalar `pair` construction, assignment, swaps, comparisons, `make_pair`, `get`,
-`tuple_size`, `tuple_element` and integer-sequence size queries. These surfaces
-do not require a runtime libc++ link. The `<array>` surface has a 217-file
-libc++/resource closure and directly lowers fixed scalar, trivial-record and
-nested arrays, including the dedicated zero-length partial specialization,
-capacity, pointer and reverse iterators, element access where the extent is
-nonzero, fill, swap, scalar and recursive nested-array comparisons and
-index-based `get`, without a runtime libc++ link.
+scalar or recursively composite `pair` construction, assignment, swaps,
+`make_pair` and `get`, scalar-pair comparisons, `tuple_size`, `tuple_element`
+and integer-sequence size queries. Pair elements may be source-owned trivial
+records, admitted arrays or nested pairs; the array-plus-utility union has a
+222-file closure. These surfaces do not require a runtime libc++ link. The
+`<array>` surface has a 217-file libc++/resource closure and directly lowers
+fixed scalar, trivial-record and nested arrays, including the dedicated
+zero-length partial specialization, capacity, pointer and reverse iterators,
+element access where the extent is nonzero, fill, swap, scalar and recursive
+nested-array comparisons and index-based `get`, without a runtime libc++ link.
 The `<tuple>` surface has a 98-file libc++/resource closure on every core-v2
 target. It authenticates libc++'s private implementation and indexed leaf
 offsets for nonempty tuples and the dedicated empty specialization, then

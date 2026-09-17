@@ -656,6 +656,38 @@ approvedUtilityReferencePairRecord(const State &S, const SourceManager &SM,
   return approvedUtilityPairRecordImpl(S, SM, Record, Context, true);
 }
 
+static bool utilityPairValue(const State &S, const SourceManager &SM,
+                             const ASTContext &Context, QualType Type,
+                             unsigned Depth = 0) {
+  if (Depth > 64 || Type.isNull())
+    return false;
+  if (utilityArrayValue(S, SM, Context, Type))
+    return true;
+  const auto *Record =
+      Type.getUnqualifiedType()->getAsCXXRecordDecl();
+  const auto Pair = approvedUtilityPairRecord(S, SM, Record, Context);
+  return Pair &&
+         utilityPairValue(S, SM, Context, Pair->First->getType(), Depth + 1) &&
+         utilityPairValue(S, SM, Context, Pair->Second->getType(), Depth + 1);
+}
+
+static bool utilityPairAssignableValue(const State &S,
+                                       const SourceManager &SM,
+                                       const ASTContext &Context,
+                                       QualType Type, unsigned Depth = 0) {
+  if (Depth > 64 || Type.isNull() || Type.isConstQualified())
+    return false;
+  if (utilityArrayValue(S, SM, Context, Type))
+    return utilityArrayTriviallyAssignable(Context, Type);
+  const auto *Record =
+      Type.getUnqualifiedType()->getAsCXXRecordDecl();
+  const auto Pair = approvedUtilityPairRecord(S, SM, Record, Context);
+  return Pair && utilityPairAssignableValue(
+                     S, SM, Context, Pair->First->getType(), Depth + 1) &&
+         utilityPairAssignableValue(S, SM, Context, Pair->Second->getType(),
+                                    Depth + 1);
+}
+
 std::optional<UtilityPairConstruction>
 approvedUtilityPairConstruction(const State &S, const SourceManager &SM,
                                 const CXXConstructExpr *Construction,
@@ -676,8 +708,8 @@ approvedUtilityPairConstruction(const State &S, const SourceManager &SM,
       !approvedStandardSDKDeclaration(S, SM, Constructor) ||
       !cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx",
                      "__utility/pair.h") ||
-      !utilityScalar(Context, Pair->First->getType()) ||
-      !utilityScalar(Context, Pair->Second->getType()))
+      !utilityPairValue(S, SM, Context, Pair->First->getType()) ||
+      !utilityPairValue(S, SM, Context, Pair->Second->getType()))
     return std::nullopt;
   if (!Construction->getNumArgs() && Constructor->isDefaultConstructor())
     return UtilityPairConstruction::Default;
@@ -714,8 +746,10 @@ approvedUtilityPairAssignment(const State &S, const SourceManager &SM,
       !approvedStandardSDKDeclaration(S, SM, Method) ||
       !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
                      "__utility/pair.h") ||
-      !utilityScalar(Context, Pair->First->getType()) ||
-      !utilityScalar(Context, Pair->Second->getType()))
+      !utilityPairValue(S, SM, Context, Pair->First->getType()) ||
+      !utilityPairValue(S, SM, Context, Pair->Second->getType()) ||
+      !utilityPairAssignableValue(S, SM, Context, Pair->First->getType()) ||
+      !utilityPairAssignableValue(S, SM, Context, Pair->Second->getType()))
     return std::nullopt;
   const auto Parameter = Method->getParamDecl(0)->getType();
   const auto Result = Method->getReturnType();
@@ -2840,8 +2874,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
                       "__utility/pair.h") &&
         S.owns(SM, Reference->getExprLoc()) &&
-        utilityScalar(Context, Pair->First->getType()) &&
-        utilityScalar(Context, Pair->Second->getType()) &&
+        utilityPairValue(S, SM, Context, Pair->First->getType()) &&
+        utilityPairValue(S, SM, Context, Pair->Second->getType()) &&
+        utilityPairAssignableValue(S, SM, Context, Pair->First->getType()) &&
+        utilityPairAssignableValue(S, SM, Context, Pair->Second->getType()) &&
         Context.hasSameUnqualifiedType(
             MemberCall->getImplicitObjectArgument()->getType(),
             Context.getRecordType(Pair->Record)) &&
@@ -4534,8 +4570,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType())) {
     const auto Pair = approvedUtilityPairRecord(
         S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
-    if (!Pair || !utilityScalar(Context, Pair->First->getType()) ||
-        !utilityScalar(Context, Pair->Second->getType()))
+    if (!Pair ||
+        !utilityPairValue(S, SM, Context, Pair->First->getType()) ||
+        !utilityPairValue(S, SM, Context, Pair->Second->getType()))
       return std::nullopt;
     for (unsigned I = 0; I != 2; ++I) {
       auto Parameter = Function->getParamDecl(I)->getType();
@@ -4781,8 +4818,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if (LeftType->isLValueReferenceType() &&
         RightType->isLValueReferenceType() && Left && Right &&
         Left->Record->getCanonicalDecl() == Right->Record->getCanonicalDecl() &&
-        utilityScalar(Context, Left->First->getType()) &&
-        utilityScalar(Context, Left->Second->getType()) &&
+        utilityPairValue(S, SM, Context, Left->First->getType()) &&
+        utilityPairValue(S, SM, Context, Left->Second->getType()) &&
+        utilityPairAssignableValue(S, SM, Context, Left->First->getType()) &&
+        utilityPairAssignableValue(S, SM, Context, Left->Second->getType()) &&
         Same(Call->getArg(0)->getType(), LeftType->getPointeeType()) &&
         Same(Call->getArg(1)->getType(), RightType->getPointeeType()))
       return UtilityOperation::PairSwap;
