@@ -97,7 +97,8 @@ built-in arithmetic elements admit default-order
 `lexicographical_compare`, `includes`, `merge` and the four `set_*` range
 algorithms. Checked by-value unary function-pointer predicates additionally
 admit `find_if`, `find_if_not`, `count_if`, `all_of`, `any_of`, `none_of`,
-`copy_if`, `remove_if`, `remove_copy_if`, `replace_if` and `replace_copy_if`.
+`copy_if`, `remove_if`, `remove_copy_if`, `replace_if`, `replace_copy_if`,
+`is_partitioned`, `partition`, `partition_copy` and `partition_point`.
 Predicate mutation and ordered output algorithms require writable destinations,
 and `copy_n`, `fill_n` and `search_n` accept integral or non-scoped enum counts
 through 64 bits after integer promotion.

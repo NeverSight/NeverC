@@ -388,6 +388,10 @@ enum class UtilityOperation {
   AlgorithmRemoveCopyIf,
   AlgorithmReplaceIf,
   AlgorithmReplaceCopyIf,
+  AlgorithmIsPartitioned,
+  AlgorithmPartition,
+  AlgorithmPartitionCopy,
+  AlgorithmPartitionPoint,
 };
 struct UtilityPairRecord {
   const clang::CXXRecordDecl *Record;

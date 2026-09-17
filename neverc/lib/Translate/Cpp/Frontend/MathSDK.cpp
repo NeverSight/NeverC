@@ -1375,6 +1375,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   const bool ApprovedNonInlineAlgorithm =
       (Origin->Path == "__algorithm/remove.h" && Name == "remove") ||
       (Origin->Path == "__algorithm/remove_if.h" && Name == "remove_if") ||
+      (Origin->Path == "__algorithm/is_partitioned.h" &&
+       Name == "is_partitioned") ||
+      (Origin->Path == "__algorithm/partition_copy.h" &&
+       Name == "partition_copy") ||
+      (Origin->Path == "__algorithm/partition_point.h" &&
+       Name == "partition_point") ||
       (Origin->Path == "__algorithm/equal_range.h" && Name == "equal_range") ||
       (Origin->Path == "__algorithm/set_union.h" && Name == "set_union") ||
       (Origin->Path == "__algorithm/set_symmetric_difference.h" &&
@@ -2204,6 +2210,60 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmReplaceCopyIf;
+  const bool PointerPartitionQuery =
+      (Origin->Path == "__algorithm/is_partitioned.h" &&
+       Name == "is_partitioned") ||
+      (Origin->Path == "__algorithm/partition_point.h" &&
+       Name == "partition_point");
+  if (PointerPartitionQuery && Call->getNumArgs() == 3 &&
+      Function->getNumParams() == 3 && Call->isPRValue() &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      AlgorithmUnaryPredicateParameter(2, 0) &&
+      Same(Call->getType(), Function->getReturnType())) {
+    if (Name == "is_partitioned" && Function->getReturnType()->isBooleanType())
+      return UtilityOperation::AlgorithmIsPartitioned;
+    if (Name == "partition_point" &&
+        Same(Function->getReturnType(), Function->getParamDecl(0)->getType()))
+      return UtilityOperation::AlgorithmPartitionPoint;
+  }
+  if (Origin->Path == "__algorithm/partition.h" && Name == "partition" &&
+      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
+      Call->isPRValue() && AlgorithmPointerParameter(0) &&
+      AlgorithmPointerParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      utilityAlgorithmWritableScalarPointer(
+          Context, Function->getParamDecl(0)->getType()) &&
+      AlgorithmUnaryPredicateParameter(2, 0) &&
+      Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmPartition;
+  if (Origin->Path == "__algorithm/partition_copy.h" &&
+      Name == "partition_copy" && Call->getNumArgs() == 5 &&
+      Function->getNumParams() == 5 && Call->isPRValue() &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      AlgorithmPointerParameter(2) && AlgorithmPointerParameter(3) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
+                           Function->getParamDecl(2)->getType()) &&
+      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
+                           Function->getParamDecl(3)->getType()) &&
+      utilityAlgorithmWritableScalarPointer(
+          Context, Function->getParamDecl(2)->getType()) &&
+      utilityAlgorithmWritableScalarPointer(
+          Context, Function->getParamDecl(3)->getType()) &&
+      AlgorithmUnaryPredicateParameter(4, 0) &&
+      Same(Call->getType(), Function->getReturnType())) {
+    auto Pair = approvedUtilityPairRecord(
+        S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);
+    if (Pair &&
+        Same(Pair->First->getType(), Function->getParamDecl(2)->getType()) &&
+        Same(Pair->Second->getType(), Function->getParamDecl(3)->getType()))
+      return UtilityOperation::AlgorithmPartitionCopy;
+  }
   if (Origin->Path == "__iterator/reverse_iterator.h" &&
       Name == "make_reverse_iterator" && Call->getNumArgs() == 1 &&
       Function->getNumParams() == 1 && Call->isPRValue()) {

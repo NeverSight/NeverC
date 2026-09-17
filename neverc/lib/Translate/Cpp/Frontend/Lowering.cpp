@@ -3174,6 +3174,230 @@ class FunctionLowering {
       label(End, L);
       return Output;
     }
+    case UtilityOperation::AlgorithmIsPartitioned: {
+      auto Current = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto Predicate = snapshot(expression(Call->getArg(2)), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      auto Result = temporary("bool", L);
+      const auto LeadingCheck = labelName(), LeadingTest = labelName();
+      const auto LeadingAdvance = labelName(), BeginTail = labelName();
+      const auto TailCheck = labelName(), TailTest = labelName();
+      const auto TailAdvance = labelName(), False = labelName();
+      const auto End = labelName();
+      assign(Result, boolean(true, L), L);
+      jump(LeadingCheck, L);
+      label(LeadingCheck, L);
+      branch(binary("!=", Current, Last, "bool", L), LeadingTest, End, L);
+      label(LeadingTest, L);
+      {
+        auto Selected = emitUnaryPredicate(
+            json::Object(Predicate), Call->getArg(2)->getType(),
+            dereference(json::Object(Current), L), L);
+        branch(std::move(Selected), LeadingAdvance, BeginTail, L);
+      }
+      label(LeadingAdvance, L);
+      assign(
+          Current,
+          binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      jump(LeadingCheck, L);
+      label(BeginTail, L);
+      assign(
+          Current,
+          binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      jump(TailCheck, L);
+      label(TailCheck, L);
+      branch(binary("!=", Current, Last, "bool", L), TailTest, End, L);
+      label(TailTest, L);
+      {
+        auto Selected = emitUnaryPredicate(
+            json::Object(Predicate), Call->getArg(2)->getType(),
+            dereference(json::Object(Current), L), L);
+        branch(std::move(Selected), False, TailAdvance, L);
+      }
+      label(TailAdvance, L);
+      assign(
+          Current,
+          binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      jump(TailCheck, L);
+      label(False, L);
+      assign(Result, boolean(false, L), L);
+      jump(End, L);
+      label(End, L);
+      return Result;
+    }
+    case UtilityOperation::AlgorithmPartition: {
+      auto Boundary = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto Predicate = snapshot(expression(Call->getArg(2)), L);
+      auto Scan = snapshot(json::Object(Boundary), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto FindCheck = labelName(), FindTest = labelName();
+      const auto AdvanceBoundary = labelName(), BeginScan = labelName();
+      const auto ScanCheck = labelName(), ScanTest = labelName();
+      const auto Swap = labelName(), AdvanceScan = labelName();
+      const auto End = labelName();
+      jump(FindCheck, L);
+      label(FindCheck, L);
+      branch(binary("!=", Boundary, Last, "bool", L), FindTest, End, L);
+      label(FindTest, L);
+      {
+        auto Selected = emitUnaryPredicate(
+            json::Object(Predicate), Call->getArg(2)->getType(),
+            dereference(json::Object(Boundary), L), L);
+        branch(std::move(Selected), AdvanceBoundary, BeginScan, L);
+      }
+      label(AdvanceBoundary, L);
+      assign(
+          Boundary,
+          binary("+", Boundary, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      jump(FindCheck, L);
+      label(BeginScan, L);
+      assign(
+          Scan,
+          binary("+", Boundary, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      jump(ScanCheck, L);
+      label(ScanCheck, L);
+      branch(binary("!=", Scan, Last, "bool", L), ScanTest, End, L);
+      label(ScanTest, L);
+      {
+        auto Selected = emitUnaryPredicate(
+            json::Object(Predicate), Call->getArg(2)->getType(),
+            dereference(json::Object(Scan), L), L);
+        branch(std::move(Selected), Swap, AdvanceScan, L);
+      }
+      label(Swap, L);
+      {
+        auto BoundaryValue =
+            snapshot(dereference(json::Object(Boundary), L), L);
+        auto ScanValue = snapshot(dereference(json::Object(Scan), L), L);
+        assign(dereference(Boundary, L), std::move(ScanValue), L);
+        assign(dereference(Scan, L), std::move(BoundaryValue), L);
+      }
+      assign(
+          Boundary,
+          binary("+", Boundary, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      jump(AdvanceScan, L);
+      label(AdvanceScan, L);
+      assign(Scan,
+             binary("+", Scan, quantity(1, DifferenceType, L), PointerType, L),
+             L);
+      jump(ScanCheck, L);
+      label(End, L);
+      return Boundary;
+    }
+    case UtilityOperation::AlgorithmPartitionCopy: {
+      auto Input = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto TrueOutput = snapshot(expression(Call->getArg(2)), L);
+      auto FalseOutput = snapshot(expression(Call->getArg(3)), L);
+      auto Predicate = snapshot(expression(Call->getArg(4)), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto InputType = type(Call->getArg(0)->getType(), L);
+      const auto TrueOutputType = type(Call->getArg(2)->getType(), L);
+      const auto FalseOutputType = type(Call->getArg(3)->getType(), L);
+      const auto Check = labelName(), Test = labelName();
+      const auto CopyTrue = labelName(), CopyFalse = labelName();
+      const auto Advance = labelName(), End = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", Input, Last, "bool", L), Test, End, L);
+      label(Test, L);
+      {
+        auto Selected = emitUnaryPredicate(
+            json::Object(Predicate), Call->getArg(4)->getType(),
+            dereference(json::Object(Input), L), L);
+        branch(std::move(Selected), CopyTrue, CopyFalse, L);
+      }
+      label(CopyTrue, L);
+      assign(dereference(TrueOutput, L), dereference(Input, L), L);
+      assign(TrueOutput,
+             binary("+", TrueOutput, quantity(1, DifferenceType, L),
+                    TrueOutputType, L),
+             L);
+      jump(Advance, L);
+      label(CopyFalse, L);
+      assign(dereference(FalseOutput, L), dereference(Input, L), L);
+      assign(FalseOutput,
+             binary("+", FalseOutput, quantity(1, DifferenceType, L),
+                    FalseOutputType, L),
+             L);
+      jump(Advance, L);
+      label(Advance, L);
+      assign(Input,
+             binary("+", Input, quantity(1, DifferenceType, L), InputType, L),
+             L);
+      jump(Check, L);
+      label(End, L);
+      auto Pair = approvedUtilityPairRecord(
+          A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+      if (!Pair)
+        reject(L, "algorithm partition_copy",
+               "The selected std::pair layout is unavailable.");
+      auto Place = Destination ? std::move(*Destination)
+                               : objectTemporary(Call->getType(), L);
+      if (Place.getString("type") != type(Call->getType(), L))
+        reject(L, "algorithm partition_copy",
+               "The std::partition_copy destination type differs from its "
+               "result.");
+      assign(fieldStorage(json::Object(Place), Pair->First, L), TrueOutput, L);
+      assign(fieldStorage(json::Object(Place), Pair->Second, L), FalseOutput,
+             L);
+      return Place;
+    }
+    case UtilityOperation::AlgorithmPartitionPoint: {
+      auto First = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto Predicate = snapshot(expression(Call->getArg(2)), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      auto Length = temporary(DifferenceType, L);
+      auto Half = temporary(DifferenceType, L);
+      auto Middle = temporary(PointerType, L);
+      const auto Check = labelName(), Test = labelName();
+      const auto Advance = labelName(), Narrow = labelName();
+      const auto End = labelName();
+      assign(Length, binary("-", Last, First, DifferenceType, L), L);
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", Length, quantity(0, DifferenceType, L), "bool", L),
+             Test, End, L);
+      label(Test, L);
+      assign(Half,
+             binary("/", Length, quantity(2, DifferenceType, L), DifferenceType,
+                    L),
+             L);
+      assign(Middle, binary("+", First, Half, PointerType, L), L);
+      {
+        auto Selected = emitUnaryPredicate(
+            json::Object(Predicate), Call->getArg(2)->getType(),
+            dereference(json::Object(Middle), L), L);
+        branch(std::move(Selected), Advance, Narrow, L);
+      }
+      label(Advance, L);
+      assign(
+          First,
+          binary("+", Middle, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      assign(Length,
+             binary("-", binary("-", Length, Half, DifferenceType, L),
+                    quantity(1, DifferenceType, L), DifferenceType, L),
+             L);
+      jump(Check, L);
+      label(Narrow, L);
+      assign(Length, Half, L);
+      jump(Check, L);
+      label(End, L);
+      return First;
+    }
     case UtilityOperation::MakePair: {
       auto Pair = approvedUtilityPairRecord(
           A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);

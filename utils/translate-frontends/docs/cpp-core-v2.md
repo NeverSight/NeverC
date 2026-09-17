@@ -278,6 +278,19 @@ and returns the advanced output. Every range, output, callback and replacement
 argument is evaluated once; empty ranges return their unadvanced iterator and do
 not invoke the predicate.
 
+The exact `std::is_partitioned`, `std::partition`, `std::partition_copy` and
+`std::partition_point` templates use that predicate boundary too.
+`is_partitioned` accepts a read-only range and stops when it finds a selected
+element after the first rejected element. `partition` requires a writable range,
+performs at most one predicate call per element, and returns the boundary between
+selected and rejected elements; it does not promise stable ordering.
+`partition_copy` requires two writable same-element outputs, preserves the input
+order within both output groups, and returns their advanced pointers in an
+authenticated `std::pair`. `partition_point` accepts a range already partitioned
+by the predicate and uses logarithmic bisection. Empty ranges return their input
+or output iterators without invoking the predicate, and all arguments are
+evaluated and retained once.
+
 The exact four-iterator `std::search`, `std::find_end` and
 `std::find_first_of` templates lower nested equality scans over two ranges.
 Three- and four-iterator `std::mismatch` return an authenticated

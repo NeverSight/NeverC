@@ -1091,6 +1091,47 @@ extern "C" int algorithm_predicate_mutation(
           'bool p(int n){return n>0;}\n#include <algorithm>\nint main(){int a[2]{1,2};long value=3;std::replace_if(a,a+2,p,value);return 0;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    algorithm_partition_source = """\
+#include <algorithm>
+extern "C" int algorithm_partition(
+    int *first, int *last, const int *read_first, const int *read_last,
+    int *true_output, int *false_output, bool (*predicate)(int)) {
+  bool checked = std::is_partitioned(read_first, read_last, predicate);
+  int *boundary = std::partition(first, last, predicate);
+  auto outputs = std::partition_copy(read_first, read_last, true_output,
+                                     false_output, predicate);
+  const int *point = std::partition_point(read_first, read_last, predicate);
+  return static_cast<int>(checked + (boundary - first) +
+                          (outputs.first - true_output) +
+                          (outputs.second - false_output) +
+                          (point - read_first));
+}
+"""
+
+    def assert_partition_algorithms(data):
+        assert len(data["sdk_dependencies"]) == 354, data
+        nodes = list(walk(data["functions"]))
+        assert not [node for node in nodes
+                    if node.get("op") in ("call", "mapped_call")], data
+        assert sum(node.get("op") == "indirect_call"
+                   for node in nodes) == 6, data
+
+    algorithm_partition = check("v2-algorithm-partition",
+                                algorithm_partition_source,
+                                profile="cpp-core-v2", sdk=True)
+    assert_partition_algorithms(algorithm_partition)
+    for target in sdk_targets:
+        target_result = check("v2-algorithm-partition-" + target,
+                              algorithm_partition_source,
+                              profile="cpp-core-v2", target=target, sdk=True)
+        assert_partition_algorithms(target_result)
+    check("v2-algorithm-partition-heterogeneous-output",
+          'bool p(int n){return n>0;}\n#include <algorithm>\nint main(){int a[2]{1,2};long yes[2]{},no[2]{};auto r=std::partition_copy(a,a+2,yes,no,p);return r.first==yes+2?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-partition-functor",
+          'struct P{bool operator()(int n)const{return n>0;}};\n#include <algorithm>\nint main(){int a[2]{1,2};return std::partition(a,a+2,P{})==a+2?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     # Windows driver defaults must not change core-v2 source visibility or
     # standard diagnostics. Exercise both MSVC architectures on every CI host.
     standard_template_parsing = {

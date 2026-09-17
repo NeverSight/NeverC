@@ -25401,6 +25401,162 @@ TEST_F(TranslateTest,
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2AlgorithmPartitionOperationsRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-partition.cpp");
+  const auto Output = tmpFile("algorithm-partition.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int calls;
+bool even(int n) { ++calls; return n % 2 == 0; }
+enum Level : unsigned char { low, high };
+bool is_high(Level value) { ++calls; return value == high; }
+int main() {
+  int good[4]{2, 4, 1, 3};
+  int effects = 0;
+  bool (*predicate)(int) = even;
+  calls = 0;
+  if (!std::is_partitioned((++effects, good), (++effects, good + 4),
+                           (++effects, predicate)) ||
+      effects != 3 || calls != 4)
+    return 1;
+  int bad[4]{2, 1, 4, 3};
+  calls = 0;
+  if (std::is_partitioned(bad, bad + 4, even) || calls != 3)
+    return 2;
+  calls = 0;
+  if (!std::is_partitioned(good, good, even) || calls != 0)
+    return 3;
+
+  int values[6]{1, 2, 3, 4, 5, 6};
+  calls = 0;
+  int *boundary = std::partition(values, values + 6, even);
+  if (boundary != values + 3 || calls != 6)
+    return 4;
+  int sum = 0;
+  for (int *p = values; p != boundary; ++p) {
+    if (*p % 2 != 0)
+      return 5;
+    sum += *p;
+  }
+  for (int *p = boundary; p != values + 6; ++p) {
+    if (*p % 2 == 0)
+      return 6;
+    sum += *p;
+  }
+  if (sum != 21)
+    return 7;
+  int all_true[3]{2, 4, 6};
+  calls = 0;
+  if (std::partition(all_true, all_true + 3, even) != all_true + 3 ||
+      calls != 3)
+    return 8;
+  int all_false[3]{1, 3, 5};
+  calls = 0;
+  if (std::partition(all_false, all_false + 3, even) != all_false ||
+      calls != 3)
+    return 9;
+
+  const int input[6]{1, 2, 3, 4, 5, 6};
+  int selected[6]{};
+  int rejected[6]{};
+  effects = 0;
+  calls = 0;
+  auto outputs = std::partition_copy(
+      (++effects, input), (++effects, input + 6), (++effects, selected),
+      (++effects, rejected), (++effects, predicate));
+  if (effects != 5 || calls != 6 || outputs.first != selected + 3 ||
+      outputs.second != rejected + 3 || selected[0] != 2 ||
+      selected[1] != 4 || selected[2] != 6 || rejected[0] != 1 ||
+      rejected[1] != 3 || rejected[2] != 5)
+    return 10;
+  calls = 0;
+  auto empty = std::partition_copy(input, input, selected, rejected, even);
+  if (empty.first != selected || empty.second != rejected || calls != 0)
+    return 11;
+
+  int ordered[6]{2, 4, 6, 1, 3, 5};
+  effects = 0;
+  calls = 0;
+  int *point = std::partition_point((++effects, ordered),
+                                    (++effects, ordered + 6),
+                                    (++effects, predicate));
+  if (effects != 3 || point != ordered + 3 || calls != 3)
+    return 12;
+  calls = 0;
+  if (std::partition_point(ordered, ordered, even) != ordered || calls != 0)
+    return 13;
+
+  Level levels[4]{high, low, high, low};
+  calls = 0;
+  Level *level_boundary = std::partition(levels, levels + 4, is_high);
+  if (level_boundary != levels + 2 || calls != 4 ||
+      !std::is_partitioned(levels, levels + 4, is_high))
+    return 14;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Dependencies =
+      Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 354u);
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+  }
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-partition" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmPartitionOperationsRequireExactForms) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+  };
+  const Rejection Cases[] = {
+      {"heterogeneous-output",
+       "bool p(int n){return n>0;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,2};long yes[2]{},no[2]{};"
+       "auto r=std::partition_copy(a,a+2,yes,no,p);"
+       "return r.first==yes+2?0:1;}"},
+      {"function-object",
+       "struct P{bool operator()(int n)const{return n>0;}};\n"
+       "#include <algorithm>\nint main(){int a[2]{1,2};"
+       "return std::partition(a,a+2,P{})==a+2?0:1;}"},
+      {"converted-parameter",
+       "bool p(long n){return n>0;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,2};"
+       "return std::partition_point(a,a+2,p)==a+2?0:1;}"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("algorithm-partition-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("algorithm-partition-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmPredicateQueriesRequireValueCallbacks) {
   struct Rejection {
     const char *Name;
