@@ -716,6 +716,37 @@ extern "C" int algorithm_mutation(int *first, int *second, int *output) {
           '#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{};return std::reverse_copy(a,a+2,b)==b+2?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    algorithm_order_source = """\
+#include <algorithm>
+extern "C" int algorithm_order(const int *first, const int *last, int value) {
+  const int *minimum = std::min_element(first, last);
+  const int *maximum = std::max_element(first, last);
+  const int *lower = std::lower_bound(first, last, value);
+  const int *upper = std::upper_bound(first, last, value);
+  bool present = std::binary_search(first, last, value);
+  bool sorted = std::is_sorted(first, last);
+  const int *until = std::is_sorted_until(first, last);
+  return static_cast<int>((minimum - first) + (maximum - first) +
+                          (lower - first) + (upper - first) +
+                          (until - first) + present + sorted);
+}
+"""
+    algorithm_order = check("v2-algorithm-order", algorithm_order_source,
+                            profile="cpp-core-v2", sdk=True)
+    assert len(algorithm_order["sdk_dependencies"]) == 354, algorithm_order
+    assert not [node for node in walk(algorithm_order["functions"])
+                if node.get("op") in ("call", "mapped_call")], algorithm_order
+    for target in sdk_targets:
+        check("v2-algorithm-order-" + target,
+              algorithm_order_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-algorithm-order-pointer-elements",
+          '#include <algorithm>\nint main(){int a[2]{};int*p[2]{a,a+1};return std::min_element(p,p+2)==p?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-order-heterogeneous-value",
+          '#include <algorithm>\nint main(){int a[2]{1,2};short v=1;return std::lower_bound(a,a+2,v)==a?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     # Windows driver defaults must not change core-v2 source visibility or
     # standard diagnostics. Exercise both MSVC architectures on every CI host.
     standard_template_parsing = {

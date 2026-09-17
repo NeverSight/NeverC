@@ -1354,6 +1354,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Context.hasSameUnqualifiedType(Left->getPointeeType(),
                                           Right->getPointeeType());
   };
+  auto AlgorithmOrderedPointerParameter = [&](unsigned Index) {
+    if (!AlgorithmPointerParameter(Index))
+      return false;
+    auto Element = Function->getParamDecl(Index)
+                       ->getType()
+                       ->getPointeeType()
+                       .getUnqualifiedType();
+    return (Element->isIntegerType() && Context.getTypeSize(Element) <= 64) ||
+           Element->isSpecificBuiltinType(BuiltinType::Float) ||
+           Element->isSpecificBuiltinType(BuiltinType::Double);
+  };
   auto AlgorithmValueParameter = [&](unsigned ValueIndex,
                                      unsigned IteratorIndex) {
     if (ValueIndex >= Function->getNumParams() ||
@@ -1513,6 +1524,53 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmReverseCopy;
+  if (((Origin->Path == "__algorithm/min_element.h" && Name == "min_element") ||
+       (Origin->Path == "__algorithm/max_element.h" &&
+        Name == "max_element")) &&
+      Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
+      Call->isPRValue() && AlgorithmOrderedPointerParameter(0) &&
+      AlgorithmPointerParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return Name == "min_element" ? UtilityOperation::AlgorithmMinElement
+                                 : UtilityOperation::AlgorithmMaxElement;
+  if (((Origin->Path == "__algorithm/lower_bound.h" && Name == "lower_bound") ||
+       (Origin->Path == "__algorithm/upper_bound.h" && Name == "upper_bound") ||
+       (Origin->Path == "__algorithm/binary_search.h" &&
+        Name == "binary_search")) &&
+      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
+      Call->isPRValue() && AlgorithmOrderedPointerParameter(0) &&
+      AlgorithmPointerParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      AlgorithmValueParameter(2, 0) &&
+      Same(Call->getType(), Function->getReturnType())) {
+    if (Name == "binary_search") {
+      if (Function->getReturnType()->isBooleanType())
+        return UtilityOperation::AlgorithmBinarySearch;
+    } else if (Same(Function->getReturnType(),
+                    Function->getParamDecl(0)->getType())) {
+      return Name == "lower_bound" ? UtilityOperation::AlgorithmLowerBound
+                                   : UtilityOperation::AlgorithmUpperBound;
+    }
+  }
+  if (((Origin->Path == "__algorithm/is_sorted.h" && Name == "is_sorted") ||
+       (Origin->Path == "__algorithm/is_sorted_until.h" &&
+        Name == "is_sorted_until")) &&
+      Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
+      Call->isPRValue() && AlgorithmOrderedPointerParameter(0) &&
+      AlgorithmPointerParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      Same(Call->getType(), Function->getReturnType())) {
+    if (Name == "is_sorted" && Function->getReturnType()->isBooleanType())
+      return UtilityOperation::AlgorithmIsSorted;
+    if (Name == "is_sorted_until" &&
+        Same(Function->getReturnType(), Function->getParamDecl(0)->getType()))
+      return UtilityOperation::AlgorithmIsSortedUntil;
+  }
   if (Origin->Path == "__iterator/reverse_iterator.h" &&
       Name == "make_reverse_iterator" && Call->getNumArgs() == 1 &&
       Function->getNumParams() == 1 && Call->isPRValue()) {

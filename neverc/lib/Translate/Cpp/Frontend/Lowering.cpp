@@ -1042,6 +1042,156 @@ class FunctionLowering {
       label(End, L);
       return Output;
     }
+    case UtilityOperation::AlgorithmMinElement:
+    case UtilityOperation::AlgorithmMaxElement: {
+      const bool Minimum = Operation == UtilityOperation::AlgorithmMinElement;
+      auto Candidate = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto Current = snapshot(json::Object(Candidate), L);
+      const auto Initialize = labelName(), Check = labelName();
+      const auto Compare = labelName(), Select = labelName();
+      const auto Next = labelName(), End = labelName();
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      branch(binary("!=", Candidate, Last, "bool", L), Initialize, End, L);
+      label(Initialize, L);
+      assign(Current,
+             binary("+", Candidate, quantity(1, DifferenceType, L), PointerType,
+                    L),
+             L);
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", Current, Last, "bool", L), Compare, End, L);
+      label(Compare, L);
+      branch(Minimum ? binary("<", dereference(Current, L),
+                              dereference(Candidate, L), "bool", L)
+                     : binary("<", dereference(Candidate, L),
+                              dereference(Current, L), "bool", L),
+             Select, Next, L);
+      label(Select, L);
+      assign(Candidate, json::Object(Current), L);
+      jump(Next, L);
+      label(Next, L);
+      assign(
+          Current,
+          binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      jump(Check, L);
+      label(End, L);
+      return Candidate;
+    }
+    case UtilityOperation::AlgorithmLowerBound:
+    case UtilityOperation::AlgorithmUpperBound:
+    case UtilityOperation::AlgorithmBinarySearch: {
+      const bool Upper = Operation == UtilityOperation::AlgorithmUpperBound;
+      const bool Search = Operation == UtilityOperation::AlgorithmBinarySearch;
+      auto First = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto ValueAddress = snapshot(
+          address(lvalue(Call->getArg(2)), Call->getArg(2)->getType(), L), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      auto Length = temporary(DifferenceType, L);
+      auto Half = temporary(DifferenceType, L);
+      auto Middle = temporary(PointerType, L);
+      assign(Length, binary("-", Last, First, DifferenceType, L), L);
+      const auto Check = labelName(), Split = labelName();
+      const auto Advance = labelName(), Narrow = labelName();
+      const auto Found = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", Length, quantity(0, DifferenceType, L), "bool", L),
+             Split, Found, L);
+      label(Split, L);
+      assign(Half,
+             binary("/", Length, quantity(2, DifferenceType, L), DifferenceType,
+                    L),
+             L);
+      assign(Middle, binary("+", First, Half, PointerType, L), L);
+      branch(Upper ? binary("<", dereference(ValueAddress, L),
+                            dereference(Middle, L), "bool", L)
+                   : binary("<", dereference(Middle, L),
+                            dereference(ValueAddress, L), "bool", L),
+             Upper ? Narrow : Advance, Upper ? Advance : Narrow, L);
+      label(Advance, L);
+      assign(
+          First,
+          binary("+", Middle, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      assign(Length,
+             binary("-", binary("-", Length, Half, DifferenceType, L),
+                    quantity(1, DifferenceType, L), DifferenceType, L),
+             L);
+      jump(Check, L);
+      label(Narrow, L);
+      assign(Length, Half, L);
+      jump(Check, L);
+      label(Found, L);
+      if (!Search)
+        return First;
+      auto Result = temporary("bool", L);
+      const auto Compare = labelName(), Present = labelName();
+      const auto Absent = labelName(), End = labelName();
+      branch(binary("!=", First, Last, "bool", L), Compare, Absent, L);
+      label(Compare, L);
+      branch(binary("<", dereference(ValueAddress, L), dereference(First, L),
+                    "bool", L),
+             Absent, Present, L);
+      label(Present, L);
+      assign(Result, boolean(true, L), L);
+      jump(End, L);
+      label(Absent, L);
+      assign(Result, boolean(false, L), L);
+      jump(End, L);
+      label(End, L);
+      return Result;
+    }
+    case UtilityOperation::AlgorithmIsSorted:
+    case UtilityOperation::AlgorithmIsSortedUntil: {
+      const bool Predicate = Operation == UtilityOperation::AlgorithmIsSorted;
+      auto Previous = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto Current = snapshot(json::Object(Previous), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto Initialize = labelName(), Check = labelName();
+      const auto Compare = labelName(), Next = labelName();
+      const auto Unsorted = labelName(), Sorted = labelName();
+      const auto End = labelName();
+      branch(binary("!=", Previous, Last, "bool", L), Initialize, Sorted, L);
+      label(Initialize, L);
+      assign(
+          Current,
+          binary("+", Previous, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", Current, Last, "bool", L), Compare, Sorted, L);
+      label(Compare, L);
+      branch(binary("<", dereference(Current, L), dereference(Previous, L),
+                    "bool", L),
+             Unsorted, Next, L);
+      label(Next, L);
+      assign(Previous, json::Object(Current), L);
+      assign(
+          Current,
+          binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      jump(Check, L);
+      std::optional<Expression> Result;
+      if (Predicate)
+        Result = temporary("bool", L);
+      label(Unsorted, L);
+      if (Result)
+        assign(*Result, boolean(false, L), L);
+      jump(End, L);
+      label(Sorted, L);
+      if (Result)
+        assign(*Result, boolean(true, L), L);
+      jump(End, L);
+      label(End, L);
+      return Result ? std::move(*Result) : std::move(Current);
+    }
     case UtilityOperation::MakePair: {
       auto Pair = approvedUtilityPairRecord(
           A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);

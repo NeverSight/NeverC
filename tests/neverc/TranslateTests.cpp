@@ -23952,6 +23952,111 @@ TEST_F(TranslateTest, CoreV2AlgorithmMutationRequiresPinnedScalarForms) {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2AlgorithmOrderPointerOperationsRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-order.cpp");
+  const auto Output = tmpFile("algorithm-order.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int main() {
+  int extremes[6]{5, 1, 3, 9, 1, 9};
+  int effects = 0;
+  if (std::min_element((++effects, extremes),
+                       (++effects, extremes + 6)) != extremes + 1 ||
+      effects != 2)
+    return 1;
+  if (std::max_element(extremes, extremes + 6) != extremes + 3 ||
+      std::min_element(extremes, extremes) != extremes ||
+      std::max_element(extremes + 6, extremes + 6) != extremes + 6)
+    return 2;
+
+  const int sorted[7]{1, 2, 2, 4, 6, 6, 9};
+  int needle = 2;
+  effects = 0;
+  if (std::lower_bound((++effects, sorted), (++effects, sorted + 7),
+                       (++effects, needle)) != sorted + 1 ||
+      effects != 3 || std::upper_bound(sorted, sorted + 7, 2) != sorted + 3)
+    return 3;
+  if (std::lower_bound(sorted, sorted + 7, 0) != sorted ||
+      std::upper_bound(sorted, sorted + 7, 9) != sorted + 7 ||
+      !std::binary_search(sorted, sorted + 7, 6) ||
+      std::binary_search(sorted, sorted + 7, 5))
+    return 4;
+  if (!std::is_sorted(sorted, sorted + 7) ||
+      !std::is_sorted(sorted, sorted) ||
+      !std::is_sorted(sorted + 2, sorted + 3) ||
+      std::is_sorted_until(sorted, sorted + 7) != sorted + 7)
+    return 5;
+
+  const int unsorted[6]{1, 3, 5, 4, 6, 2};
+  if (std::is_sorted(unsorted, unsorted + 6) ||
+      std::is_sorted_until(unsorted, unsorted + 6) != unsorted + 3)
+    return 6;
+  const double decimals[5]{-2.5, -1.0, -1.0, 3.25, 8.0};
+  if (std::min_element(decimals, decimals + 5) != decimals ||
+      std::max_element(decimals, decimals + 5) != decimals + 4 ||
+      std::lower_bound(decimals, decimals + 5, -1.0) != decimals + 1 ||
+      std::upper_bound(decimals, decimals + 5, -1.0) != decimals + 3 ||
+      !std::binary_search(decimals, decimals + 5, 3.25) ||
+      !std::is_sorted(decimals, decimals + 5))
+    return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Dependencies =
+      Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 354u);
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+  }
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-order" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmOrderRequiresPinnedArithmeticForms) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+  };
+  const Rejection Cases[] = {
+      {"pointer-elements",
+       "#include <algorithm>\nint main(){int a[2]{};int*p[2]{a,a+1};"
+       "return std::min_element(p,p+2)==p?0:1;}"},
+      {"heterogeneous-value",
+       "#include <algorithm>\nint main(){int a[2]{1,2};short v=1;"
+       "return std::lower_bound(a,a+2,v)==a?0:1;}"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("algorithm-order-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("algorithm-order-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2IteratorPointerOperationsRunAtBothOptimizations) {
   const auto Source = tmpFile("iterator-operations.cpp");
   const auto Output = tmpFile("iterator-operations.nc");

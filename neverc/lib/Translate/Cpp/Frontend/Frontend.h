@@ -328,6 +328,13 @@ enum class UtilityOperation {
   AlgorithmSwapRanges,
   AlgorithmReverse,
   AlgorithmReverseCopy,
+  AlgorithmMinElement,
+  AlgorithmMaxElement,
+  AlgorithmLowerBound,
+  AlgorithmUpperBound,
+  AlgorithmBinarySearch,
+  AlgorithmIsSorted,
+  AlgorithmIsSortedUntil,
 };
 struct UtilityPairRecord {
   const clang::CXXRecordDecl *Record;

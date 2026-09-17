@@ -238,16 +238,28 @@ scalar type. Transfer and fill algorithms require a writable output element;
 writable input range. `fill_n` accepts integral or non-scoped enum counts whose
 promoted type is at most 64 bits. Floating counts are outside this boundary.
 
+The exact two-argument `std::min_element`, `std::max_element`, `std::is_sorted`
+and `std::is_sorted_until` templates and exact three-argument
+`std::lower_bound`, `std::upper_bound` and `std::binary_search` templates lower
+for raw pointers to the same built-in integer, `float` or `double` element type.
+The searched value must have that same unqualified type. Binary bounds use the
+target `ptrdiff_t` and preserve logarithmic bisection. Default-order enum
+elements, pointer elements, heterogeneous searched values and explicit
+comparators remain outside this boundary because they can require overloaded or
+otherwise non-portable ordering semantics.
+
 Each call evaluates and retains its arguments once before entering generated
 pointer loops. `find` preserves the bound value reference, `count` uses the
 target `ptrdiff_t`, `equal` preserves short-circuit results, `fill_n` applies
 the libc++ integer promotion before its positive-count loop, and algorithms
 with output iterators return the advanced output pointer. Forward and backward
 loops preserve their respective standard overlap direction; `reverse` uses
-equality-only bidirectional contraction. Generated programs do not call or
-link libc++ for these operations. Heterogeneous value types, predicate
-overloads, custom iterators, record elements and function addresses remain
-rejected, as do calls outside a documented direct lowering.
+equality-only bidirectional contraction. Minimum and maximum scans retain the
+first equivalent element; sortedness scans report the first descending
+element. Generated programs do not call or link libc++ for these operations.
+Heterogeneous value types, predicate overloads, custom iterators, record
+elements and function addresses remain rejected, as do calls outside a
+documented direct lowering.
 
 The `shuffle` and `sample` component headers are authenticated but their
 declarations stay disabled because libc++ reaches `mbstate_t` through
