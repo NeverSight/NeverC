@@ -350,6 +350,20 @@ same unqualified type. Binary bounds use the target `ptrdiff_t` and preserve
 logarithmic bisection; `equal_range` returns an authenticated pair of the lower
 and upper pointers.
 
+The corresponding three-argument `std::min_element`, `std::max_element`,
+`std::is_sorted` and `std::is_sorted_until` overloads and four-argument
+`std::lower_bound`, `std::upper_bound`, `std::equal_range` and
+`std::binary_search` overloads accept an exact ordinary function-pointer
+comparator. It takes the range's unqualified scalar element type twice by value
+and returns `bool` exactly. Bound values retain that same element type so the
+single callback supports both comparison directions where required. This
+admits enums, object pointers and the other scalar carriers. The callback is
+evaluated and retained once. Extremum scans keep the first equivalent element;
+sortedness scans stop at the first inversion; empty and single-element ranges
+make no calls. Bounds retain logarithmic bisection. Reference or converted
+parameters, non-boolean results, variadic functions, callable objects,
+heterogeneous values and record elements stay outside this boundary.
+
 The exact two-argument `std::min` and `std::max`, three-argument `std::clamp`,
 two-argument `std::minmax` and two-iterator `std::minmax_element` templates use
 the same built-in arithmetic ordering boundary. `min`, `max` and `clamp`

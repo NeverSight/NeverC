@@ -103,8 +103,10 @@ function-pointer binary predicates additionally admit `adjacent_find`, three-
 and four-iterator `equal`, three- and four-iterator `mismatch`, and three- and
 four-iterator `is_permutation`, plus `unique`, `unique_copy`, `search`,
 `find_end`, `find_first_of` and `search_n`. Exact function-pointer callbacks
-also admit `for_each`, `for_each_n`, unary and binary `transform`, `generate`
-and `generate_n`.
+used as comparators additionally admit `min_element`, `max_element`,
+`lower_bound`, `upper_bound`, `equal_range`, `binary_search`, `is_sorted` and
+`is_sorted_until`. Other exact callbacks admit `for_each`, `for_each_n`, unary
+and binary `transform`, `generate` and `generate_n`.
 Predicate mutation and ordered output algorithms require writable destinations,
 and `copy_n`, `fill_n` and `search_n` accept integral or non-scoped enum counts
 through 64 bits after integer promotion.

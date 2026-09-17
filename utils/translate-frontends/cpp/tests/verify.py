@@ -747,6 +747,54 @@ extern "C" int algorithm_order(const int *first, const int *last, int value) {
           '#include <algorithm>\nint main(){int a[2]{1,2};short v=1;return std::lower_bound(a,a+2,v)==a?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    algorithm_comparator_queries_source = """\
+#include <algorithm>
+extern "C" long long algorithm_comparator_queries(
+    const int *first, const int *last, const int &value,
+    bool (*comparator)(int, int)) {
+  const int *minimum = std::min_element(first, last, comparator);
+  const int *maximum = std::max_element(first, last, comparator);
+  const int *lower = std::lower_bound(first, last, value, comparator);
+  const int *upper = std::upper_bound(first, last, value, comparator);
+  auto equal = std::equal_range(first, last, value, comparator);
+  bool present = std::binary_search(first, last, value, comparator);
+  bool sorted = std::is_sorted(first, last, comparator);
+  const int *until = std::is_sorted_until(first, last, comparator);
+  return static_cast<long long>((minimum - first) + (maximum - first) +
+                                (lower - first) + (upper - first) +
+                                (equal.first - first) +
+                                (equal.second - first) + (until - first) +
+                                present + sorted);
+}
+"""
+
+    def assert_comparator_queries(data):
+        assert len(data["sdk_dependencies"]) == 354, data
+        nodes = list(walk(data["functions"]))
+        assert not [node for node in nodes
+                    if node.get("op") in ("call", "mapped_call")], data
+        assert sum(node.get("op") == "indirect_call"
+                   for node in nodes) == 10, data
+
+    algorithm_comparator_queries = check(
+        "v2-algorithm-comparator-queries", algorithm_comparator_queries_source,
+        profile="cpp-core-v2", sdk=True)
+    assert_comparator_queries(algorithm_comparator_queries)
+    for target in sdk_targets:
+        target_result = check("v2-algorithm-comparator-queries-" + target,
+                              algorithm_comparator_queries_source,
+                              profile="cpp-core-v2", target=target, sdk=True)
+        assert_comparator_queries(target_result)
+    check("v2-algorithm-comparator-queries-reference",
+          'bool p(const int&a,int b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{1,2};return std::min_element(a,a+2,p)==a?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-comparator-queries-conversion",
+          'bool p(long a,long b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{1,2};return std::is_sorted(a,a+2,p)?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-comparator-queries-value",
+          'bool p(int a,long b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{1,2};long v=1;return std::lower_bound(a,a+2,v,p)==a?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     algorithm_equality_mutation_source = """\
 #include <algorithm>
 extern "C" int algorithm_equality_mutation(int *first, int *last,

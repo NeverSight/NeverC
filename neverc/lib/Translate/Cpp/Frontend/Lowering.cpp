@@ -1221,6 +1221,9 @@ class FunctionLowering {
       const bool Minimum = Operation == UtilityOperation::AlgorithmMinElement;
       auto Candidate = snapshot(expression(Call->getArg(0)), L);
       auto Last = snapshot(expression(Call->getArg(1)), L);
+      std::optional<Expression> Comparator;
+      if (Call->getNumArgs() == 3)
+        Comparator = snapshot(expression(Call->getArg(2)), L);
       auto Current = snapshot(json::Object(Candidate), L);
       const auto Initialize = labelName(), Check = labelName();
       const auto Compare = labelName(), Select = labelName();
@@ -1237,10 +1240,18 @@ class FunctionLowering {
       label(Check, L);
       branch(binary("!=", Current, Last, "bool", L), Compare, End, L);
       label(Compare, L);
-      branch(Minimum ? binary("<", dereference(Current, L),
-                              dereference(Candidate, L), "bool", L)
-                     : binary("<", dereference(Candidate, L),
-                              dereference(Current, L), "bool", L),
+      branch(Comparator
+                 ? emitBinaryPredicate(
+                       json::Object(*Comparator), Call->getArg(2)->getType(),
+                       Minimum ? dereference(json::Object(Current), L)
+                               : dereference(json::Object(Candidate), L),
+                       Minimum ? dereference(json::Object(Candidate), L)
+                               : dereference(json::Object(Current), L),
+                       L)
+             : Minimum ? binary("<", dereference(Current, L),
+                                dereference(Candidate, L), "bool", L)
+                       : binary("<", dereference(Candidate, L),
+                                dereference(Current, L), "bool", L),
              Select, Next, L);
       label(Select, L);
       assign(Candidate, json::Object(Current), L);
@@ -1263,6 +1274,9 @@ class FunctionLowering {
       auto Last = snapshot(expression(Call->getArg(1)), L);
       auto ValueAddress = snapshot(
           address(lvalue(Call->getArg(2)), Call->getArg(2)->getType(), L), L);
+      std::optional<Expression> Comparator;
+      if (Call->getNumArgs() == 4)
+        Comparator = snapshot(expression(Call->getArg(3)), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto PointerType = type(Call->getArg(0)->getType(), L);
       auto Length = temporary(DifferenceType, L);
@@ -1282,10 +1296,18 @@ class FunctionLowering {
                     L),
              L);
       assign(Middle, binary("+", First, Half, PointerType, L), L);
-      branch(Upper ? binary("<", dereference(ValueAddress, L),
-                            dereference(Middle, L), "bool", L)
-                   : binary("<", dereference(Middle, L),
-                            dereference(ValueAddress, L), "bool", L),
+      branch(Comparator
+                 ? emitBinaryPredicate(
+                       json::Object(*Comparator), Call->getArg(3)->getType(),
+                       Upper ? dereference(json::Object(ValueAddress), L)
+                             : dereference(json::Object(Middle), L),
+                       Upper ? dereference(json::Object(Middle), L)
+                             : dereference(json::Object(ValueAddress), L),
+                       L)
+             : Upper ? binary("<", dereference(ValueAddress, L),
+                              dereference(Middle, L), "bool", L)
+                     : binary("<", dereference(Middle, L),
+                              dereference(ValueAddress, L), "bool", L),
              Upper ? Narrow : Advance, Upper ? Advance : Narrow, L);
       label(Advance, L);
       assign(
@@ -1308,8 +1330,13 @@ class FunctionLowering {
       const auto Absent = labelName(), End = labelName();
       branch(binary("!=", First, Last, "bool", L), Compare, Absent, L);
       label(Compare, L);
-      branch(binary("<", dereference(ValueAddress, L), dereference(First, L),
-                    "bool", L),
+      branch(Comparator
+                 ? emitBinaryPredicate(
+                       json::Object(*Comparator), Call->getArg(3)->getType(),
+                       dereference(json::Object(ValueAddress), L),
+                       dereference(json::Object(First), L), L)
+                 : binary("<", dereference(ValueAddress, L),
+                          dereference(First, L), "bool", L),
              Absent, Present, L);
       label(Present, L);
       assign(Result, boolean(true, L), L);
@@ -1322,9 +1349,13 @@ class FunctionLowering {
     }
     case UtilityOperation::AlgorithmIsSorted:
     case UtilityOperation::AlgorithmIsSortedUntil: {
-      const bool Predicate = Operation == UtilityOperation::AlgorithmIsSorted;
+      const bool BooleanResult =
+          Operation == UtilityOperation::AlgorithmIsSorted;
       auto Previous = snapshot(expression(Call->getArg(0)), L);
       auto Last = snapshot(expression(Call->getArg(1)), L);
+      std::optional<Expression> Comparator;
+      if (Call->getNumArgs() == 3)
+        Comparator = snapshot(expression(Call->getArg(2)), L);
       auto Current = snapshot(json::Object(Previous), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto PointerType = type(Call->getArg(0)->getType(), L);
@@ -1342,8 +1373,13 @@ class FunctionLowering {
       label(Check, L);
       branch(binary("!=", Current, Last, "bool", L), Compare, Sorted, L);
       label(Compare, L);
-      branch(binary("<", dereference(Current, L), dereference(Previous, L),
-                    "bool", L),
+      branch(Comparator
+                 ? emitBinaryPredicate(
+                       json::Object(*Comparator), Call->getArg(2)->getType(),
+                       dereference(json::Object(Current), L),
+                       dereference(json::Object(Previous), L), L)
+                 : binary("<", dereference(Current, L),
+                          dereference(Previous, L), "bool", L),
              Unsorted, Next, L);
       label(Next, L);
       assign(Previous, json::Object(Current), L);
@@ -1353,7 +1389,7 @@ class FunctionLowering {
           L);
       jump(Check, L);
       std::optional<Expression> Result;
-      if (Predicate)
+      if (BooleanResult)
         Result = temporary("bool", L);
       label(Unsorted, L);
       if (Result)
@@ -1979,6 +2015,9 @@ class FunctionLowering {
       auto RangeLast = snapshot(expression(Call->getArg(1)), L);
       auto ValueAddress = snapshot(
           address(lvalue(Call->getArg(2)), Call->getArg(2)->getType(), L), L);
+      std::optional<Expression> Comparator;
+      if (Call->getNumArgs() == 4)
+        Comparator = snapshot(expression(Call->getArg(3)), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto PointerType = type(Call->getArg(0)->getType(), L);
       auto Bound = [&](const Expression &Start, const Expression &End,
@@ -2002,10 +2041,18 @@ class FunctionLowering {
                       DifferenceType, L),
                L);
         assign(Middle, binary("+", First, Half, PointerType, L), L);
-        branch(Upper ? binary("<", dereference(ValueAddress, L),
-                              dereference(Middle, L), "bool", L)
-                     : binary("<", dereference(Middle, L),
-                              dereference(ValueAddress, L), "bool", L),
+        branch(Comparator
+                   ? emitBinaryPredicate(
+                         json::Object(*Comparator), Call->getArg(3)->getType(),
+                         Upper ? dereference(json::Object(ValueAddress), L)
+                               : dereference(json::Object(Middle), L),
+                         Upper ? dereference(json::Object(Middle), L)
+                               : dereference(json::Object(ValueAddress), L),
+                         L)
+               : Upper ? binary("<", dereference(ValueAddress, L),
+                                dereference(Middle, L), "bool", L)
+                       : binary("<", dereference(Middle, L),
+                                dereference(ValueAddress, L), "bool", L),
                Upper ? Narrow : Advance, Upper ? Advance : Narrow, L);
         label(Advance, L);
         assign(

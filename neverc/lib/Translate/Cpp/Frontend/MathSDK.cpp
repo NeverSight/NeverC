@@ -1718,26 +1718,35 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (((Origin->Path == "__algorithm/min_element.h" && Name == "min_element") ||
        (Origin->Path == "__algorithm/max_element.h" &&
         Name == "max_element")) &&
-      Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
-      Call->isPRValue() && AlgorithmOrderedPointerParameter(0) &&
-      AlgorithmPointerParameter(1) &&
+      (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
+      Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
-      Same(Call->getType(), Function->getReturnType()))
+      Same(Call->getType(), Function->getReturnType())) {
+    if (!((Call->getNumArgs() == 2 && AlgorithmOrderedPointerParameter(0)) ||
+          (Call->getNumArgs() == 3 &&
+           AlgorithmBinaryPredicateParameter(2, 0, 0))))
+      return std::nullopt;
     return Name == "min_element" ? UtilityOperation::AlgorithmMinElement
                                  : UtilityOperation::AlgorithmMaxElement;
+  }
   if (((Origin->Path == "__algorithm/lower_bound.h" && Name == "lower_bound") ||
        (Origin->Path == "__algorithm/upper_bound.h" && Name == "upper_bound") ||
        (Origin->Path == "__algorithm/binary_search.h" &&
         Name == "binary_search")) &&
-      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
-      Call->isPRValue() && AlgorithmOrderedPointerParameter(0) &&
-      AlgorithmPointerParameter(1) &&
+      (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
+      Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       AlgorithmValueParameter(2, 0) &&
       Same(Call->getType(), Function->getReturnType())) {
+    if (!((Call->getNumArgs() == 3 && AlgorithmOrderedPointerParameter(0)) ||
+          (Call->getNumArgs() == 4 &&
+           AlgorithmBinaryPredicateParameter(3, 0, 0))))
+      return std::nullopt;
     if (Name == "binary_search") {
       if (Function->getReturnType()->isBooleanType())
         return UtilityOperation::AlgorithmBinarySearch;
@@ -1750,12 +1759,16 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (((Origin->Path == "__algorithm/is_sorted.h" && Name == "is_sorted") ||
        (Origin->Path == "__algorithm/is_sorted_until.h" &&
         Name == "is_sorted_until")) &&
-      Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
-      Call->isPRValue() && AlgorithmOrderedPointerParameter(0) &&
-      AlgorithmPointerParameter(1) &&
+      (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
+      Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
+    if (!((Call->getNumArgs() == 2 && AlgorithmOrderedPointerParameter(0)) ||
+          (Call->getNumArgs() == 3 &&
+           AlgorithmBinaryPredicateParameter(2, 0, 0))))
+      return std::nullopt;
     if (Name == "is_sorted" && Function->getReturnType()->isBooleanType())
       return UtilityOperation::AlgorithmIsSorted;
     if (Name == "is_sorted_until" &&
@@ -2000,13 +2013,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmRotateCopy;
   if (Origin->Path == "__algorithm/equal_range.h" && Name == "equal_range" &&
-      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
-      Call->isPRValue() && AlgorithmOrderedPointerParameter(0) &&
-      AlgorithmPointerParameter(1) &&
+      (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
+      Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       AlgorithmValueParameter(2, 0) &&
       Same(Call->getType(), Function->getReturnType())) {
+    if (!((Call->getNumArgs() == 3 && AlgorithmOrderedPointerParameter(0)) ||
+          (Call->getNumArgs() == 4 &&
+           AlgorithmBinaryPredicateParameter(3, 0, 0))))
+      return std::nullopt;
     auto Pair = approvedUtilityPairRecord(
         S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);
     if (Pair &&

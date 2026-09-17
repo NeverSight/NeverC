@@ -24061,6 +24061,194 @@ TEST_F(TranslateTest, CoreV2AlgorithmOrderRequiresPinnedArithmeticForms) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2AlgorithmComparatorQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-comparator-queries.cpp");
+  const auto Output = tmpFile("algorithm-comparator-queries.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int calls;
+bool less_absolute(int left, int right) {
+  ++calls;
+  int left_absolute = left < 0 ? -left : left;
+  int right_absolute = right < 0 ? -right : right;
+  return left_absolute < right_absolute;
+}
+bool greater_value(int left, int right) {
+  ++calls;
+  return left > right;
+}
+enum Rank : unsigned char { low, medium, high };
+bool rank_less(Rank left, Rank right) {
+  ++calls;
+  return left < right;
+}
+int main() {
+  int values[5]{3, -1, 1, -5, 5};
+  bool (*absolute_comparator)(int, int) = less_absolute;
+  int effects = 0;
+  calls = 0;
+  if (std::min_element((++effects, values), (++effects, values + 5),
+                       (++effects, absolute_comparator)) != values + 1 ||
+      effects != 3 || calls != 4)
+    return 1;
+  calls = 0;
+  if (std::max_element(values, values + 5, less_absolute) != values + 3 ||
+      calls != 4)
+    return 2;
+  calls = 0;
+  if (std::min_element(values, values, less_absolute) != values || calls != 0)
+    return 3;
+
+  const int descending[5]{9, 7, 7, 4, 1};
+  int key = 7;
+  bool (*descending_comparator)(int, int) = greater_value;
+  effects = 0;
+  calls = 0;
+  if (std::lower_bound((++effects, descending),
+                       (++effects, descending + 5), (++effects, key),
+                       (++effects, descending_comparator)) != descending + 1 ||
+      effects != 4 || calls != 3)
+    return 4;
+  calls = 0;
+  if (std::upper_bound(descending, descending + 5, key, greater_value) !=
+          descending + 3 ||
+      calls != 3)
+    return 5;
+  calls = 0;
+  auto range =
+      std::equal_range(descending, descending + 5, key, greater_value);
+  if (range.first != descending + 1 || range.second != descending + 3 ||
+      calls != 5)
+    return 6;
+  calls = 0;
+  if (!std::binary_search(descending, descending + 5, key, greater_value) ||
+      calls != 4)
+    return 7;
+  key = 8;
+  calls = 0;
+  if (std::binary_search(descending, descending + 5, key, greater_value) ||
+      calls != 4)
+    return 8;
+  calls = 0;
+  if (std::lower_bound(descending, descending, key, greater_value) !=
+          descending ||
+      std::upper_bound(descending, descending, key, greater_value) !=
+          descending ||
+      std::binary_search(descending, descending, key, greater_value) ||
+      calls != 0)
+    return 9;
+
+  calls = 0;
+  if (!std::is_sorted(descending, descending + 5, greater_value) || calls != 4)
+    return 10;
+  const int unsorted[4]{9, 7, 8, 4};
+  calls = 0;
+  if (std::is_sorted(unsorted, unsorted + 4, greater_value) || calls != 2)
+    return 11;
+  calls = 0;
+  if (std::is_sorted_until(unsorted, unsorted + 4, greater_value) !=
+          unsorted + 2 ||
+      calls != 2)
+    return 12;
+  calls = 0;
+  if (!std::is_sorted(unsorted, unsorted, greater_value) ||
+      std::is_sorted_until(unsorted, unsorted + 1, greater_value) !=
+          unsorted + 1 ||
+      calls != 0)
+    return 13;
+
+  Rank ranks[4]{medium, high, low, medium};
+  calls = 0;
+  if (std::min_element(ranks, ranks + 4, rank_less) != ranks + 2 ||
+      calls != 3)
+    return 14;
+  const Rank sorted_ranks[4]{low, medium, medium, high};
+  Rank rank_key = medium;
+  calls = 0;
+  if (std::lower_bound(sorted_ranks, sorted_ranks + 4, rank_key, rank_less) !=
+          sorted_ranks + 1 ||
+      !std::binary_search(sorted_ranks, sorted_ranks + 4, rank_key,
+                          rank_less) ||
+      calls == 0)
+    return 15;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Dependencies =
+      Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 354u);
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+  }
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("algorithm-comparator-queries" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmComparatorQueriesRequireExactFunctions) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code = "TR0203";
+  };
+  const Rejection Cases[] = {
+      {"reference-parameter",
+       "bool p(const int&a,int b){return a<b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,2};return "
+       "std::min_element(a,a+2,p)==a?0:1;}"},
+      {"non-bool-result",
+       "int p(int a,int b){return a<b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,2};return "
+       "std::max_element(a,a+2,p)==a+1?0:1;}"},
+      {"converted-parameter",
+       "bool p(long a,long b){return a<b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,2};return "
+       "std::is_sorted(a,a+2,p)?0:1;}"},
+      {"function-object",
+       "struct P{bool operator()(int a,int b)const{return a<b;}};\n"
+       "#include <algorithm>\nint main(){int a[2]{1,2};return "
+       "std::lower_bound(a,a+2,1,P{})==a?0:1;}"},
+      {"heterogeneous-value",
+       "bool p(int a,long b){return a<b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,2};long value=1;return "
+       "std::upper_bound(a,a+2,value,p)==a+1?0:1;}"},
+      {"variadic-comparator",
+       "bool p(int a,int b,...){return a<b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,2};return "
+       "std::equal_range(a,a+2,1,p).first==a?0:1;}",
+       "TR0201"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("algorithm-comparator-queries-") +
+                                Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("algorithm-comparator-queries-") +
+                                Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest,
        CoreV2AlgorithmEqualityMutationOperationsRunAtBothOptimizations) {
   const auto Source = tmpFile("algorithm-equality-mutation.cpp");
