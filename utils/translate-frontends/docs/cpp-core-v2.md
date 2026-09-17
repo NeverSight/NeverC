@@ -207,11 +207,18 @@ closure is identical across all eight targets and contains no platform headers.
 The upstream `iterator` header and directly included component headers retain
 their original bytes.
 
-Runtime iterator adapters are not part of this first boundary. In particular,
-the four stream-iterator component headers remain authenticated in the VFS but
+Native arrays and admitted `std::array` objects directly lower `begin`, `end`,
+`cbegin`, `cend`, `size`, `empty`, `data`, `rbegin`, `rend`, `crbegin` and
+`crend`. Raw object pointers and their authenticated `reverse_iterator`
+specializations directly lower `advance`, `distance`, `next`, `prev`,
+`make_reverse_iterator`, base access, dereference, arrow, increment, decrement,
+offset, subscript, difference and comparisons. Generated programs use existing
+pointer and control-flow operations and do not link libc++.
+
+The four stream-iterator component headers remain authenticated in the VFS but
 their declarations are disabled because libc++ obtains `mbstate_t` from a target
-C runtime header. Quoted includes, forged declarations, runtime utility calls
-and stream iterators remain rejected.
+C runtime header. Custom iterator classes, function-pointer iterators, quoted
+includes and forged declarations remain rejected.
 
 ## Algorithm header from `<algorithm>`
 
@@ -221,8 +228,16 @@ supported target, has the same dependency set on all eight targets, and contains
 no platform headers. The upstream public header and every consumed component
 retain their original bytes.
 
-This first header increment makes the standard declarations available for
-subsequent direct lowering; calls outside a documented lowering remain rejected.
+The exact public `std::find`, `std::count`, three-iterator `std::equal` and
+four-iterator `std::equal` templates directly lower for non-volatile raw object
+pointer ranges whose unqualified element type is the same admitted scalar type.
+Each call evaluates and retains its arguments once before entering generated
+pointer loops; `find` preserves the bound value reference, `count` uses the
+target `ptrdiff_t`, and `equal` preserves short-circuit results. Generated
+programs do not call or link libc++ for these operations. Heterogeneous value
+types, predicate overloads, custom iterators, record elements and function
+addresses remain rejected, as do calls outside a documented direct lowering.
+
 The `shuffle` and `sample` component headers are authenticated but their
 declarations stay disabled because libc++ reaches `mbstate_t` through
 `uniform_int_distribution`. They will be enabled after the core SDK has a

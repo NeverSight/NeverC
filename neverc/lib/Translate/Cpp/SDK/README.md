@@ -29,12 +29,16 @@ trivial-record and nested arrays, including capacity, pointer iterators, element
 access, fill, swap, scalar and recursive nested-array comparisons and index-based
 `get`, without a runtime libc++ link.
 The `<iterator>` surface has a 171-file libc++/resource closure on every core-v2
-target. It exposes pointer `iterator_traits` metadata while retaining the exact
-upstream iterator headers. Four stream-iterator declarations stay disabled until
-the core SDK has an authenticated cross-target C runtime `mbstate_t` boundary.
+target. It exposes pointer `iterator_traits` metadata and directly lowered
+pointer, array-range and raw-pointer reverse-iterator operations while retaining
+the exact upstream iterator headers. Four stream-iterator declarations stay
+disabled until the core SDK has an authenticated cross-target C runtime
+`mbstate_t` boundary.
 The `<algorithm>` surface has a 354-file libc++/resource closure on every
 core-v2 target. Its upstream declarations and the NeverC C string declaration
-shim are available without platform headers. `shuffle` and `sample` stay disabled until the same authenticated
+shim are available without platform headers. Exact scalar-pointer `find`,
+`count`, and three- or four-iterator `equal` calls lower without a libc++ runtime
+dependency. `shuffle` and `sample` stay disabled until the same authenticated
 cross-target `mbstate_t` boundary is available through their random-distribution
 dependency.
 Core v2 never admits the `platform` root.

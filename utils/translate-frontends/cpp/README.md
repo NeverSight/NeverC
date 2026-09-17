@@ -60,8 +60,8 @@ Core v2 also admits exact angle includes of
 the bounded [`<utility>`](../docs/cpp-core-v2.md#scalar-utilities-and-pairs-from-utility)
 and [`<array>`](../docs/cpp-core-v2.md#fixed-value-arrays-from-array) surfaces,
 [`<iterator>`](../docs/cpp-core-v2.md#iterator-metadata-from-iterator), and the
-[`<algorithm>`](../docs/cpp-core-v2.md#algorithm-header-from-algorithm) declaration
-surface. The
+[`<algorithm>`](../docs/cpp-core-v2.md#algorithm-header-from-algorithm) pointer
+algorithm surface. The
 frontend uses the pinned embedded libc++/resource VFS and exposes resolved type
 aliases plus integral/enum constant results. It records all consumed header
 hashes: 101 for the `<type_traits>` closure, nine for standalone `<cstdint>`,
@@ -77,10 +77,12 @@ integer-sequence size queries. Array directly lowers nonempty fixed scalar,
 trivial-record and nested-array storage, iterators, element access, fill, swap,
 scalar and recursive nested-array comparisons and tuple access.
 Iterator exposes the pinned public header and pointer `iterator_traits` metadata
-through a platform-free 171-file closure. Stream iterators remain disabled until
-their C runtime character-state ABI is available on every target.
-Algorithm exposes the pinned public declarations through a platform-free
-354-file closure. `shuffle` and `sample` remain disabled at this stage because
+through a platform-free 171-file closure, and directly lowers bounded pointer,
+array-range and reverse-iterator operations. Stream iterators remain disabled
+until their C runtime character-state ABI is available on every target.
+Algorithm directly lowers exact scalar-pointer `find`, `count`, and three- or
+four-iterator `equal` calls from its platform-free 354-file closure. `shuffle`
+and `sample` remain disabled at this stage because
 their libc++ implementation reaches the same target C runtime character-state
 ABI through `uniform_int_distribution`.
 The driver authenticates each closure before

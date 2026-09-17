@@ -23641,6 +23641,102 @@ int main() { return 0; }
   expectNoArtifacts(QuotedOutput);
 }
 
+TEST_F(TranslateTest, CoreV2AlgorithmReadOnlyPointerOperationsRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-read-only.cpp");
+  const auto Output = tmpFile("algorithm-read-only.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int main() {
+  int values[7]{1, 2, 3, 2, 5, 2, 7};
+  const int *first = values;
+  const int *last = values + 7;
+  int effects = 0;
+  int needle = 2;
+  auto found = std::find((++effects, first), (++effects, last),
+                         (++effects, needle));
+  if (effects != 3 || found != values + 1 ||
+      std::find(first, last, 9) != last)
+    return 1;
+  if (std::count(first, last, 2) != 3 ||
+      std::count(first, first, 2) != 0)
+    return 2;
+
+  int same[7]{1, 2, 3, 2, 5, 2, 7};
+  int mismatch[7]{1, 2, 3, 4, 5, 2, 7};
+  if (!std::equal(first, last, same) ||
+      std::equal(first, last, mismatch))
+    return 3;
+  if (!std::equal(first, last, same, same + 7) ||
+      std::equal(first, last, same, same + 6) ||
+      std::equal(first, first + 6, same, same + 7))
+    return 4;
+
+  int *pointers[3]{values, values + 3, values + 6};
+  int *target = values + 3;
+  if (std::find(pointers, pointers + 3, target) != pointers + 1)
+    return 5;
+  double decimals[5]{0.5, 1.5, 0.5, 2.5, 0.5};
+  if (std::count(decimals, decimals + 5, 0.5) != 3 ||
+      !std::equal(decimals, decimals + 5, decimals, decimals + 5))
+    return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *SDK = Manifest->getAsObject()->getObject("sdk");
+  ASSERT_NE(SDK, nullptr);
+  const auto *Dependencies = SDK->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 354u);
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+  }
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-read-only" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmReadOnlyRequiresPinnedPointerForms) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+  };
+  const Rejection Cases[] = {
+      {"heterogeneous-find",
+       "#include <algorithm>\nint main(){int a[2]{1,2};short n=2;"
+       "return std::find(a,a+2,n)==a+1?0:1;}"},
+      {"predicate-equal",
+       "#include <algorithm>\nbool same(int a,int b){return a==b;}"
+       "int main(){int a[2]{1,2};return std::equal(a,a+2,a,&same)?0:1;}"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("algorithm-read-only-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("algorithm-read-only-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2IteratorPointerOperationsRunAtBothOptimizations) {
   const auto Source = tmpFile("iterator-operations.cpp");
   const auto Output = tmpFile("iterator-operations.nc");

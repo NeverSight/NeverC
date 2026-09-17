@@ -316,6 +316,9 @@ enum class UtilityOperation {
   ReverseAddLeft,
   ArrayRBegin,
   ArrayREnd,
+  AlgorithmFind,
+  AlgorithmCount,
+  AlgorithmEqual,
 };
 struct UtilityPairRecord {
   const clang::CXXRecordDecl *Record;

@@ -773,6 +773,114 @@ class FunctionLowering {
       assign(Right, std::move(OldLeft), L);
       return {};
     }
+    case UtilityOperation::AlgorithmFind: {
+      // Function arguments are all bound before the algorithm body. Choose
+      // the permitted left-to-right C++17 order, retaining the value referent
+      // so an lvalue argument keeps its ordinary reference identity.
+      auto Current = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto ValueAddress = snapshot(
+          address(lvalue(Call->getArg(2)), Call->getArg(2)->getType(), L), L);
+      const auto Check = labelName(), Compare = labelName();
+      const auto Increment = labelName(), End = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", Current, Last, "bool", L), Compare, End, L);
+      label(Compare, L);
+      branch(binary("==", dereference(Current, L),
+                    dereference(ValueAddress, L), "bool", L),
+             End, Increment, L);
+      label(Increment, L);
+      assign(Current,
+             binary("+", Current,
+                    quantity(1, type(A.Context.getPointerDiffType(), L), L),
+                    type(Call->getType(), L), L),
+             L);
+      jump(Check, L);
+      label(End, L);
+      return Current;
+    }
+    case UtilityOperation::AlgorithmCount: {
+      auto Current = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto ValueAddress = snapshot(
+          address(lvalue(Call->getArg(2)), Call->getArg(2)->getType(), L), L);
+      const auto ResultType = type(Call->getType(), L);
+      auto Result = temporary(ResultType, L);
+      assign(Result, quantity(0, ResultType, L), L);
+      const auto Check = labelName(), Compare = labelName();
+      const auto Match = labelName(), Next = labelName(), End = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", Current, Last, "bool", L), Compare, End, L);
+      label(Compare, L);
+      branch(binary("==", dereference(Current, L),
+                    dereference(ValueAddress, L), "bool", L),
+             Match, Next, L);
+      label(Match, L);
+      assign(Result, binary("+", Result, one(ResultType, L), ResultType, L),
+             L);
+      jump(Next, L);
+      label(Next, L);
+      assign(Current,
+             binary("+", Current,
+                    quantity(1, type(A.Context.getPointerDiffType(), L), L),
+                    type(Call->getArg(0)->getType(), L), L),
+             L);
+      jump(Check, L);
+      label(End, L);
+      return Result;
+    }
+    case UtilityOperation::AlgorithmEqual: {
+      auto First = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto Second = snapshot(expression(Call->getArg(2)), L);
+      std::optional<Expression> SecondLast;
+      if (Call->getNumArgs() == 4)
+        SecondLast = snapshot(expression(Call->getArg(3)), L);
+      auto Result = temporary("bool", L);
+      const auto Check = labelName(), CheckSecond = labelName();
+      const auto Compare = labelName(), Next = labelName();
+      const auto False = labelName(), FirstDone = labelName();
+      const auto End = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", First, Last, "bool", L),
+             SecondLast ? CheckSecond : Compare, FirstDone, L);
+      if (SecondLast) {
+        label(CheckSecond, L);
+        branch(binary("!=", Second, *SecondLast, "bool", L), Compare, False,
+               L);
+      }
+      label(Compare, L);
+      branch(binary("==", dereference(First, L), dereference(Second, L),
+                    "bool", L),
+             Next, False, L);
+      label(Next, L);
+      assign(First,
+             binary("+", First,
+                    quantity(1, type(A.Context.getPointerDiffType(), L), L),
+                    type(Call->getArg(0)->getType(), L), L),
+             L);
+      assign(Second,
+             binary("+", Second,
+                    quantity(1, type(A.Context.getPointerDiffType(), L), L),
+                    type(Call->getArg(2)->getType(), L), L),
+             L);
+      jump(Check, L);
+      label(False, L);
+      assign(Result, boolean(false, L), L);
+      jump(End, L);
+      label(FirstDone, L);
+      assign(Result,
+             SecondLast
+                 ? binary("==", Second, *SecondLast, "bool", L)
+                 : boolean(true, L),
+             L);
+      jump(End, L);
+      label(End, L);
+      return Result;
+    }
     case UtilityOperation::MakePair: {
       auto Pair = approvedUtilityPairRecord(
           A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);

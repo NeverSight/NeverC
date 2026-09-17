@@ -532,9 +532,6 @@ extern "C" int array_composition() {
         ("dynamic-at",
          '#include <array>\nint f(int i){std::array<int,2>a{{1,2}};return a.at(i);}',
          "TR0203"),
-        ("reverse-iterator",
-         '#include <array>\nint main(){std::array<int,2>a{{1,2}};return *a.rbegin();}',
-         "TR0203"),
     ):
         check("v2-array-" + name, source, code,
               profile="cpp-core-v2", sdk=True)
@@ -568,6 +565,9 @@ extern "C" int iterator_operations() {
   int* last = std::end(native);
   std::advance(first, static_cast<short>(2));
   std::advance(first, -1);
+  auto reverse = std::rbegin(native);
+  std::advance(reverse, 1);
+  auto reverse_end = std::rend(native);
   const std::array<int, 4>& view = boxed;
   return *first + std::distance(first, last) + *std::next(first)
       + *std::next(first, 2) + *std::prev(last) + *std::prev(last, 2)
@@ -575,7 +575,11 @@ extern "C" int iterator_operations() {
       + *std::data(native) + *std::cbegin(native) + std::cend(native)[-1]
       + int(std::size(view)) + int(std::empty(view)) + *std::data(view)
       + *std::begin(view) + std::end(view)[-1]
-      + *std::cbegin(view) + std::cend(view)[-1];
+      + *std::cbegin(view) + std::cend(view)[-1]
+      + *reverse + *std::next(reverse) + *std::prev(reverse_end)
+      + int(std::distance(reverse, reverse_end))
+      + *view.rbegin() + *view.crbegin()
+      + *(view.rend() - 1) + *(view.crend() - 1);
 }
 """
     iterator_operations = check("v2-iterator-operations",
@@ -601,8 +605,8 @@ extern "C" int iterator_operations() {
         ("custom-iterator",
          '#include <iterator>\nstruct I{using difference_type=int;using value_type=int;using pointer=int*;using reference=int&;using iterator_category=std::input_iterator_tag;int*p;I&operator++(){++p;return *this;}};int main(){int a[2];I i{a};std::advance(i,1);return 0;}',
          "TR0203"),
-        ("reverse-native",
-         '#include <iterator>\nint main(){int a[2]{1,2};return *std::rbegin(a);}',
+        ("reverse-function-pointer",
+         '#include <iterator>\nint f(){return 0;}int main(){std::reverse_iterator<int(*)()>r(&f);return r.base()!=&f;}',
          "TR0203"),
     ):
         check("v2-iterator-" + name, source, code,
@@ -626,6 +630,33 @@ extern "C" int algorithm_header() { return 0; }
     check("v2-algorithm-quoted",
           '#include "algorithm"\nint main(){return 0;}', "TR0201",
           profile="cpp-core-v2", sdk=True)
+
+    algorithm_read_only_source = """\
+#include <algorithm>
+extern "C" int algorithm_read_only(int *values, int *other) {
+  int *found = std::find(values, values + 4, 3);
+  auto count = std::count(values, values + 4, 3);
+  bool same3 = std::equal(values, values + 4, other);
+  bool same4 = std::equal(values, values + 4, other, other + 4);
+  return static_cast<int>(found - values + count) + (same3 && same4 ? 1 : 0);
+}
+"""
+    algorithm_read_only = check("v2-algorithm-read-only",
+                                algorithm_read_only_source,
+                                profile="cpp-core-v2", sdk=True)
+    assert len(algorithm_read_only["sdk_dependencies"]) == 354, algorithm_read_only
+    assert not [node for node in walk(algorithm_read_only["functions"])
+                if node.get("op") in ("call", "mapped_call")], algorithm_read_only
+    for target in sdk_targets:
+        check("v2-algorithm-read-only-" + target,
+              algorithm_read_only_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-algorithm-heterogeneous-find",
+          '#include <algorithm>\nint main(){int a[2]{1,2};short n=2;return std::find(a,a+2,n)==a+1?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-predicate-equal",
+          '#include <algorithm>\nbool same(int a,int b){return a==b;}int main(){int a[2]{1,2};return std::equal(a,a+2,a,&same)?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
 
     # Windows driver defaults must not change core-v2 source visibility or
     # standard diagnostics. Exercise both MSVC architectures on every CI host.

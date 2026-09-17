@@ -718,6 +718,12 @@ static bool utilityObjectPointer(const ASTContext &Context, QualType Type) {
          Context.getTypeAlign(Type) == Context.getTypeAlign(Context.VoidPtrTy);
 }
 
+static bool utilityAlgorithmScalarPointer(const ASTContext &Context,
+                                          QualType Type) {
+  return utilityObjectPointer(Context, Type) &&
+         utilityScalar(Context, Type->getPointeeType());
+}
+
 static bool utilityPointerConversion(const ASTContext &Context, QualType From,
                                      QualType To) {
   if (!utilityObjectPointer(Context, From) ||
@@ -1329,6 +1335,64 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
                                           Context.getRecordType(Record.Record));
   };
+  auto AlgorithmPointerParameter = [&](unsigned Index) {
+    if (Index >= Function->getNumParams() || Index >= Call->getNumArgs())
+      return false;
+    auto Parameter = Function->getParamDecl(Index)->getType();
+    return utilityAlgorithmScalarPointer(Context, Parameter) &&
+           Same(Call->getArg(Index)->getType(), Parameter);
+  };
+  auto SameAlgorithmElement = [&](QualType Left, QualType Right) {
+    return utilityAlgorithmScalarPointer(Context, Left) &&
+           utilityAlgorithmScalarPointer(Context, Right) &&
+           Context.hasSameUnqualifiedType(Left->getPointeeType(),
+                                          Right->getPointeeType());
+  };
+  if ((Origin->Path == "__algorithm/find.h" ||
+       Origin->Path == "__algorithm/count.h") &&
+      (Name == "find" || Name == "count") && Call->getNumArgs() == 3 &&
+      Function->getNumParams() == 3 && Call->isPRValue() &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType())) {
+    auto Iterator = Function->getParamDecl(0)->getType();
+    auto Value = Function->getParamDecl(2)->getType();
+    if (Value->isLValueReferenceType() &&
+        Value->getPointeeType().isConstQualified() &&
+        !Value->getPointeeType().isVolatileQualified() &&
+        utilityScalar(Context, Value->getPointeeType()) &&
+        Context.hasSameUnqualifiedType(Value->getPointeeType(),
+                                       Iterator->getPointeeType()) &&
+        Context.hasSameUnqualifiedType(Call->getArg(2)->getType(),
+                                       Value->getPointeeType())) {
+      if (Name == "find" && Origin->Path == "__algorithm/find.h" &&
+          Same(Function->getReturnType(), Iterator) &&
+          Same(Call->getType(), Function->getReturnType()))
+        return UtilityOperation::AlgorithmFind;
+      if (Name == "count" && Origin->Path == "__algorithm/count.h" &&
+          Same(Function->getReturnType(), Context.getPointerDiffType()) &&
+          Same(Call->getType(), Function->getReturnType()))
+        return UtilityOperation::AlgorithmCount;
+    }
+  }
+  if (Origin->Path == "__algorithm/equal.h" && Name == "equal" &&
+      (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
+      Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
+      Function->getReturnType()->isBooleanType() &&
+      Same(Call->getType(), Function->getReturnType()) &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      AlgorithmPointerParameter(2) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
+                           Function->getParamDecl(2)->getType())) {
+    if (Call->getNumArgs() == 3)
+      return UtilityOperation::AlgorithmEqual;
+    if (AlgorithmPointerParameter(3) &&
+        Same(Function->getParamDecl(2)->getType(),
+             Function->getParamDecl(3)->getType()))
+      return UtilityOperation::AlgorithmEqual;
+  }
   if (Origin->Path == "__iterator/reverse_iterator.h" &&
       Name == "make_reverse_iterator" && Call->getNumArgs() == 1 &&
       Function->getNumParams() == 1 && Call->isPRValue()) {
