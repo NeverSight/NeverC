@@ -3744,10 +3744,11 @@ bool Adapter::requireUtilityTuple(const CXXRecordDecl *Record,
   }
   auto Tuple = approvedUtilityTupleRecord(S, Sources, Record, Context);
   if (!Tuple) {
-    reject(Location, "standard library record",
-           "Only the pinned nonempty scalar std::tuple<T...> layout is "
-           "admitted.",
-           "TR0203");
+    reject(
+        Location, "standard library record",
+        "Only the pinned empty or nonempty scalar std::tuple<T...> layout is "
+        "admitted.",
+        "TR0203");
     return false;
   }
   const auto *Canonical = Tuple->Record->getCanonicalDecl();

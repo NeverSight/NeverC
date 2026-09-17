@@ -23487,6 +23487,91 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2EmptyTupleRunsAtBothOptimizations) {
+  const auto Source = tmpFile("tuple-empty.cpp");
+  const auto Output = tmpFile("tuple-empty.nc");
+  writeFile(Source, R"cpp(
+#include <tuple>
+static_assert(std::tuple_size<std::tuple<>>::value == 0);
+static_assert(sizeof(std::tuple<>) == 1);
+static_assert(alignof(std::tuple<>) == 1);
+int effects;
+int trace;
+std::tuple<> &touch(std::tuple<> &value, int mark) {
+  ++effects;
+  trace = trace * 10 + mark;
+  return value;
+}
+std::tuple<> make_empty() {
+  ++effects;
+  return std::make_tuple();
+}
+int main() {
+  std::tuple<> first;
+  std::tuple<> copied(first);
+  std::tuple<> moved(static_cast<std::tuple<> &&>(copied));
+
+  effects = 0;
+  trace = 0;
+  touch(first, 1) = touch(copied, 2);
+  if (effects != 2 || trace != 21)
+    return 1;
+  moved = static_cast<std::tuple<> &&>(copied);
+
+  effects = 0;
+  auto made = make_empty();
+  if (effects != 1)
+    return 2;
+  auto direct = std::make_tuple();
+
+  effects = 0;
+  trace = 0;
+  touch(first, 1).swap(touch(made, 2));
+  if (effects != 2 || trace != 12)
+    return 3;
+  effects = 0;
+  std::swap(touch(first, 1), touch(direct, 2));
+  if (effects != 2)
+    return 4;
+
+  if (!(first == copied) || first != copied || first < copied ||
+      first > copied || !(first <= copied) || !(first >= copied))
+    return 5;
+  effects = 0;
+  if (!(touch(first, 1) == touch(copied, 2)) || effects != 2)
+    return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *SDK = Manifest->getAsObject()->getObject("sdk");
+  ASSERT_NE(SDK, nullptr);
+  const auto *Dependencies = SDK->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 98u);
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+  }
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("tuple-empty" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2TupleConvertsScalarPairs) {
   const auto Source = tmpFile("tuple-pair.cpp");
   const auto Output = tmpFile("tuple-pair.nc");
@@ -23555,8 +23640,6 @@ TEST_F(TranslateTest, CoreV2TupleRequiresPinnedScalarOperations) {
   };
   const Rejection Cases[] = {
       {"quoted", "#include \"tuple\"\nint main(){return 0;}", "TR0201"},
-      {"empty", "#include <tuple>\nint main(){std::tuple<>v;return 0;}",
-       "TR0203"},
       {"reference",
        "#include <tuple>\nint main(){int n=1;std::tuple<int&>v(n);"
        "return std::get<0>(v);}",
@@ -23584,6 +23667,10 @@ TEST_F(TranslateTest, CoreV2TupleRequiresPinnedScalarOperations) {
       {"tuple-cat",
        "#include <tuple>\nint main(){auto a=std::make_tuple(1);"
        "auto b=std::tuple_cat(a,a);return std::get<0>(b);}",
+       "TR0203"},
+      {"empty-tuple-cat",
+       "#include <tuple>\nint main(){auto value=std::tuple_cat();"
+       "return sizeof(value)!=1;}",
        "TR0203"},
       {"apply",
        "#include <tuple>\nint add(int a,int b){return a+b;}int main(){"

@@ -738,7 +738,7 @@ utilityTupleTypes(const ClassTemplateSpecializationDecl *Specialization) {
   const auto &Arguments = Specialization->getTemplateArgs();
   if (Arguments.size() != 1 ||
       Arguments.get(0).getKind() != TemplateArgument::Pack ||
-      !Arguments.get(0).pack_size() || Arguments.get(0).pack_size() > 64)
+      Arguments.get(0).pack_size() > 64)
     return std::nullopt;
   std::vector<QualType> Types;
   Types.reserve(Arguments.get(0).pack_size());
@@ -784,8 +784,13 @@ approvedUtilityTupleRecord(const State &S, const SourceManager &SM,
                        : nullptr;
   const auto Types = utilityTupleTypes(Specialization);
   if (!approvedUtilityTupleMetadata(S, SM, Specialization) || !Types ||
-      !Specialization ||
-      Specialization->getSpecializationKind() != TSK_ImplicitInstantiation ||
+      !Specialization)
+    return std::nullopt;
+  const bool Empty = Types->empty();
+  if ((Empty ? Specialization->getSpecializationKind() !=
+                   TSK_ExplicitSpecialization
+             : Specialization->getSpecializationKind() !=
+                   TSK_ImplicitInstantiation) ||
       Specialization->getNumBases() || Specialization->getNumVBases() ||
       Specialization->isDynamicClass() ||
       !Specialization->hasTrivialCopyConstructor() ||
@@ -797,6 +802,16 @@ approvedUtilityTupleRecord(const State &S, const SourceManager &SM,
     if (!utilityScalar(Context, Type) || Type.isVolatileQualified() ||
         Type.isRestrictQualified() || Type.getAddressSpace() != LangAS::Default)
       return std::nullopt;
+
+  if (Empty) {
+    const auto &Layout = Context.getASTRecordLayout(Specialization);
+    if (!Specialization->field_empty() || !Specialization->isEmpty() ||
+        !Specialization->isStandardLayout() || Layout.getFieldCount() ||
+        Layout.getSize().getQuantity() != 1 ||
+        Layout.getAlignment().getQuantity() != 1)
+      return std::nullopt;
+    return UtilityTupleRecord{Specialization, {}, {}};
+  }
 
   auto Fields = Specialization->fields();
   auto Field = Fields.begin();
@@ -936,8 +951,12 @@ approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
       !approvedStandardSDKDeclaration(S, SM, Constructor) ||
       !cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx", "tuple"))
     return std::nullopt;
-  if (!Construction->getNumArgs() && Constructor->isDefaultConstructor())
+  if (!Construction->getNumArgs() && Constructor->isDefaultConstructor()) {
+    if (Tuple->Elements.empty() &&
+        (!Constructor->isDefaulted() || !Constructor->isTrivial()))
+      return std::nullopt;
     return UtilityTupleConstruction::Default;
+  }
   if (Construction->getNumArgs() == 1 &&
       Constructor->isCopyOrMoveConstructor() && Constructor->isDefaulted() &&
       Constructor->isTrivial() &&
@@ -1025,9 +1044,13 @@ approvedUtilityTupleAssignment(const State &S, const SourceManager &SM,
       dyn_cast_or_null<CXXMethodDecl>(Assignment->getDirectCallee());
   const auto Tuple = approvedUtilityTupleRecord(
       S, SM, Method ? Method->getParent() : nullptr, Context);
+  const bool EmptyDefaultedAssignment = Tuple && Tuple->Elements.empty() &&
+                                        Method && Method->isTrivial() &&
+                                        defaultedAssignment(Method);
   if (!Method || !Tuple || Method->isStatic() || Method->isVariadic() ||
       Method->getNumParams() != 1 ||
-      Method->getOverloadedOperator() != OO_Equal || !Method->hasBody() ||
+      Method->getOverloadedOperator() != OO_Equal ||
+      (!Method->hasBody() && !EmptyDefaultedAssignment) ||
       !approvedStandardSDKDeclaration(S, SM, Method) ||
       !cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "tuple"))
     return std::nullopt;

@@ -181,10 +181,13 @@ quoted `"utility"`, user shadow headers and platform header roots remain rejecte
 Core v2 accepts the exact top-level angled `<tuple>` entry from the pinned
 embedded VFS. Its authenticated 98-file libc++/resource closure is identical on
 all eight supported targets and contains no platform headers. A retained
-`std::tuple<T...>` must contain between one and 64 admitted scalar value element
-types. The frontend authenticates libc++'s private `__base_` field, indexed leaf
-base classes, private leaf values, native size and alignment, and every ABI field
-offset before exposing the tuple as a flat protocol record.
+`std::tuple<T...>` may be empty or contain up to 64 admitted scalar value
+element types. For nonempty tuples, the frontend authenticates libc++'s private
+`__base_` field, indexed leaf base classes, private leaf values, native size and
+alignment, and every ABI field offset before exposing a flat protocol record.
+For the dedicated empty specialization, it authenticates the explicit
+specialization kind, zero bases and fields, trivial lifecycle, standard layout,
+and one-byte size and alignment before exposing a record with no fields.
 
 Default, element-wise, trivial copy/move and compatible per-element converting
 construction lower directly. Assignment supports same-type tuples and
@@ -206,10 +209,10 @@ comparison type. Equality also admits `nullptr_t` against an object pointer.
 Lexicographic ordering short-circuits at the first unequal element. Generated
 programs contain no tuple helper calls and do not link libc++.
 
-Empty, reference, nested-record, `long double` and function-pointer element
-tuples remain outside this increment. `tie`, `forward_as_tuple`, `tuple_cat`
-and `apply` are also rejected. Quoted includes, user shadows, function addresses
-and forged declarations remain rejected.
+Reference, nested-record, `long double` and function-pointer element tuples
+remain outside this increment. `tie`, `forward_as_tuple`, `tuple_cat` and
+`apply` are also rejected. Quoted includes, user shadows, function addresses and
+forged declarations remain rejected.
 
 ## Fixed value arrays from `<array>`
 

@@ -412,11 +412,20 @@ extern "C" int utility_get() {
 
     tuple_source = """\
 #include <tuple>
+static_assert(std::tuple_size<std::tuple<>>::value == 0);
+static_assert(sizeof(std::tuple<>) == 1);
 static_assert(std::tuple_size<std::tuple<int, double, int *>>::value == 3);
 static_assert(sizeof(std::tuple_element<1,
                                         std::tuple<int, double, int *>>::type)
               == sizeof(double));
 extern "C" int tuple_all(int *pointer) {
+  std::tuple<> empty, empty_copy(empty), empty_move(
+      static_cast<std::tuple<> &&>(empty_copy));
+  empty_copy = empty;
+  empty_move = static_cast<std::tuple<> &&>(empty_copy);
+  auto empty_made = std::make_tuple();
+  empty.swap(empty_made);
+  std::swap(empty_copy, empty_made);
   std::tuple<int, double, int *> first(1, 2.5, pointer);
   std::tuple<int, double, int *> second;
   second = first;
@@ -429,6 +438,9 @@ extern "C" int tuple_all(int *pointer) {
       static_cast<std::tuple<int, double, int *> &&>(made));
   std::tuple<int, int, int> left(1, 9, 3), right(2, 0, 0), same(1, 9, 3);
   int result = std::get<0>(copied) + int(std::get<1>(moved));
+  result += (empty == empty_copy) + 2 * (empty != empty_copy) +
+            4 * (empty < empty_copy) + 8 * (empty > empty_copy) +
+            16 * (empty <= empty_copy) + 32 * (empty >= empty_copy);
   result += std::get<2>(first) == pointer;
   result += std::get<int>(first) == std::get<0>(first);
   result += std::get<double>(copied) == std::get<1>(copied);
@@ -454,11 +466,19 @@ extern "C" int tuple_all(int *pointer) {
                for dependency in tuple["sdk_dependencies"]), tuple
     assert sorted([field["type"] for field in record["fields"]]
                   for record in tuple["records"]) == [
+                      [],
                       ["i16", "float"],
                       ["int", "double"],
                       ["int", "double", "ptr:int"],
                       ["int", "int", "int"],
                   ], tuple["records"]
+    empty_tuple = next(record for record in tuple["records"]
+                       if not record["fields"])
+    assert empty_tuple["layout"] == {
+        "size_bits": 8,
+        "abi_align_bits": 8,
+        "field_offsets_bits": [],
+    }, empty_tuple
     exports = {function["name"]: function for function in tuple["functions"]
                if function["c_export"]}
     assert set(exports) == {"tuple_all"}, exports
@@ -498,8 +518,6 @@ extern "C" int tuple_pair(int *pointer) {
               profile="cpp-core-v2", target=target, sdk=True)
     for name, source, code in (
         ("quoted", '#include "tuple"\nint main(){return 0;}', "TR0201"),
-        ("empty", '#include <tuple>\nint main(){std::tuple<>v;return 0;}',
-         "TR0203"),
         ("reference",
          '#include <tuple>\nint main(){int n=1;std::tuple<int&>v(n);return std::get<0>(v);}',
          "TR0201"),
@@ -520,6 +538,9 @@ extern "C" int tuple_pair(int *pointer) {
          "TR0202"),
         ("tuple-cat",
          '#include <tuple>\nint main(){auto a=std::make_tuple(1);auto b=std::tuple_cat(a,a);return std::get<0>(b);}',
+         "TR0203"),
+        ("empty-tuple-cat",
+         '#include <tuple>\nint main(){auto value=std::tuple_cat();return sizeof(value)!=1;}',
          "TR0203"),
         ("apply",
          '#include <tuple>\nint add(int a,int b){return a+b;}int main(){return std::apply(add,std::make_tuple(1,2));}',

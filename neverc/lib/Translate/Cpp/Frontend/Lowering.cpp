@@ -4393,6 +4393,12 @@ class FunctionLowering {
           address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
       auto Left = dereference(std::move(LeftAddress), L);
       auto Right = dereference(std::move(RightAddress), L);
+      if (LeftTuple->Elements.empty()) {
+        const bool Value = Operation == UtilityOperation::TupleEqual ||
+                           Operation == UtilityOperation::TupleLessEqual ||
+                           Operation == UtilityOperation::TupleGreaterEqual;
+        return boolean(Value, L);
+      }
       auto Member = [&](const Expression &Base, const FieldDecl *Field) {
         return fieldStorage(json::Object(Base), Field, L);
       };
