@@ -609,8 +609,20 @@ extern "C" int optional_operations(int value) {
                   first != std::nullopt && std::nullopt < first;
   bool values = first == value + 1 && value + 1 == first &&
                 first <= value + 1 && value + 1 >= first;
+  std::optional<short> narrow(short(4));
+  std::optional<unsigned int> unsigned_one(1u);
+  std::optional<int> negative(-1);
+  std::optional<long long> wide_negative(-1LL);
+  std::optional<float> single(1.0f);
+  std::optional<double> real(2.0);
+  bool heterogeneous = narrow < first && first > narrow &&
+                       !(negative < unsigned_one) &&
+                       !(unsigned_one > negative) &&
+                       wide_negative < unsigned_one && single < real &&
+                       first > short(4) && short(4) < first;
   return first.has_value() && !second && *first == value + 1 &&
                  selected == value + 1 && optionals && nullopts && values &&
+                 heterogeneous &&
                  *made == 0 && *zero == value + 2 && *placed == 6 &&
                  *converted == 5 && second.value_or(small) == 5
              ? 0
@@ -659,8 +671,8 @@ extern "C" int optional_operations(int value) {
         ("throwing-value",
          '#include <optional>\nint main(){std::optional<int>v;return v.value();}',
          "TR0203"),
-        ("heterogeneous-comparison",
-         '#include <optional>\nint main(){std::optional<int>a(1);std::optional<long>b(1);return a==b;}',
+        ("heterogeneous-pointer-comparison",
+         '#include <optional>\nint main(){std::optional<int*>a;std::optional<const int*>b;return a==b;}',
          "TR0203"),
         ("standalone-in-place",
          '#include <optional>\nint main(){auto tag=std::in_place;return sizeof(tag);}',

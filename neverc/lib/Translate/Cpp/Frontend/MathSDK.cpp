@@ -377,6 +377,58 @@ static bool utilityScalar(const ASTContext &Context, QualType Type) {
          Type->isNullPtrType();
 }
 
+std::optional<QualType> utilityScalarComparisonType(const ASTContext &Context,
+                                                    QualType Left,
+                                                    QualType Right) {
+  if (!utilityScalar(Context, Left) || !utilityScalar(Context, Right))
+    return std::nullopt;
+  Left = Left.getCanonicalType().getUnqualifiedType();
+  Right = Right.getCanonicalType().getUnqualifiedType();
+  if (Context.hasSameType(Left, Right)) {
+    if (Context.isPromotableIntegerType(Left))
+      Left = Context.getPromotedIntegerType(Left);
+    return Left;
+  }
+
+  // Distinct pointers, nullptr_t and enumerations need composite-pointer or
+  // enumeration-specific rules. Keep those outside the arithmetic surface.
+  if (Left->isEnumeralType() || Right->isEnumeralType() ||
+      !Left->isArithmeticType() || !Right->isArithmeticType())
+    return std::nullopt;
+  if (Left->isRealFloatingType() || Right->isRealFloatingType()) {
+    if (Left->isSpecificBuiltinType(BuiltinType::Double) ||
+        Right->isSpecificBuiltinType(BuiltinType::Double))
+      return Context.DoubleTy;
+    if (Left->isSpecificBuiltinType(BuiltinType::Float) ||
+        Right->isSpecificBuiltinType(BuiltinType::Float))
+      return Context.FloatTy;
+    return std::nullopt;
+  }
+  if (!Left->isIntegralType(Context) || !Right->isIntegralType(Context))
+    return std::nullopt;
+  if (Context.isPromotableIntegerType(Left))
+    Left = Context.getPromotedIntegerType(Left);
+  if (Context.isPromotableIntegerType(Right))
+    Right = Context.getPromotedIntegerType(Right);
+  if (Context.hasSameType(Left, Right))
+    return Left;
+
+  const bool LeftUnsigned = Left->isUnsignedIntegerType();
+  const bool RightUnsigned = Right->isUnsignedIntegerType();
+  const int Order = Context.getIntegerTypeOrder(Left, Right);
+  if (LeftUnsigned == RightUnsigned)
+    return Order >= 0 ? Left : Right;
+
+  const QualType Unsigned = LeftUnsigned ? Left : Right;
+  const QualType Signed = LeftUnsigned ? Right : Left;
+  const bool SignedOnLeft = !LeftUnsigned;
+  if (Order != (SignedOnLeft ? 1 : -1))
+    return Unsigned;
+  if (Context.getIntWidth(Signed) != Context.getIntWidth(Unsigned))
+    return Signed;
+  return Context.getCorrespondingUnsignedType(Signed);
+}
+
 static bool utilityArrayValue(const State &S, const SourceManager &SM,
                               const ASTContext &Context, QualType Type) {
   if (utilityScalar(Context, Type))
@@ -2328,9 +2380,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            !Parameter->getPointeeType().isVolatileQualified() &&
            utilityScalar(Context, Parameter->getPointeeType()) &&
            Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
-                                          Element) &&
-           Context.hasSameUnqualifiedType(Call->getArg(Index)->getType(),
-                                          Element);
+                                          Call->getArg(Index)->getType()) &&
+           utilityScalarComparisonType(Context, Element,
+                                       Parameter->getPointeeType());
   };
   if (Origin->Path == "optional" && Call->getNumArgs() == 2 &&
       Function->getNumParams() == 2 && Call->isPRValue() &&
@@ -2367,11 +2419,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       const auto Right = OptionalFor(Call->getArg(1)->getType());
       const bool LeftNullopt = NulloptParameter(0);
       const bool RightNullopt = NulloptParameter(1);
-      if (Left && Right &&
-          Left->Record->getCanonicalDecl() ==
-              Right->Record->getCanonicalDecl() &&
-          OptionalParameter(0, *Left, true) &&
-          OptionalParameter(1, *Right, true))
+      if (Left && Right && OptionalParameter(0, *Left, true) &&
+          OptionalParameter(1, *Right, true) &&
+          utilityScalarComparisonType(Context, Left->ElementType,
+                                      Right->ElementType))
         return Comparison;
       if (Left && RightNullopt && OptionalParameter(0, *Left, true))
         return Comparison;

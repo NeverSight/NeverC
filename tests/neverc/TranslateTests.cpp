@@ -28088,13 +28088,38 @@ int main() {
       !(three <= 3) || 3 <= empty || !(five >= 5) || !(5 >= three))
     return 3;
 
+  std::optional<short> short_four(short(4));
+  std::optional<int> int_four(4);
+  std::optional<int> int_five(5);
+  std::optional<int> negative(-1);
+  std::optional<unsigned int> unsigned_one(1u);
+  std::optional<long long> wide_negative(-1LL);
+  std::optional<float> float_one(1.0f);
+  std::optional<double> double_two(2.0);
+  double zero_value = 0.0;
+  std::optional<double> nan_value(zero_value / zero_value);
+  std::optional<double> double_zero(0.0);
+  if (!(short_four == int_four) || short_four != int_four ||
+      !(short_four < int_five) || !(int_five > short_four) ||
+      !(short_four <= int_four) || !(int_four >= short_four) ||
+      negative < unsigned_one || unsigned_one > negative ||
+      !(wide_negative < unsigned_one) || !(float_one < double_two) ||
+      nan_value == nan_value || !(nan_value != nan_value) ||
+      nan_value <= double_zero || nan_value >= double_zero ||
+      double_zero <= nan_value || double_zero >= nan_value ||
+      !(int_four == short(4)) || !(short(4) == int_four) ||
+      !(int_four != short(5)) || !(short(5) != int_four) ||
+      !(short(3) < int_four) || !(int_four > short(3)) ||
+      !(short(4) <= int_four) || !(int_four >= short(4)))
+    return 4;
+
   const std::optional<int> seven(7);
   if (seven.value_or(fallback()) != 7 || effects != 1)
-    return 4;
-  if (empty.value_or(fallback()) != 42 || effects != 2)
     return 5;
-  if (std::optional<int>(8).value_or(fallback()) != 8 || effects != 3)
+  if (empty.value_or(fallback()) != 42 || effects != 2)
     return 6;
+  if (std::optional<int>(8).value_or(fallback()) != 8 || effects != 3)
+    return 7;
 
   auto zero = std::make_optional<int>();
   int source = 4;
@@ -28106,7 +28131,7 @@ int main() {
   if (!zero || *zero != 6 || !explicit_value || *explicit_value != 0 ||
       !copied || *copied != 4 || !converted || *converted != 5 ||
       empty.value_or(small) != 5)
-    return 7;
+    return 8;
   return 0;
 }
 )cpp");
@@ -28147,9 +28172,9 @@ TEST_F(TranslateTest, CoreV2OptionalRequiresPinnedScalarOperations) {
       {"throwing-value",
        "#include <optional>\nint main(){std::optional<int>v;return v.value();}",
        "TR0203"},
-      {"heterogeneous-comparison",
-       "#include <optional>\nint main(){std::optional<int>a(1);"
-       "std::optional<long>b(1);return a==b;}",
+      {"heterogeneous-pointer-comparison",
+       "#include <optional>\nint main(){std::optional<int*>a;"
+       "std::optional<const int*>b;return a==b;}",
        "TR0203"},
       {"standalone-in-place",
        "#include <optional>\nint main(){auto tag=std::in_place;"

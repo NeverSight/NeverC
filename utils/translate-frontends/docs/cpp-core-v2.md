@@ -251,16 +251,21 @@ scalar `value_or`, member and free `swap`, zero- or single-value
 `make_optional`, and all six C++17 comparisons lower directly to aggregate and
 scalar IR. Selected scalar construction, assignment, emplacement, fallback and
 factory conversions cast directly to the destination element type. Comparisons
-cover the same optional specialization, `nullopt` on either side, and the exact
-unqualified element type on either side. Generated programs do not call or link
-libc++ for these operations.
+cover `nullopt` on either side, exact scalar types, and heterogeneous arithmetic
+optional or value operands. Heterogeneous arithmetic operands receive the C++17
+integer promotions and usual arithmetic conversions before comparison; exact
+pointer, `nullptr_t` and enumeration comparisons retain their existing scalar
+path. The selected comparison operator is emitted directly, preserving
+unordered floating-point behavior such as NaN for `<=` and `>=`. Generated
+programs do not call or link libc++ for these operations.
 
 Volatile, `long double`, record and other non-scalar elements remain outside
-this increment. Throwing `value`, heterogeneous optional comparisons,
-initializer-list emplacement and the `in_place_type`/`in_place_index` tags are
-not admitted yet. The authenticated `in_place` tag is erased only as an
-optional constructor argument. Function addresses, quoted includes, user
-shadows and forged declarations remain rejected.
+this increment. Throwing `value`, heterogeneous pointer or enumeration
+comparisons, initializer-list emplacement and the
+`in_place_type`/`in_place_index` tags are not admitted yet. The authenticated
+`in_place` tag is erased only as an optional constructor argument. Function
+addresses, quoted includes, user shadows and forged declarations remain
+rejected.
 
 ## Iterator metadata from `<iterator>`
 

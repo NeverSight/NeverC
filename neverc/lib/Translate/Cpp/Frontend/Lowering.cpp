@@ -4640,17 +4640,24 @@ class FunctionLowering {
           A.S, A.Sources, Call->getArg(0), A.Context);
       const bool RightNullopt = approvedUtilityNulloptExpression(
           A.S, A.Sources, Call->getArg(1), A.Context);
-      if ((!LeftOptional && !LeftNullopt &&
-           (!RightOptional ||
-            !A.Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
-                                              RightOptional->ElementType))) ||
-          (!RightOptional && !RightNullopt &&
-           (!LeftOptional ||
-            !A.Context.hasSameUnqualifiedType(Call->getArg(1)->getType(),
-                                              LeftOptional->ElementType))) ||
+      if ((!LeftOptional && !LeftNullopt && !RightOptional) ||
+          (!RightOptional && !RightNullopt && !LeftOptional) ||
           (!LeftOptional && !RightOptional))
         reject(L, "utility optional comparison",
                "The selected scalar std::optional operands are unavailable.");
+      std::optional<QualType> ComparisonType;
+      if (!LeftNullopt && !RightNullopt) {
+        const auto LeftType = LeftOptional ? LeftOptional->ElementType
+                                           : Call->getArg(0)->getType();
+        const auto RightType = RightOptional ? RightOptional->ElementType
+                                             : Call->getArg(1)->getType();
+        ComparisonType =
+            utilityScalarComparisonType(A.Context, LeftType, RightType);
+        if (!ComparisonType)
+          reject(
+              L, "utility optional comparison",
+              "The selected scalar operands have no approved converted type.");
+      }
 
       auto CaptureOptional = [&](const Expr *Source) {
         auto Address =
@@ -4675,6 +4682,15 @@ class FunctionLowering {
                        const Expression &Stored) {
         return fieldStorage(json::Object(Stored), Optional.Value, L);
       };
+      auto CompareValues = [&](llvm::StringRef Operator, Expression Left,
+                               Expression Right) {
+        if (!ComparisonType)
+          reject(L, "utility optional comparison",
+                 "The selected scalar comparison type is unavailable.");
+        const auto Converted = type(*ComparisonType, L);
+        return binary(Operator, cast(std::move(Left), Converted, L),
+                      cast(std::move(Right), Converted, L), "bool", L);
+      };
       auto Negate = [&](Expression Result) {
         return snapshot(Expression{{"kind", "unary"},
                                    {"type", "bool"},
@@ -4684,88 +4700,70 @@ class FunctionLowering {
                         L);
       };
       if (LeftOptional && RightOptional) {
-        auto Equal = [&] {
-          auto Result = temporary("bool", L);
-          const auto CheckEmpty = labelName(), Compare = labelName();
-          const auto False = labelName(), True = labelName(), End = labelName();
-          branch(binary("!=", Engaged(*LeftOptional, *LeftStored),
-                        Engaged(*RightOptional, *RightStored), "bool", L),
-                 False, CheckEmpty, L);
-          label(CheckEmpty, L);
-          branch(Engaged(*LeftOptional, *LeftStored), Compare, True, L);
-          label(Compare, L);
-          assign(Result,
-                 binary("==", Value(*LeftOptional, *LeftStored),
-                        Value(*RightOptional, *RightStored), "bool", L),
-                 L);
-          jump(End, L);
-          label(False, L);
-          assign(Result, boolean(false, L), L);
-          jump(End, L);
-          label(True, L);
-          assign(Result, boolean(true, L), L);
-          jump(End, L);
-          label(End, L);
-          return Result;
-        };
-        auto Less = [&](const UtilityOptionalRecord &Left,
-                        const Expression &LeftValue,
-                        const UtilityOptionalRecord &Right,
-                        const Expression &RightValue) {
-          auto Result = temporary("bool", L);
-          const auto CheckLeft = labelName(), Compare = labelName();
-          const auto False = labelName(), True = labelName(), End = labelName();
-          branch(Engaged(Right, RightValue), CheckLeft, False, L);
-          label(CheckLeft, L);
-          branch(Engaged(Left, LeftValue), Compare, True, L);
-          label(Compare, L);
-          assign(Result,
-                 binary("<", Value(Left, LeftValue), Value(Right, RightValue),
-                        "bool", L),
-                 L);
-          jump(End, L);
-          label(False, L);
-          assign(Result, boolean(false, L), L);
-          jump(End, L);
-          label(True, L);
-          assign(Result, boolean(true, L), L);
-          jump(End, L);
-          label(End, L);
-          return Result;
-        };
-        Expression Result;
-        bool Invert = false;
+        llvm::StringRef Operator;
+        bool LeftEmptyRightPresent = false;
+        bool LeftPresentRightEmpty = false;
+        bool BothEmpty = false;
         switch (Operation) {
         case UtilityOperation::OptionalEqual:
-          Result = Equal();
+          Operator = "==";
+          BothEmpty = true;
           break;
         case UtilityOperation::OptionalNotEqual:
-          Result = Equal();
-          Invert = true;
+          Operator = "!=";
+          LeftEmptyRightPresent = true;
+          LeftPresentRightEmpty = true;
           break;
         case UtilityOperation::OptionalLess:
-          Result =
-              Less(*LeftOptional, *LeftStored, *RightOptional, *RightStored);
+          Operator = "<";
+          LeftEmptyRightPresent = true;
           break;
         case UtilityOperation::OptionalGreater:
-          Result =
-              Less(*RightOptional, *RightStored, *LeftOptional, *LeftStored);
+          Operator = ">";
+          LeftPresentRightEmpty = true;
           break;
         case UtilityOperation::OptionalLessEqual:
-          Result =
-              Less(*RightOptional, *RightStored, *LeftOptional, *LeftStored);
-          Invert = true;
+          Operator = "<=";
+          LeftEmptyRightPresent = true;
+          BothEmpty = true;
           break;
         case UtilityOperation::OptionalGreaterEqual:
-          Result =
-              Less(*LeftOptional, *LeftStored, *RightOptional, *RightStored);
-          Invert = true;
+          Operator = ">=";
+          LeftPresentRightEmpty = true;
+          BothEmpty = true;
           break;
         default:
           reject(L, "utility optional comparison",
                  "Unknown approved std::optional comparison.");
         }
-        return Invert ? Negate(std::move(Result)) : Result;
+        auto Result = temporary("bool", L);
+        const auto CheckRight = labelName(), CheckLeftEmpty = labelName();
+        const auto Compare = labelName(), LeftOnly = labelName();
+        const auto RightOnly = labelName(), Neither = labelName();
+        const auto End = labelName();
+        branch(Engaged(*LeftOptional, *LeftStored), CheckRight, CheckLeftEmpty,
+               L);
+        label(CheckRight, L);
+        branch(Engaged(*RightOptional, *RightStored), Compare, LeftOnly, L);
+        label(CheckLeftEmpty, L);
+        branch(Engaged(*RightOptional, *RightStored), RightOnly, Neither, L);
+        label(Compare, L);
+        assign(Result,
+               CompareValues(Operator, Value(*LeftOptional, *LeftStored),
+                             Value(*RightOptional, *RightStored)),
+               L);
+        jump(End, L);
+        label(LeftOnly, L);
+        assign(Result, boolean(LeftPresentRightEmpty, L), L);
+        jump(End, L);
+        label(RightOnly, L);
+        assign(Result, boolean(LeftEmptyRightPresent, L), L);
+        jump(End, L);
+        label(Neither, L);
+        assign(Result, boolean(BothEmpty, L), L);
+        jump(End, L);
+        label(End, L);
+        return Result;
       }
 
       const bool OptionalOnLeft = LeftOptional.has_value();
@@ -4816,10 +4814,10 @@ class FunctionLowering {
         }
       }();
       assign(Result,
-             binary(Operator,
-                    OptionalOnLeft ? Value(Optional, Stored) : *LeftScalar,
-                    OptionalOnLeft ? *RightScalar : Value(Optional, Stored),
-                    "bool", L),
+             CompareValues(
+                 Operator,
+                 OptionalOnLeft ? Value(Optional, Stored) : *LeftScalar,
+                 OptionalOnLeft ? *RightScalar : Value(Optional, Stored)),
              L);
       jump(End, L);
       label(Empty, L);
