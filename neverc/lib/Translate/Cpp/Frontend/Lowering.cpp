@@ -937,6 +937,11 @@ class FunctionLowering {
           A.S, A.Sources, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(),
           A.Context);
     };
+    auto TupleFor = [&](QualType Type) {
+      return approvedUtilityTupleRecord(
+          A.S, A.Sources, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(),
+          A.Context);
+    };
     auto MemberObject = [&]() -> const Expr * {
       if (const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call))
         return Operator->getNumArgs() ? Operator->getArg(0) : nullptr;
@@ -4176,6 +4181,25 @@ class FunctionLowering {
                  Call->getArg(1), L);
       return Place;
     }
+    case UtilityOperation::MakeTuple: {
+      auto Tuple = TupleFor(Call->getType());
+      if (!Tuple)
+        reject(L, "utility make_tuple",
+               "The selected std::tuple layout is unavailable.");
+      auto Place = Destination ? std::move(*Destination)
+                               : objectTemporary(Call->getType(), L);
+      if (Place.getString("type") != type(Call->getType(), L))
+        reject(L, "utility make_tuple",
+               "The std::make_tuple destination type differs from its result.");
+      if (Call->getNumArgs() != Tuple->Elements.size())
+        reject(L, "utility make_tuple",
+               "The std::make_tuple element count differs from its result.");
+      for (unsigned I = 0; I < Tuple->Elements.size(); ++I)
+        initialize(fieldStorage(json::Object(Place), Tuple->Elements[I], L),
+                   Call->getArg(I), L);
+      return Place;
+    }
+    case UtilityOperation::TupleSwap:
     case UtilityOperation::PairSwap: {
       auto LeftAddress = snapshot(
           address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
@@ -4187,6 +4211,7 @@ class FunctionLowering {
       assign(dereference(std::move(RightAddress), L), std::move(OldLeft), L);
       return {};
     }
+    case UtilityOperation::TupleMemberSwap:
     case UtilityOperation::PairMemberSwap: {
       const auto *MemberCall = llvm::cast<CXXMemberCallExpr>(Call);
       const auto *Object = MemberCall->getImplicitObjectArgument();
@@ -4199,6 +4224,23 @@ class FunctionLowering {
       assign(dereference(std::move(LeftAddress), L), std::move(OldRight), L);
       assign(dereference(std::move(RightAddress), L), std::move(OldLeft), L);
       return {};
+    }
+    case UtilityOperation::TupleGet: {
+      auto Tuple = TupleFor(Call->getArg(0)->getType());
+      const auto *Function = Call->getDirectCallee();
+      const auto *Arguments =
+          Function ? Function->getTemplateSpecializationArgs() : nullptr;
+      if (!Tuple || !Arguments || Arguments->size() != 2 ||
+          Arguments->get(0).getKind() != TemplateArgument::Integral ||
+          Arguments->get(0).getAsIntegral().isNegative())
+        reject(L, "utility tuple get",
+               "The selected std::tuple element is unavailable.");
+      const uint64_t Index = Arguments->get(0).getAsIntegral().getLimitedValue(
+          Tuple->Elements.size());
+      if (Index >= Tuple->Elements.size())
+        reject(L, "utility tuple get",
+               "The selected std::tuple index is out of bounds.");
+      return fieldStorage(lvalue(Call->getArg(0)), Tuple->Elements[Index], L);
     }
     case UtilityOperation::PairGetFirst:
     case UtilityOperation::PairGetSecond: {
@@ -4307,6 +4349,113 @@ class FunctionLowering {
       default:
         reject(L, "utility pair comparison",
                "Unknown approved std::pair comparison.");
+      }
+      if (!Negate)
+        return Result;
+      return snapshot(Expression{{"kind", "unary"},
+                                 {"type", "bool"},
+                                 {"operator", "!"},
+                                 {"args", json::Array{std::move(Result)}},
+                                 {"loc", A.loc(L)}},
+                      L);
+    }
+    case UtilityOperation::TupleEqual:
+    case UtilityOperation::TupleNotEqual:
+    case UtilityOperation::TupleLess:
+    case UtilityOperation::TupleGreater:
+    case UtilityOperation::TupleLessEqual:
+    case UtilityOperation::TupleGreaterEqual: {
+      auto Tuple = TupleFor(Call->getArg(0)->getType());
+      if (!Tuple)
+        reject(L, "utility tuple comparison",
+               "The selected std::tuple layout is unavailable.");
+      auto LeftAddress = snapshot(
+          address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
+      auto RightAddress = snapshot(
+          address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
+      auto Left = dereference(std::move(LeftAddress), L);
+      auto Right = dereference(std::move(RightAddress), L);
+      auto Member = [&](const Expression &Base, const FieldDecl *Field) {
+        return fieldStorage(json::Object(Base), Field, L);
+      };
+      auto Equal = [&](const Expression &A, const Expression &B) {
+        auto Result = temporary("bool", L);
+        const auto False = labelName(), True = labelName(), End = labelName();
+        std::vector<std::string> Next;
+        for (unsigned I = 1; I < Tuple->Elements.size(); ++I)
+          Next.push_back(labelName());
+        for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
+          branch(binary("==", Member(A, Tuple->Elements[I]),
+                        Member(B, Tuple->Elements[I]), "bool", L),
+                 I + 1 == Tuple->Elements.size() ? True : Next[I], False, L);
+          if (I + 1 != Tuple->Elements.size())
+            label(Next[I], L);
+        }
+        label(False, L);
+        assign(Result, boolean(false, L), L);
+        jump(End, L);
+        label(True, L);
+        assign(Result, boolean(true, L), L);
+        jump(End, L);
+        label(End, L);
+        return Result;
+      };
+      auto Less = [&](const Expression &A, const Expression &B) {
+        auto Result = temporary("bool", L);
+        const auto True = labelName(), False = labelName(), End = labelName();
+        std::vector<std::string> Reverse, Next;
+        for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
+          Reverse.push_back(labelName());
+          if (I + 1 != Tuple->Elements.size())
+            Next.push_back(labelName());
+        }
+        for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
+          branch(binary("<", Member(A, Tuple->Elements[I]),
+                        Member(B, Tuple->Elements[I]), "bool", L),
+                 True, Reverse[I], L);
+          label(Reverse[I], L);
+          branch(binary("<", Member(B, Tuple->Elements[I]),
+                        Member(A, Tuple->Elements[I]), "bool", L),
+                 False, I + 1 == Tuple->Elements.size() ? False : Next[I], L);
+          if (I + 1 != Tuple->Elements.size())
+            label(Next[I], L);
+        }
+        label(True, L);
+        assign(Result, boolean(true, L), L);
+        jump(End, L);
+        label(False, L);
+        assign(Result, boolean(false, L), L);
+        jump(End, L);
+        label(End, L);
+        return Result;
+      };
+      Expression Result;
+      bool Negate = false;
+      switch (Operation) {
+      case UtilityOperation::TupleEqual:
+        Result = Equal(Left, Right);
+        break;
+      case UtilityOperation::TupleNotEqual:
+        Result = Equal(Left, Right);
+        Negate = true;
+        break;
+      case UtilityOperation::TupleLess:
+        Result = Less(Left, Right);
+        break;
+      case UtilityOperation::TupleGreater:
+        Result = Less(Right, Left);
+        break;
+      case UtilityOperation::TupleLessEqual:
+        Result = Less(Right, Left);
+        Negate = true;
+        break;
+      case UtilityOperation::TupleGreaterEqual:
+        Result = Less(Left, Right);
+        Negate = true;
+        break;
+      default:
+        reject(L, "utility tuple comparison",
+               "Unknown approved std::tuple comparison.");
       }
       if (!Negate)
         return Result;
@@ -5293,6 +5442,19 @@ class FunctionLowering {
         auto Left = dereference(std::move(LeftAddress), L);
         auto Right = dereference(std::move(RightAddress), L);
         assign(Left, std::move(Right), L);
+        return Left;
+      }
+      if (auto Tuple = approvedUtilityTupleAssignment(
+              A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call), A.Context)) {
+        if (Destination)
+          reject(L, "utility tuple assignment",
+                 "std::tuple assignment cannot initialize a record result.");
+        auto RightAddress = snapshot(
+            address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
+        auto LeftAddress = snapshot(
+            address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
+        auto Left = dereference(std::move(LeftAddress), L);
+        assign(Left, dereference(std::move(RightAddress), L), L);
         return Left;
       }
       if (auto List = approvedUtilityInitializerListAssignment(
@@ -6624,6 +6786,35 @@ class FunctionLowering {
       }
       reject(L, "utility pair construction",
              "Unknown approved std::pair construction.");
+    }
+    if (auto Kind =
+            approvedUtilityTupleConstruction(A.S, A.Sources, C, A.Context)) {
+      auto Tuple = approvedUtilityTupleRecord(
+          A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context);
+      if (!Tuple)
+        reject(L, "utility tuple construction",
+               "The selected std::tuple layout is unavailable.");
+      auto Member = [&](const FieldDecl *Field) {
+        return fieldStorage(json::Object(Place), Field, L);
+      };
+      switch (*Kind) {
+      case UtilityTupleConstruction::Default:
+        for (const auto *Element : Tuple->Elements)
+          initializeZero(Member(Element), Element->getType(), L);
+        return;
+      case UtilityTupleConstruction::Elements:
+        if (C->getNumArgs() != Tuple->Elements.size())
+          reject(L, "utility tuple construction",
+                 "The constructor and tuple element counts differ.");
+        for (unsigned I = 0; I < Tuple->Elements.size(); ++I)
+          initialize(Member(Tuple->Elements[I]), C->getArg(I), L);
+        return;
+      case UtilityTupleConstruction::CopyOrMove:
+        assign(std::move(Place), expression(C->getArg(0)), L);
+        return;
+      }
+      reject(L, "utility tuple construction",
+             "Unknown approved std::tuple construction.");
     }
     if (auto Kind = approvedUtilityInitializerListConstruction(A.S, A.Sources,
                                                                C, A.Context)) {

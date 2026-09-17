@@ -34,13 +34,13 @@ source `fenv` API is implied by the runtime probes.
 ## Built-in SDK and approved catalog
 
 `cpp-math-v1` always uses distribution
-`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r6`. No SDK descriptor, host SDK
+`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r7`. No SDK descriptor, host SDK
 discovery or external root selection is involved. The removed `--cpp-sdk` option
 is rejected; `NEVERC_CPP_SDK` is ignored. Failed built-in SDK integrity checks use
 `TR0101` with the required distribution identity.
 
 The implementation-owned [catalog.json](../../../neverc/lib/Translate/Cpp/SDK/catalog.json)
-and its source files are compiled into NeverC. The catalog contains 507 approved
+and its source files are compiled into NeverC. The catalog contains 533 approved
 headers; the `<cmath>` dependency union remains 209 headers: 127 libc++ headers,
 one Clang resource header and
 81 platform headers. The original full Apple `SDKSettings.json` is not distributed.
@@ -49,7 +49,7 @@ NeverC supplies only `Version: "15.5"` and
 macOS targets. Its metadata SHA-256 is
 `58499bbeb3eb1aa9ca96358a097bc237a9beb14cfd3db9876d986534e59ea17e`.
 Catalog SHA-256 is
-`3c1f73cf0f51618a1a14d7441bbbabf8db667c3e339decbfff317002277c01da`.
+`f4b253fbef0ba2cd616274240b654312c083eeb99d26eb617570860ef2fdb03f`.
 The [SDK provenance and license inventory](../../../neverc/lib/Translate/Cpp/SDK/README.md)
 records original byte hashes, public upstream sources and retained notices.
 This is a bounded header distribution, not a complete Apple SDK.
@@ -81,7 +81,7 @@ The request adds a single SDK envelope:
 ```json
 {
   "sdk": {
-    "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r6",
+    "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r7",
     "catalog_sha256": "<compiled catalog SHA-256>"
   }
 }
@@ -110,8 +110,8 @@ distribution ID, root name, relative path, canonical Clang USR, `double(double)`
 
 | Operation | Canonical USR | Declaration ID |
 | --- | --- | --- |
-| fabs | `c:@F@fabs` | `2a3422f9fba4b7fef40c7e014b6359f79ecec89c795e66092ae9530c551c7a26` |
-| floor | `c:@F@floor` | `4c78db59384eeaf2ab0e9e354e937e77aa5eab11d86af1e76d5d5716a843b39f` |
+| fabs | `c:@F@fabs` | `7e6cf33a987d325f52d0ab3b1874f755bfcaf33da0a63ca1e89ea904cf24bf61` |
+| floor | `c:@F@floor` | `7f892b44aee930e1cdff735d6fb3f45cca7cf518b7c1e82384b67d3d5d53e522` |
 
 The consumer checks these fixed origins/signatures/IDs, requires matching SDK
 dependency evidence, then independently constructs a runtime capability ID.

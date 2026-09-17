@@ -176,6 +176,29 @@ authenticated closure contains 87 libc++/resource files on all eight supported
 targets. Generated programs do not call or link libc++ for these operations;
 quoted `"utility"`, user shadow headers and platform header roots remain rejected.
 
+## Scalar tuples from `<tuple>`
+
+Core v2 accepts the exact top-level angled `<tuple>` entry from the pinned
+embedded VFS. Its authenticated 98-file libc++/resource closure is identical on
+all eight supported targets and contains no platform headers. A retained
+`std::tuple<T...>` must contain between one and 64 admitted scalar value element
+types. The frontend authenticates libc++'s private `__base_` field, indexed leaf
+base classes, private leaf values, native size and alignment, and every ABI field
+offset before exposing the tuple as a flat protocol record.
+
+Default, element-wise and trivial copy/move construction, same-type assignment,
+`std::make_tuple`, member and free `swap`, all six same-type C++17 lexicographic
+comparisons, `tuple_size`, `tuple_element`, and index-based `std::get` lower to
+aggregate, scalar and control-flow IR. `get` preserves const and lvalue/rvalue
+reference categories. Assignment and swap require mutable elements. Generated
+programs contain no tuple helper calls and do not link libc++.
+
+Empty, reference, nested-record, `long double` and function-pointer element
+tuples remain outside this increment. Converting or heterogeneous tuples,
+pair-to-tuple conversion, type-based `get`, `tie`, `forward_as_tuple`,
+`tuple_cat` and `apply` are also rejected. Quoted includes, user shadows,
+function addresses and forged declarations remain rejected.
+
 ## Fixed value arrays from `<array>`
 
 Core v2 accepts an exact top-level `#include <array>` from the pinned embedded

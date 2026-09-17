@@ -731,6 +731,275 @@ approvedUtilityPairAssignment(const State &S, const SourceManager &SM,
   return Pair;
 }
 
+static std::optional<std::vector<QualType>>
+utilityTupleTypes(const ClassTemplateSpecializationDecl *Specialization) {
+  if (!Specialization)
+    return std::nullopt;
+  const auto &Arguments = Specialization->getTemplateArgs();
+  if (Arguments.size() != 1 ||
+      Arguments.get(0).getKind() != TemplateArgument::Pack ||
+      !Arguments.get(0).pack_size() || Arguments.get(0).pack_size() > 64)
+    return std::nullopt;
+  std::vector<QualType> Types;
+  Types.reserve(Arguments.get(0).pack_size());
+  for (const auto &Argument : Arguments.get(0).pack_elements()) {
+    if (Argument.getKind() != TemplateArgument::Type ||
+        Argument.getAsType().isNull())
+      return std::nullopt;
+    Types.push_back(Argument.getAsType());
+  }
+  return Types;
+}
+
+bool approvedUtilityTupleMetadata(const State &S, const SourceManager &SM,
+                                  const CXXRecordDecl *Record) {
+  const auto *Specialization =
+      dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+  const auto *Template =
+      Specialization ? Specialization->getSpecializedTemplate() : nullptr;
+  const auto *CanonicalTemplate =
+      Template ? Template->getCanonicalDecl() : nullptr;
+  return Specialization && Template && CanonicalTemplate &&
+         !Specialization->isUnion() && !Specialization->isDependentContext() &&
+         Specialization->getName() == "tuple" &&
+         utilityTupleTypes(Specialization).has_value() &&
+         approvedStandardSDKDeclaration(S, SM, Specialization) &&
+         approvedStandardSDKDeclaration(S, SM, Template) &&
+         approvedStandardSDKDeclaration(S, SM, CanonicalTemplate) &&
+         cstddefOrigin(S, SM, Specialization->getLocation(), "libcxx",
+                       "tuple") &&
+         cstddefOrigin(S, SM, CanonicalTemplate->getLocation(), "libcxx",
+                       "__fwd/tuple.h");
+}
+
+std::optional<UtilityTupleRecord>
+approvedUtilityTupleRecord(const State &S, const SourceManager &SM,
+                           const CXXRecordDecl *Record,
+                           const ASTContext &Context) {
+  const auto *Specialization =
+      dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+  Specialization = Specialization
+                       ? dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+                             Specialization->getDefinition())
+                       : nullptr;
+  const auto Types = utilityTupleTypes(Specialization);
+  if (!approvedUtilityTupleMetadata(S, SM, Specialization) || !Types ||
+      !Specialization ||
+      Specialization->getSpecializationKind() != TSK_ImplicitInstantiation ||
+      Specialization->getNumBases() || Specialization->getNumVBases() ||
+      Specialization->isDynamicClass() ||
+      !Specialization->hasTrivialCopyConstructor() ||
+      !Specialization->hasTrivialDestructor() ||
+      !approvedStandardSDKDeclaration(S, SM, Specialization) ||
+      !cstddefOrigin(S, SM, Specialization->getLocation(), "libcxx", "tuple"))
+    return std::nullopt;
+  for (QualType Type : *Types)
+    if (!utilityScalar(Context, Type) || Type.isVolatileQualified() ||
+        Type.isRestrictQualified() || Type.getAddressSpace() != LangAS::Default)
+      return std::nullopt;
+
+  auto Fields = Specialization->fields();
+  auto Field = Fields.begin();
+  const auto *BaseField = Field == Fields.end() ? nullptr : *Field++;
+  const auto *Impl =
+      BaseField ? BaseField->getType()->getAsCXXRecordDecl() : nullptr;
+  Impl = Impl ? Impl->getDefinition() : nullptr;
+  const auto *ImplSpecialization =
+      dyn_cast_or_null<ClassTemplateSpecializationDecl>(Impl);
+  if (!BaseField || Field != Fields.end() ||
+      BaseField->getName() != "__base_" ||
+      BaseField->getAccess() != AS_private || BaseField->isBitField() ||
+      BaseField->isMutable() || BaseField->hasAttrs() ||
+      !approvedStandardSDKDeclaration(S, SM, BaseField) ||
+      !cstddefOrigin(S, SM, BaseField->getLocation(), "libcxx", "tuple") ||
+      !ImplSpecialization || ImplSpecialization->getName() != "__tuple_impl" ||
+      ImplSpecialization->isUnion() ||
+      ImplSpecialization->isDependentContext() ||
+      ImplSpecialization->getNumVBases() ||
+      ImplSpecialization->isDynamicClass() ||
+      !ImplSpecialization->field_empty() ||
+      ImplSpecialization->getNumBases() != Types->size() ||
+      !approvedStandardSDKDeclaration(S, SM, ImplSpecialization) ||
+      !cstddefOrigin(S, SM, ImplSpecialization->getLocation(), "libcxx",
+                     "tuple"))
+    return std::nullopt;
+
+  const auto &ImplArguments = ImplSpecialization->getTemplateArgs();
+  if (ImplArguments.size() != 2 ||
+      ImplArguments.get(0).getKind() != TemplateArgument::Type ||
+      ImplArguments.get(1).getKind() != TemplateArgument::Pack ||
+      ImplArguments.get(1).pack_size() != Types->size())
+    return std::nullopt;
+  unsigned TypeIndex = 0;
+  for (const auto &Argument : ImplArguments.get(1).pack_elements())
+    if (Argument.getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Argument.getAsType(), (*Types)[TypeIndex++]))
+      return std::nullopt;
+
+  const auto &TopLayout = Context.getASTRecordLayout(Specialization);
+  const auto &ImplLayout = Context.getASTRecordLayout(ImplSpecialization);
+  if (TopLayout.getFieldCount() != 1 || TopLayout.getFieldOffset(0) != 0 ||
+      TopLayout.getSize() != ImplLayout.getSize() ||
+      TopLayout.getAlignment() != ImplLayout.getAlignment())
+    return std::nullopt;
+
+  std::vector<const FieldDecl *> Elements;
+  std::vector<uint64_t> Offsets;
+  Elements.reserve(Types->size());
+  Offsets.reserve(Types->size());
+  unsigned Index = 0;
+  for (const auto &Base : ImplSpecialization->bases()) {
+    const auto *Leaf = Base.getType()->getAsCXXRecordDecl();
+    Leaf = Leaf ? Leaf->getDefinition() : nullptr;
+    const auto *LeafSpecialization =
+        dyn_cast_or_null<ClassTemplateSpecializationDecl>(Leaf);
+    if (!LeafSpecialization || Base.isVirtual() ||
+        Base.getAccessSpecifier() != AS_public ||
+        LeafSpecialization->getName() != "__tuple_leaf" ||
+        LeafSpecialization->isUnion() ||
+        LeafSpecialization->isDependentContext() ||
+        LeafSpecialization->getNumBases() ||
+        LeafSpecialization->getNumVBases() ||
+        LeafSpecialization->isDynamicClass() ||
+        !LeafSpecialization->isStandardLayout() ||
+        !approvedStandardSDKDeclaration(S, SM, LeafSpecialization) ||
+        !cstddefOrigin(S, SM, LeafSpecialization->getLocation(), "libcxx",
+                       "tuple"))
+      return std::nullopt;
+    const auto &LeafArguments = LeafSpecialization->getTemplateArgs();
+    if (LeafArguments.size() != 3 ||
+        LeafArguments.get(0).getKind() != TemplateArgument::Integral ||
+        LeafArguments.get(0).getAsIntegral().isNegative() ||
+        LeafArguments.get(0).getAsIntegral().getLimitedValue(65) != Index ||
+        LeafArguments.get(1).getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(LeafArguments.get(1).getAsType(),
+                             (*Types)[Index]) ||
+        LeafArguments.get(2).getKind() != TemplateArgument::Integral ||
+        !LeafArguments.get(2).getIntegralType()->isBooleanType() ||
+        !LeafArguments.get(2).getAsIntegral().isZero())
+      return std::nullopt;
+    auto LeafFields = LeafSpecialization->fields();
+    auto LeafField = LeafFields.begin();
+    const auto *Value = LeafField == LeafFields.end() ? nullptr : *LeafField++;
+    if (!Value || LeafField != LeafFields.end() ||
+        Value->getName() != "__value_" || Value->getAccess() != AS_private ||
+        Value->isBitField() || Value->isMutable() || Value->hasAttrs() ||
+        !Context.hasSameType(Value->getType(), (*Types)[Index]) ||
+        !approvedStandardSDKDeclaration(S, SM, Value) ||
+        !cstddefOrigin(S, SM, Value->getLocation(), "libcxx", "tuple"))
+      return std::nullopt;
+    const auto &LeafLayout = Context.getASTRecordLayout(LeafSpecialization);
+    const uint64_t ElementBits = Context.getTypeSize((*Types)[Index]);
+    const uint64_t ElementAlign = Context.getTypeAlign((*Types)[Index]);
+    if (LeafLayout.getFieldCount() != 1 || LeafLayout.getFieldOffset(0) != 0 ||
+        uint64_t(LeafLayout.getSize().getQuantity()) * 8 != ElementBits ||
+        uint64_t(LeafLayout.getAlignment().getQuantity()) * 8 != ElementAlign)
+      return std::nullopt;
+    const uint64_t Offset =
+        uint64_t(
+            ImplLayout.getBaseClassOffset(LeafSpecialization).getQuantity()) *
+        8;
+    if (Offset + ElementBits > uint64_t(ImplLayout.getSize().getQuantity()) * 8)
+      return std::nullopt;
+    for (unsigned I = 0; I < Offsets.size(); ++I) {
+      const uint64_t ExistingBits = Context.getTypeSize((*Types)[I]);
+      if (Offset < Offsets[I] + ExistingBits &&
+          Offsets[I] < Offset + ElementBits)
+        return std::nullopt;
+    }
+    Elements.push_back(Value);
+    Offsets.push_back(Offset);
+    ++Index;
+  }
+  if (Index != Types->size())
+    return std::nullopt;
+  return UtilityTupleRecord{Specialization, std::move(Elements),
+                            std::move(Offsets)};
+}
+
+std::optional<UtilityTupleConstruction>
+approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
+                                 const CXXConstructExpr *Construction,
+                                 const ASTContext &Context) {
+  if (!Construction || Construction->isTypeDependent() ||
+      Construction->isValueDependent() ||
+      Construction->isInstantiationDependent() ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete)
+    return std::nullopt;
+  const auto *Constructor = Construction->getConstructor();
+  const auto Tuple = approvedUtilityTupleRecord(
+      S, SM, Construction->getType()->getAsCXXRecordDecl(), Context);
+  if (!Constructor || !Tuple || Constructor->isVariadic() ||
+      Constructor->getParent()->getCanonicalDecl() !=
+          Tuple->Record->getCanonicalDecl() ||
+      Construction->getNumArgs() != Constructor->getNumParams() ||
+      !approvedStandardSDKDeclaration(S, SM, Constructor) ||
+      !cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx", "tuple"))
+    return std::nullopt;
+  if (!Construction->getNumArgs() && Constructor->isDefaultConstructor())
+    return UtilityTupleConstruction::Default;
+  if (Construction->getNumArgs() == 1 &&
+      Constructor->isCopyOrMoveConstructor() && Constructor->isDefaulted() &&
+      Constructor->isTrivial() &&
+      Context.hasSameUnqualifiedType(Construction->getArg(0)->getType(),
+                                     Construction->getType()))
+    return UtilityTupleConstruction::CopyOrMove;
+  const auto *Primary = Constructor->getPrimaryTemplate();
+  if (!Primary || Construction->getNumArgs() != Tuple->Elements.size() ||
+      !approvedStandardSDKDeclaration(S, SM, Primary) ||
+      !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "tuple"))
+    return std::nullopt;
+  for (unsigned I = 0; I < Construction->getNumArgs(); ++I) {
+    auto Parameter = Constructor->getParamDecl(I)->getType();
+    if (!Parameter->isReferenceType() ||
+        !Context.hasSameUnqualifiedType(Construction->getArg(I)->getType(),
+                                        Parameter->getPointeeType()) ||
+        !utilityScalarDirectConversion(Context,
+                                       Construction->getArg(I)->getType(),
+                                       Tuple->Elements[I]->getType()))
+      return std::nullopt;
+  }
+  return UtilityTupleConstruction::Elements;
+}
+
+std::optional<UtilityTupleRecord>
+approvedUtilityTupleAssignment(const State &S, const SourceManager &SM,
+                               const CXXOperatorCallExpr *Assignment,
+                               const ASTContext &Context) {
+  if (!Assignment || Assignment->isTypeDependent() ||
+      Assignment->isValueDependent() ||
+      Assignment->isInstantiationDependent() ||
+      Assignment->getOperator() != OO_Equal || Assignment->getNumArgs() != 2 ||
+      !Assignment->isLValue())
+    return std::nullopt;
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Assignment->getDirectCallee());
+  const auto Tuple = approvedUtilityTupleRecord(
+      S, SM, Method ? Method->getParent() : nullptr, Context);
+  if (!Method || !Tuple || Method->isStatic() || Method->isVariadic() ||
+      Method->getNumParams() != 1 ||
+      Method->getOverloadedOperator() != OO_Equal || !Method->hasBody() ||
+      !approvedStandardSDKDeclaration(S, SM, Method) ||
+      !cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "tuple"))
+    return std::nullopt;
+  for (const auto *Element : Tuple->Elements)
+    if (Element->getType().isConstQualified())
+      return std::nullopt;
+  const auto Parameter = Method->getParamDecl(0)->getType();
+  const auto Result = Method->getReturnType();
+  const auto TupleType = Context.getRecordType(Tuple->Record);
+  if (!Parameter->isReferenceType() || !Result->isLValueReferenceType() ||
+      !Context.hasSameUnqualifiedType(Parameter->getPointeeType(), TupleType) ||
+      !Context.hasSameUnqualifiedType(Result->getPointeeType(), TupleType) ||
+      !Context.hasSameUnqualifiedType(Assignment->getArg(0)->getType(),
+                                      TupleType) ||
+      !Context.hasSameUnqualifiedType(Assignment->getArg(1)->getType(),
+                                      TupleType) ||
+      !Context.hasSameUnqualifiedType(Assignment->getType(), TupleType))
+    return std::nullopt;
+  return Tuple;
+}
+
 bool approvedUtilityArrayMetadata(const State &S, const SourceManager &SM,
                                   const CXXRecordDecl *Record) {
   const auto *Specialization =
@@ -2427,6 +2696,29 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                        Context.getRecordType(Pair->Record)))
       return UtilityOperation::PairMemberSwap;
   }
+  if (const auto *MemberCall = dyn_cast<CXXMemberCallExpr>(Call)) {
+    const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
+    const auto *Reference = directMethodReference(Call);
+    const auto Tuple = approvedUtilityTupleRecord(
+        S, SM, Method ? Method->getParent() : nullptr, Context);
+    bool Mutable = Tuple.has_value();
+    if (Tuple)
+      for (const auto *Element : Tuple->Elements)
+        Mutable &= !Element->getType().isConstQualified();
+    if (Method && Reference && Tuple && Mutable && Method->getIdentifier() &&
+        Method->getName() == "swap" && !Method->isStatic() &&
+        !Method->isVariadic() && Method->getNumParams() == 1 &&
+        Call->getNumArgs() == 1 && Function->getReturnType()->isVoidType() &&
+        Method->hasBody() && approvedStandardSDKDeclaration(S, SM, Method) &&
+        cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "tuple") &&
+        S.owns(SM, Reference->getExprLoc()) &&
+        Context.hasSameUnqualifiedType(
+            MemberCall->getImplicitObjectArgument()->getType(),
+            Context.getRecordType(Tuple->Record)) &&
+        Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
+                                       Context.getRecordType(Tuple->Record)))
+      return UtilityOperation::TupleMemberSwap;
+  }
   const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
   const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
   if (!Function || !Primary || !Pattern || Function->isVariadic() ||
@@ -2447,6 +2739,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                    : llvm::StringRef();
   auto OptionalFor = [&](QualType Type) {
     return approvedUtilityOptionalRecord(
+        S, SM, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(), Context);
+  };
+  auto TupleFor = [&](QualType Type) {
+    return approvedUtilityTupleRecord(
         S, SM, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(), Context);
   };
   auto OptionalParameter = [&](unsigned Index,
@@ -4097,6 +4393,23 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     }
     return UtilityOperation::MakePair;
   }
+  if (Origin->Path == "tuple" && Name == "make_tuple" && Call->isPRValue() &&
+      !Function->getReturnType()->isReferenceType() &&
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto Tuple = TupleFor(Call->getType());
+    if (!Tuple || Call->getNumArgs() != Tuple->Elements.size())
+      return std::nullopt;
+    for (unsigned I = 0; I < Call->getNumArgs(); ++I) {
+      auto Parameter = Function->getParamDecl(I)->getType();
+      if (!Parameter->isReferenceType() ||
+          !Context.hasSameUnqualifiedType(Call->getArg(I)->getType(),
+                                          Parameter->getPointeeType()) ||
+          !utilityScalarDirectConversion(Context, Call->getArg(I)->getType(),
+                                         Tuple->Elements[I]->getType()))
+        return std::nullopt;
+    }
+    return UtilityOperation::MakeTuple;
+  }
   if (Origin->Path == "__utility/pair.h" && Call->getNumArgs() == 2 &&
       Call->isPRValue() && Function->getReturnType()->isBooleanType() &&
       Same(Call->getType(), Function->getReturnType())) {
@@ -4122,6 +4435,42 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       case OO_GreaterEqual: return UtilityOperation::PairGreaterEqual;
       default: break;
       }
+    }
+  }
+  if (Origin->Path == "tuple" && Call->getNumArgs() == 2 && Call->isPRValue() &&
+      Function->getReturnType()->isBooleanType() &&
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+    const auto Left = TupleFor(Call->getArg(0)->getType());
+    const auto Right = TupleFor(Call->getArg(1)->getType());
+    if (Operator && Left && Right &&
+        Left->Record->getCanonicalDecl() == Right->Record->getCanonicalDecl() &&
+        Left->Elements.size() == Right->Elements.size()) {
+      const auto Kind = Operator->getOperator();
+      const bool Ordered = Kind != OO_EqualEqual && Kind != OO_ExclaimEqual;
+      bool Comparable = true;
+      for (unsigned I = 0; I < Left->Elements.size(); ++I)
+        Comparable &=
+            utilityScalarComparisonType(Context, Left->Elements[I]->getType(),
+                                        Right->Elements[I]->getType(), Ordered)
+                .has_value();
+      if (Comparable)
+        switch (Kind) {
+        case OO_EqualEqual:
+          return UtilityOperation::TupleEqual;
+        case OO_ExclaimEqual:
+          return UtilityOperation::TupleNotEqual;
+        case OO_Less:
+          return UtilityOperation::TupleLess;
+        case OO_Greater:
+          return UtilityOperation::TupleGreater;
+        case OO_LessEqual:
+          return UtilityOperation::TupleLessEqual;
+        case OO_GreaterEqual:
+          return UtilityOperation::TupleGreaterEqual;
+        default:
+          break;
+        }
     }
   }
   if (Origin->Path == "array" && Call->getNumArgs() == 2 &&
@@ -4275,6 +4624,26 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Same(Call->getArg(1)->getType(), RightType->getPointeeType()))
       return UtilityOperation::PairSwap;
   }
+  if (Origin->Path == "tuple" && Name == "swap" && Call->getNumArgs() == 2 &&
+      Function->getReturnType()->isVoidType()) {
+    auto LeftType = Function->getParamDecl(0)->getType();
+    auto RightType = Function->getParamDecl(1)->getType();
+    const auto Left = TupleFor(
+        LeftType->isReferenceType() ? LeftType->getPointeeType() : QualType());
+    const auto Right =
+        TupleFor(RightType->isReferenceType() ? RightType->getPointeeType()
+                                              : QualType());
+    bool Mutable = Left.has_value();
+    if (Left)
+      for (const auto *Element : Left->Elements)
+        Mutable &= !Element->getType().isConstQualified();
+    if (LeftType->isLValueReferenceType() &&
+        RightType->isLValueReferenceType() && Left && Right && Mutable &&
+        Left->Record->getCanonicalDecl() == Right->Record->getCanonicalDecl() &&
+        Same(Call->getArg(0)->getType(), LeftType->getPointeeType()) &&
+        Same(Call->getArg(1)->getType(), RightType->getPointeeType()))
+      return UtilityOperation::TupleSwap;
+  }
   if (Origin->Path == "__utility/pair.h" && Name == "get" &&
       Call->getNumArgs() == 1) {
     const auto *Arguments = Function->getTemplateSpecializationArgs();
@@ -4318,6 +4687,30 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           return First ? UtilityOperation::PairGetFirst
                        : UtilityOperation::PairGetSecond;
       }
+    }
+  }
+  if (Origin->Path == "tuple" && Name == "get" && Call->getNumArgs() == 1) {
+    const auto *Arguments = Function->getTemplateSpecializationArgs();
+    auto Parameter = Function->getParamDecl(0)->getType();
+    auto Result = Function->getReturnType();
+    const auto Tuple =
+        TupleFor(Parameter->isReferenceType() ? Parameter->getPointeeType()
+                                              : QualType());
+    if (Arguments && Arguments->size() == 2 &&
+        Arguments->get(0).getKind() == TemplateArgument::Integral &&
+        Arguments->get(1).getKind() == TemplateArgument::Pack &&
+        Parameter->isReferenceType() && Result->isReferenceType() && Tuple &&
+        !Arguments->get(0).getAsIntegral().isNegative() &&
+        Same(Call->getArg(0)->getType(), Parameter->getPointeeType()) &&
+        Same(Call->getType(), Result->getPointeeType()) &&
+        (Result->isLValueReferenceType() ? Call->isLValue()
+                                         : Call->isXValue())) {
+      const uint64_t Index = Arguments->get(0).getAsIntegral().getLimitedValue(
+          Tuple->Elements.size());
+      if (Index < Tuple->Elements.size() &&
+          Context.hasSameUnqualifiedType(Result->getPointeeType(),
+                                         Tuple->Elements[Index]->getType()))
+        return UtilityOperation::TupleGet;
     }
   }
   return std::nullopt;

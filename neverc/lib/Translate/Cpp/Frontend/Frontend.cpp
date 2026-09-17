@@ -1858,6 +1858,15 @@ void Adapter::checkQueryType(QualType T, SourceLocation L,
       checkQueryType(Arguments.get(1).getAsType(), L, AllowIncompleteArrays,
                      AllowIncompleteRecords, Depth + 1);
     } else if (AllowIncompleteRecords &&
+               approvedUtilityTupleMetadata(S, Sources,
+                                            T->getAsCXXRecordDecl())) {
+      const auto *Tuple =
+          dyn_cast<ClassTemplateSpecializationDecl>(T->getAsCXXRecordDecl());
+      const auto &Arguments = Tuple->getTemplateArgs();
+      for (const auto &Argument : Arguments.get(0).pack_elements())
+        checkQueryType(Argument.getAsType(), L, AllowIncompleteArrays,
+                       AllowIncompleteRecords, Depth + 1);
+    } else if (AllowIncompleteRecords &&
                approvedUtilityArrayMetadata(S, Sources,
                                             T->getAsCXXRecordDecl())) {
       const auto *Array = dyn_cast<ClassTemplateSpecializationDecl>(
@@ -3675,6 +3684,9 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
       if (approvedUtilityPairMetadata(S, Sources, D)) {
         if (!requireUtilityPair(D, L, Depth + 1))
           return {};
+      } else if (approvedUtilityTupleMetadata(S, Sources, D)) {
+        if (!requireUtilityTuple(D, L, Depth + 1))
+          return {};
       } else if (approvedUtilityArrayMetadata(S, Sources, D) &&
                  !requireUtilityArray(D, L, Depth + 1)) {
         return {};
@@ -3720,6 +3732,31 @@ bool Adapter::requireUtilityPair(const CXXRecordDecl *Record,
     if (type(Field->getType(), Location, false, Depth + 1).empty())
       return false;
   Records.push_back(const_cast<CXXRecordDecl *>(Pair->Record));
+  return true;
+}
+
+bool Adapter::requireUtilityTuple(const CXXRecordDecl *Record,
+                                  SourceLocation Location, unsigned Depth) {
+  if (Depth > 64) {
+    reject(Location, "utility tuple type",
+           "Nested std::tuple element types exceed the protocol limit.");
+    return false;
+  }
+  auto Tuple = approvedUtilityTupleRecord(S, Sources, Record, Context);
+  if (!Tuple) {
+    reject(Location, "standard library record",
+           "Only the pinned nonempty scalar std::tuple<T...> layout is "
+           "admitted.",
+           "TR0203");
+    return false;
+  }
+  const auto *Canonical = Tuple->Record->getCanonicalDecl();
+  if (!RequiredUtilityTuples.insert(Canonical).second)
+    return true;
+  for (const auto *Element : Tuple->Elements)
+    if (type(Element->getType(), Location, false, Depth + 1).empty())
+      return false;
+  Records.push_back(const_cast<CXXRecordDecl *>(Tuple->Record));
   return true;
 }
 
@@ -6615,6 +6652,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     const auto *Constructor = C->getConstructor();
     if (A.S.coreV2() &&
         (approvedUtilityPairConstruction(A.S, A.Sources, C, A.Context) ||
+         approvedUtilityTupleConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityArrayConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityInitializerListConstruction(A.S, A.Sources, C,
                                                     A.Context) ||
@@ -8664,6 +8702,8 @@ public:
           Construction &&
           (approvedUtilityPairConstruction(A.S, A.Sources, Construction,
                                            A.Context) ||
+           approvedUtilityTupleConstruction(A.S, A.Sources, Construction,
+                                            A.Context) ||
            UtilityOptionalMetadata ||
            approvedUtilityOptionalConstruction(A.S, A.Sources, Construction,
                                                A.Context) ||
@@ -12678,6 +12718,10 @@ public:
                                             dyn_cast<CXXOperatorCallExpr>(Call),
                                             A.Context)
                   .has_value() ||
+              approvedUtilityTupleAssignment(
+                  A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call),
+                  A.Context)
+                  .has_value() ||
               approvedUtilityArrayAssignment(
                   A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call),
                   A.Context)
@@ -13081,6 +13125,10 @@ public:
           A.S.coreV2() &&
           approvedUtilityPairAssignment(A.S, A.Sources, Operator, A.Context)
               .has_value();
+      const bool UtilityTupleAssignment =
+          A.S.coreV2() &&
+          approvedUtilityTupleAssignment(A.S, A.Sources, Operator, A.Context)
+              .has_value();
       const bool UtilityArrayAssignment =
           A.S.coreV2() &&
           approvedUtilityArrayAssignment(A.S, A.Sources, Operator, A.Context)
@@ -13110,9 +13158,9 @@ public:
         const bool Ordinary = ordinaryOperator(F) &&
             F->getOverloadedOperator() == Operator->getOperator();
         if (!TrivialAssignment && !UtilityPairAssignment &&
-            !UtilityArrayAssignment && !UtilityInitializerListAssignment &&
-            !UtilityOptionalAssignment && !UtilityReverseIteratorAssignment &&
-            !Ordinary &&
+            !UtilityTupleAssignment && !UtilityArrayAssignment &&
+            !UtilityInitializerListAssignment && !UtilityOptionalAssignment &&
+            !UtilityReverseIteratorAssignment && !Ordinary &&
             !(supportedAssignment(Method) &&
               Operator->getOperator() == OO_Equal &&
               Operator->getNumArgs() == 2))
@@ -13171,6 +13219,8 @@ public:
           approvedUtilityOperation(A.S, A.Sources, C, A.Context))
         return true;
       if (A.S.coreV2() && UtilityPairAssignment)
+        return true;
+      if (A.S.coreV2() && UtilityTupleAssignment)
         return true;
       if (A.S.coreV2() && UtilityArrayAssignment)
         return true;
@@ -13234,6 +13284,8 @@ public:
           // by authenticated optional operations.
         } else if (approvedUtilityPairConstruction(A.S, A.Sources, C,
                                                    A.Context) ||
+                   approvedUtilityTupleConstruction(A.S, A.Sources, C,
+                                                    A.Context) ||
                    approvedUtilityArrayConstruction(A.S, A.Sources, C,
                                                     A.Context) ||
                    approvedUtilityInitializerListConstruction(A.S, A.Sources, C,
@@ -13247,7 +13299,8 @@ public:
           A.reject(L, "standard library runtime object",
                    "Approved standard headers provide only their documented "
                    "compile-time aliases, constants, folded queries and "
-                   "scalar std::pair, std::array, std::initializer_list, "
+                   "scalar std::pair, std::tuple, std::array, "
+                   "std::initializer_list, "
                    "std::optional and pointer std::reverse_iterator "
                    "construction.",
                    "TR0203");
@@ -13410,10 +13463,13 @@ static void orderCoreV2Records(Adapter &A) {
     const bool UtilityReverse =
         approvedUtilityReverseIteratorRecord(A.S, A.Sources, R, A.Context)
             .has_value();
+    const auto UtilityTuple =
+        approvedUtilityTupleRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityOptional =
         approvedUtilityOptionalRecord(A.S, A.Sources, R, A.Context);
-    if (const auto *Base =
-            UtilityReverse || UtilityOptional ? nullptr : A.emptyBase(R)) {
+    if (const auto *Base = UtilityReverse || UtilityTuple || UtilityOptional
+                               ? nullptr
+                               : A.emptyBase(R)) {
       auto Found = Indices.find(Base->Base);
       if (Found == Indices.end()) {
         A.reject(R->getLocation(), "base dependency", "An empty base requires its checked complete record definition.");
@@ -13427,7 +13483,11 @@ static void orderCoreV2Records(Adapter &A) {
       Heights[I] = Heights[Found->second] + 1;
     }
     std::vector<const FieldDecl *> DependencyFields;
-    if (UtilityOptional) {
+    if (UtilityTuple) {
+      DependencyFields.insert(DependencyFields.end(),
+                              UtilityTuple->Elements.begin(),
+                              UtilityTuple->Elements.end());
+    } else if (UtilityOptional) {
       DependencyFields.push_back(UtilityOptional->Value);
       DependencyFields.push_back(UtilityOptional->Engaged);
     } else {
@@ -13541,18 +13601,26 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
         S.coreV2() &&
         approvedUtilityReverseIteratorRecord(S, Sources, R, Context)
             .has_value();
+    const auto UtilityTuple =
+        S.coreV2() ? approvedUtilityTupleRecord(S, Sources, R, Context)
+                   : std::optional<UtilityTupleRecord>();
     const auto UtilityOptional =
         S.coreV2() ? approvedUtilityOptionalRecord(S, Sources, R, Context)
                    : std::optional<UtilityOptionalRecord>();
-    const auto *Base = S.coreV2() && !UtilityReverse && !UtilityOptional
-                           ? emptyBase(R)
-                           : nullptr;
+    const auto *Base =
+        S.coreV2() && !UtilityReverse && !UtilityTuple && !UtilityOptional
+            ? emptyBase(R)
+            : nullptr;
     if (Base)
       BaseConstructorRecords.insert(Base->Base);
     if (Base)
       Fields.push_back(json::Object{{"name", Base->Member},
           {"type", type(Context.getRecordType(Base->Base), R->getLocation())}});
-    if (UtilityOptional) {
+    if (UtilityTuple) {
+      for (const auto *F : UtilityTuple->Elements)
+        Fields.push_back(json::Object{
+            {"name", name(F)}, {"type", type(F->getType(), F->getLocation())}});
+    } else if (UtilityOptional) {
       for (const auto *F : {UtilityOptional->Value, UtilityOptional->Engaged})
         Fields.push_back(json::Object{
             {"name", name(F)}, {"type", type(F->getType(), F->getLocation())}});
@@ -13568,7 +13636,10 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
       json::Array Offsets;
       if (Base)
         Offsets.push_back(uint64_t(Layout.getBaseClassOffset(Base->Base).getQuantity()) * 8);
-      if (UtilityOptional) {
+      if (UtilityTuple) {
+        for (uint64_t Offset : UtilityTuple->Offsets)
+          Offsets.push_back(Offset);
+      } else if (UtilityOptional) {
         Offsets.push_back(uint64_t(0));
         const auto &StorageLayout =
             Context.getASTRecordLayout(UtilityOptional->DestructBase);
@@ -13854,13 +13925,14 @@ public:
           (!Angled ||
            (Name != "type_traits" && Name != "cstdint" && Name != "limits" &&
             Name != "cstddef" && Name != "utility" && Name != "array" &&
-            Name != "iterator" && Name != "algorithm" &&
+            Name != "tuple" && Name != "iterator" && Name != "algorithm" &&
             Name != "initializer_list" && Name != "optional"))) {
         reject(
             L, "include",
             "Only exact #include <type_traits>, #include <cstdint> and "
             "#include <limits>, #include <cstddef>, #include <utility> and "
-            "#include <array>, #include <iterator>, #include <algorithm> "
+            "#include <array>, #include <tuple>, #include <iterator>, "
+            "#include <algorithm> "
             "and #include <initializer_list> and #include <optional> entries "
             "are admitted in cpp-core-v2.");
         return;

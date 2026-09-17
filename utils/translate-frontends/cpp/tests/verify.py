@@ -29,8 +29,8 @@ def main():
     repository = Path(__file__).resolve().parents[4]
     count = 0
     sdk_identity = {
-        "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r6",
-        "catalog_sha256": "3c1f73cf0f51618a1a14d7441bbbabf8db667c3e339decbfff317002277c01da",
+        "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r7",
+        "catalog_sha256": "f4b253fbef0ba2cd616274240b654312c083eeb99d26eb617570860ef2fdb03f",
     }
 
     def check(name, source, code=None, options=(), root=None, profile="cpp-core-v1",
@@ -408,6 +408,85 @@ extern "C" int utility_get() {
          "TR0202"),
     ):
         check("v2-utility-" + name, source, code,
+              profile="cpp-core-v2", sdk=True)
+
+    tuple_source = """\
+#include <tuple>
+static_assert(std::tuple_size<std::tuple<int, double, int *>>::value == 3);
+static_assert(sizeof(std::tuple_element<1,
+                                        std::tuple<int, double, int *>>::type)
+              == sizeof(double));
+extern "C" int tuple_all(int *pointer) {
+  std::tuple<int, double, int *> first(1, 2.5, pointer);
+  std::tuple<int, double, int *> second;
+  second = first;
+  auto made = std::make_tuple(3, 4.5, pointer + 1);
+  second.swap(made);
+  std::swap(first, second);
+  std::get<0>(first) = 7;
+  const std::tuple<int, double, int *> copied(first);
+  std::tuple<int, double, int *> moved(
+      static_cast<std::tuple<int, double, int *> &&>(made));
+  std::tuple<int, int, int> left(1, 9, 3), right(2, 0, 0), same(1, 9, 3);
+  int result = std::get<0>(copied) + int(std::get<1>(moved));
+  result += std::get<2>(first) == pointer;
+  result += (left == same) + 2 * (left != right) + 4 * (left < right);
+  result += 8 * (right > left) + 16 * (left <= same) + 32 * (left >= same);
+  return result;
+}
+"""
+    tuple = check("v2-tuple", tuple_source,
+                  profile="cpp-core-v2", sdk=True)
+    assert len(tuple["sdk_dependencies"]) == 98, tuple
+    assert any(dependency["root"] == "libcxx" and
+               dependency["path"] == "tuple"
+               for dependency in tuple["sdk_dependencies"]), tuple
+    assert sorted([field["type"] for field in record["fields"]]
+                  for record in tuple["records"]) == [
+                      ["int", "double", "ptr:int"],
+                      ["int", "int", "int"],
+                  ], tuple["records"]
+    exports = {function["name"]: function for function in tuple["functions"]
+               if function["c_export"]}
+    assert set(exports) == {"tuple_all"}, exports
+    assert not [node for node in walk(tuple["functions"])
+                if node.get("op") in ("call", "mapped_call")], tuple
+    for target in sdk_targets:
+        check("v2-tuple-" + target, tuple_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    for name, source, code in (
+        ("quoted", '#include "tuple"\nint main(){return 0;}', "TR0201"),
+        ("empty", '#include <tuple>\nint main(){std::tuple<>v;return 0;}',
+         "TR0203"),
+        ("reference",
+         '#include <tuple>\nint main(){int n=1;std::tuple<int&>v(n);return std::get<0>(v);}',
+         "TR0201"),
+        ("nested",
+         '#include <tuple>\nint main(){std::tuple<std::tuple<int>,int>v{{1},2};return std::get<0>(std::get<0>(v));}',
+         "TR0201"),
+        ("record",
+         '#include <tuple>\nstruct R{int n;};int main(){std::tuple<R,int>v{R{1},2};return std::get<0>(v).n;}',
+         "TR0201"),
+        ("long-double",
+         '#include <tuple>\nint main(){std::tuple<long double>v(1.0L);return int(std::get<0>(v));}',
+         "TR0201"),
+        ("function-pointer",
+         '#include <tuple>\nusing F=int(*)();int main(){std::tuple<F>v;return std::get<0>(v)==nullptr;}',
+         "TR0201"),
+        ("type-get",
+         '#include <tuple>\nint main(){std::tuple<int,double>v(1,2.0);return std::get<int>(v);}',
+         "TR0203"),
+        ("tuple-cat",
+         '#include <tuple>\nint main(){auto a=std::make_tuple(1);auto b=std::tuple_cat(a,a);return std::get<0>(b);}',
+         "TR0203"),
+        ("apply",
+         '#include <tuple>\nint add(int a,int b){return a+b;}int main(){return std::apply(add,std::make_tuple(1,2));}',
+         "TR0203"),
+        ("converting",
+         '#include <tuple>\nint main(){std::tuple<short>a(short(1));std::tuple<int>b(a);return std::get<0>(b);}',
+         "TR0201"),
+    ):
+        check("v2-tuple-" + name, source, code,
               profile="cpp-core-v2", sdk=True)
 
     array_source = """\

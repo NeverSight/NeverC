@@ -263,6 +263,16 @@ enum class UtilityOperation {
   PairGreaterEqual,
   PairGetFirst,
   PairGetSecond,
+  MakeTuple,
+  TupleSwap,
+  TupleMemberSwap,
+  TupleEqual,
+  TupleNotEqual,
+  TupleLess,
+  TupleGreater,
+  TupleLessEqual,
+  TupleGreaterEqual,
+  TupleGet,
   ArraySize,
   ArrayMaxSize,
   ArrayEmpty,
@@ -453,6 +463,31 @@ approvedUtilityPairAssignment(const State &S,
                               const clang::SourceManager &SM,
                               const clang::CXXOperatorCallExpr *Assignment,
                               const clang::ASTContext &Context);
+struct UtilityTupleRecord {
+  const clang::CXXRecordDecl *Record;
+  std::vector<const clang::FieldDecl *> Elements;
+  std::vector<uint64_t> Offsets;
+};
+bool approvedUtilityTupleMetadata(const State &S,
+                                  const clang::SourceManager &SM,
+                                  const clang::CXXRecordDecl *Record);
+std::optional<UtilityTupleRecord>
+approvedUtilityTupleRecord(const State &S, const clang::SourceManager &SM,
+                           const clang::CXXRecordDecl *Record,
+                           const clang::ASTContext &Context);
+enum class UtilityTupleConstruction {
+  Default,
+  Elements,
+  CopyOrMove,
+};
+std::optional<UtilityTupleConstruction>
+approvedUtilityTupleConstruction(const State &S, const clang::SourceManager &SM,
+                                 const clang::CXXConstructExpr *Construction,
+                                 const clang::ASTContext &Context);
+std::optional<UtilityTupleRecord>
+approvedUtilityTupleAssignment(const State &S, const clang::SourceManager &SM,
+                               const clang::CXXOperatorCallExpr *Assignment,
+                               const clang::ASTContext &Context);
 struct UtilityArrayRecord {
   const clang::CXXRecordDecl *Record;
   const clang::FieldDecl *Elements;
@@ -761,6 +796,7 @@ public:
   std::map<std::string, json::Object> MappedFunctions;
   std::map<const clang::CXXRecordDecl *, std::size_t> StorageUnits;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityPairs;
+  std::set<const clang::CXXRecordDecl *> RequiredUtilityTuples;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityArrays;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityInitializerLists;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityOptionals;
@@ -783,6 +819,8 @@ public:
   bool requireUtilityPair(const clang::CXXRecordDecl *Record,
                           clang::SourceLocation Location,
                           unsigned Depth = 0);
+  bool requireUtilityTuple(const clang::CXXRecordDecl *Record,
+                           clang::SourceLocation Location, unsigned Depth = 0);
   bool requireUtilityArray(const clang::CXXRecordDecl *Record,
                            clang::SourceLocation Location,
                            unsigned Depth = 0);

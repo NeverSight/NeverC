@@ -58,7 +58,8 @@ Core v2 also admits exact angle includes of
 [`<limits>`](../docs/cpp-core-v2.md#numeric-bounds-from-limits) and
 [`<cstddef>`](../docs/cpp-core-v2.md#fundamental-types-and-bytes-from-cstddef), and
 the bounded [`<utility>`](../docs/cpp-core-v2.md#scalar-utilities-and-pairs-from-utility)
-and [`<array>`](../docs/cpp-core-v2.md#fixed-value-arrays-from-array) surfaces,
+and [`<tuple>`](../docs/cpp-core-v2.md#scalar-tuples-from-tuple) and
+[`<array>`](../docs/cpp-core-v2.md#fixed-value-arrays-from-array) surfaces,
 [`<initializer_list>`](../docs/cpp-core-v2.md#initializer-list-views-from-initializer_list),
 [`<iterator>`](../docs/cpp-core-v2.md#iterator-metadata-from-iterator), and the
 [`<algorithm>`](../docs/cpp-core-v2.md#algorithm-header-from-algorithm) pointer
@@ -66,7 +67,8 @@ algorithm surface. The
 frontend uses the pinned embedded libc++/resource VFS and exposes resolved type
 aliases plus integral/enum constant results. It records all consumed header
 hashes: 101 for the `<type_traits>` closure, nine for standalone `<cstdint>`,
-16 for `<limits>`, 29 for `<cstddef>`, 87 for `<utility>`, 217 for `<array>`,
+16 for `<limits>`, 29 for `<cstddef>`, 87 for `<utility>`, 98 for `<tuple>`,
+217 for `<array>`,
 10 for `<initializer_list>`, 171 for `<iterator>` and 354 for `<algorithm>`.
 Numeric limits fold the documented
 zero-argument integer and IEEE floating queries to literals. Cstddef aliases,
@@ -74,7 +76,9 @@ layout queries and direct `std::byte` operations lower to existing scalar IR.
 Utility directly lowers scalar `move`, `forward`, `move_if_noexcept`, `as_const`,
 `exchange` and `swap`; scalar `pair` construction, assignment, swaps,
 comparisons, `make_pair` and `get`; and `tuple_size`, `tuple_element` and
-integer-sequence size queries. Array directly lowers nonempty fixed scalar,
+integer-sequence size queries. Tuple directly lowers authenticated nonempty
+scalar tuple construction, same-type assignment, factories, swaps,
+lexicographic comparisons and index access. Array directly lowers nonempty fixed scalar,
 trivial-record and nested-array storage, iterators, element access, fill, swap,
 scalar and recursive nested-array comparisons and tuple access.
 Initializer-list objects retain libc++'s authenticated pointer-and-size view.
@@ -252,9 +256,9 @@ signaling-NaN builtin argument is not silently mapped to a dynamic runtime call.
 Dynamic binary64 parameters can still carry NaNs and infinities.
 
 The immutable translation headers are embedded in NeverC as distribution
-`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r6`. The
+`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r7`. The
 [SDK catalog](../../../neverc/lib/Translate/Cpp/SDK/catalog.json) records all
-507 approved header files and separate SDK metadata. The original header bytes
+533 approved header files and separate SDK metadata. The original header bytes
 are preserved, including observable macros such as `M_PI` and `_LIBCPP_VERSION`.
 The [SDK notices](../../../neverc/lib/Translate/Cpp/SDK/README.md) document
 origins, redistribution terms and the minimal owned SDK configuration.
