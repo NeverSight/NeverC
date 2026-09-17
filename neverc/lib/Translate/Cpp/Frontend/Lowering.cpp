@@ -2894,6 +2894,22 @@ class FunctionLowering {
       label(End, L);
       return {};
     }
+    case UtilityOperation::AlgorithmInplaceMerge: {
+      auto First = snapshot(expression(Call->getArg(0)), L);
+      auto Middle = snapshot(expression(Call->getArg(1)), L);
+      auto Last = snapshot(expression(Call->getArg(2)), L);
+      std::optional<Expression> Comparator;
+      if (Call->getNumArgs() == 4)
+        Comparator = snapshot(expression(Call->getArg(3)), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto ElementType =
+          type(Call->getArg(0)->getType()->getPointeeType(), L);
+      stableMerge(std::move(First), std::move(Middle), std::move(Last),
+                  PointerType, ElementType, DifferenceType, L, Comparator,
+                  Comparator ? Call->getArg(3)->getType() : QualType{});
+      return {};
+    }
     case UtilityOperation::AlgorithmPartialSort: {
       auto First = snapshot(expression(Call->getArg(0)), L);
       auto Middle = snapshot(expression(Call->getArg(1)), L);

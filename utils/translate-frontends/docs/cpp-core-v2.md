@@ -437,6 +437,14 @@ ranges make no callback calls. Comparator overloads additionally admit enum
 and object-pointer elements, while inexact callbacks, callable objects and
 record elements remain rejected.
 
+The exact `std::inplace_merge` overloads reuse the same stable in-place merge
+for two adjacent, already ordered writable scalar ranges. Equivalent elements
+from the first half remain before equivalent elements from the second half,
+and at most `N - 1` comparisons are made. An empty half performs no comparison.
+The default overload uses built-in arithmetic ordering; the comparator overload
+also admits enum and object-pointer elements through the exact callback
+boundary.
+
 The exact default-order `std::next_permutation` and `std::prev_permutation`
 templates use the same writable built-in arithmetic pointer boundary. They
 find the rightmost movable pivot, exchange it with the rightmost qualifying

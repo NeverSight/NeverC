@@ -1311,6 +1311,42 @@ extern "C" void algorithm_stable_sort(
           'struct R{int n;};bool p(R a,R b){return a.n<b.n;}\n#include <algorithm>\nint main(){R a[2]{{2},{1}};std::stable_sort(a,a+2,p);return 0;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    algorithm_inplace_merge_source = """\
+#include <algorithm>
+extern "C" void algorithm_inplace_merge(
+    int *first, int *middle, int *last, bool (*comparator)(int, int)) {
+  std::inplace_merge(first, middle, last);
+  std::inplace_merge(first, middle, last, comparator);
+}
+"""
+
+    def assert_inplace_merge(data):
+        assert len(data["sdk_dependencies"]) == 354, data
+        nodes = list(walk(data["functions"]))
+        assert not [node for node in nodes
+                    if node.get("op") in ("call", "mapped_call")], data
+        assert sum(node.get("op") == "indirect_call"
+                   for node in nodes) == 1, data
+
+    algorithm_inplace_merge = check(
+        "v2-algorithm-inplace-merge", algorithm_inplace_merge_source,
+        profile="cpp-core-v2", sdk=True)
+    assert_inplace_merge(algorithm_inplace_merge)
+    for target in sdk_targets:
+        target_result = check("v2-algorithm-inplace-merge-" + target,
+                              algorithm_inplace_merge_source,
+                              profile="cpp-core-v2", target=target, sdk=True)
+        assert_inplace_merge(target_result)
+    check("v2-algorithm-inplace-merge-enum",
+          '#include <algorithm>\nenum E{low,high};int main(){E a[2]{low,high};std::inplace_merge(a,a+1,a+2);return 0;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-inplace-merge-reference",
+          'bool p(const int&a,int b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{2,1};std::inplace_merge(a,a+1,a+2,p);return 0;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-inplace-merge-record",
+          'struct R{int n;};bool p(R a,R b){return a.n<b.n;}\n#include <algorithm>\nint main(){R a[2]{{2},{1}};std::inplace_merge(a,a+1,a+2,p);return 0;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     algorithm_permutation_source = """\
 #include <algorithm>
 extern "C" int algorithm_permutation(int *first, int *last,

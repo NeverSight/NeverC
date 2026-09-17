@@ -92,7 +92,8 @@ built-in arithmetic elements admit default-order
 `min`, `max`, `clamp`, `minmax`, `min_element`, `max_element`,
 `minmax_element`, `lower_bound`, `upper_bound`, `equal_range`, `binary_search`,
 `is_sorted`, `is_sorted_until`, `is_heap`, `is_heap_until`, `make_heap`,
-`push_heap`, `pop_heap`, `sort_heap`, `sort`, `stable_sort`, `partial_sort`,
+`push_heap`, `pop_heap`, `sort_heap`, `sort`, `stable_sort`, `inplace_merge`,
+`partial_sort`,
 `partial_sort_copy`, `nth_element`, `next_permutation`, `prev_permutation`,
 `lexicographical_compare`, `includes`, `merge` and the four `set_*` range
 algorithms. Checked by-value unary boolean function-pointer predicates admit
@@ -109,7 +110,7 @@ used as comparators additionally admit `min_element`, `max_element`,
 `lexicographical_compare`, `includes`, `merge`, `set_union`,
 `set_intersection`, `set_difference`, `set_symmetric_difference`, `is_heap`,
 `is_heap_until`, `make_heap`, `push_heap`, `pop_heap`, `sort_heap`, `sort`,
-`stable_sort`, `partial_sort`, `partial_sort_copy`, `nth_element`,
+`stable_sort`, `inplace_merge`, `partial_sort`, `partial_sort_copy`, `nth_element`,
 `next_permutation` and `prev_permutation`.
 Other exact callbacks admit `for_each`, `for_each_n`, unary and binary
 `transform`, `generate` and `generate_n`.

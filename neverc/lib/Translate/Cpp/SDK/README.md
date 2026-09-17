@@ -49,7 +49,8 @@ arithmetic elements with `min`, `max`, `clamp`, `minmax`, `min_element`,
 `max_element`, `minmax_element`, `lower_bound`, `upper_bound`, `equal_range`,
 `binary_search`, `is_sorted`, `is_sorted_until`, `is_heap`, `is_heap_until`,
 `make_heap`, `push_heap`, `pop_heap`, `sort_heap`,
-`sort`, `stable_sort`, `partial_sort`, `partial_sort_copy`, `nth_element`,
+`sort`, `stable_sort`, `inplace_merge`, `partial_sort`, `partial_sort_copy`,
+`nth_element`,
 `next_permutation`, `prev_permutation`,
 `lexicographical_compare`, `includes`, `merge`, `set_union`, `set_intersection`,
 `set_difference` and `set_symmetric_difference`. Checked by-value unary
@@ -68,7 +69,7 @@ same-type scalar ranges and values, and `lexicographical_compare`, `includes`,
 `merge`, `set_union`, `set_intersection`, `set_difference` and
 `set_symmetric_difference` on same-element scalar ranges. The same comparator
 boundary admits `is_heap`, `is_heap_until`, `make_heap`, `push_heap`, `pop_heap`
-and `sort_heap`, plus `sort`, `stable_sort`, `partial_sort`,
+and `sort_heap`, plus `sort`, `stable_sort`, `inplace_merge`, `partial_sort`,
 `partial_sort_copy`, `nth_element`, `next_permutation` and `prev_permutation`.
 Exact function-pointer callbacks also admit `for_each`, `for_each_n`, unary and
 binary `transform`, `generate` and `generate_n`.

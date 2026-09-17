@@ -26301,6 +26301,165 @@ TEST_F(TranslateTest, CoreV2AlgorithmStableSortRequiresPinnedScalarForms) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2AlgorithmInplaceMergeRunsAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-inplace-merge.cpp");
+  const auto Output = tmpFile("algorithm-inplace-merge.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int calls;
+bool bucket_less(int left, int right) {
+  ++calls;
+  return left / 10 < right / 10;
+}
+enum Rank : unsigned char { low, medium, high };
+bool rank_greater(Rank left, Rank right) {
+  ++calls;
+  return left > right;
+}
+bool pointed_bucket_less(int *left, int *right) {
+  ++calls;
+  return *left / 10 < *right / 10;
+}
+int main() {
+  int values[9]{1, 3, 5, 7, 0, 2, 4, 6, 8};
+  int effects = 0;
+  std::inplace_merge((++effects, values), (++effects, values + 4),
+                     (++effects, values + 9));
+  if (effects != 3)
+    return 1;
+  for (int i = 0; i != 9; ++i)
+    if (values[i] != i)
+      return 2;
+
+  float floating[6]{1.5f, 3.5f, 5.5f, 0.5f, 2.5f, 4.5f};
+  std::inplace_merge(floating, floating + 3, floating + 6);
+  const float floating_expected[6]{0.5f, 1.5f, 2.5f, 3.5f, 4.5f, 5.5f};
+  for (int i = 0; i != 6; ++i)
+    if (floating[i] != floating_expected[i])
+      return 3;
+
+  int stable[7]{11, 12, 21, 22, 13, 14, 23};
+  auto comparator = &bucket_less;
+  effects = 0;
+  calls = 0;
+  std::inplace_merge((++effects, stable), (++effects, stable + 4),
+                     (++effects, stable + 7), (++effects, comparator));
+  const int stable_expected[7]{11, 12, 13, 14, 21, 22, 23};
+  if (effects != 4 || calls == 0 || calls > 6)
+    return 4;
+  for (int i = 0; i != 7; ++i)
+    if (stable[i] != stable_expected[i])
+      return 5;
+
+  int one[1]{7};
+  effects = 0;
+  calls = 0;
+  std::inplace_merge((++effects, one), (++effects, one),
+                     (++effects, one + 1), (++effects, comparator));
+  std::inplace_merge((++effects, one), (++effects, one + 1),
+                     (++effects, one + 1), (++effects, comparator));
+  if (effects != 8 || calls != 0 || one[0] != 7)
+    return 6;
+
+  Rank ranks[4]{high, medium, high, low};
+  calls = 0;
+  std::inplace_merge(ranks, ranks + 2, ranks + 4, rank_greater);
+  if (ranks[0] != high || ranks[1] != high || ranks[2] != medium ||
+      ranks[3] != low || calls == 0)
+    return 7;
+
+  int objects[6]{11, 21, 22, 12, 13, 20};
+  int *pointers[6]{objects, objects + 1, objects + 2,
+                   objects + 3, objects + 4, objects + 5};
+  calls = 0;
+  std::inplace_merge(pointers, pointers + 3, pointers + 6,
+                     pointed_bucket_less);
+  int *pointer_expected[6]{objects,     objects + 3, objects + 4,
+                           objects + 1, objects + 2, objects + 5};
+  for (int i = 0; i != 6; ++i)
+    if (pointers[i] != pointer_expected[i])
+      return 8;
+  if (calls == 0)
+    return 9;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Dependencies =
+      Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 354u);
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+  }
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-inplace-merge" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmInplaceMergeRequiresPinnedScalarForms) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code = "TR0203";
+  };
+  const Rejection Cases[] = {
+      {"default-enum", "#include <algorithm>\nenum E{low,high};"
+                       "int main(){E a[2]{low,high};"
+                       "std::inplace_merge(a,a+1,a+2);return 0;}"},
+      {"default-pointer",
+       "#include <algorithm>\nint main(){int a=1,b=2;int*p[2]{&a,&b};"
+       "std::inplace_merge(p,p+1,p+2);return 0;}"},
+      {"reference-parameter",
+       "bool p(const int&a,int b){return a<b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{2,1};std::inplace_merge(a,a+1,a+2,p);return 0;}"},
+      {"non-bool-result",
+       "int p(int a,int b){return a<b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{2,1};std::inplace_merge(a,a+1,a+2,p);return 0;}"},
+      {"converted-parameter",
+       "bool p(long a,long b){return a<b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{2,1};std::inplace_merge(a,a+1,a+2,p);return 0;}"},
+      {"function-object",
+       "struct P{bool operator()(int a,int b)const{return a<b;}};\n"
+       "#include <algorithm>\nint main(){int a[2]{2,1};"
+       "std::inplace_merge(a,a+1,a+2,P{});return 0;}"},
+      {"record-elements", "struct R{int n;};bool p(R a,R b){return a.n<b.n;}\n"
+                          "#include <algorithm>\nint main(){R a[2]{{2},{1}};"
+                          "std::inplace_merge(a,a+1,a+2,p);return 0;}"},
+      {"variadic-comparator",
+       "bool p(int a,int b,...){return a<b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{2,1};"
+       "std::inplace_merge(a,a+1,a+2,p);return 0;}",
+       "TR0201"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("algorithm-inplace-merge-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("algorithm-inplace-merge-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmPermutationRunAtBothOptimizations) {
   const auto Source = tmpFile("algorithm-permutation.cpp");
   const auto Output = tmpFile("algorithm-permutation.nc");
