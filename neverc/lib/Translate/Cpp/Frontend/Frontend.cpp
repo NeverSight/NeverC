@@ -13682,12 +13682,12 @@ public:
           (!Angled ||
            (Name != "type_traits" && Name != "cstdint" && Name != "limits" &&
             Name != "cstddef" && Name != "utility" && Name != "array" &&
-            Name != "iterator"))) {
+            Name != "iterator" && Name != "algorithm"))) {
         reject(L, "include",
                "Only exact #include <type_traits>, #include <cstdint> and "
                "#include <limits>, #include <cstddef>, #include <utility> and "
-               "#include <array> and #include <iterator> entries are admitted "
-               "in cpp-core-v2.");
+               "#include <array>, #include <iterator> and #include <algorithm> "
+               "entries are admitted in cpp-core-v2.");
         return;
       }
       if (!S.owns(SM, L) && !S.sdkFile(SM, L))
@@ -14744,6 +14744,13 @@ extern "C" int neverc_cpp_frontend_main(int Argc, const char **Argv) {
                                "-D_LIBCPP___ITERATOR_ISTREAMBUF_ITERATOR_H",
                                "-D_LIBCPP___ITERATOR_OSTREAM_ITERATOR_H",
                                "-D_LIBCPP___ITERATOR_OSTREAMBUF_ITERATOR_H",
+                               // Randomized algorithms pull iosfwd through
+                               // uniform_int_distribution. Keep their exact
+                               // headers authenticated but their declarations
+                               // absent until every core target supplies a
+                               // checked mbstate_t ABI.
+                               "-D_LIBCPP___ALGORITHM_SHUFFLE_H",
+                               "-D_LIBCPP___ALGORITHM_SAMPLE_H",
                                "-D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS",
                                "-fno-fast-math", "-ffp-contract=off"});
     }

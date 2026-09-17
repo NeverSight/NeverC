@@ -213,6 +213,22 @@ their declarations are disabled because libc++ obtains `mbstate_t` from a target
 C runtime header. Quoted includes, forged declarations, runtime utility calls
 and stream iterators remain rejected.
 
+## Algorithm header from `<algorithm>`
+
+Core v2 admits the exact angled `<algorithm>` entry from the pinned embedded
+VFS. The authenticated closure contains 354 libc++/resource files on every
+supported target, has the same dependency set on all eight targets, and contains
+no platform headers. The upstream public header and every consumed component
+retain their original bytes.
+
+This first header increment makes the standard declarations available for
+subsequent direct lowering; calls outside a documented lowering remain rejected.
+The `shuffle` and `sample` component headers are authenticated but their
+declarations stay disabled because libc++ reaches `mbstate_t` through
+`uniform_int_distribution`. They will be enabled after the core SDK has a
+checked C runtime character-state ABI on every target. Quoted includes, user
+shadow headers and forged declarations remain rejected.
+
 ## Standard template parsing across targets
 
 The embedded frontend disables MSVC compatibility extensions and delayed template parsing for `cpp-core-v2` on every supported target, including Windows x64 and ARM64. Definitions use standard C++17 parsing and lookup rules. Duplicate explicit instantiation definitions, late specializations and incompatible exception specifications retain language diagnostics (`TR0202`); parsed source still receives the existing support checks (`TR0201`). Unused dependent bodies remain lazy until instantiation is needed. This setting does not change project/math profile configuration or the target data layout, and requires no external Clang executable. Full C++/STL support remains unfinished.

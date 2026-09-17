@@ -29,8 +29,8 @@ def main():
     repository = Path(__file__).resolve().parents[4]
     count = 0
     sdk_identity = {
-        "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r5",
-        "catalog_sha256": "bbe031f08a09a485c5fffacedc19e4da605dc7de7f06da464d1bd22d83f5cc5f",
+        "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r6",
+        "catalog_sha256": "3c1f73cf0f51618a1a14d7441bbbabf8db667c3e339decbfff317002277c01da",
     }
 
     def check(name, source, code=None, options=(), root=None, profile="cpp-core-v1",
@@ -607,6 +607,25 @@ extern "C" int iterator_operations() {
     ):
         check("v2-iterator-" + name, source, code,
               profile="cpp-core-v2", sdk=True)
+
+    algorithm_header_source = """\
+#include <algorithm>
+extern "C" int algorithm_header() { return 0; }
+"""
+    algorithm_header = check("v2-algorithm-header", algorithm_header_source,
+                             profile="cpp-core-v2", sdk=True)
+    assert len(algorithm_header["sdk_dependencies"]) == 354, algorithm_header
+    assert any(dependency["root"] == "libcxx" and
+               dependency["path"] == "algorithm"
+               for dependency in algorithm_header["sdk_dependencies"]), algorithm_header
+    assert not any(dependency["root"] == "platform"
+                   for dependency in algorithm_header["sdk_dependencies"]), algorithm_header
+    for target in sdk_targets:
+        check("v2-algorithm-header-" + target, algorithm_header_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-algorithm-quoted",
+          '#include "algorithm"\nint main(){return 0;}', "TR0201",
+          profile="cpp-core-v2", sdk=True)
 
     # Windows driver defaults must not change core-v2 source visibility or
     # standard diagnostics. Exercise both MSVC architectures on every CI host.
