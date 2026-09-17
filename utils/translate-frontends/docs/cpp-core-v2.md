@@ -228,14 +228,16 @@ supported target, has the same dependency set on all eight targets, and contains
 no platform headers. The upstream public header and every consumed component
 retain their original bytes.
 
-The exact public `std::copy`, `std::move`, `std::copy_backward`,
-`std::move_backward`, `std::fill`, `std::fill_n`, `std::swap_ranges`,
-`std::reverse` and `std::reverse_copy` templates directly lower for non-volatile
+The exact public `std::copy`, `std::copy_n`, `std::move`,
+`std::copy_backward`, `std::move_backward`, `std::fill`, `std::fill_n`,
+`std::iter_swap`, `std::swap_ranges`, `std::reverse`, `std::reverse_copy`,
+`std::rotate` and `std::rotate_copy` templates directly lower for non-volatile
 raw object pointer ranges whose unqualified element type is the same admitted
 scalar type. Transfer and fill algorithms require a writable output element;
-`swap_ranges` requires both ranges to be writable, and `reverse` requires a
-writable input range. `fill_n` accepts integral or non-scoped enum counts whose
-promoted type is at most 64 bits. Floating counts are outside this boundary.
+`iter_swap` and `swap_ranges` require both mutated ranges to be writable, and
+`reverse` and `rotate` require a writable input range. `copy_n` and `fill_n`
+accept integral or non-scoped enum counts whose promoted type is at most 64
+bits. Floating counts are outside this boundary.
 
 The exact default-equality `std::find`, `std::count`, three- and four-iterator
 `std::equal`, `std::adjacent_find`, `std::remove`, `std::remove_copy`,
@@ -274,6 +276,9 @@ with output iterators return the advanced output pointer. `search_n` applies
 the same promotion and preserves a non-positive-count fast path. `mismatch`
 constructs its scalar-pointer pair result directly. `remove` and `unique`
 return the compacted logical end; copy forms return their advanced destination.
+`copy_n` also preserves a non-positive-count fast path. `rotate` returns the
+new location of the original first element, while `rotate_copy` returns its
+advanced destination.
 Forward and backward loops preserve their respective standard overlap
 direction; `reverse` uses equality-only bidirectional contraction. Minimum and
 maximum scans retain the first equivalent element; sortedness scans report the

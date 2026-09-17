@@ -24315,6 +24315,119 @@ TEST_F(TranslateTest, CoreV2AlgorithmSubrangeRequiresPinnedScalarForms) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2AlgorithmRearrangementRunsAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-rearrangement.cpp");
+  const auto Output = tmpFile("algorithm-rearrangement.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+enum Count : unsigned int { three = 3 };
+int main() {
+  const int source[5]{1, 2, 3, 4, 5};
+  int copied[5]{9, 9, 9, 9, 9};
+  int effects = 0;
+  if (std::copy_n((++effects, source), (++effects, Count::three),
+                  (++effects, copied)) != copied + 3 ||
+      effects != 3 || copied[0] != 1 || copied[1] != 2 || copied[2] != 3 ||
+      copied[3] != 9)
+    return 1;
+  short negative = -2;
+  if (std::copy_n(source, negative, copied + 3) != copied + 3 ||
+      copied[3] != 9)
+    return 2;
+
+  int swapped[3]{7, 8, 9};
+  effects = 0;
+  std::iter_swap((++effects, swapped), (++effects, swapped + 2));
+  if (effects != 2 || swapped[0] != 9 || swapped[1] != 8 ||
+      swapped[2] != 7)
+    return 3;
+
+  int values[5]{1, 2, 3, 4, 5};
+  effects = 0;
+  int *rotated = std::rotate((++effects, values), (++effects, values + 2),
+                             (++effects, values + 5));
+  if (effects != 3 || rotated != values + 3 || values[0] != 3 ||
+      values[1] != 4 || values[2] != 5 || values[3] != 1 || values[4] != 2)
+    return 4;
+  if (std::rotate(values, values, values + 5) != values + 5 ||
+      std::rotate(values, values + 5, values + 5) != values)
+    return 5;
+
+  const int rotation_source[4]{1, 2, 3, 4};
+  int rotation_copy[4]{};
+  if (std::rotate_copy(rotation_source, rotation_source + 2,
+                       rotation_source + 4, rotation_copy) !=
+          rotation_copy + 4 ||
+      rotation_copy[0] != 3 || rotation_copy[1] != 4 ||
+      rotation_copy[2] != 1 || rotation_copy[3] != 2)
+    return 6;
+
+  int storage[4]{};
+  int *pointers[4]{storage, storage + 1, storage + 2, storage + 3};
+  if (std::rotate(pointers, pointers + 1, pointers + 4) != pointers + 3 ||
+      pointers[0] != storage + 1 || pointers[1] != storage + 2 ||
+      pointers[2] != storage + 3 || pointers[3] != storage)
+    return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Dependencies =
+      Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 354u);
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+  }
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-rearrangement" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmRearrangementRequiresPinnedScalarForms) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+  };
+  const Rejection Cases[] = {
+      {"heterogeneous-copy-n",
+       "#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{};"
+       "return std::copy_n(a,2,b)==b+2?0:1;}"},
+      {"volatile-rotate",
+       "#include <algorithm>\nint main(){volatile int a[2]{1,2};"
+       "return std::rotate(a,a+1,a+2)==a+1?0:1;}"},
+      {"record-rotate",
+       "#include <algorithm>\nstruct R{int n;};int main(){R a[2]{{1},{2}};"
+       "return std::rotate(a,a+1,a+2)==a+1?0:1;}"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("algorithm-rearrangement-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("algorithm-rearrangement-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2IteratorPointerOperationsRunAtBothOptimizations) {
   const auto Source = tmpFile("iterator-operations.cpp");
   const auto Output = tmpFile("iterator-operations.nc");

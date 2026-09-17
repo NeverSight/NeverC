@@ -81,19 +81,20 @@ through a platform-free 171-file closure, and directly lowers bounded pointer,
 array-range and reverse-iterator operations. Stream iterators remain disabled
 until their C runtime character-state ABI is available on every target.
 Algorithm directly lowers exact scalar-pointer `copy`, `move`, `copy_backward`,
-`move_backward`, `fill`, `fill_n`, `swap_ranges`, `reverse` and `reverse_copy`
-calls from its platform-free 354-file closure. Built-in equality elements admit
+`move_backward`, `copy_n`, `fill`, `fill_n`, `iter_swap`, `swap_ranges`,
+`reverse`, `reverse_copy`, `rotate` and `rotate_copy` calls from its
+platform-free 354-file closure. Built-in equality elements admit
 `find`, `count`, three- or four-iterator `equal`, `adjacent_find`, `remove`,
 `remove_copy`, `replace`, `replace_copy`, `unique`, `unique_copy`, `search`,
 `find_end`, `find_first_of`, `search_n` and three- or four-iterator `mismatch`;
 built-in arithmetic elements admit default-order
 `min_element`, `max_element`, `lower_bound`, `upper_bound`, `binary_search`,
 `is_sorted` and `is_sorted_until`. Mutation requires writable destinations,
-and `fill_n` and `search_n` accept integral or non-scoped enum counts through 64
-bits after integer promotion. `mismatch` directly constructs its authenticated
-scalar-pointer pair result. `shuffle` and `sample` remain disabled at this stage
-because their libc++ implementation reaches the same target C runtime
-character-state ABI through `uniform_int_distribution`.
+and `copy_n`, `fill_n` and `search_n` accept integral or non-scoped enum counts
+through 64 bits after integer promotion. `mismatch` directly constructs its
+authenticated scalar-pointer pair result. `shuffle` and `sample` remain
+disabled at this stage because their libc++ implementation reaches the same
+target C runtime character-state ABI through `uniform_int_distribution`.
 The driver authenticates each closure before
 emitting output. Standard-library objects and operations beyond these documented
 surfaces, other standard headers and full C++/STL remain unfinished.

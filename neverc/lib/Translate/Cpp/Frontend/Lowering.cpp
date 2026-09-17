@@ -1619,6 +1619,124 @@ class FunctionLowering {
       assign(fieldStorage(json::Object(Place), Pair->Second, L), Second, L);
       return Place;
     }
+    case UtilityOperation::AlgorithmCopyN: {
+      auto Input = snapshot(expression(Call->getArg(0)), L);
+      auto CountType = Call->getArg(1)->getType();
+      if (const auto *Enumeration = CountType->getAs<EnumType>())
+        CountType = Enumeration->getDecl()->getPromotionType();
+      else if (A.Context.isPromotableIntegerType(CountType))
+        CountType = A.Context.getPromotedIntegerType(CountType);
+      const auto CountTypeName = type(CountType, L);
+      auto Remaining =
+          snapshot(cast(expression(Call->getArg(1)), CountTypeName, L), L);
+      auto Output = snapshot(expression(Call->getArg(2)), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto InputType = type(Call->getArg(0)->getType(), L);
+      const auto OutputType = type(Call->getArg(2)->getType(), L);
+      const auto Check = labelName(), Transfer = labelName();
+      const auto End = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary(">", Remaining, quantity(0, CountTypeName, L), "bool", L),
+             Transfer, End, L);
+      label(Transfer, L);
+      assign(dereference(Output, L), dereference(Input, L), L);
+      assign(Input,
+             binary("+", Input, quantity(1, DifferenceType, L), InputType, L),
+             L);
+      assign(Output,
+             binary("+", Output, quantity(1, DifferenceType, L), OutputType, L),
+             L);
+      assign(Remaining,
+             binary("-", Remaining, one(CountTypeName, L), CountTypeName, L),
+             L);
+      jump(Check, L);
+      label(End, L);
+      return Output;
+    }
+    case UtilityOperation::AlgorithmIterSwap: {
+      auto Left = snapshot(expression(Call->getArg(0)), L);
+      auto Right = snapshot(expression(Call->getArg(1)), L);
+      auto LeftValue = snapshot(dereference(Left, L), L);
+      auto RightValue = snapshot(dereference(Right, L), L);
+      assign(dereference(Left, L), std::move(RightValue), L);
+      assign(dereference(Right, L), std::move(LeftValue), L);
+      return {};
+    }
+    case UtilityOperation::AlgorithmRotate: {
+      auto First = snapshot(expression(Call->getArg(0)), L);
+      auto Middle = snapshot(expression(Call->getArg(1)), L);
+      auto Last = snapshot(expression(Call->getArg(2)), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      auto TailLength =
+          snapshot(binary("-", Last, Middle, DifferenceType, L), L);
+      auto Result = snapshot(binary("+", First, TailLength, PointerType, L), L);
+      auto ReverseRange = [&](const Expression &RangeFirst,
+                              const Expression &RangeLast) {
+        auto Begin = snapshot(json::Object(RangeFirst), L);
+        auto End = snapshot(json::Object(RangeLast), L);
+        const auto Check = labelName(), Decrement = labelName();
+        const auto Swap = labelName(), Done = labelName();
+        jump(Check, L);
+        label(Check, L);
+        branch(binary("!=", Begin, End, "bool", L), Decrement, Done, L);
+        label(Decrement, L);
+        assign(End,
+               binary("-", End, quantity(1, DifferenceType, L), PointerType, L),
+               L);
+        branch(binary("!=", Begin, End, "bool", L), Swap, Done, L);
+        label(Swap, L);
+        auto BeginValue = snapshot(dereference(Begin, L), L);
+        auto EndValue = snapshot(dereference(End, L), L);
+        assign(dereference(Begin, L), std::move(EndValue), L);
+        assign(dereference(End, L), std::move(BeginValue), L);
+        assign(
+            Begin,
+            binary("+", Begin, quantity(1, DifferenceType, L), PointerType, L),
+            L);
+        jump(Check, L);
+        label(Done, L);
+      };
+      ReverseRange(First, Middle);
+      ReverseRange(Middle, Last);
+      ReverseRange(First, Last);
+      return Result;
+    }
+    case UtilityOperation::AlgorithmRotateCopy: {
+      auto First = snapshot(expression(Call->getArg(0)), L);
+      auto Middle = snapshot(expression(Call->getArg(1)), L);
+      auto Last = snapshot(expression(Call->getArg(2)), L);
+      auto Output = snapshot(expression(Call->getArg(3)), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto InputType = type(Call->getArg(0)->getType(), L);
+      const auto OutputType = type(Call->getArg(3)->getType(), L);
+      auto CopyRange = [&](const Expression &RangeFirst,
+                           const Expression &RangeLast) {
+        auto Current = snapshot(json::Object(RangeFirst), L);
+        auto End = snapshot(json::Object(RangeLast), L);
+        const auto Check = labelName(), Transfer = labelName();
+        const auto Done = labelName();
+        jump(Check, L);
+        label(Check, L);
+        branch(binary("!=", Current, End, "bool", L), Transfer, Done, L);
+        label(Transfer, L);
+        assign(dereference(Output, L), dereference(Current, L), L);
+        assign(
+            Current,
+            binary("+", Current, quantity(1, DifferenceType, L), InputType, L),
+            L);
+        assign(
+            Output,
+            binary("+", Output, quantity(1, DifferenceType, L), OutputType, L),
+            L);
+        jump(Check, L);
+        label(Done, L);
+      };
+      CopyRange(Middle, Last);
+      CopyRange(First, Middle);
+      return Output;
+    }
     case UtilityOperation::MakePair: {
       auto Pair = approvedUtilityPairRecord(
           A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);

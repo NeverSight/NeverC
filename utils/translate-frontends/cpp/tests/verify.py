@@ -815,6 +815,35 @@ extern "C" int algorithm_subrange(const int *first, const int *last,
           '#include <algorithm>\nbool same(int a,int b){return a==b;}int main(){int a[2]{1,2};return std::search(a,a+2,a,a+1,&same)==a?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    algorithm_rearrangement_source = """\
+#include <algorithm>
+extern "C" int algorithm_rearrangement(int *first, int *middle, int *last,
+                                         int *output, int count) {
+  int *copied = std::copy_n(first, count, output);
+  std::iter_swap(first, middle);
+  int *rotated = std::rotate(first, middle, last);
+  int *rotation_copy = std::rotate_copy(first, middle, last, copied);
+  return static_cast<int>((copied - output) + (rotated - first) +
+                          (rotation_copy - output));
+}
+"""
+    algorithm_rearrangement = check("v2-algorithm-rearrangement",
+                                    algorithm_rearrangement_source,
+                                    profile="cpp-core-v2", sdk=True)
+    assert len(algorithm_rearrangement["sdk_dependencies"]) == 354, algorithm_rearrangement
+    assert not [node for node in walk(algorithm_rearrangement["functions"])
+                if node.get("op") in ("call", "mapped_call")], algorithm_rearrangement
+    for target in sdk_targets:
+        check("v2-algorithm-rearrangement-" + target,
+              algorithm_rearrangement_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-algorithm-rearrangement-heterogeneous-copy-n",
+          '#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{};return std::copy_n(a,2,b)==b+2?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-rearrangement-record-rotate",
+          '#include <algorithm>\nstruct R{int n;};int main(){R a[2]{{1},{2}};return std::rotate(a,a+1,a+2)==a+1?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     # Windows driver defaults must not change core-v2 source visibility or
     # standard diagnostics. Exercise both MSVC architectures on every CI host.
     standard_template_parsing = {

@@ -1737,6 +1737,58 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                Function->getParamDecl(3)->getType()))))
       return UtilityOperation::AlgorithmMismatch;
   }
+  if (Origin->Path == "__algorithm/copy_n.h" && Name == "copy_n" &&
+      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
+      Call->isPRValue() && AlgorithmPointerParameter(0) &&
+      AlgorithmCountParameter(1) && AlgorithmPointerParameter(2) &&
+      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
+                           Function->getParamDecl(2)->getType()) &&
+      utilityAlgorithmWritableScalarPointer(
+          Context, Function->getParamDecl(2)->getType()) &&
+      Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmCopyN;
+  if (Origin->Path == "__algorithm/iter_swap.h" && Name == "iter_swap" &&
+      Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
+                           Function->getParamDecl(1)->getType()) &&
+      utilityAlgorithmWritableScalarPointer(
+          Context, Function->getParamDecl(0)->getType()) &&
+      utilityAlgorithmWritableScalarPointer(
+          Context, Function->getParamDecl(1)->getType()) &&
+      Function->getReturnType()->isVoidType() &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmIterSwap;
+  if (Origin->Path == "__algorithm/rotate.h" && Name == "rotate" &&
+      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
+      Call->isPRValue() && AlgorithmPointerParameter(0) &&
+      AlgorithmPointerParameter(1) && AlgorithmPointerParameter(2) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(2)->getType()) &&
+      utilityAlgorithmWritableScalarPointer(
+          Context, Function->getParamDecl(0)->getType()) &&
+      Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmRotate;
+  if (Origin->Path == "__algorithm/rotate_copy.h" && Name == "rotate_copy" &&
+      Call->getNumArgs() == 4 && Function->getNumParams() == 4 &&
+      Call->isPRValue() && AlgorithmPointerParameter(0) &&
+      AlgorithmPointerParameter(1) && AlgorithmPointerParameter(2) &&
+      AlgorithmPointerParameter(3) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(2)->getType()) &&
+      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
+                           Function->getParamDecl(3)->getType()) &&
+      utilityAlgorithmWritableScalarPointer(
+          Context, Function->getParamDecl(3)->getType()) &&
+      Same(Function->getReturnType(), Function->getParamDecl(3)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmRotateCopy;
   if (Origin->Path == "__iterator/reverse_iterator.h" &&
       Name == "make_reverse_iterator" && Call->getNumArgs() == 1 &&
       Function->getNumParams() == 1 && Call->isPRValue()) {
