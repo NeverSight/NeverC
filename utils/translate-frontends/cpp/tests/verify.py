@@ -917,6 +917,33 @@ extern "C" int algorithm_extrema(const int *first, const int *last,
           '#include <utility>\nint main(){int a=1,b=2;std::pair<const int&,const int&> value(a,b);return value.first;}',
           "TR0201", profile="cpp-core-v2", sdk=True)
 
+    algorithm_heap_source = """\
+#include <algorithm>
+extern "C" int algorithm_heap(int *first, int *last) {
+  bool heap = std::is_heap(first, last);
+  int *until = std::is_heap_until(first, last);
+  std::make_heap(first, last);
+  std::push_heap(first, last);
+  std::pop_heap(first, last);
+  std::sort_heap(first, last);
+  return heap + static_cast<int>((until - first) + (last - first));
+}
+"""
+    algorithm_heap = check("v2-algorithm-heap", algorithm_heap_source,
+                           profile="cpp-core-v2", sdk=True)
+    assert len(algorithm_heap["sdk_dependencies"]) == 354, algorithm_heap
+    assert not [node for node in walk(algorithm_heap["functions"])
+                if node.get("op") in ("call", "mapped_call")], algorithm_heap
+    for target in sdk_targets:
+        check("v2-algorithm-heap-" + target, algorithm_heap_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-algorithm-heap-enum",
+          '#include <algorithm>\nenum E{low,high};int main(){E a[2]{low,high};std::make_heap(a,a+2);return 0;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-heap-comparator",
+          '#include <algorithm>\nbool less(int a,int b){return a<b;}int main(){int a[2]{2,1};return std::is_heap(a,a+2,&less)?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     # Windows driver defaults must not change core-v2 source visibility or
     # standard diagnostics. Exercise both MSVC architectures on every CI host.
     standard_template_parsing = {

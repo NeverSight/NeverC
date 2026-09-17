@@ -364,6 +364,12 @@ enum class UtilityOperation {
   AlgorithmClamp,
   AlgorithmMinmax,
   AlgorithmMinmaxElement,
+  AlgorithmIsHeap,
+  AlgorithmIsHeapUntil,
+  AlgorithmMakeHeap,
+  AlgorithmPushHeap,
+  AlgorithmPopHeap,
+  AlgorithmSortHeap,
 };
 struct UtilityPairRecord {
   const clang::CXXRecordDecl *Record;

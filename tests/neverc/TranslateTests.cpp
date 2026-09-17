@@ -24691,6 +24691,114 @@ TEST_F(TranslateTest, CoreV2AlgorithmExtremaRequirePinnedScalarForms) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2AlgorithmHeapRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-heap.cpp");
+  const auto Output = tmpFile("algorithm-heap.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int main() {
+  const int bad[7]{9, 7, 8, 6, 5, 10, 4};
+  if (std::is_heap(bad, bad + 7) ||
+      std::is_heap_until(bad, bad + 7) != bad + 5)
+    return 1;
+  if (!std::is_heap(bad, bad) || std::is_heap_until(bad, bad) != bad)
+    return 2;
+
+  int values[10]{3, 1, 4, 1, 5, 9, 2, 6, 5, 0};
+  int effects = 0;
+  std::make_heap((++effects, values), (++effects, values + 9));
+  if (effects != 2 || !std::is_heap(values, values + 9) || values[0] != 9)
+    return 3;
+  values[9] = 7;
+  std::push_heap(values, values + 10);
+  if (!std::is_heap(values, values + 10) || values[0] != 9)
+    return 4;
+  std::pop_heap(values, values + 10);
+  if (values[9] != 9 || !std::is_heap(values, values + 9))
+    return 5;
+  std::sort_heap(values, values + 9);
+  const int expected[9]{1, 1, 2, 3, 4, 5, 5, 6, 7};
+  for (int i = 0; i != 9; ++i)
+    if (values[i] != expected[i])
+      return 6;
+
+  int one[1]{4};
+  std::make_heap(one, one + 1);
+  std::push_heap(one, one + 1);
+  std::pop_heap(one, one + 1);
+  std::sort_heap(one, one + 1);
+  if (one[0] != 4)
+    return 7;
+
+  float floating[4]{1.5f, 4.5f, 2.5f, 3.5f};
+  std::make_heap(floating, floating + 4);
+  std::sort_heap(floating, floating + 4);
+  if (floating[0] != 1.5f || floating[3] != 4.5f)
+    return 8;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Dependencies =
+      Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 354u);
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+  }
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-heap" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmHeapRequirePinnedScalarForms) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+  };
+  const Rejection Cases[] = {
+      {"enum-make",
+       "#include <algorithm>\nenum E{low,high};"
+       "int main(){E a[2]{low,high};std::make_heap(a,a+2);return 0;}"},
+      {"pointer-query",
+       "#include <algorithm>\nint main(){int a=1,b=2;int*p[2]{&a,&b};"
+       "return std::is_heap(p,p+2)?0:1;}"},
+      {"comparator-query",
+       "#include <algorithm>\nbool less(int a,int b){return a<b;}"
+       "int main(){int a[2]{2,1};return std::is_heap(a,a+2,&less)?0:1;}"},
+      {"record-sort",
+       "#include <algorithm>\nstruct R{int n;};"
+       "bool operator<(const R&a,const R&b){return a.n<b.n;}"
+       "int main(){R a[2]{{2},{1}};std::sort_heap(a,a+2);return 0;}"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("algorithm-heap-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("algorithm-heap-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2IteratorPointerOperationsRunAtBothOptimizations) {
   const auto Source = tmpFile("iterator-operations.cpp");
   const auto Output = tmpFile("iterator-operations.nc");

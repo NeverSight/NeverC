@@ -90,10 +90,12 @@ platform-free 354-file closure. Built-in equality elements admit
 built-in arithmetic elements admit default-order
 `min`, `max`, `clamp`, `minmax`, `min_element`, `max_element`,
 `minmax_element`, `lower_bound`, `upper_bound`, `equal_range`, `binary_search`,
-`is_sorted`, `is_sorted_until`, `lexicographical_compare`, `includes`, `merge`
-and the four `set_*` range algorithms. Mutation and ordered output algorithms
-require writable destinations, and `copy_n`, `fill_n` and `search_n` accept
-integral or non-scoped enum counts through 64 bits after integer promotion.
+`is_sorted`, `is_sorted_until`, `is_heap`, `is_heap_until`, `make_heap`,
+`push_heap`, `pop_heap`, `sort_heap`, `lexicographical_compare`, `includes`,
+`merge` and the four `set_*` range algorithms. Mutating and ordered output
+algorithms require writable destinations, and `copy_n`,
+`fill_n` and `search_n` accept integral or non-scoped enum counts through 64
+bits after integer promotion.
 `mismatch`, `equal_range` and `minmax_element` directly construct authenticated
 scalar-pointer pair results; `minmax` uses its exact authenticated pair of two
 const references. `shuffle` and `sample` remain disabled at this stage because
