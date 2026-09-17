@@ -782,6 +782,39 @@ extern "C" int algorithm_equality_mutation(int *first, int *last,
           '#include <algorithm>\nenum E{one,two};bool operator==(E,E){return true;}int main(){E a[1]{one};return std::find(a,a+1,two)==a?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    algorithm_subrange_source = """\
+#include <algorithm>
+extern "C" int algorithm_subrange(const int *first, const int *last,
+                                    const int *pattern,
+                                    const int *pattern_last, int value) {
+  const int *found = std::search(first, last, pattern, pattern_last);
+  const int *final = std::find_end(first, last, pattern, pattern_last);
+  const int *choice = std::find_first_of(first, last, pattern, pattern_last);
+  const int *run = std::search_n(first, last, 2, value);
+  auto different = std::mismatch(first, last, pattern, pattern_last);
+  return static_cast<int>((found - first) + (final - first) +
+                          (choice - first) + (run - first) +
+                          (different.first - first) +
+                          (different.second - pattern));
+}
+"""
+    algorithm_subrange = check("v2-algorithm-subrange",
+                               algorithm_subrange_source,
+                               profile="cpp-core-v2", sdk=True)
+    assert len(algorithm_subrange["sdk_dependencies"]) == 354, algorithm_subrange
+    assert not [node for node in walk(algorithm_subrange["functions"])
+                if node.get("op") in ("call", "mapped_call")], algorithm_subrange
+    for target in sdk_targets:
+        check("v2-algorithm-subrange-" + target,
+              algorithm_subrange_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-algorithm-subrange-heterogeneous-search",
+          '#include <algorithm>\nint main(){int a[2]{1,2};long b[1]{2};return std::search(a,a+2,b,b+1)==a+1?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-subrange-predicate-search",
+          '#include <algorithm>\nbool same(int a,int b){return a==b;}int main(){int a[2]{1,2};return std::search(a,a+2,a,a+1,&same)==a?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     # Windows driver defaults must not change core-v2 source visibility or
     # standard diagnostics. Exercise both MSVC architectures on every CI host.
     standard_template_parsing = {

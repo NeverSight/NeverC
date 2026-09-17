@@ -342,6 +342,11 @@ enum class UtilityOperation {
   AlgorithmReplaceCopy,
   AlgorithmUnique,
   AlgorithmUniqueCopy,
+  AlgorithmSearch,
+  AlgorithmFindEnd,
+  AlgorithmFindFirstOf,
+  AlgorithmSearchN,
+  AlgorithmMismatch,
 };
 struct UtilityPairRecord {
   const clang::CXXRecordDecl *Record;

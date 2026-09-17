@@ -1402,6 +1402,223 @@ class FunctionLowering {
       label(End, L);
       return Output;
     }
+    case UtilityOperation::AlgorithmSearch:
+    case UtilityOperation::AlgorithmFindEnd: {
+      const bool LastMatch = Operation == UtilityOperation::AlgorithmFindEnd;
+      auto First = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto Pattern = snapshot(expression(Call->getArg(2)), L);
+      auto PatternLast = snapshot(expression(Call->getArg(3)), L);
+      auto Candidate = snapshot(json::Object(First), L);
+      auto Current = snapshot(json::Object(First), L);
+      auto PatternCurrent = snapshot(json::Object(Pattern), L);
+      auto Result = snapshot(json::Object(Last), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto InputType = type(Call->getArg(0)->getType(), L);
+      const auto PatternType = type(Call->getArg(2)->getType(), L);
+      const auto EmptyPattern = labelName(), Outer = labelName();
+      const auto Start = labelName(), Inner = labelName();
+      const auto CheckSource = labelName(), Compare = labelName();
+      const auto Advance = labelName(), Mismatch = labelName();
+      const auto Match = labelName(), End = labelName();
+      branch(binary("!=", Pattern, PatternLast, "bool", L), Outer, EmptyPattern,
+             L);
+      label(EmptyPattern, L);
+      if (!LastMatch)
+        assign(Result, First, L);
+      jump(End, L);
+      label(Outer, L);
+      branch(binary("!=", Candidate, Last, "bool", L), Start, End, L);
+      label(Start, L);
+      assign(Current, json::Object(Candidate), L);
+      assign(PatternCurrent, json::Object(Pattern), L);
+      jump(Inner, L);
+      label(Inner, L);
+      branch(binary("!=", PatternCurrent, PatternLast, "bool", L), CheckSource,
+             Match, L);
+      label(CheckSource, L);
+      branch(binary("!=", Current, Last, "bool", L), Compare, End, L);
+      label(Compare, L);
+      branch(binary("==", dereference(Current, L),
+                    dereference(PatternCurrent, L), "bool", L),
+             Advance, Mismatch, L);
+      label(Advance, L);
+      assign(Current,
+             binary("+", Current, quantity(1, DifferenceType, L), InputType, L),
+             L);
+      assign(PatternCurrent,
+             binary("+", PatternCurrent, quantity(1, DifferenceType, L),
+                    PatternType, L),
+             L);
+      jump(Inner, L);
+      label(Mismatch, L);
+      assign(
+          Candidate,
+          binary("+", Candidate, quantity(1, DifferenceType, L), InputType, L),
+          L);
+      jump(Outer, L);
+      label(Match, L);
+      assign(Result, json::Object(Candidate), L);
+      if (LastMatch) {
+        assign(Candidate,
+               binary("+", Candidate, quantity(1, DifferenceType, L), InputType,
+                      L),
+               L);
+        jump(Outer, L);
+      } else {
+        jump(End, L);
+      }
+      label(End, L);
+      return Result;
+    }
+    case UtilityOperation::AlgorithmFindFirstOf: {
+      auto Current = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto Choices = snapshot(expression(Call->getArg(2)), L);
+      auto ChoicesLast = snapshot(expression(Call->getArg(3)), L);
+      auto Choice = snapshot(json::Object(Choices), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto InputType = type(Call->getArg(0)->getType(), L);
+      const auto ChoiceType = type(Call->getArg(2)->getType(), L);
+      const auto Outer = labelName(), Start = labelName();
+      const auto Inner = labelName(), Compare = labelName();
+      const auto NextChoice = labelName(), NextInput = labelName();
+      const auto End = labelName();
+      jump(Outer, L);
+      label(Outer, L);
+      branch(binary("!=", Current, Last, "bool", L), Start, End, L);
+      label(Start, L);
+      assign(Choice, json::Object(Choices), L);
+      jump(Inner, L);
+      label(Inner, L);
+      branch(binary("!=", Choice, ChoicesLast, "bool", L), Compare, NextInput,
+             L);
+      label(Compare, L);
+      branch(binary("==", dereference(Current, L), dereference(Choice, L),
+                    "bool", L),
+             End, NextChoice, L);
+      label(NextChoice, L);
+      assign(Choice,
+             binary("+", Choice, quantity(1, DifferenceType, L), ChoiceType, L),
+             L);
+      jump(Inner, L);
+      label(NextInput, L);
+      assign(Current,
+             binary("+", Current, quantity(1, DifferenceType, L), InputType, L),
+             L);
+      jump(Outer, L);
+      label(End, L);
+      return Current;
+    }
+    case UtilityOperation::AlgorithmSearchN: {
+      auto First = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto CountType = Call->getArg(2)->getType();
+      if (const auto *Enumeration = CountType->getAs<EnumType>())
+        CountType = Enumeration->getDecl()->getPromotionType();
+      else if (A.Context.isPromotableIntegerType(CountType))
+        CountType = A.Context.getPromotedIntegerType(CountType);
+      const auto CountTypeName = type(CountType, L);
+      auto Count =
+          snapshot(cast(expression(Call->getArg(2)), CountTypeName, L), L);
+      auto ValueAddress = snapshot(
+          address(lvalue(Call->getArg(3)), Call->getArg(3)->getType(), L), L);
+      auto Candidate = snapshot(json::Object(First), L);
+      auto Current = snapshot(json::Object(First), L);
+      auto Remaining = temporary(CountTypeName, L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto Outer = labelName(), Start = labelName();
+      const auto Inner = labelName(), CheckSource = labelName();
+      const auto Compare = labelName(), Advance = labelName();
+      const auto Mismatch = labelName(), NotFound = labelName();
+      const auto End = labelName();
+      branch(binary(">", Count, quantity(0, CountTypeName, L), "bool", L),
+             Outer, End, L);
+      label(Outer, L);
+      branch(binary("!=", Candidate, Last, "bool", L), Start, NotFound, L);
+      label(Start, L);
+      assign(Current, json::Object(Candidate), L);
+      assign(Remaining, json::Object(Count), L);
+      jump(Inner, L);
+      label(Inner, L);
+      branch(binary("!=", Remaining, quantity(0, CountTypeName, L), "bool", L),
+             CheckSource, End, L);
+      label(CheckSource, L);
+      branch(binary("!=", Current, Last, "bool", L), Compare, NotFound, L);
+      label(Compare, L);
+      branch(binary("==", dereference(Current, L), dereference(ValueAddress, L),
+                    "bool", L),
+             Advance, Mismatch, L);
+      label(Advance, L);
+      assign(
+          Current,
+          binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      assign(Remaining,
+             binary("-", Remaining, one(CountTypeName, L), CountTypeName, L),
+             L);
+      jump(Inner, L);
+      label(Mismatch, L);
+      assign(Candidate,
+             binary("+", Candidate, quantity(1, DifferenceType, L), PointerType,
+                    L),
+             L);
+      jump(Outer, L);
+      label(NotFound, L);
+      assign(Candidate, Last, L);
+      jump(End, L);
+      label(End, L);
+      return Candidate;
+    }
+    case UtilityOperation::AlgorithmMismatch: {
+      auto First = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto Second = snapshot(expression(Call->getArg(2)), L);
+      std::optional<Expression> SecondLast;
+      if (Call->getNumArgs() == 4)
+        SecondLast = snapshot(expression(Call->getArg(3)), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto FirstType = type(Call->getArg(0)->getType(), L);
+      const auto SecondType = type(Call->getArg(2)->getType(), L);
+      const auto CheckFirst = labelName(), CheckSecond = labelName();
+      const auto Compare = labelName(), Advance = labelName();
+      const auto End = labelName();
+      jump(CheckFirst, L);
+      label(CheckFirst, L);
+      branch(binary("!=", First, Last, "bool", L),
+             SecondLast ? CheckSecond : Compare, End, L);
+      if (SecondLast) {
+        label(CheckSecond, L);
+        branch(binary("!=", Second, *SecondLast, "bool", L), Compare, End, L);
+      }
+      label(Compare, L);
+      branch(binary("==", dereference(First, L), dereference(Second, L), "bool",
+                    L),
+             Advance, End, L);
+      label(Advance, L);
+      assign(First,
+             binary("+", First, quantity(1, DifferenceType, L), FirstType, L),
+             L);
+      assign(Second,
+             binary("+", Second, quantity(1, DifferenceType, L), SecondType, L),
+             L);
+      jump(CheckFirst, L);
+      label(End, L);
+      auto Pair = approvedUtilityPairRecord(
+          A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+      if (!Pair)
+        reject(L, "algorithm mismatch",
+               "The selected std::pair layout is unavailable.");
+      auto Place = Destination ? std::move(*Destination)
+                               : objectTemporary(Call->getType(), L);
+      if (Place.getString("type") != type(Call->getType(), L))
+        reject(L, "algorithm mismatch",
+               "The std::mismatch destination type differs from its result.");
+      assign(fieldStorage(json::Object(Place), Pair->First, L), First, L);
+      assign(fieldStorage(json::Object(Place), Pair->Second, L), Second, L);
+      return Place;
+    }
     case UtilityOperation::MakePair: {
       auto Pair = approvedUtilityPairRecord(
           A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);

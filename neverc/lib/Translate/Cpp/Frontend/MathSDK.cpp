@@ -1682,6 +1682,61 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmUniqueCopy;
+  if (((Origin->Path == "__algorithm/search.h" && Name == "search") ||
+       (Origin->Path == "__algorithm/find_end.h" && Name == "find_end") ||
+       (Origin->Path == "__algorithm/find_first_of.h" &&
+        Name == "find_first_of")) &&
+      Call->getNumArgs() == 4 && Function->getNumParams() == 4 &&
+      Call->isPRValue() && AlgorithmEqualityPointerParameter(0) &&
+      AlgorithmEqualityPointerParameter(1) &&
+      AlgorithmEqualityPointerParameter(2) &&
+      AlgorithmEqualityPointerParameter(3) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      Same(Function->getParamDecl(2)->getType(),
+           Function->getParamDecl(3)->getType()) &&
+      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
+                           Function->getParamDecl(2)->getType()) &&
+      Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
+      Same(Call->getType(), Function->getReturnType())) {
+    if (Name == "search")
+      return UtilityOperation::AlgorithmSearch;
+    if (Name == "find_end")
+      return UtilityOperation::AlgorithmFindEnd;
+    return UtilityOperation::AlgorithmFindFirstOf;
+  }
+  if (Origin->Path == "__algorithm/search_n.h" && Name == "search_n" &&
+      Call->getNumArgs() == 4 && Function->getNumParams() == 4 &&
+      Call->isPRValue() && AlgorithmEqualityPointerParameter(0) &&
+      AlgorithmEqualityPointerParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      AlgorithmCountParameter(2) && AlgorithmValueParameter(3, 0) &&
+      Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmSearchN;
+  if (Origin->Path == "__algorithm/mismatch.h" && Name == "mismatch" &&
+      (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
+      Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
+      AlgorithmEqualityPointerParameter(0) &&
+      AlgorithmEqualityPointerParameter(1) &&
+      AlgorithmEqualityPointerParameter(2) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
+                           Function->getParamDecl(2)->getType()) &&
+      Same(Call->getType(), Function->getReturnType())) {
+    auto Pair = approvedUtilityPairRecord(
+        S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);
+    if (Pair &&
+        Same(Pair->First->getType(), Function->getParamDecl(0)->getType()) &&
+        Same(Pair->Second->getType(), Function->getParamDecl(2)->getType()) &&
+        (Call->getNumArgs() == 3 ||
+         (AlgorithmEqualityPointerParameter(3) &&
+          Same(Function->getParamDecl(2)->getType(),
+               Function->getParamDecl(3)->getType()))))
+      return UtilityOperation::AlgorithmMismatch;
+  }
   if (Origin->Path == "__iterator/reverse_iterator.h" &&
       Name == "make_reverse_iterator" && Call->getNumArgs() == 1 &&
       Function->getNumParams() == 1 && Call->isPRValue()) {

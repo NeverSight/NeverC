@@ -24196,6 +24196,125 @@ TEST_F(TranslateTest,
   }
 }
 
+TEST_F(TranslateTest, CoreV2AlgorithmSubrangeQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-subrange.cpp");
+  const auto Output = tmpFile("algorithm-subrange.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+enum Count : unsigned int { two = 2 };
+int main() {
+  const int source[10]{1, 2, 3, 1, 2, 3, 1, 2, 4, 5};
+  const int pattern[2]{1, 2};
+  int effects = 0;
+  if (std::search((++effects, source), (++effects, source + 10),
+                  (++effects, pattern), (++effects, pattern + 2)) != source ||
+      effects != 4 ||
+      std::find_end(source, source + 10, pattern, pattern + 2) != source + 6)
+    return 1;
+  if (std::search(source, source + 10, pattern, pattern) != source ||
+      std::find_end(source, source + 10, pattern, pattern) != source + 10)
+    return 2;
+  const int missing[2]{4, 4};
+  if (std::search(source, source + 10, missing, missing + 2) != source + 10 ||
+      std::find_end(source, source + 10, missing, missing + 2) != source + 10)
+    return 3;
+
+  const int choices[2]{4, 9};
+  if (std::find_first_of(source, source + 10, choices, choices + 2) !=
+          source + 8 ||
+      std::find_first_of(source, source + 10, choices, choices) != source + 10)
+    return 4;
+  const int runs[7]{1, 2, 2, 2, 3, 2, 2};
+  short negative = -1;
+  if (std::search_n(runs, runs + 7, Count::two, 2) != runs + 1 ||
+      std::search_n(runs, runs + 7, 3, 2) != runs + 1 ||
+      std::search_n(runs, runs + 7, 4, 2) != runs + 7 ||
+      std::search_n(runs, runs + 7, 0, 2) != runs ||
+      std::search_n(runs, runs + 7, negative, 2) != runs)
+    return 5;
+
+  const int left[4]{1, 2, 3, 4};
+  const int right[4]{1, 2, 9, 4};
+  auto mismatch = std::mismatch(left, left + 4, right);
+  if (mismatch.first != left + 2 || mismatch.second != right + 2)
+    return 6;
+  auto bounded = std::mismatch(left, left + 4, right, right + 2);
+  if (bounded.first != left + 2 || bounded.second != right + 2)
+    return 7;
+  auto equal = std::mismatch(left, left + 4, left, left + 4);
+  if (equal.first != left + 4 || equal.second != left + 4)
+    return 8;
+
+  int targets[3]{};
+  int *pointer_source[5]{targets, targets + 1, targets + 2, targets + 1,
+                         targets + 2};
+  int *pointer_pattern[2]{targets + 1, targets + 2};
+  if (std::search(pointer_source, pointer_source + 5, pointer_pattern,
+                  pointer_pattern + 2) != pointer_source + 1 ||
+      std::find_end(pointer_source, pointer_source + 5, pointer_pattern,
+                    pointer_pattern + 2) != pointer_source + 3)
+    return 9;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Dependencies =
+      Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 354u);
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+  }
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-subrange" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmSubrangeRequiresPinnedScalarForms) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+  };
+  const Rejection Cases[] = {
+      {"heterogeneous-search",
+       "#include <algorithm>\nint main(){int a[2]{1,2};long b[1]{2};"
+       "return std::search(a,a+2,b,b+1)==a+1?0:1;}"},
+      {"heterogeneous-mismatch",
+       "#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{1,3};"
+       "return std::mismatch(a,a+2,b).first==a+1?0:1;}"},
+      {"predicate-search",
+       "#include <algorithm>\nbool same(int a,int b){return a==b;}"
+       "int main(){int a[2]{1,2};return "
+       "std::search(a,a+2,a,a+1,&same)==a?0:1;}"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("algorithm-subrange-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("algorithm-subrange-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2IteratorPointerOperationsRunAtBothOptimizations) {
   const auto Source = tmpFile("iterator-operations.cpp");
   const auto Output = tmpFile("iterator-operations.nc");

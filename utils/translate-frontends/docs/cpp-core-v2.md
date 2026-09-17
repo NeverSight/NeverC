@@ -247,6 +247,15 @@ Value references remain live through the loop, including when they alias an
 element that an earlier iteration changes. Enum elements stay outside this
 default-equality boundary because ADL can select a user-defined `operator==`.
 
+The exact four-iterator `std::search`, `std::find_end` and
+`std::find_first_of` templates lower nested equality scans over two ranges.
+Three- and four-iterator `std::mismatch` return an authenticated
+`std::pair` of the first unequal pointers; the bounded form also stops when the
+second range ends. Exact four-argument `std::search_n` accepts the same equality
+elements and an integral or non-scoped enum count whose promoted type is at
+most 64 bits. It returns the first iterator for non-positive counts. These
+operations require the same unqualified element type in both compared ranges.
+
 The exact two-argument `std::min_element`, `std::max_element`, `std::is_sorted`
 and `std::is_sorted_until` templates and exact three-argument
 `std::lower_bound`, `std::upper_bound` and `std::binary_search` templates lower
@@ -261,7 +270,9 @@ Each call evaluates and retains its arguments once before entering generated
 pointer loops. `find` preserves the bound value reference, `count` uses the
 target `ptrdiff_t`, `equal` preserves short-circuit results, `fill_n` applies
 the libc++ integer promotion before its positive-count loop, and algorithms
-with output iterators return the advanced output pointer. `remove` and `unique`
+with output iterators return the advanced output pointer. `search_n` applies
+the same promotion and preserves a non-positive-count fast path. `mismatch`
+constructs its scalar-pointer pair result directly. `remove` and `unique`
 return the compacted logical end; copy forms return their advanced destination.
 Forward and backward loops preserve their respective standard overlap
 direction; `reverse` uses equality-only bidirectional contraction. Minimum and

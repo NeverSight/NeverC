@@ -41,13 +41,14 @@ shim are available without platform headers. Exact scalar-pointer `copy`,
 `reverse` and `reverse_copy` calls lower without a libc++ runtime dependency.
 The same is true for built-in equality elements with `find`, `count`, three- or
 four-iterator `equal`, `adjacent_find`, `remove`, `remove_copy`, `replace`,
-`replace_copy`, `unique` and `unique_copy`, and for arithmetic elements with
-`min_element`, `max_element`, `lower_bound`, `upper_bound`, `binary_search`,
-`is_sorted` and `is_sorted_until`. Mutation requires writable destinations;
-`fill_n` accepts at-most-64-bit integral and non-scoped enum counts after the
-libc++ integer promotion. `shuffle` and `sample` stay disabled until the same
-authenticated cross-target `mbstate_t` boundary is available through their
-random-distribution dependency.
+`replace_copy`, `unique`, `unique_copy`, `search`, `find_end`,
+`find_first_of`, `search_n` and three- or four-iterator `mismatch`, and for
+arithmetic elements with `min_element`, `max_element`, `lower_bound`,
+`upper_bound`, `binary_search`, `is_sorted` and `is_sorted_until`. Mutation
+requires writable destinations; `fill_n` and `search_n` accept at-most-64-bit
+integral and non-scoped enum counts after the libc++ integer promotion.
+`shuffle` and `sample` stay disabled until the same authenticated cross-target
+`mbstate_t` boundary is available through their random-distribution dependency.
 Core v2 never admits the `platform` root.
 Math v1 continues to use its separately checked libc++, resource and Darwin
 platform closure for `<cmath>`.
