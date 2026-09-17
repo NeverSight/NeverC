@@ -202,6 +202,35 @@ nontrivial record elements, record comparisons, reverse iterators, dynamic or
 out-of-range `at`, function addresses, quoted `"array"`, user shadows and forged
 declarations remain outside this boundary.
 
+## Initializer-list views from `<initializer_list>`
+
+Core v2 accepts the exact angled `<initializer_list>` entry from the pinned
+embedded VFS. Its authenticated 10-file libc++/resource closure is identical on
+all eight supported targets and contains no platform headers. Each admitted
+`std::initializer_list<T>` specialization must retain libc++'s standard-layout
+two-field representation: a private `const T *` followed by the target
+`size_t`, with the checked pointer-size layout for that target.
+
+Braced lists materialize their constant backing arrays through the existing
+automatic, full-expression and static-storage lifetime machinery. Element
+initializers run in source order, nontrivial source-record elements receive
+normal destruction, and nested initializer lists retain their respective
+backing arrays. A nonempty backing array is limited to 65536 elements. Complete
+admitted non-volatile object element types include scalars, enums, object
+pointers, source records and nested initializer-list views.
+
+Default construction produces an empty null-and-zero view. Trivial copy/move
+construction and assignment preserve the backing-array view. Member `size`,
+`begin` and `end`, plus the free `begin` and `end` overloads from
+`<initializer_list>`, lower directly. When `<iterator>` is also present, its
+authenticated `begin`, `end`, `cbegin`, `cend`, `size`, `empty`, `data`,
+`rbegin`, `rend`, `crbegin` and `crend` overloads operate on the same view.
+Generated programs do not call or link libc++ for these operations.
+
+Reference, incomplete, volatile, restricted-address-space and function element
+types remain outside this boundary. Function addresses, quoted includes, user
+shadows and forged declarations remain rejected.
+
 ## Iterator metadata from `<iterator>`
 
 Core v2 admits the exact angled `<iterator>` entry and pointer

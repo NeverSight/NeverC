@@ -59,6 +59,7 @@ Core v2 also admits exact angle includes of
 [`<cstddef>`](../docs/cpp-core-v2.md#fundamental-types-and-bytes-from-cstddef), and
 the bounded [`<utility>`](../docs/cpp-core-v2.md#scalar-utilities-and-pairs-from-utility)
 and [`<array>`](../docs/cpp-core-v2.md#fixed-value-arrays-from-array) surfaces,
+[`<initializer_list>`](../docs/cpp-core-v2.md#initializer-list-views-from-initializer_list),
 [`<iterator>`](../docs/cpp-core-v2.md#iterator-metadata-from-iterator), and the
 [`<algorithm>`](../docs/cpp-core-v2.md#algorithm-header-from-algorithm) pointer
 algorithm surface. The
@@ -66,7 +67,7 @@ frontend uses the pinned embedded libc++/resource VFS and exposes resolved type
 aliases plus integral/enum constant results. It records all consumed header
 hashes: 101 for the `<type_traits>` closure, nine for standalone `<cstdint>`,
 16 for `<limits>`, 29 for `<cstddef>`, 87 for `<utility>`, 217 for `<array>`,
-171 for `<iterator>` and 354 for `<algorithm>`.
+10 for `<initializer_list>`, 171 for `<iterator>` and 354 for `<algorithm>`.
 Numeric limits fold the documented
 zero-argument integer and IEEE floating queries to literals. Cstddef aliases,
 layout queries and direct `std::byte` operations lower to existing scalar IR.
@@ -76,6 +77,11 @@ comparisons, `make_pair` and `get`; and `tuple_size`, `tuple_element` and
 integer-sequence size queries. Array directly lowers nonempty fixed scalar,
 trivial-record and nested-array storage, iterators, element access, fill, swap,
 scalar and recursive nested-array comparisons and tuple access.
+Initializer-list objects retain libc++'s authenticated pointer-and-size view.
+Braced backing arrays use the existing automatic, full-expression and static
+lifetime machinery; default, copy/move and assignment operations, member and
+free range access, nested lists and nontrivial source-record elements lower
+without a libc++ runtime call.
 Iterator exposes the pinned public header and pointer `iterator_traits` metadata
 through a platform-free 171-file closure, and directly lowers bounded pointer,
 array-range and reverse-iterator operations. Stream iterators remain disabled

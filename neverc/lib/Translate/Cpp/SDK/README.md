@@ -28,6 +28,13 @@ libc++/resource closure and directly lowers nonempty fixed scalar,
 trivial-record and nested arrays, including capacity, pointer iterators, element
 access, fill, swap, scalar and recursive nested-array comparisons and index-based
 `get`, without a runtime libc++ link.
+The `<initializer_list>` surface has a 10-file libc++/resource closure on every
+core-v2 target. It retains the pinned two-field pointer-and-size layout and
+directly lowers braced backing-array materialization, default and copy/move
+construction, assignment, member and free range access, and normal backing
+element destruction. Nested lists and complete admitted non-volatile object
+elements use the existing aggregate and lifetime machinery without a runtime
+libc++ link.
 The `<iterator>` surface has a 171-file libc++/resource closure on every core-v2
 target. It exposes pointer `iterator_traits` metadata and directly lowered
 pointer, array-range and raw-pointer reverse-iterator operations while retaining

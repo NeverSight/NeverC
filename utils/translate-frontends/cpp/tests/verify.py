@@ -536,6 +536,56 @@ extern "C" int array_composition() {
         check("v2-array-" + name, source, code,
               profile="cpp-core-v2", sdk=True)
 
+    initializer_list_operations_source = """\
+#include <initializer_list>
+extern "C" int initializer_list_operations() {
+  int result = 0;
+  std::initializer_list<int> values{1, 2, 3};
+  for (int value : values)
+    result += value;
+  std::initializer_list<int> copied(values);
+  std::initializer_list<int> assigned{};
+  assigned = copied;
+  return result + int(values.size()) + int(values.end() - values.begin())
+      + int(std::end(assigned) - std::begin(assigned));
+}
+"""
+    initializer_list_operations = check(
+        "v2-initializer-list-operations", initializer_list_operations_source,
+        profile="cpp-core-v2", sdk=True)
+    initializer_list_dependencies = initializer_list_operations[
+        "sdk_dependencies"]
+    assert len(initializer_list_dependencies) == 10, initializer_list_operations
+    assert any(dependency["root"] == "libcxx" and
+               dependency["path"] == "initializer_list"
+               for dependency in initializer_list_dependencies), initializer_list_operations
+    assert not any(dependency["root"] == "platform"
+                   for dependency in initializer_list_dependencies), initializer_list_operations
+    assert not [node for node in walk(initializer_list_operations["functions"])
+                if node.get("op") in ("call", "mapped_call")], initializer_list_operations
+    for target in sdk_targets:
+        target_result = check("v2-initializer-list-operations-" + target,
+                              initializer_list_operations_source,
+                              profile="cpp-core-v2", target=target, sdk=True)
+        assert target_result["sdk_dependencies"] == initializer_list_dependencies, target_result
+        assert not [node for node in walk(target_result["functions"])
+                    if node.get("op") in ("call", "mapped_call")], target_result
+    for name, source, code in (
+        ("quoted",
+         '#include "initializer_list"\nint main(){return 0;}', "TR0201"),
+        ("function-address",
+         '#include <initializer_list>\nconst int*(*p)(std::initializer_list<int>)=&std::begin<int>;int main(){return 0;}',
+         "TR0201"),
+        ("volatile-element",
+         '#include <initializer_list>\nint main(){std::initializer_list<volatile int>v{};return v.size();}',
+         "TR0203"),
+        ("unsupported-element",
+         '#include <initializer_list>\nint main(){std::initializer_list<long double>v{1.0L};return v.size();}',
+         "TR0201"),
+    ):
+        check("v2-initializer-list-" + name, source, code,
+              profile="cpp-core-v2", sdk=True)
+
     iterator_metadata_source = """\
 #include <iterator>
 using Value = std::iterator_traits<int*>::value_type;

@@ -1866,6 +1866,14 @@ void Adapter::checkQueryType(QualType T, SourceLocation L,
       checkQueryType(Arguments.get(0).getAsType(), L, AllowIncompleteArrays,
                      AllowIncompleteRecords, Depth + 1);
     } else if (AllowIncompleteRecords &&
+               approvedUtilityInitializerListMetadata(
+                   S, Sources, T->getAsCXXRecordDecl())) {
+      const auto *List =
+          dyn_cast<ClassTemplateSpecializationDecl>(T->getAsCXXRecordDecl());
+      const auto &Arguments = List->getTemplateArgs();
+      checkQueryType(Arguments.get(0).getAsType(), L, AllowIncompleteArrays,
+                     AllowIncompleteRecords, Depth + 1);
+    } else if (AllowIncompleteRecords &&
                approvedUtilityReverseIteratorMetadata(
                    S, Sources, T->getAsCXXRecordDecl())) {
       const auto *Iterator =
@@ -3670,6 +3678,9 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
       } else if (approvedUtilityArrayMetadata(S, Sources, D) &&
                  !requireUtilityArray(D, L, Depth + 1)) {
         return {};
+      } else if (approvedUtilityInitializerListMetadata(S, Sources, D) &&
+                 !requireUtilityInitializerList(D, L, Depth + 1)) {
+        return {};
       } else if (approvedUtilityReverseIteratorMetadata(S, Sources, D) &&
                  !requireUtilityReverseIterator(D, L, Depth + 1)) {
         return {};
@@ -3730,6 +3741,33 @@ bool Adapter::requireUtilityArray(const CXXRecordDecl *Record,
   if (type(Array->Elements->getType(), Location, false, Depth + 1).empty())
     return false;
   Records.push_back(const_cast<CXXRecordDecl *>(Array->Record));
+  return true;
+}
+
+bool Adapter::requireUtilityInitializerList(const CXXRecordDecl *Record,
+                                            SourceLocation Location,
+                                            unsigned Depth) {
+  if (Depth > 64) {
+    reject(Location, "initializer list type",
+           "Nested std::initializer_list element types exceed the protocol "
+           "limit.");
+    return false;
+  }
+  auto List = approvedUtilityInitializerListRecord(S, Sources, Record, Context);
+  if (!List) {
+    reject(Location, "standard library record",
+           "Only the pinned std::initializer_list<T> record layout is "
+           "admitted.",
+           "TR0203");
+    return false;
+  }
+  const auto *Canonical = List->Record->getCanonicalDecl();
+  if (!RequiredUtilityInitializerLists.insert(Canonical).second)
+    return true;
+  for (const auto *Field : {List->Begin, List->Size})
+    if (type(Field->getType(), Location, false, Depth + 1).empty())
+      return false;
+  Records.push_back(const_cast<CXXRecordDecl *>(List->Record));
   return true;
 }
 
@@ -6545,6 +6583,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     if (A.S.coreV2() &&
         (approvedUtilityPairConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityArrayConstruction(A.S, A.Sources, C, A.Context) ||
+         approvedUtilityInitializerListConstruction(A.S, A.Sources, C,
+                                                    A.Context) ||
          approvedUtilityReverseIteratorConstruction(A.S, A.Sources, C,
                                                     A.Context))) {
       for (unsigned I = 0; I < C->getNumArgs() &&
@@ -12749,14 +12789,15 @@ public:
         defaultedCopyOrMoveConstructor(dyn_cast_or_null<CXXConstructorDecl>(CurrentMethod)) &&
         (isa<ArrayInitLoopExpr>(S) || (Opaque && ArraySources.count(Opaque)) ||
          (isa<ArrayInitIndexExpr>(S) && ArrayIndexDepth));
-    if (!GeneratedArrayNode && !((A.S.math() || A.S.coreV2()) && isa<FloatingLiteral>(S)) &&
+    if (!GeneratedArrayNode &&
+        !((A.S.math() || A.S.coreV2()) && isa<FloatingLiteral>(S)) &&
         !(A.S.coreV2() &&
           isa<ConstantExpr, CXXNullPtrLiteralExpr, CXXConstCastExpr,
               CXXFunctionalCastExpr, ArraySubscriptExpr, SwitchStmt, CaseStmt,
               DefaultStmt, AttributedStmt, CharacterLiteral, StringLiteral,
               UnaryExprOrTypeTraitExpr, TypeTraitExpr, ArrayTypeTraitExpr,
-              CXXNoexceptExpr, CXXThisExpr,
-              CXXDefaultInitExpr, CXXDefaultArgExpr, CXXForRangeStmt,
+              CXXNoexceptExpr, CXXThisExpr, CXXDefaultInitExpr,
+              CXXDefaultArgExpr, CXXForRangeStmt, CXXStdInitializerListExpr,
               SubstNonTypeTemplateParmExpr, SizeOfPackExpr,
               CXXPseudoDestructorExpr, CXXNewExpr, CXXDeleteExpr, GNUNullExpr,
               OffsetOfExpr>(S)) &&
@@ -12771,6 +12812,13 @@ public:
       A.reject(S->getBeginLoc(), S->getStmtClassName(),
                "Expression or statement is outside the selected profile.");
     if (A.S.coreV2()) {
+      if (const auto *List = dyn_cast<CXXStdInitializerListExpr>(S);
+          List && !approvedUtilityInitializerListExpression(A.S, A.Sources,
+                                                            List, A.Context))
+        A.reject(L, "initializer list expression",
+                 "A pinned std::initializer_list<T> view over its exact "
+                 "checked constant array temporary is required.",
+                 "TR0203");
       if (const auto *Null = dyn_cast<GNUNullExpr>(S);
           Null && !approvedCstddefNull(A.S, A.Sources, Null))
         A.reject(L, "GNU null expression",
@@ -12968,6 +13016,10 @@ public:
           A.S.coreV2() &&
           approvedUtilityArrayAssignment(A.S, A.Sources, Operator, A.Context)
               .has_value();
+      const bool UtilityInitializerListAssignment =
+          A.S.coreV2() && approvedUtilityInitializerListAssignment(
+                              A.S, A.Sources, Operator, A.Context)
+                              .has_value();
       const bool UtilityReverseIteratorAssignment =
           A.S.coreV2() && approvedUtilityReverseIteratorAssignment(
                               A.S, A.Sources, Operator, A.Context)
@@ -12985,8 +13037,8 @@ public:
         const bool Ordinary = ordinaryOperator(F) &&
             F->getOverloadedOperator() == Operator->getOperator();
         if (!TrivialAssignment && !UtilityPairAssignment &&
-            !UtilityArrayAssignment && !UtilityReverseIteratorAssignment &&
-            !Ordinary &&
+            !UtilityArrayAssignment && !UtilityInitializerListAssignment &&
+            !UtilityReverseIteratorAssignment && !Ordinary &&
             !(supportedAssignment(Method) &&
               Operator->getOperator() == OO_Equal &&
               Operator->getNumArgs() == 2))
@@ -13048,6 +13100,8 @@ public:
         return true;
       if (A.S.coreV2() && UtilityArrayAssignment)
         return true;
+      if (A.S.coreV2() && UtilityInitializerListAssignment)
+        return true;
       if (A.S.coreV2() && UtilityReverseIteratorAssignment)
         return true;
       if (A.S.coreV2() && F &&
@@ -13100,6 +13154,8 @@ public:
                                          C->getConstructor())) {
         if (approvedUtilityPairConstruction(A.S, A.Sources, C, A.Context) ||
             approvedUtilityArrayConstruction(A.S, A.Sources, C, A.Context) ||
+            approvedUtilityInitializerListConstruction(A.S, A.Sources, C,
+                                                       A.Context) ||
             approvedUtilityReverseIteratorConstruction(A.S, A.Sources, C,
                                                        A.Context))
           checkConstruction(C, L);
@@ -13107,8 +13163,8 @@ public:
           A.reject(L, "standard library runtime object",
                    "Approved standard headers provide only their documented "
                    "compile-time aliases, constants, folded queries and "
-                   "scalar std::pair, std::array and pointer "
-                   "std::reverse_iterator construction.",
+                   "scalar std::pair, std::array, std::initializer_list and "
+                   "pointer std::reverse_iterator construction.",
                    "TR0203");
       }
       else
@@ -13684,12 +13740,14 @@ public:
           (!Angled ||
            (Name != "type_traits" && Name != "cstdint" && Name != "limits" &&
             Name != "cstddef" && Name != "utility" && Name != "array" &&
-            Name != "iterator" && Name != "algorithm"))) {
+            Name != "iterator" && Name != "algorithm" &&
+            Name != "initializer_list"))) {
         reject(L, "include",
                "Only exact #include <type_traits>, #include <cstdint> and "
                "#include <limits>, #include <cstddef>, #include <utility> and "
-               "#include <array>, #include <iterator> and #include <algorithm> "
-               "entries are admitted in cpp-core-v2.");
+               "#include <array>, #include <iterator>, #include <algorithm> "
+               "and #include <initializer_list> entries are admitted in "
+               "cpp-core-v2.");
         return;
       }
       if (!S.owns(SM, L) && !S.sdkFile(SM, L))

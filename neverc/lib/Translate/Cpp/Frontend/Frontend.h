@@ -23,6 +23,7 @@ class CallExpr;
 class ArrayTypeTraitExpr;
 class CastExpr;
 class CXXConstructExpr;
+class CXXStdInitializerListExpr;
 class CXXNewExpr;
 class CXXDefaultArgExpr;
 class CXXForRangeStmt;
@@ -401,6 +402,12 @@ enum class UtilityOperation {
   AlgorithmTransformBinary,
   AlgorithmGenerate,
   AlgorithmGenerateN,
+  InitializerListSize,
+  InitializerListEmpty,
+  InitializerListBegin,
+  InitializerListEnd,
+  InitializerListRBegin,
+  InitializerListREnd,
 };
 struct UtilityPairRecord {
   const clang::CXXRecordDecl *Record;
@@ -453,6 +460,43 @@ approvedUtilityArrayAssignment(const State &S,
                                const clang::SourceManager &SM,
                                const clang::CXXOperatorCallExpr *Assignment,
                                const clang::ASTContext &Context);
+struct UtilityInitializerListRecord {
+  const clang::CXXRecordDecl *Record;
+  const clang::FieldDecl *Begin, *Size;
+  clang::QualType ElementType;
+};
+bool approvedUtilityInitializerListMetadata(const State &S,
+                                            const clang::SourceManager &SM,
+                                            const clang::CXXRecordDecl *Record);
+std::optional<UtilityInitializerListRecord>
+approvedUtilityInitializerListRecord(const State &S,
+                                     const clang::SourceManager &SM,
+                                     const clang::CXXRecordDecl *Record,
+                                     const clang::ASTContext &Context);
+enum class UtilityInitializerListConstruction {
+  Default,
+  CopyOrMove,
+};
+std::optional<UtilityInitializerListConstruction>
+approvedUtilityInitializerListConstruction(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction,
+    const clang::ASTContext &Context);
+std::optional<UtilityInitializerListRecord>
+approvedUtilityInitializerListAssignment(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXOperatorCallExpr *Assignment,
+    const clang::ASTContext &Context);
+struct UtilityInitializerListExpression {
+  UtilityInitializerListRecord List;
+  const clang::MaterializeTemporaryExpr *Backing;
+  uint64_t Size;
+};
+std::optional<UtilityInitializerListExpression>
+approvedUtilityInitializerListExpression(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXStdInitializerListExpr *Expression,
+    const clang::ASTContext &Context);
 struct UtilityReverseIteratorRecord {
   const clang::CXXRecordDecl *Record;
   const clang::FieldDecl *Legacy, *Current;
@@ -647,6 +691,7 @@ public:
   std::map<const clang::CXXRecordDecl *, std::size_t> StorageUnits;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityPairs;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityArrays;
+  std::set<const clang::CXXRecordDecl *> RequiredUtilityInitializerLists;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityReverseIterators;
   std::map<const clang::CXXRecordDecl *, CheckedEmptyBase> EmptyBases;
   std::map<const clang::VarDecl *, const clang::CXXForRangeStmt *> RangeDeclarations;
@@ -669,6 +714,9 @@ public:
   bool requireUtilityArray(const clang::CXXRecordDecl *Record,
                            clang::SourceLocation Location,
                            unsigned Depth = 0);
+  bool requireUtilityInitializerList(const clang::CXXRecordDecl *Record,
+                                     clang::SourceLocation Location,
+                                     unsigned Depth = 0);
   bool requireUtilityReverseIterator(const clang::CXXRecordDecl *Record,
                                      clang::SourceLocation Location,
                                      unsigned Depth = 0);

@@ -23559,6 +23559,54 @@ TEST_F(TranslateTest, CoreV2ArrayRequiresPinnedOperations) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2InitializerListHeaderUsesPlatformFreeClosure) {
+  const auto Source = tmpFile("initializer-list-header.cpp");
+  const auto Output = tmpFile("initializer-list-header.nc");
+  writeFile(Source, R"cpp(
+#include <initializer_list>
+using Value = std::initializer_list<int>::value_type;
+using Size = std::initializer_list<int>::size_type;
+using Iterator = std::initializer_list<int>::iterator;
+using Reference = std::initializer_list<int>::reference;
+static_assert(sizeof(Value) == sizeof(int));
+static_assert(sizeof(Size) == sizeof(void *));
+static_assert(sizeof(Iterator) == sizeof(void *));
+static_assert(sizeof(Reference) == sizeof(int));
+static_assert(sizeof(std::initializer_list<int>) == 2 * sizeof(void *));
+int main() { return 0; }
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *SDK = Manifest->getAsObject()->getObject("sdk");
+  ASSERT_NE(SDK, nullptr);
+  const auto *Dependencies = SDK->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 10u);
+  bool FoundInitializerList = false;
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+    FoundInitializerList |= Dependency->getString("root") == "libcxx" &&
+                            Dependency->getString("path") == "initializer_list";
+  }
+  EXPECT_TRUE(FoundInitializerList);
+
+  const auto Quoted = tmpFile("initializer-list-quoted.cpp");
+  const auto QuotedOutput = tmpFile("initializer-list-quoted.nc");
+  writeFile(Quoted, "#include \"initializer_list\"\nint main(){return 0;}");
+  expectCode(translate(Quoted, {"--profile", "cpp-core-v2", "-o",
+                                QuotedOutput.string()}),
+             "TR0201");
+  expectNoArtifacts(QuotedOutput);
+}
+
 TEST_F(TranslateTest, CoreV2IteratorHeaderUsesPlatformFreeClosure) {
   const auto Source = tmpFile("iterator-metadata.cpp");
   const auto Output = tmpFile("iterator-metadata.nc");
@@ -27659,6 +27707,224 @@ TEST_F(TranslateTest, CoreV2AlgorithmPredicateQueriesRequireValueCallbacks) {
     expectCode(
         translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
         "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2InitializerListOperationsRunAtBothOptimizations) {
+  const auto Source = tmpFile("initializer-list-operations.cpp");
+  const auto Output = tmpFile("initializer-list-operations.nc");
+  writeFile(Source, R"cpp(
+#include <initializer_list>
+#include <iterator>
+
+int effects;
+int next_value(int value) {
+  ++effects;
+  return value;
+}
+int sum(std::initializer_list<int> values) {
+  int result = 0;
+  for (int value : values)
+    result += value;
+  return result;
+}
+struct Box {
+  int value;
+};
+int box_sum(std::initializer_list<Box> values) {
+  int result = 0;
+  for (Box value : values)
+    result += value.value;
+  return result;
+}
+enum Rank : unsigned char { low = 2, high = 7 };
+
+int main() {
+  effects = 0;
+  std::initializer_list<int> values{next_value(1), next_value(2),
+                                    next_value(3)};
+  if (effects != 3 || values.size() != 3 || *values.begin() != 1 ||
+      values.end() - values.begin() != 3)
+    return 1;
+  if (std::begin(values) != values.begin() ||
+      std::end(values) != values.end() ||
+      std::cbegin(values) != values.begin() ||
+      std::cend(values) != values.end())
+    return 2;
+  if (std::size(values) != 3 || std::empty(values) ||
+      std::data(values) != values.begin())
+    return 3;
+  if (*std::rbegin(values) != 3 ||
+      std::rend(values).base() != values.begin() ||
+      std::crbegin(values).base() != values.end() ||
+      std::crend(values).base() != values.begin())
+    return 4;
+  std::initializer_list<int> copied(values);
+  std::initializer_list<int> assigned{};
+  assigned = copied;
+  if (sum(copied) != 6 || sum(assigned) != 6 || sum({4, 5}) != 9 ||
+      sum({}) != 0)
+    return 5;
+  std::initializer_list<int> empty{};
+  if (!std::empty(empty) || empty.size() != 0 ||
+      empty.begin() != empty.end())
+    return 6;
+  std::initializer_list<Rank> ranks{low, high};
+  if (ranks.size() != 2 || *ranks.begin() != low ||
+      *(ranks.begin() + 1) != high)
+    return 7;
+  std::initializer_list<const int> constants{11, 12};
+  if (*constants.begin() != 11 || constants.end()[-1] != 12)
+    return 8;
+  int objects[2]{8, 9};
+  std::initializer_list<int *> pointers{objects, objects + 1};
+  if (**pointers.begin() != 8 || **(pointers.begin() + 1) != 9)
+    return 9;
+  if (box_sum({{10}, {20}, {30}}) != 60)
+    return 10;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *SDK = Manifest->getAsObject()->getObject("sdk");
+  ASSERT_NE(SDK, nullptr);
+  const auto *Dependencies = SDK->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 171u);
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+  }
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("initializer-list-operations" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Optimization << "\n" << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2InitializerListLifetimesRunAtBothOptimizations) {
+  const auto Source = tmpFile("initializer-list-lifetimes.cpp");
+  const auto Output = tmpFile("initializer-list-lifetimes.nc");
+  writeFile(Source, R"cpp(
+#include <initializer_list>
+
+int live;
+struct Item {
+  int value;
+  Item(int value) : value(value) { ++live; }
+  Item(const Item &other) : value(other.value) { ++live; }
+  ~Item() { --live; }
+};
+int consume(std::initializer_list<Item> values) {
+  int result = 0;
+  for (const Item &value : values)
+    result += value.value;
+  return result;
+}
+int nested(std::initializer_list<std::initializer_list<int>> rows) {
+  int result = 0;
+  for (std::initializer_list<int> row : rows)
+    for (int value : row)
+      result += value;
+  return result;
+}
+int nested_items(std::initializer_list<std::initializer_list<Item>> rows) {
+  int result = 0;
+  for (std::initializer_list<Item> row : rows)
+    for (const Item &value : row)
+      result += value.value;
+  return result;
+}
+std::initializer_list<int> global_values{7, 8};
+int sum(const int *first, const int *last) {
+  int result = 0;
+  while (first != last)
+    result += *first++;
+  return result;
+}
+int main() {
+  if (live != 0 || global_values.size() != 2 ||
+      sum(global_values.begin(), global_values.end()) != 15)
+    return 1;
+  {
+    std::initializer_list<Item> values{1, 2, 3};
+    if (live != 3 || consume(values) != 6 || live != 3)
+      return 2;
+  }
+  if (live != 0)
+    return 3;
+  if (consume({4, 5}) != 9)
+    return 4;
+  if (live != 0)
+    return 5;
+  if (nested({{1, 2}, {3, 4, 5}}) != 15)
+    return 6;
+  if (nested_items({{{6}, {7}}, {{8}}}) != 21)
+    return 7;
+  if (live != 0)
+    return 8;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("initializer-list-lifetimes" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Optimization << "\n" << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2InitializerListRequiresPinnedOperations) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Rejection Cases[] = {
+      {"function-address",
+       "#include <initializer_list>\nconst "
+       "int*(*p)(std::initializer_list<int>)="
+       "&std::begin<int>;int main(){return 0;}",
+       "TR0201"},
+      {"volatile-element",
+       "#include <initializer_list>\nint main(){"
+       "std::initializer_list<volatile int>v{};return v.size();}",
+       "TR0203"},
+      {"unsupported-element",
+       "#include <initializer_list>\nint main(){"
+       "std::initializer_list<long double>v{1.0L};return v.size();}",
+       "TR0201"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("initializer-list-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("initializer-list-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
     expectNoArtifacts(Output);
   }
 }

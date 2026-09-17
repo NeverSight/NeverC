@@ -927,6 +927,11 @@ class FunctionLowering {
           A.S, A.Sources,
           Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(), A.Context);
     };
+    auto InitializerListFor = [&](QualType Type) {
+      return approvedUtilityInitializerListRecord(
+          A.S, A.Sources, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(),
+          A.Context);
+    };
     auto MemberObject = [&]() -> const Expr * {
       if (const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call))
         return Operator->getNumArgs() ? Operator->getArg(0) : nullptr;
@@ -4584,6 +4589,46 @@ class FunctionLowering {
                                  type(Reverse->IteratorType, L), L),
                           *Reverse);
     }
+    case UtilityOperation::InitializerListSize:
+    case UtilityOperation::InitializerListEmpty:
+    case UtilityOperation::InitializerListBegin:
+    case UtilityOperation::InitializerListEnd:
+    case UtilityOperation::InitializerListRBegin:
+    case UtilityOperation::InitializerListREnd: {
+      const auto *Object = MemberObject();
+      const auto *Source = Object               ? Object
+                           : Call->getNumArgs() ? Call->getArg(0)
+                                                : nullptr;
+      auto List = Source ? InitializerListFor(Source->getType())
+                         : std::optional<UtilityInitializerListRecord>();
+      if (!Source || !List)
+        reject(L, "initializer list access",
+               "The selected std::initializer_list layout is unavailable.");
+      auto Base = Object ? lvalue(Object) : expression(Source);
+      auto Begin = fieldStorage(json::Object(Base), List->Begin, L);
+      auto Size = fieldStorage(std::move(Base), List->Size, L);
+      if (Operation == UtilityOperation::InitializerListSize)
+        return Size;
+      if (Operation == UtilityOperation::InitializerListEmpty)
+        return snapshot(binary("==", std::move(Size),
+                               quantity(0, type(A.Context.getSizeType(), L), L),
+                               "bool", L),
+                        L);
+      if (Operation == UtilityOperation::InitializerListBegin)
+        return Begin;
+      auto End = binary("+", json::Object(Begin), std::move(Size),
+                        type(List->Begin->getType(), L), L);
+      if (Operation == UtilityOperation::InitializerListEnd)
+        return End;
+      auto Reverse = ReverseFor(Call->getType());
+      if (!Reverse)
+        reject(L, "initializer list reverse access",
+               "The selected reverse iterator layout is unavailable.");
+      return ReverseValue(Operation == UtilityOperation::InitializerListRBegin
+                              ? std::move(End)
+                              : std::move(Begin),
+                          *Reverse);
+    }
     case UtilityOperation::ArraySize:
     case UtilityOperation::ArrayMaxSize:
     case UtilityOperation::ArrayEmpty: {
@@ -4895,6 +4940,20 @@ class FunctionLowering {
         auto Left = dereference(std::move(LeftAddress), L);
         auto Right = dereference(std::move(RightAddress), L);
         assign(Left, std::move(Right), L);
+        return Left;
+      }
+      if (auto List = approvedUtilityInitializerListAssignment(
+              A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call), A.Context)) {
+        if (Destination)
+          reject(L, "initializer list assignment",
+                 "std::initializer_list assignment cannot initialize a "
+                 "record result.");
+        auto RightAddress = snapshot(
+            address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
+        auto LeftAddress = snapshot(
+            address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
+        auto Left = dereference(std::move(LeftAddress), L);
+        assign(Left, dereference(std::move(RightAddress), L), L);
         return Left;
       }
       if (auto Assignment = approvedUtilityReverseIteratorAssignment(
@@ -5593,6 +5652,8 @@ class FunctionLowering {
       return {};
     if (isa<ImplicitValueInitExpr, CXXScalarValueInitExpr>(E))
       return A.zero(E->getType(), L);
+    if (A.S.coreV2() && isa<CXXStdInitializerListExpr>(E))
+      return materialize(E, L);
     if (const auto *I = dyn_cast<InitListExpr>(E)) {
       if (A.S.coreV2() && E->isGLValue())
         return lvalue(I);
@@ -6128,6 +6189,27 @@ class FunctionLowering {
       reject(L, "utility pair construction",
              "Unknown approved std::pair construction.");
     }
+    if (auto Kind = approvedUtilityInitializerListConstruction(A.S, A.Sources,
+                                                               C, A.Context)) {
+      auto List = approvedUtilityInitializerListRecord(
+          A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context);
+      if (!List)
+        reject(L, "initializer list construction",
+               "The selected std::initializer_list layout is unavailable.");
+      switch (*Kind) {
+      case UtilityInitializerListConstruction::Default:
+        initializeZero(fieldStorage(json::Object(Place), List->Begin, L),
+                       List->Begin->getType(), L);
+        initializeZero(fieldStorage(json::Object(Place), List->Size, L),
+                       List->Size->getType(), L);
+        return;
+      case UtilityInitializerListConstruction::CopyOrMove:
+        assign(std::move(Place), expression(C->getArg(0)), L);
+        return;
+      }
+      reject(L, "initializer list construction",
+             "Unknown approved std::initializer_list construction.");
+    }
     if (auto Kind = approvedUtilityReverseIteratorConstruction(A.S, A.Sources,
                                                                C, A.Context)) {
       auto Reverse = approvedUtilityReverseIteratorRecord(
@@ -6372,6 +6454,22 @@ class FunctionLowering {
       return;
     }
     if (A.S.coreV2()) {
+      if (const auto *Expression = dyn_cast<CXXStdInitializerListExpr>(Init)) {
+        auto List = approvedUtilityInitializerListExpression(
+            A.S, A.Sources, Expression, A.Context);
+        if (!List || Place.getString("type") != type(Expression->getType(), L))
+          reject(L, "initializer list expression",
+                 "The checked std::initializer_list destination or backing "
+                 "array is unavailable.");
+        auto Backing = lvalue(List->Backing);
+        assign(
+            fieldStorage(json::Object(Place), List->List.Begin, L),
+            decay(std::move(Backing), type(List->List.Begin->getType(), L), L),
+            L);
+        assign(fieldStorage(std::move(Place), List->List.Size, L),
+               quantity(List->Size, type(List->List.Size->getType(), L), L), L);
+        return;
+      }
       if (const auto *Default = dyn_cast<CXXDefaultInitExpr>(Init)) {
         if (!DefaultReceiver ||
             Default->getField()->getParent()->getCanonicalDecl() != DefaultReceiver->Record ||

@@ -740,6 +740,203 @@ approvedUtilityArrayAssignment(const State &S, const SourceManager &SM,
   return Array;
 }
 
+bool approvedUtilityInitializerListMetadata(const State &S,
+                                            const SourceManager &SM,
+                                            const CXXRecordDecl *Record) {
+  const auto *Specialization =
+      dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+  const auto *Template =
+      Specialization ? Specialization->getSpecializedTemplate() : nullptr;
+  const auto *CanonicalTemplate =
+      Template ? Template->getCanonicalDecl() : nullptr;
+  if (!Specialization || !Template || !CanonicalTemplate ||
+      Specialization->isUnion() || Specialization->isDependentContext() ||
+      Specialization->getName() != "initializer_list" ||
+      !approvedStandardSDKDeclaration(S, SM, Template) ||
+      !approvedStandardSDKDeclaration(S, SM, CanonicalTemplate) ||
+      !cstddefOrigin(S, SM, Template->getLocation(), "libcxx",
+                     "initializer_list") ||
+      !cstddefOrigin(S, SM, CanonicalTemplate->getLocation(), "libcxx",
+                     "initializer_list"))
+    return false;
+  const auto &Arguments = Specialization->getTemplateArgs();
+  return Arguments.size() == 1 &&
+         Arguments.get(0).getKind() == TemplateArgument::Type;
+}
+
+std::optional<UtilityInitializerListRecord>
+approvedUtilityInitializerListRecord(const State &S, const SourceManager &SM,
+                                     const CXXRecordDecl *Record,
+                                     const ASTContext &Context) {
+  const auto *Specialization =
+      dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+  Specialization = Specialization
+                       ? dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+                             Specialization->getDefinition())
+                       : nullptr;
+  const auto *Template =
+      Specialization ? Specialization->getSpecializedTemplate() : nullptr;
+  const auto *CanonicalTemplate =
+      Template ? Template->getCanonicalDecl() : nullptr;
+  if (!approvedUtilityInitializerListMetadata(S, SM, Specialization) ||
+      !Specialization || !Template || !CanonicalTemplate ||
+      Specialization->getSpecializationKind() != TSK_ImplicitInstantiation ||
+      Specialization->getNumBases() || !Specialization->isStandardLayout() ||
+      !Specialization->hasTrivialCopyConstructor() ||
+      !Specialization->hasTrivialCopyAssignment() ||
+      !Specialization->hasTrivialDestructor() ||
+      !approvedStandardSDKDeclaration(S, SM, Specialization) ||
+      !approvedStandardSDKDeclaration(S, SM, Template) ||
+      !approvedStandardSDKDeclaration(S, SM, CanonicalTemplate) ||
+      !cstddefOrigin(S, SM, Specialization->getLocation(), "libcxx",
+                     "initializer_list") ||
+      !cstddefOrigin(S, SM, Template->getLocation(), "libcxx",
+                     "initializer_list") ||
+      !cstddefOrigin(S, SM, CanonicalTemplate->getLocation(), "libcxx",
+                     "initializer_list"))
+    return std::nullopt;
+  const auto &Arguments = Specialization->getTemplateArgs();
+  const auto Element = Arguments.get(0).getAsType();
+  if (Element.isNull() || Element->isReferenceType() ||
+      !Element->isObjectType() || Element->isIncompleteType() ||
+      Element.isVolatileQualified() || Element.isRestrictQualified() ||
+      Element.getAddressSpace() != LangAS::Default)
+    return std::nullopt;
+  auto Fields = Specialization->fields();
+  auto It = Fields.begin();
+  const auto *Begin = It == Fields.end() ? nullptr : *It++;
+  const auto *Size = It == Fields.end() ? nullptr : *It++;
+  const auto BeginType = Context.getPointerType(Element.withConst());
+  if (!Begin || !Size || It != Fields.end() || Begin->getName() != "__begin_" ||
+      Size->getName() != "__size_" || Begin->getAccess() != AS_private ||
+      Size->getAccess() != AS_private || Begin->isBitField() ||
+      Size->isBitField() || Begin->isMutable() || Size->isMutable() ||
+      Begin->hasAttrs() || Size->hasAttrs() ||
+      !Context.hasSameType(Begin->getType(), BeginType) ||
+      !Context.hasSameType(Size->getType(), Context.getSizeType()) ||
+      !approvedStandardSDKDeclaration(S, SM, Begin) ||
+      !approvedStandardSDKDeclaration(S, SM, Size) ||
+      !cstddefOrigin(S, SM, Begin->getLocation(), "libcxx",
+                     "initializer_list") ||
+      !cstddefOrigin(S, SM, Size->getLocation(), "libcxx", "initializer_list"))
+    return std::nullopt;
+  const auto &Layout = Context.getASTRecordLayout(Specialization);
+  const uint64_t PointerBits = Context.getTypeSize(BeginType);
+  const uint64_t SizeBits = Context.getTypeSize(Context.getSizeType());
+  if (Layout.getFieldCount() != 2 || Layout.getFieldOffset(0) != 0 ||
+      Layout.getFieldOffset(1) != PointerBits || PointerBits != SizeBits ||
+      uint64_t(Layout.getSize().getQuantity()) * 8 != PointerBits + SizeBits ||
+      uint64_t(Layout.getAlignment().getQuantity()) * 8 !=
+          Context.getTypeAlign(BeginType))
+    return std::nullopt;
+  return UtilityInitializerListRecord{Specialization, Begin, Size, Element};
+}
+
+std::optional<UtilityInitializerListConstruction>
+approvedUtilityInitializerListConstruction(const State &S,
+                                           const SourceManager &SM,
+                                           const CXXConstructExpr *Construction,
+                                           const ASTContext &Context) {
+  if (!Construction || Construction->isTypeDependent() ||
+      Construction->isValueDependent() ||
+      Construction->isInstantiationDependent() ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete)
+    return std::nullopt;
+  const auto *Constructor = Construction->getConstructor();
+  const auto List = approvedUtilityInitializerListRecord(
+      S, SM, Construction->getType()->getAsCXXRecordDecl(), Context);
+  if (!Constructor || !List || Constructor->isVariadic() ||
+      Constructor->getParent()->getCanonicalDecl() !=
+          List->Record->getCanonicalDecl() ||
+      Construction->getNumArgs() != Constructor->getNumParams())
+    return std::nullopt;
+  if (Constructor->isImplicit() && Constructor->isTrivial() &&
+      Constructor->isCopyOrMoveConstructor() &&
+      Construction->getNumArgs() == 1 &&
+      Context.hasSameUnqualifiedType(Construction->getArg(0)->getType(),
+                                     Construction->getType()))
+    return UtilityInitializerListConstruction::CopyOrMove;
+  if (!Construction->getNumArgs() && Constructor->isDefaultConstructor() &&
+      Constructor->hasBody() &&
+      approvedStandardSDKDeclaration(S, SM, Constructor) &&
+      cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx",
+                    "initializer_list"))
+    return UtilityInitializerListConstruction::Default;
+  return std::nullopt;
+}
+
+std::optional<UtilityInitializerListRecord>
+approvedUtilityInitializerListAssignment(const State &S,
+                                         const SourceManager &SM,
+                                         const CXXOperatorCallExpr *Assignment,
+                                         const ASTContext &Context) {
+  if (!Assignment || Assignment->isTypeDependent() ||
+      Assignment->isValueDependent() ||
+      Assignment->isInstantiationDependent() ||
+      Assignment->getOperator() != OO_Equal || Assignment->getNumArgs() != 2 ||
+      !Assignment->isLValue())
+    return std::nullopt;
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Assignment->getDirectCallee());
+  const auto List = approvedUtilityInitializerListRecord(
+      S, SM, Method ? Method->getParent() : nullptr, Context);
+  if (!Method || !List || Method->isStatic() || Method->isVariadic() ||
+      Method->getNumParams() != 1 ||
+      Method->getOverloadedOperator() != OO_Equal || !Method->isImplicit() ||
+      !Method->isTrivial() ||
+      !(Method->isCopyAssignmentOperator() ||
+        Method->isMoveAssignmentOperator()))
+    return std::nullopt;
+  const auto ListType = Context.getRecordType(List->Record);
+  const auto Parameter = Method->getParamDecl(0)->getType();
+  if (!Parameter->isReferenceType() ||
+      !Method->getReturnType()->isLValueReferenceType() ||
+      !Context.hasSameUnqualifiedType(Parameter->getPointeeType(), ListType) ||
+      !Context.hasSameUnqualifiedType(Method->getReturnType()->getPointeeType(),
+                                      ListType) ||
+      !Context.hasSameUnqualifiedType(Assignment->getArg(0)->getType(),
+                                      ListType) ||
+      !Context.hasSameUnqualifiedType(Assignment->getArg(1)->getType(),
+                                      ListType) ||
+      !Context.hasSameUnqualifiedType(Assignment->getType(), ListType))
+    return std::nullopt;
+  return List;
+}
+
+std::optional<UtilityInitializerListExpression>
+approvedUtilityInitializerListExpression(
+    const State &S, const SourceManager &SM,
+    const CXXStdInitializerListExpr *Expression, const ASTContext &Context) {
+  if (!Expression || !Expression->isPRValue() ||
+      Expression->isTypeDependent() || Expression->isValueDependent() ||
+      Expression->isInstantiationDependent())
+    return std::nullopt;
+  const auto List = approvedUtilityInitializerListRecord(
+      S, SM, Expression->getType()->getAsCXXRecordDecl(), Context);
+  const auto *Backing =
+      dyn_cast_or_null<MaterializeTemporaryExpr>(Expression->getSubExpr());
+  const auto *Array =
+      Backing ? Context.getAsConstantArrayType(Backing->getType()) : nullptr;
+  const Expr *BackingValue = Backing ? Backing->getSubExpr() : nullptr;
+  if (const auto *Bound = dyn_cast_or_null<CXXBindTemporaryExpr>(BackingValue))
+    BackingValue = Bound->getSubExpr();
+  const auto *Initializers = dyn_cast_or_null<InitListExpr>(BackingValue);
+  if (!List || !Backing || !Array || !Initializers || !Backing->isXValue() ||
+      !Backing->getSubExpr()->isPRValue() ||
+      !Context.hasSameType(Backing->getType(),
+                           Backing->getSubExpr()->getType()) ||
+      !Context.hasSameType(Array->getElementType(),
+                           List->ElementType.withConst()) ||
+      Initializers->hasArrayFiller() || Initializers->hasDesignatedInit() ||
+      Initializers->getInitializedFieldInUnion() ||
+      Initializers->isStringLiteralInit())
+    return std::nullopt;
+  const uint64_t Size = Array->getSize().getLimitedValue(65537);
+  if (!Size || Size > 65536 || Initializers->getNumInits() != Size)
+    return std::nullopt;
+  return UtilityInitializerListExpression{*List, Backing, Size};
+}
+
 static bool utilityObjectPointer(const ASTContext &Context, QualType Type) {
   return !Type.isNull() && !Type.isVolatileQualified() &&
          Type.getAddressSpace() == LangAS::Default && Type->isPointerType() &&
@@ -1101,6 +1298,42 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return std::nullopt;
   const auto *Function = Call->getDirectCallee();
   const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
+  const auto InitializerList = approvedUtilityInitializerListRecord(
+      S, SM, Method ? Method->getParent() : nullptr, Context);
+  if (Method && InitializerList) {
+    const auto *Reference = directMethodReference(Call);
+    const auto *MemberCall = dyn_cast<CXXMemberCallExpr>(Call);
+    const auto *Object =
+        MemberCall ? MemberCall->getImplicitObjectArgument() : nullptr;
+    const auto ListType = Context.getRecordType(InitializerList->Record);
+    if (!Reference || !Object || Method->isStatic() || Method->isVariadic() ||
+        Method->getNumParams() || Call->getNumArgs() || !Method->isConst() ||
+        !Method->hasBody() ||
+        Method->getParent()->getCanonicalDecl() !=
+            InitializerList->Record->getCanonicalDecl() ||
+        !Context.hasSameUnqualifiedType(Object->getType(), ListType) ||
+        !approvedStandardSDKDeclaration(S, SM, Method) ||
+        !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
+                       "initializer_list") ||
+        !S.owns(SM, Reference->getExprLoc()))
+      return std::nullopt;
+    const llvm::StringRef Name = Method->getIdentifier()
+                                     ? Method->getIdentifier()->getName()
+                                     : llvm::StringRef();
+    if (Name == "size" && Call->isPRValue() && Method->isConstexpr() &&
+        Context.hasSameType(Method->getReturnType(), Context.getSizeType()) &&
+        Context.hasSameType(Call->getType(), Method->getReturnType()))
+      return UtilityOperation::InitializerListSize;
+    const auto Iterator =
+        Context.getPointerType(InitializerList->ElementType.withConst());
+    if ((Name == "begin" || Name == "end") && Call->isPRValue() &&
+        Method->isConstexpr() &&
+        Context.hasSameType(Method->getReturnType(), Iterator) &&
+        Context.hasSameType(Call->getType(), Iterator))
+      return Name == "begin" ? UtilityOperation::InitializerListBegin
+                             : UtilityOperation::InitializerListEnd;
+    return std::nullopt;
+  }
   const auto Array = approvedUtilityArrayRecord(
       S, SM, Method ? Method->getParent() : nullptr, Context);
   if (Method && Array) {
@@ -1372,6 +1605,58 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   const llvm::StringRef Name = Function->getIdentifier()
                                    ? Function->getIdentifier()->getName()
                                    : llvm::StringRef();
+  if (Call->getNumArgs() == 1 && Function->getNumParams() == 1) {
+    const auto List = approvedUtilityInitializerListRecord(
+        S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
+    const auto Parameter = Function->getParamDecl(0)->getType();
+    const auto ListType =
+        List ? Context.getRecordType(List->Record) : QualType();
+    const bool ParameterMatches =
+        List &&
+        (Parameter->isLValueReferenceType()
+             ? Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                              ListType)
+             : Context.hasSameUnqualifiedType(Parameter, ListType)) &&
+        Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), ListType);
+    if (ParameterMatches && Call->isPRValue()) {
+      const auto Iterator =
+          Context.getPointerType(List->ElementType.withConst());
+      if (((Origin->Path == "initializer_list" &&
+            (Name == "begin" || Name == "end")) ||
+           (Origin->Path == "__iterator/access.h" &&
+            (Name == "begin" || Name == "cbegin" || Name == "end" ||
+             Name == "cend"))) &&
+          Context.hasSameType(Function->getReturnType(), Iterator) &&
+          Context.hasSameType(Call->getType(), Iterator))
+        return Name == "end" || Name == "cend"
+                   ? UtilityOperation::InitializerListEnd
+                   : UtilityOperation::InitializerListBegin;
+      if (Origin->Path == "__iterator/data.h" && Name == "data" &&
+          Context.hasSameType(Function->getReturnType(), Iterator) &&
+          Context.hasSameType(Call->getType(), Iterator))
+        return UtilityOperation::InitializerListBegin;
+      if (Origin->Path == "__iterator/size.h" && Name == "size" &&
+          Context.hasSameType(Function->getReturnType(),
+                              Context.getSizeType()) &&
+          Context.hasSameType(Call->getType(), Context.getSizeType()))
+        return UtilityOperation::InitializerListSize;
+      if (Origin->Path == "__iterator/empty.h" && Name == "empty" &&
+          Function->getReturnType()->isBooleanType() &&
+          Context.hasSameType(Call->getType(), Function->getReturnType()))
+        return UtilityOperation::InitializerListEmpty;
+      if (Origin->Path == "__iterator/reverse_access.h" &&
+          (Name == "rbegin" || Name == "crbegin" || Name == "rend" ||
+           Name == "crend")) {
+        const auto Reverse = approvedUtilityReverseIteratorRecord(
+            S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);
+        if (Reverse && Context.hasSameType(Reverse->IteratorType, Iterator) &&
+            Context.hasSameType(Call->getType(), Function->getReturnType()))
+          return Name == "rend" || Name == "crend"
+                     ? UtilityOperation::InitializerListREnd
+                     : UtilityOperation::InitializerListRBegin;
+      }
+    }
+  }
   const bool ApprovedNonInlineAlgorithm =
       (Origin->Path == "__algorithm/remove.h" && Name == "remove") ||
       (Origin->Path == "__algorithm/remove_if.h" && Name == "remove_if") ||
