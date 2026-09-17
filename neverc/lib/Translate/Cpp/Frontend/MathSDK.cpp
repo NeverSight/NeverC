@@ -2301,15 +2301,18 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
        Name == "next_permutation") ||
       (Origin->Path == "__algorithm/prev_permutation.h" &&
        Name == "prev_permutation");
-  if (PermutationMutation && Call->getNumArgs() == 2 &&
-      Function->getNumParams() == 2 && Call->isPRValue() &&
-      AlgorithmOrderedPointerParameter(0) && AlgorithmPointerParameter(1) &&
+  if (PermutationMutation &&
+      (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
+      Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       utilityAlgorithmWritableScalarPointer(
           Context, Function->getParamDecl(0)->getType()) &&
       Function->getReturnType()->isBooleanType() &&
-      Same(Call->getType(), Function->getReturnType()))
+      Same(Call->getType(), Function->getReturnType()) &&
+      ((Call->getNumArgs() == 2 && AlgorithmOrderedPointerParameter(0)) ||
+       (Call->getNumArgs() == 3 && AlgorithmBinaryPredicateParameter(2, 0, 0))))
     return Name == "next_permutation"
                ? UtilityOperation::AlgorithmNextPermutation
                : UtilityOperation::AlgorithmPrevPermutation;

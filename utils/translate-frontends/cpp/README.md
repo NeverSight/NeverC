@@ -109,7 +109,8 @@ used as comparators additionally admit `min_element`, `max_element`,
 `lexicographical_compare`, `includes`, `merge`, `set_union`,
 `set_intersection`, `set_difference`, `set_symmetric_difference`, `is_heap`,
 `is_heap_until`, `make_heap`, `push_heap`, `pop_heap`, `sort_heap`, `sort`,
-`partial_sort`, `partial_sort_copy` and `nth_element`.
+`partial_sort`, `partial_sort_copy`, `nth_element`, `next_permutation` and
+`prev_permutation`.
 Other exact callbacks admit `for_each`, `for_each_n`, unary and binary
 `transform`, `generate` and `generate_n`.
 Predicate mutation and ordered output algorithms require writable destinations,

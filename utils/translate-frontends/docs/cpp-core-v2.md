@@ -436,6 +436,13 @@ permutation existed. Empty and single-element ranges return false. A range at
 its final or initial permutation is reversed to the opposite endpoint before
 returning false.
 
+Their three-argument comparator overloads accept the same exact scalar
+function-pointer boundary, including enum and object-pointer elements. The
+callback defines the lexicographical order, is retained once, and is not called
+for empty or single-element ranges. Repeated values, suffix reversal and
+endpoint wraparound retain the same behavior under that order. Inexact
+callbacks, callable objects and record elements remain rejected.
+
 The exact default-equality three- and four-iterator `std::is_permutation`
 templates use the equality element boundary, so const ranges and object-pointer
 elements are accepted while enums and records remain excluded. Their checked

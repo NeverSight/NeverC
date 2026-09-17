@@ -3006,6 +3006,16 @@ class FunctionLowering {
       const bool Next = Operation == UtilityOperation::AlgorithmNextPermutation;
       auto First = snapshot(expression(Call->getArg(0)), L);
       auto Last = snapshot(expression(Call->getArg(1)), L);
+      std::optional<Expression> Comparator;
+      if (Call->getNumArgs() == 3)
+        Comparator = snapshot(expression(Call->getArg(2)), L);
+      auto Less = [&](Expression Left, Expression Right) {
+        if (Comparator)
+          return emitBinaryPredicate(json::Object(*Comparator),
+                                     Call->getArg(2)->getType(),
+                                     std::move(Left), std::move(Right), L);
+        return binary("<", std::move(Left), std::move(Right), "bool", L);
+      };
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto PointerType = type(Call->getArg(0)->getType(), L);
       auto Current = temporary(PointerType, L);
@@ -3056,10 +3066,10 @@ class FunctionLowering {
           L);
       jump(ComparePivot, L);
       label(ComparePivot, L);
-      branch(Next ? binary("<", dereference(Current, L),
-                           dereference(Successor, L), "bool", L)
-                  : binary("<", dereference(Successor, L),
-                           dereference(Current, L), "bool", L),
+      branch(Next ? Less(dereference(json::Object(Current), L),
+                         dereference(json::Object(Successor), L))
+                  : Less(dereference(json::Object(Successor), L),
+                         dereference(json::Object(Current), L)),
              FindSuccessor, CheckFirst, L);
       label(CheckFirst, L);
       branch(binary("==", Current, First, "bool", L), Wrap, Search, L);
@@ -3071,10 +3081,10 @@ class FunctionLowering {
              binary("-", Successor, quantity(1, DifferenceType, L), PointerType,
                     L),
              L);
-      branch(Next ? binary("<", dereference(Current, L),
-                           dereference(Successor, L), "bool", L)
-                  : binary("<", dereference(Successor, L),
-                           dereference(Current, L), "bool", L),
+      branch(Next ? Less(dereference(json::Object(Current), L),
+                         dereference(json::Object(Successor), L))
+                  : Less(dereference(json::Object(Successor), L),
+                         dereference(json::Object(Current), L)),
              Exchange, CheckSuccessor, L);
       label(Exchange, L);
       {

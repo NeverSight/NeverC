@@ -1300,14 +1300,49 @@ extern "C" int algorithm_permutation(int *first, int *last,
     check("v2-algorithm-permutation-enum",
           '#include <algorithm>\nenum E{low,high};int main(){E a[2]{low,high};return std::next_permutation(a,a+2)?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
-    check("v2-algorithm-permutation-comparator",
-          '#include <algorithm>\nbool less(int a,int b){return a<b;}int main(){int a[2]{1,2};return std::next_permutation(a,a+2,&less)?0:1;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-algorithm-permutation-heterogeneous",
           '#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{2,1};return std::is_permutation(a,a+2,b,b+2)?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-algorithm-permutation-converted-predicate",
           '#include <algorithm>\nbool equal(long a,long b){return a==b;}int main(){int a[2]{1,2};return std::is_permutation(a,a+2,a,&equal)?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
+    algorithm_comparator_permutation_source = """\
+#include <algorithm>
+extern "C" int algorithm_comparator_permutation(
+    int *first, int *last, bool (*comparator)(int, int)) {
+  bool next = std::next_permutation(first, last, comparator);
+  bool previous = std::prev_permutation(first, last, comparator);
+  return next + previous;
+}
+"""
+
+    def assert_comparator_permutation(data):
+        assert len(data["sdk_dependencies"]) == 354, data
+        nodes = list(walk(data["functions"]))
+        assert not [node for node in nodes
+                    if node.get("op") in ("call", "mapped_call")], data
+        assert sum(node.get("op") == "indirect_call"
+                   for node in nodes) == 4, data
+
+    algorithm_comparator_permutation = check(
+        "v2-algorithm-comparator-permutation",
+        algorithm_comparator_permutation_source,
+        profile="cpp-core-v2", sdk=True)
+    assert_comparator_permutation(algorithm_comparator_permutation)
+    for target in sdk_targets:
+        target_result = check("v2-algorithm-comparator-permutation-" + target,
+                              algorithm_comparator_permutation_source,
+                              profile="cpp-core-v2", target=target, sdk=True)
+        assert_comparator_permutation(target_result)
+    check("v2-algorithm-comparator-permutation-reference",
+          'bool p(const int&a,int b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{1,2};return std::next_permutation(a,a+2,p)?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-comparator-permutation-conversion",
+          'bool p(long a,long b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{1,2};return std::prev_permutation(a,a+2,p)?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-comparator-permutation-record",
+          'struct R{int n;};bool p(R a,R b){return a.n<b.n;}\n#include <algorithm>\nint main(){R a[2]{{1},{2}};return std::next_permutation(a,a+2,p)?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
     algorithm_binary_predicates_source = """\

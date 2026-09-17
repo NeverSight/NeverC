@@ -26259,10 +26259,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmPermutationRequirePinnedScalarForms) {
       {"pointer-prev",
        "#include <algorithm>\nint main(){int a=1,b=2;int*p[2]{&a,&b};"
        "return std::prev_permutation(p,p+2)?0:1;}"},
-      {"comparator-next",
-       "#include <algorithm>\nbool less(int a,int b){return a<b;}"
-       "int main(){int a[2]{1,2};"
-       "return std::next_permutation(a,a+2,&less)?0:1;}"},
       {"record-prev", "#include <algorithm>\nstruct R{int n;};"
                       "bool operator<(const R&a,const R&b){return a.n<b.n;}"
                       "int main(){R a[2]{{1},{2}};"
@@ -26289,6 +26285,147 @@ TEST_F(TranslateTest, CoreV2AlgorithmPermutationRequirePinnedScalarForms) {
     expectCode(
         translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
         "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2AlgorithmComparatorPermutationRunsAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-comparator-permutation.cpp");
+  const auto Output = tmpFile("algorithm-comparator-permutation.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int calls;
+bool greater_value(int left, int right) {
+  ++calls;
+  return left > right;
+}
+enum Rank : unsigned char { low, medium, high };
+bool rank_greater(Rank left, Rank right) {
+  ++calls;
+  return left > right;
+}
+int main() {
+  int values[3]{3, 2, 1};
+  auto comparator = &greater_value;
+  int effects = 0;
+  calls = 0;
+  if (!std::next_permutation((++effects, values), (++effects, values + 3),
+                             (++effects, comparator)) ||
+      effects != 3 || calls == 0 || values[0] != 3 || values[1] != 1 ||
+      values[2] != 2)
+    return 1;
+  if (!std::prev_permutation(values, values + 3, greater_value) ||
+      values[0] != 3 || values[1] != 2 || values[2] != 1)
+    return 2;
+
+  int final[3]{1, 2, 3};
+  if (std::next_permutation(final, final + 3, greater_value) ||
+      final[0] != 3 || final[1] != 2 || final[2] != 1)
+    return 3;
+  int initial[3]{3, 2, 1};
+  if (std::prev_permutation(initial, initial + 3, greater_value) ||
+      initial[0] != 1 || initial[1] != 2 || initial[2] != 3)
+    return 4;
+
+  int one[1]{7};
+  calls = 0;
+  if (std::next_permutation(one, one, greater_value) ||
+      std::next_permutation(one, one + 1, greater_value) ||
+      std::prev_permutation(one, one + 1, greater_value) || one[0] != 7 ||
+      calls != 0)
+    return 5;
+
+  int cycle[3]{3, 3, 2};
+  int permutations = 1;
+  while (std::next_permutation(cycle, cycle + 3, greater_value))
+    ++permutations;
+  if (permutations != 3 || cycle[0] != 3 || cycle[1] != 3 || cycle[2] != 2)
+    return 6;
+
+  Rank ranks[3]{high, medium, low};
+  calls = 0;
+  if (!std::next_permutation(ranks, ranks + 3, rank_greater) ||
+      ranks[0] != high || ranks[1] != low || ranks[2] != medium || calls == 0)
+    return 7;
+  if (!std::prev_permutation(ranks, ranks + 3, rank_greater) ||
+      ranks[0] != high || ranks[1] != medium || ranks[2] != low)
+    return 8;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Dependencies =
+      Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 354u);
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+  }
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("algorithm-comparator-permutation" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2AlgorithmComparatorPermutationRequiresExactFunctions) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code = "TR0203";
+  };
+  const Rejection Cases[] = {
+      {"reference-parameter",
+       "bool p(const int&a,int b){return a>b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{2,1};return "
+       "std::next_permutation(a,a+2,p)?0:1;}"},
+      {"non-bool-result",
+       "int p(int a,int b){return a>b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{2,1};return "
+       "std::prev_permutation(a,a+2,p)?0:1;}"},
+      {"converted-parameter",
+       "bool p(long a,long b){return a>b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{2,1};return "
+       "std::next_permutation(a,a+2,p)?0:1;}"},
+      {"function-object",
+       "struct P{bool operator()(int a,int b)const{return a>b;}};\n"
+       "#include <algorithm>\nint main(){int a[2]{2,1};return "
+       "std::prev_permutation(a,a+2,P{})?0:1;}"},
+      {"record-elements",
+       "struct R{int n;};bool p(R a,R b){return a.n>b.n;}\n"
+       "#include <algorithm>\nint main(){R a[2]{{2},{1}};return "
+       "std::next_permutation(a,a+2,p)?0:1;}"},
+      {"variadic-comparator",
+       "bool p(int a,int b,...){return a>b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{2,1};return "
+       "std::next_permutation(a,a+2,p)?0:1;}",
+       "TR0201"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(
+        std::string("algorithm-comparator-permutation-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(
+        std::string("algorithm-comparator-permutation-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
     expectNoArtifacts(Output);
   }
 }
