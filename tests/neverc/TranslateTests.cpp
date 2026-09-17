@@ -23837,6 +23837,121 @@ TEST_F(TranslateTest,
   expectNoArtifacts(Output);
 }
 
+TEST_F(TranslateTest,
+       CoreV2AlgorithmMutationPointerOperationsRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-mutation.cpp");
+  const auto Output = tmpFile("algorithm-mutation.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+enum Count : unsigned int { two = 2 };
+int main() {
+  int values[5]{1, 2, 3, 4, 5};
+  int effects = 0;
+  int fill_value = 9;
+  std::fill((++effects, values + 1), (++effects, values + 4),
+            (++effects, fill_value));
+  if (effects != 3 || values[0] != 1 || values[1] != 9 ||
+      values[2] != 9 || values[3] != 9 || values[4] != 5)
+    return 1;
+  if (std::fill_n(values, two, 7) != values + 2 ||
+      values[0] != 7 || values[1] != 7)
+    return 2;
+  short negative = -3;
+  if (std::fill_n(values + 2, negative, 4) != values + 2 ||
+      values[2] != 9)
+    return 3;
+
+  int left[4]{1, 2, 3, 4};
+  int right[4]{5, 6, 7, 8};
+  if (std::swap_ranges(left, left + 4, right) != right + 4 ||
+      left[0] != 5 || left[3] != 8 || right[0] != 1 || right[3] != 4)
+    return 4;
+
+  int odd[5]{1, 2, 3, 4, 5};
+  std::reverse(odd, odd + 5);
+  if (odd[0] != 5 || odd[1] != 4 || odd[2] != 3 || odd[3] != 2 ||
+      odd[4] != 1)
+    return 5;
+  int even[4]{1, 2, 3, 4};
+  std::reverse(even, even + 4);
+  std::reverse(even, even);
+  std::reverse(even + 2, even + 3);
+  if (even[0] != 4 || even[1] != 3 || even[2] != 2 || even[3] != 1)
+    return 6;
+
+  const int source[4]{2, 4, 6, 8};
+  int reversed[4]{};
+  if (std::reverse_copy(source, source + 4, reversed) != reversed + 4 ||
+      reversed[0] != 8 || reversed[1] != 6 || reversed[2] != 4 ||
+      reversed[3] != 2)
+    return 7;
+  double decimals[3]{0.5, 1.5, 2.5};
+  std::reverse(decimals, decimals + 3);
+  if (decimals[0] != 2.5 || decimals[1] != 1.5 || decimals[2] != 0.5)
+    return 8;
+  int target = 12;
+  int *pointers[3]{};
+  std::fill(pointers, pointers + 3, &target);
+  std::reverse(pointers, pointers + 3);
+  if (pointers[0] != &target || pointers[1] != &target ||
+      pointers[2] != &target)
+    return 9;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Dependencies =
+      Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 354u);
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+  }
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-mutation" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmMutationRequiresPinnedScalarForms) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+  };
+  const Rejection Cases[] = {
+      {"floating-fill-count", "#include <algorithm>\nint main(){int a[3]{};"
+                              "return std::fill_n(a,2.5,7)==a+2?0:1;}"},
+      {"heterogeneous-reverse-copy",
+       "#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{};"
+       "return std::reverse_copy(a,a+2,b)==b+2?0:1;}"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("algorithm-mutation-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("algorithm-mutation-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2IteratorPointerOperationsRunAtBothOptimizations) {
   const auto Source = tmpFile("iterator-operations.cpp");
   const auto Output = tmpFile("iterator-operations.nc");

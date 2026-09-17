@@ -230,17 +230,24 @@ retain their original bytes.
 
 The exact public `std::find`, `std::count`, three-iterator `std::equal`,
 four-iterator `std::equal`, `std::copy`, `std::move`, `std::copy_backward` and
-`std::move_backward` templates directly lower for non-volatile raw object
-pointer ranges whose unqualified element type is the same admitted scalar type.
-Transfer algorithms additionally require a writable output element. Each call
-evaluates and retains its arguments once before entering generated pointer
-loops; `find` preserves the bound value reference, `count` uses the target
-`ptrdiff_t`, `equal` preserves short-circuit results, and transfer operations
-return the advanced output pointer. Forward and backward loops preserve their
-respective standard overlap direction. Generated programs do not call or link
-libc++ for these operations. Heterogeneous value types, predicate overloads,
-custom iterators, record elements and function addresses remain rejected, as do
-calls outside a documented direct lowering.
+`std::move_backward`, `std::fill`, `std::fill_n`, `std::swap_ranges`,
+`std::reverse` and `std::reverse_copy` templates directly lower for non-volatile
+raw object pointer ranges whose unqualified element type is the same admitted
+scalar type. Transfer and fill algorithms require a writable output element;
+`swap_ranges` requires both ranges to be writable, and `reverse` requires a
+writable input range. `fill_n` accepts integral or non-scoped enum counts whose
+promoted type is at most 64 bits. Floating counts are outside this boundary.
+
+Each call evaluates and retains its arguments once before entering generated
+pointer loops. `find` preserves the bound value reference, `count` uses the
+target `ptrdiff_t`, `equal` preserves short-circuit results, `fill_n` applies
+the libc++ integer promotion before its positive-count loop, and algorithms
+with output iterators return the advanced output pointer. Forward and backward
+loops preserve their respective standard overlap direction; `reverse` uses
+equality-only bidirectional contraction. Generated programs do not call or
+link libc++ for these operations. Heterogeneous value types, predicate
+overloads, custom iterators, record elements and function addresses remain
+rejected, as do calls outside a documented direct lowering.
 
 The `shuffle` and `sample` component headers are authenticated but their
 declarations stay disabled because libc++ reaches `mbstate_t` through

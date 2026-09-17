@@ -923,6 +923,125 @@ class FunctionLowering {
       label(End, L);
       return Output;
     }
+    case UtilityOperation::AlgorithmFill:
+    case UtilityOperation::AlgorithmFillN: {
+      const bool Counted = Operation == UtilityOperation::AlgorithmFillN;
+      auto Current = snapshot(expression(Call->getArg(0)), L);
+      auto BoundaryType = Call->getArg(1)->getType();
+      if (Counted) {
+        if (const auto *Enumeration = BoundaryType->getAs<EnumType>())
+          BoundaryType = Enumeration->getDecl()->getPromotionType();
+        else if (A.Context.isPromotableIntegerType(BoundaryType))
+          BoundaryType = A.Context.getPromotedIntegerType(BoundaryType);
+      }
+      const auto BoundaryTypeName = type(BoundaryType, L);
+      auto Boundary = snapshot(
+          Counted ? cast(expression(Call->getArg(1)), BoundaryTypeName, L)
+                  : expression(Call->getArg(1)),
+          L);
+      auto ValueAddress = snapshot(
+          address(lvalue(Call->getArg(2)), Call->getArg(2)->getType(), L), L);
+      const auto Check = labelName(), Store = labelName(), End = labelName();
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      jump(Check, L);
+      label(Check, L);
+      branch(Counted ? binary(">", Boundary, quantity(0, BoundaryTypeName, L),
+                              "bool", L)
+                     : binary("!=", Current, Boundary, "bool", L),
+             Store, End, L);
+      label(Store, L);
+      assign(dereference(Current, L), dereference(ValueAddress, L), L);
+      assign(
+          Current,
+          binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      if (Counted) {
+        assign(Boundary,
+               binary("-", Boundary, one(BoundaryTypeName, L), BoundaryTypeName,
+                      L),
+               L);
+      }
+      jump(Check, L);
+      label(End, L);
+      return Counted ? std::move(Current) : Expression();
+    }
+    case UtilityOperation::AlgorithmSwapRanges: {
+      auto First = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto Second = snapshot(expression(Call->getArg(2)), L);
+      const auto Check = labelName(), Swap = labelName(), End = labelName();
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto FirstType = type(Call->getArg(0)->getType(), L);
+      const auto SecondType = type(Call->getArg(2)->getType(), L);
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", First, Last, "bool", L), Swap, End, L);
+      label(Swap, L);
+      auto FirstValue = snapshot(dereference(First, L), L);
+      auto SecondValue = snapshot(dereference(Second, L), L);
+      assign(dereference(First, L), std::move(SecondValue), L);
+      assign(dereference(Second, L), std::move(FirstValue), L);
+      assign(First,
+             binary("+", First, quantity(1, DifferenceType, L), FirstType, L),
+             L);
+      assign(Second,
+             binary("+", Second, quantity(1, DifferenceType, L), SecondType, L),
+             L);
+      jump(Check, L);
+      label(End, L);
+      return Second;
+    }
+    case UtilityOperation::AlgorithmReverse: {
+      auto First = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      const auto Check = labelName(), Decrement = labelName();
+      const auto Swap = labelName(), End = labelName();
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", First, Last, "bool", L), Decrement, End, L);
+      label(Decrement, L);
+      assign(Last,
+             binary("-", Last, quantity(1, DifferenceType, L), PointerType, L),
+             L);
+      branch(binary("!=", First, Last, "bool", L), Swap, End, L);
+      label(Swap, L);
+      auto FirstValue = snapshot(dereference(First, L), L);
+      auto LastValue = snapshot(dereference(Last, L), L);
+      assign(dereference(First, L), std::move(LastValue), L);
+      assign(dereference(Last, L), std::move(FirstValue), L);
+      assign(First,
+             binary("+", First, quantity(1, DifferenceType, L), PointerType, L),
+             L);
+      jump(Check, L);
+      label(End, L);
+      return {};
+    }
+    case UtilityOperation::AlgorithmReverseCopy: {
+      auto First = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto Output = snapshot(expression(Call->getArg(2)), L);
+      const auto Check = labelName(), Transfer = labelName(), End = labelName();
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto InputType = type(Call->getArg(0)->getType(), L);
+      const auto OutputType = type(Call->getArg(2)->getType(), L);
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", First, Last, "bool", L), Transfer, End, L);
+      label(Transfer, L);
+      assign(Last,
+             binary("-", Last, quantity(1, DifferenceType, L), InputType, L),
+             L);
+      assign(dereference(Output, L), dereference(Last, L), L);
+      assign(Output,
+             binary("+", Output, quantity(1, DifferenceType, L), OutputType, L),
+             L);
+      jump(Check, L);
+      label(End, L);
+      return Output;
+    }
     case UtilityOperation::MakePair: {
       auto Pair = approvedUtilityPairRecord(
           A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);

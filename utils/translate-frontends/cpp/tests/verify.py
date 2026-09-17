@@ -686,6 +686,36 @@ extern "C" int algorithm_transfer(const int *source, int *destination) {
           '#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{};return std::copy(a,a+2,b)==b+2?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    algorithm_mutation_source = """\
+#include <algorithm>
+enum Count : unsigned int { two = 2 };
+extern "C" int algorithm_mutation(int *first, int *second, int *output) {
+  std::fill(first, first + 4, 3);
+  int *filled = std::fill_n(first, two, 5);
+  int *swapped = std::swap_ranges(first, first + 4, second);
+  std::reverse(first, first + 4);
+  int *copied = std::reverse_copy(first, first + 4, output);
+  return static_cast<int>((filled - first) + (swapped - second) +
+                          (copied - output));
+}
+"""
+    algorithm_mutation = check("v2-algorithm-mutation",
+                               algorithm_mutation_source,
+                               profile="cpp-core-v2", sdk=True)
+    assert len(algorithm_mutation["sdk_dependencies"]) == 354, algorithm_mutation
+    assert not [node for node in walk(algorithm_mutation["functions"])
+                if node.get("op") in ("call", "mapped_call")], algorithm_mutation
+    for target in sdk_targets:
+        check("v2-algorithm-mutation-" + target,
+              algorithm_mutation_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-algorithm-floating-fill-count",
+          '#include <algorithm>\nint main(){int a[3]{};return std::fill_n(a,2.5,7)==a+2?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-heterogeneous-reverse-copy",
+          '#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{};return std::reverse_copy(a,a+2,b)==b+2?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     # Windows driver defaults must not change core-v2 source visibility or
     # standard diagnostics. Exercise both MSVC architectures on every CI host.
     standard_template_parsing = {

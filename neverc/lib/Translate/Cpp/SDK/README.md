@@ -38,9 +38,12 @@ The `<algorithm>` surface has a 354-file libc++/resource closure on every
 core-v2 target. Its upstream declarations and the NeverC C string declaration
 shim are available without platform headers. Exact scalar-pointer `find`,
 `count`, three- or four-iterator `equal`, `copy`, `move`, `copy_backward` and
-`move_backward` calls lower without a libc++ runtime dependency. `shuffle` and
-`sample` stay disabled until the same authenticated cross-target `mbstate_t`
-boundary is available through their random-distribution dependency.
+`move_backward`, `fill`, `fill_n`, `swap_ranges`, `reverse` and `reverse_copy`
+calls lower without a libc++ runtime dependency. Mutation requires writable
+destinations; `fill_n` accepts at-most-64-bit integral and non-scoped enum
+counts after the libc++ integer promotion. `shuffle` and `sample` stay disabled
+until the same authenticated cross-target `mbstate_t` boundary is available
+through their random-distribution dependency.
 Core v2 never admits the `platform` root.
 Math v1 continues to use its separately checked libc++, resource and Darwin
 platform closure for `<cmath>`.

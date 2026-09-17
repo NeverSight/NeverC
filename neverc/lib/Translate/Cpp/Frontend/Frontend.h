@@ -323,6 +323,11 @@ enum class UtilityOperation {
   AlgorithmMove,
   AlgorithmCopyBackward,
   AlgorithmMoveBackward,
+  AlgorithmFill,
+  AlgorithmFillN,
+  AlgorithmSwapRanges,
+  AlgorithmReverse,
+  AlgorithmReverseCopy,
 };
 struct UtilityPairRecord {
   const clang::CXXRecordDecl *Record;

@@ -81,9 +81,11 @@ through a platform-free 171-file closure, and directly lowers bounded pointer,
 array-range and reverse-iterator operations. Stream iterators remain disabled
 until their C runtime character-state ABI is available on every target.
 Algorithm directly lowers exact scalar-pointer `find`, `count`, three- or
-four-iterator `equal`, `copy`, `move`, `copy_backward` and `move_backward`
-calls from its platform-free 354-file closure. `shuffle` and `sample` remain
-disabled at this stage because
+four-iterator `equal`, `copy`, `move`, `copy_backward`, `move_backward`, `fill`,
+`fill_n`, `swap_ranges`, `reverse` and `reverse_copy` calls from its
+platform-free 354-file closure. Mutation requires writable destinations, and
+`fill_n` accepts integral or non-scoped enum counts through 64 bits after
+integer promotion. `shuffle` and `sample` remain disabled at this stage because
 their libc++ implementation reaches the same target C runtime character-state
 ABI through `uniform_int_distribution`.
 The driver authenticates each closure before

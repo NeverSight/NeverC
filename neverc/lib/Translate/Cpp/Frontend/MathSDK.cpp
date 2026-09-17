@@ -1354,6 +1354,42 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Context.hasSameUnqualifiedType(Left->getPointeeType(),
                                           Right->getPointeeType());
   };
+  auto AlgorithmValueParameter = [&](unsigned ValueIndex,
+                                     unsigned IteratorIndex) {
+    if (ValueIndex >= Function->getNumParams() ||
+        ValueIndex >= Call->getNumArgs() ||
+        IteratorIndex >= Function->getNumParams())
+      return false;
+    auto Iterator = Function->getParamDecl(IteratorIndex)->getType();
+    auto Value = Function->getParamDecl(ValueIndex)->getType();
+    return utilityAlgorithmScalarPointer(Context, Iterator) &&
+           Value->isLValueReferenceType() &&
+           Value->getPointeeType().isConstQualified() &&
+           !Value->getPointeeType().isVolatileQualified() &&
+           utilityScalar(Context, Value->getPointeeType()) &&
+           Context.hasSameUnqualifiedType(Value->getPointeeType(),
+                                          Iterator->getPointeeType()) &&
+           Context.hasSameUnqualifiedType(Call->getArg(ValueIndex)->getType(),
+                                          Value->getPointeeType());
+  };
+  auto AlgorithmCountParameter = [&](unsigned Index) {
+    if (Index >= Function->getNumParams() || Index >= Call->getNumArgs())
+      return false;
+    auto Count = Function->getParamDecl(Index)->getType();
+    if (!Same(Call->getArg(Index)->getType(), Count))
+      return false;
+    if (const auto *Enumeration = Count->getAs<EnumType>()) {
+      if (Enumeration->getDecl()->isScoped())
+        return false;
+      Count = Enumeration->getDecl()->getPromotionType();
+    } else if (Context.isPromotableIntegerType(Count)) {
+      Count = Context.getPromotedIntegerType(Count);
+    } else if (!Count->isIntegerType()) {
+      return false;
+    }
+    return !Count.isNull() && Count->isIntegerType() &&
+           Context.getTypeSize(Count) <= 64;
+  };
   if ((Origin->Path == "__algorithm/find.h" ||
        Origin->Path == "__algorithm/count.h") &&
       (Name == "find" || Name == "count") && Call->getNumArgs() == 3 &&
@@ -1362,15 +1398,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType())) {
     auto Iterator = Function->getParamDecl(0)->getType();
-    auto Value = Function->getParamDecl(2)->getType();
-    if (Value->isLValueReferenceType() &&
-        Value->getPointeeType().isConstQualified() &&
-        !Value->getPointeeType().isVolatileQualified() &&
-        utilityScalar(Context, Value->getPointeeType()) &&
-        Context.hasSameUnqualifiedType(Value->getPointeeType(),
-                                       Iterator->getPointeeType()) &&
-        Context.hasSameUnqualifiedType(Call->getArg(2)->getType(),
-                                       Value->getPointeeType())) {
+    if (AlgorithmValueParameter(2, 0)) {
       if (Name == "find" && Origin->Path == "__algorithm/find.h" &&
           Same(Function->getReturnType(), Iterator) &&
           Same(Call->getType(), Function->getReturnType()))
@@ -1427,6 +1455,64 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Name == "move_backward")
       return UtilityOperation::AlgorithmMoveBackward;
   }
+  if (Origin->Path == "__algorithm/fill.h" && Name == "fill" &&
+      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      utilityAlgorithmWritableScalarPointer(
+          Context, Function->getParamDecl(0)->getType()) &&
+      AlgorithmValueParameter(2, 0) &&
+      Function->getReturnType()->isVoidType() &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmFill;
+  if (Origin->Path == "__algorithm/fill_n.h" && Name == "fill_n" &&
+      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
+      Call->isPRValue() && AlgorithmPointerParameter(0) &&
+      utilityAlgorithmWritableScalarPointer(
+          Context, Function->getParamDecl(0)->getType()) &&
+      AlgorithmCountParameter(1) && AlgorithmValueParameter(2, 0) &&
+      Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmFillN;
+  if (Origin->Path == "__algorithm/swap_ranges.h" && Name == "swap_ranges" &&
+      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
+      Call->isPRValue() && AlgorithmPointerParameter(0) &&
+      AlgorithmPointerParameter(1) && AlgorithmPointerParameter(2) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
+                           Function->getParamDecl(2)->getType()) &&
+      utilityAlgorithmWritableScalarPointer(
+          Context, Function->getParamDecl(0)->getType()) &&
+      utilityAlgorithmWritableScalarPointer(
+          Context, Function->getParamDecl(2)->getType()) &&
+      Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmSwapRanges;
+  if (Origin->Path == "__algorithm/reverse.h" && Name == "reverse" &&
+      Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      utilityAlgorithmWritableScalarPointer(
+          Context, Function->getParamDecl(0)->getType()) &&
+      Function->getReturnType()->isVoidType() &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmReverse;
+  if (Origin->Path == "__algorithm/reverse_copy.h" && Name == "reverse_copy" &&
+      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
+      Call->isPRValue() && AlgorithmPointerParameter(0) &&
+      AlgorithmPointerParameter(1) && AlgorithmPointerParameter(2) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
+                           Function->getParamDecl(2)->getType()) &&
+      utilityAlgorithmWritableScalarPointer(
+          Context, Function->getParamDecl(2)->getType()) &&
+      Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmReverseCopy;
   if (Origin->Path == "__iterator/reverse_iterator.h" &&
       Name == "make_reverse_iterator" && Call->getNumArgs() == 1 &&
       Function->getNumParams() == 1 && Call->isPRValue()) {
