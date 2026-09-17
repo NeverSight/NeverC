@@ -591,11 +591,16 @@ extern "C" int initializer_list_operations() {
 extern "C" int optional_operations(int value) {
   std::optional<int> first;
   std::optional<int> second(value);
+  short small = 5;
+  std::optional<int> placed(std::in_place, small);
+  placed = small;
+  placed.emplace(short(6));
   first = second;
   second = std::nullopt;
   first.emplace(value + 1);
   auto made = std::make_optional(value + 2);
   auto zero = std::make_optional<int>();
+  auto converted = std::make_optional<int>(small);
   std::swap(made, zero);
   int selected = first.value_or(value + 3);
   bool optionals = second < first && first > second && second <= first &&
@@ -606,7 +611,8 @@ extern "C" int optional_operations(int value) {
                 first <= value + 1 && value + 1 >= first;
   return first.has_value() && !second && *first == value + 1 &&
                  selected == value + 1 && optionals && nullopts && values &&
-                 *made == 0 && *zero == value + 2
+                 *made == 0 && *zero == value + 2 && *placed == 6 &&
+                 *converted == 5 && second.value_or(small) == 5
              ? 0
              : 1;
 }
@@ -656,11 +662,8 @@ extern "C" int optional_operations(int value) {
         ("heterogeneous-comparison",
          '#include <optional>\nint main(){std::optional<int>a(1);std::optional<long>b(1);return a==b;}',
          "TR0203"),
-        ("converting-value-or",
-         '#include <optional>\nint main(){short n=2;std::optional<int>v;return v.value_or(n);}',
-         "TR0203"),
-        ("converting-make-optional",
-         '#include <optional>\nint main(){short n=2;return *std::make_optional<int>(n);}',
+        ("standalone-in-place",
+         '#include <optional>\nint main(){auto tag=std::in_place;return sizeof(tag);}',
          "TR0203"),
     ):
         check("v2-optional-" + name, source, code,

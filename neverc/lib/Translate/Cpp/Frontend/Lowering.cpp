@@ -4149,7 +4149,10 @@ class FunctionLowering {
             "The std::make_optional destination type differs from its result.");
       auto Value = fieldStorage(json::Object(Place), Optional->Value, L);
       if (Call->getNumArgs())
-        initialize(std::move(Value), Call->getArg(0), L);
+        assign(std::move(Value),
+               cast(expression(Call->getArg(0)),
+                    type(Optional->Value->getType(), L), L),
+               L);
       else
         initializeZero(std::move(Value), Optional->Value->getType(), L);
       assign(fieldStorage(json::Object(Place), Optional->Engaged, L),
@@ -4927,7 +4930,10 @@ class FunctionLowering {
       }
       if (Operation == UtilityOperation::OptionalEmplace) {
         auto Argument = snapshot(expression(Call->getArg(0)), L);
-        assign(std::move(Value), std::move(Argument), L);
+        assign(
+            std::move(Value),
+            cast(std::move(Argument), type(Optional->Value->getType(), L), L),
+            L);
         assign(std::move(Engaged), boolean(true, L), L);
         return fieldStorage(dereference(std::move(ObjectAddress), L),
                             Optional->Value, L);
@@ -5329,6 +5335,23 @@ class FunctionLowering {
                    "unavailable.");
           assign(fieldStorage(json::Object(Left), Optional->Engaged, L),
                  boolean(false, L), L);
+          return Left;
+        }
+        case UtilityOptionalAssignment::Value: {
+          auto Optional = approvedUtilityOptionalRecord(
+              A.S, A.Sources, Call->getArg(0)->getType()->getAsCXXRecordDecl(),
+              A.Context);
+          if (!Optional)
+            reject(L, "utility optional assignment",
+                   "The destination scalar std::optional layout is "
+                   "unavailable.");
+          auto Source = snapshot(expression(Call->getArg(1)), L);
+          assign(
+              fieldStorage(json::Object(Left), Optional->Value, L),
+              cast(std::move(Source), type(Optional->Value->getType(), L), L),
+              L);
+          assign(fieldStorage(json::Object(Left), Optional->Engaged, L),
+                 boolean(true, L), L);
           return Left;
         }
         }
@@ -6607,11 +6630,25 @@ class FunctionLowering {
         initializeZero(Value(), Optional->Value->getType(), L);
         initializeZero(Engaged(), Optional->Engaged->getType(), L);
         return;
+      case UtilityOptionalConstruction::InPlaceDefault:
+        initializeZero(Value(), Optional->Value->getType(), L);
+        assign(Engaged(), boolean(true, L), L);
+        return;
+      case UtilityOptionalConstruction::InPlaceValue:
+        assign(Value(),
+               cast(expression(C->getArg(1)),
+                    type(Optional->Value->getType(), L), L),
+               L);
+        assign(Engaged(), boolean(true, L), L);
+        return;
       case UtilityOptionalConstruction::CopyOrMove:
         assign(std::move(Place), expression(C->getArg(0)), L);
         return;
       case UtilityOptionalConstruction::Value:
-        initialize(Value(), C->getArg(0), L);
+        assign(Value(),
+               cast(expression(C->getArg(0)),
+                    type(Optional->Value->getType(), L), L),
+               L);
         assign(Engaged(), boolean(true, L), L);
         return;
       }

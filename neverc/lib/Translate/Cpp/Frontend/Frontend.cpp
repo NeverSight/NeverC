@@ -12298,6 +12298,14 @@ public:
   bool VisitVarDecl(VarDecl *D) {
     if (!owned(D))
       return true;
+    if (A.S.coreV2() &&
+        approvedUtilityInPlaceType(A.S, A.Sources, D->getType(), A.Context)) {
+      A.reject(D->getLocation(), "standalone in-place tag",
+               "std::in_place_t is admitted only as an authenticated optional "
+               "constructor argument.",
+               "TR0203");
+      return true;
+    }
     A.type(D->getType(), D->getLocation());
     if (A.S.coreV2())
       if (const auto *Variable = dyn_cast<VarTemplateSpecializationDecl>(D)) {
@@ -12833,6 +12841,8 @@ public:
                      isa<CXXNullPtrLiteralExpr>(E->IgnoreParens())) &&
                    !(A.S.coreV2() && approvedUtilityNulloptExpression(
                                          A.S, A.Sources, E, A.Context)) &&
+                   !(A.S.coreV2() && approvedUtilityInPlaceExpression(
+                                         A.S, A.Sources, E, A.Context)) &&
                    !(A.S.coreV2() &&
                      approvedUtilityOptionalBaseCast(
                          A.S, A.Sources, dyn_cast<CastExpr>(E), A.Context)) &&
@@ -13218,9 +13228,10 @@ public:
       if (A.S.coreV2() && C->getConstructor() &&
           approvedStandardSDKDeclaration(A.S, A.Sources,
                                          C->getConstructor())) {
-        if (approvedUtilityNulloptExpression(A.S, A.Sources, C, A.Context)) {
-          // std::nullopt_t is an erased tag consumed only by authenticated
-          // optional construction and assignment.
+        if (approvedUtilityNulloptExpression(A.S, A.Sources, C, A.Context) ||
+            approvedUtilityInPlaceExpression(A.S, A.Sources, C, A.Context)) {
+          // std::nullopt_t and std::in_place_t are erased tags consumed only
+          // by authenticated optional operations.
         } else if (approvedUtilityPairConstruction(A.S, A.Sources, C,
                                                    A.Context) ||
                    approvedUtilityArrayConstruction(A.S, A.Sources, C,

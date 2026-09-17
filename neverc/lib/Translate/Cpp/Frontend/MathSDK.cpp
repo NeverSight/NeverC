@@ -1243,6 +1243,85 @@ bool approvedUtilityNulloptExpression(const State &S, const SourceManager &SM,
                                           Context);
 }
 
+static const CXXRecordDecl *approvedInPlaceRecord(const State &S,
+                                                  const SourceManager &SM,
+                                                  QualType Type,
+                                                  const ASTContext &Context) {
+  const auto *Record = definedRecord(Type.getUnqualifiedType());
+  if (!optionalInternalRecord(S, SM, Record, "in_place_t",
+                              "__utility/in_place.h") ||
+      Record->getNumBases() || !Record->field_empty() || !Record->isEmpty() ||
+      !Record->isStandardLayout() || !Record->hasTrivialCopyConstructor() ||
+      !Record->hasTrivialDestructor())
+    return nullptr;
+  const auto &Layout = Context.getASTRecordLayout(Record);
+  return Layout.getSize().getQuantity() == 1 &&
+                 Layout.getAlignment().getQuantity() == 1
+             ? Record
+             : nullptr;
+}
+
+static bool approvedInPlaceReference(const State &S, const SourceManager &SM,
+                                     const DeclRefExpr *Reference,
+                                     const ASTContext &Context) {
+  const auto *Variable =
+      Reference ? dyn_cast<VarDecl>(Reference->getDecl()) : nullptr;
+  const auto *Record =
+      Variable ? approvedInPlaceRecord(S, SM, Variable->getType(), Context)
+               : nullptr;
+  return Variable && Record && Variable->getName() == "in_place" &&
+         Variable->isInline() && Variable->isConstexpr() &&
+         Variable->getType().isConstQualified() &&
+         approvedStandardSDKDeclaration(S, SM, Variable) &&
+         cstddefOrigin(S, SM, Variable->getLocation(), "libcxx",
+                       "__utility/in_place.h") &&
+         S.owns(SM, Reference->getExprLoc());
+}
+
+bool approvedUtilityInPlaceType(const State &S, const SourceManager &SM,
+                                QualType Type, const ASTContext &Context) {
+  return approvedInPlaceRecord(S, SM, Type, Context) != nullptr;
+}
+
+bool approvedUtilityInPlaceExpression(const State &S, const SourceManager &SM,
+                                      const Expr *Expression,
+                                      const ASTContext &Context) {
+  if (!Expression || Expression->isTypeDependent() ||
+      Expression->isValueDependent() || Expression->isInstantiationDependent())
+    return false;
+  if (const auto *Reference = dyn_cast<DeclRefExpr>(Expression))
+    return approvedInPlaceReference(S, SM, Reference, Context);
+  if (const auto *Wrapper = dyn_cast<ExprWithCleanups>(Expression))
+    return approvedUtilityInPlaceExpression(S, SM, Wrapper->getSubExpr(),
+                                            Context);
+  if (const auto *Wrapper = dyn_cast<MaterializeTemporaryExpr>(Expression))
+    return approvedUtilityInPlaceExpression(S, SM, Wrapper->getSubExpr(),
+                                            Context);
+  if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Expression))
+    return Cast->getCastKind() == CK_NoOp &&
+           approvedUtilityInPlaceExpression(S, SM, Cast->getSubExpr(), Context);
+  const auto *Construction = dyn_cast<CXXConstructExpr>(Expression);
+  const auto *Constructor =
+      Construction ? Construction->getConstructor() : nullptr;
+  const auto *Record =
+      Construction
+          ? approvedInPlaceRecord(S, SM, Construction->getType(), Context)
+          : nullptr;
+  if (!Construction || !Constructor || !Record ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete ||
+      Constructor->getParent()->getCanonicalDecl() !=
+          Record->getCanonicalDecl() ||
+      !approvedStandardSDKDeclaration(S, SM, Constructor))
+    return false;
+  if (!Construction->getNumArgs())
+    return Constructor->isTrivial() && Constructor->isDefaulted() &&
+           Constructor->isDefaultConstructor();
+  return Construction->getNumArgs() == 1 && Constructor->isTrivial() &&
+         Constructor->isCopyOrMoveConstructor() &&
+         approvedUtilityInPlaceExpression(S, SM, Construction->getArg(0),
+                                          Context);
+}
+
 std::optional<UtilityOptionalConstruction>
 approvedUtilityOptionalConstruction(const State &S, const SourceManager &SM,
                                     const CXXConstructExpr *Construction,
@@ -1275,6 +1354,24 @@ approvedUtilityOptionalConstruction(const State &S, const SourceManager &SM,
       approvedUtilityNulloptExpression(S, SM, Construction->getArg(0), Context))
     return UtilityOptionalConstruction::Empty;
   const auto *Primary = Constructor->getPrimaryTemplate();
+  if ((Construction->getNumArgs() == 1 || Construction->getNumArgs() == 2) &&
+      Primary && Constructor->hasBody() &&
+      approvedStandardSDKDeclaration(S, SM, Primary) &&
+      cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "optional") &&
+      approvedUtilityInPlaceExpression(S, SM, Construction->getArg(0),
+                                       Context) &&
+      !Constructor->getParamDecl(0)->getType()->isReferenceType() &&
+      approvedInPlaceRecord(S, SM, Constructor->getParamDecl(0)->getType(),
+                            Context)) {
+    if (Construction->getNumArgs() == 1)
+      return UtilityOptionalConstruction::InPlaceDefault;
+    const auto Argument = Construction->getArg(1)->getType();
+    const auto Parameter = Constructor->getParamDecl(1)->getType();
+    if (Parameter->isReferenceType() && utilityScalar(Context, Argument) &&
+        utilityScalar(Context, Parameter->getPointeeType()) &&
+        Context.hasSameUnqualifiedType(Argument, Parameter->getPointeeType()))
+      return UtilityOptionalConstruction::InPlaceValue;
+  }
   const auto Parameter = Construction->getNumArgs() == 1
                              ? Constructor->getParamDecl(0)->getType()
                              : QualType();
@@ -1282,10 +1379,10 @@ approvedUtilityOptionalConstruction(const State &S, const SourceManager &SM,
       approvedStandardSDKDeclaration(S, SM, Primary) &&
       cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "optional") &&
       Parameter->isReferenceType() &&
+      utilityScalar(Context, Parameter->getPointeeType()) &&
+      utilityScalar(Context, Construction->getArg(0)->getType()) &&
       Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
-                                     Optional->ElementType) &&
-      Context.hasSameUnqualifiedType(Construction->getArg(0)->getType(),
-                                     Optional->ElementType))
+                                     Construction->getArg(0)->getType()))
     return UtilityOptionalConstruction::Value;
   return std::nullopt;
 }
@@ -1327,6 +1424,17 @@ approvedUtilityOptionalAssignment(const State &S, const SourceManager &SM,
   if (Method->hasBody() &&
       approvedUtilityNulloptExpression(S, SM, Assignment->getArg(1), Context))
     return UtilityOptionalAssignment::Empty;
+  const auto *Primary = Method->getPrimaryTemplate();
+  const auto Parameter = Method->getParamDecl(0)->getType();
+  if (Method->hasBody() && Primary &&
+      approvedStandardSDKDeclaration(S, SM, Primary) &&
+      cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "optional") &&
+      Parameter->isReferenceType() &&
+      utilityScalar(Context, Parameter->getPointeeType()) &&
+      utilityScalar(Context, Assignment->getArg(1)->getType()) &&
+      Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                     Assignment->getArg(1)->getType()))
+    return UtilityOptionalAssignment::Value;
   return std::nullopt;
 }
 
@@ -1834,11 +1942,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Context.hasSameUnqualifiedType(Call->getType(),
                                        Optional->ElementType) &&
         Method->getParamDecl(0)->getType()->isReferenceType() &&
+        utilityScalar(Context,
+                      Method->getParamDecl(0)->getType()->getPointeeType()) &&
+        utilityScalar(Context, Call->getArg(0)->getType()) &&
         Context.hasSameUnqualifiedType(
             Method->getParamDecl(0)->getType()->getPointeeType(),
-            Optional->ElementType) &&
-        Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
-                                       Optional->ElementType))
+            Call->getArg(0)->getType()))
       return UtilityOperation::OptionalEmplace;
     if (!Operator && Name == "value_or" && Method->getNumParams() == 1 &&
         Call->getNumArgs() == 1 && Call->isPRValue() &&
@@ -1853,11 +1962,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Context.hasSameUnqualifiedType(Call->getType(),
                                        Optional->ElementType) &&
         Method->getParamDecl(0)->getType()->isReferenceType() &&
+        utilityScalar(Context,
+                      Method->getParamDecl(0)->getType()->getPointeeType()) &&
+        utilityScalar(Context, Call->getArg(0)->getType()) &&
         Context.hasSameUnqualifiedType(
             Method->getParamDecl(0)->getType()->getPointeeType(),
-            Optional->ElementType) &&
-        Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
-                                       Optional->ElementType) &&
+            Call->getArg(0)->getType()) &&
         ((Method->isConst() && Method->getRefQualifier() == RQ_LValue) ||
          (!Method->isConst() && Method->getRefQualifier() == RQ_RValue)))
       return UtilityOperation::OptionalValueOr;
@@ -2297,10 +2407,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if (Result && Call->getNumArgs() == 1) {
       const auto Parameter = Function->getParamDecl(0)->getType();
       if (Parameter->isReferenceType() &&
+          utilityScalar(Context, Parameter->getPointeeType()) &&
+          utilityScalar(Context, Call->getArg(0)->getType()) &&
           Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
-                                         Result->ElementType) &&
-          Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
-                                         Result->ElementType))
+                                         Call->getArg(0)->getType()))
         return UtilityOperation::MakeOptional;
     }
   }

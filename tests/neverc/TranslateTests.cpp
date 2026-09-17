@@ -28024,9 +28024,21 @@ int main() {
       !real || *real != 2.5 || !constant || *constant != 13)
     return 6;
 
+  short small = 10;
+  std::optional<int> in_place_zero(std::in_place);
+  std::optional<int> in_place_value(std::in_place, small);
+  std::optional<int> direct_tag(std::in_place_t{}, short(11));
+  std::optional<int> converted(small);
+  converted = short(12);
+  int &converted_placed = converted.emplace(short(13));
+  if (!in_place_zero || *in_place_zero != 0 || !in_place_value ||
+      *in_place_value != 10 || !direct_tag || *direct_tag != 11 ||
+      !converted || *converted != 13 || &converted_placed != &*converted)
+    return 7;
+
   moved = static_cast<std::optional<int> &&>(other);
   absent = std::nullopt;
-  return moved && *moved == 7 && !absent ? 0 : 7;
+  return moved && *moved == 7 && !absent ? 0 : 8;
 }
 )cpp");
   auto Result =
@@ -28086,11 +28098,14 @@ int main() {
 
   auto zero = std::make_optional<int>();
   int source = 4;
+  short small = 5;
   auto copied = std::make_optional(source);
   auto explicit_value = std::make_optional<int>(6);
+  auto converted = std::make_optional<int>(small);
   std::swap(zero, explicit_value);
   if (!zero || *zero != 6 || !explicit_value || *explicit_value != 0 ||
-      !copied || *copied != 4)
+      !copied || *copied != 4 || !converted || *converted != 5 ||
+      empty.value_or(small) != 5)
     return 7;
   return 0;
 }
@@ -28136,13 +28151,9 @@ TEST_F(TranslateTest, CoreV2OptionalRequiresPinnedScalarOperations) {
        "#include <optional>\nint main(){std::optional<int>a(1);"
        "std::optional<long>b(1);return a==b;}",
        "TR0203"},
-      {"converting-value-or",
-       "#include <optional>\nint main(){short n=2;std::optional<int>v;"
-       "return v.value_or(n);}",
-       "TR0203"},
-      {"converting-make-optional",
-       "#include <optional>\nint main(){short n=2;"
-       "return *std::make_optional<int>(n);}",
+      {"standalone-in-place",
+       "#include <optional>\nint main(){auto tag=std::in_place;"
+       "return sizeof(tag);}",
        "TR0203"}};
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);

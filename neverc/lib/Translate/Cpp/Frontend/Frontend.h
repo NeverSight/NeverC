@@ -527,6 +527,8 @@ approvedUtilityOptionalRecord(const State &S, const clang::SourceManager &SM,
                               const clang::ASTContext &Context);
 enum class UtilityOptionalConstruction {
   Empty,
+  InPlaceDefault,
+  InPlaceValue,
   CopyOrMove,
   Value,
 };
@@ -538,6 +540,7 @@ approvedUtilityOptionalConstruction(const State &S,
 enum class UtilityOptionalAssignment {
   Empty,
   CopyOrMove,
+  Value,
 };
 std::optional<UtilityOptionalAssignment>
 approvedUtilityOptionalAssignment(const State &S,
@@ -548,6 +551,13 @@ bool approvedUtilityNulloptExpression(const State &S,
                                       const clang::SourceManager &SM,
                                       const clang::Expr *Expression,
                                       const clang::ASTContext &Context);
+bool approvedUtilityInPlaceExpression(const State &S,
+                                      const clang::SourceManager &SM,
+                                      const clang::Expr *Expression,
+                                      const clang::ASTContext &Context);
+bool approvedUtilityInPlaceType(const State &S, const clang::SourceManager &SM,
+                                clang::QualType Type,
+                                const clang::ASTContext &Context);
 bool approvedUtilityOptionalBaseCast(const State &S,
                                      const clang::SourceManager &SM,
                                      const clang::CastExpr *Cast,
