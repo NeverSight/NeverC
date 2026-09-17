@@ -1632,7 +1632,6 @@ approvedUtilityOptionalRecord(const State &S, const SourceManager &SM,
       Specialization->getSpecializationKind() != TSK_ImplicitInstantiation ||
       Specialization->getNumBases() != 3 || Specialization->getNumVBases() ||
       !Specialization->field_empty() || Specialization->isDynamicClass() ||
-      !Specialization->isStandardLayout() ||
       !Specialization->hasTrivialCopyConstructor() ||
       !Specialization->hasTrivialDestructor() ||
       !approvedStandardSDKDeclaration(S, SM, Specialization) ||
@@ -1641,11 +1640,16 @@ approvedUtilityOptionalRecord(const State &S, const SourceManager &SM,
     return std::nullopt;
 
   const auto Element = Specialization->getTemplateArgs().get(0).getAsType();
+  const auto *ElementRecord =
+      Element.isNull() ? nullptr
+                       : Element.getUnqualifiedType()->getAsCXXRecordDecl();
   if (Element.isNull() || Element->isReferenceType() ||
       !Element->isObjectType() || Element->isIncompleteType() ||
       Element.isVolatileQualified() || Element.isRestrictQualified() ||
       Element.getAddressSpace() != LangAS::Default ||
-      !utilityScalar(Context, Element))
+      !utilityTupleValue(S, SM, Context, Element) ||
+      (!Specialization->isStandardLayout() &&
+       !approvedUtilityTupleMetadata(S, SM, ElementRecord)))
     return std::nullopt;
 
   const auto &TopLayout = Context.getASTRecordLayout(Specialization);
@@ -2009,9 +2013,10 @@ approvedUtilityOptionalConstruction(const State &S, const SourceManager &SM,
       return UtilityOptionalConstruction::InPlaceDefault;
     const auto Argument = Construction->getArg(1)->getType();
     const auto Parameter = Constructor->getParamDecl(1)->getType();
-    if (Parameter->isReferenceType() && utilityScalar(Context, Argument) &&
-        utilityScalar(Context, Parameter->getPointeeType()) &&
-        Context.hasSameUnqualifiedType(Argument, Parameter->getPointeeType()))
+    if (Parameter->isReferenceType() &&
+        Context.hasSameUnqualifiedType(Argument, Parameter->getPointeeType()) &&
+        utilityTupleDirectConversion(S, SM, Context, Argument,
+                                     Optional->ElementType))
       return UtilityOptionalConstruction::InPlaceValue;
   }
   const auto Parameter = Construction->getNumArgs() == 1
@@ -2033,17 +2038,18 @@ approvedUtilityOptionalConstruction(const State &S, const SourceManager &SM,
       Context.hasSameUnqualifiedType(
           Parameter->getPointeeType(),
           Context.getRecordType(SourceOptional->Record)) &&
-      utilityScalarDirectConversion(Context, SourceOptional->ElementType,
-                                    Optional->ElementType))
+      utilityTupleDirectConversion(S, SM, Context, SourceOptional->ElementType,
+                                   Optional->ElementType))
     return UtilityOptionalConstruction::Converting;
   if (Construction->getNumArgs() == 1 && Primary && Constructor->hasBody() &&
       approvedStandardSDKDeclaration(S, SM, Primary) &&
       cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "optional") &&
       Parameter->isReferenceType() &&
-      utilityScalar(Context, Parameter->getPointeeType()) &&
-      utilityScalar(Context, Construction->getArg(0)->getType()) &&
       Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
-                                     Construction->getArg(0)->getType()))
+                                     Construction->getArg(0)->getType()) &&
+      utilityTupleDirectConversion(S, SM, Context,
+                                   Construction->getArg(0)->getType(),
+                                   Optional->ElementType))
     return UtilityOptionalConstruction::Value;
   return std::nullopt;
 }
@@ -2076,9 +2082,8 @@ approvedUtilityOptionalAssignment(const State &S, const SourceManager &SM,
       !Context.hasSameUnqualifiedType(Method->getReturnType()->getPointeeType(),
                                       OptionalType))
     return std::nullopt;
-  if (Method->isTrivial() && Method->isDefaulted() &&
-      (Method->isCopyAssignmentOperator() ||
-       Method->isMoveAssignmentOperator()) &&
+  if (defaultedAssignment(Method) &&
+      utilityTupleAssignableValue(S, SM, Context, Optional->ElementType) &&
       Context.hasSameUnqualifiedType(Assignment->getArg(1)->getType(),
                                      OptionalType))
     return UtilityOptionalAssignment::CopyOrMove;
@@ -2099,17 +2104,20 @@ approvedUtilityOptionalAssignment(const State &S, const SourceManager &SM,
       Context.hasSameUnqualifiedType(
           Parameter->getPointeeType(),
           Context.getRecordType(SourceOptional->Record)) &&
-      utilityScalarDirectConversion(Context, SourceOptional->ElementType,
-                                    Optional->ElementType))
+      utilityTupleAssignableValue(S, SM, Context, Optional->ElementType) &&
+      utilityTupleDirectConversion(S, SM, Context, SourceOptional->ElementType,
+                                   Optional->ElementType))
     return UtilityOptionalAssignment::Converting;
   if (Method->hasBody() && Primary &&
       approvedStandardSDKDeclaration(S, SM, Primary) &&
       cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "optional") &&
       Parameter->isReferenceType() &&
-      utilityScalar(Context, Parameter->getPointeeType()) &&
-      utilityScalar(Context, Assignment->getArg(1)->getType()) &&
       Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
-                                     Assignment->getArg(1)->getType()))
+                                     Assignment->getArg(1)->getType()) &&
+      utilityTupleAssignableValue(S, SM, Context, Optional->ElementType) &&
+      utilityTupleDirectConversion(S, SM, Context,
+                                   Assignment->getArg(1)->getType(),
+                                   Optional->ElementType))
     return UtilityOptionalAssignment::Value;
   return std::nullopt;
 }
@@ -2545,6 +2553,30 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto *Reference = directMethodReference(Call);
     const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
     const auto *MemberCall = dyn_cast<CXXMemberCallExpr>(Call);
+    const auto *ImplicitArrowReference = [&]() -> const DeclRefExpr * {
+      if (Reference || !Operator || Operator->getOperator() != OO_Arrow)
+        return nullptr;
+      const Expr *Callee = Call->getCallee();
+      while (true) {
+        if (const auto *Paren = dyn_cast<ParenExpr>(Callee)) {
+          Callee = Paren->getSubExpr();
+          continue;
+        }
+        if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Callee);
+            Cast && Cast->getCastKind() == CK_FunctionToPointerDecay) {
+          Callee = Cast->getSubExpr();
+          continue;
+        }
+        break;
+      }
+      const auto *Decl = dyn_cast<DeclRefExpr>(Callee);
+      return Decl && Decl->getDecl()->getCanonicalDecl() ==
+                         Method->getCanonicalDecl()
+                 ? Decl
+                 : nullptr;
+    }();
+    const auto *SelectedReference =
+        Reference ? Reference : ImplicitArrowReference;
     const unsigned Offset = Operator ? 1 : 0;
     const auto OptionalType = Context.getRecordType(Optional->Record);
     auto Same = [&](QualType Left, QualType Right) {
@@ -2557,10 +2589,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     };
     const auto *Parent = Method->getParent()->getCanonicalDecl();
     const auto ReferenceLocation =
-        Reference && Reference->getExprLoc().isValid() ? Reference->getExprLoc()
-                                                       : Call->getExprLoc();
-    if (!Reference || (!Operator && !MemberCall) || Method->isStatic() ||
-        Method->isVariadic() ||
+        SelectedReference && SelectedReference->getExprLoc().isValid()
+            ? SelectedReference->getExprLoc()
+            : Call->getExprLoc();
+    if (!SelectedReference || (!Operator && !MemberCall) ||
+        Method->isStatic() || Method->isVariadic() ||
         Call->getNumArgs() != Method->getNumParams() + Offset ||
         !SameOptional(OptionalObject->getType()) ||
         !approvedStandardSDKDeclaration(S, SM, Method) ||
@@ -2587,8 +2620,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Method->getReturnType()->isVoidType() && Call->getType()->isVoidType())
       return UtilityOperation::OptionalReset;
     if (Method->getOverloadedOperator() == OO_Arrow &&
-        !Method->getNumParams() && !Call->getNumArgs() && Call->isPRValue() &&
-        Parent == Optional->Record->getCanonicalDecl() &&
+        !Method->getNumParams() && Call->getNumArgs() == Offset &&
+        Call->isPRValue() && Parent == Optional->Record->getCanonicalDecl() &&
         Method->getReturnType()->isPointerType() &&
         Same(Call->getType(), Method->getReturnType()) &&
         Context.hasSameUnqualifiedType(
@@ -2618,12 +2651,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Context.hasSameUnqualifiedType(Call->getType(),
                                        Optional->ElementType) &&
         Method->getParamDecl(0)->getType()->isReferenceType() &&
-        utilityScalar(Context,
-                      Method->getParamDecl(0)->getType()->getPointeeType()) &&
-        utilityScalar(Context, Call->getArg(0)->getType()) &&
         Context.hasSameUnqualifiedType(
             Method->getParamDecl(0)->getType()->getPointeeType(),
-            Call->getArg(0)->getType()))
+            Call->getArg(0)->getType()) &&
+        utilityTupleDirectConversion(S, SM, Context, Call->getArg(0)->getType(),
+                                     Optional->ElementType))
       return UtilityOperation::OptionalEmplace;
     if (!Operator && Name == "value_or" && Method->getNumParams() == 1 &&
         Call->getNumArgs() == 1 && Call->isPRValue() &&
@@ -2638,12 +2670,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Context.hasSameUnqualifiedType(Call->getType(),
                                        Optional->ElementType) &&
         Method->getParamDecl(0)->getType()->isReferenceType() &&
-        utilityScalar(Context,
-                      Method->getParamDecl(0)->getType()->getPointeeType()) &&
-        utilityScalar(Context, Call->getArg(0)->getType()) &&
         Context.hasSameUnqualifiedType(
             Method->getParamDecl(0)->getType()->getPointeeType(),
             Call->getArg(0)->getType()) &&
+        utilityTupleDirectConversion(S, SM, Context, Call->getArg(0)->getType(),
+                                     Optional->ElementType) &&
         ((Method->isConst() && Method->getRefQualifier() == RQ_LValue) ||
          (!Method->isConst() && Method->getRefQualifier() == RQ_RValue)))
       return UtilityOperation::OptionalValueOr;
@@ -2654,7 +2685,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Call->getType()->isVoidType() &&
         Method->getParamDecl(0)->getType()->isLValueReferenceType() &&
         SameOptional(Method->getParamDecl(0)->getType()->getPointeeType()) &&
-        SameOptional(Call->getArg(0)->getType()))
+        SameOptional(Call->getArg(0)->getType()) &&
+        utilityTupleAssignableValue(S, SM, Context, Optional->ElementType))
       return UtilityOperation::OptionalMemberSwap;
   }
   const auto InitializerList = approvedUtilityInitializerListRecord(
@@ -3110,7 +3142,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if (Left && Right &&
         Left->Record->getCanonicalDecl() == Right->Record->getCanonicalDecl() &&
         OptionalParameter(0, *Left, false) &&
-        OptionalParameter(1, *Right, false))
+        OptionalParameter(1, *Right, false) &&
+        utilityTupleAssignableValue(S, SM, Context, Left->ElementType))
       return UtilityOperation::OptionalSwap;
   }
   if (Origin->Path == "optional" && Name == "make_optional" &&
@@ -3123,10 +3156,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if (Result && Call->getNumArgs() == 1) {
       const auto Parameter = Function->getParamDecl(0)->getType();
       if (Parameter->isReferenceType() &&
-          utilityScalar(Context, Parameter->getPointeeType()) &&
-          utilityScalar(Context, Call->getArg(0)->getType()) &&
           Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
-                                         Call->getArg(0)->getType()))
+                                         Call->getArg(0)->getType()) &&
+          utilityTupleDirectConversion(
+              S, SM, Context, Call->getArg(0)->getType(), Result->ElementType))
         return UtilityOperation::MakeOptional;
     }
   }

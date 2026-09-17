@@ -61,6 +61,7 @@ the bounded [`<utility>`](../docs/cpp-core-v2.md#scalar-utilities-and-pairs-from
 and [`<tuple>`](../docs/cpp-core-v2.md#value-tuples-from-tuple) and
 [`<array>`](../docs/cpp-core-v2.md#fixed-value-arrays-from-array) surfaces,
 [`<initializer_list>`](../docs/cpp-core-v2.md#initializer-list-views-from-initializer_list),
+[`<optional>`](../docs/cpp-core-v2.md#value-optionals-from-optional),
 [`<iterator>`](../docs/cpp-core-v2.md#iterator-metadata-from-iterator), and the
 [`<algorithm>`](../docs/cpp-core-v2.md#algorithm-header-from-algorithm) pointer
 algorithm surface. The
@@ -68,9 +69,10 @@ frontend uses the pinned embedded libc++/resource VFS and exposes resolved type
 aliases plus integral/enum constant results. It records all consumed header
 hashes: 101 for the `<type_traits>` closure, nine for standalone `<cstdint>`,
 16 for `<limits>`, 29 for `<cstddef>`, 87 for `<utility>`, 98 for `<tuple>`,
-217 for `<array>`, 10 for `<initializer_list>`, 171 for `<iterator>` and 354
-for `<algorithm>`. The composite array-plus-tuple-plus-utility fixture consumes
-a 231-file union closure on all eight targets.
+217 for `<array>`, 10 for `<initializer_list>`, 136 for `<optional>`, 171 for
+`<iterator>` and 354 for `<algorithm>`. The composite
+array-plus-tuple-plus-utility fixture consumes a 231-file union closure; adding
+`<optional>` produces a 253-file union closure on all eight targets.
 Numeric limits fold the documented
 zero-argument integer and IEEE floating queries to literals. Cstddef aliases,
 layout queries and direct `std::byte` operations lower to existing scalar IR.
@@ -90,6 +92,15 @@ Braced backing arrays use the existing automatic, full-expression and static
 lifetime machinery; default, copy/move and assignment operations, member and
 free range access, nested lists and nontrivial source-record elements lower
 without a libc++ runtime call.
+Optional authenticates libc++'s private base, value union, engagement flag and
+target layout before exposing value-plus-flag protocol records. Scalars,
+source-owned trivial standard-layout records, arrays, pairs and tuples support
+default, value, in-place, copy/move and converting
+construction, assignment, emplacement, fallback, factories, engagement and
+access, reset and swap without libc++. Composite conversion requires exact
+unqualified element types, and mutation requires recursive assignability;
+value comparisons remain on the scalar boundary while `nullopt` comparisons
+work for every admitted element.
 Iterator exposes the pinned public header and pointer `iterator_traits` metadata
 through a platform-free 171-file closure, and directly lowers bounded pointer,
 array-range and reverse-iterator operations. Stream iterators remain disabled

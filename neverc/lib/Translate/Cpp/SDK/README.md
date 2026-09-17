@@ -53,13 +53,18 @@ elements use the existing aggregate and lifetime machinery without a runtime
 libc++ link.
 The `<optional>` surface has a 136-file libc++/resource closure on every core-v2
 target. It authenticates libc++'s private base and union representation and
-directly lowers scalar optional construction, assignment, engagement queries,
+directly lowers optional construction, assignment, engagement queries,
 zero/single-value in-place construction, dereference, arrow, reset,
-single-value emplacement, scalar value fallback, member/free swap,
-zero/single-value factories, scalar converting optional construction and
-assignment including standard `nullptr_t`-to-object-pointer conversions, and
-C++17 same-type, heterogeneous arithmetic or qualification-compatible pointer
-comparisons without a runtime libc++ link.
+single-value emplacement, value fallback, member/free swap and zero/single-value
+factories. Elements may be admitted scalars, source-owned trivial
+standard-layout records, arrays, pairs or tuples; construction and
+conversion use exact composite types, while mutation additionally requires
+recursive assignability. Scalar conversions include the standard
+`nullptr_t`-to-object-pointer conversion. C++17 value comparisons remain on the
+same scalar, heterogeneous arithmetic and qualification-compatible pointer
+boundary; comparisons with `nullopt` work for every admitted element. The
+array-plus-tuple-plus-utility-plus-optional composite fixture has a 253-file
+platform-free union closure on all eight targets, with no runtime libc++ link.
 The `<iterator>` surface has a 171-file libc++/resource closure on every core-v2
 target. It exposes pointer `iterator_traits` metadata and directly lowered
 pointer, array-range and raw-pointer reverse-iterator operations while retaining

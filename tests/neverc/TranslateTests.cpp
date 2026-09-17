@@ -28827,7 +28827,136 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2OptionalRequiresPinnedScalarOperations) {
+TEST_F(TranslateTest, CoreV2CompositeOptionalValuesRunAtBothOptimizations) {
+  const auto Source = tmpFile("optional-composite.cpp");
+  const auto Output = tmpFile("optional-composite.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <optional>
+#include <tuple>
+#include <utility>
+struct Point { int x; int y; };
+int main() {
+  std::optional<Point> empty;
+  std::optional<Point> direct(Point{1, 2});
+  std::optional<Point> placed(std::in_place, Point{3, 4});
+  std::optional<Point> zero(std::in_place);
+  if (empty || !direct || direct->x != 1 || (*direct).y != 2 ||
+      !placed || placed->x != 3 || !zero || zero->x != 0 || zero->y != 0)
+    return 1;
+
+  std::optional<Point> copied(direct);
+  std::optional<Point> assigned;
+  assigned = direct;
+  empty = Point{5, 6};
+  Point &replaced = empty.emplace(Point{7, 8});
+  if (!copied || copied->y != 2 || !assigned || assigned->x != 1 ||
+      &replaced != &*empty || replaced.x != 7 || replaced.y != 8)
+    return 2;
+
+  Point fallback = std::optional<Point>{}.value_or(Point{9, 10});
+  Point present = direct.value_or(Point{11, 12});
+  auto made = std::make_optional(Point{13, 14});
+  auto made_zero = std::make_optional<Point>();
+  direct.swap(made);
+  std::swap(direct, made_zero);
+  if (fallback.x != 9 || fallback.y != 10 || present.x != 1 ||
+      present.y != 2 || !direct || direct->x != 0 || direct->y != 0 ||
+      !made || made->x != 1 || made->y != 2 || !made_zero ||
+      made_zero->x != 13 || made_zero->y != 14)
+    return 3;
+  direct.reset();
+  if (direct != std::nullopt || !(std::nullopt == direct) ||
+      made == std::nullopt || !(std::nullopt != made))
+    return 4;
+
+  using Array = std::array<int, 2>;
+  std::optional<Array> array(Array{{15, 16}}), array_copy;
+  array_copy = array;
+  array.emplace(Array{{17, 18}});
+  if (!array || (*array)[1] != 18 || !array_copy || (*array_copy)[0] != 15)
+    return 5;
+
+  using Pair = std::pair<int, int>;
+  std::optional<Pair> pair(Pair{19, 20}), pair_copy;
+  pair_copy = pair;
+  pair.emplace(Pair{21, 22});
+  if (!pair || pair->second != 22 || !pair_copy || pair_copy->first != 19)
+    return 6;
+
+  using Bundle = std::tuple<Point, Array, Pair>;
+  Bundle initial(Point{23, 24}, Array{{25, 26}}, Pair{27, 28});
+  std::optional<Bundle> bundle(initial);
+  std::optional<Bundle> bundle_copy(bundle);
+  std::optional<Bundle> bundle_assigned;
+  bundle_assigned = bundle;
+  bundle_assigned = Bundle(Point{29, 30}, Array{{31, 32}}, Pair{33, 34});
+  Bundle &bundle_ref = bundle_assigned.emplace(
+      Bundle(Point{35, 36}, Array{{37, 38}}, Pair{39, 40}));
+  Bundle bundle_fallback = std::optional<Bundle>{}.value_or(initial);
+  auto bundle_made = std::make_optional(
+      Bundle(Point{41, 42}, Array{{43, 44}}, Pair{45, 46}));
+  auto bundle_zero = std::make_optional<Bundle>();
+  bundle.swap(bundle_made);
+  std::swap(bundle, bundle_zero);
+  if (!bundle_copy || std::get<Point>(*bundle_copy).x != 23 ||
+      &bundle_ref != &*bundle_assigned ||
+      std::get<Array>(*bundle_assigned)[1] != 38 ||
+      std::get<Pair>(*bundle_assigned).second != 40 ||
+      std::get<Point>(bundle_fallback).y != 24 || !bundle ||
+      std::get<Point>(*bundle).x != 0 || !bundle_made ||
+      std::get<Point>(*bundle_made).x != 23 || !bundle_zero ||
+      std::get<Point>(*bundle_zero).x != 41)
+    return 7;
+
+  std::optional<const Bundle> qualified(bundle_copy);
+  if (!qualified || std::get<Array>(*qualified)[0] != 25)
+    return 8;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *SDK = Manifest->getAsObject()->getObject("sdk");
+  ASSERT_NE(SDK, nullptr);
+  const auto *Dependencies = SDK->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 253u);
+  bool FoundArray = false, FoundOptional = false, FoundTuple = false,
+       FoundUtility = false;
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+    if (Dependency->getString("root") != "libcxx")
+      continue;
+    FoundArray |= Dependency->getString("path") == "array";
+    FoundOptional |= Dependency->getString("path") == "optional";
+    FoundTuple |= Dependency->getString("path") == "tuple";
+    FoundUtility |= Dependency->getString("path") == "utility";
+  }
+  EXPECT_TRUE(FoundArray);
+  EXPECT_TRUE(FoundOptional);
+  EXPECT_TRUE(FoundTuple);
+  EXPECT_TRUE(FoundUtility);
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("optional-composite" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Optimization << "\n" << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OptionalRequiresPinnedOperations) {
   struct Rejection {
     const char *Name;
     const char *Source;
@@ -28843,9 +28972,14 @@ TEST_F(TranslateTest, CoreV2OptionalRequiresPinnedScalarOperations) {
        "#include <optional>\nint main(){std::optional<long double>v(1.0L);"
        "return v.has_value();}",
        "TR0201"},
-      {"record-element",
-       "#include <optional>\nstruct R{int n;};int main(){"
+      {"nontrivial-record",
+       "#include <optional>\nstruct R{int n;~R(){}};int main(){"
        "std::optional<R>v(R{3});return v->n;}",
+       "TR0203"},
+      {"composite-comparison",
+       "#include <optional>\nstruct R{int n;};"
+       "bool operator==(const R&a,const R&b){return a.n==b.n;}"
+       "int main(){std::optional<R>a(R{1}),b(R{1});return a==b;}",
        "TR0203"},
       {"throwing-value",
        "#include <optional>\nint main(){std::optional<int>v;return v.value();}",

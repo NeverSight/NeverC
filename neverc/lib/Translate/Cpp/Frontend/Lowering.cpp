@@ -4145,7 +4145,7 @@ class FunctionLowering {
       auto Optional = OptionalFor(Call->getType());
       if (!Optional)
         reject(L, "utility make_optional",
-               "The selected scalar std::optional layout is unavailable.");
+               "The selected std::optional layout is unavailable.");
       auto Place = Destination ? std::move(*Destination)
                                : objectTemporary(Call->getType(), L);
       if (Place.getString("type") != type(Call->getType(), L))
@@ -4153,13 +4153,17 @@ class FunctionLowering {
             L, "utility make_optional",
             "The std::make_optional destination type differs from its result.");
       auto Value = fieldStorage(json::Object(Place), Optional->Value, L);
-      if (Call->getNumArgs())
-        assign(std::move(Value),
-               cast(expression(Call->getArg(0)),
-                    type(Optional->Value->getType(), L), L),
-               L);
-      else
+      if (Call->getNumArgs()) {
+        if (recordValue(Optional->Value->getType()))
+          initialize(std::move(Value), Call->getArg(0), L);
+        else
+          assign(std::move(Value),
+                 cast(expression(Call->getArg(0)),
+                      type(Optional->Value->getType(), L), L),
+                 L);
+      } else {
         initializeZero(std::move(Value), Optional->Value->getType(), L);
+      }
       assign(fieldStorage(json::Object(Place), Optional->Engaged, L),
              boolean(true, L), L);
       return Place;
@@ -5060,7 +5064,7 @@ class FunctionLowering {
         const auto Right = OptionalFor(Call->getArg(1)->getType());
         if (!Left || !Right)
           reject(L, "utility optional swap",
-                 "The selected scalar std::optional layouts are unavailable.");
+                 "The selected std::optional layouts are unavailable.");
         auto LeftAddress = snapshot(
             address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
         auto RightAddress = snapshot(
@@ -5076,13 +5080,13 @@ class FunctionLowering {
                              : std::optional<UtilityOptionalRecord>();
       if (!Object || !Optional)
         reject(L, "utility optional operation",
-               "The selected scalar std::optional layout is unavailable.");
+               "The selected std::optional layout is unavailable.");
       if (Operation == UtilityOperation::OptionalMemberSwap) {
         const auto *RightSource =
             Call->getNumArgs() ? Call->getArg(0) : nullptr;
         if (!RightSource || !OptionalFor(RightSource->getType()))
           reject(L, "utility optional swap",
-                 "The second scalar std::optional layout is unavailable.");
+                 "The second std::optional layout is unavailable.");
         auto LeftAddress =
             snapshot(address(lvalue(Object), Object->getType(), L), L);
         auto RightAddress = snapshot(
@@ -5109,16 +5113,30 @@ class FunctionLowering {
             L);
       if (Operation == UtilityOperation::OptionalValueOr) {
         auto Default = snapshot(expression(Call->getArg(0)), L);
-        auto Result = temporary(type(Call->getType(), L), L);
+        auto Result = Destination ? std::move(*Destination)
+                      : recordValue(Call->getType())
+                          ? objectTemporary(Call->getType(), L)
+                          : temporary(type(Call->getType(), L), L);
+        if (Result.getString("type") != type(Call->getType(), L))
+          reject(L, "utility optional value_or",
+                 "The std::optional::value_or destination type differs from "
+                 "its result.");
         const auto Present = labelName(), Empty = labelName(),
                    End = labelName();
         branch(std::move(Engaged), Present, Empty, L);
         label(Present, L);
-        assign(Result, cast(std::move(Value), type(Call->getType(), L), L), L);
+        if (recordValue(Optional->Value->getType()))
+          assign(Result, std::move(Value), L);
+        else
+          assign(Result, cast(std::move(Value), type(Call->getType(), L), L),
+                 L);
         jump(End, L);
         label(Empty, L);
-        assign(Result, cast(std::move(Default), type(Call->getType(), L), L),
-               L);
+        if (recordValue(Optional->Value->getType()))
+          assign(Result, std::move(Default), L);
+        else
+          assign(Result, cast(std::move(Default), type(Call->getType(), L), L),
+                 L);
         jump(End, L);
         label(End, L);
         return Result;
@@ -5129,16 +5147,19 @@ class FunctionLowering {
       }
       if (Operation == UtilityOperation::OptionalEmplace) {
         auto Argument = snapshot(expression(Call->getArg(0)), L);
-        assign(
-            std::move(Value),
-            cast(std::move(Argument), type(Optional->Value->getType(), L), L),
-            L);
+        if (recordValue(Optional->Value->getType()))
+          assign(std::move(Value), std::move(Argument), L);
+        else
+          assign(
+              std::move(Value),
+              cast(std::move(Argument), type(Optional->Value->getType(), L), L),
+              L);
         assign(std::move(Engaged), boolean(true, L), L);
         return fieldStorage(dereference(std::move(ObjectAddress), L),
                             Optional->Value, L);
       }
       reject(L, "utility optional operation",
-             "Unknown approved scalar std::optional operation.");
+             "Unknown approved std::optional operation.");
     }
     case UtilityOperation::InitializerListSize:
     case UtilityOperation::InitializerListEmpty:
@@ -5626,18 +5647,26 @@ class FunctionLowering {
               A.Context);
           if (!DestinationOptional || !SourceOptional)
             reject(L, "utility optional assignment",
-                   "A selected scalar std::optional layout is unavailable.");
+                   "A selected std::optional layout is unavailable.");
           auto Source = snapshot(expression(Call->getArg(1)), L);
           const auto Convert = labelName(), Empty = labelName();
           const auto End = labelName();
           branch(fieldStorage(json::Object(Source), SourceOptional->Engaged, L),
                  Convert, Empty, L);
           label(Convert, L);
-          assign(
-              fieldStorage(json::Object(Left), DestinationOptional->Value, L),
-              cast(fieldStorage(json::Object(Source), SourceOptional->Value, L),
-                   type(DestinationOptional->Value->getType(), L), L),
-              L);
+          {
+            auto Destination =
+                fieldStorage(json::Object(Left), DestinationOptional->Value, L);
+            auto Value =
+                fieldStorage(json::Object(Source), SourceOptional->Value, L);
+            if (recordValue(DestinationOptional->Value->getType()))
+              assign(std::move(Destination), std::move(Value), L);
+            else
+              assign(std::move(Destination),
+                     cast(std::move(Value),
+                          type(DestinationOptional->Value->getType(), L), L),
+                     L);
+          }
           assign(
               fieldStorage(json::Object(Left), DestinationOptional->Engaged, L),
               boolean(true, L), L);
@@ -5656,8 +5685,7 @@ class FunctionLowering {
               A.Context);
           if (!Optional)
             reject(L, "utility optional assignment",
-                   "The destination scalar std::optional layout is "
-                   "unavailable.");
+                   "The destination std::optional layout is unavailable.");
           assign(fieldStorage(json::Object(Left), Optional->Engaged, L),
                  boolean(false, L), L);
           return Left;
@@ -5668,13 +5696,17 @@ class FunctionLowering {
               A.Context);
           if (!Optional)
             reject(L, "utility optional assignment",
-                   "The destination scalar std::optional layout is "
-                   "unavailable.");
+                   "The destination std::optional layout is unavailable.");
           auto Source = snapshot(expression(Call->getArg(1)), L);
-          assign(
-              fieldStorage(json::Object(Left), Optional->Value, L),
-              cast(std::move(Source), type(Optional->Value->getType(), L), L),
-              L);
+          auto Destination =
+              fieldStorage(json::Object(Left), Optional->Value, L);
+          if (recordValue(Optional->Value->getType()))
+            assign(std::move(Destination), std::move(Source), L);
+          else
+            assign(
+                std::move(Destination),
+                cast(std::move(Source), type(Optional->Value->getType(), L), L),
+                L);
           assign(fieldStorage(json::Object(Left), Optional->Engaged, L),
                  boolean(true, L), L);
           return Left;
@@ -7027,7 +7059,7 @@ class FunctionLowering {
           A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context);
       if (!Optional)
         reject(L, "utility optional construction",
-               "The selected scalar std::optional layout is unavailable.");
+               "The selected std::optional layout is unavailable.");
       auto Value = [&] {
         return fieldStorage(json::Object(Place), Optional->Value, L);
       };
@@ -7044,10 +7076,13 @@ class FunctionLowering {
         assign(Engaged(), boolean(true, L), L);
         return;
       case UtilityOptionalConstruction::InPlaceValue:
-        assign(Value(),
-               cast(expression(C->getArg(1)),
-                    type(Optional->Value->getType(), L), L),
-               L);
+        if (recordValue(Optional->Value->getType()))
+          initialize(Value(), C->getArg(1), L);
+        else
+          assign(Value(),
+                 cast(expression(C->getArg(1)),
+                      type(Optional->Value->getType(), L), L),
+                 L);
         assign(Engaged(), boolean(true, L), L);
         return;
       case UtilityOptionalConstruction::CopyOrMove:
@@ -7059,7 +7094,7 @@ class FunctionLowering {
             A.Context);
         if (!SourceOptional)
           reject(L, "utility optional construction",
-                 "The source scalar std::optional layout is unavailable.");
+                 "The source std::optional layout is unavailable.");
         auto Source = snapshot(expression(C->getArg(0)), L);
         initializeZero(Value(), Optional->Value->getType(), L);
         const auto Convert = labelName(), Empty = labelName();
@@ -7067,11 +7102,17 @@ class FunctionLowering {
         branch(fieldStorage(json::Object(Source), SourceOptional->Engaged, L),
                Convert, Empty, L);
         label(Convert, L);
-        assign(
-            Value(),
-            cast(fieldStorage(json::Object(Source), SourceOptional->Value, L),
-                 type(Optional->Value->getType(), L), L),
-            L);
+        {
+          auto SourceValue =
+              fieldStorage(json::Object(Source), SourceOptional->Value, L);
+          if (recordValue(Optional->Value->getType()))
+            assign(Value(), std::move(SourceValue), L);
+          else
+            assign(Value(),
+                   cast(std::move(SourceValue),
+                        type(Optional->Value->getType(), L), L),
+                   L);
+        }
         assign(Engaged(), boolean(true, L), L);
         jump(End, L);
         label(Empty, L);
@@ -7081,15 +7122,18 @@ class FunctionLowering {
         return;
       }
       case UtilityOptionalConstruction::Value:
-        assign(Value(),
-               cast(expression(C->getArg(0)),
-                    type(Optional->Value->getType(), L), L),
-               L);
+        if (recordValue(Optional->Value->getType()))
+          initialize(Value(), C->getArg(0), L);
+        else
+          assign(Value(),
+                 cast(expression(C->getArg(0)),
+                      type(Optional->Value->getType(), L), L),
+                 L);
         assign(Engaged(), boolean(true, L), L);
         return;
       }
       reject(L, "utility optional construction",
-             "Unknown approved scalar std::optional construction.");
+             "Unknown approved std::optional construction.");
     }
     if (auto Kind = approvedUtilityReverseIteratorConstruction(A.S, A.Sources,
                                                                C, A.Context)) {

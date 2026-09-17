@@ -3824,7 +3824,7 @@ bool Adapter::requireUtilityOptional(const CXXRecordDecl *Record,
   auto Optional = approvedUtilityOptionalRecord(S, Sources, Record, Context);
   if (!Optional) {
     reject(Location, "standard library record",
-           "Only the pinned scalar std::optional<T> record layout is "
+           "Only the pinned documented std::optional<T> record layout is "
            "admitted.",
            "TR0203");
     return false;
@@ -3903,8 +3903,11 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
     return json::Object{{"kind", "null"}, {"type", Kind}, {"loc", loc(L)}};
   if (const auto *R = T->getAsCXXRecordDecl()) {
     json::Array Args;
-    if (auto Array = approvedUtilityArrayRecord(S, Sources, R, Context);
-        Array && !Array->Size) {
+    if (auto Tuple = approvedUtilityTupleRecord(S, Sources, R, Context)) {
+      for (const auto *Field : Tuple->Elements)
+        Args.push_back(zero(Field->getType(), L));
+    } else if (auto Array = approvedUtilityArrayRecord(S, Sources, R, Context);
+               Array && !Array->Size) {
       Args.push_back(zero(Array->ElementType, L));
     } else if (auto Optional =
                    approvedUtilityOptionalRecord(S, Sources, R, Context)) {
@@ -13312,8 +13315,7 @@ public:
           A.reject(L, "standard library runtime object",
                    "Approved standard headers provide only their documented "
                    "compile-time aliases, constants, folded queries and "
-                   "scalar std::pair, std::tuple, std::array, "
-                   "std::initializer_list, "
+                   "std::pair, std::tuple, std::array, std::initializer_list, "
                    "std::optional and pointer std::reverse_iterator "
                    "construction.",
                    "TR0203");

@@ -302,7 +302,7 @@ Reference, incomplete, volatile, restricted-address-space and function element
 types remain outside this boundary. Function addresses, quoted includes, user
 shadows and forged declarations remain rejected.
 
-## Scalar optional values from `<optional>`
+## Value optionals from `<optional>`
 
 Core v2 accepts the exact angled `<optional>` entry from the pinned embedded
 VFS. Its authenticated 136-file libc++/resource closure is identical on all
@@ -310,26 +310,33 @@ eight supported targets and contains no platform headers. Each admitted
 `std::optional<T>` specialization must match libc++'s exact private base chain,
 anonymous value union, engagement flag and target layout. The translator exposes
 that representation as a synthetic `{remove_cv_t<T>, bool}` record while
-preserving the native size, alignment and field offsets.
+preserving the native size, alignment and field offsets. The composite fixture
+that also includes `<array>`, `<tuple>` and `<utility>` has an identical
+253-file platform-free union closure on all eight targets.
 
 The current element boundary includes at-most-64-bit integral and enumeration
 types, `float`, `double`, object pointers and `nullptr_t`, with optional top-level
-`const`. Default and `nullopt` construction produce an empty value. Scalar,
-zero- or single-value `in_place`, copy and move construction, copy and move
-assignment, converting construction and assignment from another scalar
-specialization, assignment from `nullopt`, direct scalar assignment,
-`has_value`, contextual `operator bool`, dereference, arrow, `reset`,
-single-value `emplace`, scalar `value_or`, member and free `swap`, zero- or
-single-value `make_optional`, and all six C++17 comparisons lower directly to
-aggregate and scalar IR. Converting optional operations preserve source
-engagement and cast an engaged source value to the destination element type.
-Selected scalar construction, assignment, emplacement, fallback and factory
-conversions use the same directly representable scalar cast boundary, including
-the standard conversion from `nullptr_t` to an object pointer.
-Comparisons cover `nullopt` on either side, exact scalar types, heterogeneous
-arithmetic operands, and qualification-compatible object pointers. Arithmetic
-optional or value operands receive the C++17 integer promotions and usual
-arithmetic conversions before comparison. Pointer operands receive a common
+`const`. It also includes source-owned trivial standard-layout records and the
+admitted array, pair and tuple value domains, recursively. Default and `nullopt`
+construction produce an empty value. Direct, zero- or single-value `in_place`,
+copy and move construction, converting construction from another optional,
+copy and move assignment, converting optional assignment, assignment from
+`nullopt`, direct value assignment, `has_value`, contextual `operator bool`,
+dereference, implicit or explicit arrow, `reset`, single-value `emplace`,
+`value_or`, member and free `swap`, and zero- or single-value `make_optional`
+lower directly to aggregate and scalar IR. Composite construction and
+conversion require the exact unqualified element type. Composite assignment,
+emplacement and swapping additionally require recursive assignability; a
+top-level `const` element remains constructible and readable. Scalar operations
+retain the directly representable conversion boundary, including the standard
+conversion from `nullptr_t` to an object pointer.
+
+All six C++17 comparison forms remain on the scalar value boundary. Comparisons
+with `nullopt` on either side inspect only engagement and therefore work for
+every admitted element. Other comparisons cover exact scalar types,
+heterogeneous arithmetic operands and qualification-compatible object pointers.
+Arithmetic optional or value operands receive the C++17 integer promotions and
+usual arithmetic conversions before comparison. Pointer operands receive a common
 pointer type by combining pointee `const`; equality also admits an object
 pointer with a compatibly qualified `void *`. Ordered pointer comparisons
 require a complete object pointee. Exact `nullptr_t` and enumeration
@@ -339,13 +346,14 @@ emitted directly, preserving unordered floating-point behavior such as NaN for
 `<=` and `>=`. Generated programs do not call or link libc++ for these
 operations.
 
-Volatile, `long double`, record and other non-scalar elements remain outside
-this increment. Throwing `value`, base-adjusting or otherwise incompatible
-pointer comparisons, heterogeneous enumeration comparisons,
-initializer-list emplacement and the `in_place_type`/`in_place_index` tags are
-not admitted yet. The authenticated `in_place` tag is erased only as an
-optional constructor argument. Function-pointer elements, function addresses,
-quoted includes, user shadows and forged declarations remain rejected.
+Reference, incomplete, volatile, restricted-address-space, nontrivially
+destructible, `long double` and function-pointer elements remain outside this
+boundary. Composite value comparisons, throwing `value`, base-adjusting or
+otherwise incompatible pointer comparisons, heterogeneous enumeration
+comparisons, initializer-list emplacement and the `in_place_type`/
+`in_place_index` tags are not admitted. The authenticated `in_place` tag is
+erased only as an optional constructor argument. Function addresses, quoted
+includes, user shadows and forged declarations remain rejected.
 
 ## Iterator metadata from `<iterator>`
 

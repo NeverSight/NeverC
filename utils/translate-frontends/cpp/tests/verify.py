@@ -913,6 +913,7 @@ extern "C" int initializer_list_operations() {
         assert target_result["sdk_dependencies"] == initializer_list_dependencies, target_result
         assert not [node for node in walk(target_result["functions"])
                     if node.get("op") in ("call", "mapped_call")], target_result
+
     for name, source, code in (
         ("quoted",
          '#include "initializer_list"\nint main(){return 0;}', "TR0201"),
@@ -928,6 +929,122 @@ extern "C" int initializer_list_operations() {
     ):
         check("v2-initializer-list-" + name, source, code,
               profile="cpp-core-v2", sdk=True)
+
+    optional_composite_source = """\
+#include <array>
+#include <optional>
+#include <tuple>
+#include <utility>
+struct Point { int x; int y; };
+extern "C" int optional_composite() {
+  using Array = std::array<int, 2>;
+  using Pair = std::pair<int, int>;
+  using Bundle = std::tuple<Point, Array, Pair>;
+
+  std::optional<Point> point(Point{1, 2}), point_copy;
+  point_copy = point;
+  point_copy = Point{3, 4};
+  point_copy.emplace(Point{5, 6});
+  Point fallback = std::optional<Point>{}.value_or(Point{7, 8});
+  auto point_made = std::make_optional(Point{9, 10});
+  auto point_zero = std::make_optional<Point>();
+  point.swap(point_made);
+  std::swap(point, point_zero);
+
+  std::optional<Array> array(Array{{11, 12}}), array_copy;
+  array_copy = array;
+  array.emplace(Array{{13, 14}});
+  std::optional<Pair> pair(Pair{15, 16}), pair_copy;
+  pair_copy = pair;
+  pair.emplace(Pair{17, 18});
+
+  Bundle initial(Point{19, 20}, Array{{21, 22}}, Pair{23, 24});
+  std::optional<Bundle> bundle(initial), bundle_copy;
+  bundle_copy = bundle;
+  bundle_copy = Bundle(Point{25, 26}, Array{{27, 28}}, Pair{29, 30});
+  bundle_copy.emplace(
+      Bundle(Point{31, 32}, Array{{33, 34}}, Pair{35, 36}));
+  Bundle bundle_fallback = std::optional<Bundle>{}.value_or(initial);
+  auto bundle_made = std::make_optional(initial);
+  auto bundle_zero = std::make_optional<Bundle>();
+  bundle.swap(bundle_made);
+  std::swap(bundle, bundle_zero);
+  std::optional<const Bundle> qualified(bundle_copy);
+
+  return fallback.x + point_copy->y + (*array)[1] + pair->second +
+         std::get<Point>(bundle_fallback).x +
+         std::get<Array>(*qualified)[0];
+}
+"""
+    optional_composite = check(
+        "v2-optional-composite", optional_composite_source,
+        profile="cpp-core-v2", sdk=True)
+    optional_composite_dependencies = optional_composite["sdk_dependencies"]
+    assert len(optional_composite_dependencies) == 253, optional_composite
+    assert {dependency["path"]
+            for dependency in optional_composite_dependencies} >= {
+                "array", "optional", "tuple", "utility"
+            }, optional_composite
+
+    def check_optional_composite_records(result, target):
+        records = result["records"]
+        array_record = next(
+            record for record in records
+            if [field["type"] for field in record["fields"]]
+            == ["arr:2:int"])
+        bundle = next(
+            record for record in records
+            if len(record["fields"]) == 3 and
+            record["fields"][1]["type"] == array_record["id"])
+        point_id = bundle["fields"][0]["type"]
+        pair_id = bundle["fields"][2]["type"]
+        point = next(record for record in records
+                     if record["id"] == point_id)
+        pair = next(record for record in records if record["id"] == pair_id)
+        assert [field["type"] for field in point["fields"]] == ["int", "int"]
+        assert [field["type"] for field in pair["fields"]] == ["int", "int"]
+        assert point_id != pair_id
+        assert bundle["layout"]["field_offsets_bits"] == [0, 64, 128], bundle
+        assert bundle["layout"]["size_bits"] == 192, bundle
+
+        element_ids = {point_id, array_record["id"], pair_id, bundle["id"]}
+        optionals = [
+            record for record in records
+            if len(record["fields"]) == 2 and
+            record["fields"][0]["type"] in element_ids and
+            record["fields"][1]["type"] == "bool"
+        ]
+        assert len(optionals) == 5, optionals
+        assert sum(record["fields"][0]["type"] == bundle["id"]
+                   for record in optionals) == 2, optionals
+        by_id = {record["id"]: record for record in records}
+        microsoft = "windows-msvc" in target
+        for optional in optionals:
+            value = by_id[optional["fields"][0]["type"]]
+            value_layout = value["layout"]
+            layout = optional["layout"]
+            alignment = value_layout["abi_align_bits"]
+            storage_size = ((value_layout["size_bits"] + 8 + alignment - 1)
+                            // alignment) * alignment
+            expected_size = ((storage_size + (16 if microsoft else 0) +
+                              alignment - 1) // alignment) * alignment
+            assert layout["field_offsets_bits"] == [
+                0, value_layout["size_bits"]
+            ], optional
+            assert layout["abi_align_bits"] == alignment, optional
+            assert layout["size_bits"] == expected_size, optional
+
+    check_optional_composite_records(optional_composite, args.target)
+    assert not [node for node in walk(optional_composite["functions"])
+                if node.get("op") in ("call", "mapped_call")], optional_composite
+    for target in sdk_targets:
+        target_result = check("v2-optional-composite-" + target,
+                              optional_composite_source,
+                              profile="cpp-core-v2", target=target, sdk=True)
+        assert target_result["sdk_dependencies"] == optional_composite_dependencies, target_result
+        check_optional_composite_records(target_result, target)
+        assert not [node for node in walk(target_result["functions"])
+                    if node.get("op") in ("call", "mapped_call")], target_result
 
     optional_operations_source = """\
 #include <optional>
@@ -1055,8 +1172,11 @@ extern "C" int optional_operations(int value) {
         ("volatile-element",
          '#include <optional>\nint main(){std::optional<volatile int>v;return v.has_value();}',
          "TR0203"),
-        ("record-element",
-         '#include <optional>\nstruct R{int n;};int main(){std::optional<R>v(R{3});return v->n;}',
+        ("nontrivial-record",
+         '#include <optional>\nstruct R{int n;~R(){}};int main(){std::optional<R>v(R{3});return v->n;}',
+         "TR0203"),
+        ("composite-comparison",
+         '#include <optional>\nstruct R{int n;};bool operator==(const R&a,const R&b){return a.n==b.n;}int main(){std::optional<R>a(R{1}),b(R{1});return a==b;}',
          "TR0203"),
         ("throwing-value",
          '#include <optional>\nint main(){std::optional<int>v;return v.value();}',
