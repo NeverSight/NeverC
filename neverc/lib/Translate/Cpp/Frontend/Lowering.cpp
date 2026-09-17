@@ -3784,6 +3784,71 @@ class FunctionLowering {
       label(End, L);
       return Boundary;
     }
+    case UtilityOperation::AlgorithmStablePartition: {
+      auto Boundary = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto Predicate = snapshot(expression(Call->getArg(2)), L);
+      auto Current = snapshot(json::Object(Boundary), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto ElementType =
+          type(Call->getArg(0)->getType()->getPointeeType(), L);
+      auto Shift = temporary(PointerType, L);
+      auto Previous = temporary(PointerType, L);
+      auto Value = temporary(ElementType, L);
+      const auto Check = labelName(), Test = labelName();
+      const auto Selected = labelName(), CheckMove = labelName();
+      const auto Save = labelName(), CheckShift = labelName();
+      const auto ShiftOne = labelName(), Place = labelName();
+      const auto AdvanceBoundary = labelName();
+      const auto AdvanceCurrent = labelName(), End = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", Current, Last, "bool", L), Test, End, L);
+      label(Test, L);
+      {
+        auto Matches = emitUnaryPredicate(
+            json::Object(Predicate), Call->getArg(2)->getType(),
+            dereference(json::Object(Current), L), L);
+        branch(std::move(Matches), Selected, AdvanceCurrent, L);
+      }
+      label(Selected, L);
+      jump(CheckMove, L);
+      label(CheckMove, L);
+      branch(binary("!=", Current, Boundary, "bool", L), Save, AdvanceBoundary,
+             L);
+      label(Save, L);
+      assign(Value, dereference(json::Object(Current), L), L);
+      assign(Shift, Current, L);
+      jump(CheckShift, L);
+      label(CheckShift, L);
+      branch(binary("!=", Shift, Boundary, "bool", L), ShiftOne, Place, L);
+      label(ShiftOne, L);
+      assign(Previous,
+             binary("-", Shift, quantity(1, DifferenceType, L), PointerType, L),
+             L);
+      assign(dereference(json::Object(Shift), L),
+             dereference(json::Object(Previous), L), L);
+      assign(Shift, Previous, L);
+      jump(CheckShift, L);
+      label(Place, L);
+      assign(dereference(json::Object(Boundary), L), Value, L);
+      jump(AdvanceBoundary, L);
+      label(AdvanceBoundary, L);
+      assign(
+          Boundary,
+          binary("+", Boundary, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      jump(AdvanceCurrent, L);
+      label(AdvanceCurrent, L);
+      assign(
+          Current,
+          binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      jump(Check, L);
+      label(End, L);
+      return Boundary;
+    }
     case UtilityOperation::AlgorithmPartitionCopy: {
       auto Input = snapshot(expression(Call->getArg(0)), L);
       auto Last = snapshot(expression(Call->getArg(1)), L);

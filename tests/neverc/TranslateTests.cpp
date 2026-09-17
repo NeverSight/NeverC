@@ -27330,6 +27330,152 @@ TEST_F(TranslateTest, CoreV2AlgorithmPartitionOperationsRequireExactForms) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2AlgorithmStablePartitionRunsAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-stable-partition.cpp");
+  const auto Output = tmpFile("algorithm-stable-partition.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int calls;
+bool even(int value) {
+  ++calls;
+  return value % 2 == 0;
+}
+enum Rank : unsigned char { low, high };
+bool is_high(Rank value) {
+  ++calls;
+  return value == high;
+}
+bool pointed_even(int *value) {
+  ++calls;
+  return *value % 2 == 0;
+}
+int main() {
+  int values[6]{1, 2, 3, 4, 5, 6};
+  bool (*predicate)(int) = even;
+  int effects = 0;
+  calls = 0;
+  int *boundary = std::stable_partition(
+      (++effects, values), (++effects, values + 6), (++effects, predicate));
+  const int expected[6]{2, 4, 6, 1, 3, 5};
+  if (effects != 3 || calls != 6 || boundary != values + 3)
+    return 1;
+  for (int i = 0; i != 6; ++i)
+    if (values[i] != expected[i])
+      return 2;
+
+  int all_true[3]{2, 4, 6};
+  calls = 0;
+  if (std::stable_partition(all_true, all_true + 3, even) != all_true + 3 ||
+      calls != 3 || all_true[0] != 2 || all_true[1] != 4 || all_true[2] != 6)
+    return 3;
+  int all_false[3]{1, 3, 5};
+  calls = 0;
+  if (std::stable_partition(all_false, all_false + 3, even) != all_false ||
+      calls != 3 || all_false[0] != 1 || all_false[1] != 3 ||
+      all_false[2] != 5)
+    return 4;
+  calls = 0;
+  if (std::stable_partition(values, values, even) != values || calls != 0)
+    return 5;
+
+  Rank ranks[5]{low, high, low, high, low};
+  calls = 0;
+  Rank *rank_boundary =
+      std::stable_partition(ranks, ranks + 5, is_high);
+  if (rank_boundary != ranks + 2 || ranks[0] != high || ranks[1] != high ||
+      ranks[2] != low || ranks[3] != low || ranks[4] != low || calls != 5)
+    return 6;
+
+  int objects[6]{1, 2, 3, 4, 5, 6};
+  int *pointers[6]{objects, objects + 1, objects + 2,
+                   objects + 3, objects + 4, objects + 5};
+  calls = 0;
+  int **pointer_boundary =
+      std::stable_partition(pointers, pointers + 6, pointed_even);
+  int *pointer_expected[6]{objects + 1, objects + 3, objects + 5,
+                           objects,     objects + 2, objects + 4};
+  if (pointer_boundary != pointers + 3 || calls != 6)
+    return 7;
+  for (int i = 0; i != 6; ++i)
+    if (pointers[i] != pointer_expected[i])
+      return 8;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Dependencies =
+      Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 354u);
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+  }
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("algorithm-stable-partition" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmStablePartitionRequiresExactFunctions) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code = "TR0203";
+  };
+  const Rejection Cases[] = {
+      {"reference-parameter",
+       "bool p(const int&n){return n>0;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,2};return "
+       "std::stable_partition(a,a+2,p)==a+2?0:1;}"},
+      {"non-bool-result", "int p(int n){return n;}\n#include <algorithm>\n"
+                          "int main(){int a[2]{1,2};return "
+                          "std::stable_partition(a,a+2,p)==a+2?0:1;}"},
+      {"converted-parameter",
+       "bool p(long n){return n>0;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,2};return "
+       "std::stable_partition(a,a+2,p)==a+2?0:1;}"},
+      {"function-object",
+       "struct P{bool operator()(int n)const{return n>0;}};\n"
+       "#include <algorithm>\nint main(){int a[2]{1,2};return "
+       "std::stable_partition(a,a+2,P{})==a+2?0:1;}"},
+      {"record-elements",
+       "struct R{int n;};bool p(R value){return value.n>0;}\n"
+       "#include <algorithm>\nint main(){R a[2]{{1},{2}};return "
+       "std::stable_partition(a,a+2,p)==a+2?0:1;}"},
+      {"variadic-predicate",
+       "bool p(int n,...){return n>0;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,2};return "
+       "std::stable_partition(a,a+2,p)==a+2?0:1;}",
+       "TR0201"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("algorithm-stable-partition-") +
+                                Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("algorithm-stable-partition-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmCallbackTraversalRunAtBothOptimizations) {
   const auto Source = tmpFile("algorithm-callback-traversal.cpp");
   const auto Output = tmpFile("algorithm-callback-traversal.nc");

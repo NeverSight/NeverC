@@ -392,6 +392,7 @@ enum class UtilityOperation {
   AlgorithmReplaceCopyIf,
   AlgorithmIsPartitioned,
   AlgorithmPartition,
+  AlgorithmStablePartition,
   AlgorithmPartitionCopy,
   AlgorithmPartitionPoint,
   AlgorithmForEach,

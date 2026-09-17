@@ -302,12 +302,16 @@ and returns the advanced output. Every range, output, callback and replacement
 argument is evaluated once; empty ranges return their unadvanced iterator and do
 not invoke the predicate.
 
-The exact `std::is_partitioned`, `std::partition`, `std::partition_copy` and
-`std::partition_point` templates use that predicate boundary too.
+The exact `std::is_partitioned`, `std::partition`, `std::stable_partition`,
+`std::partition_copy` and `std::partition_point` templates use that predicate
+boundary too.
 `is_partitioned` accepts a read-only range and stops when it finds a selected
 element after the first rejected element. `partition` requires a writable range,
 performs at most one predicate call per element, and returns the boundary between
 selected and rejected elements; it does not promise stable ordering.
+`stable_partition` requires the same writable range, invokes the predicate
+exactly once for every element, and uses in-place scalar shifts to preserve the
+relative order of both groups. It returns the first rejected element.
 `partition_copy` requires two writable same-element outputs, preserves the input
 order within both output groups, and returns their advanced pointers in an
 authenticated `std::pair`. `partition_point` accepts a range already partitioned

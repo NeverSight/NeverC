@@ -1379,6 +1379,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       (Origin->Path == "__algorithm/for_each.h" && Name == "for_each") ||
       (Origin->Path == "__algorithm/is_partitioned.h" &&
        Name == "is_partitioned") ||
+      (Origin->Path == "__algorithm/stable_partition.h" &&
+       Name == "stable_partition") ||
       (Origin->Path == "__algorithm/partition_copy.h" &&
        Name == "partition_copy") ||
       (Origin->Path == "__algorithm/partition_point.h" &&
@@ -2499,6 +2501,18 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmPartition;
+  if (Origin->Path == "__algorithm/stable_partition.h" &&
+      Name == "stable_partition" && Call->getNumArgs() == 3 &&
+      Function->getNumParams() == 3 && Call->isPRValue() &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      utilityAlgorithmWritableScalarPointer(
+          Context, Function->getParamDecl(0)->getType()) &&
+      AlgorithmUnaryPredicateParameter(2, 0) &&
+      Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmStablePartition;
   if (Origin->Path == "__algorithm/partition_copy.h" &&
       Name == "partition_copy" && Call->getNumArgs() == 5 &&
       Function->getNumParams() == 5 && Call->isPRValue() &&

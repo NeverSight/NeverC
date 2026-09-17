@@ -57,7 +57,8 @@ arithmetic elements with `min`, `max`, `clamp`, `minmax`, `min_element`,
 boolean function-pointer predicates admit `find_if`, `find_if_not`,
 `count_if`, `all_of`, `any_of`, `none_of`, `copy_if`, `remove_if`,
 `remove_copy_if`, `replace_if`, `replace_copy_if`, `is_partitioned`,
-`partition`, `partition_copy` and `partition_point`. Exact function-pointer
+`partition`, `stable_partition`, `partition_copy` and `partition_point`. Exact
+function-pointer
 binary predicates additionally admit `adjacent_find`, three- and four-iterator
 `equal`, three- and four-iterator `mismatch`, and three- and four-iterator
 `is_permutation`, plus `unique`, `unique_copy`, `search`, `find_end`,

@@ -1592,6 +1592,41 @@ extern "C" int algorithm_partition(
           'struct P{bool operator()(int n)const{return n>0;}};\n#include <algorithm>\nint main(){int a[2]{1,2};return std::partition(a,a+2,P{})==a+2?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    algorithm_stable_partition_source = """\
+#include <algorithm>
+extern "C" int *algorithm_stable_partition(
+    int *first, int *last, bool (*predicate)(int)) {
+  return std::stable_partition(first, last, predicate);
+}
+"""
+
+    def assert_stable_partition(data):
+        assert len(data["sdk_dependencies"]) == 354, data
+        nodes = list(walk(data["functions"]))
+        assert not [node for node in nodes
+                    if node.get("op") in ("call", "mapped_call")], data
+        assert sum(node.get("op") == "indirect_call"
+                   for node in nodes) == 1, data
+
+    algorithm_stable_partition = check(
+        "v2-algorithm-stable-partition", algorithm_stable_partition_source,
+        profile="cpp-core-v2", sdk=True)
+    assert_stable_partition(algorithm_stable_partition)
+    for target in sdk_targets:
+        target_result = check("v2-algorithm-stable-partition-" + target,
+                              algorithm_stable_partition_source,
+                              profile="cpp-core-v2", target=target, sdk=True)
+        assert_stable_partition(target_result)
+    check("v2-algorithm-stable-partition-reference",
+          'bool p(const int&n){return n>0;}\n#include <algorithm>\nint main(){int a[2]{1,2};return std::stable_partition(a,a+2,p)==a+2?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-stable-partition-conversion",
+          'bool p(long n){return n>0;}\n#include <algorithm>\nint main(){int a[2]{1,2};return std::stable_partition(a,a+2,p)==a+2?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-stable-partition-record",
+          'struct R{int n;};bool p(R value){return value.n>0;}\n#include <algorithm>\nint main(){R a[2]{{1},{2}};return std::stable_partition(a,a+2,p)==a+2?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     algorithm_callback_traversal_source = """\
 #include <algorithm>
 extern "C" long algorithm_callback_traversal(
