@@ -34,12 +34,16 @@ nested-array comparisons and index-based `get`, without a runtime libc++ link.
 The `<tuple>` surface has a 98-file libc++/resource closure on every core-v2
 target. It authenticates libc++'s private implementation and indexed leaf
 offsets for nonempty tuples and the dedicated empty specialization, then
-directly lowers construction, compatible per-element converting construction
-and assignment from tuples or scalar pairs, factories, swaps, same-length
-heterogeneous comparisons and index or unique-type access without a runtime
-libc++ link.
-Programs using the pair conversion include both `<tuple>` and `<utility>` and
-have a 108-file union closure on every core-v2 target.
+directly lowers scalar or recursively composite construction, compatible
+per-element converting construction and assignment from tuples or pairs,
+factories, swaps, scalar same-length heterogeneous comparisons and index or
+unique-type access without a runtime libc++ link. Composite elements may be
+source-owned nonempty trivial standard-layout records, admitted arrays or
+pairs, or nonempty nested tuples; their conversions keep the exact unqualified
+type and mutation requires recursive assignability. Programs using scalar pair
+conversion include both `<tuple>` and `<utility>` and have a 108-file union
+closure. The array-plus-tuple-plus-utility composite fixture has a 231-file
+union closure on every core-v2 target.
 The `<initializer_list>` surface has a 10-file libc++/resource closure on every
 core-v2 target. It retains the pinned two-field pointer-and-size layout and
 directly lowers braced backing-array materialization, default and copy/move

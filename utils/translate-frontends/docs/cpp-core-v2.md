@@ -184,32 +184,41 @@ platform-free union closure on those targets. Generated programs do not call or
 link libc++ for these operations; quoted `"utility"`, user shadow headers and
 platform header roots remain rejected.
 
-## Scalar tuples from `<tuple>`
+## Value tuples from `<tuple>`
 
 Core v2 accepts the exact top-level angled `<tuple>` entry from the pinned
 embedded VFS. Its authenticated 98-file libc++/resource closure is identical on
 all eight supported targets and contains no platform headers. A retained
-`std::tuple<T...>` may be empty or contain up to 64 admitted scalar value
-element types. For nonempty tuples, the frontend authenticates libc++'s private
-`__base_` field, indexed leaf base classes, private leaf values, native size and
-alignment, and every ABI field offset before exposing a flat protocol record.
-For the dedicated empty specialization, it authenticates the explicit
-specialization kind, zero bases and fields, trivial lifecycle, standard layout,
-and one-byte size and alignment before exposing a record with no fields.
+`std::tuple<T...>` may be empty or contain up to 64 admitted values. Elements
+may be admitted scalars, source-owned nonempty trivial standard-layout records,
+admitted `std::array` values, recursively admitted `std::pair` values, or
+nonempty nested tuples. For nonempty tuples, the frontend authenticates
+libc++'s private `__base_` field, indexed leaf base classes and template
+arguments, private leaf values, native size and alignment, and every ABI field
+offset before exposing a flat protocol record. A nested tuple makes its
+containing leaf non-standard-layout, so that case is admitted only after the
+same concrete field and layout checks. For the dedicated empty specialization,
+the frontend authenticates the explicit specialization kind, zero bases and
+fields, trivial lifecycle, standard layout, and one-byte size and alignment
+before exposing a record with no fields.
 
 Default, element-wise, trivial copy/move and compatible per-element converting
-construction lower directly. Assignment supports same-type tuples and
-same-length tuples whose scalar source elements can be assigned through the
-selected libc++ overload; assignment and swap require mutable destination
-elements. `std::make_tuple`, member and free `swap`, `tuple_size`,
-`tuple_element`, and index-based or unique-type `std::get` use the same
-authenticated records. `get` preserves const and lvalue/rvalue reference
-categories; type selection requires exactly one matching element, as in C++17.
+construction lower directly. Scalar elements retain the documented arithmetic
+and object-pointer conversions. Composite elements require the same
+unqualified source and destination type. Assignment supports same-type tuples
+and same-length converting tuples through those rules; assignment and swap
+require every recursive destination leaf to be assignable. `std::make_tuple`,
+member and free `swap`, `tuple_size`, `tuple_element`, and index-based or
+unique-type `std::get` use the same authenticated records. `get` preserves
+const and lvalue/rvalue reference categories; type selection requires exactly
+one matching element, as in C++17.
 
-Two-element tuples also accept admitted scalar `std::pair<U, V>` lvalues and
-rvalues for construction and assignment when both selected libc++ element
-conversions are supported. This requires both `<tuple>` and `<utility>` and has
-an authenticated, platform-free 108-file union closure on all eight targets.
+Two-element tuples also accept admitted scalar or composite `std::pair<U, V>`
+lvalues and rvalues for construction and assignment under the same per-element
+conversion rules. Scalar pair conversion requires `<tuple>` and `<utility>` and
+has an authenticated, platform-free 108-file union closure. The composite
+array-plus-tuple-plus-utility fixture has a 231-file union closure on all eight
+targets.
 
 All six C++17 comparisons accept same-length heterogeneous scalar tuples when
 each element pair has an approved arithmetic or compatible object-pointer
@@ -217,10 +226,12 @@ comparison type. Equality also admits `nullptr_t` against an object pointer.
 Lexicographic ordering short-circuits at the first unequal element. Generated
 programs contain no tuple helper calls and do not link libc++.
 
-Reference, nested-record, `long double` and function-pointer element tuples
-remain outside this increment. `tie`, `forward_as_tuple`, `tuple_cat` and
-`apply` are also rejected. Quoted includes, user shadows, function addresses and
-forged declarations remain rejected.
+The standalone empty tuple remains supported, but empty-base-optimized record
+or tuple elements do not have the authenticated one-field leaf representation
+and remain rejected. References, nontrivial records, `long double`, function
+pointers and composite tuple comparisons also remain outside this surface.
+`tie`, `forward_as_tuple`, `tuple_cat` and `apply` are rejected. Quoted includes,
+user shadows, function addresses and forged declarations remain rejected.
 
 ## Fixed value arrays from `<array>`
 

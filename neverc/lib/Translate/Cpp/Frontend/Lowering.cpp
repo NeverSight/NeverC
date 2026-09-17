@@ -5539,14 +5539,20 @@ class FunctionLowering {
           if (!DestinationTuple || !SourceTuple ||
               DestinationTuple->Elements.size() != SourceTuple->Elements.size())
             reject(L, "utility tuple assignment",
-                   "A selected scalar std::tuple layout is unavailable.");
-          for (unsigned I = 0; I < DestinationTuple->Elements.size(); ++I)
-            assign(fieldStorage(json::Object(Left),
-                                DestinationTuple->Elements[I], L),
-                   cast(fieldStorage(json::Object(Right),
-                                     SourceTuple->Elements[I], L),
-                        type(DestinationTuple->Elements[I]->getType(), L), L),
-                   L);
+                   "A selected std::tuple layout is unavailable.");
+          for (unsigned I = 0; I < DestinationTuple->Elements.size(); ++I) {
+            auto Destination = fieldStorage(json::Object(Left),
+                                            DestinationTuple->Elements[I], L);
+            auto Value =
+                fieldStorage(json::Object(Right), SourceTuple->Elements[I], L);
+            if (recordValue(DestinationTuple->Elements[I]->getType()))
+              assign(std::move(Destination), std::move(Value), L);
+            else
+              assign(std::move(Destination),
+                     cast(std::move(Value),
+                          type(DestinationTuple->Elements[I]->getType(), L), L),
+                     L);
+          }
           return Left;
         }
         case UtilityTupleAssignment::Pair: {
@@ -5563,11 +5569,16 @@ class FunctionLowering {
           for (unsigned I = 0; I != 2; ++I) {
             const auto *SourceField =
                 I ? SourcePair->Second : SourcePair->First;
-            assign(fieldStorage(json::Object(Left),
-                                DestinationTuple->Elements[I], L),
-                   cast(fieldStorage(json::Object(Right), SourceField, L),
-                        type(DestinationTuple->Elements[I]->getType(), L), L),
-                   L);
+            auto Destination = fieldStorage(json::Object(Left),
+                                            DestinationTuple->Elements[I], L);
+            auto Value = fieldStorage(json::Object(Right), SourceField, L);
+            if (recordValue(DestinationTuple->Elements[I]->getType()))
+              assign(std::move(Destination), std::move(Value), L);
+            else
+              assign(std::move(Destination),
+                     cast(std::move(Value),
+                          type(DestinationTuple->Elements[I]->getType(), L), L),
+                     L);
           }
           return Left;
         }
@@ -6929,11 +6940,15 @@ class FunctionLowering {
         if (C->getNumArgs() != Tuple->Elements.size())
           reject(L, "utility tuple construction",
                  "The constructor and tuple element counts differ.");
-        for (unsigned I = 0; I < Tuple->Elements.size(); ++I)
-          assign(Member(Tuple->Elements[I]),
-                 cast(expression(C->getArg(I)),
-                      type(Tuple->Elements[I]->getType(), L), L),
-                 L);
+        for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
+          if (recordValue(Tuple->Elements[I]->getType()))
+            initialize(Member(Tuple->Elements[I]), C->getArg(I), L);
+          else
+            assign(Member(Tuple->Elements[I]),
+                   cast(expression(C->getArg(I)),
+                        type(Tuple->Elements[I]->getType(), L), L),
+                   L);
+        }
         return;
       case UtilityTupleConstruction::CopyOrMove:
         assign(std::move(Place), expression(C->getArg(0)), L);
@@ -6945,14 +6960,19 @@ class FunctionLowering {
         if (!SourceTuple ||
             SourceTuple->Elements.size() != Tuple->Elements.size())
           reject(L, "utility tuple construction",
-                 "The source scalar std::tuple layout is unavailable.");
+                 "The source std::tuple layout is unavailable.");
         auto Source = snapshot(expression(C->getArg(0)), L);
-        for (unsigned I = 0; I < Tuple->Elements.size(); ++I)
-          assign(Member(Tuple->Elements[I]),
-                 cast(fieldStorage(json::Object(Source),
-                                   SourceTuple->Elements[I], L),
-                      type(Tuple->Elements[I]->getType(), L), L),
-                 L);
+        for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
+          auto Value =
+              fieldStorage(json::Object(Source), SourceTuple->Elements[I], L);
+          if (recordValue(Tuple->Elements[I]->getType()))
+            assign(Member(Tuple->Elements[I]), std::move(Value), L);
+          else
+            assign(Member(Tuple->Elements[I]),
+                   cast(std::move(Value),
+                        type(Tuple->Elements[I]->getType(), L), L),
+                   L);
+        }
         return;
       }
       case UtilityTupleConstruction::Pair: {
@@ -6961,14 +6981,18 @@ class FunctionLowering {
             A.Context);
         if (!SourcePair || Tuple->Elements.size() != 2)
           reject(L, "utility tuple construction",
-                 "The source scalar std::pair layout is unavailable.");
+                 "The source std::pair layout is unavailable.");
         auto Source = snapshot(expression(C->getArg(0)), L);
         for (unsigned I = 0; I != 2; ++I) {
           const auto *SourceField = I ? SourcePair->Second : SourcePair->First;
-          assign(Member(Tuple->Elements[I]),
-                 cast(fieldStorage(json::Object(Source), SourceField, L),
-                      type(Tuple->Elements[I]->getType(), L), L),
-                 L);
+          auto Value = fieldStorage(json::Object(Source), SourceField, L);
+          if (recordValue(Tuple->Elements[I]->getType()))
+            assign(Member(Tuple->Elements[I]), std::move(Value), L);
+          else
+            assign(Member(Tuple->Elements[I]),
+                   cast(std::move(Value),
+                        type(Tuple->Elements[I]->getType(), L), L),
+                   L);
         }
         return;
       }

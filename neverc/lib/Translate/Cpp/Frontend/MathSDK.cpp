@@ -786,6 +786,53 @@ utilityTupleTypes(const ClassTemplateSpecializationDecl *Specialization) {
   return Types;
 }
 
+static std::optional<UtilityTupleRecord>
+approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
+                               const CXXRecordDecl *Record,
+                               const ASTContext &Context, unsigned Depth);
+
+static bool utilityTupleValue(const State &S, const SourceManager &SM,
+                              const ASTContext &Context, QualType Type,
+                              unsigned Depth = 0) {
+  if (Depth > 64 || Type.isNull())
+    return false;
+  if (utilityPairValue(S, SM, Context, Type, Depth))
+    return true;
+  const auto *Record = Type.getUnqualifiedType()->getAsCXXRecordDecl();
+  return approvedUtilityTupleRecordImpl(S, SM, Record, Context, Depth)
+      .has_value();
+}
+
+static bool utilityTupleAssignableValue(const State &S, const SourceManager &SM,
+                                        const ASTContext &Context,
+                                        QualType Type, unsigned Depth = 0) {
+  if (Depth > 64 || Type.isNull() || Type.isConstQualified())
+    return false;
+  if (utilityPairAssignableValue(S, SM, Context, Type, Depth))
+    return true;
+  const auto *Record = Type.getUnqualifiedType()->getAsCXXRecordDecl();
+  const auto Tuple =
+      approvedUtilityTupleRecordImpl(S, SM, Record, Context, Depth);
+  if (!Tuple)
+    return false;
+  for (const auto *Element : Tuple->Elements)
+    if (!utilityTupleAssignableValue(S, SM, Context, Element->getType(),
+                                     Depth + 1))
+      return false;
+  return true;
+}
+
+static bool utilityTupleDirectConversion(const State &S,
+                                         const SourceManager &SM,
+                                         const ASTContext &Context,
+                                         QualType From, QualType To) {
+  if (utilityScalar(Context, From) || utilityScalar(Context, To))
+    return utilityScalarDirectConversion(Context, From, To);
+  return utilityTupleValue(S, SM, Context, From) &&
+         utilityTupleValue(S, SM, Context, To) &&
+         Context.hasSameUnqualifiedType(From, To);
+}
+
 bool approvedUtilityTupleMetadata(const State &S, const SourceManager &SM,
                                   const CXXRecordDecl *Record) {
   const auto *Specialization =
@@ -807,10 +854,12 @@ bool approvedUtilityTupleMetadata(const State &S, const SourceManager &SM,
                        "__fwd/tuple.h");
 }
 
-std::optional<UtilityTupleRecord>
-approvedUtilityTupleRecord(const State &S, const SourceManager &SM,
-                           const CXXRecordDecl *Record,
-                           const ASTContext &Context) {
+static std::optional<UtilityTupleRecord>
+approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
+                               const CXXRecordDecl *Record,
+                               const ASTContext &Context, unsigned Depth) {
+  if (Depth > 64)
+    return std::nullopt;
   const auto *Specialization =
       dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
   Specialization = Specialization
@@ -834,8 +883,9 @@ approvedUtilityTupleRecord(const State &S, const SourceManager &SM,
       !cstddefOrigin(S, SM, Specialization->getLocation(), "libcxx", "tuple"))
     return std::nullopt;
   for (QualType Type : *Types)
-    if (!utilityScalar(Context, Type) || Type.isVolatileQualified() ||
-        Type.isRestrictQualified() || Type.getAddressSpace() != LangAS::Default)
+    if (!utilityTupleValue(S, SM, Context, Type, Depth + 1) ||
+        Type.isVolatileQualified() || Type.isRestrictQualified() ||
+        Type.getAddressSpace() != LangAS::Default)
       return std::nullopt;
 
   if (Empty) {
@@ -911,7 +961,6 @@ approvedUtilityTupleRecord(const State &S, const SourceManager &SM,
         LeafSpecialization->getNumBases() ||
         LeafSpecialization->getNumVBases() ||
         LeafSpecialization->isDynamicClass() ||
-        !LeafSpecialization->isStandardLayout() ||
         !approvedStandardSDKDeclaration(S, SM, LeafSpecialization) ||
         !cstddefOrigin(S, SM, LeafSpecialization->getLocation(), "libcxx",
                        "tuple"))
@@ -927,6 +976,14 @@ approvedUtilityTupleRecord(const State &S, const SourceManager &SM,
         LeafArguments.get(2).getKind() != TemplateArgument::Integral ||
         !LeafArguments.get(2).getIntegralType()->isBooleanType() ||
         !LeafArguments.get(2).getAsIntegral().isZero())
+      return std::nullopt;
+    const auto *ElementRecord =
+        (*Types)[Index].getUnqualifiedType()->getAsCXXRecordDecl();
+    // A leaf containing another tuple inherits its member's non-standard-layout
+    // classification. The concrete field, size, alignment and offset checks
+    // below still authenticate that leaf.
+    if (!LeafSpecialization->isStandardLayout() &&
+        !approvedUtilityTupleMetadata(S, SM, ElementRecord))
       return std::nullopt;
     auto LeafFields = LeafSpecialization->fields();
     auto LeafField = LeafFields.begin();
@@ -965,6 +1022,13 @@ approvedUtilityTupleRecord(const State &S, const SourceManager &SM,
     return std::nullopt;
   return UtilityTupleRecord{Specialization, std::move(Elements),
                             std::move(Offsets)};
+}
+
+std::optional<UtilityTupleRecord>
+approvedUtilityTupleRecord(const State &S, const SourceManager &SM,
+                           const CXXRecordDecl *Record,
+                           const ASTContext &Context) {
+  return approvedUtilityTupleRecordImpl(S, SM, Record, Context, 0);
 }
 
 std::optional<UtilityTupleConstruction>
@@ -1019,9 +1083,9 @@ approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
             Context.getRecordType(SourceTuple->Record)))
       return std::nullopt;
     for (unsigned I = 0; I < Tuple->Elements.size(); ++I)
-      if (!utilityScalarDirectConversion(Context,
-                                         SourceTuple->Elements[I]->getType(),
-                                         Tuple->Elements[I]->getType()))
+      if (!utilityTupleDirectConversion(S, SM, Context,
+                                        SourceTuple->Elements[I]->getType(),
+                                        Tuple->Elements[I]->getType()))
         return std::nullopt;
     return UtilityTupleConstruction::Converting;
   }
@@ -1041,10 +1105,12 @@ approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
         !Context.hasSameUnqualifiedType(
             Parameter->getPointeeType(),
             Context.getRecordType(SourcePair->Record)) ||
-        !utilityScalarDirectConversion(Context, SourcePair->First->getType(),
-                                       Tuple->Elements[0]->getType()) ||
-        !utilityScalarDirectConversion(Context, SourcePair->Second->getType(),
-                                       Tuple->Elements[1]->getType()))
+        !utilityTupleDirectConversion(S, SM, Context,
+                                      SourcePair->First->getType(),
+                                      Tuple->Elements[0]->getType()) ||
+        !utilityTupleDirectConversion(S, SM, Context,
+                                      SourcePair->Second->getType(),
+                                      Tuple->Elements[1]->getType()))
       return std::nullopt;
     return UtilityTupleConstruction::Pair;
   }
@@ -1057,9 +1123,9 @@ approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
     if (!Parameter->isReferenceType() ||
         !Context.hasSameUnqualifiedType(Construction->getArg(I)->getType(),
                                         Parameter->getPointeeType()) ||
-        !utilityScalarDirectConversion(Context,
-                                       Construction->getArg(I)->getType(),
-                                       Tuple->Elements[I]->getType()))
+        !utilityTupleDirectConversion(S, SM, Context,
+                                      Construction->getArg(I)->getType(),
+                                      Tuple->Elements[I]->getType()))
       return std::nullopt;
   }
   return UtilityTupleConstruction::Elements;
@@ -1090,7 +1156,7 @@ approvedUtilityTupleAssignment(const State &S, const SourceManager &SM,
       !cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "tuple"))
     return std::nullopt;
   for (const auto *Element : Tuple->Elements)
-    if (Element->getType().isConstQualified())
+    if (!utilityTupleAssignableValue(S, SM, Context, Element->getType()))
       return std::nullopt;
   const auto Parameter = Method->getParamDecl(0)->getType();
   const auto Result = Method->getReturnType();
@@ -1119,9 +1185,9 @@ approvedUtilityTupleAssignment(const State &S, const SourceManager &SM,
         !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "tuple"))
       return std::nullopt;
     for (unsigned I = 0; I < Tuple->Elements.size(); ++I)
-      if (!utilityScalarDirectConversion(Context,
-                                         SourceTuple->Elements[I]->getType(),
-                                         Tuple->Elements[I]->getType()))
+      if (!utilityTupleDirectConversion(S, SM, Context,
+                                        SourceTuple->Elements[I]->getType(),
+                                        Tuple->Elements[I]->getType()))
         return std::nullopt;
     return UtilityTupleAssignment::Converting;
   }
@@ -1133,10 +1199,12 @@ approvedUtilityTupleAssignment(const State &S, const SourceManager &SM,
           Context.getRecordType(SourcePair->Record)) ||
       !approvedStandardSDKDeclaration(S, SM, Primary) ||
       !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "tuple") ||
-      !utilityScalarDirectConversion(Context, SourcePair->First->getType(),
-                                     Tuple->Elements[0]->getType()) ||
-      !utilityScalarDirectConversion(Context, SourcePair->Second->getType(),
-                                     Tuple->Elements[1]->getType()))
+      !utilityTupleDirectConversion(S, SM, Context,
+                                    SourcePair->First->getType(),
+                                    Tuple->Elements[0]->getType()) ||
+      !utilityTupleDirectConversion(S, SM, Context,
+                                    SourcePair->Second->getType(),
+                                    Tuple->Elements[1]->getType()))
     return std::nullopt;
   return UtilityTupleAssignment::Pair;
 }
@@ -2893,7 +2961,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     bool Mutable = Tuple.has_value();
     if (Tuple)
       for (const auto *Element : Tuple->Elements)
-        Mutable &= !Element->getType().isConstQualified();
+        Mutable &=
+            utilityTupleAssignableValue(S, SM, Context, Element->getType());
     if (Method && Reference && Tuple && Mutable && Method->getIdentifier() &&
         Method->getName() == "swap" && !Method->isStatic() &&
         !Method->isVariadic() && Method->getNumParams() == 1 &&
@@ -4594,8 +4663,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       if (!Parameter->isReferenceType() ||
           !Context.hasSameUnqualifiedType(Call->getArg(I)->getType(),
                                           Parameter->getPointeeType()) ||
-          !utilityScalarDirectConversion(Context, Call->getArg(I)->getType(),
-                                         Tuple->Elements[I]->getType()))
+          !utilityTupleDirectConversion(S, SM, Context,
+                                        Call->getArg(I)->getType(),
+                                        Tuple->Elements[I]->getType()))
         return std::nullopt;
     }
     return UtilityOperation::MakeTuple;
@@ -4838,7 +4908,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     bool Mutable = Left.has_value();
     if (Left)
       for (const auto *Element : Left->Elements)
-        Mutable &= !Element->getType().isConstQualified();
+        Mutable &=
+            utilityTupleAssignableValue(S, SM, Context, Element->getType());
     if (LeftType->isLValueReferenceType() &&
         RightType->isLValueReferenceType() && Left && Right && Mutable &&
         Left->Record->getCanonicalDecl() == Right->Record->getCanonicalDecl() &&

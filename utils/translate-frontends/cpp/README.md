@@ -58,7 +58,7 @@ Core v2 also admits exact angle includes of
 [`<limits>`](../docs/cpp-core-v2.md#numeric-bounds-from-limits) and
 [`<cstddef>`](../docs/cpp-core-v2.md#fundamental-types-and-bytes-from-cstddef), and
 the bounded [`<utility>`](../docs/cpp-core-v2.md#scalar-utilities-and-pairs-from-utility)
-and [`<tuple>`](../docs/cpp-core-v2.md#scalar-tuples-from-tuple) and
+and [`<tuple>`](../docs/cpp-core-v2.md#value-tuples-from-tuple) and
 [`<array>`](../docs/cpp-core-v2.md#fixed-value-arrays-from-array) surfaces,
 [`<initializer_list>`](../docs/cpp-core-v2.md#initializer-list-views-from-initializer_list),
 [`<iterator>`](../docs/cpp-core-v2.md#iterator-metadata-from-iterator), and the
@@ -68,19 +68,21 @@ frontend uses the pinned embedded libc++/resource VFS and exposes resolved type
 aliases plus integral/enum constant results. It records all consumed header
 hashes: 101 for the `<type_traits>` closure, nine for standalone `<cstdint>`,
 16 for `<limits>`, 29 for `<cstddef>`, 87 for `<utility>`, 98 for `<tuple>`,
-217 for `<array>`,
-10 for `<initializer_list>`, 171 for `<iterator>` and 354 for `<algorithm>`.
+217 for `<array>`, 10 for `<initializer_list>`, 171 for `<iterator>` and 354
+for `<algorithm>`. The composite array-plus-tuple-plus-utility fixture consumes
+a 231-file union closure on all eight targets.
 Numeric limits fold the documented
 zero-argument integer and IEEE floating queries to literals. Cstddef aliases,
 layout queries and direct `std::byte` operations lower to existing scalar IR.
 Utility directly lowers scalar `move`, `forward`, `move_if_noexcept`, `as_const`,
-`exchange` and `swap`; scalar `pair` construction, assignment, swaps,
-comparisons, `make_pair` and `get`; and `tuple_size`, `tuple_element` and
-integer-sequence size queries. Tuple directly lowers authenticated empty and
-nonempty scalar tuple construction, compatible per-element converting
-construction and assignment from tuples or scalar pairs, factories, swaps,
-same-length heterogeneous lexicographic comparisons and index or unique-type
-access. Array directly lowers nonempty fixed scalar,
+`exchange` and `swap`; scalar or recursively composite `pair` construction,
+assignment, swaps, `make_pair` and `get`; scalar-pair comparisons; and
+`tuple_size`, `tuple_element` and integer-sequence size queries. Tuple directly
+lowers authenticated empty and nonempty scalar or recursively composite tuple
+construction, compatible scalar or exact composite per-element construction
+and assignment from tuples or pairs, factories, swaps, scalar same-length
+heterogeneous lexicographic comparisons and index or unique-type access. Array
+directly lowers nonempty fixed scalar,
 trivial-record and nested-array storage, iterators, element access, fill, swap,
 scalar and recursive nested-array comparisons and tuple access.
 Initializer-list objects retain libc++'s authenticated pointer-and-size view.

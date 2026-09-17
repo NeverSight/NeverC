@@ -572,16 +572,93 @@ extern "C" int tuple_pair(int *pointer) {
     for target in sdk_targets:
         check("v2-tuple-pair-" + target, tuple_pair_source,
               profile="cpp-core-v2", target=target, sdk=True)
+
+    tuple_composite_source = """\
+#include <array>
+#include <tuple>
+#include <utility>
+struct Point { int x; int y; };
+extern "C" int tuple_composite() {
+  using Array = std::array<int, 2>;
+  using Pair = std::pair<int, int>;
+  using Value = std::tuple<Point, Array, Pair>;
+  Value first(Point{1, 2}, Array{{3, 4}}, Pair{5, 6});
+  Value zero{};
+  Value copied(first);
+  zero = copied;
+  std::get<Point>(zero).x = 7;
+  auto made = std::make_tuple(Point{8, 9}, Array{{10, 11}}, Pair{12, 13});
+  zero.swap(made);
+  std::swap(zero, made);
+
+  using Nested = std::tuple<std::tuple<int, int>, Point>;
+  Nested nested(std::tuple<int, int>{14, 15}, Point{16, 17});
+  Nested other(nested);
+  other = nested;
+  nested.swap(other);
+  std::swap(nested, other);
+
+  using Duo = std::tuple<Point, Array>;
+  std::pair<Point, Array> source{Point{18, 19}, Array{{20, 21}}};
+  Duo from_pair(source);
+  Duo assigned{};
+  assigned = source;
+  return std::get<Point>(zero).x + std::get<Array>(made)[1] +
+         std::get<0>(std::get<0>(nested)) +
+         std::get<Point>(from_pair).y + std::get<Array>(assigned)[0];
+}
+"""
+    tuple_composite = check("v2-tuple-composite", tuple_composite_source,
+                            profile="cpp-core-v2", sdk=True)
+    assert len(tuple_composite["sdk_dependencies"]) == 231, tuple_composite
+    assert {dependency["path"]
+            for dependency in tuple_composite["sdk_dependencies"]} >= {
+                "array", "tuple", "utility"
+            }, tuple_composite
+    records = tuple_composite["records"]
+    array = next(record for record in records
+                 if [field["type"] for field in record["fields"]]
+                 == ["arr:2:int"])
+    value = next(record for record in records
+                 if len(record["fields"]) == 3 and
+                 record["fields"][1]["type"] == array["id"])
+    point_id = value["fields"][0]["type"]
+    pair_id = value["fields"][2]["type"]
+    point = next(record for record in records if record["id"] == point_id)
+    pair = next(record for record in records if record["id"] == pair_id)
+    assert [field["type"] for field in point["fields"]] == ["int", "int"]
+    assert [field["type"] for field in pair["fields"]] == ["int", "int"]
+    assert point_id != pair_id
+    nested = next(record for record in records
+                  if len(record["fields"]) == 2 and
+                  record["fields"][1]["type"] == point_id and
+                  record["fields"][0]["type"] not in ("int", point_id,
+                                                        pair_id))
+    inner_id = nested["fields"][0]["type"]
+    inner = next(record for record in records if record["id"] == inner_id)
+    assert [field["type"] for field in inner["fields"]] == ["int", "int"]
+    assert value["layout"]["field_offsets_bits"] == [0, 64, 128], value
+    assert nested["layout"]["field_offsets_bits"] == [0, 64], nested
+    assert sum([field["type"] for field in record["fields"]]
+               == [point_id, array["id"]] for record in records) == 2, records
+    assert not [node for node in walk(tuple_composite["functions"])
+                if node.get("op") in ("call", "mapped_call")], tuple_composite
+    for target in sdk_targets:
+        check("v2-tuple-composite-" + target, tuple_composite_source,
+              profile="cpp-core-v2", target=target, sdk=True)
     for name, source, code in (
         ("quoted", '#include "tuple"\nint main(){return 0;}', "TR0201"),
         ("reference",
          '#include <tuple>\nint main(){int n=1;std::tuple<int&>v(n);return std::get<0>(v);}',
          "TR0201"),
-        ("nested",
-         '#include <tuple>\nint main(){std::tuple<std::tuple<int>,int>v{{1},2};return std::get<0>(std::get<0>(v));}',
+        ("nontrivial-record",
+         '#include <tuple>\nstruct R{int n;~R(){}};int main(){std::tuple<R,int>v{R{1},2};return std::get<0>(v).n;}',
          "TR0201"),
-        ("record",
-         '#include <tuple>\nstruct R{int n;};int main(){std::tuple<R,int>v{R{1},2};return std::get<0>(v).n;}',
+        ("empty-record",
+         '#include <tuple>\nstruct E{};int main(){std::tuple<E>v{E{}};return sizeof(v);}',
+         "TR0201"),
+        ("nested-empty",
+         '#include <tuple>\nint main(){std::tuple<std::tuple<>>v{std::tuple<>{}};return sizeof(v);}',
          "TR0201"),
         ("long-double",
          '#include <tuple>\nint main(){std::tuple<long double>v(1.0L);return int(std::get<0>(v));}',
@@ -589,6 +666,9 @@ extern "C" int tuple_pair(int *pointer) {
         ("function-pointer",
          '#include <tuple>\nusing F=int(*)();int main(){std::tuple<F>v;return std::get<0>(v)==nullptr;}',
          "TR0201"),
+        ("record-comparison",
+         '#include <tuple>\nstruct R{int n;};bool operator==(const R&a,const R&b){return a.n==b.n;}int main(){std::tuple<R>a{R{1}},b{R{1}};return a==b;}',
+         "TR0203"),
         ("ambiguous-type-get",
          '#include <tuple>\nint main(){std::tuple<int,int>v(1,2);return std::get<int>(v);}',
          "TR0202"),

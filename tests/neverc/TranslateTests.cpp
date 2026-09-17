@@ -23703,7 +23703,98 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2TupleRequiresPinnedScalarOperations) {
+TEST_F(TranslateTest, CoreV2TupleCompositeValuesRunAtBothOptimizations) {
+  const auto Source = tmpFile("tuple-composite.cpp");
+  const auto Output = tmpFile("tuple-composite.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <tuple>
+#include <utility>
+struct Point { int x; int y; };
+int main() {
+  using Array = std::array<int, 2>;
+  using Pair = std::pair<int, int>;
+  using Value = std::tuple<Point, Array, Pair>;
+  Value first(Point{1, 2}, Array{{3, 4}}, Pair{5, 6});
+  Value zero{};
+  if (std::get<Point>(zero).x != 0 || std::get<Array>(zero)[1] != 0 ||
+      std::get<Pair>(zero).second != 0)
+    return 1;
+  Value copied(first);
+  zero = copied;
+  std::get<Point>(zero).x = 7;
+  auto made = std::make_tuple(Point{8, 9}, Array{{10, 11}}, Pair{12, 13});
+  zero.swap(made);
+  std::swap(zero, made);
+  if (std::get<Point>(zero).x != 7 || std::get<Point>(zero).y != 2 ||
+      std::get<Array>(zero)[0] != 3 || std::get<Pair>(zero).second != 6 ||
+      std::get<Point>(made).x != 8 || std::get<Array>(made)[1] != 11)
+    return 2;
+
+  using Nested = std::tuple<std::tuple<int, int>, Point>;
+  Nested nested(std::tuple<int, int>{14, 15}, Point{16, 17});
+  Nested other(nested);
+  other = nested;
+  nested.swap(other);
+  std::swap(nested, other);
+  if (std::get<0>(std::get<0>(nested)) != 14 ||
+      std::get<1>(std::get<0>(nested)) != 15 ||
+      std::get<Point>(nested).x != 16 || std::get<Point>(nested).y != 17)
+    return 3;
+
+  using Duo = std::tuple<Point, Array>;
+  std::pair<Point, Array> source{Point{18, 19}, Array{{20, 21}}};
+  Duo fromPair(source);
+  Duo assigned{};
+  assigned = source;
+  if (std::get<Point>(fromPair).y != 19 ||
+      std::get<Array>(fromPair)[1] != 21 ||
+      std::get<Point>(assigned).x != 18 ||
+      std::get<Array>(assigned)[0] != 20)
+    return 4;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *SDK = Manifest->getAsObject()->getObject("sdk");
+  ASSERT_NE(SDK, nullptr);
+  const auto *Dependencies = SDK->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 231u);
+  bool FoundArray = false, FoundTuple = false, FoundUtility = false;
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+    FoundArray |= Dependency->getString("root") == "libcxx" &&
+                  Dependency->getString("path") == "array";
+    FoundTuple |= Dependency->getString("root") == "libcxx" &&
+                  Dependency->getString("path") == "tuple";
+    FoundUtility |= Dependency->getString("root") == "libcxx" &&
+                    Dependency->getString("path") == "utility";
+  }
+  EXPECT_TRUE(FoundArray);
+  EXPECT_TRUE(FoundTuple);
+  EXPECT_TRUE(FoundUtility);
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("tuple-composite" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2TupleRequiresPinnedOperations) {
   struct Rejection {
     const char *Name;
     const char *Source;
@@ -23715,13 +23806,17 @@ TEST_F(TranslateTest, CoreV2TupleRequiresPinnedScalarOperations) {
        "#include <tuple>\nint main(){int n=1;std::tuple<int&>v(n);"
        "return std::get<0>(v);}",
        "TR0201"},
-      {"nested",
-       "#include <tuple>\nint main(){std::tuple<std::tuple<int>,int>"
-       "v{{1},2};return std::get<0>(std::get<0>(v));}",
+      {"nontrivial-record",
+       "#include <tuple>\nstruct R{int n;~R(){}};int main(){"
+       "std::tuple<R,int>v{R{1},2};return std::get<0>(v).n;}",
        "TR0201"},
-      {"record",
-       "#include <tuple>\nstruct R{int n;};int main(){std::tuple<R,int>"
-       "v{R{1},2};return std::get<0>(v).n;}",
+      {"empty-record",
+       "#include <tuple>\nstruct E{};int main(){std::tuple<E>v{E{}};"
+       "return sizeof(v);}",
+       "TR0201"},
+      {"nested-empty",
+       "#include <tuple>\nint main(){std::tuple<std::tuple<>>v{"
+       "std::tuple<>{}};return sizeof(v);}",
        "TR0201"},
       {"long-double",
        "#include <tuple>\nint main(){std::tuple<long double>v(1.0L);"
@@ -23731,6 +23826,11 @@ TEST_F(TranslateTest, CoreV2TupleRequiresPinnedScalarOperations) {
        "#include <tuple>\nusing F=int(*)();int main(){std::tuple<F>v;"
        "return std::get<0>(v)==nullptr;}",
        "TR0201"},
+      {"record-comparison",
+       "#include <tuple>\nstruct R{int n;};bool operator==(const R&a,"
+       "const R&b){return a.n==b.n;}int main(){std::tuple<R>a{R{1}},"
+       "b{R{1}};return a==b;}",
+       "TR0203"},
       {"ambiguous-type-get",
        "#include <tuple>\nint main(){std::tuple<int,int>v(1,2);"
        "return std::get<int>(v);}",
