@@ -38,7 +38,8 @@ libc++ link.
 The `<optional>` surface has a 136-file libc++/resource closure on every core-v2
 target. It authenticates libc++'s private base and union representation and
 directly lowers scalar optional construction, assignment, engagement queries,
-dereference, arrow, reset, single-value emplacement and member swap without a
+dereference, arrow, reset, single-value emplacement, same-type value fallback,
+member/free swap, zero/single-value factories and C++17 comparisons without a
 runtime libc++ link.
 The `<iterator>` surface has a 171-file libc++/resource closure on every core-v2
 target. It exposes pointer `iterator_traits` metadata and directly lowered

@@ -1840,6 +1840,27 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
                                        Optional->ElementType))
       return UtilityOperation::OptionalEmplace;
+    if (!Operator && Name == "value_or" && Method->getNumParams() == 1 &&
+        Call->getNumArgs() == 1 && Call->isPRValue() &&
+        Parent == Optional->Record->getCanonicalDecl() &&
+        Method->getPrimaryTemplate() &&
+        approvedStandardSDKDeclaration(S, SM, Method->getPrimaryTemplate()) &&
+        cstddefOrigin(S, SM, Method->getPrimaryTemplate()->getLocation(),
+                      "libcxx", "optional") &&
+        Method->getReturnType()->isObjectType() &&
+        Context.hasSameUnqualifiedType(Method->getReturnType(),
+                                       Optional->ElementType) &&
+        Context.hasSameUnqualifiedType(Call->getType(),
+                                       Optional->ElementType) &&
+        Method->getParamDecl(0)->getType()->isReferenceType() &&
+        Context.hasSameUnqualifiedType(
+            Method->getParamDecl(0)->getType()->getPointeeType(),
+            Optional->ElementType) &&
+        Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
+                                       Optional->ElementType) &&
+        ((Method->isConst() && Method->getRefQualifier() == RQ_LValue) ||
+         (!Method->isConst() && Method->getRefQualifier() == RQ_RValue)))
+      return UtilityOperation::OptionalValueOr;
     if (!Operator && Name == "swap" && Method->getNumParams() == 1 &&
         Call->getNumArgs() == 1 && !Method->isConst() &&
         Parent == Optional->Record->getCanonicalDecl() &&
@@ -2157,6 +2178,132 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   const llvm::StringRef Name = Function->getIdentifier()
                                    ? Function->getIdentifier()->getName()
                                    : llvm::StringRef();
+  auto OptionalFor = [&](QualType Type) {
+    return approvedUtilityOptionalRecord(
+        S, SM, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(), Context);
+  };
+  auto OptionalParameter = [&](unsigned Index,
+                               const UtilityOptionalRecord &Optional,
+                               bool RequireConst) {
+    if (Index >= Function->getNumParams() || Index >= Call->getNumArgs())
+      return false;
+    const auto Parameter = Function->getParamDecl(Index)->getType();
+    if (!Parameter->isLValueReferenceType() ||
+        Parameter->getPointeeType().isConstQualified() != RequireConst ||
+        Parameter->getPointeeType().isVolatileQualified())
+      return false;
+    const auto OptionalType = Context.getRecordType(Optional.Record);
+    return Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                          OptionalType) &&
+           Context.hasSameUnqualifiedType(Call->getArg(Index)->getType(),
+                                          OptionalType);
+  };
+  auto NulloptParameter = [&](unsigned Index) {
+    if (Index >= Function->getNumParams() || Index >= Call->getNumArgs())
+      return false;
+    const auto Parameter = Function->getParamDecl(Index)->getType();
+    return !Parameter->isReferenceType() &&
+           approvedNulloptRecord(S, SM, Parameter, Context) &&
+           Context.hasSameUnqualifiedType(Call->getArg(Index)->getType(),
+                                          Parameter) &&
+           approvedUtilityNulloptExpression(S, SM, Call->getArg(Index),
+                                            Context);
+  };
+  auto ScalarParameter = [&](unsigned Index, QualType Element) {
+    if (Index >= Function->getNumParams() || Index >= Call->getNumArgs())
+      return false;
+    const auto Parameter = Function->getParamDecl(Index)->getType();
+    return Parameter->isLValueReferenceType() &&
+           Parameter->getPointeeType().isConstQualified() &&
+           !Parameter->getPointeeType().isVolatileQualified() &&
+           utilityScalar(Context, Parameter->getPointeeType()) &&
+           Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                          Element) &&
+           Context.hasSameUnqualifiedType(Call->getArg(Index)->getType(),
+                                          Element);
+  };
+  if (Origin->Path == "optional" && Call->getNumArgs() == 2 &&
+      Function->getNumParams() == 2 && Call->isPRValue() &&
+      Function->getReturnType()->isBooleanType() &&
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+    std::optional<UtilityOperation> Comparison;
+    if (Operator) {
+      switch (Operator->getOperator()) {
+      case OO_EqualEqual:
+        Comparison = UtilityOperation::OptionalEqual;
+        break;
+      case OO_ExclaimEqual:
+        Comparison = UtilityOperation::OptionalNotEqual;
+        break;
+      case OO_Less:
+        Comparison = UtilityOperation::OptionalLess;
+        break;
+      case OO_Greater:
+        Comparison = UtilityOperation::OptionalGreater;
+        break;
+      case OO_LessEqual:
+        Comparison = UtilityOperation::OptionalLessEqual;
+        break;
+      case OO_GreaterEqual:
+        Comparison = UtilityOperation::OptionalGreaterEqual;
+        break;
+      default:
+        break;
+      }
+    }
+    if (Comparison) {
+      const auto Left = OptionalFor(Call->getArg(0)->getType());
+      const auto Right = OptionalFor(Call->getArg(1)->getType());
+      const bool LeftNullopt = NulloptParameter(0);
+      const bool RightNullopt = NulloptParameter(1);
+      if (Left && Right &&
+          Left->Record->getCanonicalDecl() ==
+              Right->Record->getCanonicalDecl() &&
+          OptionalParameter(0, *Left, true) &&
+          OptionalParameter(1, *Right, true))
+        return Comparison;
+      if (Left && RightNullopt && OptionalParameter(0, *Left, true))
+        return Comparison;
+      if (LeftNullopt && Right && OptionalParameter(1, *Right, true))
+        return Comparison;
+      if (Left && OptionalParameter(0, *Left, true) &&
+          ScalarParameter(1, Left->ElementType))
+        return Comparison;
+      if (Right && ScalarParameter(0, Right->ElementType) &&
+          OptionalParameter(1, *Right, true))
+        return Comparison;
+    }
+  }
+  if (Origin->Path == "optional" && Name == "swap" && Call->getNumArgs() == 2 &&
+      Function->getNumParams() == 2 &&
+      Function->getReturnType()->isVoidType() &&
+      Call->getType()->isVoidType()) {
+    const auto Left = OptionalFor(Call->getArg(0)->getType());
+    const auto Right = OptionalFor(Call->getArg(1)->getType());
+    if (Left && Right &&
+        Left->Record->getCanonicalDecl() == Right->Record->getCanonicalDecl() &&
+        OptionalParameter(0, *Left, false) &&
+        OptionalParameter(1, *Right, false))
+      return UtilityOperation::OptionalSwap;
+  }
+  if (Origin->Path == "optional" && Name == "make_optional" &&
+      Call->getNumArgs() == Function->getNumParams() &&
+      Call->getNumArgs() <= 1 && Call->isPRValue() &&
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto Result = OptionalFor(Call->getType());
+    if (Result && !Call->getNumArgs())
+      return UtilityOperation::MakeOptional;
+    if (Result && Call->getNumArgs() == 1) {
+      const auto Parameter = Function->getParamDecl(0)->getType();
+      if (Parameter->isReferenceType() &&
+          Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                         Result->ElementType) &&
+          Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
+                                         Result->ElementType))
+        return UtilityOperation::MakeOptional;
+    }
+  }
   if (Call->getNumArgs() == 1 && Function->getNumParams() == 1) {
     const auto List = approvedUtilityInitializerListRecord(
         S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);

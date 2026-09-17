@@ -246,13 +246,17 @@ types, `float`, `double`, object pointers and `nullptr_t`, with optional top-lev
 `const`. Default and `nullopt` construction produce an empty value. Scalar,
 copy and move construction, copy and move assignment, assignment from
 `nullopt`, `has_value`, contextual `operator bool`, dereference, arrow, `reset`,
-single-value `emplace` and member `swap` lower directly to aggregate and scalar
-IR. Generated programs do not call or link libc++ for these operations.
+single-value `emplace`, same-type `value_or`, member and free `swap`, zero- or
+single-value `make_optional`, and all six C++17 comparisons lower directly to
+aggregate and scalar IR. Comparisons cover the same optional specialization,
+`nullopt` on either side, and the exact unqualified element type on either
+side. Generated programs do not call or link libc++ for these operations.
 
 Volatile, `long double`, record and other non-scalar elements remain outside
-this increment. Throwing `value`, `value_or`, comparisons, free `swap` and
-`make_optional` are not admitted yet. Function addresses, quoted includes,
-user shadows and forged declarations remain rejected.
+this increment. Throwing `value`, heterogeneous optional comparisons and
+converting `value_or` or `make_optional` arguments are not admitted yet.
+Function addresses, quoted includes, user shadows and forged declarations
+remain rejected.
 
 ## Iterator metadata from `<iterator>`
 

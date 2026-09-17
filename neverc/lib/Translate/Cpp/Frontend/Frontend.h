@@ -413,7 +413,16 @@ enum class UtilityOperation {
   OptionalArrow,
   OptionalReset,
   OptionalEmplace,
+  OptionalValueOr,
   OptionalMemberSwap,
+  OptionalSwap,
+  OptionalEqual,
+  OptionalNotEqual,
+  OptionalLess,
+  OptionalGreater,
+  OptionalLessEqual,
+  OptionalGreaterEqual,
+  MakeOptional,
 };
 struct UtilityPairRecord {
   const clang::CXXRecordDecl *Record;

@@ -28043,6 +28043,72 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ScalarOptionalUtilitiesRunAtBothOptimizations) {
+  const auto Source = tmpFile("optional-utilities.cpp");
+  const auto Output = tmpFile("optional-utilities.nc");
+  writeFile(Source, R"cpp(
+#include <optional>
+int effects;
+int fallback() { return 40 + ++effects; }
+int main() {
+  std::optional<int> empty;
+  std::optional<int> also_empty;
+  std::optional<int> three(3);
+  std::optional<int> also_three(3);
+  std::optional<int> five(5);
+
+  if (!(empty == also_empty) || empty != also_empty || !(empty < three) ||
+      !(three > empty) || !(empty <= three) || !(three >= empty) ||
+      !(three == also_three) || three != also_three || !(three < five) ||
+      !(five > three) || !(three <= also_three) || !(three >= also_three))
+    return 1;
+
+  if (!(empty == std::nullopt) || !(std::nullopt == empty) ||
+      empty != std::nullopt || std::nullopt != empty ||
+      empty < std::nullopt || !(std::nullopt < three) ||
+      empty > std::nullopt || std::nullopt > empty ||
+      !(empty <= std::nullopt) || !(std::nullopt <= three) ||
+      !(empty >= std::nullopt) || std::nullopt >= three)
+    return 2;
+
+  if (!(three == 3) || !(3 == three) || !(three != 4) || !(4 != three) ||
+      !(empty < 3) || 3 < empty || !(five > 3) || !(5 > three) ||
+      !(three <= 3) || 3 <= empty || !(five >= 5) || !(5 >= three))
+    return 3;
+
+  const std::optional<int> seven(7);
+  if (seven.value_or(fallback()) != 7 || effects != 1)
+    return 4;
+  if (empty.value_or(fallback()) != 42 || effects != 2)
+    return 5;
+  if (std::optional<int>(8).value_or(fallback()) != 8 || effects != 3)
+    return 6;
+
+  auto zero = std::make_optional<int>();
+  int source = 4;
+  auto copied = std::make_optional(source);
+  auto explicit_value = std::make_optional<int>(6);
+  std::swap(zero, explicit_value);
+  if (!zero || *zero != 6 || !explicit_value || *explicit_value != 0 ||
+      !copied || *copied != 4)
+    return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("optional-utilities" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Optimization << "\n" << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2OptionalRequiresPinnedScalarOperations) {
   struct Rejection {
     const char *Name;
@@ -28065,6 +28131,18 @@ TEST_F(TranslateTest, CoreV2OptionalRequiresPinnedScalarOperations) {
        "TR0203"},
       {"throwing-value",
        "#include <optional>\nint main(){std::optional<int>v;return v.value();}",
+       "TR0203"},
+      {"heterogeneous-comparison",
+       "#include <optional>\nint main(){std::optional<int>a(1);"
+       "std::optional<long>b(1);return a==b;}",
+       "TR0203"},
+      {"converting-value-or",
+       "#include <optional>\nint main(){short n=2;std::optional<int>v;"
+       "return v.value_or(n);}",
+       "TR0203"},
+      {"converting-make-optional",
+       "#include <optional>\nint main(){short n=2;"
+       "return *std::make_optional<int>(n);}",
        "TR0203"}};
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
