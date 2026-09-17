@@ -319,6 +319,10 @@ enum class UtilityOperation {
   AlgorithmFind,
   AlgorithmCount,
   AlgorithmEqual,
+  AlgorithmCopy,
+  AlgorithmMove,
+  AlgorithmCopyBackward,
+  AlgorithmMoveBackward,
 };
 struct UtilityPairRecord {
   const clang::CXXRecordDecl *Record;

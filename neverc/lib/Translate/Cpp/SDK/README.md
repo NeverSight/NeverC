@@ -37,10 +37,10 @@ disabled until the core SDK has an authenticated cross-target C runtime
 The `<algorithm>` surface has a 354-file libc++/resource closure on every
 core-v2 target. Its upstream declarations and the NeverC C string declaration
 shim are available without platform headers. Exact scalar-pointer `find`,
-`count`, and three- or four-iterator `equal` calls lower without a libc++ runtime
-dependency. `shuffle` and `sample` stay disabled until the same authenticated
-cross-target `mbstate_t` boundary is available through their random-distribution
-dependency.
+`count`, three- or four-iterator `equal`, `copy`, `move`, `copy_backward` and
+`move_backward` calls lower without a libc++ runtime dependency. `shuffle` and
+`sample` stay disabled until the same authenticated cross-target `mbstate_t`
+boundary is available through their random-distribution dependency.
 Core v2 never admits the `platform` root.
 Math v1 continues to use its separately checked libc++, resource and Darwin
 platform closure for `<cmath>`.

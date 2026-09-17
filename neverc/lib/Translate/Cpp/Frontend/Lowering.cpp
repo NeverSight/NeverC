@@ -881,6 +881,48 @@ class FunctionLowering {
       label(End, L);
       return Result;
     }
+    case UtilityOperation::AlgorithmCopy:
+    case UtilityOperation::AlgorithmMove:
+    case UtilityOperation::AlgorithmCopyBackward:
+    case UtilityOperation::AlgorithmMoveBackward: {
+      auto Current = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto Output = snapshot(expression(Call->getArg(2)), L);
+      const bool Backward =
+          Operation == UtilityOperation::AlgorithmCopyBackward ||
+          Operation == UtilityOperation::AlgorithmMoveBackward;
+      const auto Check = labelName(), Transfer = labelName(), End = labelName();
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto InputType = type(Call->getArg(0)->getType(), L);
+      const auto OutputType = type(Call->getArg(2)->getType(), L);
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", Current, Last, "bool", L), Transfer, End, L);
+      label(Transfer, L);
+      if (Backward) {
+        assign(Last,
+               binary("-", Last, quantity(1, DifferenceType, L), InputType, L),
+               L);
+        assign(
+            Output,
+            binary("-", Output, quantity(1, DifferenceType, L), OutputType, L),
+            L);
+        assign(dereference(Output, L), dereference(Last, L), L);
+      } else {
+        assign(dereference(Output, L), dereference(Current, L), L);
+        assign(
+            Current,
+            binary("+", Current, quantity(1, DifferenceType, L), InputType, L),
+            L);
+        assign(
+            Output,
+            binary("+", Output, quantity(1, DifferenceType, L), OutputType, L),
+            L);
+      }
+      jump(Check, L);
+      label(End, L);
+      return Output;
+    }
     case UtilityOperation::MakePair: {
       auto Pair = approvedUtilityPairRecord(
           A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);

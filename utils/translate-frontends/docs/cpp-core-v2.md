@@ -228,15 +228,19 @@ supported target, has the same dependency set on all eight targets, and contains
 no platform headers. The upstream public header and every consumed component
 retain their original bytes.
 
-The exact public `std::find`, `std::count`, three-iterator `std::equal` and
-four-iterator `std::equal` templates directly lower for non-volatile raw object
+The exact public `std::find`, `std::count`, three-iterator `std::equal`,
+four-iterator `std::equal`, `std::copy`, `std::move`, `std::copy_backward` and
+`std::move_backward` templates directly lower for non-volatile raw object
 pointer ranges whose unqualified element type is the same admitted scalar type.
-Each call evaluates and retains its arguments once before entering generated
-pointer loops; `find` preserves the bound value reference, `count` uses the
-target `ptrdiff_t`, and `equal` preserves short-circuit results. Generated
-programs do not call or link libc++ for these operations. Heterogeneous value
-types, predicate overloads, custom iterators, record elements and function
-addresses remain rejected, as do calls outside a documented direct lowering.
+Transfer algorithms additionally require a writable output element. Each call
+evaluates and retains its arguments once before entering generated pointer
+loops; `find` preserves the bound value reference, `count` uses the target
+`ptrdiff_t`, `equal` preserves short-circuit results, and transfer operations
+return the advanced output pointer. Forward and backward loops preserve their
+respective standard overlap direction. Generated programs do not call or link
+libc++ for these operations. Heterogeneous value types, predicate overloads,
+custom iterators, record elements and function addresses remain rejected, as do
+calls outside a documented direct lowering.
 
 The `shuffle` and `sample` component headers are authenticated but their
 declarations stay disabled because libc++ reaches `mbstate_t` through

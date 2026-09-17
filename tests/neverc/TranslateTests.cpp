@@ -23737,6 +23737,106 @@ TEST_F(TranslateTest, CoreV2AlgorithmReadOnlyRequiresPinnedPointerForms) {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2AlgorithmTransferPointerOperationsRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-transfer.cpp");
+  const auto Output = tmpFile("algorithm-transfer.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int main() {
+  const int source[5]{1, 2, 3, 4, 5};
+  int copied[5]{};
+  int effects = 0;
+  auto copied_end = std::copy((++effects, source), (++effects, source + 5),
+                              (++effects, copied));
+  if (effects != 3 || copied_end != copied + 5 ||
+      !std::equal(source, source + 5, copied))
+    return 1;
+
+  int moved[5]{};
+  if (std::move(copied, copied + 5, moved) != moved + 5 ||
+      !std::equal(source, source + 5, moved))
+    return 2;
+  if (std::copy(source, source, moved + 2) != moved + 2 ||
+      std::move(source, source, moved + 3) != moved + 3)
+    return 3;
+
+  int overlap[6]{0, 1, 2, 3, 4, 5};
+  if (std::copy(overlap + 1, overlap + 6, overlap) != overlap + 5 ||
+      overlap[0] != 1 || overlap[1] != 2 || overlap[2] != 3 ||
+      overlap[3] != 4 || overlap[4] != 5 || overlap[5] != 5)
+    return 4;
+
+  int backward[6]{1, 2, 3, 4, 5, 9};
+  if (std::copy_backward(backward, backward + 5, backward + 6) !=
+          backward + 1 ||
+      backward[0] != 1 || backward[1] != 1 || backward[2] != 2 ||
+      backward[3] != 3 || backward[4] != 4 || backward[5] != 5)
+    return 5;
+  int move_backward[6]{6, 7, 8, 9, 10, 0};
+  if (std::move_backward(move_backward, move_backward + 5,
+                         move_backward + 6) != move_backward + 1 ||
+      move_backward[1] != 6 || move_backward[2] != 7 ||
+      move_backward[3] != 8 || move_backward[4] != 9 ||
+      move_backward[5] != 10)
+    return 6;
+
+  double decimals[3]{0.5, 1.5, 2.5};
+  double decimal_copy[3]{};
+  std::copy(decimals, decimals + 3, decimal_copy);
+  if (!std::equal(decimals, decimals + 3, decimal_copy))
+    return 7;
+  int values[3]{11, 12, 13};
+  int *pointers[3]{values, values + 1, values + 2};
+  int *pointer_copy[3]{};
+  std::move(pointers, pointers + 3, pointer_copy);
+  if (pointer_copy[0] != values || pointer_copy[1] != values + 1 ||
+      pointer_copy[2] != values + 2)
+    return 8;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Dependencies =
+      Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 354u);
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+  }
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-transfer" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2AlgorithmTransferRequiresSameWritableScalarElement) {
+  const auto Source = tmpFile("algorithm-transfer-heterogeneous.cpp");
+  const auto Output = tmpFile("algorithm-transfer-heterogeneous.nc");
+  writeFile(Source,
+            "#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{};"
+            "return std::copy(a,a+2,b)==b+2?0:1;}");
+  expectCode(
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+      "TR0203");
+  expectNoArtifacts(Output);
+}
+
 TEST_F(TranslateTest, CoreV2IteratorPointerOperationsRunAtBothOptimizations) {
   const auto Source = tmpFile("iterator-operations.cpp");
   const auto Output = tmpFile("iterator-operations.nc");

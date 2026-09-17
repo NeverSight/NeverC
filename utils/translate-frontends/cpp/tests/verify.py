@@ -658,6 +658,34 @@ extern "C" int algorithm_read_only(int *values, int *other) {
           '#include <algorithm>\nbool same(int a,int b){return a==b;}int main(){int a[2]{1,2};return std::equal(a,a+2,a,&same)?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    algorithm_transfer_source = """\
+#include <algorithm>
+extern "C" int algorithm_transfer(const int *source, int *destination) {
+  int temporary[4]{};
+  int *copy_end = std::copy(source, source + 4, temporary);
+  int *move_end = std::move(temporary, copy_end, destination);
+  int *copy_begin = std::copy_backward(source, source + 4, temporary + 4);
+  int *move_begin = std::move_backward(temporary, temporary + 4,
+                                       destination + 4);
+  return static_cast<int>((move_end - destination) +
+                          (copy_begin - temporary) +
+                          (move_begin - destination));
+}
+"""
+    algorithm_transfer = check("v2-algorithm-transfer",
+                               algorithm_transfer_source,
+                               profile="cpp-core-v2", sdk=True)
+    assert len(algorithm_transfer["sdk_dependencies"]) == 354, algorithm_transfer
+    assert not [node for node in walk(algorithm_transfer["functions"])
+                if node.get("op") in ("call", "mapped_call")], algorithm_transfer
+    for target in sdk_targets:
+        check("v2-algorithm-transfer-" + target,
+              algorithm_transfer_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-algorithm-heterogeneous-copy",
+          '#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{};return std::copy(a,a+2,b)==b+2?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     # Windows driver defaults must not change core-v2 source visibility or
     # standard diagnostics. Exercise both MSVC architectures on every CI host.
     standard_template_parsing = {

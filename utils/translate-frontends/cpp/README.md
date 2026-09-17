@@ -80,9 +80,10 @@ Iterator exposes the pinned public header and pointer `iterator_traits` metadata
 through a platform-free 171-file closure, and directly lowers bounded pointer,
 array-range and reverse-iterator operations. Stream iterators remain disabled
 until their C runtime character-state ABI is available on every target.
-Algorithm directly lowers exact scalar-pointer `find`, `count`, and three- or
-four-iterator `equal` calls from its platform-free 354-file closure. `shuffle`
-and `sample` remain disabled at this stage because
+Algorithm directly lowers exact scalar-pointer `find`, `count`, three- or
+four-iterator `equal`, `copy`, `move`, `copy_backward` and `move_backward`
+calls from its platform-free 354-file closure. `shuffle` and `sample` remain
+disabled at this stage because
 their libc++ implementation reaches the same target C runtime character-state
 ABI through `uniform_int_distribution`.
 The driver authenticates each closure before

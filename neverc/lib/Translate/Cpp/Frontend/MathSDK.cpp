@@ -724,6 +724,12 @@ static bool utilityAlgorithmScalarPointer(const ASTContext &Context,
          utilityScalar(Context, Type->getPointeeType());
 }
 
+static bool utilityAlgorithmWritableScalarPointer(const ASTContext &Context,
+                                                  QualType Type) {
+  return utilityAlgorithmScalarPointer(Context, Type) &&
+         !Type->getPointeeType().isConstQualified();
+}
+
 static bool utilityPointerConversion(const ASTContext &Context, QualType From,
                                      QualType To) {
   if (!utilityObjectPointer(Context, From) ||
@@ -1392,6 +1398,34 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Same(Function->getParamDecl(2)->getType(),
              Function->getParamDecl(3)->getType()))
       return UtilityOperation::AlgorithmEqual;
+  }
+  if ((Origin->Path == "__algorithm/copy.h" ||
+       Origin->Path == "__algorithm/move.h" ||
+       Origin->Path == "__algorithm/copy_backward.h" ||
+       Origin->Path == "__algorithm/move_backward.h") &&
+      (Name == "copy" || Name == "move" || Name == "copy_backward" ||
+       Name == "move_backward") &&
+      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
+      Call->isPRValue() && AlgorithmPointerParameter(0) &&
+      AlgorithmPointerParameter(1) && AlgorithmPointerParameter(2) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
+                           Function->getParamDecl(2)->getType()) &&
+      utilityAlgorithmWritableScalarPointer(
+          Context, Function->getParamDecl(2)->getType()) &&
+      Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
+      Same(Call->getType(), Function->getReturnType())) {
+    if (Origin->Path == "__algorithm/copy.h" && Name == "copy")
+      return UtilityOperation::AlgorithmCopy;
+    if (Origin->Path == "__algorithm/move.h" && Name == "move")
+      return UtilityOperation::AlgorithmMove;
+    if (Origin->Path == "__algorithm/copy_backward.h" &&
+        Name == "copy_backward")
+      return UtilityOperation::AlgorithmCopyBackward;
+    if (Origin->Path == "__algorithm/move_backward.h" &&
+        Name == "move_backward")
+      return UtilityOperation::AlgorithmMoveBackward;
   }
   if (Origin->Path == "__iterator/reverse_iterator.h" &&
       Name == "make_reverse_iterator" && Call->getNumArgs() == 1 &&
