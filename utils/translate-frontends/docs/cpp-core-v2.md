@@ -252,6 +252,19 @@ Value references remain live through the loop, including when they alias an
 element that an earlier iteration changes. Enum elements stay outside this
 default-equality boundary because ADL can select a user-defined `operator==`.
 
+The exact three-argument `std::find_if`, `std::find_if_not`, `std::count_if`,
+`std::all_of`, `std::any_of` and `std::none_of` templates accept the same raw
+scalar-pointer ranges plus a checked ordinary function-pointer predicate. The
+predicate must take the range's unqualified element type by value and return
+`bool` exactly. This admits integer and enum scalars, `float`, `double`, object
+pointers and `nullptr_t`. The function-pointer value is evaluated and retained
+once, then invoked once per inspected element. Find and boolean queries stop at
+their first decisive result; `count_if` visits the whole range and returns the
+target `ptrdiff_t`. Empty ranges preserve the standard `all_of`/`none_of` true
+and `any_of` false identities without invoking the predicate. Reference or
+converted parameters, non-boolean results and callable objects stay outside
+this boundary.
+
 The exact four-iterator `std::search`, `std::find_end` and
 `std::find_first_of` templates lower nested equality scans over two ranges.
 Three- and four-iterator `std::mismatch` return an authenticated
@@ -353,9 +366,10 @@ first descending element. Heap queries scan parent-child relationships; heap
 mutation uses index-based upward or downward filtering with target
 `ptrdiff_t`. Sorting and partial sorting share those checked heap operations;
 selection uses pointer-width partition indexes. Generated programs do not call
-or link libc++ for these operations. Heterogeneous value types, predicate
-overloads, custom iterators, record elements and function addresses remain
-rejected, as do calls outside a documented direct lowering.
+or link libc++ for these operations. Heterogeneous value types, other predicate
+or comparator overloads, custom iterators, record elements, callable objects
+and addresses of standard algorithms remain rejected, as do calls outside a
+documented direct lowering.
 
 The `shuffle` and `sample` component headers are authenticated but their
 declarations stay disabled because libc++ reaches `mbstate_t` through

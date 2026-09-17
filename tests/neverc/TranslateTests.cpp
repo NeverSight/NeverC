@@ -25139,6 +25139,127 @@ TEST_F(TranslateTest, CoreV2AlgorithmPermutationRequirePinnedScalarForms) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2AlgorithmPredicateQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-predicate-queries.cpp");
+  const auto Output = tmpFile("algorithm-predicate-queries.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int calls;
+bool positive(int n) { ++calls; return n > 0; }
+bool even(int n) { ++calls; return n % 2 == 0; }
+enum Level : unsigned char { low, high };
+bool is_high(Level value) { ++calls; return value == high; }
+bool is_null(int *value) { ++calls; return value == nullptr; }
+bool above_one(float value) { ++calls; return value > 1.0f; }
+int main() {
+  int values[5]{-2, -1, 0, 3, 4};
+  bool (*predicate)(int) = positive;
+  int effects = 0;
+  calls = 0;
+  int *found = std::find_if((++effects, values), (++effects, values + 5),
+                            (++effects, predicate));
+  if (effects != 3 || found != values + 3 || calls != 4)
+    return 1;
+  calls = 0;
+  if (std::find_if_not(values, values + 5, positive) != values || calls != 1)
+    return 2;
+  calls = 0;
+  if (std::count_if(values, values + 5, even) != 3 || calls != 5)
+    return 3;
+
+  int all_values[3]{1, 2, 3};
+  calls = 0;
+  if (!std::all_of(all_values, all_values + 3, positive) || calls != 3)
+    return 4;
+  int mixed[4]{-1, 0, 2, 3};
+  calls = 0;
+  if (!std::any_of(mixed, mixed + 4, positive) || calls != 3)
+    return 5;
+  calls = 0;
+  if (std::none_of(mixed, mixed + 4, positive) || calls != 3)
+    return 6;
+  calls = 0;
+  if (!std::none_of(values, values, positive) ||
+      !std::all_of(values, values, positive) ||
+      std::any_of(values, values, positive) || calls != 0)
+    return 7;
+
+  Level levels[3]{low, high, low};
+  calls = 0;
+  if (std::find_if(levels, levels + 3, is_high) != levels + 1 || calls != 2)
+    return 8;
+  int number = 7;
+  int *pointers[3]{&number, nullptr, &number};
+  calls = 0;
+  if (std::count_if(pointers, pointers + 3, is_null) != 1 || calls != 3)
+    return 9;
+  float floating[3]{0.5f, 1.5f, 2.5f};
+  calls = 0;
+  if (!std::any_of(floating, floating + 3, above_one) || calls != 2)
+    return 10;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Dependencies =
+      Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 354u);
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+  }
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("algorithm-predicate-queries" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmPredicateQueriesRequireValueCallbacks) {
+  struct Rejection {
+    const char *Name;
+    const char *Predicate;
+  };
+  const Rejection Cases[] = {
+      {"reference-parameter", "bool predicate(const int&n){return n>0;}"},
+      {"non-bool-result", "int predicate(int n){return n>0;}"},
+      {"converted-parameter", "bool predicate(long n){return n>0;}"},
+      {"function-object",
+       "struct predicate{bool operator()(int n)const{return n>0;}};"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("algorithm-predicate-queries-") +
+                                Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("algorithm-predicate-queries-") +
+                                Case.Name + ".nc");
+    std::string Call = std::string(Case.Predicate) +
+                       "\n#include <algorithm>\nint main(){int a[2]{1,2};";
+    if (std::string(Case.Name) == "function-object")
+      Call += "return std::find_if(a,a+2,predicate{})==a?0:1;}";
+    else
+      Call += "return std::find_if(a,a+2,predicate)==a?0:1;}";
+    writeFile(Source, Call);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2IteratorPointerOperationsRunAtBothOptimizations) {
   const auto Source = tmpFile("iterator-operations.cpp");
   const auto Output = tmpFile("iterator-operations.nc");

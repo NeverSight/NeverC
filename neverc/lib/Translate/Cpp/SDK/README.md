@@ -52,7 +52,9 @@ arithmetic elements with `min`, `max`, `clamp`, `minmax`, `min_element`,
 `sort`, `partial_sort`, `partial_sort_copy`, `nth_element`,
 `next_permutation`, `prev_permutation`,
 `lexicographical_compare`, `includes`, `merge`, `set_union`, `set_intersection`,
-`set_difference` and `set_symmetric_difference`. Mutating and ordered output
+`set_difference` and `set_symmetric_difference`. Checked by-value unary
+function-pointer predicates additionally admit `find_if`, `find_if_not`,
+`count_if`, `all_of`, `any_of` and `none_of`. Mutating and ordered output
 algorithms require writable destinations;
 `copy_n`, `fill_n` and `search_n` accept at-most-64-bit integral and non-scoped
 enum counts after the libc++ integer promotion.

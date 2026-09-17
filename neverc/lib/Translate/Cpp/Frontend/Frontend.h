@@ -377,6 +377,12 @@ enum class UtilityOperation {
   AlgorithmNextPermutation,
   AlgorithmPrevPermutation,
   AlgorithmIsPermutation,
+  AlgorithmFindIf,
+  AlgorithmFindIfNot,
+  AlgorithmCountIf,
+  AlgorithmAllOf,
+  AlgorithmAnyOf,
+  AlgorithmNoneOf,
 };
 struct UtilityPairRecord {
   const clang::CXXRecordDecl *Record;

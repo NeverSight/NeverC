@@ -563,6 +563,24 @@ class FunctionLowering {
     }
     reject(L, "function designator", "Function values require a checked named target or stored callback.");
   }
+  Expression emitIndirectCall(Expression Callable, json::Array Args,
+                              QualType Result, SourceLocation L) {
+    chargeCall(Args, L);
+    json::Object Instruction{{"op", "indirect_call"},
+                             {"callable", std::move(Callable)},
+                             {"args", std::move(Args)},
+                             {"loc", A.loc(L)}};
+    auto ResultType = type(Result, L, true);
+    Expression Value;
+    if (ResultType != "void") {
+      Value = temporary(ResultType, L);
+      Instruction["target"] = json::Object(Value);
+    }
+    Body.push_back(std::move(Instruction));
+    if (Result->isReferenceType())
+      return dereference(std::move(Value), L);
+    return Value;
+  }
   Expression indirectCall(const CallExpr *Call) {
     auto L = Call->getExprLoc();
     auto Pointer = Call->getCallee()->getType();
@@ -577,20 +595,8 @@ class FunctionLowering {
     json::Array Args;
     for (unsigned I = 0; I < Call->getNumArgs(); ++I)
       Args.push_back(argument(Call->getArg(I), Prototype->getParamType(I)));
-    chargeCall(Args, L);
-    json::Object Instruction{{"op", "indirect_call"},
-                             {"callable", std::move(Callable)},
-                             {"args", std::move(Args)}, {"loc", A.loc(L)}};
-    auto ResultType = type(Prototype->getReturnType(), L, true);
-    Expression Result;
-    if (ResultType != "void") {
-      Result = temporary(ResultType, L);
-      Instruction["target"] = json::Object(Result);
-    }
-    Body.push_back(std::move(Instruction));
-    if (Prototype->getReturnType()->isReferenceType())
-      return dereference(std::move(Result), L);
-    return Result;
+    return emitIndirectCall(std::move(Callable), std::move(Args),
+                            Prototype->getReturnType(), L);
   }
 
   Expression cstddefOperation(const CallExpr *Call, CstddefOperation Operation) {
@@ -2897,6 +2903,128 @@ class FunctionLowering {
       label(FalseResult, L);
       assign(Result, boolean(false, L), L);
       jump(End, L);
+      label(End, L);
+      return Result;
+    }
+    case UtilityOperation::AlgorithmFindIf:
+    case UtilityOperation::AlgorithmFindIfNot: {
+      const bool Match = Operation == UtilityOperation::AlgorithmFindIf;
+      auto Current = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto Predicate = snapshot(expression(Call->getArg(2)), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto *Prototype = Call->getArg(2)
+                                  ->getType()
+                                  ->getPointeeType()
+                                  ->getAs<FunctionProtoType>();
+      auto Invoke = [&](Expression Argument) {
+        json::Array Arguments;
+        Arguments.push_back(std::move(Argument));
+        return emitIndirectCall(json::Object(Predicate), std::move(Arguments),
+                                Prototype->getReturnType(), L);
+      };
+      const auto Check = labelName(), Test = labelName();
+      const auto Advance = labelName(), End = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", Current, Last, "bool", L), Test, End, L);
+      label(Test, L);
+      auto Selected = Invoke(dereference(json::Object(Current), L));
+      branch(std::move(Selected), Match ? End : Advance, Match ? Advance : End,
+             L);
+      label(Advance, L);
+      assign(
+          Current,
+          binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      jump(Check, L);
+      label(End, L);
+      return Current;
+    }
+    case UtilityOperation::AlgorithmCountIf: {
+      auto Current = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto Predicate = snapshot(expression(Call->getArg(2)), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto *Prototype = Call->getArg(2)
+                                  ->getType()
+                                  ->getPointeeType()
+                                  ->getAs<FunctionProtoType>();
+      auto Count = temporary(DifferenceType, L);
+      const auto Check = labelName(), Test = labelName();
+      const auto Increment = labelName(), Advance = labelName();
+      const auto End = labelName();
+      assign(Count, quantity(0, DifferenceType, L), L);
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", Current, Last, "bool", L), Test, End, L);
+      label(Test, L);
+      {
+        json::Array Arguments;
+        Arguments.push_back(dereference(json::Object(Current), L));
+        auto Selected =
+            emitIndirectCall(json::Object(Predicate), std::move(Arguments),
+                             Prototype->getReturnType(), L);
+        branch(std::move(Selected), Increment, Advance, L);
+      }
+      label(Increment, L);
+      assign(
+          Count,
+          binary("+", Count, quantity(1, DifferenceType, L), DifferenceType, L),
+          L);
+      jump(Advance, L);
+      label(Advance, L);
+      assign(
+          Current,
+          binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      jump(Check, L);
+      label(End, L);
+      return Count;
+    }
+    case UtilityOperation::AlgorithmAllOf:
+    case UtilityOperation::AlgorithmAnyOf:
+    case UtilityOperation::AlgorithmNoneOf: {
+      const bool All = Operation == UtilityOperation::AlgorithmAllOf;
+      const bool Any = Operation == UtilityOperation::AlgorithmAnyOf;
+      auto Current = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto Predicate = snapshot(expression(Call->getArg(2)), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto *Prototype = Call->getArg(2)
+                                  ->getType()
+                                  ->getPointeeType()
+                                  ->getAs<FunctionProtoType>();
+      auto Result = temporary("bool", L);
+      const auto Check = labelName(), Test = labelName();
+      const auto Decisive = labelName(), Advance = labelName();
+      const auto End = labelName();
+      assign(Result, boolean(!Any, L), L);
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", Current, Last, "bool", L), Test, End, L);
+      label(Test, L);
+      {
+        json::Array Arguments;
+        Arguments.push_back(dereference(json::Object(Current), L));
+        auto Selected =
+            emitIndirectCall(json::Object(Predicate), std::move(Arguments),
+                             Prototype->getReturnType(), L);
+        branch(std::move(Selected), All ? Advance : Decisive,
+               All ? Decisive : Advance, L);
+      }
+      label(Decisive, L);
+      assign(Result, boolean(Any, L), L);
+      jump(End, L);
+      label(Advance, L);
+      assign(
+          Current,
+          binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      jump(Check, L);
       label(End, L);
       return Result;
     }

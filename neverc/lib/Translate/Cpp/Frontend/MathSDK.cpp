@@ -1478,6 +1478,29 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Element->isSpecificBuiltinType(BuiltinType::Float) ||
            Element->isSpecificBuiltinType(BuiltinType::Double);
   };
+  auto AlgorithmUnaryPredicateParameter = [&](unsigned PredicateIndex,
+                                              unsigned IteratorIndex) {
+    if (PredicateIndex >= Function->getNumParams() ||
+        PredicateIndex >= Call->getNumArgs() ||
+        IteratorIndex >= Function->getNumParams())
+      return false;
+    auto Predicate = Function->getParamDecl(PredicateIndex)->getType();
+    auto Iterator = Function->getParamDecl(IteratorIndex)->getType();
+    if (!Predicate->isFunctionPointerType() ||
+        !Same(Call->getArg(PredicateIndex)->getType(), Predicate) ||
+        !utilityAlgorithmScalarPointer(Context, Iterator))
+      return false;
+    const auto *Prototype =
+        Predicate->getPointeeType()->getAs<FunctionProtoType>();
+    if (!Prototype || Prototype->isVariadic() ||
+        Prototype->getNumParams() != 1 ||
+        !Prototype->getReturnType()->isBooleanType())
+      return false;
+    auto Parameter = Prototype->getParamType(0);
+    return utilityScalar(Context, Parameter) &&
+           Context.hasSameUnqualifiedType(Parameter,
+                                          Iterator->getPointeeType());
+  };
   if ((Origin->Path == "__algorithm/find.h" ||
        Origin->Path == "__algorithm/count.h") &&
       (Name == "find" || Name == "count") && Call->getNumArgs() == 3 &&
@@ -2090,6 +2113,38 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Same(Function->getParamDecl(2)->getType(),
              Function->getParamDecl(3)->getType()))
       return UtilityOperation::AlgorithmIsPermutation;
+  }
+  const bool UnaryPredicateQuery =
+      (Origin->Path == "__algorithm/find_if.h" && Name == "find_if") ||
+      (Origin->Path == "__algorithm/find_if_not.h" && Name == "find_if_not") ||
+      (Origin->Path == "__algorithm/count_if.h" && Name == "count_if") ||
+      (Origin->Path == "__algorithm/all_of.h" && Name == "all_of") ||
+      (Origin->Path == "__algorithm/any_of.h" && Name == "any_of") ||
+      (Origin->Path == "__algorithm/none_of.h" && Name == "none_of");
+  if (UnaryPredicateQuery && Call->getNumArgs() == 3 &&
+      Function->getNumParams() == 3 && Call->isPRValue() &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      AlgorithmUnaryPredicateParameter(2, 0) &&
+      Same(Call->getType(), Function->getReturnType())) {
+    if (Name == "find_if" &&
+        Same(Function->getReturnType(), Function->getParamDecl(0)->getType()))
+      return UtilityOperation::AlgorithmFindIf;
+    if (Name == "find_if_not" &&
+        Same(Function->getReturnType(), Function->getParamDecl(0)->getType()))
+      return UtilityOperation::AlgorithmFindIfNot;
+    if (Name == "count_if" &&
+        Same(Function->getReturnType(), Context.getPointerDiffType()))
+      return UtilityOperation::AlgorithmCountIf;
+    if (Function->getReturnType()->isBooleanType()) {
+      if (Name == "all_of")
+        return UtilityOperation::AlgorithmAllOf;
+      if (Name == "any_of")
+        return UtilityOperation::AlgorithmAnyOf;
+      if (Name == "none_of")
+        return UtilityOperation::AlgorithmNoneOf;
+    }
   }
   if (Origin->Path == "__iterator/reverse_iterator.h" &&
       Name == "make_reverse_iterator" && Call->getNumArgs() == 1 &&

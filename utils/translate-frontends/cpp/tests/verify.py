@@ -1012,6 +1012,44 @@ extern "C" int algorithm_permutation(int *first, int *last,
           '#include <algorithm>\nbool equal(int a,int b){return a==b;}int main(){int a[2]{1,2};return std::is_permutation(a,a+2,a,&equal)?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    algorithm_predicate_queries_source = """\
+#include <algorithm>
+extern "C" int algorithm_predicate_queries(const int *first,
+                                              const int *last,
+                                              bool (*predicate)(int)) {
+  const int *found = std::find_if(first, last, predicate);
+  const int *rejected = std::find_if_not(first, last, predicate);
+  auto count = std::count_if(first, last, predicate);
+  bool all = std::all_of(first, last, predicate);
+  bool any = std::any_of(first, last, predicate);
+  bool none = std::none_of(first, last, predicate);
+  return static_cast<int>((found - first) + (rejected - first) + count +
+                          all + any + none);
+}
+"""
+    algorithm_predicate_queries = check(
+        "v2-algorithm-predicate-queries", algorithm_predicate_queries_source,
+        profile="cpp-core-v2", sdk=True)
+    assert len(algorithm_predicate_queries["sdk_dependencies"]) == 354, algorithm_predicate_queries
+    predicate_query_nodes = list(walk(algorithm_predicate_queries["functions"]))
+    assert not [node for node in predicate_query_nodes
+                if node.get("op") in ("call", "mapped_call")], algorithm_predicate_queries
+    assert sum(node.get("op") == "indirect_call"
+               for node in predicate_query_nodes) == 6, algorithm_predicate_queries
+    for target in sdk_targets:
+        check("v2-algorithm-predicate-queries-" + target,
+              algorithm_predicate_queries_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-algorithm-predicate-queries-reference",
+          'bool predicate(const int&n){return n>0;}\n#include <algorithm>\nint main(){int a[2]{1,2};return std::find_if(a,a+2,predicate)==a?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-predicate-queries-result",
+          'int predicate(int n){return n>0;}\n#include <algorithm>\nint main(){int a[2]{1,2};return std::find_if(a,a+2,predicate)==a?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-predicate-queries-functor",
+          'struct Predicate{bool operator()(int n)const{return n>0;}};\n#include <algorithm>\nint main(){int a[2]{1,2};return std::find_if(a,a+2,Predicate{})==a?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     # Windows driver defaults must not change core-v2 source visibility or
     # standard diagnostics. Exercise both MSVC architectures on every CI host.
     standard_template_parsing = {

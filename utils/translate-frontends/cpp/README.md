@@ -95,7 +95,9 @@ built-in arithmetic elements admit default-order
 `push_heap`, `pop_heap`, `sort_heap`, `sort`, `partial_sort`,
 `partial_sort_copy`, `nth_element`, `next_permutation`, `prev_permutation`,
 `lexicographical_compare`, `includes`, `merge` and the four `set_*` range
-algorithms. Mutating and ordered output
+algorithms. Checked by-value unary function-pointer predicates additionally
+admit `find_if`, `find_if_not`, `count_if`, `all_of`, `any_of` and `none_of`.
+Mutating and ordered output
 algorithms require writable destinations, and `copy_n`,
 `fill_n` and `search_n` accept integral or non-scoped enum counts through 64
 bits after integer promotion.
