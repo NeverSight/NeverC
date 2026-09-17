@@ -1251,6 +1251,118 @@ class FunctionLowering {
       assign(Right, std::move(OldLeft), L);
       return {};
     }
+    case UtilityOperation::NumericIota: {
+      auto Current = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto Value = snapshot(expression(Call->getArg(2)), L);
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto ValueType = type(Call->getArg(2)->getType(), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto Check = labelName(), Store = labelName(), End = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", Current, Last, "bool", L), Store, End, L);
+      label(Store, L);
+      assign(dereference(Current, L), Value, L);
+      assign(
+          Current,
+          binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      assign(Value, binary("+", Value, one(ValueType, L), ValueType, L), L);
+      jump(Check, L);
+      label(End, L);
+      return {};
+    }
+    case UtilityOperation::NumericAccumulate:
+    case UtilityOperation::NumericInnerProduct: {
+      const bool Inner = Operation == UtilityOperation::NumericInnerProduct;
+      auto First = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      std::optional<Expression> Second;
+      if (Inner)
+        Second = snapshot(expression(Call->getArg(2)), L);
+      const unsigned InitialIndex = Inner ? 3 : 2;
+      auto Result = snapshot(expression(Call->getArg(InitialIndex)), L);
+      const auto FirstType = type(Call->getArg(0)->getType(), L);
+      const auto SecondType =
+          Inner ? type(Call->getArg(2)->getType(), L) : std::string();
+      const auto ResultType = type(Call->getArg(InitialIndex)->getType(), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto Check = labelName(), Add = labelName(), End = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", First, Last, "bool", L), Add, End, L);
+      label(Add, L);
+      auto Term = dereference(First, L);
+      if (Second)
+        Term = binary("*", std::move(Term), dereference(*Second, L), ResultType,
+                      L);
+      assign(Result, binary("+", Result, std::move(Term), ResultType, L), L);
+      assign(First,
+             binary("+", First, quantity(1, DifferenceType, L), FirstType, L),
+             L);
+      if (Second)
+        assign(
+            *Second,
+            binary("+", *Second, quantity(1, DifferenceType, L), SecondType, L),
+            L);
+      jump(Check, L);
+      label(End, L);
+      return Result;
+    }
+    case UtilityOperation::NumericPartialSum:
+    case UtilityOperation::NumericAdjacentDifference: {
+      const bool Adjacent =
+          Operation == UtilityOperation::NumericAdjacentDifference;
+      auto First = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto Output = snapshot(expression(Call->getArg(2)), L);
+      const auto FirstType = type(Call->getArg(0)->getType(), L);
+      const auto OutputType = type(Call->getArg(2)->getType(), L);
+      const auto ElementType =
+          type(Call->getArg(2)->getType()->getPointeeType(), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      auto Previous = temporary(ElementType, L);
+      auto CurrentValue = temporary(ElementType, L);
+      const auto CheckFirst = labelName(), StoreFirst = labelName();
+      const auto CheckNext = labelName(), StoreNext = labelName();
+      const auto End = labelName();
+      jump(CheckFirst, L);
+      label(CheckFirst, L);
+      branch(binary("!=", First, Last, "bool", L), StoreFirst, End, L);
+      label(StoreFirst, L);
+      assign(Previous, dereference(First, L), L);
+      assign(dereference(Output, L), Previous, L);
+      assign(First,
+             binary("+", First, quantity(1, DifferenceType, L), FirstType, L),
+             L);
+      assign(Output,
+             binary("+", Output, quantity(1, DifferenceType, L), OutputType, L),
+             L);
+      jump(CheckNext, L);
+      label(CheckNext, L);
+      branch(binary("!=", First, Last, "bool", L), StoreNext, End, L);
+      label(StoreNext, L);
+      assign(CurrentValue, dereference(First, L), L);
+      if (Adjacent) {
+        assign(dereference(Output, L),
+               binary("-", CurrentValue, Previous, ElementType, L), L);
+        assign(Previous, CurrentValue, L);
+      } else {
+        assign(Previous, binary("+", Previous, CurrentValue, ElementType, L),
+               L);
+        assign(dereference(Output, L), Previous, L);
+      }
+      assign(First,
+             binary("+", First, quantity(1, DifferenceType, L), FirstType, L),
+             L);
+      assign(Output,
+             binary("+", Output, quantity(1, DifferenceType, L), OutputType, L),
+             L);
+      jump(CheckNext, L);
+      label(End, L);
+      return Output;
+    }
     case UtilityOperation::AlgorithmFind: {
       // Function arguments are all bound before the algorithm body. Choose
       // the permitted left-to-right C++17 order, retaining the value referent

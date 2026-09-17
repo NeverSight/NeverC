@@ -514,32 +514,32 @@ extern "C" int tuple_all(int *pointer) {
   return result;
 }
 """
-    tuple = check("v2-tuple", tuple_source,
-                  profile="cpp-core-v2", sdk=True)
-    assert len(tuple["sdk_dependencies"]) == 98, tuple
+    tuple_module = check("v2-tuple", tuple_source,
+                         profile="cpp-core-v2", sdk=True)
+    assert len(tuple_module["sdk_dependencies"]) == 98, tuple_module
     assert any(dependency["root"] == "libcxx" and
                dependency["path"] == "tuple"
-               for dependency in tuple["sdk_dependencies"]), tuple
+               for dependency in tuple_module["sdk_dependencies"]), tuple_module
     assert sorted([field["type"] for field in record["fields"]]
-                  for record in tuple["records"]) == [
+                  for record in tuple_module["records"]) == [
                       [],
                       ["i16", "float"],
                       ["int", "double"],
                       ["int", "double", "ptr:int"],
                       ["int", "int", "int"],
-                  ], tuple["records"]
-    empty_tuple = next(record for record in tuple["records"]
+                  ], tuple_module["records"]
+    empty_tuple = next(record for record in tuple_module["records"]
                        if not record["fields"])
     assert empty_tuple["layout"] == {
         "size_bits": 8,
         "abi_align_bits": 8,
         "field_offsets_bits": [],
     }, empty_tuple
-    exports = {function["name"]: function for function in tuple["functions"]
+    exports = {function["name"]: function for function in tuple_module["functions"]
                if function["c_export"]}
     assert set(exports) == {"tuple_all"}, exports
-    assert not [node for node in walk(tuple["functions"])
-                if node.get("op") in ("call", "mapped_call")], tuple
+    assert not [node for node in walk(tuple_module["functions"])
+                if node.get("op") in ("call", "mapped_call")], tuple_module
     for target in sdk_targets:
         check("v2-tuple-" + target, tuple_source,
               profile="cpp-core-v2", target=target, sdk=True)
@@ -1358,9 +1358,46 @@ extern "C" int numeric_header() { return 0; }
     check("v2-numeric-quoted",
           '#include "numeric"\nint main(){return 0;}', "TR0201",
           profile="cpp-core-v2", sdk=True)
-    check("v2-numeric-runtime-operation",
-          '#include <numeric>\nint main(){int a[2]{};std::iota(a,a+2,1);return a[1];}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
+    numeric_sequential_source = """\
+#include <numeric>
+extern "C" int numeric_sequential() {
+  int values[4]{};
+  int sums[4]{};
+  int differences[4]{};
+  int weights[4]{4, 3, 2, 1};
+  std::iota(values, values + 4, 1);
+  int total = std::accumulate(values, values + 4, 0);
+  int product = std::inner_product(values, values + 4, weights, 0);
+  int *sum_end = std::partial_sum(values, values + 4, sums);
+  int *difference_end = std::adjacent_difference(
+      values, values + 4, differences);
+  return total + product + (sum_end - sums) +
+      (difference_end - differences) + sums[3] + differences[3];
+}
+"""
+    numeric_sequential = check("v2-numeric-sequential",
+                               numeric_sequential_source,
+                               profile="cpp-core-v2", sdk=True)
+    assert numeric_sequential["functions"], numeric_sequential
+    for target in sdk_targets:
+        check("v2-numeric-sequential-" + target, numeric_sequential_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    for name, source in (
+        ("promoted-iota",
+         '#include <numeric>\nint main(){short a[2]{};std::iota(a,a+2,(short)1);return 0;}'),
+        ("heterogeneous-iota",
+         '#include <numeric>\nint main(){int a[2]{};std::iota(a,a+2,1L);return 0;}'),
+        ("heterogeneous-accumulate",
+         '#include <numeric>\nint main(){int a[2]{1,2};return std::accumulate(a,a+2,0L)==3?0:1;}'),
+        ("callback-accumulate",
+         '#include <numeric>\nint add(int a,int b){return a+b;}int main(){int a[2]{1,2};return std::accumulate(a,a+2,0,add);}'),
+        ("heterogeneous-partial-sum",
+         '#include <numeric>\nint main(){int a[2]{1,2};long b[2]{};return std::partial_sum(a,a+2,b)==b+2?0:1;}'),
+        ("heterogeneous-adjacent-difference",
+         '#include <numeric>\nint main(){int a[2]{1,2};long b[2]{};return std::adjacent_difference(a,a+2,b)==b+2?0:1;}'),
+    ):
+        check("v2-numeric-sequential-" + name, source, "TR0203",
+              profile="cpp-core-v2", sdk=True)
 
     algorithm_header_source = """\
 #include <algorithm>

@@ -387,9 +387,17 @@ Its 126-file libc++/resource dependency closure is identical on all eight
 supported targets and contains no platform headers. This revision retains the
 upstream public header and all C++17 numeric components byte for byte.
 
-Numeric algorithm calls remain outside the direct-lowering boundary. The
-frontend therefore rejects them before output instead of retaining a libc++
-runtime dependency. Quoted includes, shadows, function addresses and forged
+The default `iota`, `accumulate`, `inner_product`, `partial_sum` and
+`adjacent_difference` overloads lower to direct pointer loops. Input and output
+ranges use the same unqualified element type, and each initial or generated
+value has that exact type. Admitted elements are non-promoted built-in integers
+through 64 bits, `float` or `double`; output pointers are writable.
+`partial_sum` and `adjacent_difference` preserve empty-range and in-place
+behavior. Every argument is captured once before the loop.
+
+Custom binary operations, heterogeneous types, promotable integers, enums,
+records, custom iterators and the other numeric algorithms remain outside the
+runtime boundary. Quoted includes, shadows, function addresses and forged
 declarations remain rejected.
 
 ## Algorithm header from `<algorithm>`

@@ -66,8 +66,8 @@ and [`<tuple>`](../docs/cpp-core-v2.md#value-tuples-from-tuple) and
 [`<algorithm>`](../docs/cpp-core-v2.md#algorithm-header-from-algorithm) pointer
 algorithm surface. The exact
 [`<numeric>`](../docs/cpp-core-v2.md#numeric-header-from-numeric) header is also
-authenticated while its operations are brought into the direct-lowering
-boundary. The
+authenticated and its first sequential scalar-pointer operations lower
+directly. The
 frontend uses the pinned embedded libc++/resource VFS and exposes resolved type
 aliases plus integral/enum constant results. It records all consumed header
 hashes: 101 for the `<type_traits>` closure, nine for standalone `<cstdint>`,
@@ -154,8 +154,10 @@ const references. `shuffle` and `sample` remain disabled at this stage because
 their libc++ implementation reaches the same target C runtime character-state
 ABI through `uniform_int_distribution`.
 Numeric contributes an exact, platform-free 126-file C++17 header closure.
-Calls from that header remain rejected until their scalar-pointer lowerings are
-implemented.
+Matching non-promoted integer, `float` and `double` pointer ranges admit the
+default `iota`, `accumulate`, `inner_product`, `partial_sum` and
+`adjacent_difference` overloads. Output ranges must be writable; custom
+operations, heterogeneous element types and custom iterators remain rejected.
 The driver authenticates each closure before
 emitting output. Standard-library objects and operations beyond these documented
 surfaces, other standard headers and full C++/STL remain unfinished.

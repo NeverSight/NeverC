@@ -119,9 +119,11 @@ enum counts after the libc++ integer promotion.
 `shuffle` and `sample` stay disabled until the same authenticated cross-target
 `mbstate_t` boundary is available through their random-distribution dependency.
 The `<numeric>` surface has a 126-file libc++/resource closure on every
-core-v2 target. This revision authenticates the exact public header and its
-C++17 components without platform headers. Numeric algorithm calls remain
-rejected until their direct scalar-pointer lowerings are admitted.
+core-v2 target. The exact default `iota`, `accumulate`, `inner_product`,
+`partial_sum` and `adjacent_difference` overloads lower directly for matching
+scalar arithmetic pointer ranges without platform headers or a libc++ runtime.
+The remaining C++17 numeric components stay outside the admitted runtime
+boundary.
 Core v2 never admits the `platform` root.
 Math v1 continues to use its separately checked libc++, resource and Darwin
 platform closure for `<cmath>`.

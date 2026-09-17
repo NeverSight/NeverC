@@ -24326,6 +24326,127 @@ int main() { return 0; }
   expectNoArtifacts(QuotedOutput);
 }
 
+TEST_F(TranslateTest,
+       CoreV2NumericSequentialPointerOperationsRunAtBothOptimizations) {
+  const auto Source = tmpFile("numeric-sequential.cpp");
+  const auto Output = tmpFile("numeric-sequential.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+int main() {
+  int effects = 0;
+  int sequence[5]{};
+  std::iota((++effects, sequence), (++effects, sequence + 5),
+            (++effects, -2));
+  if (effects != 3 || sequence[0] != -2 || sequence[4] != 2)
+    return 1;
+
+  const int values[4]{1, 3, 6, 10};
+  int total = std::accumulate((++effects, values),
+                              (++effects, values + 4), (++effects, 5));
+  if (effects != 6 || total != 25 ||
+      std::accumulate(values, values, 7) != 7)
+    return 2;
+
+  const int weights[4]{4, 3, 2, 1};
+  int product = std::inner_product((++effects, values),
+                                   (++effects, values + 4),
+                                   (++effects, weights), (++effects, 2));
+  if (effects != 10 || product != 37 ||
+      std::inner_product(values, values, weights, 9) != 9)
+    return 3;
+
+  int sums[4]{};
+  int *sum_end = std::partial_sum((++effects, values),
+                                  (++effects, values + 4),
+                                  (++effects, sums));
+  if (effects != 13 || sum_end != sums + 4 || sums[0] != 1 ||
+      sums[1] != 4 || sums[2] != 10 || sums[3] != 20 ||
+      std::partial_sum(values, values, sums) != sums)
+    return 4;
+
+  int differences[4]{};
+  int *difference_end = std::adjacent_difference(
+      (++effects, values), (++effects, values + 4), (++effects, differences));
+  if (effects != 16 || difference_end != differences + 4 ||
+      differences[0] != 1 || differences[1] != 2 || differences[2] != 3 ||
+      differences[3] != 4 ||
+      std::adjacent_difference(values, values, differences) != differences)
+    return 5;
+
+  int in_place[4]{1, 2, 3, 4};
+  if (std::partial_sum(in_place, in_place + 4, in_place) != in_place + 4 ||
+      in_place[0] != 1 || in_place[1] != 3 || in_place[2] != 6 ||
+      in_place[3] != 10)
+    return 6;
+  if (std::adjacent_difference(in_place, in_place + 4, in_place) !=
+          in_place + 4 ||
+      in_place[0] != 1 || in_place[1] != 2 || in_place[2] != 3 ||
+      in_place[3] != 4)
+    return 7;
+
+  double decimals[3]{};
+  std::iota(decimals, decimals + 3, 0.5);
+  if (decimals[0] != 0.5 || decimals[1] != 1.5 || decimals[2] != 2.5 ||
+      std::accumulate(decimals, decimals + 3, 0.0) != 4.5)
+    return 8;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("numeric-sequential" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NumericSequentialRequiresExactScalarForms) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+  };
+  const Rejection Cases[] = {
+      {"promoted-iota", "#include <numeric>\nint main(){short a[2]{};"
+                        "std::iota(a,a+2,(short)1);return 0;}"},
+      {"heterogeneous-iota", "#include <numeric>\nint main(){int a[2]{};"
+                             "std::iota(a,a+2,1L);return 0;}"},
+      {"heterogeneous-accumulate",
+       "#include <numeric>\nint main(){int a[2]{1,2};"
+       "return std::accumulate(a,a+2,0L)==3?0:1;}"},
+      {"callback-accumulate",
+       "#include <numeric>\nint add(int a,int b){return a+b;}"
+       "int main(){int a[2]{1,2};return std::accumulate(a,a+2,0,add);}"},
+      {"callback-inner-product",
+       "#include <numeric>\nint add(int a,int b){return a+b;}"
+       "int mul(int a,int b){return a*b;}"
+       "int main(){int a[2]{1,2};return "
+       "std::inner_product(a,a+2,a,0,add,mul);}"},
+      {"heterogeneous-partial-sum",
+       "#include <numeric>\nint main(){int a[2]{1,2};long b[2]{};"
+       "return std::partial_sum(a,a+2,b)==b+2?0:1;}"},
+      {"heterogeneous-adjacent-difference",
+       "#include <numeric>\nint main(){int a[2]{1,2};long b[2]{};"
+       "return std::adjacent_difference(a,a+2,b)==b+2?0:1;}"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("numeric-sequential-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("numeric-sequential-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmHeaderUsesPlatformFreeClosure) {
   const auto Source = tmpFile("algorithm-header.cpp");
   const auto Output = tmpFile("algorithm-header.nc");
