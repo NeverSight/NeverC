@@ -1386,6 +1386,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       (Origin->Path == "__algorithm/is_permutation.h" &&
        Name == "is_permutation") ||
       (Origin->Path == "__algorithm/equal_range.h" && Name == "equal_range") ||
+      (Origin->Path == "__algorithm/minmax_element.h" &&
+       Name == "minmax_element") ||
       (Origin->Path == "__algorithm/set_union.h" && Name == "set_union") ||
       (Origin->Path == "__algorithm/set_symmetric_difference.h" &&
        Name == "set_symmetric_difference");
@@ -1473,16 +1475,23 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return !Count.isNull() && Count->isIntegerType() &&
            Context.getTypeSize(Count) <= 64;
   };
-  auto AlgorithmOrderedReferenceParameter = [&](unsigned Index) {
+  auto AlgorithmReferenceParameter = [&](unsigned Index) {
     if (Index >= Function->getNumParams() || Index >= Call->getNumArgs())
       return false;
     auto Parameter = Function->getParamDecl(Index)->getType();
     if (!Parameter->isLValueReferenceType() ||
         !Parameter->getPointeeType().isConstQualified() ||
         Parameter->getPointeeType().isVolatileQualified() ||
+        !utilityScalar(Context, Parameter->getPointeeType()) ||
         !Context.hasSameUnqualifiedType(Call->getArg(Index)->getType(),
                                         Parameter->getPointeeType()))
       return false;
+    return true;
+  };
+  auto AlgorithmOrderedReferenceParameter = [&](unsigned Index) {
+    if (!AlgorithmReferenceParameter(Index))
+      return false;
+    auto Parameter = Function->getParamDecl(Index)->getType();
     auto Element = Parameter->getPointeeType().getUnqualifiedType();
     return (!Element->isEnumeralType() && Element->isIntegerType() &&
             Context.getTypeSize(Element) <= 64) ||
@@ -1578,6 +1587,23 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Context.hasSameUnqualifiedType(RightParameter,
                                           Value->getPointeeType());
   };
+  auto AlgorithmBinaryPredicateReferenceParameter =
+      [&](unsigned PredicateIndex, unsigned ReferenceIndex) {
+        if (!AlgorithmReferenceParameter(ReferenceIndex))
+          return false;
+        const auto *Prototype = AlgorithmCallbackPrototype(PredicateIndex);
+        if (!Prototype || Prototype->getNumParams() != 2 ||
+            !Prototype->getReturnType()->isBooleanType())
+          return false;
+        auto Reference =
+            Function->getParamDecl(ReferenceIndex)->getType()->getPointeeType();
+        auto LeftParameter = Prototype->getParamType(0);
+        auto RightParameter = Prototype->getParamType(1);
+        return utilityScalar(Context, LeftParameter) &&
+               utilityScalar(Context, RightParameter) &&
+               Context.hasSameUnqualifiedType(LeftParameter, Reference) &&
+               Context.hasSameUnqualifiedType(RightParameter, Reference);
+      };
   if ((Origin->Path == "__algorithm/find.h" ||
        Origin->Path == "__algorithm/count.h") &&
       (Name == "find" || Name == "count") && Call->getNumArgs() == 3 &&
@@ -2086,36 +2112,45 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   }
   if (((Origin->Path == "__algorithm/min.h" && Name == "min") ||
        (Origin->Path == "__algorithm/max.h" && Name == "max")) &&
-      Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
-      Call->isLValue() && AlgorithmOrderedReferenceParameter(0) &&
-      AlgorithmOrderedReferenceParameter(1) &&
+      (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
+      Function->getNumParams() == Call->getNumArgs() && Call->isLValue() &&
+      AlgorithmReferenceParameter(0) && AlgorithmReferenceParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Function->getReturnType()->isLValueReferenceType() &&
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
-      Same(Call->getType(), Function->getReturnType()->getPointeeType()))
+      Same(Call->getType(), Function->getReturnType()->getPointeeType()) &&
+      ((Call->getNumArgs() == 2 && AlgorithmOrderedReferenceParameter(0)) ||
+       (Call->getNumArgs() == 3 &&
+        AlgorithmBinaryPredicateReferenceParameter(2, 0))))
     return Name == "min" ? UtilityOperation::AlgorithmMin
                          : UtilityOperation::AlgorithmMax;
   if (Origin->Path == "__algorithm/clamp.h" && Name == "clamp" &&
-      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
-      Call->isLValue() && AlgorithmOrderedReferenceParameter(0) &&
-      AlgorithmOrderedReferenceParameter(1) &&
-      AlgorithmOrderedReferenceParameter(2) &&
+      (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
+      Function->getNumParams() == Call->getNumArgs() && Call->isLValue() &&
+      AlgorithmReferenceParameter(0) && AlgorithmReferenceParameter(1) &&
+      AlgorithmReferenceParameter(2) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(2)->getType()) &&
       Function->getReturnType()->isLValueReferenceType() &&
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
-      Same(Call->getType(), Function->getReturnType()->getPointeeType()))
+      Same(Call->getType(), Function->getReturnType()->getPointeeType()) &&
+      ((Call->getNumArgs() == 3 && AlgorithmOrderedReferenceParameter(0)) ||
+       (Call->getNumArgs() == 4 &&
+        AlgorithmBinaryPredicateReferenceParameter(3, 0))))
     return UtilityOperation::AlgorithmClamp;
   if (Origin->Path == "__algorithm/minmax.h" && Name == "minmax" &&
-      Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
-      Call->isPRValue() && AlgorithmOrderedReferenceParameter(0) &&
-      AlgorithmOrderedReferenceParameter(1) &&
+      (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
+      Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
+      AlgorithmReferenceParameter(0) && AlgorithmReferenceParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      Same(Call->getType(), Function->getReturnType())) {
+      Same(Call->getType(), Function->getReturnType()) &&
+      ((Call->getNumArgs() == 2 && AlgorithmOrderedReferenceParameter(0)) ||
+       (Call->getNumArgs() == 3 &&
+        AlgorithmBinaryPredicateReferenceParameter(2, 0)))) {
     auto Pair = approvedUtilityReferencePairRecord(
         S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);
     if (Pair &&
@@ -2124,12 +2159,16 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return UtilityOperation::AlgorithmMinmax;
   }
   if (Origin->Path == "__algorithm/minmax_element.h" &&
-      Name == "minmax_element" && Call->getNumArgs() == 2 &&
-      Function->getNumParams() == 2 && Call->isPRValue() &&
-      AlgorithmOrderedPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      Name == "minmax_element" &&
+      (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
+      Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      Same(Call->getType(), Function->getReturnType())) {
+      Same(Call->getType(), Function->getReturnType()) &&
+      ((Call->getNumArgs() == 2 && AlgorithmOrderedPointerParameter(0)) ||
+       (Call->getNumArgs() == 3 &&
+        AlgorithmBinaryPredicateParameter(2, 0, 0)))) {
     auto Pair = approvedUtilityPairRecord(
         S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);
     if (Pair &&

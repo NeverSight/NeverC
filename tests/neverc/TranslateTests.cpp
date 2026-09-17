@@ -25152,10 +25152,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmExtremaRequirePinnedScalarForms) {
       {"pointer-max",
        "#include <algorithm>\nint main(){int a[2]{};int*p=a;int*q=a+1;"
        "return std::max(p,q)==q?0:1;}"},
-      {"comparator-clamp",
-       "#include <algorithm>\nbool less(int a,int b){return a<b;}"
-       "int main(){int n=2,lo=1,hi=3;return "
-       "std::clamp(n,lo,hi,&less)==n?0:1;}"},
       {"record-minmax-element",
        "#include <algorithm>\nstruct R{int n;};"
        "bool operator<(const R&a,const R&b){return a.n<b.n;}"
@@ -25172,6 +25168,173 @@ TEST_F(TranslateTest, CoreV2AlgorithmExtremaRequirePinnedScalarForms) {
         tmpFile(std::string("algorithm-extrema-") + Case.Name + ".cpp");
     const auto Output =
         tmpFile(std::string("algorithm-extrema-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmComparatorExtremaRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-comparator-extrema.cpp");
+  const auto Output = tmpFile("algorithm-comparator-extrema.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int calls;
+bool less_absolute(int left, int right) {
+  ++calls;
+  int left_absolute = left < 0 ? -left : left;
+  int right_absolute = right < 0 ? -right : right;
+  return left_absolute < right_absolute;
+}
+enum Rank : unsigned char { low, medium, high };
+bool rank_less(Rank left, Rank right) {
+  ++calls;
+  return left < right;
+}
+int main() {
+  int left = 4;
+  int right = -2;
+  bool (*comparator)(int, int) = less_absolute;
+  int effects = 0;
+  calls = 0;
+  const int &minimum = std::min((++effects, left), (++effects, right),
+                                (++effects, comparator));
+  if (effects != 3 || calls != 1 || &minimum != &right)
+    return 1;
+  calls = 0;
+  const int &maximum = std::max(left, right, less_absolute);
+  if (calls != 1 || &maximum != &left)
+    return 2;
+  int same = -4;
+  calls = 0;
+  if (&std::min(left, same, less_absolute) != &left ||
+      &std::max(left, same, less_absolute) != &left || calls != 2)
+    return 3;
+
+  int low_bound = -3;
+  int high_bound = 6;
+  int below = 2;
+  int inside = -4;
+  int above = -8;
+  effects = 0;
+  calls = 0;
+  if (&std::clamp((++effects, below), (++effects, low_bound),
+                  (++effects, high_bound), (++effects, comparator)) !=
+          &low_bound ||
+      effects != 4 || calls != 1)
+    return 4;
+  calls = 0;
+  if (&std::clamp(inside, low_bound, high_bound, less_absolute) != &inside ||
+      calls != 2)
+    return 5;
+  calls = 0;
+  if (&std::clamp(above, low_bound, high_bound, less_absolute) != &high_bound ||
+      calls != 2)
+    return 6;
+
+  calls = 0;
+  auto extrema = std::minmax(left, right, less_absolute);
+  if (calls != 1 || &extrema.first != &right || &extrema.second != &left)
+    return 7;
+  calls = 0;
+  auto equal_extrema = std::minmax(left, same, less_absolute);
+  if (calls != 1 || &equal_extrema.first != &left ||
+      &equal_extrema.second != &same)
+    return 8;
+
+  const int values[7]{3, -1, 5, 5, -1, 5, 2};
+  calls = 0;
+  auto positions = std::minmax_element(values, values + 7, less_absolute);
+  if (calls != 9 || positions.first != values + 1 ||
+      positions.second != values + 5)
+    return 9;
+  calls = 0;
+  auto empty = std::minmax_element(values, values, less_absolute);
+  auto one = std::minmax_element(values, values + 1, less_absolute);
+  if (calls != 0 || empty.first != values || empty.second != values ||
+      one.first != values || one.second != values)
+    return 10;
+
+  Rank first = high;
+  Rank second = low;
+  calls = 0;
+  if (&std::min(first, second, rank_less) != &second ||
+      &std::max(first, second, rank_less) != &first || calls != 2)
+    return 11;
+  const Rank ranks[4]{medium, high, low, high};
+  calls = 0;
+  auto rank_extrema = std::minmax_element(ranks, ranks + 4, rank_less);
+  if (calls != 4 || rank_extrema.first != ranks + 2 ||
+      rank_extrema.second != ranks + 3)
+    return 12;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Dependencies =
+      Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 354u);
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+  }
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("algorithm-comparator-extrema" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmComparatorExtremaRequireExactFunctions) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code = "TR0203";
+  };
+  const Rejection Cases[] = {
+      {"reference-parameter",
+       "bool p(const int&a,int b){return a<b;}\n#include <algorithm>\n"
+       "int main(){int a=1,b=2;return std::min(a,b,p)==a?0:1;}"},
+      {"non-bool-result",
+       "int p(int a,int b){return a<b;}\n#include <algorithm>\n"
+       "int main(){int a=1,b=2;return std::max(a,b,p)==b?0:1;}"},
+      {"converted-parameter",
+       "bool p(long a,long b){return a<b;}\n#include <algorithm>\n"
+       "int main(){int a=1,b=2;return std::minmax(a,b,p).first==a?0:1;}"},
+      {"function-object",
+       "struct P{bool operator()(int a,int b)const{return a<b;}};\n"
+       "#include <algorithm>\nint main(){int n=2,lo=1,hi=3;return "
+       "std::clamp(n,lo,hi,P{})==n?0:1;}"},
+      {"record-elements",
+       "struct R{int n;};bool p(R a,R b){return a.n<b.n;}\n"
+       "#include <algorithm>\nint main(){R a[2]{{1},{2}};return "
+       "std::minmax_element(a,a+2,p).first==a?0:1;}"},
+      {"variadic-comparator",
+       "bool p(int a,int b,...){return a<b;}\n#include <algorithm>\n"
+       "int main(){int a=1,b=2;return std::min(a,b,p)==a?0:1;}",
+       "TR0201"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("algorithm-comparator-extrema-") +
+                                Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("algorithm-comparator-extrema-") +
+                                Case.Name + ".nc");
     writeFile(Source, Case.Source);
     expectCode(
         translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),

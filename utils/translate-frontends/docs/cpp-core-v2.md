@@ -373,6 +373,17 @@ the two argument referents on every pointer width. `minmax_element` returns an
 authenticated pointer pair, selects the first minimum and last maximum, and
 uses pairwise comparisons after its initial elements.
 
+The corresponding three-argument `std::min`, `std::max` and `std::minmax`,
+four-argument `std::clamp`, and three-argument `std::minmax_element` overloads
+use the exact comparator boundary above. Scalar reference algorithms retain
+the selected argument identity; equivalent inputs select the first argument for
+`min` and `max`, while `minmax` keeps the first argument as its minimum and the
+second as its maximum. Comparator `minmax_element` retains the first equivalent
+minimum and last equivalent maximum, uses the same pairwise comparison bound,
+and performs no calls for empty or single-element ranges. Enum and object
+pointer values are admitted, while records and inexact callbacks remain
+rejected.
+
 The exact two-iterator `std::is_heap`, `std::is_heap_until`, `std::make_heap`,
 `std::push_heap`, `std::pop_heap` and `std::sort_heap` templates use the same
 built-in arithmetic ordering boundary. Heap queries accept const or writable

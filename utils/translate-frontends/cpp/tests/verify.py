@@ -1040,12 +1040,52 @@ extern "C" int algorithm_extrema(const int *first, const int *last,
     check("v2-algorithm-extrema-enum",
           '#include <algorithm>\nenum E{low,high};int main(){E a=low,b=high;return std::min(a,b)==a?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
-    check("v2-algorithm-extrema-comparator",
-          '#include <algorithm>\nbool less(int a,int b){return a<b;}int main(){int n=2,lo=1,hi=3;return std::clamp(n,lo,hi,&less)==n?0:1;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-algorithm-extrema-manual-reference-pair",
           '#include <utility>\nint main(){int a=1,b=2;std::pair<const int&,const int&> value(a,b);return value.first;}',
           "TR0201", profile="cpp-core-v2", sdk=True)
+
+    algorithm_comparator_extrema_source = """\
+#include <algorithm>
+extern "C" long long algorithm_comparator_extrema(
+    const int *first, const int *last, const int &left, const int &right,
+    const int &low, const int &high, bool (*comparator)(int, int)) {
+  const int &minimum = std::min(left, right, comparator);
+  const int &maximum = std::max(left, right, comparator);
+  const int &bounded = std::clamp(left, low, high, comparator);
+  auto values = std::minmax(left, right, comparator);
+  auto positions = std::minmax_element(first, last, comparator);
+  return minimum + maximum + bounded + values.first + values.second +
+         static_cast<long long>((positions.first - first) +
+                                (positions.second - first));
+}
+"""
+
+    def assert_comparator_extrema(data):
+        assert len(data["sdk_dependencies"]) == 354, data
+        nodes = list(walk(data["functions"]))
+        assert not [node for node in nodes
+                    if node.get("op") in ("call", "mapped_call")], data
+        assert sum(node.get("op") == "indirect_call"
+                   for node in nodes) == 11, data
+
+    algorithm_comparator_extrema = check(
+        "v2-algorithm-comparator-extrema", algorithm_comparator_extrema_source,
+        profile="cpp-core-v2", sdk=True)
+    assert_comparator_extrema(algorithm_comparator_extrema)
+    for target in sdk_targets:
+        target_result = check("v2-algorithm-comparator-extrema-" + target,
+                              algorithm_comparator_extrema_source,
+                              profile="cpp-core-v2", target=target, sdk=True)
+        assert_comparator_extrema(target_result)
+    check("v2-algorithm-comparator-extrema-reference",
+          'bool p(const int&a,int b){return a<b;}\n#include <algorithm>\nint main(){int a=1,b=2;return std::min(a,b,p)==a?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-comparator-extrema-conversion",
+          'bool p(long a,long b){return a<b;}\n#include <algorithm>\nint main(){int a=1,b=2;return std::minmax(a,b,p).first==a?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-comparator-extrema-record",
+          'struct R{int n;};bool p(R a,R b){return a.n<b.n;}\n#include <algorithm>\nint main(){R a[2]{{1},{2}};return std::minmax_element(a,a+2,p).first==a?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
 
     algorithm_heap_source = """\
 #include <algorithm>

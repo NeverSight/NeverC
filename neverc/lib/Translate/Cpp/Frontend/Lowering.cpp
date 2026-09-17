@@ -2282,13 +2282,24 @@ class FunctionLowering {
           snapshot(bind(Call->getArg(1),
                         Call->getDirectCallee()->getParamDecl(1)->getType()),
                    L);
+      std::optional<Expression> Comparator;
+      if (Call->getNumArgs() == 3)
+        Comparator = snapshot(expression(Call->getArg(2)), L);
       auto Result = temporary(*LeftAddress.getString("type"), L);
       const auto SelectLeft = labelName(), SelectRight = labelName();
       const auto End = labelName();
-      branch(Minimum ? binary("<", dereference(RightAddress, L),
-                              dereference(LeftAddress, L), "bool", L)
-                     : binary("<", dereference(LeftAddress, L),
-                              dereference(RightAddress, L), "bool", L),
+      branch(Comparator
+                 ? emitBinaryPredicate(
+                       json::Object(*Comparator), Call->getArg(2)->getType(),
+                       Minimum ? dereference(json::Object(RightAddress), L)
+                               : dereference(json::Object(LeftAddress), L),
+                       Minimum ? dereference(json::Object(LeftAddress), L)
+                               : dereference(json::Object(RightAddress), L),
+                       L)
+             : Minimum ? binary("<", dereference(RightAddress, L),
+                                dereference(LeftAddress, L), "bool", L)
+                       : binary("<", dereference(LeftAddress, L),
+                                dereference(RightAddress, L), "bool", L),
              SelectRight, SelectLeft, L);
       label(SelectLeft, L);
       assign(Result, LeftAddress, L);
@@ -2312,16 +2323,29 @@ class FunctionLowering {
           snapshot(bind(Call->getArg(2),
                         Call->getDirectCallee()->getParamDecl(2)->getType()),
                    L);
+      std::optional<Expression> Comparator;
+      if (Call->getNumArgs() == 4)
+        Comparator = snapshot(expression(Call->getArg(3)), L);
       auto Result = temporary(*ValueAddress.getString("type"), L);
       const auto CheckHigh = labelName(), SelectValue = labelName();
       const auto SelectLow = labelName(), SelectHigh = labelName();
       const auto End = labelName();
-      branch(binary("<", dereference(ValueAddress, L),
-                    dereference(LowAddress, L), "bool", L),
+      branch(Comparator
+                 ? emitBinaryPredicate(
+                       json::Object(*Comparator), Call->getArg(3)->getType(),
+                       dereference(json::Object(ValueAddress), L),
+                       dereference(json::Object(LowAddress), L), L)
+                 : binary("<", dereference(ValueAddress, L),
+                          dereference(LowAddress, L), "bool", L),
              SelectLow, CheckHigh, L);
       label(CheckHigh, L);
-      branch(binary("<", dereference(HighAddress, L),
-                    dereference(ValueAddress, L), "bool", L),
+      branch(Comparator
+                 ? emitBinaryPredicate(
+                       json::Object(*Comparator), Call->getArg(3)->getType(),
+                       dereference(json::Object(HighAddress), L),
+                       dereference(json::Object(ValueAddress), L), L)
+                 : binary("<", dereference(HighAddress, L),
+                          dereference(ValueAddress, L), "bool", L),
              SelectHigh, SelectValue, L);
       label(SelectValue, L);
       assign(Result, ValueAddress, L);
@@ -2341,6 +2365,9 @@ class FunctionLowering {
           bind(Call->getArg(0), Function->getParamDecl(0)->getType()), L);
       auto RightAddress = snapshot(
           bind(Call->getArg(1), Function->getParamDecl(1)->getType()), L);
+      std::optional<Expression> Comparator;
+      if (Call->getNumArgs() == 3)
+        Comparator = snapshot(expression(Call->getArg(2)), L);
       auto Pair = approvedUtilityReferencePairRecord(
           A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
       if (!Pair)
@@ -2353,8 +2380,13 @@ class FunctionLowering {
                "The std::minmax destination type differs from its result.");
       const auto Forward = labelName(), Reverse = labelName(),
                  End = labelName();
-      branch(binary("<", dereference(RightAddress, L),
-                    dereference(LeftAddress, L), "bool", L),
+      branch(Comparator
+                 ? emitBinaryPredicate(
+                       json::Object(*Comparator), Call->getArg(2)->getType(),
+                       dereference(json::Object(RightAddress), L),
+                       dereference(json::Object(LeftAddress), L), L)
+                 : binary("<", dereference(RightAddress, L),
+                          dereference(LeftAddress, L), "bool", L),
              Reverse, Forward, L);
       label(Forward, L);
       assign(fieldStorage(json::Object(Place), Pair->First, L), LeftAddress, L);
@@ -2373,6 +2405,16 @@ class FunctionLowering {
     case UtilityOperation::AlgorithmMinmaxElement: {
       auto First = snapshot(expression(Call->getArg(0)), L);
       auto Last = snapshot(expression(Call->getArg(1)), L);
+      std::optional<Expression> Comparator;
+      if (Call->getNumArgs() == 3)
+        Comparator = snapshot(expression(Call->getArg(2)), L);
+      auto Less = [&](Expression Left, Expression Right) {
+        if (Comparator)
+          return emitBinaryPredicate(json::Object(*Comparator),
+                                     Call->getArg(2)->getType(),
+                                     std::move(Left), std::move(Right), L);
+        return binary("<", std::move(Left), std::move(Right), "bool", L);
+      };
       auto Minimum = snapshot(json::Object(First), L);
       auto Maximum = snapshot(json::Object(First), L);
       auto Current = snapshot(json::Object(First), L);
@@ -2400,8 +2442,8 @@ class FunctionLowering {
              L);
       branch(binary("!=", Current, Last, "bool", L), CompareInitial, End, L);
       label(CompareInitial, L);
-      branch(binary("<", dereference(Current, L), dereference(First, L), "bool",
-                    L),
+      branch(Less(dereference(json::Object(Current), L),
+                  dereference(json::Object(First), L)),
              InitialSecondMinimum, InitialSecondMaximum, L);
       label(InitialSecondMinimum, L);
       assign(Minimum, Current, L);
@@ -2426,9 +2468,9 @@ class FunctionLowering {
           L);
       branch(binary("!=", Next, Last, "bool", L), ComparePair, Odd, L);
       label(ComparePair, L);
-      branch(
-          binary("<", dereference(Next, L), dereference(Current, L), "bool", L),
-          NextLower, CurrentLower, L);
+      branch(Less(dereference(json::Object(Next), L),
+                  dereference(json::Object(Current), L)),
+             NextLower, CurrentLower, L);
       label(NextLower, L);
       assign(Lower, Next, L);
       assign(Upper, Current, L);
@@ -2438,15 +2480,15 @@ class FunctionLowering {
       assign(Upper, Next, L);
       jump(UpdateMinimum, L);
       label(UpdateMinimum, L);
-      branch(binary("<", dereference(Lower, L), dereference(Minimum, L), "bool",
-                    L),
+      branch(Less(dereference(json::Object(Lower), L),
+                  dereference(json::Object(Minimum), L)),
              SelectMinimum, UpdateMaximum, L);
       label(SelectMinimum, L);
       assign(Minimum, Lower, L);
       jump(UpdateMaximum, L);
       label(UpdateMaximum, L);
-      branch(binary("<", dereference(Upper, L), dereference(Maximum, L), "bool",
-                    L),
+      branch(Less(dereference(json::Object(Upper), L),
+                  dereference(json::Object(Maximum), L)),
              AdvancePair, SelectMaximum, L);
       label(SelectMaximum, L);
       assign(Maximum, Upper, L);
@@ -2457,15 +2499,15 @@ class FunctionLowering {
              L);
       jump(CheckPair, L);
       label(Odd, L);
-      branch(binary("<", dereference(Current, L), dereference(Minimum, L),
-                    "bool", L),
+      branch(Less(dereference(json::Object(Current), L),
+                  dereference(json::Object(Minimum), L)),
              SelectOddMinimum, CheckOddMaximum, L);
       label(SelectOddMinimum, L);
       assign(Minimum, Current, L);
       jump(End, L);
       label(CheckOddMaximum, L);
-      branch(binary("<", dereference(Current, L), dereference(Maximum, L),
-                    "bool", L),
+      branch(Less(dereference(json::Object(Current), L),
+                  dereference(json::Object(Maximum), L)),
              End, SelectOddMaximum, L);
       label(SelectOddMaximum, L);
       assign(Maximum, Current, L);
