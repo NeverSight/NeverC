@@ -428,6 +428,15 @@ three-way `nth_element` partition still terminates directly on equivalent
 values. Inexact callbacks, record elements and heterogeneous output elements
 remain rejected.
 
+The exact `std::stable_sort` overloads use the same default arithmetic and
+function-pointer comparator boundaries on writable scalar ranges. An in-place
+bottom-up merge retains the relative order of equivalent elements without a
+heap or libc++ runtime dependency and performs `O(N log N)` comparisons. The
+iterators and optional callback are retained once; empty and single-element
+ranges make no callback calls. Comparator overloads additionally admit enum
+and object-pointer elements, while inexact callbacks, callable objects and
+record elements remain rejected.
+
 The exact default-order `std::next_permutation` and `std::prev_permutation`
 templates use the same writable built-in arithmetic pointer boundary. They
 find the rightmost movable pivot, exchange it with the rightmost qualifying

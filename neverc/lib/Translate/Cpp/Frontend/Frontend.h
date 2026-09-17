@@ -371,6 +371,7 @@ enum class UtilityOperation {
   AlgorithmPopHeap,
   AlgorithmSortHeap,
   AlgorithmSort,
+  AlgorithmStableSort,
   AlgorithmPartialSort,
   AlgorithmPartialSortCopy,
   AlgorithmNthElement,

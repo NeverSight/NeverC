@@ -1388,6 +1388,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       (Origin->Path == "__algorithm/equal_range.h" && Name == "equal_range") ||
       (Origin->Path == "__algorithm/minmax_element.h" &&
        Name == "minmax_element") ||
+      (Origin->Path == "__algorithm/stable_sort.h" && Name == "stable_sort") ||
       (Origin->Path == "__algorithm/set_union.h" && Name == "set_union") ||
       (Origin->Path == "__algorithm/set_symmetric_difference.h" &&
        Name == "set_symmetric_difference");
@@ -2244,6 +2245,19 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       ((Call->getNumArgs() == 2 && AlgorithmOrderedPointerParameter(0)) ||
        (Call->getNumArgs() == 3 && AlgorithmBinaryPredicateParameter(2, 0, 0))))
     return UtilityOperation::AlgorithmSort;
+  if (Origin->Path == "__algorithm/stable_sort.h" && Name == "stable_sort" &&
+      (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
+      Function->getNumParams() == Call->getNumArgs() &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      utilityAlgorithmWritableScalarPointer(
+          Context, Function->getParamDecl(0)->getType()) &&
+      Function->getReturnType()->isVoidType() &&
+      Same(Call->getType(), Function->getReturnType()) &&
+      ((Call->getNumArgs() == 2 && AlgorithmOrderedPointerParameter(0)) ||
+       (Call->getNumArgs() == 3 && AlgorithmBinaryPredicateParameter(2, 0, 0))))
+    return UtilityOperation::AlgorithmStableSort;
   if (Origin->Path == "__algorithm/partial_sort.h" && Name == "partial_sort" &&
       (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
       Function->getNumParams() == Call->getNumArgs() &&

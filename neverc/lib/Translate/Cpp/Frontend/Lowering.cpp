@@ -855,6 +855,70 @@ class FunctionLowering {
     label(Done, L);
   }
 
+  void stableMerge(Expression First, Expression Middle, Expression Last,
+                   llvm::StringRef PointerType, llvm::StringRef ElementType,
+                   llvm::StringRef DifferenceType, SourceLocation L,
+                   const std::optional<Expression> &Comparator = std::nullopt,
+                   QualType ComparatorType = {}) {
+    auto Left = snapshot(std::move(First), L);
+    auto Right = snapshot(std::move(Middle), L);
+    auto End = snapshot(std::move(Last), L);
+    auto Shift = temporary(PointerType, L);
+    auto Previous = temporary(PointerType, L);
+    auto Value = temporary(ElementType, L);
+    auto Less = [&](Expression LeftValue, Expression RightValue) {
+      if (Comparator)
+        return emitBinaryPredicate(json::Object(*Comparator), ComparatorType,
+                                   std::move(LeftValue), std::move(RightValue),
+                                   L);
+      return binary("<", std::move(LeftValue), std::move(RightValue), "bool",
+                    L);
+    };
+    const auto CheckLeft = labelName(), CheckRight = labelName();
+    const auto Compare = labelName(), AdvanceLeft = labelName();
+    const auto Save = labelName(), CheckShift = labelName();
+    const auto ShiftOne = labelName(), Place = labelName();
+    const auto Done = labelName();
+    jump(CheckLeft, L);
+    label(CheckLeft, L);
+    branch(binary("!=", Left, Right, "bool", L), CheckRight, Done, L);
+    label(CheckRight, L);
+    branch(binary("!=", Right, End, "bool", L), Compare, Done, L);
+    label(Compare, L);
+    branch(Less(dereference(json::Object(Right), L),
+                dereference(json::Object(Left), L)),
+           Save, AdvanceLeft, L);
+    label(AdvanceLeft, L);
+    assign(Left,
+           binary("+", Left, quantity(1, DifferenceType, L), PointerType, L),
+           L);
+    jump(CheckLeft, L);
+    label(Save, L);
+    assign(Value, dereference(json::Object(Right), L), L);
+    assign(Shift, Right, L);
+    jump(CheckShift, L);
+    label(CheckShift, L);
+    branch(binary("!=", Shift, Left, "bool", L), ShiftOne, Place, L);
+    label(ShiftOne, L);
+    assign(Previous,
+           binary("-", Shift, quantity(1, DifferenceType, L), PointerType, L),
+           L);
+    assign(dereference(json::Object(Shift), L),
+           dereference(json::Object(Previous), L), L);
+    assign(Shift, Previous, L);
+    jump(CheckShift, L);
+    label(Place, L);
+    assign(dereference(json::Object(Left), L), Value, L);
+    assign(Left,
+           binary("+", Left, quantity(1, DifferenceType, L), PointerType, L),
+           L);
+    assign(Right,
+           binary("+", Right, quantity(1, DifferenceType, L), PointerType, L),
+           L);
+    jump(CheckLeft, L);
+    label(Done, L);
+  }
+
   Expression utilityOperation(const CallExpr *Call, UtilityOperation Operation,
                               std::optional<Expression> Destination) {
     auto L = Call->getExprLoc();
@@ -2755,6 +2819,79 @@ class FunctionLowering {
                DifferenceType, L, Comparator, ComparatorType);
       sortHeap(json::Object(First), json::Object(Length), PointerType,
                DifferenceType, L, Comparator, ComparatorType);
+      return {};
+    }
+    case UtilityOperation::AlgorithmStableSort: {
+      auto First = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      std::optional<Expression> Comparator;
+      if (Call->getNumArgs() == 3)
+        Comparator = snapshot(expression(Call->getArg(2)), L);
+      const auto ComparatorType =
+          Comparator ? Call->getArg(2)->getType() : QualType{};
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto ElementType =
+          type(Call->getArg(0)->getType()->getPointeeType(), L);
+      auto Length = snapshot(binary("-", Last, First, DifferenceType, L), L);
+      auto Width = temporary(DifferenceType, L);
+      auto Remaining = temporary(DifferenceType, L);
+      auto RunFirst = temporary(PointerType, L);
+      auto Middle = temporary(PointerType, L);
+      auto RunLast = temporary(PointerType, L);
+      const auto Initialize = labelName(), Pass = labelName();
+      const auto CheckRun = labelName(), CheckMiddle = labelName();
+      const auto SelectMiddle = labelName(), CheckLast = labelName();
+      const auto SelectFullLast = labelName(), SelectFinalLast = labelName();
+      const auto Merge = labelName(), AdvanceRun = labelName();
+      const auto PassDone = labelName(), DoubleWidth = labelName();
+      const auto End = labelName();
+      branch(binary(">", Length, quantity(1, DifferenceType, L), "bool", L),
+             Initialize, End, L);
+      label(Initialize, L);
+      assign(Width, quantity(1, DifferenceType, L), L);
+      jump(Pass, L);
+      label(Pass, L);
+      assign(RunFirst, First, L);
+      jump(CheckRun, L);
+      label(CheckRun, L);
+      branch(binary("!=", RunFirst, Last, "bool", L), CheckMiddle, PassDone, L);
+      label(CheckMiddle, L);
+      assign(Remaining, binary("-", Last, RunFirst, DifferenceType, L), L);
+      branch(binary(">", Remaining, Width, "bool", L), SelectMiddle, PassDone,
+             L);
+      label(SelectMiddle, L);
+      assign(Middle, binary("+", RunFirst, Width, PointerType, L), L);
+      jump(CheckLast, L);
+      label(CheckLast, L);
+      assign(Remaining, binary("-", Last, Middle, DifferenceType, L), L);
+      branch(binary(">", Remaining, Width, "bool", L), SelectFullLast,
+             SelectFinalLast, L);
+      label(SelectFullLast, L);
+      assign(RunLast, binary("+", Middle, Width, PointerType, L), L);
+      jump(Merge, L);
+      label(SelectFinalLast, L);
+      assign(RunLast, Last, L);
+      jump(Merge, L);
+      label(Merge, L);
+      stableMerge(json::Object(RunFirst), json::Object(Middle),
+                  json::Object(RunLast), PointerType, ElementType,
+                  DifferenceType, L, Comparator, ComparatorType);
+      jump(AdvanceRun, L);
+      label(AdvanceRun, L);
+      assign(RunFirst, RunLast, L);
+      jump(CheckRun, L);
+      label(PassDone, L);
+      branch(binary(">=", Width, binary("-", Length, Width, DifferenceType, L),
+                    "bool", L),
+             End, DoubleWidth, L);
+      label(DoubleWidth, L);
+      assign(
+          Width,
+          binary("*", Width, quantity(2, DifferenceType, L), DifferenceType, L),
+          L);
+      jump(Pass, L);
+      label(End, L);
       return {};
     }
     case UtilityOperation::AlgorithmPartialSort: {

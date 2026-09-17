@@ -26144,6 +26144,163 @@ TEST_F(TranslateTest, CoreV2AlgorithmComparatorOrderingRequiresExactFunctions) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2AlgorithmStableSortRunsAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-stable-sort.cpp");
+  const auto Output = tmpFile("algorithm-stable-sort.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int calls;
+bool bucket_less(int left, int right) {
+  ++calls;
+  return left / 10 < right / 10;
+}
+enum Rank : unsigned char { low, medium, high };
+bool rank_greater(Rank left, Rank right) {
+  ++calls;
+  return left > right;
+}
+bool pointed_bucket_less(int *left, int *right) {
+  ++calls;
+  return *left / 10 < *right / 10;
+}
+int main() {
+  int values[10]{7, -1, 4, 4, 9, 0, 3, 8, 2, 6};
+  int effects = 0;
+  std::stable_sort((++effects, values), (++effects, values + 10));
+  const int expected[10]{-1, 0, 2, 3, 4, 4, 6, 7, 8, 9};
+  if (effects != 2)
+    return 1;
+  for (int i = 0; i != 10; ++i)
+    if (values[i] != expected[i])
+      return 2;
+
+  float floating[5]{3.5f, 1.5f, 4.5f, 1.5f, 2.5f};
+  std::stable_sort(floating, floating + 5);
+  if (floating[0] != 1.5f || floating[1] != 1.5f ||
+      floating[2] != 2.5f || floating[3] != 3.5f ||
+      floating[4] != 4.5f)
+    return 3;
+
+  int stable[7]{21, 11, 22, 12, 20, 10, 13};
+  auto comparator = &bucket_less;
+  effects = 0;
+  calls = 0;
+  std::stable_sort((++effects, stable), (++effects, stable + 7),
+                   (++effects, comparator));
+  const int stable_expected[7]{11, 12, 10, 13, 21, 22, 20};
+  if (effects != 3 || calls == 0 || calls > 21)
+    return 4;
+  for (int i = 0; i != 7; ++i)
+    if (stable[i] != stable_expected[i])
+      return 5;
+
+  int one[1]{7};
+  effects = 0;
+  calls = 0;
+  std::stable_sort((++effects, one), (++effects, one),
+                   (++effects, comparator));
+  std::stable_sort((++effects, one), (++effects, one + 1),
+                   (++effects, comparator));
+  if (effects != 6 || calls != 0 || one[0] != 7)
+    return 6;
+
+  Rank ranks[5]{medium, high, low, high, medium};
+  calls = 0;
+  std::stable_sort(ranks, ranks + 5, rank_greater);
+  if (ranks[0] != high || ranks[1] != high || ranks[2] != medium ||
+      ranks[3] != medium || ranks[4] != low || calls == 0)
+    return 7;
+
+  int objects[6]{21, 11, 22, 12, 20, 10};
+  int *pointers[6]{objects, objects + 1, objects + 2,
+                   objects + 3, objects + 4, objects + 5};
+  calls = 0;
+  std::stable_sort(pointers, pointers + 6, pointed_bucket_less);
+  int *pointer_expected[6]{objects + 1, objects + 3, objects + 5,
+                           objects,     objects + 2, objects + 4};
+  for (int i = 0; i != 6; ++i)
+    if (pointers[i] != pointer_expected[i])
+      return 8;
+  if (calls == 0)
+    return 9;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Dependencies =
+      Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 354u);
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+  }
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-stable-sort" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmStableSortRequiresPinnedScalarForms) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code = "TR0203";
+  };
+  const Rejection Cases[] = {
+      {"default-enum", "#include <algorithm>\nenum E{low,high};"
+                       "int main(){E a[2]{high,low};"
+                       "std::stable_sort(a,a+2);return 0;}"},
+      {"default-pointer",
+       "#include <algorithm>\nint main(){int a=1,b=2;int*p[2]{&a,&b};"
+       "std::stable_sort(p,p+2);return 0;}"},
+      {"reference-parameter",
+       "bool p(const int&a,int b){return a<b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{2,1};std::stable_sort(a,a+2,p);return 0;}"},
+      {"non-bool-result",
+       "int p(int a,int b){return a<b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{2,1};std::stable_sort(a,a+2,p);return 0;}"},
+      {"converted-parameter",
+       "bool p(long a,long b){return a<b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{2,1};std::stable_sort(a,a+2,p);return 0;}"},
+      {"function-object",
+       "struct P{bool operator()(int a,int b)const{return a<b;}};\n"
+       "#include <algorithm>\nint main(){int a[2]{2,1};"
+       "std::stable_sort(a,a+2,P{});return 0;}"},
+      {"record-elements", "struct R{int n;};bool p(R a,R b){return a.n<b.n;}\n"
+                          "#include <algorithm>\nint main(){R a[2]{{2},{1}};"
+                          "std::stable_sort(a,a+2,p);return 0;}"},
+      {"variadic-comparator",
+       "bool p(int a,int b,...){return a<b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{2,1};std::stable_sort(a,a+2,p);return 0;}",
+       "TR0201"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("algorithm-stable-sort-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("algorithm-stable-sort-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmPermutationRunAtBothOptimizations) {
   const auto Source = tmpFile("algorithm-permutation.cpp");
   const auto Output = tmpFile("algorithm-permutation.nc");
