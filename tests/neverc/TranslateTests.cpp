@@ -24428,6 +24428,149 @@ TEST_F(TranslateTest, CoreV2AlgorithmRearrangementRequiresPinnedScalarForms) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2AlgorithmOrderedRangesRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-ordered-ranges.cpp");
+  const auto Output = tmpFile("algorithm-ordered-ranges.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int main() {
+  const int values[8]{1, 2, 2, 2, 3, 5, 5, 8};
+  int key = 2;
+  int effects = 0;
+  auto range = std::equal_range((++effects, values),
+                                (++effects, values + 8), (++effects, key));
+  if (effects != 3 || range.first != values + 1 ||
+      range.second != values + 4)
+    return 1;
+  key = 4;
+  range = std::equal_range(values, values + 8, key);
+  if (range.first != values + 5 || range.second != values + 5)
+    return 2;
+
+  const int lexical_left[2]{1, 2};
+  const int lexical_right[3]{1, 3, 0};
+  const int lexical_prefix[3]{1, 2, 0};
+  if (!std::lexicographical_compare(lexical_left, lexical_left + 2,
+                                    lexical_right, lexical_right + 3) ||
+      std::lexicographical_compare(lexical_right, lexical_right + 3,
+                                   lexical_left, lexical_left + 2) ||
+      !std::lexicographical_compare(lexical_left, lexical_left + 2,
+                                    lexical_prefix, lexical_prefix + 3) ||
+      std::lexicographical_compare(lexical_left, lexical_left + 2,
+                                   lexical_left, lexical_left + 2))
+    return 3;
+
+  const int left[5]{1, 1, 2, 4, 6};
+  const int right[5]{1, 2, 2, 3, 6};
+  const int subset[3]{1, 2, 6};
+  if (!std::includes(left, left + 5, subset, subset + 3) ||
+      std::includes(left, left + 5, right, right + 5) ||
+      !std::includes(left, left + 5, subset, subset))
+    return 4;
+
+  int merged[10]{};
+  effects = 0;
+  if (std::merge((++effects, left), (++effects, left + 5),
+                 (++effects, right), (++effects, right + 5),
+                 (++effects, merged)) != merged + 10 ||
+      effects != 5)
+    return 5;
+  const int expected_merge[10]{1, 1, 1, 2, 2, 2, 3, 4, 6, 6};
+  for (int i = 0; i != 10; ++i)
+    if (merged[i] != expected_merge[i])
+      return 6;
+
+  int combined[7]{};
+  if (std::set_union(left, left + 5, right, right + 5, combined) !=
+      combined + 7)
+    return 7;
+  const int expected_union[7]{1, 1, 2, 2, 3, 4, 6};
+  for (int i = 0; i != 7; ++i)
+    if (combined[i] != expected_union[i])
+      return 8;
+
+  int common[3]{};
+  if (std::set_intersection(left, left + 5, right, right + 5, common) !=
+          common + 3 ||
+      common[0] != 1 || common[1] != 2 || common[2] != 6)
+    return 9;
+  int remaining[2]{};
+  if (std::set_difference(left, left + 5, right, right + 5, remaining) !=
+          remaining + 2 ||
+      remaining[0] != 1 || remaining[1] != 4)
+    return 10;
+  int symmetric[4]{};
+  if (std::set_symmetric_difference(left, left + 5, right, right + 5,
+                                    symmetric) != symmetric + 4 ||
+      symmetric[0] != 1 || symmetric[1] != 2 || symmetric[2] != 3 ||
+      symmetric[3] != 4)
+    return 11;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Dependencies =
+      Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 354u);
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+  }
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-ordered-ranges" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmOrderedRangesRequirePinnedScalarForms) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+  };
+  const Rejection Cases[] = {
+      {"heterogeneous-lexicographical",
+       "#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{1,3};"
+       "return std::lexicographical_compare(a,a+2,b,b+2)?0:1;}"},
+      {"comparator-includes",
+       "#include <algorithm>\nbool less(int a,int b){return a<b;}"
+       "int main(){int a[2]{1,2};return "
+       "std::includes(a,a+2,a,a+1,&less)?0:1;}"},
+      {"heterogeneous-merge-output",
+       "#include <algorithm>\nint main(){int a[2]{1,2};long out[4]{};"
+       "return std::merge(a,a+2,a,a+2,out)==out+4?0:1;}"},
+      {"record-equal-range",
+       "#include <algorithm>\nstruct R{int n;};"
+       "bool operator<(const R&a,const R&b){return a.n<b.n;}"
+       "int main(){R a[2]{{1},{2}};R key{1};"
+       "return std::equal_range(a,a+2,key).first==a?0:1;}"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("algorithm-ordered-ranges-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("algorithm-ordered-ranges-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2IteratorPointerOperationsRunAtBothOptimizations) {
   const auto Source = tmpFile("iterator-operations.cpp");
   const auto Output = tmpFile("iterator-operations.nc");

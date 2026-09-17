@@ -844,6 +844,44 @@ extern "C" int algorithm_rearrangement(int *first, int *middle, int *last,
           '#include <algorithm>\nstruct R{int n;};int main(){R a[2]{{1},{2}};return std::rotate(a,a+1,a+2)==a+1?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    algorithm_ordered_ranges_source = """\
+#include <algorithm>
+extern "C" int algorithm_ordered_ranges(const int *first, const int *last,
+                                          const int *second,
+                                          const int *second_last, int *output,
+                                          int value) {
+  auto equal = std::equal_range(first, last, value);
+  bool lexical = std::lexicographical_compare(first, last, second, second_last);
+  bool contained = std::includes(first, last, second, second_last);
+  int *merged = std::merge(first, last, second, second_last, output);
+  int *united = std::set_union(first, last, second, second_last, output);
+  int *common = std::set_intersection(first, last, second, second_last, output);
+  int *remaining = std::set_difference(first, last, second, second_last, output);
+  int *symmetric =
+      std::set_symmetric_difference(first, last, second, second_last, output);
+  return static_cast<int>((equal.first - first) + (equal.second - first) +
+                          (merged - output) + (united - output) +
+                          (common - output) + (remaining - output) +
+                          (symmetric - output) + lexical + contained);
+}
+"""
+    algorithm_ordered_ranges = check("v2-algorithm-ordered-ranges",
+                                     algorithm_ordered_ranges_source,
+                                     profile="cpp-core-v2", sdk=True)
+    assert len(algorithm_ordered_ranges["sdk_dependencies"]) == 354, algorithm_ordered_ranges
+    assert not [node for node in walk(algorithm_ordered_ranges["functions"])
+                if node.get("op") in ("call", "mapped_call")], algorithm_ordered_ranges
+    for target in sdk_targets:
+        check("v2-algorithm-ordered-ranges-" + target,
+              algorithm_ordered_ranges_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-algorithm-ordered-ranges-heterogeneous",
+          '#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{1,3};return std::lexicographical_compare(a,a+2,b,b+2)?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-ordered-ranges-comparator",
+          '#include <algorithm>\nbool less(int a,int b){return a<b;}int main(){int a[2]{1,2};return std::includes(a,a+2,a,a+1,&less)?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     # Windows driver defaults must not change core-v2 source visibility or
     # standard diagnostics. Exercise both MSVC architectures on every CI host.
     standard_template_parsing = {

@@ -1737,6 +1737,256 @@ class FunctionLowering {
       CopyRange(First, Middle);
       return Output;
     }
+    case UtilityOperation::AlgorithmEqualRange: {
+      auto RangeFirst = snapshot(expression(Call->getArg(0)), L);
+      auto RangeLast = snapshot(expression(Call->getArg(1)), L);
+      auto ValueAddress = snapshot(
+          address(lvalue(Call->getArg(2)), Call->getArg(2)->getType(), L), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      auto Bound = [&](const Expression &Start, const Expression &End,
+                       bool Upper) {
+        auto First = snapshot(json::Object(Start), L);
+        auto Last = snapshot(json::Object(End), L);
+        auto Length = temporary(DifferenceType, L);
+        auto Half = temporary(DifferenceType, L);
+        auto Middle = temporary(PointerType, L);
+        assign(Length, binary("-", Last, First, DifferenceType, L), L);
+        const auto Check = labelName(), Split = labelName();
+        const auto Advance = labelName(), Narrow = labelName();
+        const auto Found = labelName();
+        jump(Check, L);
+        label(Check, L);
+        branch(binary("!=", Length, quantity(0, DifferenceType, L), "bool", L),
+               Split, Found, L);
+        label(Split, L);
+        assign(Half,
+               binary("/", Length, quantity(2, DifferenceType, L),
+                      DifferenceType, L),
+               L);
+        assign(Middle, binary("+", First, Half, PointerType, L), L);
+        branch(Upper ? binary("<", dereference(ValueAddress, L),
+                              dereference(Middle, L), "bool", L)
+                     : binary("<", dereference(Middle, L),
+                              dereference(ValueAddress, L), "bool", L),
+               Upper ? Narrow : Advance, Upper ? Advance : Narrow, L);
+        label(Advance, L);
+        assign(
+            First,
+            binary("+", Middle, quantity(1, DifferenceType, L), PointerType, L),
+            L);
+        assign(Length,
+               binary("-", binary("-", Length, Half, DifferenceType, L),
+                      quantity(1, DifferenceType, L), DifferenceType, L),
+               L);
+        jump(Check, L);
+        label(Narrow, L);
+        assign(Length, Half, L);
+        jump(Check, L);
+        label(Found, L);
+        return First;
+      };
+      auto Lower = Bound(RangeFirst, RangeLast, false);
+      auto Upper = Bound(Lower, RangeLast, true);
+      auto Pair = approvedUtilityPairRecord(
+          A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+      if (!Pair)
+        reject(L, "algorithm equal_range",
+               "The selected std::pair layout is unavailable.");
+      auto Place = Destination ? std::move(*Destination)
+                               : objectTemporary(Call->getType(), L);
+      if (Place.getString("type") != type(Call->getType(), L))
+        reject(
+            L, "algorithm equal_range",
+            "The std::equal_range destination type differs from its result.");
+      assign(fieldStorage(json::Object(Place), Pair->First, L), Lower, L);
+      assign(fieldStorage(json::Object(Place), Pair->Second, L), Upper, L);
+      return Place;
+    }
+    case UtilityOperation::AlgorithmLexicographicalCompare: {
+      auto First = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto Second = snapshot(expression(Call->getArg(2)), L);
+      auto SecondLast = snapshot(expression(Call->getArg(3)), L);
+      auto Result = temporary("bool", L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto FirstType = type(Call->getArg(0)->getType(), L);
+      const auto SecondType = type(Call->getArg(2)->getType(), L);
+      const auto CheckFirst = labelName(), CheckSecond = labelName();
+      const auto CompareFirst = labelName(), CompareSecond = labelName();
+      const auto Advance = labelName(), FirstDone = labelName();
+      const auto True = labelName(), False = labelName(), End = labelName();
+      jump(CheckFirst, L);
+      label(CheckFirst, L);
+      branch(binary("!=", First, Last, "bool", L), CheckSecond, FirstDone, L);
+      label(CheckSecond, L);
+      branch(binary("!=", Second, SecondLast, "bool", L), CompareFirst, False,
+             L);
+      label(CompareFirst, L);
+      branch(
+          binary("<", dereference(First, L), dereference(Second, L), "bool", L),
+          True, CompareSecond, L);
+      label(CompareSecond, L);
+      branch(
+          binary("<", dereference(Second, L), dereference(First, L), "bool", L),
+          False, Advance, L);
+      label(Advance, L);
+      assign(First,
+             binary("+", First, quantity(1, DifferenceType, L), FirstType, L),
+             L);
+      assign(Second,
+             binary("+", Second, quantity(1, DifferenceType, L), SecondType, L),
+             L);
+      jump(CheckFirst, L);
+      label(FirstDone, L);
+      branch(binary("!=", Second, SecondLast, "bool", L), True, False, L);
+      label(True, L);
+      assign(Result, boolean(true, L), L);
+      jump(End, L);
+      label(False, L);
+      assign(Result, boolean(false, L), L);
+      jump(End, L);
+      label(End, L);
+      return Result;
+    }
+    case UtilityOperation::AlgorithmIncludes: {
+      auto First = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto Second = snapshot(expression(Call->getArg(2)), L);
+      auto SecondLast = snapshot(expression(Call->getArg(3)), L);
+      auto Result = temporary("bool", L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto FirstType = type(Call->getArg(0)->getType(), L);
+      const auto SecondType = type(Call->getArg(2)->getType(), L);
+      const auto CheckSecond = labelName(), CheckFirst = labelName();
+      const auto Missing = labelName(), Compare = labelName();
+      const auto AdvanceFirst = labelName(), AdvanceBoth = labelName();
+      const auto True = labelName(), False = labelName(), End = labelName();
+      jump(CheckSecond, L);
+      label(CheckSecond, L);
+      branch(binary("!=", Second, SecondLast, "bool", L), CheckFirst, True, L);
+      label(CheckFirst, L);
+      branch(binary("!=", First, Last, "bool", L), Missing, False, L);
+      label(Missing, L);
+      branch(
+          binary("<", dereference(Second, L), dereference(First, L), "bool", L),
+          False, Compare, L);
+      label(Compare, L);
+      branch(
+          binary("<", dereference(First, L), dereference(Second, L), "bool", L),
+          AdvanceFirst, AdvanceBoth, L);
+      label(AdvanceFirst, L);
+      assign(First,
+             binary("+", First, quantity(1, DifferenceType, L), FirstType, L),
+             L);
+      jump(CheckSecond, L);
+      label(AdvanceBoth, L);
+      assign(First,
+             binary("+", First, quantity(1, DifferenceType, L), FirstType, L),
+             L);
+      assign(Second,
+             binary("+", Second, quantity(1, DifferenceType, L), SecondType, L),
+             L);
+      jump(CheckSecond, L);
+      label(True, L);
+      assign(Result, boolean(true, L), L);
+      jump(End, L);
+      label(False, L);
+      assign(Result, boolean(false, L), L);
+      jump(End, L);
+      label(End, L);
+      return Result;
+    }
+    case UtilityOperation::AlgorithmMerge:
+    case UtilityOperation::AlgorithmSetUnion:
+    case UtilityOperation::AlgorithmSetIntersection:
+    case UtilityOperation::AlgorithmSetDifference:
+    case UtilityOperation::AlgorithmSetSymmetricDifference: {
+      const bool Merge = Operation == UtilityOperation::AlgorithmMerge;
+      const bool Union = Operation == UtilityOperation::AlgorithmSetUnion;
+      const bool Intersection =
+          Operation == UtilityOperation::AlgorithmSetIntersection;
+      const bool Difference =
+          Operation == UtilityOperation::AlgorithmSetDifference;
+      const bool Symmetric =
+          Operation == UtilityOperation::AlgorithmSetSymmetricDifference;
+      auto First = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto Second = snapshot(expression(Call->getArg(2)), L);
+      auto SecondLast = snapshot(expression(Call->getArg(3)), L);
+      auto Output = snapshot(expression(Call->getArg(4)), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto FirstType = type(Call->getArg(0)->getType(), L);
+      const auto SecondType = type(Call->getArg(2)->getType(), L);
+      const auto OutputType = type(Call->getArg(4)->getType(), L);
+      auto Emit = [&](Expression &Input, llvm::StringRef InputType,
+                      bool Write) {
+        if (Write) {
+          assign(dereference(Output, L), dereference(Input, L), L);
+          assign(Output,
+                 binary("+", Output, quantity(1, DifferenceType, L), OutputType,
+                        L),
+                 L);
+        }
+        assign(Input,
+               binary("+", Input, quantity(1, DifferenceType, L), InputType, L),
+               L);
+      };
+      const auto CheckFirst = labelName(), CheckSecond = labelName();
+      const auto CompareFirst = labelName(), CompareSecond = labelName();
+      const auto FirstLess = labelName(), SecondLess = labelName();
+      const auto Equal = labelName(), FirstDone = labelName();
+      const auto SecondDone = labelName(), End = labelName();
+      jump(CheckFirst, L);
+      label(CheckFirst, L);
+      branch(binary("!=", First, Last, "bool", L), CheckSecond, FirstDone, L);
+      label(CheckSecond, L);
+      branch(binary("!=", Second, SecondLast, "bool", L), CompareFirst,
+             SecondDone, L);
+      label(CompareFirst, L);
+      branch(
+          binary("<", dereference(First, L), dereference(Second, L), "bool", L),
+          FirstLess, CompareSecond, L);
+      label(CompareSecond, L);
+      branch(
+          binary("<", dereference(Second, L), dereference(First, L), "bool", L),
+          SecondLess, Equal, L);
+      label(FirstLess, L);
+      Emit(First, FirstType, Merge || Union || Difference || Symmetric);
+      jump(CheckFirst, L);
+      label(SecondLess, L);
+      Emit(Second, SecondType, Merge || Union || Symmetric);
+      jump(CheckFirst, L);
+      label(Equal, L);
+      Emit(First, FirstType, Merge || Union || Intersection);
+      if (!Merge)
+        Emit(Second, SecondType, false);
+      jump(CheckFirst, L);
+      const bool CopyFirstTail = Merge || Union || Difference || Symmetric;
+      const bool CopySecondTail = Merge || Union || Symmetric;
+      const auto CopyFirstCheck = labelName(), CopyFirst = labelName();
+      const auto CopySecondCheck = labelName(), CopySecond = labelName();
+      label(FirstDone, L);
+      jump(CopySecondTail ? CopySecondCheck : End, L);
+      label(SecondDone, L);
+      jump(CopyFirstTail ? CopyFirstCheck : End, L);
+      if (CopyFirstTail) {
+        label(CopyFirstCheck, L);
+        branch(binary("!=", First, Last, "bool", L), CopyFirst, End, L);
+        label(CopyFirst, L);
+        Emit(First, FirstType, true);
+        jump(CopyFirstCheck, L);
+      }
+      if (CopySecondTail) {
+        label(CopySecondCheck, L);
+        branch(binary("!=", Second, SecondLast, "bool", L), CopySecond, End, L);
+        label(CopySecond, L);
+        Emit(Second, SecondType, true);
+        jump(CopySecondCheck, L);
+      }
+      label(End, L);
+      return Output;
+    }
     case UtilityOperation::MakePair: {
       auto Pair = approvedUtilityPairRecord(
           A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);

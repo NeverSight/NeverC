@@ -260,11 +260,22 @@ operations require the same unqualified element type in both compared ranges.
 
 The exact two-argument `std::min_element`, `std::max_element`, `std::is_sorted`
 and `std::is_sorted_until` templates and exact three-argument
-`std::lower_bound`, `std::upper_bound` and `std::binary_search` templates lower
-for raw pointers to the same built-in integer, `float` or `double` element type.
-The searched value must have that same unqualified type. Binary bounds use the
-target `ptrdiff_t` and preserve logarithmic bisection. Default-order enum
-elements, pointer elements, heterogeneous searched values and explicit
+`std::lower_bound`, `std::upper_bound`, `std::equal_range` and
+`std::binary_search` templates lower for raw pointers to the same built-in
+integer, `float` or `double` element type. The searched value must have that
+same unqualified type. Binary bounds use the target `ptrdiff_t` and preserve
+logarithmic bisection; `equal_range` returns an authenticated pair of the lower
+and upper pointers.
+
+The exact four-iterator `std::lexicographical_compare` and `std::includes`
+templates and exact five-iterator `std::merge`, `std::set_union`,
+`std::set_intersection`, `std::set_difference` and
+`std::set_symmetric_difference` templates lower for two ranges with that same
+unqualified arithmetic element type. Ordered output algorithms require a
+writable same-element destination and return its advanced pointer. Merge keeps
+equivalent elements from the first range first; set operations preserve their
+standard maximum, minimum and excess duplicate counts. Default-order enum
+elements, pointer elements, heterogeneous values or ranges and explicit
 comparators remain outside this boundary because they can require overloaded or
 otherwise non-portable ordering semantics.
 
@@ -278,7 +289,8 @@ constructs its scalar-pointer pair result directly. `remove` and `unique`
 return the compacted logical end; copy forms return their advanced destination.
 `copy_n` also preserves a non-positive-count fast path. `rotate` returns the
 new location of the original first element, while `rotate_copy` returns its
-advanced destination.
+advanced destination. Ordered two-range algorithms stop at the first decisive
+comparison and copy only the tails required by their standard result.
 Forward and backward loops preserve their respective standard overlap
 direction; `reverse` uses equality-only bidirectional contraction. Minimum and
 maximum scans retain the first equivalent element; sortedness scans report the

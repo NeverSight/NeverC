@@ -1339,8 +1339,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   const llvm::StringRef Name = Function->getIdentifier()
                                    ? Function->getIdentifier()->getName()
                                    : llvm::StringRef();
-  if (!Function->isInlined() &&
-      !(Origin->Path == "__algorithm/remove.h" && Name == "remove"))
+  const bool ApprovedNonInlineAlgorithm =
+      (Origin->Path == "__algorithm/remove.h" && Name == "remove") ||
+      (Origin->Path == "__algorithm/equal_range.h" && Name == "equal_range") ||
+      (Origin->Path == "__algorithm/set_union.h" && Name == "set_union") ||
+      (Origin->Path == "__algorithm/set_symmetric_difference.h" &&
+       Name == "set_symmetric_difference");
+  if (!Function->isInlined() && !ApprovedNonInlineAlgorithm)
     return std::nullopt;
   auto ReverseFor = [&](QualType Type) {
     return approvedUtilityReverseIteratorRecord(
@@ -1789,6 +1794,74 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Function->getReturnType(), Function->getParamDecl(3)->getType()) &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmRotateCopy;
+  if (Origin->Path == "__algorithm/equal_range.h" && Name == "equal_range" &&
+      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
+      Call->isPRValue() && AlgorithmOrderedPointerParameter(0) &&
+      AlgorithmPointerParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      AlgorithmValueParameter(2, 0) &&
+      Same(Call->getType(), Function->getReturnType())) {
+    auto Pair = approvedUtilityPairRecord(
+        S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);
+    if (Pair &&
+        Same(Pair->First->getType(), Function->getParamDecl(0)->getType()) &&
+        Same(Pair->Second->getType(), Function->getParamDecl(0)->getType()))
+      return UtilityOperation::AlgorithmEqualRange;
+  }
+  if (((Origin->Path == "__algorithm/lexicographical_compare.h" &&
+        Name == "lexicographical_compare") ||
+       (Origin->Path == "__algorithm/includes.h" && Name == "includes")) &&
+      Call->getNumArgs() == 4 && Function->getNumParams() == 4 &&
+      Call->isPRValue() && Function->getReturnType()->isBooleanType() &&
+      Same(Call->getType(), Function->getReturnType()) &&
+      AlgorithmOrderedPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      AlgorithmOrderedPointerParameter(2) && AlgorithmPointerParameter(3) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      Same(Function->getParamDecl(2)->getType(),
+           Function->getParamDecl(3)->getType()) &&
+      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
+                           Function->getParamDecl(2)->getType()))
+    return Name == "includes"
+               ? UtilityOperation::AlgorithmIncludes
+               : UtilityOperation::AlgorithmLexicographicalCompare;
+  const bool OrderedOutputAlgorithm =
+      (Origin->Path == "__algorithm/merge.h" && Name == "merge") ||
+      (Origin->Path == "__algorithm/set_union.h" && Name == "set_union") ||
+      (Origin->Path == "__algorithm/set_intersection.h" &&
+       Name == "set_intersection") ||
+      (Origin->Path == "__algorithm/set_difference.h" &&
+       Name == "set_difference") ||
+      (Origin->Path == "__algorithm/set_symmetric_difference.h" &&
+       Name == "set_symmetric_difference");
+  if (OrderedOutputAlgorithm && Call->getNumArgs() == 5 &&
+      Function->getNumParams() == 5 && Call->isPRValue() &&
+      AlgorithmOrderedPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      AlgorithmOrderedPointerParameter(2) && AlgorithmPointerParameter(3) &&
+      AlgorithmPointerParameter(4) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      Same(Function->getParamDecl(2)->getType(),
+           Function->getParamDecl(3)->getType()) &&
+      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
+                           Function->getParamDecl(2)->getType()) &&
+      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
+                           Function->getParamDecl(4)->getType()) &&
+      utilityAlgorithmWritableScalarPointer(
+          Context, Function->getParamDecl(4)->getType()) &&
+      Same(Function->getReturnType(), Function->getParamDecl(4)->getType()) &&
+      Same(Call->getType(), Function->getReturnType())) {
+    if (Name == "merge")
+      return UtilityOperation::AlgorithmMerge;
+    if (Name == "set_union")
+      return UtilityOperation::AlgorithmSetUnion;
+    if (Name == "set_intersection")
+      return UtilityOperation::AlgorithmSetIntersection;
+    if (Name == "set_difference")
+      return UtilityOperation::AlgorithmSetDifference;
+    return UtilityOperation::AlgorithmSetSymmetricDifference;
+  }
   if (Origin->Path == "__iterator/reverse_iterator.h" &&
       Name == "make_reverse_iterator" && Call->getNumArgs() == 1 &&
       Function->getNumParams() == 1 && Call->isPRValue()) {

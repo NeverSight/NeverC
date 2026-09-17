@@ -351,6 +351,14 @@ enum class UtilityOperation {
   AlgorithmIterSwap,
   AlgorithmRotate,
   AlgorithmRotateCopy,
+  AlgorithmEqualRange,
+  AlgorithmLexicographicalCompare,
+  AlgorithmIncludes,
+  AlgorithmMerge,
+  AlgorithmSetUnion,
+  AlgorithmSetIntersection,
+  AlgorithmSetDifference,
+  AlgorithmSetSymmetricDifference,
 };
 struct UtilityPairRecord {
   const clang::CXXRecordDecl *Record;
