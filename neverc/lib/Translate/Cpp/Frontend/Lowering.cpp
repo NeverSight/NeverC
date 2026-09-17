@@ -5323,6 +5323,39 @@ class FunctionLowering {
           assign(Left, dereference(std::move(RightAddress), L), L);
           return Left;
         }
+        case UtilityOptionalAssignment::Converting: {
+          auto DestinationOptional = approvedUtilityOptionalRecord(
+              A.S, A.Sources, Call->getArg(0)->getType()->getAsCXXRecordDecl(),
+              A.Context);
+          auto SourceOptional = approvedUtilityOptionalRecord(
+              A.S, A.Sources, Call->getArg(1)->getType()->getAsCXXRecordDecl(),
+              A.Context);
+          if (!DestinationOptional || !SourceOptional)
+            reject(L, "utility optional assignment",
+                   "A selected scalar std::optional layout is unavailable.");
+          auto Source = snapshot(expression(Call->getArg(1)), L);
+          const auto Convert = labelName(), Empty = labelName();
+          const auto End = labelName();
+          branch(fieldStorage(json::Object(Source), SourceOptional->Engaged, L),
+                 Convert, Empty, L);
+          label(Convert, L);
+          assign(
+              fieldStorage(json::Object(Left), DestinationOptional->Value, L),
+              cast(fieldStorage(json::Object(Source), SourceOptional->Value, L),
+                   type(DestinationOptional->Value->getType(), L), L),
+              L);
+          assign(
+              fieldStorage(json::Object(Left), DestinationOptional->Engaged, L),
+              boolean(true, L), L);
+          jump(End, L);
+          label(Empty, L);
+          assign(
+              fieldStorage(json::Object(Left), DestinationOptional->Engaged, L),
+              boolean(false, L), L);
+          jump(End, L);
+          label(End, L);
+          return Left;
+        }
         case UtilityOptionalAssignment::Empty: {
           auto Optional = approvedUtilityOptionalRecord(
               A.S, A.Sources, Call->getArg(0)->getType()->getAsCXXRecordDecl(),
@@ -6642,6 +6675,33 @@ class FunctionLowering {
       case UtilityOptionalConstruction::CopyOrMove:
         assign(std::move(Place), expression(C->getArg(0)), L);
         return;
+      case UtilityOptionalConstruction::Converting: {
+        auto SourceOptional = approvedUtilityOptionalRecord(
+            A.S, A.Sources, C->getArg(0)->getType()->getAsCXXRecordDecl(),
+            A.Context);
+        if (!SourceOptional)
+          reject(L, "utility optional construction",
+                 "The source scalar std::optional layout is unavailable.");
+        auto Source = snapshot(expression(C->getArg(0)), L);
+        initializeZero(Value(), Optional->Value->getType(), L);
+        const auto Convert = labelName(), Empty = labelName();
+        const auto End = labelName();
+        branch(fieldStorage(json::Object(Source), SourceOptional->Engaged, L),
+               Convert, Empty, L);
+        label(Convert, L);
+        assign(
+            Value(),
+            cast(fieldStorage(json::Object(Source), SourceOptional->Value, L),
+                 type(Optional->Value->getType(), L), L),
+            L);
+        assign(Engaged(), boolean(true, L), L);
+        jump(End, L);
+        label(Empty, L);
+        assign(Engaged(), boolean(false, L), L);
+        jump(End, L);
+        label(End, L);
+        return;
+      }
       case UtilityOptionalConstruction::Value:
         assign(Value(),
                cast(expression(C->getArg(0)),

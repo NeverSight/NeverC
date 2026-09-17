@@ -593,6 +593,14 @@ extern "C" int optional_operations(int value) {
   std::optional<int> second(value);
   short small = 5;
   std::optional<int> placed(std::in_place, small);
+  std::optional<short> narrow(short(4));
+  std::optional<short> narrow_empty;
+  std::optional<int> widened(narrow);
+  std::optional<double> widened_real(
+      static_cast<std::optional<short>&&>(narrow));
+  std::optional<int> widened_empty(narrow_empty);
+  widened = narrow_empty;
+  widened = narrow;
   placed = small;
   placed.emplace(short(6));
   first = second;
@@ -609,7 +617,6 @@ extern "C" int optional_operations(int value) {
                   first != std::nullopt && std::nullopt < first;
   bool values = first == value + 1 && value + 1 == first &&
                 first <= value + 1 && value + 1 >= first;
-  std::optional<short> narrow(short(4));
   std::optional<unsigned int> unsigned_one(1u);
   std::optional<int> negative(-1);
   std::optional<long long> wide_negative(-1LL);
@@ -623,6 +630,8 @@ extern "C" int optional_operations(int value) {
   return first.has_value() && !second && *first == value + 1 &&
                  selected == value + 1 && optionals && nullopts && values &&
                  heterogeneous &&
+                 widened && *widened == 4 && widened_real &&
+                 *widened_real == 4.0 && !widened_empty &&
                  *made == 0 && *zero == value + 2 && *placed == 6 &&
                  *converted == 5 && second.value_or(small) == 5
              ? 0
@@ -673,6 +682,9 @@ extern "C" int optional_operations(int value) {
          "TR0203"),
         ("heterogeneous-pointer-comparison",
          '#include <optional>\nint main(){std::optional<int*>a;std::optional<const int*>b;return a==b;}',
+         "TR0203"),
+        ("nullptr-optional-conversion",
+         '#include <optional>\nint main(){std::optional<decltype(nullptr)>a(nullptr);std::optional<int*>b(a);return b.has_value();}',
          "TR0203"),
         ("standalone-in-place",
          '#include <optional>\nint main(){auto tag=std::in_place;return sizeof(tag);}',

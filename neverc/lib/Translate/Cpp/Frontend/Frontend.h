@@ -533,6 +533,7 @@ enum class UtilityOptionalConstruction {
   InPlaceDefault,
   InPlaceValue,
   CopyOrMove,
+  Converting,
   Value,
 };
 std::optional<UtilityOptionalConstruction>
@@ -543,6 +544,7 @@ approvedUtilityOptionalConstruction(const State &S,
 enum class UtilityOptionalAssignment {
   Empty,
   CopyOrMove,
+  Converting,
   Value,
 };
 std::optional<UtilityOptionalAssignment>

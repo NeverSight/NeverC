@@ -429,6 +429,31 @@ std::optional<QualType> utilityScalarComparisonType(const ASTContext &Context,
   return Context.getCorrespondingUnsignedType(Signed);
 }
 
+static bool utilityScalarDirectConversion(const ASTContext &Context,
+                                          QualType From, QualType To) {
+  if (!utilityScalar(Context, From) || !utilityScalar(Context, To))
+    return false;
+  From = From.getCanonicalType().getUnqualifiedType();
+  To = To.getCanonicalType().getUnqualifiedType();
+  if (Context.hasSameType(From, To))
+    return true;
+  if (From->isNullPtrType())
+    return To->isBooleanType();
+  if (To->isNullPtrType())
+    return false;
+  if (From->isPointerType() || To->isPointerType()) {
+    if (From->isPointerType() && To->isBooleanType())
+      return true;
+    if (!From->isPointerType() || !To->isPointerType())
+      return false;
+    const auto FromPointee = From->getPointeeType();
+    const auto ToPointee = To->getPointeeType();
+    return FromPointee->isVoidType() || ToPointee->isVoidType() ||
+           Context.hasSameUnqualifiedType(FromPointee, ToPointee);
+  }
+  return true;
+}
+
 static bool utilityArrayValue(const State &S, const SourceManager &SM,
                               const ASTContext &Context, QualType Type) {
   if (utilityScalar(Context, Type))
@@ -1427,6 +1452,25 @@ approvedUtilityOptionalConstruction(const State &S, const SourceManager &SM,
   const auto Parameter = Construction->getNumArgs() == 1
                              ? Constructor->getParamDecl(0)->getType()
                              : QualType();
+  const auto SourceOptional =
+      Construction->getNumArgs() == 1
+          ? approvedUtilityOptionalRecord(
+                S, SM, Construction->getArg(0)->getType()->getAsCXXRecordDecl(),
+                Context)
+          : std::optional<UtilityOptionalRecord>();
+  if (SourceOptional && Primary && Constructor->hasBody() &&
+      SourceOptional->Record->getCanonicalDecl() !=
+          Optional->Record->getCanonicalDecl() &&
+      approvedStandardSDKDeclaration(S, SM, Primary) &&
+      cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "optional") &&
+      Parameter->isReferenceType() &&
+      !Parameter->getPointeeType().isVolatileQualified() &&
+      Context.hasSameUnqualifiedType(
+          Parameter->getPointeeType(),
+          Context.getRecordType(SourceOptional->Record)) &&
+      utilityScalarDirectConversion(Context, SourceOptional->ElementType,
+                                    Optional->ElementType))
+    return UtilityOptionalConstruction::Converting;
   if (Construction->getNumArgs() == 1 && Primary && Constructor->hasBody() &&
       approvedStandardSDKDeclaration(S, SM, Primary) &&
       cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "optional") &&
@@ -1478,6 +1522,21 @@ approvedUtilityOptionalAssignment(const State &S, const SourceManager &SM,
     return UtilityOptionalAssignment::Empty;
   const auto *Primary = Method->getPrimaryTemplate();
   const auto Parameter = Method->getParamDecl(0)->getType();
+  const auto SourceOptional = approvedUtilityOptionalRecord(
+      S, SM, Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
+  if (SourceOptional && Method->hasBody() && Primary &&
+      SourceOptional->Record->getCanonicalDecl() !=
+          Optional->Record->getCanonicalDecl() &&
+      approvedStandardSDKDeclaration(S, SM, Primary) &&
+      cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "optional") &&
+      Parameter->isReferenceType() &&
+      !Parameter->getPointeeType().isVolatileQualified() &&
+      Context.hasSameUnqualifiedType(
+          Parameter->getPointeeType(),
+          Context.getRecordType(SourceOptional->Record)) &&
+      utilityScalarDirectConversion(Context, SourceOptional->ElementType,
+                                    Optional->ElementType))
+    return UtilityOptionalAssignment::Converting;
   if (Method->hasBody() && Primary &&
       approvedStandardSDKDeclaration(S, SM, Primary) &&
       cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "optional") &&

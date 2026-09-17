@@ -28036,9 +28036,30 @@ int main() {
       !converted || *converted != 13 || &converted_placed != &*converted)
     return 7;
 
+  std::optional<short> short_source(short(21));
+  std::optional<short> short_rvalue(short(22));
+  std::optional<short> short_empty;
+  std::optional<int> converted_copy(short_source);
+  std::optional<int> converted_move(
+      static_cast<std::optional<short> &&>(short_rvalue));
+  std::optional<double> converted_real(short_source);
+  std::optional<int> converted_empty(short_empty);
+  std::optional<int> assigned_conversion(1);
+  assigned_conversion = short_source;
+  std::optional<int> move_assigned;
+  move_assigned = static_cast<std::optional<short> &&>(short_rvalue);
+  if (!converted_copy || *converted_copy != 21 || !converted_move ||
+      *converted_move != 22 || !converted_real || *converted_real != 21.0 ||
+      converted_empty || !assigned_conversion || *assigned_conversion != 21 ||
+      !move_assigned || *move_assigned != 22)
+    return 8;
+  assigned_conversion = short_empty;
+  if (assigned_conversion)
+    return 9;
+
   moved = static_cast<std::optional<int> &&>(other);
   absent = std::nullopt;
-  return moved && *moved == 7 && !absent ? 0 : 8;
+  return moved && *moved == 7 && !absent ? 0 : 10;
 }
 )cpp");
   auto Result =
@@ -28175,6 +28196,10 @@ TEST_F(TranslateTest, CoreV2OptionalRequiresPinnedScalarOperations) {
       {"heterogeneous-pointer-comparison",
        "#include <optional>\nint main(){std::optional<int*>a;"
        "std::optional<const int*>b;return a==b;}",
+       "TR0203"},
+      {"nullptr-optional-conversion",
+       "#include <optional>\nint main(){std::optional<decltype(nullptr)>a("
+       "nullptr);std::optional<int*>b(a);return b.has_value();}",
        "TR0203"},
       {"standalone-in-place",
        "#include <optional>\nint main(){auto tag=std::in_place;"
