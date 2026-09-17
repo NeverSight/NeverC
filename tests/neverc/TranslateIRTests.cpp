@@ -2980,20 +2980,23 @@ TEST(TranslateIR, CoreV2NullPtrStorageComposesWithDeclaratorsAndLayout) {
   invalid(M, "field offset");
 }
 
-TEST(TranslateIR, CoreV2NullPtrEqualityAndBoolConversionRemainTyped) {
+TEST(TranslateIR, CoreV2NullPtrEqualityAndStandardConversionsRemainTyped) {
   Type T{TypeKind::NullPtr, {}};
   const auto Null = pointerExpr(ExprKind::Null, T);
   auto Negated = pointerExpr(ExprKind::Unary, boolType(), {Null});
   Negated.UnaryOp = UnaryOperator::LogicalNot;
-  for (auto E : {binary(BinaryOperator::Equal, Null, Null, boolType()),
-                 binary(BinaryOperator::NotEqual, Null, Null, boolType()),
-                 pointerExpr(ExprKind::Cast, boolType(), {Null}), Negated}) {
+  for (auto E :
+       {binary(BinaryOperator::Equal, Null, Null, boolType()),
+        binary(BinaryOperator::NotEqual, Null, Null, boolType()),
+        pointerExpr(ExprKind::Cast, boolType(), {Null}),
+        pointerExpr(ExprKind::Cast, pointerType(intType()), {Null}), Negated}) {
     auto M = module(true);
-    M.Functions[0].Result = boolType();
+    M.Functions[0].Result = E.ValueType;
     M.Functions[0].Body.back() = ret(E);
     Diagnostics D;
     EmittedSource Out;
-    EXPECT_TRUE(emitNC(M, context(M), Out, D));
+    EXPECT_TRUE(emitNC(M, context(M), Out, D))
+        << (D.empty() ? std::string() : D.front().Reason);
   }
   auto M = module(true);
   M.Functions[0].Result = T;
@@ -3045,14 +3048,15 @@ TEST(TranslateIR, CoreV2NullPtrRejectsForgedValueTypesAndPayloads) {
 TEST(TranslateIR, CoreV2NullPtrRejectsInventedArithmeticAndCasts) {
   Type T{TypeKind::NullPtr, {}};
   const auto Null = pointerExpr(ExprKind::Null, T);
-  for (auto E : {binary(BinaryOperator::Add, Null, literal("1"), T),
-                 binary(BinaryOperator::Less, Null, Null, boolType()),
-                 binary(BinaryOperator::Equal, Null, literal("0"), boolType()),
-                 binary(BinaryOperator::Equal, Null, Null, intType()),
-                 pointerExpr(ExprKind::Cast, intType(), {Null}),
-                 pointerExpr(ExprKind::Cast, pointerType(intType()), {Null}),
-                 pointerExpr(ExprKind::Cast, T, {literal("0")}),
-                 pointerExpr(ExprKind::Cast, T, {pointerExpr(ExprKind::Null, pointerType(intType()))})}) {
+  for (auto E :
+       {binary(BinaryOperator::Add, Null, literal("1"), T),
+        binary(BinaryOperator::Less, Null, Null, boolType()),
+        binary(BinaryOperator::Equal, Null, literal("0"), boolType()),
+        binary(BinaryOperator::Equal, Null, Null, intType()),
+        pointerExpr(ExprKind::Cast, intType(), {Null}),
+        pointerExpr(ExprKind::Cast, T, {literal("0")}),
+        pointerExpr(ExprKind::Cast, T,
+                    {pointerExpr(ExprKind::Null, pointerType(intType()))})}) {
     auto M = module(true);
     M.Functions[0].Result = E.ValueType;
     M.Functions[0].Body.back() = ret(E);

@@ -398,6 +398,14 @@ std::optional<QualType> utilityScalarComparisonType(const ASTContext &Context,
     return Left;
   }
 
+  if (Left->isNullPtrType() || Right->isNullPtrType()) {
+    if (RequireOrderedObject)
+      return std::nullopt;
+    const auto Pointer = Left->isPointerType() ? Left : Right;
+    return Pointer->isPointerType() ? std::optional<QualType>(Pointer)
+                                    : std::nullopt;
+  }
+
   if (Left->isPointerType() || Right->isPointerType()) {
     if (!Left->isPointerType() || !Right->isPointerType())
       return std::nullopt;
@@ -476,7 +484,7 @@ static bool utilityScalarDirectConversion(const ASTContext &Context,
   if (Context.hasSameType(From, To))
     return true;
   if (From->isNullPtrType())
-    return To->isBooleanType();
+    return To->isBooleanType() || To->isPointerType();
   if (To->isNullPtrType())
     return false;
   if (From->isPointerType() || To->isPointerType()) {

@@ -1115,8 +1115,10 @@ class Verifier {
       const Type &From = E.Args[0].ValueType, &To = E.ValueType;
       if (From.Kind == TypeKind::NullPtr || To.Kind == TypeKind::NullPtr)
         return (From == To || (From.Kind == TypeKind::NullPtr &&
-                              To.Kind == TypeKind::Bool)) ||
-               error(E.Loc, "Null pointer values permit only identity or bool casts.");
+                               (To.Kind == TypeKind::Bool ||
+                                To.Kind == TypeKind::Pointer))) ||
+               error(E.Loc, "Null pointer values permit only identity, bool or "
+                            "object-pointer casts.");
       if (From.Kind == TypeKind::FunctionPointer || To.Kind == TypeKind::FunctionPointer)
         return (From == To || (From.Kind == TypeKind::FunctionPointer &&
                               To.Kind == TypeKind::Bool)) ||

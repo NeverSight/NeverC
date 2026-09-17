@@ -629,6 +629,18 @@ extern "C" int optional_operations(int value) {
   std::optional<int*> mutable_optional(mutable_pointer);
   std::optional<const int*> constant_optional(constant_pointer);
   std::optional<void*> erased_optional(erased_pointer);
+  using Null = decltype(nullptr);
+  std::optional<Null> null_value(nullptr);
+  std::optional<Null> null_empty;
+  std::optional<int*> null_pointer(nullptr);
+  std::optional<int*> converted_null(null_value);
+  std::optional<int*> converted_null_empty(null_empty);
+  std::optional<int*> assigned_null(mutable_pointer);
+  assigned_null = null_value;
+  null_pointer = nullptr;
+  null_pointer.emplace(nullptr);
+  auto made_null = std::make_optional<int*>(nullptr);
+  std::optional<int*> empty_pointer;
   bool heterogeneous = narrow < first && first > narrow &&
                        !(negative < unsigned_one) &&
                        !(unsigned_one > negative) &&
@@ -640,9 +652,22 @@ extern "C" int optional_operations(int value) {
                   constant_pointer == mutable_optional &&
                   mutable_optional == erased_optional &&
                   erased_optional == mutable_pointer;
+  bool null_conversions = null_value && *null_value == nullptr &&
+                          !null_empty && null_pointer &&
+                          *null_pointer == nullptr && converted_null &&
+                          *converted_null == nullptr &&
+                          !converted_null_empty && assigned_null &&
+                          *assigned_null == nullptr && made_null &&
+                          *made_null == nullptr &&
+                          empty_pointer.value_or(nullptr) == nullptr;
+  bool null_comparisons = null_pointer == null_value &&
+                          null_value == null_pointer &&
+                          null_pointer == nullptr &&
+                          nullptr == null_pointer;
   return first.has_value() && !second && *first == value + 1 &&
                  selected == value + 1 && optionals && nullopts && values &&
-                 heterogeneous && pointers &&
+                 heterogeneous && pointers && null_conversions &&
+                 null_comparisons &&
                  widened && *widened == 4 && widened_real &&
                  *widened_real == 4.0 && !widened_empty &&
                  *made == 0 && *zero == value + 2 && *placed == 6 &&
@@ -696,8 +721,8 @@ extern "C" int optional_operations(int value) {
         ("base-pointer-comparison",
          '#include <optional>\nstruct B{};struct D:B{};int f(B*p,D*q){std::optional<B*>a(p);std::optional<D*>b(q);return a==b;}int main(){return 0;}',
          "TR0203"),
-        ("nullptr-optional-conversion",
-         '#include <optional>\nint main(){std::optional<decltype(nullptr)>a(nullptr);std::optional<int*>b(a);return b.has_value();}',
+        ("function-pointer-element",
+         '#include <optional>\nusing F=int(*)();int main(){std::optional<F>v;return v.has_value();}',
          "TR0203"),
         ("standalone-in-place",
          '#include <optional>\nint main(){auto tag=std::in_place;return sizeof(tag);}',

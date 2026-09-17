@@ -28083,6 +28083,12 @@ TEST_F(TranslateTest, CoreV2ScalarOptionalUtilitiesRunAtBothOptimizations) {
 #include <optional>
 int effects;
 int fallback() { return 40 + ++effects; }
+using Null = decltype(nullptr);
+int null_effects;
+Null next_null() {
+  ++null_effects;
+  return nullptr;
+}
 int main() {
   std::optional<int> empty;
   std::optional<int> also_empty;
@@ -28153,13 +28159,44 @@ int main() {
       !(erased_pointer == mutable_address))
     return 5;
 
+  std::optional<Null> null_value(nullptr);
+  std::optional<Null> null_empty;
+  std::optional<int *> direct_null(nullptr);
+  std::optional<int *> converted_null(null_value);
+  std::optional<int *> converted_null_empty(null_empty);
+  std::optional<int *> assigned_null(mutable_address);
+  assigned_null = null_value;
+  direct_null = nullptr;
+  int *&placed_null = direct_null.emplace(nullptr);
+  auto made_null = std::make_optional<int *>(nullptr);
+  std::optional<int *> empty_pointer;
+  std::optional<int *> effectful_null(next_null());
+  effectful_null = next_null();
+  int *&effectful_placed = effectful_null.emplace(next_null());
+  auto effectful_made = std::make_optional<int *>(next_null());
+  int *empty_fallback = empty_pointer.value_or(next_null());
+  int *present_fallback = direct_null.value_or(next_null());
+  if (!null_value || *null_value != nullptr || null_empty || !direct_null ||
+      *direct_null != nullptr || &placed_null != &*direct_null ||
+      converted_null_empty || !converted_null || *converted_null != nullptr ||
+      !assigned_null || *assigned_null != nullptr || !made_null ||
+      *made_null != nullptr || empty_pointer.value_or(nullptr) != nullptr ||
+      !effectful_null || *effectful_null != nullptr ||
+      &effectful_placed != &*effectful_null || !effectful_made ||
+      *effectful_made != nullptr || empty_fallback != nullptr ||
+      present_fallback != nullptr || null_effects != 6 ||
+      !(direct_null == null_value) || direct_null != null_value ||
+      !(null_value == direct_null) || !(direct_null == nullptr) ||
+      !(nullptr == direct_null))
+    return 6;
+
   const std::optional<int> seven(7);
   if (seven.value_or(fallback()) != 7 || effects != 1)
-    return 6;
-  if (empty.value_or(fallback()) != 42 || effects != 2)
     return 7;
-  if (std::optional<int>(8).value_or(fallback()) != 8 || effects != 3)
+  if (empty.value_or(fallback()) != 42 || effects != 2)
     return 8;
+  if (std::optional<int>(8).value_or(fallback()) != 8 || effects != 3)
+    return 9;
 
   auto zero = std::make_optional<int>();
   int source = 4;
@@ -28171,7 +28208,7 @@ int main() {
   if (!zero || *zero != 6 || !explicit_value || *explicit_value != 0 ||
       !copied || *copied != 4 || !converted || *converted != 5 ||
       empty.value_or(small) != 5)
-    return 9;
+    return 10;
   return 0;
 }
 )cpp");
@@ -28217,9 +28254,9 @@ TEST_F(TranslateTest, CoreV2OptionalRequiresPinnedScalarOperations) {
        "int f(B*p,D*q){std::optional<B*>a(p);std::optional<D*>b(q);"
        "return a==b;}int main(){return 0;}",
        "TR0203"},
-      {"nullptr-optional-conversion",
-       "#include <optional>\nint main(){std::optional<decltype(nullptr)>a("
-       "nullptr);std::optional<int*>b(a);return b.has_value();}",
+      {"function-pointer-element",
+       "#include <optional>\nusing F=int(*)();int main(){std::optional<F>v;"
+       "return v.has_value();}",
        "TR0203"},
       {"standalone-in-place",
        "#include <optional>\nint main(){auto tag=std::in_place;"
