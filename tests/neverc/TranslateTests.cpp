@@ -24990,6 +24990,155 @@ TEST_F(TranslateTest, CoreV2AlgorithmOrderingRequirePinnedScalarForms) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2AlgorithmPermutationRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-permutation.cpp");
+  const auto Output = tmpFile("algorithm-permutation.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int main() {
+  int values[4]{1, 2, 2, 3};
+  int effects = 0;
+  if (!std::next_permutation((++effects, values),
+                             (++effects, values + 4)) ||
+      effects != 2)
+    return 1;
+  const int next_expected[4]{1, 2, 3, 2};
+  for (int i = 0; i != 4; ++i)
+    if (values[i] != next_expected[i])
+      return 2;
+  if (!std::prev_permutation(values, values + 4))
+    return 3;
+  const int original[4]{1, 2, 2, 3};
+  for (int i = 0; i != 4; ++i)
+    if (values[i] != original[i])
+      return 4;
+
+  int descending[3]{3, 2, 1};
+  if (std::next_permutation(descending, descending + 3) ||
+      descending[0] != 1 || descending[1] != 2 || descending[2] != 3)
+    return 5;
+  int ascending[3]{1, 2, 3};
+  if (std::prev_permutation(ascending, ascending + 3) ||
+      ascending[0] != 3 || ascending[1] != 2 || ascending[2] != 1)
+    return 6;
+  int one[1]{7};
+  if (std::next_permutation(one, one) ||
+      std::next_permutation(one, one + 1) || one[0] != 7)
+    return 7;
+
+  int cycle[3]{1, 1, 2};
+  int permutations = 1;
+  while (std::next_permutation(cycle, cycle + 3))
+    ++permutations;
+  if (permutations != 3 || cycle[0] != 1 || cycle[1] != 1 || cycle[2] != 2)
+    return 8;
+
+  const int second[4]{2, 3, 2, 1};
+  const int bad[4]{1, 2, 3, 3};
+  if (!std::is_permutation(original, original + 4, second))
+    return 9;
+  if (std::is_permutation(original, original + 4, bad))
+    return 10;
+  effects = 0;
+  if (!std::is_permutation((++effects, original),
+                           (++effects, original + 4),
+                           (++effects, second),
+                           (++effects, second + 4)) ||
+      effects != 4)
+    return 11;
+  if (std::is_permutation(original, original + 4, second, second + 3))
+    return 12;
+  if (!std::is_permutation(original, original, second, second))
+    return 13;
+
+  int left_value = 1, right_value = 2;
+  int *pointers[3]{&left_value, &right_value, &left_value};
+  int *reordered[3]{&left_value, &left_value, &right_value};
+  if (!std::is_permutation(pointers, pointers + 3, reordered,
+                           reordered + 3))
+    return 14;
+
+  float floating[3]{1.0f, 1.5f, 1.0f};
+  if (!std::next_permutation(floating, floating + 3) ||
+      floating[0] != 1.5f || floating[1] != 1.0f || floating[2] != 1.0f)
+    return 15;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Dependencies =
+      Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 354u);
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+  }
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-permutation" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmPermutationRequirePinnedScalarForms) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+  };
+  const Rejection Cases[] = {
+      {"enum-next", "#include <algorithm>\nenum E{low,high};"
+                    "int main(){E a[2]{low,high};"
+                    "return std::next_permutation(a,a+2)?0:1;}"},
+      {"pointer-prev",
+       "#include <algorithm>\nint main(){int a=1,b=2;int*p[2]{&a,&b};"
+       "return std::prev_permutation(p,p+2)?0:1;}"},
+      {"comparator-next",
+       "#include <algorithm>\nbool less(int a,int b){return a<b;}"
+       "int main(){int a[2]{1,2};"
+       "return std::next_permutation(a,a+2,&less)?0:1;}"},
+      {"record-prev", "#include <algorithm>\nstruct R{int n;};"
+                      "bool operator<(const R&a,const R&b){return a.n<b.n;}"
+                      "int main(){R a[2]{{1},{2}};"
+                      "return std::prev_permutation(a,a+2)?0:1;}"},
+      {"heterogeneous-is-permutation",
+       "#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{2,1};"
+       "return std::is_permutation(a,a+2,b,b+2)?0:1;}"},
+      {"record-is-permutation",
+       "#include <algorithm>\nstruct R{int n;};"
+       "bool operator==(const R&a,const R&b){return a.n==b.n;}"
+       "int main(){R a[2]{{1},{2}};"
+       "return std::is_permutation(a,a+2,a,a+2)?0:1;}"},
+      {"predicate-is-permutation",
+       "#include <algorithm>\nbool equal(int a,int b){return a==b;}"
+       "int main(){int a[2]{1,2};"
+       "return std::is_permutation(a,a+2,a,&equal)?0:1;}"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("algorithm-permutation-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("algorithm-permutation-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2IteratorPointerOperationsRunAtBothOptimizations) {
   const auto Source = tmpFile("iterator-operations.cpp");
   const auto Output = tmpFile("iterator-operations.nc");

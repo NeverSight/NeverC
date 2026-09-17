@@ -43,12 +43,14 @@ shim are available without platform headers. Exact scalar-pointer `copy`,
 The same is true for built-in equality elements with `find`, `count`, three- or
 four-iterator `equal`, `adjacent_find`, `remove`, `remove_copy`, `replace`,
 `replace_copy`, `unique`, `unique_copy`, `search`, `find_end`,
-`find_first_of`, `search_n` and three- or four-iterator `mismatch`, and for
+`find_first_of`, `search_n`, three- or four-iterator `mismatch` and three- or
+four-iterator `is_permutation`, and for
 arithmetic elements with `min`, `max`, `clamp`, `minmax`, `min_element`,
 `max_element`, `minmax_element`, `lower_bound`, `upper_bound`, `equal_range`,
 `binary_search`, `is_sorted`, `is_sorted_until`, `is_heap`, `is_heap_until`,
 `make_heap`, `push_heap`, `pop_heap`, `sort_heap`,
 `sort`, `partial_sort`, `partial_sort_copy`, `nth_element`,
+`next_permutation`, `prev_permutation`,
 `lexicographical_compare`, `includes`, `merge`, `set_union`, `set_intersection`,
 `set_difference` and `set_symmetric_difference`. Mutating and ordered output
 algorithms require writable destinations;

@@ -86,14 +86,16 @@ Algorithm directly lowers exact scalar-pointer `copy`, `move`, `copy_backward`,
 platform-free 354-file closure. Built-in equality elements admit
 `find`, `count`, three- or four-iterator `equal`, `adjacent_find`, `remove`,
 `remove_copy`, `replace`, `replace_copy`, `unique`, `unique_copy`, `search`,
-`find_end`, `find_first_of`, `search_n` and three- or four-iterator `mismatch`;
+`find_end`, `find_first_of`, `search_n`, three- or four-iterator `mismatch` and
+three- or four-iterator `is_permutation`;
 built-in arithmetic elements admit default-order
 `min`, `max`, `clamp`, `minmax`, `min_element`, `max_element`,
 `minmax_element`, `lower_bound`, `upper_bound`, `equal_range`, `binary_search`,
 `is_sorted`, `is_sorted_until`, `is_heap`, `is_heap_until`, `make_heap`,
 `push_heap`, `pop_heap`, `sort_heap`, `sort`, `partial_sort`,
-`partial_sort_copy`, `nth_element`, `lexicographical_compare`, `includes`,
-`merge` and the four `set_*` range algorithms. Mutating and ordered output
+`partial_sort_copy`, `nth_element`, `next_permutation`, `prev_permutation`,
+`lexicographical_compare`, `includes`, `merge` and the four `set_*` range
+algorithms. Mutating and ordered output
 algorithms require writable destinations, and `copy_n`,
 `fill_n` and `search_n` accept integral or non-scoped enum counts through 64
 bits after integer promotion.

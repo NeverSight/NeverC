@@ -2054,6 +2054,43 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Function->getReturnType()->isVoidType() &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmNthElement;
+  const bool PermutationMutation =
+      (Origin->Path == "__algorithm/next_permutation.h" &&
+       Name == "next_permutation") ||
+      (Origin->Path == "__algorithm/prev_permutation.h" &&
+       Name == "prev_permutation");
+  if (PermutationMutation && Call->getNumArgs() == 2 &&
+      Function->getNumParams() == 2 && Call->isPRValue() &&
+      AlgorithmOrderedPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      utilityAlgorithmWritableScalarPointer(
+          Context, Function->getParamDecl(0)->getType()) &&
+      Function->getReturnType()->isBooleanType() &&
+      Same(Call->getType(), Function->getReturnType()))
+    return Name == "next_permutation"
+               ? UtilityOperation::AlgorithmNextPermutation
+               : UtilityOperation::AlgorithmPrevPermutation;
+  if (Origin->Path == "__algorithm/is_permutation.h" &&
+      Name == "is_permutation" &&
+      (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
+      Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
+      Function->getReturnType()->isBooleanType() &&
+      Same(Call->getType(), Function->getReturnType()) &&
+      AlgorithmEqualityPointerParameter(0) &&
+      AlgorithmEqualityPointerParameter(1) &&
+      AlgorithmEqualityPointerParameter(2) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
+                           Function->getParamDecl(2)->getType())) {
+    if (Call->getNumArgs() == 3)
+      return UtilityOperation::AlgorithmIsPermutation;
+    if (AlgorithmEqualityPointerParameter(3) &&
+        Same(Function->getParamDecl(2)->getType(),
+             Function->getParamDecl(3)->getType()))
+      return UtilityOperation::AlgorithmIsPermutation;
+  }
   if (Origin->Path == "__iterator/reverse_iterator.h" &&
       Name == "make_reverse_iterator" && Call->getNumArgs() == 1 &&
       Function->getNumParams() == 1 && Call->isPRValue()) {

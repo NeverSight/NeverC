@@ -304,6 +304,22 @@ complexity and terminates directly on ranges of equivalent values. An empty
 selected prefix leaves `partial_sort` unchanged; an empty output returns the
 original output pointer.
 
+The exact default-order `std::next_permutation` and `std::prev_permutation`
+templates use the same writable built-in arithmetic pointer boundary. They
+find the rightmost movable pivot, exchange it with the rightmost qualifying
+element, reverse the suffix and return whether a lexicographically adjacent
+permutation existed. Empty and single-element ranges return false. A range at
+its final or initial permutation is reversed to the opposite endpoint before
+returning false.
+
+The exact default-equality three- and four-iterator `std::is_permutation`
+templates use the equality element boundary, so const ranges and object-pointer
+elements are accepted while enums and records remain excluded. The
+three-iterator form compares a second range of the first range's length. The
+four-iterator form checks both lengths before inspecting elements. Distinct
+values are counted at most once, preserving the standard quadratic comparison
+bound and duplicate multiplicities without allocating storage.
+
 The exact four-iterator `std::lexicographical_compare` and `std::includes`
 templates and exact five-iterator `std::merge`, `std::set_union`,
 `std::set_intersection`, `std::set_difference` and
@@ -326,8 +342,10 @@ constructs its scalar-pointer pair result directly. `remove` and `unique`
 return the compacted logical end; copy forms return their advanced destination.
 `copy_n` also preserves a non-positive-count fast path. `rotate` returns the
 new location of the original first element, while `rotate_copy` returns its
-advanced destination. Ordered two-range algorithms stop at the first decisive
-comparison and copy only the tails required by their standard result.
+advanced destination. Permutation mutation evaluates both bounds once, and
+permutation queries evaluate each supplied iterator once. Ordered two-range
+algorithms stop at the first decisive comparison and copy only the tails
+required by their standard result.
 Forward and backward loops preserve their respective standard overlap
 direction; `reverse` uses equality-only bidirectional contraction. Minimum and
 maximum scans retain the first equivalent element; sortedness scans report the

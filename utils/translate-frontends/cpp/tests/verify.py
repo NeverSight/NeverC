@@ -977,6 +977,41 @@ extern "C" int algorithm_ordering(int *first, int *middle, int *last,
           '#include <algorithm>\nint main(){int a[2]{2,1};long out[2]{};return std::partial_sort_copy(a,a+2,out,out+2)==out+2?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    algorithm_permutation_source = """\
+#include <algorithm>
+extern "C" int algorithm_permutation(int *first, int *last,
+                                       const int *second,
+                                       const int *second_last) {
+  bool next = std::next_permutation(first, last);
+  bool previous = std::prev_permutation(first, last);
+  bool unbounded = std::is_permutation(first, last, second);
+  bool bounded = std::is_permutation(first, last, second, second_last);
+  return next + previous + unbounded + bounded;
+}
+"""
+    algorithm_permutation = check("v2-algorithm-permutation",
+                                  algorithm_permutation_source,
+                                  profile="cpp-core-v2", sdk=True)
+    assert len(algorithm_permutation["sdk_dependencies"]) == 354, algorithm_permutation
+    assert not [node for node in walk(algorithm_permutation["functions"])
+                if node.get("op") in ("call", "mapped_call")], algorithm_permutation
+    for target in sdk_targets:
+        check("v2-algorithm-permutation-" + target,
+              algorithm_permutation_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-algorithm-permutation-enum",
+          '#include <algorithm>\nenum E{low,high};int main(){E a[2]{low,high};return std::next_permutation(a,a+2)?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-permutation-comparator",
+          '#include <algorithm>\nbool less(int a,int b){return a<b;}int main(){int a[2]{1,2};return std::next_permutation(a,a+2,&less)?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-permutation-heterogeneous",
+          '#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{2,1};return std::is_permutation(a,a+2,b,b+2)?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-permutation-predicate",
+          '#include <algorithm>\nbool equal(int a,int b){return a==b;}int main(){int a[2]{1,2};return std::is_permutation(a,a+2,a,&equal)?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     # Windows driver defaults must not change core-v2 source visibility or
     # standard diagnostics. Exercise both MSVC architectures on every CI host.
     standard_template_parsing = {

@@ -2680,6 +2680,226 @@ class FunctionLowering {
       label(End, L);
       return {};
     }
+    case UtilityOperation::AlgorithmNextPermutation:
+    case UtilityOperation::AlgorithmPrevPermutation: {
+      const bool Next = Operation == UtilityOperation::AlgorithmNextPermutation;
+      auto First = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      auto Current = temporary(PointerType, L);
+      auto Successor = temporary(PointerType, L);
+      auto Result = temporary("bool", L);
+      auto ReverseRange = [&](const Expression &RangeFirst,
+                              const Expression &RangeLast) {
+        auto Begin = snapshot(json::Object(RangeFirst), L);
+        auto End = snapshot(json::Object(RangeLast), L);
+        const auto Check = labelName(), Decrement = labelName();
+        const auto Swap = labelName(), Done = labelName();
+        jump(Check, L);
+        label(Check, L);
+        branch(binary("!=", Begin, End, "bool", L), Decrement, Done, L);
+        label(Decrement, L);
+        assign(End,
+               binary("-", End, quantity(1, DifferenceType, L), PointerType, L),
+               L);
+        branch(binary("!=", Begin, End, "bool", L), Swap, Done, L);
+        label(Swap, L);
+        auto BeginValue = snapshot(dereference(Begin, L), L);
+        auto EndValue = snapshot(dereference(End, L), L);
+        assign(dereference(Begin, L), std::move(EndValue), L);
+        assign(dereference(End, L), std::move(BeginValue), L);
+        assign(
+            Begin,
+            binary("+", Begin, quantity(1, DifferenceType, L), PointerType, L),
+            L);
+        jump(Check, L);
+        label(Done, L);
+      };
+      const auto NonEmpty = labelName(), Search = labelName();
+      const auto ComparePivot = labelName(), CheckFirst = labelName();
+      const auto FindSuccessor = labelName(), CheckSuccessor = labelName();
+      const auto Exchange = labelName(), Wrap = labelName();
+      const auto EmptyOrSingle = labelName(), End = labelName();
+      branch(binary("!=", First, Last, "bool", L), NonEmpty, EmptyOrSingle, L);
+      label(NonEmpty, L);
+      assign(Current,
+             binary("-", Last, quantity(1, DifferenceType, L), PointerType, L),
+             L);
+      branch(binary("!=", First, Current, "bool", L), Search, EmptyOrSingle, L);
+      label(Search, L);
+      assign(Successor, Current, L);
+      assign(
+          Current,
+          binary("-", Current, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      jump(ComparePivot, L);
+      label(ComparePivot, L);
+      branch(Next ? binary("<", dereference(Current, L),
+                           dereference(Successor, L), "bool", L)
+                  : binary("<", dereference(Successor, L),
+                           dereference(Current, L), "bool", L),
+             FindSuccessor, CheckFirst, L);
+      label(CheckFirst, L);
+      branch(binary("==", Current, First, "bool", L), Wrap, Search, L);
+      label(FindSuccessor, L);
+      assign(Successor, Last, L);
+      jump(CheckSuccessor, L);
+      label(CheckSuccessor, L);
+      assign(Successor,
+             binary("-", Successor, quantity(1, DifferenceType, L), PointerType,
+                    L),
+             L);
+      branch(Next ? binary("<", dereference(Current, L),
+                           dereference(Successor, L), "bool", L)
+                  : binary("<", dereference(Successor, L),
+                           dereference(Current, L), "bool", L),
+             Exchange, CheckSuccessor, L);
+      label(Exchange, L);
+      {
+        auto CurrentValue = snapshot(dereference(Current, L), L);
+        auto SuccessorValue = snapshot(dereference(Successor, L), L);
+        assign(dereference(Current, L), std::move(SuccessorValue), L);
+        assign(dereference(Successor, L), std::move(CurrentValue), L);
+      }
+      assign(
+          Successor,
+          binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      ReverseRange(Successor, Last);
+      assign(Result, boolean(true, L), L);
+      jump(End, L);
+      label(Wrap, L);
+      ReverseRange(First, Last);
+      jump(EmptyOrSingle, L);
+      label(EmptyOrSingle, L);
+      assign(Result, boolean(false, L), L);
+      jump(End, L);
+      label(End, L);
+      return Result;
+    }
+    case UtilityOperation::AlgorithmIsPermutation: {
+      auto First = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto Second = snapshot(expression(Call->getArg(2)), L);
+      std::optional<Expression> ExplicitSecondLast;
+      if (Call->getNumArgs() == 4)
+        ExplicitSecondLast = snapshot(expression(Call->getArg(3)), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto FirstType = type(Call->getArg(0)->getType(), L);
+      const auto SecondType = type(Call->getArg(2)->getType(), L);
+      auto Length = snapshot(binary("-", Last, First, DifferenceType, L), L);
+      auto SecondLast =
+          ExplicitSecondLast
+              ? std::move(*ExplicitSecondLast)
+              : snapshot(binary("+", Second, Length, SecondType, L), L);
+      auto Current = snapshot(json::Object(First), L);
+      auto Previous = temporary(FirstType, L);
+      auto FirstScan = temporary(FirstType, L);
+      auto SecondScan = temporary(SecondType, L);
+      auto FirstCount = temporary(DifferenceType, L);
+      auto SecondCount = temporary(DifferenceType, L);
+      auto Result = temporary("bool", L);
+      const auto OuterCheck = labelName(), BeginDuplicateSearch = labelName();
+      const auto DuplicateCheck = labelName(), ComparePrevious = labelName();
+      const auto AdvancePrevious = labelName(), BeginFirstCount = labelName();
+      const auto FirstScanCheck = labelName(), CompareFirst = labelName();
+      const auto IncrementFirst = labelName(), AdvanceFirstScan = labelName();
+      const auto BeginSecondCount = labelName(), SecondScanCheck = labelName();
+      const auto CompareSecond = labelName(), IncrementSecond = labelName();
+      const auto AdvanceSecondScan = labelName(), CompareCounts = labelName();
+      const auto AdvanceCurrent = labelName(), TrueResult = labelName();
+      const auto FalseResult = labelName(), End = labelName();
+      if (Call->getNumArgs() == 4) {
+        branch(binary("==", Length,
+                      binary("-", SecondLast, Second, DifferenceType, L),
+                      "bool", L),
+               OuterCheck, FalseResult, L);
+      } else {
+        jump(OuterCheck, L);
+      }
+      label(OuterCheck, L);
+      branch(binary("!=", Current, Last, "bool", L), BeginDuplicateSearch,
+             TrueResult, L);
+      label(BeginDuplicateSearch, L);
+      assign(Previous, First, L);
+      jump(DuplicateCheck, L);
+      label(DuplicateCheck, L);
+      branch(binary("!=", Previous, Current, "bool", L), ComparePrevious,
+             BeginFirstCount, L);
+      label(ComparePrevious, L);
+      branch(binary("==", dereference(Previous, L), dereference(Current, L),
+                    "bool", L),
+             AdvanceCurrent, AdvancePrevious, L);
+      label(AdvancePrevious, L);
+      assign(
+          Previous,
+          binary("+", Previous, quantity(1, DifferenceType, L), FirstType, L),
+          L);
+      jump(DuplicateCheck, L);
+      label(BeginFirstCount, L);
+      assign(FirstCount, quantity(0, DifferenceType, L), L);
+      assign(FirstScan, Current, L);
+      jump(FirstScanCheck, L);
+      label(FirstScanCheck, L);
+      branch(binary("!=", FirstScan, Last, "bool", L), CompareFirst,
+             BeginSecondCount, L);
+      label(CompareFirst, L);
+      branch(binary("==", dereference(FirstScan, L), dereference(Current, L),
+                    "bool", L),
+             IncrementFirst, AdvanceFirstScan, L);
+      label(IncrementFirst, L);
+      assign(FirstCount,
+             binary("+", FirstCount, quantity(1, DifferenceType, L),
+                    DifferenceType, L),
+             L);
+      jump(AdvanceFirstScan, L);
+      label(AdvanceFirstScan, L);
+      assign(
+          FirstScan,
+          binary("+", FirstScan, quantity(1, DifferenceType, L), FirstType, L),
+          L);
+      jump(FirstScanCheck, L);
+      label(BeginSecondCount, L);
+      assign(SecondCount, quantity(0, DifferenceType, L), L);
+      assign(SecondScan, Second, L);
+      jump(SecondScanCheck, L);
+      label(SecondScanCheck, L);
+      branch(binary("!=", SecondScan, SecondLast, "bool", L), CompareSecond,
+             CompareCounts, L);
+      label(CompareSecond, L);
+      branch(binary("==", dereference(SecondScan, L), dereference(Current, L),
+                    "bool", L),
+             IncrementSecond, AdvanceSecondScan, L);
+      label(IncrementSecond, L);
+      assign(SecondCount,
+             binary("+", SecondCount, quantity(1, DifferenceType, L),
+                    DifferenceType, L),
+             L);
+      jump(AdvanceSecondScan, L);
+      label(AdvanceSecondScan, L);
+      assign(SecondScan,
+             binary("+", SecondScan, quantity(1, DifferenceType, L), SecondType,
+                    L),
+             L);
+      jump(SecondScanCheck, L);
+      label(CompareCounts, L);
+      branch(binary("==", FirstCount, SecondCount, "bool", L), AdvanceCurrent,
+             FalseResult, L);
+      label(AdvanceCurrent, L);
+      assign(Current,
+             binary("+", Current, quantity(1, DifferenceType, L), FirstType, L),
+             L);
+      jump(OuterCheck, L);
+      label(TrueResult, L);
+      assign(Result, boolean(true, L), L);
+      jump(End, L);
+      label(FalseResult, L);
+      assign(Result, boolean(false, L), L);
+      jump(End, L);
+      label(End, L);
+      return Result;
+    }
     case UtilityOperation::MakePair: {
       auto Pair = approvedUtilityPairRecord(
           A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);

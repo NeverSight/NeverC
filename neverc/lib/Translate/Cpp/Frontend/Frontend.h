@@ -374,6 +374,9 @@ enum class UtilityOperation {
   AlgorithmPartialSort,
   AlgorithmPartialSortCopy,
   AlgorithmNthElement,
+  AlgorithmNextPermutation,
+  AlgorithmPrevPermutation,
+  AlgorithmIsPermutation,
 };
 struct UtilityPairRecord {
   const clang::CXXRecordDecl *Record;
