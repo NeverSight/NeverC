@@ -2189,12 +2189,16 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       (Origin->Path == "__algorithm/is_heap.h" && Name == "is_heap") ||
       (Origin->Path == "__algorithm/is_heap_until.h" &&
        Name == "is_heap_until");
-  if (HeapQueryAlgorithm && Call->getNumArgs() == 2 &&
-      Function->getNumParams() == 2 && Call->isPRValue() &&
-      AlgorithmOrderedPointerParameter(0) && AlgorithmPointerParameter(1) &&
+  if (HeapQueryAlgorithm &&
+      (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
+      Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      Same(Call->getType(), Function->getReturnType())) {
+      Same(Call->getType(), Function->getReturnType()) &&
+      ((Call->getNumArgs() == 2 && AlgorithmOrderedPointerParameter(0)) ||
+       (Call->getNumArgs() == 3 &&
+        AlgorithmBinaryPredicateParameter(2, 0, 0)))) {
     if (Name == "is_heap" && Function->getReturnType()->isBooleanType())
       return UtilityOperation::AlgorithmIsHeap;
     if (Name == "is_heap_until" &&
@@ -2206,15 +2210,19 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       (Origin->Path == "__algorithm/push_heap.h" && Name == "push_heap") ||
       (Origin->Path == "__algorithm/pop_heap.h" && Name == "pop_heap") ||
       (Origin->Path == "__algorithm/sort_heap.h" && Name == "sort_heap");
-  if (HeapMutationAlgorithm && Call->getNumArgs() == 2 &&
-      Function->getNumParams() == 2 && AlgorithmOrderedPointerParameter(0) &&
-      AlgorithmPointerParameter(1) &&
+  if (HeapMutationAlgorithm &&
+      (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
+      Function->getNumParams() == Call->getNumArgs() &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       utilityAlgorithmWritableScalarPointer(
           Context, Function->getParamDecl(0)->getType()) &&
       Function->getReturnType()->isVoidType() &&
-      Same(Call->getType(), Function->getReturnType())) {
+      Same(Call->getType(), Function->getReturnType()) &&
+      ((Call->getNumArgs() == 2 && AlgorithmOrderedPointerParameter(0)) ||
+       (Call->getNumArgs() == 3 &&
+        AlgorithmBinaryPredicateParameter(2, 0, 0)))) {
     if (Name == "make_heap")
       return UtilityOperation::AlgorithmMakeHeap;
     if (Name == "push_heap")

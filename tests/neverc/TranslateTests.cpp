@@ -25600,9 +25600,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmHeapRequirePinnedScalarForms) {
       {"pointer-query",
        "#include <algorithm>\nint main(){int a=1,b=2;int*p[2]{&a,&b};"
        "return std::is_heap(p,p+2)?0:1;}"},
-      {"comparator-query",
-       "#include <algorithm>\nbool less(int a,int b){return a<b;}"
-       "int main(){int a[2]{2,1};return std::is_heap(a,a+2,&less)?0:1;}"},
       {"record-sort",
        "#include <algorithm>\nstruct R{int n;};"
        "bool operator<(const R&a,const R&b){return a.n<b.n;}"
@@ -25617,6 +25614,165 @@ TEST_F(TranslateTest, CoreV2AlgorithmHeapRequirePinnedScalarForms) {
     expectCode(
         translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
         "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmComparatorHeapRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-comparator-heap.cpp");
+  const auto Output = tmpFile("algorithm-comparator-heap.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int calls;
+bool greater_value(int left, int right) {
+  ++calls;
+  return left > right;
+}
+enum Rank : unsigned char { low, medium, high };
+bool rank_greater(Rank left, Rank right) {
+  ++calls;
+  return left > right;
+}
+bool pointed_greater(int *left, int *right) {
+  ++calls;
+  return *left > *right;
+}
+int main() {
+  const int valid[5]{1, 3, 2, 7, 6};
+  calls = 0;
+  if (!std::is_heap(valid, valid + 5, greater_value) ||
+      std::is_heap_until(valid, valid + 5, greater_value) != valid + 5 ||
+      calls != 8)
+    return 1;
+  const int bad[4]{1, 3, 2, 0};
+  calls = 0;
+  if (std::is_heap(bad, bad + 4, greater_value) ||
+      std::is_heap_until(bad, bad + 4, greater_value) != bad + 3 || calls != 6)
+    return 2;
+
+  int values[10]{3, 1, 4, 1, 5, 9, 2, 6, 5, 0};
+  int effects = 0;
+  auto comparator = &greater_value;
+  calls = 0;
+  std::make_heap((++effects, values), (++effects, values + 9),
+                 (++effects, comparator));
+  if (effects != 3 || calls == 0 ||
+      !std::is_heap(values, values + 9, greater_value) || values[0] != 1)
+    return 3;
+  values[9] = 0;
+  std::push_heap(values, values + 10, greater_value);
+  if (!std::is_heap(values, values + 10, greater_value) || values[0] != 0)
+    return 4;
+  std::pop_heap(values, values + 10, greater_value);
+  if (values[9] != 0 ||
+      !std::is_heap(values, values + 9, greater_value))
+    return 5;
+  std::sort_heap(values, values + 9, greater_value);
+  const int expected[9]{9, 6, 5, 5, 4, 3, 2, 1, 1};
+  for (int i = 0; i != 9; ++i)
+    if (values[i] != expected[i])
+      return 6;
+
+  Rank one[1]{medium};
+  calls = 0;
+  std::make_heap(one, one + 1, rank_greater);
+  std::push_heap(one, one + 1, rank_greater);
+  std::pop_heap(one, one + 1, rank_greater);
+  std::sort_heap(one, one + 1, rank_greater);
+  if (!std::is_heap(one, one + 1, rank_greater) ||
+      std::is_heap_until(one, one + 1, rank_greater) != one + 1 ||
+      one[0] != medium || calls != 0)
+    return 7;
+
+  Rank ranks[4]{medium, high, low, high};
+  calls = 0;
+  std::make_heap(ranks, ranks + 4, rank_greater);
+  if (ranks[0] != low || !std::is_heap(ranks, ranks + 4, rank_greater))
+    return 8;
+  std::sort_heap(ranks, ranks + 4, rank_greater);
+  if (ranks[0] != high || ranks[1] != high || ranks[2] != medium ||
+      ranks[3] != low || calls == 0)
+    return 9;
+
+  int objects[4]{1, 4, 2, 3};
+  int *pointers[4]{objects, objects + 1, objects + 2, objects + 3};
+  calls = 0;
+  std::make_heap(pointers, pointers + 4, pointed_greater);
+  if (*pointers[0] != 1 ||
+      !std::is_heap(pointers, pointers + 4, pointed_greater))
+    return 10;
+  std::sort_heap(pointers, pointers + 4, pointed_greater);
+  if (*pointers[0] != 4 || *pointers[1] != 3 || *pointers[2] != 2 ||
+      *pointers[3] != 1 || calls == 0)
+    return 11;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Dependencies =
+      Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 354u);
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+  }
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-comparator-heap" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmComparatorHeapRequiresExactFunctions) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code = "TR0203";
+  };
+  const Rejection Cases[] = {
+      {"reference-parameter",
+       "bool p(const int&a,int b){return a<b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{2,1};std::make_heap(a,a+2,p);return 0;}"},
+      {"non-bool-result",
+       "int p(int a,int b){return a<b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{2,1};return std::is_heap(a,a+2,p)?0:1;}"},
+      {"converted-parameter",
+       "bool p(long a,long b){return a<b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{2,1};std::sort_heap(a,a+2,p);return 0;}"},
+      {"function-object",
+       "struct P{bool operator()(int a,int b)const{return a<b;}};\n"
+       "#include <algorithm>\nint main(){int a[2]{2,1};"
+       "std::push_heap(a,a+2,P{});return 0;}"},
+      {"record-elements", "struct R{int n;};bool p(R a,R b){return a.n<b.n;}\n"
+                          "#include <algorithm>\nint main(){R a[2]{{2},{1}};"
+                          "std::pop_heap(a,a+2,p);return 0;}"},
+      {"variadic-comparator",
+       "bool p(int a,int b,...){return a<b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{2,1};return std::is_heap(a,a+2,p)?0:1;}",
+       "TR0201"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("algorithm-comparator-heap-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("algorithm-comparator-heap-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
     expectNoArtifacts(Output);
   }
 }

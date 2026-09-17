@@ -396,6 +396,15 @@ and retains the standard linear comparison bound. Empty and single-element
 query, construction, push and sort ranges are handled without dereferencing
 them; `pop_heap` retains the standard nonempty-range precondition.
 
+The corresponding three-argument heap overloads accept the exact scalar
+function-pointer comparator boundary above, including enum and object-pointer
+elements. The comparator defines the heap order: for example, a greater-than
+callback builds a minimum heap and `sort_heap` produces descending order. Each
+call retains the callback once; query ranges may be read-only, mutation ranges
+remain writable, and empty or single-element work performs no callback calls.
+Reference or converted callback signatures, non-boolean results, variadic
+functions, callable objects and record elements remain rejected.
+
 The exact default-order `std::sort`, `std::partial_sort`,
 `std::partial_sort_copy` and `std::nth_element` templates use that arithmetic
 ordering boundary. `sort`, `partial_sort` and `nth_element` require writable

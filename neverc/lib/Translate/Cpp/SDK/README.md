@@ -66,7 +66,9 @@ Exact function-pointer comparators admit `min_element`, `max_element`,
 `is_sorted_until`, plus `min`, `max`, `clamp`, `minmax` and `minmax_element` on
 same-type scalar ranges and values, and `lexicographical_compare`, `includes`,
 `merge`, `set_union`, `set_intersection`, `set_difference` and
-`set_symmetric_difference` on same-element scalar ranges.
+`set_symmetric_difference` on same-element scalar ranges. The same comparator
+boundary admits `is_heap`, `is_heap_until`, `make_heap`, `push_heap`, `pop_heap`
+and `sort_heap`.
 Exact function-pointer callbacks also admit `for_each`, `for_each_n`, unary and
 binary `transform`, `generate` and `generate_n`.
 Predicate mutation and ordered output algorithms require writable destinations;

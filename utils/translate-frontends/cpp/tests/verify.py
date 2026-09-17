@@ -1160,8 +1160,46 @@ extern "C" int algorithm_heap(int *first, int *last) {
     check("v2-algorithm-heap-enum",
           '#include <algorithm>\nenum E{low,high};int main(){E a[2]{low,high};std::make_heap(a,a+2);return 0;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
-    check("v2-algorithm-heap-comparator",
-          '#include <algorithm>\nbool less(int a,int b){return a<b;}int main(){int a[2]{2,1};return std::is_heap(a,a+2,&less)?0:1;}',
+
+    algorithm_comparator_heap_source = """\
+#include <algorithm>
+extern "C" int algorithm_comparator_heap(
+    int *first, int *last, bool (*comparator)(int, int)) {
+  bool heap = std::is_heap(first, last, comparator);
+  int *until = std::is_heap_until(first, last, comparator);
+  std::make_heap(first, last, comparator);
+  std::push_heap(first, last, comparator);
+  std::pop_heap(first, last, comparator);
+  std::sort_heap(first, last, comparator);
+  return heap + static_cast<int>((until - first) + (last - first));
+}
+"""
+
+    def assert_comparator_heap(data):
+        assert len(data["sdk_dependencies"]) == 354, data
+        nodes = list(walk(data["functions"]))
+        assert not [node for node in nodes
+                    if node.get("op") in ("call", "mapped_call")], data
+        assert sum(node.get("op") == "indirect_call"
+                   for node in nodes) == 9, data
+
+    algorithm_comparator_heap = check(
+        "v2-algorithm-comparator-heap", algorithm_comparator_heap_source,
+        profile="cpp-core-v2", sdk=True)
+    assert_comparator_heap(algorithm_comparator_heap)
+    for target in sdk_targets:
+        target_result = check("v2-algorithm-comparator-heap-" + target,
+                              algorithm_comparator_heap_source,
+                              profile="cpp-core-v2", target=target, sdk=True)
+        assert_comparator_heap(target_result)
+    check("v2-algorithm-comparator-heap-reference",
+          'bool p(const int&a,int b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{2,1};std::make_heap(a,a+2,p);return 0;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-comparator-heap-conversion",
+          'bool p(long a,long b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{2,1};std::sort_heap(a,a+2,p);return 0;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-comparator-heap-record",
+          'struct R{int n;};bool p(R a,R b){return a.n<b.n;}\n#include <algorithm>\nint main(){R a[2]{{2},{1}};std::pop_heap(a,a+2,p);return 0;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
     algorithm_ordering_source = """\
