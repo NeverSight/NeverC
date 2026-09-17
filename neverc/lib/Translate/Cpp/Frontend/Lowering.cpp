@@ -581,6 +581,19 @@ class FunctionLowering {
       return dereference(std::move(Value), L);
     return Value;
   }
+  Expression emitAlgorithmCallback(Expression Callable, QualType CallbackType,
+                                   json::Array Arguments, SourceLocation L) {
+    const auto *Prototype =
+        CallbackType->isFunctionPointerType()
+            ? CallbackType->getPointeeType()->getAs<FunctionProtoType>()
+            : nullptr;
+    if (!Prototype || Prototype->isVariadic() ||
+        Prototype->getNumParams() != Arguments.size())
+      reject(L, "algorithm callback",
+             "A checked fixed-arity function pointer is required.");
+    return emitIndirectCall(std::move(Callable), std::move(Arguments),
+                            Prototype->getReturnType(), L);
+  }
   Expression emitUnaryPredicate(Expression Callable, QualType PredicateType,
                                 Expression Argument, SourceLocation L) {
     const auto *Prototype =
@@ -591,8 +604,8 @@ class FunctionLowering {
              "A checked unary boolean callback is required.");
     json::Array Arguments;
     Arguments.push_back(std::move(Argument));
-    return emitIndirectCall(std::move(Callable), std::move(Arguments),
-                            Prototype->getReturnType(), L);
+    return emitAlgorithmCallback(std::move(Callable), PredicateType,
+                                 std::move(Arguments), L);
   }
   Expression indirectCall(const CallExpr *Call) {
     auto L = Call->getExprLoc();
@@ -3397,6 +3410,168 @@ class FunctionLowering {
       jump(Check, L);
       label(End, L);
       return First;
+    }
+    case UtilityOperation::AlgorithmForEach: {
+      auto Current = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto Callback = snapshot(expression(Call->getArg(2)), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto Check = labelName(), Invoke = labelName(), End = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", Current, Last, "bool", L), Invoke, End, L);
+      label(Invoke, L);
+      {
+        json::Array Arguments;
+        Arguments.push_back(dereference(json::Object(Current), L));
+        emitAlgorithmCallback(json::Object(Callback),
+                              Call->getArg(2)->getType(), std::move(Arguments),
+                              L);
+      }
+      assign(
+          Current,
+          binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      jump(Check, L);
+      label(End, L);
+      return Callback;
+    }
+    case UtilityOperation::AlgorithmForEachN: {
+      auto Current = snapshot(expression(Call->getArg(0)), L);
+      auto CountType = Call->getArg(1)->getType();
+      if (const auto *Enumeration = CountType->getAs<EnumType>())
+        CountType = Enumeration->getDecl()->getPromotionType();
+      else if (A.Context.isPromotableIntegerType(CountType))
+        CountType = A.Context.getPromotedIntegerType(CountType);
+      const auto CountTypeName = type(CountType, L);
+      auto Remaining =
+          snapshot(cast(expression(Call->getArg(1)), CountTypeName, L), L);
+      auto Callback = snapshot(expression(Call->getArg(2)), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto Check = labelName(), Invoke = labelName(), End = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary(">", Remaining, quantity(0, CountTypeName, L), "bool", L),
+             Invoke, End, L);
+      label(Invoke, L);
+      {
+        json::Array Arguments;
+        Arguments.push_back(dereference(json::Object(Current), L));
+        emitAlgorithmCallback(json::Object(Callback),
+                              Call->getArg(2)->getType(), std::move(Arguments),
+                              L);
+      }
+      assign(
+          Current,
+          binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      assign(Remaining,
+             binary("-", Remaining, quantity(1, CountTypeName, L),
+                    CountTypeName, L),
+             L);
+      jump(Check, L);
+      label(End, L);
+      return Current;
+    }
+    case UtilityOperation::AlgorithmTransformUnary:
+    case UtilityOperation::AlgorithmTransformBinary: {
+      const bool Binary =
+          Operation == UtilityOperation::AlgorithmTransformBinary;
+      auto First = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      std::optional<Expression> Second;
+      if (Binary)
+        Second = snapshot(expression(Call->getArg(2)), L);
+      const unsigned OutputIndex = Binary ? 3 : 2;
+      const unsigned CallbackIndex = Binary ? 4 : 3;
+      auto Output = snapshot(expression(Call->getArg(OutputIndex)), L);
+      auto Callback = snapshot(expression(Call->getArg(CallbackIndex)), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto FirstType = type(Call->getArg(0)->getType(), L);
+      const auto SecondType =
+          Binary ? type(Call->getArg(2)->getType(), L) : std::string();
+      const auto OutputType = type(Call->getArg(OutputIndex)->getType(), L);
+      const auto Check = labelName(), Invoke = labelName(), End = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", First, Last, "bool", L), Invoke, End, L);
+      label(Invoke, L);
+      {
+        json::Array Arguments;
+        Arguments.push_back(dereference(json::Object(First), L));
+        if (Second)
+          Arguments.push_back(dereference(json::Object(*Second), L));
+        auto Value = emitAlgorithmCallback(
+            json::Object(Callback), Call->getArg(CallbackIndex)->getType(),
+            std::move(Arguments), L);
+        assign(dereference(Output, L), std::move(Value), L);
+      }
+      assign(First,
+             binary("+", First, quantity(1, DifferenceType, L), FirstType, L),
+             L);
+      if (Second)
+        assign(
+            *Second,
+            binary("+", *Second, quantity(1, DifferenceType, L), SecondType, L),
+            L);
+      assign(Output,
+             binary("+", Output, quantity(1, DifferenceType, L), OutputType, L),
+             L);
+      jump(Check, L);
+      label(End, L);
+      return Output;
+    }
+    case UtilityOperation::AlgorithmGenerate:
+    case UtilityOperation::AlgorithmGenerateN: {
+      const bool Counted = Operation == UtilityOperation::AlgorithmGenerateN;
+      auto Current = snapshot(expression(Call->getArg(0)), L);
+      std::optional<Expression> Last;
+      std::optional<Expression> Remaining;
+      std::string CountTypeName;
+      if (Counted) {
+        auto CountType = Call->getArg(1)->getType();
+        if (const auto *Enumeration = CountType->getAs<EnumType>())
+          CountType = Enumeration->getDecl()->getPromotionType();
+        else if (A.Context.isPromotableIntegerType(CountType))
+          CountType = A.Context.getPromotedIntegerType(CountType);
+        CountTypeName = type(CountType, L);
+        Remaining =
+            snapshot(cast(expression(Call->getArg(1)), CountTypeName, L), L);
+      } else {
+        Last = snapshot(expression(Call->getArg(1)), L);
+      }
+      auto Callback = snapshot(expression(Call->getArg(2)), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto Check = labelName(), Invoke = labelName(), End = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(Counted ? binary(">", *Remaining, quantity(0, CountTypeName, L),
+                              "bool", L)
+                     : binary("!=", Current, *Last, "bool", L),
+             Invoke, End, L);
+      label(Invoke, L);
+      {
+        json::Array Arguments;
+        auto Value = emitAlgorithmCallback(json::Object(Callback),
+                                           Call->getArg(2)->getType(),
+                                           std::move(Arguments), L);
+        assign(dereference(Current, L), std::move(Value), L);
+      }
+      assign(
+          Current,
+          binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      if (Remaining)
+        assign(*Remaining,
+               binary("-", *Remaining, quantity(1, CountTypeName, L),
+                      CountTypeName, L),
+               L);
+      jump(Check, L);
+      label(End, L);
+      return Counted ? Current : Expression{};
     }
     case UtilityOperation::MakePair: {
       auto Pair = approvedUtilityPairRecord(

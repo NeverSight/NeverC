@@ -1375,6 +1375,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   const bool ApprovedNonInlineAlgorithm =
       (Origin->Path == "__algorithm/remove.h" && Name == "remove") ||
       (Origin->Path == "__algorithm/remove_if.h" && Name == "remove_if") ||
+      (Origin->Path == "__algorithm/for_each.h" && Name == "for_each") ||
       (Origin->Path == "__algorithm/is_partitioned.h" &&
        Name == "is_partitioned") ||
       (Origin->Path == "__algorithm/partition_copy.h" &&
@@ -1485,22 +1486,30 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Element->isSpecificBuiltinType(BuiltinType::Float) ||
            Element->isSpecificBuiltinType(BuiltinType::Double);
   };
+  auto AlgorithmCallbackPrototype =
+      [&](unsigned CallbackIndex) -> const FunctionProtoType * {
+    if (CallbackIndex >= Function->getNumParams() ||
+        CallbackIndex >= Call->getNumArgs())
+      return nullptr;
+    auto Callback = Function->getParamDecl(CallbackIndex)->getType();
+    if (!Callback->isFunctionPointerType() ||
+        !Same(Call->getArg(CallbackIndex)->getType(), Callback))
+      return nullptr;
+    const auto *Prototype =
+        Callback->getPointeeType()->getAs<FunctionProtoType>();
+    return Prototype && !Prototype->isVariadic() ? Prototype : nullptr;
+  };
   auto AlgorithmUnaryPredicateParameter = [&](unsigned PredicateIndex,
                                               unsigned IteratorIndex) {
     if (PredicateIndex >= Function->getNumParams() ||
         PredicateIndex >= Call->getNumArgs() ||
         IteratorIndex >= Function->getNumParams())
       return false;
-    auto Predicate = Function->getParamDecl(PredicateIndex)->getType();
     auto Iterator = Function->getParamDecl(IteratorIndex)->getType();
-    if (!Predicate->isFunctionPointerType() ||
-        !Same(Call->getArg(PredicateIndex)->getType(), Predicate) ||
-        !utilityAlgorithmScalarPointer(Context, Iterator))
+    if (!utilityAlgorithmScalarPointer(Context, Iterator))
       return false;
-    const auto *Prototype =
-        Predicate->getPointeeType()->getAs<FunctionProtoType>();
-    if (!Prototype || Prototype->isVariadic() ||
-        Prototype->getNumParams() != 1 ||
+    const auto *Prototype = AlgorithmCallbackPrototype(PredicateIndex);
+    if (!Prototype || Prototype->getNumParams() != 1 ||
         !Prototype->getReturnType()->isBooleanType())
       return false;
     auto Parameter = Prototype->getParamType(0);
@@ -2263,6 +2272,101 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Same(Pair->First->getType(), Function->getParamDecl(2)->getType()) &&
         Same(Pair->Second->getType(), Function->getParamDecl(3)->getType()))
       return UtilityOperation::AlgorithmPartitionCopy;
+  }
+  if (Origin->Path == "__algorithm/for_each.h" && Name == "for_each" &&
+      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
+      Call->isPRValue() && AlgorithmPointerParameter(0) &&
+      AlgorithmPointerParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto *Callback = AlgorithmCallbackPrototype(2);
+    if (Callback && Callback->getNumParams() == 1 &&
+        utilityScalar(Context, Callback->getParamType(0)) &&
+        Context.hasSameUnqualifiedType(
+            Callback->getParamType(0),
+            Function->getParamDecl(0)->getType()->getPointeeType()) &&
+        (Callback->getReturnType()->isVoidType() ||
+         utilityScalar(Context, Callback->getReturnType())))
+      return UtilityOperation::AlgorithmForEach;
+  }
+  if (Origin->Path == "__algorithm/for_each_n.h" && Name == "for_each_n" &&
+      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
+      Call->isPRValue() && AlgorithmPointerParameter(0) &&
+      AlgorithmCountParameter(1) &&
+      Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto *Callback = AlgorithmCallbackPrototype(2);
+    if (Callback && Callback->getNumParams() == 1 &&
+        utilityScalar(Context, Callback->getParamType(0)) &&
+        Context.hasSameUnqualifiedType(
+            Callback->getParamType(0),
+            Function->getParamDecl(0)->getType()->getPointeeType()) &&
+        (Callback->getReturnType()->isVoidType() ||
+         utilityScalar(Context, Callback->getReturnType())))
+      return UtilityOperation::AlgorithmForEachN;
+  }
+  if (Origin->Path == "__algorithm/transform.h" && Name == "transform" &&
+      (Call->getNumArgs() == 4 || Call->getNumArgs() == 5) &&
+      Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType())) {
+    const bool Binary = Call->getNumArgs() == 5;
+    const unsigned OutputIndex = Binary ? 3 : 2;
+    const unsigned CallbackIndex = Binary ? 4 : 3;
+    const auto *Callback = AlgorithmCallbackPrototype(CallbackIndex);
+    bool Valid =
+        AlgorithmPointerParameter(OutputIndex) &&
+        utilityAlgorithmWritableScalarPointer(
+            Context, Function->getParamDecl(OutputIndex)->getType()) &&
+        Callback && Callback->getNumParams() == (Binary ? 2u : 1u) &&
+        utilityScalar(Context, Callback->getParamType(0)) &&
+        utilityScalar(Context, Callback->getReturnType()) &&
+        Context.hasSameUnqualifiedType(
+            Callback->getParamType(0),
+            Function->getParamDecl(0)->getType()->getPointeeType()) &&
+        Context.hasSameUnqualifiedType(
+            Callback->getReturnType(),
+            Function->getParamDecl(OutputIndex)->getType()->getPointeeType()) &&
+        Same(Function->getReturnType(),
+             Function->getParamDecl(OutputIndex)->getType()) &&
+        Same(Call->getType(), Function->getReturnType());
+    if (Binary)
+      Valid = Valid && AlgorithmPointerParameter(2) &&
+              utilityScalar(Context, Callback->getParamType(1)) &&
+              Context.hasSameUnqualifiedType(
+                  Callback->getParamType(1),
+                  Function->getParamDecl(2)->getType()->getPointeeType());
+    if (Valid)
+      return Binary ? UtilityOperation::AlgorithmTransformBinary
+                    : UtilityOperation::AlgorithmTransformUnary;
+  }
+  if (((Origin->Path == "__algorithm/generate.h" && Name == "generate") ||
+       (Origin->Path == "__algorithm/generate_n.h" && Name == "generate_n")) &&
+      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
+      AlgorithmPointerParameter(0) &&
+      utilityAlgorithmWritableScalarPointer(
+          Context, Function->getParamDecl(0)->getType())) {
+    const bool Counted = Name == "generate_n";
+    const auto *Callback = AlgorithmCallbackPrototype(2);
+    const bool Bound = Counted ? AlgorithmCountParameter(1)
+                               : (AlgorithmPointerParameter(1) &&
+                                  Same(Function->getParamDecl(0)->getType(),
+                                       Function->getParamDecl(1)->getType()));
+    const bool Result = Counted ? (Call->isPRValue() &&
+                                   Same(Function->getReturnType(),
+                                        Function->getParamDecl(0)->getType()))
+                                : Function->getReturnType()->isVoidType();
+    if (Bound && Result && Same(Call->getType(), Function->getReturnType()) &&
+        Callback && Callback->getNumParams() == 0 &&
+        utilityScalar(Context, Callback->getReturnType()) &&
+        Context.hasSameUnqualifiedType(
+            Callback->getReturnType(),
+            Function->getParamDecl(0)->getType()->getPointeeType()))
+      return Counted ? UtilityOperation::AlgorithmGenerateN
+                     : UtilityOperation::AlgorithmGenerate;
   }
   if (Origin->Path == "__iterator/reverse_iterator.h" &&
       Name == "make_reverse_iterator" && Call->getNumArgs() == 1 &&

@@ -392,6 +392,12 @@ enum class UtilityOperation {
   AlgorithmPartition,
   AlgorithmPartitionCopy,
   AlgorithmPartitionPoint,
+  AlgorithmForEach,
+  AlgorithmForEachN,
+  AlgorithmTransformUnary,
+  AlgorithmTransformBinary,
+  AlgorithmGenerate,
+  AlgorithmGenerateN,
 };
 struct UtilityPairRecord {
   const clang::CXXRecordDecl *Record;

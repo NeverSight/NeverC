@@ -53,11 +53,13 @@ arithmetic elements with `min`, `max`, `clamp`, `minmax`, `min_element`,
 `next_permutation`, `prev_permutation`,
 `lexicographical_compare`, `includes`, `merge`, `set_union`, `set_intersection`,
 `set_difference` and `set_symmetric_difference`. Checked by-value unary
-function-pointer predicates additionally admit `find_if`, `find_if_not`,
+boolean function-pointer predicates admit `find_if`, `find_if_not`,
 `count_if`, `all_of`, `any_of`, `none_of`, `copy_if`, `remove_if`,
 `remove_copy_if`, `replace_if`, `replace_copy_if`, `is_partitioned`,
-`partition`, `partition_copy` and `partition_point`. Predicate mutation and
-ordered output algorithms require writable destinations;
+`partition`, `partition_copy` and `partition_point`. Exact function-pointer
+callbacks also admit `for_each`, `for_each_n`, unary and binary `transform`,
+`generate` and `generate_n`. Predicate mutation and ordered output algorithms
+require writable destinations;
 `copy_n`, `fill_n` and `search_n` accept at-most-64-bit integral and non-scoped
 enum counts after the libc++ integer promotion.
 `shuffle` and `sample` stay disabled until the same authenticated cross-target

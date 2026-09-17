@@ -1132,6 +1132,47 @@ extern "C" int algorithm_partition(
           'struct P{bool operator()(int n)const{return n>0;}};\n#include <algorithm>\nint main(){int a[2]{1,2};return std::partition(a,a+2,P{})==a+2?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    algorithm_callback_traversal_source = """\
+#include <algorithm>
+extern "C" long algorithm_callback_traversal(
+    const int *first, const int *last, const short *second, long *output,
+    int *generated, int count, void (*visit)(int), long (*unary)(int),
+    long (*binary)(int, short), int (*generator)()) {
+  auto returned = std::for_each(first, last, visit);
+  const int *visited = std::for_each_n(first, count, visit);
+  long *unary_end = std::transform(first, last, output, unary);
+  long *binary_end = std::transform(first, last, second, output, binary);
+  std::generate(generated, generated + count, generator);
+  int *generated_end = std::generate_n(generated, count, generator);
+  return (returned == visit) + (visited - first) + (unary_end - output) +
+         (binary_end - output) + (generated_end - generated);
+}
+"""
+
+    def assert_callback_traversal(data):
+        assert len(data["sdk_dependencies"]) == 354, data
+        nodes = list(walk(data["functions"]))
+        assert not [node for node in nodes
+                    if node.get("op") in ("call", "mapped_call")], data
+        assert sum(node.get("op") == "indirect_call"
+                   for node in nodes) == 6, data
+
+    algorithm_callback_traversal = check(
+        "v2-algorithm-callback-traversal", algorithm_callback_traversal_source,
+        profile="cpp-core-v2", sdk=True)
+    assert_callback_traversal(algorithm_callback_traversal)
+    for target in sdk_targets:
+        target_result = check("v2-algorithm-callback-traversal-" + target,
+                              algorithm_callback_traversal_source,
+                              profile="cpp-core-v2", target=target, sdk=True)
+        assert_callback_traversal(target_result)
+    check("v2-algorithm-callback-traversal-reference",
+          'void visit(const int&){}\n#include <algorithm>\nint main(){int a[2]{1,2};std::for_each(a,a+2,visit);return 0;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-callback-traversal-conversion",
+          'long op(long n){return n;}\n#include <algorithm>\nint main(){int a[2]{1,2};long out[2]{};return std::transform(a,a+2,out,op)==out+2?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     # Windows driver defaults must not change core-v2 source visibility or
     # standard diagnostics. Exercise both MSVC architectures on every CI host.
     standard_template_parsing = {

@@ -95,10 +95,12 @@ built-in arithmetic elements admit default-order
 `push_heap`, `pop_heap`, `sort_heap`, `sort`, `partial_sort`,
 `partial_sort_copy`, `nth_element`, `next_permutation`, `prev_permutation`,
 `lexicographical_compare`, `includes`, `merge` and the four `set_*` range
-algorithms. Checked by-value unary function-pointer predicates additionally
-admit `find_if`, `find_if_not`, `count_if`, `all_of`, `any_of`, `none_of`,
+algorithms. Checked by-value unary boolean function-pointer predicates admit
+`find_if`, `find_if_not`, `count_if`, `all_of`, `any_of`, `none_of`,
 `copy_if`, `remove_if`, `remove_copy_if`, `replace_if`, `replace_copy_if`,
-`is_partitioned`, `partition`, `partition_copy` and `partition_point`.
+`is_partitioned`, `partition`, `partition_copy` and `partition_point`. Exact
+function-pointer callbacks also admit `for_each`, `for_each_n`, unary and binary
+`transform`, `generate` and `generate_n`.
 Predicate mutation and ordered output algorithms require writable destinations,
 and `copy_n`, `fill_n` and `search_n` accept integral or non-scoped enum counts
 through 64 bits after integer promotion.

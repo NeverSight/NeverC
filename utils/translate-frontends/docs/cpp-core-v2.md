@@ -291,6 +291,20 @@ by the predicate and uses logarithmic bisection. Empty ranges return their input
 or output iterators without invoking the predicate, and all arguments are
 evaluated and retained once.
 
+The exact `std::for_each`, `std::for_each_n`, unary and binary
+`std::transform`, `std::generate` and `std::generate_n` templates accept checked
+ordinary function pointers too. Traversal and transform callbacks take each
+input's exact unqualified scalar element type by value. `for_each` permits a
+`void` or admitted scalar result, ignores that result, and returns the retained
+function pointer; `for_each_n` returns the advanced input. Transform callbacks
+must return the output's exact unqualified scalar element type, so different
+input and output scalar types are admitted without implicit callback conversions.
+Generators take no arguments and return the output's exact scalar element type.
+Output ranges are writable, callback values are retained once, and each visited
+or generated element invokes its callback exactly once. The counted forms use
+the same promoted integral or non-scoped enum count boundary as `copy_n`; a
+non-positive signed count performs no calls and returns the original iterator.
+
 The exact four-iterator `std::search`, `std::find_end` and
 `std::find_first_of` templates lower nested equality scans over two ranges.
 Three- and four-iterator `std::mismatch` return an authenticated

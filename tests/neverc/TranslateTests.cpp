@@ -25557,6 +25557,162 @@ TEST_F(TranslateTest, CoreV2AlgorithmPartitionOperationsRequireExactForms) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2AlgorithmCallbackTraversalRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-callback-traversal.cpp");
+  const auto Output = tmpFile("algorithm-callback-traversal.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int calls;
+int total;
+int generated;
+void accumulate(int n) { ++calls; total += n; }
+int observe(int n) { ++calls; total += n; return n; }
+long square(int n) { ++calls; return static_cast<long>(n) * n; }
+long combine(int left, short right) { ++calls; return left + right; }
+int next_value() { ++calls; return ++generated; }
+enum Level : unsigned char { low, high };
+Level next_level() { ++calls; return calls % 2 ? low : high; }
+int pointed;
+int *next_pointer() { ++calls; return &pointed; }
+int main() {
+  int input[4]{1, 2, 3, 4};
+  int effects = 0;
+  calls = 0;
+  total = 0;
+  void (*action)(int) = accumulate;
+  auto returned = std::for_each((++effects, input), (++effects, input + 4),
+                                (++effects, action));
+  if (effects != 3 || returned != action || calls != 4 || total != 10)
+    return 1;
+  calls = 0;
+  total = 0;
+  if (std::for_each(input, input + 2, observe) != observe || calls != 2 ||
+      total != 3)
+    return 2;
+
+  calls = 0;
+  total = 0;
+  short count = 3;
+  if (std::for_each_n(input, count, accumulate) != input + 3 || calls != 3 ||
+      total != 6)
+    return 3;
+  calls = 0;
+  if (std::for_each_n(input, -2, accumulate) != input || calls != 0)
+    return 4;
+
+  long unary[4]{};
+  calls = 0;
+  if (std::transform(input, input + 4, unary, square) != unary + 4 ||
+      calls != 4 || unary[0] != 1 || unary[1] != 4 || unary[2] != 9 ||
+      unary[3] != 16)
+    return 5;
+  short second[4]{10, 20, 30, 40};
+  long binary[4]{};
+  calls = 0;
+  if (std::transform(input, input + 4, second, binary, combine) != binary + 4 ||
+      calls != 4 || binary[0] != 11 || binary[1] != 22 ||
+      binary[2] != 33 || binary[3] != 44)
+    return 6;
+  calls = 0;
+  if (std::transform(input, input, unary, square) != unary || calls != 0)
+    return 7;
+
+  int values[4]{};
+  generated = 3;
+  calls = 0;
+  std::generate(values, values + 4, next_value);
+  if (calls != 4 || values[0] != 4 || values[1] != 5 || values[2] != 6 ||
+      values[3] != 7)
+    return 8;
+  generated = 8;
+  calls = 0;
+  if (std::generate_n(values, 3, next_value) != values + 3 || calls != 3 ||
+      values[0] != 9 || values[1] != 10 || values[2] != 11)
+    return 9;
+  calls = 0;
+  if (std::generate_n(values, -1, next_value) != values || calls != 0)
+    return 10;
+
+  Level levels[3]{};
+  calls = 0;
+  std::generate(levels, levels + 3, next_level);
+  if (calls != 3 || levels[0] != low || levels[1] != high ||
+      levels[2] != low)
+    return 11;
+  int *pointers[2]{};
+  calls = 0;
+  if (std::generate_n(pointers, 2, next_pointer) != pointers + 2 ||
+      calls != 2 || pointers[0] != &pointed || pointers[1] != &pointed)
+    return 12;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Dependencies =
+      Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 354u);
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+  }
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("algorithm-callback-traversal" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmCallbackTraversalRequiresExactFunctions) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+  };
+  const Rejection Cases[] = {
+      {"reference-parameter",
+       "void visit(const int&){}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,2};std::for_each(a,a+2,visit);return 0;}"},
+      {"function-object",
+       "struct F{void operator()(int)const{}};\n#include <algorithm>\n"
+       "int main(){int a[2]{1,2};std::for_each(a,a+2,F{});return 0;}"},
+      {"converted-transform-parameter",
+       "long op(long n){return n;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,2};long out[2]{};"
+       "return std::transform(a,a+2,out,op)==out+2?0:1;}"},
+      {"converted-transform-result",
+       "int op(int n){return n;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,2};long out[2]{};"
+       "return std::transform(a,a+2,out,op)==out+2?0:1;}"},
+      {"converted-generator-result",
+       "short gen(){return 3;}\n#include <algorithm>\n"
+       "int main(){int out[2]{};std::generate(out,out+2,gen);return 0;}"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("algorithm-callback-traversal-") +
+                                Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("algorithm-callback-traversal-") +
+                                Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmPredicateQueriesRequireValueCallbacks) {
   struct Rejection {
     const char *Name;
