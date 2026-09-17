@@ -77,8 +77,9 @@ Utility directly lowers scalar `move`, `forward`, `move_if_noexcept`, `as_const`
 `exchange` and `swap`; scalar `pair` construction, assignment, swaps,
 comparisons, `make_pair` and `get`; and `tuple_size`, `tuple_element` and
 integer-sequence size queries. Tuple directly lowers authenticated nonempty
-scalar tuple construction, same-type assignment, factories, swaps,
-lexicographic comparisons and index access. Array directly lowers nonempty fixed scalar,
+scalar tuple construction, compatible per-element converting construction and
+assignment, factories, swaps, same-length heterogeneous lexicographic
+comparisons and index access. Array directly lowers nonempty fixed scalar,
 trivial-record and nested-array storage, iterators, element access, fill, swap,
 scalar and recursive nested-array comparisons and tuple access.
 Initializer-list objects retain libc++'s authenticated pointer-and-size view.

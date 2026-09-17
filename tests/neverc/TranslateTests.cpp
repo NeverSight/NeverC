@@ -23409,10 +23409,42 @@ int main() {
       !(left >= same) || !(right > left) || !(right >= left))
     return 6;
 
+  using Narrow = std::tuple<short, float, int *>;
+  using Wide = std::tuple<int, double, const int *>;
+  Narrow narrow(short(5), 6.5f, objects + 0);
+  Wide converted(narrow);
+  Wide moved_converted(static_cast<Narrow &&>(narrow));
+  Wide assigned;
+  assigned = narrow;
+  Wide moved_assigned;
+  moved_assigned = static_cast<Narrow &&>(narrow);
+  if (std::get<0>(converted) != 5 || std::get<1>(converted) != 6.5 ||
+      std::get<2>(converted) != objects ||
+      std::get<0>(moved_converted) != 5 || std::get<1>(assigned) != 6.5 ||
+      std::get<2>(moved_assigned) != objects)
+    return 7;
+
+  std::tuple<short, float> narrow_left(short(1), 9.0f);
+  std::tuple<int, double> wide_right(2, 0.0), wide_same(1, 9.0);
+  if (!(narrow_left == wide_same) || narrow_left != wide_same ||
+      !(narrow_left != wide_right) || narrow_left == wide_right ||
+      !(narrow_left < wide_right) || narrow_left > wide_right ||
+      !(narrow_left <= wide_same) || !(narrow_left >= wide_same) ||
+      !(wide_right > narrow_left) || !(wide_right >= narrow_left))
+    return 8;
+
+  std::tuple<const int *> qualified(objects + 0);
+  std::tuple<int *> pointer(objects + 0), null_pointer(nullptr);
+  std::tuple<decltype(nullptr)> null_value(nullptr);
+  if (!(pointer == qualified) || pointer != qualified ||
+      !(null_value != pointer) || null_value == pointer ||
+      std::get<0>(null_pointer) != nullptr)
+    return 9;
+
   int &&rvalue = std::get<0>(
       static_cast<std::tuple<int, double, int *> &&>(moved));
   rvalue = 8;
-  return std::get<0>(moved) == 8 ? 0 : 7;
+  return std::get<0>(moved) == 8 ? 0 : 10;
 }
 )cpp");
   auto Result =
@@ -23489,11 +23521,7 @@ TEST_F(TranslateTest, CoreV2TupleRequiresPinnedScalarOperations) {
       {"apply",
        "#include <tuple>\nint add(int a,int b){return a+b;}int main(){"
        "return std::apply(add,std::make_tuple(1,2));}",
-       "TR0203"},
-      {"converting",
-       "#include <tuple>\nint main(){std::tuple<short>a(short(1));"
-       "std::tuple<int>b(a);return std::get<0>(b);}",
-       "TR0201"}};
+       "TR0203"}};
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
     const auto Source = tmpFile(std::string("tuple-") + Case.Name + ".cpp");

@@ -432,6 +432,15 @@ extern "C" int tuple_all(int *pointer) {
   result += std::get<2>(first) == pointer;
   result += (left == same) + 2 * (left != right) + 4 * (left < right);
   result += 8 * (right > left) + 16 * (left <= same) + 32 * (left >= same);
+  std::tuple<short, float> narrow(short(1), 9.0f);
+  std::tuple<int, double> wide(narrow), converted(
+      static_cast<std::tuple<short, float> &&>(narrow)), greater(2, 0.0);
+  wide = narrow;
+  converted = static_cast<std::tuple<short, float> &&>(narrow);
+  result += (narrow == wide) + 2 * (narrow != greater) +
+            4 * (narrow < greater);
+  result += 8 * (greater > narrow) + 16 * (narrow <= wide) +
+            32 * (narrow >= wide);
   return result;
 }
 """
@@ -443,6 +452,8 @@ extern "C" int tuple_all(int *pointer) {
                for dependency in tuple["sdk_dependencies"]), tuple
     assert sorted([field["type"] for field in record["fields"]]
                   for record in tuple["records"]) == [
+                      ["i16", "float"],
+                      ["int", "double"],
                       ["int", "double", "ptr:int"],
                       ["int", "int", "int"],
                   ], tuple["records"]
@@ -482,9 +493,6 @@ extern "C" int tuple_all(int *pointer) {
         ("apply",
          '#include <tuple>\nint add(int a,int b){return a+b;}int main(){return std::apply(add,std::make_tuple(1,2));}',
          "TR0203"),
-        ("converting",
-         '#include <tuple>\nint main(){std::tuple<short>a(short(1));std::tuple<int>b(a);return std::get<0>(b);}',
-         "TR0201"),
     ):
         check("v2-tuple-" + name, source, code,
               profile="cpp-core-v2", sdk=True)

@@ -479,12 +479,17 @@ enum class UtilityTupleConstruction {
   Default,
   Elements,
   CopyOrMove,
+  Converting,
 };
 std::optional<UtilityTupleConstruction>
 approvedUtilityTupleConstruction(const State &S, const clang::SourceManager &SM,
                                  const clang::CXXConstructExpr *Construction,
                                  const clang::ASTContext &Context);
-std::optional<UtilityTupleRecord>
+enum class UtilityTupleAssignment {
+  CopyOrMove,
+  Converting,
+};
+std::optional<UtilityTupleAssignment>
 approvedUtilityTupleAssignment(const State &S, const clang::SourceManager &SM,
                                const clang::CXXOperatorCallExpr *Assignment,
                                const clang::ASTContext &Context);

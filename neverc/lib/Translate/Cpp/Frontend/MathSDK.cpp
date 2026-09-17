@@ -945,6 +945,32 @@ approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
                                      Construction->getType()))
     return UtilityTupleConstruction::CopyOrMove;
   const auto *Primary = Constructor->getPrimaryTemplate();
+  const auto SourceTuple =
+      Construction->getNumArgs() == 1
+          ? approvedUtilityTupleRecord(
+                S, SM, Construction->getArg(0)->getType()->getAsCXXRecordDecl(),
+                Context)
+          : std::optional<UtilityTupleRecord>();
+  if (SourceTuple && Primary && Constructor->hasBody() &&
+      SourceTuple->Record->getCanonicalDecl() !=
+          Tuple->Record->getCanonicalDecl() &&
+      SourceTuple->Elements.size() == Tuple->Elements.size() &&
+      approvedStandardSDKDeclaration(S, SM, Primary) &&
+      cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "tuple")) {
+    const auto Parameter = Constructor->getParamDecl(0)->getType();
+    if (!Parameter->isReferenceType() ||
+        Parameter->getPointeeType().isVolatileQualified() ||
+        !Context.hasSameUnqualifiedType(
+            Parameter->getPointeeType(),
+            Context.getRecordType(SourceTuple->Record)))
+      return std::nullopt;
+    for (unsigned I = 0; I < Tuple->Elements.size(); ++I)
+      if (!utilityScalarDirectConversion(Context,
+                                         SourceTuple->Elements[I]->getType(),
+                                         Tuple->Elements[I]->getType()))
+        return std::nullopt;
+    return UtilityTupleConstruction::Converting;
+  }
   if (!Primary || Construction->getNumArgs() != Tuple->Elements.size() ||
       !approvedStandardSDKDeclaration(S, SM, Primary) ||
       !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "tuple"))
@@ -962,7 +988,7 @@ approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
   return UtilityTupleConstruction::Elements;
 }
 
-std::optional<UtilityTupleRecord>
+std::optional<UtilityTupleAssignment>
 approvedUtilityTupleAssignment(const State &S, const SourceManager &SM,
                                const CXXOperatorCallExpr *Assignment,
                                const ASTContext &Context) {
@@ -988,16 +1014,34 @@ approvedUtilityTupleAssignment(const State &S, const SourceManager &SM,
   const auto Parameter = Method->getParamDecl(0)->getType();
   const auto Result = Method->getReturnType();
   const auto TupleType = Context.getRecordType(Tuple->Record);
-  if (!Parameter->isReferenceType() || !Result->isLValueReferenceType() ||
-      !Context.hasSameUnqualifiedType(Parameter->getPointeeType(), TupleType) ||
+  if (!Result->isLValueReferenceType() ||
       !Context.hasSameUnqualifiedType(Result->getPointeeType(), TupleType) ||
       !Context.hasSameUnqualifiedType(Assignment->getArg(0)->getType(),
                                       TupleType) ||
-      !Context.hasSameUnqualifiedType(Assignment->getArg(1)->getType(),
-                                      TupleType) ||
       !Context.hasSameUnqualifiedType(Assignment->getType(), TupleType))
     return std::nullopt;
-  return Tuple;
+  const auto SourceTuple = approvedUtilityTupleRecord(
+      S, SM, Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
+  if (!SourceTuple || !Parameter->isReferenceType() ||
+      Parameter->getPointeeType().isVolatileQualified() ||
+      !Context.hasSameUnqualifiedType(
+          Parameter->getPointeeType(),
+          Context.getRecordType(SourceTuple->Record)))
+    return std::nullopt;
+  if (SourceTuple->Record->getCanonicalDecl() ==
+      Tuple->Record->getCanonicalDecl())
+    return UtilityTupleAssignment::CopyOrMove;
+  const auto *Primary = Method->getPrimaryTemplate();
+  if (!Primary || SourceTuple->Elements.size() != Tuple->Elements.size() ||
+      !approvedStandardSDKDeclaration(S, SM, Primary) ||
+      !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "tuple"))
+    return std::nullopt;
+  for (unsigned I = 0; I < Tuple->Elements.size(); ++I)
+    if (!utilityScalarDirectConversion(Context,
+                                       SourceTuple->Elements[I]->getType(),
+                                       Tuple->Elements[I]->getType()))
+      return std::nullopt;
+  return UtilityTupleAssignment::Converting;
 }
 
 bool approvedUtilityArrayMetadata(const State &S, const SourceManager &SM,
@@ -4443,8 +4487,16 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
     const auto Left = TupleFor(Call->getArg(0)->getType());
     const auto Right = TupleFor(Call->getArg(1)->getType());
-    if (Operator && Left && Right &&
-        Left->Record->getCanonicalDecl() == Right->Record->getCanonicalDecl() &&
+    const auto LeftParameter = Function->getParamDecl(0)->getType();
+    const auto RightParameter = Function->getParamDecl(1)->getType();
+    if (Operator && Left && Right && LeftParameter->isLValueReferenceType() &&
+        RightParameter->isLValueReferenceType() &&
+        !LeftParameter->getPointeeType().isVolatileQualified() &&
+        !RightParameter->getPointeeType().isVolatileQualified() &&
+        Context.hasSameUnqualifiedType(LeftParameter->getPointeeType(),
+                                       Call->getArg(0)->getType()) &&
+        Context.hasSameUnqualifiedType(RightParameter->getPointeeType(),
+                                       Call->getArg(1)->getType()) &&
         Left->Elements.size() == Right->Elements.size()) {
       const auto Kind = Operator->getOperator();
       const bool Ordered = Kind != OO_EqualEqual && Kind != OO_ExclaimEqual;
