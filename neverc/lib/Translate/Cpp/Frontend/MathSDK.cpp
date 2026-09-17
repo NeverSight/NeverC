@@ -3272,6 +3272,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       (Origin->Path == "__numeric/partial_sum.h" && Name == "partial_sum") ||
       (Origin->Path == "__numeric/adjacent_difference.h" &&
        Name == "adjacent_difference") ||
+      (Origin->Path == "__numeric/reduce.h" && Name == "reduce") ||
+      (Origin->Path == "__numeric/transform_reduce.h" &&
+       Name == "transform_reduce") ||
+      (Origin->Path == "__numeric/inclusive_scan.h" &&
+       Name == "inclusive_scan") ||
+      (Origin->Path == "__numeric/exclusive_scan.h" &&
+       Name == "exclusive_scan") ||
       (Origin->Path == "__algorithm/remove.h" && Name == "remove") ||
       (Origin->Path == "__algorithm/remove_if.h" && Name == "remove_if") ||
       (Origin->Path == "__algorithm/unique.h" && Name == "unique") ||
@@ -3584,6 +3591,54 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType()))
     return Name == "partial_sum" ? UtilityOperation::NumericPartialSum
                                  : UtilityOperation::NumericAdjacentDifference;
+  if (Origin->Path == "__numeric/reduce.h" && Name == "reduce" &&
+      (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
+      Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
+      NumericPointerParameter(0, false) && NumericPointerParameter(1, false) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      Same(Call->getType(), Function->getReturnType())) {
+    if (Call->getNumArgs() == 2 &&
+        Same(Function->getReturnType(), Function->getParamDecl(0)
+                                            ->getType()
+                                            ->getPointeeType()
+                                            .getUnqualifiedType()))
+      return UtilityOperation::NumericReduce;
+    if (Call->getNumArgs() == 3 && NumericValueParameter(2, 0) &&
+        Same(Function->getReturnType(), Function->getParamDecl(2)->getType()))
+      return UtilityOperation::NumericReduce;
+  }
+  if (Origin->Path == "__numeric/transform_reduce.h" &&
+      Name == "transform_reduce" && Call->getNumArgs() == 4 &&
+      Function->getNumParams() == 4 && Call->isPRValue() &&
+      NumericPointerParameter(0, false) && NumericPointerParameter(1, false) &&
+      NumericPointerParameter(2, false) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
+                           Function->getParamDecl(2)->getType()) &&
+      NumericValueParameter(3, 0) &&
+      Same(Function->getReturnType(), Function->getParamDecl(3)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::NumericTransformReduce;
+  if (((Origin->Path == "__numeric/inclusive_scan.h" &&
+        Name == "inclusive_scan" && Call->getNumArgs() == 3) ||
+       (Origin->Path == "__numeric/exclusive_scan.h" &&
+        Name == "exclusive_scan" && Call->getNumArgs() == 4)) &&
+      Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
+      NumericPointerParameter(0, false) && NumericPointerParameter(1, false) &&
+      NumericPointerParameter(2, true) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
+                           Function->getParamDecl(2)->getType()) &&
+      Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
+      Same(Call->getType(), Function->getReturnType())) {
+    if (Name == "inclusive_scan")
+      return UtilityOperation::NumericInclusiveScan;
+    if (NumericValueParameter(3, 0))
+      return UtilityOperation::NumericExclusiveScan;
+  }
   if ((Origin->Path == "__algorithm/find.h" ||
        Origin->Path == "__algorithm/count.h") &&
       (Name == "find" || Name == "count") && Call->getNumArgs() == 3 &&

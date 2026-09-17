@@ -1399,6 +1399,57 @@ extern "C" int numeric_sequential() {
         check("v2-numeric-sequential-" + name, source, "TR0203",
               profile="cpp-core-v2", sdk=True)
 
+    numeric_cxx17_source = """\
+#include <numeric>
+extern "C" int numeric_cxx17() {
+  int values[4]{1, 2, 3, 4};
+  int weights[4]{4, 3, 2, 1};
+  int inclusive[4]{};
+  int exclusive[4]{};
+  int reduced = std::reduce(values, values + 4);
+  int initialized = std::reduce(values, values + 4, 5);
+  int transformed = std::transform_reduce(values, values + 4, weights, 1);
+  int *inclusive_end = std::inclusive_scan(
+      values, values + 4, inclusive);
+  int *exclusive_end = std::exclusive_scan(
+      values, values + 4, exclusive, 5);
+  return reduced + initialized + transformed + inclusive[3] + exclusive[3] +
+      (inclusive_end - inclusive) + (exclusive_end - exclusive);
+}
+"""
+    numeric_cxx17 = check("v2-numeric-cxx17", numeric_cxx17_source,
+                          profile="cpp-core-v2", sdk=True)
+    assert numeric_cxx17["functions"], numeric_cxx17
+    assert not [node for node in walk(numeric_cxx17["functions"])
+                if node.get("op") in ("call", "mapped_call")], numeric_cxx17
+    for target in sdk_targets:
+        check("v2-numeric-cxx17-" + target, numeric_cxx17_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    for name, source in (
+        ("promoted-reduce",
+         '#include <numeric>\nint main(){short a[2]{1,2};return std::reduce(a,a+2); }'),
+        ("heterogeneous-reduce",
+         '#include <numeric>\nint main(){int a[2]{1,2};return std::reduce(a,a+2,0L)==3?0:1;}'),
+        ("callback-reduce",
+         '#include <numeric>\nint add(int a,int b){return a+b;}int main(){int a[2]{1,2};return std::reduce(a,a+2,0,add); }'),
+        ("heterogeneous-transform-reduce",
+         '#include <numeric>\nint main(){int a[2]{1,2};long b[2]{3,4};return std::transform_reduce(a,a+2,b,0); }'),
+        ("callback-transform-reduce",
+         '#include <numeric>\nint add(int a,int b){return a+b;}int mul(int a,int b){return a*b;}int main(){int a[2]{1,2};return std::transform_reduce(a,a+2,a,0,add,mul); }'),
+        ("heterogeneous-inclusive-scan",
+         '#include <numeric>\nint main(){int a[2]{1,2};long b[2]{};return std::inclusive_scan(a,a+2,b)==b+2?0:1;}'),
+        ("callback-inclusive-scan",
+         '#include <numeric>\nint add(int a,int b){return a+b;}int main(){int a[2]{1,2},b[2]{};return std::inclusive_scan(a,a+2,b,add)==b+2?0:1;}'),
+        ("heterogeneous-exclusive-scan",
+         '#include <numeric>\nint main(){int a[2]{1,2};long b[2]{};return std::exclusive_scan(a,a+2,b,0)==b+2?0:1;}'),
+        ("heterogeneous-exclusive-init",
+         '#include <numeric>\nint main(){int a[2]{1,2},b[2]{};return std::exclusive_scan(a,a+2,b,0L)==b+2?0:1;}'),
+        ("callback-exclusive-scan",
+         '#include <numeric>\nint add(int a,int b){return a+b;}int main(){int a[2]{1,2},b[2]{};return std::exclusive_scan(a,a+2,b,0,add)==b+2?0:1;}'),
+    ):
+        check("v2-numeric-cxx17-" + name, source, "TR0203",
+              profile="cpp-core-v2", sdk=True)
+
     algorithm_header_source = """\
 #include <algorithm>
 extern "C" int algorithm_header() { return 0; }

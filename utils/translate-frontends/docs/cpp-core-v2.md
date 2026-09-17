@@ -387,18 +387,20 @@ Its 126-file libc++/resource dependency closure is identical on all eight
 supported targets and contains no platform headers. This revision retains the
 upstream public header and all C++17 numeric components byte for byte.
 
-The default `iota`, `accumulate`, `inner_product`, `partial_sum` and
-`adjacent_difference` overloads lower to direct pointer loops. Input and output
+The default `iota`, `accumulate`, `inner_product`, `partial_sum`,
+`adjacent_difference`, `reduce`, two-range `transform_reduce`, `inclusive_scan`
+and `exclusive_scan` overloads lower to direct pointer loops. Input and output
 ranges use the same unqualified element type, and each initial or generated
 value has that exact type. Admitted elements are non-promoted built-in integers
-through 64 bits, `float` or `double`; output pointers are writable.
-`partial_sum` and `adjacent_difference` preserve empty-range and in-place
-behavior. Every argument is captured once before the loop.
+through 64 bits, `float` or `double`; output pointers are writable. Two-argument
+`reduce` starts from the element type's zero value. The sequential scan
+operations preserve empty-range and in-place behavior. Every argument is
+captured once before the loop.
 
-Custom binary operations, heterogeneous types, promotable integers, enums,
-records, custom iterators and the other numeric algorithms remain outside the
-runtime boundary. Quoted includes, shadows, function addresses and forged
-declarations remain rejected.
+Custom operations, heterogeneous types, promotable integers, enums, records,
+custom iterators and the other numeric algorithms remain outside the runtime
+boundary. Quoted includes, shadows, function addresses and forged declarations
+remain rejected.
 
 ## Algorithm header from `<algorithm>`
 

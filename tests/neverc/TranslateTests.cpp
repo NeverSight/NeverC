@@ -24447,6 +24447,139 @@ TEST_F(TranslateTest, CoreV2NumericSequentialRequiresExactScalarForms) {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2NumericCxx17DefaultOperationsRunAtBothOptimizations) {
+  const auto Source = tmpFile("numeric-cxx17-defaults.cpp");
+  const auto Output = tmpFile("numeric-cxx17-defaults.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+int main() {
+  const int values[4]{1, 2, 3, 4};
+  const int weights[4]{4, 3, 2, 1};
+  int effects = 0;
+  int reduced = std::reduce((++effects, values), (++effects, values + 4),
+                            (++effects, 5));
+  if (effects != 3 || reduced != 15 || std::reduce(values, values + 4) != 10 ||
+      std::reduce(values, values) != 0 ||
+      std::reduce(values, values, 7) != 7)
+    return 1;
+
+  int product = std::transform_reduce(
+      (++effects, values), (++effects, values + 4), (++effects, weights),
+      (++effects, 1));
+  if (effects != 7 || product != 21 ||
+      std::transform_reduce(values, values, weights, 9) != 9)
+    return 2;
+
+  int inclusive[4]{};
+  int *inclusive_end = std::inclusive_scan(
+      (++effects, values), (++effects, values + 4), (++effects, inclusive));
+  if (effects != 10 || inclusive_end != inclusive + 4 ||
+      inclusive[0] != 1 || inclusive[1] != 3 || inclusive[2] != 6 ||
+      inclusive[3] != 10 ||
+      std::inclusive_scan(values, values, inclusive) != inclusive)
+    return 3;
+
+  int exclusive[4]{};
+  int *exclusive_end = std::exclusive_scan(
+      (++effects, values), (++effects, values + 4), (++effects, exclusive),
+      (++effects, 5));
+  if (effects != 14 || exclusive_end != exclusive + 4 ||
+      exclusive[0] != 5 || exclusive[1] != 6 || exclusive[2] != 8 ||
+      exclusive[3] != 11 ||
+      std::exclusive_scan(values, values, exclusive, 7) != exclusive)
+    return 4;
+
+  int inclusive_in_place[4]{1, 2, 3, 4};
+  if (std::inclusive_scan(inclusive_in_place, inclusive_in_place + 4,
+                          inclusive_in_place) != inclusive_in_place + 4 ||
+      inclusive_in_place[0] != 1 || inclusive_in_place[1] != 3 ||
+      inclusive_in_place[2] != 6 || inclusive_in_place[3] != 10)
+    return 5;
+  int exclusive_in_place[4]{1, 2, 3, 4};
+  if (std::exclusive_scan(exclusive_in_place, exclusive_in_place + 4,
+                          exclusive_in_place, 0) != exclusive_in_place + 4 ||
+      exclusive_in_place[0] != 0 || exclusive_in_place[1] != 1 ||
+      exclusive_in_place[2] != 3 || exclusive_in_place[3] != 6)
+    return 6;
+
+  const double decimals[3]{0.5, 1.5, 2.0};
+  double decimal_scan[3]{};
+  if (std::reduce(decimals, decimals + 3) != 4.0 ||
+      std::transform_reduce(decimals, decimals + 3, decimals, 0.0) != 6.5 ||
+      std::inclusive_scan(decimals, decimals + 3, decimal_scan) !=
+          decimal_scan + 3 ||
+      decimal_scan[2] != 4.0)
+    return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("numeric-cxx17-defaults" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NumericCxx17DefaultsRequireExactScalarForms) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+  };
+  const Rejection Cases[] = {
+      {"promoted-reduce", "#include <numeric>\nint main(){short a[2]{1,2};"
+                          "return std::reduce(a,a+2);}"},
+      {"heterogeneous-reduce", "#include <numeric>\nint main(){int a[2]{1,2};"
+                               "return std::reduce(a,a+2,0L)==3?0:1;}"},
+      {"callback-reduce",
+       "#include <numeric>\nint add(int a,int b){return a+b;}"
+       "int main(){int a[2]{1,2};return std::reduce(a,a+2,0,add);}"},
+      {"heterogeneous-transform-reduce",
+       "#include <numeric>\nint main(){int a[2]{1,2};long b[2]{3,4};"
+       "return std::transform_reduce(a,a+2,b,0);}"},
+      {"callback-transform-reduce",
+       "#include <numeric>\nint add(int a,int b){return a+b;}"
+       "int mul(int a,int b){return a*b;}"
+       "int main(){int a[2]{1,2};return "
+       "std::transform_reduce(a,a+2,a,0,add,mul);}"},
+      {"heterogeneous-inclusive-scan",
+       "#include <numeric>\nint main(){int a[2]{1,2};long b[2]{};"
+       "return std::inclusive_scan(a,a+2,b)==b+2?0:1;}"},
+      {"callback-inclusive-scan",
+       "#include <numeric>\nint add(int a,int b){return a+b;}"
+       "int main(){int a[2]{1,2},b[2]{};"
+       "return std::inclusive_scan(a,a+2,b,add)==b+2?0:1;}"},
+      {"heterogeneous-exclusive-scan",
+       "#include <numeric>\nint main(){int a[2]{1,2};long b[2]{};"
+       "return std::exclusive_scan(a,a+2,b,0)==b+2?0:1;}"},
+      {"heterogeneous-exclusive-init",
+       "#include <numeric>\nint main(){int a[2]{1,2},b[2]{};"
+       "return std::exclusive_scan(a,a+2,b,0L)==b+2?0:1;}"},
+      {"callback-exclusive-scan",
+       "#include <numeric>\nint add(int a,int b){return a+b;}"
+       "int main(){int a[2]{1,2},b[2]{};"
+       "return std::exclusive_scan(a,a+2,b,0,add)==b+2?0:1;}"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("numeric-cxx17-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("numeric-cxx17-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmHeaderUsesPlatformFreeClosure) {
   const auto Source = tmpFile("algorithm-header.cpp");
   const auto Output = tmpFile("algorithm-header.nc");

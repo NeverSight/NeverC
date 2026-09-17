@@ -1274,19 +1274,29 @@ class FunctionLowering {
       return {};
     }
     case UtilityOperation::NumericAccumulate:
-    case UtilityOperation::NumericInnerProduct: {
-      const bool Inner = Operation == UtilityOperation::NumericInnerProduct;
+    case UtilityOperation::NumericInnerProduct:
+    case UtilityOperation::NumericReduce:
+    case UtilityOperation::NumericTransformReduce: {
+      const bool Inner = Operation == UtilityOperation::NumericInnerProduct ||
+                         Operation == UtilityOperation::NumericTransformReduce;
       auto First = snapshot(expression(Call->getArg(0)), L);
       auto Last = snapshot(expression(Call->getArg(1)), L);
       std::optional<Expression> Second;
       if (Inner)
         Second = snapshot(expression(Call->getArg(2)), L);
       const unsigned InitialIndex = Inner ? 3 : 2;
-      auto Result = snapshot(expression(Call->getArg(InitialIndex)), L);
+      const bool HasInitial = InitialIndex < Call->getNumArgs();
       const auto FirstType = type(Call->getArg(0)->getType(), L);
       const auto SecondType =
           Inner ? type(Call->getArg(2)->getType(), L) : std::string();
-      const auto ResultType = type(Call->getArg(InitialIndex)->getType(), L);
+      const auto ResultQualType =
+          HasInitial ? Call->getArg(InitialIndex)->getType() : Call->getType();
+      const auto ResultType = type(ResultQualType, L);
+      auto Result = temporary(ResultType, L);
+      assign(Result,
+             HasInitial ? expression(Call->getArg(InitialIndex))
+                        : A.zero(ResultQualType, L),
+             L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto Check = labelName(), Add = labelName(), End = labelName();
       jump(Check, L);
@@ -1311,7 +1321,8 @@ class FunctionLowering {
       return Result;
     }
     case UtilityOperation::NumericPartialSum:
-    case UtilityOperation::NumericAdjacentDifference: {
+    case UtilityOperation::NumericAdjacentDifference:
+    case UtilityOperation::NumericInclusiveScan: {
       const bool Adjacent =
           Operation == UtilityOperation::NumericAdjacentDifference;
       auto First = snapshot(expression(Call->getArg(0)), L);
@@ -1360,6 +1371,36 @@ class FunctionLowering {
              binary("+", Output, quantity(1, DifferenceType, L), OutputType, L),
              L);
       jump(CheckNext, L);
+      label(End, L);
+      return Output;
+    }
+    case UtilityOperation::NumericExclusiveScan: {
+      auto First = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto Output = snapshot(expression(Call->getArg(2)), L);
+      auto Value = snapshot(expression(Call->getArg(3)), L);
+      const auto FirstType = type(Call->getArg(0)->getType(), L);
+      const auto OutputType = type(Call->getArg(2)->getType(), L);
+      const auto ValueType = type(Call->getArg(3)->getType(), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      auto InputValue = temporary(ValueType, L);
+      auto Next = temporary(ValueType, L);
+      const auto Check = labelName(), Store = labelName(), End = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", First, Last, "bool", L), Store, End, L);
+      label(Store, L);
+      assign(InputValue, dereference(First, L), L);
+      assign(Next, binary("+", Value, InputValue, ValueType, L), L);
+      assign(dereference(Output, L), Value, L);
+      assign(Value, Next, L);
+      assign(First,
+             binary("+", First, quantity(1, DifferenceType, L), FirstType, L),
+             L);
+      assign(Output,
+             binary("+", Output, quantity(1, DifferenceType, L), OutputType, L),
+             L);
+      jump(Check, L);
       label(End, L);
       return Output;
     }
