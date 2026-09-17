@@ -4525,8 +4525,12 @@ class FunctionLowering {
         // Capacity queries still evaluate the range expression exactly once.
         lvalue(Source);
         if (Operation == UtilityOperation::IteratorEmpty)
-          return boolean(false, L);
+          return boolean(!Count, L);
         return quantity(Count, type(Call->getType(), L), L);
+      }
+      if (Array && !Array->Size) {
+        lvalue(Source);
+        return A.zero(Call->getType(), L);
       }
       auto Base = lvalue(Source);
       auto Storage = Native ? std::move(Base)
@@ -4641,6 +4645,10 @@ class FunctionLowering {
                "unavailable.");
       const uint64_t Count =
           Native ? Native->getSize().getLimitedValue() : Array->Size;
+      if (Array && !Array->Size) {
+        lvalue(Source);
+        return ReverseValue(A.zero(Reverse->IteratorType, L), *Reverse);
+      }
       auto Base = lvalue(Source);
       auto Storage = Native ? std::move(Base)
                             : fieldStorage(std::move(Base), Array->Elements, L);
@@ -5185,7 +5193,7 @@ class FunctionLowering {
       // the template extent.
       lvalue(Object);
       if (Operation == UtilityOperation::ArrayEmpty)
-        return boolean(false, L);
+        return boolean(!Array->Size, L);
       return quantity(Array->Size, type(Call->getType(), L), L);
     }
     case UtilityOperation::ArrayData:
@@ -5197,6 +5205,10 @@ class FunctionLowering {
       if (!Object || !Array)
         reject(L, "utility array iterator",
                "The selected std::array layout is unavailable.");
+      if (!Array->Size) {
+        lvalue(Object);
+        return A.zero(Call->getType(), L);
+      }
       auto Elements = fieldStorage(lvalue(Object), Array->Elements, L);
       auto Pointer = decay(std::move(Elements), type(Call->getType(), L), L);
       if (Operation != UtilityOperation::ArrayEnd)
@@ -5254,6 +5266,10 @@ class FunctionLowering {
                "The selected std::array layout is unavailable.");
       auto ObjectAddress = snapshot(
           address(lvalue(Object), Object->getType(), L), L);
+      if (!Array->Size) {
+        lvalue(Call->getArg(0));
+        return {};
+      }
       auto Value = snapshot(expression(Call->getArg(0)), L);
       auto SizeType = type(A.Context.getSizeType(), L);
       for (uint64_t I = 0; I < Array->Size; ++I) {
@@ -5273,13 +5289,17 @@ class FunctionLowering {
       const Expr *RightSource = Operation == UtilityOperation::ArrayMemberSwap
                                     ? Call->getArg(0)
                                     : Call->getArg(1);
-      if (!LeftSource || !RightSource || !ArrayFor(LeftSource->getType()))
+      auto Array = LeftSource ? ArrayFor(LeftSource->getType())
+                              : std::optional<UtilityArrayRecord>();
+      if (!LeftSource || !RightSource || !Array)
         reject(L, "utility array swap",
                "The selected std::array layout is unavailable.");
       auto LeftAddress = snapshot(
           address(lvalue(LeftSource), LeftSource->getType(), L), L);
       auto RightAddress = snapshot(
           address(lvalue(RightSource), RightSource->getType(), L), L);
+      if (!Array->Size)
+        return {};
       auto OldLeft = snapshot(dereference(json::Object(LeftAddress), L), L);
       auto OldRight = snapshot(dereference(json::Object(RightAddress), L), L);
       assign(dereference(std::move(LeftAddress), L), std::move(OldRight), L);
@@ -5300,6 +5320,12 @@ class FunctionLowering {
           address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
       auto RightAddress = snapshot(
           address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
+      if (!Array->Size) {
+        const bool Value = Operation == UtilityOperation::ArrayEqual ||
+                           Operation == UtilityOperation::ArrayLessEqual ||
+                           Operation == UtilityOperation::ArrayGreaterEqual;
+        return boolean(Value, L);
+      }
       auto Left = dereference(std::move(LeftAddress), L);
       auto Right = dereference(std::move(RightAddress), L);
       auto SizeType = type(A.Context.getSizeType(), L);
@@ -5326,9 +5352,12 @@ class FunctionLowering {
         }
       };
       CollectElements(CollectElements, Left, Right, *Array, 0);
-      if (Elements.empty())
-        reject(L, "utility array comparison",
-               "The selected std::array has no comparable scalar elements.");
+      if (Elements.empty()) {
+        const bool Value = Operation == UtilityOperation::ArrayEqual ||
+                           Operation == UtilityOperation::ArrayLessEqual ||
+                           Operation == UtilityOperation::ArrayGreaterEqual;
+        return boolean(Value, L);
+      }
       auto Equal = [&] {
         auto Result = temporary("bool", L);
         auto True = labelName(), False = labelName(), End = labelName();
@@ -6718,8 +6747,13 @@ class FunctionLowering {
   }
   bool emptyRecord(QualType T) const {
     const auto *R = T->getAsCXXRecordDecl();
-    return A.S.coreV2() && R && R->getDefinition() &&
-           R->getDefinition()->field_empty();
+    if (!A.S.coreV2() || !R || !R->getDefinition())
+      return false;
+    if (R->getDefinition()->field_empty())
+      return true;
+    const auto Array =
+        approvedUtilityArrayRecord(A.S, A.Sources, R, A.Context);
+    return Array && !Array->Size;
   }
   bool aggregateValue(QualType T) const {
     return A.S.coreV2() && (T->isRecordType() || T->isArrayType());
@@ -7463,6 +7497,32 @@ class FunctionLowering {
       if (I->isSyntacticForm() && I->getSemanticForm())
         I = I->getSemanticForm();
       const auto *Record = I->getType()->getAsCXXRecordDecl()->getDefinition();
+      const auto UtilityArray = approvedUtilityArrayRecord(
+          A.S, A.Sources, Record, A.Context);
+      if (UtilityArray && !UtilityArray->Size) {
+        const auto *Storage =
+            I->getNumInits() == 1
+                ? dyn_cast<InitListExpr>(I->getInit(0)->IgnoreParens())
+                : nullptr;
+        if (Storage && Storage->isSyntacticForm() &&
+            Storage->getSemanticForm())
+          Storage = Storage->getSemanticForm();
+        const auto *Filler =
+            Storage
+                ? dyn_cast_or_null<InitListExpr>(Storage->getArrayFiller())
+                : nullptr;
+        if (Filler && Filler->isSyntacticForm() && Filler->getSemanticForm())
+          Filler = Filler->getSemanticForm();
+        if (!Storage || Storage->getNumInits() || !Filler ||
+            Filler->getNumInits() ||
+            !A.Context.hasSameType(Storage->getType(),
+                                   UtilityArray->Elements->getType()))
+          reject(L, "empty array initialization",
+                 "A zero-sized std::array requires its implicit empty "
+                 "storage initializer.");
+        initializeZero(std::move(Place), I->getType(), L);
+        return;
+      }
       auto SavedReceiver = DefaultReceiver;
       if (A.S.coreV2())
         DefaultReceiver = InitializationReceiver{

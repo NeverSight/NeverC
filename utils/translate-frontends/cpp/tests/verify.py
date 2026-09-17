@@ -657,10 +657,78 @@ extern "C" int array_composition() {
     for target in sdk_targets:
         check("v2-array-composition-" + target, array_composition_source,
               profile="cpp-core-v2", target=target, sdk=True)
+    array_zero_source = """\
+#include <array>
+struct Point { int x; int y; };
+std::array<int, 0> global_empty{};
+const std::array<double, 0> global_double{};
+extern "C" int array_zero() {
+  static_assert(std::tuple_size<std::array<int, 0>>::value == 0);
+  static_assert(sizeof(std::array<int, 0>) == sizeof(int));
+  static_assert(alignof(std::array<int, 0>) == alignof(int));
+  static_assert(sizeof(std::array<double, 0>) == sizeof(double));
+  static_assert(alignof(std::array<double, 0>) == alignof(double));
+  static_assert(sizeof(std::array<Point, 0>) == sizeof(Point));
+  static_assert(alignof(std::array<Point, 0>) == alignof(Point));
+  std::array<int, 0> first{}, second{}, uninitialized;
+  std::array<int, 0> copied(first);
+  uninitialized = copied;
+  if (first.size() || first.max_size() || !first.empty() ||
+      std::size(first) || !std::empty(first) || first.data() != nullptr ||
+      first.begin() != nullptr || first.end() != nullptr ||
+      first.rbegin().base() != nullptr ||
+      std::data(first) != nullptr || std::begin(first) != nullptr ||
+      std::end(first) != nullptr || std::rbegin(first).base() != nullptr ||
+      global_empty.size() || !global_double.empty())
+    return 1;
+  int effects = 0, value = 3;
+  (++effects, first).fill((++effects, value));
+  (++effects, first).swap((++effects, second));
+  std::swap((++effects, first), (++effects, second));
+  int comparison = (first == second) + 2 * (first != second) +
+                   4 * (first < second) + 8 * (first > second) +
+                   16 * (first <= second) + 32 * (first >= second);
+  std::array<Point, 0> points{};
+  std::array<std::array<int, 0>, 2> nested{{{}, {}}}, other = nested;
+  if (!(nested == other) || nested != other || nested < other ||
+      nested > other || !(nested <= other) || !(nested >= other))
+    return 2;
+  for (int element : first)
+    effects += element;
+  return comparison == 49 && effects == 6 ? 0 : 3;
+}
+"""
+    array_zero = check("v2-array-zero", array_zero_source,
+                       profile="cpp-core-v2", sdk=True)
+    assert len(array_zero["sdk_dependencies"]) == 217, array_zero
+    assert not [node for node in walk(array_zero["functions"])
+                if node.get("op") in ("call", "mapped_call")], array_zero
+    point = next(record for record in array_zero["records"]
+                 if [field["type"] for field in record["fields"]]
+                 == ["int", "int"])
+    empty_int = next(record for record in array_zero["records"]
+                     if [field["type"] for field in record["fields"]]
+                     == ["int"] and record["layout"]["size_bits"] == 32)
+    assert empty_int["layout"] == {
+        "size_bits": 32, "abi_align_bits": 32,
+        "field_offsets_bits": [0]}, empty_int
+    assert any([field["type"] for field in record["fields"]] == ["double"]
+               for record in array_zero["records"]), array_zero["records"]
+    assert any([field["type"] for field in record["fields"]] == [point["id"]]
+               for record in array_zero["records"]), array_zero["records"]
+    assert any([field["type"] for field in record["fields"]]
+               == ["arr:2:" + empty_int["id"]]
+               for record in array_zero["records"]), array_zero["records"]
+    for target in sdk_targets:
+        check("v2-array-zero-" + target, array_zero_source,
+              profile="cpp-core-v2", target=target, sdk=True)
     for name, source, code in (
         ("quoted", '#include "array"\nint main(){return 0;}', "TR0201"),
-        ("zero",
-         '#include <array>\nint main(){std::array<int,0>a{};return a.size();}',
+        ("zero-front",
+         '#include <array>\nint main(){std::array<int,0>a{};return a.front();}',
+         "TR0203"),
+        ("zero-subscript",
+         '#include <array>\nint main(){std::array<int,0>a{};return a[0];}',
          "TR0203"),
         ("nontrivial-element",
          '#include <array>\nstruct R{int n;~R(){}};int main(){std::array<R,2>a{{{1},{2}}};return a[0].n;}',

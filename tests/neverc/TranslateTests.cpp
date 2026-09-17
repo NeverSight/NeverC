@@ -23848,6 +23848,107 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2EmptyArrayOperationsRunAtBothOptimizations) {
+  const auto Source = tmpFile("empty-array.cpp");
+  const auto Output = tmpFile("empty-array.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+struct Point { int x; int y; };
+struct Locked { const int value; };
+std::array<int, 0> globalEmpty{};
+const std::array<double, 0> globalDouble{};
+int main() {
+  static_assert(std::tuple_size<std::array<int, 0>>::value == 0);
+  static_assert(sizeof(std::array<int, 0>) == sizeof(int));
+  static_assert(alignof(std::array<int, 0>) == alignof(int));
+  static_assert(sizeof(std::array<double, 0>) == sizeof(double));
+  static_assert(alignof(std::array<double, 0>) == alignof(double));
+  static_assert(sizeof(std::array<Point, 0>) == sizeof(Point));
+  static_assert(alignof(std::array<Point, 0>) == alignof(Point));
+  static_assert(sizeof(std::array<Locked, 0>) == sizeof(Locked));
+  static_assert(alignof(std::array<Locked, 0>) == alignof(Locked));
+
+  std::array<int, 0> first{}, second{}, uninitialized;
+  std::array<int, 0> copied(first);
+  uninitialized = copied;
+  const std::array<int, 0> &view = first;
+  if (first.size() != 0 || first.max_size() != 0 || !first.empty() ||
+      std::size(first) != 0 || !std::empty(first) ||
+      globalEmpty.size() != 0 || !globalDouble.empty())
+    return 1;
+  if (first.data() != nullptr || first.begin() != nullptr ||
+      first.end() != nullptr || view.cbegin() != nullptr ||
+      view.cend() != nullptr || std::data(first) != nullptr ||
+      std::begin(first) != nullptr || std::end(first) != nullptr)
+    return 2;
+  if (first.rbegin().base() != nullptr ||
+      first.rend().base() != nullptr ||
+      view.crbegin().base() != nullptr || view.crend().base() != nullptr ||
+      std::rbegin(first).base() != nullptr ||
+      std::rend(first).base() != nullptr)
+    return 3;
+
+  int order = 0, touches = 0, stored = 9;
+  (order = order * 10 + 1, ++touches, first)
+      .fill((order = order * 10 + 2, ++touches, stored));
+  if (order != 12 || touches != 2)
+    return 4;
+  order = 0;
+  touches = 0;
+  (order = order * 10 + 1, ++touches, first)
+      .swap((order = order * 10 + 2, ++touches, second));
+  if (order != 12 || touches != 2)
+    return 5;
+  touches = 0;
+  std::swap((++touches, first), (++touches, second));
+  if (touches != 2)
+    return 6;
+
+  touches = 0;
+  int comparison =
+      ((++touches, first) == (++touches, second)) +
+      2 * ((++touches, first) != (++touches, second)) +
+      4 * ((++touches, first) < (++touches, second)) +
+      8 * ((++touches, first) > (++touches, second)) +
+      16 * ((++touches, first) <= (++touches, second)) +
+      32 * ((++touches, first) >= (++touches, second));
+  if (comparison != 49 || touches != 12)
+    return 7;
+
+  std::array<Point, 0> points{};
+  std::array<Locked, 0> locked{}, otherLocked{};
+  Locked lockedValue{7};
+  locked.fill(lockedValue);
+  locked.swap(otherLocked);
+  std::swap(locked, otherLocked);
+  locked = otherLocked;
+  std::array<std::array<int, 0>, 2> nested{{{}, {}}};
+  auto nestedCopy = nested;
+  if (!(nested == nestedCopy) || nested != nestedCopy ||
+      nested < nestedCopy || nested > nestedCopy ||
+      !(nested <= nestedCopy) || !(nested >= nestedCopy))
+    return 8;
+  int count = 0;
+  for (int value : first)
+    count += value + 1;
+  return count;
+}
+)cpp");
+  auto Result = translate(
+      Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  for (const auto *Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile(std::string("empty-array-") + Optimization + ".out");
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ArrayRequiresPinnedOperations) {
   struct Rejection {
     const char *Name;
@@ -23856,8 +23957,11 @@ TEST_F(TranslateTest, CoreV2ArrayRequiresPinnedOperations) {
   };
   const Rejection Cases[] = {
       {"quoted", "#include \"array\"\nint main(){return 0;}", "TR0201"},
-      {"zero",
-       "#include <array>\nint main(){std::array<int,0>a{};return a.size();}",
+      {"zero-front",
+       "#include <array>\nint main(){std::array<int,0>a{};return a.front();}",
+       "TR0203"},
+      {"zero-subscript",
+       "#include <array>\nint main(){std::array<int,0>a{};return a[0];}",
        "TR0203"},
       {"nontrivial-element",
        "#include <array>\nstruct R{int n;~R(){}};int main(){"

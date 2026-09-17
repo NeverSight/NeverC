@@ -3771,7 +3771,7 @@ bool Adapter::requireUtilityArray(const CXXRecordDecl *Record,
   auto Array = approvedUtilityArrayRecord(S, Sources, Record, Context);
   if (!Array) {
     reject(Location, "standard library record",
-           "Only the pinned nonempty trivial-value std::array<T, N> layout is "
+           "Only the pinned trivial-value std::array<T, N> layout is "
            "admitted.",
            "TR0203");
     return false;
@@ -3779,7 +3779,9 @@ bool Adapter::requireUtilityArray(const CXXRecordDecl *Record,
   const auto *Canonical = Array->Record->getCanonicalDecl();
   if (!RequiredUtilityArrays.insert(Canonical).second)
     return true;
-  if (type(Array->Elements->getType(), Location, false, Depth + 1).empty())
+  const auto StorageType =
+      Array->Size ? Array->Elements->getType() : Array->ElementType;
+  if (type(StorageType, Location, false, Depth + 1).empty())
     return false;
   Records.push_back(const_cast<CXXRecordDecl *>(Array->Record));
   return true;
@@ -3901,7 +3903,11 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
     return json::Object{{"kind", "null"}, {"type", Kind}, {"loc", loc(L)}};
   if (const auto *R = T->getAsCXXRecordDecl()) {
     json::Array Args;
-    if (auto Optional = approvedUtilityOptionalRecord(S, Sources, R, Context)) {
+    if (auto Array = approvedUtilityArrayRecord(S, Sources, R, Context);
+        Array && !Array->Size) {
+      Args.push_back(zero(Array->ElementType, L));
+    } else if (auto Optional =
+                   approvedUtilityOptionalRecord(S, Sources, R, Context)) {
       Args.push_back(zero(Optional->Value->getType(), L));
       Args.push_back(zero(Optional->Engaged->getType(), L));
     } else {
@@ -4285,11 +4291,17 @@ json::Object Adapter::constant(const APValue &V, QualType T, SourceLocation L) {
       reject(L, "constant record", "A folded record must retain every actual base and field value.");
       throw Failure{};
     }
-    if (const auto *Base = emptyBase(Record))
-      Args.push_back(constant(V.getStructBase(0), Context.getRecordType(Base->Base), L));
-    unsigned I = 0;
-    for (const auto *F : Record->fields())
-      Args.push_back(constant(V.getStructField(I++), F->getType(), L));
+    if (auto Array = approvedUtilityArrayRecord(S, Sources, Record, Context);
+        Array && !Array->Size) {
+      Args.push_back(zero(Array->ElementType, L));
+    } else {
+      if (const auto *Base = emptyBase(Record))
+        Args.push_back(
+            constant(V.getStructBase(0), Context.getRecordType(Base->Base), L));
+      unsigned I = 0;
+      for (const auto *F : Record->fields())
+        Args.push_back(constant(V.getStructField(I++), F->getType(), L));
+    }
     return json::Object{{"kind", "aggregate"},
                         {"type", Kind},
                         {"args", std::move(Args)},
@@ -13466,11 +13478,14 @@ static void orderCoreV2Records(Adapter &A) {
             .has_value();
     const auto UtilityTuple =
         approvedUtilityTupleRecord(A.S, A.Sources, R, A.Context);
+    const auto UtilityArray =
+        approvedUtilityArrayRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityOptional =
         approvedUtilityOptionalRecord(A.S, A.Sources, R, A.Context);
-    if (const auto *Base = UtilityReverse || UtilityTuple || UtilityOptional
-                               ? nullptr
-                               : A.emptyBase(R)) {
+    if (const auto *Base =
+            UtilityReverse || UtilityTuple || UtilityArray || UtilityOptional
+                ? nullptr
+                : A.emptyBase(R)) {
       auto Found = Indices.find(Base->Base);
       if (Found == Indices.end()) {
         A.reject(R->getLocation(), "base dependency", "An empty base requires its checked complete record definition.");
@@ -13483,29 +13498,35 @@ static void orderCoreV2Records(Adapter &A) {
       }
       Heights[I] = Heights[Found->second] + 1;
     }
-    std::vector<const FieldDecl *> DependencyFields;
+    std::vector<std::pair<QualType, SourceLocation>> DependencyTypes;
     if (UtilityTuple) {
-      DependencyFields.insert(DependencyFields.end(),
-                              UtilityTuple->Elements.begin(),
-                              UtilityTuple->Elements.end());
+      for (const auto *Field : UtilityTuple->Elements)
+        DependencyTypes.emplace_back(Field->getType(), Field->getLocation());
+    } else if (UtilityArray) {
+      DependencyTypes.emplace_back(
+          UtilityArray->Size ? UtilityArray->Elements->getType()
+                             : UtilityArray->ElementType,
+          UtilityArray->Elements->getLocation());
     } else if (UtilityOptional) {
-      DependencyFields.push_back(UtilityOptional->Value);
-      DependencyFields.push_back(UtilityOptional->Engaged);
+      DependencyTypes.emplace_back(UtilityOptional->Value->getType(),
+                                   UtilityOptional->Value->getLocation());
+      DependencyTypes.emplace_back(UtilityOptional->Engaged->getType(),
+                                   UtilityOptional->Engaged->getLocation());
     } else {
       for (const auto *Field : R->fields())
-        DependencyFields.push_back(Field);
+        DependencyTypes.emplace_back(Field->getType(), Field->getLocation());
     }
-    for (const auto *F : DependencyFields) {
+    for (const auto &[DependencyType, DependencyLocation] : DependencyTypes) {
       // A pointer to a record needs only its forward declaration, but an array
       // element needs a complete definition even inside a callback signature.
       auto RequireType = [&](auto &&Walk, QualType T, bool Complete,
                              unsigned TypeDepth) -> void {
         if (TypeDepth > 64) {
-          A.reject(F->getLocation(), "record dependency",
+          A.reject(DependencyLocation, "record dependency",
                    "Field declaration type nesting exceeds the depth limit.");
           throw Failure{};
         }
-        A.chargeExpansion(1, F->getLocation());
+        A.chargeExpansion(1, DependencyLocation);
         if (const auto *Array = A.Context.getAsConstantArrayType(T)) {
           Walk(Walk, Array->getElementType(), true, TypeDepth + 1);
           return;
@@ -13525,20 +13546,20 @@ static void orderCoreV2Records(Adapter &A) {
           return;
         auto Found = Indices.find(Dependency->getCanonicalDecl());
         if (Found == Indices.end()) {
-          A.reject(F->getLocation(), "record dependency",
+          A.reject(DependencyLocation, "record dependency",
                    "A field declaration requires a checked complete record definition.");
           throw Failure{};
         }
         Self(Self, Found->second, Depth + 1);
         // Cached dependencies still contribute their whole declaration depth.
         if (Heights[Found->second] >= 64) {
-          A.reject(F->getLocation(), "record dependency",
+          A.reject(DependencyLocation, "record dependency",
                    "Record declaration nesting exceeds the depth limit.");
           throw Failure{};
         }
         Heights[I] = std::max(Heights[I], Heights[Found->second] + 1);
       };
-      RequireType(RequireType, F->getType(), true, 0);
+      RequireType(RequireType, DependencyType, true, 0);
     }
     State[I] = Visit::Done;
     Ordered.push_back(R);
@@ -13605,11 +13626,15 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
     const auto UtilityTuple =
         S.coreV2() ? approvedUtilityTupleRecord(S, Sources, R, Context)
                    : std::optional<UtilityTupleRecord>();
+    const auto UtilityArray =
+        S.coreV2() ? approvedUtilityArrayRecord(S, Sources, R, Context)
+                   : std::optional<UtilityArrayRecord>();
     const auto UtilityOptional =
         S.coreV2() ? approvedUtilityOptionalRecord(S, Sources, R, Context)
                    : std::optional<UtilityOptionalRecord>();
     const auto *Base =
-        S.coreV2() && !UtilityReverse && !UtilityTuple && !UtilityOptional
+        S.coreV2() && !UtilityReverse && !UtilityTuple && !UtilityArray &&
+                !UtilityOptional
             ? emptyBase(R)
             : nullptr;
     if (Base)
@@ -13621,6 +13646,11 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
       for (const auto *F : UtilityTuple->Elements)
         Fields.push_back(json::Object{
             {"name", name(F)}, {"type", type(F->getType(), F->getLocation())}});
+    } else if (UtilityArray && !UtilityArray->Size) {
+      Fields.push_back(
+          json::Object{{"name", name(UtilityArray->Elements)},
+                       {"type", type(UtilityArray->ElementType,
+                                     UtilityArray->Elements->getLocation())}});
     } else if (UtilityOptional) {
       for (const auto *F : {UtilityOptional->Value, UtilityOptional->Engaged})
         Fields.push_back(json::Object{
@@ -13640,6 +13670,8 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
       if (UtilityTuple) {
         for (uint64_t Offset : UtilityTuple->Offsets)
           Offsets.push_back(Offset);
+      } else if (UtilityArray && !UtilityArray->Size) {
+        Offsets.push_back(uint64_t(0));
       } else if (UtilityOptional) {
         Offsets.push_back(uint64_t(0));
         const auto &StorageLayout =

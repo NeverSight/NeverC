@@ -1,5 +1,6 @@
 #include "BuiltinCppSdkData.h"
 #include "Frontend.h"
+#include "clang/AST/Attr.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/RecordLayout.h"
@@ -1161,7 +1162,7 @@ approvedUtilityArrayRecord(const State &S, const SourceManager &SM,
   const auto &Arguments = Specialization->getTemplateArgs();
   const auto SizeValue = Arguments.get(1).getAsIntegral();
   const uint64_t Size = SizeValue.getLimitedValue(65537);
-  if (!Size || Size > 65536)
+  if (Size > 65536)
     return std::nullopt;
   auto Fields = Specialization->fields();
   auto It = Fields.begin();
@@ -1171,12 +1172,53 @@ approvedUtilityArrayRecord(const State &S, const SourceManager &SM,
   auto Element = Arguments.get(0).getAsType();
   if (!Elements || It != Fields.end() || Elements->getName() != "__elems_" ||
       Elements->getAccess() != AS_public || Elements->isBitField() ||
-      Elements->isMutable() || Elements->hasAttrs() || !Array ||
-      Array->getSize().getLimitedValue(65537) != Size ||
-      !Context.hasSameType(Array->getElementType(), Element) ||
+      Elements->isMutable() || !Array || Element.isNull() ||
+      !Element->isObjectType() || Element->isIncompleteType() ||
       !utilityArrayValue(S, SM, Context, Element) ||
       !approvedStandardSDKDeclaration(S, SM, Elements) ||
       !cstddefOrigin(S, SM, Elements->getLocation(), "libcxx", "array"))
+    return std::nullopt;
+  if (!Size) {
+    unsigned AttributeCount = 0;
+    for (const auto *Attribute : Elements->attrs()) {
+      ++AttributeCount;
+      if (!isa<AlignedAttr>(Attribute))
+        return std::nullopt;
+    }
+    const auto StorageElement = Array->getElementType();
+    const auto *Empty =
+        StorageElement.getUnqualifiedType()->getAsCXXRecordDecl();
+    Empty = Empty ? Empty->getDefinition() : nullptr;
+    const auto &Layout = Context.getASTRecordLayout(Specialization);
+    const auto ExpectedBytes =
+        uint64_t(Context.getTypeSizeInChars(Element).getQuantity());
+    const auto ExpectedBits = Context.getTypeSize(Element);
+    const auto ExpectedAlign = Context.getTypeAlign(Element);
+    if (AttributeCount != 1 ||
+        Array->getSize().getLimitedValue(ExpectedBytes + 1) != ExpectedBytes ||
+        StorageElement.isConstQualified() != Element.isConstQualified() ||
+        StorageElement.isVolatileQualified() ||
+        StorageElement.isRestrictQualified() || !Empty ||
+        Empty->getName() != "__empty" || Empty->isUnion() ||
+        Empty->isDependentContext() || Empty->getNumBases() ||
+        Empty->getNumVBases() || Empty->isDynamicClass() ||
+        !Empty->field_empty() || !Empty->isEmpty() ||
+        !Empty->isStandardLayout() || !Empty->isTrivial() ||
+        !Empty->hasTrivialDestructor() ||
+        !approvedStandardSDKDeclaration(S, SM, Empty) ||
+        !cstddefOrigin(S, SM, Empty->getLocation(), "libcxx",
+                       "__utility/empty.h") ||
+        Context.getTypeSize(StorageElement) != Context.getCharWidth() ||
+        Context.getTypeAlign(StorageElement) != Context.getCharWidth() ||
+        Layout.getFieldCount() != 1 || Layout.getFieldOffset(0) != 0 ||
+        uint64_t(Layout.getSize().getQuantity()) * 8 != ExpectedBits ||
+        uint64_t(Layout.getAlignment().getQuantity()) * 8 != ExpectedAlign)
+      return std::nullopt;
+    return UtilityArrayRecord{Specialization, Elements, Element, Size};
+  }
+  if (Elements->hasAttrs() ||
+      Array->getSize().getLimitedValue(65537) != Size ||
+      !Context.hasSameType(Array->getElementType(), Element))
     return std::nullopt;
   return UtilityArrayRecord{Specialization, Elements, Element, Size};
 }
@@ -2629,11 +2671,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                      ? UtilityOperation::ArrayREnd
                      : UtilityOperation::ArrayRBegin;
       }
-      if ((Name == "front" || Name == "back") && ReferenceResult())
+      if (Array->Size && (Name == "front" || Name == "back") &&
+          ReferenceResult())
         return Name == "front" ? UtilityOperation::ArrayFront
                                : UtilityOperation::ArrayBack;
     }
-    if (Operator && Operator->getOperator() == OO_Subscript &&
+    if (Array->Size && Operator && Operator->getOperator() == OO_Subscript &&
         Method->getNumParams() == 1 && Call->getNumArgs() == 2 &&
         Method->getParamDecl(0)->getType()->isIntegralType(Context) &&
         Call->getArg(1)->getType()->isIntegralType(Context) &&
@@ -2653,7 +2696,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if (!Operator && Name == "fill" && Method->getNumParams() == 1 &&
         Call->getNumArgs() == 1 && Method->getReturnType()->isVoidType() &&
         !Object->getType().isConstQualified() &&
-        utilityArrayTriviallyAssignable(Context, Array->ElementType)) {
+        (Array->Size
+             ? utilityArrayTriviallyAssignable(Context, Array->ElementType)
+             : !Array->ElementType.isConstQualified())) {
       auto Parameter = Method->getParamDecl(0)->getType();
       if (Parameter->isLValueReferenceType() &&
           Parameter->getPointeeType().isConstQualified() &&
@@ -2666,7 +2711,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if (!Operator && Name == "swap" && Method->getNumParams() == 1 &&
         Call->getNumArgs() == 1 && Method->getReturnType()->isVoidType() &&
         !Object->getType().isConstQualified() &&
-        utilityArrayTriviallyAssignable(Context, Array->ElementType)) {
+        (Array->Size
+             ? utilityArrayTriviallyAssignable(Context, Array->ElementType)
+             : !Array->ElementType.isConstQualified())) {
       auto Parameter = Method->getParamDecl(0)->getType();
       if (Parameter->isLValueReferenceType() &&
           SameArray(Parameter->getPointeeType()) &&
@@ -4626,7 +4673,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if (LeftType->isLValueReferenceType() &&
         RightType->isLValueReferenceType() && Left && Right &&
         Left->Record->getCanonicalDecl() == Right->Record->getCanonicalDecl() &&
-        utilityArrayTriviallyAssignable(Context, Left->ElementType) &&
+        (Left->Size
+             ? utilityArrayTriviallyAssignable(Context, Left->ElementType)
+             : !Left->ElementType.isConstQualified()) &&
         Same(Call->getArg(0)->getType(), LeftType->getPointeeType()) &&
         Same(Call->getArg(1)->getType(), RightType->getPointeeType()))
       return UtilityOperation::ArraySwap;

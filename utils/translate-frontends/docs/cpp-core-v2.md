@@ -218,27 +218,41 @@ forged declarations remain rejected.
 
 Core v2 accepts an exact top-level `#include <array>` from the pinned embedded
 VFS. Nonempty `std::array<T, N>` objects use libc++'s checked single fixed-array
-field and the existing aggregate carrier. `T` may be an admitted integral or
-enum scalar up to 64 bits, `float`, `double`, `nullptr_t`, or a non-function
-object pointer, a source-owned trivial standard-layout record, or another
-admitted `std::array`; `N` is limited to 65536. Nested arrays and record arrays
-retain their recursive field layout and ordinary aggregate access.
+field and the existing aggregate carrier. The `N == 0` partial specialization
+is authenticated separately: its private `std::__empty` byte array, typed
+alignment attribute, size and ABI alignment must exactly match one `T` object.
+The protocol exposes that inaccessible storage as one synthetic `T` carrier so
+the generated record preserves the native size and alignment without exposing
+or operating on libc++ internals. `T` may be an admitted integral or enum
+scalar up to 64 bits, `float`, `double`, `nullptr_t`, or a non-function object
+pointer, a source-owned trivial standard-layout record, or another admitted
+`std::array`; `N` is limited to 65536. Nested arrays and record arrays retain
+their recursive field layout and ordinary aggregate access.
 
 `size`, `max_size`, `empty`, `data`, `begin`, `end`, `cbegin`, `cend`, indexed
-access, `front`, `back`, compile-time in-range `at`, `fill`, member and free
-`swap`, all six C++17 comparisons and index-based `get` lower directly to
-existing array, pointer, assignment and control-flow operations. Aggregate
-initialization, trivial copy/move construction and copy/move assignment retain
-ordinary value semantics. `tuple_size` and `tuple_element` remain checked
-compile-time metadata.
+access, `front`, `back`, compile-time in-range `at`, forward and reverse range
+access, `fill`, member and free `swap`, all six C++17 comparisons and
+index-based `get` lower directly to existing array, pointer, assignment and
+control-flow operations. Aggregate initialization, trivial copy/move
+construction and copy/move assignment retain ordinary value semantics.
+`tuple_size` and `tuple_element` remain checked compile-time metadata.
+
+For `std::array<T, 0>`, capacity is zero, `empty()` is true, and libc++'s
+`data()` plus every forward or reverse iterator base is null. `fill` and swap
+still evaluate their receiver and arguments but do not read or write the
+synthetic carrier. The six comparisons evaluate both operands and return the
+empty-range results: equality, `<=` and `>=` are true; inequality, `<` and `>`
+are false. This rule composes through nonempty arrays whose nested leaves all
+have zero extent. Element access remains rejected because no valid index,
+`front`, `back`, `at` or `get` operation exists.
 
 The standalone authenticated closure contains 217 libc++/resource files on all
 eight supported targets and contains no platform headers. Generated programs do
 not call or link libc++ for these operations. Comparisons recursively preserve
-row-major lexicographic order when every leaf element is scalar. Zero-length and
-nontrivial record elements, record comparisons, reverse iterators, dynamic or
-out-of-range `at`, function addresses, quoted `"array"`, user shadows and forged
-declarations remain outside this boundary.
+row-major lexicographic order when every leaf element is scalar. Nontrivial
+record elements, record comparisons, dynamic or out-of-range `at`, function
+addresses, quoted `"array"`, user shadows and forged declarations remain
+outside this boundary.
 
 ## Initializer-list views from `<initializer_list>`
 

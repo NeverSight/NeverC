@@ -24,10 +24,11 @@ folded layout queries and directly lowered `std::byte` operations. The
 scalar `pair` construction, assignment, swaps, comparisons, `make_pair`, `get`,
 `tuple_size`, `tuple_element` and integer-sequence size queries. These surfaces
 do not require a runtime libc++ link. The `<array>` surface has a 217-file
-libc++/resource closure and directly lowers nonempty fixed scalar,
-trivial-record and nested arrays, including capacity, pointer iterators, element
-access, fill, swap, scalar and recursive nested-array comparisons and index-based
-`get`, without a runtime libc++ link.
+libc++/resource closure and directly lowers fixed scalar, trivial-record and
+nested arrays, including the dedicated zero-length partial specialization,
+capacity, pointer and reverse iterators, element access where the extent is
+nonzero, fill, swap, scalar and recursive nested-array comparisons and
+index-based `get`, without a runtime libc++ link.
 The `<tuple>` surface has a 98-file libc++/resource closure on every core-v2
 target. It authenticates libc++'s private implementation and indexed leaf
 offsets for nonempty tuples and the dedicated empty specialization, then
