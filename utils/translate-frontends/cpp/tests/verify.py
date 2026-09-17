@@ -29,8 +29,8 @@ def main():
     repository = Path(__file__).resolve().parents[4]
     count = 0
     sdk_identity = {
-        "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r7",
-        "catalog_sha256": "f4b253fbef0ba2cd616274240b654312c083eeb99d26eb617570860ef2fdb03f",
+        "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r8",
+        "catalog_sha256": "b40c4f1899ac3cbc0373d71296ca2ba48127a56bc05b681994ccd1648e0fa857",
     }
 
     def check(name, source, code=None, options=(), root=None, profile="cpp-core-v1",
@@ -1337,6 +1337,30 @@ extern "C" int iterator_operations() {
     ):
         check("v2-iterator-" + name, source, code,
               profile="cpp-core-v2", sdk=True)
+
+    numeric_header_source = """\
+#include <numeric>
+extern "C" int numeric_header() { return 0; }
+"""
+    numeric_header = check("v2-numeric-header", numeric_header_source,
+                           profile="cpp-core-v2", sdk=True)
+    assert len(numeric_header["sdk_dependencies"]) == 126, numeric_header
+    assert any(dependency["root"] == "libcxx" and
+               dependency["path"] == "numeric"
+               for dependency in numeric_header["sdk_dependencies"]), numeric_header
+    assert not any(dependency["root"] == "platform"
+                   for dependency in numeric_header["sdk_dependencies"]), numeric_header
+    for target in sdk_targets:
+        target_result = check("v2-numeric-header-" + target,
+                              numeric_header_source, profile="cpp-core-v2",
+                              target=target, sdk=True)
+        assert target_result["sdk_dependencies"] == numeric_header["sdk_dependencies"], target_result
+    check("v2-numeric-quoted",
+          '#include "numeric"\nint main(){return 0;}', "TR0201",
+          profile="cpp-core-v2", sdk=True)
+    check("v2-numeric-runtime-operation",
+          '#include <numeric>\nint main(){int a[2]{};std::iota(a,a+2,1);return a[1];}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
 
     algorithm_header_source = """\
 #include <algorithm>

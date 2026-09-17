@@ -64,13 +64,16 @@ and [`<tuple>`](../docs/cpp-core-v2.md#value-tuples-from-tuple) and
 [`<optional>`](../docs/cpp-core-v2.md#value-optionals-from-optional),
 [`<iterator>`](../docs/cpp-core-v2.md#iterator-metadata-from-iterator), and the
 [`<algorithm>`](../docs/cpp-core-v2.md#algorithm-header-from-algorithm) pointer
-algorithm surface. The
+algorithm surface. The exact
+[`<numeric>`](../docs/cpp-core-v2.md#numeric-header-from-numeric) header is also
+authenticated while its operations are brought into the direct-lowering
+boundary. The
 frontend uses the pinned embedded libc++/resource VFS and exposes resolved type
 aliases plus integral/enum constant results. It records all consumed header
 hashes: 101 for the `<type_traits>` closure, nine for standalone `<cstdint>`,
 16 for `<limits>`, 29 for `<cstddef>`, 87 for `<utility>`, 98 for `<tuple>`,
 217 for `<array>`, 10 for `<initializer_list>`, 136 for `<optional>`, 171 for
-`<iterator>` and 354 for `<algorithm>`. The composite
+`<iterator>`, 354 for `<algorithm>` and 126 for `<numeric>`. The composite
 array-plus-tuple-plus-utility fixture consumes a 231-file union closure; adding
 `<optional>` produces a 253-file union closure on all eight targets.
 Numeric limits fold the documented
@@ -150,6 +153,9 @@ scalar-pointer pair results; `minmax` uses its exact authenticated pair of two
 const references. `shuffle` and `sample` remain disabled at this stage because
 their libc++ implementation reaches the same target C runtime character-state
 ABI through `uniform_int_distribution`.
+Numeric contributes an exact, platform-free 126-file C++17 header closure.
+Calls from that header remain rejected until their scalar-pointer lowerings are
+implemented.
 The driver authenticates each closure before
 emitting output. Standard-library objects and operations beyond these documented
 surfaces, other standard headers and full C++/STL remain unfinished.
@@ -273,9 +279,9 @@ signaling-NaN builtin argument is not silently mapped to a dynamic runtime call.
 Dynamic binary64 parameters can still carry NaNs and infinities.
 
 The immutable translation headers are embedded in NeverC as distribution
-`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r7`. The
+`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r8`. The
 [SDK catalog](../../../neverc/lib/Translate/Cpp/SDK/catalog.json) records all
-533 approved header files and separate SDK metadata. The original header bytes
+546 approved header files and separate SDK metadata. The original header bytes
 are preserved, including observable macros such as `M_PI` and `_LIBCPP_VERSION`.
 The [SDK notices](../../../neverc/lib/Translate/Cpp/SDK/README.md) document
 origins, redistribution terms and the minimal owned SDK configuration.

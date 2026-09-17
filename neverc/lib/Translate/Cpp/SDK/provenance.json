@@ -2,7 +2,7 @@
   "schema": "neverc.cpp.sdk.provenance",
   "version": 1,
   "source_distribution_id": "clang20.1.8-libcxx200100-macos15.5",
-  "scope": "533 approved header files; upstream references document source and license provenance, not a claim that every SDK export is byte-identical to that upstream revision.",
+  "scope": "546 approved header files; upstream references document source and license provenance, not a claim that every SDK export is byte-identical to that upstream revision.",
   "headers": [
     {
       "root": "libcxx",
@@ -3090,6 +3090,90 @@
     },
     {
       "root": "libcxx",
+      "path": "__numeric/accumulate.h",
+      "sha256": "7628c656ed2c45537ce3cf1afefcf85b5bbe7ea4ec36397f0bff51699128ca28",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__numeric/accumulate.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__numeric/accumulate.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "__numeric/adjacent_difference.h",
+      "sha256": "9f29e25c380513f6fc10182410b285fde33b752f9db95006a5d50beb032fd885",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__numeric/adjacent_difference.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__numeric/adjacent_difference.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "__numeric/exclusive_scan.h",
+      "sha256": "7c014b25db4e22757d008aff80983dc43829330a674363a2f3f12b3ae38ec464",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__numeric/exclusive_scan.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__numeric/exclusive_scan.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "__numeric/gcd_lcm.h",
+      "sha256": "feb81d6d37bef630cbf544d92371d65a30f55ad511e5f7e01ed12e95c314b2a4",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__numeric/gcd_lcm.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__numeric/gcd_lcm.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "__numeric/inclusive_scan.h",
+      "sha256": "724cce224801a986b05f198208097cc5b89811e4722d01f6a66cbaa618515fba",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__numeric/inclusive_scan.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__numeric/inclusive_scan.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "__numeric/inner_product.h",
+      "sha256": "6fa7a71437a5c606306dbce2541524350bceff59ff3b65309a9113ccca020660",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__numeric/inner_product.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__numeric/inner_product.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "__numeric/iota.h",
+      "sha256": "bf7a064ffa56c649c3fcbc6719a084a714873f5a382ca6ebb152b5b010c34236",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__numeric/iota.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__numeric/iota.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
       "path": "__numeric/partial_sum.h",
       "sha256": "c86cd3a78b52247a50107f80bd03d3934dfa21dfd9441fa8fa7ae0f89d25d994",
       "license": "Apache-2.0 WITH LLVM-exception",
@@ -3098,6 +3182,66 @@
       "upstream_revision": "llvmorg-20.1.8",
       "upstream_path": "libcxx/include/__numeric/partial_sum.h",
       "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__numeric/partial_sum.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "__numeric/pstl.h",
+      "sha256": "5d5cba7c67f8562d49edbf273281bbdf17f3a3473b8a133c1750bc51ee42c97f",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__numeric/pstl.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__numeric/pstl.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "__numeric/reduce.h",
+      "sha256": "6c47d327fea3ecbf9f870db2b3eb4ab6165171f094537a89fc99272b27f1078d",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__numeric/reduce.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__numeric/reduce.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "__numeric/transform_exclusive_scan.h",
+      "sha256": "243bc3a525c0e2bb2cbb51fbad27caef17444b9a041db05437218d45c94f0a6d",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__numeric/transform_exclusive_scan.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__numeric/transform_exclusive_scan.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "__numeric/transform_inclusive_scan.h",
+      "sha256": "10395bfe812a8d60ba61a8c30a78bd57d316cdf2595d03d64cdaf4604d330845",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__numeric/transform_inclusive_scan.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__numeric/transform_inclusive_scan.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "__numeric/transform_reduce.h",
+      "sha256": "26a1dbc9b44276b1c1c7b5a9bce37389ce793d87b448283c963ec58afcd6e07d",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__numeric/transform_reduce.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__numeric/transform_reduce.h",
       "upstream_relationship": "source-reference"
     },
     {
@@ -5130,6 +5274,18 @@
     },
     {
       "root": "libcxx",
+      "path": "numeric",
+      "sha256": "9a4a1f8ff8db818e0bc987f53f35cab2e10de997d8536e1d53cee380ab645296",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/numeric",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/numeric",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
       "path": "optional",
       "sha256": "c33344069468e49259b6dc8ac3663af34ea3c4882fc41fe39c1551d22caeb9b2",
       "license": "Apache-2.0 WITH LLVM-exception",
@@ -6417,7 +6573,7 @@
       "sha256": "58a133735f0a55a624a1703067059f6e78925e51725ec6e1f966072e142c9c42"
     }
   ],
-  "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r7",
+  "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r8",
   "metadata": [
     {
       "root": "platform",

@@ -24287,6 +24287,45 @@ int main() { return 0; }
   expectNoArtifacts(QuotedOutput);
 }
 
+TEST_F(TranslateTest, CoreV2NumericHeaderUsesPlatformFreeClosure) {
+  const auto Source = tmpFile("numeric-header.cpp");
+  const auto Output = tmpFile("numeric-header.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+int main() { return 0; }
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *SDK = Manifest->getAsObject()->getObject("sdk");
+  ASSERT_NE(SDK, nullptr);
+  const auto *Dependencies = SDK->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 126u);
+  bool FoundNumeric = false;
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+    FoundNumeric |= Dependency->getString("root") == "libcxx" &&
+                    Dependency->getString("path") == "numeric";
+  }
+  EXPECT_TRUE(FoundNumeric);
+
+  const auto Quoted = tmpFile("numeric-quoted.cpp");
+  const auto QuotedOutput = tmpFile("numeric-quoted.nc");
+  writeFile(Quoted, "#include \"numeric\"\nint main(){return 0;}");
+  expectCode(translate(Quoted, {"--profile", "cpp-core-v2", "-o",
+                                QuotedOutput.string()}),
+             "TR0201");
+  expectNoArtifacts(QuotedOutput);
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmHeaderUsesPlatformFreeClosure) {
   const auto Source = tmpFile("algorithm-header.cpp");
   const auto Output = tmpFile("algorithm-header.nc");

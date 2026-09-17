@@ -380,6 +380,18 @@ their declarations are disabled because libc++ obtains `mbstate_t` from a target
 C runtime header. Custom iterator classes, function-pointer iterators, quoted
 includes and forged declarations remain rejected.
 
+## Numeric header from `<numeric>`
+
+Core v2 admits the exact angled `<numeric>` entry from the pinned embedded VFS.
+Its 126-file libc++/resource dependency closure is identical on all eight
+supported targets and contains no platform headers. This revision retains the
+upstream public header and all C++17 numeric components byte for byte.
+
+Numeric algorithm calls remain outside the direct-lowering boundary. The
+frontend therefore rejects them before output instead of retaining a libc++
+runtime dependency. Quoted includes, shadows, function addresses and forged
+declarations remain rejected.
+
 ## Algorithm header from `<algorithm>`
 
 Core v2 admits the exact angled `<algorithm>` entry from the pinned embedded
