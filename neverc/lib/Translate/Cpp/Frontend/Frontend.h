@@ -527,7 +527,8 @@ approvedUtilityOptionalRecord(const State &S, const clang::SourceManager &SM,
                               const clang::ASTContext &Context);
 std::optional<clang::QualType>
 utilityScalarComparisonType(const clang::ASTContext &Context,
-                            clang::QualType Left, clang::QualType Right);
+                            clang::QualType Left, clang::QualType Right,
+                            bool RequireOrderedObject = false);
 enum class UtilityOptionalConstruction {
   Empty,
   InPlaceDefault,

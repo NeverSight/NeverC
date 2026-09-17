@@ -41,8 +41,8 @@ directly lowers scalar optional construction, assignment, engagement queries,
 zero/single-value in-place construction, dereference, arrow, reset,
 single-value emplacement, scalar value fallback, member/free swap,
 zero/single-value factories, scalar converting optional construction and
-assignment, and C++17 same-type or heterogeneous arithmetic comparisons
-without a runtime libc++ link.
+assignment, and C++17 same-type, heterogeneous arithmetic or
+qualification-compatible pointer comparisons without a runtime libc++ link.
 The `<iterator>` surface has a 171-file libc++/resource closure on every core-v2
 target. It exposes pointer `iterator_traits` metadata and directly lowered
 pointer, array-range and raw-pointer reverse-iterator operations while retaining

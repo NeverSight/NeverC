@@ -4651,8 +4651,11 @@ class FunctionLowering {
                                            : Call->getArg(0)->getType();
         const auto RightType = RightOptional ? RightOptional->ElementType
                                              : Call->getArg(1)->getType();
-        ComparisonType =
-            utilityScalarComparisonType(A.Context, LeftType, RightType);
+        const bool RequireOrderedObject =
+            Operation != UtilityOperation::OptionalEqual &&
+            Operation != UtilityOperation::OptionalNotEqual;
+        ComparisonType = utilityScalarComparisonType(
+            A.Context, LeftType, RightType, RequireOrderedObject);
         if (!ComparisonType)
           reject(
               L, "utility optional comparison",

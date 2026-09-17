@@ -28134,13 +28134,32 @@ int main() {
       !(short(4) <= int_four) || !(int_four >= short(4)))
     return 4;
 
+  int object = 0;
+  int *mutable_address = &object;
+  const int *constant_address = &object;
+  void *erased_address = &object;
+  std::optional<int *> mutable_pointer(mutable_address);
+  std::optional<const int *> constant_pointer(constant_address);
+  std::optional<void *> erased_pointer(erased_address);
+  if (!(mutable_pointer == constant_pointer) ||
+      mutable_pointer != constant_pointer ||
+      !(mutable_pointer <= constant_pointer) ||
+      !(mutable_pointer >= constant_pointer) ||
+      !(mutable_pointer == constant_address) ||
+      !(constant_address == mutable_pointer) ||
+      !(mutable_pointer <= constant_address) ||
+      !(constant_address >= mutable_pointer) ||
+      !(mutable_pointer == erased_pointer) ||
+      !(erased_pointer == mutable_address))
+    return 5;
+
   const std::optional<int> seven(7);
   if (seven.value_or(fallback()) != 7 || effects != 1)
-    return 5;
-  if (empty.value_or(fallback()) != 42 || effects != 2)
     return 6;
-  if (std::optional<int>(8).value_or(fallback()) != 8 || effects != 3)
+  if (empty.value_or(fallback()) != 42 || effects != 2)
     return 7;
+  if (std::optional<int>(8).value_or(fallback()) != 8 || effects != 3)
+    return 8;
 
   auto zero = std::make_optional<int>();
   int source = 4;
@@ -28152,7 +28171,7 @@ int main() {
   if (!zero || *zero != 6 || !explicit_value || *explicit_value != 0 ||
       !copied || *copied != 4 || !converted || *converted != 5 ||
       empty.value_or(small) != 5)
-    return 8;
+    return 9;
   return 0;
 }
 )cpp");
@@ -28193,9 +28212,10 @@ TEST_F(TranslateTest, CoreV2OptionalRequiresPinnedScalarOperations) {
       {"throwing-value",
        "#include <optional>\nint main(){std::optional<int>v;return v.value();}",
        "TR0203"},
-      {"heterogeneous-pointer-comparison",
-       "#include <optional>\nint main(){std::optional<int*>a;"
-       "std::optional<const int*>b;return a==b;}",
+      {"base-pointer-comparison",
+       "#include <optional>\nstruct B{};struct D:B{};"
+       "int f(B*p,D*q){std::optional<B*>a(p);std::optional<D*>b(q);"
+       "return a==b;}int main(){return 0;}",
        "TR0203"},
       {"nullptr-optional-conversion",
        "#include <optional>\nint main(){std::optional<decltype(nullptr)>a("

@@ -622,14 +622,27 @@ extern "C" int optional_operations(int value) {
   std::optional<long long> wide_negative(-1LL);
   std::optional<float> single(1.0f);
   std::optional<double> real(2.0);
+  int object = 0;
+  int* mutable_pointer = &object;
+  const int* constant_pointer = &object;
+  void* erased_pointer = &object;
+  std::optional<int*> mutable_optional(mutable_pointer);
+  std::optional<const int*> constant_optional(constant_pointer);
+  std::optional<void*> erased_optional(erased_pointer);
   bool heterogeneous = narrow < first && first > narrow &&
                        !(negative < unsigned_one) &&
                        !(unsigned_one > negative) &&
                        wide_negative < unsigned_one && single < real &&
                        first > short(4) && short(4) < first;
+  bool pointers = mutable_optional == constant_optional &&
+                  mutable_optional <= constant_optional &&
+                  mutable_optional >= constant_pointer &&
+                  constant_pointer == mutable_optional &&
+                  mutable_optional == erased_optional &&
+                  erased_optional == mutable_pointer;
   return first.has_value() && !second && *first == value + 1 &&
                  selected == value + 1 && optionals && nullopts && values &&
-                 heterogeneous &&
+                 heterogeneous && pointers &&
                  widened && *widened == 4 && widened_real &&
                  *widened_real == 4.0 && !widened_empty &&
                  *made == 0 && *zero == value + 2 && *placed == 6 &&
@@ -680,8 +693,8 @@ extern "C" int optional_operations(int value) {
         ("throwing-value",
          '#include <optional>\nint main(){std::optional<int>v;return v.value();}',
          "TR0203"),
-        ("heterogeneous-pointer-comparison",
-         '#include <optional>\nint main(){std::optional<int*>a;std::optional<const int*>b;return a==b;}',
+        ("base-pointer-comparison",
+         '#include <optional>\nstruct B{};struct D:B{};int f(B*p,D*q){std::optional<B*>a(p);std::optional<D*>b(q);return a==b;}int main(){return 0;}',
          "TR0203"),
         ("nullptr-optional-conversion",
          '#include <optional>\nint main(){std::optional<decltype(nullptr)>a(nullptr);std::optional<int*>b(a);return b.has_value();}',

@@ -379,19 +379,57 @@ static bool utilityScalar(const ASTContext &Context, QualType Type) {
 
 std::optional<QualType> utilityScalarComparisonType(const ASTContext &Context,
                                                     QualType Left,
-                                                    QualType Right) {
+                                                    QualType Right,
+                                                    bool RequireOrderedObject) {
   if (!utilityScalar(Context, Left) || !utilityScalar(Context, Right))
     return std::nullopt;
   Left = Left.getCanonicalType().getUnqualifiedType();
   Right = Right.getCanonicalType().getUnqualifiedType();
   if (Context.hasSameType(Left, Right)) {
+    if (Left->isNullPtrType() && RequireOrderedObject)
+      return std::nullopt;
+    if (Left->isPointerType() && RequireOrderedObject) {
+      const auto Pointee = Left->getPointeeType();
+      if (!Pointee->isObjectType() || Pointee->isIncompleteType())
+        return std::nullopt;
+    }
     if (Context.isPromotableIntegerType(Left))
       Left = Context.getPromotedIntegerType(Left);
     return Left;
   }
 
-  // Distinct pointers, nullptr_t and enumerations need composite-pointer or
-  // enumeration-specific rules. Keep those outside the arithmetic surface.
+  if (Left->isPointerType() || Right->isPointerType()) {
+    if (!Left->isPointerType() || !Right->isPointerType())
+      return std::nullopt;
+    auto LeftPointee = Left->getPointeeType();
+    auto RightPointee = Right->getPointeeType();
+    auto SupportedPointee = [](QualType Type) {
+      return !Type.isNull() && !Type.isVolatileQualified() &&
+             !Type.isRestrictQualified() &&
+             Type.getAddressSpace() == LangAS::Default &&
+             (Type->isObjectType() || Type->isVoidType());
+    };
+    if (!SupportedPointee(LeftPointee) || !SupportedPointee(RightPointee))
+      return std::nullopt;
+    QualType Pointee;
+    if (Context.hasSameUnqualifiedType(LeftPointee, RightPointee))
+      Pointee = LeftPointee.getUnqualifiedType();
+    else if (LeftPointee->isVoidType() && RightPointee->isObjectType())
+      Pointee = Context.VoidTy;
+    else if (RightPointee->isVoidType() && LeftPointee->isObjectType())
+      Pointee = Context.VoidTy;
+    else
+      return std::nullopt;
+    if (RequireOrderedObject &&
+        (!Pointee->isObjectType() || Pointee->isIncompleteType()))
+      return std::nullopt;
+    if (LeftPointee.isConstQualified() || RightPointee.isConstQualified())
+      Pointee = Pointee.withConst();
+    return Context.getPointerType(Pointee);
+  }
+
+  // Distinct nullptr_t and enumerations need separate source rules. Keep those
+  // outside the arithmetic surface.
   if (Left->isEnumeralType() || Right->isEnumeralType() ||
       !Left->isArithmeticType() || !Right->isArithmeticType())
     return std::nullopt;
@@ -2430,7 +2468,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            approvedUtilityNulloptExpression(S, SM, Call->getArg(Index),
                                             Context);
   };
-  auto ScalarParameter = [&](unsigned Index, QualType Element) {
+  auto ScalarParameter = [&](unsigned Index, QualType Element,
+                             bool RequireOrderedObject) {
     if (Index >= Function->getNumParams() || Index >= Call->getNumArgs())
       return false;
     const auto Parameter = Function->getParamDecl(Index)->getType();
@@ -2441,7 +2480,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
                                           Call->getArg(Index)->getType()) &&
            utilityScalarComparisonType(Context, Element,
-                                       Parameter->getPointeeType());
+                                       Parameter->getPointeeType(),
+                                       RequireOrderedObject);
   };
   if (Origin->Path == "optional" && Call->getNumArgs() == 2 &&
       Function->getNumParams() == 2 && Call->isPRValue() &&
@@ -2474,6 +2514,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       }
     }
     if (Comparison) {
+      const bool RequireOrderedObject =
+          *Comparison != UtilityOperation::OptionalEqual &&
+          *Comparison != UtilityOperation::OptionalNotEqual;
       const auto Left = OptionalFor(Call->getArg(0)->getType());
       const auto Right = OptionalFor(Call->getArg(1)->getType());
       const bool LeftNullopt = NulloptParameter(0);
@@ -2481,16 +2524,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       if (Left && Right && OptionalParameter(0, *Left, true) &&
           OptionalParameter(1, *Right, true) &&
           utilityScalarComparisonType(Context, Left->ElementType,
-                                      Right->ElementType))
+                                      Right->ElementType, RequireOrderedObject))
         return Comparison;
       if (Left && RightNullopt && OptionalParameter(0, *Left, true))
         return Comparison;
       if (LeftNullopt && Right && OptionalParameter(1, *Right, true))
         return Comparison;
       if (Left && OptionalParameter(0, *Left, true) &&
-          ScalarParameter(1, Left->ElementType))
+          ScalarParameter(1, Left->ElementType, RequireOrderedObject))
         return Comparison;
-      if (Right && ScalarParameter(0, Right->ElementType) &&
+      if (Right &&
+          ScalarParameter(0, Right->ElementType, RequireOrderedObject) &&
           OptionalParameter(1, *Right, true))
         return Comparison;
     }

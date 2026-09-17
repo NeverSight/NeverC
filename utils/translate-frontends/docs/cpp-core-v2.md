@@ -254,21 +254,26 @@ aggregate and scalar IR. Converting optional operations preserve source
 engagement and cast an engaged source value to the destination element type.
 Selected scalar construction, assignment, emplacement, fallback and factory
 conversions use the same directly representable scalar cast boundary.
-Comparisons cover `nullopt` on either side, exact scalar types, and
-heterogeneous arithmetic optional or value operands. Heterogeneous arithmetic
-operands receive the C++17 integer promotions and usual arithmetic conversions
-before comparison; exact pointer, `nullptr_t` and enumeration comparisons
-retain their existing scalar path. The selected comparison operator is emitted
-directly, preserving unordered floating-point behavior such as NaN for `<=`
-and `>=`. Generated programs do not call or link libc++ for these operations.
+Comparisons cover `nullopt` on either side, exact scalar types, heterogeneous
+arithmetic operands, and qualification-compatible object pointers. Arithmetic
+optional or value operands receive the C++17 integer promotions and usual
+arithmetic conversions before comparison. Pointer operands receive a common
+pointer type by combining pointee `const`; equality also admits an object
+pointer with a compatibly qualified `void *`. Ordered pointer comparisons
+require a complete object pointee. Exact `nullptr_t` and enumeration
+comparisons retain their existing scalar path. The selected comparison
+operator is emitted directly, preserving unordered floating-point behavior
+such as NaN for `<=` and `>=`. Generated programs do not call or link libc++
+for these operations.
 
 Volatile, `long double`, record and other non-scalar elements remain outside
-this increment. Throwing `value`, heterogeneous pointer or enumeration
-comparisons, `nullptr_t`-to-pointer optional conversion, initializer-list emplacement and the
-`in_place_type`/`in_place_index` tags are not admitted yet. The authenticated
-`in_place` tag is erased only as an optional constructor argument. Function
-addresses, quoted includes, user shadows and forged declarations remain
-rejected.
+this increment. Throwing `value`, base-adjusting or otherwise incompatible
+pointer comparisons, heterogeneous enumeration comparisons,
+`nullptr_t`-to-pointer optional conversion, initializer-list emplacement and
+the `in_place_type`/`in_place_index` tags are not admitted yet. The
+authenticated `in_place` tag is erased only as an optional constructor
+argument. Function addresses, quoted includes, user shadows and forged
+declarations remain rejected.
 
 ## Iterator metadata from `<iterator>`
 
