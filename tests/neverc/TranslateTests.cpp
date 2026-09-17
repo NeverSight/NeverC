@@ -23380,6 +23380,9 @@ int main() {
   if (effects != 1 || std::get<0>(first) != 1 ||
       std::get<1>(first) != 2.5 || std::get<2>(first) != objects)
     return 1;
+  if (std::get<int>(first) != 1 || std::get<double>(first) != 2.5 ||
+      std::get<int *>(first) != objects)
+    return 1;
 
   std::tuple<int, double, int *> second;
   if (std::get<0>(second) != 0 || std::get<1>(second) != 0.0 ||
@@ -23399,7 +23402,8 @@ int main() {
   const std::tuple<int, double, int *> copied(second);
   std::tuple<int, double, int *> moved(
       static_cast<std::tuple<int, double, int *> &&>(made));
-  if (std::get<0>(copied) != 1 || std::get<0>(moved) != 7)
+  if (std::get<0>(copied) != 1 || std::get<0>(moved) != 7 ||
+      std::get<double>(copied) != 2.5)
     return 5;
 
   std::tuple<int, int, int> left(1, 9, 3), right(2, 0, 0),
@@ -23443,8 +23447,11 @@ int main() {
 
   int &&rvalue = std::get<0>(
       static_cast<std::tuple<int, double, int *> &&>(moved));
+  double &&typed_rvalue = std::get<double>(
+      static_cast<std::tuple<int, double, int *> &&>(moved));
   rvalue = 8;
-  return std::get<0>(moved) == 8 ? 0 : 10;
+  typed_rvalue = 9.5;
+  return std::get<0>(moved) == 8 && std::get<1>(moved) == 9.5 ? 0 : 10;
 }
 )cpp");
   auto Result =
@@ -23473,6 +23480,66 @@ int main() {
   for (const std::string &Optimization : {"-O0", "-O2"}) {
     SCOPED_TRACE(Optimization);
     const auto Executable = tmpFile("tuple" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2TupleConvertsScalarPairs) {
+  const auto Source = tmpFile("tuple-pair.cpp");
+  const auto Output = tmpFile("tuple-pair.nc");
+  writeFile(Source, R"cpp(
+#include <tuple>
+#include <utility>
+int main() {
+  int objects[2]{7, 9};
+  std::pair<short, int *> source(short(12), objects + 1);
+  std::tuple<int, const int *> copied(source);
+  std::tuple<int, const int *> moved(
+      static_cast<std::pair<short, int *> &&>(source));
+  std::tuple<int, const int *> assigned;
+  assigned = source;
+  std::tuple<int, const int *> move_assigned;
+  move_assigned = static_cast<std::pair<short, int *> &&>(source);
+  if (std::get<int>(copied) != 12 ||
+      std::get<const int *>(copied) != objects + 1 ||
+      std::get<0>(moved) != 12 || std::get<1>(assigned) != objects + 1 ||
+      std::get<0>(move_assigned) != 12)
+    return 1;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *SDK = Manifest->getAsObject()->getObject("sdk");
+  ASSERT_NE(SDK, nullptr);
+  const auto *Dependencies = SDK->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 108u);
+  bool FoundTuple = false, FoundUtility = false;
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+    FoundTuple |= Dependency->getString("root") == "libcxx" &&
+                  Dependency->getString("path") == "tuple";
+    FoundUtility |= Dependency->getString("root") == "libcxx" &&
+                    Dependency->getString("path") == "utility";
+  }
+  EXPECT_TRUE(FoundTuple);
+  EXPECT_TRUE(FoundUtility);
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("tuple-pair" + Optimization);
     auto Compile = compileGenerated(Output, Executable, Optimization);
     ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
     auto Run = exec(Executable.string(), {});
@@ -23510,10 +23577,10 @@ TEST_F(TranslateTest, CoreV2TupleRequiresPinnedScalarOperations) {
        "#include <tuple>\nusing F=int(*)();int main(){std::tuple<F>v;"
        "return std::get<0>(v)==nullptr;}",
        "TR0201"},
-      {"type-get",
-       "#include <tuple>\nint main(){std::tuple<int,double>v(1,2.0);"
+      {"ambiguous-type-get",
+       "#include <tuple>\nint main(){std::tuple<int,int>v(1,2);"
        "return std::get<int>(v);}",
-       "TR0203"},
+       "TR0202"},
       {"tuple-cat",
        "#include <tuple>\nint main(){auto a=std::make_tuple(1);"
        "auto b=std::tuple_cat(a,a);return std::get<0>(b);}",

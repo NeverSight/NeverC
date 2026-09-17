@@ -4231,16 +4231,32 @@ class FunctionLowering {
       const auto *Arguments =
           Function ? Function->getTemplateSpecializationArgs() : nullptr;
       if (!Tuple || !Arguments || Arguments->size() != 2 ||
-          Arguments->get(0).getKind() != TemplateArgument::Integral ||
-          Arguments->get(0).getAsIntegral().isNegative())
+          Arguments->get(1).getKind() != TemplateArgument::Pack ||
+          Arguments->get(1).pack_size() != Tuple->Elements.size())
         reject(L, "utility tuple get",
                "The selected std::tuple element is unavailable.");
-      const uint64_t Index = Arguments->get(0).getAsIntegral().getLimitedValue(
-          Tuple->Elements.size());
-      if (Index >= Tuple->Elements.size())
+      std::optional<uint64_t> Index;
+      if (Arguments->get(0).getKind() == TemplateArgument::Integral &&
+          !Arguments->get(0).getAsIntegral().isNegative()) {
+        const uint64_t Candidate =
+            Arguments->get(0).getAsIntegral().getLimitedValue(
+                Tuple->Elements.size());
+        if (Candidate < Tuple->Elements.size())
+          Index = Candidate;
+      } else if (Arguments->get(0).getKind() == TemplateArgument::Type) {
+        for (unsigned I = 0; I < Tuple->Elements.size(); ++I)
+          if (A.Context.hasSameType(Arguments->get(0).getAsType(),
+                                    Tuple->Elements[I]->getType())) {
+            if (Index)
+              reject(L, "utility tuple get",
+                     "The selected std::tuple type is ambiguous.");
+            Index = I;
+          }
+      }
+      if (!Index)
         reject(L, "utility tuple get",
-               "The selected std::tuple index is out of bounds.");
-      return fieldStorage(lvalue(Call->getArg(0)), Tuple->Elements[Index], L);
+               "The selected std::tuple element is unavailable.");
+      return fieldStorage(lvalue(Call->getArg(0)), Tuple->Elements[*Index], L);
     }
     case UtilityOperation::PairGetFirst:
     case UtilityOperation::PairGetSecond: {
@@ -5496,6 +5512,28 @@ class FunctionLowering {
                                      SourceTuple->Elements[I], L),
                         type(DestinationTuple->Elements[I]->getType(), L), L),
                    L);
+          return Left;
+        }
+        case UtilityTupleAssignment::Pair: {
+          auto DestinationTuple = approvedUtilityTupleRecord(
+              A.S, A.Sources, Call->getArg(0)->getType()->getAsCXXRecordDecl(),
+              A.Context);
+          auto SourcePair = approvedUtilityPairRecord(
+              A.S, A.Sources, Call->getArg(1)->getType()->getAsCXXRecordDecl(),
+              A.Context);
+          if (!DestinationTuple || DestinationTuple->Elements.size() != 2 ||
+              !SourcePair)
+            reject(L, "utility tuple assignment",
+                   "A selected tuple or pair layout is unavailable.");
+          for (unsigned I = 0; I != 2; ++I) {
+            const auto *SourceField =
+                I ? SourcePair->Second : SourcePair->First;
+            assign(fieldStorage(json::Object(Left),
+                                DestinationTuple->Elements[I], L),
+                   cast(fieldStorage(json::Object(Right), SourceField, L),
+                        type(DestinationTuple->Elements[I]->getType(), L), L),
+                   L);
+          }
           return Left;
         }
         }
@@ -6875,6 +6913,23 @@ class FunctionLowering {
                                    SourceTuple->Elements[I], L),
                       type(Tuple->Elements[I]->getType(), L), L),
                  L);
+        return;
+      }
+      case UtilityTupleConstruction::Pair: {
+        auto SourcePair = approvedUtilityPairRecord(
+            A.S, A.Sources, C->getArg(0)->getType()->getAsCXXRecordDecl(),
+            A.Context);
+        if (!SourcePair || Tuple->Elements.size() != 2)
+          reject(L, "utility tuple construction",
+                 "The source scalar std::pair layout is unavailable.");
+        auto Source = snapshot(expression(C->getArg(0)), L);
+        for (unsigned I = 0; I != 2; ++I) {
+          const auto *SourceField = I ? SourcePair->Second : SourcePair->First;
+          assign(Member(Tuple->Elements[I]),
+                 cast(fieldStorage(json::Object(Source), SourceField, L),
+                      type(Tuple->Elements[I]->getType(), L), L),
+                 L);
+        }
         return;
       }
       }

@@ -971,6 +971,29 @@ approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
         return std::nullopt;
     return UtilityTupleConstruction::Converting;
   }
+  const auto SourcePair =
+      Construction->getNumArgs() == 1
+          ? approvedUtilityPairRecord(
+                S, SM, Construction->getArg(0)->getType()->getAsCXXRecordDecl(),
+                Context)
+          : std::optional<UtilityPairRecord>();
+  if (SourcePair && Primary && Constructor->hasBody() &&
+      Tuple->Elements.size() == 2 &&
+      approvedStandardSDKDeclaration(S, SM, Primary) &&
+      cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "tuple")) {
+    const auto Parameter = Constructor->getParamDecl(0)->getType();
+    if (!Parameter->isReferenceType() ||
+        Parameter->getPointeeType().isVolatileQualified() ||
+        !Context.hasSameUnqualifiedType(
+            Parameter->getPointeeType(),
+            Context.getRecordType(SourcePair->Record)) ||
+        !utilityScalarDirectConversion(Context, SourcePair->First->getType(),
+                                       Tuple->Elements[0]->getType()) ||
+        !utilityScalarDirectConversion(Context, SourcePair->Second->getType(),
+                                       Tuple->Elements[1]->getType()))
+      return std::nullopt;
+    return UtilityTupleConstruction::Pair;
+  }
   if (!Primary || Construction->getNumArgs() != Tuple->Elements.size() ||
       !approvedStandardSDKDeclaration(S, SM, Primary) ||
       !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "tuple"))
@@ -1018,30 +1041,46 @@ approvedUtilityTupleAssignment(const State &S, const SourceManager &SM,
       !Context.hasSameUnqualifiedType(Result->getPointeeType(), TupleType) ||
       !Context.hasSameUnqualifiedType(Assignment->getArg(0)->getType(),
                                       TupleType) ||
-      !Context.hasSameUnqualifiedType(Assignment->getType(), TupleType))
+      !Context.hasSameUnqualifiedType(Assignment->getType(), TupleType) ||
+      !Parameter->isReferenceType() ||
+      Parameter->getPointeeType().isVolatileQualified())
     return std::nullopt;
   const auto SourceTuple = approvedUtilityTupleRecord(
       S, SM, Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
-  if (!SourceTuple || !Parameter->isReferenceType() ||
-      Parameter->getPointeeType().isVolatileQualified() ||
+  const auto *Primary = Method->getPrimaryTemplate();
+  if (SourceTuple) {
+    if (!Context.hasSameUnqualifiedType(
+            Parameter->getPointeeType(),
+            Context.getRecordType(SourceTuple->Record)))
+      return std::nullopt;
+    if (SourceTuple->Record->getCanonicalDecl() ==
+        Tuple->Record->getCanonicalDecl())
+      return UtilityTupleAssignment::CopyOrMove;
+    if (!Primary || SourceTuple->Elements.size() != Tuple->Elements.size() ||
+        !approvedStandardSDKDeclaration(S, SM, Primary) ||
+        !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "tuple"))
+      return std::nullopt;
+    for (unsigned I = 0; I < Tuple->Elements.size(); ++I)
+      if (!utilityScalarDirectConversion(Context,
+                                         SourceTuple->Elements[I]->getType(),
+                                         Tuple->Elements[I]->getType()))
+        return std::nullopt;
+    return UtilityTupleAssignment::Converting;
+  }
+  const auto SourcePair = approvedUtilityPairRecord(
+      S, SM, Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
+  if (!SourcePair || Tuple->Elements.size() != 2 || !Primary ||
       !Context.hasSameUnqualifiedType(
           Parameter->getPointeeType(),
-          Context.getRecordType(SourceTuple->Record)))
-    return std::nullopt;
-  if (SourceTuple->Record->getCanonicalDecl() ==
-      Tuple->Record->getCanonicalDecl())
-    return UtilityTupleAssignment::CopyOrMove;
-  const auto *Primary = Method->getPrimaryTemplate();
-  if (!Primary || SourceTuple->Elements.size() != Tuple->Elements.size() ||
+          Context.getRecordType(SourcePair->Record)) ||
       !approvedStandardSDKDeclaration(S, SM, Primary) ||
-      !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "tuple"))
+      !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "tuple") ||
+      !utilityScalarDirectConversion(Context, SourcePair->First->getType(),
+                                     Tuple->Elements[0]->getType()) ||
+      !utilityScalarDirectConversion(Context, SourcePair->Second->getType(),
+                                     Tuple->Elements[1]->getType()))
     return std::nullopt;
-  for (unsigned I = 0; I < Tuple->Elements.size(); ++I)
-    if (!utilityScalarDirectConversion(Context,
-                                       SourceTuple->Elements[I]->getType(),
-                                       Tuple->Elements[I]->getType()))
-      return std::nullopt;
-  return UtilityTupleAssignment::Converting;
+  return UtilityTupleAssignment::Pair;
 }
 
 bool approvedUtilityArrayMetadata(const State &S, const SourceManager &SM,
@@ -4748,22 +4787,42 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto Tuple =
         TupleFor(Parameter->isReferenceType() ? Parameter->getPointeeType()
                                               : QualType());
-    if (Arguments && Arguments->size() == 2 &&
-        Arguments->get(0).getKind() == TemplateArgument::Integral &&
-        Arguments->get(1).getKind() == TemplateArgument::Pack &&
-        Parameter->isReferenceType() && Result->isReferenceType() && Tuple &&
-        !Arguments->get(0).getAsIntegral().isNegative() &&
-        Same(Call->getArg(0)->getType(), Parameter->getPointeeType()) &&
-        Same(Call->getType(), Result->getPointeeType()) &&
-        (Result->isLValueReferenceType() ? Call->isLValue()
-                                         : Call->isXValue())) {
-      const uint64_t Index = Arguments->get(0).getAsIntegral().getLimitedValue(
-          Tuple->Elements.size());
-      if (Index < Tuple->Elements.size() &&
-          Context.hasSameUnqualifiedType(Result->getPointeeType(),
-                                         Tuple->Elements[Index]->getType()))
-        return UtilityOperation::TupleGet;
+    if (!Arguments || Arguments->size() != 2 ||
+        Arguments->get(1).getKind() != TemplateArgument::Pack ||
+        !Parameter->isReferenceType() || !Result->isReferenceType() || !Tuple ||
+        Arguments->get(1).pack_size() != Tuple->Elements.size() ||
+        !Same(Call->getArg(0)->getType(), Parameter->getPointeeType()) ||
+        !Same(Call->getType(), Result->getPointeeType()) ||
+        (Result->isLValueReferenceType() ? !Call->isLValue()
+                                         : !Call->isXValue()))
+      return std::nullopt;
+    unsigned PackIndex = 0;
+    for (const auto &Argument : Arguments->get(1).pack_elements())
+      if (Argument.getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Argument.getAsType(),
+                               Tuple->Elements[PackIndex++]->getType()))
+        return std::nullopt;
+    std::optional<uint64_t> Index;
+    if (Arguments->get(0).getKind() == TemplateArgument::Integral &&
+        !Arguments->get(0).getAsIntegral().isNegative()) {
+      const uint64_t Candidate =
+          Arguments->get(0).getAsIntegral().getLimitedValue(
+              Tuple->Elements.size());
+      if (Candidate < Tuple->Elements.size())
+        Index = Candidate;
+    } else if (Arguments->get(0).getKind() == TemplateArgument::Type) {
+      for (unsigned I = 0; I < Tuple->Elements.size(); ++I)
+        if (Context.hasSameType(Arguments->get(0).getAsType(),
+                                Tuple->Elements[I]->getType())) {
+          if (Index)
+            return std::nullopt;
+          Index = I;
+        }
     }
+    if (Index &&
+        Context.hasSameUnqualifiedType(Result->getPointeeType(),
+                                       Tuple->Elements[*Index]->getType()))
+      return UtilityOperation::TupleGet;
   }
   return std::nullopt;
 }

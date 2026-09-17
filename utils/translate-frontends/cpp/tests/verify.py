@@ -430,6 +430,8 @@ extern "C" int tuple_all(int *pointer) {
   std::tuple<int, int, int> left(1, 9, 3), right(2, 0, 0), same(1, 9, 3);
   int result = std::get<0>(copied) + int(std::get<1>(moved));
   result += std::get<2>(first) == pointer;
+  result += std::get<int>(first) == std::get<0>(first);
+  result += std::get<double>(copied) == std::get<1>(copied);
   result += (left == same) + 2 * (left != right) + 4 * (left < right);
   result += 8 * (right > left) + 16 * (left <= same) + 32 * (left >= same);
   std::tuple<short, float> narrow(short(1), 9.0f);
@@ -465,6 +467,35 @@ extern "C" int tuple_all(int *pointer) {
     for target in sdk_targets:
         check("v2-tuple-" + target, tuple_source,
               profile="cpp-core-v2", target=target, sdk=True)
+
+    tuple_pair_source = """\
+#include <tuple>
+#include <utility>
+extern "C" int tuple_pair(int *pointer) {
+  std::pair<short, int *> source(short(3), pointer);
+  std::tuple<int, const int *> copied(source), moved(
+      static_cast<std::pair<short, int *> &&>(source));
+  copied = source;
+  moved = static_cast<std::pair<short, int *> &&>(source);
+  return std::get<int>(copied) + (std::get<const int *>(moved) == pointer);
+}
+"""
+    tuple_pair = check("v2-tuple-pair", tuple_pair_source,
+                       profile="cpp-core-v2", sdk=True)
+    assert len(tuple_pair["sdk_dependencies"]) == 108, tuple_pair
+    assert {dependency["path"] for dependency in tuple_pair["sdk_dependencies"]} >= {
+        "tuple", "utility"
+    }, tuple_pair
+    assert sorted([field["type"] for field in record["fields"]]
+                  for record in tuple_pair["records"]) == [
+                      ["i16", "ptr:int"],
+                      ["int", "cptr:int"],
+                  ], tuple_pair["records"]
+    assert not [node for node in walk(tuple_pair["functions"])
+                if node.get("op") in ("call", "mapped_call")], tuple_pair
+    for target in sdk_targets:
+        check("v2-tuple-pair-" + target, tuple_pair_source,
+              profile="cpp-core-v2", target=target, sdk=True)
     for name, source, code in (
         ("quoted", '#include "tuple"\nint main(){return 0;}', "TR0201"),
         ("empty", '#include <tuple>\nint main(){std::tuple<>v;return 0;}',
@@ -484,9 +515,9 @@ extern "C" int tuple_all(int *pointer) {
         ("function-pointer",
          '#include <tuple>\nusing F=int(*)();int main(){std::tuple<F>v;return std::get<0>(v)==nullptr;}',
          "TR0201"),
-        ("type-get",
-         '#include <tuple>\nint main(){std::tuple<int,double>v(1,2.0);return std::get<int>(v);}',
-         "TR0203"),
+        ("ambiguous-type-get",
+         '#include <tuple>\nint main(){std::tuple<int,int>v(1,2);return std::get<int>(v);}',
+         "TR0202"),
         ("tuple-cat",
          '#include <tuple>\nint main(){auto a=std::make_tuple(1);auto b=std::tuple_cat(a,a);return std::get<0>(b);}',
          "TR0203"),

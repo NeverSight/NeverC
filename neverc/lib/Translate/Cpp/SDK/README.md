@@ -31,9 +31,11 @@ access, fill, swap, scalar and recursive nested-array comparisons and index-base
 The `<tuple>` surface has a 98-file libc++/resource closure on every core-v2
 target. It authenticates libc++'s private implementation and indexed leaf
 offsets, then directly lowers nonempty scalar tuple construction, compatible
-per-element converting construction and assignment, factories, swaps,
-same-length heterogeneous comparisons and index access without a runtime
-libc++ link.
+per-element converting construction and assignment from tuples or scalar pairs,
+factories, swaps, same-length heterogeneous comparisons and index or
+unique-type access without a runtime libc++ link.
+Programs using the pair conversion include both `<tuple>` and `<utility>` and
+have a 108-file union closure on every core-v2 target.
 The `<initializer_list>` surface has a 10-file libc++/resource closure on every
 core-v2 target. It retains the pinned two-field pointer-and-size layout and
 directly lowers braced backing-array materialization, default and copy/move

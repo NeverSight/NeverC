@@ -191,8 +191,14 @@ construction lower directly. Assignment supports same-type tuples and
 same-length tuples whose scalar source elements can be assigned through the
 selected libc++ overload; assignment and swap require mutable destination
 elements. `std::make_tuple`, member and free `swap`, `tuple_size`,
-`tuple_element`, and index-based `std::get` use the same authenticated records.
-`get` preserves const and lvalue/rvalue reference categories.
+`tuple_element`, and index-based or unique-type `std::get` use the same
+authenticated records. `get` preserves const and lvalue/rvalue reference
+categories; type selection requires exactly one matching element, as in C++17.
+
+Two-element tuples also accept admitted scalar `std::pair<U, V>` lvalues and
+rvalues for construction and assignment when both selected libc++ element
+conversions are supported. This requires both `<tuple>` and `<utility>` and has
+an authenticated, platform-free 108-file union closure on all eight targets.
 
 All six C++17 comparisons accept same-length heterogeneous scalar tuples when
 each element pair has an approved arithmetic or compatible object-pointer
@@ -201,10 +207,9 @@ Lexicographic ordering short-circuits at the first unequal element. Generated
 programs contain no tuple helper calls and do not link libc++.
 
 Empty, reference, nested-record, `long double` and function-pointer element
-tuples remain outside this increment. Pair-to-tuple conversion, type-based
-`get`, `tie`, `forward_as_tuple`, `tuple_cat` and `apply` are also rejected.
-Quoted includes, user shadows, function addresses and forged declarations
-remain rejected.
+tuples remain outside this increment. `tie`, `forward_as_tuple`, `tuple_cat`
+and `apply` are also rejected. Quoted includes, user shadows, function addresses
+and forged declarations remain rejected.
 
 ## Fixed value arrays from `<array>`
 

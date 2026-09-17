@@ -480,6 +480,7 @@ enum class UtilityTupleConstruction {
   Elements,
   CopyOrMove,
   Converting,
+  Pair,
 };
 std::optional<UtilityTupleConstruction>
 approvedUtilityTupleConstruction(const State &S, const clang::SourceManager &SM,
@@ -488,6 +489,7 @@ approvedUtilityTupleConstruction(const State &S, const clang::SourceManager &SM,
 enum class UtilityTupleAssignment {
   CopyOrMove,
   Converting,
+  Pair,
 };
 std::optional<UtilityTupleAssignment>
 approvedUtilityTupleAssignment(const State &S, const clang::SourceManager &SM,
