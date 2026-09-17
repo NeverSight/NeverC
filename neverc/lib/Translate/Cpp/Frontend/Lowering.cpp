@@ -707,6 +707,33 @@ class FunctionLowering {
       return index(decay(std::move(Elements), PointerType, L),
                    std::move(Position), type(ResultType, L), L);
     };
+    auto ReverseFor = [&](QualType Type) {
+      return approvedUtilityReverseIteratorRecord(
+          A.S, A.Sources, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(),
+          A.Context);
+    };
+    auto ReverseCurrent = [&](Expression Base,
+                              const UtilityReverseIteratorRecord &Reverse) {
+      return fieldStorage(std::move(Base), Reverse.Current, L);
+    };
+    auto ReverseValue = [&](Expression Pointer,
+                            const UtilityReverseIteratorRecord &Reverse) {
+      auto RecordType = A.Context.getRecordType(Reverse.Record);
+      auto Place = Destination ? std::move(*Destination)
+                               : objectTemporary(RecordType, L);
+      Destination.reset();
+      if (Place.getString("type") != type(RecordType, L))
+        reject(
+            L, "reverse iterator result",
+            "The destination type differs from the reverse iterator result.");
+      auto Value = snapshot(
+          cast(std::move(Pointer), type(Reverse.IteratorType, L), L), L);
+      assign(fieldStorage(json::Object(Place), Reverse.Legacy, L),
+             json::Object(Value), L);
+      assign(fieldStorage(json::Object(Place), Reverse.Current, L),
+             std::move(Value), L);
+      return Place;
+    };
     switch (Operation) {
     case UtilityOperation::Move:
     case UtilityOperation::Forward:
@@ -951,16 +978,37 @@ class FunctionLowering {
                                   type(A.Context.getPointerDiffType(), L), L),
                              L);
       auto Iterator = dereference(std::move(IteratorAddress), L);
-      auto Current = snapshot(Iterator, L);
-      assign(Iterator,
-             binary("+", std::move(Current), std::move(Offset),
-                    type(IteratorType, L), L),
-             L);
+      auto Reverse = ReverseFor(IteratorType);
+      if (Reverse) {
+        auto Current = ReverseCurrent(std::move(Iterator), *Reverse);
+        auto Value = snapshot(Current, L);
+        assign(Current,
+               binary("-", std::move(Value), std::move(Offset),
+                      type(Reverse->IteratorType, L), L),
+               L);
+      } else {
+        auto Current = snapshot(Iterator, L);
+        assign(Iterator,
+               binary("+", std::move(Current), std::move(Offset),
+                      type(IteratorType, L), L),
+               L);
+      }
       return {};
     }
     case UtilityOperation::IteratorDistance: {
       auto First = snapshot(expression(Call->getArg(0)), L);
       auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto Reverse = ReverseFor(Call->getArg(0)->getType());
+      if (Reverse) {
+        auto FirstCurrent =
+            snapshot(ReverseCurrent(std::move(First), *Reverse), L);
+        auto LastCurrent =
+            snapshot(ReverseCurrent(std::move(Last), *Reverse), L);
+        return snapshot(binary("-", std::move(FirstCurrent),
+                               std::move(LastCurrent), type(Call->getType(), L),
+                               L),
+                        L);
+      }
       return snapshot(binary("-", std::move(Last), std::move(First),
                              type(Call->getType(), L), L),
                       L);
@@ -982,11 +1030,217 @@ class FunctionLowering {
                                type(A.Context.getPointerDiffType(), L), L),
                           L);
       }
+      auto Reverse = ReverseFor(Call->getArg(0)->getType());
+      if (Reverse) {
+        auto Current =
+            snapshot(ReverseCurrent(std::move(Iterator), *Reverse), L);
+        return ReverseValue(
+            binary(Operation == UtilityOperation::IteratorNext ? "-" : "+",
+                   std::move(Current), std::move(Offset),
+                   type(Reverse->IteratorType, L), L),
+            *Reverse);
+      }
       return snapshot(
           binary(Operation == UtilityOperation::IteratorNext ? "+" : "-",
                  std::move(Iterator), std::move(Offset),
                  type(Call->getType(), L), L),
           L);
+    }
+    case UtilityOperation::IteratorRBegin:
+    case UtilityOperation::IteratorREnd:
+    case UtilityOperation::ArrayRBegin:
+    case UtilityOperation::ArrayREnd: {
+      const bool Member = Operation == UtilityOperation::ArrayRBegin ||
+                          Operation == UtilityOperation::ArrayREnd;
+      const auto *Source = Member ? MemberObject() : Call->getArg(0);
+      const auto *Native =
+          Source ? A.Context.getAsConstantArrayType(Source->getType())
+                 : nullptr;
+      auto Array = Source ? ArrayFor(Source->getType())
+                          : std::optional<UtilityArrayRecord>();
+      auto Reverse = ReverseFor(Call->getType());
+      if (!Source || (!Native && !Array) || !Reverse)
+        reject(L, "reverse iterator range access",
+               "The selected fixed range or reverse iterator layout is "
+               "unavailable.");
+      const uint64_t Count =
+          Native ? Native->getSize().getLimitedValue() : Array->Size;
+      auto Base = lvalue(Source);
+      auto Storage = Native ? std::move(Base)
+                            : fieldStorage(std::move(Base), Array->Elements, L);
+      auto Pointer =
+          decay(std::move(Storage), type(Reverse->IteratorType, L), L);
+      if (Operation == UtilityOperation::IteratorRBegin ||
+          Operation == UtilityOperation::ArrayRBegin)
+        Pointer = binary("+", std::move(Pointer),
+                         quantity(Count, type(A.Context.getSizeType(), L), L),
+                         type(Reverse->IteratorType, L), L);
+      return ReverseValue(std::move(Pointer), *Reverse);
+    }
+    case UtilityOperation::MakeReverseIterator: {
+      auto Reverse = ReverseFor(Call->getType());
+      if (!Reverse)
+        reject(L, "make reverse iterator",
+               "The selected reverse iterator layout is unavailable.");
+      return ReverseValue(expression(Call->getArg(0)), *Reverse);
+    }
+    case UtilityOperation::ReverseBase:
+    case UtilityOperation::ReverseDereference:
+    case UtilityOperation::ReverseArrow: {
+      const auto *Object = MemberObject();
+      auto Reverse = Object ? ReverseFor(Object->getType())
+                            : std::optional<UtilityReverseIteratorRecord>();
+      if (!Object || !Reverse)
+        reject(L, "reverse iterator access",
+               "The selected reverse iterator layout is unavailable.");
+      auto Current = snapshot(ReverseCurrent(lvalue(Object), *Reverse), L);
+      if (Operation == UtilityOperation::ReverseBase)
+        return Current;
+      auto Previous =
+          binary("-", std::move(Current),
+                 quantity(1, type(A.Context.getPointerDiffType(), L), L),
+                 type(Reverse->IteratorType, L), L);
+      if (Operation == UtilityOperation::ReverseArrow)
+        return snapshot(std::move(Previous), L);
+      return dereference(std::move(Previous), L);
+    }
+    case UtilityOperation::ReversePreIncrement:
+    case UtilityOperation::ReversePostIncrement:
+    case UtilityOperation::ReversePreDecrement:
+    case UtilityOperation::ReversePostDecrement: {
+      const auto *Object = MemberObject();
+      auto Reverse = Object ? ReverseFor(Object->getType())
+                            : std::optional<UtilityReverseIteratorRecord>();
+      if (!Object || !Reverse)
+        reject(L, "reverse iterator update",
+               "The selected reverse iterator layout is unavailable.");
+      auto ObjectAddress =
+          snapshot(address(lvalue(Object), Object->getType(), L), L);
+      auto Stored = dereference(std::move(ObjectAddress), L);
+      const bool Post = Operation == UtilityOperation::ReversePostIncrement ||
+                        Operation == UtilityOperation::ReversePostDecrement;
+      Expression Result;
+      if (Post) {
+        auto RecordType = A.Context.getRecordType(Reverse->Record);
+        Result = Destination ? std::move(*Destination)
+                             : objectTemporary(RecordType, L);
+        Destination.reset();
+        assign(Result, snapshot(Stored, L), L);
+      }
+      auto Current = ReverseCurrent(json::Object(Stored), *Reverse);
+      auto Value = snapshot(Current, L);
+      const bool Increment =
+          Operation == UtilityOperation::ReversePreIncrement ||
+          Operation == UtilityOperation::ReversePostIncrement;
+      assign(Current,
+             binary(Increment ? "-" : "+", std::move(Value),
+                    quantity(1, type(A.Context.getPointerDiffType(), L), L),
+                    type(Reverse->IteratorType, L), L),
+             L);
+      return Post ? std::move(Result) : std::move(Stored);
+    }
+    case UtilityOperation::ReverseAdd:
+    case UtilityOperation::ReverseAddAssign:
+    case UtilityOperation::ReverseSubtract:
+    case UtilityOperation::ReverseSubtractAssign:
+    case UtilityOperation::ReverseSubscript: {
+      const auto *Object = MemberObject();
+      auto Reverse = Object ? ReverseFor(Object->getType())
+                            : std::optional<UtilityReverseIteratorRecord>();
+      if (!Object || !Reverse || Call->getNumArgs() != 2)
+        reject(
+            L, "reverse iterator arithmetic",
+            "The selected reverse iterator layout or offset is unavailable.");
+      auto ObjectAddress =
+          snapshot(address(lvalue(Object), Object->getType(), L), L);
+      auto Offset = snapshot(cast(expression(Call->getArg(1)),
+                                  type(A.Context.getPointerDiffType(), L), L),
+                             L);
+      auto Stored = dereference(std::move(ObjectAddress), L);
+      auto Current = ReverseCurrent(json::Object(Stored), *Reverse);
+      auto Value = snapshot(Current, L);
+      const bool Forward = Operation == UtilityOperation::ReverseAdd ||
+                           Operation == UtilityOperation::ReverseAddAssign ||
+                           Operation == UtilityOperation::ReverseSubscript;
+      if (Operation == UtilityOperation::ReverseSubscript) {
+        auto Position =
+            binary("+", std::move(Offset),
+                   quantity(1, type(A.Context.getPointerDiffType(), L), L),
+                   type(A.Context.getPointerDiffType(), L), L);
+        return dereference(binary("-", std::move(Value), std::move(Position),
+                                  type(Reverse->IteratorType, L), L),
+                           L);
+      }
+      auto Pointer =
+          binary(Forward ? "-" : "+", std::move(Value), std::move(Offset),
+                 type(Reverse->IteratorType, L), L);
+      if (Operation == UtilityOperation::ReverseAddAssign ||
+          Operation == UtilityOperation::ReverseSubtractAssign) {
+        assign(Current, std::move(Pointer), L);
+        return Stored;
+      }
+      return ReverseValue(std::move(Pointer), *Reverse);
+    }
+    case UtilityOperation::ReverseEqual:
+    case UtilityOperation::ReverseNotEqual:
+    case UtilityOperation::ReverseLess:
+    case UtilityOperation::ReverseGreater:
+    case UtilityOperation::ReverseLessEqual:
+    case UtilityOperation::ReverseGreaterEqual:
+    case UtilityOperation::ReverseDifference: {
+      auto LeftReverse = ReverseFor(Call->getArg(0)->getType());
+      auto RightReverse = ReverseFor(Call->getArg(1)->getType());
+      if (!LeftReverse || !RightReverse)
+        reject(L, "reverse iterator comparison",
+               "The selected reverse iterator layouts are unavailable.");
+      auto Left =
+          snapshot(ReverseCurrent(lvalue(Call->getArg(0)), *LeftReverse), L);
+      auto Right =
+          snapshot(ReverseCurrent(lvalue(Call->getArg(1)), *RightReverse), L);
+      if (Operation == UtilityOperation::ReverseDifference)
+        return snapshot(binary("-", std::move(Right), std::move(Left),
+                               type(Call->getType(), L), L),
+                        L);
+      const char *Operator = nullptr;
+      switch (Operation) {
+      case UtilityOperation::ReverseEqual:
+        Operator = "==";
+        break;
+      case UtilityOperation::ReverseNotEqual:
+        Operator = "!=";
+        break;
+      case UtilityOperation::ReverseLess:
+        Operator = ">";
+        break;
+      case UtilityOperation::ReverseGreater:
+        Operator = "<";
+        break;
+      case UtilityOperation::ReverseLessEqual:
+        Operator = ">=";
+        break;
+      case UtilityOperation::ReverseGreaterEqual:
+        Operator = "<=";
+        break;
+      default:
+        reject(L, "reverse iterator comparison",
+               "Unknown approved reverse iterator comparison.");
+      }
+      return snapshot(
+          binary(Operator, std::move(Left), std::move(Right), "bool", L), L);
+    }
+    case UtilityOperation::ReverseAddLeft: {
+      auto Offset = snapshot(cast(expression(Call->getArg(0)),
+                                  type(A.Context.getPointerDiffType(), L), L),
+                             L);
+      auto Reverse = ReverseFor(Call->getArg(1)->getType());
+      if (!Reverse)
+        reject(L, "reverse iterator addition",
+               "The selected reverse iterator layout is unavailable.");
+      auto Current =
+          snapshot(ReverseCurrent(lvalue(Call->getArg(1)), *Reverse), L);
+      return ReverseValue(binary("-", std::move(Current), std::move(Offset),
+                                 type(Reverse->IteratorType, L), L),
+                          *Reverse);
     }
     case UtilityOperation::ArraySize:
     case UtilityOperation::ArrayMaxSize:
@@ -1299,6 +1553,38 @@ class FunctionLowering {
         auto Left = dereference(std::move(LeftAddress), L);
         auto Right = dereference(std::move(RightAddress), L);
         assign(Left, std::move(Right), L);
+        return Left;
+      }
+      if (auto Assignment = approvedUtilityReverseIteratorAssignment(
+              A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call), A.Context)) {
+        if (Destination)
+          reject(L, "reverse iterator assignment",
+                 "std::reverse_iterator assignment cannot initialize a "
+                 "record result.");
+        auto RightAddress = snapshot(
+            address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
+        Expression Converted;
+        if (Assignment->Converting) {
+          auto Right = dereference(json::Object(RightAddress), L);
+          Converted =
+              snapshot(cast(fieldStorage(std::move(Right),
+                                         Assignment->Source.Current, L),
+                            type(Assignment->Destination.IteratorType, L), L),
+                       L);
+        }
+        auto LeftAddress = snapshot(
+            address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
+        auto Left = dereference(std::move(LeftAddress), L);
+        if (!Assignment->Converting) {
+          assign(Left, dereference(std::move(RightAddress), L), L);
+        } else {
+          assign(fieldStorage(json::Object(Left),
+                              Assignment->Destination.Legacy, L),
+                 json::Object(Converted), L);
+          assign(fieldStorage(json::Object(Left),
+                              Assignment->Destination.Current, L),
+                 std::move(Converted), L);
+        }
         return Left;
       }
     }
@@ -2499,6 +2785,48 @@ class FunctionLowering {
       }
       reject(L, "utility pair construction",
              "Unknown approved std::pair construction.");
+    }
+    if (auto Kind = approvedUtilityReverseIteratorConstruction(A.S, A.Sources,
+                                                               C, A.Context)) {
+      auto Reverse = approvedUtilityReverseIteratorRecord(
+          A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context);
+      if (!Reverse)
+        reject(L, "reverse iterator construction",
+               "The selected std::reverse_iterator layout is unavailable.");
+      auto Member = [&](const FieldDecl *Field) {
+        return fieldStorage(json::Object(Place), Field, L);
+      };
+      auto InitializePointer = [&](Expression Pointer) {
+        auto Value = snapshot(
+            cast(std::move(Pointer), type(Reverse->IteratorType, L), L), L);
+        assign(Member(Reverse->Legacy), json::Object(Value), L);
+        assign(Member(Reverse->Current), std::move(Value), L);
+      };
+      switch (*Kind) {
+      case UtilityReverseIteratorConstruction::Default:
+        initializeZero(Member(Reverse->Legacy), Reverse->IteratorType, L);
+        initializeZero(Member(Reverse->Current), Reverse->IteratorType, L);
+        return;
+      case UtilityReverseIteratorConstruction::Iterator:
+        InitializePointer(expression(C->getArg(0)));
+        return;
+      case UtilityReverseIteratorConstruction::CopyOrMove:
+        assign(std::move(Place), expression(C->getArg(0)), L);
+        return;
+      case UtilityReverseIteratorConstruction::Converting: {
+        auto Source = approvedUtilityReverseIteratorRecord(
+            A.S, A.Sources, C->getArg(0)->getType()->getAsCXXRecordDecl(),
+            A.Context);
+        if (!Source)
+          reject(L, "reverse iterator conversion",
+                 "The source std::reverse_iterator layout is unavailable.");
+        InitializePointer(
+            fieldStorage(lvalue(C->getArg(0)), Source->Current, L));
+        return;
+      }
+      }
+      reject(L, "reverse iterator construction",
+             "Unknown approved std::reverse_iterator construction.");
     }
     const auto ZeroCompleteObject = [&] {
       if (!C->requiresZeroInitialization() || BaseObject)

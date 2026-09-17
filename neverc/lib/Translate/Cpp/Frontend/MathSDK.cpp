@@ -1,7 +1,8 @@
-#include "Frontend.h"
 #include "BuiltinCppSdkData.h"
+#include "Frontend.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
+#include "clang/AST/RecordLayout.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Index/USRGeneration.h"
 #include "llvm/ADT/SmallString.h"
@@ -706,6 +707,275 @@ approvedUtilityArrayAssignment(const State &S, const SourceManager &SM,
   return Array;
 }
 
+static bool utilityObjectPointer(const ASTContext &Context, QualType Type) {
+  return !Type.isNull() && !Type.isVolatileQualified() &&
+         Type.getAddressSpace() == LangAS::Default && Type->isPointerType() &&
+         !Type->isFunctionPointerType() &&
+         Type->getPointeeType()->isObjectType() &&
+         !Type->getPointeeType().isVolatileQualified() &&
+         Type->getPointeeType().getAddressSpace() == LangAS::Default &&
+         Context.getTypeSize(Type) == Context.getTypeSize(Context.VoidPtrTy) &&
+         Context.getTypeAlign(Type) == Context.getTypeAlign(Context.VoidPtrTy);
+}
+
+static bool utilityPointerConversion(const ASTContext &Context, QualType From,
+                                     QualType To) {
+  if (!utilityObjectPointer(Context, From) ||
+      !utilityObjectPointer(Context, To))
+    return false;
+  const auto Source = From->getPointeeType();
+  const auto Destination = To->getPointeeType();
+  return Context.hasSameUnqualifiedType(Source, Destination) &&
+         (!Source.isConstQualified() || Destination.isConstQualified());
+}
+
+bool approvedUtilityReverseIteratorMetadata(const State &S,
+                                            const SourceManager &SM,
+                                            const CXXRecordDecl *Record) {
+  const auto *Specialization =
+      dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+  const auto *Template =
+      Specialization ? Specialization->getSpecializedTemplate() : nullptr;
+  const auto *CanonicalTemplate =
+      Template ? Template->getCanonicalDecl() : nullptr;
+  if (!Specialization || !Template || !CanonicalTemplate ||
+      Specialization->isUnion() || Specialization->isDependentContext() ||
+      Specialization->getName() != "reverse_iterator" ||
+      !approvedStandardSDKDeclaration(S, SM, Template) ||
+      !approvedStandardSDKDeclaration(S, SM, CanonicalTemplate) ||
+      !cstddefOrigin(S, SM, Template->getLocation(), "libcxx",
+                     "__iterator/reverse_iterator.h") ||
+      !cstddefOrigin(S, SM, CanonicalTemplate->getLocation(), "libcxx",
+                     "__iterator/reverse_iterator.h"))
+    return false;
+  const auto &Arguments = Specialization->getTemplateArgs();
+  return Arguments.size() == 1 &&
+         Arguments.get(0).getKind() == TemplateArgument::Type;
+}
+
+std::optional<UtilityReverseIteratorRecord>
+approvedUtilityReverseIteratorRecord(const State &S, const SourceManager &SM,
+                                     const CXXRecordDecl *Record,
+                                     const ASTContext &Context) {
+  const auto *Specialization =
+      dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+  Specialization = Specialization
+                       ? dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+                             Specialization->getDefinition())
+                       : nullptr;
+  const auto *Template =
+      Specialization ? Specialization->getSpecializedTemplate() : nullptr;
+  const auto *CanonicalTemplate =
+      Template ? Template->getCanonicalDecl() : nullptr;
+  if (!approvedUtilityReverseIteratorMetadata(S, SM, Specialization) ||
+      !Specialization || !Template || !CanonicalTemplate ||
+      Specialization->getSpecializationKind() != TSK_ImplicitInstantiation ||
+      Specialization->getNumBases() != 1 || Specialization->getNumVBases() ||
+      Specialization->isDynamicClass() ||
+      !Specialization->hasTrivialCopyConstructor() ||
+      !Specialization->hasTrivialCopyAssignment() ||
+      !Specialization->hasTrivialDestructor() ||
+      !approvedStandardSDKDeclaration(S, SM, Specialization) ||
+      !approvedStandardSDKDeclaration(S, SM, Template) ||
+      !approvedStandardSDKDeclaration(S, SM, CanonicalTemplate) ||
+      !cstddefOrigin(S, SM, Specialization->getLocation(), "libcxx",
+                     "__iterator/reverse_iterator.h") ||
+      !cstddefOrigin(S, SM, Template->getLocation(), "libcxx",
+                     "__iterator/reverse_iterator.h") ||
+      !cstddefOrigin(S, SM, CanonicalTemplate->getLocation(), "libcxx",
+                     "__iterator/reverse_iterator.h"))
+    return std::nullopt;
+  const auto &Arguments = Specialization->getTemplateArgs();
+  const auto Iterator = Arguments.get(0).getAsType();
+  if (!utilityObjectPointer(Context, Iterator))
+    return std::nullopt;
+
+  auto Fields = Specialization->fields();
+  auto It = Fields.begin();
+  const auto *Legacy = It == Fields.end() ? nullptr : *It++;
+  const auto *Current = It == Fields.end() ? nullptr : *It++;
+  if (!Legacy || !Current || It != Fields.end() ||
+      Legacy->getName() != "__t_" || Current->getName() != "current" ||
+      Legacy->getAccess() != AS_private ||
+      Current->getAccess() != AS_protected || Legacy->isBitField() ||
+      Current->isBitField() || Legacy->isMutable() || Current->isMutable() ||
+      Legacy->hasAttrs() || Current->hasAttrs() ||
+      !Context.hasSameType(Legacy->getType(), Iterator) ||
+      !Context.hasSameType(Current->getType(), Iterator) ||
+      !approvedStandardSDKDeclaration(S, SM, Legacy) ||
+      !approvedStandardSDKDeclaration(S, SM, Current) ||
+      !cstddefOrigin(S, SM, Legacy->getLocation(), "libcxx",
+                     "__iterator/reverse_iterator.h") ||
+      !cstddefOrigin(S, SM, Current->getLocation(), "libcxx",
+                     "__iterator/reverse_iterator.h"))
+    return std::nullopt;
+
+  const auto &Base = *Specialization->bases_begin();
+  const auto *BaseSpecialization =
+      dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+          Base.getType()->getAsCXXRecordDecl());
+  BaseSpecialization = BaseSpecialization
+                           ? dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+                                 BaseSpecialization->getDefinition())
+                           : nullptr;
+  const auto *BaseTemplate = BaseSpecialization
+                                 ? BaseSpecialization->getSpecializedTemplate()
+                                 : nullptr;
+  const auto *CanonicalBaseTemplate =
+      BaseTemplate ? BaseTemplate->getCanonicalDecl() : nullptr;
+  if (Base.isVirtual() || Base.isPackExpansion() ||
+      Base.getAccessSpecifier() != AS_public || !Base.getTypeSourceInfo() ||
+      !BaseSpecialization || !BaseTemplate || !CanonicalBaseTemplate ||
+      BaseSpecialization->getName() != "iterator" ||
+      BaseSpecialization->getNumBases() || !BaseSpecialization->field_empty() ||
+      !BaseSpecialization->isStandardLayout() ||
+      !BaseSpecialization->hasTrivialDestructor() ||
+      BaseSpecialization->getTemplateArgs().size() != 5 ||
+      !approvedStandardSDKDeclaration(S, SM, BaseSpecialization) ||
+      !approvedStandardSDKDeclaration(S, SM, BaseTemplate) ||
+      !approvedStandardSDKDeclaration(S, SM, CanonicalBaseTemplate) ||
+      !cstddefOrigin(S, SM, Base.getBeginLoc(), "libcxx",
+                     "__iterator/reverse_iterator.h") ||
+      !cstddefOrigin(S, SM, BaseSpecialization->getLocation(), "libcxx",
+                     "__iterator/iterator.h") ||
+      !cstddefOrigin(S, SM, BaseTemplate->getLocation(), "libcxx",
+                     "__iterator/iterator.h") ||
+      !cstddefOrigin(S, SM, CanonicalBaseTemplate->getLocation(), "libcxx",
+                     "__iterator/iterator.h"))
+    return std::nullopt;
+  for (const auto &Argument : BaseSpecialization->getTemplateArgs().asArray())
+    if (Argument.getKind() != TemplateArgument::Type)
+      return std::nullopt;
+
+  const auto &BaseLayout = Context.getASTRecordLayout(BaseSpecialization);
+  const auto &Layout = Context.getASTRecordLayout(Specialization);
+  const uint64_t PointerBits = Context.getTypeSize(Iterator);
+  if (BaseLayout.getSize().getQuantity() != 1 ||
+      BaseLayout.getAlignment().getQuantity() != 1 ||
+      Layout.getFieldCount() != 2 || Layout.getFieldOffset(0) != 0 ||
+      Layout.getFieldOffset(1) != PointerBits ||
+      Layout.getBaseClassOffset(BaseSpecialization).getQuantity() != 0 ||
+      uint64_t(Layout.getSize().getQuantity()) * 8 != PointerBits * 2 ||
+      uint64_t(Layout.getAlignment().getQuantity()) * 8 !=
+          Context.getTypeAlign(Iterator))
+    return std::nullopt;
+  return UtilityReverseIteratorRecord{Specialization, Legacy, Current,
+                                      Iterator};
+}
+
+std::optional<UtilityReverseIteratorConstruction>
+approvedUtilityReverseIteratorConstruction(const State &S,
+                                           const SourceManager &SM,
+                                           const CXXConstructExpr *Construction,
+                                           const ASTContext &Context) {
+  if (!Construction || Construction->isTypeDependent() ||
+      Construction->isValueDependent() ||
+      Construction->isInstantiationDependent() ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete)
+    return std::nullopt;
+  const auto *Constructor = Construction->getConstructor();
+  const auto Destination = approvedUtilityReverseIteratorRecord(
+      S, SM, Construction->getType()->getAsCXXRecordDecl(), Context);
+  if (!Constructor || !Destination || Constructor->isVariadic() ||
+      Constructor->getParent()->getCanonicalDecl() !=
+          Destination->Record->getCanonicalDecl() ||
+      Construction->getNumArgs() != Constructor->getNumParams())
+    return std::nullopt;
+  if (Constructor->isImplicit() && Constructor->isTrivial() &&
+      Constructor->isCopyOrMoveConstructor() &&
+      Construction->getNumArgs() == 1 &&
+      Context.hasSameUnqualifiedType(Construction->getArg(0)->getType(),
+                                     Construction->getType()))
+    return UtilityReverseIteratorConstruction::CopyOrMove;
+  if (!approvedStandardSDKDeclaration(S, SM, Constructor) ||
+      !cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx",
+                     "__iterator/reverse_iterator.h") ||
+      !Constructor->hasBody())
+    return std::nullopt;
+  if (!Construction->getNumArgs() && Constructor->isDefaultConstructor())
+    return UtilityReverseIteratorConstruction::Default;
+  if (Construction->getNumArgs() != 1)
+    return std::nullopt;
+  if (!Constructor->getPrimaryTemplate()) {
+    return Context.hasSameType(Constructor->getParamDecl(0)->getType(),
+                               Destination->IteratorType) &&
+                   Context.hasSameType(Construction->getArg(0)->getType(),
+                                       Destination->IteratorType)
+               ? std::optional(UtilityReverseIteratorConstruction::Iterator)
+               : std::nullopt;
+  }
+  const auto *Primary = Constructor->getPrimaryTemplate();
+  auto Parameter = Constructor->getParamDecl(0)->getType();
+  const auto Source = approvedUtilityReverseIteratorRecord(
+      S, SM, Construction->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
+  if (!Primary || !Source || !Parameter->isLValueReferenceType() ||
+      !Parameter->getPointeeType().isConstQualified() ||
+      !Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                      Context.getRecordType(Source->Record)) ||
+      !approvedStandardSDKDeclaration(S, SM, Primary) ||
+      !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
+                     "__iterator/reverse_iterator.h") ||
+      !utilityPointerConversion(Context, Source->IteratorType,
+                                Destination->IteratorType))
+    return std::nullopt;
+  return UtilityReverseIteratorConstruction::Converting;
+}
+
+std::optional<UtilityReverseIteratorAssignment>
+approvedUtilityReverseIteratorAssignment(const State &S,
+                                         const SourceManager &SM,
+                                         const CXXOperatorCallExpr *Assignment,
+                                         const ASTContext &Context) {
+  if (!Assignment || Assignment->isTypeDependent() ||
+      Assignment->isValueDependent() ||
+      Assignment->isInstantiationDependent() ||
+      Assignment->getOperator() != OO_Equal || Assignment->getNumArgs() != 2 ||
+      !Assignment->isLValue())
+    return std::nullopt;
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Assignment->getDirectCallee());
+  const auto Destination = approvedUtilityReverseIteratorRecord(
+      S, SM, Method ? Method->getParent() : nullptr, Context);
+  const auto Source = approvedUtilityReverseIteratorRecord(
+      S, SM, Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
+  if (!Method || !Destination || !Source || Method->isStatic() ||
+      Method->isVariadic() || Method->getNumParams() != 1 ||
+      Method->getOverloadedOperator() != OO_Equal ||
+      !Context.hasSameUnqualifiedType(
+          Assignment->getArg(0)->getType(),
+          Context.getRecordType(Destination->Record)) ||
+      !Context.hasSameUnqualifiedType(
+          Assignment->getType(), Context.getRecordType(Destination->Record)) ||
+      !Method->getReturnType()->isLValueReferenceType() ||
+      !Context.hasSameUnqualifiedType(
+          Method->getReturnType()->getPointeeType(),
+          Context.getRecordType(Destination->Record)))
+    return std::nullopt;
+  const bool Same = Destination->Record->getCanonicalDecl() ==
+                    Source->Record->getCanonicalDecl();
+  if (Same && Method->isImplicit() && Method->isTrivial() &&
+      (Method->isCopyAssignmentOperator() ||
+       Method->isMoveAssignmentOperator()))
+    return UtilityReverseIteratorAssignment{*Destination, *Source, false};
+  const auto *Primary = Method->getPrimaryTemplate();
+  auto Parameter = Method->getParamDecl(0)->getType();
+  if (Same || !Primary || !Method->hasBody() ||
+      !Parameter->isLValueReferenceType() ||
+      !Parameter->getPointeeType().isConstQualified() ||
+      !Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                      Context.getRecordType(Source->Record)) ||
+      !approvedStandardSDKDeclaration(S, SM, Method) ||
+      !approvedStandardSDKDeclaration(S, SM, Primary) ||
+      !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
+                     "__iterator/reverse_iterator.h") ||
+      !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
+                     "__iterator/reverse_iterator.h") ||
+      !utilityPointerConversion(Context, Source->IteratorType,
+                                Destination->IteratorType))
+    return std::nullopt;
+  return UtilityReverseIteratorAssignment{*Destination, *Source, true};
+}
+
 static const DeclRefExpr *approvedUtilityReference(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const FunctionDecl *Function) {
@@ -744,11 +1014,12 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
   auto Origin = S.sdkFile(SM, Primary->getLocation());
   auto Iterator = Function->getParamDecl(0)->getType();
   auto Distance = Parameter->getType();
+  const auto Reverse = approvedUtilityReverseIteratorRecord(
+      S, SM, Iterator->getAsCXXRecordDecl(), Context);
   const auto *Init = selectedDefaultArgument(Default, Context);
   if (!Origin || Origin->Root != "libcxx" ||
-      Origin->Path != "__iterator/next.h" || !Iterator->isPointerType() ||
-      Iterator->isFunctionPointerType() ||
-      Iterator->getPointeeType()->isVoidType() ||
+      Origin->Path != "__iterator/next.h" ||
+      (!utilityObjectPointer(Context, Iterator) && !Reverse) ||
       !Distance->isIntegralType(Context) ||
       Context.getTypeSize(Distance) > 64 ||
       !Context.hasSameType(Distance, Context.getPointerDiffType()) ||
@@ -838,6 +1109,20 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           return UtilityOperation::ArrayBegin;
         return UtilityOperation::ArrayEnd;
       }
+      if ((Name == "rbegin" || Name == "crbegin" || Name == "rend" ||
+           Name == "crend") &&
+          Call->isPRValue() && Same(Call->getType(), Method->getReturnType())) {
+        const auto Reverse = approvedUtilityReverseIteratorRecord(
+            S, SM, Method->getReturnType()->getAsCXXRecordDecl(), Context);
+        if (Reverse &&
+            Context.hasSameUnqualifiedType(
+                Reverse->IteratorType->getPointeeType(), Array->ElementType) &&
+            Reverse->IteratorType->getPointeeType().isConstQualified() ==
+                Method->isConst())
+          return Name == "rend" || Name == "crend"
+                     ? UtilityOperation::ArrayREnd
+                     : UtilityOperation::ArrayRBegin;
+      }
       if ((Name == "front" || Name == "back") && ReferenceResult())
         return Name == "front" ? UtilityOperation::ArrayFront
                                : UtilityOperation::ArrayBack;
@@ -883,6 +1168,112 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         return UtilityOperation::ArrayMemberSwap;
     }
   }
+  const auto Reverse = approvedUtilityReverseIteratorRecord(
+      S, SM, Method ? Method->getParent() : nullptr, Context);
+  if (Method && Reverse) {
+    const auto *Reference = directMethodReference(Call);
+    const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+    const auto *MemberCall = dyn_cast<CXXMemberCallExpr>(Call);
+    const Expr *Object = Operator && Call->getNumArgs() ? Call->getArg(0)
+                         : MemberCall ? MemberCall->getImplicitObjectArgument()
+                                      : nullptr;
+    const unsigned Offset = Operator ? 1 : 0;
+    auto Same = [&](QualType Left, QualType Right) {
+      return !Left.isNull() && !Right.isNull() &&
+             Context.hasSameType(Left, Right);
+    };
+    auto SameReverse = [&](QualType Type) {
+      return !Type.isNull() &&
+             Context.hasSameUnqualifiedType(
+                 Type, Context.getRecordType(Reverse->Record));
+    };
+    auto DifferenceParameter = [&] {
+      return Method->getNumParams() == 1 &&
+             Same(Method->getParamDecl(0)->getType(),
+                  Context.getPointerDiffType()) &&
+             Call->getNumArgs() == 1 + Offset &&
+             Same(Call->getArg(Offset)->getType(),
+                  Context.getPointerDiffType());
+    };
+    if (!Reference || !Object || Method->isStatic() || Method->isVariadic() ||
+        Method->getParent()->getCanonicalDecl() !=
+            Reverse->Record->getCanonicalDecl() ||
+        Call->getNumArgs() != Method->getNumParams() + Offset ||
+        !SameReverse(Object->getType()) ||
+        !approvedStandardSDKDeclaration(S, SM, Method) ||
+        !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
+                       "__iterator/reverse_iterator.h") ||
+        !S.owns(SM, Reference->getExprLoc()) || !Method->hasBody())
+      return std::nullopt;
+    const llvm::StringRef Name = Method->getIdentifier()
+                                     ? Method->getIdentifier()->getName()
+                                     : llvm::StringRef();
+    if (!Operator && !Method->getNumParams() && Call->getNumArgs() == 0 &&
+        Method->isConst()) {
+      if (Name == "base" && Call->isPRValue() &&
+          Same(Method->getReturnType(), Reverse->IteratorType) &&
+          Same(Call->getType(), Reverse->IteratorType))
+        return UtilityOperation::ReverseBase;
+      if (Method->getOverloadedOperator() == OO_Arrow && Call->isPRValue() &&
+          Same(Method->getReturnType(), Reverse->IteratorType) &&
+          Same(Call->getType(), Reverse->IteratorType))
+        return UtilityOperation::ReverseArrow;
+    }
+    if (!Operator)
+      return std::nullopt;
+    const auto Kind = Operator->getOperator();
+    const auto Pointee = Reverse->IteratorType->getPointeeType();
+    if (Kind == OO_Star && !Method->getNumParams() && Method->isConst() &&
+        Method->getReturnType()->isLValueReferenceType() && Call->isLValue() &&
+        Same(Method->getReturnType()->getPointeeType(), Pointee) &&
+        Same(Call->getType(), Pointee))
+      return UtilityOperation::ReverseDereference;
+    if (Kind == OO_Arrow && !Method->getNumParams() && Method->isConst() &&
+        Call->isPRValue() &&
+        Same(Method->getReturnType(), Reverse->IteratorType) &&
+        Same(Call->getType(), Reverse->IteratorType))
+      return UtilityOperation::ReverseArrow;
+    if ((Kind == OO_PlusPlus || Kind == OO_MinusMinus) &&
+        !Object->getType().isConstQualified()) {
+      if (!Method->getNumParams() &&
+          Method->getReturnType()->isLValueReferenceType() &&
+          Call->isLValue() &&
+          SameReverse(Method->getReturnType()->getPointeeType()) &&
+          SameReverse(Call->getType())) {
+        if (Kind == OO_PlusPlus)
+          return UtilityOperation::ReversePreIncrement;
+        return UtilityOperation::ReversePreDecrement;
+      }
+      if (Method->getNumParams() == 1 &&
+          Method->getParamDecl(0)->getType()->isSpecificBuiltinType(
+              BuiltinType::Int) &&
+          Call->getNumArgs() == 2 &&
+          Call->getArg(1)->getType()->isSpecificBuiltinType(BuiltinType::Int) &&
+          Call->isPRValue() && SameReverse(Method->getReturnType()) &&
+          SameReverse(Call->getType())) {
+        if (Kind == OO_PlusPlus)
+          return UtilityOperation::ReversePostIncrement;
+        return UtilityOperation::ReversePostDecrement;
+      }
+    }
+    if ((Kind == OO_Plus || Kind == OO_Minus) && Method->isConst() &&
+        DifferenceParameter() && Call->isPRValue() &&
+        SameReverse(Method->getReturnType()) && SameReverse(Call->getType()))
+      return Kind == OO_Plus ? UtilityOperation::ReverseAdd
+                             : UtilityOperation::ReverseSubtract;
+    if ((Kind == OO_PlusEqual || Kind == OO_MinusEqual) &&
+        !Object->getType().isConstQualified() && DifferenceParameter() &&
+        Method->getReturnType()->isLValueReferenceType() && Call->isLValue() &&
+        SameReverse(Method->getReturnType()->getPointeeType()) &&
+        SameReverse(Call->getType()))
+      return Kind == OO_PlusEqual ? UtilityOperation::ReverseAddAssign
+                                  : UtilityOperation::ReverseSubtractAssign;
+    if (Kind == OO_Subscript && Method->isConst() && DifferenceParameter() &&
+        Method->getReturnType()->isLValueReferenceType() && Call->isLValue() &&
+        Same(Method->getReturnType()->getPointeeType(), Pointee) &&
+        Same(Call->getType(), Pointee))
+      return UtilityOperation::ReverseSubscript;
+  }
   if (const auto *MemberCall = dyn_cast<CXXMemberCallExpr>(Call)) {
     const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
     const auto *Reference = directMethodReference(Call);
@@ -924,6 +1315,78 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   const llvm::StringRef Name = Function->getIdentifier()
                                    ? Function->getIdentifier()->getName()
                                    : llvm::StringRef();
+  auto ReverseFor = [&](QualType Type) {
+    return approvedUtilityReverseIteratorRecord(
+        S, SM, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(), Context);
+  };
+  auto ReverseParameter = [&](unsigned Index,
+                              const UtilityReverseIteratorRecord &Record) {
+    if (Index >= Function->getNumParams())
+      return false;
+    auto Parameter = Function->getParamDecl(Index)->getType();
+    return Parameter->isLValueReferenceType() &&
+           Parameter->getPointeeType().isConstQualified() &&
+           Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                          Context.getRecordType(Record.Record));
+  };
+  if (Origin->Path == "__iterator/reverse_iterator.h" &&
+      Name == "make_reverse_iterator" && Call->getNumArgs() == 1 &&
+      Function->getNumParams() == 1 && Call->isPRValue()) {
+    const auto Result = ReverseFor(Function->getReturnType());
+    auto Parameter = Function->getParamDecl(0)->getType();
+    if (Result && utilityObjectPointer(Context, Parameter) &&
+        Same(Parameter, Result->IteratorType) &&
+        Same(Call->getArg(0)->getType(), Parameter) &&
+        Same(Call->getType(), Function->getReturnType()))
+      return UtilityOperation::MakeReverseIterator;
+  }
+  if (Origin->Path == "__iterator/reverse_iterator.h" &&
+      Call->getNumArgs() == 2 && Function->getNumParams() == 2) {
+    const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+    const auto Left = ReverseFor(Call->getArg(0)->getType());
+    const auto Right = ReverseFor(Call->getArg(1)->getType());
+    if (Operator && Left && Right && ReverseParameter(0, *Left) &&
+        ReverseParameter(1, *Right) &&
+        Context.hasSameUnqualifiedType(Left->IteratorType->getPointeeType(),
+                                       Right->IteratorType->getPointeeType())) {
+      if (Call->isPRValue() && Function->getReturnType()->isBooleanType() &&
+          Same(Call->getType(), Function->getReturnType())) {
+        switch (Operator->getOperator()) {
+        case OO_EqualEqual:
+          return UtilityOperation::ReverseEqual;
+        case OO_ExclaimEqual:
+          return UtilityOperation::ReverseNotEqual;
+        case OO_Less:
+          return UtilityOperation::ReverseLess;
+        case OO_Greater:
+          return UtilityOperation::ReverseGreater;
+        case OO_LessEqual:
+          return UtilityOperation::ReverseLessEqual;
+        case OO_GreaterEqual:
+          return UtilityOperation::ReverseGreaterEqual;
+        default:
+          break;
+        }
+      }
+      if (Operator->getOperator() == OO_Minus && Call->isPRValue() &&
+          Same(Function->getReturnType(), Context.getPointerDiffType()) &&
+          Same(Call->getType(), Function->getReturnType()))
+        return UtilityOperation::ReverseDifference;
+    }
+    if (Operator && Operator->getOperator() == OO_Plus && Call->isPRValue()) {
+      const auto Result = ReverseFor(Function->getReturnType());
+      const auto RightRecord = ReverseFor(Call->getArg(1)->getType());
+      auto LeftParameter = Function->getParamDecl(0)->getType();
+      if (Result && RightRecord &&
+          Result->Record->getCanonicalDecl() ==
+              RightRecord->Record->getCanonicalDecl() &&
+          Same(LeftParameter, Context.getPointerDiffType()) &&
+          Same(Call->getArg(0)->getType(), LeftParameter) &&
+          ReverseParameter(1, *RightRecord) &&
+          Same(Call->getType(), Function->getReturnType()))
+        return UtilityOperation::ReverseAddLeft;
+    }
+  }
   auto IteratorRange =
       [&](QualType Type) -> std::optional<std::pair<QualType, uint64_t>> {
     if (Type.isNull())
@@ -975,10 +1438,37 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         return UtilityOperation::IteratorEmpty;
     }
   }
+  if (Origin->Path == "__iterator/reverse_access.h" &&
+      (Name == "rbegin" || Name == "rend" || Name == "crbegin" ||
+       Name == "crend") &&
+      Call->getNumArgs() == 1 && Function->getNumParams() == 1 &&
+      Call->isPRValue()) {
+    auto Parameter = Function->getParamDecl(0)->getType();
+    auto Result = Function->getReturnType();
+    const auto Range =
+        IteratorRange(Parameter->isReferenceType() ? Parameter->getPointeeType()
+                                                   : QualType());
+    const auto ReverseResult = ReverseFor(Result);
+    if (Parameter->isLValueReferenceType() && Range && ReverseResult &&
+        Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
+                                       Parameter->getPointeeType()) &&
+        Same(Call->getType(), Result)) {
+      auto Element = Range->first;
+      if (Parameter->getPointeeType().isConstQualified())
+        Element = Element.withConst();
+      if (Same(ReverseResult->IteratorType->getPointeeType(), Element))
+        return Name == "rend" || Name == "crend"
+                   ? UtilityOperation::IteratorREnd
+                   : UtilityOperation::IteratorRBegin;
+    }
+  }
   auto ObjectPointer = [&](QualType Type) {
     return !Type.isNull() && Type->isPointerType() &&
            !Type->isFunctionPointerType() &&
            !Type->getPointeeType()->isVoidType();
+  };
+  auto PointerOrReverse = [&](QualType Type) {
+    return ObjectPointer(Type) || ReverseFor(Type).has_value();
   };
   if (Origin->Path == "__iterator/advance.h" && Name == "advance" &&
       Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
@@ -986,7 +1476,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     auto Iterator = Function->getParamDecl(0)->getType();
     auto Distance = Function->getParamDecl(1)->getType();
     if (Iterator->isLValueReferenceType() &&
-        ObjectPointer(Iterator->getPointeeType()) &&
+        PointerOrReverse(Iterator->getPointeeType()) &&
         !Iterator->getPointeeType().isConstQualified() &&
         Distance->isIntegralType(Context) &&
         Context.getTypeSize(Distance) <= 64 &&
@@ -1001,7 +1491,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType())) {
     auto First = Function->getParamDecl(0)->getType();
     auto Last = Function->getParamDecl(1)->getType();
-    if (ObjectPointer(First) && Same(First, Last) &&
+    if (PointerOrReverse(First) && Same(First, Last) &&
         Same(Call->getArg(0)->getType(), First) &&
         Same(Call->getArg(1)->getType(), Last))
       return UtilityOperation::IteratorDistance;
@@ -1012,7 +1502,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Function->getNumParams() == 2 && Call->isPRValue()) {
     auto Iterator = Function->getParamDecl(0)->getType();
     auto Distance = Function->getParamDecl(1)->getType();
-    if (ObjectPointer(Iterator) &&
+    if (PointerOrReverse(Iterator) &&
         Same(Distance, Context.getPointerDiffType()) &&
         Same(Call->getType(), Iterator) &&
         Same(Function->getReturnType(), Iterator) &&
@@ -1025,7 +1515,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Call->getNumArgs() == 1 && Function->getNumParams() == 1 &&
       Call->isPRValue()) {
     auto Iterator = Function->getParamDecl(0)->getType();
-    if (ObjectPointer(Iterator) && Same(Call->getType(), Iterator) &&
+    if (PointerOrReverse(Iterator) && Same(Call->getType(), Iterator) &&
         Same(Function->getReturnType(), Iterator) &&
         Same(Call->getArg(0)->getType(), Iterator))
       return UtilityOperation::IteratorPrev;

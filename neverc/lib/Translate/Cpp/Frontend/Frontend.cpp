@@ -1866,7 +1866,15 @@ void Adapter::checkQueryType(QualType T, SourceLocation L,
       checkQueryType(Arguments.get(0).getAsType(), L, AllowIncompleteArrays,
                      AllowIncompleteRecords, Depth + 1);
     } else if (AllowIncompleteRecords &&
-               incompleteRecordMetadataIdentity(*this, T->getAsCXXRecordDecl())) {
+               approvedUtilityReverseIteratorMetadata(
+                   S, Sources, T->getAsCXXRecordDecl())) {
+      const auto *Iterator =
+          dyn_cast<ClassTemplateSpecializationDecl>(T->getAsCXXRecordDecl());
+      const auto &Arguments = Iterator->getTemplateArgs();
+      checkQueryType(Arguments.get(0).getAsType(), L, AllowIncompleteArrays,
+                     AllowIncompleteRecords, Depth + 1);
+    } else if (AllowIncompleteRecords && incompleteRecordMetadataIdentity(
+                                             *this, T->getAsCXXRecordDecl())) {
       // Identity requires no size, field traversal, operation or IR record.
     } else {
       reject(L, "type metadata", "An admitted incomplete record or exact array, pointer or reference wrapper is required.");
@@ -3662,6 +3670,9 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
       } else if (approvedUtilityArrayMetadata(S, Sources, D) &&
                  !requireUtilityArray(D, L, Depth + 1)) {
         return {};
+      } else if (approvedUtilityReverseIteratorMetadata(S, Sources, D) &&
+                 !requireUtilityReverseIterator(D, L, Depth + 1)) {
+        return {};
       }
       return name(D);
     }
@@ -3717,6 +3728,33 @@ bool Adapter::requireUtilityArray(const CXXRecordDecl *Record,
   if (type(Array->Elements->getType(), Location, false, Depth + 1).empty())
     return false;
   Records.push_back(const_cast<CXXRecordDecl *>(Array->Record));
+  return true;
+}
+
+bool Adapter::requireUtilityReverseIterator(const CXXRecordDecl *Record,
+                                            SourceLocation Location,
+                                            unsigned Depth) {
+  if (Depth > 64) {
+    reject(Location, "utility reverse iterator type",
+           "Nested std::reverse_iterator types exceed the protocol limit.");
+    return false;
+  }
+  auto Iterator =
+      approvedUtilityReverseIteratorRecord(S, Sources, Record, Context);
+  if (!Iterator) {
+    reject(Location, "standard library record",
+           "Only the pinned std::reverse_iterator<T*> record layout is "
+           "admitted.",
+           "TR0203");
+    return false;
+  }
+  const auto *Canonical = Iterator->Record->getCanonicalDecl();
+  if (!RequiredUtilityReverseIterators.insert(Canonical).second)
+    return true;
+  for (const auto *Field : {Iterator->Legacy, Iterator->Current})
+    if (type(Field->getType(), Location, false, Depth + 1).empty())
+      return false;
+  Records.push_back(const_cast<CXXRecordDecl *>(Iterator->Record));
   return true;
 }
 
@@ -6504,7 +6542,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     const auto *Constructor = C->getConstructor();
     if (A.S.coreV2() &&
         (approvedUtilityPairConstruction(A.S, A.Sources, C, A.Context) ||
-         approvedUtilityArrayConstruction(A.S, A.Sources, C, A.Context))) {
+         approvedUtilityArrayConstruction(A.S, A.Sources, C, A.Context) ||
+         approvedUtilityReverseIteratorConstruction(A.S, A.Sources, C,
+                                                    A.Context))) {
       for (unsigned I = 0; I < C->getNumArgs() &&
                            I < Constructor->getNumParams(); ++I) {
         checkDefaultArgument(C->getArg(I), Constructor, I, L);
@@ -8539,13 +8579,16 @@ public:
         Selected = Allocation->getOperatorNew();
       const auto *Construction =
           dyn_cast_or_null<CXXConstructExpr>(Source.Expression);
-      const bool UtilityPair =
-          Construction && approvedUtilityPairConstruction(
-                              A.S, A.Sources, Construction, A.Context);
+      const bool UtilityConstruction =
+          Construction && (approvedUtilityPairConstruction(
+                               A.S, A.Sources, Construction, A.Context) ||
+                           approvedUtilityReverseIteratorConstruction(
+                               A.S, A.Sources, Construction, A.Context));
       if (!Selected || Selected != Source.Function ||
-          !(isa<CXXNewExpr>(Source.Expression) ? concreteFunctionTemplate(Selected)
-                                              : concreteMemberFunctionTemplate(Selected)) ||
-          (!UtilityPair && !owned(Selected)) ||
+          !(isa<CXXNewExpr>(Source.Expression)
+                ? concreteFunctionTemplate(Selected)
+                : concreteMemberFunctionTemplate(Selected)) ||
+          (!UtilityConstruction && !owned(Selected)) ||
           !A.S.owns(A.Sources, Source.Location)) {
         A.reject(Source.Location, "selected member template source", "A retained record requires its actual direct source-owned template call.");
         continue;
@@ -12533,11 +12576,15 @@ public:
           const bool Utility =
               approvedUtilityOperation(A.S, A.Sources, Call, A.Context)
                   .has_value() ||
-              approvedUtilityPairAssignment(
+              approvedUtilityPairAssignment(A.S, A.Sources,
+                                            dyn_cast<CXXOperatorCallExpr>(Call),
+                                            A.Context)
+                  .has_value() ||
+              approvedUtilityArrayAssignment(
                   A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call),
                   A.Context)
                   .has_value() ||
-              approvedUtilityArrayAssignment(
+              approvedUtilityReverseIteratorAssignment(
                   A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call),
                   A.Context)
                   .has_value();
@@ -12919,6 +12966,10 @@ public:
           A.S.coreV2() &&
           approvedUtilityArrayAssignment(A.S, A.Sources, Operator, A.Context)
               .has_value();
+      const bool UtilityReverseIteratorAssignment =
+          A.S.coreV2() && approvedUtilityReverseIteratorAssignment(
+                              A.S, A.Sources, Operator, A.Context)
+                              .has_value();
       unsigned ArgumentOffset = Operator && Method && !Method->isStatic() ? 1 : 0;
       // This inline operator form already supports materialized temporaries.
       // Keep its narrow boundary while sharing reference capture and stores.
@@ -12932,8 +12983,10 @@ public:
         const bool Ordinary = ordinaryOperator(F) &&
             F->getOverloadedOperator() == Operator->getOperator();
         if (!TrivialAssignment && !UtilityPairAssignment &&
-            !UtilityArrayAssignment && !Ordinary &&
-            !(supportedAssignment(Method) && Operator->getOperator() == OO_Equal &&
+            !UtilityArrayAssignment && !UtilityReverseIteratorAssignment &&
+            !Ordinary &&
+            !(supportedAssignment(Method) &&
+              Operator->getOperator() == OO_Equal &&
               Operator->getNumArgs() == 2))
           A.reject(L, "overloaded operator", "Unsupported selected operator function.");
         if (F && Operator->getNumArgs() != F->getNumParams() + ArgumentOffset)
@@ -12993,6 +13046,8 @@ public:
         return true;
       if (A.S.coreV2() && UtilityArrayAssignment)
         return true;
+      if (A.S.coreV2() && UtilityReverseIteratorAssignment)
+        return true;
       if (A.S.coreV2() && F &&
           approvedStandardSDKDeclaration(A.S, A.Sources, F)) {
         A.reject(S->getBeginLoc(), "standard library runtime call",
@@ -13042,13 +13097,16 @@ public:
           approvedStandardSDKDeclaration(A.S, A.Sources,
                                          C->getConstructor())) {
         if (approvedUtilityPairConstruction(A.S, A.Sources, C, A.Context) ||
-            approvedUtilityArrayConstruction(A.S, A.Sources, C, A.Context))
+            approvedUtilityArrayConstruction(A.S, A.Sources, C, A.Context) ||
+            approvedUtilityReverseIteratorConstruction(A.S, A.Sources, C,
+                                                       A.Context))
           checkConstruction(C, L);
         else
           A.reject(L, "standard library runtime object",
                    "Approved standard headers provide only their documented "
                    "compile-time aliases, constants, folded queries and "
-                   "scalar std::pair and std::array construction.",
+                   "scalar std::pair, std::array and pointer "
+                   "std::reverse_iterator construction.",
                    "TR0203");
       }
       else
@@ -13206,7 +13264,10 @@ static void orderCoreV2Records(Adapter &A) {
     if (State[I] == Visit::Done)
       return;
     State[I] = Visit::Active;
-    if (const auto *Base = A.emptyBase(R)) {
+    const bool UtilityReverse =
+        approvedUtilityReverseIteratorRecord(A.S, A.Sources, R, A.Context)
+            .has_value();
+    if (const auto *Base = UtilityReverse ? nullptr : A.emptyBase(R)) {
       auto Found = Indices.find(Base->Base);
       if (Found == Indices.end()) {
         A.reject(R->getLocation(), "base dependency", "An empty base requires its checked complete record definition.");
@@ -13322,7 +13383,11 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
   json::Array RecordData, GlobalData, FunctionData;
   for (const auto *R : Records) {
     json::Array Fields;
-    const auto *Base = S.coreV2() ? emptyBase(R) : nullptr;
+    const bool UtilityReverse =
+        S.coreV2() &&
+        approvedUtilityReverseIteratorRecord(S, Sources, R, Context)
+            .has_value();
+    const auto *Base = S.coreV2() && !UtilityReverse ? emptyBase(R) : nullptr;
     if (Base)
       BaseConstructorRecords.insert(Base->Base);
     if (Base)

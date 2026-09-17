@@ -23546,10 +23546,6 @@ TEST_F(TranslateTest, CoreV2ArrayRequiresPinnedOperations) {
       {"dynamic-at",
        "#include <array>\nint f(int i){std::array<int,2>a{{1,2}};"
        "return a.at(i);}",
-       "TR0203"},
-      {"reverse-iterator",
-       "#include <array>\nint main(){std::array<int,2>a{{1,2}};"
-       "return *a.rbegin();}",
        "TR0203"}};
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
@@ -23689,6 +23685,105 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ReverseIteratorOperationsRunAtBothOptimizations) {
+  const auto Source = tmpFile("reverse-iterator-operations.cpp");
+  const auto Output = tmpFile("reverse-iterator-operations.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <iterator>
+static_assert(sizeof(std::reverse_iterator<int *>) == 2 * sizeof(void *));
+int main() {
+  int native[5]{1, 2, 3, 4, 5};
+  int effects = 0;
+  auto begin = std::rbegin((++effects, native));
+  auto end = std::rend((++effects, native));
+  if (effects != 2 || *begin != 5 || begin.base() != native + 5 ||
+      begin.operator->() != native + 4)
+    return 1;
+  auto old = begin++;
+  if (*old != 5 || *begin != 4)
+    return 2;
+  ++begin;
+  if (*begin != 3)
+    return 3;
+  auto before = begin--;
+  if (*before != 3 || *begin != 4)
+    return 4;
+  --begin;
+  if (*begin != 5)
+    return 5;
+  if (*(begin + 2) != 3 || *(2 + begin) != 3 || (begin + 2)[1] != 2)
+    return 6;
+  begin += 3;
+  if (*begin != 2)
+    return 7;
+  begin -= 2;
+  if (*begin != 4)
+    return 8;
+  if (!(begin != end) || begin == end || !(begin < end) || begin > end ||
+      !(begin <= end) || begin >= end || end - begin != 4)
+    return 9;
+
+  auto made = std::make_reverse_iterator(native + 5);
+  std::reverse_iterator<int *> empty;
+  std::reverse_iterator<int *> direct(native + 5);
+  std::reverse_iterator<int *> copied(direct);
+  std::reverse_iterator<const int *> converted(direct);
+  converted = copied;
+  copied = direct;
+  if (empty.base() != nullptr || *made != 5 || *copied != 5 ||
+      *converted != 5)
+    return 10;
+
+  const int (&view)[5] = native;
+  if (*std::crbegin(view) != 5 || std::crend(view).base() != native)
+    return 11;
+  std::array<int, 3> boxed{{6, 7, 8}};
+  if (*((++effects, boxed).rbegin()) != 8 || effects != 3 ||
+      *boxed.crbegin() != 8 || boxed.rend().base() != boxed.begin() ||
+      boxed.crend().base() != boxed.cbegin() || *std::rbegin(boxed) != 8 ||
+      std::rend(boxed).base() != boxed.begin())
+    return 12;
+
+  auto algorithm = std::rbegin(native);
+  std::advance(algorithm, static_cast<short>(2));
+  if (*algorithm != 3 || std::distance(algorithm, std::rend(native)) != 3 ||
+      *std::next(algorithm) != 2 || *std::next(algorithm, 2) != 1 ||
+      *std::prev(algorithm) != 4 || *std::prev(std::rend(native)) != 1)
+    return 13;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *SDK = Manifest->getAsObject()->getObject("sdk");
+  ASSERT_NE(SDK, nullptr);
+  const auto *Dependencies = SDK->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 228u);
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+  }
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("reverse-iterator-operations" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2IteratorRequiresPinnedPointerOperations) {
   struct Rejection {
     const char *Name;
@@ -23709,9 +23804,9 @@ TEST_F(TranslateTest, CoreV2IteratorRequiresPinnedPointerOperations) {
        "return *this;}};int main(){int a[2];I i{a};std::advance(i,1);"
        "return 0;}",
        "TR0203"},
-      {"reverse-native",
-       "#include <iterator>\nint main(){int a[2]{1,2};"
-       "return *std::rbegin(a);}",
+      {"reverse-function-pointer",
+       "#include <iterator>\nint f(){return 0;}int main(){"
+       "std::reverse_iterator<int(*)()>r(&f);return r.base()!=&f;}",
        "TR0203"}};
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);

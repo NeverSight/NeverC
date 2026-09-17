@@ -291,6 +291,31 @@ enum class UtilityOperation {
   IteratorDistance,
   IteratorNext,
   IteratorPrev,
+  IteratorRBegin,
+  IteratorREnd,
+  MakeReverseIterator,
+  ReverseBase,
+  ReverseDereference,
+  ReverseArrow,
+  ReversePreIncrement,
+  ReversePostIncrement,
+  ReversePreDecrement,
+  ReversePostDecrement,
+  ReverseAdd,
+  ReverseAddAssign,
+  ReverseSubtract,
+  ReverseSubtractAssign,
+  ReverseSubscript,
+  ReverseEqual,
+  ReverseNotEqual,
+  ReverseLess,
+  ReverseGreater,
+  ReverseLessEqual,
+  ReverseGreaterEqual,
+  ReverseDifference,
+  ReverseAddLeft,
+  ArrayRBegin,
+  ArrayREnd,
 };
 struct UtilityPairRecord {
   const clang::CXXRecordDecl *Record;
@@ -340,6 +365,39 @@ approvedUtilityArrayAssignment(const State &S,
                                const clang::SourceManager &SM,
                                const clang::CXXOperatorCallExpr *Assignment,
                                const clang::ASTContext &Context);
+struct UtilityReverseIteratorRecord {
+  const clang::CXXRecordDecl *Record;
+  const clang::FieldDecl *Legacy, *Current;
+  clang::QualType IteratorType;
+};
+bool approvedUtilityReverseIteratorMetadata(const State &S,
+                                            const clang::SourceManager &SM,
+                                            const clang::CXXRecordDecl *Record);
+std::optional<UtilityReverseIteratorRecord>
+approvedUtilityReverseIteratorRecord(const State &S,
+                                     const clang::SourceManager &SM,
+                                     const clang::CXXRecordDecl *Record,
+                                     const clang::ASTContext &Context);
+enum class UtilityReverseIteratorConstruction {
+  Default,
+  Iterator,
+  CopyOrMove,
+  Converting,
+};
+std::optional<UtilityReverseIteratorConstruction>
+approvedUtilityReverseIteratorConstruction(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction,
+    const clang::ASTContext &Context);
+struct UtilityReverseIteratorAssignment {
+  UtilityReverseIteratorRecord Destination, Source;
+  bool Converting;
+};
+std::optional<UtilityReverseIteratorAssignment>
+approvedUtilityReverseIteratorAssignment(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXOperatorCallExpr *Assignment,
+    const clang::ASTContext &Context);
 std::optional<UtilityOperation>
 approvedUtilityOperation(const State &S, const clang::SourceManager &SM,
                          const clang::CallExpr *Call,
@@ -501,6 +559,7 @@ public:
   std::map<const clang::CXXRecordDecl *, std::size_t> StorageUnits;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityPairs;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityArrays;
+  std::set<const clang::CXXRecordDecl *> RequiredUtilityReverseIterators;
   std::map<const clang::CXXRecordDecl *, CheckedEmptyBase> EmptyBases;
   std::map<const clang::VarDecl *, const clang::CXXForRangeStmt *> RangeDeclarations;
   std::size_t ExpandedNodes = 0;
@@ -522,6 +581,9 @@ public:
   bool requireUtilityArray(const clang::CXXRecordDecl *Record,
                            clang::SourceLocation Location,
                            unsigned Depth = 0);
+  bool requireUtilityReverseIterator(const clang::CXXRecordDecl *Record,
+                                     clang::SourceLocation Location,
+                                     unsigned Depth = 0);
   std::string functionPointerType(clang::QualType T, clang::SourceLocation L,
                                   unsigned Depth = 0);
   bool typeClassificationValue(const clang::TypeTraitExpr *Query);
