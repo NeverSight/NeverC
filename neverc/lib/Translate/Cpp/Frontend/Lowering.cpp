@@ -1192,6 +1192,216 @@ class FunctionLowering {
       label(End, L);
       return Result ? std::move(*Result) : std::move(Current);
     }
+    case UtilityOperation::AlgorithmAdjacentFind: {
+      auto First = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto Current = snapshot(json::Object(First), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto Initialize = labelName(), Check = labelName();
+      const auto Compare = labelName(), Next = labelName();
+      const auto Exhausted = labelName(), End = labelName();
+      branch(binary("!=", First, Last, "bool", L), Initialize, End, L);
+      label(Initialize, L);
+      assign(Current,
+             binary("+", First, quantity(1, DifferenceType, L), PointerType, L),
+             L);
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", Current, Last, "bool", L), Compare, Exhausted, L);
+      label(Compare, L);
+      branch(binary("==", dereference(First, L), dereference(Current, L),
+                    "bool", L),
+             End, Next, L);
+      label(Next, L);
+      assign(First, json::Object(Current), L);
+      assign(
+          Current,
+          binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      jump(Check, L);
+      label(Exhausted, L);
+      assign(First, Current, L);
+      jump(End, L);
+      label(End, L);
+      return First;
+    }
+    case UtilityOperation::AlgorithmRemove:
+    case UtilityOperation::AlgorithmRemoveCopy: {
+      const bool Copying = Operation == UtilityOperation::AlgorithmRemoveCopy;
+      auto Current = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto Output = Copying ? snapshot(expression(Call->getArg(2)), L)
+                            : snapshot(json::Object(Current), L);
+      const unsigned ValueIndex = Copying ? 3 : 2;
+      auto ValueAddress =
+          snapshot(address(lvalue(Call->getArg(ValueIndex)),
+                           Call->getArg(ValueIndex)->getType(), L),
+                   L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto InputType = type(Call->getArg(0)->getType(), L);
+      const auto OutputType = type(Call->getArg(Copying ? 2 : 0)->getType(), L);
+      const auto Check = labelName(), Compare = labelName();
+      const auto Transfer = labelName(), Next = labelName();
+      const auto End = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", Current, Last, "bool", L), Compare, End, L);
+      label(Compare, L);
+      branch(binary("==", dereference(Current, L), dereference(ValueAddress, L),
+                    "bool", L),
+             Next, Transfer, L);
+      label(Transfer, L);
+      assign(dereference(Output, L), dereference(Current, L), L);
+      assign(Output,
+             binary("+", Output, quantity(1, DifferenceType, L), OutputType, L),
+             L);
+      jump(Next, L);
+      label(Next, L);
+      assign(Current,
+             binary("+", Current, quantity(1, DifferenceType, L), InputType, L),
+             L);
+      jump(Check, L);
+      label(End, L);
+      return Output;
+    }
+    case UtilityOperation::AlgorithmReplace:
+    case UtilityOperation::AlgorithmReplaceCopy: {
+      const bool Copying = Operation == UtilityOperation::AlgorithmReplaceCopy;
+      auto Current = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      std::optional<Expression> Output;
+      if (Copying)
+        Output = snapshot(expression(Call->getArg(2)), L);
+      const unsigned OldIndex = Copying ? 3 : 2;
+      const unsigned NewIndex = OldIndex + 1;
+      auto OldAddress = snapshot(address(lvalue(Call->getArg(OldIndex)),
+                                         Call->getArg(OldIndex)->getType(), L),
+                                 L);
+      auto NewAddress = snapshot(address(lvalue(Call->getArg(NewIndex)),
+                                         Call->getArg(NewIndex)->getType(), L),
+                                 L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto InputType = type(Call->getArg(0)->getType(), L);
+      const auto OutputType = type(Call->getArg(Copying ? 2 : 0)->getType(), L);
+      const auto Check = labelName(), Compare = labelName();
+      const auto Match = labelName(), Mismatch = labelName();
+      const auto Next = labelName(), End = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", Current, Last, "bool", L), Compare, End, L);
+      label(Compare, L);
+      branch(binary("==", dereference(Current, L), dereference(OldAddress, L),
+                    "bool", L),
+             Match, Mismatch, L);
+      label(Match, L);
+      assign(dereference(Output ? *Output : Current, L),
+             dereference(NewAddress, L), L);
+      jump(Next, L);
+      label(Mismatch, L);
+      if (Output)
+        assign(dereference(*Output, L), dereference(Current, L), L);
+      jump(Next, L);
+      label(Next, L);
+      assign(Current,
+             binary("+", Current, quantity(1, DifferenceType, L), InputType, L),
+             L);
+      if (Output)
+        assign(
+            *Output,
+            binary("+", *Output, quantity(1, DifferenceType, L), OutputType, L),
+            L);
+      jump(Check, L);
+      label(End, L);
+      return Output ? std::move(*Output) : Expression();
+    }
+    case UtilityOperation::AlgorithmUnique: {
+      auto First = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto Output = snapshot(json::Object(First), L);
+      auto Current = snapshot(json::Object(First), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto Initialize = labelName(), Check = labelName();
+      const auto Compare = labelName(), Select = labelName();
+      const auto Next = labelName(), Finish = labelName();
+      const auto End = labelName();
+      branch(binary("!=", First, Last, "bool", L), Initialize, End, L);
+      label(Initialize, L);
+      assign(Current,
+             binary("+", First, quantity(1, DifferenceType, L), PointerType, L),
+             L);
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", Current, Last, "bool", L), Compare, Finish, L);
+      label(Compare, L);
+      branch(binary("==", dereference(Output, L), dereference(Current, L),
+                    "bool", L),
+             Next, Select, L);
+      label(Select, L);
+      assign(
+          Output,
+          binary("+", Output, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      assign(dereference(Output, L), dereference(Current, L), L);
+      jump(Next, L);
+      label(Next, L);
+      assign(
+          Current,
+          binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      jump(Check, L);
+      label(Finish, L);
+      assign(
+          Output,
+          binary("+", Output, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      jump(End, L);
+      label(End, L);
+      return Output;
+    }
+    case UtilityOperation::AlgorithmUniqueCopy: {
+      auto Current = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto Output = snapshot(expression(Call->getArg(2)), L);
+      auto Previous = snapshot(json::Object(Current), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto InputType = type(Call->getArg(0)->getType(), L);
+      const auto OutputType = type(Call->getArg(2)->getType(), L);
+      const auto Initialize = labelName(), Check = labelName();
+      const auto Compare = labelName(), Transfer = labelName();
+      const auto Next = labelName(), End = labelName();
+      branch(binary("!=", Current, Last, "bool", L), Initialize, End, L);
+      label(Initialize, L);
+      assign(dereference(Output, L), dereference(Current, L), L);
+      assign(Output,
+             binary("+", Output, quantity(1, DifferenceType, L), OutputType, L),
+             L);
+      assign(Current,
+             binary("+", Current, quantity(1, DifferenceType, L), InputType, L),
+             L);
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", Current, Last, "bool", L), Compare, End, L);
+      label(Compare, L);
+      branch(binary("==", dereference(Previous, L), dereference(Current, L),
+                    "bool", L),
+             Next, Transfer, L);
+      label(Transfer, L);
+      assign(dereference(Output, L), dereference(Current, L), L);
+      assign(Output,
+             binary("+", Output, quantity(1, DifferenceType, L), OutputType, L),
+             L);
+      assign(Previous, json::Object(Current), L);
+      jump(Next, L);
+      label(Next, L);
+      assign(Current,
+             binary("+", Current, quantity(1, DifferenceType, L), InputType, L),
+             L);
+      jump(Check, L);
+      label(End, L);
+      return Output;
+    }
     case UtilityOperation::MakePair: {
       auto Pair = approvedUtilityPairRecord(
           A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);

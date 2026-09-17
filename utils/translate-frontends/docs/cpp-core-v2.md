@@ -228,8 +228,7 @@ supported target, has the same dependency set on all eight targets, and contains
 no platform headers. The upstream public header and every consumed component
 retain their original bytes.
 
-The exact public `std::find`, `std::count`, three-iterator `std::equal`,
-four-iterator `std::equal`, `std::copy`, `std::move`, `std::copy_backward` and
+The exact public `std::copy`, `std::move`, `std::copy_backward`,
 `std::move_backward`, `std::fill`, `std::fill_n`, `std::swap_ranges`,
 `std::reverse` and `std::reverse_copy` templates directly lower for non-volatile
 raw object pointer ranges whose unqualified element type is the same admitted
@@ -237,6 +236,16 @@ scalar type. Transfer and fill algorithms require a writable output element;
 `swap_ranges` requires both ranges to be writable, and `reverse` requires a
 writable input range. `fill_n` accepts integral or non-scoped enum counts whose
 promoted type is at most 64 bits. Floating counts are outside this boundary.
+
+The exact default-equality `std::find`, `std::count`, three- and four-iterator
+`std::equal`, `std::adjacent_find`, `std::remove`, `std::remove_copy`,
+`std::replace`, `std::replace_copy`, `std::unique` and `std::unique_copy`
+templates lower for same-element built-in integer, `float`, `double`, object
+pointer or `nullptr_t` values. Algorithms that compact or replace an input
+range require it to be writable; copy variants require a writable output.
+Value references remain live through the loop, including when they alias an
+element that an earlier iteration changes. Enum elements stay outside this
+default-equality boundary because ADL can select a user-defined `operator==`.
 
 The exact two-argument `std::min_element`, `std::max_element`, `std::is_sorted`
 and `std::is_sorted_until` templates and exact three-argument
@@ -252,14 +261,15 @@ Each call evaluates and retains its arguments once before entering generated
 pointer loops. `find` preserves the bound value reference, `count` uses the
 target `ptrdiff_t`, `equal` preserves short-circuit results, `fill_n` applies
 the libc++ integer promotion before its positive-count loop, and algorithms
-with output iterators return the advanced output pointer. Forward and backward
-loops preserve their respective standard overlap direction; `reverse` uses
-equality-only bidirectional contraction. Minimum and maximum scans retain the
-first equivalent element; sortedness scans report the first descending
-element. Generated programs do not call or link libc++ for these operations.
-Heterogeneous value types, predicate overloads, custom iterators, record
-elements and function addresses remain rejected, as do calls outside a
-documented direct lowering.
+with output iterators return the advanced output pointer. `remove` and `unique`
+return the compacted logical end; copy forms return their advanced destination.
+Forward and backward loops preserve their respective standard overlap
+direction; `reverse` uses equality-only bidirectional contraction. Minimum and
+maximum scans retain the first equivalent element; sortedness scans report the
+first descending element. Generated programs do not call or link libc++ for
+these operations. Heterogeneous value types, predicate overloads, custom
+iterators, record elements and function addresses remain rejected, as do calls
+outside a documented direct lowering.
 
 The `shuffle` and `sample` component headers are authenticated but their
 declarations stay disabled because libc++ reaches `mbstate_t` through

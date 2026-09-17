@@ -36,14 +36,16 @@ disabled until the core SDK has an authenticated cross-target C runtime
 `mbstate_t` boundary.
 The `<algorithm>` surface has a 354-file libc++/resource closure on every
 core-v2 target. Its upstream declarations and the NeverC C string declaration
-shim are available without platform headers. Exact scalar-pointer `find`,
-`count`, three- or four-iterator `equal`, `copy`, `move`, `copy_backward` and
-`move_backward`, `fill`, `fill_n`, `swap_ranges`, `reverse` and `reverse_copy`
-calls, plus arithmetic-pointer `min_element`, `max_element`, `lower_bound`,
-`upper_bound`, `binary_search`, `is_sorted` and `is_sorted_until`, lower without
-a libc++ runtime dependency. Mutation requires writable destinations; `fill_n`
-accepts at-most-64-bit integral and non-scoped enum counts after the libc++
-integer promotion. `shuffle` and `sample` stay disabled until the same
+shim are available without platform headers. Exact scalar-pointer `copy`,
+`move`, `copy_backward`, `move_backward`, `fill`, `fill_n`, `swap_ranges`,
+`reverse` and `reverse_copy` calls lower without a libc++ runtime dependency.
+The same is true for built-in equality elements with `find`, `count`, three- or
+four-iterator `equal`, `adjacent_find`, `remove`, `remove_copy`, `replace`,
+`replace_copy`, `unique` and `unique_copy`, and for arithmetic elements with
+`min_element`, `max_element`, `lower_bound`, `upper_bound`, `binary_search`,
+`is_sorted` and `is_sorted_until`. Mutation requires writable destinations;
+`fill_n` accepts at-most-64-bit integral and non-scoped enum counts after the
+libc++ integer promotion. `shuffle` and `sample` stay disabled until the same
 authenticated cross-target `mbstate_t` boundary is available through their
 random-distribution dependency.
 Core v2 never admits the `platform` root.

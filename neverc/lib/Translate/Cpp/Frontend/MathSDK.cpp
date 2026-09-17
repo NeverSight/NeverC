@@ -724,6 +724,19 @@ static bool utilityAlgorithmScalarPointer(const ASTContext &Context,
          utilityScalar(Context, Type->getPointeeType());
 }
 
+static bool utilityAlgorithmEqualityPointer(const ASTContext &Context,
+                                            QualType Type) {
+  if (!utilityAlgorithmScalarPointer(Context, Type))
+    return false;
+  auto Element = Type->getPointeeType().getUnqualifiedType();
+  return (!Element->isEnumeralType() && Element->isIntegerType() &&
+          Context.getTypeSize(Element) <= 64) ||
+         Element->isSpecificBuiltinType(BuiltinType::Float) ||
+         Element->isSpecificBuiltinType(BuiltinType::Double) ||
+         (Element->isPointerType() && !Element->isFunctionPointerType()) ||
+         Element->isNullPtrType();
+}
+
 static bool utilityAlgorithmWritableScalarPointer(const ASTContext &Context,
                                                   QualType Type) {
   return utilityAlgorithmScalarPointer(Context, Type) &&
@@ -1311,8 +1324,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
   const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
   if (!Function || !Primary || !Pattern || Function->isVariadic() ||
-      !Function->isInlined() || !Pattern->hasBody() ||
-      !approvedStandardSDKDeclaration(S, SM, Function) ||
+      !Pattern->hasBody() || !approvedStandardSDKDeclaration(S, SM, Function) ||
       !approvedStandardSDKDeclaration(S, SM, Primary) ||
       !approvedUtilityReference(S, SM, Call, Function) ||
       Call->getNumArgs() != Function->getNumParams())
@@ -1327,6 +1339,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   const llvm::StringRef Name = Function->getIdentifier()
                                    ? Function->getIdentifier()->getName()
                                    : llvm::StringRef();
+  if (!Function->isInlined() &&
+      !(Origin->Path == "__algorithm/remove.h" && Name == "remove"))
+    return std::nullopt;
   auto ReverseFor = [&](QualType Type) {
     return approvedUtilityReverseIteratorRecord(
         S, SM, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(), Context);
@@ -1348,6 +1363,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return utilityAlgorithmScalarPointer(Context, Parameter) &&
            Same(Call->getArg(Index)->getType(), Parameter);
   };
+  auto AlgorithmEqualityPointerParameter = [&](unsigned Index) {
+    if (Index >= Function->getNumParams() || Index >= Call->getNumArgs())
+      return false;
+    auto Parameter = Function->getParamDecl(Index)->getType();
+    return utilityAlgorithmEqualityPointer(Context, Parameter) &&
+           Same(Call->getArg(Index)->getType(), Parameter);
+  };
   auto SameAlgorithmElement = [&](QualType Left, QualType Right) {
     return utilityAlgorithmScalarPointer(Context, Left) &&
            utilityAlgorithmScalarPointer(Context, Right) &&
@@ -1361,7 +1383,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                        ->getType()
                        ->getPointeeType()
                        .getUnqualifiedType();
-    return (Element->isIntegerType() && Context.getTypeSize(Element) <= 64) ||
+    return (!Element->isEnumeralType() && Element->isIntegerType() &&
+            Context.getTypeSize(Element) <= 64) ||
            Element->isSpecificBuiltinType(BuiltinType::Float) ||
            Element->isSpecificBuiltinType(BuiltinType::Double);
   };
@@ -1405,7 +1428,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
        Origin->Path == "__algorithm/count.h") &&
       (Name == "find" || Name == "count") && Call->getNumArgs() == 3 &&
       Function->getNumParams() == 3 && Call->isPRValue() &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      AlgorithmEqualityPointerParameter(0) &&
+      AlgorithmEqualityPointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType())) {
     auto Iterator = Function->getParamDecl(0)->getType();
@@ -1425,15 +1449,16 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
       Function->getReturnType()->isBooleanType() &&
       Same(Call->getType(), Function->getReturnType()) &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
-      AlgorithmPointerParameter(2) &&
+      AlgorithmEqualityPointerParameter(0) &&
+      AlgorithmEqualityPointerParameter(1) &&
+      AlgorithmEqualityPointerParameter(2) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       SameAlgorithmElement(Function->getParamDecl(0)->getType(),
                            Function->getParamDecl(2)->getType())) {
     if (Call->getNumArgs() == 3)
       return UtilityOperation::AlgorithmEqual;
-    if (AlgorithmPointerParameter(3) &&
+    if (AlgorithmEqualityPointerParameter(3) &&
         Same(Function->getParamDecl(2)->getType(),
              Function->getParamDecl(3)->getType()))
       return UtilityOperation::AlgorithmEqual;
@@ -1571,6 +1596,92 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Same(Function->getReturnType(), Function->getParamDecl(0)->getType()))
       return UtilityOperation::AlgorithmIsSortedUntil;
   }
+  if (Origin->Path == "__algorithm/adjacent_find.h" &&
+      Name == "adjacent_find" && Call->getNumArgs() == 2 &&
+      Function->getNumParams() == 2 && Call->isPRValue() &&
+      AlgorithmEqualityPointerParameter(0) &&
+      AlgorithmEqualityPointerParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmAdjacentFind;
+  if (Origin->Path == "__algorithm/remove.h" && Name == "remove" &&
+      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
+      Call->isPRValue() && AlgorithmEqualityPointerParameter(0) &&
+      AlgorithmEqualityPointerParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      utilityAlgorithmWritableScalarPointer(
+          Context, Function->getParamDecl(0)->getType()) &&
+      AlgorithmValueParameter(2, 0) &&
+      Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmRemove;
+  if (Origin->Path == "__algorithm/remove_copy.h" && Name == "remove_copy" &&
+      Call->getNumArgs() == 4 && Function->getNumParams() == 4 &&
+      Call->isPRValue() && AlgorithmEqualityPointerParameter(0) &&
+      AlgorithmEqualityPointerParameter(1) && AlgorithmPointerParameter(2) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
+                           Function->getParamDecl(2)->getType()) &&
+      utilityAlgorithmWritableScalarPointer(
+          Context, Function->getParamDecl(2)->getType()) &&
+      AlgorithmValueParameter(3, 0) &&
+      Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmRemoveCopy;
+  if (Origin->Path == "__algorithm/replace.h" && Name == "replace" &&
+      Call->getNumArgs() == 4 && Function->getNumParams() == 4 &&
+      AlgorithmEqualityPointerParameter(0) &&
+      AlgorithmEqualityPointerParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      utilityAlgorithmWritableScalarPointer(
+          Context, Function->getParamDecl(0)->getType()) &&
+      AlgorithmValueParameter(2, 0) && AlgorithmValueParameter(3, 0) &&
+      Function->getReturnType()->isVoidType() &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmReplace;
+  if (Origin->Path == "__algorithm/replace_copy.h" && Name == "replace_copy" &&
+      Call->getNumArgs() == 5 && Function->getNumParams() == 5 &&
+      Call->isPRValue() && AlgorithmEqualityPointerParameter(0) &&
+      AlgorithmEqualityPointerParameter(1) && AlgorithmPointerParameter(2) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
+                           Function->getParamDecl(2)->getType()) &&
+      utilityAlgorithmWritableScalarPointer(
+          Context, Function->getParamDecl(2)->getType()) &&
+      AlgorithmValueParameter(3, 0) && AlgorithmValueParameter(4, 0) &&
+      Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmReplaceCopy;
+  if (Origin->Path == "__algorithm/unique.h" && Name == "unique" &&
+      Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
+      Call->isPRValue() && AlgorithmEqualityPointerParameter(0) &&
+      AlgorithmEqualityPointerParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      utilityAlgorithmWritableScalarPointer(
+          Context, Function->getParamDecl(0)->getType()) &&
+      Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmUnique;
+  if (Origin->Path == "__algorithm/unique_copy.h" && Name == "unique_copy" &&
+      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
+      Call->isPRValue() && AlgorithmEqualityPointerParameter(0) &&
+      AlgorithmEqualityPointerParameter(1) && AlgorithmPointerParameter(2) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
+                           Function->getParamDecl(2)->getType()) &&
+      utilityAlgorithmWritableScalarPointer(
+          Context, Function->getParamDecl(2)->getType()) &&
+      Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmUniqueCopy;
   if (Origin->Path == "__iterator/reverse_iterator.h" &&
       Name == "make_reverse_iterator" && Call->getNumArgs() == 1 &&
       Function->getNumParams() == 1 && Call->isPRValue()) {

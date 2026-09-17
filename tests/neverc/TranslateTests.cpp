@@ -23722,7 +23722,11 @@ TEST_F(TranslateTest, CoreV2AlgorithmReadOnlyRequiresPinnedPointerForms) {
        "return std::find(a,a+2,n)==a+1?0:1;}"},
       {"predicate-equal",
        "#include <algorithm>\nbool same(int a,int b){return a==b;}"
-       "int main(){int a[2]{1,2};return std::equal(a,a+2,a,&same)?0:1;}"}};
+       "int main(){int a[2]{1,2};return std::equal(a,a+2,a,&same)?0:1;}"},
+      {"overloaded-enum-equality",
+       "#include <algorithm>\nenum E{one,two};"
+       "bool operator==(E,E){return true;}"
+       "int main(){E a[1]{one};return std::find(a,a+1,two)==a?0:1;}"}};
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
     const auto Source =
@@ -24049,6 +24053,141 @@ TEST_F(TranslateTest, CoreV2AlgorithmOrderRequiresPinnedArithmeticForms) {
         tmpFile(std::string("algorithm-order-") + Case.Name + ".cpp");
     const auto Output =
         tmpFile(std::string("algorithm-order-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2AlgorithmEqualityMutationOperationsRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-equality-mutation.cpp");
+  const auto Output = tmpFile("algorithm-equality-mutation.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int main() {
+  int adjacent[7]{1, 2, 2, 3, 4, 4, 5};
+  int effects = 0;
+  if (std::adjacent_find((++effects, adjacent),
+                         (++effects, adjacent + 7)) != adjacent + 1 ||
+      effects != 2 ||
+      std::adjacent_find(adjacent, adjacent + 1) != adjacent + 1)
+    return 1;
+
+  int removed[7]{1, 2, 3, 2, 4, 2, 5};
+  int *removed_end = std::remove(removed, removed + 7, 2);
+  if (removed_end != removed + 4 || removed[0] != 1 || removed[1] != 3 ||
+      removed[2] != 4 || removed[3] != 5)
+    return 2;
+  const int source[7]{1, 2, 3, 2, 4, 2, 5};
+  int copied[7]{};
+  if (std::remove_copy(source, source + 7, copied, 2) != copied + 4 ||
+      copied[0] != 1 || copied[1] != 3 || copied[2] != 4 ||
+      copied[3] != 5)
+    return 3;
+
+  int replaced[5]{1, 2, 3, 2, 4};
+  std::replace(replaced, replaced + 5, 2, 9);
+  int replacement_copy[5]{};
+  if (replaced[1] != 9 || replaced[3] != 9 ||
+      std::replace_copy(source, source + 5, replacement_copy, 2, 8) !=
+          replacement_copy + 5 ||
+      replacement_copy[0] != 1 || replacement_copy[1] != 8 ||
+      replacement_copy[2] != 3 || replacement_copy[3] != 8 ||
+      replacement_copy[4] != 4)
+    return 4;
+
+  int duplicates[9]{1, 1, 2, 2, 2, 3, 1, 1, 4};
+  int *unique_end = std::unique(duplicates, duplicates + 9);
+  if (unique_end != duplicates + 5 || duplicates[0] != 1 ||
+      duplicates[1] != 2 || duplicates[2] != 3 || duplicates[3] != 1 ||
+      duplicates[4] != 4 || std::unique(duplicates, duplicates) != duplicates)
+    return 5;
+  int unique_copy[9]{};
+  if (std::unique_copy(source, source + 7, unique_copy) != unique_copy + 7 ||
+      std::unique_copy(source, source, unique_copy) != unique_copy)
+    return 6;
+  const int runs[9]{1, 1, 2, 2, 2, 3, 1, 1, 4};
+  if (std::unique_copy(runs, runs + 9, unique_copy) != unique_copy + 5 ||
+      unique_copy[0] != 1 || unique_copy[1] != 2 || unique_copy[2] != 3 ||
+      unique_copy[3] != 1 || unique_copy[4] != 4)
+    return 7;
+
+  int aliased_remove[4]{1, 2, 3, 2};
+  int &remove_value = aliased_remove[1];
+  if (std::remove(aliased_remove, aliased_remove + 4, remove_value) !=
+          aliased_remove + 3 ||
+      aliased_remove[0] != 1 || aliased_remove[1] != 3 ||
+      aliased_remove[2] != 2)
+    return 8;
+  int aliased_replace[3]{1, 2, 1};
+  int &old_value = aliased_replace[0];
+  int &new_value = aliased_replace[1];
+  std::replace(aliased_replace, aliased_replace + 3, old_value, new_value);
+  if (aliased_replace[0] != 2 || aliased_replace[1] != 2 ||
+      aliased_replace[2] != 1)
+    return 9;
+
+  int targets[2]{};
+  int *pointers[4]{targets, targets, targets + 1, targets + 1};
+  if (std::adjacent_find(pointers, pointers + 4) != pointers ||
+      std::unique(pointers, pointers + 4) != pointers + 2 ||
+      pointers[0] != targets || pointers[1] != targets + 1)
+    return 10;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Dependencies =
+      Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 354u);
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+  }
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("algorithm-equality-mutation" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2AlgorithmEqualityMutationRequiresPinnedScalarForms) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+  };
+  const Rejection Cases[] = {
+      {"heterogeneous-remove-copy",
+       "#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{};"
+       "return std::remove_copy(a,a+2,b,1)==b+1?0:1;}"},
+      {"predicate-unique",
+       "#include <algorithm>\nbool same(int a,int b){return a==b;}"
+       "int main(){int a[3]{1,1,2};return "
+       "std::unique(a,a+3,&same)==a+2?0:1;}"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("algorithm-equality-mutation-") +
+                                Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("algorithm-equality-mutation-") +
+                                Case.Name + ".nc");
     writeFile(Source, Case.Source);
     expectCode(
         translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),

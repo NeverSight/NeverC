@@ -335,6 +335,13 @@ enum class UtilityOperation {
   AlgorithmBinarySearch,
   AlgorithmIsSorted,
   AlgorithmIsSortedUntil,
+  AlgorithmAdjacentFind,
+  AlgorithmRemove,
+  AlgorithmRemoveCopy,
+  AlgorithmReplace,
+  AlgorithmReplaceCopy,
+  AlgorithmUnique,
+  AlgorithmUniqueCopy,
 };
 struct UtilityPairRecord {
   const clang::CXXRecordDecl *Record;

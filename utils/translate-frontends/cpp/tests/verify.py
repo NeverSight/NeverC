@@ -747,6 +747,41 @@ extern "C" int algorithm_order(const int *first, const int *last, int value) {
           '#include <algorithm>\nint main(){int a[2]{1,2};short v=1;return std::lower_bound(a,a+2,v)==a?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    algorithm_equality_mutation_source = """\
+#include <algorithm>
+extern "C" int algorithm_equality_mutation(int *first, int *last,
+                                             int *output, int value) {
+  int *adjacent = std::adjacent_find(first, last);
+  int *removed = std::remove(first, last, value);
+  int *removed_copy = std::remove_copy(first, removed, output, value);
+  std::replace(first, removed, value, value + 1);
+  int *replaced_copy = std::replace_copy(first, removed, output, value,
+                                          value + 1);
+  int *unique = std::unique(first, removed);
+  int *unique_copy = std::unique_copy(first, unique, output);
+  return static_cast<int>((adjacent - first) + (removed - first) +
+                          (removed_copy - output) +
+                          (replaced_copy - output) + (unique - first) +
+                          (unique_copy - output));
+}
+"""
+    algorithm_equality_mutation = check(
+        "v2-algorithm-equality-mutation", algorithm_equality_mutation_source,
+        profile="cpp-core-v2", sdk=True)
+    assert len(algorithm_equality_mutation["sdk_dependencies"]) == 354, algorithm_equality_mutation
+    assert not [node for node in walk(algorithm_equality_mutation["functions"])
+                if node.get("op") in ("call", "mapped_call")], algorithm_equality_mutation
+    for target in sdk_targets:
+        check("v2-algorithm-equality-mutation-" + target,
+              algorithm_equality_mutation_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-algorithm-equality-mutation-heterogeneous-output",
+          '#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{};return std::remove_copy(a,a+2,b,1)==b+1?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-overloaded-enum-equality",
+          '#include <algorithm>\nenum E{one,two};bool operator==(E,E){return true;}int main(){E a[1]{one};return std::find(a,a+1,two)==a?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     # Windows driver defaults must not change core-v2 source visibility or
     # standard diagnostics. Exercise both MSVC architectures on every CI host.
     standard_template_parsing = {
