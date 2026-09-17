@@ -64,7 +64,9 @@ binary predicates additionally admit `adjacent_find`, three- and four-iterator
 Exact function-pointer comparators admit `min_element`, `max_element`,
 `lower_bound`, `upper_bound`, `equal_range`, `binary_search`, `is_sorted` and
 `is_sorted_until`, plus `min`, `max`, `clamp`, `minmax` and `minmax_element` on
-same-type scalar ranges and values.
+same-type scalar ranges and values, and `lexicographical_compare`, `includes`,
+`merge`, `set_union`, `set_intersection`, `set_difference` and
+`set_symmetric_difference` on same-element scalar ranges.
 Exact function-pointer callbacks also admit `for_each`, `for_each_n`, unary and
 binary `transform`, `generate` and `generate_n`.
 Predicate mutation and ordered output algorithms require writable destinations;

@@ -2060,17 +2060,21 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (((Origin->Path == "__algorithm/lexicographical_compare.h" &&
         Name == "lexicographical_compare") ||
        (Origin->Path == "__algorithm/includes.h" && Name == "includes")) &&
-      Call->getNumArgs() == 4 && Function->getNumParams() == 4 &&
-      Call->isPRValue() && Function->getReturnType()->isBooleanType() &&
+      (Call->getNumArgs() == 4 || Call->getNumArgs() == 5) &&
+      Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
+      Function->getReturnType()->isBooleanType() &&
       Same(Call->getType(), Function->getReturnType()) &&
-      AlgorithmOrderedPointerParameter(0) && AlgorithmPointerParameter(1) &&
-      AlgorithmOrderedPointerParameter(2) && AlgorithmPointerParameter(3) &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      AlgorithmPointerParameter(2) && AlgorithmPointerParameter(3) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getParamDecl(2)->getType(),
            Function->getParamDecl(3)->getType()) &&
       SameAlgorithmElement(Function->getParamDecl(0)->getType(),
-                           Function->getParamDecl(2)->getType()))
+                           Function->getParamDecl(2)->getType()) &&
+      ((Call->getNumArgs() == 4 && AlgorithmOrderedPointerParameter(0) &&
+        AlgorithmOrderedPointerParameter(2)) ||
+       (Call->getNumArgs() == 5 && AlgorithmBinaryPredicateParameter(4, 0, 2))))
     return Name == "includes"
                ? UtilityOperation::AlgorithmIncludes
                : UtilityOperation::AlgorithmLexicographicalCompare;
@@ -2083,10 +2087,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
        Name == "set_difference") ||
       (Origin->Path == "__algorithm/set_symmetric_difference.h" &&
        Name == "set_symmetric_difference");
-  if (OrderedOutputAlgorithm && Call->getNumArgs() == 5 &&
-      Function->getNumParams() == 5 && Call->isPRValue() &&
-      AlgorithmOrderedPointerParameter(0) && AlgorithmPointerParameter(1) &&
-      AlgorithmOrderedPointerParameter(2) && AlgorithmPointerParameter(3) &&
+  if (OrderedOutputAlgorithm &&
+      (Call->getNumArgs() == 5 || Call->getNumArgs() == 6) &&
+      Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      AlgorithmPointerParameter(2) && AlgorithmPointerParameter(3) &&
       AlgorithmPointerParameter(4) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
@@ -2099,7 +2104,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       utilityAlgorithmWritableScalarPointer(
           Context, Function->getParamDecl(4)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(4)->getType()) &&
-      Same(Call->getType(), Function->getReturnType())) {
+      Same(Call->getType(), Function->getReturnType()) &&
+      ((Call->getNumArgs() == 5 && AlgorithmOrderedPointerParameter(0) &&
+        AlgorithmOrderedPointerParameter(2)) ||
+       (Call->getNumArgs() == 6 &&
+        AlgorithmBinaryPredicateParameter(5, 0, 2)))) {
     if (Name == "merge")
       return UtilityOperation::AlgorithmMerge;
     if (Name == "set_union")

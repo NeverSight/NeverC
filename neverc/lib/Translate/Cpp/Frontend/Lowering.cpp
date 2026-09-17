@@ -2092,6 +2092,16 @@ class FunctionLowering {
       auto Last = snapshot(expression(Call->getArg(1)), L);
       auto Second = snapshot(expression(Call->getArg(2)), L);
       auto SecondLast = snapshot(expression(Call->getArg(3)), L);
+      std::optional<Expression> Comparator;
+      if (Call->getNumArgs() == 5)
+        Comparator = snapshot(expression(Call->getArg(4)), L);
+      auto Less = [&](Expression Left, Expression Right) {
+        if (Comparator)
+          return emitBinaryPredicate(json::Object(*Comparator),
+                                     Call->getArg(4)->getType(),
+                                     std::move(Left), std::move(Right), L);
+        return binary("<", std::move(Left), std::move(Right), "bool", L);
+      };
       auto Result = temporary("bool", L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto FirstType = type(Call->getArg(0)->getType(), L);
@@ -2107,13 +2117,13 @@ class FunctionLowering {
       branch(binary("!=", Second, SecondLast, "bool", L), CompareFirst, False,
              L);
       label(CompareFirst, L);
-      branch(
-          binary("<", dereference(First, L), dereference(Second, L), "bool", L),
-          True, CompareSecond, L);
+      branch(Less(dereference(json::Object(First), L),
+                  dereference(json::Object(Second), L)),
+             True, CompareSecond, L);
       label(CompareSecond, L);
-      branch(
-          binary("<", dereference(Second, L), dereference(First, L), "bool", L),
-          False, Advance, L);
+      branch(Less(dereference(json::Object(Second), L),
+                  dereference(json::Object(First), L)),
+             False, Advance, L);
       label(Advance, L);
       assign(First,
              binary("+", First, quantity(1, DifferenceType, L), FirstType, L),
@@ -2138,6 +2148,16 @@ class FunctionLowering {
       auto Last = snapshot(expression(Call->getArg(1)), L);
       auto Second = snapshot(expression(Call->getArg(2)), L);
       auto SecondLast = snapshot(expression(Call->getArg(3)), L);
+      std::optional<Expression> Comparator;
+      if (Call->getNumArgs() == 5)
+        Comparator = snapshot(expression(Call->getArg(4)), L);
+      auto Less = [&](Expression Left, Expression Right) {
+        if (Comparator)
+          return emitBinaryPredicate(json::Object(*Comparator),
+                                     Call->getArg(4)->getType(),
+                                     std::move(Left), std::move(Right), L);
+        return binary("<", std::move(Left), std::move(Right), "bool", L);
+      };
       auto Result = temporary("bool", L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto FirstType = type(Call->getArg(0)->getType(), L);
@@ -2152,13 +2172,13 @@ class FunctionLowering {
       label(CheckFirst, L);
       branch(binary("!=", First, Last, "bool", L), Missing, False, L);
       label(Missing, L);
-      branch(
-          binary("<", dereference(Second, L), dereference(First, L), "bool", L),
-          False, Compare, L);
+      branch(Less(dereference(json::Object(Second), L),
+                  dereference(json::Object(First), L)),
+             False, Compare, L);
       label(Compare, L);
-      branch(
-          binary("<", dereference(First, L), dereference(Second, L), "bool", L),
-          AdvanceFirst, AdvanceBoth, L);
+      branch(Less(dereference(json::Object(First), L),
+                  dereference(json::Object(Second), L)),
+             AdvanceFirst, AdvanceBoth, L);
       label(AdvanceFirst, L);
       assign(First,
              binary("+", First, quantity(1, DifferenceType, L), FirstType, L),
@@ -2199,6 +2219,16 @@ class FunctionLowering {
       auto Second = snapshot(expression(Call->getArg(2)), L);
       auto SecondLast = snapshot(expression(Call->getArg(3)), L);
       auto Output = snapshot(expression(Call->getArg(4)), L);
+      std::optional<Expression> Comparator;
+      if (Call->getNumArgs() == 6)
+        Comparator = snapshot(expression(Call->getArg(5)), L);
+      auto Less = [&](Expression Left, Expression Right) {
+        if (Comparator)
+          return emitBinaryPredicate(json::Object(*Comparator),
+                                     Call->getArg(5)->getType(),
+                                     std::move(Left), std::move(Right), L);
+        return binary("<", std::move(Left), std::move(Right), "bool", L);
+      };
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto FirstType = type(Call->getArg(0)->getType(), L);
       const auto SecondType = type(Call->getArg(2)->getType(), L);
@@ -2228,13 +2258,13 @@ class FunctionLowering {
       branch(binary("!=", Second, SecondLast, "bool", L), CompareFirst,
              SecondDone, L);
       label(CompareFirst, L);
-      branch(
-          binary("<", dereference(First, L), dereference(Second, L), "bool", L),
-          FirstLess, CompareSecond, L);
+      branch(Less(dereference(json::Object(First), L),
+                  dereference(json::Object(Second), L)),
+             FirstLess, CompareSecond, L);
       label(CompareSecond, L);
-      branch(
-          binary("<", dereference(Second, L), dereference(First, L), "bool", L),
-          SecondLess, Equal, L);
+      branch(Less(dereference(json::Object(Second), L),
+                  dereference(json::Object(First), L)),
+             SecondLess, Equal, L);
       label(FirstLess, L);
       Emit(First, FirstType, Merge || Union || Difference || Symmetric);
       jump(CheckFirst, L);

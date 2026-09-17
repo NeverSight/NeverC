@@ -1008,8 +1008,58 @@ extern "C" int algorithm_ordered_ranges(const int *first, const int *last,
     check("v2-algorithm-ordered-ranges-heterogeneous",
           '#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{1,3};return std::lexicographical_compare(a,a+2,b,b+2)?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
-    check("v2-algorithm-ordered-ranges-comparator",
-          '#include <algorithm>\nbool less(int a,int b){return a<b;}int main(){int a[2]{1,2};return std::includes(a,a+2,a,a+1,&less)?0:1;}',
+
+    algorithm_comparator_ordered_ranges_source = """\
+#include <algorithm>
+extern "C" int algorithm_comparator_ordered_ranges(
+    const int *first, const int *last, const int *second,
+    const int *second_last, int *output, bool (*comparator)(int, int)) {
+  bool lexical = std::lexicographical_compare(first, last, second, second_last,
+                                               comparator);
+  bool contained = std::includes(first, last, second, second_last, comparator);
+  int *merged =
+      std::merge(first, last, second, second_last, output, comparator);
+  int *united =
+      std::set_union(first, last, second, second_last, output, comparator);
+  int *common =
+      std::set_intersection(first, last, second, second_last, output, comparator);
+  int *remaining =
+      std::set_difference(first, last, second, second_last, output, comparator);
+  int *symmetric = std::set_symmetric_difference(
+      first, last, second, second_last, output, comparator);
+  return static_cast<int>((merged - output) + (united - output) +
+                          (common - output) + (remaining - output) +
+                          (symmetric - output) + lexical + contained);
+}
+"""
+
+    def assert_comparator_ordered_ranges(data):
+        assert len(data["sdk_dependencies"]) == 354, data
+        nodes = list(walk(data["functions"]))
+        assert not [node for node in nodes
+                    if node.get("op") in ("call", "mapped_call")], data
+        assert sum(node.get("op") == "indirect_call"
+                   for node in nodes) == 14, data
+
+    algorithm_comparator_ordered_ranges = check(
+        "v2-algorithm-comparator-ordered-ranges",
+        algorithm_comparator_ordered_ranges_source,
+        profile="cpp-core-v2", sdk=True)
+    assert_comparator_ordered_ranges(algorithm_comparator_ordered_ranges)
+    for target in sdk_targets:
+        target_result = check(
+            "v2-algorithm-comparator-ordered-ranges-" + target,
+            algorithm_comparator_ordered_ranges_source,
+            profile="cpp-core-v2", target=target, sdk=True)
+        assert_comparator_ordered_ranges(target_result)
+    check("v2-algorithm-comparator-ordered-ranges-reference",
+          'bool p(const int&a,int b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{1,2};return std::includes(a,a+2,a,a+1,p)?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-comparator-ordered-ranges-conversion",
+          'bool p(long a,long b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{1,2},out[4]{};return std::merge(a,a+2,a,a+2,out,p)==out+4?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-comparator-ordered-ranges-heterogeneous",
+          'bool p(int a,long b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{1,2};return std::includes(a,a+2,b,b+2,p)?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
     algorithm_extrema_source = """\

@@ -435,9 +435,18 @@ unqualified arithmetic element type. Ordered output algorithms require a
 writable same-element destination and return its advanced pointer. Merge keeps
 equivalent elements from the first range first; set operations preserve their
 standard maximum, minimum and excess duplicate counts. Default-order enum
-elements, pointer elements, heterogeneous values or ranges and explicit
-comparators remain outside this boundary because they can require overloaded or
-otherwise non-portable ordering semantics.
+elements, pointer elements and heterogeneous values or ranges remain outside
+this boundary because they can require overloaded or otherwise non-portable
+ordering semantics.
+
+The corresponding comparator overloads admit same-element scalar ranges with
+an exact by-value `bool(T, T)` function pointer. This includes enum and pointer
+elements whose ordering is supplied entirely by the callback. Ordered output
+forms still require a writable destination with the same element type. The
+callback object is retained once, and the generated loops invoke it in both
+argument orientations when distinguishing equivalent elements. Function
+objects, reference parameters, converted parameter or result types,
+heterogeneous ranges and heterogeneous destinations remain rejected.
 
 Each call evaluates and retains its arguments once before entering generated
 pointer loops. `find` preserves the bound value reference, `count` uses the
@@ -454,7 +463,8 @@ new location of the original first element, while `rotate_copy` returns its
 advanced destination. Permutation mutation evaluates both bounds once, and
 permutation queries evaluate each supplied iterator once. Ordered two-range
 algorithms stop at the first decisive comparison and copy only the tails
-required by their standard result.
+required by their standard result. Comparator forms preserve the same
+first-range merge priority and set multiplicities.
 Forward and backward loops preserve their respective standard overlap
 direction; `reverse` uses equality-only bidirectional contraction. Minimum and
 maximum scans retain the first equivalent element; sortedness scans report the

@@ -25034,10 +25034,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmOrderedRangesRequirePinnedScalarForms) {
       {"heterogeneous-lexicographical",
        "#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{1,3};"
        "return std::lexicographical_compare(a,a+2,b,b+2)?0:1;}"},
-      {"comparator-includes",
-       "#include <algorithm>\nbool less(int a,int b){return a<b;}"
-       "int main(){int a[2]{1,2};return "
-       "std::includes(a,a+2,a,a+1,&less)?0:1;}"},
       {"heterogeneous-merge-output",
        "#include <algorithm>\nint main(){int a[2]{1,2};long out[4]{};"
        "return std::merge(a,a+2,a,a+2,out)==out+4?0:1;}"},
@@ -25056,6 +25052,180 @@ TEST_F(TranslateTest, CoreV2AlgorithmOrderedRangesRequirePinnedScalarForms) {
     expectCode(
         translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
         "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2AlgorithmComparatorOrderedRangesRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-comparator-ordered-ranges.cpp");
+  const auto Output = tmpFile("algorithm-comparator-ordered-ranges.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int calls;
+bool greater_value(int left, int right) {
+  ++calls;
+  return left > right;
+}
+enum Rank : unsigned char { low, medium, high };
+bool rank_greater(Rank left, Rank right) {
+  ++calls;
+  return left > right;
+}
+int main() {
+  const int left[5]{9, 7, 7, 4, 1};
+  const int right[4]{8, 7, 5, 1};
+  const int subset[2]{7, 1};
+  const int missing[1]{8};
+  calls = 0;
+  if (!std::lexicographical_compare(left, left + 5, right, right + 4,
+                                    greater_value) ||
+      std::lexicographical_compare(right, right + 4, left, left + 5,
+                                   greater_value) ||
+      !std::includes(left, left + 5, subset, subset + 2, greater_value) ||
+      std::includes(left, left + 5, missing, missing + 1, greater_value) ||
+      calls == 0)
+    return 1;
+
+  calls = 0;
+  if (std::lexicographical_compare(left, left, right, right, greater_value) ||
+      !std::includes(left, left, right, right, greater_value) || calls != 0)
+    return 2;
+
+  int merged[9]{};
+  int effects = 0;
+  auto comparator = &greater_value;
+  if (std::merge((++effects, left), (++effects, left + 5),
+                 (++effects, right), (++effects, right + 4),
+                 (++effects, merged), (++effects, comparator)) != merged + 9 ||
+      effects != 6)
+    return 3;
+  const int expected_merge[9]{9, 8, 7, 7, 7, 5, 4, 1, 1};
+  for (int i = 0; i != 9; ++i)
+    if (merged[i] != expected_merge[i])
+      return 4;
+
+  int combined[7]{};
+  if (std::set_union(left, left + 5, right, right + 4, combined,
+                     greater_value) != combined + 7)
+    return 5;
+  const int expected_union[7]{9, 8, 7, 7, 5, 4, 1};
+  for (int i = 0; i != 7; ++i)
+    if (combined[i] != expected_union[i])
+      return 6;
+
+  int common[2]{};
+  if (std::set_intersection(left, left + 5, right, right + 4, common,
+                            greater_value) != common + 2 ||
+      common[0] != 7 || common[1] != 1)
+    return 7;
+  int remaining[3]{};
+  if (std::set_difference(left, left + 5, right, right + 4, remaining,
+                          greater_value) != remaining + 3 ||
+      remaining[0] != 9 || remaining[1] != 7 || remaining[2] != 4)
+    return 8;
+  int symmetric[5]{};
+  if (std::set_symmetric_difference(left, left + 5, right, right + 4,
+                                    symmetric, greater_value) != symmetric + 5)
+    return 9;
+  const int expected_symmetric[5]{9, 8, 7, 5, 4};
+  for (int i = 0; i != 5; ++i)
+    if (symmetric[i] != expected_symmetric[i])
+      return 10;
+
+  const Rank rank_left[3]{high, medium, low};
+  const Rank rank_right[2]{medium, low};
+  Rank rank_output[5]{};
+  calls = 0;
+  if (!std::lexicographical_compare(rank_left, rank_left + 3, rank_right,
+                                    rank_right + 2, rank_greater) ||
+      std::merge(rank_left, rank_left + 3, rank_right, rank_right + 2,
+                 rank_output, rank_greater) != rank_output + 5 ||
+      rank_output[0] != high || rank_output[1] != medium ||
+      rank_output[2] != medium || rank_output[3] != low ||
+      rank_output[4] != low || calls == 0)
+    return 11;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Dependencies =
+      Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 354u);
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+  }
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("algorithm-comparator-ordered-ranges" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2AlgorithmComparatorOrderedRangesRequireExactFunctions) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code = "TR0203";
+  };
+  const Rejection Cases[] = {
+      {"reference-parameter",
+       "bool p(const int&a,int b){return a>b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{2,1};return "
+       "std::includes(a,a+2,a,a+1,p)?0:1;}"},
+      {"non-bool-result",
+       "int p(int a,int b){return a>b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{2,1};return "
+       "std::lexicographical_compare(a,a+1,a+1,a+2,p)?0:1;}"},
+      {"converted-parameter",
+       "bool p(long a,long b){return a>b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{2,1},out[4]{};return "
+       "std::merge(a,a+2,a,a+2,out,p)==out+4?0:1;}"},
+      {"function-object",
+       "struct P{bool operator()(int a,int b)const{return a>b;}};\n"
+       "#include <algorithm>\nint main(){int a[2]{2,1},out[2]{};return "
+       "std::set_union(a,a+2,a,a+2,out,P{})==out+2?0:1;}"},
+      {"heterogeneous-ranges",
+       "bool p(int a,long b){return a>b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{2,1};long b[2]{2,1};return "
+       "std::includes(a,a+2,b,b+2,p)?0:1;}"},
+      {"heterogeneous-output",
+       "bool p(int a,int b){return a>b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{2,1};long out[4]{};return "
+       "std::set_difference(a,a+2,a,a+2,out,p)==out?0:1;}"},
+      {"variadic-comparator",
+       "bool p(int a,int b,...){return a>b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{2,1},out[4]{};return "
+       "std::set_symmetric_difference(a,a+2,a,a+2,out,p)==out?0:1;}",
+       "TR0201"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("algorithm-comparator-ordered-ranges-") +
+                Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("algorithm-comparator-ordered-ranges-") +
+                Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
     expectNoArtifacts(Output);
   }
 }
