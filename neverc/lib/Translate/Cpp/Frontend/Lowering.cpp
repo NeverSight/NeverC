@@ -2743,19 +2743,35 @@ class FunctionLowering {
     case UtilityOperation::AlgorithmSort: {
       auto First = snapshot(expression(Call->getArg(0)), L);
       auto Last = snapshot(expression(Call->getArg(1)), L);
+      std::optional<Expression> Comparator;
+      if (Call->getNumArgs() == 3)
+        Comparator = snapshot(expression(Call->getArg(2)), L);
+      const auto ComparatorType =
+          Comparator ? Call->getArg(2)->getType() : QualType{};
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto PointerType = type(Call->getArg(0)->getType(), L);
       auto Length = snapshot(binary("-", Last, First, DifferenceType, L), L);
       makeHeap(json::Object(First), json::Object(Length), PointerType,
-               DifferenceType, L);
+               DifferenceType, L, Comparator, ComparatorType);
       sortHeap(json::Object(First), json::Object(Length), PointerType,
-               DifferenceType, L);
+               DifferenceType, L, Comparator, ComparatorType);
       return {};
     }
     case UtilityOperation::AlgorithmPartialSort: {
       auto First = snapshot(expression(Call->getArg(0)), L);
       auto Middle = snapshot(expression(Call->getArg(1)), L);
       auto Last = snapshot(expression(Call->getArg(2)), L);
+      std::optional<Expression> Comparator;
+      if (Call->getNumArgs() == 4)
+        Comparator = snapshot(expression(Call->getArg(3)), L);
+      const auto ComparatorType =
+          Comparator ? Call->getArg(3)->getType() : QualType{};
+      auto Less = [&](Expression Left, Expression Right) {
+        if (Comparator)
+          return emitBinaryPredicate(json::Object(*Comparator), ComparatorType,
+                                     std::move(Left), std::move(Right), L);
+        return binary("<", std::move(Left), std::move(Right), "bool", L);
+      };
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto PointerType = type(Call->getArg(0)->getType(), L);
       auto HeapSize =
@@ -2769,13 +2785,13 @@ class FunctionLowering {
              NonEmpty, End, L);
       label(NonEmpty, L);
       makeHeap(json::Object(First), json::Object(HeapSize), PointerType,
-               DifferenceType, L);
+               DifferenceType, L, Comparator, ComparatorType);
       jump(Scan, L);
       label(Scan, L);
       branch(binary("!=", Current, Last, "bool", L), Compare, Finish, L);
       label(Compare, L);
-      branch(binary("<", dereference(Current, L),
-                    dereference(json::Object(First), L), "bool", L),
+      branch(Less(dereference(json::Object(Current), L),
+                  dereference(json::Object(First), L)),
              Replace, Advance, L);
       label(Replace, L);
       auto RootValue = snapshot(dereference(json::Object(First), L), L);
@@ -2784,7 +2800,7 @@ class FunctionLowering {
       assign(dereference(Current, L), std::move(RootValue), L);
       heapSiftDown(json::Object(First), json::Object(HeapSize),
                    quantity(0, DifferenceType, L), PointerType, DifferenceType,
-                   L);
+                   L, Comparator, ComparatorType);
       jump(Advance, L);
       label(Advance, L);
       assign(
@@ -2794,7 +2810,7 @@ class FunctionLowering {
       jump(Scan, L);
       label(Finish, L);
       sortHeap(json::Object(First), json::Object(HeapSize), PointerType,
-               DifferenceType, L);
+               DifferenceType, L, Comparator, ComparatorType);
       jump(End, L);
       label(End, L);
       return {};
@@ -2804,6 +2820,17 @@ class FunctionLowering {
       auto InputLast = snapshot(expression(Call->getArg(1)), L);
       auto OutputFirst = snapshot(expression(Call->getArg(2)), L);
       auto OutputLast = snapshot(expression(Call->getArg(3)), L);
+      std::optional<Expression> Comparator;
+      if (Call->getNumArgs() == 5)
+        Comparator = snapshot(expression(Call->getArg(4)), L);
+      const auto ComparatorType =
+          Comparator ? Call->getArg(4)->getType() : QualType{};
+      auto Less = [&](Expression Left, Expression Right) {
+        if (Comparator)
+          return emitBinaryPredicate(json::Object(*Comparator), ComparatorType,
+                                     std::move(Left), std::move(Right), L);
+        return binary("<", std::move(Left), std::move(Right), "bool", L);
+      };
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto InputType = type(Call->getArg(0)->getType(), L);
       const auto OutputType = type(Call->getArg(2)->getType(), L);
@@ -2837,20 +2864,20 @@ class FunctionLowering {
              NonEmpty, End, L);
       label(NonEmpty, L);
       makeHeap(json::Object(OutputFirst), json::Object(HeapSize), OutputType,
-               DifferenceType, L);
+               DifferenceType, L, Comparator, ComparatorType);
       jump(Scan, L);
       label(Scan, L);
       branch(binary("!=", Input, InputLast, "bool", L), Compare, Finish, L);
       label(Compare, L);
-      branch(binary("<", dereference(Input, L),
-                    dereference(json::Object(OutputFirst), L), "bool", L),
+      branch(Less(dereference(json::Object(Input), L),
+                  dereference(json::Object(OutputFirst), L)),
              Replace, Advance, L);
       label(Replace, L);
       assign(dereference(json::Object(OutputFirst), L), dereference(Input, L),
              L);
       heapSiftDown(json::Object(OutputFirst), json::Object(HeapSize),
                    quantity(0, DifferenceType, L), OutputType, DifferenceType,
-                   L);
+                   L, Comparator, ComparatorType);
       jump(Advance, L);
       label(Advance, L);
       assign(Input,
@@ -2859,7 +2886,7 @@ class FunctionLowering {
       jump(Scan, L);
       label(Finish, L);
       sortHeap(json::Object(OutputFirst), json::Object(HeapSize), OutputType,
-               DifferenceType, L);
+               DifferenceType, L, Comparator, ComparatorType);
       jump(End, L);
       label(End, L);
       return Output;
@@ -2868,6 +2895,17 @@ class FunctionLowering {
       auto First = snapshot(expression(Call->getArg(0)), L);
       auto Nth = snapshot(expression(Call->getArg(1)), L);
       auto Last = snapshot(expression(Call->getArg(2)), L);
+      std::optional<Expression> Comparator;
+      if (Call->getNumArgs() == 4)
+        Comparator = snapshot(expression(Call->getArg(3)), L);
+      auto Less = [&](Expression LeftValue, Expression RightValue) {
+        if (Comparator)
+          return emitBinaryPredicate(
+              json::Object(*Comparator), Call->getArg(3)->getType(),
+              std::move(LeftValue), std::move(RightValue), L);
+        return binary("<", std::move(LeftValue), std::move(RightValue), "bool",
+                      L);
+      };
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto PointerType = type(Call->getArg(0)->getType(), L);
       const auto ElementType =
@@ -2913,10 +2951,9 @@ class FunctionLowering {
       label(Partition, L);
       branch(binary("<", Current, High, "bool", L), Classify, Partitioned, L);
       label(Classify, L);
-      branch(binary("<", At(Current), Pivot, "bool", L), MoveLow, CheckHigher,
-             L);
+      branch(Less(At(Current), json::Object(Pivot)), MoveLow, CheckHigher, L);
       label(CheckHigher, L);
-      branch(binary("<", Pivot, At(Current), "bool", L), MoveHigh, Equal, L);
+      branch(Less(json::Object(Pivot), At(Current)), MoveHigh, Equal, L);
       label(MoveLow, L);
       {
         auto LowValue = snapshot(At(Low), L);

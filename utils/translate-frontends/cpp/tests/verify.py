@@ -1228,11 +1228,51 @@ extern "C" int algorithm_ordering(int *first, int *middle, int *last,
     check("v2-algorithm-ordering-enum",
           '#include <algorithm>\nenum E{low,high};int main(){E a[2]{high,low};std::sort(a,a+2);return 0;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
-    check("v2-algorithm-ordering-comparator",
-          '#include <algorithm>\nbool less(int a,int b){return a<b;}int main(){int a[2]{2,1};std::sort(a,a+2,&less);return 0;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-algorithm-ordering-heterogeneous-copy",
           '#include <algorithm>\nint main(){int a[2]{2,1};long out[2]{};return std::partial_sort_copy(a,a+2,out,out+2)==out+2?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
+    algorithm_comparator_ordering_source = """\
+#include <algorithm>
+extern "C" int algorithm_comparator_ordering(
+    int *first, int *middle, int *last, const int *input_first,
+    const int *input_last, int *output_first, int *output_last,
+    bool (*comparator)(int, int)) {
+  std::sort(first, last, comparator);
+  std::partial_sort(first, middle, last, comparator);
+  int *output = std::partial_sort_copy(input_first, input_last, output_first,
+                                       output_last, comparator);
+  std::nth_element(first, middle, last, comparator);
+  return static_cast<int>(output - output_first);
+}
+"""
+
+    def assert_comparator_ordering(data):
+        assert len(data["sdk_dependencies"]) == 354, data
+        nodes = list(walk(data["functions"]))
+        assert not [node for node in nodes
+                    if node.get("op") in ("call", "mapped_call")], data
+        assert sum(node.get("op") == "indirect_call"
+                   for node in nodes) == 20, data
+
+    algorithm_comparator_ordering = check(
+        "v2-algorithm-comparator-ordering",
+        algorithm_comparator_ordering_source,
+        profile="cpp-core-v2", sdk=True)
+    assert_comparator_ordering(algorithm_comparator_ordering)
+    for target in sdk_targets:
+        target_result = check("v2-algorithm-comparator-ordering-" + target,
+                              algorithm_comparator_ordering_source,
+                              profile="cpp-core-v2", target=target, sdk=True)
+        assert_comparator_ordering(target_result)
+    check("v2-algorithm-comparator-ordering-reference",
+          'bool p(const int&a,int b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{2,1};std::sort(a,a+2,p);return 0;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-comparator-ordering-conversion",
+          'bool p(long a,long b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{2,1};std::nth_element(a,a+1,a+2,p);return 0;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-comparator-ordering-output",
+          'bool p(int a,long b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{2,1};long out[2]{};return std::partial_sort_copy(a,a+2,out,out+2,p)==out+2?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
     algorithm_permutation_source = """\

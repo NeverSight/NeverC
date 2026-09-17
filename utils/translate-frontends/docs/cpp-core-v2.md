@@ -418,6 +418,16 @@ complexity and terminates directly on ranges of equivalent values. An empty
 selected prefix leaves `partial_sort` unchanged; an empty output returns the
 original output pointer.
 
+The corresponding comparator overloads accept the same exact scalar
+function-pointer boundary. `sort`, `partial_sort` and `nth_element` require a
+writable same-element range; `partial_sort_copy` accepts a read-only input and
+writable same-element output. A greater-than callback therefore sorts or
+selects in descending order. All callback and iterator arguments are retained
+once. Empty selected prefixes and outputs make no callback calls, and the
+three-way `nth_element` partition still terminates directly on equivalent
+values. Inexact callbacks, record elements and heterogeneous output elements
+remain rejected.
+
 The exact default-order `std::next_permutation` and `std::prev_permutation`
 templates use the same writable built-in arithmetic pointer boundary. They
 find the rightmost movable pivot, exchange it with the rightmost qualifying

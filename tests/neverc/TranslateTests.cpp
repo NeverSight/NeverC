@@ -25944,9 +25944,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmOrderingRequirePinnedScalarForms) {
       {"pointer-sort",
        "#include <algorithm>\nint main(){int a=1,b=2;int*p[2]{&a,&b};"
        "std::sort(p,p+2);return 0;}"},
-      {"comparator-sort",
-       "#include <algorithm>\nbool less(int a,int b){return a<b;}"
-       "int main(){int a[2]{2,1};std::sort(a,a+2,&less);return 0;}"},
       {"record-nth",
        "#include <algorithm>\nstruct R{int n;};"
        "bool operator<(const R&a,const R&b){return a.n<b.n;}"
@@ -25964,6 +25961,185 @@ TEST_F(TranslateTest, CoreV2AlgorithmOrderingRequirePinnedScalarForms) {
     expectCode(
         translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
         "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmComparatorOrderingRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-comparator-ordering.cpp");
+  const auto Output = tmpFile("algorithm-comparator-ordering.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int calls;
+bool greater_value(int left, int right) {
+  ++calls;
+  return left > right;
+}
+enum Rank : unsigned char { low, medium, high };
+bool rank_greater(Rank left, Rank right) {
+  ++calls;
+  return left > right;
+}
+int main() {
+  int values[12]{7, -1, 4, 4, 9, 0, 3, 8, 2, 6, 5, 1};
+  int effects = 0;
+  auto comparator = &greater_value;
+  calls = 0;
+  std::sort((++effects, values), (++effects, values + 12),
+            (++effects, comparator));
+  const int expected[12]{9, 8, 7, 6, 5, 4, 4, 3, 2, 1, 0, -1};
+  if (effects != 3 || calls == 0)
+    return 1;
+  for (int i = 0; i != 12; ++i)
+    if (values[i] != expected[i])
+      return 2;
+
+  int partial[10]{0, 9, 1, 8, 2, 7, 3, 6, 4, 5};
+  std::partial_sort(partial, partial + 4, partial + 10, greater_value);
+  for (int i = 0; i != 4; ++i)
+    if (partial[i] != 9 - i)
+      return 3;
+  for (int i = 4; i != 10; ++i)
+    if (partial[i] > partial[3])
+      return 4;
+  int unchanged[3]{1, 3, 2};
+  calls = 0;
+  std::partial_sort(unchanged, unchanged, unchanged + 3, greater_value);
+  if (unchanged[0] != 1 || unchanged[1] != 3 || unchanged[2] != 2 ||
+      calls != 0)
+    return 5;
+
+  const int input[10]{0, 9, 1, 8, 2, 7, 3, 6, 4, 5};
+  int output[5]{-1, -1, -1, -1, -1};
+  effects = 0;
+  int *output_end = std::partial_sort_copy(
+      (++effects, input), (++effects, input + 10), (++effects, output),
+      (++effects, output + 4), (++effects, comparator));
+  if (effects != 5 || output_end != output + 4)
+    return 6;
+  for (int i = 0; i != 4; ++i)
+    if (output[i] != 9 - i)
+      return 7;
+  if (output[4] != -1 || input[0] != 0)
+    return 8;
+  const int short_input[3]{1, 3, 2};
+  int long_output[5]{9, 9, 9, 9, 9};
+  output_end = std::partial_sort_copy(short_input, short_input + 3, long_output,
+                                      long_output + 5, greater_value);
+  if (output_end != long_output + 3 || long_output[0] != 3 ||
+      long_output[1] != 2 || long_output[2] != 1 || long_output[3] != 9)
+    return 9;
+  calls = 0;
+  if (std::partial_sort_copy(input, input + 10, output, output,
+                             greater_value) != output ||
+      calls != 0)
+    return 10;
+
+  int selected[12]{7, 2, 5, 2, 9, 1, 5, 0, 8, 5, 3, 4};
+  std::nth_element(selected, selected + 5, selected + 12, greater_value);
+  if (selected[5] != 5)
+    return 11;
+  for (int i = 0; i != 5; ++i)
+    if (selected[i] < selected[5])
+      return 12;
+  for (int i = 6; i != 12; ++i)
+    if (selected[i] > selected[5])
+      return 13;
+  int equal[6]{4, 4, 4, 4, 4, 4};
+  std::nth_element(equal, equal + 3, equal + 6, greater_value);
+  if (equal[3] != 4)
+    return 14;
+  int no_change[3]{3, 2, 1};
+  calls = 0;
+  std::nth_element(no_change, no_change + 3, no_change + 3, greater_value);
+  if (no_change[0] != 3 || no_change[1] != 2 || no_change[2] != 1 ||
+      calls != 0)
+    return 15;
+
+  Rank ranks[5]{medium, low, high, medium, low};
+  calls = 0;
+  std::sort(ranks, ranks + 5, rank_greater);
+  if (ranks[0] != high || ranks[1] != medium || ranks[2] != medium ||
+      ranks[3] != low || ranks[4] != low || calls == 0)
+    return 16;
+  Rank selected_ranks[5]{medium, low, high, medium, low};
+  std::nth_element(selected_ranks, selected_ranks + 2, selected_ranks + 5,
+                   rank_greater);
+  if (selected_ranks[2] != medium)
+    return 17;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Dependencies =
+      Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 354u);
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+  }
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("algorithm-comparator-ordering" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmComparatorOrderingRequiresExactFunctions) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code = "TR0203";
+  };
+  const Rejection Cases[] = {
+      {"reference-parameter",
+       "bool p(const int&a,int b){return a>b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,2};std::sort(a,a+2,p);return 0;}"},
+      {"non-bool-result",
+       "int p(int a,int b){return a>b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,2};std::partial_sort(a,a+1,a+2,p);return 0;}"},
+      {"converted-parameter",
+       "bool p(long a,long b){return a>b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,2};std::nth_element(a,a+1,a+2,p);return 0;}"},
+      {"function-object",
+       "struct P{bool operator()(int a,int b)const{return a>b;}};\n"
+       "#include <algorithm>\nint main(){int a[2]{1,2},out[2]{};return "
+       "std::partial_sort_copy(a,a+2,out,out+2,P{})==out+2?0:1;}"},
+      {"heterogeneous-output",
+       "bool p(int a,long b){return a>b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,2};long out[2]{};return "
+       "std::partial_sort_copy(a,a+2,out,out+2,p)==out+2?0:1;}"},
+      {"record-elements", "struct R{int n;};bool p(R a,R b){return a.n>b.n;}\n"
+                          "#include <algorithm>\nint main(){R a[2]{{1},{2}};"
+                          "std::sort(a,a+2,p);return 0;}"},
+      {"variadic-comparator",
+       "bool p(int a,int b,...){return a>b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,2};std::sort(a,a+2,p);return 0;}",
+       "TR0201"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("algorithm-comparator-ordering-") +
+                                Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("algorithm-comparator-ordering-") +
+                                Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
     expectNoArtifacts(Output);
   }
 }

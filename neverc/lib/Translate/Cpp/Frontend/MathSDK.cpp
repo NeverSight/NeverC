@@ -2232,18 +2232,22 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return UtilityOperation::AlgorithmSortHeap;
   }
   if (Origin->Path == "__algorithm/sort.h" && Name == "sort" &&
-      Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
-      AlgorithmOrderedPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
+      Function->getNumParams() == Call->getNumArgs() &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       utilityAlgorithmWritableScalarPointer(
           Context, Function->getParamDecl(0)->getType()) &&
       Function->getReturnType()->isVoidType() &&
-      Same(Call->getType(), Function->getReturnType()))
+      Same(Call->getType(), Function->getReturnType()) &&
+      ((Call->getNumArgs() == 2 && AlgorithmOrderedPointerParameter(0)) ||
+       (Call->getNumArgs() == 3 && AlgorithmBinaryPredicateParameter(2, 0, 0))))
     return UtilityOperation::AlgorithmSort;
   if (Origin->Path == "__algorithm/partial_sort.h" && Name == "partial_sort" &&
-      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
-      AlgorithmOrderedPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
+      Function->getNumParams() == Call->getNumArgs() &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
       AlgorithmPointerParameter(2) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
@@ -2252,13 +2256,16 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       utilityAlgorithmWritableScalarPointer(
           Context, Function->getParamDecl(0)->getType()) &&
       Function->getReturnType()->isVoidType() &&
-      Same(Call->getType(), Function->getReturnType()))
+      Same(Call->getType(), Function->getReturnType()) &&
+      ((Call->getNumArgs() == 3 && AlgorithmOrderedPointerParameter(0)) ||
+       (Call->getNumArgs() == 4 && AlgorithmBinaryPredicateParameter(3, 0, 0))))
     return UtilityOperation::AlgorithmPartialSort;
   if (Origin->Path == "__algorithm/partial_sort_copy.h" &&
-      Name == "partial_sort_copy" && Call->getNumArgs() == 4 &&
-      Function->getNumParams() == 4 && Call->isPRValue() &&
-      AlgorithmOrderedPointerParameter(0) && AlgorithmPointerParameter(1) &&
-      AlgorithmOrderedPointerParameter(2) && AlgorithmPointerParameter(3) &&
+      Name == "partial_sort_copy" &&
+      (Call->getNumArgs() == 4 || Call->getNumArgs() == 5) &&
+      Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      AlgorithmPointerParameter(2) && AlgorithmPointerParameter(3) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getParamDecl(2)->getType(),
@@ -2268,11 +2275,15 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       utilityAlgorithmWritableScalarPointer(
           Context, Function->getParamDecl(2)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
-      Same(Call->getType(), Function->getReturnType()))
+      Same(Call->getType(), Function->getReturnType()) &&
+      ((Call->getNumArgs() == 4 && AlgorithmOrderedPointerParameter(0) &&
+        AlgorithmOrderedPointerParameter(2)) ||
+       (Call->getNumArgs() == 5 && AlgorithmBinaryPredicateParameter(4, 0, 2))))
     return UtilityOperation::AlgorithmPartialSortCopy;
   if (Origin->Path == "__algorithm/nth_element.h" && Name == "nth_element" &&
-      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
-      AlgorithmOrderedPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
+      Function->getNumParams() == Call->getNumArgs() &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
       AlgorithmPointerParameter(2) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
@@ -2281,7 +2292,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       utilityAlgorithmWritableScalarPointer(
           Context, Function->getParamDecl(0)->getType()) &&
       Function->getReturnType()->isVoidType() &&
-      Same(Call->getType(), Function->getReturnType()))
+      Same(Call->getType(), Function->getReturnType()) &&
+      ((Call->getNumArgs() == 3 && AlgorithmOrderedPointerParameter(0)) ||
+       (Call->getNumArgs() == 4 && AlgorithmBinaryPredicateParameter(3, 0, 0))))
     return UtilityOperation::AlgorithmNthElement;
   const bool PermutationMutation =
       (Origin->Path == "__algorithm/next_permutation.h" &&
