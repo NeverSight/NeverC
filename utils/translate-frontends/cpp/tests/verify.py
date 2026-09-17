@@ -586,6 +586,63 @@ extern "C" int initializer_list_operations() {
         check("v2-initializer-list-" + name, source, code,
               profile="cpp-core-v2", sdk=True)
 
+    optional_operations_source = """\
+#include <optional>
+extern "C" int optional_operations(int value) {
+  std::optional<int> first;
+  std::optional<int> second(value);
+  first = second;
+  second = std::nullopt;
+  first.emplace(value + 1);
+  return first.has_value() && !second && *first == value + 1 ? 0 : 1;
+}
+"""
+    optional_operations = check(
+        "v2-optional-operations", optional_operations_source,
+        profile="cpp-core-v2", sdk=True)
+    optional_dependencies = optional_operations["sdk_dependencies"]
+    assert len(optional_dependencies) == 136, optional_operations
+    assert any(dependency["root"] == "libcxx" and
+               dependency["path"] == "optional"
+               for dependency in optional_dependencies), optional_operations
+    assert not any(dependency["root"] == "platform"
+                   for dependency in optional_dependencies), optional_operations
+    optional_record = next(record for record in optional_operations["records"]
+                           if [field["type"] for field in record["fields"]]
+                           == ["int", "bool"])
+    assert optional_record["layout"]["field_offsets_bits"] == [0, 32], optional_record
+    assert optional_record["layout"]["size_bits"] == 64, optional_record
+    assert not [node for node in walk(optional_operations["functions"])
+                if node.get("op") in ("call", "mapped_call")], optional_operations
+    for target in sdk_targets:
+        target_result = check("v2-optional-operations-" + target,
+                              optional_operations_source,
+                              profile="cpp-core-v2", target=target, sdk=True)
+        assert target_result["sdk_dependencies"] == optional_dependencies, target_result
+        target_optional_record = next(
+            record for record in target_result["records"]
+            if [field["type"] for field in record["fields"]] == ["int", "bool"])
+        assert target_optional_record["layout"]["field_offsets_bits"] == [0, 32], target_optional_record
+        assert target_optional_record["layout"]["abi_align_bits"] == 32, target_optional_record
+        expected_optional_size = 96 if "windows-msvc" in target else 64
+        assert target_optional_record["layout"]["size_bits"] == expected_optional_size, target_optional_record
+        assert not [node for node in walk(target_result["functions"])
+                    if node.get("op") in ("call", "mapped_call")], target_result
+    for name, source, code in (
+        ("quoted", '#include "optional"\nint main(){return 0;}', "TR0201"),
+        ("volatile-element",
+         '#include <optional>\nint main(){std::optional<volatile int>v;return v.has_value();}',
+         "TR0203"),
+        ("record-element",
+         '#include <optional>\nstruct R{int n;};int main(){std::optional<R>v(R{3});return v->n;}',
+         "TR0203"),
+        ("throwing-value",
+         '#include <optional>\nint main(){std::optional<int>v;return v.value();}',
+         "TR0203"),
+    ):
+        check("v2-optional-" + name, source, code,
+              profile="cpp-core-v2", sdk=True)
+
     iterator_metadata_source = """\
 #include <iterator>
 using Value = std::iterator_traits<int*>::value_type;
@@ -704,8 +761,8 @@ extern "C" int algorithm_read_only(int *values, int *other) {
     check("v2-algorithm-heterogeneous-find",
           '#include <algorithm>\nint main(){int a[2]{1,2};short n=2;return std::find(a,a+2,n)==a+1?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
-    check("v2-algorithm-predicate-equal",
-          '#include <algorithm>\nbool same(int a,int b){return a==b;}int main(){int a[2]{1,2};return std::equal(a,a+2,a,&same)?0:1;}',
+    check("v2-algorithm-predicate-equal-reference",
+          '#include <algorithm>\nbool same(const int&a,const int&b){return a==b;}int main(){int a[2]{1,2};return std::equal(a,a+2,a,&same)?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
     algorithm_transfer_source = """\

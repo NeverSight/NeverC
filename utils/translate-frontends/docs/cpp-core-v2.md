@@ -231,6 +231,29 @@ Reference, incomplete, volatile, restricted-address-space and function element
 types remain outside this boundary. Function addresses, quoted includes, user
 shadows and forged declarations remain rejected.
 
+## Scalar optional values from `<optional>`
+
+Core v2 accepts the exact angled `<optional>` entry from the pinned embedded
+VFS. Its authenticated 136-file libc++/resource closure is identical on all
+eight supported targets and contains no platform headers. Each admitted
+`std::optional<T>` specialization must match libc++'s exact private base chain,
+anonymous value union, engagement flag and target layout. The translator exposes
+that representation as a synthetic `{remove_cv_t<T>, bool}` record while
+preserving the native size, alignment and field offsets.
+
+The current element boundary includes at-most-64-bit integral and enumeration
+types, `float`, `double`, object pointers and `nullptr_t`, with optional top-level
+`const`. Default and `nullopt` construction produce an empty value. Scalar,
+copy and move construction, copy and move assignment, assignment from
+`nullopt`, `has_value`, contextual `operator bool`, dereference, arrow, `reset`,
+single-value `emplace` and member `swap` lower directly to aggregate and scalar
+IR. Generated programs do not call or link libc++ for these operations.
+
+Volatile, `long double`, record and other non-scalar elements remain outside
+this increment. Throwing `value`, `value_or`, comparisons, free `swap` and
+`make_optional` are not admitted yet. Function addresses, quoted includes,
+user shadows and forged declarations remain rejected.
+
 ## Iterator metadata from `<iterator>`
 
 Core v2 admits the exact angled `<iterator>` entry and pointer

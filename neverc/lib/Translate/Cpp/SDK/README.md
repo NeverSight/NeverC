@@ -35,6 +35,11 @@ construction, assignment, member and free range access, and normal backing
 element destruction. Nested lists and complete admitted non-volatile object
 elements use the existing aggregate and lifetime machinery without a runtime
 libc++ link.
+The `<optional>` surface has a 136-file libc++/resource closure on every core-v2
+target. It authenticates libc++'s private base and union representation and
+directly lowers scalar optional construction, assignment, engagement queries,
+dereference, arrow, reset, single-value emplacement and member swap without a
+runtime libc++ link.
 The `<iterator>` surface has a 171-file libc++/resource closure on every core-v2
 target. It exposes pointer `iterator_traits` metadata and directly lowered
 pointer, array-range and raw-pointer reverse-iterator operations while retaining

@@ -932,12 +932,28 @@ class FunctionLowering {
           A.S, A.Sources, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(),
           A.Context);
     };
+    auto OptionalFor = [&](QualType Type) {
+      return approvedUtilityOptionalRecord(
+          A.S, A.Sources, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(),
+          A.Context);
+    };
     auto MemberObject = [&]() -> const Expr * {
       if (const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call))
         return Operator->getNumArgs() ? Operator->getArg(0) : nullptr;
       if (const auto *Member = dyn_cast<CXXMemberCallExpr>(Call))
         return Member->getImplicitObjectArgument();
       return nullptr;
+    };
+    auto OptionalObject = [&]() -> const Expr * {
+      const Expr *Object = MemberObject();
+      while (const auto *Cast = dyn_cast_or_null<ImplicitCastExpr>(Object)) {
+        if (Cast->getCastKind() != CK_NoOp &&
+            Cast->getCastKind() != CK_DerivedToBase &&
+            Cast->getCastKind() != CK_UncheckedDerivedToBase)
+          break;
+        Object = Cast->getSubExpr();
+      }
+      return Object;
     };
     auto ArrayElement = [&](Expression Base, const UtilityArrayRecord &Array,
                             Expression Position, QualType ResultType,
@@ -4589,6 +4605,62 @@ class FunctionLowering {
                                  type(Reverse->IteratorType, L), L),
                           *Reverse);
     }
+    case UtilityOperation::OptionalHasValue:
+    case UtilityOperation::OptionalDereference:
+    case UtilityOperation::OptionalArrow:
+    case UtilityOperation::OptionalReset:
+    case UtilityOperation::OptionalEmplace:
+    case UtilityOperation::OptionalMemberSwap: {
+      const auto *Object = OptionalObject();
+      auto Optional = Object ? OptionalFor(Object->getType())
+                             : std::optional<UtilityOptionalRecord>();
+      if (!Object || !Optional)
+        reject(L, "utility optional operation",
+               "The selected scalar std::optional layout is unavailable.");
+      if (Operation == UtilityOperation::OptionalMemberSwap) {
+        const auto *RightSource =
+            Call->getNumArgs() ? Call->getArg(0) : nullptr;
+        if (!RightSource || !OptionalFor(RightSource->getType()))
+          reject(L, "utility optional swap",
+                 "The second scalar std::optional layout is unavailable.");
+        auto LeftAddress =
+            snapshot(address(lvalue(Object), Object->getType(), L), L);
+        auto RightAddress = snapshot(
+            address(lvalue(RightSource), RightSource->getType(), L), L);
+        auto OldLeft = snapshot(dereference(json::Object(LeftAddress), L), L);
+        auto OldRight = snapshot(dereference(json::Object(RightAddress), L), L);
+        assign(dereference(std::move(LeftAddress), L), std::move(OldRight), L);
+        assign(dereference(std::move(RightAddress), L), std::move(OldLeft), L);
+        return {};
+      }
+      auto ObjectAddress =
+          snapshot(address(lvalue(Object), Object->getType(), L), L);
+      auto Stored = dereference(json::Object(ObjectAddress), L);
+      auto Value = fieldStorage(json::Object(Stored), Optional->Value, L);
+      auto Engaged = fieldStorage(std::move(Stored), Optional->Engaged, L);
+      if (Operation == UtilityOperation::OptionalHasValue)
+        return Engaged;
+      if (Operation == UtilityOperation::OptionalDereference)
+        return Value;
+      if (Operation == UtilityOperation::OptionalArrow)
+        return snapshot(
+            cast(address(std::move(Value), Optional->Value->getType(), L),
+                 type(Call->getType(), L), L),
+            L);
+      if (Operation == UtilityOperation::OptionalReset) {
+        assign(std::move(Engaged), boolean(false, L), L);
+        return {};
+      }
+      if (Operation == UtilityOperation::OptionalEmplace) {
+        auto Argument = snapshot(expression(Call->getArg(0)), L);
+        assign(std::move(Value), std::move(Argument), L);
+        assign(std::move(Engaged), boolean(true, L), L);
+        return fieldStorage(dereference(std::move(ObjectAddress), L),
+                            Optional->Value, L);
+      }
+      reject(L, "utility optional operation",
+             "Unknown approved scalar std::optional operation.");
+    }
     case UtilityOperation::InitializerListSize:
     case UtilityOperation::InitializerListEmpty:
     case UtilityOperation::InitializerListBegin:
@@ -4955,6 +5027,39 @@ class FunctionLowering {
         auto Left = dereference(std::move(LeftAddress), L);
         assign(Left, dereference(std::move(RightAddress), L), L);
         return Left;
+      }
+      if (auto Assignment = approvedUtilityOptionalAssignment(
+              A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call), A.Context)) {
+        if (Destination)
+          reject(L, "utility optional assignment",
+                 "std::optional assignment cannot initialize a record "
+                 "result.");
+        auto LeftAddress = snapshot(
+            address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
+        auto Left = dereference(json::Object(LeftAddress), L);
+        switch (*Assignment) {
+        case UtilityOptionalAssignment::CopyOrMove: {
+          auto RightAddress = snapshot(
+              address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L),
+              L);
+          assign(Left, dereference(std::move(RightAddress), L), L);
+          return Left;
+        }
+        case UtilityOptionalAssignment::Empty: {
+          auto Optional = approvedUtilityOptionalRecord(
+              A.S, A.Sources, Call->getArg(0)->getType()->getAsCXXRecordDecl(),
+              A.Context);
+          if (!Optional)
+            reject(L, "utility optional assignment",
+                   "The destination scalar std::optional layout is "
+                   "unavailable.");
+          assign(fieldStorage(json::Object(Left), Optional->Engaged, L),
+                 boolean(false, L), L);
+          return Left;
+        }
+        }
+        reject(L, "utility optional assignment",
+               "Unknown approved std::optional assignment.");
       }
       if (auto Assignment = approvedUtilityReverseIteratorAssignment(
               A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call), A.Context)) {
@@ -6209,6 +6314,35 @@ class FunctionLowering {
       }
       reject(L, "initializer list construction",
              "Unknown approved std::initializer_list construction.");
+    }
+    if (auto Kind =
+            approvedUtilityOptionalConstruction(A.S, A.Sources, C, A.Context)) {
+      auto Optional = approvedUtilityOptionalRecord(
+          A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context);
+      if (!Optional)
+        reject(L, "utility optional construction",
+               "The selected scalar std::optional layout is unavailable.");
+      auto Value = [&] {
+        return fieldStorage(json::Object(Place), Optional->Value, L);
+      };
+      auto Engaged = [&] {
+        return fieldStorage(json::Object(Place), Optional->Engaged, L);
+      };
+      switch (*Kind) {
+      case UtilityOptionalConstruction::Empty:
+        initializeZero(Value(), Optional->Value->getType(), L);
+        initializeZero(Engaged(), Optional->Engaged->getType(), L);
+        return;
+      case UtilityOptionalConstruction::CopyOrMove:
+        assign(std::move(Place), expression(C->getArg(0)), L);
+        return;
+      case UtilityOptionalConstruction::Value:
+        initialize(Value(), C->getArg(0), L);
+        assign(Engaged(), boolean(true, L), L);
+        return;
+      }
+      reject(L, "utility optional construction",
+             "Unknown approved scalar std::optional construction.");
     }
     if (auto Kind = approvedUtilityReverseIteratorConstruction(A.S, A.Sources,
                                                                C, A.Context)) {

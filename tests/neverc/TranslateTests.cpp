@@ -23607,6 +23607,42 @@ int main() { return 0; }
   expectNoArtifacts(QuotedOutput);
 }
 
+TEST_F(TranslateTest, CoreV2OptionalHeaderUsesPlatformFreeClosure) {
+  const auto Source = tmpFile("optional-header.cpp");
+  const auto Output = tmpFile("optional-header.nc");
+  writeFile(Source, R"cpp(
+#include <optional>
+using Value = std::optional<int>::value_type;
+static_assert(sizeof(Value) == sizeof(int));
+static_assert(sizeof(std::optional<bool>) == 2);
+static_assert(sizeof(std::optional<int>) == 2 * sizeof(int));
+static_assert(sizeof(std::optional<int *>) == 2 * sizeof(void *));
+int main() { return 0; }
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *SDK = Manifest->getAsObject()->getObject("sdk");
+  ASSERT_NE(SDK, nullptr);
+  const auto *Dependencies = SDK->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 136u);
+  bool FoundOptional = false;
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+    FoundOptional |= Dependency->getString("root") == "libcxx" &&
+                     Dependency->getString("path") == "optional";
+  }
+  EXPECT_TRUE(FoundOptional);
+}
+
 TEST_F(TranslateTest, CoreV2IteratorHeaderUsesPlatformFreeClosure) {
   const auto Source = tmpFile("iterator-metadata.cpp");
   const auto Output = tmpFile("iterator-metadata.nc");
@@ -23768,8 +23804,8 @@ TEST_F(TranslateTest, CoreV2AlgorithmReadOnlyRequiresPinnedPointerForms) {
       {"heterogeneous-find",
        "#include <algorithm>\nint main(){int a[2]{1,2};short n=2;"
        "return std::find(a,a+2,n)==a+1?0:1;}"},
-      {"predicate-equal",
-       "#include <algorithm>\nbool same(int a,int b){return a==b;}"
+      {"predicate-equal-reference",
+       "#include <algorithm>\nbool same(const int&a,const int&b){return a==b;}"
        "int main(){int a[2]{1,2};return std::equal(a,a+2,a,&same)?0:1;}"},
       {"overloaded-enum-equality",
        "#include <algorithm>\nenum E{one,two};"
@@ -27921,6 +27957,119 @@ TEST_F(TranslateTest, CoreV2InitializerListRequiresPinnedOperations) {
         tmpFile(std::string("initializer-list-") + Case.Name + ".cpp");
     const auto Output =
         tmpFile(std::string("initializer-list-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ScalarOptionalOperationsRunAtBothOptimizations) {
+  const auto Source = tmpFile("optional-operations.cpp");
+  const auto Output = tmpFile("optional-operations.nc");
+  writeFile(Source, R"cpp(
+#include <optional>
+
+int effects;
+int next_value(int value) {
+  ++effects;
+  return value;
+}
+enum Rank : unsigned char { low = 2, high = 7 };
+
+int main() {
+  effects = 0;
+  std::optional<int> empty;
+  std::optional<int> absent(std::nullopt);
+  std::optional<int> value(next_value(3));
+  if (effects != 1 || empty.has_value() || absent || !value || *value != 3)
+    return 1;
+
+  std::optional<int> copied(value);
+  std::optional<int> moved(static_cast<std::optional<int> &&>(copied));
+  empty = value;
+  absent = next_value(4);
+  value = std::nullopt;
+  if (effects != 2 || !empty || *empty != 3 || !absent || *absent != 4 ||
+      value)
+    return 2;
+
+  absent.reset();
+  int &placed = empty.emplace(next_value(7));
+  if (effects != 3 || &placed != &*empty || placed != 7 || absent)
+    return 3;
+
+  int lvalue = 5;
+  const int const_lvalue = 6;
+  std::optional<int> from_lvalue(lvalue);
+  std::optional<int> from_const_lvalue(const_lvalue);
+  int &lvalue_placed = from_lvalue.emplace(const_lvalue);
+  if (&lvalue_placed != &*from_lvalue || *from_lvalue != 6 ||
+      *from_const_lvalue != 6)
+    return 4;
+
+  std::optional<int> other(9);
+  empty.swap(other);
+  int *pointer = empty.operator->();
+  if (*pointer != 9 || *other != 7)
+    return 5;
+
+  std::optional<Rank> rank(high);
+  int objects[2]{11, 12};
+  std::optional<int *> object_pointer(objects + 1);
+  std::optional<double> real(2.5);
+  std::optional<const int> constant(13);
+  if (!rank || *rank != high || !object_pointer || **object_pointer != 12 ||
+      !real || *real != 2.5 || !constant || *constant != 13)
+    return 6;
+
+  moved = static_cast<std::optional<int> &&>(other);
+  absent = std::nullopt;
+  return moved && *moved == 7 && !absent ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("optional-operations" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Optimization << "\n" << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OptionalRequiresPinnedScalarOperations) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Rejection Cases[] = {
+      {"quoted", "#include \"optional\"\nint main(){return 0;}", "TR0201"},
+      {"volatile-element",
+       "#include <optional>\nint main(){std::optional<volatile int>v;"
+       "return v.has_value();}",
+       "TR0203"},
+      {"unsupported-element",
+       "#include <optional>\nint main(){std::optional<long double>v(1.0L);"
+       "return v.has_value();}",
+       "TR0201"},
+      {"record-element",
+       "#include <optional>\nstruct R{int n;};int main(){"
+       "std::optional<R>v(R{3});return v->n;}",
+       "TR0203"},
+      {"throwing-value",
+       "#include <optional>\nint main(){std::optional<int>v;return v.value();}",
+       "TR0203"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("optional-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("optional-") + Case.Name + ".nc");
     writeFile(Source, Case.Source);
     expectCode(
         translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),

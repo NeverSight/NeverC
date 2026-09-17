@@ -408,6 +408,12 @@ enum class UtilityOperation {
   InitializerListEnd,
   InitializerListRBegin,
   InitializerListREnd,
+  OptionalHasValue,
+  OptionalDereference,
+  OptionalArrow,
+  OptionalReset,
+  OptionalEmplace,
+  OptionalMemberSwap,
 };
 struct UtilityPairRecord {
   const clang::CXXRecordDecl *Record;
@@ -497,6 +503,46 @@ approvedUtilityInitializerListExpression(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXStdInitializerListExpr *Expression,
     const clang::ASTContext &Context);
+struct UtilityOptionalRecord {
+  const clang::CXXRecordDecl *Record;
+  const clang::CXXRecordDecl *StorageBase, *DestructBase;
+  const clang::FieldDecl *Value, *Engaged;
+  clang::QualType ElementType;
+};
+bool approvedUtilityOptionalMetadata(const State &S,
+                                     const clang::SourceManager &SM,
+                                     const clang::CXXRecordDecl *Record);
+std::optional<UtilityOptionalRecord>
+approvedUtilityOptionalRecord(const State &S, const clang::SourceManager &SM,
+                              const clang::CXXRecordDecl *Record,
+                              const clang::ASTContext &Context);
+enum class UtilityOptionalConstruction {
+  Empty,
+  CopyOrMove,
+  Value,
+};
+std::optional<UtilityOptionalConstruction>
+approvedUtilityOptionalConstruction(const State &S,
+                                    const clang::SourceManager &SM,
+                                    const clang::CXXConstructExpr *Construction,
+                                    const clang::ASTContext &Context);
+enum class UtilityOptionalAssignment {
+  Empty,
+  CopyOrMove,
+};
+std::optional<UtilityOptionalAssignment>
+approvedUtilityOptionalAssignment(const State &S,
+                                  const clang::SourceManager &SM,
+                                  const clang::CXXOperatorCallExpr *Assignment,
+                                  const clang::ASTContext &Context);
+bool approvedUtilityNulloptExpression(const State &S,
+                                      const clang::SourceManager &SM,
+                                      const clang::Expr *Expression,
+                                      const clang::ASTContext &Context);
+bool approvedUtilityOptionalBaseCast(const State &S,
+                                     const clang::SourceManager &SM,
+                                     const clang::CastExpr *Cast,
+                                     const clang::ASTContext &Context);
 struct UtilityReverseIteratorRecord {
   const clang::CXXRecordDecl *Record;
   const clang::FieldDecl *Legacy, *Current;
@@ -692,6 +738,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredUtilityPairs;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityArrays;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityInitializerLists;
+  std::set<const clang::CXXRecordDecl *> RequiredUtilityOptionals;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityReverseIterators;
   std::map<const clang::CXXRecordDecl *, CheckedEmptyBase> EmptyBases;
   std::map<const clang::VarDecl *, const clang::CXXForRangeStmt *> RangeDeclarations;
@@ -717,6 +764,9 @@ public:
   bool requireUtilityInitializerList(const clang::CXXRecordDecl *Record,
                                      clang::SourceLocation Location,
                                      unsigned Depth = 0);
+  bool requireUtilityOptional(const clang::CXXRecordDecl *Record,
+                              clang::SourceLocation Location,
+                              unsigned Depth = 0);
   bool requireUtilityReverseIterator(const clang::CXXRecordDecl *Record,
                                      clang::SourceLocation Location,
                                      unsigned Depth = 0);

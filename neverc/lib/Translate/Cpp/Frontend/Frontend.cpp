@@ -3681,6 +3681,9 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
       } else if (approvedUtilityInitializerListMetadata(S, Sources, D) &&
                  !requireUtilityInitializerList(D, L, Depth + 1)) {
         return {};
+      } else if (approvedUtilityOptionalMetadata(S, Sources, D) &&
+                 !requireUtilityOptional(D, L, Depth + 1)) {
+        return {};
       } else if (approvedUtilityReverseIteratorMetadata(S, Sources, D) &&
                  !requireUtilityReverseIterator(D, L, Depth + 1)) {
         return {};
@@ -3771,6 +3774,31 @@ bool Adapter::requireUtilityInitializerList(const CXXRecordDecl *Record,
   return true;
 }
 
+bool Adapter::requireUtilityOptional(const CXXRecordDecl *Record,
+                                     SourceLocation Location, unsigned Depth) {
+  if (Depth > 64) {
+    reject(Location, "utility optional type",
+           "Nested std::optional element types exceed the protocol limit.");
+    return false;
+  }
+  auto Optional = approvedUtilityOptionalRecord(S, Sources, Record, Context);
+  if (!Optional) {
+    reject(Location, "standard library record",
+           "Only the pinned scalar std::optional<T> record layout is "
+           "admitted.",
+           "TR0203");
+    return false;
+  }
+  const auto *Canonical = Optional->Record->getCanonicalDecl();
+  if (!RequiredUtilityOptionals.insert(Canonical).second)
+    return true;
+  for (const auto *Field : {Optional->Value, Optional->Engaged})
+    if (type(Field->getType(), Location, false, Depth + 1).empty())
+      return false;
+  Records.push_back(const_cast<CXXRecordDecl *>(Optional->Record));
+  return true;
+}
+
 bool Adapter::requireUtilityReverseIterator(const CXXRecordDecl *Record,
                                             SourceLocation Location,
                                             unsigned Depth) {
@@ -3835,10 +3863,15 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
     return json::Object{{"kind", "null"}, {"type", Kind}, {"loc", loc(L)}};
   if (const auto *R = T->getAsCXXRecordDecl()) {
     json::Array Args;
-    if (const auto *Base = emptyBase(R))
-      Args.push_back(zero(Context.getRecordType(Base->Base), L));
-    for (const auto *F : R->getDefinition()->fields())
-      Args.push_back(zero(F->getType(), L));
+    if (auto Optional = approvedUtilityOptionalRecord(S, Sources, R, Context)) {
+      Args.push_back(zero(Optional->Value->getType(), L));
+      Args.push_back(zero(Optional->Engaged->getType(), L));
+    } else {
+      if (const auto *Base = emptyBase(R))
+        Args.push_back(zero(Context.getRecordType(Base->Base), L));
+      for (const auto *F : R->getDefinition()->fields())
+        Args.push_back(zero(F->getType(), L));
+    }
     return json::Object{{"kind", "aggregate"},
                         {"type", Kind},
                         {"args", std::move(Args)},
@@ -6585,6 +6618,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
          approvedUtilityArrayConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityInitializerListConstruction(A.S, A.Sources, C,
                                                     A.Context) ||
+         approvedUtilityOptionalConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityReverseIteratorConstruction(A.S, A.Sources, C,
                                                     A.Context))) {
       for (unsigned I = 0; I < C->getNumArgs() &&
@@ -8621,16 +8655,28 @@ public:
         Selected = Allocation->getOperatorNew();
       const auto *Construction =
           dyn_cast_or_null<CXXConstructExpr>(Source.Expression);
+      const auto *UtilityCall = dyn_cast_or_null<CallExpr>(Source.Expression);
+      const bool UtilityOptionalMetadata =
+          Construction &&
+          approvedUtilityOptionalMetadata(
+              A.S, A.Sources, Construction->getType()->getAsCXXRecordDecl());
       const bool UtilityConstruction =
-          Construction && (approvedUtilityPairConstruction(
-                               A.S, A.Sources, Construction, A.Context) ||
-                           approvedUtilityReverseIteratorConstruction(
-                               A.S, A.Sources, Construction, A.Context));
+          Construction &&
+          (approvedUtilityPairConstruction(A.S, A.Sources, Construction,
+                                           A.Context) ||
+           UtilityOptionalMetadata ||
+           approvedUtilityOptionalConstruction(A.S, A.Sources, Construction,
+                                               A.Context) ||
+           approvedUtilityReverseIteratorConstruction(A.S, A.Sources,
+                                                      Construction, A.Context));
+      const bool ApprovedUtilityCall =
+          UtilityCall &&
+          approvedUtilityOperation(A.S, A.Sources, UtilityCall, A.Context);
       if (!Selected || Selected != Source.Function ||
           !(isa<CXXNewExpr>(Source.Expression)
                 ? concreteFunctionTemplate(Selected)
                 : concreteMemberFunctionTemplate(Selected)) ||
-          (!UtilityConstruction && !owned(Selected)) ||
+          (!UtilityConstruction && !ApprovedUtilityCall && !owned(Selected)) ||
           !A.S.owns(A.Sources, Source.Location)) {
         A.reject(Source.Location, "selected member template source", "A retained record requires its actual direct source-owned template call.");
         continue;
@@ -9934,8 +9980,10 @@ public:
       return RecursiveASTVisitor<Allowlist>::TraverseMemberExpr(Reference);
     // The selected source check owns explicit arguments here as well. Keep
     // the receiver traversal: its type, source and effects still matter.
-    if (const auto *Function = dyn_cast<FunctionDecl>(Reference->getMemberDecl());
-        concreteMemberFunctionTemplate(Function))
+    if (const auto *Function =
+            dyn_cast<FunctionDecl>(Reference->getMemberDecl());
+        concreteMemberFunctionTemplate(Function) &&
+        !ApprovedUtilityCallees.count(Reference))
       checkFunctionTemplateUse(Function, Reference->getMemberLoc(),
                                Reference->template_arguments(), {},
                                directTemplateCallLocation(Reference));
@@ -12626,6 +12674,10 @@ public:
                   A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call),
                   A.Context)
                   .has_value() ||
+              approvedUtilityOptionalAssignment(
+                  A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call),
+                  A.Context)
+                  .has_value() ||
               approvedUtilityReverseIteratorAssignment(
                   A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call),
                   A.Context)
@@ -12721,7 +12773,8 @@ public:
           case CK_DerivedToBase:
           case CK_UncheckedDerivedToBase:
           case CK_BaseToDerived:
-            A.emptyBaseCast(C);
+            if (!approvedUtilityOptionalBaseCast(A.S, A.Sources, C, A.Context))
+              A.emptyBaseCast(C);
             break;
           case CK_BitCast:
             if (C->getType()->isPointerType() &&
@@ -12776,7 +12829,13 @@ public:
           if (const auto *Function = dyn_cast_or_null<FunctionDecl>(Target))
             A.functionAddressTarget(Function, E->getExprLoc());
         } else if (!NewArrayInitializers.count(E) &&
-                   !(A.S.coreV2() && isa<CXXNullPtrLiteralExpr>(E->IgnoreParens())) &&
+                   !(A.S.coreV2() &&
+                     isa<CXXNullPtrLiteralExpr>(E->IgnoreParens())) &&
+                   !(A.S.coreV2() && approvedUtilityNulloptExpression(
+                                         A.S, A.Sources, E, A.Context)) &&
+                   !(A.S.coreV2() &&
+                     approvedUtilityOptionalBaseCast(
+                         A.S, A.Sources, dyn_cast<CastExpr>(E), A.Context)) &&
                    !E->getType()->isFunctionType() &&
                    (A.S.coreV2() || !FunctionDecay)) {
           A.type(E->getType(), E->getExprLoc(), true);
@@ -13020,6 +13079,10 @@ public:
           A.S.coreV2() && approvedUtilityInitializerListAssignment(
                               A.S, A.Sources, Operator, A.Context)
                               .has_value();
+      const bool UtilityOptionalAssignment =
+          A.S.coreV2() &&
+          approvedUtilityOptionalAssignment(A.S, A.Sources, Operator, A.Context)
+              .has_value();
       const bool UtilityReverseIteratorAssignment =
           A.S.coreV2() && approvedUtilityReverseIteratorAssignment(
                               A.S, A.Sources, Operator, A.Context)
@@ -13038,7 +13101,8 @@ public:
             F->getOverloadedOperator() == Operator->getOperator();
         if (!TrivialAssignment && !UtilityPairAssignment &&
             !UtilityArrayAssignment && !UtilityInitializerListAssignment &&
-            !UtilityReverseIteratorAssignment && !Ordinary &&
+            !UtilityOptionalAssignment && !UtilityReverseIteratorAssignment &&
+            !Ordinary &&
             !(supportedAssignment(Method) &&
               Operator->getOperator() == OO_Equal &&
               Operator->getNumArgs() == 2))
@@ -13102,6 +13166,8 @@ public:
         return true;
       if (A.S.coreV2() && UtilityInitializerListAssignment)
         return true;
+      if (A.S.coreV2() && UtilityOptionalAssignment)
+        return true;
       if (A.S.coreV2() && UtilityReverseIteratorAssignment)
         return true;
       if (A.S.coreV2() && F &&
@@ -13152,19 +13218,27 @@ public:
       if (A.S.coreV2() && C->getConstructor() &&
           approvedStandardSDKDeclaration(A.S, A.Sources,
                                          C->getConstructor())) {
-        if (approvedUtilityPairConstruction(A.S, A.Sources, C, A.Context) ||
-            approvedUtilityArrayConstruction(A.S, A.Sources, C, A.Context) ||
-            approvedUtilityInitializerListConstruction(A.S, A.Sources, C,
+        if (approvedUtilityNulloptExpression(A.S, A.Sources, C, A.Context)) {
+          // std::nullopt_t is an erased tag consumed only by authenticated
+          // optional construction and assignment.
+        } else if (approvedUtilityPairConstruction(A.S, A.Sources, C,
+                                                   A.Context) ||
+                   approvedUtilityArrayConstruction(A.S, A.Sources, C,
+                                                    A.Context) ||
+                   approvedUtilityInitializerListConstruction(A.S, A.Sources, C,
+                                                              A.Context) ||
+                   approvedUtilityOptionalConstruction(A.S, A.Sources, C,
                                                        A.Context) ||
-            approvedUtilityReverseIteratorConstruction(A.S, A.Sources, C,
-                                                       A.Context))
+                   approvedUtilityReverseIteratorConstruction(A.S, A.Sources, C,
+                                                              A.Context))
           checkConstruction(C, L);
         else
           A.reject(L, "standard library runtime object",
                    "Approved standard headers provide only their documented "
                    "compile-time aliases, constants, folded queries and "
-                   "scalar std::pair, std::array, std::initializer_list and "
-                   "pointer std::reverse_iterator construction.",
+                   "scalar std::pair, std::array, std::initializer_list, "
+                   "std::optional and pointer std::reverse_iterator "
+                   "construction.",
                    "TR0203");
       }
       else
@@ -13325,7 +13399,10 @@ static void orderCoreV2Records(Adapter &A) {
     const bool UtilityReverse =
         approvedUtilityReverseIteratorRecord(A.S, A.Sources, R, A.Context)
             .has_value();
-    if (const auto *Base = UtilityReverse ? nullptr : A.emptyBase(R)) {
+    const auto UtilityOptional =
+        approvedUtilityOptionalRecord(A.S, A.Sources, R, A.Context);
+    if (const auto *Base =
+            UtilityReverse || UtilityOptional ? nullptr : A.emptyBase(R)) {
       auto Found = Indices.find(Base->Base);
       if (Found == Indices.end()) {
         A.reject(R->getLocation(), "base dependency", "An empty base requires its checked complete record definition.");
@@ -13338,7 +13415,15 @@ static void orderCoreV2Records(Adapter &A) {
       }
       Heights[I] = Heights[Found->second] + 1;
     }
-    for (const auto *F : R->fields()) {
+    std::vector<const FieldDecl *> DependencyFields;
+    if (UtilityOptional) {
+      DependencyFields.push_back(UtilityOptional->Value);
+      DependencyFields.push_back(UtilityOptional->Engaged);
+    } else {
+      for (const auto *Field : R->fields())
+        DependencyFields.push_back(Field);
+    }
+    for (const auto *F : DependencyFields) {
       // A pointer to a record needs only its forward declaration, but an array
       // element needs a complete definition even inside a callback signature.
       auto RequireType = [&](auto &&Walk, QualType T, bool Complete,
@@ -13445,15 +13530,26 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
         S.coreV2() &&
         approvedUtilityReverseIteratorRecord(S, Sources, R, Context)
             .has_value();
-    const auto *Base = S.coreV2() && !UtilityReverse ? emptyBase(R) : nullptr;
+    const auto UtilityOptional =
+        S.coreV2() ? approvedUtilityOptionalRecord(S, Sources, R, Context)
+                   : std::optional<UtilityOptionalRecord>();
+    const auto *Base = S.coreV2() && !UtilityReverse && !UtilityOptional
+                           ? emptyBase(R)
+                           : nullptr;
     if (Base)
       BaseConstructorRecords.insert(Base->Base);
     if (Base)
       Fields.push_back(json::Object{{"name", Base->Member},
           {"type", type(Context.getRecordType(Base->Base), R->getLocation())}});
-    for (const auto *F : R->fields())
-      Fields.push_back(json::Object{
-          {"name", name(F)}, {"type", type(F->getType(), F->getLocation())}});
+    if (UtilityOptional) {
+      for (const auto *F : {UtilityOptional->Value, UtilityOptional->Engaged})
+        Fields.push_back(json::Object{
+            {"name", name(F)}, {"type", type(F->getType(), F->getLocation())}});
+    } else {
+      for (const auto *F : R->fields())
+        Fields.push_back(json::Object{
+            {"name", name(F)}, {"type", type(F->getType(), F->getLocation())}});
+    }
     json::Object Record{{"id", name(R)}, {"fields", std::move(Fields)},
                         {"loc", loc(R->getLocation())}};
     if (S.coreV2()) {
@@ -13461,8 +13557,15 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
       json::Array Offsets;
       if (Base)
         Offsets.push_back(uint64_t(Layout.getBaseClassOffset(Base->Base).getQuantity()) * 8);
-      for (unsigned I = 0; I < Layout.getFieldCount(); ++I)
-        Offsets.push_back(Layout.getFieldOffset(I));
+      if (UtilityOptional) {
+        Offsets.push_back(uint64_t(0));
+        const auto &StorageLayout =
+            Context.getASTRecordLayout(UtilityOptional->DestructBase);
+        Offsets.push_back(StorageLayout.getFieldOffset(1));
+      } else {
+        for (unsigned I = 0; I < Layout.getFieldCount(); ++I)
+          Offsets.push_back(Layout.getFieldOffset(I));
+      }
       Record["layout"] = json::Object{
           {"size_bits", uint64_t(Layout.getSize().getQuantity()) * 8},
           {"abi_align_bits", uint64_t(Layout.getAlignment().getQuantity()) * 8},
@@ -13741,13 +13844,14 @@ public:
            (Name != "type_traits" && Name != "cstdint" && Name != "limits" &&
             Name != "cstddef" && Name != "utility" && Name != "array" &&
             Name != "iterator" && Name != "algorithm" &&
-            Name != "initializer_list"))) {
-        reject(L, "include",
-               "Only exact #include <type_traits>, #include <cstdint> and "
-               "#include <limits>, #include <cstddef>, #include <utility> and "
-               "#include <array>, #include <iterator>, #include <algorithm> "
-               "and #include <initializer_list> entries are admitted in "
-               "cpp-core-v2.");
+            Name != "initializer_list" && Name != "optional"))) {
+        reject(
+            L, "include",
+            "Only exact #include <type_traits>, #include <cstdint> and "
+            "#include <limits>, #include <cstddef>, #include <utility> and "
+            "#include <array>, #include <iterator>, #include <algorithm> "
+            "and #include <initializer_list> and #include <optional> entries "
+            "are admitted in cpp-core-v2.");
         return;
       }
       if (!S.owns(SM, L) && !S.sdkFile(SM, L))

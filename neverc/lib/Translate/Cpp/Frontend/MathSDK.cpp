@@ -4,6 +4,7 @@
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/RecordLayout.h"
 #include "clang/Basic/SourceManager.h"
+#include "clang/Basic/TargetInfo.h"
 #include "clang/Index/USRGeneration.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringExtras.h"
@@ -937,6 +938,444 @@ approvedUtilityInitializerListExpression(
   return UtilityInitializerListExpression{*List, Backing, Size};
 }
 
+bool approvedUtilityOptionalMetadata(const State &S, const SourceManager &SM,
+                                     const CXXRecordDecl *Record) {
+  const auto *Specialization =
+      dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+  const auto *Template =
+      Specialization ? Specialization->getSpecializedTemplate() : nullptr;
+  const auto *CanonicalTemplate =
+      Template ? Template->getCanonicalDecl() : nullptr;
+  if (!Specialization || !Template || !CanonicalTemplate ||
+      Specialization->isUnion() || Specialization->isDependentContext() ||
+      Specialization->getName() != "optional" ||
+      !approvedStandardSDKDeclaration(S, SM, Template) ||
+      !approvedStandardSDKDeclaration(S, SM, CanonicalTemplate) ||
+      !cstddefOrigin(S, SM, Template->getLocation(), "libcxx", "optional") ||
+      !cstddefOrigin(S, SM, CanonicalTemplate->getLocation(), "libcxx",
+                     "optional"))
+    return false;
+  const auto &Arguments = Specialization->getTemplateArgs();
+  return Arguments.size() == 1 &&
+         Arguments.get(0).getKind() == TemplateArgument::Type;
+}
+
+static const CXXRecordDecl *definedRecord(QualType Type) {
+  const auto *Record = Type.isNull() ? nullptr : Type->getAsCXXRecordDecl();
+  return Record ? Record->getDefinition() : nullptr;
+}
+
+static bool optionalInternalRecord(const State &S, const SourceManager &SM,
+                                   const CXXRecordDecl *Record,
+                                   llvm::StringRef Name,
+                                   llvm::StringRef Path = "optional") {
+  return Record && Record->getName() == Name && !Record->isUnion() &&
+         !Record->isDependentContext() &&
+         approvedStandardSDKDeclaration(S, SM, Record) &&
+         cstddefOrigin(S, SM, Record->getLocation(), "libcxx", Path);
+}
+
+std::optional<UtilityOptionalRecord>
+approvedUtilityOptionalRecord(const State &S, const SourceManager &SM,
+                              const CXXRecordDecl *Record,
+                              const ASTContext &Context) {
+  const auto *Specialization =
+      dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+  Specialization = Specialization
+                       ? dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+                             Specialization->getDefinition())
+                       : nullptr;
+  if (!approvedUtilityOptionalMetadata(S, SM, Specialization) ||
+      !Specialization ||
+      Specialization->getSpecializationKind() != TSK_ImplicitInstantiation ||
+      Specialization->getNumBases() != 3 || Specialization->getNumVBases() ||
+      !Specialization->field_empty() || Specialization->isDynamicClass() ||
+      !Specialization->isStandardLayout() ||
+      !Specialization->hasTrivialCopyConstructor() ||
+      !Specialization->hasTrivialDestructor() ||
+      !approvedStandardSDKDeclaration(S, SM, Specialization) ||
+      !cstddefOrigin(S, SM, Specialization->getLocation(), "libcxx",
+                     "optional"))
+    return std::nullopt;
+
+  const auto Element = Specialization->getTemplateArgs().get(0).getAsType();
+  if (Element.isNull() || Element->isReferenceType() ||
+      !Element->isObjectType() || Element->isIncompleteType() ||
+      Element.isVolatileQualified() || Element.isRestrictQualified() ||
+      Element.getAddressSpace() != LangAS::Default ||
+      !utilityScalar(Context, Element))
+    return std::nullopt;
+
+  const auto &TopLayout = Context.getASTRecordLayout(Specialization);
+  const bool MicrosoftABI = Context.getTargetInfo().getCXXABI().isMicrosoft();
+  auto Bases = Specialization->bases();
+  auto Base = Bases.begin();
+  const auto *Main =
+      Base == Bases.end() ? nullptr : definedRecord(Base->getType());
+  const auto MainSize =
+      Main ? Context.getASTRecordLayout(Main).getSize() : CharUnits::Zero();
+  const bool MainBase = Base != Bases.end() && !Base->isVirtual() &&
+                        Base->getAccessSpecifier() == AS_private && Main &&
+                        TopLayout.getBaseClassOffset(Main).getQuantity() == 0;
+  if (Base != Bases.end())
+    ++Base;
+  const auto *CtorSFINAE =
+      Base == Bases.end() ? nullptr : definedRecord(Base->getType());
+  const bool CtorBase = Base != Bases.end() && !Base->isVirtual() &&
+                        Base->getAccessSpecifier() == AS_private &&
+                        CtorSFINAE &&
+                        TopLayout.getBaseClassOffset(CtorSFINAE) ==
+                            (MicrosoftABI ? MainSize : CharUnits::Zero());
+  if (Base != Bases.end())
+    ++Base;
+  const auto *AssignSFINAE =
+      Base == Bases.end() ? nullptr : definedRecord(Base->getType());
+  const bool AssignBase =
+      Base != Bases.end() && !Base->isVirtual() &&
+      Base->getAccessSpecifier() == AS_private && AssignSFINAE &&
+      TopLayout.getBaseClassOffset(AssignSFINAE) ==
+          (MicrosoftABI ? MainSize + CharUnits::One() : CharUnits::Zero());
+  if (Base != Bases.end())
+    ++Base;
+  auto BooleanArguments = [](const CXXRecordDecl *Value) {
+    const auto *Instantiation =
+        dyn_cast_or_null<ClassTemplateSpecializationDecl>(Value);
+    if (!Instantiation || Instantiation->getTemplateArgs().size() != 2)
+      return false;
+    for (const auto &Argument : Instantiation->getTemplateArgs().asArray())
+      if (Argument.getKind() != TemplateArgument::Integral ||
+          !Argument.getIntegralType()->isBooleanType())
+        return false;
+    return true;
+  };
+  if (Base != Bases.end() || !MainBase || !CtorBase || !AssignBase ||
+      !optionalInternalRecord(S, SM, Main, "__optional_move_assign_base") ||
+      !optionalInternalRecord(S, SM, CtorSFINAE, "__sfinae_ctor_base",
+                              "__tuple/sfinae_helpers.h") ||
+      !optionalInternalRecord(S, SM, AssignSFINAE, "__sfinae_assign_base",
+                              "__tuple/sfinae_helpers.h") ||
+      !BooleanArguments(CtorSFINAE) || !BooleanArguments(AssignSFINAE) ||
+      !CtorSFINAE->isEmpty() || !AssignSFINAE->isEmpty() ||
+      CtorSFINAE->getNumBases() || AssignSFINAE->getNumBases() ||
+      !CtorSFINAE->field_empty() || !AssignSFINAE->field_empty())
+    return std::nullopt;
+
+  const llvm::StringRef ChainNames[] = {
+      "__optional_move_assign_base", "__optional_copy_assign_base",
+      "__optional_move_base",        "__optional_copy_base",
+      "__optional_storage_base",     "__optional_destruct_base"};
+  const CXXRecordDecl *Chain[std::size(ChainNames)]{};
+  const auto *Current = Main;
+  for (unsigned I = 0; I < std::size(ChainNames); ++I) {
+    if (!optionalInternalRecord(S, SM, Current, ChainNames[I]) ||
+        Current->getNumVBases() || Current->isDynamicClass())
+      return std::nullopt;
+    const auto *Internal = dyn_cast<ClassTemplateSpecializationDecl>(Current);
+    if (!Internal || Internal->getTemplateArgs().size() == 0 ||
+        Internal->getTemplateArgs().get(0).getKind() !=
+            TemplateArgument::Type ||
+        !Context.hasSameType(Internal->getTemplateArgs().get(0).getAsType(),
+                             Element))
+      return std::nullopt;
+    for (unsigned J = 1; J < Internal->getTemplateArgs().size(); ++J) {
+      const auto &Argument = Internal->getTemplateArgs().get(J);
+      if (Argument.getKind() != TemplateArgument::Integral ||
+          !Argument.getIntegralType()->isBooleanType())
+        return std::nullopt;
+    }
+    Chain[I] = Current;
+    if (I + 1 == std::size(ChainNames)) {
+      if (Current->getNumBases())
+        return std::nullopt;
+      break;
+    }
+    if (Current->getNumBases() != 1 ||
+        Current->field_begin() != Current->field_end())
+      return std::nullopt;
+    const auto &Layout = Context.getASTRecordLayout(Current);
+    const auto &OnlyBase = *Current->bases_begin();
+    const auto *Next = definedRecord(OnlyBase.getType());
+    if (!Next || OnlyBase.isVirtual() ||
+        OnlyBase.getAccessSpecifier() != AS_public ||
+        Layout.getBaseClassOffset(Next).getQuantity() != 0)
+      return std::nullopt;
+    Current = Next;
+  }
+  const auto *Storage = Chain[4];
+  const auto *Destruct = Chain[5];
+
+  auto Fields = Destruct->fields();
+  auto It = Fields.begin();
+  const auto *Anonymous = It == Fields.end() ? nullptr : *It++;
+  const auto *Engaged = It == Fields.end() ? nullptr : *It++;
+  const auto *Union = Anonymous ? definedRecord(Anonymous->getType()) : nullptr;
+  if (!Anonymous || !Engaged || It != Fields.end() || !Union ||
+      !Union->isUnion() || !Anonymous->isAnonymousStructOrUnion() ||
+      Anonymous->getAccess() != AS_public || Anonymous->isBitField() ||
+      Anonymous->isMutable() || Engaged->getName() != "__engaged_" ||
+      Engaged->getAccess() != AS_public || Engaged->isBitField() ||
+      Engaged->isMutable() || !Engaged->getType()->isBooleanType() ||
+      !approvedStandardSDKDeclaration(S, SM, Anonymous) ||
+      !approvedStandardSDKDeclaration(S, SM, Engaged) ||
+      !approvedStandardSDKDeclaration(S, SM, Union) ||
+      !cstddefOrigin(S, SM, Anonymous->getLocation(), "libcxx", "optional") ||
+      !cstddefOrigin(S, SM, Engaged->getLocation(), "libcxx", "optional") ||
+      !cstddefOrigin(S, SM, Union->getLocation(), "libcxx", "optional"))
+    return std::nullopt;
+  auto UnionFields = Union->fields();
+  auto UnionIt = UnionFields.begin();
+  const auto *NullState = UnionIt == UnionFields.end() ? nullptr : *UnionIt++;
+  const auto *Value = UnionIt == UnionFields.end() ? nullptr : *UnionIt++;
+  const auto ValueType = Element.getUnqualifiedType();
+  if (!NullState || !Value || UnionIt != UnionFields.end() ||
+      NullState->getName() != "__null_state_" ||
+      (!NullState->getType()->isSpecificBuiltinType(BuiltinType::Char_S) &&
+       !NullState->getType()->isSpecificBuiltinType(BuiltinType::Char_U)) ||
+      Value->getName() != "__val_" || NullState->getAccess() != AS_public ||
+      Value->getAccess() != AS_public || NullState->isBitField() ||
+      Value->isBitField() || NullState->isMutable() || Value->isMutable() ||
+      !Context.hasSameType(Value->getType(), ValueType) ||
+      !approvedStandardSDKDeclaration(S, SM, NullState) ||
+      !approvedStandardSDKDeclaration(S, SM, Value) ||
+      !cstddefOrigin(S, SM, NullState->getLocation(), "libcxx", "optional") ||
+      !cstddefOrigin(S, SM, Value->getLocation(), "libcxx", "optional"))
+    return std::nullopt;
+
+  const auto &MainLayout = Context.getASTRecordLayout(Main);
+  const auto &StorageLayout = Context.getASTRecordLayout(Storage);
+  const auto &DestructLayout = Context.getASTRecordLayout(Destruct);
+  const auto &UnionLayout = Context.getASTRecordLayout(Union);
+  const uint64_t ValueBits = Context.getTypeSize(ValueType);
+  const uint64_t ValueAlign = Context.getTypeAlign(ValueType);
+  const uint64_t BoolBits = Context.getTypeSize(Context.BoolTy);
+  const uint64_t ExpectedBits =
+      ((ValueBits + BoolBits + ValueAlign - 1) / ValueAlign) * ValueAlign;
+  const uint64_t ExpectedTopBits =
+      MicrosoftABI
+          ? ((ExpectedBits + 2 * Context.getCharWidth() + ValueAlign - 1) /
+             ValueAlign) *
+                ValueAlign
+          : ExpectedBits;
+  if (MainLayout.getSize() != StorageLayout.getSize() ||
+      TopLayout.getAlignment() != MainLayout.getAlignment() ||
+      TopLayout.getAlignment() != StorageLayout.getAlignment() ||
+      MainLayout.getSize() != DestructLayout.getSize() ||
+      TopLayout.getAlignment() != DestructLayout.getAlignment() ||
+      DestructLayout.getFieldCount() != 2 ||
+      DestructLayout.getFieldOffset(0) != 0 ||
+      DestructLayout.getFieldOffset(1) != ValueBits ||
+      UnionLayout.getFieldCount() != 2 || UnionLayout.getFieldOffset(0) != 0 ||
+      UnionLayout.getFieldOffset(1) != 0 ||
+      uint64_t(UnionLayout.getSize().getQuantity()) * 8 != ValueBits ||
+      uint64_t(MainLayout.getSize().getQuantity()) * 8 != ExpectedBits ||
+      uint64_t(TopLayout.getSize().getQuantity()) * 8 != ExpectedTopBits ||
+      uint64_t(TopLayout.getAlignment().getQuantity()) * 8 != ValueAlign)
+    return std::nullopt;
+
+  return UtilityOptionalRecord{Specialization, Storage, Destruct,
+                               Value,          Engaged, Element};
+}
+
+static const CXXRecordDecl *approvedNulloptRecord(const State &S,
+                                                  const SourceManager &SM,
+                                                  QualType Type,
+                                                  const ASTContext &Context) {
+  const auto *Record = definedRecord(Type.getUnqualifiedType());
+  if (!optionalInternalRecord(S, SM, Record, "nullopt_t") ||
+      Record->getNumBases() || !Record->field_empty() || !Record->isEmpty() ||
+      !Record->isStandardLayout() || !Record->hasTrivialCopyConstructor() ||
+      !Record->hasTrivialDestructor())
+    return nullptr;
+  const auto &Layout = Context.getASTRecordLayout(Record);
+  return Layout.getSize().getQuantity() == 1 &&
+                 Layout.getAlignment().getQuantity() == 1
+             ? Record
+             : nullptr;
+}
+
+static bool approvedNulloptReference(const State &S, const SourceManager &SM,
+                                     const DeclRefExpr *Reference,
+                                     const ASTContext &Context) {
+  const auto *Variable =
+      Reference ? dyn_cast<VarDecl>(Reference->getDecl()) : nullptr;
+  const auto *Record =
+      Variable ? approvedNulloptRecord(S, SM, Variable->getType(), Context)
+               : nullptr;
+  return Variable && Record && Variable->getName() == "nullopt" &&
+         Variable->isInline() && Variable->isConstexpr() &&
+         Variable->getType().isConstQualified() &&
+         approvedStandardSDKDeclaration(S, SM, Variable) &&
+         cstddefOrigin(S, SM, Variable->getLocation(), "libcxx", "optional") &&
+         S.owns(SM, Reference->getExprLoc());
+}
+
+bool approvedUtilityNulloptExpression(const State &S, const SourceManager &SM,
+                                      const Expr *Expression,
+                                      const ASTContext &Context) {
+  if (!Expression || Expression->isTypeDependent() ||
+      Expression->isValueDependent() || Expression->isInstantiationDependent())
+    return false;
+  if (const auto *Reference = dyn_cast<DeclRefExpr>(Expression))
+    return approvedNulloptReference(S, SM, Reference, Context);
+  if (const auto *Wrapper = dyn_cast<ExprWithCleanups>(Expression))
+    return approvedUtilityNulloptExpression(S, SM, Wrapper->getSubExpr(),
+                                            Context);
+  if (const auto *Wrapper = dyn_cast<MaterializeTemporaryExpr>(Expression))
+    return approvedUtilityNulloptExpression(S, SM, Wrapper->getSubExpr(),
+                                            Context);
+  if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Expression))
+    return Cast->getCastKind() == CK_NoOp &&
+           approvedUtilityNulloptExpression(S, SM, Cast->getSubExpr(), Context);
+  const auto *Construction = dyn_cast<CXXConstructExpr>(Expression);
+  const auto *Constructor =
+      Construction ? Construction->getConstructor() : nullptr;
+  const auto *Record =
+      Construction
+          ? approvedNulloptRecord(S, SM, Construction->getType(), Context)
+          : nullptr;
+  return Construction && Constructor && Record &&
+         Construction->getConstructionKind() == CXXConstructionKind::Complete &&
+         Construction->getNumArgs() == 1 && Constructor->isTrivial() &&
+         Constructor->isCopyOrMoveConstructor() &&
+         Constructor->getParent()->getCanonicalDecl() ==
+             Record->getCanonicalDecl() &&
+         approvedUtilityNulloptExpression(S, SM, Construction->getArg(0),
+                                          Context);
+}
+
+std::optional<UtilityOptionalConstruction>
+approvedUtilityOptionalConstruction(const State &S, const SourceManager &SM,
+                                    const CXXConstructExpr *Construction,
+                                    const ASTContext &Context) {
+  if (!Construction || Construction->isTypeDependent() ||
+      Construction->isValueDependent() ||
+      Construction->isInstantiationDependent() ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete)
+    return std::nullopt;
+  const auto *Constructor = Construction->getConstructor();
+  const auto Optional = approvedUtilityOptionalRecord(
+      S, SM, Construction->getType()->getAsCXXRecordDecl(), Context);
+  if (!Constructor || !Optional || Constructor->isVariadic() ||
+      Constructor->getParent()->getCanonicalDecl() !=
+          Optional->Record->getCanonicalDecl() ||
+      Construction->getNumArgs() != Constructor->getNumParams() ||
+      !approvedStandardSDKDeclaration(S, SM, Constructor) ||
+      !cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx", "optional"))
+    return std::nullopt;
+  if (Constructor->isTrivial() && Constructor->isDefaulted() &&
+      Constructor->isCopyOrMoveConstructor() &&
+      Construction->getNumArgs() == 1 &&
+      Context.hasSameUnqualifiedType(Construction->getArg(0)->getType(),
+                                     Construction->getType()))
+    return UtilityOptionalConstruction::CopyOrMove;
+  if (!Construction->getNumArgs() && Constructor->isDefaultConstructor() &&
+      Constructor->hasBody())
+    return UtilityOptionalConstruction::Empty;
+  if (Construction->getNumArgs() == 1 && Constructor->hasBody() &&
+      approvedUtilityNulloptExpression(S, SM, Construction->getArg(0), Context))
+    return UtilityOptionalConstruction::Empty;
+  const auto *Primary = Constructor->getPrimaryTemplate();
+  const auto Parameter = Construction->getNumArgs() == 1
+                             ? Constructor->getParamDecl(0)->getType()
+                             : QualType();
+  if (Construction->getNumArgs() == 1 && Primary && Constructor->hasBody() &&
+      approvedStandardSDKDeclaration(S, SM, Primary) &&
+      cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "optional") &&
+      Parameter->isReferenceType() &&
+      Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                     Optional->ElementType) &&
+      Context.hasSameUnqualifiedType(Construction->getArg(0)->getType(),
+                                     Optional->ElementType))
+    return UtilityOptionalConstruction::Value;
+  return std::nullopt;
+}
+
+std::optional<UtilityOptionalAssignment>
+approvedUtilityOptionalAssignment(const State &S, const SourceManager &SM,
+                                  const CXXOperatorCallExpr *Assignment,
+                                  const ASTContext &Context) {
+  if (!Assignment || Assignment->isTypeDependent() ||
+      Assignment->isValueDependent() ||
+      Assignment->isInstantiationDependent() ||
+      Assignment->getOperator() != OO_Equal || Assignment->getNumArgs() != 2 ||
+      !Assignment->isLValue())
+    return std::nullopt;
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Assignment->getDirectCallee());
+  const auto Optional = approvedUtilityOptionalRecord(
+      S, SM, Method ? Method->getParent() : nullptr, Context);
+  if (!Method || !Optional || Method->isStatic() || Method->isVariadic() ||
+      Method->getNumParams() != 1 ||
+      Method->getOverloadedOperator() != OO_Equal ||
+      !approvedStandardSDKDeclaration(S, SM, Method) ||
+      !cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "optional"))
+    return std::nullopt;
+  const auto OptionalType = Context.getRecordType(Optional->Record);
+  if (!Context.hasSameUnqualifiedType(Assignment->getArg(0)->getType(),
+                                      OptionalType) ||
+      !Context.hasSameUnqualifiedType(Assignment->getType(), OptionalType) ||
+      !Method->getReturnType()->isLValueReferenceType() ||
+      !Context.hasSameUnqualifiedType(Method->getReturnType()->getPointeeType(),
+                                      OptionalType))
+    return std::nullopt;
+  if (Method->isTrivial() && Method->isDefaulted() &&
+      (Method->isCopyAssignmentOperator() ||
+       Method->isMoveAssignmentOperator()) &&
+      Context.hasSameUnqualifiedType(Assignment->getArg(1)->getType(),
+                                     OptionalType))
+    return UtilityOptionalAssignment::CopyOrMove;
+  if (Method->hasBody() &&
+      approvedUtilityNulloptExpression(S, SM, Assignment->getArg(1), Context))
+    return UtilityOptionalAssignment::Empty;
+  return std::nullopt;
+}
+
+bool approvedUtilityOptionalBaseCast(const State &S, const SourceManager &SM,
+                                     const CastExpr *Cast,
+                                     const ASTContext &Context) {
+  if (!Cast ||
+      (Cast->getCastKind() != CK_DerivedToBase &&
+       Cast->getCastKind() != CK_UncheckedDerivedToBase) ||
+      Cast->path_empty())
+    return false;
+  const auto *Source = Cast->getSubExpr();
+  while (const auto *NoOp = dyn_cast<ImplicitCastExpr>(Source)) {
+    if (NoOp->getCastKind() != CK_NoOp)
+      break;
+    Source = NoOp->getSubExpr();
+  }
+  const auto Optional = approvedUtilityOptionalRecord(
+      S, SM, Source->getType()->getAsCXXRecordDecl(), Context);
+  const auto *Destination = definedRecord(Cast->getType());
+  if (!Optional || !Destination)
+    return false;
+  const auto *Current = Optional->Record;
+  for (const auto *Step : Cast->path()) {
+    if (!Step || Step->isVirtual())
+      return false;
+    const auto *Next = definedRecord(Step->getType());
+    if (!Next || Current->getNumBases() == 0)
+      return false;
+    bool Direct = false;
+    for (const auto &Base : Current->bases()) {
+      const auto *DirectBase = definedRecord(Base.getType());
+      if (!Base.isVirtual() && DirectBase &&
+          DirectBase->getCanonicalDecl() == Next->getCanonicalDecl()) {
+        Direct = true;
+        break;
+      }
+    }
+    if (!Direct)
+      return false;
+    Current = Next;
+  }
+  return Current->getCanonicalDecl() == Destination->getCanonicalDecl() &&
+         (Destination->getCanonicalDecl() ==
+              Optional->StorageBase->getCanonicalDecl() ||
+          Destination->getCanonicalDecl() ==
+              Optional->DestructBase->getCanonicalDecl());
+}
+
 static bool utilityObjectPointer(const ASTContext &Context, QualType Type) {
   return !Type.isNull() && !Type.isVolatileQualified() &&
          Type.getAddressSpace() == LangAS::Default && Type->isPointerType() &&
@@ -1298,6 +1737,119 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return std::nullopt;
   const auto *Function = Call->getDirectCallee();
   const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
+  const auto *OptionalObject = [&]() -> const Expr * {
+    const Expr *Object = nullptr;
+    if (const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call))
+      Object = Operator->getNumArgs() ? Operator->getArg(0) : nullptr;
+    else if (const auto *Member = dyn_cast<CXXMemberCallExpr>(Call))
+      Object = Member->getImplicitObjectArgument();
+    while (const auto *Cast = dyn_cast_or_null<ImplicitCastExpr>(Object)) {
+      if (Cast->getCastKind() != CK_NoOp &&
+          Cast->getCastKind() != CK_DerivedToBase &&
+          Cast->getCastKind() != CK_UncheckedDerivedToBase)
+        break;
+      Object = Cast->getSubExpr();
+    }
+    return Object;
+  }();
+  const auto Optional = approvedUtilityOptionalRecord(
+      S, SM,
+      OptionalObject ? OptionalObject->getType()->getAsCXXRecordDecl()
+                     : nullptr,
+      Context);
+  if (Method && Optional) {
+    const auto *Reference = directMethodReference(Call);
+    const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+    const auto *MemberCall = dyn_cast<CXXMemberCallExpr>(Call);
+    const unsigned Offset = Operator ? 1 : 0;
+    const auto OptionalType = Context.getRecordType(Optional->Record);
+    auto Same = [&](QualType Left, QualType Right) {
+      return !Left.isNull() && !Right.isNull() &&
+             Context.hasSameType(Left, Right);
+    };
+    auto SameOptional = [&](QualType Type) {
+      return !Type.isNull() &&
+             Context.hasSameUnqualifiedType(Type, OptionalType);
+    };
+    const auto *Parent = Method->getParent()->getCanonicalDecl();
+    const auto ReferenceLocation =
+        Reference && Reference->getExprLoc().isValid() ? Reference->getExprLoc()
+                                                       : Call->getExprLoc();
+    if (!Reference || (!Operator && !MemberCall) || Method->isStatic() ||
+        Method->isVariadic() ||
+        Call->getNumArgs() != Method->getNumParams() + Offset ||
+        !SameOptional(OptionalObject->getType()) ||
+        !approvedStandardSDKDeclaration(S, SM, Method) ||
+        !cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "optional") ||
+        !S.owns(SM, ReferenceLocation) || !Method->hasBody())
+      return std::nullopt;
+    const llvm::StringRef Name = Method->getIdentifier()
+                                     ? Method->getIdentifier()->getName()
+                                     : llvm::StringRef();
+    if (!Operator && !Method->getNumParams() && !Call->getNumArgs() &&
+        Method->isConst() && Call->isPRValue() &&
+        Method->getReturnType()->isBooleanType() &&
+        Same(Call->getType(), Method->getReturnType())) {
+      if (Name == "has_value" &&
+          Parent == Optional->StorageBase->getCanonicalDecl())
+        return UtilityOperation::OptionalHasValue;
+      if (isa<CXXConversionDecl>(Method) &&
+          Parent == Optional->Record->getCanonicalDecl())
+        return UtilityOperation::OptionalHasValue;
+    }
+    if (!Operator && Name == "reset" && !Method->getNumParams() &&
+        !Call->getNumArgs() && !Method->isConst() &&
+        Parent == Optional->DestructBase->getCanonicalDecl() &&
+        Method->getReturnType()->isVoidType() && Call->getType()->isVoidType())
+      return UtilityOperation::OptionalReset;
+    if (Method->getOverloadedOperator() == OO_Arrow &&
+        !Method->getNumParams() && !Call->getNumArgs() && Call->isPRValue() &&
+        Parent == Optional->Record->getCanonicalDecl() &&
+        Method->getReturnType()->isPointerType() &&
+        Same(Call->getType(), Method->getReturnType()) &&
+        Context.hasSameUnqualifiedType(
+            Method->getReturnType()->getPointeeType(), Optional->ElementType))
+      return UtilityOperation::OptionalArrow;
+    if (Operator && Operator->getOperator() == OO_Star &&
+        !Method->getNumParams() && Call->getNumArgs() == 1 &&
+        Parent == Optional->Record->getCanonicalDecl() &&
+        Method->getReturnType()->isReferenceType() &&
+        Context.hasSameUnqualifiedType(
+            Method->getReturnType()->getPointeeType(), Optional->ElementType) &&
+        Context.hasSameUnqualifiedType(Call->getType(),
+                                       Optional->ElementType) &&
+        (Method->getReturnType()->isLValueReferenceType() ? Call->isLValue()
+                                                          : Call->isXValue()))
+      return UtilityOperation::OptionalDereference;
+    if (!Operator && Name == "emplace" && Method->getNumParams() == 1 &&
+        Call->getNumArgs() == 1 && !Method->isConst() &&
+        Parent == Optional->Record->getCanonicalDecl() &&
+        Method->getPrimaryTemplate() &&
+        approvedStandardSDKDeclaration(S, SM, Method->getPrimaryTemplate()) &&
+        cstddefOrigin(S, SM, Method->getPrimaryTemplate()->getLocation(),
+                      "libcxx", "optional") &&
+        Method->getReturnType()->isLValueReferenceType() && Call->isLValue() &&
+        Context.hasSameUnqualifiedType(
+            Method->getReturnType()->getPointeeType(), Optional->ElementType) &&
+        Context.hasSameUnqualifiedType(Call->getType(),
+                                       Optional->ElementType) &&
+        Method->getParamDecl(0)->getType()->isReferenceType() &&
+        Context.hasSameUnqualifiedType(
+            Method->getParamDecl(0)->getType()->getPointeeType(),
+            Optional->ElementType) &&
+        Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
+                                       Optional->ElementType))
+      return UtilityOperation::OptionalEmplace;
+    if (!Operator && Name == "swap" && Method->getNumParams() == 1 &&
+        Call->getNumArgs() == 1 && !Method->isConst() &&
+        Parent == Optional->Record->getCanonicalDecl() &&
+        Method->getReturnType()->isVoidType() &&
+        Call->getType()->isVoidType() &&
+        Method->getParamDecl(0)->getType()->isLValueReferenceType() &&
+        SameOptional(Method->getParamDecl(0)->getType()->getPointeeType()) &&
+        SameOptional(Call->getArg(0)->getType()))
+      return UtilityOperation::OptionalMemberSwap;
+  }
   const auto InitializerList = approvedUtilityInitializerListRecord(
       S, SM, Method ? Method->getParent() : nullptr, Context);
   if (Method && InitializerList) {
