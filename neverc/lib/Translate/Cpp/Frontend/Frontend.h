@@ -370,6 +370,10 @@ enum class UtilityOperation {
   AlgorithmPushHeap,
   AlgorithmPopHeap,
   AlgorithmSortHeap,
+  AlgorithmSort,
+  AlgorithmPartialSort,
+  AlgorithmPartialSortCopy,
+  AlgorithmNthElement,
 };
 struct UtilityPairRecord {
   const clang::CXXRecordDecl *Record;

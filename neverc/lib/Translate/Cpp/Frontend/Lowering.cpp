@@ -683,6 +683,118 @@ class FunctionLowering {
     return Left;
   }
 
+  void heapSiftDown(Expression First, Expression Size, Expression InitialRoot,
+                    llvm::StringRef PointerType, llvm::StringRef DifferenceType,
+                    SourceLocation L) {
+    auto Root = snapshot(std::move(InitialRoot), L);
+    auto Child = temporary(DifferenceType, L);
+    auto Left = temporary(DifferenceType, L);
+    auto Right = temporary(DifferenceType, L);
+    auto At = [&](const Expression &Position) {
+      return dereference(binary("+", json::Object(First),
+                                json::Object(Position), PointerType, L),
+                         L);
+    };
+    const auto CheckChild = labelName(), SelectChild = labelName();
+    const auto CompareChildren = labelName(), SelectRight = labelName();
+    const auto CompareRoot = labelName(), SwapDown = labelName();
+    const auto Done = labelName();
+    jump(CheckChild, L);
+    label(CheckChild, L);
+    branch(binary("<", Root,
+                  binary("/", Size, quantity(2, DifferenceType, L),
+                         DifferenceType, L),
+                  "bool", L),
+           SelectChild, Done, L);
+    label(SelectChild, L);
+    assign(Left,
+           binary("+",
+                  binary("*", Root, quantity(2, DifferenceType, L),
+                         DifferenceType, L),
+                  quantity(1, DifferenceType, L), DifferenceType, L),
+           L);
+    assign(Child, Left, L);
+    assign(Right,
+           binary("+", Left, quantity(1, DifferenceType, L), DifferenceType, L),
+           L);
+    branch(binary("<", Right, Size, "bool", L), CompareChildren, CompareRoot,
+           L);
+    label(CompareChildren, L);
+    branch(binary("<", At(Child), At(Right), "bool", L), SelectRight,
+           CompareRoot, L);
+    label(SelectRight, L);
+    assign(Child, Right, L);
+    jump(CompareRoot, L);
+    label(CompareRoot, L);
+    branch(binary("<", At(Root), At(Child), "bool", L), SwapDown, Done, L);
+    label(SwapDown, L);
+    auto RootValue = snapshot(At(Root), L);
+    auto ChildValue = snapshot(At(Child), L);
+    assign(At(Root), std::move(ChildValue), L);
+    assign(At(Child), std::move(RootValue), L);
+    assign(Root, Child, L);
+    jump(CheckChild, L);
+    label(Done, L);
+  }
+
+  void makeHeap(Expression First, Expression Size, llvm::StringRef PointerType,
+                llvm::StringRef DifferenceType, SourceLocation L) {
+    auto Start = temporary(DifferenceType, L);
+    const auto Initialize = labelName(), Sift = labelName();
+    const auto Previous = labelName(), Done = labelName();
+    branch(binary(">", Size, quantity(1, DifferenceType, L), "bool", L),
+           Initialize, Done, L);
+    label(Initialize, L);
+    assign(Start,
+           binary("/",
+                  binary("-", Size, quantity(2, DifferenceType, L),
+                         DifferenceType, L),
+                  quantity(2, DifferenceType, L), DifferenceType, L),
+           L);
+    jump(Sift, L);
+    label(Sift, L);
+    heapSiftDown(json::Object(First), json::Object(Size), json::Object(Start),
+                 PointerType, DifferenceType, L);
+    branch(binary(">", Start, quantity(0, DifferenceType, L), "bool", L),
+           Previous, Done, L);
+    label(Previous, L);
+    assign(
+        Start,
+        binary("-", Start, quantity(1, DifferenceType, L), DifferenceType, L),
+        L);
+    jump(Sift, L);
+    label(Done, L);
+  }
+
+  void sortHeap(Expression First, Expression Size, llvm::StringRef PointerType,
+                llvm::StringRef DifferenceType, SourceLocation L) {
+    auto HeapSize = snapshot(std::move(Size), L);
+    auto At = [&](const Expression &Position) {
+      return dereference(binary("+", json::Object(First),
+                                json::Object(Position), PointerType, L),
+                         L);
+    };
+    const auto Check = labelName(), Extract = labelName(), Done = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary(">", HeapSize, quantity(1, DifferenceType, L), "bool", L),
+           Extract, Done, L);
+    label(Extract, L);
+    assign(HeapSize,
+           binary("-", HeapSize, quantity(1, DifferenceType, L), DifferenceType,
+                  L),
+           L);
+    auto TopValue = snapshot(dereference(json::Object(First), L), L);
+    auto EndValue = snapshot(At(HeapSize), L);
+    assign(dereference(json::Object(First), L), std::move(EndValue), L);
+    assign(At(HeapSize), std::move(TopValue), L);
+    heapSiftDown(json::Object(First), json::Object(HeapSize),
+                 quantity(0, DifferenceType, L), PointerType, DifferenceType,
+                 L);
+    jump(Check, L);
+    label(Done, L);
+  }
+
   Expression utilityOperation(const CallExpr *Call, UtilityOperation Operation,
                               std::optional<Expression> Destination) {
     auto L = Call->getExprLoc();
@@ -2258,79 +2370,8 @@ class FunctionLowering {
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto PointerType = type(Call->getArg(0)->getType(), L);
       auto Length = snapshot(binary("-", Last, First, DifferenceType, L), L);
-      auto Start = temporary(DifferenceType, L);
-      auto Root = temporary(DifferenceType, L);
-      auto Child = temporary(DifferenceType, L);
-      auto Left = temporary(DifferenceType, L);
-      auto Right = temporary(DifferenceType, L);
-      auto At = [&](const Expression &Position) {
-        return dereference(binary("+", json::Object(First),
-                                  json::Object(Position), PointerType, L),
-                           L);
-      };
-      const auto Initialize = labelName(), CheckChild = labelName();
-      const auto SelectChild = labelName(), CompareChildren = labelName();
-      const auto SelectRight = labelName(), CompareRoot = labelName();
-      const auto SwapDown = labelName(), FinishSift = labelName();
-      const auto Previous = labelName(), End = labelName();
-      branch(binary(">", Length, quantity(1, DifferenceType, L), "bool", L),
-             Initialize, End, L);
-      label(Initialize, L);
-      assign(Start,
-             binary("/",
-                    binary("-", Length, quantity(2, DifferenceType, L),
-                           DifferenceType, L),
-                    quantity(2, DifferenceType, L), DifferenceType, L),
-             L);
-      assign(Root, Start, L);
-      jump(CheckChild, L);
-      label(CheckChild, L);
-      branch(binary("<", Root,
-                    binary("/", Length, quantity(2, DifferenceType, L),
-                           DifferenceType, L),
-                    "bool", L),
-             SelectChild, FinishSift, L);
-      label(SelectChild, L);
-      assign(Left,
-             binary("+",
-                    binary("*", Root, quantity(2, DifferenceType, L),
-                           DifferenceType, L),
-                    quantity(1, DifferenceType, L), DifferenceType, L),
-             L);
-      assign(Child, Left, L);
-      assign(
-          Right,
-          binary("+", Left, quantity(1, DifferenceType, L), DifferenceType, L),
-          L);
-      branch(binary("<", Right, Length, "bool", L), CompareChildren,
-             CompareRoot, L);
-      label(CompareChildren, L);
-      branch(binary("<", At(Child), At(Right), "bool", L), SelectRight,
-             CompareRoot, L);
-      label(SelectRight, L);
-      assign(Child, Right, L);
-      jump(CompareRoot, L);
-      label(CompareRoot, L);
-      branch(binary("<", At(Root), At(Child), "bool", L), SwapDown, FinishSift,
-             L);
-      label(SwapDown, L);
-      auto RootValue = snapshot(At(Root), L);
-      auto ChildValue = snapshot(At(Child), L);
-      assign(At(Root), std::move(ChildValue), L);
-      assign(At(Child), std::move(RootValue), L);
-      assign(Root, Child, L);
-      jump(CheckChild, L);
-      label(FinishSift, L);
-      branch(binary(">", Start, quantity(0, DifferenceType, L), "bool", L),
-             Previous, End, L);
-      label(Previous, L);
-      assign(
-          Start,
-          binary("-", Start, quantity(1, DifferenceType, L), DifferenceType, L),
-          L);
-      assign(Root, Start, L);
-      jump(CheckChild, L);
-      label(End, L);
+      makeHeap(json::Object(First), json::Object(Length), PointerType,
+               DifferenceType, L);
       return {};
     }
     case UtilityOperation::AlgorithmPushHeap: {
@@ -2386,22 +2427,17 @@ class FunctionLowering {
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto PointerType = type(Call->getArg(0)->getType(), L);
       auto HeapSize = snapshot(binary("-", Last, First, DifferenceType, L), L);
-      auto Root = temporary(DifferenceType, L);
-      auto Child = temporary(DifferenceType, L);
-      auto Left = temporary(DifferenceType, L);
-      auto Right = temporary(DifferenceType, L);
+      if (Sort) {
+        sortHeap(json::Object(First), json::Object(HeapSize), PointerType,
+                 DifferenceType, L);
+        return {};
+      }
       auto At = [&](const Expression &Position) {
         return dereference(binary("+", json::Object(First),
                                   json::Object(Position), PointerType, L),
                            L);
       };
-      const auto CheckHeap = labelName(), Extract = labelName();
-      const auto CheckChild = labelName(), SelectChild = labelName();
-      const auto CompareChildren = labelName(), SelectRight = labelName();
-      const auto CompareRoot = labelName(), SwapDown = labelName();
-      const auto FinishSift = labelName(), End = labelName();
-      jump(CheckHeap, L);
-      label(CheckHeap, L);
+      const auto Extract = labelName(), End = labelName();
       branch(binary(">", HeapSize, quantity(1, DifferenceType, L), "bool", L),
              Extract, End, L);
       label(Extract, L);
@@ -2413,46 +2449,234 @@ class FunctionLowering {
       auto EndValue = snapshot(At(HeapSize), L);
       assign(dereference(json::Object(First), L), std::move(EndValue), L);
       assign(At(HeapSize), std::move(TopValue), L);
-      assign(Root, quantity(0, DifferenceType, L), L);
-      jump(CheckChild, L);
-      label(CheckChild, L);
-      branch(binary("<", Root,
-                    binary("/", HeapSize, quantity(2, DifferenceType, L),
-                           DifferenceType, L),
-                    "bool", L),
-             SelectChild, FinishSift, L);
-      label(SelectChild, L);
-      assign(Left,
-             binary("+",
-                    binary("*", Root, quantity(2, DifferenceType, L),
-                           DifferenceType, L),
-                    quantity(1, DifferenceType, L), DifferenceType, L),
-             L);
-      assign(Child, Left, L);
+      heapSiftDown(json::Object(First), json::Object(HeapSize),
+                   quantity(0, DifferenceType, L), PointerType, DifferenceType,
+                   L);
+      jump(End, L);
+      label(End, L);
+      return {};
+    }
+    case UtilityOperation::AlgorithmSort: {
+      auto First = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      auto Length = snapshot(binary("-", Last, First, DifferenceType, L), L);
+      makeHeap(json::Object(First), json::Object(Length), PointerType,
+               DifferenceType, L);
+      sortHeap(json::Object(First), json::Object(Length), PointerType,
+               DifferenceType, L);
+      return {};
+    }
+    case UtilityOperation::AlgorithmPartialSort: {
+      auto First = snapshot(expression(Call->getArg(0)), L);
+      auto Middle = snapshot(expression(Call->getArg(1)), L);
+      auto Last = snapshot(expression(Call->getArg(2)), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      auto HeapSize =
+          snapshot(binary("-", Middle, First, DifferenceType, L), L);
+      auto Current = snapshot(json::Object(Middle), L);
+      const auto NonEmpty = labelName(), Scan = labelName();
+      const auto Compare = labelName(), Replace = labelName();
+      const auto Advance = labelName(), Finish = labelName();
+      const auto End = labelName();
+      branch(binary(">", HeapSize, quantity(0, DifferenceType, L), "bool", L),
+             NonEmpty, End, L);
+      label(NonEmpty, L);
+      makeHeap(json::Object(First), json::Object(HeapSize), PointerType,
+               DifferenceType, L);
+      jump(Scan, L);
+      label(Scan, L);
+      branch(binary("!=", Current, Last, "bool", L), Compare, Finish, L);
+      label(Compare, L);
+      branch(binary("<", dereference(Current, L),
+                    dereference(json::Object(First), L), "bool", L),
+             Replace, Advance, L);
+      label(Replace, L);
+      auto RootValue = snapshot(dereference(json::Object(First), L), L);
+      auto CurrentValue = snapshot(dereference(Current, L), L);
+      assign(dereference(json::Object(First), L), std::move(CurrentValue), L);
+      assign(dereference(Current, L), std::move(RootValue), L);
+      heapSiftDown(json::Object(First), json::Object(HeapSize),
+                   quantity(0, DifferenceType, L), PointerType, DifferenceType,
+                   L);
+      jump(Advance, L);
+      label(Advance, L);
       assign(
-          Right,
-          binary("+", Left, quantity(1, DifferenceType, L), DifferenceType, L),
+          Current,
+          binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),
           L);
-      branch(binary("<", Right, HeapSize, "bool", L), CompareChildren,
-             CompareRoot, L);
-      label(CompareChildren, L);
-      branch(binary("<", At(Child), At(Right), "bool", L), SelectRight,
-             CompareRoot, L);
-      label(SelectRight, L);
-      assign(Child, Right, L);
-      jump(CompareRoot, L);
-      label(CompareRoot, L);
-      branch(binary("<", At(Root), At(Child), "bool", L), SwapDown, FinishSift,
+      jump(Scan, L);
+      label(Finish, L);
+      sortHeap(json::Object(First), json::Object(HeapSize), PointerType,
+               DifferenceType, L);
+      jump(End, L);
+      label(End, L);
+      return {};
+    }
+    case UtilityOperation::AlgorithmPartialSortCopy: {
+      auto InputFirst = snapshot(expression(Call->getArg(0)), L);
+      auto InputLast = snapshot(expression(Call->getArg(1)), L);
+      auto OutputFirst = snapshot(expression(Call->getArg(2)), L);
+      auto OutputLast = snapshot(expression(Call->getArg(3)), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto InputType = type(Call->getArg(0)->getType(), L);
+      const auto OutputType = type(Call->getArg(2)->getType(), L);
+      auto Input = snapshot(json::Object(InputFirst), L);
+      auto Output = snapshot(json::Object(OutputFirst), L);
+      auto HeapSize = temporary(DifferenceType, L);
+      const auto FillCheck = labelName(), Fill = labelName();
+      const auto CheckOutput = labelName(), Prepared = labelName();
+      const auto NonEmpty = labelName(), Scan = labelName();
+      const auto Compare = labelName(), Replace = labelName();
+      const auto Advance = labelName(), Finish = labelName();
+      const auto End = labelName();
+      jump(FillCheck, L);
+      label(FillCheck, L);
+      branch(binary("!=", Input, InputLast, "bool", L), CheckOutput, Prepared,
              L);
-      label(SwapDown, L);
-      auto RootValue = snapshot(At(Root), L);
-      auto ChildValue = snapshot(At(Child), L);
-      assign(At(Root), std::move(ChildValue), L);
-      assign(At(Child), std::move(RootValue), L);
-      assign(Root, Child, L);
-      jump(CheckChild, L);
-      label(FinishSift, L);
-      jump(Sort ? CheckHeap : End, L);
+      label(CheckOutput, L);
+      branch(binary("!=", Output, OutputLast, "bool", L), Fill, Prepared, L);
+      label(Fill, L);
+      assign(dereference(Output, L), dereference(Input, L), L);
+      assign(Input,
+             binary("+", Input, quantity(1, DifferenceType, L), InputType, L),
+             L);
+      assign(Output,
+             binary("+", Output, quantity(1, DifferenceType, L), OutputType, L),
+             L);
+      jump(FillCheck, L);
+      label(Prepared, L);
+      assign(HeapSize, binary("-", Output, OutputFirst, DifferenceType, L), L);
+      branch(binary(">", HeapSize, quantity(0, DifferenceType, L), "bool", L),
+             NonEmpty, End, L);
+      label(NonEmpty, L);
+      makeHeap(json::Object(OutputFirst), json::Object(HeapSize), OutputType,
+               DifferenceType, L);
+      jump(Scan, L);
+      label(Scan, L);
+      branch(binary("!=", Input, InputLast, "bool", L), Compare, Finish, L);
+      label(Compare, L);
+      branch(binary("<", dereference(Input, L),
+                    dereference(json::Object(OutputFirst), L), "bool", L),
+             Replace, Advance, L);
+      label(Replace, L);
+      assign(dereference(json::Object(OutputFirst), L), dereference(Input, L),
+             L);
+      heapSiftDown(json::Object(OutputFirst), json::Object(HeapSize),
+                   quantity(0, DifferenceType, L), OutputType, DifferenceType,
+                   L);
+      jump(Advance, L);
+      label(Advance, L);
+      assign(Input,
+             binary("+", Input, quantity(1, DifferenceType, L), InputType, L),
+             L);
+      jump(Scan, L);
+      label(Finish, L);
+      sortHeap(json::Object(OutputFirst), json::Object(HeapSize), OutputType,
+               DifferenceType, L);
+      jump(End, L);
+      label(End, L);
+      return Output;
+    }
+    case UtilityOperation::AlgorithmNthElement: {
+      auto First = snapshot(expression(Call->getArg(0)), L);
+      auto Nth = snapshot(expression(Call->getArg(1)), L);
+      auto Last = snapshot(expression(Call->getArg(2)), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto ElementType =
+          type(Call->getArg(0)->getType()->getPointeeType(), L);
+      auto Length = snapshot(binary("-", Last, First, DifferenceType, L), L);
+      auto Target = snapshot(binary("-", Nth, First, DifferenceType, L), L);
+      auto Left = temporary(DifferenceType, L);
+      auto Right = temporary(DifferenceType, L);
+      auto Low = temporary(DifferenceType, L);
+      auto Current = temporary(DifferenceType, L);
+      auto High = temporary(DifferenceType, L);
+      auto PivotIndex = temporary(DifferenceType, L);
+      auto Pivot = temporary(ElementType, L);
+      auto At = [&](const Expression &Position) {
+        return dereference(binary("+", json::Object(First),
+                                  json::Object(Position), PointerType, L),
+                           L);
+      };
+      const auto Initialize = labelName(), SelectPivot = labelName();
+      const auto Partition = labelName(), Classify = labelName();
+      const auto CheckHigher = labelName(), MoveLow = labelName();
+      const auto MoveHigh = labelName(), Equal = labelName();
+      const auto Partitioned = labelName(), CheckRight = labelName();
+      const auto NarrowLeft = labelName(), NarrowRight = labelName();
+      const auto End = labelName();
+      branch(binary("!=", Nth, Last, "bool", L), Initialize, End, L);
+      label(Initialize, L);
+      assign(Left, quantity(0, DifferenceType, L), L);
+      assign(Right, Length, L);
+      jump(SelectPivot, L);
+      label(SelectPivot, L);
+      assign(PivotIndex,
+             binary("+", Left,
+                    binary("/", binary("-", Right, Left, DifferenceType, L),
+                           quantity(2, DifferenceType, L), DifferenceType, L),
+                    DifferenceType, L),
+             L);
+      assign(Pivot, At(PivotIndex), L);
+      assign(Low, Left, L);
+      assign(Current, Left, L);
+      assign(High, Right, L);
+      jump(Partition, L);
+      label(Partition, L);
+      branch(binary("<", Current, High, "bool", L), Classify, Partitioned, L);
+      label(Classify, L);
+      branch(binary("<", At(Current), Pivot, "bool", L), MoveLow, CheckHigher,
+             L);
+      label(CheckHigher, L);
+      branch(binary("<", Pivot, At(Current), "bool", L), MoveHigh, Equal, L);
+      label(MoveLow, L);
+      {
+        auto LowValue = snapshot(At(Low), L);
+        auto CurrentValue = snapshot(At(Current), L);
+        assign(At(Low), std::move(CurrentValue), L);
+        assign(At(Current), std::move(LowValue), L);
+      }
+      assign(
+          Low,
+          binary("+", Low, quantity(1, DifferenceType, L), DifferenceType, L),
+          L);
+      assign(Current,
+             binary("+", Current, quantity(1, DifferenceType, L),
+                    DifferenceType, L),
+             L);
+      jump(Partition, L);
+      label(MoveHigh, L);
+      assign(
+          High,
+          binary("-", High, quantity(1, DifferenceType, L), DifferenceType, L),
+          L);
+      {
+        auto CurrentValue = snapshot(At(Current), L);
+        auto HighValue = snapshot(At(High), L);
+        assign(At(Current), std::move(HighValue), L);
+        assign(At(High), std::move(CurrentValue), L);
+      }
+      jump(Partition, L);
+      label(Equal, L);
+      assign(Current,
+             binary("+", Current, quantity(1, DifferenceType, L),
+                    DifferenceType, L),
+             L);
+      jump(Partition, L);
+      label(Partitioned, L);
+      branch(binary("<", Target, Low, "bool", L), NarrowLeft, CheckRight, L);
+      label(CheckRight, L);
+      branch(binary("<", Target, High, "bool", L), End, NarrowRight, L);
+      label(NarrowLeft, L);
+      assign(Right, Low, L);
+      jump(SelectPivot, L);
+      label(NarrowRight, L);
+      assign(Left, High, L);
+      jump(SelectPivot, L);
       label(End, L);
       return {};
     }

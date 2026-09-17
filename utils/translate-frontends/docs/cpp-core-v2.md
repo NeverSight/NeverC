@@ -291,6 +291,19 @@ and retains the standard linear comparison bound. Empty and single-element
 query, construction, push and sort ranges are handled without dereferencing
 them; `pop_heap` retains the standard nonempty-range precondition.
 
+The exact default-order `std::sort`, `std::partial_sort`,
+`std::partial_sort_copy` and `std::nth_element` templates use that arithmetic
+ordering boundary. `sort`, `partial_sort` and `nth_element` require writable
+same-type ranges. `partial_sort_copy` accepts a const or writable input range
+and a writable same-element output range, returning the advanced output
+pointer. `sort` uses worst-case `O(N log N)` heap sorting. The partial forms
+retain a maximum heap of the selected prefix or output capacity for
+`O(N log M)` comparison complexity. `nth_element` uses an in-place three-way
+partition around a retained scalar pivot, provides average linear comparison
+complexity and terminates directly on ranges of equivalent values. An empty
+selected prefix leaves `partial_sort` unchanged; an empty output returns the
+original output pointer.
+
 The exact four-iterator `std::lexicographical_compare` and `std::includes`
 templates and exact five-iterator `std::merge`, `std::set_union`,
 `std::set_intersection`, `std::set_difference` and
@@ -320,10 +333,11 @@ direction; `reverse` uses equality-only bidirectional contraction. Minimum and
 maximum scans retain the first equivalent element; sortedness scans report the
 first descending element. Heap queries scan parent-child relationships; heap
 mutation uses index-based upward or downward filtering with target
-`ptrdiff_t`. Generated programs do not call or link libc++ for these
-operations. Heterogeneous value types, predicate overloads, custom iterators,
-record elements and function addresses remain rejected, as do calls outside a
-documented direct lowering.
+`ptrdiff_t`. Sorting and partial sorting share those checked heap operations;
+selection uses pointer-width partition indexes. Generated programs do not call
+or link libc++ for these operations. Heterogeneous value types, predicate
+overloads, custom iterators, record elements and function addresses remain
+rejected, as do calls outside a documented direct lowering.
 
 The `shuffle` and `sample` component headers are authenticated but their
 declarations stay disabled because libc++ reaches `mbstate_t` through

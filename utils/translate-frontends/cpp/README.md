@@ -91,7 +91,8 @@ built-in arithmetic elements admit default-order
 `min`, `max`, `clamp`, `minmax`, `min_element`, `max_element`,
 `minmax_element`, `lower_bound`, `upper_bound`, `equal_range`, `binary_search`,
 `is_sorted`, `is_sorted_until`, `is_heap`, `is_heap_until`, `make_heap`,
-`push_heap`, `pop_heap`, `sort_heap`, `lexicographical_compare`, `includes`,
+`push_heap`, `pop_heap`, `sort_heap`, `sort`, `partial_sort`,
+`partial_sort_copy`, `nth_element`, `lexicographical_compare`, `includes`,
 `merge` and the four `set_*` range algorithms. Mutating and ordered output
 algorithms require writable destinations, and `copy_n`,
 `fill_n` and `search_n` accept integral or non-scoped enum counts through 64

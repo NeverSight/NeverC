@@ -944,6 +944,39 @@ extern "C" int algorithm_heap(int *first, int *last) {
           '#include <algorithm>\nbool less(int a,int b){return a<b;}int main(){int a[2]{2,1};return std::is_heap(a,a+2,&less)?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    algorithm_ordering_source = """\
+#include <algorithm>
+extern "C" int algorithm_ordering(int *first, int *middle, int *last,
+                                    const int *input_first,
+                                    const int *input_last, int *output_first,
+                                    int *output_last) {
+  std::sort(first, last);
+  std::partial_sort(first, middle, last);
+  int *output =
+      std::partial_sort_copy(input_first, input_last, output_first, output_last);
+  std::nth_element(first, middle, last);
+  return static_cast<int>(output - output_first);
+}
+"""
+    algorithm_ordering = check("v2-algorithm-ordering",
+                               algorithm_ordering_source,
+                               profile="cpp-core-v2", sdk=True)
+    assert len(algorithm_ordering["sdk_dependencies"]) == 354, algorithm_ordering
+    assert not [node for node in walk(algorithm_ordering["functions"])
+                if node.get("op") in ("call", "mapped_call")], algorithm_ordering
+    for target in sdk_targets:
+        check("v2-algorithm-ordering-" + target, algorithm_ordering_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-algorithm-ordering-enum",
+          '#include <algorithm>\nenum E{low,high};int main(){E a[2]{high,low};std::sort(a,a+2);return 0;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-ordering-comparator",
+          '#include <algorithm>\nbool less(int a,int b){return a<b;}int main(){int a[2]{2,1};std::sort(a,a+2,&less);return 0;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-ordering-heterogeneous-copy",
+          '#include <algorithm>\nint main(){int a[2]{2,1};long out[2]{};return std::partial_sort_copy(a,a+2,out,out+2)==out+2?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     # Windows driver defaults must not change core-v2 source visibility or
     # standard diagnostics. Exercise both MSVC architectures on every CI host.
     standard_template_parsing = {
