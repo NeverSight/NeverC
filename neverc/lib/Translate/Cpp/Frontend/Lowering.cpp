@@ -581,6 +581,19 @@ class FunctionLowering {
       return dereference(std::move(Value), L);
     return Value;
   }
+  Expression emitUnaryPredicate(Expression Callable, QualType PredicateType,
+                                Expression Argument, SourceLocation L) {
+    const auto *Prototype =
+        PredicateType->getPointeeType()->getAs<FunctionProtoType>();
+    if (!Prototype || Prototype->getNumParams() != 1 ||
+        !Prototype->getReturnType()->isBooleanType())
+      reject(L, "algorithm predicate",
+             "A checked unary boolean callback is required.");
+    json::Array Arguments;
+    Arguments.push_back(std::move(Argument));
+    return emitIndirectCall(std::move(Callable), std::move(Arguments),
+                            Prototype->getReturnType(), L);
+  }
   Expression indirectCall(const CallExpr *Call) {
     auto L = Call->getExprLoc();
     auto Pointer = Call->getCallee()->getType();
@@ -2914,23 +2927,15 @@ class FunctionLowering {
       auto Predicate = snapshot(expression(Call->getArg(2)), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto PointerType = type(Call->getArg(0)->getType(), L);
-      const auto *Prototype = Call->getArg(2)
-                                  ->getType()
-                                  ->getPointeeType()
-                                  ->getAs<FunctionProtoType>();
-      auto Invoke = [&](Expression Argument) {
-        json::Array Arguments;
-        Arguments.push_back(std::move(Argument));
-        return emitIndirectCall(json::Object(Predicate), std::move(Arguments),
-                                Prototype->getReturnType(), L);
-      };
       const auto Check = labelName(), Test = labelName();
       const auto Advance = labelName(), End = labelName();
       jump(Check, L);
       label(Check, L);
       branch(binary("!=", Current, Last, "bool", L), Test, End, L);
       label(Test, L);
-      auto Selected = Invoke(dereference(json::Object(Current), L));
+      auto Selected = emitUnaryPredicate(
+          json::Object(Predicate), Call->getArg(2)->getType(),
+          dereference(json::Object(Current), L), L);
       branch(std::move(Selected), Match ? End : Advance, Match ? Advance : End,
              L);
       label(Advance, L);
@@ -2948,10 +2953,6 @@ class FunctionLowering {
       auto Predicate = snapshot(expression(Call->getArg(2)), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto PointerType = type(Call->getArg(0)->getType(), L);
-      const auto *Prototype = Call->getArg(2)
-                                  ->getType()
-                                  ->getPointeeType()
-                                  ->getAs<FunctionProtoType>();
       auto Count = temporary(DifferenceType, L);
       const auto Check = labelName(), Test = labelName();
       const auto Increment = labelName(), Advance = labelName();
@@ -2962,11 +2963,9 @@ class FunctionLowering {
       branch(binary("!=", Current, Last, "bool", L), Test, End, L);
       label(Test, L);
       {
-        json::Array Arguments;
-        Arguments.push_back(dereference(json::Object(Current), L));
-        auto Selected =
-            emitIndirectCall(json::Object(Predicate), std::move(Arguments),
-                             Prototype->getReturnType(), L);
+        auto Selected = emitUnaryPredicate(
+            json::Object(Predicate), Call->getArg(2)->getType(),
+            dereference(json::Object(Current), L), L);
         branch(std::move(Selected), Increment, Advance, L);
       }
       label(Increment, L);
@@ -2994,10 +2993,6 @@ class FunctionLowering {
       auto Predicate = snapshot(expression(Call->getArg(2)), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto PointerType = type(Call->getArg(0)->getType(), L);
-      const auto *Prototype = Call->getArg(2)
-                                  ->getType()
-                                  ->getPointeeType()
-                                  ->getAs<FunctionProtoType>();
       auto Result = temporary("bool", L);
       const auto Check = labelName(), Test = labelName();
       const auto Decisive = labelName(), Advance = labelName();
@@ -3008,11 +3003,9 @@ class FunctionLowering {
       branch(binary("!=", Current, Last, "bool", L), Test, End, L);
       label(Test, L);
       {
-        json::Array Arguments;
-        Arguments.push_back(dereference(json::Object(Current), L));
-        auto Selected =
-            emitIndirectCall(json::Object(Predicate), std::move(Arguments),
-                             Prototype->getReturnType(), L);
+        auto Selected = emitUnaryPredicate(
+            json::Object(Predicate), Call->getArg(2)->getType(),
+            dereference(json::Object(Current), L), L);
         branch(std::move(Selected), All ? Advance : Decisive,
                All ? Decisive : Advance, L);
       }
@@ -3027,6 +3020,159 @@ class FunctionLowering {
       jump(Check, L);
       label(End, L);
       return Result;
+    }
+    case UtilityOperation::AlgorithmCopyIf:
+    case UtilityOperation::AlgorithmRemoveCopyIf: {
+      const bool CopyMatches = Operation == UtilityOperation::AlgorithmCopyIf;
+      auto Input = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto Output = snapshot(expression(Call->getArg(2)), L);
+      auto Predicate = snapshot(expression(Call->getArg(3)), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto InputType = type(Call->getArg(0)->getType(), L);
+      const auto OutputType = type(Call->getArg(2)->getType(), L);
+      const auto Check = labelName(), Test = labelName();
+      const auto Copy = labelName(), Advance = labelName();
+      const auto End = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", Input, Last, "bool", L), Test, End, L);
+      label(Test, L);
+      {
+        auto Selected = emitUnaryPredicate(
+            json::Object(Predicate), Call->getArg(3)->getType(),
+            dereference(json::Object(Input), L), L);
+        branch(std::move(Selected), CopyMatches ? Copy : Advance,
+               CopyMatches ? Advance : Copy, L);
+      }
+      label(Copy, L);
+      assign(dereference(Output, L), dereference(Input, L), L);
+      assign(Output,
+             binary("+", Output, quantity(1, DifferenceType, L), OutputType, L),
+             L);
+      jump(Advance, L);
+      label(Advance, L);
+      assign(Input,
+             binary("+", Input, quantity(1, DifferenceType, L), InputType, L),
+             L);
+      jump(Check, L);
+      label(End, L);
+      return Output;
+    }
+    case UtilityOperation::AlgorithmRemoveIf: {
+      auto Input = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto Predicate = snapshot(expression(Call->getArg(2)), L);
+      auto Output = snapshot(json::Object(Input), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto Check = labelName(), Test = labelName();
+      const auto Keep = labelName(), CheckMove = labelName();
+      const auto Move = labelName(), AdvanceOutput = labelName();
+      const auto AdvanceInput = labelName(), End = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", Input, Last, "bool", L), Test, End, L);
+      label(Test, L);
+      {
+        auto Selected = emitUnaryPredicate(
+            json::Object(Predicate), Call->getArg(2)->getType(),
+            dereference(json::Object(Input), L), L);
+        branch(std::move(Selected), AdvanceInput, Keep, L);
+      }
+      label(Keep, L);
+      jump(CheckMove, L);
+      label(CheckMove, L);
+      branch(binary("!=", Input, Output, "bool", L), Move, AdvanceOutput, L);
+      label(Move, L);
+      assign(dereference(Output, L), dereference(Input, L), L);
+      jump(AdvanceOutput, L);
+      label(AdvanceOutput, L);
+      assign(
+          Output,
+          binary("+", Output, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      jump(AdvanceInput, L);
+      label(AdvanceInput, L);
+      assign(Input,
+             binary("+", Input, quantity(1, DifferenceType, L), PointerType, L),
+             L);
+      jump(Check, L);
+      label(End, L);
+      return Output;
+    }
+    case UtilityOperation::AlgorithmReplaceIf: {
+      auto Current = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto Predicate = snapshot(expression(Call->getArg(2)), L);
+      auto ValueAddress = snapshot(
+          address(lvalue(Call->getArg(3)), Call->getArg(3)->getType(), L), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto Check = labelName(), Test = labelName();
+      const auto Replace = labelName(), Advance = labelName();
+      const auto End = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", Current, Last, "bool", L), Test, End, L);
+      label(Test, L);
+      {
+        auto Selected = emitUnaryPredicate(
+            json::Object(Predicate), Call->getArg(2)->getType(),
+            dereference(json::Object(Current), L), L);
+        branch(std::move(Selected), Replace, Advance, L);
+      }
+      label(Replace, L);
+      assign(dereference(Current, L), dereference(ValueAddress, L), L);
+      jump(Advance, L);
+      label(Advance, L);
+      assign(
+          Current,
+          binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      jump(Check, L);
+      label(End, L);
+      return {};
+    }
+    case UtilityOperation::AlgorithmReplaceCopyIf: {
+      auto Input = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto Output = snapshot(expression(Call->getArg(2)), L);
+      auto Predicate = snapshot(expression(Call->getArg(3)), L);
+      auto ValueAddress = snapshot(
+          address(lvalue(Call->getArg(4)), Call->getArg(4)->getType(), L), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto InputType = type(Call->getArg(0)->getType(), L);
+      const auto OutputType = type(Call->getArg(2)->getType(), L);
+      const auto Check = labelName(), Test = labelName();
+      const auto Replace = labelName(), Copy = labelName();
+      const auto Advance = labelName(), End = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", Input, Last, "bool", L), Test, End, L);
+      label(Test, L);
+      {
+        auto Selected = emitUnaryPredicate(
+            json::Object(Predicate), Call->getArg(3)->getType(),
+            dereference(json::Object(Input), L), L);
+        branch(std::move(Selected), Replace, Copy, L);
+      }
+      label(Replace, L);
+      assign(dereference(Output, L), dereference(ValueAddress, L), L);
+      jump(Advance, L);
+      label(Copy, L);
+      assign(dereference(Output, L), dereference(Input, L), L);
+      jump(Advance, L);
+      label(Advance, L);
+      assign(Input,
+             binary("+", Input, quantity(1, DifferenceType, L), InputType, L),
+             L);
+      assign(Output,
+             binary("+", Output, quantity(1, DifferenceType, L), OutputType, L),
+             L);
+      jump(Check, L);
+      label(End, L);
+      return Output;
     }
     case UtilityOperation::MakePair: {
       auto Pair = approvedUtilityPairRecord(

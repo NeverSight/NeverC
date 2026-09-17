@@ -1374,6 +1374,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                    : llvm::StringRef();
   const bool ApprovedNonInlineAlgorithm =
       (Origin->Path == "__algorithm/remove.h" && Name == "remove") ||
+      (Origin->Path == "__algorithm/remove_if.h" && Name == "remove_if") ||
       (Origin->Path == "__algorithm/equal_range.h" && Name == "equal_range") ||
       (Origin->Path == "__algorithm/set_union.h" && Name == "set_union") ||
       (Origin->Path == "__algorithm/set_symmetric_difference.h" &&
@@ -2146,6 +2147,63 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         return UtilityOperation::AlgorithmNoneOf;
     }
   }
+  const bool PredicateCopy =
+      (Origin->Path == "__algorithm/copy_if.h" && Name == "copy_if") ||
+      (Origin->Path == "__algorithm/remove_copy_if.h" &&
+       Name == "remove_copy_if");
+  if (PredicateCopy && Call->getNumArgs() == 4 &&
+      Function->getNumParams() == 4 && Call->isPRValue() &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      AlgorithmPointerParameter(2) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
+                           Function->getParamDecl(2)->getType()) &&
+      utilityAlgorithmWritableScalarPointer(
+          Context, Function->getParamDecl(2)->getType()) &&
+      AlgorithmUnaryPredicateParameter(3, 0) &&
+      Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return Name == "copy_if" ? UtilityOperation::AlgorithmCopyIf
+                             : UtilityOperation::AlgorithmRemoveCopyIf;
+  if (Origin->Path == "__algorithm/remove_if.h" && Name == "remove_if" &&
+      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
+      Call->isPRValue() && AlgorithmPointerParameter(0) &&
+      AlgorithmPointerParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      utilityAlgorithmWritableScalarPointer(
+          Context, Function->getParamDecl(0)->getType()) &&
+      AlgorithmUnaryPredicateParameter(2, 0) &&
+      Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmRemoveIf;
+  if (Origin->Path == "__algorithm/replace_if.h" && Name == "replace_if" &&
+      Call->getNumArgs() == 4 && Function->getNumParams() == 4 &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      utilityAlgorithmWritableScalarPointer(
+          Context, Function->getParamDecl(0)->getType()) &&
+      AlgorithmUnaryPredicateParameter(2, 0) && AlgorithmValueParameter(3, 0) &&
+      Function->getReturnType()->isVoidType() &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmReplaceIf;
+  if (Origin->Path == "__algorithm/replace_copy_if.h" &&
+      Name == "replace_copy_if" && Call->getNumArgs() == 5 &&
+      Function->getNumParams() == 5 && Call->isPRValue() &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      AlgorithmPointerParameter(2) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
+                           Function->getParamDecl(2)->getType()) &&
+      utilityAlgorithmWritableScalarPointer(
+          Context, Function->getParamDecl(2)->getType()) &&
+      AlgorithmUnaryPredicateParameter(3, 0) && AlgorithmValueParameter(4, 0) &&
+      Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::AlgorithmReplaceCopyIf;
   if (Origin->Path == "__iterator/reverse_iterator.h" &&
       Name == "make_reverse_iterator" && Call->getNumArgs() == 1 &&
       Function->getNumParams() == 1 && Call->isPRValue()) {

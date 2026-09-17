@@ -96,11 +96,11 @@ built-in arithmetic elements admit default-order
 `partial_sort_copy`, `nth_element`, `next_permutation`, `prev_permutation`,
 `lexicographical_compare`, `includes`, `merge` and the four `set_*` range
 algorithms. Checked by-value unary function-pointer predicates additionally
-admit `find_if`, `find_if_not`, `count_if`, `all_of`, `any_of` and `none_of`.
-Mutating and ordered output
-algorithms require writable destinations, and `copy_n`,
-`fill_n` and `search_n` accept integral or non-scoped enum counts through 64
-bits after integer promotion.
+admit `find_if`, `find_if_not`, `count_if`, `all_of`, `any_of`, `none_of`,
+`copy_if`, `remove_if`, `remove_copy_if`, `replace_if` and `replace_copy_if`.
+Predicate mutation and ordered output algorithms require writable destinations,
+and `copy_n`, `fill_n` and `search_n` accept integral or non-scoped enum counts
+through 64 bits after integer promotion.
 `mismatch`, `equal_range` and `minmax_element` directly construct authenticated
 scalar-pointer pair results; `minmax` uses its exact authenticated pair of two
 const references. `shuffle` and `sample` remain disabled at this stage because

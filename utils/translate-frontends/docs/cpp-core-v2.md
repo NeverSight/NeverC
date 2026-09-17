@@ -265,6 +265,19 @@ and `any_of` false identities without invoking the predicate. Reference or
 converted parameters, non-boolean results and callable objects stay outside
 this boundary.
 
+The exact `std::copy_if`, `std::remove_if`, `std::remove_copy_if`,
+`std::replace_if` and `std::replace_copy_if` templates use the same checked
+unary predicate boundary. Copy variants require a writable output with the same
+unqualified scalar element type; `remove_if` and `replace_if` require a writable
+input range. `copy_if` and both remove forms preserve the relative order of
+retained elements and return the advanced output or new logical end. The replace
+forms require an exact scalar `const` value reference, retain that reference
+through the loop, and therefore observe changes when a callback mutates an
+aliased replacement object. `replace_copy_if` writes exactly one output per input
+and returns the advanced output. Every range, output, callback and replacement
+argument is evaluated once; empty ranges return their unadvanced iterator and do
+not invoke the predicate.
+
 The exact four-iterator `std::search`, `std::find_end` and
 `std::find_first_of` templates lower nested equality scans over two ranges.
 Three- and four-iterator `std::mismatch` return an authenticated

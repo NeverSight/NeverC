@@ -1050,6 +1050,47 @@ extern "C" int algorithm_predicate_queries(const int *first,
           'struct Predicate{bool operator()(int n)const{return n>0;}};\n#include <algorithm>\nint main(){int a[2]{1,2};return std::find_if(a,a+2,Predicate{})==a?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    algorithm_predicate_mutation_source = """\
+#include <algorithm>
+extern "C" int algorithm_predicate_mutation(
+    int *first, int *last, const int *input_first, const int *input_last,
+    int *output, bool (*predicate)(int), const int &replacement) {
+  int *copied = std::copy_if(input_first, input_last, output, predicate);
+  int *removed = std::remove_if(first, last, predicate);
+  int *rejected = std::remove_copy_if(input_first, input_last, output,
+                                      predicate);
+  std::replace_if(first, last, predicate, replacement);
+  int *replaced = std::replace_copy_if(input_first, input_last, output,
+                                       predicate, replacement);
+  return static_cast<int>((copied - output) + (removed - first) +
+                          (rejected - output) + (replaced - output));
+}
+"""
+
+    def assert_predicate_mutation(data):
+        assert len(data["sdk_dependencies"]) == 354, data
+        nodes = list(walk(data["functions"]))
+        assert not [node for node in nodes
+                    if node.get("op") in ("call", "mapped_call")], data
+        assert sum(node.get("op") == "indirect_call"
+                   for node in nodes) == 5, data
+
+    algorithm_predicate_mutation = check(
+        "v2-algorithm-predicate-mutation", algorithm_predicate_mutation_source,
+        profile="cpp-core-v2", sdk=True)
+    assert_predicate_mutation(algorithm_predicate_mutation)
+    for target in sdk_targets:
+        target_result = check("v2-algorithm-predicate-mutation-" + target,
+                              algorithm_predicate_mutation_source,
+                              profile="cpp-core-v2", target=target, sdk=True)
+        assert_predicate_mutation(target_result)
+    check("v2-algorithm-predicate-mutation-heterogeneous-output",
+          'bool p(int n){return n>0;}\n#include <algorithm>\nint main(){int a[2]{1,2};long out[2]{};return std::copy_if(a,a+2,out,p)==out+2?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-predicate-mutation-converted-value",
+          'bool p(int n){return n>0;}\n#include <algorithm>\nint main(){int a[2]{1,2};long value=3;std::replace_if(a,a+2,p,value);return 0;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     # Windows driver defaults must not change core-v2 source visibility or
     # standard diagnostics. Exercise both MSVC architectures on every CI host.
     standard_template_parsing = {

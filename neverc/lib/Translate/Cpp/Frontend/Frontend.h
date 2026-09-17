@@ -383,6 +383,11 @@ enum class UtilityOperation {
   AlgorithmAllOf,
   AlgorithmAnyOf,
   AlgorithmNoneOf,
+  AlgorithmCopyIf,
+  AlgorithmRemoveIf,
+  AlgorithmRemoveCopyIf,
+  AlgorithmReplaceIf,
+  AlgorithmReplaceCopyIf,
 };
 struct UtilityPairRecord {
   const clang::CXXRecordDecl *Record;

@@ -25229,6 +25229,178 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2AlgorithmPredicateMutationRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-predicate-mutation.cpp");
+  const auto Output = tmpFile("algorithm-predicate-mutation.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int calls;
+int replacement_value;
+bool even(int n) { ++calls; return n % 2 == 0; }
+bool odd_update(int n) {
+  ++calls;
+  if (calls == 3)
+    replacement_value = 11;
+  return n % 2 != 0;
+}
+bool even_update(int n) {
+  ++calls;
+  if (calls == 2)
+    replacement_value = 9;
+  return n % 2 == 0;
+}
+enum Level : unsigned char { low, high };
+bool is_high(Level value) { ++calls; return value == high; }
+bool is_null(int *value) { ++calls; return value == nullptr; }
+int main() {
+  int input[6]{1, 2, 3, 4, 5, 6};
+  int copied[6]{};
+  bool (*predicate)(int) = even;
+  int effects = 0;
+  calls = 0;
+  int *copy_end = std::copy_if((++effects, input), (++effects, input + 6),
+                               (++effects, copied), (++effects, predicate));
+  if (effects != 4 || copy_end != copied + 3 || calls != 6 ||
+      copied[0] != 2 || copied[1] != 4 || copied[2] != 6)
+    return 1;
+
+  int rejected[6]{};
+  calls = 0;
+  int *reject_end = std::remove_copy_if(input, input + 6, rejected, even);
+  if (reject_end != rejected + 3 || calls != 6 || rejected[0] != 1 ||
+      rejected[1] != 3 || rejected[2] != 5)
+    return 2;
+
+  int compact[7]{1, 2, 3, 4, 5, 6, 7};
+  calls = 0;
+  int *compact_end = std::remove_if(compact, compact + 7, even);
+  if (compact_end != compact + 4 || calls != 7 || compact[0] != 1 ||
+      compact[1] != 3 || compact[2] != 5 || compact[3] != 7)
+    return 3;
+  int unchanged[3]{1, 3, 5};
+  calls = 0;
+  if (std::remove_if(unchanged, unchanged + 3, even) != unchanged + 3 ||
+      calls != 3 || unchanged[0] != 1 || unchanged[1] != 3 ||
+      unchanged[2] != 5)
+    return 4;
+
+  int replaced[3]{2, 4, 6};
+  replacement_value = 7;
+  calls = 0;
+  effects = 0;
+  std::replace_if((++effects, replaced), (++effects, replaced + 3),
+                  (++effects, even_update),
+                  (++effects, replacement_value));
+  if (effects != 4 || calls != 3 || replacement_value != 9 ||
+      replaced[0] != 7 || replaced[1] != 9 || replaced[2] != 9)
+    return 5;
+
+  int replacement_copy[4]{};
+  int replacement_input[4]{1, 2, 3, 4};
+  replacement_value = 8;
+  calls = 0;
+  int *replacement_end = std::replace_copy_if(
+      replacement_input, replacement_input + 4, replacement_copy, odd_update,
+      replacement_value);
+  if (replacement_end != replacement_copy + 4 || calls != 4 ||
+      replacement_value != 11 || replacement_copy[0] != 8 ||
+      replacement_copy[1] != 2 || replacement_copy[2] != 11 ||
+      replacement_copy[3] != 4)
+    return 6;
+
+  calls = 0;
+  if (std::copy_if(input, input, copied, even) != copied ||
+      std::remove_if(input, input, even) != input ||
+      std::remove_copy_if(input, input, copied, even) != copied ||
+      (std::replace_if(input, input, even, replacement_value), calls != 0) ||
+      std::replace_copy_if(input, input, copied, even, replacement_value) !=
+          copied ||
+      calls != 0)
+    return 7;
+
+  Level levels[3]{low, high, low};
+  Level selected[3]{};
+  calls = 0;
+  if (std::copy_if(levels, levels + 3, selected, is_high) != selected + 1 ||
+      calls != 3 || selected[0] != high)
+    return 8;
+  int number = 3;
+  int *pointers[3]{nullptr, &number, nullptr};
+  int *replacement_pointer = &number;
+  calls = 0;
+  std::replace_if(pointers, pointers + 3, is_null, replacement_pointer);
+  if (calls != 3 || pointers[0] != &number || pointers[1] != &number ||
+      pointers[2] != &number)
+    return 9;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Dependencies =
+      Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 354u);
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+  }
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("algorithm-predicate-mutation" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2AlgorithmPredicateMutationRequiresExactScalarForms) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+  };
+  const Rejection Cases[] = {
+      {"heterogeneous-copy",
+       "bool p(int n){return n>0;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,2};long out[2]{};"
+       "return std::copy_if(a,a+2,out,p)==out+2?0:1;}"},
+      {"heterogeneous-remove-copy",
+       "bool p(int n){return n>0;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,2};long out[2]{};"
+       "return std::remove_copy_if(a,a+2,out,p)==out?0:1;}"},
+      {"converted-replace-value",
+       "bool p(int n){return n>0;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,2};long value=3;"
+       "std::replace_if(a,a+2,p,value);return 0;}"},
+      {"converted-replace-copy-value",
+       "bool p(int n){return n>0;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,2},out[2]{};long value=3;"
+       "return std::replace_copy_if(a,a+2,out,p,value)==out+2?0:1;}"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("algorithm-predicate-mutation-") +
+                                Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("algorithm-predicate-mutation-") +
+                                Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmPredicateQueriesRequireValueCallbacks) {
   struct Rejection {
     const char *Name;
