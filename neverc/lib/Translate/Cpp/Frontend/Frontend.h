@@ -359,6 +359,11 @@ enum class UtilityOperation {
   AlgorithmSetIntersection,
   AlgorithmSetDifference,
   AlgorithmSetSymmetricDifference,
+  AlgorithmMin,
+  AlgorithmMax,
+  AlgorithmClamp,
+  AlgorithmMinmax,
+  AlgorithmMinmaxElement,
 };
 struct UtilityPairRecord {
   const clang::CXXRecordDecl *Record;
@@ -376,6 +381,9 @@ std::optional<UtilityPairRecord>
 approvedUtilityPairRecord(const State &S, const clang::SourceManager &SM,
                           const clang::CXXRecordDecl *Record,
                           const clang::ASTContext &Context);
+std::optional<UtilityPairRecord> approvedUtilityReferencePairRecord(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
 std::optional<UtilityPairConstruction>
 approvedUtilityPairConstruction(const State &S,
                                 const clang::SourceManager &SM,

@@ -882,6 +882,41 @@ extern "C" int algorithm_ordered_ranges(const int *first, const int *last,
           '#include <algorithm>\nbool less(int a,int b){return a<b;}int main(){int a[2]{1,2};return std::includes(a,a+2,a,a+1,&less)?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    algorithm_extrema_source = """\
+#include <algorithm>
+extern "C" int algorithm_extrema(const int *first, const int *last,
+                                  const int &left, const int &right,
+                                  const int &low, const int &high) {
+  const int &minimum = std::min(left, right);
+  const int &maximum = std::max(left, right);
+  const int &bounded = std::clamp(left, low, high);
+  auto values = std::minmax(left, right);
+  auto positions = std::minmax_element(first, last);
+  return minimum + maximum + bounded + values.first + values.second +
+         static_cast<int>((positions.first - first) +
+                          (positions.second - first));
+}
+"""
+    algorithm_extrema = check("v2-algorithm-extrema",
+                              algorithm_extrema_source,
+                              profile="cpp-core-v2", sdk=True)
+    assert len(algorithm_extrema["sdk_dependencies"]) == 354, algorithm_extrema
+    assert not [node for node in walk(algorithm_extrema["functions"])
+                if node.get("op") in ("call", "mapped_call")], algorithm_extrema
+    for target in sdk_targets:
+        check("v2-algorithm-extrema-" + target,
+              algorithm_extrema_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-algorithm-extrema-enum",
+          '#include <algorithm>\nenum E{low,high};int main(){E a=low,b=high;return std::min(a,b)==a?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-extrema-comparator",
+          '#include <algorithm>\nbool less(int a,int b){return a<b;}int main(){int n=2,lo=1,hi=3;return std::clamp(n,lo,hi,&less)==n?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-extrema-manual-reference-pair",
+          '#include <utility>\nint main(){int a=1,b=2;std::pair<const int&,const int&> value(a,b);return value.first;}',
+          "TR0201", profile="cpp-core-v2", sdk=True)
+
     # Windows driver defaults must not change core-v2 source visibility or
     # standard diagnostics. Exercise both MSVC architectures on every CI host.
     standard_template_parsing = {

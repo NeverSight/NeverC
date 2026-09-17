@@ -443,10 +443,9 @@ bool approvedUtilityPairMetadata(const State &S, const SourceManager &SM,
          Arguments.get(1).getKind() == TemplateArgument::Type;
 }
 
-std::optional<UtilityPairRecord>
-approvedUtilityPairRecord(const State &S, const SourceManager &SM,
-                          const CXXRecordDecl *Record,
-                          const ASTContext &Context) {
+static std::optional<UtilityPairRecord> approvedUtilityPairRecordImpl(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
+    const ASTContext &Context, bool RequireReferenceElements) {
   const auto *Specialization =
       dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
   Specialization = Specialization
@@ -456,12 +455,11 @@ approvedUtilityPairRecord(const State &S, const SourceManager &SM,
   const auto *Template =
       Specialization ? Specialization->getSpecializedTemplate() : nullptr;
   const auto *CanonicalTemplate = Template ? Template->getCanonicalDecl() : nullptr;
-  if (!approvedUtilityPairMetadata(S, SM, Specialization) ||
-      !Specialization || !Template || Specialization->isUnion() ||
+  if (!approvedUtilityPairMetadata(S, SM, Specialization) || !Specialization ||
+      !Template || Specialization->isUnion() ||
       Specialization->isDependentContext() ||
       Specialization->getSpecializationKind() != TSK_ImplicitInstantiation ||
-      Specialization->getName() != "pair" ||
-      Specialization->getNumBases() || !Specialization->isStandardLayout() ||
+      Specialization->getName() != "pair" || Specialization->getNumBases() ||
       !approvedStandardSDKDeclaration(S, SM, Specialization) ||
       !approvedStandardSDKDeclaration(S, SM, Template) || !CanonicalTemplate ||
       !approvedStandardSDKDeclaration(S, SM, CanonicalTemplate) ||
@@ -477,6 +475,27 @@ approvedUtilityPairRecord(const State &S, const SourceManager &SM,
       Arguments.get(0).getKind() != TemplateArgument::Type ||
       Arguments.get(1).getKind() != TemplateArgument::Type)
     return std::nullopt;
+  const auto FirstType = Arguments.get(0).getAsType();
+  const auto SecondType = Arguments.get(1).getAsType();
+  if (RequireReferenceElements) {
+    if (!FirstType->isLValueReferenceType() ||
+        !SecondType->isLValueReferenceType() ||
+        !FirstType->getPointeeType().isConstQualified() ||
+        FirstType->getPointeeType().isVolatileQualified() ||
+        !SecondType->getPointeeType().isConstQualified() ||
+        SecondType->getPointeeType().isVolatileQualified() ||
+        !Context.hasSameUnqualifiedType(FirstType->getPointeeType(),
+                                        SecondType->getPointeeType()))
+      return std::nullopt;
+    auto Element = FirstType->getPointeeType().getUnqualifiedType();
+    if ((Element->isEnumeralType() || !Element->isIntegerType() ||
+         Context.getTypeSize(Element) > 64) &&
+        !Element->isSpecificBuiltinType(BuiltinType::Float) &&
+        !Element->isSpecificBuiltinType(BuiltinType::Double))
+      return std::nullopt;
+  } else if (!Specialization->isStandardLayout()) {
+    return std::nullopt;
+  }
   auto Fields = Specialization->fields();
   auto It = Fields.begin();
   const auto *First = It == Fields.end() ? nullptr : *It++;
@@ -492,10 +511,24 @@ approvedUtilityPairRecord(const State &S, const SourceManager &SM,
                      "__utility/pair.h") ||
       !cstddefOrigin(S, SM, Second->getLocation(), "libcxx",
                      "__utility/pair.h") ||
-      !Context.hasSameType(First->getType(), Arguments.get(0).getAsType()) ||
-      !Context.hasSameType(Second->getType(), Arguments.get(1).getAsType()))
+      !Context.hasSameType(First->getType(), FirstType) ||
+      !Context.hasSameType(Second->getType(), SecondType))
     return std::nullopt;
   return UtilityPairRecord{Specialization, First, Second};
+}
+
+std::optional<UtilityPairRecord>
+approvedUtilityPairRecord(const State &S, const SourceManager &SM,
+                          const CXXRecordDecl *Record,
+                          const ASTContext &Context) {
+  return approvedUtilityPairRecordImpl(S, SM, Record, Context, false);
+}
+
+std::optional<UtilityPairRecord>
+approvedUtilityReferencePairRecord(const State &S, const SourceManager &SM,
+                                   const CXXRecordDecl *Record,
+                                   const ASTContext &Context) {
+  return approvedUtilityPairRecordImpl(S, SM, Record, Context, true);
 }
 
 std::optional<UtilityPairConstruction>
@@ -1429,6 +1462,22 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return !Count.isNull() && Count->isIntegerType() &&
            Context.getTypeSize(Count) <= 64;
   };
+  auto AlgorithmOrderedReferenceParameter = [&](unsigned Index) {
+    if (Index >= Function->getNumParams() || Index >= Call->getNumArgs())
+      return false;
+    auto Parameter = Function->getParamDecl(Index)->getType();
+    if (!Parameter->isLValueReferenceType() ||
+        !Parameter->getPointeeType().isConstQualified() ||
+        Parameter->getPointeeType().isVolatileQualified() ||
+        !Context.hasSameUnqualifiedType(Call->getArg(Index)->getType(),
+                                        Parameter->getPointeeType()))
+      return false;
+    auto Element = Parameter->getPointeeType().getUnqualifiedType();
+    return (!Element->isEnumeralType() && Element->isIntegerType() &&
+            Context.getTypeSize(Element) <= 64) ||
+           Element->isSpecificBuiltinType(BuiltinType::Float) ||
+           Element->isSpecificBuiltinType(BuiltinType::Double);
+  };
   if ((Origin->Path == "__algorithm/find.h" ||
        Origin->Path == "__algorithm/count.h") &&
       (Name == "find" || Name == "count") && Call->getNumArgs() == 3 &&
@@ -1861,6 +1910,59 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if (Name == "set_difference")
       return UtilityOperation::AlgorithmSetDifference;
     return UtilityOperation::AlgorithmSetSymmetricDifference;
+  }
+  if (((Origin->Path == "__algorithm/min.h" && Name == "min") ||
+       (Origin->Path == "__algorithm/max.h" && Name == "max")) &&
+      Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
+      Call->isLValue() && AlgorithmOrderedReferenceParameter(0) &&
+      AlgorithmOrderedReferenceParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      Function->getReturnType()->isLValueReferenceType() &&
+      Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()->getPointeeType()))
+    return Name == "min" ? UtilityOperation::AlgorithmMin
+                         : UtilityOperation::AlgorithmMax;
+  if (Origin->Path == "__algorithm/clamp.h" && Name == "clamp" &&
+      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
+      Call->isLValue() && AlgorithmOrderedReferenceParameter(0) &&
+      AlgorithmOrderedReferenceParameter(1) &&
+      AlgorithmOrderedReferenceParameter(2) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(2)->getType()) &&
+      Function->getReturnType()->isLValueReferenceType() &&
+      Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
+      Same(Call->getType(), Function->getReturnType()->getPointeeType()))
+    return UtilityOperation::AlgorithmClamp;
+  if (Origin->Path == "__algorithm/minmax.h" && Name == "minmax" &&
+      Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
+      Call->isPRValue() && AlgorithmOrderedReferenceParameter(0) &&
+      AlgorithmOrderedReferenceParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      Same(Call->getType(), Function->getReturnType())) {
+    auto Pair = approvedUtilityReferencePairRecord(
+        S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);
+    if (Pair &&
+        Same(Pair->First->getType(), Function->getParamDecl(0)->getType()) &&
+        Same(Pair->Second->getType(), Function->getParamDecl(0)->getType()))
+      return UtilityOperation::AlgorithmMinmax;
+  }
+  if (Origin->Path == "__algorithm/minmax_element.h" &&
+      Name == "minmax_element" && Call->getNumArgs() == 2 &&
+      Function->getNumParams() == 2 && Call->isPRValue() &&
+      AlgorithmOrderedPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      Same(Call->getType(), Function->getReturnType())) {
+    auto Pair = approvedUtilityPairRecord(
+        S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);
+    if (Pair &&
+        Same(Pair->First->getType(), Function->getParamDecl(0)->getType()) &&
+        Same(Pair->Second->getType(), Function->getParamDecl(0)->getType()))
+      return UtilityOperation::AlgorithmMinmaxElement;
   }
   if (Origin->Path == "__iterator/reverse_iterator.h" &&
       Name == "make_reverse_iterator" && Call->getNumArgs() == 1 &&

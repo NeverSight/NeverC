@@ -1987,6 +1987,221 @@ class FunctionLowering {
       label(End, L);
       return Output;
     }
+    case UtilityOperation::AlgorithmMin:
+    case UtilityOperation::AlgorithmMax: {
+      const bool Minimum = Operation == UtilityOperation::AlgorithmMin;
+      auto LeftAddress =
+          snapshot(bind(Call->getArg(0),
+                        Call->getDirectCallee()->getParamDecl(0)->getType()),
+                   L);
+      auto RightAddress =
+          snapshot(bind(Call->getArg(1),
+                        Call->getDirectCallee()->getParamDecl(1)->getType()),
+                   L);
+      auto Result = temporary(*LeftAddress.getString("type"), L);
+      const auto SelectLeft = labelName(), SelectRight = labelName();
+      const auto End = labelName();
+      branch(Minimum ? binary("<", dereference(RightAddress, L),
+                              dereference(LeftAddress, L), "bool", L)
+                     : binary("<", dereference(LeftAddress, L),
+                              dereference(RightAddress, L), "bool", L),
+             SelectRight, SelectLeft, L);
+      label(SelectLeft, L);
+      assign(Result, LeftAddress, L);
+      jump(End, L);
+      label(SelectRight, L);
+      assign(Result, RightAddress, L);
+      jump(End, L);
+      label(End, L);
+      return dereference(std::move(Result), L);
+    }
+    case UtilityOperation::AlgorithmClamp: {
+      auto ValueAddress =
+          snapshot(bind(Call->getArg(0),
+                        Call->getDirectCallee()->getParamDecl(0)->getType()),
+                   L);
+      auto LowAddress =
+          snapshot(bind(Call->getArg(1),
+                        Call->getDirectCallee()->getParamDecl(1)->getType()),
+                   L);
+      auto HighAddress =
+          snapshot(bind(Call->getArg(2),
+                        Call->getDirectCallee()->getParamDecl(2)->getType()),
+                   L);
+      auto Result = temporary(*ValueAddress.getString("type"), L);
+      const auto CheckHigh = labelName(), SelectValue = labelName();
+      const auto SelectLow = labelName(), SelectHigh = labelName();
+      const auto End = labelName();
+      branch(binary("<", dereference(ValueAddress, L),
+                    dereference(LowAddress, L), "bool", L),
+             SelectLow, CheckHigh, L);
+      label(CheckHigh, L);
+      branch(binary("<", dereference(HighAddress, L),
+                    dereference(ValueAddress, L), "bool", L),
+             SelectHigh, SelectValue, L);
+      label(SelectValue, L);
+      assign(Result, ValueAddress, L);
+      jump(End, L);
+      label(SelectLow, L);
+      assign(Result, LowAddress, L);
+      jump(End, L);
+      label(SelectHigh, L);
+      assign(Result, HighAddress, L);
+      jump(End, L);
+      label(End, L);
+      return dereference(std::move(Result), L);
+    }
+    case UtilityOperation::AlgorithmMinmax: {
+      const auto *Function = Call->getDirectCallee();
+      auto LeftAddress = snapshot(
+          bind(Call->getArg(0), Function->getParamDecl(0)->getType()), L);
+      auto RightAddress = snapshot(
+          bind(Call->getArg(1), Function->getParamDecl(1)->getType()), L);
+      auto Pair = approvedUtilityReferencePairRecord(
+          A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+      if (!Pair)
+        reject(L, "algorithm minmax",
+               "The selected reference std::pair layout is unavailable.");
+      auto Place = Destination ? std::move(*Destination)
+                               : objectTemporary(Call->getType(), L);
+      if (Place.getString("type") != type(Call->getType(), L))
+        reject(L, "algorithm minmax",
+               "The std::minmax destination type differs from its result.");
+      const auto Forward = labelName(), Reverse = labelName(),
+                 End = labelName();
+      branch(binary("<", dereference(RightAddress, L),
+                    dereference(LeftAddress, L), "bool", L),
+             Reverse, Forward, L);
+      label(Forward, L);
+      assign(fieldStorage(json::Object(Place), Pair->First, L), LeftAddress, L);
+      assign(fieldStorage(json::Object(Place), Pair->Second, L), RightAddress,
+             L);
+      jump(End, L);
+      label(Reverse, L);
+      assign(fieldStorage(json::Object(Place), Pair->First, L), RightAddress,
+             L);
+      assign(fieldStorage(json::Object(Place), Pair->Second, L), LeftAddress,
+             L);
+      jump(End, L);
+      label(End, L);
+      return Place;
+    }
+    case UtilityOperation::AlgorithmMinmaxElement: {
+      auto First = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto Minimum = snapshot(json::Object(First), L);
+      auto Maximum = snapshot(json::Object(First), L);
+      auto Current = snapshot(json::Object(First), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      auto Next = temporary(PointerType, L);
+      auto Lower = temporary(PointerType, L);
+      auto Upper = temporary(PointerType, L);
+      const auto Initialize = labelName(), CompareInitial = labelName();
+      const auto InitialSecondMinimum = labelName();
+      const auto InitialSecondMaximum = labelName();
+      const auto CheckPair = labelName(), PreparePair = labelName();
+      const auto ComparePair = labelName(), NextLower = labelName();
+      const auto CurrentLower = labelName(), UpdateMinimum = labelName();
+      const auto SelectMinimum = labelName(), UpdateMaximum = labelName();
+      const auto SelectMaximum = labelName(), AdvanceInitial = labelName();
+      const auto AdvancePair = labelName();
+      const auto Odd = labelName(), CheckOddMaximum = labelName();
+      const auto SelectOddMinimum = labelName();
+      const auto SelectOddMaximum = labelName(), End = labelName();
+      branch(binary("!=", First, Last, "bool", L), Initialize, End, L);
+      label(Initialize, L);
+      assign(Current,
+             binary("+", First, quantity(1, DifferenceType, L), PointerType, L),
+             L);
+      branch(binary("!=", Current, Last, "bool", L), CompareInitial, End, L);
+      label(CompareInitial, L);
+      branch(binary("<", dereference(Current, L), dereference(First, L), "bool",
+                    L),
+             InitialSecondMinimum, InitialSecondMaximum, L);
+      label(InitialSecondMinimum, L);
+      assign(Minimum, Current, L);
+      assign(Maximum, First, L);
+      jump(AdvanceInitial, L);
+      label(InitialSecondMaximum, L);
+      assign(Minimum, First, L);
+      assign(Maximum, Current, L);
+      jump(AdvanceInitial, L);
+      label(AdvanceInitial, L);
+      assign(
+          Current,
+          binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      jump(CheckPair, L);
+      label(CheckPair, L);
+      branch(binary("!=", Current, Last, "bool", L), PreparePair, End, L);
+      label(PreparePair, L);
+      assign(
+          Next,
+          binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      branch(binary("!=", Next, Last, "bool", L), ComparePair, Odd, L);
+      label(ComparePair, L);
+      branch(
+          binary("<", dereference(Next, L), dereference(Current, L), "bool", L),
+          NextLower, CurrentLower, L);
+      label(NextLower, L);
+      assign(Lower, Next, L);
+      assign(Upper, Current, L);
+      jump(UpdateMinimum, L);
+      label(CurrentLower, L);
+      assign(Lower, Current, L);
+      assign(Upper, Next, L);
+      jump(UpdateMinimum, L);
+      label(UpdateMinimum, L);
+      branch(binary("<", dereference(Lower, L), dereference(Minimum, L), "bool",
+                    L),
+             SelectMinimum, UpdateMaximum, L);
+      label(SelectMinimum, L);
+      assign(Minimum, Lower, L);
+      jump(UpdateMaximum, L);
+      label(UpdateMaximum, L);
+      branch(binary("<", dereference(Upper, L), dereference(Maximum, L), "bool",
+                    L),
+             AdvancePair, SelectMaximum, L);
+      label(SelectMaximum, L);
+      assign(Maximum, Upper, L);
+      jump(AdvancePair, L);
+      label(AdvancePair, L);
+      assign(Current,
+             binary("+", Next, quantity(1, DifferenceType, L), PointerType, L),
+             L);
+      jump(CheckPair, L);
+      label(Odd, L);
+      branch(binary("<", dereference(Current, L), dereference(Minimum, L),
+                    "bool", L),
+             SelectOddMinimum, CheckOddMaximum, L);
+      label(SelectOddMinimum, L);
+      assign(Minimum, Current, L);
+      jump(End, L);
+      label(CheckOddMaximum, L);
+      branch(binary("<", dereference(Current, L), dereference(Maximum, L),
+                    "bool", L),
+             End, SelectOddMaximum, L);
+      label(SelectOddMaximum, L);
+      assign(Maximum, Current, L);
+      jump(End, L);
+      label(End, L);
+      auto Pair = approvedUtilityPairRecord(
+          A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+      if (!Pair)
+        reject(L, "algorithm minmax_element",
+               "The selected std::pair layout is unavailable.");
+      auto Place = Destination ? std::move(*Destination)
+                               : objectTemporary(Call->getType(), L);
+      if (Place.getString("type") != type(Call->getType(), L))
+        reject(L, "algorithm minmax_element",
+               "The std::minmax_element destination type differs from its "
+               "result.");
+      assign(fieldStorage(json::Object(Place), Pair->First, L), Minimum, L);
+      assign(fieldStorage(json::Object(Place), Pair->Second, L), Maximum, L);
+      return Place;
+    }
     case UtilityOperation::MakePair: {
       auto Pair = approvedUtilityPairRecord(
           A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);

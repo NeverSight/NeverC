@@ -88,15 +88,17 @@ platform-free 354-file closure. Built-in equality elements admit
 `remove_copy`, `replace`, `replace_copy`, `unique`, `unique_copy`, `search`,
 `find_end`, `find_first_of`, `search_n` and three- or four-iterator `mismatch`;
 built-in arithmetic elements admit default-order
-`min_element`, `max_element`, `lower_bound`, `upper_bound`, `equal_range`,
-`binary_search`, `is_sorted`, `is_sorted_until`, `lexicographical_compare`,
-`includes`, `merge` and the four `set_*` range algorithms. Mutation and ordered
-output algorithms require writable destinations, and `copy_n`, `fill_n` and
-`search_n` accept integral or non-scoped enum counts through 64 bits after
-integer promotion. `mismatch` and `equal_range` directly construct their
-authenticated scalar-pointer pair results. `shuffle` and `sample` remain
-disabled at this stage because their libc++ implementation reaches the same
-target C runtime character-state ABI through `uniform_int_distribution`.
+`min`, `max`, `clamp`, `minmax`, `min_element`, `max_element`,
+`minmax_element`, `lower_bound`, `upper_bound`, `equal_range`, `binary_search`,
+`is_sorted`, `is_sorted_until`, `lexicographical_compare`, `includes`, `merge`
+and the four `set_*` range algorithms. Mutation and ordered output algorithms
+require writable destinations, and `copy_n`, `fill_n` and `search_n` accept
+integral or non-scoped enum counts through 64 bits after integer promotion.
+`mismatch`, `equal_range` and `minmax_element` directly construct authenticated
+scalar-pointer pair results; `minmax` uses its exact authenticated pair of two
+const references. `shuffle` and `sample` remain disabled at this stage because
+their libc++ implementation reaches the same target C runtime character-state
+ABI through `uniform_int_distribution`.
 The driver authenticates each closure before
 emitting output. Standard-library objects and operations beyond these documented
 surfaces, other standard headers and full C++/STL remain unfinished.

@@ -166,6 +166,9 @@ Elements may be admitted integral or enum scalars up to 64 bits, `float`,
 their two fields and ordinary value or reference behavior. Type-based `get`
 is accepted only when libc++ resolves it unambiguously. Nested, user-record and
 reference-valued pairs remain outside this boundary.
+The sole reference-pair exception is the exact `std::minmax` result documented
+under the algorithm surface; ordinary construction, assignment, comparison,
+swap, `make_pair` and `get` remain unavailable for that pair type.
 
 `std::integer_sequence`, `index_sequence`, their generator aliases and
 `integer_sequence::size()` remain compile-time types and values. The standalone
@@ -266,6 +269,15 @@ integer, `float` or `double` element type. The searched value must have that
 same unqualified type. Binary bounds use the target `ptrdiff_t` and preserve
 logarithmic bisection; `equal_range` returns an authenticated pair of the lower
 and upper pointers.
+
+The exact two-argument `std::min` and `std::max`, three-argument `std::clamp`,
+two-argument `std::minmax` and two-iterator `std::minmax_element` templates use
+the same built-in arithmetic ordering boundary. `min`, `max` and `clamp`
+preserve the selected const-reference identity. `minmax` constructs only its
+exact authenticated `std::pair<const T&, const T&>` result; its fields retain
+the two argument referents on every pointer width. `minmax_element` returns an
+authenticated pointer pair, selects the first minimum and last maximum, and
+uses pairwise comparisons after its initial elements.
 
 The exact four-iterator `std::lexicographical_compare` and `std::includes`
 templates and exact five-iterator `std::merge`, `std::set_union`,

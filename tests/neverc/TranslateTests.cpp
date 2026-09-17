@@ -24571,6 +24571,126 @@ TEST_F(TranslateTest, CoreV2AlgorithmOrderedRangesRequirePinnedScalarForms) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2AlgorithmExtremaRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-extrema.cpp");
+  const auto Output = tmpFile("algorithm-extrema.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int main() {
+  int left = 4;
+  int right = 2;
+  int same = 4;
+  int effects = 0;
+  const int &minimum = std::min((++effects, left), (++effects, right));
+  if (effects != 2 || &minimum != &right)
+    return 1;
+  const int &maximum = std::max(left, right);
+  if (&maximum != &left || &std::min(left, same) != &left ||
+      &std::max(left, same) != &left)
+    return 2;
+
+  int low = 1;
+  int high = 5;
+  int below = -1;
+  int inside = 3;
+  int above = 7;
+  if (&std::clamp(below, low, high) != &low ||
+      &std::clamp(inside, low, high) != &inside ||
+      &std::clamp(above, low, high) != &high)
+    return 3;
+
+  auto extrema = std::minmax(left, right);
+  if (&extrema.first != &right || &extrema.second != &left)
+    return 4;
+  auto equal_extrema = std::minmax(left, same);
+  if (&equal_extrema.first != &left || &equal_extrema.second != &same)
+    return 5;
+
+  const int values[7]{3, 1, 5, 5, 1, 5, 2};
+  auto positions = std::minmax_element(values, values + 7);
+  if (positions.first != values + 1 || positions.second != values + 5)
+    return 6;
+  auto empty = std::minmax_element(values, values);
+  auto one = std::minmax_element(values, values + 1);
+  if (empty.first != values || empty.second != values || one.first != values ||
+      one.second != values)
+    return 7;
+  float small = 1.5f;
+  float large = 2.5f;
+  if (&std::min(small, large) != &small ||
+      &std::max(small, large) != &large)
+    return 8;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Dependencies =
+      Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 354u);
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+  }
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-extrema" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmExtremaRequirePinnedScalarForms) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code = "TR0203";
+  };
+  const Rejection Cases[] = {
+      {"enum-min", "#include <algorithm>\nenum E{low,high};"
+                   "int main(){E a=low,b=high;return std::min(a,b)==a?0:1;}"},
+      {"pointer-max",
+       "#include <algorithm>\nint main(){int a[2]{};int*p=a;int*q=a+1;"
+       "return std::max(p,q)==q?0:1;}"},
+      {"comparator-clamp",
+       "#include <algorithm>\nbool less(int a,int b){return a<b;}"
+       "int main(){int n=2,lo=1,hi=3;return "
+       "std::clamp(n,lo,hi,&less)==n?0:1;}"},
+      {"record-minmax-element",
+       "#include <algorithm>\nstruct R{int n;};"
+       "bool operator<(const R&a,const R&b){return a.n<b.n;}"
+       "int main(){R a[2]{{1},{2}};return "
+       "std::minmax_element(a,a+2).first==a?0:1;}"},
+      {"manual-reference-pair",
+       "#include <utility>\nint main(){int a=1,b=2;"
+       "std::pair<const int&,const int&> value(a,b);"
+       "return value.first;}",
+       "TR0201"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("algorithm-extrema-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("algorithm-extrema-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2IteratorPointerOperationsRunAtBothOptimizations) {
   const auto Source = tmpFile("iterator-operations.cpp");
   const auto Output = tmpFile("iterator-operations.nc");
