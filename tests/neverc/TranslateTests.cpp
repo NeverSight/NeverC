@@ -24285,6 +24285,117 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2AlgorithmPredicateSubrangesRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-predicate-subranges.cpp");
+  const auto Output = tmpFile("algorithm-predicate-subranges.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int calls;
+bool same_last_digit(int left, long right) {
+  ++calls;
+  return left % 10 == right % 10;
+}
+enum Level : unsigned char { low, high };
+bool same_level(Level left, Level right) {
+  ++calls;
+  return left == right;
+}
+int main() {
+  const int source[7]{1, 2, 3, 2, 3, 2, 4};
+  const long pattern[2]{12, 13};
+  bool (*predicate)(int, long) = same_last_digit;
+  int effects = 0;
+  calls = 0;
+  if (std::search((++effects, source), (++effects, source + 7),
+                  (++effects, pattern), (++effects, pattern + 2),
+                  (++effects, predicate)) != source + 1 ||
+      effects != 5 || calls != 3)
+    return 1;
+  calls = 0;
+  if (std::find_end(source, source + 7, pattern, pattern + 2,
+                    same_last_digit) != source + 3 ||
+      calls != 10)
+    return 2;
+  calls = 0;
+  if (std::search(source, source + 7, pattern, pattern, same_last_digit) !=
+          source ||
+      std::find_end(source, source + 7, pattern, pattern, same_last_digit) !=
+          source + 7 ||
+      calls != 0)
+    return 3;
+
+  const long choices[2]{14, 13};
+  calls = 0;
+  if (std::find_first_of(source, source + 7, choices, choices + 2,
+                         same_last_digit) != source + 2 ||
+      calls != 6)
+    return 4;
+  calls = 0;
+  if (std::find_first_of(source, source + 7, choices, choices,
+                         same_last_digit) != source + 7 ||
+      calls != 0)
+    return 5;
+
+  const int runs[7]{1, 2, 12, 3, 22, 32, 4};
+  long needle = 2;
+  calls = 0;
+  if (std::search_n(runs, runs + 7, 2, needle, same_last_digit) != runs + 1 ||
+      calls != 3)
+    return 6;
+  calls = 0;
+  if (std::search_n(runs, runs + 7, 3, needle, same_last_digit) != runs + 7 ||
+      calls != 7)
+    return 7;
+  calls = 0;
+  short negative = -2;
+  if (std::search_n(runs, runs + 7, negative, needle, same_last_digit) != runs ||
+      std::search_n(runs, runs + 7, 0, needle, same_last_digit) != runs ||
+      calls != 0)
+    return 8;
+
+  const Level levels[4]{low, high, low, high};
+  const Level level_pattern[2]{high, low};
+  calls = 0;
+  if (std::search(levels, levels + 4, level_pattern, level_pattern + 2,
+                  same_level) != levels + 1 ||
+      calls != 3)
+    return 9;
+  calls = 0;
+  if (std::search_n(levels, levels + 4, 2, high, same_level) != levels + 4 ||
+      calls != 4)
+    return 10;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Dependencies =
+      Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 354u);
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+  }
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("algorithm-predicate-subranges" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmSubrangeRequiresPinnedScalarForms) {
   struct Rejection {
     const char *Name;
@@ -24297,8 +24408,8 @@ TEST_F(TranslateTest, CoreV2AlgorithmSubrangeRequiresPinnedScalarForms) {
       {"heterogeneous-mismatch",
        "#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{1,3};"
        "return std::mismatch(a,a+2,b).first==a+1?0:1;}"},
-      {"predicate-search",
-       "#include <algorithm>\nbool same(int a,int b){return a==b;}"
+      {"converted-predicate-search",
+       "#include <algorithm>\nbool same(long a,long b){return a==b;}"
        "int main(){int a[2]{1,2};return "
        "std::search(a,a+2,a,a+1,&same)==a?0:1;}"}};
   for (const auto &Case : Cases) {
@@ -24307,6 +24418,50 @@ TEST_F(TranslateTest, CoreV2AlgorithmSubrangeRequiresPinnedScalarForms) {
         tmpFile(std::string("algorithm-subrange-") + Case.Name + ".cpp");
     const auto Output =
         tmpFile(std::string("algorithm-subrange-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmPredicateSubrangesRequireExactFunctions) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+  };
+  const Rejection Cases[] = {
+      {"reference-parameter",
+       "bool p(const int&a,long b){return a==b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,2};long b[1]{2};"
+       "return std::search(a,a+2,b,b+1,p)==a+1?0:1;}"},
+      {"non-bool-result",
+       "int p(int a,long b){return a==b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,2};long b[1]{2};"
+       "return std::find_end(a,a+2,b,b+1,p)==a+1?0:1;}"},
+      {"converted-parameter",
+       "bool p(long a,long b){return a==b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,2};long b[1]{2};"
+       "return std::find_first_of(a,a+2,b,b+1,p)==a+1?0:1;}"},
+      {"function-object",
+       "struct P{bool operator()(int a,long b)const{return a==b;}};\n"
+       "#include <algorithm>\nint main(){int a[2]{1,2};long b[1]{2};"
+       "return std::search(a,a+2,b,b+1,P{})==a+1?0:1;}"},
+      {"converted-search-n-value",
+       "bool p(int a,int b){return a==b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,1};long v=1;"
+       "return std::search_n(a,a+2,2,v,p)==a?0:1;}"},
+      {"reference-search-n-value",
+       "bool p(int a,const long&b){return a==b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,1};long v=1;"
+       "return std::search_n(a,a+2,2,v,p)==a?0:1;}"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("algorithm-predicate-subranges-") +
+                                Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("algorithm-predicate-subranges-") +
+                                Case.Name + ".nc");
     writeFile(Source, Case.Source);
     expectCode(
         translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),

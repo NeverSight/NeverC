@@ -1545,6 +1545,38 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Context.hasSameUnqualifiedType(RightParameter,
                                           Right->getPointeeType());
   };
+  auto AlgorithmBinaryPredicateValueParameter = [&](unsigned PredicateIndex,
+                                                    unsigned IteratorIndex,
+                                                    unsigned ValueIndex) {
+    if (PredicateIndex >= Function->getNumParams() ||
+        PredicateIndex >= Call->getNumArgs() ||
+        IteratorIndex >= Function->getNumParams() ||
+        ValueIndex >= Function->getNumParams() ||
+        ValueIndex >= Call->getNumArgs())
+      return false;
+    auto Iterator = Function->getParamDecl(IteratorIndex)->getType();
+    auto Value = Function->getParamDecl(ValueIndex)->getType();
+    if (!utilityAlgorithmScalarPointer(Context, Iterator) ||
+        !Value->isLValueReferenceType() ||
+        !Value->getPointeeType().isConstQualified() ||
+        Value->getPointeeType().isVolatileQualified() ||
+        !utilityScalar(Context, Value->getPointeeType()) ||
+        !Context.hasSameUnqualifiedType(Call->getArg(ValueIndex)->getType(),
+                                        Value->getPointeeType()))
+      return false;
+    const auto *Prototype = AlgorithmCallbackPrototype(PredicateIndex);
+    if (!Prototype || Prototype->getNumParams() != 2 ||
+        !Prototype->getReturnType()->isBooleanType())
+      return false;
+    auto LeftParameter = Prototype->getParamType(0);
+    auto RightParameter = Prototype->getParamType(1);
+    return utilityScalar(Context, LeftParameter) &&
+           utilityScalar(Context, RightParameter) &&
+           Context.hasSameUnqualifiedType(LeftParameter,
+                                          Iterator->getPointeeType()) &&
+           Context.hasSameUnqualifiedType(RightParameter,
+                                          Value->getPointeeType());
+  };
   if ((Origin->Path == "__algorithm/find.h" ||
        Origin->Path == "__algorithm/count.h") &&
       (Name == "find" || Name == "count") && Call->getNumArgs() == 3 &&
@@ -1824,19 +1856,27 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
        (Origin->Path == "__algorithm/find_end.h" && Name == "find_end") ||
        (Origin->Path == "__algorithm/find_first_of.h" &&
         Name == "find_first_of")) &&
-      Call->getNumArgs() == 4 && Function->getNumParams() == 4 &&
-      Call->isPRValue() && AlgorithmEqualityPointerParameter(0) &&
-      AlgorithmEqualityPointerParameter(1) &&
-      AlgorithmEqualityPointerParameter(2) &&
-      AlgorithmEqualityPointerParameter(3) &&
+      (Call->getNumArgs() == 4 || Call->getNumArgs() == 5) &&
+      Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      AlgorithmPointerParameter(2) && AlgorithmPointerParameter(3) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getParamDecl(2)->getType(),
            Function->getParamDecl(3)->getType()) &&
-      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
-                           Function->getParamDecl(2)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
+    const bool DefaultElements =
+        AlgorithmEqualityPointerParameter(0) &&
+        AlgorithmEqualityPointerParameter(1) &&
+        AlgorithmEqualityPointerParameter(2) &&
+        AlgorithmEqualityPointerParameter(3) &&
+        SameAlgorithmElement(Function->getParamDecl(0)->getType(),
+                             Function->getParamDecl(2)->getType());
+    if (!((Call->getNumArgs() == 4 && DefaultElements) ||
+          (Call->getNumArgs() == 5 &&
+           AlgorithmBinaryPredicateParameter(4, 0, 2))))
+      return std::nullopt;
     if (Name == "search")
       return UtilityOperation::AlgorithmSearch;
     if (Name == "find_end")
@@ -1844,15 +1884,21 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return UtilityOperation::AlgorithmFindFirstOf;
   }
   if (Origin->Path == "__algorithm/search_n.h" && Name == "search_n" &&
-      Call->getNumArgs() == 4 && Function->getNumParams() == 4 &&
-      Call->isPRValue() && AlgorithmEqualityPointerParameter(0) &&
-      AlgorithmEqualityPointerParameter(1) &&
+      (Call->getNumArgs() == 4 || Call->getNumArgs() == 5) &&
+      Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      AlgorithmCountParameter(2) && AlgorithmValueParameter(3, 0) &&
+      AlgorithmCountParameter(2) &&
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
-      Same(Call->getType(), Function->getReturnType()))
-    return UtilityOperation::AlgorithmSearchN;
+      Same(Call->getType(), Function->getReturnType())) {
+    if (Call->getNumArgs() == 4 && AlgorithmEqualityPointerParameter(0) &&
+        AlgorithmEqualityPointerParameter(1) && AlgorithmValueParameter(3, 0))
+      return UtilityOperation::AlgorithmSearchN;
+    if (Call->getNumArgs() == 5 &&
+        AlgorithmBinaryPredicateValueParameter(4, 0, 3))
+      return UtilityOperation::AlgorithmSearchN;
+  }
   if (Origin->Path == "__algorithm/mismatch.h" && Name == "mismatch" &&
       Call->getNumArgs() >= 3 && Call->getNumArgs() <= 5 &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&

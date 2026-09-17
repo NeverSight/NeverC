@@ -811,8 +811,53 @@ extern "C" int algorithm_subrange(const int *first, const int *last,
     check("v2-algorithm-subrange-heterogeneous-search",
           '#include <algorithm>\nint main(){int a[2]{1,2};long b[1]{2};return std::search(a,a+2,b,b+1)==a+1?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
-    check("v2-algorithm-subrange-predicate-search",
-          '#include <algorithm>\nbool same(int a,int b){return a==b;}int main(){int a[2]{1,2};return std::search(a,a+2,a,a+1,&same)==a?0:1;}',
+    check("v2-algorithm-subrange-converted-predicate-search",
+          '#include <algorithm>\nbool same(long a,long b){return a==b;}int main(){int a[2]{1,2};return std::search(a,a+2,a,a+1,&same)==a?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
+    algorithm_predicate_subrange_source = """\
+#include <algorithm>
+extern "C" long long algorithm_predicate_subrange(
+    const int *first, const int *last, const long *pattern,
+    const long *pattern_last, int count, const long &value,
+    bool (*predicate)(int, long)) {
+  const int *found =
+      std::search(first, last, pattern, pattern_last, predicate);
+  const int *final =
+      std::find_end(first, last, pattern, pattern_last, predicate);
+  const int *choice =
+      std::find_first_of(first, last, pattern, pattern_last, predicate);
+  const int *run = std::search_n(first, last, count, value, predicate);
+  return static_cast<long long>((found - first) + (final - first) +
+                                (choice - first) + (run - first));
+}
+"""
+
+    def assert_predicate_subrange(data):
+        assert len(data["sdk_dependencies"]) == 354, data
+        nodes = list(walk(data["functions"]))
+        assert not [node for node in nodes
+                    if node.get("op") in ("call", "mapped_call")], data
+        assert sum(node.get("op") == "indirect_call"
+                   for node in nodes) == 4, data
+
+    algorithm_predicate_subrange = check(
+        "v2-algorithm-predicate-subrange",
+        algorithm_predicate_subrange_source, profile="cpp-core-v2", sdk=True)
+    assert_predicate_subrange(algorithm_predicate_subrange)
+    for target in sdk_targets:
+        target_result = check("v2-algorithm-predicate-subrange-" + target,
+                              algorithm_predicate_subrange_source,
+                              profile="cpp-core-v2", target=target, sdk=True)
+        assert_predicate_subrange(target_result)
+    check("v2-algorithm-predicate-subrange-reference",
+          'bool p(const int&a,long b){return a==b;}\n#include <algorithm>\nint main(){int a[2]{1,2};long b[1]{2};return std::search(a,a+2,b,b+1,p)==a+1?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-predicate-subrange-result",
+          'int p(int a,long b){return a==b;}\n#include <algorithm>\nint main(){int a[2]{1,2};long b[1]{2};return std::find_end(a,a+2,b,b+1,p)==a+1?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-predicate-subrange-conversion",
+          'bool p(int a,int b){return a==b;}\n#include <algorithm>\nint main(){int a[2]{1,1};long v=1;return std::search_n(a,a+2,2,v,p)==a?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
     algorithm_rearrangement_source = """\

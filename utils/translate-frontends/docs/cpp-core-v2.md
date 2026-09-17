@@ -254,19 +254,23 @@ default-equality boundary because ADL can select a user-defined `operator==`.
 
 The exact binary-predicate overloads of `std::adjacent_find`, three- and
 four-iterator `std::equal`, three- and four-iterator `std::mismatch`, and three-
-and four-iterator `std::is_permutation` accept checked ordinary function
-pointers. Each predicate takes the two compared unqualified scalar element
-types by value and returns `bool` exactly. This admits enums and the other
-scalar carriers; `equal` and `mismatch` may compare two different element types
-when both callback parameters match exactly. `adjacent_find` and
-`is_permutation` require one common element type because they compare elements
-within the first range. The callback value is evaluated and retained once.
-Adjacent and equality scans stop on their first decisive comparison, mismatch
-returns its authenticated pointer pair, and bounded permutation checks unequal
-lengths before invoking the predicate. Empty ranges perform no predicate calls.
-Reference or converted parameters, variadic functions, non-boolean results,
-callable objects and heterogeneous permutation ranges stay outside this
-boundary.
+and four-iterator `std::is_permutation`, plus `std::search`, `std::find_end`,
+`std::find_first_of` and `std::search_n`, accept checked ordinary function
+pointers. Each predicate takes the two compared unqualified scalar types by
+value and returns `bool` exactly. This admits enums and the other scalar
+carriers; `equal`, `mismatch` and the two-range search operations may compare
+two different element types when both callback parameters match exactly.
+`search_n` may likewise use a different exact scalar type for its retained
+`const` search value. `adjacent_find` and `is_permutation` require one common
+element type because they compare elements within the first range. The callback
+value is evaluated and retained once. Adjacent and equality scans stop on their
+first decisive comparison, mismatch returns its authenticated pointer pair,
+and bounded permutation checks unequal lengths before invoking the predicate.
+Empty patterns and ranges perform no predicate calls; non-positive `search_n`
+counts return the first iterator without a call, and a positive unsuccessful
+run applies its predicate at most once per input element. Reference or converted
+parameters, variadic functions, non-boolean results, callable objects and
+heterogeneous permutation ranges stay outside this boundary.
 
 The exact three-argument `std::find_if`, `std::find_if_not`, `std::count_if`,
 `std::all_of`, `std::any_of` and `std::none_of` templates accept the same raw
@@ -321,14 +325,17 @@ or generated element invokes its callback exactly once. The counted forms use
 the same promoted integral or non-scoped enum count boundary as `copy_n`; a
 non-positive signed count performs no calls and returns the original iterator.
 
-The exact four-iterator `std::search`, `std::find_end` and
-`std::find_first_of` templates lower nested equality scans over two ranges.
+The exact default-equality four-iterator `std::search`, `std::find_end` and
+`std::find_first_of` templates lower nested equality scans over two ranges;
+their five-argument forms use the checked binary-predicate boundary above.
 Three- and four-iterator `std::mismatch` return an authenticated
 `std::pair` of the first unequal pointers; the bounded form also stops when the
-second range ends. Exact four-argument `std::search_n` accepts the same equality
-elements and an integral or non-scoped enum count whose promoted type is at
-most 64 bits. It returns the first iterator for non-positive counts. These
-operations require the same unqualified element type in both compared ranges.
+second range ends. Exact four-argument default-equality and five-argument
+predicate `std::search_n` accept an integral or non-scoped enum count whose
+promoted type is at most 64 bits. It returns the first iterator for non-positive
+counts. Default-equality operations require the same unqualified element type
+in both compared ranges; the documented predicate forms use their exact callback
+parameter types instead.
 
 The exact two-argument `std::min_element`, `std::max_element`, `std::is_sorted`
 and `std::is_sorted_until` templates and exact three-argument

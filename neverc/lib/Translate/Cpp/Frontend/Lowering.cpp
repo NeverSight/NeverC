@@ -1591,6 +1591,9 @@ class FunctionLowering {
       auto Last = snapshot(expression(Call->getArg(1)), L);
       auto Pattern = snapshot(expression(Call->getArg(2)), L);
       auto PatternLast = snapshot(expression(Call->getArg(3)), L);
+      std::optional<Expression> Predicate;
+      if (Call->getNumArgs() == 5)
+        Predicate = snapshot(expression(Call->getArg(4)), L);
       auto Candidate = snapshot(json::Object(First), L);
       auto Current = snapshot(json::Object(First), L);
       auto PatternCurrent = snapshot(json::Object(Pattern), L);
@@ -1621,8 +1624,13 @@ class FunctionLowering {
       label(CheckSource, L);
       branch(binary("!=", Current, Last, "bool", L), Compare, End, L);
       label(Compare, L);
-      branch(binary("==", dereference(Current, L),
-                    dereference(PatternCurrent, L), "bool", L),
+      branch(Predicate
+                 ? emitBinaryPredicate(
+                       json::Object(*Predicate), Call->getArg(4)->getType(),
+                       dereference(json::Object(Current), L),
+                       dereference(json::Object(PatternCurrent), L), L)
+                 : binary("==", dereference(Current, L),
+                          dereference(PatternCurrent, L), "bool", L),
              Advance, Mismatch, L);
       label(Advance, L);
       assign(Current,
@@ -1658,6 +1666,9 @@ class FunctionLowering {
       auto Last = snapshot(expression(Call->getArg(1)), L);
       auto Choices = snapshot(expression(Call->getArg(2)), L);
       auto ChoicesLast = snapshot(expression(Call->getArg(3)), L);
+      std::optional<Expression> Predicate;
+      if (Call->getNumArgs() == 5)
+        Predicate = snapshot(expression(Call->getArg(4)), L);
       auto Choice = snapshot(json::Object(Choices), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto InputType = type(Call->getArg(0)->getType(), L);
@@ -1676,8 +1687,13 @@ class FunctionLowering {
       branch(binary("!=", Choice, ChoicesLast, "bool", L), Compare, NextInput,
              L);
       label(Compare, L);
-      branch(binary("==", dereference(Current, L), dereference(Choice, L),
-                    "bool", L),
+      branch(Predicate
+                 ? emitBinaryPredicate(json::Object(*Predicate),
+                                       Call->getArg(4)->getType(),
+                                       dereference(json::Object(Current), L),
+                                       dereference(json::Object(Choice), L), L)
+                 : binary("==", dereference(Current, L), dereference(Choice, L),
+                          "bool", L),
              End, NextChoice, L);
       label(NextChoice, L);
       assign(Choice,
@@ -1705,6 +1721,9 @@ class FunctionLowering {
           snapshot(cast(expression(Call->getArg(2)), CountTypeName, L), L);
       auto ValueAddress = snapshot(
           address(lvalue(Call->getArg(3)), Call->getArg(3)->getType(), L), L);
+      std::optional<Expression> Predicate;
+      if (Call->getNumArgs() == 5)
+        Predicate = snapshot(expression(Call->getArg(4)), L);
       auto Candidate = snapshot(json::Object(First), L);
       auto Current = snapshot(json::Object(First), L);
       auto Remaining = temporary(CountTypeName, L);
@@ -1729,8 +1748,13 @@ class FunctionLowering {
       label(CheckSource, L);
       branch(binary("!=", Current, Last, "bool", L), Compare, NotFound, L);
       label(Compare, L);
-      branch(binary("==", dereference(Current, L), dereference(ValueAddress, L),
-                    "bool", L),
+      branch(Predicate
+                 ? emitBinaryPredicate(
+                       json::Object(*Predicate), Call->getArg(4)->getType(),
+                       dereference(json::Object(Current), L),
+                       dereference(json::Object(ValueAddress), L), L)
+                 : binary("==", dereference(Current, L),
+                          dereference(ValueAddress, L), "bool", L),
              Advance, Mismatch, L);
       label(Advance, L);
       assign(
@@ -1742,10 +1766,10 @@ class FunctionLowering {
              L);
       jump(Inner, L);
       label(Mismatch, L);
-      assign(Candidate,
-             binary("+", Candidate, quantity(1, DifferenceType, L), PointerType,
-                    L),
-             L);
+      assign(
+          Candidate,
+          binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),
+          L);
       jump(Outer, L);
       label(NotFound, L);
       assign(Candidate, Last, L);
