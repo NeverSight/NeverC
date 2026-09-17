@@ -24177,11 +24177,7 @@ TEST_F(TranslateTest,
   const Rejection Cases[] = {
       {"heterogeneous-remove-copy",
        "#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{};"
-       "return std::remove_copy(a,a+2,b,1)==b+1?0:1;}"},
-      {"predicate-unique",
-       "#include <algorithm>\nbool same(int a,int b){return a==b;}"
-       "int main(){int a[3]{1,1,2};return "
-       "std::unique(a,a+3,&same)==a+2?0:1;}"}};
+       "return std::remove_copy(a,a+2,b,1)==b+1?0:1;}"}};
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
     const auto Source = tmpFile(std::string("algorithm-equality-mutation-") +
@@ -24192,6 +24188,156 @@ TEST_F(TranslateTest,
     expectCode(
         translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
         "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2AlgorithmPredicateUniqueOperationsRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-predicate-unique.cpp");
+  const auto Output = tmpFile("algorithm-predicate-unique.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int calls;
+bool same_parity(int left, int right) {
+  ++calls;
+  return left % 2 == right % 2;
+}
+enum Level : unsigned char { low, high };
+bool same_level(Level left, Level right) {
+  ++calls;
+  return left == right;
+}
+bool same_pointer(int *left, int *right) {
+  ++calls;
+  return left == right;
+}
+int main() {
+  int values[7]{1, 3, 2, 4, 6, 7, 9};
+  bool (*predicate)(int, int) = same_parity;
+  int effects = 0;
+  calls = 0;
+  int *unique_end = std::unique((++effects, values),
+                                (++effects, values + 7),
+                                (++effects, predicate));
+  if (effects != 3 || calls != 6 || unique_end != values + 3 ||
+      values[0] != 1 || values[1] != 2 || values[2] != 7)
+    return 1;
+
+  calls = 0;
+  if (std::unique(values, values, same_parity) != values || calls != 0)
+    return 2;
+  calls = 0;
+  if (std::unique(values, values + 1, same_parity) != values + 1 || calls != 0)
+    return 3;
+
+  const int input[7]{1, 3, 2, 4, 6, 7, 9};
+  int output[7]{};
+  effects = 0;
+  calls = 0;
+  int *copy_end = std::unique_copy((++effects, input),
+                                   (++effects, input + 7),
+                                   (++effects, output),
+                                   (++effects, predicate));
+  if (effects != 4 || calls != 6 || copy_end != output + 3 ||
+      output[0] != 1 || output[1] != 2 || output[2] != 7)
+    return 4;
+  calls = 0;
+  if (std::unique_copy(input, input, output, same_parity) != output ||
+      calls != 0)
+    return 5;
+
+  Level levels[6]{low, low, high, high, low, low};
+  calls = 0;
+  Level *level_end = std::unique(levels, levels + 6, same_level);
+  if (level_end != levels + 3 || calls != 5 || levels[0] != low ||
+      levels[1] != high || levels[2] != low)
+    return 6;
+  const Level level_input[4]{high, high, low, low};
+  Level level_output[4]{};
+  calls = 0;
+  if (std::unique_copy(level_input, level_input + 4, level_output,
+                       same_level) != level_output + 2 ||
+      calls != 3 || level_output[0] != high || level_output[1] != low)
+    return 7;
+
+  int targets[2]{};
+  int *pointers[4]{targets, targets, targets + 1, targets + 1};
+  calls = 0;
+  if (std::unique(pointers, pointers + 4, same_pointer) != pointers + 2 ||
+      calls != 3 || pointers[0] != targets || pointers[1] != targets + 1)
+    return 8;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Dependencies =
+      Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 354u);
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+  }
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("algorithm-predicate-unique" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2AlgorithmPredicateUniqueOperationsRequireExactFunctions) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code = "TR0203";
+  };
+  const Rejection Cases[] = {
+      {"reference-parameter",
+       "bool p(const int&a,int b){return a==b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,1};return std::unique(a,a+2,p)==a+1?0:1;}"},
+      {"non-bool-result",
+       "int p(int a,int b){return a==b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,1};return std::unique(a,a+2,p)==a+1?0:1;}"},
+      {"converted-parameter",
+       "bool p(long a,long b){return a==b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,1};return std::unique(a,a+2,p)==a+1?0:1;}"},
+      {"function-object",
+       "struct P{bool operator()(int a,int b)const{return a==b;}};\n"
+       "#include <algorithm>\nint main(){int a[2]{1,1};"
+       "return std::unique_copy(a,a+2,a,P{})==a+1?0:1;}"},
+      {"heterogeneous-output",
+       "bool p(int a,int b){return a==b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,1};long out[2]{};"
+       "return std::unique_copy(a,a+2,out,p)==out+1?0:1;}"},
+      {"variadic-predicate",
+       "bool p(int a,int b,...){return a==b;}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,1};return std::unique(a,a+2,p)==a+1?0:1;}",
+       "TR0201"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("algorithm-predicate-unique-") +
+                                Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("algorithm-predicate-unique-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
     expectNoArtifacts(Output);
   }
 }

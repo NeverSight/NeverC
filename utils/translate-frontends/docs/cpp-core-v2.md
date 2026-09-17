@@ -254,23 +254,27 @@ default-equality boundary because ADL can select a user-defined `operator==`.
 
 The exact binary-predicate overloads of `std::adjacent_find`, three- and
 four-iterator `std::equal`, three- and four-iterator `std::mismatch`, and three-
-and four-iterator `std::is_permutation`, plus `std::search`, `std::find_end`,
-`std::find_first_of` and `std::search_n`, accept checked ordinary function
-pointers. Each predicate takes the two compared unqualified scalar types by
-value and returns `bool` exactly. This admits enums and the other scalar
-carriers; `equal`, `mismatch` and the two-range search operations may compare
-two different element types when both callback parameters match exactly.
-`search_n` may likewise use a different exact scalar type for its retained
-`const` search value. `adjacent_find` and `is_permutation` require one common
-element type because they compare elements within the first range. The callback
-value is evaluated and retained once. Adjacent and equality scans stop on their
-first decisive comparison, mismatch returns its authenticated pointer pair,
-and bounded permutation checks unequal lengths before invoking the predicate.
-Empty patterns and ranges perform no predicate calls; non-positive `search_n`
-counts return the first iterator without a call, and a positive unsuccessful
-run applies its predicate at most once per input element. Reference or converted
-parameters, variadic functions, non-boolean results, callable objects and
-heterogeneous permutation ranges stay outside this boundary.
+and four-iterator `std::is_permutation`, plus `std::unique`,
+`std::unique_copy`, `std::search`, `std::find_end`, `std::find_first_of` and
+`std::search_n`, accept checked ordinary function pointers. Each predicate
+takes the two compared unqualified scalar types by value and returns `bool`
+exactly. This admits enums and the other scalar carriers; `equal`, `mismatch`
+and the two-range search operations may compare two different element types
+when both callback parameters match exactly. `search_n` may likewise use a
+different exact scalar type for its retained `const` search value.
+`adjacent_find`, `unique`, `unique_copy` and `is_permutation` require one common
+element type because they compare elements within one range. Predicate `unique`
+requires a writable range, and predicate `unique_copy` requires a writable
+same-element output range. The callback value is evaluated and retained once.
+Adjacent and equality scans stop on their first decisive comparison, mismatch
+returns its authenticated pointer pair, and bounded permutation checks unequal
+lengths before invoking the predicate. Empty patterns and ranges perform no
+predicate calls; nonempty unique operations make one call per element after the
+first. Non-positive `search_n` counts return the first iterator without a call,
+and a positive unsuccessful run applies its predicate at most once per input
+element. Reference or converted parameters, variadic functions, non-boolean
+results, callable objects and heterogeneous permutation or unique-copy output
+ranges stay outside this boundary.
 
 The exact three-argument `std::find_if`, `std::find_if_not`, `std::count_if`,
 `std::all_of`, `std::any_of` and `std::none_of` templates accept the same raw
@@ -418,6 +422,8 @@ with output iterators return the advanced output pointer. `search_n` applies
 the same promotion and preserves a non-positive-count fast path. `mismatch`
 constructs its scalar-pointer pair result directly. `remove` and `unique`
 return the compacted logical end; copy forms return their advanced destination.
+Predicate `unique` and `unique_copy` preserve the first element from each
+equivalent run and compare later elements against the last retained element.
 `copy_n` also preserves a non-positive-count fast path. `rotate` returns the
 new location of the original first element, while `rotate_copy` returns its
 advanced destination. Permutation mutation evaluates both bounds once, and

@@ -59,7 +59,8 @@ boolean function-pointer predicates admit `find_if`, `find_if_not`,
 `partition`, `partition_copy` and `partition_point`. Exact function-pointer
 binary predicates additionally admit `adjacent_find`, three- and four-iterator
 `equal`, three- and four-iterator `mismatch`, and three- and four-iterator
-`is_permutation`, plus `search`, `find_end`, `find_first_of` and `search_n`.
+`is_permutation`, plus `unique`, `unique_copy`, `search`, `find_end`,
+`find_first_of` and `search_n`.
 Exact function-pointer callbacks also admit `for_each`, `for_each_n`, unary and
 binary `transform`, `generate` and `generate_n`.
 Predicate mutation and ordered output algorithms require writable destinations;

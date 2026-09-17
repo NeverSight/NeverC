@@ -1375,6 +1375,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   const bool ApprovedNonInlineAlgorithm =
       (Origin->Path == "__algorithm/remove.h" && Name == "remove") ||
       (Origin->Path == "__algorithm/remove_if.h" && Name == "remove_if") ||
+      (Origin->Path == "__algorithm/unique.h" && Name == "unique") ||
       (Origin->Path == "__algorithm/for_each.h" && Name == "for_each") ||
       (Origin->Path == "__algorithm/is_partitioned.h" &&
        Name == "is_partitioned") ||
@@ -1829,20 +1830,26 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmReplaceCopy;
   if (Origin->Path == "__algorithm/unique.h" && Name == "unique" &&
-      Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
-      Call->isPRValue() && AlgorithmEqualityPointerParameter(0) &&
-      AlgorithmEqualityPointerParameter(1) &&
+      (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
+      Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       utilityAlgorithmWritableScalarPointer(
           Context, Function->getParamDecl(0)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
-      Same(Call->getType(), Function->getReturnType()))
-    return UtilityOperation::AlgorithmUnique;
+      Same(Call->getType(), Function->getReturnType())) {
+    if (Call->getNumArgs() == 2 && AlgorithmEqualityPointerParameter(0) &&
+        AlgorithmEqualityPointerParameter(1))
+      return UtilityOperation::AlgorithmUnique;
+    if (Call->getNumArgs() == 3 && AlgorithmBinaryPredicateParameter(2, 0, 0))
+      return UtilityOperation::AlgorithmUnique;
+  }
   if (Origin->Path == "__algorithm/unique_copy.h" && Name == "unique_copy" &&
-      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
-      Call->isPRValue() && AlgorithmEqualityPointerParameter(0) &&
-      AlgorithmEqualityPointerParameter(1) && AlgorithmPointerParameter(2) &&
+      (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
+      Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
+      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      AlgorithmPointerParameter(2) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       SameAlgorithmElement(Function->getParamDecl(0)->getType(),
@@ -1850,8 +1857,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       utilityAlgorithmWritableScalarPointer(
           Context, Function->getParamDecl(2)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
-      Same(Call->getType(), Function->getReturnType()))
-    return UtilityOperation::AlgorithmUniqueCopy;
+      Same(Call->getType(), Function->getReturnType())) {
+    if (Call->getNumArgs() == 3 && AlgorithmEqualityPointerParameter(0) &&
+        AlgorithmEqualityPointerParameter(1))
+      return UtilityOperation::AlgorithmUniqueCopy;
+    if (Call->getNumArgs() == 4 && AlgorithmBinaryPredicateParameter(3, 0, 0))
+      return UtilityOperation::AlgorithmUniqueCopy;
+  }
   if (((Origin->Path == "__algorithm/search.h" && Name == "search") ||
        (Origin->Path == "__algorithm/find_end.h" && Name == "find_end") ||
        (Origin->Path == "__algorithm/find_first_of.h" &&

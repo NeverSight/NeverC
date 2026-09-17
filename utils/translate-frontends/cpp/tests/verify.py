@@ -782,6 +782,43 @@ extern "C" int algorithm_equality_mutation(int *first, int *last,
           '#include <algorithm>\nenum E{one,two};bool operator==(E,E){return true;}int main(){E a[1]{one};return std::find(a,a+1,two)==a?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    algorithm_predicate_unique_source = """\
+#include <algorithm>
+extern "C" int algorithm_predicate_unique(
+    int *first, int *last, int *output, bool (*predicate)(int, int)) {
+  int *unique = std::unique(first, last, predicate);
+  int *copied = std::unique_copy(first, unique, output, predicate);
+  return static_cast<int>((unique - first) + (copied - output));
+}
+"""
+
+    def assert_predicate_unique(data):
+        assert len(data["sdk_dependencies"]) == 354, data
+        nodes = list(walk(data["functions"]))
+        assert not [node for node in nodes
+                    if node.get("op") in ("call", "mapped_call")], data
+        assert sum(node.get("op") == "indirect_call"
+                   for node in nodes) == 2, data
+
+    algorithm_predicate_unique = check(
+        "v2-algorithm-predicate-unique", algorithm_predicate_unique_source,
+        profile="cpp-core-v2", sdk=True)
+    assert_predicate_unique(algorithm_predicate_unique)
+    for target in sdk_targets:
+        target_result = check("v2-algorithm-predicate-unique-" + target,
+                              algorithm_predicate_unique_source,
+                              profile="cpp-core-v2", target=target, sdk=True)
+        assert_predicate_unique(target_result)
+    check("v2-algorithm-predicate-unique-reference",
+          'bool p(const int&a,int b){return a==b;}\n#include <algorithm>\nint main(){int a[2]{1,1};return std::unique(a,a+2,p)==a+1?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-predicate-unique-conversion",
+          'bool p(long a,long b){return a==b;}\n#include <algorithm>\nint main(){int a[2]{1,1};return std::unique(a,a+2,p)==a+1?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-predicate-unique-output",
+          'bool p(int a,int b){return a==b;}\n#include <algorithm>\nint main(){int a[2]{1,1};long b[2]{};return std::unique_copy(a,a+2,b,p)==b+1?0:1;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     algorithm_subrange_source = """\
 #include <algorithm>
 extern "C" int algorithm_subrange(const int *first, const int *last,

@@ -1500,6 +1500,9 @@ class FunctionLowering {
     case UtilityOperation::AlgorithmUnique: {
       auto First = snapshot(expression(Call->getArg(0)), L);
       auto Last = snapshot(expression(Call->getArg(1)), L);
+      std::optional<Expression> Predicate;
+      if (Call->getNumArgs() == 3)
+        Predicate = snapshot(expression(Call->getArg(2)), L);
       auto Output = snapshot(json::Object(First), L);
       auto Current = snapshot(json::Object(First), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
@@ -1517,8 +1520,13 @@ class FunctionLowering {
       label(Check, L);
       branch(binary("!=", Current, Last, "bool", L), Compare, Finish, L);
       label(Compare, L);
-      branch(binary("==", dereference(Output, L), dereference(Current, L),
-                    "bool", L),
+      branch(Predicate
+                 ? emitBinaryPredicate(json::Object(*Predicate),
+                                       Call->getArg(2)->getType(),
+                                       dereference(json::Object(Output), L),
+                                       dereference(json::Object(Current), L), L)
+                 : binary("==", dereference(Output, L), dereference(Current, L),
+                          "bool", L),
              Next, Select, L);
       label(Select, L);
       assign(
@@ -1546,6 +1554,9 @@ class FunctionLowering {
       auto Current = snapshot(expression(Call->getArg(0)), L);
       auto Last = snapshot(expression(Call->getArg(1)), L);
       auto Output = snapshot(expression(Call->getArg(2)), L);
+      std::optional<Expression> Predicate;
+      if (Call->getNumArgs() == 4)
+        Predicate = snapshot(expression(Call->getArg(3)), L);
       auto Previous = snapshot(json::Object(Current), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto InputType = type(Call->getArg(0)->getType(), L);
@@ -1566,8 +1577,13 @@ class FunctionLowering {
       label(Check, L);
       branch(binary("!=", Current, Last, "bool", L), Compare, End, L);
       label(Compare, L);
-      branch(binary("==", dereference(Previous, L), dereference(Current, L),
-                    "bool", L),
+      branch(Predicate
+                 ? emitBinaryPredicate(json::Object(*Predicate),
+                                       Call->getArg(3)->getType(),
+                                       dereference(json::Object(Previous), L),
+                                       dereference(json::Object(Current), L), L)
+                 : binary("==", dereference(Previous, L),
+                          dereference(Current, L), "bool", L),
              Next, Transfer, L);
       label(Transfer, L);
       assign(dereference(Output, L), dereference(Current, L), L);
