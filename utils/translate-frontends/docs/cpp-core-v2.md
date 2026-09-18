@@ -421,6 +421,21 @@ Integer arguments wider than 64 bits, quoted includes, shadows, function
 addresses for the numeric algorithms themselves and forged declarations remain
 rejected.
 
+## Memory header from `<memory>`
+
+Core v2 admits the exact angled `<memory>` entry from the pinned embedded VFS.
+Its 267-file libc++/resource dependency closure is identical on all eight
+supported targets and contains no platform headers. The public C++17 header and
+all consumed component headers retain their upstream bytes and are authenticated
+before translation.
+
+This increment establishes the parsing and provenance boundary only. Memory
+objects and runtime operations, including allocators, uninitialized algorithms,
+smart pointers and ownership factories, remain rejected until their layouts,
+allocation behavior, destruction, error handling and cross-target ABI contracts
+receive direct lowerings. Quoted includes, shadows and forged declarations remain
+rejected.
+
 ## Algorithm header from `<algorithm>`
 
 Core v2 admits the exact angled `<algorithm>` entry from the pinned embedded

@@ -2,7 +2,7 @@
   "schema": "neverc.cpp.sdk.provenance",
   "version": 1,
   "source_distribution_id": "clang20.1.8-libcxx200100-macos15.5",
-  "scope": "546 approved header files; upstream references document source and license provenance, not a claim that every SDK export is byte-identical to that upstream revision.",
+  "scope": "562 approved header files; upstream references document source and license provenance, not a claim that every SDK export is byte-identical to that upstream revision.",
   "headers": [
     {
       "root": "libcxx",
@@ -1266,6 +1266,18 @@
     },
     {
       "root": "libcxx",
+      "path": "__atomic/memory_order.h",
+      "sha256": "b895451abf25a5d605ccfd14f0f63af7aaa84f459a18687fae0b8d10a60c40a8",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__atomic/memory_order.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__atomic/memory_order.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
       "path": "__bit/bit_cast.h",
       "sha256": "2cfae78277c8ce25a7b3845dd542984cbae45ef9a2c8fbb9a0ca7a7cdb3f7392",
       "license": "Apache-2.0 WITH LLVM-exception",
@@ -1986,6 +1998,18 @@
     },
     {
       "root": "libcxx",
+      "path": "__functional/reference_wrapper.h",
+      "sha256": "8c93c74692d0e9c36940d324cfc5b333de6bef15d26bf1116213a71d15542736",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__functional/reference_wrapper.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__functional/reference_wrapper.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
       "path": "__functional/unary_function.h",
       "sha256": "b49095b80a3b409446197ac774c4597e66b4a64dce96bd819480b1c46a1f5d39",
       "license": "Apache-2.0 WITH LLVM-exception",
@@ -1994,6 +2018,18 @@
       "upstream_revision": "llvmorg-20.1.8",
       "upstream_path": "libcxx/include/__functional/unary_function.h",
       "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__functional/unary_function.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "__functional/weak_result_type.h",
+      "sha256": "fd245e86c7742a957706472aabcc5f512bf1908ad63bd0e432c3733bdb16f3ef",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__functional/weak_result_type.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__functional/weak_result_type.h",
       "upstream_relationship": "source-reference"
     },
     {
@@ -2826,6 +2862,18 @@
     },
     {
       "root": "libcxx",
+      "path": "__memory/align.h",
+      "sha256": "478fc259bb28ffdb4c18f096fb982fcc3321bbb54de689be8c8ac17767adeb73",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__memory/align.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__memory/align.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
       "path": "__memory/allocate_at_least.h",
       "sha256": "154126d253126555850287c03ee3c069d30a35d916f72107d673f2f4d2212ab6",
       "license": "Apache-2.0 WITH LLVM-exception",
@@ -2834,6 +2882,18 @@
       "upstream_revision": "llvmorg-20.1.8",
       "upstream_path": "libcxx/include/__memory/allocate_at_least.h",
       "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__memory/allocate_at_least.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "__memory/allocation_guard.h",
+      "sha256": "8ccc7e3e8f4bcaa592cd5bb0f78af2122f7188be2e18f78da7519c1e76ca92d9",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__memory/allocation_guard.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__memory/allocation_guard.h",
       "upstream_relationship": "source-reference"
     },
     {
@@ -2858,6 +2918,18 @@
       "upstream_revision": "llvmorg-20.1.8",
       "upstream_path": "libcxx/include/__memory/allocator_arg_t.h",
       "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__memory/allocator_arg_t.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "__memory/allocator_destructor.h",
+      "sha256": "2826fdcdff3c2983f5b79cf0af91f40a6b9b270e7a459220079b663ca2404f06",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__memory/allocator_destructor.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__memory/allocator_destructor.h",
       "upstream_relationship": "source-reference"
     },
     {
@@ -2934,6 +3006,30 @@
     },
     {
       "root": "libcxx",
+      "path": "__memory/inout_ptr.h",
+      "sha256": "afaca6c524156b493cadd704ef31a072f21f5725eb0b2ec42f0cbed650e4500c",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__memory/inout_ptr.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__memory/inout_ptr.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "__memory/out_ptr.h",
+      "sha256": "436581152af118ffffd3e3c6becb282b03d39dc0dd0544d77c638acf2597dd94",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__memory/out_ptr.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__memory/out_ptr.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
       "path": "__memory/pointer_traits.h",
       "sha256": "18b16bfc84c284326b7c74c09e8d83cb88a348d097da7c5ac4bdeb3f814680e3",
       "license": "Apache-2.0 WITH LLVM-exception",
@@ -2942,6 +3038,66 @@
       "upstream_revision": "llvmorg-20.1.8",
       "upstream_path": "libcxx/include/__memory/pointer_traits.h",
       "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__memory/pointer_traits.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "__memory/raw_storage_iterator.h",
+      "sha256": "a51ceeadc72aa7f4a7e2e8079bb1d085432097065da7616a8fa5eaddea816909",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__memory/raw_storage_iterator.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__memory/raw_storage_iterator.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "__memory/shared_count.h",
+      "sha256": "e9ca8c04aa3b6b13c82a2152ac0850a98e6c6dbb06457d919b28e424433cd058",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__memory/shared_count.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__memory/shared_count.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "__memory/shared_ptr.h",
+      "sha256": "1abff832c5ba95f8f68cb6d8c96264c81b7e3ee42281c06769d1d8593823e4eb",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__memory/shared_ptr.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__memory/shared_ptr.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "__memory/temporary_buffer.h",
+      "sha256": "fc26542776d089c6acb460995ce1378740808ebcb0eab377940602f4b87e991f",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__memory/temporary_buffer.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__memory/temporary_buffer.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "__memory/uninitialized_algorithms.h",
+      "sha256": "7aab0335664c61efe09a0a715350ff7cc257f38278ff864b60e82d479e4c4a58",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__memory/uninitialized_algorithms.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__memory/uninitialized_algorithms.h",
       "upstream_relationship": "source-reference"
     },
     {
@@ -4350,6 +4506,18 @@
     },
     {
       "root": "libcxx",
+      "path": "__type_traits/is_specialization.h",
+      "sha256": "97aa27b586bc556ca96394689c36fb78e2bc9cfc58863e9b2fa2df1436ef1b62",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__type_traits/is_specialization.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__type_traits/is_specialization.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
       "path": "__type_traits/is_standard_layout.h",
       "sha256": "6fea040d1b76059357f81ba18ca4829cc52ede05d52c07153445fdb0426de15d",
       "license": "Apache-2.0 WITH LLVM-exception",
@@ -4902,6 +5070,18 @@
     },
     {
       "root": "libcxx",
+      "path": "__utility/exception_guard.h",
+      "sha256": "f4d21d966aeae943f7b6da05ab9950bc5a866c194741141899602096d2af7e5f",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__utility/exception_guard.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__utility/exception_guard.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
       "path": "__utility/exchange.h",
       "sha256": "2edc9e6ec4f0324ece73429d028374c12b28d0543b7cde0aee4e5fd32b98c078",
       "license": "Apache-2.0 WITH LLVM-exception",
@@ -5258,6 +5438,18 @@
       "upstream_revision": "llvmorg-20.1.8",
       "upstream_path": "libcxx/include/math.h",
       "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/math.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "memory",
+      "sha256": "a2dc4b8626860b1024ca1af8067ea4495045e839685fe55cbf4c605ab989f79b",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/memory",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/memory",
       "upstream_relationship": "source-reference"
     },
     {
@@ -6573,7 +6765,7 @@
       "sha256": "58a133735f0a55a624a1703067059f6e78925e51725ec6e1f966072e142c9c42"
     }
   ],
-  "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r8",
+  "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r9",
   "metadata": [
     {
       "root": "platform",

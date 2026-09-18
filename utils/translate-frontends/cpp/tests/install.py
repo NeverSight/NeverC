@@ -103,8 +103,8 @@ def main():
                  "licenses/APSL-1.1.txt", "licenses/APSL-2.0.txt", "licenses/BSD-4-NOTICES.txt"):
         assert (sdk_sources / name).is_file(), name
     sdk_catalog = json.loads((sdk_sources / "catalog.json").read_text())
-    assert sdk_catalog["distribution_id"] == "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r8"
-    assert len(sdk_catalog["headers"]) == 546
+    assert sdk_catalog["distribution_id"] == "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r9"
+    assert len(sdk_catalog["headers"]) == 562
     for entry in sdk_catalog["headers"] + sdk_catalog["metadata"]:
         data = (sdk_sources / entry["root"] / entry["path"]).read_bytes()
         assert hashlib.sha256(data).hexdigest() == entry["sha256"], entry

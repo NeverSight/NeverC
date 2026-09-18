@@ -68,13 +68,16 @@ algorithm surface. The exact
 [`<numeric>`](../docs/cpp-core-v2.md#numeric-header-from-numeric) header is also
 authenticated; its sequential scalar-pointer operations, default C++17
 reductions and scans, exact same-type function-pointer operations including
-transformed scans, and integer `gcd`/`lcm` lower directly. The
+transformed scans, and integer `gcd`/`lcm` lower directly. The exact
+[`<memory>`](../docs/cpp-core-v2.md#memory-header-from-memory) header has an
+authenticated parsing boundary while its runtime objects remain separate. The
 frontend uses the pinned embedded libc++/resource VFS and exposes resolved type
 aliases plus integral/enum constant results. It records all consumed header
 hashes: 101 for the `<type_traits>` closure, nine for standalone `<cstdint>`,
 16 for `<limits>`, 29 for `<cstddef>`, 87 for `<utility>`, 98 for `<tuple>`,
 217 for `<array>`, 10 for `<initializer_list>`, 136 for `<optional>`, 171 for
-`<iterator>`, 354 for `<algorithm>` and 126 for `<numeric>`. The composite
+`<iterator>`, 354 for `<algorithm>`, 126 for `<numeric>` and 267 for `<memory>`.
+The composite
 array-plus-tuple-plus-utility fixture consumes a 231-file union closure; adding
 `<optional>` produces a 253-file union closure on all eight targets.
 Numeric limits fold the documented
@@ -157,8 +160,12 @@ ABI through `uniform_int_distribution`.
 Numeric contributes an exact, platform-free 126-file C++17 header closure.
 Matching non-promoted integer, `float` and `double` pointer ranges admit the
 default `iota`, `accumulate`, `inner_product`, `partial_sum` and
-`adjacent_difference` overloads. Output ranges must be writable; custom
-operations, heterogeneous element types and custom iterators remain rejected.
+`adjacent_difference` overloads, C++17 reductions and scans, transformed scans,
+and exact same-type by-value function-pointer operations. Integer `gcd` and
+`lcm` accept the documented built-in integer combinations. Output ranges must
+be writable; callable objects, heterogeneous element types and custom iterators
+remain rejected. Memory contributes an exact, platform-free 267-file C++17
+header closure; runtime memory objects and operations are not yet admitted.
 The driver authenticates each closure before
 emitting output. Standard-library objects and operations beyond these documented
 surfaces, other standard headers and full C++/STL remain unfinished.
@@ -282,9 +289,9 @@ signaling-NaN builtin argument is not silently mapped to a dynamic runtime call.
 Dynamic binary64 parameters can still carry NaNs and infinities.
 
 The immutable translation headers are embedded in NeverC as distribution
-`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r8`. The
+`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r9`. The
 [SDK catalog](../../../neverc/lib/Translate/Cpp/SDK/catalog.json) records all
-546 approved header files and separate SDK metadata. The original header bytes
+562 approved header files and separate SDK metadata. The original header bytes
 are preserved, including observable macros such as `M_PI` and `_LIBCPP_VERSION`.
 The [SDK notices](../../../neverc/lib/Translate/Cpp/SDK/README.md) document
 origins, redistribution terms and the minimal owned SDK configuration.

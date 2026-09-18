@@ -29,8 +29,8 @@ def main():
     repository = Path(__file__).resolve().parents[4]
     count = 0
     sdk_identity = {
-        "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r8",
-        "catalog_sha256": "b40c4f1899ac3cbc0373d71296ca2ba48127a56bc05b681994ccd1648e0fa857",
+        "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r9",
+        "catalog_sha256": "b01cc7085f50e8c6d80e8319c2ffa2184460f40e9dea98768e547b1ad37468e5",
     }
 
     def check(name, source, code=None, options=(), root=None, profile="cpp-core-v1",
@@ -1337,6 +1337,30 @@ extern "C" int iterator_operations() {
     ):
         check("v2-iterator-" + name, source, code,
               profile="cpp-core-v2", sdk=True)
+
+    memory_header_source = """\
+#include <memory>
+extern "C" int memory_header() { return 0; }
+"""
+    memory_header = check("v2-memory-header", memory_header_source,
+                          profile="cpp-core-v2", sdk=True)
+    assert len(memory_header["sdk_dependencies"]) == 267, memory_header
+    assert any(dependency["root"] == "libcxx" and
+               dependency["path"] == "memory"
+               for dependency in memory_header["sdk_dependencies"]), memory_header
+    assert not any(dependency["root"] == "platform"
+                   for dependency in memory_header["sdk_dependencies"]), memory_header
+    for target in sdk_targets:
+        target_result = check("v2-memory-header-" + target,
+                              memory_header_source, profile="cpp-core-v2",
+                              target=target, sdk=True)
+        assert target_result["sdk_dependencies"] == memory_header["sdk_dependencies"], target_result
+    check("v2-memory-quoted",
+          '#include "memory"\nint main(){return 0;}', "TR0201",
+          profile="cpp-core-v2", sdk=True)
+    check("v2-memory-shared-pointer",
+          '#include <memory>\nint main(){std::shared_ptr<int> p;return p?1:0;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
 
     numeric_header_source = """\
 #include <numeric>
