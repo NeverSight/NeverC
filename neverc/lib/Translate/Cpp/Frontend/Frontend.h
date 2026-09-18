@@ -279,6 +279,16 @@ approvedUtilityAllocatorConstructCall(
     const State &S, const clang::SourceManager &SM,
     const clang::CallExpr *Call, bool Traits,
     const clang::ASTContext &Context);
+struct UtilityAllocatorHeapCall {
+  UtilityAllocatorRecord Allocator;
+  bool Allocate;
+  bool Traits;
+  bool Hint;
+};
+std::optional<UtilityAllocatorHeapCall>
+approvedUtilityAllocatorHeapCall(const State &S, const clang::SourceManager &SM,
+                                 const clang::CallExpr *Call, bool Traits,
+                                 const clang::ASTContext &Context);
 enum class UtilityAllocatorConstruction {
   Default,
   CopyOrMove,
@@ -300,10 +310,14 @@ enum class UtilityOperation {
   AsConst,
   NewLaunder,
   MemoryAllocatorAddress,
+  MemoryAllocatorAllocate,
+  MemoryAllocatorDeallocate,
   MemoryAllocatorMaxSize,
   MemoryAllocatorConstruct,
   MemoryAllocatorDestroy,
   MemoryAllocatorTraitsConstruct,
+  MemoryAllocatorTraitsAllocate,
+  MemoryAllocatorTraitsDeallocate,
   MemoryAllocatorTraitsDestroy,
   MemoryAllocatorTraitsMaxSize,
   MemoryAllocatorTraitsSelectOnCopy,
@@ -956,6 +970,9 @@ public:
   const clang::FunctionDecl *allocationFunction(const clang::FunctionDecl *F,
                                                bool Allocate, clang::SourceLocation L,
                                                bool Array = false);
+  const clang::FunctionDecl *allocatorHeapFunction(bool Allocate,
+                                                   clang::QualType Element,
+                                                   clang::SourceLocation L);
   ArrayAllocationLayout arrayAllocationLayout(clang::QualType Object,
       bool UsualDeleteWantsSize, clang::SourceLocation L);
   ArrayNewInfo arrayNewInfo(const clang::CXXNewExpr *N);

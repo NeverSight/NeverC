@@ -58,10 +58,14 @@ default/copy/move/converting construction, same-type assignment, heterogeneous
 comparison, C++17 `address` and `max_size`. Exact C++17 allocator and
 allocator-traits `construct` calls value-initialize writable scalars or call
 checked source-owned `noexcept` record constructors, including exact
-multi-argument, copy and move selection. Allocation and deallocation remain
-excluded. Exact C++17 allocator `destroy` plus
-`allocator_traits` destruction, `max_size` and copy-selection forwarding reuse
-the checked lifetime and stateless-allocator paths without a libc++ call.
+multi-argument, copy and move selection. Exact allocator and allocator-traits
+`allocate`/`deallocate` forwarders also lower for complete default-new-aligned
+elements when allocation uses a constant count proven within `max_size` and the
+matching global new/delete definitions are source-owned. Hints, receivers,
+pointers and deallocation counts retain their evaluation. Exact C++17
+allocator `destroy` plus `allocator_traits` destruction, `max_size` and
+copy-selection forwarding reuse the checked lifetime and stateless-allocator
+paths without a libc++ call.
 The authenticated 267-file closure is identical and platform-free across all
 supported targets.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).

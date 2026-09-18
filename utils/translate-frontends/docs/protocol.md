@@ -1466,7 +1466,8 @@ The driver supplies a `VerificationContext` containing the exact approved SDK
 identity, verifies the response before and after semantic-IR processing, and
 copies the authenticated dependency closure into the manifest's built-in SDK
 record. Frontend claims cannot authorize an SDK. Except for the documented
-stateless allocator carriers, runtime calls or object/storage identity from
+stateless allocator carriers and allocator calls into checked source-defined
+global allocation functions, runtime calls or object/storage identity from
 these declarations are rejected before lowering; only resolved
 type aliases, integral/enum constants, folded `numeric_limits` scalar queries,
 checked cstddef layout constants, direct `std::byte` scalar operations, and the
@@ -1497,7 +1498,20 @@ allocator-traits `construct` calls authenticate the instantiated pinned
 placement-new/forwarding body, then reuse scalar initialization or the selected
 source-owned `noexcept` record constructor call. They preserve the evaluated
 allocator, target pointer, forwarding categories and source arguments, set
-`memory_lifetimes: true`, and introduce no SDK call or allocation opcode. Direct
+`memory_lifetimes: true`, and introduce no SDK call or allocation opcode. Exact
+allocator and allocator-traits allocation/deallocation forwarding also uses
+existing `call` instructions to checked source-defined global new/delete
+functions. Allocation requires a constant `size_t` count proven within the
+complete default-new-aligned element's `max_size`; the emitted size argument is
+that count times the exact target `sizeof(T)`. Deallocation accepts a runtime
+count and supplies the same multiplication only to a selected sized delete. An
+undefined sized delete may fall back to a source-defined unsized delete only
+when every nonimplicit declaration is the exact pinned libc++ standard
+declaration. Receivers, allocator references, hints, pointers and counts retain
+their evaluation, and the result is cast from the source allocation function's
+`ptr:void` return to the exact `ptr:T`. These operations set
+`memory_lifetimes: true` and add no wire field, SDK call, native-heap import or
+allocation opcode. Direct
 `std::addressof` and
 raw-pointer `pointer_traits::pointer_to` produce checked object addresses.
 Its scalar-pointer `destroy_at`, `destroy` and `destroy_n` operations retain

@@ -167,6 +167,8 @@ static bool supportedDeclarationAttributes(const Decl *D) {
   // These exact implicit facts are synthesized by pinned Clang's
   // AddKnownFunctionAttributesForReplaceableGlobalAllocationFunction. Written
   // attributes never gain this exception and are not copied to emitted calls.
+  // libc++ declares throwing allocation with [[nodiscard]], which Sema copies
+  // to a later source definition as an inherited diagnostic-only attribute.
   for (const auto *Attribute : F->attrs()) {
     // Sema's visibility merge reconstructs this inherited attribute without
     // its implicit bit. Prove its origin in the exact prior implicit global
@@ -188,6 +190,18 @@ static bool supportedDeclarationAttributes(const Decl *D) {
                        Original->getVisibility() == VisibilityAttr::Default;
       }
       if (Generated)
+        continue;
+    }
+    if (const auto *Unused = dyn_cast<WarnUnusedResultAttr>(Attribute);
+        Allocate && Unused && Unused->isInherited() &&
+        Unused->getMessage().empty()) {
+      bool Declared = false;
+      for (const auto *Prior = F->getPreviousDecl(); Prior;
+           Prior = Prior->getPreviousDecl())
+        for (const auto *Original :
+             Prior->specific_attrs<WarnUnusedResultAttr>())
+          Declared |= Original->getMessage().empty();
+      if (Declared)
         continue;
     }
     if (!Allocate)
@@ -3341,6 +3355,84 @@ const FunctionDecl *Adapter::allocationFunction(const FunctionDecl *F,
   for (const auto *P : Definition->parameters())
     type(P->getType(), L);
   return Definition;
+}
+
+const FunctionDecl *Adapter::allocatorHeapFunction(bool Allocate,
+                                                   QualType Element,
+                                                   SourceLocation L) {
+  if (!S.coreV2() || Element.isNull() || Element->isVoidType() ||
+      Element->isIncompleteType() || Element->isFunctionType() ||
+      Context.getTypeAlign(Element) > Context.getTargetInfo().getNewAlign()) {
+    reject(L, Allocate ? "allocator allocation" : "allocator deallocation",
+           "A complete element within the target's default new alignment is "
+           "required.",
+           "TR0203");
+    throw Failure{};
+  }
+  const auto Operator = Allocate ? OO_New : OO_Delete;
+  const auto Name = Context.DeclarationNames.getCXXOperatorName(Operator);
+  const FunctionDecl *Selected = nullptr;
+  auto Match = [&](const FunctionDecl *Candidate, unsigned Parameters) {
+    if (!Candidate || isa<CXXMethodDecl>(Candidate) ||
+        Candidate->isVariadic() ||
+        Candidate->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+        Candidate->getOverloadedOperator() != Operator ||
+        !Candidate->getDeclContext()->getRedeclContext()->isTranslationUnit() ||
+        Candidate->getNumParams() != Parameters ||
+        !Context.hasSameUnqualifiedType(Candidate->getReturnType(),
+                                        Allocate ? Context.VoidPtrTy
+                                                 : Context.VoidTy) ||
+        !Context.hasSameUnqualifiedType(Candidate->getParamDecl(0)->getType(),
+                                        Allocate ? Context.getSizeType()
+                                                 : Context.VoidPtrTy))
+      return false;
+    return Allocate || Parameters == 1 ||
+           Context.hasSameUnqualifiedType(Candidate->getParamDecl(1)->getType(),
+                                          Context.getSizeType());
+  };
+  auto Find = [&](unsigned Parameters) {
+    for (const auto *Declaration :
+         Context.getTranslationUnitDecl()->lookup(Name)) {
+      const auto *Candidate = dyn_cast<FunctionDecl>(Declaration);
+      if (!Match(Candidate, Parameters))
+        continue;
+      if (Selected &&
+          Selected->getCanonicalDecl() != Candidate->getCanonicalDecl()) {
+        reject(L, Allocate ? "allocator allocation" : "allocator deallocation",
+               "A unique matching global allocation function is required.",
+               "TR0203");
+        throw Failure{};
+      }
+      Selected = Candidate;
+    }
+  };
+  Find(Allocate ? 1u : 2u);
+  if (!Allocate && Selected && Selected->getNumParams() == 2 &&
+      !Selected->getDefinition()) {
+    bool StandardSizedDelete = true;
+    for (const auto *Declaration : Selected->redecls()) {
+      if (Declaration->isImplicit() && !Declaration->getLocation().isValid())
+        continue;
+      const auto Origin = S.sdkFile(Sources, Declaration->getLocation());
+      if (!Origin || Origin->Root != "libcxx" ||
+          Origin->Path != "__new/global_new_delete.h") {
+        StandardSizedDelete = false;
+        break;
+      }
+    }
+    if (StandardSizedDelete) {
+      Selected = nullptr;
+      Find(1u);
+    }
+  }
+  if (!Selected && !Allocate)
+    Find(1u);
+  if (!Selected) {
+    reject(L, Allocate ? "allocator allocation" : "allocator deallocation",
+           "A matching global allocation function is required.", "TR0203");
+    throw Failure{};
+  }
+  return allocationFunction(Selected, Allocate, L);
 }
 
 ArrayAllocationLayout Adapter::arrayAllocationLayout(
@@ -13387,9 +13479,13 @@ public:
             break;
           }
           switch (*Operation) {
+          case UtilityOperation::MemoryAllocatorAllocate:
           case UtilityOperation::MemoryAllocatorConstruct:
+          case UtilityOperation::MemoryAllocatorDeallocate:
           case UtilityOperation::MemoryAllocatorDestroy:
+          case UtilityOperation::MemoryAllocatorTraitsAllocate:
           case UtilityOperation::MemoryAllocatorTraitsConstruct:
+          case UtilityOperation::MemoryAllocatorTraitsDeallocate:
           case UtilityOperation::MemoryAllocatorTraitsDestroy:
           case UtilityOperation::MemoryDestroyAt:
           case UtilityOperation::MemoryDestroy:

@@ -1577,6 +1577,58 @@ extern "C" int memory_allocator_objects(int *pointer) {
             target=target, sdk=True)
         assert target_result["sdk_dependencies"] == memory_allocator_objects["sdk_dependencies"], target_result
         check_memory_allocator_objects(target_result)
+
+    memory_allocator_heap_source = """\
+#include <memory>
+using Size = decltype(sizeof(0));
+struct Storage { unsigned long long alignment; unsigned char bytes[64]; };
+Storage storage{};
+Size allocated;
+int released;
+void *operator new(Size size) { allocated = size; return storage.bytes; }
+void operator delete(void *pointer) noexcept {
+  if (pointer == storage.bytes)
+    ++released;
+}
+extern "C" int memory_allocator_heap() {
+  using Traits = std::allocator_traits<std::allocator<int>>;
+  std::allocator<int> allocator;
+  int *first = allocator.allocate(2);
+  allocator.construct(first, 4);
+  allocator.construct(first + 1, 5);
+  int value = first[0] + first[1];
+  allocator.destroy(first + 1);
+  allocator.destroy(first);
+  Size two = 2;
+  allocator.deallocate(first, two);
+  int *second = Traits::allocate(allocator, 1, nullptr);
+  Size one = 1;
+  Traits::deallocate(allocator, second, one);
+  return value == 9 && allocated == sizeof(int) && released == 2 ? 0 : 1;
+}
+"""
+
+    def check_memory_allocator_heap(data):
+        calls = [node for node in walk(data["functions"])
+                 if node.get("op") == "call"]
+        assert len(calls) == 4, data
+        assert len([call for call in calls if "target" in call]) == 2, data
+        assert not [node for node in walk(data["functions"])
+                    if node.get("op") in ("mapped_call", "native_heap_call")], data
+        assert data.get("memory_lifetimes") is True, data
+
+    memory_allocator_heap = check(
+        "v2-memory-allocator-heap", memory_allocator_heap_source,
+        profile="cpp-core-v2", sdk=True)
+    assert memory_allocator_heap["sdk_dependencies"] == memory_allocator_objects["sdk_dependencies"], memory_allocator_heap
+    check_memory_allocator_heap(memory_allocator_heap)
+    for target in sdk_targets:
+        target_result = check(
+            "v2-memory-allocator-heap-" + target,
+            memory_allocator_heap_source, profile="cpp-core-v2",
+            target=target, sdk=True)
+        assert target_result["sdk_dependencies"] == memory_allocator_objects["sdk_dependencies"], target_result
+        check_memory_allocator_heap(target_result)
     memory_address_source = """\
 #include <memory>
 using Pointer = std::pointer_traits<int *>::pointer;

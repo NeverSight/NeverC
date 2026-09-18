@@ -81,8 +81,10 @@ identities, inherited aliases and constants also resolve, while
 `std::addressof`, `pointer_traits::pointer_to` and scalar-pointer destruction
 and uninitialized construction algorithms lower directly. Exact runtime
 allocator objects, C++17 `destroy`, and allocator-traits destruction,
-`max_size` and copy selection also lower directly; allocation and ownership
-objects remain separate. The
+`max_size` and copy selection also lower directly. Exact allocator and traits
+allocation/deallocation forwarders call checked source-defined global new/delete
+for complete default-new-aligned elements and constant nonoverflowing allocation
+counts; ownership objects remain separate. The
 frontend uses the pinned embedded libc++/resource VFS and exposes resolved type
 aliases plus integral/enum constant results. It records all consumed header
 hashes: 101 for the `<type_traits>` closure, nine for standalone `<cstdint>`,
@@ -201,8 +203,11 @@ their exact iterator results. Exact allocator objects, member destruction and
 allocator-traits destruction, construction, `max_size` and copy selection use
 the same checked stateless-record and lifetime paths. Construction accepts
 writable scalars and complete source-owned records whose selected constructor
-is supported, source-owned and `noexcept`; allocation and ownership objects are
-not yet admitted.
+is supported, source-owned and `noexcept`. Allocation/deallocation accepts exact
+member and traits forwarding, including hints and runtime deallocation counts,
+when a source-defined global new/delete path exists and the allocation count is
+a constant proven within `max_size`. Default heap allocation, dynamic allocation
+counts, over-aligned elements and ownership objects are not yet admitted.
 The driver authenticates each closure before
 emitting output. Standard-library objects and operations beyond these documented
 surfaces, other standard headers and full C++/STL remain unfinished.

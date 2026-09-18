@@ -1294,6 +1294,77 @@ class FunctionLowering {
                                   {"args", std::move(Args)},
                                   {"loc", A.loc(L)}});
     };
+    auto AllocatorHeap = [&](const UtilityAllocatorHeapCall &Info) {
+      if (Info.Traits) {
+        if (!Call->getNumArgs())
+          reject(L, "allocator heap operation",
+                 "A checked allocator reference is required.");
+        lvalue(Call->getArg(0));
+      } else {
+        const auto *Object = MemberObject();
+        if (!Object)
+          reject(L, "allocator heap operation",
+                 "A checked std::allocator receiver is required.");
+        lvalue(Object);
+      }
+      const unsigned First = Info.Traits ? 1u : 0u;
+      const auto Size = type(A.Context.getSizeType(), L);
+      const uint64_t ElementBytes =
+          A.Context.getTypeSizeInChars(Info.Allocator.ElementType)
+              .getQuantity();
+      if (!ElementBytes)
+        reject(L, "allocator heap operation",
+               "The allocator element must have positive complete size.");
+
+      if (Info.Allocate) {
+        if (First >= Call->getNumArgs())
+          reject(L, "allocator allocation",
+                 "A checked constant element count is required.");
+        auto Count = snapshot(expression(Call->getArg(First)), L);
+        if (Info.Hint) {
+          if (First + 1 >= Call->getNumArgs())
+            reject(L, "allocator allocation",
+                   "The allocation hint is missing.");
+          discard(Call->getArg(First + 1));
+        }
+        const auto *Function =
+            A.allocatorHeapFunction(true, Info.Allocator.ElementType, L);
+        json::Array Args;
+        Args.push_back(cast(binary("*", std::move(Count),
+                                   quantity(ElementBytes, Size, L), Size, L),
+                            type(Function->getParamDecl(0)->getType(), L), L));
+        chargeCall(Args, L);
+        auto Storage = temporary(type(Function->getReturnType(), L), L);
+        Body.push_back(json::Object{{"op", "call"},
+                                    {"callee", A.name(Function)},
+                                    {"args", std::move(Args)},
+                                    {"target", json::Object(Storage)},
+                                    {"loc", A.loc(L)}});
+        return snapshot(cast(std::move(Storage), type(Call->getType(), L), L),
+                        L);
+      }
+
+      if (First + 1 >= Call->getNumArgs())
+        reject(L, "allocator deallocation",
+               "A checked pointer and element count are required.");
+      auto Pointer = snapshot(expression(Call->getArg(First)), L);
+      auto Count = snapshot(expression(Call->getArg(First + 1)), L);
+      const auto *Function =
+          A.allocatorHeapFunction(false, Info.Allocator.ElementType, L);
+      json::Array Args;
+      Args.push_back(cast(std::move(Pointer),
+                          type(Function->getParamDecl(0)->getType(), L), L));
+      if (Function->getNumParams() == 2)
+        Args.push_back(cast(binary("*", std::move(Count),
+                                   quantity(ElementBytes, Size, L), Size, L),
+                            type(Function->getParamDecl(1)->getType(), L), L));
+      chargeCall(Args, L);
+      Body.push_back(json::Object{{"op", "call"},
+                                  {"callee", A.name(Function)},
+                                  {"args", std::move(Args)},
+                                  {"loc", A.loc(L)}});
+      return Expression();
+    };
     switch (Operation) {
     case UtilityOperation::Move:
     case UtilityOperation::Forward:
@@ -1321,6 +1392,22 @@ class FunctionLowering {
           cast(address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L),
                type(Call->getType(), L), L),
           L);
+    }
+    case UtilityOperation::MemoryAllocatorAllocate: {
+      const auto Info = approvedUtilityAllocatorHeapCall(A.S, A.Sources, Call,
+                                                         false, A.Context);
+      if (!Info || !Info->Allocate)
+        reject(L, "allocator allocation",
+               "A checked std::allocator allocation is required.");
+      return AllocatorHeap(*Info);
+    }
+    case UtilityOperation::MemoryAllocatorDeallocate: {
+      const auto Info = approvedUtilityAllocatorHeapCall(A.S, A.Sources, Call,
+                                                         false, A.Context);
+      if (!Info || Info->Allocate)
+        reject(L, "allocator deallocation",
+               "A checked std::allocator deallocation is required.");
+      return AllocatorHeap(*Info);
     }
     case UtilityOperation::MemoryAllocatorMaxSize: {
       const auto *Object = MemberObject();
@@ -1369,6 +1456,22 @@ class FunctionLowering {
       lvalue(Call->getArg(0));
       AllocatorConstruct(*Info, 1, 2);
       return {};
+    }
+    case UtilityOperation::MemoryAllocatorTraitsAllocate: {
+      const auto Info = approvedUtilityAllocatorHeapCall(A.S, A.Sources, Call,
+                                                         true, A.Context);
+      if (!Info || !Info->Allocate)
+        reject(L, "allocator traits allocation",
+               "A checked allocator_traits allocation is required.");
+      return AllocatorHeap(*Info);
+    }
+    case UtilityOperation::MemoryAllocatorTraitsDeallocate: {
+      const auto Info = approvedUtilityAllocatorHeapCall(A.S, A.Sources, Call,
+                                                         true, A.Context);
+      if (!Info || Info->Allocate)
+        reject(L, "allocator traits deallocation",
+               "A checked allocator_traits deallocation is required.");
+      return AllocatorHeap(*Info);
     }
     case UtilityOperation::MemoryAllocatorTraitsDestroy: {
       if (Call->getNumArgs() != 2)

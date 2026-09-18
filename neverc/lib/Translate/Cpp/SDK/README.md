@@ -163,6 +163,17 @@ They value-initialize writable scalars or call the selected supported,
 source-owned `noexcept` constructor of a complete source-owned non-union
 record. Exact scalar conversion, multi-argument, copy and move forms preserve
 their call-site argument evaluation without a libc++ runtime call.
+Exact allocator and allocator-traits `allocate`/`deallocate` calls authenticate
+the pinned member and traits forwarding bodies. Allocation requires a complete
+non-void element no more aligned than the target's default new alignment, an
+element count that is an integer constant expression proven no greater than
+`max_size`, and a checked source-defined global `operator new(size_t)`.
+Deallocation accepts a runtime count, calls an exact source-defined sized delete
+when present, and otherwise permits the pinned standard sized declaration to
+forward to a checked source-defined unsized delete. Receivers, allocator
+references, hints, pointers and counts retain their evaluation; hints do not
+change the selected global allocation function. These paths use ordinary source
+calls, enable the lifetime alias policy and add no libc++ runtime dependency.
 `std::addressof` and
 raw-pointer `pointer_traits::pointer_to` are admitted for checked non-volatile
 object lvalues. `std::destroy_at`, `std::destroy` and `std::destroy_n`
@@ -185,8 +196,9 @@ accept a complete source-owned non-union record when the authenticated libc++
 helper selects a source-owned, non-template copy or move constructor with
 exactly one same-record reference parameter, a supported definition and a
 resolved `noexcept(true)` specification. Move preserves Clang's selected move
-or copy fallback. Allocator `allocate` and `deallocate`, other allocator-traits
-forwarding calls, potentially throwing, default-argument or
+or copy fallback. Default-heap allocation, dynamic or overflowing allocation
+counts, over-aligned elements, other allocator-traits forwarding calls,
+potentially throwing, default-argument or
 constructor-template source-record construction, nontrivial by-value record
 parameters, ownership objects and the remaining memory operations stay outside
 the direct lowering boundary.

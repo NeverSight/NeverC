@@ -3082,6 +3082,188 @@ utilityAllocatorMemberConstruct(const State &S, const SourceManager &SM,
   return UtilityAllocatorConstructCall{Element, Constructor};
 }
 
+static bool utilityAllocatorConstantCount(const Expr *Count, QualType Element,
+                                          const ASTContext &Context) {
+  if (!Count || Element.isNull() || Element->isVoidType() ||
+      Element->isIncompleteType() ||
+      !Context.hasSameType(Count->getType(), Context.getSizeType()))
+    return false;
+  auto Value = Count->getIntegerConstantExpr(Context);
+  if (!Value || Value->isNegative())
+    return false;
+  const auto Bits = Context.getTypeSize(Context.getSizeType());
+  const auto Bytes = Context.getTypeSizeInChars(Element).getQuantity();
+  if (!Bits || !Bytes)
+    return false;
+  const auto Maximum = llvm::APInt::getMaxValue(Bits).udiv(
+      llvm::APInt(Bits, static_cast<uint64_t>(Bytes)));
+  return Value->extOrTrunc(Bits).ule(Maximum);
+}
+
+static std::optional<UtilityAllocatorHeapCall>
+utilityAllocatorMemberHeap(const State &S, const SourceManager &SM,
+                           const CXXMethodDecl *Method,
+                           const ASTContext &Context) {
+  const auto Allocator = approvedUtilityAllocatorRecord(
+      S, SM, Method ? Method->getParent() : nullptr, Context);
+  const auto *Prototype =
+      Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
+  if (!Method || !Allocator || !Prototype || !Method->getIdentifier() ||
+      Method->isStatic() || Method->isConst() || Method->isVariadic() ||
+      !Method->isInlined() || !Method->hasBody() ||
+      !approvedStandardSDKDeclaration(S, SM, Method) ||
+      !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
+                     "__memory/allocator.h") ||
+      Allocator->ElementType->isVoidType() ||
+      Allocator->ElementType->isIncompleteType())
+    return std::nullopt;
+
+  const bool Allocate = Method->getName() == "allocate";
+  if (!Allocate && Method->getName() != "deallocate")
+    return std::nullopt;
+  const auto Pointer = Context.getPointerType(Allocator->ElementType);
+  const auto Size = Context.getSizeType();
+  if (Allocate) {
+    const bool Hint = Method->getNumParams() == 2;
+    if ((!Hint && Method->getNumParams() != 1) ||
+        !Context.hasSameType(Method->getParamDecl(0)->getType(), Size) ||
+        !Context.hasSameType(Method->getReturnType(), Pointer))
+      return std::nullopt;
+    if (Hint) {
+      const auto HintType = Method->getParamDecl(1)->getType();
+      if (!HintType->isPointerType() ||
+          !HintType->getPointeeType()->isVoidType() ||
+          !HintType->getPointeeType().isConstQualified() ||
+          HintType->getPointeeType().isVolatileQualified() ||
+          HintType->getPointeeType().isRestrictQualified())
+        return std::nullopt;
+    }
+    return UtilityAllocatorHeapCall{*Allocator, true, false, Hint};
+  }
+
+  if (Method->getNumParams() != 2 || !Prototype->isNothrow() ||
+      !Method->getReturnType()->isVoidType() ||
+      !Context.hasSameType(Method->getParamDecl(0)->getType(), Pointer) ||
+      !Context.hasSameType(Method->getParamDecl(1)->getType(), Size))
+    return std::nullopt;
+  return UtilityAllocatorHeapCall{*Allocator, false, false, false};
+}
+
+std::optional<UtilityAllocatorHeapCall>
+approvedUtilityAllocatorHeapCall(const State &S, const SourceManager &SM,
+                                 const CallExpr *Call, bool Traits,
+                                 const ASTContext &Context) {
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);
+  if (!Call || !Method)
+    return std::nullopt;
+  if (!Traits) {
+    const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
+    const auto *Reference = directMethodReference(Call);
+    auto Info = utilityAllocatorMemberHeap(S, SM, Method, Context);
+    if (!Member || !Reference || !Info ||
+        !S.owns(SM, Reference->getExprLoc()) ||
+        Call->getNumArgs() != Method->getNumParams() ||
+        !Context.hasSameType(Call->getType(), Method->getReturnType()) ||
+        !Context.hasSameUnqualifiedType(
+            Member->getImplicitObjectArgument()->getType(),
+            Context.getRecordType(Info->Allocator.Record)))
+      return std::nullopt;
+    for (unsigned I = 0; I < Call->getNumArgs(); ++I)
+      if (!Context.hasSameType(Call->getArg(I)->getType(),
+                               Method->getParamDecl(I)->getType()))
+        return std::nullopt;
+    if (Info->Allocate &&
+        !utilityAllocatorConstantCount(Call->getArg(0),
+                                       Info->Allocator.ElementType, Context))
+      return std::nullopt;
+    return Info;
+  }
+
+  const auto TraitsRecord =
+      approvedUtilityAllocatorTraitsRecord(S, SM, Method->getParent(), Context);
+  const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
+  const auto *Primary = Method->getPrimaryTemplate();
+  if (!TraitsRecord || !Prototype || !Method->isStatic() ||
+      !Method->getIdentifier() || Method->isVariadic() ||
+      !Method->isInlined() || !Method->hasBody() ||
+      !approvedStandardSDKDeclaration(S, SM, Method) ||
+      (Primary && !approvedStandardSDKDeclaration(S, SM, Primary)) ||
+      !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
+                     "__memory/allocator_traits.h") ||
+      (Primary && !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
+                                 "__memory/allocator_traits.h")) ||
+      !approvedUtilityReference(S, SM, Call, Method) ||
+      Call->getNumArgs() != Method->getNumParams() ||
+      !Context.hasSameType(Call->getType(), Method->getReturnType()))
+    return std::nullopt;
+
+  const bool Allocate = Method->getName() == "allocate";
+  if (!Allocate && Method->getName() != "deallocate")
+    return std::nullopt;
+  const unsigned Expected =
+      Allocate ? (Method->getNumParams() == 3 ? 3u : 2u) : 3u;
+  if (Method->getNumParams() != Expected)
+    return std::nullopt;
+  const auto AllocatorType =
+      Context.getRecordType(TraitsRecord->Allocator.Record);
+  const auto AllocatorParameter = Method->getParamDecl(0)->getType();
+  if (!AllocatorParameter->isLValueReferenceType() ||
+      AllocatorParameter->getPointeeType().isConstQualified() ||
+      AllocatorParameter->getPointeeType().isVolatileQualified() ||
+      !Call->getArg(0)->isLValue() ||
+      !Context.hasSameUnqualifiedType(AllocatorParameter->getPointeeType(),
+                                      AllocatorType) ||
+      !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
+                                      AllocatorType))
+    return std::nullopt;
+  for (unsigned I = 1; I < Call->getNumArgs(); ++I)
+    if (!Context.hasSameType(Call->getArg(I)->getType(),
+                             Method->getParamDecl(I)->getType()))
+      return std::nullopt;
+  if (Allocate &&
+      !utilityAllocatorConstantCount(
+          Call->getArg(1), TraitsRecord->Allocator.ElementType, Context))
+    return std::nullopt;
+
+  const CXXMemberCallExpr *Forward = nullptr;
+  unsigned Forwards = 0;
+  auto FindForward = [&](auto &&Self, const Stmt *Node,
+                         unsigned Depth) -> void {
+    if (!Node || Depth > 32)
+      return;
+    if (const auto *MemberCall = dyn_cast<CXXMemberCallExpr>(Node)) {
+      const auto *Callee = MemberCall->getDirectCallee();
+      if (Callee && Callee->getIdentifier() &&
+          Callee->getName() == Method->getName()) {
+        ++Forwards;
+        Forward = MemberCall;
+      }
+    }
+    for (const auto *Child : Node->children())
+      Self(Self, Child, Depth + 1);
+  };
+  FindForward(FindForward, Method->getBody(), 0);
+  const auto *ForwardMethod = dyn_cast_or_null<CXXMethodDecl>(
+      Forward ? Forward->getDirectCallee() : nullptr);
+  const auto ForwardInfo =
+      utilityAllocatorMemberHeap(S, SM, ForwardMethod, Context);
+  if (!Forward || Forwards != 1 || !ForwardMethod || !ForwardInfo ||
+      ForwardInfo->Allocate != Allocate ||
+      Forward->getNumArgs() != ForwardMethod->getNumParams() ||
+      Forward->getNumArgs() + 1 != Call->getNumArgs() ||
+      ForwardMethod->getNumParams() + 1 != Method->getNumParams() ||
+      !Context.hasSameUnqualifiedType(
+          Forward->getImplicitObjectArgument()->getType(), AllocatorType))
+    return std::nullopt;
+  for (unsigned I = 0; I < ForwardMethod->getNumParams(); ++I)
+    if (!Context.hasSameType(Method->getParamDecl(I + 1)->getType(),
+                             ForwardMethod->getParamDecl(I)->getType()))
+      return std::nullopt;
+  return UtilityAllocatorHeapCall{TraitsRecord->Allocator, Allocate, true,
+                                  Allocate && Method->getNumParams() == 3};
+}
+
 std::optional<UtilityAllocatorConstructCall>
 approvedUtilityAllocatorConstructCall(const State &S,
                                       const SourceManager &SM,
@@ -3342,6 +3524,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                             Parameter->getPointeeType()))
       return UtilityOperation::MemoryPointerTo;
   }
+  if (const auto Heap =
+          approvedUtilityAllocatorHeapCall(S, SM, Call, true, Context))
+    return Heap->Allocate ? UtilityOperation::MemoryAllocatorTraitsAllocate
+                          : UtilityOperation::MemoryAllocatorTraitsDeallocate;
+  if (const auto Heap =
+          approvedUtilityAllocatorHeapCall(S, SM, Call, false, Context))
+    return Heap->Allocate ? UtilityOperation::MemoryAllocatorAllocate
+                          : UtilityOperation::MemoryAllocatorDeallocate;
   if (approvedUtilityAllocatorConstructCall(S, SM, Call, true, Context))
     return UtilityOperation::MemoryAllocatorTraitsConstruct;
   if (approvedUtilityAllocatorConstructCall(S, SM, Call, false, Context))

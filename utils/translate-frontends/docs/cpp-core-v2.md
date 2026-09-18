@@ -525,6 +525,30 @@ libc++ runtime call. Potentially throwing constructors, constructor defaults,
 constructor templates, nontrivial by-value record parameters, user-defined
 conversions and unsupported target records remain rejected.
 
+Exact `allocator<T>::allocate` and `deallocate` members and their exact
+`allocator_traits<allocator<T>>` forwarding operations lower through the
+existing source-defined global allocation-function contract. `T` must be a
+complete non-void object whose alignment does not exceed the target's default
+new alignment. An allocation count must be an integer constant expression no
+greater than `max_size`; this proves the byte multiplication cannot overflow
+without adding the unsupported `bad_array_new_length` exception path. Zero is
+valid and still calls the selected allocator. The deprecated allocation-hint
+member and the traits hint overload evaluate the hint once after the allocator
+and count, then use the same global allocation function.
+
+Allocation requires the checked source-owned definition of the ordinary global
+`operator new(size_t)` and returns its storage as `T *` without creating lexical
+ownership. Deallocation evaluates its pointer and count once and multiplies the
+runtime count by `sizeof(T)` when a source-defined sized delete is selected. If
+the exact pinned libc++ sized-delete declaration has no definition, it may use
+the existing standard forward to a checked source-defined unsized delete; any
+source-written undefined sized redeclaration blocks that inference. The allocator
+receiver or traits allocator reference is evaluated first. Both paths emit
+ordinary checked source calls, enable `memory_lifetimes`, and introduce no
+libc++ runtime call or allocation opcode. Default heap allocation, dynamic or
+overflowing allocation counts, extended alignment, exceptions and ownership
+types remain rejected.
+
 The exact `std::addressof(T&)` and raw-pointer
 `std::pointer_traits<T *>::pointer_to(T&)` operations directly produce the
 address of an otherwise admitted non-volatile object lvalue. They preserve

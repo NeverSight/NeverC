@@ -24952,6 +24952,140 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2MemoryAllocatorHeapForwardersRunAtBothOptimizations) {
+  const auto Source = tmpFile("memory-allocator-heap.cpp");
+  const auto Output = tmpFile("memory-allocator-heap.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+struct Storage { unsigned long long alignment; unsigned char bytes[256]; };
+Storage storage{};
+Size last_size;
+int allocations;
+int releases;
+void *operator new(Size size) {
+  ++allocations;
+  last_size = size;
+  return storage.bytes;
+}
+void operator delete(void *pointer) noexcept {
+  if (pointer == storage.bytes)
+    ++releases;
+}
+#include <memory>
+int effects;
+std::allocator<int> &observe(std::allocator<int> &value, int bit) {
+  effects |= bit;
+  return value;
+}
+int *observe(int *value, int bit) { effects |= bit; return value; }
+Size observe(Size value, int bit) { effects |= bit; return value; }
+const void *hint(int bit) { effects |= bit; return nullptr; }
+int main() {
+  std::allocator<int> allocator;
+  using Traits = std::allocator_traits<std::allocator<int>>;
+
+  int *one = allocator.allocate(1);
+  if (!one || last_size != sizeof(int)) return 1;
+  allocator.construct(one, 7);
+  if (*one != 7) return 2;
+  allocator.destroy(one);
+  Size one_count = 1;
+  allocator.deallocate(one, one_count);
+
+  effects = 0;
+  int *two = observe(allocator, 1).allocate(2, hint(2));
+  if (effects != 3 || last_size != 2 * sizeof(int)) return 3;
+  allocator.construct(two, 8);
+  allocator.construct(two + 1, 9);
+  if (two[0] != 8 || two[1] != 9) return 4;
+  allocator.destroy(two + 1);
+  allocator.destroy(two);
+  effects = 0;
+  observe(allocator, 1).deallocate(observe(two, 2), observe(Size(2), 4));
+  if (effects != 7) return 5;
+
+  effects = 0;
+  int *three = Traits::allocate(observe(allocator, 1), 3);
+  if (effects != 1 || last_size != 3 * sizeof(int)) return 6;
+  Size three_count = 3;
+  Traits::deallocate(allocator, three, three_count);
+
+  effects = 0;
+  int *four = Traits::allocate(observe(allocator, 1), 4, hint(2));
+  if (effects != 3 || last_size != 4 * sizeof(int)) return 7;
+  effects = 0;
+  Traits::deallocate(observe(allocator, 1), observe(four, 2),
+                     observe(Size(4), 4));
+  if (effects != 7) return 8;
+
+  int *zero = allocator.allocate(0);
+  if (!zero || last_size != 0) return 9;
+  allocator.deallocate(zero, 0);
+  return allocations == 5 && releases == 5 ? 0 : 10;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Root = Manifest->getAsObject();
+  ASSERT_NE(Root, nullptr);
+  EXPECT_NE(readFile(Output).find(
+                "translated memory lifetimes require may_alias support"),
+            std::string::npos);
+  const auto *SDK = Root->getObject("sdk");
+  ASSERT_NE(SDK, nullptr);
+  const auto *Dependencies = SDK->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 267u);
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("memory-allocator-heap" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+
+  const auto SizedSource = tmpFile("memory-allocator-sized-delete.cpp");
+  const auto SizedOutput = tmpFile("memory-allocator-sized-delete.nc");
+  writeFile(SizedSource, R"cpp(
+#include <memory>
+using Size = decltype(sizeof(0));
+struct Storage { unsigned long long alignment; unsigned char bytes[64]; };
+Storage storage{};
+Size allocated;
+Size released;
+void *operator new(Size size) { allocated = size; return storage.bytes; }
+void operator delete(void *, Size size) noexcept { released = size; }
+int main() {
+  std::allocator<long> allocator;
+  long *pointer = allocator.allocate(3);
+  Size count = 3;
+  allocator.deallocate(pointer, count);
+  return allocated == 3 * sizeof(long) && released == allocated ? 0 : 1;
+}
+)cpp");
+  Result = translate(SizedSource,
+                     {"--profile", "cpp-core-v2", "-o", SizedOutput.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE("sized " + Optimization);
+    const auto Executable =
+        tmpFile("memory-allocator-sized-delete" + Optimization);
+    auto Compile = compileGenerated(SizedOutput, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2MemoryAllocatorMetadataRequiresExactTemplates) {
   struct Rejection {
     const char *Name;
@@ -24974,14 +25108,46 @@ TEST_F(TranslateTest, CoreV2MemoryAllocatorMetadataRequiresExactTemplates) {
        "static_assert(__is_same(std::uses_allocator<int,A>,"
        "std::uses_allocator<int,A>));",
        "TR0201"},
-      {"allocate-call",
+      {"allocate-missing-new-definition",
        "#include <memory>\nint main(){std::allocator<int> allocator;"
        "int *p=allocator.allocate(1);allocator.deallocate(p,1);}",
        "TR0203"},
-      {"deallocate-call",
+      {"deallocate-missing-delete-definition",
        "#include <memory>\nint main(){std::allocator<int> allocator;"
        "allocator.deallocate(nullptr,0);}",
        "TR0203"},
+      {"allocate-runtime-count",
+       "using Size=decltype(sizeof(0));unsigned char bytes[64];"
+       "void*operator new(Size){return bytes;}"
+       "void operator delete(void*)noexcept{}\n#include <memory>\n"
+       "int*f(std::allocator<int>&a,Size n){return a.allocate(n);}",
+       "TR0203"},
+      {"allocate-overflow",
+       "using Size=decltype(sizeof(0));unsigned char bytes[64];"
+       "void*operator new(Size){return bytes;}"
+       "void operator delete(void*)noexcept{}\n#include <memory>\n"
+       "int f(){std::allocator<int>a;return a.allocate(Size(-1))!=nullptr;}",
+       "TR0203"},
+      {"allocate-overaligned",
+       "using Size=decltype(sizeof(0));unsigned char bytes[128];"
+       "void*operator new(Size){return bytes;}"
+       "void operator delete(void*)noexcept{}\n#include <memory>\n"
+       "struct alignas(64) R{int n;};R*f(std::allocator<R>&a){"
+       "return a.allocate(1);}",
+       "TR0201"},
+      {"deallocate-written-sized-declaration",
+       "using Size=decltype(sizeof(0));unsigned char bytes[64];"
+       "void*operator new(Size){return bytes;}"
+       "void operator delete(void*)noexcept{}\n#include <memory>\n"
+       "void operator delete(void*,Size)noexcept;"
+       "void f(std::allocator<int>&a,int*p){a.deallocate(p,1);}",
+       "TR0203"},
+      {"allocation-definition-written-nodiscard",
+       "using Size=decltype(sizeof(0));unsigned char bytes[64];"
+       "[[nodiscard]]void*operator new(Size){return bytes;}"
+       "void operator delete(void*)noexcept{}\n#include <memory>\n"
+       "int*f(std::allocator<int>&a){return a.allocate(1);}",
+       "TR0201"},
       {"address-member-pointer",
        "#include <memory>\nusing A=std::allocator<int>;"
        "using F=int*(A::*)(int&)const noexcept;"
