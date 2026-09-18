@@ -1489,7 +1489,11 @@ libc++ representation as a record with one synthetic
 `{name:"nct_allocator_storage",type:"u8"}` field at bit offset zero. Their
 default, copy/move and non-void converting construction, same-type assignment,
 heterogeneous equality, deprecated C++17 `address` and complete-element
-`max_size` lower directly without an SDK call. Direct `std::addressof` and
+`max_size` lower directly without an SDK call. Exact allocator member
+`destroy`, allocator-traits `destroy` with its matching member or `destroy_at`
+fallback, traits `max_size` and traits copy selection reuse the existing
+checked destruction, size and stateless-record operations. Direct
+`std::addressof` and
 raw-pointer `pointer_traits::pointer_to` produce checked object addresses.
 Its scalar-pointer `destroy_at`, `destroy` and `destroy_n` operations retain
 argument effects and counted pointer advancement without a runtime destructor

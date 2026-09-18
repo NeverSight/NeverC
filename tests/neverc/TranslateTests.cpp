@@ -24742,6 +24742,96 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2MemoryAllocatorLifecycleForwardersRunAtBothOptimizations) {
+  const auto Source = tmpFile("memory-allocator-lifetimes.cpp");
+  const auto Output = tmpFile("memory-allocator-lifetimes.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+struct Storage { unsigned long long alignment; unsigned char bytes[128]; };
+int effects;
+int destroyed;
+struct Record {
+  int value;
+  Record(int input) : value(input) {}
+  ~Record() { destroyed = destroyed * 10 + value; }
+};
+std::allocator<Record> &record_allocator(std::allocator<Record> &value) {
+  ++effects;
+  return value;
+}
+std::allocator<int> &int_allocator(std::allocator<int> &value) {
+  ++effects;
+  return value;
+}
+Record *record_pointer(Record *value) { ++effects; return value; }
+int *int_pointer(int *value) { ++effects; return value; }
+int main() {
+  std::allocator<Record> records;
+  Storage first{};
+  Record *one = new (first.bytes) Record(7);
+  effects = 0;
+  record_allocator(records).destroy(record_pointer(one));
+  if (effects != 2 || destroyed != 7)
+    return 1;
+
+  std::allocator<int> integers;
+  using Traits = std::allocator_traits<std::allocator<int>>;
+  Storage second{};
+  Record *two = new (second.bytes) Record(8);
+  effects = 0;
+  Traits::destroy(int_allocator(integers), record_pointer(two));
+  if (effects != 2 || destroyed != 78)
+    return 2;
+
+  int scalar = 9;
+  effects = 0;
+  Traits::destroy(int_allocator(integers), int_pointer(&scalar));
+  if (effects != 2)
+    return 3;
+  effects = 0;
+  if (Traits::max_size(int_allocator(integers)) !=
+          static_cast<std::size_t>(-1) / sizeof(int) ||
+      effects != 1)
+    return 4;
+  effects = 0;
+  std::allocator<int> selected =
+      Traits::select_on_container_copy_construction(int_allocator(integers));
+  if (effects != 1 || !(selected == integers))
+    return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Root = Manifest->getAsObject();
+  ASSERT_NE(Root, nullptr);
+  EXPECT_NE(readFile(Output).find(
+                "translated memory lifetimes require may_alias support"),
+            std::string::npos);
+  const auto *SDK = Root->getObject("sdk");
+  ASSERT_NE(SDK, nullptr);
+  const auto *Dependencies = SDK->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 267u);
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("memory-allocator-lifetimes" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2MemoryAllocatorMetadataRequiresExactTemplates) {
   struct Rejection {
     const char *Name;
@@ -24782,6 +24872,30 @@ TEST_F(TranslateTest, CoreV2MemoryAllocatorMetadataRequiresExactTemplates) {
        "using F=std::size_t(A::*)()const noexcept;"
        "F f(){return &A::max_size;}",
        "TR0201"},
+      {"destroy-member-pointer",
+       "#include <memory>\nusing A=std::allocator<int>;"
+       "using F=void(A::*)(int*);F f(){return &A::destroy;}",
+       "TR0201"},
+      {"traits-destroy-function-pointer",
+       "#include <memory>\nusing A=std::allocator<int>;"
+       "using T=std::allocator_traits<A>;using F=void(*)(A&,int*);"
+       "F f(){return &T::destroy<int>;}",
+       "TR0201"},
+      {"traits-max-size-function-pointer",
+       "#include <memory>\nusing A=std::allocator<int>;"
+       "using T=std::allocator_traits<A>;"
+       "using F=std::size_t(*)(const A&)noexcept;"
+       "F f(){return &T::max_size<>;}",
+       "TR0201"},
+      {"traits-select-function-pointer",
+       "#include <memory>\nusing A=std::allocator<int>;"
+       "using T=std::allocator_traits<A>;using F=A(*)(const A&);"
+       "F f(){return &T::select_on_container_copy_construction<>;}",
+       "TR0201"},
+      {"traits-destroy-volatile",
+       "#include <memory>\nint main(){std::allocator<int>a;volatile int n=1;"
+       "std::allocator_traits<std::allocator<int>>::destroy(a,&n);}",
+       "TR0203"},
       {"equality-function-pointer",
        "#include <memory>\nusing F=bool(*)(const std::allocator<int>&,"
        "const std::allocator<long>&)noexcept;"

@@ -151,7 +151,13 @@ without materializing a standard-library object. Exact runtime allocator
 specializations use an authenticated one-byte stateless carrier. Default,
 copy/move and non-void converting construction, same-type assignment,
 heterogeneous equality, deprecated C++17 `address` and complete-element
-`max_size` lower directly without a libc++ call. `std::addressof` and
+`max_size` lower directly without a libc++ call. Exact allocator `destroy`
+accepts its matching raw element pointer. Exact
+`allocator_traits<std::allocator<T>>` destruction accepts an admitted raw
+scalar or complete source-record pointer and preserves the pinned member or
+`destroy_at` fallback selection; its `max_size` and
+`select_on_container_copy_construction` also lower through the checked
+stateless allocator path. `std::addressof` and
 raw-pointer `pointer_traits::pointer_to` are admitted for checked non-volatile
 object lvalues. `std::destroy_at`, `std::destroy` and `std::destroy_n`
 additionally lower for scalar and complete source-owned non-union record object
@@ -173,7 +179,7 @@ accept a complete source-owned non-union record when the authenticated libc++
 helper selects a source-owned, non-template copy or move constructor with
 exactly one same-record reference parameter, a supported definition and a
 resolved `noexcept(true)` specification. Move preserves Clang's selected move
-or copy fallback. Allocator `allocate`, `deallocate`, `construct`, `destroy` and
+or copy fallback. Allocator `allocate`, `deallocate` and `construct`, other
 allocator-traits forwarding calls, potentially throwing, default-argument or
 constructor-template source-record construction, ownership objects and the
 remaining memory operations stay outside the direct lowering boundary.

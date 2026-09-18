@@ -496,6 +496,19 @@ pointee qualification. The deprecated C++17 `max_size` operation evaluates its
 receiver and returns the target `size_t` maximum divided by the positive size of
 the complete non-void element. These operations emit no libc++ runtime call.
 
+The deprecated C++17 `allocator<T>::destroy` member accepts the exact matching
+raw `T *`. Exact `allocator_traits<allocator<T>>::destroy` additionally accepts
+an admitted raw pointer to another scalar or complete source-owned non-union
+record, preserving libc++'s selected member-forwarding or `destroy_at` fallback
+behavior. Both evaluate the allocator expression before capturing the pointer;
+trivial destruction has no body and nontrivial records call the existing
+checked destruction helper. Both enable the `memory_lifetimes` alias policy.
+The exact traits `max_size` operation evaluates its allocator reference and
+uses the same target `size_t` maximum divided by complete `T` size. Exact
+`select_on_container_copy_construction` evaluates its source once and returns
+the copied stateless allocator carrier. These traits operations emit no libc++
+runtime call.
+
 The exact `std::addressof(T&)` and raw-pointer
 `std::pointer_traits<T *>::pointer_to(T&)` operations directly produce the
 address of an otherwise admitted non-volatile object lvalue. They preserve
@@ -562,10 +575,11 @@ addresses, quoted includes, shadows and forged declarations remain rejected.
 Potentially throwing constructors, constructors with extra default arguments,
 constructor templates and unsupported source-record definitions remain
 rejected. Allocator member or comparison function addresses, custom allocator
-types and traits, `allocate`, `deallocate`, `construct`, `destroy` and their
-`allocator_traits` forwarding calls remain rejected. Allocation requires a
-separate default-heap and exception contract. Smart pointers and ownership
-factories also remain outside this boundary.
+types and traits, `allocate`, `deallocate`, `construct` and other
+`allocator_traits` forwarding calls remain rejected. Volatile destruction
+pointers remain rejected. Allocation requires a separate default-heap and
+exception contract. Smart pointers and ownership factories also remain outside
+this boundary.
 
 ## Algorithm header from `<algorithm>`
 

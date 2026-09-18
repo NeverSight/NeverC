@@ -79,8 +79,10 @@ authenticated parsing boundary; raw-pointer `pointer_traits`, exact
 resolve at compile time. Exact `uses_allocator<T, std::allocator<U>>`
 identities, inherited aliases and constants also resolve, while
 `std::addressof`, `pointer_traits::pointer_to` and scalar-pointer destruction
-and uninitialized construction algorithms lower directly. Runtime allocators
-and ownership objects remain separate. The
+and uninitialized construction algorithms lower directly. Exact runtime
+allocator objects, C++17 `destroy`, and allocator-traits destruction,
+`max_size` and copy selection also lower directly; allocation and ownership
+objects remain separate. The
 frontend uses the pinned embedded libc++/resource VFS and exposes resolved type
 aliases plus integral/enum constant results. It records all consumed header
 hashes: 101 for the `<type_traits>` closure, nine for standalone `<cstdint>`,
@@ -195,9 +197,10 @@ runtime call. Exact
 argument evaluation and counted iterator results without emitting a trivial
 destructor call. The ten C++17 `uninitialized_*` copy, move, fill, default and
 value construction forms directly initialize scalar pointer ranges and retain
-their exact iterator results. Runtime allocator objects and calls, record
-construction, nontrivial destruction and ownership objects are not yet
-admitted.
+their exact iterator results. Exact allocator objects, member destruction and
+allocator-traits destruction, `max_size` and copy selection use the same
+checked stateless-record and lifetime paths. Allocation, allocator construction
+and ownership objects are not yet admitted.
 The driver authenticates each closure before
 emitting output. Standard-library objects and operations beyond these documented
 surfaces, other standard headers and full C++/STL remain unfinished.

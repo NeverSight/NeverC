@@ -56,7 +56,9 @@ selected by the authenticated libc++ helper for complete source-owned records;
 exact runtime allocator objects use a checked one-byte stateless carrier with
 default/copy/move/converting construction, same-type assignment, heterogeneous
 comparison, C++17 `address` and `max_size`. Allocation/deallocation and
-allocator-traits forwarding calls remain excluded.
+`construct` remain excluded. Exact C++17 allocator `destroy` plus
+`allocator_traits` destruction, `max_size` and copy-selection forwarding reuse
+the checked lifetime and stateless-allocator paths without a libc++ call.
 The authenticated 267-file closure is identical and platform-free across all
 supported targets.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).

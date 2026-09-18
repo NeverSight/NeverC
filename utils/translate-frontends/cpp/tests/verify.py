@@ -1515,6 +1515,7 @@ extern "C" int memory_allocator_metadata() {
     memory_allocator_object_source = """\
 #include <memory>
 extern "C" int memory_allocator_objects(int *pointer) {
+  using Traits = std::allocator_traits<std::allocator<int>>;
   std::allocator<int> first;
   std::allocator<int> copied(first);
   std::allocator<int> moved(static_cast<std::allocator<int> &&>(copied));
@@ -1532,9 +1533,16 @@ extern "C" int memory_allocator_objects(int *pointer) {
   const int &constant = *pointer;
   if (first.address(*pointer) != pointer || first.address(constant) != pointer)
     return 2;
-  return first.max_size() == static_cast<std::size_t>(-1) / sizeof(int)
-             ? 0
-             : 3;
+  std::allocator<int> selected =
+      Traits::select_on_container_copy_construction(first);
+  if (!(selected == first) ||
+      first.max_size() != static_cast<std::size_t>(-1) / sizeof(int) ||
+      Traits::max_size(first) != static_cast<std::size_t>(-1) / sizeof(int))
+    return 3;
+  int second = 0;
+  first.destroy(pointer);
+  Traits::destroy(first, &second);
+  return 0;
 }
 """
 
@@ -1553,6 +1561,7 @@ extern "C" int memory_allocator_objects(int *pointer) {
         } for record in allocator_records), data
         assert not [node for node in walk(data["functions"])
                     if node.get("op") in ("call", "mapped_call")], data
+        assert data.get("memory_lifetimes") is True, data
 
     memory_allocator_objects = check(
         "v2-memory-allocator-objects", memory_allocator_object_source,

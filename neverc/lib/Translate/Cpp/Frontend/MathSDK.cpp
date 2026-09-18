@@ -503,6 +503,37 @@ approvedUtilityAllocatorRecord(const State &S, const SourceManager &SM,
   return UtilityAllocatorRecord{Definition, Element};
 }
 
+std::optional<UtilityAllocatorTraitsRecord>
+approvedUtilityAllocatorTraitsRecord(const State &S, const SourceManager &SM,
+                                     const CXXRecordDecl *Record,
+                                     const ASTContext &Context) {
+  const auto *Definition = Record ? Record->getDefinition() : nullptr;
+  const auto *Specialization =
+      dyn_cast_or_null<ClassTemplateSpecializationDecl>(Definition);
+  if (!Definition || !Specialization || Definition->isInvalidDecl() ||
+      Definition->isUnion() || Definition->isDependentContext() ||
+      approvedMemoryTemplateMetadata(S, SM, Definition) !=
+          MemoryTemplateMetadata::AllocatorTraits ||
+      !approvedStandardSDKDeclaration(S, SM, Definition) ||
+      !Definition->field_empty() || Definition->getNumBases() ||
+      Definition->isDynamicClass() || !Definition->isEmpty())
+    return std::nullopt;
+  const auto &Arguments = Specialization->getTemplateArgs();
+  if (Arguments.size() != 1 ||
+      Arguments.get(0).getKind() != TemplateArgument::Type)
+    return std::nullopt;
+  const auto AllocatorType = Arguments.get(0).getAsType();
+  const auto Allocator = approvedUtilityAllocatorRecord(
+      S, SM,
+      AllocatorType.isNull() ? nullptr : AllocatorType->getAsCXXRecordDecl(),
+      Context);
+  if (!Allocator ||
+      !Context.hasSameUnqualifiedType(
+          AllocatorType, Context.getRecordType(Allocator->Record)))
+    return std::nullopt;
+  return UtilityAllocatorTraitsRecord{Definition, *Allocator};
+}
+
 std::optional<UtilityAllocatorConstruction>
 approvedUtilityAllocatorConstruction(const State &S, const SourceManager &SM,
                                      const CXXConstructExpr *Construction,
@@ -3082,6 +3113,66 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                             Parameter->getPointeeType()))
       return UtilityOperation::MemoryPointerTo;
   }
+  if (Method && Method->isStatic() && Method->getIdentifier() &&
+      !Method->isVariadic() && Method->hasBody() && Method->isInlined() &&
+      approvedStandardSDKDeclaration(S, SM, Method) &&
+      cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
+                    "__memory/allocator_traits.h") &&
+      approvedUtilityReference(S, SM, Call, Method)) {
+    const auto Traits = approvedUtilityAllocatorTraitsRecord(
+        S, SM, Method->getParent(), Context);
+    const auto *Primary = Method->getPrimaryTemplate();
+    const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
+    if (Traits && Primary && Prototype &&
+        Method->getParent()->getCanonicalDecl() ==
+            Traits->Record->getCanonicalDecl() &&
+        approvedStandardSDKDeclaration(S, SM, Primary) &&
+        cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
+                      "__memory/allocator_traits.h") &&
+        Method->getNumParams() == Call->getNumArgs() &&
+        Method->getNumParams() >= 1) {
+      const auto AllocatorType = Context.getRecordType(Traits->Allocator.Record);
+      const auto AllocatorParameter = Method->getParamDecl(0)->getType();
+      const auto *AllocatorArgument = Call->getArg(0);
+      const bool ExactAllocatorReference =
+          AllocatorParameter->isLValueReferenceType() &&
+          !AllocatorParameter->getPointeeType().isVolatileQualified() &&
+          AllocatorArgument->isLValue() &&
+          Context.hasSameUnqualifiedType(
+              AllocatorParameter->getPointeeType(), AllocatorType) &&
+          Context.hasSameUnqualifiedType(AllocatorArgument->getType(),
+                                         AllocatorType);
+      if (ExactAllocatorReference && Method->getName() == "destroy" &&
+          Method->getNumParams() == 2 && Call->getNumArgs() == 2 &&
+          !AllocatorParameter->getPointeeType().isConstQualified() &&
+          Method->getReturnType()->isVoidType() &&
+          Context.hasSameType(Call->getType(), Method->getReturnType())) {
+        const auto Pointer = Method->getParamDecl(1)->getType();
+        if (utilityMemoryDestructiblePointer(S, SM, Context, Pointer) &&
+            Context.hasSameType(Call->getArg(1)->getType(), Pointer))
+          return UtilityOperation::MemoryAllocatorTraitsDestroy;
+      }
+      if (ExactAllocatorReference &&
+          AllocatorParameter->getPointeeType().isConstQualified() &&
+          Method->getName() == "max_size" && Method->getNumParams() == 1 &&
+          Call->getNumArgs() == 1 && Call->isPRValue() &&
+          Prototype->isNothrow() &&
+          !Traits->Allocator.ElementType->isVoidType() &&
+          !Traits->Allocator.ElementType->isIncompleteType() &&
+          Context.hasSameType(Method->getReturnType(), Context.getSizeType()) &&
+          Context.hasSameType(Call->getType(), Context.getSizeType()))
+        return UtilityOperation::MemoryAllocatorTraitsMaxSize;
+      if (ExactAllocatorReference &&
+          AllocatorParameter->getPointeeType().isConstQualified() &&
+          Method->getName() == "select_on_container_copy_construction" &&
+          Method->getNumParams() == 1 && Call->getNumArgs() == 1 &&
+          Call->isPRValue() &&
+          Context.hasSameUnqualifiedType(Method->getReturnType(),
+                                         AllocatorType) &&
+          Context.hasSameUnqualifiedType(Call->getType(), AllocatorType))
+        return UtilityOperation::MemoryAllocatorTraitsSelectOnCopy;
+    }
+  }
   if (const auto *MemberCall = dyn_cast<CXXMemberCallExpr>(Call)) {
     const auto Allocator = approvedUtilityAllocatorRecord(
         S, SM, Method ? Method->getParent() : nullptr, Context);
@@ -3089,6 +3180,27 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto *Prototype =
         Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
     const auto *Object = MemberCall->getImplicitObjectArgument();
+    if (Method && Allocator && Reference && Object &&
+        Method->getIdentifier() && Method->getName() == "destroy" &&
+        !Method->isStatic() && !Method->isConst() && !Method->isVariadic() &&
+        Method->hasBody() && Method->isInlined() &&
+        Method->getNumParams() == 1 && Call->getNumArgs() == 1 &&
+        Method->getReturnType()->isVoidType() &&
+        Context.hasSameType(Call->getType(), Method->getReturnType()) &&
+        approvedStandardSDKDeclaration(S, SM, Method) &&
+        cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
+                      "__memory/allocator.h") &&
+        S.owns(SM, Reference->getExprLoc()) &&
+        Context.hasSameUnqualifiedType(
+            Object->getType(), Context.getRecordType(Allocator->Record))) {
+      const auto Pointer = Method->getParamDecl(0)->getType();
+      if (!Allocator->ElementType->isVoidType() &&
+          Context.hasSameType(
+              Pointer, Context.getPointerType(Allocator->ElementType)) &&
+          Context.hasSameType(Call->getArg(0)->getType(), Pointer) &&
+          utilityMemoryDestructiblePointer(S, SM, Context, Pointer))
+        return UtilityOperation::MemoryAllocatorDestroy;
+    }
     if (Method && Allocator && Reference && Prototype && Object &&
         Method->getIdentifier() && !Method->isStatic() && Method->isConst() &&
         !Method->isVariadic() && Method->hasBody() && Method->isInlined() &&

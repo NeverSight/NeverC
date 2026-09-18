@@ -1213,6 +1213,24 @@ class FunctionLowering {
              std::move(Value), L);
       return Place;
     };
+    auto AllocatorMaximum = [&](const UtilityAllocatorRecord &Allocator,
+                                llvm::StringRef Description) {
+      if (Allocator.ElementType->isVoidType() ||
+          Allocator.ElementType->isIncompleteType())
+        reject(L, Description,
+               "A checked complete std::allocator element is required.");
+      const auto ResultType = type(Call->getType(), L);
+      const unsigned Bits = integerBits(ResultType);
+      const uint64_t Maximum = Bits == 64
+                                   ? std::numeric_limits<uint64_t>::max()
+                                   : (uint64_t(1) << Bits) - 1;
+      const uint64_t ElementBytes =
+          A.Context.getTypeSizeInChars(Allocator.ElementType).getQuantity();
+      if (!ElementBytes)
+        reject(L, Description,
+               "The allocator element must have positive complete size.");
+      return quantity(Maximum / ElementBytes, ResultType, L);
+    };
     switch (Operation) {
     case UtilityOperation::Move:
     case UtilityOperation::Forward:
@@ -1253,16 +1271,62 @@ class FunctionLowering {
         reject(L, "allocator max_size",
                "A checked complete std::allocator element is required.");
       lvalue(Object);
-      const auto ResultType = type(Call->getType(), L);
-      const unsigned Bits = integerBits(ResultType);
-      const uint64_t Maximum = Bits == 64 ? std::numeric_limits<uint64_t>::max()
-                                          : (uint64_t(1) << Bits) - 1;
-      const uint64_t ElementBytes =
-          A.Context.getTypeSizeInChars(Allocator->ElementType).getQuantity();
-      if (!ElementBytes)
-        reject(L, "allocator max_size",
-               "The allocator element must have positive complete size.");
-      return quantity(Maximum / ElementBytes, ResultType, L);
+      return AllocatorMaximum(*Allocator, "allocator max_size");
+    }
+    case UtilityOperation::MemoryAllocatorDestroy: {
+      const auto *Object = MemberObject();
+      if (!Object || Call->getNumArgs() != 1)
+        reject(L, "allocator destroy",
+               "A checked std::allocator receiver and one pointer are "
+               "required.");
+      // The receiver is sequenced before the bound argument.
+      lvalue(Object);
+      auto Pointer = snapshot(expression(Call->getArg(0)), L);
+      destroy(dereference(Pointer, L),
+              Call->getArg(0)->getType()->getPointeeType(), L);
+      return {};
+    }
+    case UtilityOperation::MemoryAllocatorTraitsDestroy: {
+      if (Call->getNumArgs() != 2)
+        reject(L, "allocator traits destroy",
+               "A checked allocator reference and one pointer are required.");
+      lvalue(Call->getArg(0));
+      auto Pointer = snapshot(expression(Call->getArg(1)), L);
+      destroy(dereference(Pointer, L),
+              Call->getArg(1)->getType()->getPointeeType(), L);
+      return {};
+    }
+    case UtilityOperation::MemoryAllocatorTraitsMaxSize: {
+      const auto *Method =
+          dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
+      const auto Traits = approvedUtilityAllocatorTraitsRecord(
+          A.S, A.Sources, Method ? Method->getParent() : nullptr, A.Context);
+      if (!Traits || Call->getNumArgs() != 1)
+        reject(L, "allocator traits max_size",
+               "A checked allocator_traits specialization is required.");
+      lvalue(Call->getArg(0));
+      return AllocatorMaximum(Traits->Allocator,
+                              "allocator traits max_size");
+    }
+    case UtilityOperation::MemoryAllocatorTraitsSelectOnCopy: {
+      const auto *Method =
+          dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
+      const auto Traits = approvedUtilityAllocatorTraitsRecord(
+          A.S, A.Sources, Method ? Method->getParent() : nullptr, A.Context);
+      if (!Traits || Call->getNumArgs() != 1)
+        reject(L, "allocator traits copy selection",
+               "A checked allocator_traits specialization is required.");
+      // std::allocator has no state, but the bound source expression and its
+      // full-expression lifetime remain observable.
+      expression(Call->getArg(0));
+      auto Place = Destination ? std::move(*Destination)
+                               : objectTemporary(Call->getType(), L);
+      Destination.reset();
+      if (Place.getString("type") != type(Call->getType(), L))
+        reject(L, "allocator traits copy selection",
+               "The destination type differs from the allocator result.");
+      assign(json::Object(Place), A.zero(Call->getType(), L), L);
+      return Place;
     }
     case UtilityOperation::MemoryAllocatorEqual:
     case UtilityOperation::MemoryAllocatorNotEqual:

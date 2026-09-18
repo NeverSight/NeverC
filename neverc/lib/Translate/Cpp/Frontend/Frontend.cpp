@@ -13387,6 +13387,8 @@ public:
             break;
           }
           switch (*Operation) {
+          case UtilityOperation::MemoryAllocatorDestroy:
+          case UtilityOperation::MemoryAllocatorTraitsDestroy:
           case UtilityOperation::MemoryDestroyAt:
           case UtilityOperation::MemoryDestroy:
           case UtilityOperation::MemoryDestroyN:
