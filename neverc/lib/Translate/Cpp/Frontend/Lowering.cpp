@@ -1221,6 +1221,15 @@ class FunctionLowering {
       // portable IR keeps the same storage designator; the selected outer
       // constructor/binding still observes Clang's checked result category.
       return lvalue(Call->getArg(0));
+    case UtilityOperation::MemoryAddressof:
+    case UtilityOperation::MemoryPointerTo:
+      // Both operations bypass an overloaded operator& and return the address
+      // of the already-bound object. Keep the argument as a storage designator
+      // so its expression is evaluated exactly once.
+      return snapshot(
+          cast(address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L),
+               type(Call->getType(), L), L),
+          L);
     case UtilityOperation::Exchange: {
       // Function arguments are bound before exchange reads the old value.
       // Capture the destination address and converted new scalar first, then

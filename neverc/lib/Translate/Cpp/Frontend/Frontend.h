@@ -250,6 +250,8 @@ enum class UtilityOperation {
   Forward,
   MoveIfNoexcept,
   AsConst,
+  MemoryAddressof,
+  MemoryPointerTo,
   Exchange,
   Swap,
   MakePair,

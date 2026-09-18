@@ -1469,7 +1469,9 @@ record. Frontend claims cannot authorize an SDK. Runtime calls or object/storage
 identity from these declarations are rejected before lowering; only resolved
 type aliases, integral/enum constants, folded `numeric_limits` scalar queries,
 checked cstddef layout constants, direct `std::byte` scalar operations, and the
-documented scalar utility and `pair` operations reach semantic IR.
+documented standard-library direct operations reach semantic IR. The memory
+surface includes authenticated raw-pointer `pointer_traits` aliases plus direct
+`std::addressof` and raw-pointer `pointer_traits::pointer_to` object addresses.
 
 ## Gated mathematics extension
 

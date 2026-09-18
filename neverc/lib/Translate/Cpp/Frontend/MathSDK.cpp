@@ -2599,6 +2599,48 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       OptionalObject ? OptionalObject->getType()->getAsCXXRecordDecl()
                      : nullptr,
       Context);
+  if (Method && Method->isStatic() && Method->getIdentifier() &&
+      Method->getName() == "pointer_to" && !Method->isVariadic() &&
+      Method->getNumParams() == 1 && Call->getNumArgs() == 1 &&
+      Call->isPRValue() && Call->getArg(0)->isLValue() && Method->hasBody() &&
+      Method->isInlined() && approvedStandardSDKDeclaration(S, SM, Method) &&
+      cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
+                    "__memory/pointer_traits.h") &&
+      approvedUtilityReference(S, SM, Call, Method)) {
+    const auto *Traits =
+        dyn_cast<ClassTemplateSpecializationDecl>(Method->getParent());
+    const auto *Template = Traits ? Traits->getSpecializedTemplate() : nullptr;
+    const auto *CanonicalTemplate =
+        Template ? Template->getCanonicalDecl() : nullptr;
+    const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
+    const auto *Arguments = Traits ? &Traits->getTemplateArgs() : nullptr;
+    const auto Parameter = Method->getParamDecl(0)->getType();
+    const auto Result = Method->getReturnType();
+    if (Traits && Template && CanonicalTemplate && Prototype &&
+        Prototype->isNothrow() && Arguments && Arguments->size() == 1 &&
+        Arguments->get(0).getKind() == TemplateArgument::Type &&
+        !Traits->isUnion() && !Traits->isDependentContext() &&
+        Traits->getName() == "pointer_traits" &&
+        Template->getName() == "pointer_traits" &&
+        approvedStandardSDKDeclaration(S, SM, Traits) &&
+        approvedStandardSDKDeclaration(S, SM, Template) &&
+        approvedStandardSDKDeclaration(S, SM, CanonicalTemplate) &&
+        cstddefOrigin(S, SM, Traits->getLocation(), "libcxx",
+                      "__memory/pointer_traits.h") &&
+        cstddefOrigin(S, SM, Template->getLocation(), "libcxx",
+                      "__memory/pointer_traits.h") &&
+        cstddefOrigin(S, SM, CanonicalTemplate->getLocation(), "libcxx",
+                      "__memory/pointer_traits.h") &&
+        Parameter->isLValueReferenceType() &&
+        utilityObjectPointer(Context, Result) &&
+        Context.hasSameType(Arguments->get(0).getAsType(), Result) &&
+        Context.hasSameType(Call->getType(), Result) &&
+        Context.hasSameType(Parameter->getPointeeType(),
+                            Result->getPointeeType()) &&
+        Context.hasSameType(Call->getArg(0)->getType(),
+                            Parameter->getPointeeType()))
+      return UtilityOperation::MemoryPointerTo;
+  }
   if (Method && Optional) {
     const auto *Reference = directMethodReference(Call);
     const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
@@ -3077,6 +3119,21 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   const llvm::StringRef Name = Function->getIdentifier()
                                    ? Function->getIdentifier()->getName()
                                    : llvm::StringRef();
+  if (Origin->Path == "__memory/addressof.h" && Name == "addressof" &&
+      Function->isInlined() && Function->isConstexpr() &&
+      Call->getNumArgs() == 1 && Function->getNumParams() == 1 &&
+      Call->isPRValue() && Call->getArg(0)->isLValue()) {
+    const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
+    const auto Parameter = Function->getParamDecl(0)->getType();
+    const auto Result = Function->getReturnType();
+    if (Prototype && Prototype->isNothrow() &&
+        Parameter->isLValueReferenceType() &&
+        utilityObjectPointer(Context, Result) &&
+        Same(Call->getType(), Result) &&
+        Same(Call->getArg(0)->getType(), Parameter->getPointeeType()) &&
+        Same(Parameter->getPointeeType(), Result->getPointeeType()))
+      return UtilityOperation::MemoryAddressof;
+  }
   auto OptionalFor = [&](QualType Type) {
     return approvedUtilityOptionalRecord(
         S, SM, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(), Context);

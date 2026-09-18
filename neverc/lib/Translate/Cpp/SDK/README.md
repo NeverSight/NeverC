@@ -132,8 +132,10 @@ callback signatures and the remaining C++17 numeric components stay outside
 the admitted runtime boundary.
 The `<memory>` surface has a 267-file libc++/resource closure on every core-v2
 target. The exact C++17 public header and all consumed component headers are
-authenticated without platform headers. This increment admits header parsing;
-memory objects and runtime operations remain outside the documented direct
+authenticated without platform headers. Raw-pointer `pointer_traits` aliases,
+`std::addressof` and raw-pointer `pointer_traits::pointer_to` are admitted for
+checked non-volatile object lvalues. Allocators, uninitialized algorithms,
+ownership objects and the remaining memory operations stay outside the direct
 lowering boundary.
 Core v2 never admits the `platform` root.
 Math v1 continues to use its separately checked libc++, resource and Darwin

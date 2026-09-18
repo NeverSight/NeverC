@@ -1355,12 +1355,65 @@ extern "C" int memory_header() { return 0; }
                               memory_header_source, profile="cpp-core-v2",
                               target=target, sdk=True)
         assert target_result["sdk_dependencies"] == memory_header["sdk_dependencies"], target_result
+    memory_address_source = """\
+#include <memory>
+using Pointer = std::pointer_traits<int *>::pointer;
+using Element = std::pointer_traits<int *>::element_type;
+using Difference = std::pointer_traits<int *>::difference_type;
+using Rebound = std::pointer_traits<int *>::rebind<double>;
+static_assert(__is_same(Pointer, int *));
+static_assert(__is_same(Element, int));
+static_assert(__is_same(Rebound, double *));
+static_assert(sizeof(Difference) == sizeof(void *));
+int memory_object;
+extern "C" int *memory_addressof() {
+  return std::addressof(memory_object);
+}
+extern "C" int *memory_pointer_to() {
+  return std::pointer_traits<int *>::pointer_to(memory_object);
+}
+"""
+    memory_address = check("v2-memory-address", memory_address_source,
+                           profile="cpp-core-v2", sdk=True)
+    assert len(memory_address["sdk_dependencies"]) == 267, memory_address
+    assert not [node for node in walk(memory_address["functions"])
+                if node.get("op") in ("call", "mapped_call")], memory_address
+    for target in sdk_targets:
+        target_result = check("v2-memory-address-" + target,
+                              memory_address_source, profile="cpp-core-v2",
+                              target=target, sdk=True)
+        assert target_result["sdk_dependencies"] == memory_address["sdk_dependencies"], target_result
     check("v2-memory-quoted",
           '#include "memory"\nint main(){return 0;}', "TR0201",
           profile="cpp-core-v2", sdk=True)
     check("v2-memory-shared-pointer",
           '#include <memory>\nint main(){std::shared_ptr<int> p;return p?1:0;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
+    for name, source, code in (
+        ("addressof-address",
+         '#include <memory>\nusing F=int*(*)(int&)noexcept;F f(){return &std::addressof<int>;}',
+         "TR0201"),
+        ("addressof-volatile",
+         '#include <memory>\nint main(){volatile int n=1;return *std::addressof(n);}',
+         "TR0201"),
+        ("addressof-rvalue",
+         '#include <memory>\nint main(){return *std::addressof(1);}',
+         "TR0202"),
+        ("pointer-to-address",
+         '#include <memory>\nauto f(){return &std::pointer_traits<int*>::pointer_to;}',
+         "TR0201"),
+        ("pointer-to-function",
+         '#include <memory>\nint f(){return 1;}int main(){return std::pointer_traits<int(*)()>::pointer_to(f)();}',
+         "TR0203"),
+        ("pointer-to-fancy",
+         '#include <memory>\nstruct F{using element_type=int;static F pointer_to(int&x){return F{&x};}int*p;};int main(){int n=1;return *std::pointer_traits<F>::pointer_to(n).p;}',
+         "TR0203"),
+        ("forged-addressof",
+         'namespace std{template<class T>T*addressof(T&);}int main(){int n=1;return *std::addressof(n);}',
+         "TR0201"),
+    ):
+        check("v2-memory-" + name, source, code,
+              profile="cpp-core-v2", sdk=True)
 
     numeric_header_source = """\
 #include <numeric>

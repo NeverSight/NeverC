@@ -24365,6 +24365,133 @@ int main() { return 0; }
   expectNoArtifacts(QuotedOutput);
 }
 
+TEST_F(TranslateTest, CoreV2MemoryAddressOperationsRunAtBothOptimizations) {
+  const auto Source = tmpFile("memory-address.cpp");
+  const auto Output = tmpFile("memory-address.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+using Pointer = std::pointer_traits<int *>::pointer;
+using Element = std::pointer_traits<int *>::element_type;
+using Difference = std::pointer_traits<int *>::difference_type;
+using Rebound = std::pointer_traits<int *>::rebind<double>;
+static_assert(__is_same(Pointer, int *));
+static_assert(__is_same(Element, int));
+static_assert(__is_same(Rebound, double *));
+static_assert(sizeof(Difference) == sizeof(void *));
+struct R {
+  int value;
+  R *operator&() { return nullptr; }
+  const R *operator&() const { return nullptr; }
+};
+int effects;
+R &select(R &value) { ++effects; return value; }
+int main() {
+  R value{17};
+  effects = 0;
+  R *actual = std::addressof(select(value));
+  if (effects != 1 || !actual || actual->value != 17 || &value != nullptr)
+    return 1;
+  const R &constant = value;
+  const R *constant_address = std::addressof(constant);
+  if (!constant_address || constant_address->value != 17 ||
+      &constant != nullptr)
+    return 2;
+
+  int number = 19;
+  int *pointer = std::pointer_traits<int *>::pointer_to(number);
+  if (pointer != std::addressof(number) || *pointer != 19)
+    return 3;
+  *pointer = 23;
+  const int &constant_number = number;
+  const int *constant_pointer =
+      std::pointer_traits<const int *>::pointer_to(constant_number);
+  if (constant_pointer != pointer || *constant_pointer != 23)
+    return 4;
+
+  int values[2]{3, 4};
+  int (*array_address)[2] = std::addressof(values);
+  int (*array_pointer)[2] =
+      std::pointer_traits<int (*)[2]>::pointer_to(values);
+  int *raw = values;
+  int **pointer_address = std::addressof(raw);
+  return array_address == array_pointer && (*array_address)[1] == 4 &&
+                 pointer_address && *pointer_address == values
+             ? 0
+             : 5;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *SDK = Manifest->getAsObject()->getObject("sdk");
+  ASSERT_NE(SDK, nullptr);
+  const auto *Dependencies = SDK->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 267u);
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("memory-address" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2MemoryAddressOperationsRequireExactObjectForms) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Rejection Cases[] = {
+      {"addressof-address",
+       "#include <memory>\nusing F=int*(*)(int&)noexcept;"
+       "F f(){return &std::addressof<int>;}",
+       "TR0201"},
+      {"addressof-volatile",
+       "#include <memory>\nint main(){volatile int n=1;"
+       "return *std::addressof(n);}",
+       "TR0201"},
+      {"addressof-rvalue",
+       "#include <memory>\nint main(){return *std::addressof(1);}", "TR0202"},
+      {"pointer-to-address",
+       "#include <memory>\nauto f(){return "
+       "&std::pointer_traits<int*>::pointer_to;}",
+       "TR0201"},
+      {"pointer-to-function",
+       "#include <memory>\nint f(){return 1;}int main(){return "
+       "std::pointer_traits<int(*)()>::pointer_to(f)();}",
+       "TR0203"},
+      {"pointer-to-fancy",
+       "#include <memory>\nstruct F{using element_type=int;static F "
+       "pointer_to(int&x){return F{&x};}int*p;};int main(){int n=1;return "
+       "*std::pointer_traits<F>::pointer_to(n).p;}",
+       "TR0203"},
+      {"forged-addressof",
+       "namespace std{template<class T>T*addressof(T&);}int main(){int n=1;"
+       "return *std::addressof(n);}",
+       "TR0201"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("memory-address-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("memory-address-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest,
        CoreV2NumericSequentialPointerOperationsRunAtBothOptimizations) {
   const auto Source = tmpFile("numeric-sequential.cpp");

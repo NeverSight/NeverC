@@ -427,14 +427,22 @@ Core v2 admits the exact angled `<memory>` entry from the pinned embedded VFS.
 Its 267-file libc++/resource dependency closure is identical on all eight
 supported targets and contains no platform headers. The public C++17 header and
 all consumed component headers retain their upstream bytes and are authenticated
-before translation.
+before translation. Raw-pointer `std::pointer_traits<T *>` exposes its exact
+`pointer`, `element_type`, `difference_type` and `rebind<U>` aliases.
 
-This increment establishes the parsing and provenance boundary only. Memory
-objects and runtime operations, including allocators, uninitialized algorithms,
-smart pointers and ownership factories, remain rejected until their layouts,
-allocation behavior, destruction, error handling and cross-target ABI contracts
-receive direct lowerings. Quoted includes, shadows and forged declarations remain
-rejected.
+The exact `std::addressof(T&)` and raw-pointer
+`std::pointer_traits<T *>::pointer_to(T&)` operations directly produce the
+address of an otherwise admitted non-volatile object lvalue. They preserve
+top-level pointee `const`, accept scalar, pointer, array and source-record
+objects, evaluate the bound argument once, and bypass an overloaded
+`operator&`. Their result is an ordinary checked raw object pointer; they do not
+call libc++ at runtime.
+
+Volatile objects, rvalues, function pointers, fancy-pointer `pointer_traits`,
+function addresses, quoted includes, shadows and forged declarations remain
+rejected. Allocators, uninitialized algorithms, smart pointers and ownership
+factories remain rejected until their layouts, allocation behavior, destruction,
+error handling and cross-target ABI contracts receive direct lowerings.
 
 ## Algorithm header from `<algorithm>`
 
