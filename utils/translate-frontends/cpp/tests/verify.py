@@ -1542,7 +1542,9 @@ extern "C" int memory_allocator_objects(int *pointer) {
   int second = 0;
   first.destroy(pointer);
   Traits::destroy(first, &second);
-  return 0;
+  first.construct(pointer, 4);
+  Traits::construct(first, &second, 5);
+  return *pointer == 4 && second == 5 ? 0 : 4;
 }
 """
 

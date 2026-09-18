@@ -509,6 +509,22 @@ uses the same target `size_t` maximum divided by complete `T` size. Exact
 the copied stateless allocator carrier. These traits operations emit no libc++
 runtime call.
 
+The deprecated C++17 `allocator<T>::construct` member and exact
+`allocator_traits<allocator<T>>::construct` forwarding overload authenticate
+the instantiated libc++ placement-new body before lowering. Their target may be
+a writable admitted scalar or a complete source-owned non-union record,
+independent of allocator `T`. Zero-argument scalar construction value-initializes
+to zero; one scalar argument uses the checked direct scalar conversion. Record
+construction retains Clang's exact selected default, multi-argument, copy or
+move constructor and requires a supported source-owned definition with a
+resolved `noexcept(true)` specification. Forwarded reference categories and
+the allocator, pointer and source argument evaluations are preserved. The
+constructed object remains caller-owned and is compatible with the admitted
+destruction operations. These calls enable `memory_lifetimes` and emit no
+libc++ runtime call. Potentially throwing constructors, constructor defaults,
+constructor templates, nontrivial by-value record parameters, user-defined
+conversions and unsupported target records remain rejected.
+
 The exact `std::addressof(T&)` and raw-pointer
 `std::pointer_traits<T *>::pointer_to(T&)` operations directly produce the
 address of an otherwise admitted non-volatile object lvalue. They preserve

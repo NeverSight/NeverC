@@ -2945,6 +2945,235 @@ static const DeclRefExpr *approvedUtilityReference(
              : nullptr;
 }
 
+static bool utilityAllocatorForwardingArguments(
+    const CallExpr *Call, const CXXMethodDecl *Method, unsigned Offset,
+    const ASTContext &Context) {
+  if (!Call || !Method || Call->getNumArgs() != Method->getNumParams() ||
+      Offset > Method->getNumParams())
+    return false;
+  for (unsigned I = Offset; I < Method->getNumParams(); ++I) {
+    const auto Parameter = Method->getParamDecl(I)->getType();
+    const auto *Argument = Call->getArg(I);
+    if (!Parameter->isReferenceType() ||
+        Parameter->getPointeeType().isVolatileQualified() ||
+        Parameter->getPointeeType().isRestrictQualified() ||
+        !Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                        Argument->getType()) ||
+        (Parameter->isLValueReferenceType() ? !Argument->isLValue()
+                                            : Argument->isLValue()))
+      return false;
+  }
+  return true;
+}
+
+static std::optional<UtilityAllocatorConstructCall>
+utilityAllocatorMemberConstruct(const State &S, const SourceManager &SM,
+                                const CXXMethodDecl *Method,
+                                const ASTContext &Context) {
+  const auto Allocator = approvedUtilityAllocatorRecord(
+      S, SM, Method ? Method->getParent() : nullptr, Context);
+  const auto *Primary = Method ? Method->getPrimaryTemplate() : nullptr;
+  if (!Method || !Allocator || !Primary || !Method->getIdentifier() ||
+      Method->getName() != "construct" || Method->isStatic() ||
+      Method->isConst() || Method->isVariadic() || !Method->isInlined() ||
+      !Method->hasBody() || Method->getNumParams() < 1 ||
+      !Method->getReturnType()->isVoidType() ||
+      !approvedStandardSDKDeclaration(S, SM, Method) ||
+      !approvedStandardSDKDeclaration(S, SM, Primary) ||
+      !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
+                     "__memory/allocator.h") ||
+      !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
+                     "__memory/allocator.h"))
+    return std::nullopt;
+
+  const auto Pointer = Method->getParamDecl(0)->getType();
+  if (!utilityObjectPointer(Context, Pointer) ||
+      Pointer->getPointeeType().isConstQualified() ||
+      Pointer->getPointeeType().isVolatileQualified() ||
+      Pointer->getPointeeType()->isIncompleteType())
+    return std::nullopt;
+  const auto Element = Pointer->getPointeeType().getUnqualifiedType();
+
+  const CXXNewExpr *Allocation = nullptr;
+  unsigned Allocations = 0;
+  auto FindAllocation = [&](auto &&Self, const Stmt *Node,
+                            unsigned Depth) -> void {
+    if (!Node || Depth > 32)
+      return;
+    if (const auto *New = dyn_cast<CXXNewExpr>(Node)) {
+      ++Allocations;
+      Allocation = New;
+    }
+    for (const auto *Child : Node->children())
+      Self(Self, Child, Depth + 1);
+  };
+  FindAllocation(FindAllocation, Method->getBody(), 0);
+  const auto *AllocationFunction =
+      Allocation ? Allocation->getOperatorNew() : nullptr;
+  if (!Allocation || Allocations != 1 || Allocation->isArray() ||
+      Allocation->getNumPlacementArgs() != 1 || !AllocationFunction ||
+      !cstddefOrigin(S, SM, Allocation->getExprLoc(), "libcxx",
+                     "__memory/allocator.h") ||
+      !cstddefOrigin(S, SM, AllocationFunction->getLocation(), "libcxx",
+                     "__new/placement_new_delete.h") ||
+      !Context.hasSameUnqualifiedType(Allocation->getAllocatedType(),
+                                      Element))
+    return std::nullopt;
+
+  const unsigned ArgumentCount = Method->getNumParams() - 1;
+  if (utilityScalar(Context, Element)) {
+    if (ArgumentCount > 1 || !Allocation->getInitializer())
+      return std::nullopt;
+    if (!ArgumentCount) {
+      if (!isa<ImplicitValueInitExpr>(Allocation->getInitializer()))
+        return std::nullopt;
+    } else {
+      const auto Forwarded =
+          Method->getParamDecl(1)->getType()->getPointeeType();
+      if (!utilityScalarDirectConversion(Context, Forwarded, Element))
+        return std::nullopt;
+    }
+    return UtilityAllocatorConstructCall{Element, nullptr};
+  }
+
+  const auto *Record = definedRecord(Element);
+  const auto *Construction = Allocation->getConstructExpr();
+  const auto *Constructor =
+      Construction ? Construction->getConstructor() : nullptr;
+  const auto *Prototype =
+      Constructor ? Constructor->getType()->getAs<FunctionProtoType>()
+                  : nullptr;
+  if (!Record || Record->isUnion() || Record->isDependentContext() ||
+      !S.owns(SM, Record->getLocation()) || !Construction || !Constructor ||
+      Constructor->getParent()->getCanonicalDecl() !=
+          Record->getCanonicalDecl() ||
+      Construction->getNumArgs() != ArgumentCount ||
+      Constructor->getNumParams() != ArgumentCount ||
+      Constructor->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+      !supportedConstructor(Constructor) || !Prototype ||
+      !Prototype->isNothrow() || !S.owns(SM, Constructor->getLocation()))
+    return std::nullopt;
+  for (unsigned I = 0; I < ArgumentCount; ++I) {
+    const auto Forwarded =
+        Method->getParamDecl(I + 1)->getType()->getPointeeType();
+    const auto Parameter = Constructor->getParamDecl(I)->getType();
+    if (Parameter->isReferenceType()) {
+      if (Parameter->getPointeeType().isVolatileQualified() ||
+          Parameter->getPointeeType().isRestrictQualified() ||
+          !Context.hasSameUnqualifiedType(Forwarded,
+                                          Parameter->getPointeeType()))
+        return std::nullopt;
+    } else if (utilityScalar(Context, Parameter)) {
+      if (!utilityScalarDirectConversion(Context, Forwarded, Parameter))
+        return std::nullopt;
+    } else if (!Parameter->isRecordType() ||
+               !Context.hasSameUnqualifiedType(Forwarded, Parameter) ||
+               !utilityMemoryTrivialValue(S, SM, Context, Parameter)) {
+      return std::nullopt;
+    }
+  }
+  if (!Constructor->isTrivial()) {
+    const FunctionDecl *Definition = nullptr;
+    if (!Constructor->hasBody(Definition) || !Definition ||
+        !S.owns(SM, Definition->getLocation()))
+      return std::nullopt;
+    Constructor = cast<CXXConstructorDecl>(Definition);
+  }
+  return UtilityAllocatorConstructCall{Element, Constructor};
+}
+
+std::optional<UtilityAllocatorConstructCall>
+approvedUtilityAllocatorConstructCall(const State &S,
+                                      const SourceManager &SM,
+                                      const CallExpr *Call, bool Traits,
+                                      const ASTContext &Context) {
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);
+  if (!Call || !Method || !Call->getType()->isVoidType() ||
+      !Context.hasSameType(Call->getType(), Method->getReturnType()))
+    return std::nullopt;
+  if (!Traits) {
+    const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
+    const auto *Reference = directMethodReference(Call);
+    const auto Info = utilityAllocatorMemberConstruct(S, SM, Method, Context);
+    if (!Member || !Reference || !Info ||
+        !S.owns(SM, Reference->getExprLoc()) ||
+        !utilityAllocatorForwardingArguments(Call, Method, 1, Context) ||
+        !Context.hasSameType(Call->getArg(0)->getType(),
+                             Method->getParamDecl(0)->getType()) ||
+        !Context.hasSameUnqualifiedType(
+            Member->getImplicitObjectArgument()->getType(),
+            Context.getRecordType(Method->getParent())))
+      return std::nullopt;
+    return Info;
+  }
+
+  const auto TraitsRecord = approvedUtilityAllocatorTraitsRecord(
+      S, SM, Method->getParent(), Context);
+  const auto *Primary = Method->getPrimaryTemplate();
+  if (!TraitsRecord || !Primary || !Method->isStatic() ||
+      !Method->getIdentifier() || Method->getName() != "construct" ||
+      Method->isVariadic() || !Method->isInlined() || !Method->hasBody() ||
+      Method->getNumParams() < 2 ||
+      !approvedStandardSDKDeclaration(S, SM, Method) ||
+      !approvedStandardSDKDeclaration(S, SM, Primary) ||
+      !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
+                     "__memory/allocator_traits.h") ||
+      !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
+                     "__memory/allocator_traits.h") ||
+      !approvedUtilityReference(S, SM, Call, Method) ||
+      !utilityAllocatorForwardingArguments(Call, Method, 2, Context))
+    return std::nullopt;
+  const auto AllocatorType =
+      Context.getRecordType(TraitsRecord->Allocator.Record);
+  const auto AllocatorParameter = Method->getParamDecl(0)->getType();
+  if (!AllocatorParameter->isLValueReferenceType() ||
+      AllocatorParameter->getPointeeType().isConstQualified() ||
+      !Call->getArg(0)->isLValue() ||
+      !Context.hasSameUnqualifiedType(AllocatorParameter->getPointeeType(),
+                                      AllocatorType) ||
+      !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
+                                      AllocatorType) ||
+      !Context.hasSameType(Call->getArg(1)->getType(),
+                           Method->getParamDecl(1)->getType()))
+    return std::nullopt;
+
+  const CXXMemberCallExpr *Forward = nullptr;
+  unsigned Forwards = 0;
+  auto FindForward = [&](auto &&Self, const Stmt *Node,
+                         unsigned Depth) -> void {
+    if (!Node || Depth > 32)
+      return;
+    if (const auto *MemberCall = dyn_cast<CXXMemberCallExpr>(Node)) {
+      const auto *Callee = MemberCall->getDirectCallee();
+      if (Callee && Callee->getIdentifier() &&
+          Callee->getName() == "construct") {
+        ++Forwards;
+        Forward = MemberCall;
+      }
+    }
+    for (const auto *Child : Node->children())
+      Self(Self, Child, Depth + 1);
+  };
+  FindForward(FindForward, Method->getBody(), 0);
+  const auto *ForwardMethod = dyn_cast_or_null<CXXMethodDecl>(
+      Forward ? Forward->getDirectCallee() : nullptr);
+  const auto Info =
+      utilityAllocatorMemberConstruct(S, SM, ForwardMethod, Context);
+  if (!Forward || Forwards != 1 || !ForwardMethod || !Info ||
+      Forward->getNumArgs() + 1 != Call->getNumArgs() ||
+      !Context.hasSameUnqualifiedType(
+          Forward->getImplicitObjectArgument()->getType(), AllocatorType) ||
+      !Context.hasSameType(Method->getParamDecl(1)->getType(),
+                           ForwardMethod->getParamDecl(0)->getType()))
+    return std::nullopt;
+  for (unsigned I = 2; I < Method->getNumParams(); ++I)
+    if (!Context.hasSameType(Method->getParamDecl(I)->getType(),
+                             ForwardMethod->getParamDecl(I - 1)->getType()))
+      return std::nullopt;
+  return Info;
+}
+
 static bool utilityComparableValue(const State &S, const SourceManager &SM,
                                    const ASTContext &Context, QualType Left,
                                    QualType Right, bool Ordered,
@@ -3113,6 +3342,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                             Parameter->getPointeeType()))
       return UtilityOperation::MemoryPointerTo;
   }
+  if (approvedUtilityAllocatorConstructCall(S, SM, Call, true, Context))
+    return UtilityOperation::MemoryAllocatorTraitsConstruct;
+  if (approvedUtilityAllocatorConstructCall(S, SM, Call, false, Context))
+    return UtilityOperation::MemoryAllocatorConstruct;
   if (Method && Method->isStatic() && Method->getIdentifier() &&
       !Method->isVariadic() && Method->hasBody() && Method->isInlined() &&
       approvedStandardSDKDeclaration(S, SM, Method) &&

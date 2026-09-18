@@ -24832,6 +24832,126 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2MemoryAllocatorConstructionForwardersRunAtBothOptimizations) {
+  const auto Source = tmpFile("memory-allocator-construction.cpp");
+  const auto Output = tmpFile("memory-allocator-construction.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+struct Storage { unsigned long long alignment; unsigned char bytes[128]; };
+int effects;
+int created;
+int copied;
+int moved;
+int destroyed;
+struct Record {
+  int value;
+  Record() noexcept : value(7) { ++created; }
+  Record(int first, long second) noexcept
+      : value(first + static_cast<int>(second)) { ++created; }
+  Record(const Record &other) noexcept : value(other.value + 10) { ++copied; }
+  Record(Record &&other) noexcept : value(other.value + 100) {
+    ++moved;
+    other.value = -1;
+  }
+  ~Record() noexcept { ++destroyed; }
+};
+template<class T> T *raw(Storage &storage) {
+  return static_cast<T *>(static_cast<void *>(storage.bytes));
+}
+std::allocator<int> &observe(std::allocator<int> &allocator) {
+  ++effects;
+  return allocator;
+}
+int *observe(int *pointer) { ++effects; return pointer; }
+Record *observe(Record *pointer) { ++effects; return pointer; }
+int observe(int value) { ++effects; return value; }
+long observe(long value) { ++effects; return value; }
+Record &observe(Record &value) { ++effects; return value; }
+int main() {
+  std::allocator<int> allocator;
+  using Traits = std::allocator_traits<std::allocator<int>>;
+
+  Storage scalar_storage{};
+  int *scalar = raw<int>(scalar_storage);
+  effects = 0;
+  observe(allocator).construct(observe(scalar));
+  if (effects != 2 || *scalar != 0)
+    return 1;
+  allocator.destroy(scalar);
+  effects = 0;
+  Traits::construct(observe(allocator), observe(scalar), observe(9));
+  if (effects != 3 || *scalar != 9)
+    return 2;
+  Traits::destroy(allocator, scalar);
+
+  Storage default_storage{};
+  Record *defaulted = raw<Record>(default_storage);
+  effects = 0;
+  observe(allocator).construct(observe(defaulted));
+  if (effects != 2 || created != 1 || defaulted->value != 7)
+    return 3;
+  Traits::destroy(allocator, defaulted);
+
+  Storage arguments_storage{};
+  Record *arguments = raw<Record>(arguments_storage);
+  effects = 0;
+  observe(allocator).construct(observe(arguments), observe(3), observe(4L));
+  if (effects != 4 || created != 2 || arguments->value != 7)
+    return 4;
+  Traits::destroy(allocator, arguments);
+
+  Record source(2, 3L);
+  Storage copy_storage{};
+  Record *copy = raw<Record>(copy_storage);
+  effects = 0;
+  Traits::construct(observe(allocator), observe(copy), observe(source));
+  if (effects != 3 || copied != 1 || copy->value != 15)
+    return 5;
+  Traits::destroy(allocator, copy);
+
+  Storage move_storage{};
+  Record *movement = raw<Record>(move_storage);
+  effects = 0;
+  Traits::construct(observe(allocator), observe(movement),
+                    static_cast<Record &&>(observe(source)));
+  if (effects != 3 || moved != 1 || movement->value != 105 ||
+      source.value != -1)
+    return 6;
+  Traits::destroy(allocator, movement);
+  return created == 3 && destroyed == 4 ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Root = Manifest->getAsObject();
+  ASSERT_NE(Root, nullptr);
+  EXPECT_NE(readFile(Output).find(
+                "translated memory lifetimes require may_alias support"),
+            std::string::npos);
+  const auto *SDK = Root->getObject("sdk");
+  ASSERT_NE(SDK, nullptr);
+  const auto *Dependencies = SDK->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 267u);
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("memory-allocator-construction" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2MemoryAllocatorMetadataRequiresExactTemplates) {
   struct Rejection {
     const char *Name;
@@ -24876,10 +24996,38 @@ TEST_F(TranslateTest, CoreV2MemoryAllocatorMetadataRequiresExactTemplates) {
        "#include <memory>\nusing A=std::allocator<int>;"
        "using F=void(A::*)(int*);F f(){return &A::destroy;}",
        "TR0201"},
+      {"construct-member-pointer",
+       "#include <memory>\nusing A=std::allocator<int>;"
+       "using F=void(A::*)(int*);"
+       "F f(){return &A::construct<int>;}",
+       "TR0201"},
+      {"construct-throwing-record",
+       "#include <memory>\nstruct R{R(int){}};"
+       "void f(std::allocator<int>&a,R*p){a.construct(p,1);}",
+       "TR0203"},
+      {"construct-default-argument-record",
+       "#include <memory>\nstruct R{R(int=1)noexcept{}};"
+       "void f(std::allocator<int>&a,R*p){a.construct(p);}",
+       "TR0203"},
+      {"construct-nontrivial-value-parameter",
+       "#include <memory>\nstruct A{A()noexcept{}A(const A&)noexcept{}};"
+       "struct R{R(A)noexcept{}};void f(std::allocator<int>&a,R*p,A&v){"
+       "a.construct(p,v);}",
+       "TR0203"},
+      {"construct-volatile",
+       "#include <memory>\nvoid f(std::allocator<int>&a,volatile int*p){"
+       "a.construct(p,1);}",
+       "TR0203"},
       {"traits-destroy-function-pointer",
        "#include <memory>\nusing A=std::allocator<int>;"
        "using T=std::allocator_traits<A>;using F=void(*)(A&,int*);"
        "F f(){return &T::destroy<int>;}",
+       "TR0201"},
+      {"traits-construct-function-pointer",
+       "#include <memory>\nusing A=std::allocator<int>;"
+       "using T=std::allocator_traits<A>;"
+       "using F=void(*)(A&,int*,int&&);"
+       "F f(){return &T::construct<int,int>;}",
        "TR0201"},
       {"traits-max-size-function-pointer",
        "#include <memory>\nusing A=std::allocator<int>;"

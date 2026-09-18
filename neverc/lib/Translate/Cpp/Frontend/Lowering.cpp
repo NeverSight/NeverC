@@ -1231,6 +1231,69 @@ class FunctionLowering {
                "The allocator element must have positive complete size.");
       return quantity(Maximum / ElementBytes, ResultType, L);
     };
+    auto AllocatorConstruct = [&](const UtilityAllocatorConstructCall &Info,
+                                  unsigned PointerIndex,
+                                  unsigned ArgumentIndex) {
+      if (PointerIndex >= Call->getNumArgs() ||
+          ArgumentIndex > Call->getNumArgs())
+        reject(L, "allocator construct",
+               "The checked pointer and construction arguments are missing.");
+      auto Pointer = snapshot(expression(Call->getArg(PointerIndex)), L);
+      auto Place = dereference(std::move(Pointer), L);
+      const unsigned ArgumentCount = Call->getNumArgs() - ArgumentIndex;
+      if (!Info.Constructor) {
+        if (!ArgumentCount) {
+          initializeZero(std::move(Place), Info.ElementType, L);
+          return;
+        }
+        if (ArgumentCount != 1)
+          reject(L, "allocator construct",
+                 "A scalar construction needs zero or one argument.");
+        assign(std::move(Place),
+               cast(expression(Call->getArg(ArgumentIndex)),
+                    type(Info.ElementType, L), L),
+               L);
+        return;
+      }
+
+      const auto *Constructor = Info.Constructor;
+      if (Constructor->getNumParams() != ArgumentCount)
+        reject(L, "allocator construct",
+               "The selected constructor and argument counts differ.");
+      if (!ArgumentCount && Constructor->isDefaultConstructor()) {
+        constructMemoryDefault(std::move(Place), Info.ElementType,
+                               Constructor, true, L);
+        return;
+      }
+      if (ArgumentCount == 1 && Constructor->isCopyOrMoveConstructor()) {
+        auto Source = argument(Call->getArg(ArgumentIndex),
+                               Constructor->getParamDecl(0)->getType());
+        constructMemorySource(std::move(Place), Info.ElementType, Constructor,
+                              std::move(Source), L);
+        return;
+      }
+      if (Constructor->isTrivial() || !Constructor->hasBody())
+        reject(L, "allocator construct",
+               "The selected source constructor has no checked body.");
+      json::Array Args;
+      Args.push_back(snapshot(address(std::move(Place),
+                                      Info.ElementType.getUnqualifiedType(), L),
+                              L));
+      for (unsigned I = 0; I < ArgumentCount; ++I) {
+        const auto Parameter = Constructor->getParamDecl(I)->getType();
+        const auto *Actual = Call->getArg(ArgumentIndex + I);
+        if (Parameter->isReferenceType() || recordValue(Parameter))
+          Args.push_back(argument(Actual, Parameter));
+        else
+          Args.push_back(snapshot(
+              cast(expression(Actual), type(Parameter, L), L), L));
+      }
+      chargeCall(Args, L);
+      Body.push_back(json::Object{{"op", "call"},
+                                  {"callee", A.name(Constructor)},
+                                  {"args", std::move(Args)},
+                                  {"loc", A.loc(L)}});
+    };
     switch (Operation) {
     case UtilityOperation::Move:
     case UtilityOperation::Forward:
@@ -1273,6 +1336,17 @@ class FunctionLowering {
       lvalue(Object);
       return AllocatorMaximum(*Allocator, "allocator max_size");
     }
+    case UtilityOperation::MemoryAllocatorConstruct: {
+      const auto *Object = MemberObject();
+      const auto Info = approvedUtilityAllocatorConstructCall(
+          A.S, A.Sources, Call, false, A.Context);
+      if (!Object || !Info)
+        reject(L, "allocator construct",
+               "A checked std::allocator construction is required.");
+      lvalue(Object);
+      AllocatorConstruct(*Info, 0, 1);
+      return {};
+    }
     case UtilityOperation::MemoryAllocatorDestroy: {
       const auto *Object = MemberObject();
       if (!Object || Call->getNumArgs() != 1)
@@ -1284,6 +1358,16 @@ class FunctionLowering {
       auto Pointer = snapshot(expression(Call->getArg(0)), L);
       destroy(dereference(Pointer, L),
               Call->getArg(0)->getType()->getPointeeType(), L);
+      return {};
+    }
+    case UtilityOperation::MemoryAllocatorTraitsConstruct: {
+      const auto Info = approvedUtilityAllocatorConstructCall(
+          A.S, A.Sources, Call, true, A.Context);
+      if (!Info)
+        reject(L, "allocator traits construct",
+               "A checked allocator_traits construction is required.");
+      lvalue(Call->getArg(0));
+      AllocatorConstruct(*Info, 1, 2);
       return {};
     }
     case UtilityOperation::MemoryAllocatorTraitsDestroy: {

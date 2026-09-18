@@ -55,8 +55,11 @@ call the exact source-owned non-template `noexcept` copy or move constructor
 selected by the authenticated libc++ helper for complete source-owned records;
 exact runtime allocator objects use a checked one-byte stateless carrier with
 default/copy/move/converting construction, same-type assignment, heterogeneous
-comparison, C++17 `address` and `max_size`. Allocation/deallocation and
-`construct` remain excluded. Exact C++17 allocator `destroy` plus
+comparison, C++17 `address` and `max_size`. Exact C++17 allocator and
+allocator-traits `construct` calls value-initialize writable scalars or call
+checked source-owned `noexcept` record constructors, including exact
+multi-argument, copy and move selection. Allocation and deallocation remain
+excluded. Exact C++17 allocator `destroy` plus
 `allocator_traits` destruction, `max_size` and copy-selection forwarding reuse
 the checked lifetime and stateless-allocator paths without a libc++ call.
 The authenticated 267-file closure is identical and platform-free across all

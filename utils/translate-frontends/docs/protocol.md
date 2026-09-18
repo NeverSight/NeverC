@@ -1492,7 +1492,12 @@ heterogeneous equality, deprecated C++17 `address` and complete-element
 `max_size` lower directly without an SDK call. Exact allocator member
 `destroy`, allocator-traits `destroy` with its matching member or `destroy_at`
 fallback, traits `max_size` and traits copy selection reuse the existing
-checked destruction, size and stateless-record operations. Direct
+checked destruction, size and stateless-record operations. Exact allocator and
+allocator-traits `construct` calls authenticate the instantiated pinned
+placement-new/forwarding body, then reuse scalar initialization or the selected
+source-owned `noexcept` record constructor call. They preserve the evaluated
+allocator, target pointer, forwarding categories and source arguments, set
+`memory_lifetimes: true`, and introduce no SDK call or allocation opcode. Direct
 `std::addressof` and
 raw-pointer `pointer_traits::pointer_to` produce checked object addresses.
 Its scalar-pointer `destroy_at`, `destroy` and `destroy_n` operations retain

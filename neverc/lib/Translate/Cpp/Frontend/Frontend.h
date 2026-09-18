@@ -270,6 +270,15 @@ std::optional<UtilityAllocatorTraitsRecord>
 approvedUtilityAllocatorTraitsRecord(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+struct UtilityAllocatorConstructCall {
+  clang::QualType ElementType;
+  const clang::CXXConstructorDecl *Constructor;
+};
+std::optional<UtilityAllocatorConstructCall>
+approvedUtilityAllocatorConstructCall(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *Call, bool Traits,
+    const clang::ASTContext &Context);
 enum class UtilityAllocatorConstruction {
   Default,
   CopyOrMove,
@@ -292,7 +301,9 @@ enum class UtilityOperation {
   NewLaunder,
   MemoryAllocatorAddress,
   MemoryAllocatorMaxSize,
+  MemoryAllocatorConstruct,
   MemoryAllocatorDestroy,
+  MemoryAllocatorTraitsConstruct,
   MemoryAllocatorTraitsDestroy,
   MemoryAllocatorTraitsMaxSize,
   MemoryAllocatorTraitsSelectOnCopy,

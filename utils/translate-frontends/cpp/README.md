@@ -198,9 +198,11 @@ argument evaluation and counted iterator results without emitting a trivial
 destructor call. The ten C++17 `uninitialized_*` copy, move, fill, default and
 value construction forms directly initialize scalar pointer ranges and retain
 their exact iterator results. Exact allocator objects, member destruction and
-allocator-traits destruction, `max_size` and copy selection use the same
-checked stateless-record and lifetime paths. Allocation, allocator construction
-and ownership objects are not yet admitted.
+allocator-traits destruction, construction, `max_size` and copy selection use
+the same checked stateless-record and lifetime paths. Construction accepts
+writable scalars and complete source-owned records whose selected constructor
+is supported, source-owned and `noexcept`; allocation and ownership objects are
+not yet admitted.
 The driver authenticates each closure before
 emitting output. Standard-library objects and operations beyond these documented
 surfaces, other standard headers and full C++/STL remain unfinished.

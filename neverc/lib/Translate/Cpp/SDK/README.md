@@ -157,7 +157,13 @@ accepts its matching raw element pointer. Exact
 scalar or complete source-record pointer and preserves the pinned member or
 `destroy_at` fallback selection; its `max_size` and
 `select_on_container_copy_construction` also lower through the checked
-stateless allocator path. `std::addressof` and
+stateless allocator path. Exact allocator and allocator-traits `construct`
+calls authenticate the instantiated libc++ placement-new or forwarding body.
+They value-initialize writable scalars or call the selected supported,
+source-owned `noexcept` constructor of a complete source-owned non-union
+record. Exact scalar conversion, multi-argument, copy and move forms preserve
+their call-site argument evaluation without a libc++ runtime call.
+`std::addressof` and
 raw-pointer `pointer_traits::pointer_to` are admitted for checked non-volatile
 object lvalues. `std::destroy_at`, `std::destroy` and `std::destroy_n`
 additionally lower for scalar and complete source-owned non-union record object
@@ -179,10 +185,11 @@ accept a complete source-owned non-union record when the authenticated libc++
 helper selects a source-owned, non-template copy or move constructor with
 exactly one same-record reference parameter, a supported definition and a
 resolved `noexcept(true)` specification. Move preserves Clang's selected move
-or copy fallback. Allocator `allocate`, `deallocate` and `construct`, other
-allocator-traits forwarding calls, potentially throwing, default-argument or
-constructor-template source-record construction, ownership objects and the
-remaining memory operations stay outside the direct lowering boundary.
+or copy fallback. Allocator `allocate` and `deallocate`, other allocator-traits
+forwarding calls, potentially throwing, default-argument or
+constructor-template source-record construction, nontrivial by-value record
+parameters, ownership objects and the remaining memory operations stay outside
+the direct lowering boundary.
 Core v2 never admits the `platform` root.
 Math v1 continues to use its separately checked libc++, resource and Darwin
 platform closure for `<cmath>`.
