@@ -1777,6 +1777,21 @@ static bool incompleteRecordMetadataType(QualType T) {
   return false;
 }
 
+static bool memoryTemplateMetadataType(Adapter &A, QualType T) {
+  for (unsigned Depth = 0; Depth <= 64 && !T.isNull(); ++Depth) {
+    const auto *Raw = T.getCanonicalType().getTypePtr();
+    if (const auto *Record = Raw->getAsCXXRecordDecl())
+      return approvedMemoryTemplateMetadata(A.S, A.Sources, Record).has_value();
+    if (const auto *Array = dyn_cast<ArrayType>(Raw))
+      T = Array->getElementType();
+    else if (Raw->isPointerType() || Raw->isReferenceType())
+      T = Raw->getPointeeType();
+    else
+      return false;
+  }
+  return false;
+}
+
 static bool incompleteRecordMetadataIdentity(Adapter &A, const CXXRecordDecl *D) {
   // This is only a type identity gate. Template uses, copied member origins and
   // written declaration sources retain their independent allowlist traversal.
@@ -1801,7 +1816,7 @@ static QualType functionMetadataType(QualType T) {
 
 void Adapter::checkTypeOnly(QualType T, SourceLocation L) {
   if (!functionMetadataType(T).isNull() || incompleteArrayMetadataType(T) ||
-      incompleteRecordMetadataType(T))
+      incompleteRecordMetadataType(T) || memoryTemplateMetadataType(*this, T))
     checkQueryType(T, L, true, true);
   else
     type(T, L, true);
@@ -1819,7 +1834,8 @@ void Adapter::checkQueryType(QualType T, SourceLocation L,
     throw Failure{};
   }
   if ((AllowIncompleteArrays && incompleteArrayMetadataType(T)) ||
-      (AllowIncompleteRecords && incompleteRecordMetadataType(T))) {
+      (AllowIncompleteRecords && (incompleteRecordMetadataType(T) ||
+                                  memoryTemplateMetadataType(*this, T)))) {
     if (T.isVolatileQualified() || T->isAtomicType() || T.isRestrictQualified() ||
         T.getAddressSpace() != LangAS::Default) {
       reject(L, "type metadata qualifiers", "Type metadata requires admitted qualifiers and the default address space.");
@@ -1890,6 +1906,15 @@ void Adapter::checkQueryType(QualType T, SourceLocation L,
       const auto &Arguments = Iterator->getTemplateArgs();
       checkQueryType(Arguments.get(0).getAsType(), L, AllowIncompleteArrays,
                      AllowIncompleteRecords, Depth + 1);
+    } else if (AllowIncompleteRecords &&
+               approvedMemoryTemplateMetadata(S, Sources,
+                                              T->getAsCXXRecordDecl())) {
+      const auto *Metadata =
+          dyn_cast<ClassTemplateSpecializationDecl>(T->getAsCXXRecordDecl());
+      const auto &Arguments = Metadata->getTemplateArgs();
+      for (const auto &Argument : Arguments.asArray())
+        checkQueryType(Argument.getAsType(), L, AllowIncompleteArrays,
+                       AllowIncompleteRecords, Depth + 1);
     } else if (AllowIncompleteRecords && incompleteRecordMetadataIdentity(
                                              *this, T->getAsCXXRecordDecl())) {
       // Identity requires no size, field traversal, operation or IR record.
@@ -6929,8 +6954,19 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         Self(Self, Prototype->getReturnType(), false, Depth + 1);
         for (auto Parameter : Prototype->param_types())
           Self(Self, Parameter, false, Depth + 1);
-      } else if (const auto *RecordType = dyn_cast<clang::RecordType>(Raw); RecordType && NeedLayout) {
-        const auto *Record = dyn_cast_or_null<CXXRecordDecl>(RecordType->getDecl()->getDefinition());
+      } else if (const auto *RecordType = dyn_cast<clang::RecordType>(Raw);
+                 RecordType && NeedLayout) {
+        const auto *Declaration =
+            dyn_cast_or_null<CXXRecordDecl>(RecordType->getDecl());
+        if (approvedMemoryTemplateMetadata(A.S, A.Sources, Declaration)) {
+          const auto *Metadata =
+              cast<ClassTemplateSpecializationDecl>(Declaration);
+          for (const auto &Argument : Metadata->getTemplateArgs().asArray())
+            Self(Self, Argument.getAsType(), true, Depth + 1);
+          return;
+        }
+        const auto *Record = dyn_cast_or_null<CXXRecordDecl>(
+            RecordType->getDecl()->getDefinition());
         if (!Record)
           return; // Never instantiate a record to manufacture source evidence.
         for (const auto &Base : Record->bases()) {
@@ -6941,7 +6977,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           operationTypeDependency(Field->getTypeSourceInfo());
           Self(Self, Field->getType(), true, Depth + 1);
         }
-      } else if (const auto *Enum = dyn_cast<EnumType>(Raw); Enum && NeedLayout) {
+      } else if (const auto *Enum = dyn_cast<EnumType>(Raw);
+                 Enum && NeedLayout) {
         for (const auto *Declaration : Enum->getDecl()->redecls()) {
           A.chargeExpansion(1, Declaration->getLocation());
           operationTypeDependency(cast<EnumDecl>(Declaration)->getIntegerTypeSourceInfo());

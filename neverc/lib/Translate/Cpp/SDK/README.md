@@ -133,8 +133,12 @@ the admitted runtime boundary.
 The `<memory>` surface has a 267-file libc++/resource closure on every core-v2
 target. The exact C++17 public header and all consumed component headers are
 authenticated without platform headers. Raw-pointer `pointer_traits` aliases,
-`std::addressof` and raw-pointer `pointer_traits::pointer_to` are admitted for
-checked non-volatile object lvalues. `std::destroy_at`, `std::destroy` and
+exact `std::allocator<T>` and
+`std::allocator_traits<std::allocator<T>>` types and their nested aliases are
+admitted as compile-time metadata. Compatible `uses_allocator` constants fold
+without materializing a standard-library object. `std::addressof` and
+raw-pointer `pointer_traits::pointer_to` are admitted for checked non-volatile
+object lvalues. `std::destroy_at`, `std::destroy` and
 `std::destroy_n` additionally lower for scalar object pointers; their trivial
 destruction has no runtime body, while argument evaluation and the counted
 return iterator are retained. The scalar-pointer `uninitialized_copy`,
@@ -142,8 +146,9 @@ return iterator are retained. The scalar-pointer `uninitialized_copy`,
 `uninitialized_default_construct`, `uninitialized_default_construct_n`,
 `uninitialized_value_construct`, `uninitialized_value_construct_n`,
 `uninitialized_move` and `uninitialized_move_n` forms also lower directly.
-Allocators, record construction, nontrivial destruction, ownership objects and
-the remaining memory operations stay outside the direct lowering boundary.
+Runtime allocator objects and calls, record construction, nontrivial
+destruction, ownership objects and the remaining memory operations stay outside
+the direct lowering boundary.
 Core v2 never admits the `platform` root.
 Math v1 continues to use its separately checked libc++, resource and Darwin
 platform closure for `<cmath>`.

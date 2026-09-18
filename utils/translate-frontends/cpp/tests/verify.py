@@ -1355,6 +1355,61 @@ extern "C" int memory_header() { return 0; }
                               memory_header_source, profile="cpp-core-v2",
                               target=target, sdk=True)
         assert target_result["sdk_dependencies"] == memory_header["sdk_dependencies"], target_result
+    memory_allocator_metadata_source = """\
+#include <memory>
+struct Forward;
+using PointerTraits = std::pointer_traits<int *>;
+using ForwardAllocator = std::allocator<Forward>;
+using IntAllocator = ForwardAllocator::rebind<int>::other;
+using Traits = std::allocator_traits<IntAllocator>;
+using DoubleAllocator = Traits::rebind_alloc<double>;
+using DoubleTraits = Traits::rebind_traits<double>;
+using ReboundPointer = PointerTraits::rebind<double>;
+struct Plain {};
+struct Aware { using allocator_type = IntAllocator; };
+static_assert(__is_same(PointerTraits, std::pointer_traits<int *>));
+static_assert(__is_same(PointerTraits::pointer, int *));
+static_assert(__is_same(PointerTraits::element_type, int));
+static_assert(sizeof(PointerTraits::difference_type) == sizeof(void *));
+static_assert(__is_same(ReboundPointer, double *));
+static_assert(__is_same(ForwardAllocator, std::allocator<Forward>));
+static_assert(__is_same(ForwardAllocator::value_type, Forward));
+static_assert(__is_same(IntAllocator::value_type, int));
+static_assert(__is_same(Traits, std::allocator_traits<IntAllocator>));
+static_assert(__is_same(Traits::allocator_type, IntAllocator));
+static_assert(__is_same(Traits::pointer, int *));
+static_assert(__is_same(Traits::const_pointer, const int *));
+static_assert(__is_same(Traits::void_pointer, void *));
+static_assert(__is_same(Traits::const_void_pointer, const void *));
+static_assert(__is_same(DoubleAllocator, std::allocator<double>));
+static_assert(__is_same(
+    DoubleTraits, std::allocator_traits<std::allocator<double>>));
+static_assert(__is_same(std::allocator<void>, std::allocator<void>));
+static_assert(!std::uses_allocator<Plain, IntAllocator>::value);
+static_assert(std::uses_allocator<Aware, IntAllocator>::value);
+extern "C" int memory_allocator_metadata() {
+  return Traits::propagate_on_container_copy_assignment::value ||
+                 !Traits::propagate_on_container_move_assignment::value ||
+                 Traits::propagate_on_container_swap::value ||
+                 !Traits::is_always_equal::value
+             ? 1
+             : 0;
+}
+"""
+    memory_allocator_metadata = check(
+        "v2-memory-allocator-metadata", memory_allocator_metadata_source,
+        profile="cpp-core-v2", sdk=True)
+    assert len(memory_allocator_metadata["sdk_dependencies"]) == 267, memory_allocator_metadata
+    assert not [node for node in walk(memory_allocator_metadata["functions"])
+                if node.get("op") in ("call", "mapped_call")], memory_allocator_metadata
+    for target in sdk_targets:
+        target_result = check(
+            "v2-memory-allocator-metadata-" + target,
+            memory_allocator_metadata_source, profile="cpp-core-v2",
+            target=target, sdk=True)
+        assert target_result["sdk_dependencies"] == memory_allocator_metadata["sdk_dependencies"], target_result
+        assert not [node for node in walk(target_result["functions"])
+                    if node.get("op") in ("call", "mapped_call")], target_result
     memory_address_source = """\
 #include <memory>
 using Pointer = std::pointer_traits<int *>::pointer;
@@ -1490,6 +1545,24 @@ extern "C" int *memory_uninitialized_move_n(int *first, long count,
          "TR0203"),
         ("forged-addressof",
          'namespace std{template<class T>T*addressof(T&);}int main(){int n=1;return *std::addressof(n);}',
+         "TR0201"),
+        ("fancy-pointer-traits-metadata",
+         '#include <memory>\nstruct F{using element_type=int;};static_assert(__is_same(std::pointer_traits<F>,std::pointer_traits<F>));',
+         "TR0201"),
+        ("custom-allocator-traits-metadata",
+         '#include <memory>\nstruct A{using value_type=int;};static_assert(__is_same(std::allocator_traits<A>,std::allocator_traits<A>));',
+         "TR0201"),
+        ("runtime-allocator",
+         '#include <memory>\nint main(){std::allocator<int> allocator;return 0;}',
+         "TR0203"),
+        ("allocator-call",
+         '#include <memory>\nint main(){std::allocator<int> allocator;int*p=allocator.allocate(1);allocator.deallocate(p,1);}',
+         "TR0203"),
+        ("function-allocator-metadata",
+         '#include <memory>\nusing A=std::allocator<void()>;static_assert(__is_same(A,A));',
+         "TR0201"),
+        ("array-allocator-metadata",
+         '#include <memory>\nusing A=std::allocator<int[2]>;static_assert(__is_same(A,A));',
          "TR0201"),
         ("destroy-at-address",
          '#include <memory>\nauto f(){return &std::destroy_at<int>;}',

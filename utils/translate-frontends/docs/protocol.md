@@ -1470,14 +1470,19 @@ identity from these declarations are rejected before lowering; only resolved
 type aliases, integral/enum constants, folded `numeric_limits` scalar queries,
 checked cstddef layout constants, direct `std::byte` scalar operations, and the
 documented standard-library direct operations reach semantic IR. The memory
-surface includes authenticated raw-pointer `pointer_traits` aliases plus direct
-`std::addressof` and raw-pointer `pointer_traits::pointer_to` object addresses.
+surface includes authenticated raw-pointer `pointer_traits`, exact
+`std::allocator<T>` and exact
+`std::allocator_traits<std::allocator<T>>` compile-time metadata. Their nested
+aliases, rebinds and constants, plus compatible `uses_allocator` values, close
+through the existing checked type/query graph without allocator storage or a
+runtime call. Direct `std::addressof` and raw-pointer
+`pointer_traits::pointer_to` produce checked object addresses.
 Its scalar-pointer `destroy_at`, `destroy` and `destroy_n` operations retain
 argument effects and counted pointer advancement without a runtime destructor
 call. Its ten C++17 scalar-pointer `uninitialized_*` copy, move, fill, default
 and value construction forms use the existing checked load, store, zero,
-pointer-loop and authenticated pair-record operations. No new opcode, allocator,
-exception edge or implicit call is introduced.
+pointer-loop and authenticated pair-record operations. No new opcode, runtime
+allocator, exception edge or implicit call is introduced.
 
 ## Gated mathematics extension
 

@@ -24365,6 +24365,134 @@ int main() { return 0; }
   expectNoArtifacts(QuotedOutput);
 }
 
+TEST_F(TranslateTest, CoreV2MemoryAllocatorMetadataRunsAtBothOptimizations) {
+  const auto Source = tmpFile("memory-allocator-metadata.cpp");
+  const auto Output = tmpFile("memory-allocator-metadata.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+struct Forward;
+using PointerTraits = std::pointer_traits<int *>;
+using ForwardAllocator = std::allocator<Forward>;
+using ReboundPointer = PointerTraits::rebind<double>;
+using IntAllocator = ForwardAllocator::rebind<int>::other;
+using Traits = std::allocator_traits<IntAllocator>;
+using DoubleAllocator = Traits::rebind_alloc<double>;
+using DoubleTraits = Traits::rebind_traits<double>;
+using VoidAllocator = std::allocator<void>;
+using AllocatorPointer = IntAllocator *;
+using AllocatorReference = IntAllocator &;
+using AllocatorArray = IntAllocator[2];
+struct Plain {};
+struct Aware { using allocator_type = IntAllocator; };
+static_assert(__is_same(PointerTraits, std::pointer_traits<int *>));
+static_assert(__is_same(PointerTraits::pointer, int *));
+static_assert(__is_same(PointerTraits::element_type, int));
+static_assert(sizeof(PointerTraits::difference_type) == sizeof(void *));
+static_assert(__is_same(ReboundPointer, double *));
+static_assert(__is_same(ForwardAllocator, std::allocator<Forward>));
+static_assert(__is_same(ForwardAllocator::value_type, Forward));
+static_assert(__is_same(IntAllocator::value_type, int));
+static_assert(__is_same(IntAllocator::pointer, int *));
+static_assert(__is_same(IntAllocator::const_pointer, const int *));
+static_assert(__is_same(IntAllocator::reference, int &));
+static_assert(__is_same(IntAllocator::const_reference, const int &));
+static_assert(__is_same(Traits, std::allocator_traits<IntAllocator>));
+static_assert(__is_same(Traits::allocator_type, IntAllocator));
+static_assert(__is_same(Traits::value_type, int));
+static_assert(__is_same(Traits::pointer, int *));
+static_assert(__is_same(Traits::const_pointer, const int *));
+static_assert(__is_same(Traits::void_pointer, void *));
+static_assert(__is_same(Traits::const_void_pointer, const void *));
+static_assert(__is_same(DoubleAllocator, std::allocator<double>));
+static_assert(__is_same(
+    DoubleTraits, std::allocator_traits<std::allocator<double>>));
+static_assert(__is_same(VoidAllocator, std::allocator<void>));
+static_assert(__is_same(AllocatorPointer, std::allocator<int> *));
+static_assert(__is_same(AllocatorReference, std::allocator<int> &));
+static_assert(__is_same(AllocatorArray, std::allocator<int>[2]));
+static_assert(!std::uses_allocator<Plain, IntAllocator>::value);
+static_assert(!std::uses_allocator_v<Plain, IntAllocator>);
+static_assert(std::uses_allocator<Aware, IntAllocator>::value);
+static_assert(std::uses_allocator_v<Aware, IntAllocator>);
+int main() {
+  return Traits::propagate_on_container_copy_assignment::value ||
+                 !Traits::propagate_on_container_move_assignment::value ||
+                 Traits::propagate_on_container_swap::value ||
+                 !Traits::is_always_equal::value
+             ? 1
+             : 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *SDK = Manifest->getAsObject()->getObject("sdk");
+  ASSERT_NE(SDK, nullptr);
+  const auto *Dependencies = SDK->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 267u);
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("memory-allocator-metadata" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2MemoryAllocatorMetadataRequiresExactTemplates) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Rejection Cases[] = {
+      {"fancy-pointer-traits",
+       "#include <memory>\nstruct F{using element_type=int;};"
+       "static_assert(__is_same(std::pointer_traits<F>,"
+       "std::pointer_traits<F>));",
+       "TR0201"},
+      {"custom-allocator-traits",
+       "#include <memory>\nstruct A{using value_type=int;};"
+       "static_assert(__is_same(std::allocator_traits<A>,"
+       "std::allocator_traits<A>));",
+       "TR0201"},
+      {"runtime-allocator",
+       "#include <memory>\nint main(){std::allocator<int> allocator;return 0;}",
+       "TR0203"},
+      {"allocate-call",
+       "#include <memory>\nint main(){std::allocator<int> allocator;"
+       "int *p=allocator.allocate(1);allocator.deallocate(p,1);}",
+       "TR0203"},
+      {"function-allocator",
+       "#include <memory>\nusing A=std::allocator<void()>;"
+       "static_assert(__is_same(A,A));",
+       "TR0201"},
+      {"array-allocator",
+       "#include <memory>\nusing A=std::allocator<int[2]>;"
+       "static_assert(__is_same(A,A));",
+       "TR0201"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("memory-allocator-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("memory-allocator-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2MemoryAddressOperationsRunAtBothOptimizations) {
   const auto Source = tmpFile("memory-address.cpp");
   const auto Output = tmpFile("memory-address.nc");

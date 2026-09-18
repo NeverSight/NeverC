@@ -70,10 +70,12 @@ authenticated; its sequential scalar-pointer operations, default C++17
 reductions and scans, exact same-type function-pointer operations including
 transformed scans, and integer `gcd`/`lcm` lower directly. The exact
 [`<memory>`](../docs/cpp-core-v2.md#memory-header-from-memory) header has an
-authenticated parsing boundary; raw-pointer `pointer_traits` metadata,
+authenticated parsing boundary; raw-pointer `pointer_traits`, exact
+`std::allocator` and exact `std::allocator_traits<std::allocator<T>>` metadata
+resolve at compile time. Compatible `uses_allocator` constants fold, while
 `std::addressof`, `pointer_traits::pointer_to` and scalar-pointer destruction
-and uninitialized construction algorithms lower directly while its ownership
-objects remain separate. The
+and uninitialized construction algorithms lower directly. Runtime allocators
+and ownership objects remain separate. The
 frontend uses the pinned embedded libc++/resource VFS and exposes resolved type
 aliases plus integral/enum constant results. It records all consumed header
 hashes: 101 for the `<type_traits>` closure, nine for standalone `<cstdint>`,
@@ -169,14 +171,19 @@ and exact same-type by-value function-pointer operations. Integer `gcd` and
 be writable; callable objects, heterogeneous element types and custom iterators
 remain rejected. Memory contributes an exact, platform-free 267-file C++17
 header closure. Raw-pointer `pointer_traits` aliases resolve through pinned
-libc++, while `std::addressof` and raw-pointer `pointer_traits::pointer_to`
-return checked object addresses without a libc++ runtime call. Exact
+libc++. Exact `std::allocator<T>` and
+`std::allocator_traits<std::allocator<T>>` type identities, nested aliases,
+rebinds and trait constants also resolve as compile-time metadata, including
+compatible `uses_allocator` values. `std::addressof` and raw-pointer
+`pointer_traits::pointer_to` return checked object addresses without a libc++
+runtime call. Exact
 `destroy_at`, `destroy` and `destroy_n` calls on scalar object pointers retain
 argument evaluation and counted iterator results without emitting a trivial
 destructor call. The ten C++17 `uninitialized_*` copy, move, fill, default and
 value construction forms directly initialize scalar pointer ranges and retain
-their exact iterator results. Allocators, record construction, nontrivial
-destruction and ownership objects are not yet admitted.
+their exact iterator results. Runtime allocator objects and calls, record
+construction, nontrivial destruction and ownership objects are not yet
+admitted.
 The driver authenticates each closure before
 emitting output. Standard-library objects and operations beyond these documented
 surfaces, other standard headers and full C++/STL remain unfinished.

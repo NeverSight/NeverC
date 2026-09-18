@@ -430,6 +430,16 @@ all consumed component headers retain their upstream bytes and are authenticated
 before translation. Raw-pointer `std::pointer_traits<T *>` exposes its exact
 `pointer`, `element_type`, `difference_type` and `rebind<U>` aliases.
 
+Exact `std::allocator<T>` metadata is admitted when `T` is non-cv `void` or a
+non-array object type, including an incomplete object. Its C++17 nested value,
+pointer, reference, size, difference and `rebind` aliases remain compile-time
+types. Exact `std::allocator_traits<std::allocator<T>>` metadata exposes the
+corresponding allocator, value, pointer and rebind aliases plus its integral
+trait constants. These identities can appear behind pointer, reference and
+fixed-array type wrappers. `std::uses_allocator` and `uses_allocator_v` values
+that consume an admitted allocator also fold through the authenticated header.
+None of these metadata queries creates allocator storage or emits a call.
+
 The exact `std::addressof(T&)` and raw-pointer
 `std::pointer_traits<T *>::pointer_to(T&)` operations directly produce the
 address of an otherwise admitted non-volatile object lvalue. They preserve
@@ -465,9 +475,10 @@ Volatile objects, rvalues for address utilities, function pointers,
 fancy-pointer `pointer_traits`, non-scalar destruction, custom iterators,
 heterogeneous or non-scalar uninitialized construction, function addresses,
 quoted includes, shadows and forged declarations remain rejected. Allocators,
-record construction, nontrivial destruction, smart pointers and ownership
-factories remain rejected until their layouts, allocation behavior, lifetime,
-error handling and cross-target ABI contracts receive direct lowerings.
+other than the exact compile-time metadata above, remain rejected. Runtime
+allocator objects and calls, record construction, nontrivial destruction, smart
+pointers and ownership factories await layout, allocation behavior, lifetime,
+error handling and cross-target ABI contracts.
 
 ## Algorithm header from `<algorithm>`
 

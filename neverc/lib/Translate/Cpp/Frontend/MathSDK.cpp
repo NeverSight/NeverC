@@ -366,6 +366,63 @@ approvedCstddefOperation(const State &S, const SourceManager &SM,
   return CstddefOperation::ToInteger;
 }
 
+std::optional<MemoryTemplateMetadata>
+approvedMemoryTemplateMetadata(const State &S, const SourceManager &SM,
+                               const CXXRecordDecl *Record) {
+  const auto *Specialization =
+      dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+  const auto *Template =
+      Specialization ? Specialization->getSpecializedTemplate() : nullptr;
+  const auto *CanonicalTemplate =
+      Template ? Template->getCanonicalDecl() : nullptr;
+  if (!Specialization || !Template || !CanonicalTemplate ||
+      Specialization->isUnion() || Specialization->isDependentContext() ||
+      !approvedStandardSDKDeclaration(S, SM, Template) ||
+      !approvedStandardSDKDeclaration(S, SM, CanonicalTemplate))
+    return std::nullopt;
+  const auto &Arguments = Specialization->getTemplateArgs();
+  auto OneTypeArgument = [&]() {
+    return Arguments.size() == 1 &&
+           Arguments.get(0).getKind() == TemplateArgument::Type;
+  };
+  const auto Name = Specialization->getName();
+  if (Name == "pointer_traits" && OneTypeArgument() &&
+      cstddefOrigin(S, SM, Template->getLocation(), "libcxx",
+                    "__memory/pointer_traits.h") &&
+      cstddefOrigin(S, SM, CanonicalTemplate->getLocation(), "libcxx",
+                    "__memory/pointer_traits.h")) {
+    const auto Pointer = Arguments.get(0).getAsType();
+    if (!Pointer.isNull() && Pointer.getAddressSpace() == LangAS::Default &&
+        Pointer->isPointerType() && !Pointer->isFunctionPointerType() &&
+        Pointer->getPointeeType().getAddressSpace() == LangAS::Default)
+      return MemoryTemplateMetadata::PointerTraits;
+  }
+  if (Name == "allocator" && OneTypeArgument() &&
+      cstddefOrigin(S, SM, Template->getLocation(), "libcxx",
+                    "__memory/allocator.h") &&
+      cstddefOrigin(S, SM, CanonicalTemplate->getLocation(), "libcxx",
+                    "__fwd/memory.h")) {
+    const auto Element = Arguments.get(0).getAsType();
+    if (!Element.isNull() && !Element.isConstQualified() &&
+        !Element.isVolatileQualified() &&
+        (Element->isVoidType() ||
+         (Element->isObjectType() && !Element->isArrayType())))
+      return MemoryTemplateMetadata::Allocator;
+  }
+  if (Name == "allocator_traits" && OneTypeArgument() &&
+      cstddefOrigin(S, SM, Template->getLocation(), "libcxx",
+                    "__memory/allocator_traits.h") &&
+      cstddefOrigin(S, SM, CanonicalTemplate->getLocation(), "libcxx",
+                    "__memory/allocator_traits.h")) {
+    const auto Allocator = Arguments.get(0).getAsType();
+    const auto Nested = approvedMemoryTemplateMetadata(
+        S, SM, Allocator.isNull() ? nullptr : Allocator->getAsCXXRecordDecl());
+    if (Nested == MemoryTemplateMetadata::Allocator)
+      return MemoryTemplateMetadata::AllocatorTraits;
+  }
+  return std::nullopt;
+}
+
 static bool utilityScalar(const ASTContext &Context, QualType Type) {
   if (Type.isNull() || Type->isReferenceType())
     return false;

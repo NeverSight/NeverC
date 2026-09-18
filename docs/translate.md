@@ -32,6 +32,16 @@ queries lower without libc++; `std::byte` storage, bitwise/shift operations and
 authenticated on all supported targets, while quoted/C-header spellings, raw
 builtins and standard-function addresses remain rejected. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#fundamental-types-and-bytes-from-cstddef).
 
+Core v2's pinned `<memory>` surface now resolves exact raw-pointer
+`pointer_traits`, `std::allocator<T>` and
+`std::allocator_traits<std::allocator<T>>` identities, nested aliases, rebinds
+and trait constants as compile-time metadata. Compatible `uses_allocator`
+values also fold. The existing address, scalar destruction and scalar
+uninitialized-construction operations still lower directly; runtime allocator
+objects and allocation calls remain excluded. The authenticated 267-file
+closure is identical and platform-free across all supported targets.
+[C++17](../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
+
 Core v2 also accepts the pinned `<utility>` header. Scalar `move`, `forward`,
 `move_if_noexcept`, `as_const`, `exchange` and `swap` lower directly, as do
 scalar `std::pair` construction, assignment, swapping, comparison, `make_pair`
