@@ -24408,7 +24408,66 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2NewLaunderRequiresExactPointerForms) {
+TEST_F(TranslateTest, CoreV2StandardPlacementNewRunsAtBothOptimizations) {
+  const auto Source = tmpFile("new-standard-placement.cpp");
+  const auto Output = tmpFile("new-standard-placement.nc");
+  writeFile(Source, R"cpp(
+#include <new>
+struct Storage { unsigned long long alignment; unsigned char bytes[512]; };
+int effects;
+int destructions;
+void *capture(void *pointer) { ++effects; return pointer; }
+struct Record {
+  int value;
+  Record *self;
+  Record(int input) : value(input), self(this) {}
+  ~Record() { ++destructions; }
+};
+int main() {
+  Storage first{};
+  Record *one = new (capture(first.bytes)) Record(7);
+  if (effects != 1 || one->value != 7 || one->self != one)
+    return 1;
+  one->~Record();
+  if (destructions != 1)
+    return 2;
+  int *number = new (capture(first.bytes)) int(11);
+  if (effects != 2 || number != static_cast<void *>(first.bytes) ||
+      *number != 11)
+    return 3;
+
+  Storage second{};
+  Record *many = new (capture(second.bytes)) Record[2]{{13}, {17}};
+  if (effects != 3 || many[0].value != 13 || many[0].self != many ||
+      many[1].value != 17 || many[1].self != many + 1)
+    return 4;
+  many[1].~Record();
+  many[0].~Record();
+  if (destructions != 3)
+    return 5;
+
+  int *values = new (capture(second.bytes)) int[3]{2, 3, 5};
+  if (effects != 4 || values != static_cast<void *>(second.bytes) ||
+      values[0] + values[1] + values[2] != 10)
+    return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("new-standard-placement" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NewRequiresExactRuntimeForms) {
   struct Rejection {
     const char *Name;
     const char *Source;
@@ -24427,8 +24486,14 @@ TEST_F(TranslateTest, CoreV2NewLaunderRequiresExactPointerForms) {
       {"function-object",
        "#include <new>\nusing F=int();F*f(F*p){return std::launder(p);}",
        "TR0202"},
-      {"standard-placement-new",
-       "#include <new>\nint main(){int n=1;new(&n)int(3);return n;}", "TR0203"},
+      {"direct-placement-call",
+       "#include <new>\nvoid*f(void*p){return ::operator "
+       "new(sizeof(int),p);}",
+       "TR0203"},
+      {"placement-redeclaration",
+       "#include <new>\nvoid*operator new(std::size_t,void*)noexcept;"
+       "int f(){int n=1;new(&n)int(3);return n;}",
+       "TR0203"},
       {"runtime-nothrow-tag",
        "#include <new>\nint main(){std::nothrow_t tag;return sizeof(tag);}",
        "TR0203"},

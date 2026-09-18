@@ -3236,6 +3236,50 @@ static bool implicitSizedDeallocation(const FunctionDecl *F, ASTContext &Context
   return true;
 }
 
+bool Adapter::standardPlacementAllocation(const FunctionDecl *F,
+                                          bool Array) const {
+  const auto Operator = Array ? OO_Array_New : OO_New;
+  const auto *Definition = F ? F->getDefinition() : nullptr;
+  const auto *Prototype =
+      Definition ? Definition->getType()->getAs<FunctionProtoType>() : nullptr;
+  if (!S.coreV2() || !Definition || isa<CXXMethodDecl>(Definition) ||
+      Definition->isImplicit() || Definition->isInvalidDecl() ||
+      !Definition->isInlined() || !Definition->hasBody() ||
+      Definition->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+      Definition->getOverloadedOperator() != Operator ||
+      !Definition->isReservedGlobalPlacementOperator() ||
+      !Definition->getDeclContext()->getRedeclContext()->isTranslationUnit() ||
+      !Definition->getLexicalDeclContext()
+           ->getRedeclContext()
+           ->isTranslationUnit() ||
+      !ordinaryCallbackPrototype(Prototype) ||
+      Prototype->getExceptionSpecType() != EST_BasicNoexcept ||
+      Definition->getNumParams() != 2 ||
+      !Context.hasSameType(Definition->getReturnType(), Context.VoidPtrTy) ||
+      !Context.hasSameType(Definition->getParamDecl(0)->getType(),
+                           Context.getSizeType()) ||
+      !Context.hasSameType(Definition->getParamDecl(1)->getType(),
+                           Context.VoidPtrTy))
+    return false;
+
+  for (const auto *Declaration : F->redecls()) {
+    const auto Origin = S.sdkFile(Sources, Declaration->getLocation());
+    if (!Origin || Origin->Root != "libcxx" ||
+        Origin->Path != "__new/placement_new_delete.h" ||
+        Declaration->getCanonicalDecl() != Definition->getCanonicalDecl())
+      return false;
+  }
+
+  const auto *Body = dyn_cast<CompoundStmt>(Definition->getBody());
+  if (!Body || Body->size() != 1)
+    return false;
+  const auto *Return = dyn_cast<ReturnStmt>(*Body->body_begin());
+  const auto *Value = Return ? Return->getRetValue() : nullptr;
+  const auto *Reference =
+      Value ? dyn_cast<DeclRefExpr>(Value->IgnoreParenImpCasts()) : nullptr;
+  return Reference && Reference->getDecl() == Definition->getParamDecl(1);
+}
+
 const FunctionDecl *Adapter::allocationFunction(const FunctionDecl *F,
                                                bool Allocate, SourceLocation L,
                                                bool Array) {
@@ -3269,6 +3313,12 @@ const FunctionDecl *Adapter::allocationFunction(const FunctionDecl *F,
       }
       Definition = Body;
     }
+  }
+  if (Allocate && standardPlacementAllocation(F, Array)) {
+    type(Definition->getReturnType(), L, true);
+    for (const auto *P : Definition->parameters())
+      type(P->getType(), L);
+    return Definition;
   }
   if (!Definition || !S.owns(Sources, Definition->getLocation())) {
     reject(L, Allocate ? "allocation definition" : "deallocation definition",
@@ -13283,11 +13333,10 @@ public:
         return true;
       if (A.S.coreV2() && UtilityReverseIteratorAssignment)
         return true;
-      if (A.S.coreV2() && F &&
-          approvedStandardSDKDeclaration(A.S, A.Sources, F)) {
+      if (A.S.coreV2() && F && approvedSDKDeclaration(A.S, A.Sources, F)) {
         A.reject(S->getBeginLoc(), "standard library runtime call",
-                 "Approved standard headers provide only their documented "
-                 "compile-time aliases, constants and folded queries.",
+                 "Approved SDK declarations may run only through a documented "
+                 "direct lowering; this call has none.",
                  "TR0203");
         return true;
       }

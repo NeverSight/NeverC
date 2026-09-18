@@ -1473,7 +1473,9 @@ documented standard-library direct operations reach semantic IR. The memory
 model also authenticates the platform-free 37-file `<new>` closure. Its
 allocation tags and interference-size values remain compile-time or scalar
 metadata, and exact `std::launder` calls retain one admitted non-volatile object
-pointer without an IR call. The memory surface includes authenticated
+pointer without an IR call. Exact standard placement new and constant-bound
+placement new[] expressions likewise retain the supplied storage pointer and
+introduce no allocation call. The memory surface includes authenticated
 raw-pointer `pointer_traits`, exact
 `std::allocator<T>` and exact
 `std::allocator_traits<std::allocator<T>>` compile-time metadata. Their nested

@@ -135,9 +135,11 @@ target. Its exact public C++17 header exposes `std::nothrow_t`, the scalar
 `std::align_val_t` enum and folded hardware interference-size constants.
 Exact `std::launder` calls on admitted non-volatile scalar, array or record
 object pointers lower to the checked pointer value without a libc++ call and
-retain their argument once. Runtime nothrow tags, standard placement allocation,
-default heap operations and standard-function addresses remain outside the
-direct lowering boundary.
+retain their argument once. Exact standard placement new and constant-bound
+placement new[] expressions capture and reuse their storage pointer without a
+libc++ call. Runtime nothrow tags, direct allocation-function calls, default heap
+operations and standard-function addresses remain outside the direct lowering
+boundary.
 The `<memory>` surface has a 267-file libc++/resource closure on every core-v2
 target. The exact C++17 public header and all consumed component headers are
 authenticated without platform headers. Raw-pointer `pointer_traits` aliases,

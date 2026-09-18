@@ -892,6 +892,8 @@ public:
                                                const clang::CXXCtorInitializer *Initializer);
   std::vector<const CheckedEmptyBase *> emptyBaseCast(const clang::CastExpr *Cast);
   bool functionAddressTarget(const clang::FunctionDecl *F, clang::SourceLocation L);
+  bool standardPlacementAllocation(const clang::FunctionDecl *F,
+                                   bool Array) const;
   const clang::FunctionDecl *allocationFunction(const clang::FunctionDecl *F,
                                                bool Allocate, clang::SourceLocation L,
                                                bool Array = false);

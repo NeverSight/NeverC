@@ -6518,13 +6518,21 @@ class FunctionLowering {
       Args.push_back(allocationExtent(Object, F->getParamDecl(1)->getType(), true, L));
       ++Prefix;
     }
-    for (unsigned I = 0; I < N->getNumPlacementArgs(); ++I)
-      Args.push_back(argument(N->getPlacementArg(I), F->getParamDecl(Prefix + I)->getType()));
     auto Storage = temporary("ptr:void", L);
-    chargeCall(Args, L);
-    Body.push_back(json::Object{{"op", "call"}, {"callee", A.name(F)},
-                                {"args", std::move(Args)}, {"target", json::Object(Storage)},
-                                {"loc", A.loc(L)}});
+    if (A.standardPlacementAllocation(F, true)) {
+      assign(Storage,
+             argument(N->getPlacementArg(0), F->getParamDecl(1)->getType()), L);
+    } else {
+      for (unsigned I = 0; I < N->getNumPlacementArgs(); ++I)
+        Args.push_back(argument(N->getPlacementArg(I),
+                                F->getParamDecl(Prefix + I)->getType()));
+      chargeCall(Args, L);
+      Body.push_back(json::Object{{"op", "call"},
+                                  {"callee", A.name(F)},
+                                  {"args", std::move(Args)},
+                                  {"target", json::Object(Storage)},
+                                  {"loc", A.loc(L)}});
+    }
     if (N->shouldNullCheckAllocation()) {
       auto Initialize = labelName();
       if (End.empty()) End = labelName();
@@ -6564,13 +6572,21 @@ class FunctionLowering {
       Args.push_back(allocationExtent(Object, F->getParamDecl(1)->getType(), true, L));
       ++Prefix;
     }
-    for (unsigned I = 0; I < N->getNumPlacementArgs(); ++I)
-      Args.push_back(argument(N->getPlacementArg(I), F->getParamDecl(Prefix + I)->getType()));
     auto Storage = temporary(type(F->getReturnType(), L), L);
-    chargeCall(Args, L);
-    Body.push_back(json::Object{{"op", "call"}, {"callee", A.name(F)},
-                                {"args", std::move(Args)}, {"target", json::Object(Storage)},
-                                {"loc", A.loc(L)}});
+    if (A.standardPlacementAllocation(F, false)) {
+      assign(Storage,
+             argument(N->getPlacementArg(0), F->getParamDecl(1)->getType()), L);
+    } else {
+      for (unsigned I = 0; I < N->getNumPlacementArgs(); ++I)
+        Args.push_back(argument(N->getPlacementArg(I),
+                                F->getParamDecl(Prefix + I)->getType()));
+      chargeCall(Args, L);
+      Body.push_back(json::Object{{"op", "call"},
+                                  {"callee", A.name(F)},
+                                  {"args", std::move(Args)},
+                                  {"target", json::Object(Storage)},
+                                  {"loc", A.loc(L)}});
+    }
     auto Result = snapshot(cast(std::move(Storage), type(N->getType(), L), L), L);
     std::string End;
     if (N->shouldNullCheckAllocation() && N->hasInitializer()) {

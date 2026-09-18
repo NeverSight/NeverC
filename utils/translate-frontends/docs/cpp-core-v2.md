@@ -441,9 +441,18 @@ pointees. The result has the exact input pointer type and value. Its argument is
 captured once, and the portable pointer model then observes the lifetime chosen
 by the authenticated C++ call without a libc++ runtime operation.
 
+The exact global `operator new(size_t, void *)` and `operator new[](size_t,
+void *)` definitions from the pinned placement component are admitted only when
+Clang selects them for a new expression. Single objects and constant-bound
+arrays capture the placement argument once and initialize directly in that
+storage without emitting an allocation call. Array expressions retain the
+checked target cookie layout and advance past any required cookie before
+initializing elements, so valid source must provide sufficient aligned storage.
+
 Volatile, void and function pointees, function addresses, quoted includes,
 shadows and forged declarations remain rejected. Runtime `std::nothrow` tag
-objects, the standard placement allocation functions, default heap allocation,
+objects, direct calls or addresses of the placement functions, source
+redeclarations, default heap allocation, runtime placement-array bounds,
 allocation handlers and exception objects remain outside this boundary.
 
 ## Memory header from `<memory>`
@@ -5958,14 +5967,16 @@ relocation. Native results require the implementing revision's CI.
 
 ## Single-object allocation and placement reuse
 
-Core v2 admits C++17 single-object `new` and `delete` when their selected allocation
-and deallocation functions have checked definitions in this source unit, including
-the bounded default sized-delete forwarding rule below. Global
-replacement functions, class-specific static functions, custom placement overloads
-and existing concrete function/class/member templates compose with supported
-scalar and complete record types. Allocation operator declarations and direct
-calls, including `operator new[]`/`operator delete[]`, follow ordinary checked
-function rules; array expressions follow the separate contract below.
+Core v2 admits C++17 single-object `new` and `delete` when their selected
+allocation and deallocation functions have checked definitions in this source
+unit, including the bounded default sized-delete forwarding rule below. It also
+admits the exact standard placement allocation selected from the embedded
+`<new>` header. Global replacement functions, class-specific static functions,
+custom placement overloads and existing concrete function/class/member templates
+compose with supported scalar and complete record types. Allocation operator
+declarations and direct calls, including `operator new[]`/`operator delete[]`,
+follow ordinary checked function rules; array expressions follow the separate
+contract below.
 
 The selected allocator must return `void*` and start with the target `size_t`.
 Clang supplies allocation selection and converted placement arguments. An exact
@@ -6027,15 +6038,16 @@ below. The translator does not prove runtime ownership, storage capacity, addres
 alignment or transparent replacement of every old alias. Defined C++ source must
 supply suitable storage and obey const, reference-member and lifetime rules.
 
-The self-contained source profile supplies no default heap or standard placement runtime.
-A selected function without an owned definition or this exact default forwarding
-case reports `TR0203`; it never becomes
-an unchecked host allocation call. Reserved global `operator new(size_t, void*)`
-and its matching delete cannot be defined as user functions here and also report
-`TR0203`. Use class-specific placement or a custom global overload with a distinct
-parameter list until SDK integration provides the standard forms. Only exact
-allocation attributes synthesized by pinned Clang are admitted. Inherited default
-visibility must trace to the exact prior implicit global allocation declaration:
+The self-contained source profile supplies no default heap. A selected function
+without an owned definition, the exact embedded standard placement definition or
+the default forwarding case reports `TR0203`; it never becomes an unchecked host
+allocation call. Reserved global `operator new(size_t, void*)` and its matching
+delete cannot be defined or redeclared by user source. The standard functions are
+valid only as Clang-selected new-expression machinery; direct calls and addresses
+remain rejected. Class-specific placement and custom global overloads with a
+distinct parameter list retain the source-owned path. Only exact allocation
+attributes synthesized by pinned Clang are admitted. Inherited default visibility
+must trace to the exact prior implicit global allocation declaration:
 pinned Sema's merge loses its implicit bit, but keeps the inherited flag and absent
 source range. Written or unrelated attributes remain rejected. No exception-throwing path, construction
 rollback or foreign ABI is newly admitted.

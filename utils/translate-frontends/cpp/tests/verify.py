@@ -1382,6 +1382,26 @@ extern "C" int new_launder(int *value, const int *read_only,
         assert target_result["sdk_dependencies"] == new_header["sdk_dependencies"], target_result
         assert not [node for node in walk(target_result["functions"])
                     if node.get("op") in ("call", "mapped_call")], target_result
+    new_placement_source = """\
+#include <new>
+extern "C" int new_placement(void *storage) {
+  int *one = new (storage) int(3);
+  int *many = new (storage) int[2]{4, 5};
+  return *one + many[1];
+}
+"""
+    new_placement = check("v2-new-placement", new_placement_source,
+                          profile="cpp-core-v2", sdk=True)
+    assert new_placement["sdk_dependencies"] == new_header["sdk_dependencies"], new_placement
+    assert not [node for node in walk(new_placement["functions"])
+                if node.get("op") in ("call", "mapped_call")], new_placement
+    for target in sdk_targets:
+        target_result = check("v2-new-placement-" + target,
+                              new_placement_source, profile="cpp-core-v2",
+                              target=target, sdk=True)
+        assert target_result["sdk_dependencies"] == new_header["sdk_dependencies"], target_result
+        assert not [node for node in walk(target_result["functions"])
+                    if node.get("op") in ("call", "mapped_call")], target_result
     for name, source, code in (
         ("quoted-header", '#include "new"\nint main(){return 0;}', "TR0201"),
         ("launder-function-address",
@@ -1393,8 +1413,12 @@ extern "C" int new_launder(int *value, const int *read_only,
         ("launder-void",
          '#include <new>\nvoid*f(void*p){return std::launder(p);}',
          "TR0202"),
-        ("standard-placement-new",
-         '#include <new>\nint main(){int n=1;new(&n)int(3);return n;}',
+        ("direct-placement-call",
+         '#include <new>\nvoid*f(void*p){return ::operator new(sizeof(int),p);}',
+         "TR0203"),
+        ("placement-redeclaration",
+         '#include <new>\nvoid*operator new(std::size_t,void*)noexcept;'
+         'int f(){int n=1;new(&n)int(3);return n;}',
          "TR0203"),
         ("runtime-nothrow-tag",
          '#include <new>\nint main(){std::nothrow_t tag;return sizeof(tag);}',

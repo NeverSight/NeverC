@@ -71,7 +71,8 @@ reductions and scans, exact same-type function-pointer operations including
 transformed scans, and integer `gcd`/`lcm` lower directly. The exact
 [`<new>`](../docs/cpp-core-v2.md#new-header-from-new) header is also
 authenticated; its allocation metadata resolves at compile time and exact
-`std::launder` calls on admitted object pointers lower directly. The exact
+`std::launder` calls on admitted object pointers plus exact standard placement
+new expressions lower directly. The exact
 [`<memory>`](../docs/cpp-core-v2.md#memory-header-from-memory) header has an
 authenticated parsing boundary; raw-pointer `pointer_traits`, exact
 `std::allocator` and exact `std::allocator_traits<std::allocator<T>>` metadata
@@ -178,8 +179,10 @@ remain rejected. New contributes an exact, platform-free 37-file C++17 header
 closure. The standard allocation tag types and interference-size values remain
 compile-time or scalar metadata, and exact `std::launder` calls on admitted
 non-volatile object pointers lower to their retained pointer value without a
-libc++ call. Runtime tag objects, standard placement allocation and default
-heap operations remain excluded. Memory contributes an exact, platform-free
+libc++ call. Exact standard placement new and constant-bound placement new[]
+reuse a captured storage pointer without a runtime call. Runtime tag objects,
+direct allocation-function calls and default heap operations remain excluded.
+Memory contributes an exact, platform-free
 267-file C++17 header closure. Raw-pointer `pointer_traits` aliases resolve
 through pinned libc++. Exact `std::allocator<T>` and
 `std::allocator_traits<std::allocator<T>>` type identities, nested aliases,

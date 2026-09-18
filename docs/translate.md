@@ -36,9 +36,11 @@ Core v2 also accepts the pinned `<new>` header. Its 37-file closure is identical
 and platform-free on all supported targets. `std::nothrow_t`, `std::align_val_t`
 and the C++17 interference-size constants remain compile-time or scalar
 metadata, while exact `std::launder` calls on admitted non-volatile object
-pointers lower directly and evaluate their argument once. Standard placement
-allocation, nothrow objects, function addresses and default heap operations
-remain excluded. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#new-header-from-new).
+pointers lower directly and evaluate their argument once. Exact standard
+single-object and constant-array placement new expressions also reuse their
+captured storage without a runtime call. Direct allocation-function calls,
+nothrow objects, function addresses and default heap operations remain excluded.
+[C++17](../utils/translate-frontends/docs/cpp-core-v2.md#new-header-from-new).
 
 Core v2's pinned `<memory>` surface now resolves exact raw-pointer
 `pointer_traits`, `std::allocator<T>` and
@@ -85,7 +87,7 @@ Core v2 now supports nonlocal dynamic initialization of admitted objects and ref
 
 Runtime new[] now also accepts source-defined noexcept class allocators without placement arguments. Invalid lengths return null before calling the allocator; valid elements use a construction loop with per-element default-argument cleanup. Explicit-prefix and bound temporaries retain the enclosing full expression. Aggregate fillers now support actual element initialization without separate temporary objects, including nested lists and references to live storage. Fillers needing extra temporaries, throwing or placement runtime allocation, the default heap and full C++/STL remain unfinished. Native verification awaits implementing CI. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#runtime-array-allocation).
 
-Core v2 supports single-object new/delete through checked source-defined allocation functions, including class/template placement overloads, exact storage identity and argument cleanup. Explicit destruction and placement reconstruction preserve later automatic cleanup obligations. Native verification requires implementing CI. Default heap runtime, runtime new[] lengths, exceptions, standard headers and full C++/STL remain unfinished. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#single-object-allocation-and-placement-reuse).
+Core v2 supports single-object new/delete through checked source-defined allocation functions, including class/template placement overloads, plus exact standard placement new from the embedded `<new>` header. Storage identity, argument cleanup, explicit destruction and placement reconstruction preserve later automatic cleanup obligations. Native verification requires implementing CI. Default heap runtime, placement runtime new[] lengths, exceptions, remaining standard-library behavior and full C++/STL remain unfinished. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#single-object-allocation-and-placement-reuse).
 
 Experimental `neverc translate` emits reviewable `.nc` source through `cpp-core-v1`, `cpp-core-v2`, `cpp-project-v1` and `cpp-math-v1`.
 
