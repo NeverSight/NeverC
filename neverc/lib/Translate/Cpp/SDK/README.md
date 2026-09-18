@@ -147,7 +147,11 @@ exact `std::allocator<T>` and
 `std::allocator_traits<std::allocator<T>>` types and their nested aliases are
 admitted as compile-time metadata. Exact `uses_allocator<T,
 std::allocator<U>>` identities, inherited aliases and constants also resolve
-without materializing a standard-library object. `std::addressof` and
+without materializing a standard-library object. Exact runtime allocator
+specializations use an authenticated one-byte stateless carrier. Default,
+copy/move and non-void converting construction, same-type assignment,
+heterogeneous equality, deprecated C++17 `address` and complete-element
+`max_size` lower directly without a libc++ call. `std::addressof` and
 raw-pointer `pointer_traits::pointer_to` are admitted for checked non-volatile
 object lvalues. `std::destroy_at`, `std::destroy` and `std::destroy_n`
 additionally lower for scalar and complete source-owned non-union record object
@@ -169,9 +173,10 @@ accept a complete source-owned non-union record when the authenticated libc++
 helper selects a source-owned, non-template copy or move constructor with
 exactly one same-record reference parameter, a supported definition and a
 resolved `noexcept(true)` specification. Move preserves Clang's selected move
-or copy fallback. Runtime allocator objects and calls, potentially throwing,
-default-argument or constructor-template construction, ownership objects and
-the remaining memory operations stay outside the direct lowering boundary.
+or copy fallback. Allocator `allocate`, `deallocate`, `construct`, `destroy` and
+allocator-traits forwarding calls, potentially throwing, default-argument or
+constructor-template source-record construction, ownership objects and the
+remaining memory operations stay outside the direct lowering boundary.
 Core v2 never admits the `platform` root.
 Math v1 continues to use its separately checked libc++, resource and Darwin
 platform closure for `<cmath>`.

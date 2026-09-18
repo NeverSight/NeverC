@@ -1465,8 +1465,9 @@ catalog. Platform roots, mappings and `fp_contract` are invalid in core v2.
 The driver supplies a `VerificationContext` containing the exact approved SDK
 identity, verifies the response before and after semantic-IR processing, and
 copies the authenticated dependency closure into the manifest's built-in SDK
-record. Frontend claims cannot authorize an SDK. Runtime calls or object/storage
-identity from these declarations are rejected before lowering; only resolved
+record. Frontend claims cannot authorize an SDK. Except for the documented
+stateless allocator carriers, runtime calls or object/storage identity from
+these declarations are rejected before lowering; only resolved
 type aliases, integral/enum constants, folded `numeric_limits` scalar queries,
 checked cstddef layout constants, direct `std::byte` scalar operations, and the
 documented standard-library direct operations reach semantic IR. The memory
@@ -1482,14 +1483,20 @@ raw-pointer `pointer_traits`, exact
 aliases, rebinds and constants, plus exact
 `uses_allocator<T, std::allocator<U>>` identities and inherited aliases, close
 through the existing checked type/query graph without allocator storage or a
-runtime call. Their compatible values also fold. Direct `std::addressof` and
+runtime call. Their compatible values also fold. Exact runtime allocator
+specializations preserve the authenticated one-byte, one-byte-aligned empty
+libc++ representation as a record with one synthetic
+`{name:"nct_allocator_storage",type:"u8"}` field at bit offset zero. Their
+default, copy/move and non-void converting construction, same-type assignment,
+heterogeneous equality, deprecated C++17 `address` and complete-element
+`max_size` lower directly without an SDK call. Direct `std::addressof` and
 raw-pointer `pointer_traits::pointer_to` produce checked object addresses.
 Its scalar-pointer `destroy_at`, `destroy` and `destroy_n` operations retain
 argument effects and counted pointer advancement without a runtime destructor
 call. Its ten C++17 scalar-pointer `uninitialized_*` copy, move, fill, default
 and value construction forms use the existing checked load, store, zero,
 pointer-loop and authenticated pair-record operations. No new opcode, runtime
-allocator, exception edge or implicit call is introduced.
+allocation, exception edge or implicit call is introduced.
 
 ## Gated mathematics extension
 

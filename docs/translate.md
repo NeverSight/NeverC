@@ -53,7 +53,10 @@ construction, and nothrow zero-parameter source-record default/value
 construction operations lower directly. Uninitialized copy, fill and move also
 call the exact source-owned non-template `noexcept` copy or move constructor
 selected by the authenticated libc++ helper for complete source-owned records;
-runtime allocator objects and allocation calls remain excluded.
+exact runtime allocator objects use a checked one-byte stateless carrier with
+default/copy/move/converting construction, same-type assignment, heterogeneous
+comparison, C++17 `address` and `max_size`. Allocation/deallocation and
+allocator-traits forwarding calls remain excluded.
 The authenticated 267-file closure is identical and platform-free across all
 supported targets.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).

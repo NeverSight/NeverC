@@ -24645,6 +24645,103 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2MemoryAllocatorObjectsRunAtBothOptimizations) {
+  const auto Source = tmpFile("memory-allocator-objects.cpp");
+  const auto Output = tmpFile("memory-allocator-objects.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+struct R {
+  int value;
+  R *operator&() { return nullptr; }
+  const R *operator&() const { return nullptr; }
+};
+int effects;
+std::allocator<int> &pick_int(std::allocator<int> &value, int digit) {
+  effects = effects * 10 + digit;
+  return value;
+}
+std::allocator<R> &pick_allocator(std::allocator<R> &value) {
+  ++effects;
+  return value;
+}
+R &pick_record(R &value) {
+  ++effects;
+  return value;
+}
+int main() {
+  std::allocator<int> first;
+  effects = 0;
+  std::allocator<int> copied(pick_int(first, 1));
+  if (effects != 1)
+    return 1;
+  effects = 0;
+  std::allocator<int> moved(
+      static_cast<std::allocator<int> &&>(pick_int(copied, 2)));
+  if (effects != 2)
+    return 2;
+  effects = 0;
+  std::allocator<long> converted(pick_int(first, 3));
+  if (effects != 3)
+    return 3;
+  std::allocator<void> erased;
+  std::allocator<void> erased_copy(erased);
+  std::allocator<long> from_erased(erased);
+
+  effects = 0;
+  pick_int(first, 1) = pick_int(copied, 2);
+  if (effects != 21)
+    return 4;
+  effects = 0;
+  pick_int(first, 3) =
+      static_cast<std::allocator<int> &&>(pick_int(moved, 4));
+  if (effects != 43)
+    return 5;
+
+  if (!(first == copied) || first != copied || !(first == converted) ||
+      erased != first || !(erased_copy == from_erased))
+    return 6;
+  if (!(std::allocator<int>{} == std::allocator<long>{}) ||
+      std::allocator<void>{} != std::allocator<int>{})
+    return 7;
+
+  R value{17};
+  std::allocator<R> objects;
+  effects = 0;
+  R *address = pick_allocator(objects).address(pick_record(value));
+  if (effects != 2 || !address || address->value != 17 || &value != nullptr)
+    return 8;
+  const R &constant = value;
+  if (objects.address(constant) != address)
+    return 9;
+  if (first.max_size() != static_cast<std::size_t>(-1) / sizeof(int))
+    return 10;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *SDK = Manifest->getAsObject()->getObject("sdk");
+  ASSERT_NE(SDK, nullptr);
+  const auto *Dependencies = SDK->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 267u);
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("memory-allocator-objects" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2MemoryAllocatorMetadataRequiresExactTemplates) {
   struct Rejection {
     const char *Name;
@@ -24667,13 +24764,29 @@ TEST_F(TranslateTest, CoreV2MemoryAllocatorMetadataRequiresExactTemplates) {
        "static_assert(__is_same(std::uses_allocator<int,A>,"
        "std::uses_allocator<int,A>));",
        "TR0201"},
-      {"runtime-allocator",
-       "#include <memory>\nint main(){std::allocator<int> allocator;return 0;}",
-       "TR0203"},
       {"allocate-call",
        "#include <memory>\nint main(){std::allocator<int> allocator;"
        "int *p=allocator.allocate(1);allocator.deallocate(p,1);}",
        "TR0203"},
+      {"deallocate-call",
+       "#include <memory>\nint main(){std::allocator<int> allocator;"
+       "allocator.deallocate(nullptr,0);}",
+       "TR0203"},
+      {"address-member-pointer",
+       "#include <memory>\nusing A=std::allocator<int>;"
+       "using F=int*(A::*)(int&)const noexcept;"
+       "F f(){return static_cast<F>(&A::address);}",
+       "TR0201"},
+      {"max-size-member-pointer",
+       "#include <memory>\nusing A=std::allocator<int>;"
+       "using F=std::size_t(A::*)()const noexcept;"
+       "F f(){return &A::max_size;}",
+       "TR0201"},
+      {"equality-function-pointer",
+       "#include <memory>\nusing F=bool(*)(const std::allocator<int>&,"
+       "const std::allocator<long>&)noexcept;"
+       "F f(){return &std::operator==<int,long>;}",
+       "TR0201"},
       {"function-allocator",
        "#include <memory>\nusing A=std::allocator<void()>;"
        "static_assert(__is_same(A,A));",

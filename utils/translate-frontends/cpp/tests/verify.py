@@ -1512,6 +1512,60 @@ extern "C" int memory_allocator_metadata() {
         assert target_result["sdk_dependencies"] == memory_allocator_metadata["sdk_dependencies"], target_result
         assert not [node for node in walk(target_result["functions"])
                     if node.get("op") in ("call", "mapped_call")], target_result
+    memory_allocator_object_source = """\
+#include <memory>
+extern "C" int memory_allocator_objects(int *pointer) {
+  std::allocator<int> first;
+  std::allocator<int> copied(first);
+  std::allocator<int> moved(static_cast<std::allocator<int> &&>(copied));
+  std::allocator<long> converted(first);
+  std::allocator<void> erased;
+  std::allocator<void> erased_copy(erased);
+  std::allocator<long> from_erased(erased);
+  first = copied;
+  moved = static_cast<std::allocator<int> &&>(copied);
+  if (!(first == moved) || first != moved || !(first == converted) ||
+      erased != first || !(erased_copy == from_erased) ||
+      !(std::allocator<int>{} == std::allocator<long>{}) ||
+      std::allocator<void>{} != std::allocator<int>{})
+    return 1;
+  const int &constant = *pointer;
+  if (first.address(*pointer) != pointer || first.address(constant) != pointer)
+    return 2;
+  return first.max_size() == static_cast<std::size_t>(-1) / sizeof(int)
+             ? 0
+             : 3;
+}
+"""
+
+    def check_memory_allocator_objects(data):
+        allocator_records = [
+            record for record in data["records"]
+            if record["fields"] == [
+                {"name": "nct_allocator_storage", "type": "u8"}
+            ]
+        ]
+        assert len(allocator_records) == 3, data
+        assert all(record["layout"] == {
+            "size_bits": 8,
+            "abi_align_bits": 8,
+            "field_offsets_bits": [0],
+        } for record in allocator_records), data
+        assert not [node for node in walk(data["functions"])
+                    if node.get("op") in ("call", "mapped_call")], data
+
+    memory_allocator_objects = check(
+        "v2-memory-allocator-objects", memory_allocator_object_source,
+        profile="cpp-core-v2", sdk=True)
+    assert len(memory_allocator_objects["sdk_dependencies"]) == 267, memory_allocator_objects
+    check_memory_allocator_objects(memory_allocator_objects)
+    for target in sdk_targets:
+        target_result = check(
+            "v2-memory-allocator-objects-" + target,
+            memory_allocator_object_source, profile="cpp-core-v2",
+            target=target, sdk=True)
+        assert target_result["sdk_dependencies"] == memory_allocator_objects["sdk_dependencies"], target_result
+        check_memory_allocator_objects(target_result)
     memory_address_source = """\
 #include <memory>
 using Pointer = std::pointer_traits<int *>::pointer;
@@ -1867,12 +1921,21 @@ extern "C" MemorySourceRecord *memory_source_record_move_n(
         ("custom-uses-allocator-metadata",
          '#include <memory>\nstruct A{using value_type=int;};static_assert(__is_same(std::uses_allocator<int,A>,std::uses_allocator<int,A>));',
          "TR0201"),
-        ("runtime-allocator",
-         '#include <memory>\nint main(){std::allocator<int> allocator;return 0;}',
-         "TR0203"),
         ("allocator-call",
          '#include <memory>\nint main(){std::allocator<int> allocator;int*p=allocator.allocate(1);allocator.deallocate(p,1);}',
          "TR0203"),
+        ("allocator-deallocate-call",
+         '#include <memory>\nint main(){std::allocator<int> allocator;allocator.deallocate(nullptr,0);}',
+         "TR0203"),
+        ("allocator-address-member-pointer",
+         '#include <memory>\nusing A=std::allocator<int>;using F=int*(A::*)(int&)const noexcept;F f(){return static_cast<F>(&A::address);}',
+         "TR0201"),
+        ("allocator-max-size-member-pointer",
+         '#include <memory>\nusing A=std::allocator<int>;using F=std::size_t(A::*)()const noexcept;F f(){return &A::max_size;}',
+         "TR0201"),
+        ("allocator-equality-function-pointer",
+         '#include <memory>\nusing F=bool(*)(const std::allocator<int>&,const std::allocator<long>&)noexcept;F f(){return &std::operator==<int,long>;}',
+         "TR0201"),
         ("function-allocator-metadata",
          '#include <memory>\nusing A=std::allocator<void()>;static_assert(__is_same(A,A));',
          "TR0201"),

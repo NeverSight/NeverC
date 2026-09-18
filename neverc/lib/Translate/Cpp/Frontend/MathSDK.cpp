@@ -436,6 +436,164 @@ approvedMemoryTemplateMetadata(const State &S, const SourceManager &SM,
   return std::nullopt;
 }
 
+std::optional<UtilityAllocatorRecord>
+approvedUtilityAllocatorRecord(const State &S, const SourceManager &SM,
+                               const CXXRecordDecl *Record,
+                               const ASTContext &Context) {
+  const auto *Definition = Record ? Record->getDefinition() : nullptr;
+  const auto *Specialization =
+      dyn_cast_or_null<ClassTemplateSpecializationDecl>(Definition);
+  if (!Definition || !Specialization || Definition->isInvalidDecl() ||
+      Definition->isUnion() || Definition->isDependentContext() ||
+      approvedMemoryTemplateMetadata(S, SM, Definition) !=
+          MemoryTemplateMetadata::Allocator ||
+      !approvedStandardSDKDeclaration(S, SM, Definition) ||
+      !Definition->field_empty() || Definition->isDynamicClass() ||
+      !Definition->isEmpty())
+    return std::nullopt;
+  const auto &Arguments = Specialization->getTemplateArgs();
+  if (Arguments.size() != 1 ||
+      Arguments.get(0).getKind() != TemplateArgument::Type)
+    return std::nullopt;
+  const auto Element = Arguments.get(0).getAsType();
+  const auto &Layout = Context.getASTRecordLayout(Definition);
+  if (Element.isNull() || Layout.getSize().getQuantity() != 1 ||
+      Layout.getAlignment().getQuantity() != 1)
+    return std::nullopt;
+  if (Element->isVoidType()) {
+    if (Definition->getNumBases())
+      return std::nullopt;
+    return UtilityAllocatorRecord{Definition, Element};
+  }
+  if (Definition->getNumBases() != 1)
+    return std::nullopt;
+  const auto &Base = *Definition->bases_begin();
+  const auto *BaseRecord = Base.getType()->getAsCXXRecordDecl();
+  const auto *BaseDefinition =
+      BaseRecord ? BaseRecord->getDefinition() : nullptr;
+  const auto *BaseSpecialization =
+      dyn_cast_or_null<ClassTemplateSpecializationDecl>(BaseDefinition);
+  const auto *BaseTemplate = BaseSpecialization
+                                 ? BaseSpecialization->getSpecializedTemplate()
+                                 : nullptr;
+  if (Base.isVirtual() || Base.isPackExpansion() || !Base.getTypeSourceInfo() ||
+      !BaseDefinition || !BaseSpecialization || !BaseTemplate ||
+      BaseDefinition->isInvalidDecl() || BaseDefinition->isUnion() ||
+      BaseDefinition->isDependentContext() || !BaseDefinition->field_empty() ||
+      BaseDefinition->getNumBases() || !BaseDefinition->isEmpty() ||
+      BaseSpecialization->getName() != "__non_trivial_if" ||
+      !approvedStandardSDKDeclaration(S, SM, BaseDefinition) ||
+      !approvedStandardSDKDeclaration(S, SM, BaseTemplate) ||
+      !cstddefOrigin(S, SM, BaseTemplate->getLocation(), "libcxx",
+                     "__memory/allocator.h") ||
+      !Layout.getBaseClassOffset(BaseDefinition).isZero())
+    return std::nullopt;
+  const auto &BaseArguments = BaseSpecialization->getTemplateArgs();
+  if (BaseArguments.size() != 2 ||
+      BaseArguments.get(0).getKind() != TemplateArgument::Integral ||
+      BaseArguments.get(0).getAsIntegral().isZero() ||
+      BaseArguments.get(1).getKind() != TemplateArgument::Type ||
+      !Context.hasSameUnqualifiedType(BaseArguments.get(1).getAsType(),
+                                      Context.getRecordType(Definition)))
+    return std::nullopt;
+  const auto &BaseLayout = Context.getASTRecordLayout(BaseDefinition);
+  if (BaseLayout.getSize().getQuantity() != 1 ||
+      BaseLayout.getAlignment().getQuantity() != 1)
+    return std::nullopt;
+  return UtilityAllocatorRecord{Definition, Element};
+}
+
+std::optional<UtilityAllocatorConstruction>
+approvedUtilityAllocatorConstruction(const State &S, const SourceManager &SM,
+                                     const CXXConstructExpr *Construction,
+                                     const ASTContext &Context) {
+  if (!Construction || Construction->isTypeDependent() ||
+      Construction->isValueDependent() ||
+      Construction->isInstantiationDependent() ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete)
+    return std::nullopt;
+  const auto *Constructor = Construction->getConstructor();
+  const auto Allocator = approvedUtilityAllocatorRecord(
+      S, SM, Construction->getType()->getAsCXXRecordDecl(), Context);
+  const auto *Prototype =
+      Constructor ? Constructor->getType()->getAs<FunctionProtoType>()
+                  : nullptr;
+  if (!Constructor || !Allocator || !Prototype || !Prototype->isNothrow() ||
+      Constructor->getParent()->getCanonicalDecl() !=
+          Allocator->Record->getCanonicalDecl() ||
+      Constructor->isVariadic() ||
+      Construction->getNumArgs() != Constructor->getNumParams() ||
+      !approvedStandardSDKDeclaration(S, SM, Constructor))
+    return std::nullopt;
+  if (!Construction->getNumArgs() && Constructor->isDefaultConstructor())
+    return UtilityAllocatorConstruction::Default;
+  if (Construction->getNumArgs() != 1)
+    return std::nullopt;
+  const auto Source = approvedUtilityAllocatorRecord(
+      S, SM, Construction->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
+  const auto Parameter = Constructor->getParamDecl(0)->getType();
+  if (!Source || !Parameter->isReferenceType() ||
+      !Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                      Context.getRecordType(Source->Record)) ||
+      !Context.hasSameUnqualifiedType(Construction->getArg(0)->getType(),
+                                      Context.getRecordType(Source->Record)))
+    return std::nullopt;
+  if (Allocator->Record->getCanonicalDecl() ==
+          Source->Record->getCanonicalDecl() &&
+      Constructor->isCopyOrMoveConstructor())
+    return UtilityAllocatorConstruction::CopyOrMove;
+  const auto *Primary = Constructor->getPrimaryTemplate();
+  if (!Primary || !Constructor->hasBody() ||
+      !Parameter->isLValueReferenceType() ||
+      !Parameter->getPointeeType().isConstQualified() ||
+      !approvedStandardSDKDeclaration(S, SM, Primary) ||
+      !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
+                     "__memory/allocator.h"))
+    return std::nullopt;
+  return UtilityAllocatorConstruction::Converting;
+}
+
+bool approvedUtilityAllocatorAssignment(const State &S, const SourceManager &SM,
+                                        const CXXOperatorCallExpr *Assignment,
+                                        const ASTContext &Context) {
+  if (!Assignment || Assignment->isTypeDependent() ||
+      Assignment->isValueDependent() ||
+      Assignment->isInstantiationDependent() ||
+      Assignment->getOperator() != OO_Equal || Assignment->getNumArgs() != 2 ||
+      !Assignment->isLValue())
+    return false;
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Assignment->getDirectCallee());
+  const auto Allocator = approvedUtilityAllocatorRecord(
+      S, SM, Method ? Method->getParent() : nullptr, Context);
+  const auto Source = approvedUtilityAllocatorRecord(
+      S, SM, Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
+  const auto *Reference = directMethodReference(Assignment);
+  if (!Method || !Allocator || !Source || !Reference || Method->isStatic() ||
+      Method->isVariadic() || Method->getNumParams() != 1 ||
+      Method->getOverloadedOperator() != OO_Equal || !Method->isImplicit() ||
+      !Method->isTrivial() ||
+      (!Method->isCopyAssignmentOperator() &&
+       !Method->isMoveAssignmentOperator()) ||
+      Allocator->Record->getCanonicalDecl() !=
+          Source->Record->getCanonicalDecl() ||
+      !approvedStandardSDKDeclaration(S, SM, Method) ||
+      !S.owns(SM, Reference->getExprLoc()) ||
+      !Context.hasSameUnqualifiedType(
+          Assignment->getArg(0)->getType(),
+          Context.getRecordType(Allocator->Record)) ||
+      !Context.hasSameUnqualifiedType(Assignment->getArg(1)->getType(),
+                                      Context.getRecordType(Source->Record)) ||
+      !Method->getReturnType()->isLValueReferenceType() ||
+      !Context.hasSameUnqualifiedType(Method->getReturnType()->getPointeeType(),
+                                      Context.getRecordType(Allocator->Record)))
+    return false;
+  const auto Parameter = Method->getParamDecl(0)->getType();
+  return Parameter->isReferenceType() &&
+         Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                        Context.getRecordType(Source->Record));
+}
+
 static bool utilityScalar(const ASTContext &Context, QualType Type) {
   if (Type.isNull() || Type->isReferenceType())
     return false;
@@ -2924,6 +3082,48 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                             Parameter->getPointeeType()))
       return UtilityOperation::MemoryPointerTo;
   }
+  if (const auto *MemberCall = dyn_cast<CXXMemberCallExpr>(Call)) {
+    const auto Allocator = approvedUtilityAllocatorRecord(
+        S, SM, Method ? Method->getParent() : nullptr, Context);
+    const auto *Reference = directMethodReference(Call);
+    const auto *Prototype =
+        Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
+    const auto *Object = MemberCall->getImplicitObjectArgument();
+    if (Method && Allocator && Reference && Prototype && Object &&
+        Method->getIdentifier() && !Method->isStatic() && Method->isConst() &&
+        !Method->isVariadic() && Method->hasBody() && Method->isInlined() &&
+        Prototype->isNothrow() &&
+        approvedStandardSDKDeclaration(S, SM, Method) &&
+        cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
+                      "__memory/allocator.h") &&
+        S.owns(SM, Reference->getExprLoc()) &&
+        Context.hasSameUnqualifiedType(
+            Object->getType(), Context.getRecordType(Allocator->Record))) {
+      if (Method->getName() == "address" && Method->getNumParams() == 1 &&
+          Call->getNumArgs() == 1 && Call->isPRValue() &&
+          Call->getArg(0)->isLValue()) {
+        const auto Parameter = Method->getParamDecl(0)->getType();
+        const auto Result = Method->getReturnType();
+        if (Parameter->isLValueReferenceType() &&
+            utilityObjectPointer(Context, Result) &&
+            Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                           Allocator->ElementType) &&
+            Context.hasSameType(Parameter->getPointeeType(),
+                                Result->getPointeeType()) &&
+            Context.hasSameType(Call->getArg(0)->getType(),
+                                Parameter->getPointeeType()) &&
+            Context.hasSameType(Call->getType(), Result))
+          return UtilityOperation::MemoryAllocatorAddress;
+      }
+      if (Method->getName() == "max_size" && !Method->getNumParams() &&
+          !Call->getNumArgs() && Call->isPRValue() &&
+          !Allocator->ElementType->isVoidType() &&
+          !Allocator->ElementType->isIncompleteType() &&
+          Context.hasSameType(Method->getReturnType(), Context.getSizeType()) &&
+          Context.hasSameType(Call->getType(), Context.getSizeType()))
+        return UtilityOperation::MemoryAllocatorMaxSize;
+    }
+  }
   if (Method && Optional) {
     const auto *Reference = directMethodReference(Call);
     const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
@@ -3402,6 +3602,34 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   const llvm::StringRef Name = Function->getIdentifier()
                                    ? Function->getIdentifier()->getName()
                                    : llvm::StringRef();
+  if (Origin->Path == "__memory/allocator.h" && Call->getNumArgs() == 2 &&
+      Function->getNumParams() == 2 && Function->isInlined() &&
+      Call->isPRValue() && Function->getReturnType()->isBooleanType() &&
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+    const auto Left = approvedUtilityAllocatorRecord(
+        S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
+    const auto Right = approvedUtilityAllocatorRecord(
+        S, SM, Call->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
+    auto Parameter = [&](unsigned Index,
+                         const UtilityAllocatorRecord &Allocator) {
+      const auto Type = Function->getParamDecl(Index)->getType();
+      return Type->isLValueReferenceType() &&
+             Type->getPointeeType().isConstQualified() &&
+             Context.hasSameUnqualifiedType(
+                 Type->getPointeeType(),
+                 Context.getRecordType(Allocator.Record));
+    };
+    if (Operator && Left && Right && Parameter(0, *Left) &&
+        Parameter(1, *Right)) {
+      if (Function->getOverloadedOperator() == OO_EqualEqual &&
+          Operator->getOperator() == OO_EqualEqual)
+        return UtilityOperation::MemoryAllocatorEqual;
+      if (Function->getOverloadedOperator() == OO_ExclaimEqual &&
+          Operator->getOperator() == OO_ExclaimEqual)
+        return UtilityOperation::MemoryAllocatorNotEqual;
+    }
+  }
   if (Origin->Path == "__new/launder.h" && Name == "launder" &&
       Function->isInlined() && Function->isConstexpr() &&
       Call->getNumArgs() == 1 && Function->getNumParams() == 1 &&

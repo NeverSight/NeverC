@@ -473,8 +473,28 @@ trait constants. These identities can appear behind pointer, reference and
 fixed-array type wrappers. Exact
 `std::uses_allocator<T, std::allocator<U>>` identities expose their inherited
 `type` and `value_type` aliases; their `value` and `uses_allocator_v` constants
-also fold through the authenticated header. None of these metadata queries
-creates allocator storage or emits a call.
+also fold through the authenticated header. Metadata-only uses create no
+allocator storage and emit no call.
+
+Exact runtime `std::allocator<T>` objects use an authenticated stateless
+carrier. The pinned libc++ layout must be exactly one byte with one-byte
+alignment and no data members; non-void specializations must have only the
+exact empty private ABI base from `__memory/allocator.h`. The response preserves
+that representation as one synthetic `u8` field at offset zero. Default,
+copy/move and same-type assignment are admitted, as is the exact `noexcept`
+converting constructor from `std::allocator<U>` into a non-void specialization.
+The `allocator<void>` specialization retains its own implicit default,
+copy/move and assignment operations, and may be the source of a non-void
+converting construction. Every source and receiver expression is still
+evaluated; assignment evaluates the right operand before the left.
+
+Exact heterogeneous `operator==` and `operator!=` calls evaluate both allocator
+operands and fold to `true` and `false`, respectively. The deprecated C++17
+`address` overloads evaluate the allocator receiver and bound object once,
+bypass overloaded `operator&`, and return the checked raw address with exact
+pointee qualification. The deprecated C++17 `max_size` operation evaluates its
+receiver and returns the target `size_t` maximum divided by the positive size of
+the complete non-void element. These operations emit no libc++ runtime call.
 
 The exact `std::addressof(T&)` and raw-pointer
 `std::pointer_traits<T *>::pointer_to(T&)` operations directly produce the
@@ -541,9 +561,11 @@ heterogeneous, union or non-source-record uninitialized construction, function
 addresses, quoted includes, shadows and forged declarations remain rejected.
 Potentially throwing constructors, constructors with extra default arguments,
 constructor templates and unsupported source-record definitions remain
-rejected. Allocators, other than the exact compile-time metadata above, remain
-rejected. Runtime allocator objects and calls, smart pointers and ownership
-factories await their own checked lifetime and ABI contracts.
+rejected. Allocator member or comparison function addresses, custom allocator
+types and traits, `allocate`, `deallocate`, `construct`, `destroy` and their
+`allocator_traits` forwarding calls remain rejected. Allocation requires a
+separate default-heap and exception contract. Smart pointers and ownership
+factories also remain outside this boundary.
 
 ## Algorithm header from `<algorithm>`
 

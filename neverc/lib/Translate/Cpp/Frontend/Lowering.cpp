@@ -3,6 +3,7 @@
 #include "clang/AST/StmtCXX.h"
 #include "llvm/ADT/ScopeExit.h"
 #include <algorithm>
+#include <limits>
 #include <optional>
 #include <set>
 
@@ -1226,6 +1227,51 @@ class FunctionLowering {
       // Retain the checked pointer value once; a later access observes the
       // lifetime selected by the source's authenticated std::launder call.
       return snapshot(expression(Call->getArg(0)), L);
+    case UtilityOperation::MemoryAllocatorAddress: {
+      const auto *Object = MemberObject();
+      if (!Object || Call->getNumArgs() != 1)
+        reject(
+            L, "allocator address",
+            "A checked std::allocator receiver and one object are required.");
+      // The postfix object is sequenced before the bound argument. The
+      // allocator is stateless, but evaluating its receiver remains observable.
+      lvalue(Object);
+      return snapshot(
+          cast(address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L),
+               type(Call->getType(), L), L),
+          L);
+    }
+    case UtilityOperation::MemoryAllocatorMaxSize: {
+      const auto *Object = MemberObject();
+      const auto Allocator =
+          Object ? approvedUtilityAllocatorRecord(
+                       A.S, A.Sources, Object->getType()->getAsCXXRecordDecl(),
+                       A.Context)
+                 : std::optional<UtilityAllocatorRecord>();
+      if (!Object || !Allocator || Allocator->ElementType->isVoidType() ||
+          Allocator->ElementType->isIncompleteType())
+        reject(L, "allocator max_size",
+               "A checked complete std::allocator element is required.");
+      lvalue(Object);
+      const auto ResultType = type(Call->getType(), L);
+      const unsigned Bits = integerBits(ResultType);
+      const uint64_t Maximum = Bits == 64 ? std::numeric_limits<uint64_t>::max()
+                                          : (uint64_t(1) << Bits) - 1;
+      const uint64_t ElementBytes =
+          A.Context.getTypeSizeInChars(Allocator->ElementType).getQuantity();
+      if (!ElementBytes)
+        reject(L, "allocator max_size",
+               "The allocator element must have positive complete size.");
+      return quantity(Maximum / ElementBytes, ResultType, L);
+    }
+    case UtilityOperation::MemoryAllocatorEqual:
+    case UtilityOperation::MemoryAllocatorNotEqual:
+      if (Call->getNumArgs() != 2)
+        reject(L, "allocator comparison",
+               "Two checked std::allocator operands are required.");
+      lvalue(Call->getArg(0));
+      lvalue(Call->getArg(1));
+      return boolean(Operation == UtilityOperation::MemoryAllocatorEqual, L);
     case UtilityOperation::MemoryAddressof:
     case UtilityOperation::MemoryPointerTo:
       // Both operations bypass an overloaded operator& and return the address
@@ -6086,6 +6132,19 @@ class FunctionLowering {
       if (auto Operation =
               approvedUtilityOperation(A.S, A.Sources, Call, A.Context))
         return utilityOperation(Call, *Operation, std::move(Destination));
+      if (approvedUtilityAllocatorAssignment(
+              A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call), A.Context)) {
+        if (Destination)
+          reject(
+              L, "allocator assignment",
+              "std::allocator assignment cannot initialize a record result.");
+        auto Right = snapshot(expression(Call->getArg(1)), L);
+        auto LeftAddress = snapshot(
+            address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
+        auto Left = dereference(std::move(LeftAddress), L);
+        assign(Left, std::move(Right), L);
+        return Left;
+      }
       if (auto Pair = approvedUtilityPairAssignment(
               A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call), A.Context)) {
         if (Destination)
@@ -7571,6 +7630,19 @@ class FunctionLowering {
             Constructor->getParent()->getCanonicalDecl() ||
         Place.getString("type") != type(T, L))
       reject(L, "construction", "Constructor and destination types differ.");
+    if (auto Kind = approvedUtilityAllocatorConstruction(A.S, A.Sources, C,
+                                                         A.Context)) {
+      if (*Kind != UtilityAllocatorConstruction::Default) {
+        if (C->getNumArgs() != 1)
+          reject(L, "allocator construction",
+                 "A copied or converted std::allocator needs one source.");
+        // The state is empty, but the bound source expression and any
+        // full-expression lifetime still have to be evaluated.
+        expression(C->getArg(0));
+      }
+      assign(std::move(Place), A.zero(T, L), L);
+      return;
+    }
     if (auto Kind = approvedUtilityPairConstruction(
             A.S, A.Sources, C, A.Context)) {
       auto Pair = approvedUtilityPairRecord(

@@ -254,12 +254,38 @@ enum class MemoryTemplateMetadata {
 std::optional<MemoryTemplateMetadata>
 approvedMemoryTemplateMetadata(const State &S, const clang::SourceManager &SM,
                                const clang::CXXRecordDecl *Record);
+struct UtilityAllocatorRecord {
+  const clang::CXXRecordDecl *Record;
+  clang::QualType ElementType;
+};
+std::optional<UtilityAllocatorRecord>
+approvedUtilityAllocatorRecord(const State &S, const clang::SourceManager &SM,
+                               const clang::CXXRecordDecl *Record,
+                               const clang::ASTContext &Context);
+enum class UtilityAllocatorConstruction {
+  Default,
+  CopyOrMove,
+  Converting,
+};
+std::optional<UtilityAllocatorConstruction>
+approvedUtilityAllocatorConstruction(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction,
+    const clang::ASTContext &Context);
+bool approvedUtilityAllocatorAssignment(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXOperatorCallExpr *Assignment,
+    const clang::ASTContext &Context);
 enum class UtilityOperation {
   Move,
   Forward,
   MoveIfNoexcept,
   AsConst,
   NewLaunder,
+  MemoryAllocatorAddress,
+  MemoryAllocatorMaxSize,
+  MemoryAllocatorEqual,
+  MemoryAllocatorNotEqual,
   MemoryAddressof,
   MemoryPointerTo,
   MemoryDestroyAt,
@@ -852,6 +878,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredUtilityInitializerLists;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityOptionals;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityReverseIterators;
+  std::set<const clang::CXXRecordDecl *> RequiredUtilityAllocators;
   std::map<const clang::CXXRecordDecl *, CheckedEmptyBase> EmptyBases;
   std::map<const clang::VarDecl *, const clang::CXXForRangeStmt *> RangeDeclarations;
   std::size_t ExpandedNodes = 0;
@@ -884,6 +911,9 @@ public:
   bool requireUtilityReverseIterator(const clang::CXXRecordDecl *Record,
                                      clang::SourceLocation Location,
                                      unsigned Depth = 0);
+  bool requireUtilityAllocator(const clang::CXXRecordDecl *Record,
+                               clang::SourceLocation Location,
+                               unsigned Depth = 0);
   std::string functionPointerType(clang::QualType T, clang::SourceLocation L,
                                   unsigned Depth = 0);
   bool typeClassificationValue(const clang::TypeTraitExpr *Query);
