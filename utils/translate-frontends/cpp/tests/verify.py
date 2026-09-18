@@ -1407,6 +1407,62 @@ extern "C" int *memory_destroy_n(int *first, long count) {
         assert target_result["sdk_dependencies"] == memory_destroy["sdk_dependencies"], target_result
         assert not [node for node in walk(target_result["functions"])
                     if node.get("op") in ("call", "mapped_call")], target_result
+    memory_uninitialized_source = """\
+#include <memory>
+extern "C" int *memory_uninitialized_copy(const int *first,
+                                            const int *last, int *output) {
+  return std::uninitialized_copy(first, last, output);
+}
+extern "C" int *memory_uninitialized_copy_n(const int *first, long count,
+                                              int *output) {
+  return std::uninitialized_copy_n(first, count, output);
+}
+extern "C" void memory_uninitialized_fill(int *first, int *last, int value) {
+  std::uninitialized_fill(first, last, value);
+}
+extern "C" int *memory_uninitialized_fill_n(int *first, long count,
+                                              int value) {
+  return std::uninitialized_fill_n(first, count, value);
+}
+extern "C" void memory_uninitialized_default_construct(int *first,
+                                                         int *last) {
+  std::uninitialized_default_construct(first, last);
+}
+extern "C" int *memory_uninitialized_default_construct_n(int *first,
+                                                           long count) {
+  return std::uninitialized_default_construct_n(first, count);
+}
+extern "C" void memory_uninitialized_value_construct(int *first, int *last) {
+  std::uninitialized_value_construct(first, last);
+}
+extern "C" int *memory_uninitialized_value_construct_n(int *first,
+                                                         long count) {
+  return std::uninitialized_value_construct_n(first, count);
+}
+extern "C" int *memory_uninitialized_move(int *first, int *last,
+                                            int *output) {
+  return std::uninitialized_move(first, last, output);
+}
+extern "C" int *memory_uninitialized_move_n(int *first, long count,
+                                              int *output, int **input_end) {
+  auto result = std::uninitialized_move_n(first, count, output);
+  *input_end = result.first;
+  return result.second;
+}
+"""
+    memory_uninitialized = check("v2-memory-uninitialized",
+                                 memory_uninitialized_source,
+                                 profile="cpp-core-v2", sdk=True)
+    assert len(memory_uninitialized["sdk_dependencies"]) == 267, memory_uninitialized
+    assert not [node for node in walk(memory_uninitialized["functions"])
+                if node.get("op") in ("call", "mapped_call")], memory_uninitialized
+    for target in sdk_targets:
+        target_result = check("v2-memory-uninitialized-" + target,
+                              memory_uninitialized_source,
+                              profile="cpp-core-v2", target=target, sdk=True)
+        assert target_result["sdk_dependencies"] == memory_uninitialized["sdk_dependencies"], target_result
+        assert not [node for node in walk(target_result["functions"])
+                    if node.get("op") in ("call", "mapped_call")], target_result
     check("v2-memory-quoted",
           '#include "memory"\nint main(){return 0;}', "TR0201",
           profile="cpp-core-v2", sdk=True)
@@ -1452,6 +1508,27 @@ extern "C" int *memory_destroy_n(int *first, long count) {
          "TR0203"),
         ("forged-destroy-n",
          'namespace std{template<class I,class N>I destroy_n(I,N);}int main(){int n=1;return *std::destroy_n(&n,1);}',
+         "TR0203"),
+        ("uninitialized-copy-address",
+         '#include <memory>\nauto f(){return &std::uninitialized_copy<int*,int*>;}',
+         "TR0201"),
+        ("uninitialized-copy-record",
+         '#include <memory>\nstruct R{int n;};int main(){R a[1]{{1}},b[1]{};std::uninitialized_copy(a,a+1,b);}',
+         "TR0203"),
+        ("uninitialized-copy-heterogeneous",
+         '#include <memory>\nint main(){int a[1]{1};long b[1];std::uninitialized_copy(a,a+1,b);}',
+         "TR0203"),
+        ("uninitialized-value-record",
+         '#include <memory>\nstruct R{int n;R():n(1){}};int main(){R a[1];std::uninitialized_value_construct(a,a+1);}',
+         "TR0203"),
+        ("uninitialized-copy-function-pointer",
+         '#include <memory>\nusing F=void();int main(){F*a[1]{};F*b[1];std::uninitialized_copy(a,a+1,b);}',
+         "TR0203"),
+        ("uninitialized-fill-volatile",
+         '#include <memory>\nint main(){volatile int a[1];std::uninitialized_fill(a,a+1,1);}',
+         "TR0202"),
+        ("forged-uninitialized-fill",
+         'namespace std{template<class I,class T>void uninitialized_fill(I,I,const T&);}int main(){int a[1];std::uninitialized_fill(a,a+1,1);}',
          "TR0203"),
     ):
         check("v2-memory-" + name, source, code,

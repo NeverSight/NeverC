@@ -446,13 +446,28 @@ advances and returns the captured pointer once per positive count; zero and
 negative signed counts return the original pointer. No operation reads the
 destroyed scalar value.
 
+The exact `std::uninitialized_copy`, `std::uninitialized_copy_n`,
+`std::uninitialized_fill`, `std::uninitialized_fill_n`,
+`std::uninitialized_default_construct`,
+`std::uninitialized_default_construct_n`,
+`std::uninitialized_value_construct`,
+`std::uninitialized_value_construct_n`, `std::uninitialized_move` and
+`std::uninitialized_move_n` templates lower for writable raw output pointers to
+the same admitted scalar element type. Copy, move and fill construct each
+destination from the captured input or value. Value construction stores the
+scalar zero or null value. Default construction starts the scalar lifetime
+without inventing a write. Every argument is retained once, range forms advance
+to their end, counted forms run only while the promoted count is positive, and
+the exact pointer or pointer-pair result is preserved. Scalar operations cannot
+throw, so these direct loops require no exception cleanup.
+
 Volatile objects, rvalues for address utilities, function pointers,
 fancy-pointer `pointer_traits`, non-scalar destruction, custom iterators,
-function addresses, quoted includes, shadows and forged declarations remain
-rejected. Allocators, uninitialized construction, nontrivial destruction, smart
-pointers and ownership factories remain rejected until their layouts,
-allocation behavior, lifetime, error handling and cross-target ABI contracts
-receive direct lowerings.
+heterogeneous or non-scalar uninitialized construction, function addresses,
+quoted includes, shadows and forged declarations remain rejected. Allocators,
+record construction, nontrivial destruction, smart pointers and ownership
+factories remain rejected until their layouts, allocation behavior, lifetime,
+error handling and cross-target ABI contracts receive direct lowerings.
 
 ## Algorithm header from `<algorithm>`
 

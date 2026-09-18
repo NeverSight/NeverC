@@ -1474,7 +1474,10 @@ surface includes authenticated raw-pointer `pointer_traits` aliases plus direct
 `std::addressof` and raw-pointer `pointer_traits::pointer_to` object addresses.
 Its scalar-pointer `destroy_at`, `destroy` and `destroy_n` operations retain
 argument effects and counted pointer advancement without a runtime destructor
-call.
+call. Its ten C++17 scalar-pointer `uninitialized_*` copy, move, fill, default
+and value construction forms use the existing checked load, store, zero,
+pointer-loop and authenticated pair-record operations. No new opcode, allocator,
+exception edge or implicit call is introduced.
 
 ## Gated mathematics extension
 

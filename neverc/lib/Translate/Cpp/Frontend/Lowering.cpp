@@ -1237,12 +1237,15 @@ class FunctionLowering {
       snapshot(expression(Call->getArg(0)), L);
       return {};
     case UtilityOperation::MemoryDestroy:
-      // Both range arguments are still evaluated once. Scalar destruction has
-      // no observable body after those bindings.
+    case UtilityOperation::MemoryUninitializedDefaultConstruct:
+      // Both range arguments are still evaluated once. Scalar destruction and
+      // default initialization have no observable body after those bindings;
+      // scalar lifetime is represented by the existing checked storage.
       snapshot(expression(Call->getArg(0)), L);
       snapshot(expression(Call->getArg(1)), L);
       return {};
-    case UtilityOperation::MemoryDestroyN: {
+    case UtilityOperation::MemoryDestroyN:
+    case UtilityOperation::MemoryUninitializedDefaultConstructN: {
       auto Current = snapshot(expression(Call->getArg(0)), L);
       auto CountType = Call->getArg(1)->getType();
       if (const auto *Enumeration = CountType->getAs<EnumType>())
@@ -1270,6 +1273,50 @@ class FunctionLowering {
       jump(Check, L);
       label(End, L);
       return Current;
+    }
+    case UtilityOperation::MemoryUninitializedValueConstruct:
+    case UtilityOperation::MemoryUninitializedValueConstructN: {
+      const bool Counted =
+          Operation == UtilityOperation::MemoryUninitializedValueConstructN;
+      auto Current = snapshot(expression(Call->getArg(0)), L);
+      auto BoundaryType = Call->getArg(1)->getType();
+      if (Counted) {
+        if (const auto *Enumeration = BoundaryType->getAs<EnumType>())
+          BoundaryType = Enumeration->getDecl()->getPromotionType();
+        else if (A.Context.isPromotableIntegerType(BoundaryType))
+          BoundaryType = A.Context.getPromotedIntegerType(BoundaryType);
+      }
+      const auto BoundaryTypeName = type(BoundaryType, L);
+      auto Boundary = snapshot(
+          Counted ? cast(expression(Call->getArg(1)), BoundaryTypeName, L)
+                  : expression(Call->getArg(1)),
+          L);
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto ElementType =
+          Call->getArg(0)->getType()->getPointeeType().getUnqualifiedType();
+      const auto Check = labelName(), Construct = labelName(),
+                 End = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(Counted ? binary(">", Boundary, quantity(0, BoundaryTypeName, L),
+                              "bool", L)
+                     : binary("!=", Current, Boundary, "bool", L),
+             Construct, End, L);
+      label(Construct, L);
+      assign(dereference(Current, L), A.zero(ElementType, L), L);
+      assign(
+          Current,
+          binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      if (Counted)
+        assign(Boundary,
+               binary("-", Boundary, one(BoundaryTypeName, L), BoundaryTypeName,
+                      L),
+               L);
+      jump(Check, L);
+      label(End, L);
+      return Counted ? Current : Expression{};
     }
     case UtilityOperation::Exchange: {
       // Function arguments are bound before exchange reads the old value.
@@ -1865,6 +1912,8 @@ class FunctionLowering {
     }
     case UtilityOperation::AlgorithmCopy:
     case UtilityOperation::AlgorithmMove:
+    case UtilityOperation::MemoryUninitializedCopy:
+    case UtilityOperation::MemoryUninitializedMove:
     case UtilityOperation::AlgorithmCopyBackward:
     case UtilityOperation::AlgorithmMoveBackward: {
       auto Current = snapshot(expression(Call->getArg(0)), L);
@@ -1906,8 +1955,12 @@ class FunctionLowering {
       return Output;
     }
     case UtilityOperation::AlgorithmFill:
-    case UtilityOperation::AlgorithmFillN: {
-      const bool Counted = Operation == UtilityOperation::AlgorithmFillN;
+    case UtilityOperation::AlgorithmFillN:
+    case UtilityOperation::MemoryUninitializedFill:
+    case UtilityOperation::MemoryUninitializedFillN: {
+      const bool Counted =
+          Operation == UtilityOperation::AlgorithmFillN ||
+          Operation == UtilityOperation::MemoryUninitializedFillN;
       auto Current = snapshot(expression(Call->getArg(0)), L);
       auto BoundaryType = Call->getArg(1)->getType();
       if (Counted) {
@@ -2700,7 +2753,9 @@ class FunctionLowering {
       assign(fieldStorage(json::Object(Place), Pair->Second, L), Second, L);
       return Place;
     }
-    case UtilityOperation::AlgorithmCopyN: {
+    case UtilityOperation::AlgorithmCopyN:
+    case UtilityOperation::MemoryUninitializedCopyN:
+    case UtilityOperation::MemoryUninitializedMoveN: {
       auto Input = snapshot(expression(Call->getArg(0)), L);
       auto CountType = Call->getArg(1)->getType();
       if (const auto *Enumeration = CountType->getAs<EnumType>())
@@ -2733,6 +2788,22 @@ class FunctionLowering {
              L);
       jump(Check, L);
       label(End, L);
+      if (Operation == UtilityOperation::MemoryUninitializedMoveN) {
+        auto Pair = approvedUtilityPairRecord(
+            A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+        if (!Pair)
+          reject(L, "uninitialized move",
+                 "The selected std::pair layout is unavailable.");
+        auto Place = Destination ? std::move(*Destination)
+                                 : objectTemporary(Call->getType(), L);
+        if (Place.getString("type") != type(Call->getType(), L))
+          reject(L, "uninitialized move",
+                 "The std::uninitialized_move_n destination type differs from "
+                 "its result.");
+        assign(fieldStorage(json::Object(Place), Pair->First, L), Input, L);
+        assign(fieldStorage(json::Object(Place), Pair->Second, L), Output, L);
+        return Place;
+      }
       return Output;
     }
     case UtilityOperation::AlgorithmIterSwap: {

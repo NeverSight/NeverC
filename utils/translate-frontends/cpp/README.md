@@ -72,7 +72,8 @@ transformed scans, and integer `gcd`/`lcm` lower directly. The exact
 [`<memory>`](../docs/cpp-core-v2.md#memory-header-from-memory) header has an
 authenticated parsing boundary; raw-pointer `pointer_traits` metadata,
 `std::addressof`, `pointer_traits::pointer_to` and scalar-pointer destruction
-algorithms lower directly while its ownership objects remain separate. The
+and uninitialized construction algorithms lower directly while its ownership
+objects remain separate. The
 frontend uses the pinned embedded libc++/resource VFS and exposes resolved type
 aliases plus integral/enum constant results. It records all consumed header
 hashes: 101 for the `<type_traits>` closure, nine for standalone `<cstdint>`,
@@ -172,8 +173,10 @@ libc++, while `std::addressof` and raw-pointer `pointer_traits::pointer_to`
 return checked object addresses without a libc++ runtime call. Exact
 `destroy_at`, `destroy` and `destroy_n` calls on scalar object pointers retain
 argument evaluation and counted iterator results without emitting a trivial
-destructor call. Allocators, uninitialized construction, nontrivial destruction
-and ownership objects are not yet admitted.
+destructor call. The ten C++17 `uninitialized_*` copy, move, fill, default and
+value construction forms directly initialize scalar pointer ranges and retain
+their exact iterator results. Allocators, record construction, nontrivial
+destruction and ownership objects are not yet admitted.
 The driver authenticates each closure before
 emitting output. Standard-library objects and operations beyond these documented
 surfaces, other standard headers and full C++/STL remain unfinished.

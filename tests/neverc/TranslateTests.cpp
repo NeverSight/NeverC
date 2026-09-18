@@ -24601,6 +24601,198 @@ TEST_F(TranslateTest, CoreV2MemoryDestructionRequiresExactScalarPointerForms) {
 }
 
 TEST_F(TranslateTest,
+       CoreV2MemoryScalarUninitializedAlgorithmsRunAtBothOptimizations) {
+  const auto Source = tmpFile("memory-uninitialized.cpp");
+  const auto Output = tmpFile("memory-uninitialized.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+int effects;
+int *observe(int *pointer) { ++effects; return pointer; }
+long observe_count(long count) { ++effects; return count; }
+int observe_value(int value) { ++effects; return value; }
+enum Kind { empty_kind, full_kind };
+int main() {
+  int input[4]{1, 2, 3, 4};
+  int copied[4]{-1, -1, -1, -1};
+  int copied_n[4]{-1, -1, -1, -1};
+  int filled[4]{-1, -1, -1, -1};
+  int filled_n[4]{-1, -1, -1, -1};
+  int defaults[4]{9, 9, 9, 9};
+  int values[4]{9, 9, 9, 9};
+  int moved[4]{-1, -1, -1, -1};
+  int moved_n[4]{-1, -1, -1, -1};
+
+  effects = 0;
+  int *copy_end = std::uninitialized_copy(
+      observe(input), observe(input + 4), observe(copied));
+  if (effects != 3 || copy_end != copied + 4 || copied[0] != 1 ||
+      copied[3] != 4)
+    return 1;
+
+  effects = 0;
+  int *copy_n_end = std::uninitialized_copy_n(
+      observe(input), observe_count(4), observe(copied_n));
+  if (effects != 3 || copy_n_end != copied_n + 4 || copied_n[1] != 2 ||
+      copied_n[2] != 3)
+    return 2;
+  int negative_copy[1]{17};
+  if (std::uninitialized_copy_n(input, -2, negative_copy) != negative_copy ||
+      negative_copy[0] != 17)
+    return 3;
+
+  effects = 0;
+  std::uninitialized_fill(observe(filled), observe(filled + 4),
+                          observe_value(6));
+  if (effects != 3 || filled[0] != 6 || filled[3] != 6)
+    return 4;
+
+  effects = 0;
+  int *fill_n_end = std::uninitialized_fill_n(
+      observe(filled_n), observe_count(4), observe_value(7));
+  if (effects != 3 || fill_n_end != filled_n + 4 || filled_n[0] != 7 ||
+      filled_n[3] != 7)
+    return 5;
+  int negative_fill[1]{18};
+  if (std::uninitialized_fill_n(negative_fill, -2, 5) != negative_fill ||
+      negative_fill[0] != 18)
+    return 6;
+
+  effects = 0;
+  std::uninitialized_default_construct(observe(defaults),
+                                       observe(defaults + 4));
+  if (effects != 2)
+    return 7;
+  effects = 0;
+  int *default_end = std::uninitialized_default_construct_n(
+      observe(defaults), observe_count(4));
+  if (effects != 2 || default_end != defaults + 4 ||
+      std::uninitialized_default_construct_n(defaults, -2) != defaults)
+    return 8;
+
+  effects = 0;
+  std::uninitialized_value_construct(observe(values), observe(values + 4));
+  if (effects != 2 || values[0] != 0 || values[3] != 0)
+    return 9;
+  values[0] = values[1] = values[2] = values[3] = 9;
+  effects = 0;
+  int *value_end = std::uninitialized_value_construct_n(
+      observe(values), observe_count(4));
+  if (effects != 2 || value_end != values + 4 || values[0] != 0 ||
+      values[3] != 0)
+    return 10;
+  int negative_value[1]{19};
+  if (std::uninitialized_value_construct_n(negative_value, -2) !=
+          negative_value ||
+      negative_value[0] != 19)
+    return 11;
+
+  effects = 0;
+  int *move_end = std::uninitialized_move(
+      observe(input), observe(input + 4), observe(moved));
+  if (effects != 3 || move_end != moved + 4 || moved[0] != 1 ||
+      moved[3] != 4)
+    return 12;
+
+  effects = 0;
+  auto move_n_end = std::uninitialized_move_n(
+      observe(input), observe_count(4), observe(moved_n));
+  if (effects != 3 || move_n_end.first != input + 4 ||
+      move_n_end.second != moved_n + 4 || moved_n[0] != 1 ||
+      moved_n[3] != 4)
+    return 13;
+  auto negative_move = std::uninitialized_move_n(input, -2, moved_n);
+  if (negative_move.first != input || negative_move.second != moved_n)
+    return 14;
+
+  int anchor = 1;
+  int *pointers[2]{&anchor, &anchor};
+  Kind kinds[2]{full_kind, full_kind};
+  double reals[2]{1.5, 2.5};
+  std::uninitialized_value_construct(pointers, pointers + 2);
+  std::uninitialized_value_construct(kinds, kinds + 2);
+  std::uninitialized_value_construct(reals, reals + 2);
+  if (pointers[0] || pointers[1] || kinds[0] != empty_kind ||
+      kinds[1] != empty_kind || reals[0] != 0.0 || reals[1] != 0.0)
+    return 15;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *SDK = Manifest->getAsObject()->getObject("sdk");
+  ASSERT_NE(SDK, nullptr);
+  const auto *Dependencies = SDK->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 267u);
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("memory-uninitialized" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2MemoryUninitializedAlgorithmsRequireExactScalarPointerForms) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Rejection Cases[] = {
+      {"copy-address",
+       "#include <memory>\nauto f(){return "
+       "&std::uninitialized_copy<int*,int*>;}",
+       "TR0201"},
+      {"copy-record",
+       "#include <memory>\nstruct R{int n;};int main(){R a[1]{{1}},b[1]{};"
+       "std::uninitialized_copy(a,a+1,b);}",
+       "TR0203"},
+      {"copy-heterogeneous",
+       "#include <memory>\nint main(){int a[1]{1};long b[1];"
+       "std::uninitialized_copy(a,a+1,b);}",
+       "TR0203"},
+      {"value-record",
+       "#include <memory>\nstruct R{int n;R():n(1){}};int main(){R a[1];"
+       "std::uninitialized_value_construct(a,a+1);}",
+       "TR0203"},
+      {"copy-function-pointer",
+       "#include <memory>\nusing F=void();int main(){F*a[1]{};F*b[1];"
+       "std::uninitialized_copy(a,a+1,b);}",
+       "TR0203"},
+      {"fill-volatile",
+       "#include <memory>\nint main(){volatile int a[1];"
+       "std::uninitialized_fill(a,a+1,1);}",
+       "TR0202"},
+      {"forged-fill",
+       "namespace std{template<class I,class T>void "
+       "uninitialized_fill(I,I,const T&);}int main(){int a[1];"
+       "std::uninitialized_fill(a,a+1,1);}",
+       "TR0203"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("memory-uninitialized-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("memory-uninitialized-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest,
        CoreV2NumericSequentialPointerOperationsRunAtBothOptimizations) {
   const auto Source = tmpFile("numeric-sequential.cpp");
   const auto Output = tmpFile("numeric-sequential.nc");

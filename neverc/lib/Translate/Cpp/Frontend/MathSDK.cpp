@@ -3344,6 +3344,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
        (Name == "gcd" || Name == "lcm")) ||
       (Origin->Path == "__memory/construct_at.h" &&
        (Name == "destroy_at" || Name == "destroy" || Name == "destroy_n")) ||
+      (Origin->Path == "__memory/uninitialized_algorithms.h" &&
+       (Name == "uninitialized_copy" || Name == "uninitialized_copy_n" ||
+        Name == "uninitialized_fill" || Name == "uninitialized_fill_n" ||
+        Name == "uninitialized_default_construct" ||
+        Name == "uninitialized_default_construct_n" ||
+        Name == "uninitialized_value_construct" ||
+        Name == "uninitialized_value_construct_n" ||
+        Name == "uninitialized_move" || Name == "uninitialized_move_n")) ||
       (Origin->Path == "__algorithm/remove.h" && Name == "remove") ||
       (Origin->Path == "__algorithm/remove_if.h" && Name == "remove_if") ||
       (Origin->Path == "__algorithm/unique.h" && Name == "unique") ||
@@ -3471,6 +3479,89 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
         Same(Call->getType(), Function->getReturnType()))
       return UtilityOperation::MemoryDestroyN;
+  }
+  if (Origin->Path == "__memory/uninitialized_algorithms.h") {
+    const bool WritableFirst =
+        Function->getNumParams() != 0 && AlgorithmPointerParameter(0) &&
+        utilityAlgorithmWritableScalarPointer(
+            Context, Function->getParamDecl(0)->getType());
+    if ((Name == "uninitialized_copy" || Name == "uninitialized_move") &&
+        Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
+        Call->isPRValue() && AlgorithmPointerParameter(0) &&
+        AlgorithmPointerParameter(1) && AlgorithmPointerParameter(2) &&
+        Same(Function->getParamDecl(0)->getType(),
+             Function->getParamDecl(1)->getType()) &&
+        SameAlgorithmElement(Function->getParamDecl(0)->getType(),
+                             Function->getParamDecl(2)->getType()) &&
+        utilityAlgorithmWritableScalarPointer(
+            Context, Function->getParamDecl(2)->getType()) &&
+        Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
+        Same(Call->getType(), Function->getReturnType()))
+      return Name == "uninitialized_copy"
+                 ? UtilityOperation::MemoryUninitializedCopy
+                 : UtilityOperation::MemoryUninitializedMove;
+    if (Name == "uninitialized_copy_n" && Call->getNumArgs() == 3 &&
+        Function->getNumParams() == 3 && Call->isPRValue() &&
+        AlgorithmPointerParameter(0) && AlgorithmCountParameter(1) &&
+        AlgorithmPointerParameter(2) &&
+        SameAlgorithmElement(Function->getParamDecl(0)->getType(),
+                             Function->getParamDecl(2)->getType()) &&
+        utilityAlgorithmWritableScalarPointer(
+            Context, Function->getParamDecl(2)->getType()) &&
+        Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
+        Same(Call->getType(), Function->getReturnType()))
+      return UtilityOperation::MemoryUninitializedCopyN;
+    if (Name == "uninitialized_fill" && Call->getNumArgs() == 3 &&
+        Function->getNumParams() == 3 && WritableFirst &&
+        AlgorithmPointerParameter(1) &&
+        Same(Function->getParamDecl(0)->getType(),
+             Function->getParamDecl(1)->getType()) &&
+        AlgorithmValueParameter(2, 0) &&
+        Function->getReturnType()->isVoidType() &&
+        Same(Call->getType(), Function->getReturnType()))
+      return UtilityOperation::MemoryUninitializedFill;
+    if (Name == "uninitialized_fill_n" && Call->getNumArgs() == 3 &&
+        Function->getNumParams() == 3 && Call->isPRValue() && WritableFirst &&
+        AlgorithmCountParameter(1) && AlgorithmValueParameter(2, 0) &&
+        Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
+        Same(Call->getType(), Function->getReturnType()))
+      return UtilityOperation::MemoryUninitializedFillN;
+    if ((Name == "uninitialized_default_construct" ||
+         Name == "uninitialized_value_construct") &&
+        Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
+        WritableFirst && AlgorithmPointerParameter(1) &&
+        Same(Function->getParamDecl(0)->getType(),
+             Function->getParamDecl(1)->getType()) &&
+        Function->getReturnType()->isVoidType() &&
+        Same(Call->getType(), Function->getReturnType()))
+      return Name == "uninitialized_default_construct"
+                 ? UtilityOperation::MemoryUninitializedDefaultConstruct
+                 : UtilityOperation::MemoryUninitializedValueConstruct;
+    if ((Name == "uninitialized_default_construct_n" ||
+         Name == "uninitialized_value_construct_n") &&
+        Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
+        Call->isPRValue() && WritableFirst && AlgorithmCountParameter(1) &&
+        Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
+        Same(Call->getType(), Function->getReturnType()))
+      return Name == "uninitialized_default_construct_n"
+                 ? UtilityOperation::MemoryUninitializedDefaultConstructN
+                 : UtilityOperation::MemoryUninitializedValueConstructN;
+    if (Name == "uninitialized_move_n" && Call->getNumArgs() == 3 &&
+        Function->getNumParams() == 3 && Call->isPRValue() &&
+        AlgorithmPointerParameter(0) && AlgorithmCountParameter(1) &&
+        AlgorithmPointerParameter(2) &&
+        SameAlgorithmElement(Function->getParamDecl(0)->getType(),
+                             Function->getParamDecl(2)->getType()) &&
+        utilityAlgorithmWritableScalarPointer(
+            Context, Function->getParamDecl(2)->getType()) &&
+        Same(Call->getType(), Function->getReturnType())) {
+      auto Pair = approvedUtilityPairRecord(
+          S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);
+      if (Pair &&
+          Same(Pair->First->getType(), Function->getParamDecl(0)->getType()) &&
+          Same(Pair->Second->getType(), Function->getParamDecl(2)->getType()))
+        return UtilityOperation::MemoryUninitializedMoveN;
+    }
   }
   auto AlgorithmReferenceParameter = [&](unsigned Index) {
     if (Index >= Function->getNumParams() || Index >= Call->getNumArgs())
