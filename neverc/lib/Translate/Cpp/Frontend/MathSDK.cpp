@@ -3559,6 +3559,25 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Context.getTypeSize(Parameter) <= 64 &&
            Same(Call->getArg(Index)->getType(), Parameter);
   };
+  auto NumericCallback = [&](unsigned Index, QualType Element, unsigned Arity) {
+    const auto *Prototype = AlgorithmCallbackPrototype(Index);
+    if (!Prototype || Prototype->getNumParams() != Arity)
+      return false;
+    Element = Element.getUnqualifiedType();
+    if (!NumericArithmetic(Element) ||
+        !Same(Prototype->getReturnType(), Element))
+      return false;
+    for (QualType Parameter : Prototype->param_types())
+      if (Parameter->isReferenceType() || !Same(Parameter, Element))
+        return false;
+    return true;
+  };
+  auto NumericUnaryCallback = [&](unsigned Index, QualType Element) {
+    return NumericCallback(Index, Element, 1);
+  };
+  auto NumericBinaryCallback = [&](unsigned Index, QualType Element) {
+    return NumericCallback(Index, Element, 2);
+  };
   if (Origin->Path == "__numeric/iota.h" && Name == "iota" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
       NumericPointerParameter(0, true) && NumericPointerParameter(1, true) &&
@@ -3568,43 +3587,57 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::NumericIota;
   if (Origin->Path == "__numeric/accumulate.h" && Name == "accumulate" &&
-      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
-      Call->isPRValue() && NumericPointerParameter(0, false) &&
-      NumericPointerParameter(1, false) &&
+      (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
+      Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
+      NumericPointerParameter(0, false) && NumericPointerParameter(1, false) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       NumericValueParameter(2, 0) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
-      Same(Call->getType(), Function->getReturnType()))
+      Same(Call->getType(), Function->getReturnType()) &&
+      (Call->getNumArgs() == 3 ||
+       NumericBinaryCallback(
+           3, Function->getParamDecl(0)->getType()->getPointeeType())))
     return UtilityOperation::NumericAccumulate;
   if (Origin->Path == "__numeric/inner_product.h" && Name == "inner_product" &&
-      Call->getNumArgs() == 4 && Function->getNumParams() == 4 &&
-      Call->isPRValue() && NumericPointerParameter(0, false) &&
-      NumericPointerParameter(1, false) && NumericPointerParameter(2, false) &&
+      (Call->getNumArgs() == 4 || Call->getNumArgs() == 6) &&
+      Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
+      NumericPointerParameter(0, false) && NumericPointerParameter(1, false) &&
+      NumericPointerParameter(2, false) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       SameAlgorithmElement(Function->getParamDecl(0)->getType(),
                            Function->getParamDecl(2)->getType()) &&
       NumericValueParameter(3, 0) &&
       Same(Function->getReturnType(), Function->getParamDecl(3)->getType()) &&
-      Same(Call->getType(), Function->getReturnType()))
+      Same(Call->getType(), Function->getReturnType()) &&
+      (Call->getNumArgs() == 4 ||
+       (NumericBinaryCallback(
+            4, Function->getParamDecl(0)->getType()->getPointeeType()) &&
+        NumericBinaryCallback(
+            5, Function->getParamDecl(0)->getType()->getPointeeType()))))
     return UtilityOperation::NumericInnerProduct;
   if (((Origin->Path == "__numeric/partial_sum.h" && Name == "partial_sum") ||
        (Origin->Path == "__numeric/adjacent_difference.h" &&
         Name == "adjacent_difference")) &&
-      Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
-      Call->isPRValue() && NumericPointerParameter(0, false) &&
-      NumericPointerParameter(1, false) && NumericPointerParameter(2, true) &&
+      (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
+      Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
+      NumericPointerParameter(0, false) && NumericPointerParameter(1, false) &&
+      NumericPointerParameter(2, true) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       SameAlgorithmElement(Function->getParamDecl(0)->getType(),
                            Function->getParamDecl(2)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
-      Same(Call->getType(), Function->getReturnType()))
+      Same(Call->getType(), Function->getReturnType()) &&
+      (Call->getNumArgs() == 3 ||
+       NumericBinaryCallback(
+           3, Function->getParamDecl(0)->getType()->getPointeeType())))
     return Name == "partial_sum" ? UtilityOperation::NumericPartialSum
                                  : UtilityOperation::NumericAdjacentDifference;
   if (Origin->Path == "__numeric/reduce.h" && Name == "reduce" &&
-      (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
+      (Call->getNumArgs() == 2 || Call->getNumArgs() == 3 ||
+       Call->getNumArgs() == 4) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
       NumericPointerParameter(0, false) && NumericPointerParameter(1, false) &&
       Same(Function->getParamDecl(0)->getType(),
@@ -3616,27 +3649,42 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                             ->getPointeeType()
                                             .getUnqualifiedType()))
       return UtilityOperation::NumericReduce;
-    if (Call->getNumArgs() == 3 && NumericValueParameter(2, 0) &&
-        Same(Function->getReturnType(), Function->getParamDecl(2)->getType()))
-      return UtilityOperation::NumericReduce;
+    if (Call->getNumArgs() >= 3 && NumericValueParameter(2, 0) &&
+        Same(Function->getReturnType(), Function->getParamDecl(2)->getType())) {
+      if (Call->getNumArgs() == 3 ||
+          NumericBinaryCallback(
+              3, Function->getParamDecl(0)->getType()->getPointeeType()))
+        return UtilityOperation::NumericReduce;
+    }
   }
   if (Origin->Path == "__numeric/transform_reduce.h" &&
-      Name == "transform_reduce" && Call->getNumArgs() == 4 &&
-      Function->getNumParams() == 4 && Call->isPRValue() &&
+      Name == "transform_reduce" &&
+      Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
+      Same(Call->getType(), Function->getReturnType()) &&
       NumericPointerParameter(0, false) && NumericPointerParameter(1, false) &&
-      NumericPointerParameter(2, false) &&
       Same(Function->getParamDecl(0)->getType(),
-           Function->getParamDecl(1)->getType()) &&
-      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
-                           Function->getParamDecl(2)->getType()) &&
-      NumericValueParameter(3, 0) &&
-      Same(Function->getReturnType(), Function->getParamDecl(3)->getType()) &&
-      Same(Call->getType(), Function->getReturnType()))
-    return UtilityOperation::NumericTransformReduce;
+           Function->getParamDecl(1)->getType())) {
+    auto Element = Function->getParamDecl(0)->getType()->getPointeeType();
+    if ((Call->getNumArgs() == 4 || Call->getNumArgs() == 6) &&
+        NumericPointerParameter(2, false) &&
+        SameAlgorithmElement(Function->getParamDecl(0)->getType(),
+                             Function->getParamDecl(2)->getType()) &&
+        NumericValueParameter(3, 0) &&
+        Same(Function->getReturnType(), Function->getParamDecl(3)->getType()) &&
+        (Call->getNumArgs() == 4 || (NumericBinaryCallback(4, Element) &&
+                                     NumericBinaryCallback(5, Element))))
+      return UtilityOperation::NumericTransformReduce;
+    if (Call->getNumArgs() == 5 && NumericValueParameter(2, 0) &&
+        Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
+        NumericBinaryCallback(3, Element) && NumericUnaryCallback(4, Element))
+      return UtilityOperation::NumericTransformReduce;
+  }
   if (((Origin->Path == "__numeric/inclusive_scan.h" &&
-        Name == "inclusive_scan" && Call->getNumArgs() == 3) ||
+        Name == "inclusive_scan" && Call->getNumArgs() >= 3 &&
+        Call->getNumArgs() <= 5) ||
        (Origin->Path == "__numeric/exclusive_scan.h" &&
-        Name == "exclusive_scan" && Call->getNumArgs() == 4)) &&
+        Name == "exclusive_scan" &&
+        (Call->getNumArgs() == 4 || Call->getNumArgs() == 5))) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
       NumericPointerParameter(0, false) && NumericPointerParameter(1, false) &&
       NumericPointerParameter(2, true) &&
@@ -3646,10 +3694,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                            Function->getParamDecl(2)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
-    if (Name == "inclusive_scan")
-      return UtilityOperation::NumericInclusiveScan;
-    if (NumericValueParameter(3, 0))
+    auto Element = Function->getParamDecl(0)->getType()->getPointeeType();
+    if (Name == "inclusive_scan") {
+      if (Call->getNumArgs() == 3 ||
+          (Call->getNumArgs() == 4 && NumericBinaryCallback(3, Element)) ||
+          (Call->getNumArgs() == 5 && NumericBinaryCallback(3, Element) &&
+           NumericValueParameter(4, 0)))
+        return UtilityOperation::NumericInclusiveScan;
+    } else if (NumericValueParameter(3, 0) &&
+               (Call->getNumArgs() == 4 || NumericBinaryCallback(4, Element))) {
       return UtilityOperation::NumericExclusiveScan;
+    }
   }
   if (Origin->Path == "__numeric/gcd_lcm.h" &&
       (Name == "gcd" || Name == "lcm") && Call->getNumArgs() == 2 &&

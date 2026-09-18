@@ -1389,8 +1389,18 @@ extern "C" int numeric_sequential() {
          '#include <numeric>\nint main(){int a[2]{};std::iota(a,a+2,1L);return 0;}'),
         ("heterogeneous-accumulate",
          '#include <numeric>\nint main(){int a[2]{1,2};return std::accumulate(a,a+2,0L)==3?0:1;}'),
-        ("callback-accumulate",
-         '#include <numeric>\nint add(int a,int b){return a+b;}int main(){int a[2]{1,2};return std::accumulate(a,a+2,0,add);}'),
+        ("mismatched-callback-accumulate",
+         '#include <numeric>\nlong add(long a,long b){return a+b;}int main(){int a[2]{1,2};return std::accumulate(a,a+2,0,add);}'),
+        ("reference-callback-accumulate",
+         '#include <numeric>\nint add(const int&a,const int&b){return a+b;}int main(){int v[2]{1,2};return std::accumulate(v,v+2,0,add);}'),
+        ("callable-object-accumulate",
+         '#include <numeric>\nstruct Add{int operator()(int a,int b)const{return a+b;}};int main(){int v[2]{1,2};return std::accumulate(v,v+2,0,Add{});}'),
+        ("mismatched-callback-inner-product",
+         '#include <numeric>\nlong add(long a,long b){return a+b;}long mul(long a,long b){return a*b;}int main(){int a[2]{1,2};return std::inner_product(a,a+2,a,0,add,mul);}'),
+        ("mismatched-callback-partial-sum",
+         '#include <numeric>\nlong add(long a,long b){return a+b;}int main(){int a[2]{1,2},b[2]{};return std::partial_sum(a,a+2,b,add)==b+2?0:1;}'),
+        ("mismatched-callback-adjacent-difference",
+         '#include <numeric>\nlong sub(long a,long b){return a-b;}int main(){int a[2]{1,2},b[2]{};return std::adjacent_difference(a,a+2,b,sub)==b+2?0:1;}'),
         ("heterogeneous-partial-sum",
          '#include <numeric>\nint main(){int a[2]{1,2};long b[2]{};return std::partial_sum(a,a+2,b)==b+2?0:1;}'),
         ("heterogeneous-adjacent-difference",
@@ -1432,27 +1442,67 @@ extern "C" int numeric_cxx17() {
     for target in sdk_targets:
         check("v2-numeric-cxx17-" + target, numeric_cxx17_source,
               profile="cpp-core-v2", target=target, sdk=True)
+
+    numeric_callbacks_source = """\
+#include <numeric>
+int add(int a, int b) { return a + b; }
+int subtract(int a, int b) { return a - b; }
+int multiply(int a, int b) { return a * b; }
+int square(int value) { return value * value; }
+extern "C" int numeric_callbacks() {
+  int values[4]{1, 2, 3, 4};
+  int weights[4]{4, 3, 2, 1};
+  int output[4]{};
+  int result = std::accumulate(values, values + 4, 1, add);
+  result += std::inner_product(
+      values, values + 4, weights, 1, add, multiply);
+  result += int(std::partial_sum(values, values + 4, output, add) - output);
+  result += int(std::adjacent_difference(
+      values, values + 4, output, subtract) - output);
+  result += std::reduce(values, values + 4, 1, add);
+  result += std::transform_reduce(
+      values, values + 4, weights, 1, add, multiply);
+  result += std::transform_reduce(values, values + 4, 1, add, square);
+  result += int(std::inclusive_scan(values, values + 4, output, add) - output);
+  result += int(
+      std::inclusive_scan(values, values + 4, output, add, 1) - output);
+  result += int(
+      std::exclusive_scan(values, values + 4, output, 1, add) - output);
+  return result;
+}
+"""
+    numeric_callbacks = check("v2-numeric-callbacks", numeric_callbacks_source,
+                              profile="cpp-core-v2", sdk=True)
+    assert [node for node in walk(numeric_callbacks["functions"])
+            if node.get("op") == "indirect_call"], numeric_callbacks
+    for target in sdk_targets:
+        check("v2-numeric-callbacks-" + target, numeric_callbacks_source,
+              profile="cpp-core-v2", target=target, sdk=True)
     for name, source in (
         ("promoted-reduce",
          '#include <numeric>\nint main(){short a[2]{1,2};return std::reduce(a,a+2); }'),
         ("heterogeneous-reduce",
          '#include <numeric>\nint main(){int a[2]{1,2};return std::reduce(a,a+2,0L)==3?0:1;}'),
-        ("callback-reduce",
-         '#include <numeric>\nint add(int a,int b){return a+b;}int main(){int a[2]{1,2};return std::reduce(a,a+2,0,add); }'),
+        ("mismatched-callback-reduce",
+         '#include <numeric>\nlong add(long a,long b){return a+b;}int main(){int a[2]{1,2};return std::reduce(a,a+2,0,add); }'),
         ("heterogeneous-transform-reduce",
          '#include <numeric>\nint main(){int a[2]{1,2};long b[2]{3,4};return std::transform_reduce(a,a+2,b,0); }'),
-        ("callback-transform-reduce",
-         '#include <numeric>\nint add(int a,int b){return a+b;}int mul(int a,int b){return a*b;}int main(){int a[2]{1,2};return std::transform_reduce(a,a+2,a,0,add,mul); }'),
+        ("mismatched-callback-transform-reduce",
+         '#include <numeric>\nlong add(long a,long b){return a+b;}long mul(long a,long b){return a*b;}int main(){int a[2]{1,2};return std::transform_reduce(a,a+2,a,0,add,mul); }'),
+        ("mismatched-callback-unary-transform-reduce",
+         '#include <numeric>\nlong add(long a,long b){return a+b;}long square(long a){return a*a;}int main(){int a[2]{1,2};return std::transform_reduce(a,a+2,0,add,square); }'),
         ("heterogeneous-inclusive-scan",
          '#include <numeric>\nint main(){int a[2]{1,2};long b[2]{};return std::inclusive_scan(a,a+2,b)==b+2?0:1;}'),
-        ("callback-inclusive-scan",
-         '#include <numeric>\nint add(int a,int b){return a+b;}int main(){int a[2]{1,2},b[2]{};return std::inclusive_scan(a,a+2,b,add)==b+2?0:1;}'),
+        ("mismatched-callback-inclusive-scan",
+         '#include <numeric>\nlong add(long a,long b){return a+b;}int main(){int a[2]{1,2},b[2]{};return std::inclusive_scan(a,a+2,b,add)==b+2?0:1;}'),
+        ("mismatched-callback-inclusive-scan-init",
+         '#include <numeric>\nlong add(long a,long b){return a+b;}int main(){int a[2]{1,2},b[2]{};return std::inclusive_scan(a,a+2,b,add,0)==b+2?0:1;}'),
         ("heterogeneous-exclusive-scan",
          '#include <numeric>\nint main(){int a[2]{1,2};long b[2]{};return std::exclusive_scan(a,a+2,b,0)==b+2?0:1;}'),
         ("heterogeneous-exclusive-init",
          '#include <numeric>\nint main(){int a[2]{1,2},b[2]{};return std::exclusive_scan(a,a+2,b,0L)==b+2?0:1;}'),
-        ("callback-exclusive-scan",
-         '#include <numeric>\nint add(int a,int b){return a+b;}int main(){int a[2]{1,2},b[2]{};return std::exclusive_scan(a,a+2,b,0,add)==b+2?0:1;}'),
+        ("mismatched-callback-exclusive-scan",
+         '#include <numeric>\nlong add(long a,long b){return a+b;}int main(){int a[2]{1,2},b[2]{};return std::exclusive_scan(a,a+2,b,0,add)==b+2?0:1;}'),
     ):
         check("v2-numeric-cxx17-" + name, source, "TR0203",
               profile="cpp-core-v2", sdk=True)

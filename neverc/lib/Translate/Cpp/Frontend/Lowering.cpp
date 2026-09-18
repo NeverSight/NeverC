@@ -1277,8 +1277,12 @@ class FunctionLowering {
     case UtilityOperation::NumericInnerProduct:
     case UtilityOperation::NumericReduce:
     case UtilityOperation::NumericTransformReduce: {
+      const bool TransformReduce =
+          Operation == UtilityOperation::NumericTransformReduce;
+      const bool UnaryTransformReduce =
+          TransformReduce && Call->getNumArgs() == 5;
       const bool Inner = Operation == UtilityOperation::NumericInnerProduct ||
-                         Operation == UtilityOperation::NumericTransformReduce;
+                         (TransformReduce && !UnaryTransformReduce);
       auto First = snapshot(expression(Call->getArg(0)), L);
       auto Last = snapshot(expression(Call->getArg(1)), L);
       std::optional<Expression> Second;
@@ -1297,6 +1301,29 @@ class FunctionLowering {
              HasInitial ? expression(Call->getArg(InitialIndex))
                         : A.zero(ResultQualType, L),
              L);
+      std::optional<Expression> ReductionCallback, TransformCallback;
+      std::optional<QualType> ReductionCallbackType, TransformCallbackType;
+      if ((Operation == UtilityOperation::NumericAccumulate ||
+           Operation == UtilityOperation::NumericReduce) &&
+          Call->getNumArgs() == 4) {
+        ReductionCallbackType = Call->getArg(3)->getType();
+        ReductionCallback = snapshot(expression(Call->getArg(3)), L);
+      } else if (Operation == UtilityOperation::NumericInnerProduct &&
+                 Call->getNumArgs() == 6) {
+        ReductionCallbackType = Call->getArg(4)->getType();
+        TransformCallbackType = Call->getArg(5)->getType();
+        ReductionCallback = snapshot(expression(Call->getArg(4)), L);
+        TransformCallback = snapshot(expression(Call->getArg(5)), L);
+      } else if (TransformReduce && Call->getNumArgs() >= 5) {
+        const unsigned ReductionIndex = UnaryTransformReduce ? 3 : 4;
+        const unsigned TransformIndex = UnaryTransformReduce ? 4 : 5;
+        ReductionCallbackType = Call->getArg(ReductionIndex)->getType();
+        TransformCallbackType = Call->getArg(TransformIndex)->getType();
+        ReductionCallback =
+            snapshot(expression(Call->getArg(ReductionIndex)), L);
+        TransformCallback =
+            snapshot(expression(Call->getArg(TransformIndex)), L);
+      }
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto Check = labelName(), Add = labelName(), End = labelName();
       jump(Check, L);
@@ -1304,10 +1331,30 @@ class FunctionLowering {
       branch(binary("!=", First, Last, "bool", L), Add, End, L);
       label(Add, L);
       auto Term = dereference(First, L);
-      if (Second)
+      if (TransformCallback) {
+        json::Array Arguments;
+        Arguments.push_back(std::move(Term));
+        if (Second)
+          Arguments.push_back(dereference(*Second, L));
+        Term = emitAlgorithmCallback(json::Object(*TransformCallback),
+                                     *TransformCallbackType,
+                                     std::move(Arguments), L);
+      } else if (Second) {
         Term = binary("*", std::move(Term), dereference(*Second, L), ResultType,
                       L);
-      assign(Result, binary("+", Result, std::move(Term), ResultType, L), L);
+      }
+      if (ReductionCallback) {
+        json::Array Arguments;
+        Arguments.push_back(json::Object(Result));
+        Arguments.push_back(std::move(Term));
+        assign(Result,
+               emitAlgorithmCallback(json::Object(*ReductionCallback),
+                                     *ReductionCallbackType,
+                                     std::move(Arguments), L),
+               L);
+      } else {
+        assign(Result, binary("+", Result, std::move(Term), ResultType, L), L);
+      }
       assign(First,
              binary("+", First, quantity(1, DifferenceType, L), FirstType, L),
              L);
@@ -1328,6 +1375,12 @@ class FunctionLowering {
       auto First = snapshot(expression(Call->getArg(0)), L);
       auto Last = snapshot(expression(Call->getArg(1)), L);
       auto Output = snapshot(expression(Call->getArg(2)), L);
+      std::optional<Expression> Callback;
+      std::optional<QualType> CallbackType;
+      if (Call->getNumArgs() >= 4) {
+        CallbackType = Call->getArg(3)->getType();
+        Callback = snapshot(expression(Call->getArg(3)), L);
+      }
       const auto FirstType = type(Call->getArg(0)->getType(), L);
       const auto OutputType = type(Call->getArg(2)->getType(), L);
       const auto ElementType =
@@ -1335,6 +1388,34 @@ class FunctionLowering {
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       auto Previous = temporary(ElementType, L);
       auto CurrentValue = temporary(ElementType, L);
+      if (Operation == UtilityOperation::NumericInclusiveScan &&
+          Call->getNumArgs() == 5) {
+        auto Value = snapshot(expression(Call->getArg(4)), L);
+        const auto Check = labelName(), Store = labelName(), End = labelName();
+        jump(Check, L);
+        label(Check, L);
+        branch(binary("!=", First, Last, "bool", L), Store, End, L);
+        label(Store, L);
+        assign(CurrentValue, dereference(First, L), L);
+        json::Array Arguments;
+        Arguments.push_back(json::Object(Value));
+        Arguments.push_back(json::Object(CurrentValue));
+        assign(Value,
+               emitAlgorithmCallback(json::Object(*Callback), *CallbackType,
+                                     std::move(Arguments), L),
+               L);
+        assign(dereference(Output, L), Value, L);
+        assign(First,
+               binary("+", First, quantity(1, DifferenceType, L), FirstType, L),
+               L);
+        assign(
+            Output,
+            binary("+", Output, quantity(1, DifferenceType, L), OutputType, L),
+            L);
+        jump(Check, L);
+        label(End, L);
+        return Output;
+      }
       const auto CheckFirst = labelName(), StoreFirst = labelName();
       const auto CheckNext = labelName(), StoreNext = labelName();
       const auto End = labelName();
@@ -1355,13 +1436,22 @@ class FunctionLowering {
       branch(binary("!=", First, Last, "bool", L), StoreNext, End, L);
       label(StoreNext, L);
       assign(CurrentValue, dereference(First, L), L);
+      auto Combine = [&](Expression Left, Expression Right,
+                         llvm::StringRef DefaultOperator) {
+        if (!Callback)
+          return binary(DefaultOperator, std::move(Left), std::move(Right),
+                        ElementType, L);
+        json::Array Arguments;
+        Arguments.push_back(std::move(Left));
+        Arguments.push_back(std::move(Right));
+        return emitAlgorithmCallback(json::Object(*Callback), *CallbackType,
+                                     std::move(Arguments), L);
+      };
       if (Adjacent) {
-        assign(dereference(Output, L),
-               binary("-", CurrentValue, Previous, ElementType, L), L);
+        assign(dereference(Output, L), Combine(CurrentValue, Previous, "-"), L);
         assign(Previous, CurrentValue, L);
       } else {
-        assign(Previous, binary("+", Previous, CurrentValue, ElementType, L),
-               L);
+        assign(Previous, Combine(Previous, CurrentValue, "+"), L);
         assign(dereference(Output, L), Previous, L);
       }
       assign(First,
@@ -1379,6 +1469,12 @@ class FunctionLowering {
       auto Last = snapshot(expression(Call->getArg(1)), L);
       auto Output = snapshot(expression(Call->getArg(2)), L);
       auto Value = snapshot(expression(Call->getArg(3)), L);
+      std::optional<Expression> Callback;
+      std::optional<QualType> CallbackType;
+      if (Call->getNumArgs() == 5) {
+        CallbackType = Call->getArg(4)->getType();
+        Callback = snapshot(expression(Call->getArg(4)), L);
+      }
       const auto FirstType = type(Call->getArg(0)->getType(), L);
       const auto OutputType = type(Call->getArg(2)->getType(), L);
       const auto ValueType = type(Call->getArg(3)->getType(), L);
@@ -1391,7 +1487,17 @@ class FunctionLowering {
       branch(binary("!=", First, Last, "bool", L), Store, End, L);
       label(Store, L);
       assign(InputValue, dereference(First, L), L);
-      assign(Next, binary("+", Value, InputValue, ValueType, L), L);
+      if (Callback) {
+        json::Array Arguments;
+        Arguments.push_back(json::Object(Value));
+        Arguments.push_back(json::Object(InputValue));
+        assign(Next,
+               emitAlgorithmCallback(json::Object(*Callback), *CallbackType,
+                                     std::move(Arguments), L),
+               L);
+      } else {
+        assign(Next, binary("+", Value, InputValue, ValueType, L), L);
+      }
       assign(dereference(Output, L), Value, L);
       assign(Value, Next, L);
       assign(First,

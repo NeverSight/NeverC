@@ -397,16 +397,26 @@ through 64 bits, `float` or `double`; output pointers are writable. Two-argument
 operations preserve empty-range and in-place behavior. Every argument is
 captured once before the loop.
 
+The operation-taking overloads of `accumulate`, `inner_product`, `partial_sum`,
+`adjacent_difference`, `reduce`, unary and two-range `transform_reduce`,
+`inclusive_scan` with or without an initial value, and `exclusive_scan` also
+lower directly. Each operation must be an ordinary function pointer whose
+return and by-value parameters exactly match the range element type; unary
+transforms take one element and every combining operation takes two. Callback
+values are captured once, empty ranges make no callback calls, and the
+sequential scan forms retain their in-place behavior.
+
 `gcd` and `lcm` accept any non-boolean built-in integer argument combination
 through 64 bits and return libc++'s exact `common_type_t` result. Signed inputs
 are converted to unsigned magnitudes before the Euclidean loop, so supported
 negative, narrow and mixed-signedness calls retain the standard result and
 representability preconditions. Each argument is evaluated once.
 
-Custom operations, heterogeneous range values, promotable range integers,
-enums, records, custom iterators and the other range-based numeric algorithms
-remain outside the runtime boundary. Integer arguments wider than 64 bits,
-quoted includes, shadows, function addresses and forged declarations remain
+Callable objects, reference or converted callback signatures, heterogeneous
+range values, promotable range integers, enums, records, custom iterators and
+the other range-based numeric algorithms remain outside the runtime boundary.
+Integer arguments wider than 64 bits, quoted includes, shadows, function
+addresses for the numeric algorithms themselves and forged declarations remain
 rejected.
 
 ## Algorithm header from `<algorithm>`

@@ -24419,14 +24419,29 @@ TEST_F(TranslateTest, CoreV2NumericSequentialRequiresExactScalarForms) {
       {"heterogeneous-accumulate",
        "#include <numeric>\nint main(){int a[2]{1,2};"
        "return std::accumulate(a,a+2,0L)==3?0:1;}"},
-      {"callback-accumulate",
-       "#include <numeric>\nint add(int a,int b){return a+b;}"
+      {"mismatched-callback-accumulate",
+       "#include <numeric>\nlong add(long a,long b){return a+b;}"
        "int main(){int a[2]{1,2};return std::accumulate(a,a+2,0,add);}"},
-      {"callback-inner-product",
-       "#include <numeric>\nint add(int a,int b){return a+b;}"
-       "int mul(int a,int b){return a*b;}"
+      {"reference-callback-accumulate",
+       "#include <numeric>\nint add(const int&a,const int&b){return a+b;}"
+       "int main(){int v[2]{1,2};return std::accumulate(v,v+2,0,add);}"},
+      {"callable-object-accumulate",
+       "#include <numeric>\nstruct Add{int operator()(int a,int b)const{"
+       "return a+b;}};int main(){int v[2]{1,2};"
+       "return std::accumulate(v,v+2,0,Add{});}"},
+      {"mismatched-callback-inner-product",
+       "#include <numeric>\nlong add(long a,long b){return a+b;}"
+       "long mul(long a,long b){return a*b;}"
        "int main(){int a[2]{1,2};return "
        "std::inner_product(a,a+2,a,0,add,mul);}"},
+      {"mismatched-callback-partial-sum",
+       "#include <numeric>\nlong add(long a,long b){return a+b;}"
+       "int main(){int a[2]{1,2},b[2]{};return "
+       "std::partial_sum(a,a+2,b,add)==b+2?0:1;}"},
+      {"mismatched-callback-adjacent-difference",
+       "#include <numeric>\nlong sub(long a,long b){return a-b;}"
+       "int main(){int a[2]{1,2},b[2]{};return "
+       "std::adjacent_difference(a,a+2,b,sub)==b+2?0:1;}"},
       {"heterogeneous-partial-sum",
        "#include <numeric>\nint main(){int a[2]{1,2};long b[2]{};"
        "return std::partial_sum(a,a+2,b)==b+2?0:1;}"},
@@ -24528,6 +24543,111 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2NumericFunctionPointerOperationsRunAtBothOptimizations) {
+  const auto Source = tmpFile("numeric-function-pointers.cpp");
+  const auto Output = tmpFile("numeric-function-pointers.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+int calls;
+int add(int left, int right) { ++calls; return left + right; }
+int subtract(int left, int right) { ++calls; return left - right; }
+int multiply(int left, int right) { ++calls; return left * right; }
+int square(int value) { ++calls; return value * value; }
+int main() {
+  const int values[4]{1, 2, 3, 4};
+  const int weights[4]{4, 3, 2, 1};
+
+  calls = 0;
+  if (std::accumulate(values, values + 4, 5, add) != 15 || calls != 4)
+    return 1;
+  calls = 0;
+  if (std::inner_product(values, values + 4, weights, 1, add, multiply) !=
+          21 ||
+      calls != 8)
+    return 2;
+
+  int partial[4]{};
+  calls = 0;
+  if (std::partial_sum(values, values + 4, partial, add) != partial + 4 ||
+      calls != 3 || partial[0] != 1 || partial[1] != 3 ||
+      partial[2] != 6 || partial[3] != 10)
+    return 3;
+  int adjacent[4]{};
+  calls = 0;
+  if (std::adjacent_difference(values, values + 4, adjacent, subtract) !=
+          adjacent + 4 ||
+      calls != 3 || adjacent[0] != 1 || adjacent[1] != 1 ||
+      adjacent[2] != 1 || adjacent[3] != 1)
+    return 4;
+
+  calls = 0;
+  if (std::reduce(values, values + 4, 5, add) != 15 || calls != 4)
+    return 5;
+  calls = 0;
+  if (std::transform_reduce(values, values + 4, weights, 1, add, multiply) !=
+          21 ||
+      calls != 8)
+    return 6;
+  calls = 0;
+  if (std::transform_reduce(values, values + 4, 1, add, square) != 31 ||
+      calls != 8)
+    return 7;
+
+  int inclusive[4]{};
+  calls = 0;
+  if (std::inclusive_scan(values, values + 4, inclusive, add) !=
+          inclusive + 4 ||
+      calls != 3 || inclusive[0] != 1 || inclusive[1] != 3 ||
+      inclusive[2] != 6 || inclusive[3] != 10)
+    return 8;
+  calls = 0;
+  if (std::inclusive_scan(values, values + 4, inclusive, add, 5) !=
+          inclusive + 4 ||
+      calls != 4 || inclusive[0] != 6 || inclusive[1] != 8 ||
+      inclusive[2] != 11 || inclusive[3] != 15)
+    return 9;
+  int exclusive[4]{};
+  calls = 0;
+  if (std::exclusive_scan(values, values + 4, exclusive, 5, add) !=
+          exclusive + 4 ||
+      calls != 4 || exclusive[0] != 5 || exclusive[1] != 6 ||
+      exclusive[2] != 8 || exclusive[3] != 11)
+    return 10;
+
+  calls = 0;
+  if (std::accumulate(values, values, 7, add) != 7 ||
+      std::partial_sum(values, values, partial, add) != partial ||
+      std::reduce(values, values, 9, add) != 9 ||
+      std::inclusive_scan(values, values, inclusive, add) != inclusive ||
+      std::exclusive_scan(values, values, exclusive, 9, add) != exclusive ||
+      calls != 0)
+    return 11;
+
+  int in_place[4]{1, 2, 3, 4};
+  calls = 0;
+  if (std::exclusive_scan(in_place, in_place + 4, in_place, 0, add) !=
+          in_place + 4 ||
+      calls != 4 || in_place[0] != 0 || in_place[1] != 1 ||
+      in_place[2] != 3 || in_place[3] != 6)
+    return 12;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("numeric-function-pointers" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2NumericGcdLcmRunAtBothOptimizations) {
   const auto Source = tmpFile("numeric-gcd-lcm.cpp");
   const auto Output = tmpFile("numeric-gcd-lcm.nc");
@@ -24610,32 +24730,41 @@ TEST_F(TranslateTest, CoreV2NumericCxx17DefaultsRequireExactScalarForms) {
                           "return std::reduce(a,a+2);}"},
       {"heterogeneous-reduce", "#include <numeric>\nint main(){int a[2]{1,2};"
                                "return std::reduce(a,a+2,0L)==3?0:1;}"},
-      {"callback-reduce",
-       "#include <numeric>\nint add(int a,int b){return a+b;}"
+      {"mismatched-callback-reduce",
+       "#include <numeric>\nlong add(long a,long b){return a+b;}"
        "int main(){int a[2]{1,2};return std::reduce(a,a+2,0,add);}"},
       {"heterogeneous-transform-reduce",
        "#include <numeric>\nint main(){int a[2]{1,2};long b[2]{3,4};"
        "return std::transform_reduce(a,a+2,b,0);}"},
-      {"callback-transform-reduce",
-       "#include <numeric>\nint add(int a,int b){return a+b;}"
-       "int mul(int a,int b){return a*b;}"
+      {"mismatched-callback-transform-reduce",
+       "#include <numeric>\nlong add(long a,long b){return a+b;}"
+       "long mul(long a,long b){return a*b;}"
        "int main(){int a[2]{1,2};return "
        "std::transform_reduce(a,a+2,a,0,add,mul);}"},
+      {"mismatched-callback-unary-transform-reduce",
+       "#include <numeric>\nlong add(long a,long b){return a+b;}"
+       "long square(long a){return a*a;}"
+       "int main(){int a[2]{1,2};return "
+       "std::transform_reduce(a,a+2,0,add,square);}"},
       {"heterogeneous-inclusive-scan",
        "#include <numeric>\nint main(){int a[2]{1,2};long b[2]{};"
        "return std::inclusive_scan(a,a+2,b)==b+2?0:1;}"},
-      {"callback-inclusive-scan",
-       "#include <numeric>\nint add(int a,int b){return a+b;}"
+      {"mismatched-callback-inclusive-scan",
+       "#include <numeric>\nlong add(long a,long b){return a+b;}"
        "int main(){int a[2]{1,2},b[2]{};"
        "return std::inclusive_scan(a,a+2,b,add)==b+2?0:1;}"},
+      {"mismatched-callback-inclusive-scan-init",
+       "#include <numeric>\nlong add(long a,long b){return a+b;}"
+       "int main(){int a[2]{1,2},b[2]{};"
+       "return std::inclusive_scan(a,a+2,b,add,0)==b+2?0:1;}"},
       {"heterogeneous-exclusive-scan",
        "#include <numeric>\nint main(){int a[2]{1,2};long b[2]{};"
        "return std::exclusive_scan(a,a+2,b,0)==b+2?0:1;}"},
       {"heterogeneous-exclusive-init",
        "#include <numeric>\nint main(){int a[2]{1,2},b[2]{};"
        "return std::exclusive_scan(a,a+2,b,0L)==b+2?0:1;}"},
-      {"callback-exclusive-scan",
-       "#include <numeric>\nint add(int a,int b){return a+b;}"
+      {"mismatched-callback-exclusive-scan",
+       "#include <numeric>\nlong add(long a,long b){return a+b;}"
        "int main(){int a[2]{1,2},b[2]{};"
        "return std::exclusive_scan(a,a+2,b,0,add)==b+2?0:1;}"}};
   for (const auto &Case : Cases) {
