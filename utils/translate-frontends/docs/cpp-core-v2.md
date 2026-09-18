@@ -501,22 +501,25 @@ The exact `std::uninitialized_copy`, `std::uninitialized_copy_n`,
 `std::uninitialized_value_construct`,
 `std::uninitialized_value_construct_n`, `std::uninitialized_move` and
 `std::uninitialized_move_n` templates lower for writable raw output pointers to
-the same admitted scalar element type. Copy, move and fill construct each
-destination from the captured input or value. Value construction stores the
-scalar zero or null value. Default construction starts the scalar lifetime
-without inventing a write. Every argument is retained once, range forms advance
-to their end, counted forms run only while the promoted count is positive, and
-the exact pointer or pointer-pair result is preserved. Scalar operations cannot
-throw, so these direct loops require no exception cleanup.
+the same admitted scalar or trivial source-record element type. A record must be
+complete, source-owned, non-union, standard-layout and trivial. Copy, move and
+fill construct each destination from the captured input or value. Value
+construction stores the scalar zero or null value, or recursively zeroes the
+record fields. Default construction starts the object lifetime without
+inventing a write. Every argument is retained once, range forms advance to
+their end, counted forms run only while the promoted count is positive, and the
+exact pointer or pointer-pair result is preserved. All ten operations enable
+the checked `memory_lifetimes` alias policy. Admitted operations cannot throw,
+so these direct loops require no exception cleanup.
 
 Volatile objects, rvalues for address utilities, function pointers,
 fancy-pointer `pointer_traits`, array-element destruction, custom iterators,
-heterogeneous or non-scalar uninitialized construction, function addresses,
-quoted includes, shadows and forged declarations remain rejected. Allocators,
-other than the exact compile-time metadata above, remain rejected. Runtime
-allocator objects and calls, record construction through `uninitialized_*`,
-smart pointers and ownership factories await their own checked lifetime and ABI
-contracts.
+heterogeneous, union, nontrivial or non-source-record uninitialized
+construction, function addresses, quoted includes, shadows and forged
+declarations remain rejected. Allocators, other than the exact compile-time
+metadata above, remain rejected. Runtime allocator objects and calls,
+nontrivial record construction through `uninitialized_*`, smart pointers and
+ownership factories await their own checked lifetime and ABI contracts.
 
 ## Algorithm header from `<algorithm>`
 

@@ -13321,10 +13321,25 @@ public:
       if (A.S.coreV2())
         if (auto Operation =
                 approvedUtilityOperation(A.S, A.Sources, C, A.Context)) {
-          if (*Operation == UtilityOperation::MemoryDestroyAt ||
-              *Operation == UtilityOperation::MemoryDestroy ||
-              *Operation == UtilityOperation::MemoryDestroyN)
+          switch (*Operation) {
+          case UtilityOperation::MemoryDestroyAt:
+          case UtilityOperation::MemoryDestroy:
+          case UtilityOperation::MemoryDestroyN:
+          case UtilityOperation::MemoryUninitializedCopy:
+          case UtilityOperation::MemoryUninitializedCopyN:
+          case UtilityOperation::MemoryUninitializedFill:
+          case UtilityOperation::MemoryUninitializedFillN:
+          case UtilityOperation::MemoryUninitializedDefaultConstruct:
+          case UtilityOperation::MemoryUninitializedDefaultConstructN:
+          case UtilityOperation::MemoryUninitializedValueConstruct:
+          case UtilityOperation::MemoryUninitializedValueConstructN:
+          case UtilityOperation::MemoryUninitializedMove:
+          case UtilityOperation::MemoryUninitializedMoveN:
             A.S.Module["memory_lifetimes"] = true;
+            break;
+          default:
+            break;
+          }
           return true;
         }
       if (A.S.coreV2() && UtilityPairAssignment)

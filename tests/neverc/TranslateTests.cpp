@@ -25152,7 +25152,167 @@ int main() {
 }
 
 TEST_F(TranslateTest,
-       CoreV2MemoryUninitializedAlgorithmsRequireExactScalarPointerForms) {
+       CoreV2MemoryTrivialRecordUninitializedAlgorithmsRunAtBothOptimizations) {
+  const auto Source = tmpFile("memory-record-uninitialized.cpp");
+  const auto Output = tmpFile("memory-record-uninitialized.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+struct Storage { unsigned long long alignment; unsigned char bytes[256]; };
+struct Record { int value; int *pointer; };
+int effects;
+Record *observe(Record *pointer) { ++effects; return pointer; }
+long observe_count(long count) { ++effects; return count; }
+const Record &observe_value(const Record &value) { ++effects; return value; }
+Record *raw(Storage &storage) {
+  return static_cast<Record *>(static_cast<void *>(storage.bytes));
+}
+void dirty(Storage &storage) {
+  for (int index = 0; index != 256; ++index)
+    storage.bytes[index] = 255;
+}
+int main() {
+  int anchor = 9;
+  Record input[4]{{1, &anchor}, {2, &anchor}, {3, &anchor}, {4, &anchor}};
+
+  Storage copied_storage{};
+  Record *copied = raw(copied_storage);
+  effects = 0;
+  Record *copy_end = std::uninitialized_copy(
+      observe(input), observe(input + 4), observe(copied));
+  if (effects != 3 || copy_end != copied + 4 || copied[0].value != 1 ||
+      copied[3].value != 4 || copied[1].pointer != &anchor)
+    return 1;
+
+  Storage copied_n_storage{};
+  Record *copied_n = raw(copied_n_storage);
+  effects = 0;
+  Record *copy_n_end = std::uninitialized_copy_n(
+      observe(input), observe_count(4), observe(copied_n));
+  if (effects != 3 || copy_n_end != copied_n + 4 ||
+      copied_n[1].value != 2 || copied_n[2].pointer != &anchor)
+    return 2;
+  Storage negative_copy_storage{};
+  Record *negative_copy = raw(negative_copy_storage);
+  if (std::uninitialized_copy_n(input, -2, negative_copy) != negative_copy)
+    return 3;
+
+  Record fill_value{6, &anchor};
+  Storage filled_storage{};
+  Record *filled = raw(filled_storage);
+  effects = 0;
+  std::uninitialized_fill(observe(filled), observe(filled + 4),
+                          observe_value(fill_value));
+  if (effects != 3 || filled[0].value != 6 || filled[3].value != 6 ||
+      filled[2].pointer != &anchor)
+    return 4;
+
+  Record fill_n_value{7, &anchor};
+  Storage filled_n_storage{};
+  Record *filled_n = raw(filled_n_storage);
+  effects = 0;
+  Record *fill_n_end = std::uninitialized_fill_n(
+      observe(filled_n), observe_count(4), observe_value(fill_n_value));
+  if (effects != 3 || fill_n_end != filled_n + 4 ||
+      filled_n[0].value != 7 || filled_n[3].pointer != &anchor)
+    return 5;
+  Storage negative_fill_storage{};
+  Record *negative_fill = raw(negative_fill_storage);
+  if (std::uninitialized_fill_n(negative_fill, -2, fill_n_value) !=
+      negative_fill)
+    return 6;
+
+  Storage defaults_storage{};
+  dirty(defaults_storage);
+  Record *defaults = raw(defaults_storage);
+  effects = 0;
+  std::uninitialized_default_construct(observe(defaults),
+                                       observe(defaults + 4));
+  if (effects != 2)
+    return 7;
+
+  Storage defaults_n_storage{};
+  dirty(defaults_n_storage);
+  Record *defaults_n = raw(defaults_n_storage);
+  effects = 0;
+  Record *default_n_end = std::uninitialized_default_construct_n(
+      observe(defaults_n), observe_count(4));
+  if (effects != 2 || default_n_end != defaults_n + 4)
+    return 8;
+  Storage negative_default_storage{};
+  Record *negative_default = raw(negative_default_storage);
+  if (std::uninitialized_default_construct_n(negative_default, -2) !=
+      negative_default)
+    return 9;
+
+  Storage values_storage{};
+  dirty(values_storage);
+  Record *values = raw(values_storage);
+  effects = 0;
+  std::uninitialized_value_construct(observe(values), observe(values + 4));
+  if (effects != 2 || values[0].value != 0 || values[3].value != 0 ||
+      values[0].pointer || values[3].pointer)
+    return 10;
+
+  Storage values_n_storage{};
+  dirty(values_n_storage);
+  Record *values_n = raw(values_n_storage);
+  effects = 0;
+  Record *value_n_end = std::uninitialized_value_construct_n(
+      observe(values_n), observe_count(4));
+  if (effects != 2 || value_n_end != values_n + 4 ||
+      values_n[1].value != 0 || values_n[2].pointer)
+    return 11;
+  Storage negative_value_storage{};
+  Record *negative_value = raw(negative_value_storage);
+  if (std::uninitialized_value_construct_n(negative_value, -2) !=
+      negative_value)
+    return 12;
+
+  Storage moved_storage{};
+  Record *moved = raw(moved_storage);
+  effects = 0;
+  Record *move_end = std::uninitialized_move(
+      observe(input), observe(input + 4), observe(moved));
+  if (effects != 3 || move_end != moved + 4 || moved[0].value != 1 ||
+      moved[3].value != 4 || moved[2].pointer != &anchor)
+    return 13;
+
+  Storage moved_n_storage{};
+  Record *moved_n = raw(moved_n_storage);
+  effects = 0;
+  auto move_n_end = std::uninitialized_move_n(
+      observe(input), observe_count(4), observe(moved_n));
+  if (effects != 3 || move_n_end.first != input + 4 ||
+      move_n_end.second != moved_n + 4 || moved_n[0].value != 1 ||
+      moved_n[3].pointer != &anchor)
+    return 14;
+  Storage negative_move_storage{};
+  Record *negative_move = raw(negative_move_storage);
+  auto negative_move_end =
+      std::uninitialized_move_n(input, -2, negative_move);
+  if (negative_move_end.first != input ||
+      negative_move_end.second != negative_move)
+    return 15;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("memory-record-uninitialized" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2MemoryUninitializedAlgorithmsRequireExactSupportedPointerForms) {
   struct Rejection {
     const char *Name;
     const char *Source;
@@ -25163,10 +25323,10 @@ TEST_F(TranslateTest,
        "#include <memory>\nauto f(){return "
        "&std::uninitialized_copy<int*,int*>;}",
        "TR0201"},
-      {"copy-record",
-       "#include <memory>\nstruct R{int n;};int main(){R a[1]{{1}},b[1]{};"
+      {"copy-union",
+       "#include <memory>\nunion U{int n;};int main(){U a[1]{{1}},b[1]{};"
        "std::uninitialized_copy(a,a+1,b);}",
-       "TR0203"},
+       "TR0201"},
       {"copy-heterogeneous",
        "#include <memory>\nint main(){int a[1]{1};long b[1];"
        "std::uninitialized_copy(a,a+1,b);}",

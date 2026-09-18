@@ -1649,11 +1649,57 @@ extern "C" int *memory_uninitialized_move_n(int *first, long count,
   *input_end = result.first;
   return result.second;
 }
+struct MemoryRecord { int value; int *pointer; };
+extern "C" MemoryRecord *memory_record_uninitialized_copy(
+    const MemoryRecord *first, const MemoryRecord *last,
+    MemoryRecord *output) {
+  return std::uninitialized_copy(first, last, output);
+}
+extern "C" MemoryRecord *memory_record_uninitialized_copy_n(
+    const MemoryRecord *first, long count, MemoryRecord *output) {
+  return std::uninitialized_copy_n(first, count, output);
+}
+extern "C" void memory_record_uninitialized_fill(
+    MemoryRecord *first, MemoryRecord *last, const MemoryRecord *value) {
+  std::uninitialized_fill(first, last, *value);
+}
+extern "C" MemoryRecord *memory_record_uninitialized_fill_n(
+    MemoryRecord *first, long count, const MemoryRecord *value) {
+  return std::uninitialized_fill_n(first, count, *value);
+}
+extern "C" void memory_record_uninitialized_default_construct(
+    MemoryRecord *first, MemoryRecord *last) {
+  std::uninitialized_default_construct(first, last);
+}
+extern "C" MemoryRecord *memory_record_uninitialized_default_construct_n(
+    MemoryRecord *first, long count) {
+  return std::uninitialized_default_construct_n(first, count);
+}
+extern "C" void memory_record_uninitialized_value_construct(
+    MemoryRecord *first, MemoryRecord *last) {
+  std::uninitialized_value_construct(first, last);
+}
+extern "C" MemoryRecord *memory_record_uninitialized_value_construct_n(
+    MemoryRecord *first, long count) {
+  return std::uninitialized_value_construct_n(first, count);
+}
+extern "C" MemoryRecord *memory_record_uninitialized_move(
+    MemoryRecord *first, MemoryRecord *last, MemoryRecord *output) {
+  return std::uninitialized_move(first, last, output);
+}
+extern "C" MemoryRecord *memory_record_uninitialized_move_n(
+    MemoryRecord *first, long count, MemoryRecord *output,
+    MemoryRecord **input_end) {
+  auto result = std::uninitialized_move_n(first, count, output);
+  *input_end = result.first;
+  return result.second;
+}
 """
     memory_uninitialized = check("v2-memory-uninitialized",
                                  memory_uninitialized_source,
                                  profile="cpp-core-v2", sdk=True)
     assert len(memory_uninitialized["sdk_dependencies"]) == 267, memory_uninitialized
+    assert memory_uninitialized.get("memory_lifetimes") is True, memory_uninitialized
     assert not [node for node in walk(memory_uninitialized["functions"])
                 if node.get("op") in ("call", "mapped_call")], memory_uninitialized
     for target in sdk_targets:
@@ -1661,6 +1707,7 @@ extern "C" int *memory_uninitialized_move_n(int *first, long count,
                               memory_uninitialized_source,
                               profile="cpp-core-v2", target=target, sdk=True)
         assert target_result["sdk_dependencies"] == memory_uninitialized["sdk_dependencies"], target_result
+        assert target_result.get("memory_lifetimes") is True, target_result
         assert not [node for node in walk(target_result["functions"])
                     if node.get("op") in ("call", "mapped_call")], target_result
     check("v2-memory-quoted",
@@ -1727,9 +1774,9 @@ extern "C" int *memory_uninitialized_move_n(int *first, long count,
         ("uninitialized-copy-address",
          '#include <memory>\nauto f(){return &std::uninitialized_copy<int*,int*>;}',
          "TR0201"),
-        ("uninitialized-copy-record",
-         '#include <memory>\nstruct R{int n;};int main(){R a[1]{{1}},b[1]{};std::uninitialized_copy(a,a+1,b);}',
-         "TR0203"),
+        ("uninitialized-copy-union",
+         '#include <memory>\nunion U{int n;};int main(){U a[1]{{1}},b[1]{};std::uninitialized_copy(a,a+1,b);}',
+         "TR0201"),
         ("uninitialized-copy-heterogeneous",
          '#include <memory>\nint main(){int a[1]{1};long b[1];std::uninitialized_copy(a,a+1,b);}',
          "TR0203"),

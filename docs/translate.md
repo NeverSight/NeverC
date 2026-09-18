@@ -48,8 +48,9 @@ Core v2's pinned `<memory>` surface now resolves exact raw-pointer
 and trait constants as compile-time metadata. Exact
 `uses_allocator<T, std::allocator<U>>` identities, inherited aliases and
 compatible values also resolve. The existing address operations, scalar and
-source-record destruction, and scalar uninitialized-construction operations
-lower directly; runtime allocator objects and allocation calls remain excluded.
+source-record destruction, and scalar or trivial source-record
+uninitialized-construction operations lower directly; runtime allocator objects
+and allocation calls remain excluded.
 The authenticated 267-file closure is identical and platform-free across all
 supported targets.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
