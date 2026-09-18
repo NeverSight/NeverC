@@ -1757,6 +1757,79 @@ extern "C" MemoryDefaultRecord *memory_value_record_construct_n(
         assert target_result["sdk_dependencies"] == memory_default_record["sdk_dependencies"], target_result
         assert target_result.get("memory_lifetimes") is True, target_result
         check_memory_default_record(target_result)
+    memory_source_record_source = """\
+#include <memory>
+struct MemorySourceRecord {
+  int value;
+  MemorySourceRecord(const MemorySourceRecord &other) noexcept
+      : value(other.value + 1) {}
+  MemorySourceRecord(MemorySourceRecord &&other) noexcept
+      : value(other.value + 2) { other.value = -other.value; }
+};
+extern "C" MemorySourceRecord *memory_source_record_copy(
+    const MemorySourceRecord *first, const MemorySourceRecord *last,
+    MemorySourceRecord *output) {
+  return std::uninitialized_copy(first, last, output);
+}
+extern "C" MemorySourceRecord *memory_source_record_copy_n(
+    const MemorySourceRecord *first, long count,
+    MemorySourceRecord *output) {
+  return std::uninitialized_copy_n(first, count, output);
+}
+extern "C" void memory_source_record_fill(
+    MemorySourceRecord *first, MemorySourceRecord *last,
+    const MemorySourceRecord *value) {
+  std::uninitialized_fill(first, last, *value);
+}
+extern "C" MemorySourceRecord *memory_source_record_fill_n(
+    MemorySourceRecord *first, long count,
+    const MemorySourceRecord *value) {
+  return std::uninitialized_fill_n(first, count, *value);
+}
+extern "C" MemorySourceRecord *memory_source_record_move(
+    MemorySourceRecord *first, MemorySourceRecord *last,
+    MemorySourceRecord *output) {
+  return std::uninitialized_move(first, last, output);
+}
+extern "C" MemorySourceRecord *memory_source_record_move_n(
+    MemorySourceRecord *first, long count, MemorySourceRecord *output,
+    MemorySourceRecord **input_end) {
+  auto result = std::uninitialized_move_n(first, count, output);
+  *input_end = result.first;
+  return result.second;
+}
+"""
+
+    def check_memory_source_record(data):
+        calls = [node for node in walk(data["functions"])
+                 if node.get("op") in ("call", "mapped_call")]
+        names = {function["name"] for function in data["functions"]}
+        exports = [function for function in data["functions"]
+                   if function["c_export"]]
+        assert len(data["functions"]) == 8, data
+        assert len(exports) == 6, data
+        assert len(calls) == 6, data
+        assert all(call["op"] == "call" and call["callee"] in names
+                   for call in calls), data
+        counts = {}
+        for call in calls:
+            counts[call["callee"]] = counts.get(call["callee"], 0) + 1
+        assert sorted(counts.values()) == [2, 4], data
+
+    memory_source_record = check(
+        "v2-memory-source-record", memory_source_record_source,
+        profile="cpp-core-v2", sdk=True)
+    assert len(memory_source_record["sdk_dependencies"]) == 267, memory_source_record
+    assert memory_source_record.get("memory_lifetimes") is True, memory_source_record
+    check_memory_source_record(memory_source_record)
+    for target in sdk_targets:
+        target_result = check(
+            "v2-memory-source-record-" + target,
+            memory_source_record_source, profile="cpp-core-v2",
+            target=target, sdk=True)
+        assert target_result["sdk_dependencies"] == memory_source_record["sdk_dependencies"], target_result
+        assert target_result.get("memory_lifetimes") is True, target_result
+        check_memory_source_record(target_result)
     check("v2-memory-quoted",
           '#include "memory"\nint main(){return 0;}', "TR0201",
           profile="cpp-core-v2", sdk=True)
@@ -1826,6 +1899,15 @@ extern "C" MemoryDefaultRecord *memory_value_record_construct_n(
          "TR0201"),
         ("uninitialized-copy-heterogeneous",
          '#include <memory>\nint main(){int a[1]{1};long b[1];std::uninitialized_copy(a,a+1,b);}',
+         "TR0203"),
+        ("uninitialized-copy-throwing-record",
+         '#include <memory>\nstruct R{int n;R(const R&o):n(o.n){}};void f(const R*a,R*b){std::uninitialized_copy(a,a+1,b);}',
+         "TR0203"),
+        ("uninitialized-move-throwing-record",
+         '#include <memory>\nstruct R{int n;R(R&&o):n(o.n){}};void f(R*a,R*b){std::uninitialized_move(a,a+1,b);}',
+         "TR0203"),
+        ("uninitialized-copy-default-argument-record",
+         '#include <memory>\nstruct R{int n;R(const R&o,int x=0)noexcept:n(o.n+x){}};void f(const R*a,R*b){std::uninitialized_copy(a,a+1,b);}',
          "TR0203"),
         ("uninitialized-value-record",
          '#include <memory>\nstruct R{int n;R():n(1){}};int main(){R a[1];std::uninitialized_value_construct(a,a+1);}',

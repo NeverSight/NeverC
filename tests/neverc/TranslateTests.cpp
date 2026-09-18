@@ -25450,6 +25450,192 @@ int main() {
   }
 }
 
+TEST_F(
+    TranslateTest,
+    CoreV2MemoryNothrowRecordSourceUninitializedAlgorithmsRunAtBothOptimizations) {
+  const auto Source = tmpFile("memory-record-source-uninitialized.cpp");
+  const auto Output = tmpFile("memory-record-source-uninitialized.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+struct Storage { unsigned long long alignment; unsigned char bytes[256]; };
+int effects;
+int copies;
+int moves;
+struct Member {
+  int value;
+  Member(int input) noexcept : value(input) {}
+  Member(const Member &other) noexcept : value(other.value + 100) {
+    ++copies;
+  }
+  Member(Member &&other) noexcept : value(other.value + 1000) {
+    ++moves;
+    other.value = -other.value;
+  }
+};
+struct Record {
+  int marker;
+  Member member;
+  Record(int input_marker, int input_value) noexcept
+      : marker(input_marker), member(input_value) {}
+  Record(const Record &) noexcept = default;
+  Record(Record &&) noexcept = default;
+};
+Record *raw(Storage &storage) {
+  return static_cast<Record *>(static_cast<void *>(storage.bytes));
+}
+Record *observe(Record *pointer) { ++effects; return pointer; }
+const Record *observe(const Record *pointer) { ++effects; return pointer; }
+long observe_count(long count) { ++effects; return count; }
+const Record &observe_value(const Record &value) { ++effects; return value; }
+
+int fallback_copies;
+struct CopyFallback {
+  int value;
+  CopyFallback(int input) noexcept : value(input) {}
+  CopyFallback(const CopyFallback &other) noexcept : value(other.value + 200) {
+    ++fallback_copies;
+  }
+};
+CopyFallback *raw_fallback(Storage &storage) {
+  return static_cast<CopyFallback *>(static_cast<void *>(storage.bytes));
+}
+
+int main() {
+  Record input[4]{{10, 1}, {20, 2}, {30, 3}, {40, 4}};
+  copies = moves = 0;
+
+  Storage copied_storage{};
+  Record *copied = raw(copied_storage);
+  effects = 0;
+  Record *copy_end = std::uninitialized_copy(
+      observe(input), observe(input + 4), observe(copied));
+  if (effects != 3 || copies != 4 || copy_end != copied + 4 ||
+      copied[0].marker != 10 || copied[0].member.value != 101 ||
+      copied[3].marker != 40 || copied[3].member.value != 104)
+    return 1;
+
+  Storage copied_n_storage{};
+  Record *copied_n = raw(copied_n_storage);
+  effects = 0;
+  Record *copy_n_end = std::uninitialized_copy_n(
+      observe(input), observe_count(4), observe(copied_n));
+  if (effects != 3 || copies != 8 || copy_n_end != copied_n + 4 ||
+      copied_n[1].marker != 20 || copied_n[1].member.value != 102 ||
+      copied_n[2].marker != 30 || copied_n[2].member.value != 103)
+    return 2;
+  Storage negative_copy_storage{};
+  Record *negative_copy = raw(negative_copy_storage);
+  if (std::uninitialized_copy_n(input, -2, negative_copy) != negative_copy ||
+      copies != 8)
+    return 3;
+
+  Record fill_value{60, 6};
+  Storage filled_storage{};
+  Record *filled = raw(filled_storage);
+  effects = 0;
+  std::uninitialized_fill(observe(filled), observe(filled + 4),
+                          observe_value(fill_value));
+  if (effects != 3 || copies != 12 || filled[0].marker != 60 ||
+      filled[3].marker != 60 || filled[0].member.value != 106 ||
+      filled[3].member.value != 106)
+    return 4;
+
+  Record fill_n_value{70, 7};
+  Storage filled_n_storage{};
+  Record *filled_n = raw(filled_n_storage);
+  effects = 0;
+  Record *fill_n_end = std::uninitialized_fill_n(
+      observe(filled_n), observe_count(4), observe_value(fill_n_value));
+  if (effects != 3 || copies != 16 || fill_n_end != filled_n + 4 ||
+      filled_n[0].marker != 70 || filled_n[3].member.value != 107)
+    return 5;
+  Storage negative_fill_storage{};
+  Record *negative_fill = raw(negative_fill_storage);
+  if (std::uninitialized_fill_n(negative_fill, -2, fill_n_value) !=
+          negative_fill ||
+      copies != 16)
+    return 6;
+
+  Record move_input[4]{{11, 1}, {22, 2}, {33, 3}, {44, 4}};
+  Storage moved_storage{};
+  Record *moved = raw(moved_storage);
+  effects = 0;
+  Record *move_end = std::uninitialized_move(
+      observe(move_input), observe(move_input + 4), observe(moved));
+  if (effects != 3 || moves != 4 || move_end != moved + 4 ||
+      moved[0].marker != 11 || moved[0].member.value != 1001 ||
+      moved[3].marker != 44 || moved[3].member.value != 1004 ||
+      move_input[0].member.value != -1 || move_input[3].member.value != -4)
+    return 7;
+
+  Record move_n_input[4]{{12, 5}, {24, 6}, {36, 7}, {48, 8}};
+  Storage moved_n_storage{};
+  Record *moved_n = raw(moved_n_storage);
+  effects = 0;
+  auto move_n_end = std::uninitialized_move_n(
+      observe(move_n_input), observe_count(4), observe(moved_n));
+  if (effects != 3 || moves != 8 || move_n_end.first != move_n_input + 4 ||
+      move_n_end.second != moved_n + 4 || moved_n[0].marker != 12 ||
+      moved_n[0].member.value != 1005 || moved_n[3].marker != 48 ||
+      moved_n[3].member.value != 1008 ||
+      move_n_input[0].member.value != -5 ||
+      move_n_input[3].member.value != -8)
+    return 8;
+  Storage negative_move_storage{};
+  Record *negative_move = raw(negative_move_storage);
+  auto negative_move_end =
+      std::uninitialized_move_n(move_n_input, -2, negative_move);
+  if (negative_move_end.first != move_n_input ||
+      negative_move_end.second != negative_move || moves != 8)
+    return 9;
+
+  CopyFallback fallback_input[2]{5, 8};
+  Storage fallback_storage{};
+  CopyFallback *fallback = raw_fallback(fallback_storage);
+  fallback_copies = 0;
+  CopyFallback *fallback_end = std::uninitialized_move(
+      fallback_input, fallback_input + 2, fallback);
+  if (fallback_end != fallback + 2 || fallback_copies != 2 ||
+      fallback[0].value != 205 || fallback[1].value != 208 ||
+      fallback_input[0].value != 5 || fallback_input[1].value != 8)
+    return 10;
+
+  std::destroy(copied, copied + 4);
+  std::destroy_n(copied_n, 4);
+  std::destroy(filled, filled + 4);
+  std::destroy_n(filled_n, 4);
+  std::destroy(moved, moved + 4);
+  if (std::destroy_n(moved_n, 4) != moved_n + 4)
+    return 11;
+  std::destroy(fallback, fallback + 2);
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *SDK = Manifest->getAsObject()->getObject("sdk");
+  ASSERT_NE(SDK, nullptr);
+  const auto *Dependencies = SDK->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 267u);
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("memory-record-source-uninitialized" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest,
        CoreV2MemoryUninitializedAlgorithmsRequireExactSupportedPointerForms) {
   struct Rejection {
@@ -25468,6 +25654,19 @@ TEST_F(TranslateTest,
        "TR0201"},
       {"copy-heterogeneous",
        "#include <memory>\nint main(){int a[1]{1};long b[1];"
+       "std::uninitialized_copy(a,a+1,b);}",
+       "TR0203"},
+      {"copy-throwing-record",
+       "#include <memory>\nstruct R{int n;R(const R&o):n(o.n){}};"
+       "void f(const R*a,R*b){std::uninitialized_copy(a,a+1,b);}",
+       "TR0203"},
+      {"move-throwing-record",
+       "#include <memory>\nstruct R{int n;R(R&&o):n(o.n){}};"
+       "void f(R*a,R*b){std::uninitialized_move(a,a+1,b);}",
+       "TR0203"},
+      {"copy-default-argument-record",
+       "#include <memory>\nstruct R{int n;R(const R&o,int x=0)noexcept:"
+       "n(o.n+x){}};void f(const R*a,R*b){"
        "std::uninitialized_copy(a,a+1,b);}",
        "TR0203"},
       {"value-throwing-record",

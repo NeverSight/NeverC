@@ -2278,21 +2278,6 @@ static bool utilityMemoryTrivialValue(const State &S, const SourceManager &SM,
          Record->isTrivial() && Record->hasTrivialDestructor();
 }
 
-static bool utilityMemoryTrivialPointer(const State &S, const SourceManager &SM,
-                                        const ASTContext &Context,
-                                        QualType Type) {
-  return utilityObjectPointer(Context, Type) &&
-         utilityMemoryTrivialValue(S, SM, Context, Type->getPointeeType());
-}
-
-static bool utilityMemoryWritableTrivialPointer(const State &S,
-                                                const SourceManager &SM,
-                                                const ASTContext &Context,
-                                                QualType Type) {
-  return utilityMemoryTrivialPointer(S, SM, Context, Type) &&
-         !Type->getPointeeType().isConstQualified();
-}
-
 const CXXConstructorDecl *
 approvedUtilityMemoryDefaultConstructor(const State &S, const SourceManager &SM,
                                         QualType Element,
@@ -2343,6 +2328,142 @@ static bool utilityMemoryWritableDefaultPointer(const State &S,
                                                 QualType Type) {
   return utilityMemoryDefaultPointer(S, SM, Context, Type) &&
          !Type->getPointeeType().isConstQualified();
+}
+
+static llvm::StringRef utilityMemorySourceHelper(UtilityOperation Operation) {
+  switch (Operation) {
+  case UtilityOperation::MemoryUninitializedCopy:
+    return "__uninitialized_copy";
+  case UtilityOperation::MemoryUninitializedCopyN:
+    return "__uninitialized_copy_n";
+  case UtilityOperation::MemoryUninitializedFill:
+    return "__uninitialized_fill";
+  case UtilityOperation::MemoryUninitializedFillN:
+    return "__uninitialized_fill_n";
+  case UtilityOperation::MemoryUninitializedMove:
+    return "__uninitialized_move";
+  case UtilityOperation::MemoryUninitializedMoveN:
+    return "__uninitialized_move_n";
+  default:
+    return {};
+  }
+}
+
+const CXXConstructorDecl *approvedUtilityMemorySourceConstructor(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    UtilityOperation Operation, const ASTContext &Context) {
+  const auto HelperName = utilityMemorySourceHelper(Operation);
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const unsigned OutputIndex =
+      Operation == UtilityOperation::MemoryUninitializedFill ||
+              Operation == UtilityOperation::MemoryUninitializedFillN
+          ? 0
+          : 2;
+  if (HelperName.empty() || !Function || OutputIndex >= Call->getNumArgs())
+    return nullptr;
+  const auto OutputType = Call->getArg(OutputIndex)->getType();
+  if (!utilityObjectPointer(Context, OutputType) ||
+      OutputType->getPointeeType().isConstQualified())
+    return nullptr;
+  const auto Element = OutputType->getPointeeType().getUnqualifiedType();
+  if (utilityMemoryTrivialValue(S, SM, Context, Element))
+    return nullptr;
+  const auto *Record = definedRecord(Element);
+  if (!Record || Record->isUnion() || Record->isDependentContext() ||
+      !S.owns(SM, Record->getLocation()))
+    return nullptr;
+
+  // Use the instantiated pinned implementation as the overload-resolution
+  // witness. Reconstructing copy-versus-move selection here would diverge for
+  // valid copy fallbacks and future exact SDK revisions.
+  const FunctionDecl *Helper = nullptr;
+  unsigned HelperCalls = 0;
+  auto FindHelper = [&](auto &&Self, const Stmt *Node, unsigned Depth) -> void {
+    if (!Node || Depth > 64)
+      return;
+    if (const auto *Nested = dyn_cast<CallExpr>(Node)) {
+      const auto *Callee = Nested->getDirectCallee();
+      const auto Origin =
+          Callee ? S.sdkFile(SM, Callee->getLocation()) : std::nullopt;
+      if (Callee && Callee->getName() == HelperName && Origin &&
+          Origin->Root == "libcxx" &&
+          Origin->Path == "__memory/uninitialized_algorithms.h") {
+        ++HelperCalls;
+        if (!Helper || Helper->getCanonicalDecl() == Callee->getCanonicalDecl())
+          Helper = Callee;
+        else
+          Helper = nullptr;
+      }
+    }
+    for (const auto *Child : Node->children())
+      Self(Self, Child, Depth + 1);
+  };
+  FindHelper(FindHelper, Function->getBody(), 0);
+  if (!Helper || HelperCalls != 1 || !Helper->getPrimaryTemplate() ||
+      !Helper->hasBody())
+    return nullptr;
+
+  const CXXNewExpr *Allocation = nullptr;
+  unsigned Allocations = 0;
+  auto FindAllocation = [&](auto &&Self, const Stmt *Node,
+                            unsigned Depth) -> void {
+    if (!Node || Depth > 64)
+      return;
+    if (const auto *New = dyn_cast<CXXNewExpr>(Node)) {
+      const auto Origin = S.sdkFile(SM, New->getExprLoc());
+      if (Origin && Origin->Root == "libcxx" &&
+          Origin->Path == "__memory/uninitialized_algorithms.h") {
+        ++Allocations;
+        Allocation = New;
+      }
+    }
+    for (const auto *Child : Node->children())
+      Self(Self, Child, Depth + 1);
+  };
+  FindAllocation(FindAllocation, Helper->getBody(), 0);
+  const auto *AllocationFunction =
+      Allocation ? Allocation->getOperatorNew() : nullptr;
+  const auto AllocationFunctionOrigin =
+      AllocationFunction ? S.sdkFile(SM, AllocationFunction->getLocation())
+                         : std::nullopt;
+  if (!Allocation || Allocations != 1 || Allocation->isArray() ||
+      Allocation->getNumPlacementArgs() != 1 || !AllocationFunction ||
+      !AllocationFunctionOrigin || AllocationFunctionOrigin->Root != "libcxx" ||
+      AllocationFunctionOrigin->Path != "__new/placement_new_delete.h" ||
+      !Context.hasSameUnqualifiedType(Allocation->getAllocatedType(), Element))
+    return nullptr;
+  const auto *Construction = Allocation->getConstructExpr();
+  const auto *Constructor =
+      Construction ? Construction->getConstructor() : nullptr;
+  const auto *Prototype =
+      Constructor ? Constructor->getType()->getAs<FunctionProtoType>()
+                  : nullptr;
+  if (!Construction || !Constructor || Construction->getNumArgs() != 1 ||
+      Constructor->getParent()->getCanonicalDecl() !=
+          Record->getCanonicalDecl() ||
+      Constructor->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+      !Constructor->isCopyOrMoveConstructor() ||
+      Constructor->getNumParams() != 1 || !supportedConstructor(Constructor) ||
+      !Prototype || !Prototype->isNothrow() ||
+      !S.owns(SM, Constructor->getLocation()))
+    return nullptr;
+  const auto Parameter = Constructor->getParamDecl(0)->getType();
+  if (!Parameter->isReferenceType() ||
+      Parameter->getPointeeType().isVolatileQualified() ||
+      Parameter->getPointeeType().isRestrictQualified() ||
+      !Context.hasSameUnqualifiedType(Parameter->getPointeeType(), Element))
+    return nullptr;
+  if (Operation != UtilityOperation::MemoryUninitializedMove &&
+      Operation != UtilityOperation::MemoryUninitializedMoveN &&
+      !Parameter->isLValueReferenceType())
+    return nullptr;
+  if (Constructor->isTrivial())
+    return Constructor;
+  const FunctionDecl *Definition = nullptr;
+  if (!Constructor->hasBody(Definition) || !Definition ||
+      !S.owns(SM, Definition->getLocation()))
+    return nullptr;
+  return cast<CXXConstructorDecl>(Definition);
 }
 
 static bool utilityAlgorithmEqualityPointer(const ASTContext &Context,
@@ -3580,11 +3701,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return utilityMemoryDestructiblePointer(S, SM, Context, Parameter) &&
            Same(Call->getArg(Index)->getType(), Parameter);
   };
-  auto MemoryUninitializedPointerParameter = [&](unsigned Index) {
+  auto MemoryConstructionPointerParameter = [&](unsigned Index) {
     if (Index >= Function->getNumParams() || Index >= Call->getNumArgs())
       return false;
     auto Parameter = Function->getParamDecl(Index)->getType();
-    return utilityMemoryTrivialPointer(S, SM, Context, Parameter) &&
+    return utilityObjectPointer(Context, Parameter) &&
            Same(Call->getArg(Index)->getType(), Parameter);
   };
   auto MemoryDefaultPointerParameter = [&](unsigned Index) {
@@ -3607,9 +3728,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Context.hasSameUnqualifiedType(Left->getPointeeType(),
                                           Right->getPointeeType());
   };
-  auto SameMemoryUninitializedElement = [&](QualType Left, QualType Right) {
-    return utilityMemoryTrivialPointer(S, SM, Context, Left) &&
-           utilityMemoryTrivialPointer(S, SM, Context, Right) &&
+  auto SameMemoryConstructionElement = [&](QualType Left, QualType Right) {
+    return utilityObjectPointer(Context, Left) &&
+           utilityObjectPointer(Context, Right) &&
            Context.hasSameUnqualifiedType(Left->getPointeeType(),
                                           Right->getPointeeType());
   };
@@ -3643,19 +3764,19 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Context.hasSameUnqualifiedType(Call->getArg(ValueIndex)->getType(),
                                           Value->getPointeeType());
   };
-  auto MemoryUninitializedValueParameter = [&](unsigned ValueIndex,
-                                               unsigned IteratorIndex) {
+  auto MemoryConstructionValueParameter = [&](unsigned ValueIndex,
+                                              unsigned IteratorIndex) {
     if (ValueIndex >= Function->getNumParams() ||
         ValueIndex >= Call->getNumArgs() ||
         IteratorIndex >= Function->getNumParams())
       return false;
     auto Iterator = Function->getParamDecl(IteratorIndex)->getType();
     auto Value = Function->getParamDecl(ValueIndex)->getType();
-    return utilityMemoryTrivialPointer(S, SM, Context, Iterator) &&
+    return utilityObjectPointer(Context, Iterator) &&
            Value->isLValueReferenceType() &&
            Value->getPointeeType().isConstQualified() &&
            !Value->getPointeeType().isVolatileQualified() &&
-           utilityMemoryTrivialValue(S, SM, Context, Value->getPointeeType()) &&
+           Value->getPointeeType()->isObjectType() &&
            Context.hasSameUnqualifiedType(Value->getPointeeType(),
                                           Iterator->getPointeeType()) &&
            Context.hasSameUnqualifiedType(Call->getArg(ValueIndex)->getType(),
@@ -3701,56 +3822,75 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return UtilityOperation::MemoryDestroyN;
   }
   if (Origin->Path == "__memory/uninitialized_algorithms.h") {
-    const bool WritableFirst =
-        Function->getNumParams() != 0 &&
-        MemoryUninitializedPointerParameter(0) &&
-        utilityMemoryWritableTrivialPointer(
-            S, SM, Context, Function->getParamDecl(0)->getType());
+    const bool WritableFirst = Function->getNumParams() != 0 &&
+                               MemoryConstructionPointerParameter(0) &&
+                               !Function->getParamDecl(0)
+                                    ->getType()
+                                    ->getPointeeType()
+                                    .isConstQualified();
     const bool WritableDefaultFirst =
         Function->getNumParams() != 0 && MemoryDefaultPointerParameter(0) &&
         utilityMemoryWritableDefaultPointer(
             S, SM, Context, Function->getParamDecl(0)->getType());
+    const auto SourceConstructible = [&](UtilityOperation Operation,
+                                         unsigned OutputIndex) {
+      const auto Element =
+          Function->getParamDecl(OutputIndex)->getType()->getPointeeType();
+      return utilityMemoryTrivialValue(S, SM, Context, Element) ||
+             approvedUtilityMemorySourceConstructor(S, SM, Call, Operation,
+                                                    Context);
+    };
     if ((Name == "uninitialized_copy" || Name == "uninitialized_move") &&
         Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
-        Call->isPRValue() && MemoryUninitializedPointerParameter(0) &&
-        MemoryUninitializedPointerParameter(1) &&
-        MemoryUninitializedPointerParameter(2) &&
+        Call->isPRValue() && MemoryConstructionPointerParameter(0) &&
+        MemoryConstructionPointerParameter(1) &&
+        MemoryConstructionPointerParameter(2) &&
         Same(Function->getParamDecl(0)->getType(),
              Function->getParamDecl(1)->getType()) &&
-        SameMemoryUninitializedElement(Function->getParamDecl(0)->getType(),
-                                       Function->getParamDecl(2)->getType()) &&
-        utilityMemoryWritableTrivialPointer(
-            S, SM, Context, Function->getParamDecl(2)->getType()) &&
+        SameMemoryConstructionElement(Function->getParamDecl(0)->getType(),
+                                      Function->getParamDecl(2)->getType()) &&
+        !Function->getParamDecl(2)
+             ->getType()
+             ->getPointeeType()
+             .isConstQualified() &&
         Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
-        Same(Call->getType(), Function->getReturnType()))
-      return Name == "uninitialized_copy"
-                 ? UtilityOperation::MemoryUninitializedCopy
-                 : UtilityOperation::MemoryUninitializedMove;
+        Same(Call->getType(), Function->getReturnType())) {
+      const auto Operation = Name == "uninitialized_copy"
+                                 ? UtilityOperation::MemoryUninitializedCopy
+                                 : UtilityOperation::MemoryUninitializedMove;
+      if (SourceConstructible(Operation, 2))
+        return Operation;
+    }
     if (Name == "uninitialized_copy_n" && Call->getNumArgs() == 3 &&
         Function->getNumParams() == 3 && Call->isPRValue() &&
-        MemoryUninitializedPointerParameter(0) && AlgorithmCountParameter(1) &&
-        MemoryUninitializedPointerParameter(2) &&
-        SameMemoryUninitializedElement(Function->getParamDecl(0)->getType(),
-                                       Function->getParamDecl(2)->getType()) &&
-        utilityMemoryWritableTrivialPointer(
-            S, SM, Context, Function->getParamDecl(2)->getType()) &&
+        MemoryConstructionPointerParameter(0) && AlgorithmCountParameter(1) &&
+        MemoryConstructionPointerParameter(2) &&
+        SameMemoryConstructionElement(Function->getParamDecl(0)->getType(),
+                                      Function->getParamDecl(2)->getType()) &&
+        !Function->getParamDecl(2)
+             ->getType()
+             ->getPointeeType()
+             .isConstQualified() &&
         Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
-        Same(Call->getType(), Function->getReturnType()))
+        Same(Call->getType(), Function->getReturnType()) &&
+        SourceConstructible(UtilityOperation::MemoryUninitializedCopyN, 2))
       return UtilityOperation::MemoryUninitializedCopyN;
     if (Name == "uninitialized_fill" && Call->getNumArgs() == 3 &&
         Function->getNumParams() == 3 && WritableFirst &&
-        MemoryUninitializedPointerParameter(1) &&
+        MemoryConstructionPointerParameter(1) &&
         Same(Function->getParamDecl(0)->getType(),
              Function->getParamDecl(1)->getType()) &&
-        MemoryUninitializedValueParameter(2, 0) &&
+        MemoryConstructionValueParameter(2, 0) &&
         Function->getReturnType()->isVoidType() &&
-        Same(Call->getType(), Function->getReturnType()))
+        Same(Call->getType(), Function->getReturnType()) &&
+        SourceConstructible(UtilityOperation::MemoryUninitializedFill, 0))
       return UtilityOperation::MemoryUninitializedFill;
     if (Name == "uninitialized_fill_n" && Call->getNumArgs() == 3 &&
         Function->getNumParams() == 3 && Call->isPRValue() && WritableFirst &&
-        AlgorithmCountParameter(1) && MemoryUninitializedValueParameter(2, 0) &&
+        AlgorithmCountParameter(1) && MemoryConstructionValueParameter(2, 0) &&
         Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
-        Same(Call->getType(), Function->getReturnType()))
+        Same(Call->getType(), Function->getReturnType()) &&
+        SourceConstructible(UtilityOperation::MemoryUninitializedFillN, 0))
       return UtilityOperation::MemoryUninitializedFillN;
     if ((Name == "uninitialized_default_construct" ||
          Name == "uninitialized_value_construct") &&
@@ -3775,13 +3915,16 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                  : UtilityOperation::MemoryUninitializedValueConstructN;
     if (Name == "uninitialized_move_n" && Call->getNumArgs() == 3 &&
         Function->getNumParams() == 3 && Call->isPRValue() &&
-        MemoryUninitializedPointerParameter(0) && AlgorithmCountParameter(1) &&
-        MemoryUninitializedPointerParameter(2) &&
-        SameMemoryUninitializedElement(Function->getParamDecl(0)->getType(),
-                                       Function->getParamDecl(2)->getType()) &&
-        utilityMemoryWritableTrivialPointer(
-            S, SM, Context, Function->getParamDecl(2)->getType()) &&
-        Same(Call->getType(), Function->getReturnType())) {
+        MemoryConstructionPointerParameter(0) && AlgorithmCountParameter(1) &&
+        MemoryConstructionPointerParameter(2) &&
+        SameMemoryConstructionElement(Function->getParamDecl(0)->getType(),
+                                      Function->getParamDecl(2)->getType()) &&
+        !Function->getParamDecl(2)
+             ->getType()
+             ->getPointeeType()
+             .isConstQualified() &&
+        Same(Call->getType(), Function->getReturnType()) &&
+        SourceConstructible(UtilityOperation::MemoryUninitializedMoveN, 2)) {
       auto Pair = approvedUtilityPairRecord(
           S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);
       if (Pair &&

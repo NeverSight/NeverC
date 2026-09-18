@@ -688,6 +688,9 @@ approvedUtilityOperation(const State &S, const clang::SourceManager &SM,
 const clang::CXXConstructorDecl *approvedUtilityMemoryDefaultConstructor(
     const State &S, const clang::SourceManager &SM, clang::QualType Element,
     const clang::ASTContext &Context);
+const clang::CXXConstructorDecl *approvedUtilityMemorySourceConstructor(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    UtilityOperation Operation, const clang::ASTContext &Context);
 bool approvedUtilityDefaultArgument(const State &S,
                                     const clang::SourceManager &SM,
                                     const clang::CXXDefaultArgExpr *Default,

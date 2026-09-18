@@ -164,10 +164,14 @@ trivial element type. The four default/value-construction forms additionally
 accept a complete source-owned non-union record with an exact zero-parameter
 source-owned `noexcept` default constructor. They call that constructor for
 each selected object; value construction first zeroes a complete object when
-the constructor is not user-provided. Runtime allocator objects and calls,
-potentially throwing or default-argument construction, nontrivial record
-copy/move/fill, ownership objects and the remaining memory operations stay
-outside the direct lowering boundary.
+the constructor is not user-provided. The six copy/fill/move forms additionally
+accept a complete source-owned non-union record when the authenticated libc++
+helper selects a source-owned, non-template copy or move constructor with
+exactly one same-record reference parameter, a supported definition and a
+resolved `noexcept(true)` specification. Move preserves Clang's selected move
+or copy fallback. Runtime allocator objects and calls, potentially throwing,
+default-argument or constructor-template construction, ownership objects and
+the remaining memory operations stay outside the direct lowering boundary.
 Core v2 never admits the `platform` root.
 Math v1 continues to use its separately checked libc++, resource and Darwin
 platform closure for `<cmath>`.

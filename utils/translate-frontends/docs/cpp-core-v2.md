@@ -517,6 +517,18 @@ selected constructor is not user-provided, then calls the constructor. This
 preserves zero-initialization of untouched scalar members before a defaulted
 nontrivial constructor initializes its record members.
 
+The six copy/fill/move forms additionally accept a complete source-owned
+non-union record when their instantiated, authenticated libc++ helper contains
+one placement construction and Clang selected a source-owned non-template copy
+or move constructor for it. The selected constructor must take exactly one
+same-record reference parameter, have a supported definition when nontrivial,
+and resolve to `noexcept(true)`. Copy and fill require the selected lvalue
+reference constructor. Move uses the constructor Clang actually selected, so a
+move constructor receives the source as an rvalue while a valid copy fallback
+keeps its lvalue-reference form. Each loop calls that constructor once for each
+destination object; explicitly defaulted or implicit nontrivial constructors
+are materialized through the normal generated-special-member path.
+
 Every argument is retained once, range forms advance to their end, counted
 forms run only while the promoted count is positive, and the exact pointer or
 pointer-pair result is preserved. All ten operations enable the checked
@@ -527,11 +539,11 @@ Volatile objects, rvalues for address utilities, function pointers,
 fancy-pointer `pointer_traits`, array-element destruction, custom iterators,
 heterogeneous, union or non-source-record uninitialized construction, function
 addresses, quoted includes, shadows and forged declarations remain rejected.
-Potentially throwing/default-argument constructors and nontrivial record
-copy/move/fill remain rejected. Allocators, other than the exact compile-time
-metadata above, remain rejected. Runtime allocator objects and calls, smart
-pointers and ownership factories await their own checked lifetime and ABI
-contracts.
+Potentially throwing constructors, constructors with extra default arguments,
+constructor templates and unsupported source-record definitions remain
+rejected. Allocators, other than the exact compile-time metadata above, remain
+rejected. Runtime allocator objects and calls, smart pointers and ownership
+factories await their own checked lifetime and ABI contracts.
 
 ## Algorithm header from `<algorithm>`
 

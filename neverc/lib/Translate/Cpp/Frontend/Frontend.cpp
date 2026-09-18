@@ -13333,6 +13333,19 @@ public:
               if (!Constructor->isTrivial() && defaultedLifecycle(Constructor))
                 queueGenerated(Constructor, C->getExprLoc());
             break;
+          case UtilityOperation::MemoryUninitializedCopy:
+          case UtilityOperation::MemoryUninitializedCopyN:
+          case UtilityOperation::MemoryUninitializedFill:
+          case UtilityOperation::MemoryUninitializedFillN:
+          case UtilityOperation::MemoryUninitializedMove:
+          case UtilityOperation::MemoryUninitializedMoveN:
+            if (const auto *Constructor =
+                    approvedUtilityMemorySourceConstructor(
+                        A.S, A.Sources, C, *Operation, A.Context))
+              if (!Constructor->isTrivial() &&
+                  defaultedCopyOrMoveConstructor(Constructor))
+                queueGenerated(Constructor, C->getExprLoc());
+            break;
           default:
             break;
           }

@@ -1987,6 +1987,18 @@ class FunctionLowering {
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto InputType = type(Call->getArg(0)->getType(), L);
       const auto OutputType = type(Call->getArg(2)->getType(), L);
+      const bool MemoryConstruction =
+          Operation == UtilityOperation::MemoryUninitializedCopy ||
+          Operation == UtilityOperation::MemoryUninitializedMove;
+      const auto *Constructor =
+          MemoryConstruction ? approvedUtilityMemorySourceConstructor(
+                                   A.S, A.Sources, Call, Operation, A.Context)
+                             : nullptr;
+      const auto ElementType = MemoryConstruction ? Call->getArg(2)
+                                                        ->getType()
+                                                        ->getPointeeType()
+                                                        .getUnqualifiedType()
+                                                  : QualType();
       jump(Check, L);
       label(Check, L);
       branch(binary("!=", Current, Last, "bool", L), Transfer, End, L);
@@ -2001,7 +2013,11 @@ class FunctionLowering {
             L);
         assign(dereference(Output, L), dereference(Last, L), L);
       } else {
-        assign(dereference(Output, L), dereference(Current, L), L);
+        if (MemoryConstruction && Constructor)
+          constructMemorySource(dereference(Output, L), ElementType,
+                                Constructor, json::Object(Current), L);
+        else
+          assign(dereference(Output, L), dereference(Current, L), L);
         assign(
             Current,
             binary("+", Current, quantity(1, DifferenceType, L), InputType, L),
@@ -2040,6 +2056,18 @@ class FunctionLowering {
       const auto Check = labelName(), Store = labelName(), End = labelName();
       const auto PointerType = type(Call->getArg(0)->getType(), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const bool MemoryConstruction =
+          Operation == UtilityOperation::MemoryUninitializedFill ||
+          Operation == UtilityOperation::MemoryUninitializedFillN;
+      const auto *Constructor =
+          MemoryConstruction ? approvedUtilityMemorySourceConstructor(
+                                   A.S, A.Sources, Call, Operation, A.Context)
+                             : nullptr;
+      const auto ElementType = MemoryConstruction ? Call->getArg(0)
+                                                        ->getType()
+                                                        ->getPointeeType()
+                                                        .getUnqualifiedType()
+                                                  : QualType();
       jump(Check, L);
       label(Check, L);
       branch(Counted ? binary(">", Boundary, quantity(0, BoundaryTypeName, L),
@@ -2047,7 +2075,11 @@ class FunctionLowering {
                      : binary("!=", Current, Boundary, "bool", L),
              Store, End, L);
       label(Store, L);
-      assign(dereference(Current, L), dereference(ValueAddress, L), L);
+      if (MemoryConstruction && Constructor)
+        constructMemorySource(dereference(Current, L), ElementType, Constructor,
+                              json::Object(ValueAddress), L);
+      else
+        assign(dereference(Current, L), dereference(ValueAddress, L), L);
       assign(
           Current,
           binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),
@@ -2830,6 +2862,18 @@ class FunctionLowering {
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto InputType = type(Call->getArg(0)->getType(), L);
       const auto OutputType = type(Call->getArg(2)->getType(), L);
+      const bool MemoryConstruction =
+          Operation == UtilityOperation::MemoryUninitializedCopyN ||
+          Operation == UtilityOperation::MemoryUninitializedMoveN;
+      const auto *Constructor =
+          MemoryConstruction ? approvedUtilityMemorySourceConstructor(
+                                   A.S, A.Sources, Call, Operation, A.Context)
+                             : nullptr;
+      const auto ElementType = MemoryConstruction ? Call->getArg(2)
+                                                        ->getType()
+                                                        ->getPointeeType()
+                                                        .getUnqualifiedType()
+                                                  : QualType();
       const auto Check = labelName(), Transfer = labelName();
       const auto End = labelName();
       jump(Check, L);
@@ -2837,7 +2881,11 @@ class FunctionLowering {
       branch(binary(">", Remaining, quantity(0, CountTypeName, L), "bool", L),
              Transfer, End, L);
       label(Transfer, L);
-      assign(dereference(Output, L), dereference(Input, L), L);
+      if (MemoryConstruction && Constructor)
+        constructMemorySource(dereference(Output, L), ElementType, Constructor,
+                              json::Object(Input), L);
+      else
+        assign(dereference(Output, L), dereference(Input, L), L);
       assign(Input,
              binary("+", Input, quantity(1, DifferenceType, L), InputType, L),
              L);
@@ -7346,6 +7394,37 @@ class FunctionLowering {
     json::Array Args;
     Args.push_back(
         snapshot(address(std::move(Place), T.getUnqualifiedType(), L), L));
+    chargeCall(Args, L);
+    Body.push_back(json::Object{{"op", "call"},
+                                {"callee", A.name(Constructor)},
+                                {"args", std::move(Args)},
+                                {"loc", A.loc(L)}});
+  }
+  void constructMemorySource(Expression Place, QualType T,
+                             const CXXConstructorDecl *Constructor,
+                             Expression SourcePointer, SourceLocation L) {
+    if (!Constructor || !T->isRecordType() ||
+        T->getAsCXXRecordDecl()->getCanonicalDecl() !=
+            Constructor->getParent()->getCanonicalDecl() ||
+        Place.getString("type") != type(T, L))
+      reject(L, "memory construction",
+             "Constructor and destination types differ.");
+    if (Constructor->isTrivial()) {
+      assign(std::move(Place), dereference(std::move(SourcePointer), L), L);
+      return;
+    }
+    if (!supportedConstructor(Constructor) || !Constructor->hasBody() ||
+        Constructor->getNumParams() != 1 ||
+        !Constructor->getParamDecl(0)->getType()->isReferenceType())
+      reject(L, "memory construction",
+             "Unsupported selected source constructor.");
+    json::Array Args;
+    Args.push_back(
+        snapshot(address(std::move(Place), T.getUnqualifiedType(), L), L));
+    Args.push_back(
+        snapshot(cast(std::move(SourcePointer),
+                      type(Constructor->getParamDecl(0)->getType(), L), L),
+                 L));
     chargeCall(Args, L);
     Body.push_back(json::Object{{"op", "call"},
                                 {"callee", A.name(Constructor)},

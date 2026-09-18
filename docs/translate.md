@@ -50,8 +50,10 @@ and trait constants as compile-time metadata. Exact
 compatible values also resolve. The existing address operations, scalar and
 source-record destruction, scalar or trivial source-record uninitialized
 construction, and nothrow zero-parameter source-record default/value
-construction operations lower directly; runtime allocator objects and
-allocation calls remain excluded.
+construction operations lower directly. Uninitialized copy, fill and move also
+call the exact source-owned non-template `noexcept` copy or move constructor
+selected by the authenticated libc++ helper for complete source-owned records;
+runtime allocator objects and allocation calls remain excluded.
 The authenticated 267-file closure is identical and platform-free across all
 supported targets.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
