@@ -47,7 +47,11 @@ Core v2's pinned `<memory>` surface now resolves exact raw-pointer
 `std::allocator_traits<std::allocator<T>>` identities, nested aliases, rebinds
 and trait constants as compile-time metadata. Exact
 `uses_allocator<T, std::allocator<U>>` identities, inherited aliases and
-compatible values also resolve. The existing address operations, scalar and
+compatible values also resolve. Exact single-object `std::default_delete<T>`
+uses a checked one-byte stateless carrier with default, copy/move and admitted
+cv-converting construction. Its call operator evaluates the receiver and
+pointer once, destroys the complete object and calls a checked source-defined
+global sized or unsized delete. The existing address operations, scalar and
 source-record destruction, scalar or trivial source-record uninitialized
 construction, and nothrow zero-parameter source-record default/value
 construction operations lower directly. Uninitialized copy, fill and move also

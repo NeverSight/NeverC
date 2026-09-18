@@ -1629,6 +1629,64 @@ extern "C" int memory_allocator_heap() {
             target=target, sdk=True)
         assert target_result["sdk_dependencies"] == memory_allocator_objects["sdk_dependencies"], target_result
         check_memory_allocator_heap(target_result)
+
+    memory_default_delete_source = """\
+#include <memory>
+using Size = decltype(sizeof(0));
+struct Storage { unsigned long long alignment; unsigned char bytes[64]; };
+Storage storage{};
+Size allocated;
+int released;
+void *operator new(Size size) { allocated = size; return storage.bytes; }
+void operator delete(void *pointer) noexcept {
+  if (pointer == storage.bytes)
+    ++released;
+}
+extern "C" int memory_default_delete() {
+  std::default_delete<int> deleter;
+  int *first = new int(4);
+  deleter(first);
+  std::default_delete<const int> converted(deleter);
+  const int *second = new int(5);
+  converted.operator()(second);
+  return allocated == sizeof(int) && released == 2 ? 0 : 1;
+}
+"""
+
+    def check_memory_default_delete(data):
+        deleter_records = [
+            record for record in data["records"]
+            if record["fields"] == [
+                {"name": "nct_default_delete_storage", "type": "u8"}
+            ]
+        ]
+        assert len(deleter_records) == 2, data
+        assert all(record["layout"] == {
+            "size_bits": 8,
+            "abi_align_bits": 8,
+            "field_offsets_bits": [0],
+        } for record in deleter_records), data
+        calls = [node for node in walk(data["functions"])
+                 if node.get("op") == "call"]
+        assert len(calls) == 4, data
+        assert len([call for call in calls if "target" in call]) == 2, data
+        assert not [node for node in walk(data["functions"])
+                    if node.get("op") in ("mapped_call", "native_heap_call")], data
+        assert data.get("memory_lifetimes") is True, data
+
+    memory_default_delete = check(
+        "v2-memory-default-delete", memory_default_delete_source,
+        profile="cpp-core-v2", sdk=True)
+    assert memory_default_delete["sdk_dependencies"] == memory_allocator_objects["sdk_dependencies"], memory_default_delete
+    check_memory_default_delete(memory_default_delete)
+    for target in sdk_targets:
+        target_result = check(
+            "v2-memory-default-delete-" + target,
+            memory_default_delete_source, profile="cpp-core-v2",
+            target=target, sdk=True)
+        assert target_result["sdk_dependencies"] == memory_allocator_objects["sdk_dependencies"], target_result
+        check_memory_default_delete(target_result)
+
     memory_address_source = """\
 #include <memory>
 using Pointer = std::pointer_traits<int *>::pointer;

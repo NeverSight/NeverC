@@ -1466,9 +1466,9 @@ The driver supplies a `VerificationContext` containing the exact approved SDK
 identity, verifies the response before and after semantic-IR processing, and
 copies the authenticated dependency closure into the manifest's built-in SDK
 record. Frontend claims cannot authorize an SDK. Except for the documented
-stateless allocator carriers and allocator calls into checked source-defined
-global allocation functions, runtime calls or object/storage identity from
-these declarations are rejected before lowering; only resolved
+stateless default-delete and allocator carriers and their calls into checked
+source-defined global allocation functions, runtime calls or object/storage
+identity from these declarations are rejected before lowering; only resolved
 type aliases, integral/enum constants, folded `numeric_limits` scalar queries,
 checked cstddef layout constants, direct `std::byte` scalar operations, and the
 documented standard-library direct operations reach semantic IR. The memory
@@ -1484,7 +1484,18 @@ raw-pointer `pointer_traits`, exact
 aliases, rebinds and constants, plus exact
 `uses_allocator<T, std::allocator<U>>` identities and inherited aliases, close
 through the existing checked type/query graph without allocator storage or a
-runtime call. Their compatible values also fold. Exact runtime allocator
+runtime call. Their compatible values also fold. Exact single-object
+`std::default_delete<T>` specializations preserve the authenticated one-byte,
+one-byte-aligned empty libc++ representation as a record with one synthetic
+`{name:"nct_default_delete_storage",type:"u8"}` field at bit offset zero.
+Default, implicit trivial copy/move and admitted cv-converting construction
+evaluate their operands and emit no SDK call. An authenticated call operator
+captures its receiver and pointer once, uses the existing null-guarded
+single-object destruction path, and emits an ordinary `call` to a checked
+source-defined sized or unsized global delete. The selected function receives
+the saved pointer and, for sized delete, exact `sizeof(T)`. Calls set
+`memory_lifetimes: true` and add no opcode, SDK call, native-heap import or
+ownership field. Exact runtime allocator
 specializations preserve the authenticated one-byte, one-byte-aligned empty
 libc++ representation as a record with one synthetic
 `{name:"nct_allocator_storage",type:"u8"}` field at bit offset zero. Their

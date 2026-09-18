@@ -3848,7 +3848,10 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
     const auto *D = dyn_cast<CXXRecordDecl>(R->getDecl());
     if (D && D->getDefinition() && !D->isUnion()) {
       D = D->getDefinition();
-      if (approvedUtilityAllocatorRecord(S, Sources, D, Context)) {
+      if (approvedUtilityDefaultDeleteRecord(S, Sources, D, Context)) {
+        if (!requireUtilityDefaultDelete(D, L, Depth + 1))
+          return {};
+      } else if (approvedUtilityAllocatorRecord(S, Sources, D, Context)) {
         if (!requireUtilityAllocator(D, L, Depth + 1))
           return {};
       } else if (approvedUtilityPairMetadata(S, Sources, D)) {
@@ -4036,6 +4039,34 @@ bool Adapter::requireUtilityReverseIterator(const CXXRecordDecl *Record,
   return true;
 }
 
+bool Adapter::requireUtilityDefaultDelete(const CXXRecordDecl *Record,
+                                          SourceLocation Location,
+                                          unsigned Depth) {
+  if (Depth > 64) {
+    reject(Location, "default delete type",
+           "Nested std::default_delete types exceed the protocol limit.");
+    return false;
+  }
+  auto Deleter =
+      approvedUtilityDefaultDeleteRecord(S, Sources, Record, Context);
+  if (!Deleter) {
+    reject(Location, "standard library record",
+           "Only the pinned one-byte std::default_delete<T> layout is "
+           "admitted.",
+           "TR0203");
+    return false;
+  }
+  const auto *Canonical = Deleter->Record->getCanonicalDecl();
+  if (!RequiredUtilityDefaultDeletes.insert(Canonical).second)
+    return true;
+  if (type(Context.getPointerType(Deleter->ElementType), Location, false,
+           Depth + 1)
+          .empty())
+    return false;
+  Records.push_back(const_cast<CXXRecordDecl *>(Deleter->Record));
+  return true;
+}
+
 bool Adapter::requireUtilityAllocator(const CXXRecordDecl *Record,
                                       SourceLocation Location, unsigned Depth) {
   if (Depth > 64) {
@@ -4094,7 +4125,8 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
     return json::Object{{"kind", "null"}, {"type", Kind}, {"loc", loc(L)}};
   if (const auto *R = T->getAsCXXRecordDecl()) {
     json::Array Args;
-    if (approvedUtilityAllocatorRecord(S, Sources, R, Context)) {
+    if (approvedUtilityDefaultDeleteRecord(S, Sources, R, Context) ||
+        approvedUtilityAllocatorRecord(S, Sources, R, Context)) {
       Args.push_back(zero(Context.UnsignedCharTy, L));
     } else if (auto Tuple =
                    approvedUtilityTupleRecord(S, Sources, R, Context)) {
@@ -4488,7 +4520,8 @@ json::Object Adapter::constant(const APValue &V, QualType T, SourceLocation L) {
       reject(L, "constant record", "A folded record must retain every actual base and field value.");
       throw Failure{};
     }
-    if (approvedUtilityAllocatorRecord(S, Sources, Record, Context)) {
+    if (approvedUtilityDefaultDeleteRecord(S, Sources, Record, Context) ||
+        approvedUtilityAllocatorRecord(S, Sources, Record, Context)) {
       Args.push_back(zero(Context.UnsignedCharTy, L));
     } else if (auto Array =
                    approvedUtilityArrayRecord(S, Sources, Record, Context);
@@ -6864,7 +6897,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return;
     const auto *Constructor = C->getConstructor();
     if (A.S.coreV2() &&
-        (approvedUtilityAllocatorConstruction(A.S, A.Sources, C, A.Context) ||
+        (approvedUtilityDefaultDeleteConstruction(A.S, A.Sources, C,
+                                                  A.Context) ||
+         approvedUtilityAllocatorConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityPairConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityTupleConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityArrayConstruction(A.S, A.Sources, C, A.Context) ||
@@ -8926,7 +8961,9 @@ public:
               A.S, A.Sources, Construction->getType()->getAsCXXRecordDecl());
       const bool UtilityConstruction =
           Construction &&
-          (approvedUtilityAllocatorConstruction(A.S, A.Sources, Construction,
+          (approvedUtilityDefaultDeleteConstruction(A.S, A.Sources,
+                                                    Construction, A.Context) ||
+           approvedUtilityAllocatorConstruction(A.S, A.Sources, Construction,
                                                 A.Context) ||
            approvedUtilityPairConstruction(A.S, A.Sources, Construction,
                                            A.Context) ||
@@ -13376,6 +13413,10 @@ public:
       const bool UtilityAllocatorAssignment =
           A.S.coreV2() && approvedUtilityAllocatorAssignment(
                               A.S, A.Sources, Operator, A.Context);
+      const bool UtilityDefaultDelete =
+          A.S.coreV2() &&
+          approvedUtilityDefaultDeleteCall(A.S, A.Sources, C, A.Context)
+              .has_value();
       unsigned ArgumentOffset = Operator && Method && !Method->isStatic() ? 1 : 0;
       // This inline operator form already supports materialized temporaries.
       // Keep its narrow boundary while sharing reference capture and stores.
@@ -13392,7 +13433,7 @@ public:
             !UtilityTupleAssignment && !UtilityArrayAssignment &&
             !UtilityInitializerListAssignment && !UtilityOptionalAssignment &&
             !UtilityReverseIteratorAssignment && !UtilityAllocatorAssignment &&
-            !Ordinary &&
+            !UtilityDefaultDelete && !Ordinary &&
             !(supportedAssignment(Method) &&
               Operator->getOperator() == OO_Equal &&
               Operator->getNumArgs() == 2))
@@ -13451,6 +13492,33 @@ public:
         if (auto Operation =
                 approvedUtilityOperation(A.S, A.Sources, C, A.Context)) {
           switch (*Operation) {
+          case UtilityOperation::MemoryDefaultDelete: {
+            const auto Info =
+                approvedUtilityDefaultDeleteCall(A.S, A.Sources, C, A.Context);
+            if (!Info) {
+              A.reject(L, "default delete",
+                       "A checked std::default_delete call is required.");
+              break;
+            }
+            A.type(Info->Deleter.ElementType, L);
+            const auto *Function =
+                A.allocatorHeapFunction(false, Info->Deleter.ElementType, L);
+            unsigned Index = 1;
+            if (Index < Function->getNumParams() &&
+                A.Context.hasSameUnqualifiedType(
+                    Function->getParamDecl(Index)->getType(),
+                    A.Context.getSizeType()))
+              ++Index;
+            if (Index < Function->getNumParams() &&
+                Function->getParamDecl(Index)->getType()->isAlignValT())
+              ++Index;
+            if (Index != Function->getNumParams() ||
+                concreteFunctionTemplate(Function))
+              A.reject(L, "default delete arguments",
+                       "Usual deallocation requires a pointer followed only "
+                       "by selected size and alignment values.");
+            break;
+          }
           case UtilityOperation::MemoryUninitializedDefaultConstruct:
           case UtilityOperation::MemoryUninitializedDefaultConstructN:
           case UtilityOperation::MemoryUninitializedValueConstruct:
@@ -13479,6 +13547,7 @@ public:
             break;
           }
           switch (*Operation) {
+          case UtilityOperation::MemoryDefaultDelete:
           case UtilityOperation::MemoryAllocatorAllocate:
           case UtilityOperation::MemoryAllocatorConstruct:
           case UtilityOperation::MemoryAllocatorDeallocate:
@@ -13572,7 +13641,9 @@ public:
             approvedUtilityInPlaceExpression(A.S, A.Sources, C, A.Context)) {
           // std::nullopt_t and std::in_place_t are erased tags consumed only
           // by authenticated optional operations.
-        } else if (approvedUtilityAllocatorConstruction(A.S, A.Sources, C,
+        } else if (approvedUtilityDefaultDeleteConstruction(A.S, A.Sources, C,
+                                                            A.Context) ||
+                   approvedUtilityAllocatorConstruction(A.S, A.Sources, C,
                                                         A.Context) ||
                    approvedUtilityPairConstruction(A.S, A.Sources, C,
                                                    A.Context) ||
@@ -13591,7 +13662,8 @@ public:
           A.reject(L, "standard library runtime object",
                    "Approved standard headers provide only their documented "
                    "compile-time aliases, constants, folded queries and "
-                   "std::allocator, std::pair, std::tuple, std::array, "
+                   "std::default_delete, std::allocator, std::pair, "
+                   "std::tuple, std::array, "
                    "std::initializer_list, "
                    "std::optional and pointer std::reverse_iterator "
                    "construction.",
@@ -13761,10 +13833,13 @@ static void orderCoreV2Records(Adapter &A) {
         approvedUtilityArrayRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityOptional =
         approvedUtilityOptionalRecord(A.S, A.Sources, R, A.Context);
+    const auto UtilityDefaultDelete =
+        approvedUtilityDefaultDeleteRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityAllocator =
         approvedUtilityAllocatorRecord(A.S, A.Sources, R, A.Context);
     if (const auto *Base = UtilityReverse || UtilityTuple || UtilityArray ||
-                                   UtilityOptional || UtilityAllocator
+                                   UtilityOptional || UtilityDefaultDelete ||
+                                   UtilityAllocator
                                ? nullptr
                                : A.emptyBase(R)) {
       auto Found = Indices.find(Base->Base);
@@ -13913,12 +13988,15 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
     const auto UtilityOptional =
         S.coreV2() ? approvedUtilityOptionalRecord(S, Sources, R, Context)
                    : std::optional<UtilityOptionalRecord>();
+    const auto UtilityDefaultDelete =
+        S.coreV2() ? approvedUtilityDefaultDeleteRecord(S, Sources, R, Context)
+                   : std::optional<UtilityDefaultDeleteRecord>();
     const auto UtilityAllocator =
         S.coreV2() ? approvedUtilityAllocatorRecord(S, Sources, R, Context)
                    : std::optional<UtilityAllocatorRecord>();
     const auto *Base = S.coreV2() && !UtilityReverse && !UtilityTuple &&
                                !UtilityArray && !UtilityOptional &&
-                               !UtilityAllocator
+                               !UtilityDefaultDelete && !UtilityAllocator
                            ? emptyBase(R)
                            : nullptr;
     if (Base)
@@ -13926,7 +14004,10 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
     if (Base)
       Fields.push_back(json::Object{{"name", Base->Member},
           {"type", type(Context.getRecordType(Base->Base), R->getLocation())}});
-    if (UtilityAllocator) {
+    if (UtilityDefaultDelete) {
+      Fields.push_back(
+          json::Object{{"name", "nct_default_delete_storage"}, {"type", "u8"}});
+    } else if (UtilityAllocator) {
       Fields.push_back(
           json::Object{{"name", "nct_allocator_storage"}, {"type", "u8"}});
     } else if (UtilityTuple) {
@@ -13954,7 +14035,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
       json::Array Offsets;
       if (Base)
         Offsets.push_back(uint64_t(Layout.getBaseClassOffset(Base->Base).getQuantity()) * 8);
-      if (UtilityAllocator) {
+      if (UtilityDefaultDelete || UtilityAllocator) {
         Offsets.push_back(uint64_t(0));
       } else if (UtilityTuple) {
         for (uint64_t Offset : UtilityTuple->Offsets)

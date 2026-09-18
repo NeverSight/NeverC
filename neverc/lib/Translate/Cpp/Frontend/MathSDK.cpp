@@ -397,6 +397,16 @@ approvedMemoryTemplateMetadata(const State &S, const SourceManager &SM,
         Pointer->getPointeeType().getAddressSpace() == LangAS::Default)
       return MemoryTemplateMetadata::PointerTraits;
   }
+  if (Name == "default_delete" && OneTypeArgument() &&
+      cstddefOrigin(S, SM, Template->getLocation(), "libcxx",
+                    "__memory/unique_ptr.h") &&
+      cstddefOrigin(S, SM, CanonicalTemplate->getLocation(), "libcxx",
+                    "__memory/unique_ptr.h")) {
+    const auto Element = Arguments.get(0).getAsType();
+    if (!Element.isNull() && !Element.isVolatileQualified() &&
+        Element->isObjectType() && !Element->isArrayType())
+      return MemoryTemplateMetadata::DefaultDelete;
+  }
   if (Name == "allocator" && OneTypeArgument() &&
       cstddefOrigin(S, SM, Template->getLocation(), "libcxx",
                     "__memory/allocator.h") &&
@@ -434,6 +444,39 @@ approvedMemoryTemplateMetadata(const State &S, const SourceManager &SM,
       return MemoryTemplateMetadata::UsesAllocator;
   }
   return std::nullopt;
+}
+
+std::optional<UtilityDefaultDeleteRecord>
+approvedUtilityDefaultDeleteRecord(const State &S, const SourceManager &SM,
+                                   const CXXRecordDecl *Record,
+                                   const ASTContext &Context) {
+  const auto *Definition = Record ? Record->getDefinition() : nullptr;
+  const auto *Specialization =
+      dyn_cast_or_null<ClassTemplateSpecializationDecl>(Definition);
+  if (!Definition || !Specialization || Definition->isInvalidDecl() ||
+      Definition->isUnion() || Definition->isDependentContext() ||
+      approvedMemoryTemplateMetadata(S, SM, Definition) !=
+          MemoryTemplateMetadata::DefaultDelete ||
+      !approvedStandardSDKDeclaration(S, SM, Definition) ||
+      !cstddefOrigin(S, SM, Definition->getLocation(), "libcxx",
+                     "__memory/unique_ptr.h") ||
+      !Definition->field_empty() || Definition->getNumBases() ||
+      Definition->isDynamicClass() || !Definition->isEmpty() ||
+      !Definition->isStandardLayout() || !Definition->hasTrivialDestructor() ||
+      !Definition->hasTrivialDefaultConstructor())
+    return std::nullopt;
+  const auto &Arguments = Specialization->getTemplateArgs();
+  if (Arguments.size() != 1 ||
+      Arguments.get(0).getKind() != TemplateArgument::Type)
+    return std::nullopt;
+  const auto Element = Arguments.get(0).getAsType();
+  const auto &Layout = Context.getASTRecordLayout(Definition);
+  if (Element.isNull() || Element.isVolatileQualified() ||
+      !Element->isObjectType() || Element->isArrayType() ||
+      Layout.getSize().getQuantity() != 1 ||
+      Layout.getAlignment().getQuantity() != 1)
+    return std::nullopt;
+  return UtilityDefaultDeleteRecord{Definition, Element};
 }
 
 std::optional<UtilityAllocatorRecord>
@@ -2685,6 +2728,141 @@ static bool utilityPointerConversion(const ASTContext &Context, QualType From,
          (!Source.isConstQualified() || Destination.isConstQualified());
 }
 
+std::optional<UtilityDefaultDeleteConstruction>
+approvedUtilityDefaultDeleteConstruction(const State &S,
+                                         const SourceManager &SM,
+                                         const CXXConstructExpr *Construction,
+                                         const ASTContext &Context) {
+  if (!Construction || Construction->isTypeDependent() ||
+      Construction->isValueDependent() ||
+      Construction->isInstantiationDependent() ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete)
+    return std::nullopt;
+  const auto *Constructor = Construction->getConstructor();
+  const auto Deleter = approvedUtilityDefaultDeleteRecord(
+      S, SM, Construction->getType()->getAsCXXRecordDecl(), Context);
+  const auto *Prototype =
+      Constructor ? Constructor->getType()->getAs<FunctionProtoType>()
+                  : nullptr;
+  if (!Constructor || !Deleter || !Prototype || !Prototype->isNothrow() ||
+      Constructor->getParent()->getCanonicalDecl() !=
+          Deleter->Record->getCanonicalDecl() ||
+      Constructor->isVariadic() ||
+      Construction->getNumArgs() != Constructor->getNumParams() ||
+      !approvedStandardSDKDeclaration(S, SM, Constructor) ||
+      !cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx",
+                     "__memory/unique_ptr.h"))
+    return std::nullopt;
+  if (!Construction->getNumArgs() && Constructor->isDefaultConstructor() &&
+      Constructor->isDefaulted())
+    return UtilityDefaultDeleteConstruction::Default;
+  if (Construction->getNumArgs() != 1)
+    return std::nullopt;
+  const auto Source = approvedUtilityDefaultDeleteRecord(
+      S, SM, Construction->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
+  const auto Parameter = Constructor->getParamDecl(0)->getType();
+  if (!Source || !Parameter->isReferenceType() ||
+      Parameter->getPointeeType().isVolatileQualified() ||
+      !Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                      Context.getRecordType(Source->Record)))
+    return std::nullopt;
+  if (Deleter->Record->getCanonicalDecl() ==
+          Source->Record->getCanonicalDecl() &&
+      Constructor->isImplicit() && Constructor->isTrivial() &&
+      Constructor->isCopyOrMoveConstructor())
+    return UtilityDefaultDeleteConstruction::CopyOrMove;
+  const auto *Primary = Constructor->getPrimaryTemplate();
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Constructor->getBody());
+  if (!Primary || !Body || !Body->body_empty() ||
+      !Parameter->isLValueReferenceType() ||
+      !Parameter->getPointeeType().isConstQualified() ||
+      !approvedStandardSDKDeclaration(S, SM, Primary) ||
+      !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
+                     "__memory/unique_ptr.h") ||
+      !utilityPointerConversion(Context,
+                                Context.getPointerType(Source->ElementType),
+                                Context.getPointerType(Deleter->ElementType)))
+    return std::nullopt;
+  return UtilityDefaultDeleteConstruction::Converting;
+}
+
+std::optional<UtilityDefaultDeleteCall>
+approvedUtilityDefaultDeleteCall(const State &S, const SourceManager &SM,
+                                 const CallExpr *Call,
+                                 const ASTContext &Context) {
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);
+  const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  const auto *Member = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const Expr *Object = nullptr;
+  unsigned PointerIndex = 0;
+  if (Operator) {
+    if (Operator->getOperator() != OO_Call || Operator->getNumArgs() != 2)
+      return std::nullopt;
+    Object = Operator->getArg(0);
+    PointerIndex = 1;
+  } else if (Member) {
+    Object = Member->getImplicitObjectArgument();
+  }
+  const auto *Reference = directMethodReference(Call);
+  const auto Deleter = approvedUtilityDefaultDeleteRecord(
+      S, SM, Method ? Method->getParent() : nullptr, Context);
+  const auto *Prototype =
+      Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
+  if (!Call || !Method || !Object || !Reference || !Deleter || !Prototype ||
+      !Prototype->isNothrow() || Method->isStatic() || !Method->isConst() ||
+      Method->isVariadic() || Method->getOverloadedOperator() != OO_Call ||
+      Method->getNumParams() != 1 || !Method->getReturnType()->isVoidType() ||
+      !Call->getType()->isVoidType() ||
+      Call->getNumArgs() != PointerIndex + 1 || !Method->isInlined() ||
+      !Method->hasBody() || !approvedStandardSDKDeclaration(S, SM, Method) ||
+      !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
+                     "__memory/unique_ptr.h") ||
+      !S.owns(SM, Reference->getExprLoc()) ||
+      !Context.hasSameUnqualifiedType(Object->getType(),
+                                      Context.getRecordType(Deleter->Record)))
+    return std::nullopt;
+  const auto Pointer = Context.getPointerType(Deleter->ElementType);
+  if (!Context.hasSameType(Method->getParamDecl(0)->getType(), Pointer) ||
+      !Context.hasSameType(Call->getArg(PointerIndex)->getType(), Pointer))
+    return std::nullopt;
+
+  const CXXDeleteExpr *Deletion = nullptr;
+  unsigned Deletions = 0;
+  auto FindDeletion = [&](auto &&Self, const Stmt *Node,
+                          unsigned Depth) -> void {
+    if (!Node || Depth > 32)
+      return;
+    if (const auto *Delete = dyn_cast<CXXDeleteExpr>(Node)) {
+      ++Deletions;
+      Deletion = Delete;
+    }
+    for (const auto *Child : Node->children())
+      Self(Self, Child, Depth + 1);
+  };
+  FindDeletion(FindDeletion, Method->getBody(), 0);
+  const auto *Argument =
+      Deletion ? dyn_cast<DeclRefExpr>(
+                     Deletion->getArgument()->IgnoreParenImpCasts())
+               : nullptr;
+  const auto *DeleteFunction =
+      Deletion ? Deletion->getOperatorDelete() : nullptr;
+  if (!Deletion || Deletions != 1 || Deletion->isArrayForm() || !Argument ||
+      Argument->getDecl() != Method->getParamDecl(0) || !DeleteFunction ||
+      isa<CXXMethodDecl>(DeleteFunction) ||
+      DeleteFunction->getOverloadedOperator() != OO_Delete ||
+      !DeleteFunction->getDeclContext()
+           ->getRedeclContext()
+           ->isTranslationUnit() ||
+      !Context.hasSameType(Deletion->getArgument()->getType(), Pointer) ||
+      !Context.hasSameType(Deletion->getDestroyedType(),
+                           Deleter->ElementType) ||
+      !cstddefOrigin(S, SM, Deletion->getExprLoc(), "libcxx",
+                     "__memory/unique_ptr.h"))
+    return std::nullopt;
+  return UtilityDefaultDeleteCall{*Deleter, Deletion, Object, PointerIndex};
+}
+
 bool approvedUtilityReverseIteratorMetadata(const State &S,
                                             const SourceManager &SM,
                                             const CXXRecordDecl *Record) {
@@ -3532,6 +3710,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           approvedUtilityAllocatorHeapCall(S, SM, Call, false, Context))
     return Heap->Allocate ? UtilityOperation::MemoryAllocatorAllocate
                           : UtilityOperation::MemoryAllocatorDeallocate;
+  if (approvedUtilityDefaultDeleteCall(S, SM, Call, Context))
+    return UtilityOperation::MemoryDefaultDelete;
   if (approvedUtilityAllocatorConstructCall(S, SM, Call, true, Context))
     return UtilityOperation::MemoryAllocatorTraitsConstruct;
   if (approvedUtilityAllocatorConstructCall(S, SM, Call, false, Context))

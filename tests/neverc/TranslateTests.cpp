@@ -25086,6 +25086,133 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2MemoryDefaultDeleteRunsAtBothOptimizations) {
+  const auto Source = tmpFile("memory-default-delete.cpp");
+  const auto Output = tmpFile("memory-default-delete.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+using Size = decltype(sizeof(0));
+struct Storage { unsigned long long alignment; unsigned char bytes[64]; };
+Storage storage{};
+Size allocated;
+Size released;
+int allocations;
+int releases;
+int destroyed;
+struct Owned {
+  int value;
+  ~Owned() noexcept { destroyed += value; }
+};
+void *operator new(Size size) {
+  ++allocations;
+  allocated = size;
+  return storage.bytes;
+}
+void operator delete(void *pointer, Size size) noexcept {
+  if (pointer == storage.bytes) {
+    ++releases;
+    released = size;
+  }
+}
+int effects;
+std::default_delete<int> &observe(std::default_delete<int> &value, int bit) {
+  effects |= bit;
+  return value;
+}
+int *observe(int *value, int bit) { effects |= bit; return value; }
+int main() {
+  std::default_delete<int> first;
+  std::default_delete<int> copied(first);
+  std::default_delete<int> moved(std::move(copied));
+  std::default_delete<const int> converted(first);
+
+  int *one = new int(41);
+  if (*one != 41 || allocated != sizeof(int)) return 1;
+  effects = 0;
+  observe(moved, 1)(observe(one, 2));
+  if (effects != 3 || released != sizeof(int)) return 2;
+
+  const int *two = new int(42);
+  if (*two != 42) return 3;
+  converted.operator()(two);
+  if (released != sizeof(int)) return 4;
+
+  std::default_delete<int>{}(new int(43));
+  std::default_delete<Owned>{}(new Owned{7});
+  return allocations == 4 && releases == 4 && destroyed == 7 &&
+                 allocated == sizeof(Owned) && released == sizeof(Owned)
+             ? 0
+             : 5;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Root = Manifest->getAsObject();
+  ASSERT_NE(Root, nullptr);
+  const auto *SDK = Root->getObject("sdk");
+  ASSERT_NE(SDK, nullptr);
+  const auto *Dependencies = SDK->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 267u);
+  EXPECT_NE(readFile(Output).find("nct_default_delete_storage"),
+            std::string::npos);
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("memory-default-delete" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2MemoryDefaultDeleteRequiresExactObjectForms) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Rejection Cases[] = {
+      {"missing-delete-definition",
+       "#include <memory>\nvoid f(int*p){std::default_delete<int>{}(p);}",
+       "TR0203"},
+      {"array-specialization",
+       "#include <memory>\nstd::default_delete<int[]> value;", "TR0203"},
+      {"volatile-element",
+       "#include <memory>\nstd::default_delete<volatile int> value;", "TR0201"},
+      {"class-delete",
+       "#include <memory>\nstruct R{static void operator "
+       "delete(void*)noexcept;};"
+       "void R::operator delete(void*)noexcept{}"
+       "void operator delete(void*)noexcept{}"
+       "void f(R*p){std::default_delete<R>{}(p);}",
+       "TR0203"},
+      {"function-address",
+       "#include <memory>\nusing D=std::default_delete<int>;"
+       "using F=void(D::*)(int*)const noexcept;"
+       "F f(){return &D::operator();}",
+       "TR0201"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("memory-default-delete-reject-") +
+                                Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("memory-default-delete-reject-") +
+                                Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2MemoryAllocatorMetadataRequiresExactTemplates) {
   struct Rejection {
     const char *Name;

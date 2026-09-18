@@ -247,6 +247,7 @@ approvedCstddefOperation(const State &S, const clang::SourceManager &SM,
                          const clang::ASTContext &Context);
 enum class MemoryTemplateMetadata {
   PointerTraits,
+  DefaultDelete,
   Allocator,
   AllocatorTraits,
   UsesAllocator,
@@ -254,6 +255,33 @@ enum class MemoryTemplateMetadata {
 std::optional<MemoryTemplateMetadata>
 approvedMemoryTemplateMetadata(const State &S, const clang::SourceManager &SM,
                                const clang::CXXRecordDecl *Record);
+struct UtilityDefaultDeleteRecord {
+  const clang::CXXRecordDecl *Record;
+  clang::QualType ElementType;
+};
+std::optional<UtilityDefaultDeleteRecord> approvedUtilityDefaultDeleteRecord(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+enum class UtilityDefaultDeleteConstruction {
+  Default,
+  CopyOrMove,
+  Converting,
+};
+std::optional<UtilityDefaultDeleteConstruction>
+approvedUtilityDefaultDeleteConstruction(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction,
+    const clang::ASTContext &Context);
+struct UtilityDefaultDeleteCall {
+  UtilityDefaultDeleteRecord Deleter;
+  const clang::CXXDeleteExpr *Delete;
+  const clang::Expr *Object;
+  unsigned PointerIndex;
+};
+std::optional<UtilityDefaultDeleteCall>
+approvedUtilityDefaultDeleteCall(const State &S, const clang::SourceManager &SM,
+                                 const clang::CallExpr *Call,
+                                 const clang::ASTContext &Context);
 struct UtilityAllocatorRecord {
   const clang::CXXRecordDecl *Record;
   clang::QualType ElementType;
@@ -309,6 +337,7 @@ enum class UtilityOperation {
   MoveIfNoexcept,
   AsConst,
   NewLaunder,
+  MemoryDefaultDelete,
   MemoryAllocatorAddress,
   MemoryAllocatorAllocate,
   MemoryAllocatorDeallocate,
@@ -915,6 +944,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredUtilityInitializerLists;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityOptionals;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityReverseIterators;
+  std::set<const clang::CXXRecordDecl *> RequiredUtilityDefaultDeletes;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityAllocators;
   std::map<const clang::CXXRecordDecl *, CheckedEmptyBase> EmptyBases;
   std::map<const clang::VarDecl *, const clang::CXXForRangeStmt *> RangeDeclarations;
@@ -948,6 +978,9 @@ public:
   bool requireUtilityReverseIterator(const clang::CXXRecordDecl *Record,
                                      clang::SourceLocation Location,
                                      unsigned Depth = 0);
+  bool requireUtilityDefaultDelete(const clang::CXXRecordDecl *Record,
+                                   clang::SourceLocation Location,
+                                   unsigned Depth = 0);
   bool requireUtilityAllocator(const clang::CXXRecordDecl *Record,
                                clang::SourceLocation Location,
                                unsigned Depth = 0);

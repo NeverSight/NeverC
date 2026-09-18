@@ -147,8 +147,14 @@ exact `std::allocator<T>` and
 `std::allocator_traits<std::allocator<T>>` types and their nested aliases are
 admitted as compile-time metadata. Exact `uses_allocator<T,
 std::allocator<U>>` identities, inherited aliases and constants also resolve
-without materializing a standard-library object. Exact runtime allocator
-specializations use an authenticated one-byte stateless carrier. Default,
+without materializing a standard-library object. Exact single-object
+`std::default_delete<T>` specializations preserve the pinned empty one-byte
+layout through a synthetic byte carrier. Default, copy/move and admitted
+cv-converting construction lower directly. Their authenticated call operator
+evaluates the receiver and pointer once, destroys the complete object and calls
+a checked source-defined global sized or unsized delete. Array specializations,
+volatile elements and function addresses remain rejected. Exact runtime
+allocator specializations use an authenticated one-byte stateless carrier. Default,
 copy/move and non-void converting construction, same-type assignment,
 heterogeneous equality, deprecated C++17 `address` and complete-element
 `max_size` lower directly without a libc++ call. Exact allocator `destroy`
@@ -200,8 +206,8 @@ or copy fallback. Default-heap allocation, dynamic or overflowing allocation
 counts, over-aligned elements, other allocator-traits forwarding calls,
 potentially throwing, default-argument or
 constructor-template source-record construction, nontrivial by-value record
-parameters, ownership objects and the remaining memory operations stay outside
-the direct lowering boundary.
+parameters, smart pointers, ownership factories and the remaining memory
+operations stay outside the direct lowering boundary.
 Core v2 never admits the `platform` root.
 Math v1 continues to use its separately checked libc++, resource and Darwin
 platform closure for `<cmath>`.

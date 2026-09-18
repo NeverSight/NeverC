@@ -1379,6 +1379,19 @@ class FunctionLowering {
       // Retain the checked pointer value once; a later access observes the
       // lifetime selected by the source's authenticated std::launder call.
       return snapshot(expression(Call->getArg(0)), L);
+    case UtilityOperation::MemoryDefaultDelete: {
+      const auto Info =
+          approvedUtilityDefaultDeleteCall(A.S, A.Sources, Call, A.Context);
+      if (!Info || Info->PointerIndex >= Call->getNumArgs())
+        reject(L, "default delete",
+               "A checked std::default_delete call is required.");
+      discard(Info->Object);
+      const auto *Function =
+          A.allocatorHeapFunction(false, Info->Deleter.ElementType, L);
+      deallocateSingle(expression(Call->getArg(Info->PointerIndex)),
+                       Info->Deleter.ElementType, Function, L);
+      return {};
+    }
     case UtilityOperation::MemoryAllocatorAddress: {
       const auto *Object = MemberObject();
       if (!Object || Call->getNumArgs() != 1)
@@ -7075,16 +7088,11 @@ class FunctionLowering {
     jump(End, L);
     label(End, L);
   }
-  void deallocate(const CXXDeleteExpr *Delete) {
-    if (Delete->isArrayForm()) {
-      deallocateArray(Delete);
-      return;
-    }
-    auto L = Delete->getExprLoc();
-    const auto *F = A.allocationFunction(Delete->getOperatorDelete(), false, L);
-    auto Object = Delete->getDestroyedType().getUnqualifiedType();
+  void deallocateSingle(Expression Pointer, QualType Object,
+                        const FunctionDecl *F, SourceLocation L) {
+    Object = Object.getUnqualifiedType();
     // A destructor may reseat the variable which supplied this pointer.
-    auto Pointer = snapshot(expression(Delete->getArgument()), L);
+    Pointer = snapshot(std::move(Pointer), L);
     auto Destroy = labelName(), End = labelName();
     branch(cast(Pointer, "bool", L), Destroy, End, L);
     label(Destroy, L);
@@ -7101,6 +7109,16 @@ class FunctionLowering {
                                 {"args", std::move(Args)}, {"loc", A.loc(L)}});
     jump(End, L);
     label(End, L);
+  }
+  void deallocate(const CXXDeleteExpr *Delete) {
+    if (Delete->isArrayForm()) {
+      deallocateArray(Delete);
+      return;
+    }
+    auto L = Delete->getExprLoc();
+    const auto *F = A.allocationFunction(Delete->getOperatorDelete(), false, L);
+    deallocateSingle(expression(Delete->getArgument()),
+                     Delete->getDestroyedType(), F, L);
   }
   Expression expression(const Expr *E) {
     if (A.S.coreV2() && E->getType()->isFunctionType())
@@ -7881,6 +7899,17 @@ class FunctionLowering {
             Constructor->getParent()->getCanonicalDecl() ||
         Place.getString("type") != type(T, L))
       reject(L, "construction", "Constructor and destination types differ.");
+    if (auto Kind = approvedUtilityDefaultDeleteConstruction(A.S, A.Sources, C,
+                                                             A.Context)) {
+      if (*Kind != UtilityDefaultDeleteConstruction::Default) {
+        if (C->getNumArgs() != 1)
+          reject(L, "default delete construction",
+                 "A copied or converted std::default_delete needs one source.");
+        expression(C->getArg(0));
+      }
+      assign(std::move(Place), A.zero(T, L), L);
+      return;
+    }
     if (auto Kind = approvedUtilityAllocatorConstruction(A.S, A.Sources, C,
                                                          A.Context)) {
       if (*Kind != UtilityAllocatorConstruction::Default) {
