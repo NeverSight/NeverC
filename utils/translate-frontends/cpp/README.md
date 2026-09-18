@@ -72,7 +72,8 @@ transformed scans, and integer `gcd`/`lcm` lower directly. The exact
 [`<memory>`](../docs/cpp-core-v2.md#memory-header-from-memory) header has an
 authenticated parsing boundary; raw-pointer `pointer_traits`, exact
 `std::allocator` and exact `std::allocator_traits<std::allocator<T>>` metadata
-resolve at compile time. Compatible `uses_allocator` constants fold, while
+resolve at compile time. Exact `uses_allocator<T, std::allocator<U>>`
+identities, inherited aliases and constants also resolve, while
 `std::addressof`, `pointer_traits::pointer_to` and scalar-pointer destruction
 and uninitialized construction algorithms lower directly. Runtime allocators
 and ownership objects remain separate. The
@@ -174,7 +175,8 @@ header closure. Raw-pointer `pointer_traits` aliases resolve through pinned
 libc++. Exact `std::allocator<T>` and
 `std::allocator_traits<std::allocator<T>>` type identities, nested aliases,
 rebinds and trait constants also resolve as compile-time metadata, including
-compatible `uses_allocator` values. `std::addressof` and raw-pointer
+exact `uses_allocator<T, std::allocator<U>>` identities, inherited aliases and
+values. `std::addressof` and raw-pointer
 `pointer_traits::pointer_to` return checked object addresses without a libc++
 runtime call. Exact
 `destroy_at`, `destroy` and `destroy_n` calls on scalar object pointers retain

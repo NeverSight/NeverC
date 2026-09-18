@@ -35,11 +35,12 @@ builtins and standard-function addresses remain rejected. [C++17](../utils/trans
 Core v2's pinned `<memory>` surface now resolves exact raw-pointer
 `pointer_traits`, `std::allocator<T>` and
 `std::allocator_traits<std::allocator<T>>` identities, nested aliases, rebinds
-and trait constants as compile-time metadata. Compatible `uses_allocator`
-values also fold. The existing address, scalar destruction and scalar
-uninitialized-construction operations still lower directly; runtime allocator
-objects and allocation calls remain excluded. The authenticated 267-file
-closure is identical and platform-free across all supported targets.
+and trait constants as compile-time metadata. Exact
+`uses_allocator<T, std::allocator<U>>` identities, inherited aliases and
+compatible values also resolve. The existing address, scalar destruction and
+scalar uninitialized-construction operations still lower directly; runtime
+allocator objects and allocation calls remain excluded. The authenticated
+267-file closure is identical and platform-free across all supported targets.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
 
 Core v2 also accepts the pinned `<utility>` header. Scalar `move`, `forward`,

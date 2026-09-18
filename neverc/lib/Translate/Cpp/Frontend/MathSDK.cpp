@@ -420,6 +420,19 @@ approvedMemoryTemplateMetadata(const State &S, const SourceManager &SM,
     if (Nested == MemoryTemplateMetadata::Allocator)
       return MemoryTemplateMetadata::AllocatorTraits;
   }
+  if (Name == "uses_allocator" && Arguments.size() == 2 &&
+      Arguments.get(0).getKind() == TemplateArgument::Type &&
+      Arguments.get(1).getKind() == TemplateArgument::Type &&
+      cstddefOrigin(S, SM, Template->getLocation(), "libcxx",
+                    "__memory/uses_allocator.h") &&
+      cstddefOrigin(S, SM, CanonicalTemplate->getLocation(), "libcxx",
+                    "__memory/uses_allocator.h")) {
+    const auto Allocator = Arguments.get(1).getAsType();
+    const auto Nested = approvedMemoryTemplateMetadata(
+        S, SM, Allocator.isNull() ? nullptr : Allocator->getAsCXXRecordDecl());
+    if (Nested == MemoryTemplateMetadata::Allocator)
+      return MemoryTemplateMetadata::UsesAllocator;
+  }
   return std::nullopt;
 }
 

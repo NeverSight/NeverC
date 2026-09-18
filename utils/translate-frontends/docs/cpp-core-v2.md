@@ -436,9 +436,11 @@ pointer, reference, size, difference and `rebind` aliases remain compile-time
 types. Exact `std::allocator_traits<std::allocator<T>>` metadata exposes the
 corresponding allocator, value, pointer and rebind aliases plus its integral
 trait constants. These identities can appear behind pointer, reference and
-fixed-array type wrappers. `std::uses_allocator` and `uses_allocator_v` values
-that consume an admitted allocator also fold through the authenticated header.
-None of these metadata queries creates allocator storage or emits a call.
+fixed-array type wrappers. Exact
+`std::uses_allocator<T, std::allocator<U>>` identities expose their inherited
+`type` and `value_type` aliases; their `value` and `uses_allocator_v` constants
+also fold through the authenticated header. None of these metadata queries
+creates allocator storage or emits a call.
 
 The exact `std::addressof(T&)` and raw-pointer
 `std::pointer_traits<T *>::pointer_to(T&)` operations directly produce the

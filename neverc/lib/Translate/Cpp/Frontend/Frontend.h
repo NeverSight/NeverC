@@ -249,6 +249,7 @@ enum class MemoryTemplateMetadata {
   PointerTraits,
   Allocator,
   AllocatorTraits,
+  UsesAllocator,
 };
 std::optional<MemoryTemplateMetadata>
 approvedMemoryTemplateMetadata(const State &S, const clang::SourceManager &SM,

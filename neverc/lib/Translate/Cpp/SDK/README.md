@@ -135,7 +135,8 @@ target. The exact C++17 public header and all consumed component headers are
 authenticated without platform headers. Raw-pointer `pointer_traits` aliases,
 exact `std::allocator<T>` and
 `std::allocator_traits<std::allocator<T>>` types and their nested aliases are
-admitted as compile-time metadata. Compatible `uses_allocator` constants fold
+admitted as compile-time metadata. Exact `uses_allocator<T,
+std::allocator<U>>` identities, inherited aliases and constants also resolve
 without materializing a standard-library object. `std::addressof` and
 raw-pointer `pointer_traits::pointer_to` are admitted for checked non-volatile
 object lvalues. `std::destroy_at`, `std::destroy` and

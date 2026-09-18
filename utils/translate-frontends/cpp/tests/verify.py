@@ -1367,6 +1367,10 @@ using DoubleTraits = Traits::rebind_traits<double>;
 using ReboundPointer = PointerTraits::rebind<double>;
 struct Plain {};
 struct Aware { using allocator_type = IntAllocator; };
+using PlainUsesAllocator = std::uses_allocator<Plain, IntAllocator>;
+using AwareUsesAllocator = std::uses_allocator<Aware, IntAllocator>;
+using PlainUsesAllocatorType = PlainUsesAllocator::type;
+using AwareUsesAllocatorType = AwareUsesAllocator::type;
 static_assert(__is_same(PointerTraits, std::pointer_traits<int *>));
 static_assert(__is_same(PointerTraits::pointer, int *));
 static_assert(__is_same(PointerTraits::element_type, int));
@@ -1385,6 +1389,15 @@ static_assert(__is_same(DoubleAllocator, std::allocator<double>));
 static_assert(__is_same(
     DoubleTraits, std::allocator_traits<std::allocator<double>>));
 static_assert(__is_same(std::allocator<void>, std::allocator<void>));
+static_assert(__is_same(
+    PlainUsesAllocator, std::uses_allocator<Plain, std::allocator<int>>));
+static_assert(__is_same(
+    AwareUsesAllocator, std::uses_allocator<Aware, std::allocator<int>>));
+static_assert(__is_same(PlainUsesAllocator::value_type, bool));
+static_assert(__is_same(
+    PlainUsesAllocatorType, std::integral_constant<bool, false>));
+static_assert(__is_same(
+    AwareUsesAllocatorType, std::integral_constant<bool, true>));
 static_assert(!std::uses_allocator<Plain, IntAllocator>::value);
 static_assert(std::uses_allocator<Aware, IntAllocator>::value);
 extern "C" int memory_allocator_metadata() {
@@ -1551,6 +1564,9 @@ extern "C" int *memory_uninitialized_move_n(int *first, long count,
          "TR0201"),
         ("custom-allocator-traits-metadata",
          '#include <memory>\nstruct A{using value_type=int;};static_assert(__is_same(std::allocator_traits<A>,std::allocator_traits<A>));',
+         "TR0201"),
+        ("custom-uses-allocator-metadata",
+         '#include <memory>\nstruct A{using value_type=int;};static_assert(__is_same(std::uses_allocator<int,A>,std::uses_allocator<int,A>));',
          "TR0201"),
         ("runtime-allocator",
          '#include <memory>\nint main(){std::allocator<int> allocator;return 0;}',

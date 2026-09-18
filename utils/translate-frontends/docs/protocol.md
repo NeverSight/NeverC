@@ -1473,10 +1473,11 @@ documented standard-library direct operations reach semantic IR. The memory
 surface includes authenticated raw-pointer `pointer_traits`, exact
 `std::allocator<T>` and exact
 `std::allocator_traits<std::allocator<T>>` compile-time metadata. Their nested
-aliases, rebinds and constants, plus compatible `uses_allocator` values, close
+aliases, rebinds and constants, plus exact
+`uses_allocator<T, std::allocator<U>>` identities and inherited aliases, close
 through the existing checked type/query graph without allocator storage or a
-runtime call. Direct `std::addressof` and raw-pointer
-`pointer_traits::pointer_to` produce checked object addresses.
+runtime call. Their compatible values also fold. Direct `std::addressof` and
+raw-pointer `pointer_traits::pointer_to` produce checked object addresses.
 Its scalar-pointer `destroy_at`, `destroy` and `destroy_n` operations retain
 argument effects and counted pointer advancement without a runtime destructor
 call. Its ten C++17 scalar-pointer `uninitialized_*` copy, move, fill, default
