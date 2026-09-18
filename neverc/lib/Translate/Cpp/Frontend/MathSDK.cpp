@@ -2253,6 +2253,20 @@ static bool utilityAlgorithmScalarPointer(const ASTContext &Context,
          utilityScalar(Context, Type->getPointeeType());
 }
 
+static bool utilityMemoryDestructiblePointer(const State &S,
+                                             const SourceManager &SM,
+                                             const ASTContext &Context,
+                                             QualType Type) {
+  if (!utilityObjectPointer(Context, Type))
+    return false;
+  const auto Element = Type->getPointeeType();
+  if (utilityScalar(Context, Element))
+    return true;
+  const auto *Record = definedRecord(Element.getUnqualifiedType());
+  return Record && !Record->isUnion() && !Record->isDependentContext() &&
+         S.owns(SM, Record->getLocation());
+}
+
 static bool utilityAlgorithmEqualityPointer(const ASTContext &Context,
                                             QualType Type) {
   if (!utilityAlgorithmScalarPointer(Context, Type))
@@ -3481,6 +3495,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return utilityAlgorithmScalarPointer(Context, Parameter) &&
            Same(Call->getArg(Index)->getType(), Parameter);
   };
+  auto MemoryDestructionPointerParameter = [&](unsigned Index) {
+    if (Index >= Function->getNumParams() || Index >= Call->getNumArgs())
+      return false;
+    auto Parameter = Function->getParamDecl(Index)->getType();
+    return utilityMemoryDestructiblePointer(S, SM, Context, Parameter) &&
+           Same(Call->getArg(Index)->getType(), Parameter);
+  };
   auto AlgorithmEqualityPointerParameter = [&](unsigned Index) {
     if (Index >= Function->getNumParams() || Index >= Call->getNumArgs())
       return false;
@@ -3544,13 +3565,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   };
   if (Origin->Path == "__memory/construct_at.h") {
     if (Name == "destroy_at" && Call->getNumArgs() == 1 &&
-        Function->getNumParams() == 1 && AlgorithmPointerParameter(0) &&
+        Function->getNumParams() == 1 && MemoryDestructionPointerParameter(0) &&
         Function->getReturnType()->isVoidType() &&
         Same(Call->getType(), Function->getReturnType()))
       return UtilityOperation::MemoryDestroyAt;
     if (Name == "destroy" && Call->getNumArgs() == 2 &&
-        Function->getNumParams() == 2 && AlgorithmPointerParameter(0) &&
-        AlgorithmPointerParameter(1) &&
+        Function->getNumParams() == 2 && MemoryDestructionPointerParameter(0) &&
+        MemoryDestructionPointerParameter(1) &&
         Same(Function->getParamDecl(0)->getType(),
              Function->getParamDecl(1)->getType()) &&
         Function->getReturnType()->isVoidType() &&
@@ -3558,7 +3579,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return UtilityOperation::MemoryDestroy;
     if (Name == "destroy_n" && Call->getNumArgs() == 2 &&
         Function->getNumParams() == 2 && Call->isPRValue() &&
-        AlgorithmPointerParameter(0) && AlgorithmCountParameter(1) &&
+        MemoryDestructionPointerParameter(0) && AlgorithmCountParameter(1) &&
         Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
         Same(Call->getType(), Function->getReturnType()))
       return UtilityOperation::MemoryDestroyN;

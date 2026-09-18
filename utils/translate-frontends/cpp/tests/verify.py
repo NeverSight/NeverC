@@ -1555,6 +1555,7 @@ extern "C" int *memory_destroy_n(int *first, long count) {
     memory_destroy = check("v2-memory-destroy", memory_destroy_source,
                            profile="cpp-core-v2", sdk=True)
     assert len(memory_destroy["sdk_dependencies"]) == 267, memory_destroy
+    assert memory_destroy.get("memory_lifetimes") is True, memory_destroy
     assert not [node for node in walk(memory_destroy["functions"])
                 if node.get("op") in ("call", "mapped_call")], memory_destroy
     for target in sdk_targets:
@@ -1562,8 +1563,50 @@ extern "C" int *memory_destroy_n(int *first, long count) {
                               memory_destroy_source, profile="cpp-core-v2",
                               target=target, sdk=True)
         assert target_result["sdk_dependencies"] == memory_destroy["sdk_dependencies"], target_result
+        assert target_result.get("memory_lifetimes") is True, target_result
         assert not [node for node in walk(target_result["functions"])
                     if node.get("op") in ("call", "mapped_call")], target_result
+    memory_record_destroy_source = """\
+#include <memory>
+int record_drops;
+struct Record {
+  int value;
+  ~Record() { record_drops += value; }
+};
+extern "C" void memory_record_destroy_at(Record *pointer) {
+  std::destroy_at(pointer);
+}
+extern "C" void memory_record_destroy(Record *first, Record *last) {
+  std::destroy(first, last);
+}
+extern "C" Record *memory_record_destroy_n(Record *first, long count) {
+  return std::destroy_n(first, count);
+}
+"""
+
+    def check_memory_record_destroy(data):
+        calls = [node for node in walk(data["functions"])
+                 if node.get("op") in ("call", "mapped_call")]
+        names = {function["name"] for function in data["functions"]}
+        assert len(calls) == 3, data
+        assert all(call["op"] == "call" and
+                   call.get("callee", "").endswith("_destroy") and
+                   call["callee"] in names for call in calls), data
+
+    memory_record_destroy = check(
+        "v2-memory-record-destroy", memory_record_destroy_source,
+        profile="cpp-core-v2", sdk=True)
+    assert len(memory_record_destroy["sdk_dependencies"]) == 267, memory_record_destroy
+    assert memory_record_destroy.get("memory_lifetimes") is True, memory_record_destroy
+    check_memory_record_destroy(memory_record_destroy)
+    for target in sdk_targets:
+        target_result = check(
+            "v2-memory-record-destroy-" + target,
+            memory_record_destroy_source, profile="cpp-core-v2",
+            target=target, sdk=True)
+        assert target_result["sdk_dependencies"] == memory_record_destroy["sdk_dependencies"], target_result
+        assert target_result.get("memory_lifetimes") is True, target_result
+        check_memory_record_destroy(target_result)
     memory_uninitialized_source = """\
 #include <memory>
 extern "C" int *memory_uninitialized_copy(const int *first,
@@ -1675,14 +1718,8 @@ extern "C" int *memory_uninitialized_move_n(int *first, long count,
         ("destroy-at-volatile",
          '#include <memory>\nint main(){volatile int n=1;std::destroy_at(&n);}',
          "TR0203"),
-        ("destroy-at-record",
-         '#include <memory>\nstruct R{int n;~R(){n=0;}};int main(){R r{1};std::destroy_at(&r);}',
-         "TR0203"),
-        ("destroy-record-range",
-         '#include <memory>\nstruct R{int n;};int main(){R r[1]{{1}};std::destroy(r,r+1);}',
-         "TR0203"),
-        ("destroy-n-record",
-         '#include <memory>\nstruct R{int n;};int main(){R r[1]{{1}};return std::destroy_n(r,1)==r+1?0:1;}',
+        ("destroy-custom-iterator",
+         '#include <memory>\nstruct I{int*p;int&operator*()const{return *p;}I&operator++(){++p;return *this;}friend bool operator!=(I a,I b){return a.p!=b.p;}};void f(I a,I b){std::destroy(a,b);}',
          "TR0203"),
         ("forged-destroy-n",
          'namespace std{template<class I,class N>I destroy_n(I,N);}int main(){int n=1;return *std::destroy_n(&n,1);}',

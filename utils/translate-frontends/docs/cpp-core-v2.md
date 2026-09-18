@@ -485,12 +485,14 @@ objects, evaluate the bound argument once, and bypass an overloaded
 call libc++ at runtime.
 
 The exact C++17 `std::destroy_at`, `std::destroy` and `std::destroy_n`
-templates also lower for raw pointers to admitted scalar objects. Scalar
-destruction is trivial, so `destroy_at` and `destroy` retain each pointer
-argument once without emitting a destructor call. `destroy_n` additionally
-advances and returns the captured pointer once per positive count; zero and
-negative signed counts return the original pointer. No operation reads the
-destroyed scalar value.
+templates also lower for raw pointers to admitted scalar objects and complete
+source-owned non-union records. Scalar and trivial-record destruction have no
+runtime body. Nontrivial records call their existing checked destruction helper:
+`destroy_at` destroys one object, while `destroy` and `destroy_n` walk forward
+and destroy each selected object in order. Every pointer and count argument is
+captured once. `destroy_n` advances and returns the captured pointer once per
+positive count; zero and negative signed counts return the original pointer.
+All three operations enable the checked `memory_lifetimes` alias policy.
 
 The exact `std::uninitialized_copy`, `std::uninitialized_copy_n`,
 `std::uninitialized_fill`, `std::uninitialized_fill_n`,
@@ -508,13 +510,13 @@ the exact pointer or pointer-pair result is preserved. Scalar operations cannot
 throw, so these direct loops require no exception cleanup.
 
 Volatile objects, rvalues for address utilities, function pointers,
-fancy-pointer `pointer_traits`, non-scalar destruction, custom iterators,
+fancy-pointer `pointer_traits`, array-element destruction, custom iterators,
 heterogeneous or non-scalar uninitialized construction, function addresses,
 quoted includes, shadows and forged declarations remain rejected. Allocators,
 other than the exact compile-time metadata above, remain rejected. Runtime
-allocator objects and calls, record construction, nontrivial destruction, smart
-pointers and ownership factories await layout, allocation behavior, lifetime,
-error handling and cross-target ABI contracts.
+allocator objects and calls, record construction through `uninitialized_*`,
+smart pointers and ownership factories await their own checked lifetime and ABI
+contracts.
 
 ## Algorithm header from `<algorithm>`
 

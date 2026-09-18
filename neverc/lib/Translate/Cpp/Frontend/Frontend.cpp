@@ -13318,9 +13318,15 @@ public:
           approvedUtilityConstant(A.S, A.Sources, C, A.Context,
                                   UtilityValue))
         return true;
-      if (A.S.coreV2() &&
-          approvedUtilityOperation(A.S, A.Sources, C, A.Context))
-        return true;
+      if (A.S.coreV2())
+        if (auto Operation =
+                approvedUtilityOperation(A.S, A.Sources, C, A.Context)) {
+          if (*Operation == UtilityOperation::MemoryDestroyAt ||
+              *Operation == UtilityOperation::MemoryDestroy ||
+              *Operation == UtilityOperation::MemoryDestroyN)
+            A.S.Module["memory_lifetimes"] = true;
+          return true;
+        }
       if (A.S.coreV2() && UtilityPairAssignment)
         return true;
       if (A.S.coreV2() && UtilityTupleAssignment)

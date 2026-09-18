@@ -1235,17 +1235,37 @@ class FunctionLowering {
           cast(address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L),
                type(Call->getType(), L), L),
           L);
-    case UtilityOperation::MemoryDestroyAt:
-      // The admitted scalar object has a trivial destructor. Retain the bound
-      // pointer evaluation while its pseudo-destructor contributes no runtime
-      // operation to the portable program.
-      snapshot(expression(Call->getArg(0)), L);
+    case UtilityOperation::MemoryDestroyAt: {
+      auto Pointer = snapshot(expression(Call->getArg(0)), L);
+      destroy(dereference(Pointer, L),
+              Call->getArg(0)->getType()->getPointeeType(), L);
       return {};
-    case UtilityOperation::MemoryDestroy:
+    }
+    case UtilityOperation::MemoryDestroy: {
+      auto Current = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      const auto ElementType = Call->getArg(0)->getType()->getPointeeType();
+      if (!needsDestruction(ElementType))
+        return {};
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto Check = labelName(), Destruct = labelName(), End = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", Current, Last, "bool", L), Destruct, End, L);
+      label(Destruct, L);
+      destroy(dereference(Current, L), ElementType, L);
+      assign(
+          Current,
+          binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      jump(Check, L);
+      label(End, L);
+      return {};
+    }
     case UtilityOperation::MemoryUninitializedDefaultConstruct:
-      // Both range arguments are still evaluated once. Scalar destruction and
-      // default initialization have no observable body after those bindings;
-      // scalar lifetime is represented by the existing checked storage.
+      // Scalar default initialization has no observable body after the range
+      // bindings; its lifetime is represented by the checked storage.
       snapshot(expression(Call->getArg(0)), L);
       snapshot(expression(Call->getArg(1)), L);
       return {};
@@ -1268,6 +1288,9 @@ class FunctionLowering {
       branch(binary(">", Remaining, quantity(0, CountTypeName, L), "bool", L),
              Advance, End, L);
       label(Advance, L);
+      if (Operation == UtilityOperation::MemoryDestroyN)
+        destroy(dereference(Current, L),
+                Call->getArg(0)->getType()->getPointeeType(), L);
       assign(
           Current,
           binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),

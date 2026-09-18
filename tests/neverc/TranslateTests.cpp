@@ -24889,7 +24889,93 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2MemoryDestructionRequiresExactScalarPointerForms) {
+TEST_F(TranslateTest, CoreV2MemoryRecordDestructionRunsAtBothOptimizations) {
+  const auto Source = tmpFile("memory-record-destroy.cpp");
+  const auto Output = tmpFile("memory-record-destroy.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+struct Storage { unsigned long long alignment; unsigned char bytes[512]; };
+int effects;
+int destroyed;
+int order;
+struct Record {
+  int value;
+  Record(int input) : value(input) {}
+  ~Record() { ++destroyed; order = order * 10 + value; }
+};
+Record *observe(Record *pointer) { ++effects; return pointer; }
+long observe_count(long count) { ++effects; return count; }
+int main() {
+  Storage one{};
+  Record *single = new (one.bytes) Record(7);
+  effects = 0;
+  std::destroy_at(observe(single));
+  if (effects != 1 || destroyed != 1 || order != 7)
+    return 1;
+
+  Storage two{};
+  Record *range = new (two.bytes) Record(1);
+  new (range + 1) Record(2);
+  new (range + 2) Record(3);
+  effects = 0;
+  std::destroy(observe(range), observe(range + 3));
+  if (effects != 2 || destroyed != 4 || order != 7123)
+    return 2;
+
+  Storage three{};
+  Record *counted = new (three.bytes) Record(4);
+  new (counted + 1) Record(5);
+  effects = 0;
+  Record *end = std::destroy_n(observe(counted), observe_count(2));
+  if (effects != 2 || end != counted + 2 || destroyed != 6 ||
+      order != 712345)
+    return 3;
+
+  Storage four{};
+  Record *untouched = new (four.bytes) Record(6);
+  effects = 0;
+  Record *same = std::destroy_n(observe(untouched), observe_count(-2));
+  if (effects != 2 || same != untouched || destroyed != 6 ||
+      order != 712345)
+    return 4;
+  std::destroy_at(untouched);
+  if (destroyed != 7 || order != 7123456)
+    return 5;
+
+  struct Trivial { int value; };
+  Storage five{};
+  Trivial *trivial = new (five.bytes) Trivial{1};
+  new (trivial + 1) Trivial{2};
+  if (std::destroy_n(trivial, 2) != trivial + 2)
+    return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *SDK = Manifest->getAsObject()->getObject("sdk");
+  ASSERT_NE(SDK, nullptr);
+  const auto *Dependencies = SDK->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 267u);
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("memory-record-destroy" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2MemoryDestructionRequiresExactObjectPointerForms) {
   struct Rejection {
     const char *Name;
     const char *Source;
@@ -24901,17 +24987,10 @@ TEST_F(TranslateTest, CoreV2MemoryDestructionRequiresExactScalarPointerForms) {
       {"destroy-at-volatile",
        "#include <memory>\nint main(){volatile int n=1;std::destroy_at(&n);}",
        "TR0203"},
-      {"destroy-at-record",
-       "#include <memory>\nstruct R{int n;~R(){n=0;}};"
-       "int main(){R r{1};std::destroy_at(&r);}",
-       "TR0203"},
-      {"destroy-record-range",
-       "#include <memory>\nstruct R{int n;};"
-       "int main(){R r[1]{{1}};std::destroy(r,r+1);}",
-       "TR0203"},
-      {"destroy-n-record",
-       "#include <memory>\nstruct R{int n;};"
-       "int main(){R r[1]{{1}};return std::destroy_n(r,1)==r+1?0:1;}",
+      {"destroy-custom-iterator",
+       "#include <memory>\nstruct I{int*p;int&operator*()const{return *p;}"
+       "I&operator++(){++p;return *this;}friend bool operator!=(I a,I b){"
+       "return a.p!=b.p;}};void f(I a,I b){std::destroy(a,b);}",
        "TR0203"},
       {"forged-destroy-n",
        "namespace std{template<class I,class N>I destroy_n(I,N);}"
