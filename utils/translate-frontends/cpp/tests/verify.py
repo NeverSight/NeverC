@@ -1710,6 +1710,53 @@ extern "C" MemoryRecord *memory_record_uninitialized_move_n(
         assert target_result.get("memory_lifetimes") is True, target_result
         assert not [node for node in walk(target_result["functions"])
                     if node.get("op") in ("call", "mapped_call")], target_result
+    memory_default_record_source = """\
+#include <memory>
+struct MemoryDefaultRecord {
+  int value;
+  MemoryDefaultRecord() noexcept : value(7) {}
+};
+extern "C" void memory_default_record_construct(
+    MemoryDefaultRecord *first, MemoryDefaultRecord *last) {
+  std::uninitialized_default_construct(first, last);
+}
+extern "C" MemoryDefaultRecord *memory_default_record_construct_n(
+    MemoryDefaultRecord *first, long count) {
+  return std::uninitialized_default_construct_n(first, count);
+}
+extern "C" void memory_value_record_construct(
+    MemoryDefaultRecord *first, MemoryDefaultRecord *last) {
+  std::uninitialized_value_construct(first, last);
+}
+extern "C" MemoryDefaultRecord *memory_value_record_construct_n(
+    MemoryDefaultRecord *first, long count) {
+  return std::uninitialized_value_construct_n(first, count);
+}
+"""
+
+    def check_memory_default_record(data):
+        calls = [node for node in walk(data["functions"])
+                 if node.get("op") in ("call", "mapped_call")]
+        names = {function["name"] for function in data["functions"]}
+        assert len(data["functions"]) == 5, data
+        assert len(calls) == 4, data
+        assert all(call["op"] == "call" and call["callee"] in names
+                   for call in calls), data
+
+    memory_default_record = check(
+        "v2-memory-default-record", memory_default_record_source,
+        profile="cpp-core-v2", sdk=True)
+    assert len(memory_default_record["sdk_dependencies"]) == 267, memory_default_record
+    assert memory_default_record.get("memory_lifetimes") is True, memory_default_record
+    check_memory_default_record(memory_default_record)
+    for target in sdk_targets:
+        target_result = check(
+            "v2-memory-default-record-" + target,
+            memory_default_record_source, profile="cpp-core-v2",
+            target=target, sdk=True)
+        assert target_result["sdk_dependencies"] == memory_default_record["sdk_dependencies"], target_result
+        assert target_result.get("memory_lifetimes") is True, target_result
+        check_memory_default_record(target_result)
     check("v2-memory-quoted",
           '#include "memory"\nint main(){return 0;}', "TR0201",
           profile="cpp-core-v2", sdk=True)
@@ -1782,6 +1829,9 @@ extern "C" MemoryRecord *memory_record_uninitialized_move_n(
          "TR0203"),
         ("uninitialized-value-record",
          '#include <memory>\nstruct R{int n;R():n(1){}};int main(){R a[1];std::uninitialized_value_construct(a,a+1);}',
+         "TR0203"),
+        ("uninitialized-default-argument-record",
+         '#include <memory>\nstruct R{int n;R(int v=1)noexcept:n(v){}};void f(R*p){std::uninitialized_default_construct(p,p+1);}',
          "TR0203"),
         ("uninitialized-copy-function-pointer",
          '#include <memory>\nusing F=void();int main(){F*a[1]{};F*b[1];std::uninitialized_copy(a,a+1,b);}',

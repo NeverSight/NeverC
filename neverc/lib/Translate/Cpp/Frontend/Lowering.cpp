@@ -1263,15 +1263,43 @@ class FunctionLowering {
       label(End, L);
       return {};
     }
-    case UtilityOperation::MemoryUninitializedDefaultConstruct:
-      // Scalar default initialization has no observable body after the range
-      // bindings; its lifetime is represented by the checked storage.
-      snapshot(expression(Call->getArg(0)), L);
-      snapshot(expression(Call->getArg(1)), L);
+    case UtilityOperation::MemoryUninitializedDefaultConstruct: {
+      auto Current = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      const auto ElementType =
+          Call->getArg(0)->getType()->getPointeeType().getUnqualifiedType();
+      const auto *Constructor = approvedUtilityMemoryDefaultConstructor(
+          A.S, A.Sources, ElementType, A.Context);
+      if (!Constructor || Constructor->isTrivial())
+        return {};
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto Check = labelName(), Construct = labelName(),
+                 End = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", Current, Last, "bool", L), Construct, End, L);
+      label(Construct, L);
+      constructMemoryDefault(dereference(Current, L), ElementType, Constructor,
+                             false, L);
+      assign(
+          Current,
+          binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      jump(Check, L);
+      label(End, L);
       return {};
+    }
     case UtilityOperation::MemoryDestroyN:
     case UtilityOperation::MemoryUninitializedDefaultConstructN: {
       auto Current = snapshot(expression(Call->getArg(0)), L);
+      const auto ElementType =
+          Call->getArg(0)->getType()->getPointeeType().getUnqualifiedType();
+      const auto *Constructor =
+          Operation == UtilityOperation::MemoryUninitializedDefaultConstructN
+              ? approvedUtilityMemoryDefaultConstructor(A.S, A.Sources,
+                                                        ElementType, A.Context)
+              : nullptr;
       auto CountType = Call->getArg(1)->getType();
       if (const auto *Enumeration = CountType->getAs<EnumType>())
         CountType = Enumeration->getDecl()->getPromotionType();
@@ -1289,8 +1317,10 @@ class FunctionLowering {
              Advance, End, L);
       label(Advance, L);
       if (Operation == UtilityOperation::MemoryDestroyN)
-        destroy(dereference(Current, L),
-                Call->getArg(0)->getType()->getPointeeType(), L);
+        destroy(dereference(Current, L), ElementType, L);
+      else if (Constructor && !Constructor->isTrivial())
+        constructMemoryDefault(dereference(Current, L), ElementType,
+                               Constructor, false, L);
       assign(
           Current,
           binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),
@@ -1323,6 +1353,8 @@ class FunctionLowering {
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto ElementType =
           Call->getArg(0)->getType()->getPointeeType().getUnqualifiedType();
+      const auto *Constructor = approvedUtilityMemoryDefaultConstructor(
+          A.S, A.Sources, ElementType, A.Context);
       const auto Check = labelName(), Construct = labelName(),
                  End = labelName();
       jump(Check, L);
@@ -1332,7 +1364,8 @@ class FunctionLowering {
                      : binary("!=", Current, Boundary, "bool", L),
              Construct, End, L);
       label(Construct, L);
-      assign(dereference(Current, L), A.zero(ElementType, L), L);
+      constructMemoryDefault(dereference(Current, L), ElementType, Constructor,
+                             true, L);
       assign(
           Current,
           binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),
@@ -7284,6 +7317,40 @@ class FunctionLowering {
       return;
     }
     assign(std::move(Place), A.zero(T, L), L);
+  }
+  void constructMemoryDefault(Expression Place, QualType T,
+                              const CXXConstructorDecl *Constructor,
+                              bool ValueInitialize, SourceLocation L) {
+    if (!T->isRecordType()) {
+      if (Constructor)
+        reject(L, "memory construction",
+               "A scalar destination cannot select a constructor.");
+      if (ValueInitialize)
+        initializeZero(std::move(Place), T, L);
+      return;
+    }
+    if (!Constructor ||
+        T->getAsCXXRecordDecl()->getCanonicalDecl() !=
+            Constructor->getParent()->getCanonicalDecl() ||
+        Place.getString("type") != type(T, L))
+      reject(L, "memory construction",
+             "Constructor and destination types differ.");
+    if (ValueInitialize && !Constructor->isUserProvided())
+      initializeZero(Place, T, L);
+    if (Constructor->isTrivial())
+      return;
+    if (!supportedConstructor(Constructor) || !Constructor->hasBody() ||
+        Constructor->getNumParams())
+      reject(L, "memory construction",
+             "Unsupported selected default constructor.");
+    json::Array Args;
+    Args.push_back(
+        snapshot(address(std::move(Place), T.getUnqualifiedType(), L), L));
+    chargeCall(Args, L);
+    Body.push_back(json::Object{{"op", "call"},
+                                {"callee", A.name(Constructor)},
+                                {"args", std::move(Args)},
+                                {"loc", A.loc(L)}});
   }
   bool recordValue(QualType T) const {
     return A.S.coreV2() && T->isRecordType();

@@ -25311,6 +25311,145 @@ int main() {
   }
 }
 
+TEST_F(
+    TranslateTest,
+    CoreV2MemoryNothrowDefaultRecordUninitializedAlgorithmsRunAtBothOptimizations) {
+  const auto Source = tmpFile("memory-default-record-uninitialized.cpp");
+  const auto Output = tmpFile("memory-default-record-uninitialized.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+struct Storage { unsigned long long alignment; unsigned char bytes[256]; };
+int effects;
+int created;
+int destroyed;
+struct Record {
+  int value;
+  Record() noexcept : value(++created) {}
+  ~Record() noexcept { ++destroyed; }
+};
+Record *raw_record(Storage &storage) {
+  return static_cast<Record *>(static_cast<void *>(storage.bytes));
+}
+Record *observe_record(Record *pointer) { ++effects; return pointer; }
+long observe_count(long count) { ++effects; return count; }
+
+int member_created;
+int member_destroyed;
+struct Member {
+  int value;
+  Member() noexcept : value(++member_created) {}
+  ~Member() noexcept { ++member_destroyed; }
+};
+struct Defaulted {
+  int zero;
+  Member member;
+  Defaulted() noexcept = default;
+};
+Defaulted *raw_defaulted(Storage &storage) {
+  return static_cast<Defaulted *>(static_cast<void *>(storage.bytes));
+}
+Defaulted *observe_defaulted(Defaulted *pointer) {
+  ++effects;
+  return pointer;
+}
+void dirty(Storage &storage) {
+  for (int index = 0; index != 256; ++index)
+    storage.bytes[index] = 255;
+}
+
+int main() {
+  Storage range_storage{};
+  dirty(range_storage);
+  Record *range = raw_record(range_storage);
+  effects = created = destroyed = 0;
+  std::uninitialized_default_construct(observe_record(range),
+                                       observe_record(range + 3));
+  if (effects != 2 || created != 3 || range[0].value != 1 ||
+      range[2].value != 3)
+    return 1;
+  std::destroy(range, range + 3);
+  if (destroyed != 3)
+    return 2;
+
+  Storage counted_storage{};
+  dirty(counted_storage);
+  Record *counted = raw_record(counted_storage);
+  effects = 0;
+  Record *counted_end = std::uninitialized_default_construct_n(
+      observe_record(counted), observe_count(2));
+  if (effects != 2 || counted_end != counted + 2 || created != 5 ||
+      counted[0].value != 4 || counted[1].value != 5)
+    return 3;
+  Storage negative_default_storage{};
+  Record *negative_default = raw_record(negative_default_storage);
+  if (std::uninitialized_default_construct_n(negative_default, -2) !=
+          negative_default ||
+      created != 5)
+    return 4;
+  if (std::destroy_n(counted, 2) != counted + 2 || destroyed != 5)
+    return 5;
+
+  Storage value_storage{};
+  dirty(value_storage);
+  Defaulted *values = raw_defaulted(value_storage);
+  effects = member_created = member_destroyed = 0;
+  std::uninitialized_value_construct(observe_defaulted(values),
+                                     observe_defaulted(values + 2));
+  if (effects != 2 || member_created != 2 || values[0].zero != 0 ||
+      values[1].zero != 0 || values[0].member.value != 1 ||
+      values[1].member.value != 2)
+    return 6;
+  std::destroy(values, values + 2);
+  if (member_destroyed != 2)
+    return 7;
+
+  Storage value_n_storage{};
+  dirty(value_n_storage);
+  Defaulted *values_n = raw_defaulted(value_n_storage);
+  effects = 0;
+  Defaulted *value_n_end = std::uninitialized_value_construct_n(
+      observe_defaulted(values_n), observe_count(2));
+  if (effects != 2 || value_n_end != values_n + 2 || member_created != 4 ||
+      values_n[0].zero != 0 || values_n[1].zero != 0 ||
+      values_n[0].member.value != 3 || values_n[1].member.value != 4)
+    return 8;
+  Storage negative_value_storage{};
+  Defaulted *negative_value = raw_defaulted(negative_value_storage);
+  if (std::uninitialized_value_construct_n(negative_value, -2) !=
+          negative_value ||
+      member_created != 4)
+    return 9;
+  if (std::destroy_n(values_n, 2) != values_n + 2 ||
+      member_destroyed != 4)
+    return 10;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *SDK = Manifest->getAsObject()->getObject("sdk");
+  ASSERT_NE(SDK, nullptr);
+  const auto *Dependencies = SDK->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 267u);
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("memory-default-record-uninitialized" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest,
        CoreV2MemoryUninitializedAlgorithmsRequireExactSupportedPointerForms) {
   struct Rejection {
@@ -25331,9 +25470,13 @@ TEST_F(TranslateTest,
        "#include <memory>\nint main(){int a[1]{1};long b[1];"
        "std::uninitialized_copy(a,a+1,b);}",
        "TR0203"},
-      {"value-record",
+      {"value-throwing-record",
        "#include <memory>\nstruct R{int n;R():n(1){}};int main(){R a[1];"
        "std::uninitialized_value_construct(a,a+1);}",
+       "TR0203"},
+      {"default-argument-record",
+       "#include <memory>\nstruct R{int n;R(int v=1)noexcept:n(v){}};"
+       "void f(R*p){std::uninitialized_default_construct(p,p+1);}",
        "TR0203"},
       {"copy-function-pointer",
        "#include <memory>\nusing F=void();int main(){F*a[1]{};F*b[1];"

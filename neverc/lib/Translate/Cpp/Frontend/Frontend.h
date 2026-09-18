@@ -685,6 +685,9 @@ std::optional<UtilityOperation>
 approvedUtilityOperation(const State &S, const clang::SourceManager &SM,
                          const clang::CallExpr *Call,
                          const clang::ASTContext &Context);
+const clang::CXXConstructorDecl *approvedUtilityMemoryDefaultConstructor(
+    const State &S, const clang::SourceManager &SM, clang::QualType Element,
+    const clang::ASTContext &Context);
 bool approvedUtilityDefaultArgument(const State &S,
                                     const clang::SourceManager &SM,
                                     const clang::CXXDefaultArgExpr *Default,

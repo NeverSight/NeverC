@@ -2293,6 +2293,58 @@ static bool utilityMemoryWritableTrivialPointer(const State &S,
          !Type->getPointeeType().isConstQualified();
 }
 
+const CXXConstructorDecl *
+approvedUtilityMemoryDefaultConstructor(const State &S, const SourceManager &SM,
+                                        QualType Element,
+                                        const ASTContext &Context) {
+  const auto *Record = definedRecord(Element.getUnqualifiedType());
+  if (!Record || Record->isUnion() || Record->isDependentContext() ||
+      !S.owns(SM, Record->getLocation()))
+    return nullptr;
+  const CXXConstructorDecl *Constructor = nullptr;
+  for (const auto *Candidate : Record->ctors()) {
+    if (!Candidate->isDefaultConstructor())
+      continue;
+    if (Constructor &&
+        Constructor->getCanonicalDecl() != Candidate->getCanonicalDecl())
+      return nullptr;
+    Constructor = Candidate;
+  }
+  const auto *Prototype =
+      Constructor ? Constructor->getType()->getAs<FunctionProtoType>()
+                  : nullptr;
+  if (!Constructor || Constructor->isInvalidDecl() ||
+      Constructor->isDeleted() || Constructor->getNumParams() ||
+      !supportedConstructor(Constructor) || !Prototype ||
+      !Prototype->isNothrow() || !S.owns(SM, Constructor->getLocation()))
+    return nullptr;
+  if (Constructor->isTrivial())
+    return Constructor;
+  const FunctionDecl *Definition = nullptr;
+  if (!Constructor->hasBody(Definition) || !Definition ||
+      !S.owns(SM, Definition->getLocation()))
+    return nullptr;
+  return cast<CXXConstructorDecl>(Definition);
+}
+
+static bool utilityMemoryDefaultPointer(const State &S, const SourceManager &SM,
+                                        const ASTContext &Context,
+                                        QualType Type) {
+  if (!utilityObjectPointer(Context, Type))
+    return false;
+  const auto Element = Type->getPointeeType();
+  return utilityMemoryTrivialValue(S, SM, Context, Element) ||
+         approvedUtilityMemoryDefaultConstructor(S, SM, Element, Context);
+}
+
+static bool utilityMemoryWritableDefaultPointer(const State &S,
+                                                const SourceManager &SM,
+                                                const ASTContext &Context,
+                                                QualType Type) {
+  return utilityMemoryDefaultPointer(S, SM, Context, Type) &&
+         !Type->getPointeeType().isConstQualified();
+}
+
 static bool utilityAlgorithmEqualityPointer(const ASTContext &Context,
                                             QualType Type) {
   if (!utilityAlgorithmScalarPointer(Context, Type))
@@ -3535,6 +3587,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return utilityMemoryTrivialPointer(S, SM, Context, Parameter) &&
            Same(Call->getArg(Index)->getType(), Parameter);
   };
+  auto MemoryDefaultPointerParameter = [&](unsigned Index) {
+    if (Index >= Function->getNumParams() || Index >= Call->getNumArgs())
+      return false;
+    auto Parameter = Function->getParamDecl(Index)->getType();
+    return utilityMemoryDefaultPointer(S, SM, Context, Parameter) &&
+           Same(Call->getArg(Index)->getType(), Parameter);
+  };
   auto AlgorithmEqualityPointerParameter = [&](unsigned Index) {
     if (Index >= Function->getNumParams() || Index >= Call->getNumArgs())
       return false;
@@ -3647,6 +3706,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         MemoryUninitializedPointerParameter(0) &&
         utilityMemoryWritableTrivialPointer(
             S, SM, Context, Function->getParamDecl(0)->getType());
+    const bool WritableDefaultFirst =
+        Function->getNumParams() != 0 && MemoryDefaultPointerParameter(0) &&
+        utilityMemoryWritableDefaultPointer(
+            S, SM, Context, Function->getParamDecl(0)->getType());
     if ((Name == "uninitialized_copy" || Name == "uninitialized_move") &&
         Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
         Call->isPRValue() && MemoryUninitializedPointerParameter(0) &&
@@ -3692,7 +3755,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if ((Name == "uninitialized_default_construct" ||
          Name == "uninitialized_value_construct") &&
         Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
-        WritableFirst && MemoryUninitializedPointerParameter(1) &&
+        WritableDefaultFirst && MemoryDefaultPointerParameter(1) &&
         Same(Function->getParamDecl(0)->getType(),
              Function->getParamDecl(1)->getType()) &&
         Function->getReturnType()->isVoidType() &&
@@ -3703,7 +3766,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if ((Name == "uninitialized_default_construct_n" ||
          Name == "uninitialized_value_construct_n") &&
         Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
-        Call->isPRValue() && WritableFirst && AlgorithmCountParameter(1) &&
+        Call->isPRValue() && WritableDefaultFirst &&
+        AlgorithmCountParameter(1) &&
         Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
         Same(Call->getType(), Function->getReturnType()))
       return Name == "uninitialized_default_construct_n"

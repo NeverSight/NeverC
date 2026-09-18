@@ -160,9 +160,14 @@ retained. The scalar-pointer and trivial source-record `uninitialized_copy`,
 `uninitialized_value_construct`, `uninitialized_value_construct_n`,
 `uninitialized_move` and `uninitialized_move_n` forms also lower directly.
 The record form requires a complete source-owned non-union, standard-layout
-trivial element type. Runtime allocator objects and calls, nontrivial record
-construction through `uninitialized_*`, ownership objects and the remaining
-memory operations stay outside the direct lowering boundary.
+trivial element type. The four default/value-construction forms additionally
+accept a complete source-owned non-union record with an exact zero-parameter
+source-owned `noexcept` default constructor. They call that constructor for
+each selected object; value construction first zeroes a complete object when
+the constructor is not user-provided. Runtime allocator objects and calls,
+potentially throwing or default-argument construction, nontrivial record
+copy/move/fill, ownership objects and the remaining memory operations stay
+outside the direct lowering boundary.
 Core v2 never admits the `platform` root.
 Math v1 continues to use its separately checked libc++, resource and Darwin
 platform closure for `<cmath>`.

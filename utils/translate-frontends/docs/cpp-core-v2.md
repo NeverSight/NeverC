@@ -506,20 +506,32 @@ complete, source-owned, non-union, standard-layout and trivial. Copy, move and
 fill construct each destination from the captured input or value. Value
 construction stores the scalar zero or null value, or recursively zeroes the
 record fields. Default construction starts the object lifetime without
-inventing a write. Every argument is retained once, range forms advance to
-their end, counted forms run only while the promoted count is positive, and the
-exact pointer or pointer-pair result is preserved. All ten operations enable
-the checked `memory_lifetimes` alias policy. Admitted operations cannot throw,
-so these direct loops require no exception cleanup.
+inventing a write.
+
+The four default/value-construction forms additionally accept a complete
+source-owned non-union record whose selected default constructor is
+source-owned, takes exactly zero parameters, has a supported definition and is
+resolved `noexcept(true)`. Default construction calls it once per object.
+Value construction first recursively zeroes the complete object when the
+selected constructor is not user-provided, then calls the constructor. This
+preserves zero-initialization of untouched scalar members before a defaulted
+nontrivial constructor initializes its record members.
+
+Every argument is retained once, range forms advance to their end, counted
+forms run only while the promoted count is positive, and the exact pointer or
+pointer-pair result is preserved. All ten operations enable the checked
+`memory_lifetimes` alias policy. Admitted operations cannot throw, so these
+direct loops require no exception cleanup.
 
 Volatile objects, rvalues for address utilities, function pointers,
 fancy-pointer `pointer_traits`, array-element destruction, custom iterators,
-heterogeneous, union, nontrivial or non-source-record uninitialized
-construction, function addresses, quoted includes, shadows and forged
-declarations remain rejected. Allocators, other than the exact compile-time
-metadata above, remain rejected. Runtime allocator objects and calls,
-nontrivial record construction through `uninitialized_*`, smart pointers and
-ownership factories await their own checked lifetime and ABI contracts.
+heterogeneous, union or non-source-record uninitialized construction, function
+addresses, quoted includes, shadows and forged declarations remain rejected.
+Potentially throwing/default-argument constructors and nontrivial record
+copy/move/fill remain rejected. Allocators, other than the exact compile-time
+metadata above, remain rejected. Runtime allocator objects and calls, smart
+pointers and ownership factories await their own checked lifetime and ABI
+contracts.
 
 ## Algorithm header from `<algorithm>`
 

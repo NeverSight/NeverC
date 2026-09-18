@@ -13322,6 +13322,21 @@ public:
         if (auto Operation =
                 approvedUtilityOperation(A.S, A.Sources, C, A.Context)) {
           switch (*Operation) {
+          case UtilityOperation::MemoryUninitializedDefaultConstruct:
+          case UtilityOperation::MemoryUninitializedDefaultConstructN:
+          case UtilityOperation::MemoryUninitializedValueConstruct:
+          case UtilityOperation::MemoryUninitializedValueConstructN:
+            if (const auto *Constructor =
+                    approvedUtilityMemoryDefaultConstructor(
+                        A.S, A.Sources,
+                        C->getArg(0)->getType()->getPointeeType(), A.Context))
+              if (!Constructor->isTrivial() && defaultedLifecycle(Constructor))
+                queueGenerated(Constructor, C->getExprLoc());
+            break;
+          default:
+            break;
+          }
+          switch (*Operation) {
           case UtilityOperation::MemoryDestroyAt:
           case UtilityOperation::MemoryDestroy:
           case UtilityOperation::MemoryDestroyN:
