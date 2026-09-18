@@ -24528,6 +24528,78 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2NumericGcdLcmRunAtBothOptimizations) {
+  const auto Source = tmpFile("numeric-gcd-lcm.cpp");
+  const auto Output = tmpFile("numeric-gcd-lcm.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+int main() {
+  int effects = 0;
+  int left = -48;
+  int right = 18;
+  int gcd = std::gcd((++effects, left), (++effects, right));
+  int lcm = std::lcm((++effects, left), (++effects, right));
+  if (effects != 4 || gcd != 6 || lcm != 144)
+    return 1;
+
+  short narrow_left = -12;
+  short narrow_right = 18;
+  if (std::gcd(narrow_left, narrow_right) != 6 ||
+      std::lcm(narrow_left, narrow_right) != 36)
+    return 2;
+
+  int mixed_left = -42;
+  unsigned mixed_right = 56;
+  if (std::gcd(mixed_left, mixed_right) != 14u ||
+      std::lcm(mixed_left, mixed_right) != 168u)
+    return 3;
+
+  long long wide_left = -84;
+  unsigned long long wide_right = 126;
+  if (std::gcd(wide_left, wide_right) != 42ull ||
+      std::lcm(wide_left, wide_right) != 252ull)
+    return 4;
+
+  if (std::gcd(0, 0) != 0 || std::gcd(-24, -18) != 6 ||
+      std::lcm(0, -7) != 0)
+    return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("numeric-gcd-lcm" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NumericGcdLcmRejectsUnsupportedForms) {
+  const auto Wide = tmpFile("numeric-gcd-wide.cpp");
+  const auto WideOutput = tmpFile("numeric-gcd-wide.nc");
+  writeFile(Wide, "#include <numeric>\nint main(){unsigned __int128 a=12,b=18;"
+                  "return std::gcd(a,b)==6?0:1;}");
+  expectCode(
+      translate(Wide, {"--profile", "cpp-core-v2", "-o", WideOutput.string()}),
+      "TR0201");
+  expectNoArtifacts(WideOutput);
+
+  const auto Address = tmpFile("numeric-gcd-address.cpp");
+  const auto AddressOutput = tmpFile("numeric-gcd-address.nc");
+  writeFile(Address, "#include <numeric>\nint main(){auto p=&std::gcd<int,int>;"
+                     "return p(12,18)==6?0:1;}");
+  expectCode(translate(Address, {"--profile", "cpp-core-v2", "-o",
+                                 AddressOutput.string()}),
+             "TR0201");
+  expectNoArtifacts(AddressOutput);
+}
+
 TEST_F(TranslateTest, CoreV2NumericCxx17DefaultsRequireExactScalarForms) {
   struct Rejection {
     const char *Name;

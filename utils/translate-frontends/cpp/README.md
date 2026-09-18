@@ -66,8 +66,8 @@ and [`<tuple>`](../docs/cpp-core-v2.md#value-tuples-from-tuple) and
 [`<algorithm>`](../docs/cpp-core-v2.md#algorithm-header-from-algorithm) pointer
 algorithm surface. The exact
 [`<numeric>`](../docs/cpp-core-v2.md#numeric-header-from-numeric) header is also
-authenticated; its sequential scalar-pointer operations and default C++17
-reductions and scans lower directly. The
+authenticated; its sequential scalar-pointer operations, default C++17
+reductions and scans, and integer `gcd`/`lcm` lower directly. The
 frontend uses the pinned embedded libc++/resource VFS and exposes resolved type
 aliases plus integral/enum constant results. It records all consumed header
 hashes: 101 for the `<type_traits>` closure, nine for standalone `<cstdint>`,

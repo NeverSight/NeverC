@@ -122,9 +122,10 @@ The `<numeric>` surface has a 126-file libc++/resource closure on every
 core-v2 target. The exact default `iota`, `accumulate`, `inner_product`,
 `partial_sum`, `adjacent_difference`, `reduce`, two-range `transform_reduce`,
 `inclusive_scan` and `exclusive_scan` overloads lower directly for matching
-scalar arithmetic pointer ranges without platform headers or a libc++ runtime.
-Custom operations and the remaining C++17 numeric components stay outside the
-admitted runtime boundary.
+scalar arithmetic pointer ranges. `gcd` and `lcm` lower for non-boolean built-in
+integer combinations through 64 bits. None of these operations requires
+platform headers or a libc++ runtime. Custom operations and the remaining C++17
+numeric components stay outside the admitted runtime boundary.
 Core v2 never admits the `platform` root.
 Math v1 continues to use its separately checked libc++, resource and Darwin
 platform closure for `<cmath>`.

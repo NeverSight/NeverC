@@ -1404,6 +1404,94 @@ class FunctionLowering {
       label(End, L);
       return Output;
     }
+    case UtilityOperation::NumericGcd:
+    case UtilityOperation::NumericLcm: {
+      const bool Lcm = Operation == UtilityOperation::NumericLcm;
+      const auto ResultQualType = Call->getType().getUnqualifiedType();
+      const auto UnsignedQualType =
+          A.Context.getCorrespondingUnsignedType(ResultQualType);
+      const auto ResultType = type(ResultQualType, L);
+      const auto UnsignedType = type(UnsignedQualType, L);
+      auto ComputationQualType = UnsignedQualType;
+      if (A.Context.isPromotableIntegerType(ComputationQualType))
+        ComputationQualType =
+            A.Context.getPromotedIntegerType(ComputationQualType);
+      const auto ComputationType = type(ComputationQualType, L);
+      auto UnsignedBinary = [&](llvm::StringRef Operator, Expression Left,
+                                Expression Right) {
+        auto Value = binary(Operator, cast(std::move(Left), ComputationType, L),
+                            cast(std::move(Right), ComputationType, L),
+                            ComputationType, L);
+        return cast(std::move(Value), UnsignedType, L);
+      };
+      auto Magnitude = [&](unsigned Index) {
+        const auto SourceQualType =
+            Call->getArg(Index)->getType().getUnqualifiedType();
+        auto Source = snapshot(expression(Call->getArg(Index)), L);
+        auto Result = temporary(UnsignedType, L);
+        if (!SourceQualType->isSignedIntegerType()) {
+          assign(Result, cast(std::move(Source), UnsignedType, L), L);
+          return Result;
+        }
+        const auto Negative = labelName(), Nonnegative = labelName();
+        const auto End = labelName();
+        branch(binary("<", Source, A.zero(SourceQualType, L), "bool", L),
+               Negative, Nonnegative, L);
+        label(Negative, L);
+        assign(Result,
+               UnsignedBinary("-", A.zero(UnsignedQualType, L),
+                              cast(Source, UnsignedType, L)),
+               L);
+        jump(End, L);
+        label(Nonnegative, L);
+        assign(Result, cast(std::move(Source), UnsignedType, L), L);
+        jump(End, L);
+        label(End, L);
+        return Result;
+      };
+
+      auto Left = Magnitude(0);
+      auto Right = Magnitude(1);
+      auto Result = temporary(ResultType, L);
+      const auto Zero = A.zero(UnsignedQualType, L);
+      const auto CheckRightZero = labelName(), ReturnZero = labelName();
+      const auto Prepare = labelName(), Check = labelName();
+      const auto Step = labelName(), Finish = labelName(), End = labelName();
+      if (Lcm) {
+        branch(binary("==", Left, Zero, "bool", L), ReturnZero, CheckRightZero,
+               L);
+        label(CheckRightZero, L);
+        branch(binary("==", Right, Zero, "bool", L), ReturnZero, Prepare, L);
+        label(ReturnZero, L);
+        assign(Result, A.zero(ResultQualType, L), L);
+        jump(End, L);
+        label(Prepare, L);
+      }
+      auto GcdLeft = snapshot(Left, L);
+      auto GcdRight = snapshot(Right, L);
+      auto Remainder = temporary(UnsignedType, L);
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", GcdRight, Zero, "bool", L), Step, Finish, L);
+      label(Step, L);
+      assign(Remainder, UnsignedBinary("%", GcdLeft, GcdRight), L);
+      assign(GcdLeft, GcdRight, L);
+      assign(GcdRight, Remainder, L);
+      jump(Check, L);
+      label(Finish, L);
+      if (Lcm) {
+        auto Quotient = UnsignedBinary("/", Left, GcdLeft);
+        assign(Result,
+               cast(UnsignedBinary("*", std::move(Quotient), Right), ResultType,
+                    L),
+               L);
+      } else {
+        assign(Result, cast(GcdLeft, ResultType, L), L);
+      }
+      jump(End, L);
+      label(End, L);
+      return Result;
+    }
     case UtilityOperation::AlgorithmFind: {
       // Function arguments are all bound before the algorithm body. Choose
       // the permitted left-to-right C++17 order, retaining the value referent

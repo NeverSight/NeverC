@@ -1413,8 +1413,15 @@ extern "C" int numeric_cxx17() {
       values, values + 4, inclusive);
   int *exclusive_end = std::exclusive_scan(
       values, values + 4, exclusive, 5);
+  short narrow_left = -12;
+  short narrow_right = 18;
+  short narrow_gcd = std::gcd(narrow_left, narrow_right);
+  int mixed_left = -42;
+  unsigned mixed_right = 56;
+  unsigned mixed_lcm = std::lcm(mixed_left, mixed_right);
   return reduced + initialized + transformed + inclusive[3] + exclusive[3] +
-      (inclusive_end - inclusive) + (exclusive_end - exclusive);
+      (inclusive_end - inclusive) + (exclusive_end - exclusive) + narrow_gcd +
+      mixed_lcm;
 }
 """
     numeric_cxx17 = check("v2-numeric-cxx17", numeric_cxx17_source,
@@ -1449,6 +1456,12 @@ extern "C" int numeric_cxx17() {
     ):
         check("v2-numeric-cxx17-" + name, source, "TR0203",
               profile="cpp-core-v2", sdk=True)
+    check("v2-numeric-gcd-wide",
+          '#include <numeric>\nint main(){unsigned __int128 a=12,b=18;return std::gcd(a,b)==6?0:1;}',
+          "TR0201", profile="cpp-core-v2", sdk=True)
+    check("v2-numeric-gcd-address",
+          '#include <numeric>\nint main(){auto p=&std::gcd<int,int>;return p(12,18)==6?0:1;}',
+          "TR0201", profile="cpp-core-v2", sdk=True)
 
     algorithm_header_source = """\
 #include <algorithm>

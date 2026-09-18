@@ -397,10 +397,17 @@ through 64 bits, `float` or `double`; output pointers are writable. Two-argument
 operations preserve empty-range and in-place behavior. Every argument is
 captured once before the loop.
 
-Custom operations, heterogeneous types, promotable integers, enums, records,
-custom iterators and the other numeric algorithms remain outside the runtime
-boundary. Quoted includes, shadows, function addresses and forged declarations
-remain rejected.
+`gcd` and `lcm` accept any non-boolean built-in integer argument combination
+through 64 bits and return libc++'s exact `common_type_t` result. Signed inputs
+are converted to unsigned magnitudes before the Euclidean loop, so supported
+negative, narrow and mixed-signedness calls retain the standard result and
+representability preconditions. Each argument is evaluated once.
+
+Custom operations, heterogeneous range values, promotable range integers,
+enums, records, custom iterators and the other range-based numeric algorithms
+remain outside the runtime boundary. Integer arguments wider than 64 bits,
+quoted includes, shadows, function addresses and forged declarations remain
+rejected.
 
 ## Algorithm header from `<algorithm>`
 

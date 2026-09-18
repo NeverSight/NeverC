@@ -3279,6 +3279,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
        Name == "inclusive_scan") ||
       (Origin->Path == "__numeric/exclusive_scan.h" &&
        Name == "exclusive_scan") ||
+      (Origin->Path == "__numeric/gcd_lcm.h" &&
+       (Name == "gcd" || Name == "lcm")) ||
       (Origin->Path == "__algorithm/remove.h" && Name == "remove") ||
       (Origin->Path == "__algorithm/remove_if.h" && Name == "remove_if") ||
       (Origin->Path == "__algorithm/unique.h" && Name == "unique") ||
@@ -3547,6 +3549,16 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Same(Call->getArg(ValueIndex)->getType(), Value) &&
            Context.hasSameUnqualifiedType(Value, Iterator->getPointeeType());
   };
+  auto NumericIntegerValueParameter = [&](unsigned Index) {
+    if (Index >= Function->getNumParams() || Index >= Call->getNumArgs())
+      return false;
+    auto Parameter = Function->getParamDecl(Index)->getType();
+    return !Parameter.isNull() && !Parameter->isReferenceType() &&
+           !Parameter->isEnumeralType() && Parameter->isIntegerType() &&
+           !Parameter->isBooleanType() &&
+           Context.getTypeSize(Parameter) <= 64 &&
+           Same(Call->getArg(Index)->getType(), Parameter);
+  };
   if (Origin->Path == "__numeric/iota.h" && Name == "iota" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
       NumericPointerParameter(0, true) && NumericPointerParameter(1, true) &&
@@ -3639,6 +3651,18 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if (NumericValueParameter(3, 0))
       return UtilityOperation::NumericExclusiveScan;
   }
+  if (Origin->Path == "__numeric/gcd_lcm.h" &&
+      (Name == "gcd" || Name == "lcm") && Call->getNumArgs() == 2 &&
+      Function->getNumParams() == 2 && Call->isPRValue() &&
+      NumericIntegerValueParameter(0) && NumericIntegerValueParameter(1) &&
+      !Function->getReturnType().isNull() &&
+      !Function->getReturnType()->isEnumeralType() &&
+      Function->getReturnType()->isIntegerType() &&
+      !Function->getReturnType()->isBooleanType() &&
+      Context.getTypeSize(Function->getReturnType()) <= 64 &&
+      Same(Call->getType(), Function->getReturnType()))
+    return Name == "gcd" ? UtilityOperation::NumericGcd
+                         : UtilityOperation::NumericLcm;
   if ((Origin->Path == "__algorithm/find.h" ||
        Origin->Path == "__algorithm/count.h") &&
       (Name == "find" || Name == "count") && Call->getNumArgs() == 3 &&

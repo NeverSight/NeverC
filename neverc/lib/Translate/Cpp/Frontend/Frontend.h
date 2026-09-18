@@ -421,6 +421,8 @@ enum class UtilityOperation {
   NumericTransformReduce,
   NumericInclusiveScan,
   NumericExclusiveScan,
+  NumericGcd,
+  NumericLcm,
   InitializerListSize,
   InitializerListEmpty,
   InitializerListBegin,
