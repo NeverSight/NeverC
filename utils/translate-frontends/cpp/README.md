@@ -69,6 +69,9 @@ algorithm surface. The exact
 authenticated; its sequential scalar-pointer operations, default C++17
 reductions and scans, exact same-type function-pointer operations including
 transformed scans, and integer `gcd`/`lcm` lower directly. The exact
+[`<new>`](../docs/cpp-core-v2.md#new-header-from-new) header is also
+authenticated; its allocation metadata resolves at compile time and exact
+`std::launder` calls on admitted object pointers lower directly. The exact
 [`<memory>`](../docs/cpp-core-v2.md#memory-header-from-memory) header has an
 authenticated parsing boundary; raw-pointer `pointer_traits`, exact
 `std::allocator` and exact `std::allocator_traits<std::allocator<T>>` metadata
@@ -82,7 +85,8 @@ aliases plus integral/enum constant results. It records all consumed header
 hashes: 101 for the `<type_traits>` closure, nine for standalone `<cstdint>`,
 16 for `<limits>`, 29 for `<cstddef>`, 87 for `<utility>`, 98 for `<tuple>`,
 217 for `<array>`, 10 for `<initializer_list>`, 136 for `<optional>`, 171 for
-`<iterator>`, 354 for `<algorithm>`, 126 for `<numeric>` and 267 for `<memory>`.
+`<iterator>`, 354 for `<algorithm>`, 126 for `<numeric>`, 37 for `<new>` and
+267 for `<memory>`.
 The composite
 array-plus-tuple-plus-utility fixture consumes a 231-file union closure; adding
 `<optional>` produces a 253-file union closure on all eight targets.
@@ -170,9 +174,14 @@ default `iota`, `accumulate`, `inner_product`, `partial_sum` and
 and exact same-type by-value function-pointer operations. Integer `gcd` and
 `lcm` accept the documented built-in integer combinations. Output ranges must
 be writable; callable objects, heterogeneous element types and custom iterators
-remain rejected. Memory contributes an exact, platform-free 267-file C++17
-header closure. Raw-pointer `pointer_traits` aliases resolve through pinned
-libc++. Exact `std::allocator<T>` and
+remain rejected. New contributes an exact, platform-free 37-file C++17 header
+closure. The standard allocation tag types and interference-size values remain
+compile-time or scalar metadata, and exact `std::launder` calls on admitted
+non-volatile object pointers lower to their retained pointer value without a
+libc++ call. Runtime tag objects, standard placement allocation and default
+heap operations remain excluded. Memory contributes an exact, platform-free
+267-file C++17 header closure. Raw-pointer `pointer_traits` aliases resolve
+through pinned libc++. Exact `std::allocator<T>` and
 `std::allocator_traits<std::allocator<T>>` type identities, nested aliases,
 rebinds and trait constants also resolve as compile-time metadata, including
 exact `uses_allocator<T, std::allocator<U>>` identities, inherited aliases and

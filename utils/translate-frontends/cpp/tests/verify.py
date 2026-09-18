@@ -1338,6 +1338,71 @@ extern "C" int iterator_operations() {
         check("v2-iterator-" + name, source, code,
               profile="cpp-core-v2", sdk=True)
 
+    new_header_source = """\
+#include <new>
+using Nothrow = std::nothrow_t;
+static_assert(__is_same(Nothrow, std::nothrow_t));
+static_assert(sizeof(std::align_val_t) == sizeof(__SIZE_TYPE__));
+constexpr auto alignment = static_cast<std::align_val_t>(16);
+static_assert(static_cast<__SIZE_TYPE__>(alignment) == 16);
+static_assert(std::hardware_destructive_interference_size > 0);
+static_assert(std::hardware_constructive_interference_size > 0);
+extern "C" int new_header() { return 0; }
+"""
+    new_header = check("v2-new-header", new_header_source,
+                       profile="cpp-core-v2", sdk=True)
+    assert len(new_header["sdk_dependencies"]) == 37, new_header
+    assert any(dependency["root"] == "libcxx" and
+               dependency["path"] == "new"
+               for dependency in new_header["sdk_dependencies"]), new_header
+    assert not any(dependency["root"] == "platform"
+                   for dependency in new_header["sdk_dependencies"]), new_header
+    for target in sdk_targets:
+        target_result = check("v2-new-header-" + target, new_header_source,
+                              profile="cpp-core-v2", target=target, sdk=True)
+        assert target_result["sdk_dependencies"] == new_header["sdk_dependencies"], target_result
+    new_launder_source = """\
+#include <new>
+struct Record { int value; };
+extern "C" int new_launder(int *value, const int *read_only,
+                             Record *object, int (*array)[2]) {
+  return *std::launder(value) + *std::launder(read_only) +
+         std::launder(object)->value + (*std::launder(array))[1];
+}
+"""
+    new_launder = check("v2-new-launder", new_launder_source,
+                        profile="cpp-core-v2", sdk=True)
+    assert new_launder["sdk_dependencies"] == new_header["sdk_dependencies"], new_launder
+    assert not [node for node in walk(new_launder["functions"])
+                if node.get("op") in ("call", "mapped_call")], new_launder
+    for target in sdk_targets:
+        target_result = check("v2-new-launder-" + target,
+                              new_launder_source, profile="cpp-core-v2",
+                              target=target, sdk=True)
+        assert target_result["sdk_dependencies"] == new_header["sdk_dependencies"], target_result
+        assert not [node for node in walk(target_result["functions"])
+                    if node.get("op") in ("call", "mapped_call")], target_result
+    for name, source, code in (
+        ("quoted-header", '#include "new"\nint main(){return 0;}', "TR0201"),
+        ("launder-function-address",
+         '#include <new>\nauto p=&std::launder<int>;int main(){return p!=nullptr;}',
+         "TR0201"),
+        ("launder-volatile",
+         '#include <new>\nint f(volatile int*p){return *std::launder(p);}',
+         "TR0201"),
+        ("launder-void",
+         '#include <new>\nvoid*f(void*p){return std::launder(p);}',
+         "TR0202"),
+        ("standard-placement-new",
+         '#include <new>\nint main(){int n=1;new(&n)int(3);return n;}',
+         "TR0203"),
+        ("runtime-nothrow-tag",
+         '#include <new>\nint main(){std::nothrow_t tag;return sizeof(tag);}',
+         "TR0203"),
+    ):
+        check("v2-new-" + name, source, code,
+              profile="cpp-core-v2", sdk=True)
+
     memory_header_source = """\
 #include <memory>
 extern "C" int memory_header() { return 0; }

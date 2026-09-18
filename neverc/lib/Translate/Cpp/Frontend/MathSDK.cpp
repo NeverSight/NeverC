@@ -3189,6 +3189,19 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   const llvm::StringRef Name = Function->getIdentifier()
                                    ? Function->getIdentifier()->getName()
                                    : llvm::StringRef();
+  if (Origin->Path == "__new/launder.h" && Name == "launder" &&
+      Function->isInlined() && Function->isConstexpr() &&
+      Call->getNumArgs() == 1 && Function->getNumParams() == 1 &&
+      Call->isPRValue()) {
+    const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
+    const auto Parameter = Function->getParamDecl(0)->getType();
+    const auto Result = Function->getReturnType();
+    if (Prototype && Prototype->isNothrow() &&
+        utilityObjectPointer(Context, Parameter) && Same(Parameter, Result) &&
+        Same(Call->getType(), Result) &&
+        Same(Call->getArg(0)->getType(), Parameter))
+      return UtilityOperation::NewLaunder;
+  }
   if (Origin->Path == "__memory/addressof.h" && Name == "addressof" &&
       Function->isInlined() && Function->isConstexpr() &&
       Call->getNumArgs() == 1 && Function->getNumParams() == 1 &&

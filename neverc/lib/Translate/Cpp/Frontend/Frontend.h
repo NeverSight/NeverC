@@ -259,6 +259,7 @@ enum class UtilityOperation {
   Forward,
   MoveIfNoexcept,
   AsConst,
+  NewLaunder,
   MemoryAddressof,
   MemoryPointerTo,
   MemoryDestroyAt,

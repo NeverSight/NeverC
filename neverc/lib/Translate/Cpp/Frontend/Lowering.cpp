@@ -1221,6 +1221,11 @@ class FunctionLowering {
       // portable IR keeps the same storage designator; the selected outer
       // constructor/binding still observes Clang's checked result category.
       return lvalue(Call->getArg(0));
+    case UtilityOperation::NewLaunder:
+      // The portable pointer model carries no stale C++ object provenance.
+      // Retain the checked pointer value once; a later access observes the
+      // lifetime selected by the source's authenticated std::launder call.
+      return snapshot(expression(Call->getArg(0)), L);
     case UtilityOperation::MemoryAddressof:
     case UtilityOperation::MemoryPointerTo:
       // Both operations bypass an overloaded operator& and return the address

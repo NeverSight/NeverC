@@ -24326,6 +24326,126 @@ int main() { return 0; }
   expectNoArtifacts(QuotedOutput);
 }
 
+TEST_F(TranslateTest, CoreV2NewHeaderUsesPlatformFreeClosure) {
+  const auto Source = tmpFile("new-header.cpp");
+  const auto Output = tmpFile("new-header.nc");
+  writeFile(Source, R"cpp(
+#include <new>
+using Nothrow = std::nothrow_t;
+static_assert(__is_same(Nothrow, std::nothrow_t));
+static_assert(sizeof(std::align_val_t) == sizeof(__SIZE_TYPE__));
+constexpr auto alignment = static_cast<std::align_val_t>(16);
+static_assert(static_cast<__SIZE_TYPE__>(alignment) == 16);
+static_assert(std::hardware_destructive_interference_size > 0);
+static_assert(std::hardware_constructive_interference_size > 0);
+int main() { return 0; }
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *SDK = Manifest->getAsObject()->getObject("sdk");
+  ASSERT_NE(SDK, nullptr);
+  const auto *Dependencies = SDK->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 37u);
+  bool FoundNew = false;
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+    FoundNew |= Dependency->getString("root") == "libcxx" &&
+                Dependency->getString("path") == "new";
+  }
+  EXPECT_TRUE(FoundNew);
+
+  const auto Quoted = tmpFile("new-quoted.cpp");
+  const auto QuotedOutput = tmpFile("new-quoted.nc");
+  writeFile(Quoted, "#include \"new\"\nint main(){return 0;}");
+  expectCode(translate(Quoted, {"--profile", "cpp-core-v2", "-o",
+                                QuotedOutput.string()}),
+             "TR0201");
+  expectNoArtifacts(QuotedOutput);
+}
+
+TEST_F(TranslateTest, CoreV2NewLaunderRunsAtBothOptimizations) {
+  const auto Source = tmpFile("new-launder.cpp");
+  const auto Output = tmpFile("new-launder.nc");
+  writeFile(Source, R"cpp(
+#include <new>
+struct Record { int value; };
+int main() {
+  int hits = 0;
+  int values[2] = {3, 5};
+  const int constant = 7;
+  Record record{11};
+  int row[2] = {13, 17};
+  int *value = std::launder((++hits, &values[1]));
+  const int *read_only = std::launder((++hits, &constant));
+  Record *object = std::launder((++hits, &record));
+  int (*array)[2] = std::launder((++hits, &row));
+  return hits == 4 && *value == 5 && *read_only == 7 &&
+                 object->value == 11 && (*array)[1] == 17
+             ? 0
+             : 1;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("new-launder" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NewLaunderRequiresExactPointerForms) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Rejection Cases[] = {
+      {"function-address",
+       "#include <new>\nauto p=&std::launder<int>;int main(){return "
+       "p!=nullptr;}",
+       "TR0201"},
+      {"volatile-object",
+       "#include <new>\nint f(volatile int*p){return *std::launder(p);}",
+       "TR0201"},
+      {"void-object", "#include <new>\nvoid*f(void*p){return std::launder(p);}",
+       "TR0202"},
+      {"function-object",
+       "#include <new>\nusing F=int();F*f(F*p){return std::launder(p);}",
+       "TR0202"},
+      {"standard-placement-new",
+       "#include <new>\nint main(){int n=1;new(&n)int(3);return n;}", "TR0203"},
+      {"runtime-nothrow-tag",
+       "#include <new>\nint main(){std::nothrow_t tag;return sizeof(tag);}",
+       "TR0203"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("new-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("new-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2MemoryHeaderUsesPlatformFreeClosure) {
   const auto Source = tmpFile("memory-header.cpp");
   const auto Output = tmpFile("memory-header.nc");

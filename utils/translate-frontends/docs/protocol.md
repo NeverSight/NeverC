@@ -1455,7 +1455,7 @@ A core v2 request may add the same two-field immutable SDK envelope used by the
 built-in driver: `distribution_id` and `catalog_sha256`. When present, the
 source may include exact angle forms of `<type_traits>`, `<cstdint>`, `<limits>`,
 `<cstddef>`, `<utility>`, `<tuple>`, `<array>`, `<initializer_list>`,
-`<optional>`, `<iterator>`, `<algorithm>`, `<numeric>` and `<memory>`. A
+`<optional>`, `<iterator>`, `<algorithm>`, `<numeric>`, `<new>` and `<memory>`. A
 successful response adds
 `sdk_distribution_id`, `sdk_catalog_sha256` and `sdk_dependencies`. Core v2
 dependencies may use only the `libcxx` and `resource` roots; each normalized
@@ -1470,7 +1470,11 @@ identity from these declarations are rejected before lowering; only resolved
 type aliases, integral/enum constants, folded `numeric_limits` scalar queries,
 checked cstddef layout constants, direct `std::byte` scalar operations, and the
 documented standard-library direct operations reach semantic IR. The memory
-surface includes authenticated raw-pointer `pointer_traits`, exact
+model also authenticates the platform-free 37-file `<new>` closure. Its
+allocation tags and interference-size values remain compile-time or scalar
+metadata, and exact `std::launder` calls retain one admitted non-volatile object
+pointer without an IR call. The memory surface includes authenticated
+raw-pointer `pointer_traits`, exact
 `std::allocator<T>` and exact
 `std::allocator_traits<std::allocator<T>>` compile-time metadata. Their nested
 aliases, rebinds and constants, plus exact

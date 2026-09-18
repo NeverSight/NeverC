@@ -32,6 +32,14 @@ queries lower without libc++; `std::byte` storage, bitwise/shift operations and
 authenticated on all supported targets, while quoted/C-header spellings, raw
 builtins and standard-function addresses remain rejected. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#fundamental-types-and-bytes-from-cstddef).
 
+Core v2 also accepts the pinned `<new>` header. Its 37-file closure is identical
+and platform-free on all supported targets. `std::nothrow_t`, `std::align_val_t`
+and the C++17 interference-size constants remain compile-time or scalar
+metadata, while exact `std::launder` calls on admitted non-volatile object
+pointers lower directly and evaluate their argument once. Standard placement
+allocation, nothrow objects, function addresses and default heap operations
+remain excluded. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#new-header-from-new).
+
 Core v2's pinned `<memory>` surface now resolves exact raw-pointer
 `pointer_traits`, `std::allocator<T>` and
 `std::allocator_traits<std::allocator<T>>` identities, nested aliases, rebinds

@@ -421,6 +421,31 @@ Integer arguments wider than 64 bits, quoted includes, shadows, function
 addresses for the numeric algorithms themselves and forged declarations remain
 rejected.
 
+## New header from `<new>`
+
+Core v2 admits the exact angled `<new>` entry from the pinned embedded VFS. Its
+37-file libc++/resource dependency closure is identical on all eight supported
+targets and contains no platform headers. The exact upstream C++17 declarations
+are authenticated before translation.
+
+`std::nothrow_t` type identity, the scalar `std::align_val_t` enum, and the
+positive `hardware_destructive_interference_size` and
+`hardware_constructive_interference_size` constants remain compile-time or
+scalar metadata. An `align_val_t` value retains its target `size_t` width and
+explicit enum conversions. These uses create no standard-library storage and
+emit no call.
+
+The exact `std::launder(T *)` template lowers directly for admitted
+non-volatile object pointers, including scalar, fixed-array and source-record
+pointees. The result has the exact input pointer type and value. Its argument is
+captured once, and the portable pointer model then observes the lifetime chosen
+by the authenticated C++ call without a libc++ runtime operation.
+
+Volatile, void and function pointees, function addresses, quoted includes,
+shadows and forged declarations remain rejected. Runtime `std::nothrow` tag
+objects, the standard placement allocation functions, default heap allocation,
+allocation handlers and exception objects remain outside this boundary.
+
 ## Memory header from `<memory>`
 
 Core v2 admits the exact angled `<memory>` entry from the pinned embedded VFS.
