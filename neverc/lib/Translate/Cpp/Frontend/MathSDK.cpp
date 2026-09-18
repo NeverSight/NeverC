@@ -3321,7 +3321,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       }
     }
   }
-  const bool ApprovedNonInlineAlgorithm =
+  const bool ApprovedNonInlineOperation =
       (Origin->Path == "__numeric/iota.h" && Name == "iota") ||
       (Origin->Path == "__numeric/accumulate.h" && Name == "accumulate") ||
       (Origin->Path == "__numeric/inner_product.h" &&
@@ -3342,6 +3342,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
        Name == "transform_exclusive_scan") ||
       (Origin->Path == "__numeric/gcd_lcm.h" &&
        (Name == "gcd" || Name == "lcm")) ||
+      (Origin->Path == "__memory/construct_at.h" &&
+       (Name == "destroy_at" || Name == "destroy" || Name == "destroy_n")) ||
       (Origin->Path == "__algorithm/remove.h" && Name == "remove") ||
       (Origin->Path == "__algorithm/remove_if.h" && Name == "remove_if") ||
       (Origin->Path == "__algorithm/unique.h" && Name == "unique") ||
@@ -3365,7 +3367,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       (Origin->Path == "__algorithm/set_union.h" && Name == "set_union") ||
       (Origin->Path == "__algorithm/set_symmetric_difference.h" &&
        Name == "set_symmetric_difference");
-  if (!Function->isInlined() && !ApprovedNonInlineAlgorithm)
+  if (!Function->isInlined() && !ApprovedNonInlineOperation)
     return std::nullopt;
   auto ReverseFor = [&](QualType Type) {
     return approvedUtilityReverseIteratorRecord(
@@ -3449,6 +3451,27 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return !Count.isNull() && Count->isIntegerType() &&
            Context.getTypeSize(Count) <= 64;
   };
+  if (Origin->Path == "__memory/construct_at.h") {
+    if (Name == "destroy_at" && Call->getNumArgs() == 1 &&
+        Function->getNumParams() == 1 && AlgorithmPointerParameter(0) &&
+        Function->getReturnType()->isVoidType() &&
+        Same(Call->getType(), Function->getReturnType()))
+      return UtilityOperation::MemoryDestroyAt;
+    if (Name == "destroy" && Call->getNumArgs() == 2 &&
+        Function->getNumParams() == 2 && AlgorithmPointerParameter(0) &&
+        AlgorithmPointerParameter(1) &&
+        Same(Function->getParamDecl(0)->getType(),
+             Function->getParamDecl(1)->getType()) &&
+        Function->getReturnType()->isVoidType() &&
+        Same(Call->getType(), Function->getReturnType()))
+      return UtilityOperation::MemoryDestroy;
+    if (Name == "destroy_n" && Call->getNumArgs() == 2 &&
+        Function->getNumParams() == 2 && Call->isPRValue() &&
+        AlgorithmPointerParameter(0) && AlgorithmCountParameter(1) &&
+        Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
+        Same(Call->getType(), Function->getReturnType()))
+      return UtilityOperation::MemoryDestroyN;
+  }
   auto AlgorithmReferenceParameter = [&](unsigned Index) {
     if (Index >= Function->getNumParams() || Index >= Call->getNumArgs())
       return false;

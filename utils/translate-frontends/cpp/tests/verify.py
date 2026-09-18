@@ -1383,6 +1383,30 @@ extern "C" int *memory_pointer_to() {
                               memory_address_source, profile="cpp-core-v2",
                               target=target, sdk=True)
         assert target_result["sdk_dependencies"] == memory_address["sdk_dependencies"], target_result
+    memory_destroy_source = """\
+#include <memory>
+extern "C" void memory_destroy_at(int *pointer) {
+  std::destroy_at(pointer);
+}
+extern "C" void memory_destroy(int *first, int *last) {
+  std::destroy(first, last);
+}
+extern "C" int *memory_destroy_n(int *first, long count) {
+  return std::destroy_n(first, count);
+}
+"""
+    memory_destroy = check("v2-memory-destroy", memory_destroy_source,
+                           profile="cpp-core-v2", sdk=True)
+    assert len(memory_destroy["sdk_dependencies"]) == 267, memory_destroy
+    assert not [node for node in walk(memory_destroy["functions"])
+                if node.get("op") in ("call", "mapped_call")], memory_destroy
+    for target in sdk_targets:
+        target_result = check("v2-memory-destroy-" + target,
+                              memory_destroy_source, profile="cpp-core-v2",
+                              target=target, sdk=True)
+        assert target_result["sdk_dependencies"] == memory_destroy["sdk_dependencies"], target_result
+        assert not [node for node in walk(target_result["functions"])
+                    if node.get("op") in ("call", "mapped_call")], target_result
     check("v2-memory-quoted",
           '#include "memory"\nint main(){return 0;}', "TR0201",
           profile="cpp-core-v2", sdk=True)
@@ -1411,6 +1435,24 @@ extern "C" int *memory_pointer_to() {
         ("forged-addressof",
          'namespace std{template<class T>T*addressof(T&);}int main(){int n=1;return *std::addressof(n);}',
          "TR0201"),
+        ("destroy-at-address",
+         '#include <memory>\nauto f(){return &std::destroy_at<int>;}',
+         "TR0201"),
+        ("destroy-at-volatile",
+         '#include <memory>\nint main(){volatile int n=1;std::destroy_at(&n);}',
+         "TR0203"),
+        ("destroy-at-record",
+         '#include <memory>\nstruct R{int n;~R(){n=0;}};int main(){R r{1};std::destroy_at(&r);}',
+         "TR0203"),
+        ("destroy-record-range",
+         '#include <memory>\nstruct R{int n;};int main(){R r[1]{{1}};std::destroy(r,r+1);}',
+         "TR0203"),
+        ("destroy-n-record",
+         '#include <memory>\nstruct R{int n;};int main(){R r[1]{{1}};return std::destroy_n(r,1)==r+1?0:1;}',
+         "TR0203"),
+        ("forged-destroy-n",
+         'namespace std{template<class I,class N>I destroy_n(I,N);}int main(){int n=1;return *std::destroy_n(&n,1);}',
+         "TR0203"),
     ):
         check("v2-memory-" + name, source, code,
               profile="cpp-core-v2", sdk=True)

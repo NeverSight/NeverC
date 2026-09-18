@@ -1230,6 +1230,47 @@ class FunctionLowering {
           cast(address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L),
                type(Call->getType(), L), L),
           L);
+    case UtilityOperation::MemoryDestroyAt:
+      // The admitted scalar object has a trivial destructor. Retain the bound
+      // pointer evaluation while its pseudo-destructor contributes no runtime
+      // operation to the portable program.
+      snapshot(expression(Call->getArg(0)), L);
+      return {};
+    case UtilityOperation::MemoryDestroy:
+      // Both range arguments are still evaluated once. Scalar destruction has
+      // no observable body after those bindings.
+      snapshot(expression(Call->getArg(0)), L);
+      snapshot(expression(Call->getArg(1)), L);
+      return {};
+    case UtilityOperation::MemoryDestroyN: {
+      auto Current = snapshot(expression(Call->getArg(0)), L);
+      auto CountType = Call->getArg(1)->getType();
+      if (const auto *Enumeration = CountType->getAs<EnumType>())
+        CountType = Enumeration->getDecl()->getPromotionType();
+      else if (A.Context.isPromotableIntegerType(CountType))
+        CountType = A.Context.getPromotedIntegerType(CountType);
+      const auto CountTypeName = type(CountType, L);
+      auto Remaining =
+          snapshot(cast(expression(Call->getArg(1)), CountTypeName, L), L);
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto Check = labelName(), Advance = labelName(), End = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary(">", Remaining, quantity(0, CountTypeName, L), "bool", L),
+             Advance, End, L);
+      label(Advance, L);
+      assign(
+          Current,
+          binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      assign(Remaining,
+             binary("-", Remaining, one(CountTypeName, L), CountTypeName, L),
+             L);
+      jump(Check, L);
+      label(End, L);
+      return Current;
+    }
     case UtilityOperation::Exchange: {
       // Function arguments are bound before exchange reads the old value.
       // Capture the destination address and converted new scalar first, then

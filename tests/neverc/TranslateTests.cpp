@@ -24492,6 +24492,114 @@ TEST_F(TranslateTest, CoreV2MemoryAddressOperationsRequireExactObjectForms) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2MemoryScalarDestructionRunsAtBothOptimizations) {
+  const auto Source = tmpFile("memory-destroy.cpp");
+  const auto Output = tmpFile("memory-destroy.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+int effects;
+int range_values[3]{1, 2, 3};
+int counted_values[4]{4, 5, 6, 7};
+int untouched_value = 8;
+int single_value = 9;
+double real_value = 1.5;
+int *pointer_value = &untouched_value;
+enum Kind { first_kind, second_kind };
+Kind kind_value = second_kind;
+int *observe(int *pointer) { ++effects; return pointer; }
+long observe_count(long count) { ++effects; return count; }
+int main() {
+  effects = 0;
+  std::destroy(observe(range_values), observe(range_values + 3));
+  if (effects != 2)
+    return 1;
+
+  effects = 0;
+  int *end = std::destroy_n(observe(counted_values), observe_count(4));
+  if (effects != 2 || end != counted_values + 4)
+    return 2;
+
+  effects = 0;
+  int *same = std::destroy_n(observe(&untouched_value), observe_count(-3));
+  if (effects != 2 || same != &untouched_value)
+    return 3;
+
+  effects = 0;
+  std::destroy_at(observe(&single_value));
+  if (effects != 1)
+    return 4;
+  std::destroy_at(&real_value);
+  std::destroy_at(&pointer_value);
+  std::destroy_at(&kind_value);
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *SDK = Manifest->getAsObject()->getObject("sdk");
+  ASSERT_NE(SDK, nullptr);
+  const auto *Dependencies = SDK->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 267u);
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("memory-destroy" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2MemoryDestructionRequiresExactScalarPointerForms) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Rejection Cases[] = {
+      {"destroy-at-address",
+       "#include <memory>\nauto f(){return &std::destroy_at<int>;}", "TR0201"},
+      {"destroy-at-volatile",
+       "#include <memory>\nint main(){volatile int n=1;std::destroy_at(&n);}",
+       "TR0203"},
+      {"destroy-at-record",
+       "#include <memory>\nstruct R{int n;~R(){n=0;}};"
+       "int main(){R r{1};std::destroy_at(&r);}",
+       "TR0203"},
+      {"destroy-record-range",
+       "#include <memory>\nstruct R{int n;};"
+       "int main(){R r[1]{{1}};std::destroy(r,r+1);}",
+       "TR0203"},
+      {"destroy-n-record",
+       "#include <memory>\nstruct R{int n;};"
+       "int main(){R r[1]{{1}};return std::destroy_n(r,1)==r+1?0:1;}",
+       "TR0203"},
+      {"forged-destroy-n",
+       "namespace std{template<class I,class N>I destroy_n(I,N);}"
+       "int main(){int n=1;return *std::destroy_n(&n,1);}",
+       "TR0203"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("memory-destroy-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("memory-destroy-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest,
        CoreV2NumericSequentialPointerOperationsRunAtBothOptimizations) {
   const auto Source = tmpFile("numeric-sequential.cpp");

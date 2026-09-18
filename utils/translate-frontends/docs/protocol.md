@@ -1472,6 +1472,9 @@ checked cstddef layout constants, direct `std::byte` scalar operations, and the
 documented standard-library direct operations reach semantic IR. The memory
 surface includes authenticated raw-pointer `pointer_traits` aliases plus direct
 `std::addressof` and raw-pointer `pointer_traits::pointer_to` object addresses.
+Its scalar-pointer `destroy_at`, `destroy` and `destroy_n` operations retain
+argument effects and counted pointer advancement without a runtime destructor
+call.
 
 ## Gated mathematics extension
 

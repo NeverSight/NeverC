@@ -134,9 +134,12 @@ The `<memory>` surface has a 267-file libc++/resource closure on every core-v2
 target. The exact C++17 public header and all consumed component headers are
 authenticated without platform headers. Raw-pointer `pointer_traits` aliases,
 `std::addressof` and raw-pointer `pointer_traits::pointer_to` are admitted for
-checked non-volatile object lvalues. Allocators, uninitialized algorithms,
-ownership objects and the remaining memory operations stay outside the direct
-lowering boundary.
+checked non-volatile object lvalues. `std::destroy_at`, `std::destroy` and
+`std::destroy_n` additionally lower for scalar object pointers; their trivial
+destruction has no runtime body, while argument evaluation and the counted
+return iterator are retained. Allocators, uninitialized construction,
+nontrivial destruction, ownership objects and the remaining memory operations
+stay outside the direct lowering boundary.
 Core v2 never admits the `platform` root.
 Math v1 continues to use its separately checked libc++, resource and Darwin
 platform closure for `<cmath>`.

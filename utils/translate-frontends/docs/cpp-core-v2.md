@@ -438,11 +438,21 @@ objects, evaluate the bound argument once, and bypass an overloaded
 `operator&`. Their result is an ordinary checked raw object pointer; they do not
 call libc++ at runtime.
 
-Volatile objects, rvalues, function pointers, fancy-pointer `pointer_traits`,
+The exact C++17 `std::destroy_at`, `std::destroy` and `std::destroy_n`
+templates also lower for raw pointers to admitted scalar objects. Scalar
+destruction is trivial, so `destroy_at` and `destroy` retain each pointer
+argument once without emitting a destructor call. `destroy_n` additionally
+advances and returns the captured pointer once per positive count; zero and
+negative signed counts return the original pointer. No operation reads the
+destroyed scalar value.
+
+Volatile objects, rvalues for address utilities, function pointers,
+fancy-pointer `pointer_traits`, non-scalar destruction, custom iterators,
 function addresses, quoted includes, shadows and forged declarations remain
-rejected. Allocators, uninitialized algorithms, smart pointers and ownership
-factories remain rejected until their layouts, allocation behavior, destruction,
-error handling and cross-target ABI contracts receive direct lowerings.
+rejected. Allocators, uninitialized construction, nontrivial destruction, smart
+pointers and ownership factories remain rejected until their layouts,
+allocation behavior, lifetime, error handling and cross-target ABI contracts
+receive direct lowerings.
 
 ## Algorithm header from `<algorithm>`
 
