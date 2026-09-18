@@ -1468,6 +1468,12 @@ extern "C" int numeric_callbacks() {
       std::inclusive_scan(values, values + 4, output, add, 1) - output);
   result += int(
       std::exclusive_scan(values, values + 4, output, 1, add) - output);
+  result += int(std::transform_inclusive_scan(
+      values, values + 4, output, add, square) - output);
+  result += int(std::transform_inclusive_scan(
+      values, values + 4, output, add, square, 1) - output);
+  result += int(std::transform_exclusive_scan(
+      values, values + 4, output, 1, add, square) - output);
   return result;
 }
 """
@@ -1503,6 +1509,12 @@ extern "C" int numeric_callbacks() {
          '#include <numeric>\nint main(){int a[2]{1,2},b[2]{};return std::exclusive_scan(a,a+2,b,0L)==b+2?0:1;}'),
         ("mismatched-callback-exclusive-scan",
          '#include <numeric>\nlong add(long a,long b){return a+b;}int main(){int a[2]{1,2},b[2]{};return std::exclusive_scan(a,a+2,b,0,add)==b+2?0:1;}'),
+        ("mismatched-transform-scan-binary",
+         '#include <numeric>\nlong add(long a,long b){return a+b;}int square(int a){return a*a;}int main(){int a[2]{1,2},b[2]{};return std::transform_inclusive_scan(a,a+2,b,add,square)==b+2?0:1;}'),
+        ("mismatched-transform-scan-unary",
+         '#include <numeric>\nint add(int a,int b){return a+b;}long square(long a){return a*a;}int main(){int a[2]{1,2},b[2]{};return std::transform_inclusive_scan(a,a+2,b,add,square)==b+2?0:1;}'),
+        ("heterogeneous-transform-exclusive-init",
+         '#include <numeric>\nint add(int a,int b){return a+b;}int square(int a){return a*a;}int main(){int a[2]{1,2},b[2]{};return std::transform_exclusive_scan(a,a+2,b,0L,add,square)==b+2?0:1;}'),
     ):
         check("v2-numeric-cxx17-" + name, source, "TR0203",
               profile="cpp-core-v2", sdk=True)

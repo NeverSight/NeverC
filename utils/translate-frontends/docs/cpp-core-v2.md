@@ -400,11 +400,13 @@ captured once before the loop.
 The operation-taking overloads of `accumulate`, `inner_product`, `partial_sum`,
 `adjacent_difference`, `reduce`, unary and two-range `transform_reduce`,
 `inclusive_scan` with or without an initial value, and `exclusive_scan` also
-lower directly. Each operation must be an ordinary function pointer whose
-return and by-value parameters exactly match the range element type; unary
-transforms take one element and every combining operation takes two. Callback
-values are captured once, empty ranges make no callback calls, and the
-sequential scan forms retain their in-place behavior.
+lower directly. The no-init and initialized `transform_inclusive_scan` forms
+and initialized `transform_exclusive_scan` are admitted on the same ranges.
+Each operation must be an ordinary function pointer whose return and by-value
+parameters exactly match the range element type; unary transforms take one
+element and every combining operation takes two. Callback values are captured
+once, empty ranges make no callback calls, and the sequential scan forms retain
+their in-place behavior.
 
 `gcd` and `lcm` accept any non-boolean built-in integer argument combination
 through 64 bits and return libc++'s exact `common_type_t` result. Signed inputs

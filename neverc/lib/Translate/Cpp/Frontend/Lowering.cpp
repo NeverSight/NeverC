@@ -1510,6 +1510,98 @@ class FunctionLowering {
       label(End, L);
       return Output;
     }
+    case UtilityOperation::NumericTransformInclusiveScan:
+    case UtilityOperation::NumericTransformExclusiveScan: {
+      const bool Inclusive =
+          Operation == UtilityOperation::NumericTransformInclusiveScan;
+      auto First = snapshot(expression(Call->getArg(0)), L);
+      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto Output = snapshot(expression(Call->getArg(2)), L);
+      std::optional<Expression> Accumulator;
+      std::optional<Expression> BinaryCallback, UnaryCallback;
+      std::optional<QualType> BinaryCallbackType, UnaryCallbackType;
+      if (Inclusive) {
+        BinaryCallbackType = Call->getArg(3)->getType();
+        UnaryCallbackType = Call->getArg(4)->getType();
+        BinaryCallback = snapshot(expression(Call->getArg(3)), L);
+        UnaryCallback = snapshot(expression(Call->getArg(4)), L);
+        if (Call->getNumArgs() == 6)
+          Accumulator = snapshot(expression(Call->getArg(5)), L);
+      } else {
+        Accumulator = snapshot(expression(Call->getArg(3)), L);
+        BinaryCallbackType = Call->getArg(4)->getType();
+        UnaryCallbackType = Call->getArg(5)->getType();
+        BinaryCallback = snapshot(expression(Call->getArg(4)), L);
+        UnaryCallback = snapshot(expression(Call->getArg(5)), L);
+      }
+      const auto FirstType = type(Call->getArg(0)->getType(), L);
+      const auto OutputType = type(Call->getArg(2)->getType(), L);
+      const auto ElementType =
+          type(Call->getArg(2)->getType()->getPointeeType(), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      if (!Accumulator)
+        Accumulator = temporary(ElementType, L);
+      auto InputValue = temporary(ElementType, L);
+      auto Transformed = temporary(ElementType, L);
+      auto Next = temporary(ElementType, L);
+      auto ApplyUnary = [&] {
+        json::Array Arguments;
+        Arguments.push_back(json::Object(InputValue));
+        return emitAlgorithmCallback(json::Object(*UnaryCallback),
+                                     *UnaryCallbackType, std::move(Arguments),
+                                     L);
+      };
+      auto ApplyBinary = [&] {
+        json::Array Arguments;
+        Arguments.push_back(json::Object(*Accumulator));
+        Arguments.push_back(json::Object(Transformed));
+        return emitAlgorithmCallback(json::Object(*BinaryCallback),
+                                     *BinaryCallbackType, std::move(Arguments),
+                                     L);
+      };
+      auto Advance = [&] {
+        assign(First,
+               binary("+", First, quantity(1, DifferenceType, L), FirstType, L),
+               L);
+        assign(
+            Output,
+            binary("+", Output, quantity(1, DifferenceType, L), OutputType, L),
+            L);
+      };
+      const auto LoopCheck = labelName(), LoopBody = labelName();
+      const auto End = labelName();
+      if (Inclusive && Call->getNumArgs() == 5) {
+        const auto FirstCheck = labelName(), FirstBody = labelName();
+        jump(FirstCheck, L);
+        label(FirstCheck, L);
+        branch(binary("!=", First, Last, "bool", L), FirstBody, End, L);
+        label(FirstBody, L);
+        assign(InputValue, dereference(First, L), L);
+        assign(*Accumulator, ApplyUnary(), L);
+        assign(dereference(Output, L), *Accumulator, L);
+        Advance();
+        jump(LoopCheck, L);
+      } else {
+        jump(LoopCheck, L);
+      }
+      label(LoopCheck, L);
+      branch(binary("!=", First, Last, "bool", L), LoopBody, End, L);
+      label(LoopBody, L);
+      assign(InputValue, dereference(First, L), L);
+      assign(Transformed, ApplyUnary(), L);
+      assign(Next, ApplyBinary(), L);
+      if (Inclusive) {
+        assign(*Accumulator, Next, L);
+        assign(dereference(Output, L), *Accumulator, L);
+      } else {
+        assign(dereference(Output, L), *Accumulator, L);
+        assign(*Accumulator, Next, L);
+      }
+      Advance();
+      jump(LoopCheck, L);
+      label(End, L);
+      return Output;
+    }
     case UtilityOperation::NumericGcd:
     case UtilityOperation::NumericLcm: {
       const bool Lcm = Operation == UtilityOperation::NumericLcm;

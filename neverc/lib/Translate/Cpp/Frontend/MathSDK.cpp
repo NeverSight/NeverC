@@ -3279,6 +3279,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
        Name == "inclusive_scan") ||
       (Origin->Path == "__numeric/exclusive_scan.h" &&
        Name == "exclusive_scan") ||
+      (Origin->Path == "__numeric/transform_inclusive_scan.h" &&
+       Name == "transform_inclusive_scan") ||
+      (Origin->Path == "__numeric/transform_exclusive_scan.h" &&
+       Name == "transform_exclusive_scan") ||
       (Origin->Path == "__numeric/gcd_lcm.h" &&
        (Name == "gcd" || Name == "lcm")) ||
       (Origin->Path == "__algorithm/remove.h" && Name == "remove") ||
@@ -3704,6 +3708,32 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     } else if (NumericValueParameter(3, 0) &&
                (Call->getNumArgs() == 4 || NumericBinaryCallback(4, Element))) {
       return UtilityOperation::NumericExclusiveScan;
+    }
+  }
+  if (((Origin->Path == "__numeric/transform_inclusive_scan.h" &&
+        Name == "transform_inclusive_scan" &&
+        (Call->getNumArgs() == 5 || Call->getNumArgs() == 6)) ||
+       (Origin->Path == "__numeric/transform_exclusive_scan.h" &&
+        Name == "transform_exclusive_scan" && Call->getNumArgs() == 6)) &&
+      Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
+      NumericPointerParameter(0, false) && NumericPointerParameter(1, false) &&
+      NumericPointerParameter(2, true) &&
+      Same(Function->getParamDecl(0)->getType(),
+           Function->getParamDecl(1)->getType()) &&
+      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
+                           Function->getParamDecl(2)->getType()) &&
+      Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
+      Same(Call->getType(), Function->getReturnType())) {
+    auto Element = Function->getParamDecl(0)->getType()->getPointeeType();
+    if (Name == "transform_inclusive_scan") {
+      if (NumericBinaryCallback(3, Element) &&
+          NumericUnaryCallback(4, Element) &&
+          (Call->getNumArgs() == 5 || NumericValueParameter(5, 0)))
+        return UtilityOperation::NumericTransformInclusiveScan;
+    } else if (NumericValueParameter(3, 0) &&
+               NumericBinaryCallback(4, Element) &&
+               NumericUnaryCallback(5, Element)) {
+      return UtilityOperation::NumericTransformExclusiveScan;
     }
   }
   if (Origin->Path == "__numeric/gcd_lcm.h" &&

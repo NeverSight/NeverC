@@ -24648,6 +24648,154 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2NumericTransformScansRunAtBothOptimizations) {
+  const auto Source = tmpFile("numeric-transform-scans.cpp");
+  const auto Output = tmpFile("numeric-transform-scans.nc");
+  writeFile(Source, R"cpp(
+#include <numeric>
+int unary_calls;
+int binary_calls;
+int twice(int value) { ++unary_calls; return value * 2; }
+int add(int left, int right) { ++binary_calls; return left + right; }
+double half(double value) { return value / 2.0; }
+double plus(double left, double right) { return left + right; }
+int main() {
+  const int values[4]{1, 2, 3, 4};
+  int output[4]{};
+  int effects = 0;
+
+  unary_calls = binary_calls = 0;
+  int *end = std::transform_inclusive_scan(
+      (++effects, values), (++effects, values + 4), (++effects, output),
+      (++effects, add), (++effects, twice));
+  if (effects != 5 || end != output + 4 || unary_calls != 4 ||
+      binary_calls != 3 || output[0] != 2 || output[1] != 6 ||
+      output[2] != 12 || output[3] != 20)
+    return 1;
+
+  unary_calls = binary_calls = 0;
+  end = std::transform_inclusive_scan(
+      (++effects, values), (++effects, values + 4), (++effects, output),
+      (++effects, add), (++effects, twice), (++effects, 5));
+  if (effects != 11 || end != output + 4 || unary_calls != 4 ||
+      binary_calls != 4 || output[0] != 7 || output[1] != 11 ||
+      output[2] != 17 || output[3] != 25)
+    return 2;
+
+  unary_calls = binary_calls = 0;
+  end = std::transform_exclusive_scan(
+      (++effects, values), (++effects, values + 4), (++effects, output),
+      (++effects, 5), (++effects, add), (++effects, twice));
+  if (effects != 17 || end != output + 4 || unary_calls != 4 ||
+      binary_calls != 4 || output[0] != 5 || output[1] != 7 ||
+      output[2] != 11 || output[3] != 17)
+    return 3;
+
+  unary_calls = binary_calls = 0;
+  if (std::transform_inclusive_scan(values, values, output, add, twice) !=
+          output ||
+      std::transform_inclusive_scan(values, values, output, add, twice, 5) !=
+          output ||
+      std::transform_exclusive_scan(values, values, output, 5, add, twice) !=
+          output ||
+      unary_calls != 0 || binary_calls != 0)
+    return 4;
+
+  int inclusive_in_place[4]{1, 2, 3, 4};
+  unary_calls = binary_calls = 0;
+  if (std::transform_inclusive_scan(inclusive_in_place,
+                                    inclusive_in_place + 4,
+                                    inclusive_in_place, add, twice) !=
+          inclusive_in_place + 4 ||
+      unary_calls != 4 || binary_calls != 3 ||
+      inclusive_in_place[0] != 2 || inclusive_in_place[1] != 6 ||
+      inclusive_in_place[2] != 12 || inclusive_in_place[3] != 20)
+    return 5;
+  int exclusive_in_place[4]{1, 2, 3, 4};
+  unary_calls = binary_calls = 0;
+  if (std::transform_exclusive_scan(exclusive_in_place,
+                                    exclusive_in_place + 4,
+                                    exclusive_in_place, 0, add, twice) !=
+          exclusive_in_place + 4 ||
+      unary_calls != 4 || binary_calls != 4 ||
+      exclusive_in_place[0] != 0 || exclusive_in_place[1] != 2 ||
+      exclusive_in_place[2] != 6 || exclusive_in_place[3] != 12)
+    return 6;
+
+  const double decimals[3]{2.0, 4.0, 8.0};
+  double decimal_output[3]{};
+  if (std::transform_inclusive_scan(decimals, decimals + 3, decimal_output,
+                                    plus, half, 1.0) !=
+          decimal_output + 3 ||
+      decimal_output[0] != 2.0 || decimal_output[1] != 4.0 ||
+      decimal_output[2] != 8.0)
+    return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("numeric-transform-scans" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NumericTransformScansRequireExactScalarForms) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+  };
+  const Rejection Cases[] = {
+      {"promoted-element",
+       "#include <numeric>\nshort add(short a,short b){return a+b;}"
+       "short twice(short a){return a*2;}int main(){short a[2]{1,2},b[2]{};"
+       "return std::transform_inclusive_scan(a,a+2,b,add,twice)==b+2?0:1;}"},
+      {"heterogeneous-output",
+       "#include <numeric>\nint add(int a,int b){return a+b;}"
+       "int twice(int a){return a*2;}int main(){int a[2]{1,2};long b[2]{};"
+       "return std::transform_inclusive_scan(a,a+2,b,add,twice)==b+2?0:1;}"},
+      {"mismatched-binary",
+       "#include <numeric>\nlong add(long a,long b){return a+b;}"
+       "int twice(int a){return a*2;}int main(){int a[2]{1,2},b[2]{};"
+       "return std::transform_inclusive_scan(a,a+2,b,add,twice)==b+2?0:1;}"},
+      {"mismatched-unary",
+       "#include <numeric>\nint add(int a,int b){return a+b;}"
+       "long twice(long a){return a*2;}int main(){int a[2]{1,2},b[2]{};"
+       "return std::transform_inclusive_scan(a,a+2,b,add,twice)==b+2?0:1;}"},
+      {"heterogeneous-inclusive-init",
+       "#include <numeric>\nint add(int a,int b){return a+b;}"
+       "int twice(int a){return a*2;}int main(){int a[2]{1,2},b[2]{};"
+       "return std::transform_inclusive_scan(a,a+2,b,add,twice,0L)==b+2?0:1;}"},
+      {"heterogeneous-exclusive-init",
+       "#include <numeric>\nint add(int a,int b){return a+b;}"
+       "int twice(int a){return a*2;}int main(){int a[2]{1,2},b[2]{};"
+       "return std::transform_exclusive_scan(a,a+2,b,0L,add,twice)==b+2?0:1;}"},
+      {"callable-object",
+       "#include <numeric>\nstruct Add{int operator()(int a,int b)const{"
+       "return a+b;}};struct Twice{int operator()(int a)const{return a*2;}};"
+       "int main(){int a[2]{1,2},b[2]{};return "
+       "std::transform_exclusive_scan(a,a+2,b,0,Add{},Twice{})==b+2?0:1;}"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("numeric-transform-scans-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("numeric-transform-scans-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2NumericGcdLcmRunAtBothOptimizations) {
   const auto Source = tmpFile("numeric-gcd-lcm.cpp");
   const auto Output = tmpFile("numeric-gcd-lcm.nc");
