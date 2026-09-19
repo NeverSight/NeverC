@@ -13626,13 +13626,20 @@ public:
             break;
           }
           case UtilityOperation::MemoryUniquePtrMoveAssign:
+          case UtilityOperation::MemoryUniquePtrConvertingMoveAssign:
           case UtilityOperation::MemoryUniquePtrNullAssign: {
             const auto Info =
                 approvedUtilityUniquePtrCall(A.S, A.Sources, C, A.Context);
-            const auto Expected =
-                *Operation == UtilityOperation::MemoryUniquePtrMoveAssign
-                    ? UtilityUniquePtrOperation::MoveAssign
-                    : UtilityUniquePtrOperation::NullAssign;
+            const auto Expected = [&] {
+              switch (*Operation) {
+              case UtilityOperation::MemoryUniquePtrMoveAssign:
+                return UtilityUniquePtrOperation::MoveAssign;
+              case UtilityOperation::MemoryUniquePtrConvertingMoveAssign:
+                return UtilityUniquePtrOperation::ConvertingMoveAssign;
+              default:
+                return UtilityUniquePtrOperation::NullAssign;
+              }
+            }();
             if (!Info || Info->Operation != Expected) {
               A.reject(L, "unique pointer assignment",
                        "A checked std::unique_ptr assignment is required.");
@@ -13701,6 +13708,7 @@ public:
           case UtilityOperation::MemoryMakeUnique:
           case UtilityOperation::MemoryUniquePtrReset:
           case UtilityOperation::MemoryUniquePtrMoveAssign:
+          case UtilityOperation::MemoryUniquePtrConvertingMoveAssign:
           case UtilityOperation::MemoryUniquePtrNullAssign:
           case UtilityOperation::MemoryAllocatorAllocate:
           case UtilityOperation::MemoryAllocatorConstruct:

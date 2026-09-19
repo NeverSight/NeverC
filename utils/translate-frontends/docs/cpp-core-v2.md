@@ -493,21 +493,24 @@ all at offset zero. Its total size and alignment must equal `T *`. The response
 preserves that ABI as one synthetic `nct_unique_ptr_pointer: ptr:T` field at
 offset zero.
 
-Default, `nullptr`, exact raw-pointer and same-type move construction lower
-directly. A move captures the source once, transfers its pointer and clears the
+Default, `nullptr`, exact raw-pointer, same-type move and const-adding converting
+move construction lower directly. A move captures the source once, transfers
+its pointer through the checked qualification conversion and clears the
 source. `get`, `operator->`, `operator*` and explicit boolean conversion read
 the captured pointer once. `release` returns that pointer and clears the owner
 without destroying it. `reset(pointer())` and `reset(pointer)` evaluate the
 receiver before the replacement argument, install the replacement before
 destroying the old object, and use the same checked single-object destruction
-and global delete path as `default_delete`. Same-type move assignment evaluates
-the right owner before the left owner, releases the source and then resets the
-destination; self-move therefore retains ownership. `nullptr` assignment keeps
-the same right-before-left ordering and resets the destination. Member `swap`
-evaluates its receiver before its argument; free `std::swap` evaluates each
-owner once. Both exchange only the captured pointer fields, perform no
-destruction and retain ownership during self-swap. Same-specialization `==` and
-`!=` compare the captured raw pointers, including either operand order with
+and global delete path as `default_delete`. Same-type and const-adding
+converting move assignment evaluate the right owner before the left owner,
+release the source and then reset the destination; same-type self-move therefore
+retains ownership. `nullptr` assignment keeps the same right-before-left
+ordering and resets the destination. Member `swap` evaluates its receiver
+before its argument; free `std::swap` evaluates each owner once. Both exchange
+only the captured pointer fields, perform no destruction and retain ownership
+during self-swap. Same-specialization and qualification-compatible
+same-unqualified-element `==` and `!=` compare captured raw pointers after
+forming the common qualified pointer type, including either operand order with
 `nullptr`. Automatic and static destruction first clear the owner and then
 destroy and deallocate its former object. Null pointers skip destruction and
 deallocation.
@@ -528,8 +531,9 @@ destruction and the checked global-delete path remain shared with direct
 The element must be complete and within the target's default new alignment,
 and the matching global sized or unsized delete definition must be
 source-owned. Class-specific delete, array specializations, custom deleters,
-volatile elements, `get_deleter`, member-function addresses, converting moves,
-heterogeneous or ordered comparisons remain rejected at this boundary. Array
+volatile elements, `get_deleter`, member-function addresses, const-removing or
+base-adjusting converting moves, base-adjusting heterogeneous comparisons and
+ordered comparisons remain rejected at this boundary. Array
 `make_unique`, class-specific allocation, throwing or default-argument record
 construction, over-aligned elements, factory function addresses and other
 ownership factories remain rejected. Every admitted operation emits no libc++

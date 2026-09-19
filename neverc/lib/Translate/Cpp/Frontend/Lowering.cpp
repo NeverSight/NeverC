@@ -1464,6 +1464,7 @@ class FunctionLowering {
     case UtilityOperation::MemoryUniquePtrRelease:
     case UtilityOperation::MemoryUniquePtrReset:
     case UtilityOperation::MemoryUniquePtrMoveAssign:
+    case UtilityOperation::MemoryUniquePtrConvertingMoveAssign:
     case UtilityOperation::MemoryUniquePtrNullAssign:
     case UtilityOperation::MemoryUniquePtrMemberSwap: {
       const auto Info =
@@ -1487,6 +1488,8 @@ class FunctionLowering {
           return UtilityUniquePtrOperation::Reset;
         case UtilityOperation::MemoryUniquePtrMoveAssign:
           return UtilityUniquePtrOperation::MoveAssign;
+        case UtilityOperation::MemoryUniquePtrConvertingMoveAssign:
+          return UtilityUniquePtrOperation::ConvertingMoveAssign;
         case UtilityOperation::MemoryUniquePtrNullAssign:
           return UtilityUniquePtrOperation::NullAssign;
         case UtilityOperation::MemoryUniquePtrMemberSwap:
@@ -1517,12 +1520,24 @@ class FunctionLowering {
 
       const auto RecordType = A.Context.getRecordType(Info->Owner.Record);
       std::optional<Expression> MoveSourceAddress;
-      if (Expected == UtilityUniquePtrOperation::MoveAssign) {
+      std::optional<UtilityUniquePtrRecord> MoveSourceOwner;
+      if (Expected == UtilityUniquePtrOperation::MoveAssign ||
+          Expected == UtilityUniquePtrOperation::ConvertingMoveAssign) {
         if (Info->ArgumentIndex >= Call->getNumArgs())
           reject(L, "unique pointer move assignment",
                  "The checked source owner is missing.");
+        MoveSourceOwner =
+            Expected == UtilityUniquePtrOperation::MoveAssign
+                ? std::optional<UtilityUniquePtrRecord>(Info->Owner)
+                : Info->SourceOwner;
+        if (!MoveSourceOwner)
+          reject(L, "unique pointer move assignment",
+                 "The checked source owner type is missing.");
         const auto *Source = Call->getArg(Info->ArgumentIndex);
-        MoveSourceAddress = snapshot(address(lvalue(Source), RecordType, L), L);
+        MoveSourceAddress = snapshot(
+            address(lvalue(Source),
+                    A.Context.getRecordType(MoveSourceOwner->Record), L),
+            L);
       } else if (Expected == UtilityUniquePtrOperation::NullAssign) {
         if (Info->ArgumentIndex >= Call->getNumArgs())
           reject(L, "unique pointer null assignment",
@@ -1559,18 +1574,22 @@ class FunctionLowering {
         assign(Member(), A.zero(Info->Owner.PointerType, L), L);
         return Pointer;
       }
-      if (Expected == UtilityUniquePtrOperation::MoveAssign) {
-        if (!MoveSourceAddress)
+      if (Expected == UtilityUniquePtrOperation::MoveAssign ||
+          Expected == UtilityUniquePtrOperation::ConvertingMoveAssign) {
+        if (!MoveSourceAddress || !MoveSourceOwner)
           reject(L, "unique pointer move assignment",
                  "The checked source owner was not captured.");
         auto SourceMember = [&] {
           return UniquePtrMember(
-              dereference(json::Object(*MoveSourceAddress), L), Info->Owner);
+              dereference(json::Object(*MoveSourceAddress), L),
+              *MoveSourceOwner);
         };
         auto Pointer = snapshot(SourceMember(), L);
-        assign(SourceMember(), A.zero(Info->Owner.PointerType, L), L);
+        assign(SourceMember(), A.zero(MoveSourceOwner->PointerType, L), L);
         auto Previous = snapshot(Member(), L);
-        assign(Member(), std::move(Pointer), L);
+        assign(Member(),
+               cast(std::move(Pointer), type(Info->Owner.PointerType, L), L),
+               L);
         const auto *Function =
             A.allocatorHeapFunction(false, Info->Owner.ElementType, L);
         deallocateSingle(std::move(Previous), Info->Owner.ElementType, Function,
@@ -1649,20 +1668,27 @@ class FunctionLowering {
           A.S, A.Sources, Call->getArg(1)->getType()->getAsCXXRecordDecl(),
           A.Context);
       if ((!Left && !Right) || (Left && Right &&
-                                Left->Record->getCanonicalDecl() !=
-                                    Right->Record->getCanonicalDecl()))
+                                !A.Context.hasSameUnqualifiedType(
+                                    Left->ElementType, Right->ElementType)))
         reject(L, "unique pointer comparison",
-               "Matching checked std::unique_ptr or nullptr operands are "
+               "Compatible checked std::unique_ptr or nullptr operands are "
                "required.");
       const auto &Owner = Left ? *Left : *Right;
+      auto ComparisonPointer = Owner.PointerType;
+      if (Left && Right)
+        ComparisonPointer = Left->ElementType.isConstQualified()
+                                ? Left->PointerType
+                                : Right->PointerType;
       auto Operand = [&](unsigned Index,
                          const std::optional<UtilityUniquePtrRecord> &Unique) {
         if (!Unique) {
           discard(Call->getArg(Index));
-          return A.zero(Owner.PointerType, L);
+          return A.zero(ComparisonPointer, L);
         }
-        return snapshot(UniquePtrMember(lvalue(Call->getArg(Index)), *Unique),
-                        L);
+        return snapshot(
+            cast(UniquePtrMember(lvalue(Call->getArg(Index)), *Unique),
+                 type(ComparisonPointer, L), L),
+            L);
       };
       auto LeftValue = Operand(0, Left);
       auto RightValue = Operand(1, Right);
@@ -8207,28 +8233,39 @@ class FunctionLowering {
         assign(std::move(Member), expression(C->getArg(0)), L);
         return;
       }
-      case UtilityUniquePtrConstruction::Move: {
+      case UtilityUniquePtrConstruction::Move:
+      case UtilityUniquePtrConstruction::ConvertingMove: {
         if (C->getNumArgs() != 1)
           reject(L, "unique pointer move construction",
                  "A moving std::unique_ptr construction needs one owner.");
+        const auto Source = approvedUtilityUniquePtrRecord(
+            A.S, A.Sources, C->getArg(0)->getType()->getAsCXXRecordDecl(),
+            A.Context);
+        const bool Converting =
+            *Kind == UtilityUniquePtrConstruction::ConvertingMove;
+        if (!Source || Converting == (Source->Record->getCanonicalDecl() ==
+                                      Unique->Record->getCanonicalDecl()))
+          reject(L, "unique pointer move construction",
+                 "The checked source std::unique_ptr type changed.");
         auto SourceAddress =
             snapshot(address(lvalue(C->getArg(0)),
-                             A.Context.getRecordType(Unique->Record), L),
+                             A.Context.getRecordType(Source->Record), L),
                      L);
         Expression SourceMember{
             {"kind", "member"},
-            {"type", type(Unique->PointerType, L)},
+            {"type", type(Source->PointerType, L)},
             {"name", "nct_unique_ptr_pointer"},
             {"args", json::Array{dereference(std::move(SourceAddress), L)}},
             {"loc", A.loc(L)}};
         auto Pointer = snapshot(SourceMember, L);
-        assign(std::move(SourceMember), A.zero(Unique->PointerType, L), L);
+        assign(std::move(SourceMember), A.zero(Source->PointerType, L), L);
         Expression DestinationMember{{"kind", "member"},
                                      {"type", type(Unique->PointerType, L)},
                                      {"name", "nct_unique_ptr_pointer"},
                                      {"args", json::Array{json::Object(Place)}},
                                      {"loc", A.loc(L)}};
-        assign(std::move(DestinationMember), std::move(Pointer), L);
+        assign(std::move(DestinationMember),
+               cast(std::move(Pointer), type(Unique->PointerType, L), L), L);
         return;
       }
       }

@@ -298,6 +298,7 @@ enum class UtilityUniquePtrConstruction {
   Null,
   Pointer,
   Move,
+  ConvertingMove,
 };
 std::optional<UtilityUniquePtrConstruction>
 approvedUtilityUniquePtrConstruction(
@@ -312,6 +313,7 @@ enum class UtilityUniquePtrOperation {
   Release,
   Reset,
   MoveAssign,
+  ConvertingMoveAssign,
   NullAssign,
   Swap,
 };
@@ -320,6 +322,7 @@ struct UtilityUniquePtrCall {
   UtilityUniquePtrOperation Operation;
   const clang::Expr *Object;
   unsigned ArgumentIndex;
+  std::optional<UtilityUniquePtrRecord> SourceOwner = std::nullopt;
 };
 std::optional<UtilityUniquePtrCall>
 approvedUtilityUniquePtrCall(const State &S, const clang::SourceManager &SM,
@@ -401,6 +404,7 @@ enum class UtilityOperation {
   MemoryUniquePtrRelease,
   MemoryUniquePtrReset,
   MemoryUniquePtrMoveAssign,
+  MemoryUniquePtrConvertingMoveAssign,
   MemoryUniquePtrNullAssign,
   MemoryUniquePtrMemberSwap,
   MemoryUniquePtrSwap,

@@ -3004,6 +3004,23 @@ approvedUtilityUniquePtrConstruction(const State &S, const SourceManager &SM,
       Context.hasSameUnqualifiedType(Argument, OwnerType) &&
       Construction->getArg(0)->isXValue())
     return UtilityUniquePtrConstruction::Move;
+  const auto Source = approvedUtilityUniquePtrRecord(
+      S, SM, Construction->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
+  const auto *Primary = Constructor->getPrimaryTemplate();
+  if (Source && Primary &&
+      Source->Record->getCanonicalDecl() != Owner->Record->getCanonicalDecl() &&
+      Parameter->isRValueReferenceType() &&
+      Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                     Context.getRecordType(Source->Record)) &&
+      Context.hasSameUnqualifiedType(Argument,
+                                     Context.getRecordType(Source->Record)) &&
+      Construction->getArg(0)->isXValue() &&
+      approvedStandardSDKDeclaration(S, SM, Primary) &&
+      cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
+                    "__memory/unique_ptr.h") &&
+      utilityPointerConversion(Context, Source->PointerType,
+                               Owner->PointerType))
+    return UtilityUniquePtrConstruction::ConvertingMove;
   if (Parameter->isNullPtrType() && Argument->isNullPtrType())
     return UtilityUniquePtrConstruction::Null;
   if (Context.hasSameType(Parameter, Owner->PointerType) &&
@@ -3084,6 +3101,34 @@ approvedUtilityUniquePtrCall(const State &S, const SourceManager &SM,
                                      OwnerType) &&
       Call->getArg(ArgumentIndex)->isXValue()) {
     Operation = UtilityUniquePtrOperation::MoveAssign;
+  } else if (Method->getOverloadedOperator() == OO_Equal &&
+             Method->getPrimaryTemplate() && Method->getNumParams() == 1 &&
+             AssignmentResult()) {
+    const auto Source = approvedUtilityUniquePtrRecord(
+        S, SM, Call->getArg(ArgumentIndex)->getType()->getAsCXXRecordDecl(),
+        Context);
+    const auto *Primary = Method->getPrimaryTemplate();
+    const auto Parameter = Method->getParamDecl(0)->getType();
+    if (!Source || !Primary ||
+        Source->Record->getCanonicalDecl() ==
+            Owner->Record->getCanonicalDecl() ||
+        !Parameter->isRValueReferenceType() ||
+        !Context.hasSameUnqualifiedType(
+            Parameter->getPointeeType(),
+            Context.getRecordType(Source->Record)) ||
+        !Context.hasSameUnqualifiedType(
+            Call->getArg(ArgumentIndex)->getType(),
+            Context.getRecordType(Source->Record)) ||
+        !Call->getArg(ArgumentIndex)->isXValue() ||
+        !approvedStandardSDKDeclaration(S, SM, Primary) ||
+        !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
+                       "__memory/unique_ptr.h") ||
+        !utilityPointerConversion(Context, Source->PointerType,
+                                  Owner->PointerType))
+      return std::nullopt;
+    Operation = UtilityUniquePtrOperation::ConvertingMoveAssign;
+    return UtilityUniquePtrCall{*Owner, Operation, Object, ArgumentIndex,
+                                *Source};
   } else if (Method->getOverloadedOperator() == OO_Equal &&
              !Method->getPrimaryTemplate() && Method->getNumParams() == 1 &&
              AssignmentResult() &&
@@ -4237,6 +4282,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return UtilityOperation::MemoryUniquePtrReset;
     case UtilityUniquePtrOperation::MoveAssign:
       return UtilityOperation::MemoryUniquePtrMoveAssign;
+    case UtilityUniquePtrOperation::ConvertingMoveAssign:
+      return UtilityOperation::MemoryUniquePtrConvertingMoveAssign;
     case UtilityUniquePtrOperation::NullAssign:
       return UtilityOperation::MemoryUniquePtrNullAssign;
     case UtilityUniquePtrOperation::Swap:
@@ -4914,7 +4961,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         !(LeftNull && RightNull) &&
         (!Left || !Right ||
          Left->Record->getCanonicalDecl() ==
-             Right->Record->getCanonicalDecl()) &&
+             Right->Record->getCanonicalDecl() ||
+         utilityPointerConversion(Context, Left->PointerType,
+                                  Right->PointerType) ||
+         utilityPointerConversion(Context, Right->PointerType,
+                                  Left->PointerType)) &&
         ParameterMatches(0, Left, LeftNull) &&
         ParameterMatches(1, Right, RightNull))
       return Kind == OO_EqualEqual ? UtilityOperation::MemoryUniquePtrEqual

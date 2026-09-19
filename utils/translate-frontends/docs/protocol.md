@@ -1499,12 +1499,15 @@ ownership field. Exact single-object
 `std::unique_ptr<T, std::default_delete<T>>` specializations preserve the
 authenticated pointer-sized libc++ representation as a record with one
 synthetic `{name:"nct_unique_ptr_pointer",type:"ptr:T"}` field at bit offset
-zero. Default, null, raw-pointer and same-type move construction; same-type move
-and `nullptr` assignment; pointer access, dereference, boolean conversion,
-release, reset, member/free swap, same-specialization equality/inequality,
-bidirectional `nullptr` comparison and destruction lower to existing record,
-pointer, comparison and checked lifetime instructions. Swaps capture both owners
-and exchange only their pointer fields; comparison operands are evaluated once.
+zero. Default, null, raw-pointer, same-type move and const-adding converting move
+construction; same-type and const-adding converting move assignment; `nullptr`
+assignment; pointer access, dereference, boolean conversion, release, reset,
+member/free swap, same-specialization and qualification-compatible same-element
+equality/inequality, bidirectional `nullptr` comparison and destruction lower
+to existing record, pointer, cast, comparison and checked lifetime instructions.
+Moves capture the source pointer, clear that source and cast only to the checked
+qualification-compatible destination type. Swaps capture both owners and
+exchange only their pointer fields; comparison operands are evaluated once.
 Exact single-object `std::make_unique<T>(args...)` authenticates its pinned
 template specialization, non-array `new` and raw-pointer owner construction,
 then emits an ordinary checked source-defined global-new `call`, scalar

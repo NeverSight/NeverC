@@ -155,16 +155,17 @@ evaluates the receiver and pointer once, destroys the complete object and calls
 a checked source-defined global sized or unsized delete. Array specializations,
 volatile elements and function addresses remain rejected. Exact single-object
 `std::unique_ptr<T, std::default_delete<T>>` specializations use an
-authenticated pointer-sized carrier. Default, null, raw-pointer and same-type
-move construction; same-type move and `nullptr` assignment; pointer access,
-release, reset, member/free swap, same-specialization equality/inequality,
-bidirectional `nullptr` comparison and destruction lower directly through the
-checked global-delete path without a libc++ call. Exact single-object
-`std::make_unique<T>(args...)` authenticates the pinned factory body and lowers
-through checked source-defined global new/delete. It value-initializes scalars
-or calls an exact source-owned non-template `noexcept` record constructor with
-the call-site arguments, then returns the same pointer-sized owner without a
-libc++ call. Exact runtime allocator
+authenticated pointer-sized carrier. Default, null, raw-pointer, same-type move
+and const-adding converting move construction; same-type and const-adding
+converting move assignment; `nullptr` assignment; pointer access, release,
+reset, member/free swap, same-specialization and qualification-compatible same-element
+equality/inequality, bidirectional `nullptr` comparison and destruction lower
+directly through the checked global-delete path without a libc++ call. Exact
+single-object `std::make_unique<T>(args...)` authenticates the pinned factory
+body and lowers through checked source-defined global new/delete. It
+value-initializes scalars or calls an exact source-owned non-template `noexcept`
+record constructor with the call-site arguments, then returns the same
+pointer-sized owner without a libc++ call. Exact runtime allocator
 specializations use an authenticated one-byte stateless carrier. Default,
 copy/move and non-void converting construction, same-type assignment,
 heterogeneous equality, deprecated C++17 `address` and complete-element

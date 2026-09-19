@@ -1683,8 +1683,21 @@ extern "C" int memory_unique_ptr(int *pointer) {
       !(nullptr != assigned) || !(other == nullptr) || !(nullptr == other) ||
       other != nullptr || nullptr != other)
     return 8;
-  assigned = nullptr;
-  return assigned ? 9 : 0;
+  std::unique_ptr<const int> converted(std::move(assigned));
+  if (assigned || !converted || *converted != *pointer)
+    return 9;
+  std::unique_ptr<int> converting_source(new int(3));
+  std::unique_ptr<const int> converting_target(new int(4));
+  if (converted == converting_source || converting_source == converted ||
+      !(converted != converting_source) ||
+      !(converting_source != converted))
+    return 10;
+  converting_target = std::move(converting_source);
+  if (converting_source || !converting_target || *converting_target != 3)
+    return 11;
+  converted = nullptr;
+  converting_target = nullptr;
+  return converted || converting_target ? 12 : 0;
 }
 extern "C" int memory_make_unique(int value) {
   auto owner = std::make_unique<int>(value);
@@ -1717,26 +1730,39 @@ extern "C" int memory_make_unique(int value) {
         assert data.get("memory_lifetimes") is True, data
 
     def check_memory_unique_ptr(data):
-        unique_records = [
-            record for record in data["records"]
-            if record["fields"] == [
-                {"name": "nct_unique_ptr_pointer", "type": "ptr:int"}
-            ]
-        ]
-        assert len(unique_records) == 1, data
+        unique_records = {
+            record["fields"][0]["type"]: record
+            for record in data["records"]
+            if len(record["fields"]) == 1 and
+               record["fields"][0]["name"] == "nct_unique_ptr_pointer" and
+               record["fields"][0]["type"] in ("ptr:int", "cptr:int")
+        }
+        assert set(unique_records) == {"ptr:int", "cptr:int"}, data
         pointer_layout = data["target"]["carrier_layout"]["default-pointer"]
-        assert unique_records[0]["layout"] == {
+        expected_layout = {
             "size_bits": data["target"]["pointer_bits"],
             "abi_align_bits": pointer_layout["abi_align_bits"],
             "field_offsets_bits": [0],
-        }, data
+        }
+        assert all(record["layout"] == expected_layout
+                   for record in unique_records.values()), data
+        destroy_names = {
+            record["id"] + "_destroy" for record in unique_records.values()
+        }
         functions = [
             function for function in data["functions"]
-            if function["name"] in (
-                "memory_unique_ptr", "memory_make_unique",
-                unique_records[0]["id"] + "_destroy")
+            if function["name"] in {
+                "memory_unique_ptr", "memory_make_unique", *destroy_names
+            }
         ]
-        assert len(functions) == 3, data
+        assert len(functions) == 4, data
+        unique_function = next(
+            function for function in functions
+            if function["name"] == "memory_unique_ptr"
+        )
+        assert any(node.get("kind") == "cast" and
+                   node.get("type") == "cptr:int"
+                   for node in walk(unique_function["body"])), data
         calls = [node for node in walk(functions)
                  if node.get("op") == "call"]
         assert calls, data

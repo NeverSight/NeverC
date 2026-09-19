@@ -25220,7 +25220,7 @@ TEST_F(TranslateTest, CoreV2MemoryUniquePtrRunsAtBothOptimizations) {
 #include <memory>
 using Size = decltype(sizeof(0));
 struct Storage { unsigned long long alignment; unsigned char bytes[64]; };
-Storage storage[10]{};
+Storage storage[11]{};
 int allocations;
 int releases;
 int destroyed;
@@ -25241,6 +25241,15 @@ std::unique_ptr<Owned> &observe(std::unique_ptr<Owned> &value, int digit) {
   return value;
 }
 Owned *observe(Owned *value, int digit) {
+  effects = effects * 10 + digit;
+  return value;
+}
+std::unique_ptr<int> &observe(std::unique_ptr<int> &value, int digit) {
+  effects = effects * 10 + digit;
+  return value;
+}
+std::unique_ptr<const int> &observe(std::unique_ptr<const int> &value,
+                                    int digit) {
   effects = effects * 10 + digit;
   return value;
 }
@@ -25271,8 +25280,24 @@ int main() {
   if (releases != 3 || destroyed != 7) return 7;
 
   {
-    std::unique_ptr<const int> qualified(new int(5));
-    if (!qualified || *qualified != 5) return 8;
+    std::unique_ptr<int> mutable_qualified(new int(5));
+    effects = 0;
+    std::unique_ptr<const int> qualified(
+        std::move(observe(mutable_qualified, 1)));
+    std::unique_ptr<int> assignment_source(new int(6));
+    std::unique_ptr<const int> assignment_target(new int(7));
+    if (effects != 1 || mutable_qualified || !qualified || *qualified != 5 ||
+        qualified == assignment_source || assignment_source == qualified ||
+        !(qualified != assignment_source) ||
+        !(assignment_source != qualified)) return 8;
+    const int releases_before_assignment = releases;
+    effects = 0;
+    observe(assignment_target, 2) =
+        std::move(observe(assignment_source, 1));
+    if (effects != 12 || assignment_source || !assignment_target ||
+        *assignment_target != 6 ||
+        releases != releases_before_assignment + 1)
+      return 8;
   }
 
   effects = 0;
@@ -25283,13 +25308,13 @@ int main() {
   effects = 0;
   observe(target, 2) = std::move(observe(moved, 1));
   if (effects != 12 || moved || !target || target->value != 6 ||
-      releases != 5 || destroyed != 14) return 10;
+      releases != 7 || destroyed != 14) return 10;
   Owned *same = target.get();
   target = std::move(target);
-  if (target.get() != same || releases != 5 || destroyed != 14) return 11;
+  if (target.get() != same || releases != 7 || destroyed != 14) return 11;
   effects = 0;
   observe(target, 3) = (effects = effects * 10 + 4, nullptr);
-  if (effects != 43 || target || releases != 6 || destroyed != 20) return 12;
+  if (effects != 43 || target || releases != 8 || destroyed != 20) return 12;
 
   std::unique_ptr<Owned> left(new Owned{9});
   std::unique_ptr<Owned> right(new Owned{10});
@@ -25326,7 +25351,7 @@ int main() {
   left.reset();
   right.reset();
 
-  return allocations == 9 && releases == 8 && destroyed == 39 &&
+  return allocations == 11 && releases == 10 && destroyed == 39 &&
                  released_size == sizeof(int)
              ? 0
              : 17;
@@ -25391,17 +25416,24 @@ TEST_F(TranslateTest, CoreV2MemoryUniquePtrRequiresExactObjectForms) {
        "int f(){std::unique_ptr<int> value;"
        "return &value.get_deleter()!=nullptr;}",
        "TR0203"},
-      {"converting-move",
+      {"derived-converting-move",
        "#include <memory>\nvoid operator delete(void*)noexcept{}"
-       "int f(){std::unique_ptr<int> source;"
-       "std::unique_ptr<const int> destination("
-       "static_cast<std::unique_ptr<int>&&>(source));"
+       "struct B{};struct D:B{};int f(){std::unique_ptr<D> source;"
+       "std::unique_ptr<B> destination("
+       "static_cast<std::unique_ptr<D>&&>(source));"
        "return destination ? 1 : 0;}",
        "TR0201"},
-      {"heterogeneous-comparison",
+      {"derived-converting-assignment",
        "#include <memory>\nvoid operator delete(void*)noexcept{}"
-       "int f(){std::unique_ptr<int> left;"
-       "std::unique_ptr<const int> right;return left==right;}",
+       "struct B{};struct D:B{};int f(){std::unique_ptr<D> source;"
+       "std::unique_ptr<B> destination;destination="
+       "static_cast<std::unique_ptr<D>&&>(source);"
+       "return destination ? 1 : 0;}",
+       "TR0203"},
+      {"derived-heterogeneous-comparison",
+       "#include <memory>\nvoid operator delete(void*)noexcept{}"
+       "struct B{};struct D:B{};int f(){std::unique_ptr<D> left;"
+       "std::unique_ptr<B> right;return left==right;}",
        "TR0203"},
       {"ordered-comparison",
        "#include <memory>\nvoid operator delete(void*)noexcept{}"
