@@ -5990,6 +5990,26 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Context.hasSameUnqualifiedType(Call->getArg(ValueIndex)->getType(),
                                           Value->getPointeeType());
   };
+  auto AlgorithmEqualityValueParameter = [&](unsigned ValueIndex,
+                                             unsigned IteratorIndex) {
+    if (ValueIndex >= Function->getNumParams() ||
+        ValueIndex >= Call->getNumArgs() ||
+        IteratorIndex >= Function->getNumParams())
+      return false;
+    auto Iterator = Function->getParamDecl(IteratorIndex)->getType();
+    auto Value = Function->getParamDecl(ValueIndex)->getType();
+    if (!utilityAlgorithmScalarPointer(Context, Iterator) ||
+        !Value->isLValueReferenceType() ||
+        !Value->getPointeeType().isConstQualified() ||
+        Value->getPointeeType().isVolatileQualified() ||
+        !utilityScalar(Context, Value->getPointeeType()) ||
+        !Context.hasSameUnqualifiedType(Call->getArg(ValueIndex)->getType(),
+                                        Value->getPointeeType()))
+      return false;
+    return utilityScalarComparisonType(Context, Iterator->getPointeeType(),
+                                       Value->getPointeeType(), false)
+        .has_value();
+  };
   auto MemoryConstructionValueParameter = [&](unsigned ValueIndex,
                                               unsigned IteratorIndex) {
     if (ValueIndex >= Function->getNumParams() ||
@@ -6549,7 +6569,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType())) {
     auto Iterator = Function->getParamDecl(0)->getType();
-    if (AlgorithmValueParameter(2, 0)) {
+    if (AlgorithmEqualityValueParameter(2, 0)) {
       if (Name == "find" && Origin->Path == "__algorithm/find.h" &&
           Same(Function->getReturnType(), Iterator) &&
           Same(Call->getType(), Function->getReturnType()))

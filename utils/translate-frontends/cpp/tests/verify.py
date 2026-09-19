@@ -2919,9 +2919,9 @@ extern "C" int algorithm_header() { return 0; }
 
     algorithm_read_only_source = """\
 #include <algorithm>
-extern "C" int algorithm_read_only(int *values, long *other) {
-  int *found = std::find(values, values + 4, 3);
-  auto count = std::count(values, values + 4, 3);
+extern "C" int algorithm_read_only(int *values, long *other, short value) {
+  int *found = std::find(values, values + 4, value);
+  auto count = std::count(values, values + 4, value);
   bool same3 = std::equal(values, values + 4, other);
   bool same4 = std::equal(values, values + 4, other, other + 4);
   return static_cast<int>(found - values + count) + (same3 && same4 ? 1 : 0);
@@ -2937,9 +2937,6 @@ extern "C" int algorithm_read_only(int *values, long *other) {
         check("v2-algorithm-read-only-" + target,
               algorithm_read_only_source, profile="cpp-core-v2",
               target=target, sdk=True)
-    check("v2-algorithm-heterogeneous-find",
-          '#include <algorithm>\nint main(){int a[2]{1,2};short n=2;return std::find(a,a+2,n)==a+1?0:1;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-algorithm-predicate-equal-reference",
           '#include <algorithm>\nbool same(const int&a,const int&b){return a==b;}int main(){int a[2]{1,2};return std::equal(a,a+2,a,&same)?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)

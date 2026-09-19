@@ -2617,14 +2617,22 @@ class FunctionLowering {
       auto Last = snapshot(expression(Call->getArg(1)), L);
       auto ValueAddress = snapshot(
           address(lvalue(Call->getArg(2)), Call->getArg(2)->getType(), L), L);
+      auto Common = utilityScalarComparisonType(
+          A.Context, Call->getArg(0)->getType()->getPointeeType(),
+          Call->getArg(2)->getType(), false);
+      if (!Common)
+        reject(L, "algorithm find",
+               "The range element and value have no equality common type.");
+      const auto ComparisonType = type(*Common, L);
       const auto Check = labelName(), Compare = labelName();
       const auto Increment = labelName(), End = labelName();
       jump(Check, L);
       label(Check, L);
       branch(binary("!=", Current, Last, "bool", L), Compare, End, L);
       label(Compare, L);
-      branch(binary("==", dereference(Current, L),
-                    dereference(ValueAddress, L), "bool", L),
+      branch(binary("==", cast(dereference(Current, L), ComparisonType, L),
+                    cast(dereference(ValueAddress, L), ComparisonType, L),
+                    "bool", L),
              End, Increment, L);
       label(Increment, L);
       assign(Current,
@@ -2641,6 +2649,13 @@ class FunctionLowering {
       auto Last = snapshot(expression(Call->getArg(1)), L);
       auto ValueAddress = snapshot(
           address(lvalue(Call->getArg(2)), Call->getArg(2)->getType(), L), L);
+      auto Common = utilityScalarComparisonType(
+          A.Context, Call->getArg(0)->getType()->getPointeeType(),
+          Call->getArg(2)->getType(), false);
+      if (!Common)
+        reject(L, "algorithm count",
+               "The range element and value have no equality common type.");
+      const auto ComparisonType = type(*Common, L);
       const auto ResultType = type(Call->getType(), L);
       auto Result = temporary(ResultType, L);
       assign(Result, quantity(0, ResultType, L), L);
@@ -2650,8 +2665,9 @@ class FunctionLowering {
       label(Check, L);
       branch(binary("!=", Current, Last, "bool", L), Compare, End, L);
       label(Compare, L);
-      branch(binary("==", dereference(Current, L),
-                    dereference(ValueAddress, L), "bool", L),
+      branch(binary("==", cast(dereference(Current, L), ComparisonType, L),
+                    cast(dereference(ValueAddress, L), ComparisonType, L),
+                    "bool", L),
              Match, Next, L);
       label(Match, L);
       assign(Result, binary("+", Result, one(ResultType, L), ResultType, L),

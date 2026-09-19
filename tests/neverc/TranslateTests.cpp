@@ -28510,13 +28510,13 @@ int main() {
   const int *first = values;
   const int *last = values + 7;
   int effects = 0;
-  int needle = 2;
+  short needle = 2;
   auto found = std::find((++effects, first), (++effects, last),
                          (++effects, needle));
   if (effects != 3 || found != values + 1 ||
       std::find(first, last, 9) != last)
     return 1;
-  if (std::count(first, last, 2) != 3 ||
+  if (std::count(first, last, needle) != 3 ||
       std::count(first, first, 2) != 0)
     return 2;
 
@@ -28576,9 +28576,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmReadOnlyRequiresPinnedPointerForms) {
     const char *Source;
   };
   const Rejection Cases[] = {
-      {"heterogeneous-find",
-       "#include <algorithm>\nint main(){int a[2]{1,2};short n=2;"
-       "return std::find(a,a+2,n)==a+1?0:1;}"},
       {"predicate-equal-reference",
        "#include <algorithm>\nbool same(const int&a,const int&b){return a==b;}"
        "int main(){int a[2]{1,2};return std::equal(a,a+2,a,&same)?0:1;}"},

@@ -835,7 +835,9 @@ The exact default-equality `std::find`, `std::count`, three- and four-iterator
 `std::replace`, `std::replace_copy`, `std::unique` and `std::unique_copy`
 templates lower for built-in integer, `float`, `double`, object pointer or
 `nullptr_t` values. `equal` may compare two scalar element types with a checked
-common equality type. Algorithms that compact or replace an input range require
+common equality type. `find` and `count` may compare the range element with a
+different scalar value through the same checked common type. Algorithms that
+compact or replace an input range require
 it to be writable; copy variants require a writable scalar output whose element
 accepts a checked direct conversion from the input.
 Value references remain live through the loop, including when they alias an
