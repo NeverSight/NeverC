@@ -4650,18 +4650,18 @@ utilityTupleCatSource(const State &S, const SourceManager &SM, QualType Type,
       Type.isNull() ? nullptr : Type.getUnqualifiedType()->getAsCXXRecordDecl();
   if (const auto Tuple = approvedUtilityTupleRecord(S, SM, Record, Context)) {
     for (const auto *Element : Tuple->Elements)
-      if (!utilityScalar(Context, Element->getType()))
+      if (!utilityTupleValue(S, SM, Context, Element->getType()))
         return std::nullopt;
     return UtilityTupleCatSource{Tuple->Elements, nullptr, {}, 0};
   }
   if (const auto Pair = approvedUtilityPairRecord(S, SM, Record, Context)) {
-    if (!utilityScalar(Context, Pair->First->getType()) ||
-        !utilityScalar(Context, Pair->Second->getType()))
+    if (!utilityTupleValue(S, SM, Context, Pair->First->getType()) ||
+        !utilityTupleValue(S, SM, Context, Pair->Second->getType()))
       return std::nullopt;
     return UtilityTupleCatSource{{Pair->First, Pair->Second}, nullptr, {}, 0};
   }
   if (const auto Array = approvedUtilityArrayRecord(S, SM, Record, Context)) {
-    if (!utilityScalar(Context, Array->ElementType))
+    if (!utilityTupleValue(S, SM, Context, Array->ElementType))
       return std::nullopt;
     return UtilityTupleCatSource{
         {}, Array->Elements, Array->ElementType, Array->Size};

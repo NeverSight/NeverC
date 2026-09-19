@@ -135,10 +135,10 @@ construction, assignment, factories, swaps, comparisons and `get`. Exact
 pointers with exact by-value scalar parameters and a scalar or void result. The
 callable and tuple are evaluated once and lower to an ordinary indirect call,
 without a libc++ runtime dependency. Exact `tuple_cat` accepts zero arguments
-or scalar tuple, pair and array sources, evaluates all sources once before
-reading their elements, and constructs the exact concatenated tuple directly.
-Callable objects, converted, reference or record callback parameters, and
-tuple-cat composite elements remain rejected.
+or scalar and recursively composite tuple, pair and array sources, evaluates
+all sources once before reading their elements, and constructs the exact
+concatenated tuple directly. Callable objects and converted, reference or record
+callback parameters remain rejected.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#value-tuples-from-tuple).
 
 Core v2 type metadata now accepts owned incomplete non-union classes, including forward declarations and uninstantiated template types. Classification and array dimensions retain exact source identity without generating record storage; runtime carriers and callbacks still require complete admitted types. Reference/pointer operation queries can use these identities with exact retained source proof; selected lazy method return signatures keep their complete-carrier checks. Native verification requires the implementing revision’s CI. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#incomplete-record-type-metadata).

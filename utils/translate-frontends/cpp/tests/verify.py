@@ -618,11 +618,17 @@ extern "C" int tuple_composite() {
   Pair scalar_pair{22, 23};
   Array scalar_array{{24, 25}};
   auto concatenated = std::tuple_cat(scalar_pair, scalar_array);
+  std::array<Point, 2> points{{{26, 27}, {28, 29}}};
+  auto composite_concatenated = std::tuple_cat(first, source, points, nested);
   auto empty_concatenated = std::tuple_cat(std::array<int, 0>{});
   return std::get<Point>(zero).x + std::get<Array>(made)[1] +
          std::get<0>(std::get<0>(nested)) +
          std::get<Point>(from_pair).y + std::get<Array>(assigned)[0] +
          std::get<0>(concatenated) + std::get<3>(concatenated) +
+         std::get<0>(composite_concatenated).x +
+         std::get<3>(composite_concatenated).y +
+         std::get<5>(composite_concatenated).x +
+         std::get<0>(std::get<7>(composite_concatenated)) +
          int(sizeof(empty_concatenated));
 }
 """
@@ -690,9 +696,6 @@ extern "C" int tuple_composite() {
         ("ambiguous-type-get",
          '#include <tuple>\nint main(){std::tuple<int,int>v(1,2);return std::get<int>(v);}',
          "TR0202"),
-        ("tuple-cat-record",
-         '#include <tuple>\nstruct R{int n;};int main(){std::tuple<R> source(R{1});auto value=std::tuple_cat(source);return std::get<0>(value).n;}',
-         "TR0203"),
         ("apply-converted-parameter",
          '#include <tuple>\nint add(int a,int b){return a+b;}int main(){return std::apply(add,std::make_tuple(short(1),2));}',
          "TR0203"),

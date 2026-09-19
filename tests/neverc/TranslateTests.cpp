@@ -23637,6 +23637,7 @@ TEST_F(TranslateTest, CoreV2TupleCatRunsAtBothOptimizations) {
 #include <array>
 #include <tuple>
 #include <utility>
+struct Point { int x; int y; };
 using One = std::tuple<int>;
 int effects;
 One &select(One &value) {
@@ -23672,11 +23673,27 @@ int main() {
     return 3;
   auto empty = std::tuple_cat();
   auto empty_array = std::tuple_cat(std::array<int, 0>{});
-  return std::tuple_size<decltype(empty)>::value == 0 && sizeof(empty) == 1 &&
-                 std::tuple_size<decltype(empty_array)>::value == 0 &&
-                 sizeof(empty_array) == 1
-             ? 0
-             : 4;
+  if (std::tuple_size<decltype(empty)>::value != 0 || sizeof(empty) != 1 ||
+      std::tuple_size<decltype(empty_array)>::value != 0 ||
+      sizeof(empty_array) != 1)
+    return 4;
+
+  using Row = std::array<int, 2>;
+  using Nested = std::tuple<short, int>;
+  std::tuple<Point> record(Point{10, 11});
+  std::pair<Row, Point> composite(Row{{12, 13}}, Point{14, 15});
+  std::array<Row, 2> records{{{{16, 17}}, {{18, 19}}}};
+  std::tuple<Nested> nested(Nested(short(20), 21));
+  auto combined = std::tuple_cat(record, composite, records, nested,
+                                 std::make_tuple(Point{22, 23}));
+  if (std::get<0>(combined).y != 11 || std::get<1>(combined)[1] != 13 ||
+      std::get<2>(combined).x != 14 || std::get<2>(combined).y != 15 ||
+      std::get<3>(combined)[0] != 16 || std::get<4>(combined)[1] != 19 ||
+      std::get<0>(std::get<5>(combined)) != 20 ||
+      std::get<1>(std::get<5>(combined)) != 21 ||
+      std::get<6>(combined).x != 22)
+    return 5;
+  return 0;
 }
 )cpp");
   auto Result =
@@ -23970,11 +23987,6 @@ TEST_F(TranslateTest, CoreV2TupleRequiresPinnedOperations) {
        "#include <tuple>\nint main(){std::tuple<int,int>v(1,2);"
        "return std::get<int>(v);}",
        "TR0202"},
-      {"tuple-cat-record",
-       "#include <tuple>\nstruct R{int n;};int main(){"
-       "std::tuple<R> source(R{1});auto value=std::tuple_cat(source);"
-       "return std::get<0>(value).n;}",
-       "TR0203"},
       {"apply-converted-parameter",
        "#include <tuple>\nint add(int a,int b){return a+b;}int main(){"
        "return std::apply(add,std::make_tuple(short(1),2));}",

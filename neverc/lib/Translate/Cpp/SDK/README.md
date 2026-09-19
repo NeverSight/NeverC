@@ -42,11 +42,12 @@ unique-type access without a runtime libc++ link. Exact `apply` over scalar
 tuples lowers named functions or stored function pointers with exact by-value
 scalar parameters to an ordinary indirect call, including empty tuples and
 scalar or void results. Exact `tuple_cat` handles zero arguments and
-authenticated scalar tuple, pair or array sources, capturing every source once
-before copying elements into the exact concatenated tuple. Composite elements
-may be source-owned nonempty trivial standard-layout records, admitted arrays or
-pairs, or nonempty nested tuples; their conversions keep the exact unqualified
-type and mutation requires recursive assignability. Programs using scalar pair
+authenticated scalar or recursively composite tuple, pair or array sources,
+capturing every source once before copying elements into the exact concatenated
+tuple. Composite elements may be source-owned nonempty trivial standard-layout
+records, admitted arrays or pairs, or nonempty nested tuples; their
+conversions keep the exact unqualified type and mutation requires recursive
+assignability. Programs using scalar pair
 conversion include both `<tuple>` and `<utility>` and have a 108-file union
 closure. The array-plus-tuple-plus-utility composite fixture has a 231-file
 union closure on every core-v2 target.
