@@ -1578,6 +1578,71 @@ extern "C" int memory_allocator_objects(int *pointer) {
         assert target_result["sdk_dependencies"] == memory_allocator_objects["sdk_dependencies"], target_result
         check_memory_allocator_objects(target_result)
 
+    memory_allocator_defaults_source = """\
+#include <memory>
+struct Storage { unsigned long long alignment; unsigned char bytes[64]; };
+int default_arguments;
+int next_default() noexcept { return ++default_arguments; }
+struct Record {
+  int value;
+  Record(int left = next_default(), long right = next_default()) noexcept
+      : value(left + static_cast<int>(right)) {}
+};
+extern "C" int memory_allocator_defaults() {
+  std::allocator<int> allocator;
+  using Traits = std::allocator_traits<std::allocator<int>>;
+  Storage first_storage{};
+  Storage second_storage{};
+  Record *first =
+      static_cast<Record *>(static_cast<void *>(first_storage.bytes));
+  Record *second =
+      static_cast<Record *>(static_cast<void *>(second_storage.bytes));
+  allocator.construct(first);
+  Traits::construct(allocator, second, 5);
+  return first->value == 3 && second->value == 8 && default_arguments == 3
+             ? 0
+             : 1;
+}
+"""
+
+    def check_memory_allocator_defaults(data):
+        function = next(function for function in data["functions"]
+                        if function["name"] == "memory_allocator_defaults")
+        functions_by_name = {
+            function["name"]: function for function in data["functions"]
+        }
+        pending = [function["name"]]
+        visited = set()
+        calls = []
+        while pending:
+            name = pending.pop()
+            if name in visited or name not in functions_by_name:
+                continue
+            visited.add(name)
+            for node in walk(functions_by_name[name]["body"]):
+                if node.get("op") != "call":
+                    continue
+                calls.append(node)
+                pending.append(node["callee"])
+        assert len(calls) == 5, data
+        assert len([call for call in calls if "target" in call]) == 3, data
+        assert not [node for node in walk(data["functions"])
+                    if node.get("op") in ("mapped_call", "native_heap_call")], data
+        assert data.get("memory_lifetimes") is True, data
+
+    memory_allocator_defaults = check(
+        "v2-memory-allocator-defaults", memory_allocator_defaults_source,
+        profile="cpp-core-v2", sdk=True)
+    assert memory_allocator_defaults["sdk_dependencies"] == memory_allocator_objects["sdk_dependencies"], memory_allocator_defaults
+    check_memory_allocator_defaults(memory_allocator_defaults)
+    for target in sdk_targets:
+        target_result = check(
+            "v2-memory-allocator-defaults-" + target,
+            memory_allocator_defaults_source, profile="cpp-core-v2",
+            target=target, sdk=True)
+        assert target_result["sdk_dependencies"] == memory_allocator_objects["sdk_dependencies"], target_result
+        check_memory_allocator_defaults(target_result)
+
     memory_allocator_heap_source = """\
 #include <memory>
 using Size = decltype(sizeof(0));

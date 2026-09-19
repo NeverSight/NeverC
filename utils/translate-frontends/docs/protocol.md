@@ -1577,9 +1577,11 @@ fallback, traits `max_size` and traits copy selection reuse the existing
 checked destruction, size and stateless-record operations. Exact allocator and
 allocator-traits `construct` calls authenticate the instantiated pinned
 placement-new/forwarding body, then reuse scalar initialization or the selected
-source-owned `noexcept` record constructor call. They preserve the evaluated
-allocator, target pointer, forwarding categories and source arguments, set
-`memory_lifetimes: true`, and introduce no SDK call or allocation opcode. Exact
+source-owned `noexcept` record constructor call, including authenticated
+source-owned trailing defaults. They preserve the evaluated allocator, target
+pointer, forwarding categories and source arguments; each supplied argument
+and selected default is evaluated once. They set `memory_lifetimes: true` and
+introduce no SDK call or allocation opcode. Exact
 allocator and allocator-traits allocation/deallocation forwarding also uses
 existing `call` instructions to checked source-defined global new/delete
 functions. Allocation requires a constant `size_t` count proven within the

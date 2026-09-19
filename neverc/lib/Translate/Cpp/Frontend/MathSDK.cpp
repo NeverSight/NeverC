@@ -3757,6 +3757,30 @@ static const DeclRefExpr *approvedUtilityReference(
              : nullptr;
 }
 
+static bool utilityConstructorTrailingDefaults(
+    const State &S, const SourceManager &SM,
+    const CXXConstructExpr *Construction, const CXXConstructorDecl *Constructor,
+    unsigned ExplicitArguments, const ASTContext &Context) {
+  if (!Construction || !Constructor ||
+      Construction->getNumArgs() < ExplicitArguments ||
+      Constructor->getNumParams() != Construction->getNumArgs())
+    return false;
+  for (unsigned I = 0; I < ExplicitArguments; ++I)
+    if (isa<CXXDefaultArgExpr>(Construction->getArg(I)))
+      return false;
+  for (unsigned I = ExplicitArguments; I < Construction->getNumArgs(); ++I) {
+    const auto *Default = dyn_cast<CXXDefaultArgExpr>(Construction->getArg(I));
+    const auto *Init = selectedDefaultArgument(Default, Context);
+    const auto *Parameter = Default ? Default->getParam() : nullptr;
+    if (!Default || !Init || !Parameter || Default->hasRewrittenInit() ||
+        Parameter != Constructor->getParamDecl(I) ||
+        Parameter->getFunctionScopeIndex() != I ||
+        !S.owns(SM, Init->getExprLoc()))
+      return false;
+  }
+  return true;
+}
+
 std::optional<UtilityMakeUniqueCall>
 approvedUtilityMakeUniqueCall(const State &S, const SourceManager &SM,
                               const CallExpr *Call, const ASTContext &Context) {
@@ -3940,15 +3964,13 @@ approvedUtilityMakeUniqueCall(const State &S, const SourceManager &SM,
       !S.owns(SM, Record->getLocation()) || !Construction || !Constructor ||
       Constructor->getParent()->getCanonicalDecl() !=
           Record->getCanonicalDecl() ||
-      Construction->getNumArgs() < ArgumentCount ||
-      Constructor->getNumParams() != Construction->getNumArgs() ||
+      !utilityConstructorTrailingDefaults(S, SM, Construction, Constructor,
+                                          ArgumentCount, Context) ||
       Constructor->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
       !supportedConstructor(Constructor) || !Prototype ||
       !Prototype->isNothrow() || !S.owns(SM, Constructor->getLocation()))
     return std::nullopt;
   for (unsigned I = 0; I < ArgumentCount; ++I) {
-    if (isa<CXXDefaultArgExpr>(Construction->getArg(I)))
-      return std::nullopt;
     const auto Forwarded =
         Function->getParamDecl(I)->getType()->getPointeeType();
     const auto Parameter = Constructor->getParamDecl(I)->getType();
@@ -3966,16 +3988,6 @@ approvedUtilityMakeUniqueCall(const State &S, const SourceManager &SM,
                !utilityMemoryTrivialValue(S, SM, Context, Parameter)) {
       return std::nullopt;
     }
-  }
-  for (unsigned I = ArgumentCount; I < Construction->getNumArgs(); ++I) {
-    const auto *Default = dyn_cast<CXXDefaultArgExpr>(Construction->getArg(I));
-    const auto *Init = selectedDefaultArgument(Default, Context);
-    const auto *Parameter = Default ? Default->getParam() : nullptr;
-    if (!Default || !Init || !Parameter || Default->hasRewrittenInit() ||
-        Parameter != Constructor->getParamDecl(I) ||
-        Parameter->getFunctionScopeIndex() != I ||
-        !S.owns(SM, Init->getExprLoc()))
-      return std::nullopt;
   }
   if (!Constructor->isTrivial()) {
     const FunctionDecl *Definition = nullptr;
@@ -4076,7 +4088,7 @@ utilityAllocatorMemberConstruct(const State &S, const SourceManager &SM,
       if (!utilityScalarDirectConversion(Context, Forwarded, Element))
         return std::nullopt;
     }
-    return UtilityAllocatorConstructCall{Element, nullptr};
+    return UtilityAllocatorConstructCall{Element, nullptr, nullptr};
   }
 
   const auto *Record = definedRecord(Element);
@@ -4090,8 +4102,8 @@ utilityAllocatorMemberConstruct(const State &S, const SourceManager &SM,
       !S.owns(SM, Record->getLocation()) || !Construction || !Constructor ||
       Constructor->getParent()->getCanonicalDecl() !=
           Record->getCanonicalDecl() ||
-      Construction->getNumArgs() != ArgumentCount ||
-      Constructor->getNumParams() != ArgumentCount ||
+      !utilityConstructorTrailingDefaults(S, SM, Construction, Constructor,
+                                          ArgumentCount, Context) ||
       Constructor->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
       !supportedConstructor(Constructor) || !Prototype ||
       !Prototype->isNothrow() || !S.owns(SM, Constructor->getLocation()))
@@ -4122,7 +4134,7 @@ utilityAllocatorMemberConstruct(const State &S, const SourceManager &SM,
       return std::nullopt;
     Constructor = cast<CXXConstructorDecl>(Definition);
   }
-  return UtilityAllocatorConstructCall{Element, Constructor};
+  return UtilityAllocatorConstructCall{Element, Construction, Constructor};
 }
 
 static bool utilityAllocatorConstantCount(const Expr *Count, QualType Element,

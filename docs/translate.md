@@ -99,8 +99,10 @@ default/copy/move/converting construction, same-type assignment, heterogeneous
 comparison, C++17 `address` and `max_size`. Exact C++17 allocator and
 allocator-traits `construct` calls value-initialize writable scalars or call
 checked source-owned `noexcept` record constructors, including exact
-multi-argument, copy and move selection. Exact allocator and allocator-traits
-`allocate`/`deallocate` forwarders also lower for complete default-new-aligned
+multi-argument, copy and move selection and authenticated source-owned trailing
+defaults. Supplied arguments and defaults are each evaluated once. Exact
+allocator and allocator-traits `allocate`/`deallocate` forwarders also lower
+for complete default-new-aligned
 elements when allocation uses a constant count proven within `max_size` and the
 matching global new/delete definitions are source-owned. Hints, receivers,
 pointers and deallocation counts retain their evaluation. Exact C++17

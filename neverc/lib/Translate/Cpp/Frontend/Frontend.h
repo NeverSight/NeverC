@@ -368,6 +368,7 @@ approvedUtilityAllocatorTraitsRecord(
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
 struct UtilityAllocatorConstructCall {
   clang::QualType ElementType;
+  const clang::CXXConstructExpr *Construction;
   const clang::CXXConstructorDecl *Constructor;
 };
 std::optional<UtilityAllocatorConstructCall>

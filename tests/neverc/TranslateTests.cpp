@@ -24844,10 +24844,15 @@ int created;
 int copied;
 int moved;
 int destroyed;
+int default_arguments;
+int default_value(int value) noexcept {
+  ++effects;
+  ++default_arguments;
+  return value;
+}
 struct Record {
   int value;
-  Record() noexcept : value(7) { ++created; }
-  Record(int first, long second) noexcept
+  Record(int first = default_value(7), long second = default_value(0)) noexcept
       : value(first + static_cast<int>(second)) { ++created; }
   Record(const Record &other) noexcept : value(other.value + 10) { ++copied; }
   Record(Record &&other) noexcept : value(other.value + 100) {
@@ -24889,7 +24894,8 @@ int main() {
   Record *defaulted = raw<Record>(default_storage);
   effects = 0;
   observe(allocator).construct(observe(defaulted));
-  if (effects != 2 || created != 1 || defaulted->value != 7)
+  if (effects != 4 || created != 1 || default_arguments != 2 ||
+      defaulted->value != 7)
     return 3;
   Traits::destroy(allocator, defaulted);
 
@@ -24901,13 +24907,22 @@ int main() {
     return 4;
   Traits::destroy(allocator, arguments);
 
+  Storage trailing_storage{};
+  Record *trailing = raw<Record>(trailing_storage);
+  effects = 0;
+  Traits::construct(observe(allocator), observe(trailing), observe(5));
+  if (effects != 4 || created != 3 || default_arguments != 3 ||
+      trailing->value != 5)
+    return 5;
+  Traits::destroy(allocator, trailing);
+
   Record source(2, 3L);
   Storage copy_storage{};
   Record *copy = raw<Record>(copy_storage);
   effects = 0;
   Traits::construct(observe(allocator), observe(copy), observe(source));
   if (effects != 3 || copied != 1 || copy->value != 15)
-    return 5;
+    return 6;
   Traits::destroy(allocator, copy);
 
   Storage move_storage{};
@@ -24917,9 +24932,9 @@ int main() {
                     static_cast<Record &&>(observe(source)));
   if (effects != 3 || moved != 1 || movement->value != 105 ||
       source.value != -1)
-    return 6;
+    return 7;
   Traits::destroy(allocator, movement);
-  return created == 3 && destroyed == 4 ? 0 : 7;
+  return created == 4 && destroyed == 5 && default_arguments == 3 ? 0 : 8;
 }
 )cpp");
   auto Result =
@@ -26404,10 +26419,6 @@ TEST_F(TranslateTest, CoreV2MemoryAllocatorMetadataRequiresExactTemplates) {
       {"construct-throwing-record",
        "#include <memory>\nstruct R{R(int){}};"
        "void f(std::allocator<int>&a,R*p){a.construct(p,1);}",
-       "TR0203"},
-      {"construct-default-argument-record",
-       "#include <memory>\nstruct R{R(int=1)noexcept{}};"
-       "void f(std::allocator<int>&a,R*p){a.construct(p);}",
        "TR0203"},
       {"construct-nontrivial-value-parameter",
        "#include <memory>\nstruct A{A()noexcept{}A(const A&)noexcept{}};"

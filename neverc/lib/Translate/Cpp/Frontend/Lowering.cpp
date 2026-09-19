@@ -1313,7 +1313,7 @@ class FunctionLowering {
                "The checked pointer and construction arguments are missing.");
       auto Pointer = snapshot(expression(Call->getArg(PointerIndex)), L);
       ConstructAt(dereference(std::move(Pointer), L), Info.ElementType,
-                  Info.Constructor, nullptr, ArgumentIndex,
+                  Info.Constructor, Info.Construction, ArgumentIndex,
                   "allocator construct");
     };
     auto AllocatorHeap = [&](const UtilityAllocatorHeapCall &Info) {

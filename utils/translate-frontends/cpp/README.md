@@ -238,11 +238,13 @@ their exact iterator results. Exact allocator objects, member destruction and
 allocator-traits destruction, construction, `max_size` and copy selection use
 the same checked stateless-record and lifetime paths. Construction accepts
 writable scalars and complete source-owned records whose selected constructor
-is supported, source-owned and `noexcept`. Allocation/deallocation accepts exact
-member and traits forwarding, including hints and runtime deallocation counts,
-when a source-defined global new/delete path exists and the allocation count is
-a constant proven within `max_size`. Default heap allocation, dynamic allocation
-counts, over-aligned elements, runtime-count array factories, stateful,
+is supported, source-owned and `noexcept`, including authenticated source-owned
+trailing defaults evaluated once after supplied arguments. Allocation and
+deallocation accept exact member and traits forwarding, including hints and
+runtime deallocation counts, when a source-defined global new/delete path
+exists and the allocation count is a constant proven within `max_size`. Default
+heap allocation, dynamic allocation counts, over-aligned elements,
+runtime-count array factories, stateful,
 reference, non-raw-pointer, nontrivial, overloaded, ref-qualified or throwing
 custom deleters, other smart pointers and ownership factories are not yet
 admitted. The driver authenticates each

@@ -657,13 +657,15 @@ independent of allocator `T`. Zero-argument scalar construction value-initialize
 to zero; one scalar argument uses the checked direct scalar conversion. Record
 construction retains Clang's exact selected default, multi-argument, copy or
 move constructor and requires a supported source-owned definition with a
-resolved `noexcept(true)` specification. Forwarded reference categories and
-the allocator, pointer and source argument evaluations are preserved. The
-constructed object remains caller-owned and is compatible with the admitted
-destruction operations. These calls enable `memory_lifetimes` and emit no
-libc++ runtime call. Potentially throwing constructors, constructor defaults,
-constructor templates, nontrivial by-value record parameters, user-defined
-conversions and unsupported target records remain rejected.
+resolved `noexcept(true)` specification. Omitted trailing parameters must be
+the exact selected constructor's unrewritten source-owned default expressions.
+Forwarded reference categories and the allocator, pointer and source argument
+evaluations are preserved; every supplied argument and selected default is
+evaluated once. The constructed object remains caller-owned and is compatible
+with the admitted destruction operations. These calls enable
+`memory_lifetimes` and emit no libc++ runtime call. Potentially throwing
+constructors, constructor templates, nontrivial by-value record parameters,
+user-defined conversions and unsupported target records remain rejected.
 
 Exact `allocator<T>::allocate` and `deallocate` members and their exact
 `allocator_traits<allocator<T>>` forwarding operations lower through the

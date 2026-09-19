@@ -206,8 +206,10 @@ stateless allocator path. Exact allocator and allocator-traits `construct`
 calls authenticate the instantiated libc++ placement-new or forwarding body.
 They value-initialize writable scalars or call the selected supported,
 source-owned `noexcept` constructor of a complete source-owned non-union
-record. Exact scalar conversion, multi-argument, copy and move forms preserve
-their call-site argument evaluation without a libc++ runtime call.
+record. Exact scalar conversion, multi-argument, copy and move forms and
+authenticated source-owned trailing defaults preserve their call-site argument
+evaluation without a libc++ runtime call. Each supplied argument and selected
+default is evaluated once.
 Exact allocator and allocator-traits `allocate`/`deallocate` calls authenticate
 the pinned member and traits forwarding bodies. Allocation requires a complete
 non-void element no more aligned than the target's default new alignment, an
@@ -244,8 +246,8 @@ resolved `noexcept(true)` specification. Move preserves Clang's selected move
 or copy fallback. Default-heap allocation, dynamic or overflowing allocation
 counts, over-aligned elements, other allocator-traits forwarding calls,
 potentially throwing or constructor-template source-record construction,
-default-argument allocator construction, nontrivial by-value record parameters,
-runtime-count ownership factories, other smart pointers and the
+nontrivial by-value record parameters, runtime-count ownership factories, other
+smart pointers and the
 remaining memory operations stay outside the direct lowering boundary.
 Core v2 never admits the `platform` root.
 Math v1 continues to use its separately checked libc++, resource and Darwin
