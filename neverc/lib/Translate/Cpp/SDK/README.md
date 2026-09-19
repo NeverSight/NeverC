@@ -99,8 +99,9 @@ arithmetic elements with `min`, `max`, `clamp`, `minmax`, `min_element`,
 `nth_element`,
 `next_permutation`, `prev_permutation`,
 `lexicographical_compare`, `includes`, `merge`, `set_union`, `set_intersection`,
-`set_difference` and `set_symmetric_difference`. Checked by-value unary
-boolean function-pointer predicates admit `find_if`, `find_if_not`,
+`set_difference` and `set_symmetric_difference`. Checked unary boolean
+function-pointer predicates with directly convertible by-value scalar
+parameters admit `find_if`, `find_if_not`,
 `count_if`, `all_of`, `any_of`, `none_of`, `copy_if`, `remove_if`,
 `remove_copy_if`, `replace_if`, `replace_copy_if`, `is_partitioned`,
 `partition`, `stable_partition`, `partition_copy` and `partition_point`. Exact

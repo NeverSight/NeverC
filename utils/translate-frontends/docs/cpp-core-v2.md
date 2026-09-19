@@ -854,15 +854,15 @@ ranges stay outside this boundary.
 The exact three-argument `std::find_if`, `std::find_if_not`, `std::count_if`,
 `std::all_of`, `std::any_of` and `std::none_of` templates accept the same raw
 scalar-pointer ranges plus a checked ordinary function-pointer predicate. The
-predicate must take the range's unqualified element type by value and return
-`bool` exactly. This admits integer and enum scalars, `float`, `double`, object
-pointers and `nullptr_t`. The function-pointer value is evaluated and retained
-once, then invoked once per inspected element. Find and boolean queries stop at
-their first decisive result; `count_if` visits the whole range and returns the
-target `ptrdiff_t`. Empty ranges preserve the standard `all_of`/`none_of` true
-and `any_of` false identities without invoking the predicate. Reference or
-converted parameters, non-boolean results and callable objects stay outside
-this boundary.
+predicate must take one admitted by-value scalar parameter reachable through
+the checked direct conversion from the range element and return `bool` exactly.
+This admits integer and enum scalars, `float`, `double`, object pointers and
+`nullptr_t`. The function-pointer value is evaluated and retained once, then
+invoked once per inspected element. Find and boolean queries stop at their
+first decisive result; `count_if` visits the whole range and returns the target
+`ptrdiff_t`. Empty ranges preserve the standard `all_of`/`none_of` true and
+`any_of` false identities without invoking the predicate. Reference parameters,
+non-boolean results and callable objects stay outside this boundary.
 
 The exact `std::copy_if`, `std::remove_if`, `std::remove_copy_if`,
 `std::replace_if` and `std::replace_copy_if` templates use the same checked

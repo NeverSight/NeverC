@@ -3792,7 +3792,7 @@ extern "C" long algorithm_binary_predicates(
 #include <algorithm>
 extern "C" int algorithm_predicate_queries(const int *first,
                                               const int *last,
-                                              bool (*predicate)(int)) {
+                                              bool (*predicate)(long)) {
   const int *found = std::find_if(first, last, predicate);
   const int *rejected = std::find_if_not(first, last, predicate);
   auto count = std::count_if(first, last, predicate);
@@ -3830,7 +3830,7 @@ extern "C" int algorithm_predicate_queries(const int *first,
 #include <algorithm>
 extern "C" int algorithm_predicate_mutation(
     int *first, int *last, const int *input_first, const int *input_last,
-    int *output, bool (*predicate)(int), const int &replacement) {
+    int *output, bool (*predicate)(long), const int &replacement) {
   int *copied = std::copy_if(input_first, input_last, output, predicate);
   int *removed = std::remove_if(first, last, predicate);
   int *rejected = std::remove_copy_if(input_first, input_last, output,
@@ -3871,7 +3871,7 @@ extern "C" int algorithm_predicate_mutation(
 #include <algorithm>
 extern "C" int algorithm_partition(
     int *first, int *last, const int *read_first, const int *read_last,
-    int *true_output, int *false_output, bool (*predicate)(int)) {
+    int *true_output, int *false_output, bool (*predicate)(long)) {
   bool checked = std::is_partitioned(read_first, read_last, predicate);
   int *boundary = std::partition(first, last, predicate);
   auto outputs = std::partition_copy(read_first, read_last, true_output,
@@ -3911,7 +3911,7 @@ extern "C" int algorithm_partition(
     algorithm_stable_partition_source = """\
 #include <algorithm>
 extern "C" int *algorithm_stable_partition(
-    int *first, int *last, bool (*predicate)(int)) {
+    int *first, int *last, bool (*predicate)(long)) {
   return std::stable_partition(first, last, predicate);
 }
 """
@@ -3935,9 +3935,6 @@ extern "C" int *algorithm_stable_partition(
         assert_stable_partition(target_result)
     check("v2-algorithm-stable-partition-reference",
           'bool p(const int&n){return n>0;}\n#include <algorithm>\nint main(){int a[2]{1,2};return std::stable_partition(a,a+2,p)==a+2?0:1;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
-    check("v2-algorithm-stable-partition-conversion",
-          'bool p(long n){return n>0;}\n#include <algorithm>\nint main(){int a[2]{1,2};return std::stable_partition(a,a+2,p)==a+2?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-algorithm-stable-partition-record",
           'struct R{int n;};bool p(R value){return value.n>0;}\n#include <algorithm>\nint main(){R a[2]{{1},{2}};return std::stable_partition(a,a+2,p)==a+2?0:1;}',

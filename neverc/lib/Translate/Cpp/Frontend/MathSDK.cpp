@@ -6174,9 +6174,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         !Prototype->getReturnType()->isBooleanType())
       return false;
     auto Parameter = Prototype->getParamType(0);
-    return utilityScalar(Context, Parameter) &&
-           Context.hasSameUnqualifiedType(Parameter,
-                                          Iterator->getPointeeType());
+    return utilityScalarDirectConversion(Context, Iterator->getPointeeType(),
+                                         Parameter);
   };
   auto AlgorithmBinaryPredicateParameter = [&](unsigned PredicateIndex,
                                                unsigned LeftIteratorIndex,

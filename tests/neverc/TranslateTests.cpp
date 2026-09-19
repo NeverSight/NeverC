@@ -31823,15 +31823,15 @@ TEST_F(TranslateTest, CoreV2AlgorithmPredicateQueriesRunAtBothOptimizations) {
   writeFile(Source, R"cpp(
 #include <algorithm>
 int calls;
-bool positive(int n) { ++calls; return n > 0; }
-bool even(int n) { ++calls; return n % 2 == 0; }
+bool positive(long n) { ++calls; return n > 0; }
+bool even(double n) { ++calls; return int(n) % 2 == 0; }
 enum Level : unsigned char { low, high };
 bool is_high(Level value) { ++calls; return value == high; }
 bool is_null(int *value) { ++calls; return value == nullptr; }
 bool above_one(float value) { ++calls; return value > 1.0f; }
 int main() {
   int values[5]{-2, -1, 0, 3, 4};
-  bool (*predicate)(int) = positive;
+  bool (*predicate)(long) = positive;
   int effects = 0;
   calls = 0;
   int *found = std::find_if((++effects, values), (++effects, values + 5),
@@ -31914,14 +31914,14 @@ TEST_F(TranslateTest, CoreV2AlgorithmPredicateMutationRunAtBothOptimizations) {
 #include <algorithm>
 int calls;
 int replacement_value;
-bool even(int n) { ++calls; return n % 2 == 0; }
-bool odd_update(int n) {
+bool even(long n) { ++calls; return n % 2 == 0; }
+bool odd_update(double n) {
   ++calls;
   if (calls == 3)
     replacement_value = 11;
-  return n % 2 != 0;
+  return int(n) % 2 != 0;
 }
-bool even_update(int n) {
+bool even_update(short n) {
   ++calls;
   if (calls == 2)
     replacement_value = 9;
@@ -31933,7 +31933,7 @@ bool is_null(int *value) { ++calls; return value == nullptr; }
 int main() {
   int input[6]{1, 2, 3, 4, 5, 6};
   int copied[6]{};
-  bool (*predicate)(int) = even;
+  bool (*predicate)(long) = even;
   int effects = 0;
   calls = 0;
   int *copy_end = std::copy_if((++effects, input), (++effects, input + 6),
@@ -32086,13 +32086,13 @@ TEST_F(TranslateTest,
   writeFile(Source, R"cpp(
 #include <algorithm>
 int calls;
-bool even(int n) { ++calls; return n % 2 == 0; }
+bool even(long n) { ++calls; return n % 2 == 0; }
 enum Level : unsigned char { low, high };
 bool is_high(Level value) { ++calls; return value == high; }
 int main() {
   int good[4]{2, 4, 1, 3};
   int effects = 0;
-  bool (*predicate)(int) = even;
+  bool (*predicate)(long) = even;
   calls = 0;
   if (!std::is_partitioned((++effects, good), (++effects, good + 4),
                            (++effects, predicate)) ||
@@ -32216,11 +32216,7 @@ TEST_F(TranslateTest, CoreV2AlgorithmPartitionOperationsRequireExactForms) {
       {"function-object",
        "struct P{bool operator()(int n)const{return n>0;}};\n"
        "#include <algorithm>\nint main(){int a[2]{1,2};"
-       "return std::partition(a,a+2,P{})==a+2?0:1;}"},
-      {"converted-parameter",
-       "bool p(long n){return n>0;}\n#include <algorithm>\n"
-       "int main(){int a[2]{1,2};"
-       "return std::partition_point(a,a+2,p)==a+2?0:1;}"}};
+       "return std::partition(a,a+2,P{})==a+2?0:1;}"}};
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
     const auto Source =
@@ -32241,7 +32237,7 @@ TEST_F(TranslateTest, CoreV2AlgorithmStablePartitionRunsAtBothOptimizations) {
   writeFile(Source, R"cpp(
 #include <algorithm>
 int calls;
-bool even(int value) {
+bool even(long value) {
   ++calls;
   return value % 2 == 0;
 }
@@ -32256,7 +32252,7 @@ bool pointed_even(int *value) {
 }
 int main() {
   int values[6]{1, 2, 3, 4, 5, 6};
-  bool (*predicate)(int) = even;
+  bool (*predicate)(long) = even;
   int effects = 0;
   calls = 0;
   int *boundary = std::stable_partition(
@@ -32350,10 +32346,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmStablePartitionRequiresExactFunctions) {
       {"non-bool-result", "int p(int n){return n;}\n#include <algorithm>\n"
                           "int main(){int a[2]{1,2};return "
                           "std::stable_partition(a,a+2,p)==a+2?0:1;}"},
-      {"converted-parameter",
-       "bool p(long n){return n>0;}\n#include <algorithm>\n"
-       "int main(){int a[2]{1,2};return "
-       "std::stable_partition(a,a+2,p)==a+2?0:1;}"},
       {"function-object",
        "struct P{bool operator()(int n)const{return n>0;}};\n"
        "#include <algorithm>\nint main(){int a[2]{1,2};return "
@@ -32545,7 +32537,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmPredicateQueriesRequireValueCallbacks) {
   const Rejection Cases[] = {
       {"reference-parameter", "bool predicate(const int&n){return n>0;}"},
       {"non-bool-result", "int predicate(int n){return n>0;}"},
-      {"converted-parameter", "bool predicate(long n){return n>0;}"},
       {"function-object",
        "struct predicate{bool operator()(int n)const{return n>0;}};"}};
   for (const auto &Case : Cases) {
