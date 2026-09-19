@@ -917,8 +917,8 @@ second range ends. Exact four-argument default-equality and five-argument
 predicate `std::search_n` accept an integral or non-scoped enum count whose
 promoted type is at most 64 bits. It returns the first iterator for non-positive
 counts. Default-equality operations require the same unqualified element type
-in both compared ranges; the documented predicate forms use their exact callback
-parameter types instead.
+in both compared ranges; the documented predicate forms use checked direct
+conversions to their callback parameter types instead.
 
 The exact two-argument `std::min_element`, `std::max_element`, `std::is_sorted`
 and `std::is_sorted_until` templates and exact three-argument
@@ -932,16 +932,17 @@ and upper pointers.
 The corresponding three-argument `std::min_element`, `std::max_element`,
 `std::is_sorted` and `std::is_sorted_until` overloads and four-argument
 `std::lower_bound`, `std::upper_bound`, `std::equal_range` and
-`std::binary_search` overloads accept an exact ordinary function-pointer
-comparator. It takes the range's unqualified scalar element type twice by value
-and returns `bool` exactly. Bound values retain that same element type so the
-single callback supports both comparison directions where required. This
-admits enums, object pointers and the other scalar carriers. The callback is
-evaluated and retained once. Extremum scans keep the first equivalent element;
-sortedness scans stop at the first inversion; empty and single-element ranges
-make no calls. Bounds retain logarithmic bisection. Reference or converted
-parameters, non-boolean results, variadic functions, callable objects,
-heterogeneous values and record elements stay outside this boundary.
+`std::binary_search` overloads accept a checked ordinary function-pointer
+comparator. It takes two admitted by-value scalar parameters reachable through
+checked direct conversions from the range element and returns `bool` exactly.
+Bound values retain the same element type so the single callback supports both
+comparison directions where required. This admits enums, object pointers and
+the other scalar carriers. The callback is evaluated and retained once.
+Extremum scans keep the first equivalent element; sortedness scans stop at the
+first inversion; empty and single-element ranges make no calls. Bounds retain
+logarithmic bisection. Reference parameters, non-boolean results, variadic
+functions, callable objects, heterogeneous values and record elements stay
+outside this boundary.
 
 The exact two-argument `std::min` and `std::max`, three-argument `std::clamp`,
 two-argument `std::minmax` and two-iterator `std::minmax_element` templates use
@@ -954,13 +955,13 @@ uses pairwise comparisons after its initial elements.
 
 The corresponding three-argument `std::min`, `std::max` and `std::minmax`,
 four-argument `std::clamp`, and three-argument `std::minmax_element` overloads
-use the exact comparator boundary above. Scalar reference algorithms retain
+use the checked comparator boundary above. Scalar reference algorithms retain
 the selected argument identity; equivalent inputs select the first argument for
 `min` and `max`, while `minmax` keeps the first argument as its minimum and the
 second as its maximum. Comparator `minmax_element` retains the first equivalent
 minimum and last equivalent maximum, uses the same pairwise comparison bound,
 and performs no calls for empty or single-element ranges. Enum and object
-pointer values are admitted, while records and inexact callbacks remain
+pointer values are admitted, while records and unsupported callbacks remain
 rejected.
 
 The exact two-iterator `std::is_heap`, `std::is_heap_until`, `std::make_heap`,
@@ -975,14 +976,14 @@ and retains the standard linear comparison bound. Empty and single-element
 query, construction, push and sort ranges are handled without dereferencing
 them; `pop_heap` retains the standard nonempty-range precondition.
 
-The corresponding three-argument heap overloads accept the exact scalar
+The corresponding three-argument heap overloads accept the checked scalar
 function-pointer comparator boundary above, including enum and object-pointer
 elements. The comparator defines the heap order: for example, a greater-than
 callback builds a minimum heap and `sort_heap` produces descending order. Each
 call retains the callback once; query ranges may be read-only, mutation ranges
 remain writable, and empty or single-element work performs no callback calls.
-Reference or converted callback signatures, non-boolean results, variadic
-functions, callable objects and record elements remain rejected.
+Reference callback signatures, non-boolean results, variadic functions,
+callable objects and record elements remain rejected.
 
 The exact default-order `std::sort`, `std::partial_sort`,
 `std::partial_sort_copy` and `std::nth_element` templates use that arithmetic
@@ -997,23 +998,23 @@ complexity and terminates directly on ranges of equivalent values. An empty
 selected prefix leaves `partial_sort` unchanged; an empty output returns the
 original output pointer.
 
-The corresponding comparator overloads accept the same exact scalar
+The corresponding comparator overloads accept the same checked scalar
 function-pointer boundary. `sort`, `partial_sort` and `nth_element` require a
 writable same-element range; `partial_sort_copy` accepts a read-only input and
 writable same-element output. A greater-than callback therefore sorts or
 selects in descending order. All callback and iterator arguments are retained
 once. Empty selected prefixes and outputs make no callback calls, and the
 three-way `nth_element` partition still terminates directly on equivalent
-values. Inexact callbacks, record elements and heterogeneous output elements
+values. Unsupported callbacks, record elements and heterogeneous output elements
 remain rejected.
 
 The exact `std::stable_sort` overloads use the same default arithmetic and
-function-pointer comparator boundaries on writable scalar ranges. An in-place
+checked function-pointer comparator boundaries on writable scalar ranges. An in-place
 bottom-up merge retains the relative order of equivalent elements without a
 heap or libc++ runtime dependency and performs `O(N log N)` comparisons. The
 iterators and optional callback are retained once; empty and single-element
 ranges make no callback calls. Comparator overloads additionally admit enum
-and object-pointer elements, while inexact callbacks, callable objects and
+and object-pointer elements, while unsupported callbacks, callable objects and
 record elements remain rejected.
 
 The exact `std::inplace_merge` overloads reuse the same stable in-place merge
@@ -1021,7 +1022,7 @@ for two adjacent, already ordered writable scalar ranges. Equivalent elements
 from the first half remain before equivalent elements from the second half,
 and at most `N - 1` comparisons are made. An empty half performs no comparison.
 The default overload uses built-in arithmetic ordering; the comparator overload
-also admits enum and object-pointer elements through the exact callback
+also admits enum and object-pointer elements through the checked callback
 boundary.
 
 The exact default-order `std::next_permutation` and `std::prev_permutation`
@@ -1032,11 +1033,11 @@ permutation existed. Empty and single-element ranges return false. A range at
 its final or initial permutation is reversed to the opposite endpoint before
 returning false.
 
-Their three-argument comparator overloads accept the same exact scalar
+Their three-argument comparator overloads accept the same checked scalar
 function-pointer boundary, including enum and object-pointer elements. The
 callback defines the lexicographical order, is retained once, and is not called
 for empty or single-element ranges. Repeated values, suffix reversal and
-endpoint wraparound retain the same behavior under that order. Inexact
+endpoint wraparound retain the same behavior under that order. Unsupported
 callbacks, callable objects and record elements remain rejected.
 
 The exact default-equality three- and four-iterator `std::is_permutation`
@@ -1062,12 +1063,14 @@ this boundary because they can require overloaded or otherwise non-portable
 ordering semantics.
 
 The corresponding comparator overloads admit same-element scalar ranges with
-an exact by-value `bool(T, T)` function pointer. This includes enum and pointer
-elements whose ordering is supplied entirely by the callback. Ordered output
+a checked function pointer whose two by-value scalar parameters are reachable
+through direct conversions from the element type and whose result is exactly
+`bool`. This includes enum and pointer elements whose ordering is supplied
+entirely by the callback. Ordered output
 forms still require a writable destination with the same element type. The
 callback object is retained once, and the generated loops invoke it in both
 argument orientations when distinguishing equivalent elements. Function
-objects, reference parameters, converted parameter or result types,
+objects, reference parameters, converted result types,
 heterogeneous ranges and heterogeneous destinations remain rejected.
 
 Each call evaluates and retains its arguments once before entering generated

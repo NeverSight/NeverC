@@ -3067,7 +3067,7 @@ extern "C" int algorithm_order(const int *first, const int *last, int value) {
 #include <algorithm>
 extern "C" long long algorithm_comparator_queries(
     const int *first, const int *last, const int &value,
-    bool (*comparator)(int, int)) {
+    bool (*comparator)(long, double)) {
   const int *minimum = std::min_element(first, last, comparator);
   const int *maximum = std::max_element(first, last, comparator);
   const int *lower = std::lower_bound(first, last, value, comparator);
@@ -3103,9 +3103,6 @@ extern "C" long long algorithm_comparator_queries(
         assert_comparator_queries(target_result)
     check("v2-algorithm-comparator-queries-reference",
           'bool p(const int&a,int b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{1,2};return std::min_element(a,a+2,p)==a?0:1;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
-    check("v2-algorithm-comparator-queries-conversion",
-          'bool p(long a,long b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{1,2};return std::is_sorted(a,a+2,p)?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-algorithm-comparator-queries-value",
           'bool p(int a,long b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{1,2};long v=1;return std::lower_bound(a,a+2,v,p)==a?0:1;}',
@@ -3320,7 +3317,7 @@ extern "C" int algorithm_ordered_ranges(const int *first, const int *last,
 #include <algorithm>
 extern "C" int algorithm_comparator_ordered_ranges(
     const int *first, const int *last, const int *second,
-    const int *second_last, int *output, bool (*comparator)(int, int)) {
+    const int *second_last, int *output, bool (*comparator)(long, double)) {
   bool lexical = std::lexicographical_compare(first, last, second, second_last,
                                                comparator);
   bool contained = std::includes(first, last, second, second_last, comparator);
@@ -3362,9 +3359,6 @@ extern "C" int algorithm_comparator_ordered_ranges(
     check("v2-algorithm-comparator-ordered-ranges-reference",
           'bool p(const int&a,int b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{1,2};return std::includes(a,a+2,a,a+1,p)?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
-    check("v2-algorithm-comparator-ordered-ranges-conversion",
-          'bool p(long a,long b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{1,2},out[4]{};return std::merge(a,a+2,a,a+2,out,p)==out+4?0:1;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-algorithm-comparator-ordered-ranges-heterogeneous",
           'bool p(int a,long b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{1,2};return std::includes(a,a+2,b,b+2,p)?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
@@ -3405,7 +3399,7 @@ extern "C" int algorithm_extrema(const int *first, const int *last,
 #include <algorithm>
 extern "C" long long algorithm_comparator_extrema(
     const int *first, const int *last, const int &left, const int &right,
-    const int &low, const int &high, bool (*comparator)(int, int)) {
+    const int &low, const int &high, bool (*comparator)(long, double)) {
   const int &minimum = std::min(left, right, comparator);
   const int &maximum = std::max(left, right, comparator);
   const int &bounded = std::clamp(left, low, high, comparator);
@@ -3436,9 +3430,6 @@ extern "C" long long algorithm_comparator_extrema(
         assert_comparator_extrema(target_result)
     check("v2-algorithm-comparator-extrema-reference",
           'bool p(const int&a,int b){return a<b;}\n#include <algorithm>\nint main(){int a=1,b=2;return std::min(a,b,p)==a?0:1;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
-    check("v2-algorithm-comparator-extrema-conversion",
-          'bool p(long a,long b){return a<b;}\n#include <algorithm>\nint main(){int a=1,b=2;return std::minmax(a,b,p).first==a?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-algorithm-comparator-extrema-record",
           'struct R{int n;};bool p(R a,R b){return a.n<b.n;}\n#include <algorithm>\nint main(){R a[2]{{1},{2}};return std::minmax_element(a,a+2,p).first==a?0:1;}',
@@ -3471,7 +3462,7 @@ extern "C" int algorithm_heap(int *first, int *last) {
     algorithm_comparator_heap_source = """\
 #include <algorithm>
 extern "C" int algorithm_comparator_heap(
-    int *first, int *last, bool (*comparator)(int, int)) {
+    int *first, int *last, bool (*comparator)(long, double)) {
   bool heap = std::is_heap(first, last, comparator);
   int *until = std::is_heap_until(first, last, comparator);
   std::make_heap(first, last, comparator);
@@ -3501,9 +3492,6 @@ extern "C" int algorithm_comparator_heap(
         assert_comparator_heap(target_result)
     check("v2-algorithm-comparator-heap-reference",
           'bool p(const int&a,int b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{2,1};std::make_heap(a,a+2,p);return 0;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
-    check("v2-algorithm-comparator-heap-conversion",
-          'bool p(long a,long b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{2,1};std::sort_heap(a,a+2,p);return 0;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-algorithm-comparator-heap-record",
           'struct R{int n;};bool p(R a,R b){return a.n<b.n;}\n#include <algorithm>\nint main(){R a[2]{{2},{1}};std::pop_heap(a,a+2,p);return 0;}',
@@ -3544,7 +3532,7 @@ extern "C" int algorithm_ordering(int *first, int *middle, int *last,
 extern "C" int algorithm_comparator_ordering(
     int *first, int *middle, int *last, const int *input_first,
     const int *input_last, int *output_first, int *output_last,
-    bool (*comparator)(int, int)) {
+    bool (*comparator)(long, double)) {
   std::sort(first, last, comparator);
   std::partial_sort(first, middle, last, comparator);
   int *output = std::partial_sort_copy(input_first, input_last, output_first,
@@ -3575,9 +3563,6 @@ extern "C" int algorithm_comparator_ordering(
     check("v2-algorithm-comparator-ordering-reference",
           'bool p(const int&a,int b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{2,1};std::sort(a,a+2,p);return 0;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
-    check("v2-algorithm-comparator-ordering-conversion",
-          'bool p(long a,long b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{2,1};std::nth_element(a,a+1,a+2,p);return 0;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-algorithm-comparator-ordering-output",
           'bool p(int a,long b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{2,1};long out[2]{};return std::partial_sort_copy(a,a+2,out,out+2,p)==out+2?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
@@ -3585,7 +3570,7 @@ extern "C" int algorithm_comparator_ordering(
     algorithm_stable_sort_source = """\
 #include <algorithm>
 extern "C" void algorithm_stable_sort(
-    int *first, int *last, bool (*comparator)(int, int)) {
+    int *first, int *last, bool (*comparator)(long, double)) {
   std::stable_sort(first, last);
   std::stable_sort(first, last, comparator);
 }
@@ -3621,7 +3606,7 @@ extern "C" void algorithm_stable_sort(
     algorithm_inplace_merge_source = """\
 #include <algorithm>
 extern "C" void algorithm_inplace_merge(
-    int *first, int *middle, int *last, bool (*comparator)(int, int)) {
+    int *first, int *middle, int *last, bool (*comparator)(long, double)) {
   std::inplace_merge(first, middle, last);
   std::inplace_merge(first, middle, last, comparator);
 }
@@ -3686,7 +3671,7 @@ extern "C" int algorithm_permutation(int *first, int *last,
     algorithm_comparator_permutation_source = """\
 #include <algorithm>
 extern "C" int algorithm_comparator_permutation(
-    int *first, int *last, bool (*comparator)(int, int)) {
+    int *first, int *last, bool (*comparator)(long, double)) {
   bool next = std::next_permutation(first, last, comparator);
   bool previous = std::prev_permutation(first, last, comparator);
   return next + previous;
@@ -3713,9 +3698,6 @@ extern "C" int algorithm_comparator_permutation(
         assert_comparator_permutation(target_result)
     check("v2-algorithm-comparator-permutation-reference",
           'bool p(const int&a,int b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{1,2};return std::next_permutation(a,a+2,p)?0:1;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
-    check("v2-algorithm-comparator-permutation-conversion",
-          'bool p(long a,long b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{1,2};return std::prev_permutation(a,a+2,p)?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-algorithm-comparator-permutation-record",
           'struct R{int n;};bool p(R a,R b){return a.n<b.n;}\n#include <algorithm>\nint main(){R a[2]{{1},{2}};return std::next_permutation(a,a+2,p)?0:1;}',

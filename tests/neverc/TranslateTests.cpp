@@ -28972,24 +28972,24 @@ TEST_F(TranslateTest, CoreV2AlgorithmComparatorQueriesRunAtBothOptimizations) {
   writeFile(Source, R"cpp(
 #include <algorithm>
 int calls;
-bool less_absolute(int left, int right) {
+bool less_absolute(long left, double right) {
   ++calls;
   int left_absolute = left < 0 ? -left : left;
   int right_absolute = right < 0 ? -right : right;
   return left_absolute < right_absolute;
 }
-bool greater_value(int left, int right) {
+bool greater_value(long left, double right) {
   ++calls;
   return left > right;
 }
 enum Rank : unsigned char { low, medium, high };
-bool rank_less(Rank left, Rank right) {
+bool rank_less(int left, unsigned right) {
   ++calls;
   return left < right;
 }
 int main() {
   int values[5]{3, -1, 1, -5, 5};
-  bool (*absolute_comparator)(int, int) = less_absolute;
+  bool (*absolute_comparator)(long, double) = less_absolute;
   int effects = 0;
   calls = 0;
   if (std::min_element((++effects, values), (++effects, values + 5),
@@ -29006,7 +29006,7 @@ int main() {
 
   const int descending[5]{9, 7, 7, 4, 1};
   int key = 7;
-  bool (*descending_comparator)(int, int) = greater_value;
+  bool (*descending_comparator)(long, double) = greater_value;
   effects = 0;
   calls = 0;
   if (std::lower_bound((++effects, descending),
@@ -29108,7 +29108,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2AlgorithmComparatorQueriesRequireExactFunctions) {
+TEST_F(TranslateTest, CoreV2AlgorithmComparatorQueriesRequireValueCallbacks) {
   struct Rejection {
     const char *Name;
     const char *Source;
@@ -29123,10 +29123,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmComparatorQueriesRequireExactFunctions) {
        "int p(int a,int b){return a<b;}\n#include <algorithm>\n"
        "int main(){int a[2]{1,2};return "
        "std::max_element(a,a+2,p)==a+1?0:1;}"},
-      {"converted-parameter",
-       "bool p(long a,long b){return a<b;}\n#include <algorithm>\n"
-       "int main(){int a[2]{1,2};return "
-       "std::is_sorted(a,a+2,p)?0:1;}"},
       {"function-object",
        "struct P{bool operator()(int a,int b)const{return a<b;}};\n"
        "#include <algorithm>\nint main(){int a[2]{1,2};return "
@@ -29954,12 +29950,12 @@ TEST_F(TranslateTest,
   writeFile(Source, R"cpp(
 #include <algorithm>
 int calls;
-bool greater_value(int left, int right) {
+bool greater_value(long left, double right) {
   ++calls;
   return left > right;
 }
 enum Rank : unsigned char { low, medium, high };
-bool rank_greater(Rank left, Rank right) {
+bool rank_greater(int left, unsigned right) {
   ++calls;
   return left > right;
 }
@@ -30069,7 +30065,7 @@ int main() {
 }
 
 TEST_F(TranslateTest,
-       CoreV2AlgorithmComparatorOrderedRangesRequireExactFunctions) {
+       CoreV2AlgorithmComparatorOrderedRangesRequireValueCallbacks) {
   struct Rejection {
     const char *Name;
     const char *Source;
@@ -30084,10 +30080,6 @@ TEST_F(TranslateTest,
        "int p(int a,int b){return a>b;}\n#include <algorithm>\n"
        "int main(){int a[2]{2,1};return "
        "std::lexicographical_compare(a,a+1,a+1,a+2,p)?0:1;}"},
-      {"converted-parameter",
-       "bool p(long a,long b){return a>b;}\n#include <algorithm>\n"
-       "int main(){int a[2]{2,1},out[4]{};return "
-       "std::merge(a,a+2,a,a+2,out,p)==out+4?0:1;}"},
       {"function-object",
        "struct P{bool operator()(int a,int b)const{return a>b;}};\n"
        "#include <algorithm>\nint main(){int a[2]{2,1},out[2]{};return "
@@ -30243,21 +30235,21 @@ TEST_F(TranslateTest, CoreV2AlgorithmComparatorExtremaRunAtBothOptimizations) {
   writeFile(Source, R"cpp(
 #include <algorithm>
 int calls;
-bool less_absolute(int left, int right) {
+bool less_absolute(long left, double right) {
   ++calls;
   int left_absolute = left < 0 ? -left : left;
   int right_absolute = right < 0 ? -right : right;
   return left_absolute < right_absolute;
 }
 enum Rank : unsigned char { low, medium, high };
-bool rank_less(Rank left, Rank right) {
+bool rank_less(int left, unsigned right) {
   ++calls;
   return left < right;
 }
 int main() {
   int left = 4;
   int right = -2;
-  bool (*comparator)(int, int) = less_absolute;
+  bool (*comparator)(long, double) = less_absolute;
   int effects = 0;
   calls = 0;
   const int &minimum = std::min((++effects, left), (++effects, right),
@@ -30362,7 +30354,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2AlgorithmComparatorExtremaRequireExactFunctions) {
+TEST_F(TranslateTest, CoreV2AlgorithmComparatorExtremaRequireValueCallbacks) {
   struct Rejection {
     const char *Name;
     const char *Source;
@@ -30375,9 +30367,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmComparatorExtremaRequireExactFunctions) {
       {"non-bool-result",
        "int p(int a,int b){return a<b;}\n#include <algorithm>\n"
        "int main(){int a=1,b=2;return std::max(a,b,p)==b?0:1;}"},
-      {"converted-parameter",
-       "bool p(long a,long b){return a<b;}\n#include <algorithm>\n"
-       "int main(){int a=1,b=2;return std::minmax(a,b,p).first==a?0:1;}"},
       {"function-object",
        "struct P{bool operator()(int a,int b)const{return a<b;}};\n"
        "#include <algorithm>\nint main(){int n=2,lo=1,hi=3;return "
@@ -30515,16 +30504,16 @@ TEST_F(TranslateTest, CoreV2AlgorithmComparatorHeapRunAtBothOptimizations) {
   writeFile(Source, R"cpp(
 #include <algorithm>
 int calls;
-bool greater_value(int left, int right) {
+bool greater_value(long left, double right) {
   ++calls;
   return left > right;
 }
 enum Rank : unsigned char { low, medium, high };
-bool rank_greater(Rank left, Rank right) {
+bool rank_greater(int left, unsigned right) {
   ++calls;
   return left > right;
 }
-bool pointed_greater(int *left, int *right) {
+bool pointed_greater(const int *left, const int *right) {
   ++calls;
   return *left > *right;
 }
@@ -30627,7 +30616,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2AlgorithmComparatorHeapRequiresExactFunctions) {
+TEST_F(TranslateTest, CoreV2AlgorithmComparatorHeapRequiresValueCallbacks) {
   struct Rejection {
     const char *Name;
     const char *Source;
@@ -30640,9 +30629,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmComparatorHeapRequiresExactFunctions) {
       {"non-bool-result",
        "int p(int a,int b){return a<b;}\n#include <algorithm>\n"
        "int main(){int a[2]{2,1};return std::is_heap(a,a+2,p)?0:1;}"},
-      {"converted-parameter",
-       "bool p(long a,long b){return a<b;}\n#include <algorithm>\n"
-       "int main(){int a[2]{2,1};std::sort_heap(a,a+2,p);return 0;}"},
       {"function-object",
        "struct P{bool operator()(int a,int b)const{return a<b;}};\n"
        "#include <algorithm>\nint main(){int a[2]{2,1};"
@@ -30862,12 +30848,12 @@ TEST_F(TranslateTest, CoreV2AlgorithmComparatorOrderingRunAtBothOptimizations) {
   writeFile(Source, R"cpp(
 #include <algorithm>
 int calls;
-bool greater_value(int left, int right) {
+bool greater_value(long left, double right) {
   ++calls;
   return left > right;
 }
 enum Rank : unsigned char { low, medium, high };
-bool rank_greater(Rank left, Rank right) {
+bool rank_greater(int left, unsigned right) {
   ++calls;
   return left > right;
 }
@@ -30990,7 +30976,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2AlgorithmComparatorOrderingRequiresExactFunctions) {
+TEST_F(TranslateTest, CoreV2AlgorithmComparatorOrderingRequiresValueCallbacks) {
   struct Rejection {
     const char *Name;
     const char *Source;
@@ -31003,9 +30989,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmComparatorOrderingRequiresExactFunctions) {
       {"non-bool-result",
        "int p(int a,int b){return a>b;}\n#include <algorithm>\n"
        "int main(){int a[2]{1,2};std::partial_sort(a,a+1,a+2,p);return 0;}"},
-      {"converted-parameter",
-       "bool p(long a,long b){return a>b;}\n#include <algorithm>\n"
-       "int main(){int a[2]{1,2};std::nth_element(a,a+1,a+2,p);return 0;}"},
       {"function-object",
        "struct P{bool operator()(int a,int b)const{return a>b;}};\n"
        "#include <algorithm>\nint main(){int a[2]{1,2},out[2]{};return "
@@ -31041,16 +31024,16 @@ TEST_F(TranslateTest, CoreV2AlgorithmStableSortRunsAtBothOptimizations) {
   writeFile(Source, R"cpp(
 #include <algorithm>
 int calls;
-bool bucket_less(int left, int right) {
+bool bucket_less(long left, double right) {
   ++calls;
-  return left / 10 < right / 10;
+  return left / 10 < long(right) / 10;
 }
 enum Rank : unsigned char { low, medium, high };
-bool rank_greater(Rank left, Rank right) {
+bool rank_greater(int left, unsigned right) {
   ++calls;
   return left > right;
 }
-bool pointed_bucket_less(int *left, int *right) {
+bool pointed_bucket_less(const int *left, const int *right) {
   ++calls;
   return *left / 10 < *right / 10;
 }
@@ -31164,9 +31147,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmStableSortRequiresPinnedScalarForms) {
       {"non-bool-result",
        "int p(int a,int b){return a<b;}\n#include <algorithm>\n"
        "int main(){int a[2]{2,1};std::stable_sort(a,a+2,p);return 0;}"},
-      {"converted-parameter",
-       "bool p(long a,long b){return a<b;}\n#include <algorithm>\n"
-       "int main(){int a[2]{2,1};std::stable_sort(a,a+2,p);return 0;}"},
       {"function-object",
        "struct P{bool operator()(int a,int b)const{return a<b;}};\n"
        "#include <algorithm>\nint main(){int a[2]{2,1};"
@@ -31198,16 +31178,16 @@ TEST_F(TranslateTest, CoreV2AlgorithmInplaceMergeRunsAtBothOptimizations) {
   writeFile(Source, R"cpp(
 #include <algorithm>
 int calls;
-bool bucket_less(int left, int right) {
+bool bucket_less(long left, double right) {
   ++calls;
-  return left / 10 < right / 10;
+  return left / 10 < long(right) / 10;
 }
 enum Rank : unsigned char { low, medium, high };
-bool rank_greater(Rank left, Rank right) {
+bool rank_greater(int left, unsigned right) {
   ++calls;
   return left > right;
 }
-bool pointed_bucket_less(int *left, int *right) {
+bool pointed_bucket_less(const int *left, const int *right) {
   ++calls;
   return *left / 10 < *right / 10;
 }
@@ -31321,9 +31301,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmInplaceMergeRequiresPinnedScalarForms) {
        "int main(){int a[2]{2,1};std::inplace_merge(a,a+1,a+2,p);return 0;}"},
       {"non-bool-result",
        "int p(int a,int b){return a<b;}\n#include <algorithm>\n"
-       "int main(){int a[2]{2,1};std::inplace_merge(a,a+1,a+2,p);return 0;}"},
-      {"converted-parameter",
-       "bool p(long a,long b){return a<b;}\n#include <algorithm>\n"
        "int main(){int a[2]{2,1};std::inplace_merge(a,a+1,a+2,p);return 0;}"},
       {"function-object",
        "struct P{bool operator()(int a,int b)const{return a<b;}};\n"
@@ -31499,12 +31476,12 @@ TEST_F(TranslateTest,
   writeFile(Source, R"cpp(
 #include <algorithm>
 int calls;
-bool greater_value(int left, int right) {
+bool greater_value(long left, double right) {
   ++calls;
   return left > right;
 }
 enum Rank : unsigned char { low, medium, high };
-bool rank_greater(Rank left, Rank right) {
+bool rank_greater(int left, unsigned right) {
   ++calls;
   return left > right;
 }
@@ -31587,7 +31564,7 @@ int main() {
 }
 
 TEST_F(TranslateTest,
-       CoreV2AlgorithmComparatorPermutationRequiresExactFunctions) {
+       CoreV2AlgorithmComparatorPermutationRequiresValueCallbacks) {
   struct Rejection {
     const char *Name;
     const char *Source;
@@ -31602,10 +31579,6 @@ TEST_F(TranslateTest,
        "int p(int a,int b){return a>b;}\n#include <algorithm>\n"
        "int main(){int a[2]{2,1};return "
        "std::prev_permutation(a,a+2,p)?0:1;}"},
-      {"converted-parameter",
-       "bool p(long a,long b){return a>b;}\n#include <algorithm>\n"
-       "int main(){int a[2]{2,1};return "
-       "std::next_permutation(a,a+2,p)?0:1;}"},
       {"function-object",
        "struct P{bool operator()(int a,int b)const{return a>b;}};\n"
        "#include <algorithm>\nint main(){int a[2]{2,1};return "
