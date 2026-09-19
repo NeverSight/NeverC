@@ -822,10 +822,11 @@ bits. Floating counts are outside this boundary.
 The exact default-equality `std::find`, `std::count`, three- and four-iterator
 `std::equal`, `std::adjacent_find`, `std::remove`, `std::remove_copy`,
 `std::replace`, `std::replace_copy`, `std::unique` and `std::unique_copy`
-templates lower for same-element built-in integer, `float`, `double`, object
-pointer or `nullptr_t` values. Algorithms that compact or replace an input
-range require it to be writable; copy variants require a writable scalar
-output whose element accepts a checked direct conversion from the input.
+templates lower for built-in integer, `float`, `double`, object pointer or
+`nullptr_t` values. `equal` may compare two scalar element types with a checked
+common equality type. Algorithms that compact or replace an input range require
+it to be writable; copy variants require a writable scalar output whose element
+accepts a checked direct conversion from the input.
 Value references remain live through the loop, including when they alias an
 element that an earlier iteration changes. Enum elements stay outside this
 default-equality boundary because ADL can select a user-defined `operator==`.
@@ -840,8 +841,8 @@ conversions from the compared values and returns `bool` exactly. This admits
 enums and the other scalar carriers; `equal`, `mismatch` and the two-range
 search operations may compare two different element types. `search_n` may
 likewise use a different scalar type for its retained `const` search value.
-`adjacent_find`, `unique`, `unique_copy` and `is_permutation` require one common
-element type because they compare elements within one range. Predicate `unique`
+`adjacent_find`, `unique` and `unique_copy` require one common element type
+because they compare elements within one range. Predicate `unique`
 requires a writable range, and predicate `unique_copy` requires a writable
 scalar output whose element accepts a checked direct conversion from the input.
 The callback value is evaluated and retained once.
@@ -851,9 +852,8 @@ lengths before invoking the predicate. Empty patterns and ranges perform no
 predicate calls; nonempty unique operations make one call per element after the
 first. Non-positive `search_n` counts return the first iterator without a call,
 and a positive unsuccessful run applies its predicate at most once per input
-element. Reference parameters, variadic functions, non-boolean results,
-callable objects and heterogeneous permutation ranges stay outside this
-boundary.
+element. Reference parameters, variadic functions, non-boolean results and
+callable objects stay outside this boundary.
 
 The exact three-argument `std::find_if`, `std::find_if_not`, `std::count_if`,
 `std::all_of`, `std::any_of` and `std::none_of` templates accept the same raw
@@ -922,8 +922,8 @@ Three- and four-iterator `std::mismatch` return an authenticated
 second range ends. Exact four-argument default-equality and five-argument
 predicate `std::search_n` accept an integral or non-scoped enum count whose
 promoted type is at most 64 bits. It returns the first iterator for non-positive
-counts. Default-equality operations require the same unqualified element type
-in both compared ranges; the documented predicate forms use checked direct
+counts. Default-equality operations may compare two scalar element types with a
+checked common equality type; the documented predicate forms use checked direct
 conversions to their callback parameter types instead.
 
 The exact two-argument `std::min_element`, `std::max_element`, `std::is_sorted`
@@ -1049,13 +1049,14 @@ callbacks, callable objects and record elements remain rejected.
 
 The exact default-equality three- and four-iterator `std::is_permutation`
 templates use the equality element boundary, so const ranges and object-pointer
-elements are accepted while enums and records remain excluded. Their checked
-binary-predicate overloads use the scalar predicate boundary above and therefore
-also admit same-element enum ranges. The three-iterator form compares a second
-range of the first range's length. The four-iterator form checks both lengths
-before inspecting elements. Distinct equivalence classes are counted at most
-once, preserving the standard quadratic comparison bound and duplicate
-multiplicities without allocating storage.
+elements are accepted while enums and records remain excluded. The two ranges
+may have different scalar element types with a checked common equality type.
+Their checked binary-predicate overloads use the scalar predicate boundary above
+and also admit heterogeneous scalar ranges, including enum ranges. The
+three-iterator form compares a second range of the first range's length. The
+four-iterator form checks both lengths before inspecting elements. Distinct
+equivalence classes are counted at most once, preserving the standard quadratic
+comparison bound and duplicate multiplicities without allocating storage.
 
 The exact four-iterator `std::lexicographical_compare` and `std::includes`
 templates and exact five-iterator `std::merge`, `std::set_union`,

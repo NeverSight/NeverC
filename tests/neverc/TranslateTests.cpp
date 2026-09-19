@@ -28538,8 +28538,8 @@ int main() {
       std::count(first, first, 2) != 0)
     return 2;
 
-  int same[7]{1, 2, 3, 2, 5, 2, 7};
-  int mismatch[7]{1, 2, 3, 4, 5, 2, 7};
+  long same[7]{1, 2, 3, 2, 5, 2, 7};
+  long mismatch[7]{1, 2, 3, 4, 5, 2, 7};
   if (!std::equal(first, last, same) ||
       std::equal(first, last, mismatch))
     return 3;
@@ -29366,7 +29366,7 @@ TEST_F(TranslateTest, CoreV2AlgorithmSubrangeQueriesRunAtBothOptimizations) {
 enum Count : unsigned int { two = 2 };
 int main() {
   const int source[10]{1, 2, 3, 1, 2, 3, 1, 2, 4, 5};
-  const int pattern[2]{1, 2};
+  const long pattern[2]{1, 2};
   int effects = 0;
   if (std::search((++effects, source), (++effects, source + 10),
                   (++effects, pattern), (++effects, pattern + 2)) != source ||
@@ -29376,12 +29376,12 @@ int main() {
   if (std::search(source, source + 10, pattern, pattern) != source ||
       std::find_end(source, source + 10, pattern, pattern) != source + 10)
     return 2;
-  const int missing[2]{4, 4};
+  const long missing[2]{4, 4};
   if (std::search(source, source + 10, missing, missing + 2) != source + 10 ||
       std::find_end(source, source + 10, missing, missing + 2) != source + 10)
     return 3;
 
-  const int choices[2]{4, 9};
+  const long choices[2]{4, 9};
   if (std::find_first_of(source, source + 10, choices, choices + 2) !=
           source + 8 ||
       std::find_first_of(source, source + 10, choices, choices) != source + 10)
@@ -29396,7 +29396,7 @@ int main() {
     return 5;
 
   const int left[4]{1, 2, 3, 4};
-  const int right[4]{1, 2, 9, 4};
+  const long right[4]{1, 2, 9, 4};
   auto mismatch = std::mismatch(left, left + 4, right);
   if (mismatch.first != left + 2 || mismatch.second != right + 2)
     return 6;
@@ -29564,13 +29564,13 @@ TEST_F(TranslateTest, CoreV2AlgorithmSubrangeRequiresPinnedScalarForms) {
     const char *Source;
   };
   const Rejection Cases[] = {
-      {"heterogeneous-search",
-       "#include <algorithm>\nint main(){int a[2]{1,2};long b[1]{2};"
-       "return std::search(a,a+2,b,b+1)==a+1?0:1;}"},
-      {"heterogeneous-mismatch",
-       "#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{1,3};"
-       "return std::mismatch(a,a+2,b).first==a+1?0:1;}"},
-  };
+      {"record-search", "#include <algorithm>\nstruct R{int n;};"
+                        "bool operator==(R a,R b){return a.n==b.n;}"
+                        "int main(){R a[2]{{1},{2}},b[1]{{2}};"
+                        "return std::search(a,a+2,b,b+1)==a+1?0:1;}"},
+      {"enum-mismatch", "#include <algorithm>\nenum E{one,two};"
+                        "int main(){E a[2]{one,two},b[2]{one,one};"
+                        "return std::mismatch(a,a+2,b).first==a+1?0:1;}"}};
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
     const auto Source =
@@ -31284,8 +31284,8 @@ int main() {
   if (permutations != 3 || cycle[0] != 1 || cycle[1] != 1 || cycle[2] != 2)
     return 8;
 
-  const int second[4]{2, 3, 2, 1};
-  const int bad[4]{1, 2, 3, 3};
+  const long second[4]{2, 3, 2, 1};
+  const long bad[4]{1, 2, 3, 3};
   if (!std::is_permutation(original, original + 4, second))
     return 9;
   if (std::is_permutation(original, original + 4, bad))
@@ -31360,9 +31360,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmPermutationRequirePinnedScalarForms) {
                       "bool operator<(const R&a,const R&b){return a.n<b.n;}"
                       "int main(){R a[2]{{1},{2}};"
                       "return std::prev_permutation(a,a+2)?0:1;}"},
-      {"heterogeneous-is-permutation",
-       "#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{2,1};"
-       "return std::is_permutation(a,a+2,b,b+2)?0:1;}"},
       {"record-is-permutation",
        "#include <algorithm>\nstruct R{int n;};"
        "bool operator==(const R&a,const R&b){return a.n==b.n;}"
@@ -31582,8 +31579,8 @@ int main() {
     return 8;
 
   int first[4]{1, 3, 2, 4};
-  int second[4]{6, 8, 5, 7};
-  int wrong[4]{6, 5, 7, 9};
+  long second[4]{6, 8, 5, 7};
+  long wrong[4]{6, 5, 7, 9};
   calls = 0;
   if (!std::is_permutation(first, first + 4, second, same_parity) ||
       calls == 0)
@@ -31658,10 +31655,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmBinaryPredicatesRequireValueFunctions) {
        "struct P{bool operator()(int a,int b)const{return a==b;}};\n"
        "#include <algorithm>\nint main(){int a[2]{1,2};"
        "return std::is_permutation(a,a+2,a,P{})?0:1;}"},
-      {"heterogeneous-permutation",
-       "bool p(int a,long b){return a==b;}\n#include <algorithm>\n"
-       "int main(){int a[2]{1,2};long b[2]{2,1};"
-       "return std::is_permutation(a,a+2,b,b+2,p)?0:1;}"},
       {"variadic-predicate",
        "bool p(int a,int b,...){return a==b;}\n#include <algorithm>\n"
        "int main(){int a[2]{1,1};"

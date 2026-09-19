@@ -5924,6 +5924,18 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return utilityAlgorithmEqualityPointer(Context, Parameter) &&
            Same(Call->getArg(Index)->getType(), Parameter);
   };
+  auto AlgorithmEqualityParameters = [&](unsigned LeftIndex,
+                                         unsigned RightIndex) {
+    if (!AlgorithmEqualityPointerParameter(LeftIndex) ||
+        !AlgorithmEqualityPointerParameter(RightIndex))
+      return false;
+    return utilityScalarComparisonType(
+               Context,
+               Function->getParamDecl(LeftIndex)->getType()->getPointeeType(),
+               Function->getParamDecl(RightIndex)->getType()->getPointeeType(),
+               false)
+        .has_value();
+  };
   auto SameAlgorithmElement = [&](QualType Left, QualType Right) {
     return utilityAlgorithmScalarPointer(Context, Left) &&
            utilityAlgorithmScalarPointer(Context, Right) &&
@@ -6517,12 +6529,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       AlgorithmPointerParameter(2) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType())) {
-    const bool DefaultElements =
-        AlgorithmEqualityPointerParameter(0) &&
-        AlgorithmEqualityPointerParameter(1) &&
-        AlgorithmEqualityPointerParameter(2) &&
-        SameAlgorithmElement(Function->getParamDecl(0)->getType(),
-                             Function->getParamDecl(2)->getType());
+    const bool DefaultElements = AlgorithmEqualityPointerParameter(0) &&
+                                 AlgorithmEqualityPointerParameter(1) &&
+                                 AlgorithmEqualityParameters(0, 2);
     if (Call->getNumArgs() == 3 && DefaultElements)
       return UtilityOperation::AlgorithmEqual;
     if (Call->getNumArgs() == 4) {
@@ -6783,13 +6792,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Function->getParamDecl(3)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
-    const bool DefaultElements =
-        AlgorithmEqualityPointerParameter(0) &&
-        AlgorithmEqualityPointerParameter(1) &&
-        AlgorithmEqualityPointerParameter(2) &&
-        AlgorithmEqualityPointerParameter(3) &&
-        SameAlgorithmElement(Function->getParamDecl(0)->getType(),
-                             Function->getParamDecl(2)->getType());
+    const bool DefaultElements = AlgorithmEqualityPointerParameter(0) &&
+                                 AlgorithmEqualityPointerParameter(1) &&
+                                 AlgorithmEqualityPointerParameter(3) &&
+                                 AlgorithmEqualityParameters(0, 2);
     if (!((Call->getNumArgs() == 4 && DefaultElements) ||
           (Call->getNumArgs() == 5 &&
            AlgorithmBinaryPredicateParameter(4, 0, 2))))
@@ -6829,12 +6835,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if (Pair &&
         Same(Pair->First->getType(), Function->getParamDecl(0)->getType()) &&
         Same(Pair->Second->getType(), Function->getParamDecl(2)->getType())) {
-      const bool DefaultElements =
-          AlgorithmEqualityPointerParameter(0) &&
-          AlgorithmEqualityPointerParameter(1) &&
-          AlgorithmEqualityPointerParameter(2) &&
-          SameAlgorithmElement(Function->getParamDecl(0)->getType(),
-                               Function->getParamDecl(2)->getType());
+      const bool DefaultElements = AlgorithmEqualityPointerParameter(0) &&
+                                   AlgorithmEqualityPointerParameter(1) &&
+                                   AlgorithmEqualityParameters(0, 2);
       if (Call->getNumArgs() == 3 && DefaultElements)
         return UtilityOperation::AlgorithmMismatch;
       if (Call->getNumArgs() == 4) {
@@ -7206,12 +7209,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
       AlgorithmPointerParameter(2) &&
       Same(Function->getParamDecl(0)->getType(),
-           Function->getParamDecl(1)->getType()) &&
-      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
-                           Function->getParamDecl(2)->getType())) {
+           Function->getParamDecl(1)->getType())) {
     const bool DefaultElements = AlgorithmEqualityPointerParameter(0) &&
                                  AlgorithmEqualityPointerParameter(1) &&
-                                 AlgorithmEqualityPointerParameter(2);
+                                 AlgorithmEqualityParameters(0, 2);
     if (Call->getNumArgs() == 3 && DefaultElements)
       return UtilityOperation::AlgorithmIsPermutation;
     if (Call->getNumArgs() == 4) {

@@ -1203,6 +1203,12 @@ class FunctionLowering {
                "Unknown approved comparison operation.");
       }
     };
+    auto AlgorithmEqual = [&](Expression Left, unsigned LeftIndex,
+                              Expression Right, unsigned RightIndex) {
+      return CompareUtilityValues(
+          "==", Left, Call->getArg(LeftIndex)->getType()->getPointeeType(),
+          Right, Call->getArg(RightIndex)->getType()->getPointeeType());
+    };
     auto ReverseFor = [&](QualType Type) {
       return approvedUtilityReverseIteratorRecord(
           A.S, A.Sources, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(),
@@ -2659,8 +2665,8 @@ class FunctionLowering {
                                        Call->getArg(*PredicateIndex)->getType(),
                                        dereference(json::Object(First), L),
                                        dereference(json::Object(Second), L), L)
-                 : binary("==", dereference(First, L), dereference(Second, L),
-                          "bool", L),
+                 : AlgorithmEqual(dereference(First, L), 0,
+                                  dereference(Second, L), 2),
              Next, False, L);
       label(Next, L);
       assign(First,
@@ -3378,8 +3384,8 @@ class FunctionLowering {
                        json::Object(*Predicate), Call->getArg(4)->getType(),
                        dereference(json::Object(Current), L),
                        dereference(json::Object(PatternCurrent), L), L)
-                 : binary("==", dereference(Current, L),
-                          dereference(PatternCurrent, L), "bool", L),
+                 : AlgorithmEqual(dereference(Current, L), 0,
+                                  dereference(PatternCurrent, L), 2),
              Advance, Mismatch, L);
       label(Advance, L);
       assign(Current,
@@ -3441,8 +3447,8 @@ class FunctionLowering {
                                        Call->getArg(4)->getType(),
                                        dereference(json::Object(Current), L),
                                        dereference(json::Object(Choice), L), L)
-                 : binary("==", dereference(Current, L), dereference(Choice, L),
-                          "bool", L),
+                 : AlgorithmEqual(dereference(Current, L), 0,
+                                  dereference(Choice, L), 2),
              End, NextChoice, L);
       label(NextChoice, L);
       assign(Choice,
@@ -3563,8 +3569,8 @@ class FunctionLowering {
                                        Call->getArg(*PredicateIndex)->getType(),
                                        dereference(json::Object(First), L),
                                        dereference(json::Object(Second), L), L)
-                 : binary("==", dereference(First, L), dereference(Second, L),
-                          "bool", L),
+                 : AlgorithmEqual(dereference(First, L), 0,
+                                  dereference(Second, L), 2),
              Advance, End, L);
       label(Advance, L);
       assign(First,
@@ -5059,8 +5065,8 @@ class FunctionLowering {
                              Call->getArg(*PredicateIndex)->getType(),
                              dereference(json::Object(Current), L),
                              dereference(json::Object(SecondScan), L), L)
-                       : binary("==", dereference(SecondScan, L),
-                                dereference(Current, L), "bool", L),
+                       : AlgorithmEqual(dereference(Current, L), 0,
+                                        dereference(SecondScan, L), 2),
              IncrementSecond, AdvanceSecondScan, L);
       label(IncrementSecond, L);
       assign(SecondCount,

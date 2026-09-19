@@ -2929,7 +2929,7 @@ extern "C" int algorithm_header() { return 0; }
 
     algorithm_read_only_source = """\
 #include <algorithm>
-extern "C" int algorithm_read_only(int *values, int *other) {
+extern "C" int algorithm_read_only(int *values, long *other) {
   int *found = std::find(values, values + 4, 3);
   auto count = std::count(values, values + 4, 3);
   bool same3 = std::equal(values, values + 4, other);
@@ -3146,8 +3146,8 @@ extern "C" int algorithm_predicate_unique(
     algorithm_subrange_source = """\
 #include <algorithm>
 extern "C" int algorithm_subrange(const int *first, const int *last,
-                                    const int *pattern,
-                                    const int *pattern_last, int value) {
+                                    const long *pattern,
+                                    const long *pattern_last, int value) {
   const int *found = std::search(first, last, pattern, pattern_last);
   const int *final = std::find_end(first, last, pattern, pattern_last);
   const int *choice = std::find_first_of(first, last, pattern, pattern_last);
@@ -3169,10 +3169,6 @@ extern "C" int algorithm_subrange(const int *first, const int *last,
         check("v2-algorithm-subrange-" + target,
               algorithm_subrange_source, profile="cpp-core-v2",
               target=target, sdk=True)
-    check("v2-algorithm-subrange-heterogeneous-search",
-          '#include <algorithm>\nint main(){int a[2]{1,2};long b[1]{2};return std::search(a,a+2,b,b+1)==a+1?0:1;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
-
     algorithm_predicate_subrange_source = """\
 #include <algorithm>
 extern "C" long long algorithm_predicate_subrange(
@@ -3597,8 +3593,8 @@ extern "C" void algorithm_inplace_merge(
     algorithm_permutation_source = """\
 #include <algorithm>
 extern "C" int algorithm_permutation(int *first, int *last,
-                                       const int *second,
-                                       const int *second_last) {
+                                       const long *second,
+                                       const long *second_last) {
   bool next = std::next_permutation(first, last);
   bool previous = std::prev_permutation(first, last);
   bool unbounded = std::is_permutation(first, last, second);
@@ -3619,10 +3615,6 @@ extern "C" int algorithm_permutation(int *first, int *last,
     check("v2-algorithm-permutation-enum",
           '#include <algorithm>\nenum E{low,high};int main(){E a[2]{low,high};return std::next_permutation(a,a+2)?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
-    check("v2-algorithm-permutation-heterogeneous",
-          '#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{2,1};return std::is_permutation(a,a+2,b,b+2)?0:1;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
-
     algorithm_comparator_permutation_source = """\
 #include <algorithm>
 extern "C" int algorithm_comparator_permutation(
@@ -3674,9 +3666,9 @@ extern "C" long algorithm_binary_predicates(
   auto mismatch_unbounded = std::mismatch(first, last, second, heterogeneous);
   auto mismatch_bounded =
       std::mismatch(first, last, second, second_last, heterogeneous);
-  bool permutation_unbounded = std::is_permutation(first, last, first, same);
+  bool permutation_unbounded = std::is_permutation(first, last, second, same);
   bool permutation_bounded =
-      std::is_permutation(first, last, first, last, same);
+      std::is_permutation(first, last, second, second_last, same);
   return (adjacent - levels) + equal_unbounded + equal_bounded +
          (mismatch_unbounded.first - first) +
          (mismatch_unbounded.second - second) +
