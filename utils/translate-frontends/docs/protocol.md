@@ -1485,8 +1485,9 @@ aliases, rebinds and constants, plus exact
 `uses_allocator<T, std::allocator<U>>` identities and inherited aliases, close
 through the existing checked type/query graph without allocator storage or a
 runtime call. Their compatible values also fold. Exact single-object
-`std::default_delete<T>` and one-dimensional `std::default_delete<T[]>`
-specializations preserve the authenticated one-byte, one-byte-aligned empty
+`std::default_delete<T>` and unbounded-array `std::default_delete<T[]>`, where
+`T` may have complete bounded inner extents, preserve the authenticated
+one-byte, one-byte-aligned empty
 libc++ representation as a record with one synthetic
 `{name:"nct_default_delete_storage",type:"u8"}` field at bit offset zero.
 Default, implicit trivial copy/move and admitted cv-converting construction
@@ -1496,11 +1497,14 @@ single-object or array destruction path. Array calls consume the checked native
 cookie, destroy nontrivial elements in reverse order and emit an ordinary
 `call` to the checked source-defined sized or unsized global delete[]. Sized
 single-object deletion receives exact `sizeof(T)`; sized array deletion receives
-the original allocation extent. Calls set `memory_lifetimes: true`; array calls
-also select the target's `array_cookie_abi`. Neither form adds an SDK call,
-native-heap import or ownership field. Exact single-object
-`std::unique_ptr<T, std::default_delete<T>>` and one-dimensional
-`std::unique_ptr<T[], std::default_delete<T[]>>` specializations preserve the
+the original allocation extent. Multidimensional calls flatten the fixed inner
+shape for cookie counts and reverse destruction. Calls set
+`memory_lifetimes: true`; array calls also select the target's
+`array_cookie_abi`. Neither form adds an SDK call, native-heap import or
+ownership field. Exact single-object
+`std::unique_ptr<T, std::default_delete<T>>` and unbounded-array
+`std::unique_ptr<T[], std::default_delete<T[]>>`, including multidimensional
+owners, preserve the
 authenticated pointer-sized libc++ representation as a record with one
 synthetic `{name:"nct_unique_ptr_pointer",type:"ptr:T"}` field at bit offset
 zero. The array record additionally authenticates libc++'s empty stateless
@@ -1532,13 +1536,14 @@ Exact single-object `std::make_unique<T>(args...)` authenticates its pinned
 template specialization, non-array `new` and raw-pointer owner construction,
 then emits an ordinary checked source-defined global-new `call`, scalar
 initialization or the selected source-owned non-template `noexcept` constructor
-call, and the same synthetic owner field store. Exact one-dimensional
-`std::make_unique<T[]>(count)` authenticates its `T[]` specialization, one
-`size_t` parameter, value-initializing `new[]` expression and libc++ private
-array-owner construction. The call-site count must be an integer constant
-expression from zero through 65536. It emits the checked global-new[] `call`,
-target cookie and per-element scalar value initialization or exact
-zero-parameter source-owned non-template `noexcept` record-constructor calls.
+call, and the same synthetic owner field store. Exact unbounded-array
+`std::make_unique<T[]>(count)`, where `T` may have complete bounded inner
+extents, authenticates its `T[]` specialization, one `size_t` parameter,
+value-initializing `new[]` expression and libc++ private array-owner
+construction. The call-site count must be an integer constant expression from
+zero through 65536. It emits the checked global-new[] `call`, target cookie and
+flattened scalar value initialization or exact zero-parameter source-owned
+non-template `noexcept` base-record constructor calls.
 Later destruction uses the existing checked global-delete or reverse
 global-delete[] path. These operations add no wire instruction, SDK call,
 native-heap import or hidden deleter storage. Exact runtime allocator

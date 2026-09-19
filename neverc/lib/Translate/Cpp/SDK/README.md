@@ -148,16 +148,17 @@ exact `std::allocator<T>` and
 admitted as compile-time metadata. Exact `uses_allocator<T,
 std::allocator<U>>` identities, inherited aliases and constants also resolve
 without materializing a standard-library object. Exact single-object
-`std::default_delete<T>` and one-dimensional `std::default_delete<T[]>`
-specializations preserve the pinned empty one-byte layout through a synthetic
+`std::default_delete<T>` and unbounded-array `std::default_delete<T[]>`, where
+`T` may have complete bounded inner extents, preserve the pinned empty one-byte
+layout through a synthetic
 byte carrier. Default, copy/move and admitted cv-converting construction lower
 directly. Their authenticated call operator evaluates the receiver and pointer
 once, destroys the complete object or reverse array elements, and calls a
-checked source-defined global sized or unsized delete/delete[].
-Multidimensional specializations, volatile elements and function addresses
-remain rejected. Exact single-object
-`std::unique_ptr<T, std::default_delete<T>>` and one-dimensional
-`std::unique_ptr<T[], std::default_delete<T[]>>` specializations use an
+checked source-defined global sized or unsized delete/delete[]. Volatile base
+elements and function addresses remain rejected. Exact single-object
+`std::unique_ptr<T, std::default_delete<T>>` and unbounded-array
+`std::unique_ptr<T[], std::default_delete<T[]>>`, including multidimensional
+owners, use an
 authenticated pointer-sized carrier. Default, null, raw-pointer, same-type move
 and const-adding converting move construction; same-type and const-adding
 converting move assignment; `nullptr` assignment; pointer access,
@@ -171,14 +172,16 @@ raw pointers to the owner may also receive every admitted nonstatic member;
 their pointee qualification and one-time receiver evaluation are preserved.
 Exact single-object `std::make_unique<T>(args...)` authenticates the pinned
 factory body and lowers through checked source-defined global new/delete. Exact
-one-dimensional `std::make_unique<T[]>(count)` additionally accepts an integer
-constant expression from zero through 65536 and lowers through the matching
-checked global new[]/delete[] cookie path. The scalar factory value-initializes
+unbounded-array `std::make_unique<T[]>(count)`, where `T` may have complete
+bounded inner extents, additionally accepts an integer constant expression from
+zero through 65536 and lowers through the matching checked global new[]/delete[]
+cookie path. The scalar factory value-initializes
 its object or calls an exact source-owned non-template `noexcept` record
 constructor with the call-site arguments. The array factory value-initializes
 each scalar element or calls an exact zero-parameter source-owned non-template
-`noexcept` record constructor. Both return the same pointer-sized owner without
-a libc++ call. Exact runtime allocator specializations use an authenticated
+`noexcept` record constructor. Multidimensional factories apply the outer count
+to the fixed inner shape and flatten base-element construction and destruction.
+Both return the same pointer-sized owner without a libc++ call. Exact runtime allocator specializations use an authenticated
 one-byte stateless carrier. Default,
 copy/move and non-void converting construction, same-type assignment,
 heterogeneous equality, deprecated C++17 `address` and complete-element
@@ -231,9 +234,8 @@ or copy fallback. Default-heap allocation, dynamic or overflowing allocation
 counts, over-aligned elements, other allocator-traits forwarding calls,
 potentially throwing, default-argument or
 constructor-template source-record construction, nontrivial by-value record
-parameters, runtime-count or multidimensional ownership factories, other smart
-pointers and the remaining memory operations stay outside the direct lowering
-boundary.
+parameters, runtime-count ownership factories, other smart pointers and the
+remaining memory operations stay outside the direct lowering boundary.
 Core v2 never admits the `platform` root.
 Math v1 continues to use its separately checked libc++, resource and Darwin
 platform closure for `<cmath>`.

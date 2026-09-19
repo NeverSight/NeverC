@@ -25231,8 +25231,6 @@ TEST_F(TranslateTest, CoreV2MemoryDefaultDeleteRequiresExactObjectForms) {
       {"volatile-array-element",
        "#include <memory>\nstd::default_delete<volatile int[]> value;",
        "TR0201"},
-      {"multidimensional-array",
-       "#include <memory>\nstd::default_delete<int[][2]> value;", "TR0203"},
       {"class-delete",
        "#include <memory>\nstruct R{static void operator "
        "delete(void*)noexcept;};"
@@ -25641,9 +25639,9 @@ TEST_F(TranslateTest, CoreV2MemoryUniquePtrRequiresExactObjectForms) {
        "#include <memory>\nvoid operator delete[](void*)noexcept{}"
        "std::unique_ptr<volatile int[]> value;",
        "TR0203"},
-      {"multidimensional-array",
+      {"multidimensional-volatile-element",
        "#include <memory>\nvoid operator delete[](void*)noexcept{}"
-       "std::unique_ptr<int[][2]> value;",
+       "std::unique_ptr<volatile int[][2]> value;",
        "TR0203"},
       {"class-array-delete",
        "#include <memory>\nstruct R{static void operator "
@@ -25651,6 +25649,13 @@ TEST_F(TranslateTest, CoreV2MemoryUniquePtrRequiresExactObjectForms) {
        "void R::operator delete[](void*)noexcept{}"
        "void operator delete[](void*)noexcept{}"
        "std::unique_ptr<R[]> value;",
+       "TR0203"},
+      {"multidimensional-class-array-delete",
+       "#include <memory>\nstruct R{static void operator "
+       "delete[](void*)noexcept;};"
+       "void R::operator delete[](void*)noexcept{}"
+       "void operator delete[](void*)noexcept{}"
+       "std::unique_ptr<R[][2]> value;",
        "TR0203"},
       {"custom-deleter",
        "#include <memory>\nstruct D{void operator()(int*)const noexcept{}};"
@@ -25902,6 +25907,131 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2MemoryMultidimensionalOwnershipRunsAtBothOptimizations) {
+  const auto Source = tmpFile("memory-multidimensional-ownership.cpp");
+  const auto Output = tmpFile("memory-multidimensional-ownership.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+using Size = decltype(sizeof(0));
+struct Storage { unsigned long long alignment; unsigned char bytes[512]; };
+Storage storage[7]{};
+int allocations;
+int releases;
+int sized_releases;
+int unsized_releases;
+Size allocated_bytes;
+Size released_bytes;
+int constructed;
+int destroyed_order;
+struct Owned {
+  int value;
+  Owned() noexcept : value(++constructed) {}
+  ~Owned() noexcept { destroyed_order = destroyed_order * 10 + value; }
+};
+void *operator new[](Size size) {
+  allocated_bytes += size;
+  return storage[allocations++].bytes;
+}
+void operator delete[](void *) noexcept {
+  ++releases;
+  ++unsized_releases;
+}
+void operator delete[](void *, Size size) noexcept {
+  ++releases;
+  ++sized_releases;
+  released_bytes += size;
+}
+void reset_lifetime() {
+  constructed = 0;
+  destroyed_order = 0;
+}
+int main() {
+  reset_lifetime();
+  Owned (*raw)[2] = new Owned[2][2]{};
+  std::default_delete<Owned[][2]> deleter;
+  std::default_delete<Owned[][2]> copied_deleter(deleter);
+  std::default_delete<Owned[][2]> moved_deleter(
+      static_cast<std::default_delete<Owned[][2]> &&>(copied_deleter));
+  moved_deleter(raw);
+  if (constructed != 4 || destroyed_order != 4321) return 1;
+
+  reset_lifetime();
+  const Owned (*qualified_raw)[2] = new Owned[2][2]{};
+  std::default_delete<const Owned[][2]> qualified_deleter(deleter);
+  qualified_deleter(qualified_raw);
+  if (constructed != 4 || destroyed_order != 4321) return 2;
+
+  reset_lifetime();
+  std::unique_ptr<Owned[][2]> owner(new Owned[2][2]{});
+  if (owner[0][0].value != 1 || owner[1][0].value != 3 ||
+      owner[1][1].value != 4)
+    return 3;
+  Owned (*released)[2] = owner.release();
+  if (owner || released[0][1].value != 2) return 4;
+  owner.reset(released);
+  std::unique_ptr<Owned[][2]> moved_owner(std::move(owner));
+  std::unique_ptr<const Owned[][2]> qualified_owner(std::move(moved_owner));
+  if (owner || moved_owner || qualified_owner[1][1].value != 4) return 5;
+  qualified_owner.reset();
+  if (constructed != 4 || destroyed_order != 4321) return 6;
+
+  auto matrix = std::make_unique<int[][3]>(2);
+  auto qualified_matrix = std::make_unique<const int[][2]>(2);
+  if (matrix[0][0] || matrix[0][1] || matrix[0][2] || matrix[1][0] ||
+      matrix[1][1] || matrix[1][2] || qualified_matrix[0][0] ||
+      qualified_matrix[0][1] || qualified_matrix[1][0] ||
+      qualified_matrix[1][1])
+    return 7;
+  matrix[1][2] = 7;
+  if (matrix[1][2] != 7) return 8;
+
+  reset_lifetime();
+  auto objects = std::make_unique<Owned[][2]>(2);
+  if (constructed != 4 || objects[0][0].value != 1 ||
+      objects[0][1].value != 2 || objects[1][0].value != 3 ||
+      objects[1][1].value != 4)
+    return 9;
+  objects.reset();
+  if (destroyed_order != 4321) return 10;
+
+  auto cube = std::make_unique<int[][2][2]>(2);
+  cube[1][1][1] = 9;
+  if (cube[0][0][0] || cube[0][1][1] || cube[1][0][1] ||
+      cube[1][1][1] != 9)
+    return 11;
+  matrix.reset();
+  qualified_matrix.reset();
+  cube.reset();
+
+  const Size scalar_bytes =
+      2 * 3 * sizeof(int) + 2 * 2 * sizeof(int) +
+      2 * 2 * 2 * sizeof(int);
+  return allocations == 7 && releases == 7 && sized_releases == 4 &&
+                 unsized_releases == 3 &&
+                 allocated_bytes == released_bytes + scalar_bytes
+             ? 0
+             : 12;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  const auto Text = readFile(Output);
+  EXPECT_NE(Text.find("nct_unique_ptr_pointer"), std::string::npos);
+  EXPECT_EQ(Text.find("make_unique"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("memory-multidimensional-ownership" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2MemoryMakeUniqueRequiresExactObjectForms) {
   struct Rejection {
     const char *Name;
@@ -25945,6 +26075,20 @@ TEST_F(TranslateTest, CoreV2MemoryMakeUniqueRequiresExactObjectForms) {
        "delete[](void*)noexcept{}"
        "struct R{R(){}};int main(){auto value=std::make_unique<R[]>(1);}",
        "TR0203"},
+      {"multidimensional-array-throwing-constructor",
+       "#include <memory>\nusing S=decltype(sizeof(0));unsigned char b[16];"
+       "void*operator new[](S){return b;}void operator "
+       "delete[](void*)noexcept{}"
+       "struct R{R(){}};"
+       "int main(){auto value=std::make_unique<R[][2]>(1);}",
+       "TR0203"},
+      {"multidimensional-array-expansion-limit",
+       "#include <memory>\nusing S=decltype(sizeof(0));unsigned char b[16];"
+       "void*operator new[](S){return b;}void operator "
+       "delete[](void*)noexcept{}"
+       "int main(){auto value=std::make_unique<int[][65536]>(4);"
+       "return value[0][0];}",
+       "TR0201"},
       {"array-default-constructor-argument",
        "#include <memory>\nusing S=decltype(sizeof(0));unsigned char b[16];"
        "void*operator new[](S){return b;}void operator "

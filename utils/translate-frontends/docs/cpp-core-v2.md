@@ -464,9 +464,10 @@ all consumed component headers retain their upstream bytes and are authenticated
 before translation. Raw-pointer `std::pointer_traits<T *>` exposes its exact
 `pointer`, `element_type`, `difference_type` and `rebind<U>` aliases.
 
-Exact single-object `std::default_delete<T>` and one-dimensional array
-`std::default_delete<T[]>` specializations are admitted for a non-volatile,
-non-array object type `T`. Each pinned libc++ specialization must be an empty,
+Exact single-object `std::default_delete<T>` and unbounded-array
+`std::default_delete<T[]>` specializations are admitted for a non-volatile base
+object type. In the array form, `T` may contain complete bounded inner extents,
+as in `std::default_delete<int[][3]>`. Each pinned libc++ specialization must be an empty,
 standard-layout record with no fields or bases, trivial default construction
 and destruction, and an exact one-byte size and alignment. The response
 preserves that representation as one synthetic
@@ -488,17 +489,21 @@ the original allocation extent. When libc++ supplies only a standard sized
 declaration, a checked source-defined unsized operator is selected instead.
 Calls require a complete element within the target's default new alignment,
 enable `memory_lifetimes`, and introduce no libc++ runtime call, native-heap
-import or ownership object.
+import or ownership object. Multidimensional deletion uses each fixed inner
+extent to flatten the native cookie count and destroy base elements in reverse
+order.
 
 Exact single-object `std::unique_ptr<T, std::default_delete<T>>` and
-one-dimensional `std::unique_ptr<T[], std::default_delete<T[]>>`
-specializations are admitted for the same non-volatile, non-array element
-types. The pinned libc++ record must contain its exact raw pointer, two exact
+unbounded-array `std::unique_ptr<T[], std::default_delete<T[]>>`
+specializations are admitted for the same non-volatile base element types,
+including complete bounded inner extents. The pinned libc++ record must contain
+its exact raw pointer, two exact
 empty compressed-pair padding fields and the matching empty default deleter,
 all at offset zero. The array specialization must also contain the exact empty,
 trivial `__unique_ptr_array_bounds_stateless` checker at offset zero. Its total
 size and alignment must equal `T *`. The response preserves either ABI as one
-synthetic `nct_unique_ptr_pointer: ptr:T` field at offset zero.
+synthetic `nct_unique_ptr_pointer: ptr:T` field at offset zero. For a
+multidimensional owner this is a pointer to its first bounded row.
 
 Default, `nullptr`, compatible raw-pointer, same-type move and const-adding
 converting move construction lower directly. Converting moves retain the same
@@ -538,7 +543,8 @@ uses the checked native cookie and original allocation extent. Null pointers
 skip destruction and deallocation.
 
 The exact pinned single-object `std::make_unique<T>(args...)` overload and
-one-dimensional `std::make_unique<T[]>(count)` overload are also admitted. The
+unbounded-array `std::make_unique<T[]>(count)` overload are also admitted;
+array `T` may contain complete bounded inner extents. The
 single-object path authenticates the concrete function-template specialization,
 `T` and `_Args` pack, non-array `new T(...)`, raw-pointer `unique_ptr<T>`
 construction and selected global allocation function together. Allocation uses
@@ -550,24 +556,25 @@ default, copy, move and multi-argument forms.
 
 The array path authenticates its concrete `T[]` specialization, one `size_t`
 parameter, `new T[count]()` expression, libc++ private array-owner construction
-and selected global allocation function together. The call-site count must be
-an integer constant expression from zero through 65536. Lowering computes the
-checked byte extent, stores the target array cookie when required and
-value-initializes every scalar element. A complete source-owned non-union record
+and selected global allocation function together. The call-site count is the
+outer extent and must be an integer constant expression from zero through
+65536. Lowering combines it with all fixed inner extents, computes the checked
+byte extent, stores the target array cookie when required and value-initializes
+every flattened scalar element. A complete source-owned non-union base record
 must select an exact zero-parameter source-owned non-template `noexcept` default
-constructor, which is called once for each element. The resulting raw pointer
-is installed in the normal pointer-sized owner, so return destinations,
+constructor, which is called once for each flattened element. The resulting raw
+pointer is installed in the normal pointer-sized owner, so return destinations,
 automatic destruction and the checked global-delete or reverse global-delete[]
 path remain shared with direct `unique_ptr` construction. Neither factory emits
 a libc++ runtime call.
 
-The element must be complete and within the target's default new alignment,
+The base element must be complete and within the target's default new alignment,
 and the matching global sized or unsized delete definition must be
-source-owned. Class-specific delete/delete[], multidimensional or custom-deleter
-`unique_ptr`, volatile elements, member-function addresses, const-removing or
-base-adjusting converting moves and base-adjusting heterogeneous comparisons
-remain rejected at this boundary. Runtime-count or multidimensional
-`make_unique`, class-specific allocation, throwing or default-argument record
+source-owned. Class-specific delete/delete[], custom-deleter `unique_ptr`,
+volatile elements, member-function addresses, const-removing or base-adjusting
+converting moves and base-adjusting heterogeneous comparisons remain rejected
+at this boundary. Runtime-count `make_unique`, class-specific allocation,
+throwing or default-argument record
 construction, over-aligned elements, factory function addresses and other
 ownership factories remain rejected. Every admitted operation emits no libc++
 runtime call and enables the checked `memory_lifetimes` policy.
@@ -722,9 +729,9 @@ heterogeneous, union or non-source-record uninitialized construction, function
 addresses, quoted includes, shadows and forged declarations remain rejected.
 Potentially throwing constructors, constructors with extra default arguments,
 constructor templates and unsupported source-record definitions remain
-rejected. Default-delete function addresses, multidimensional array
-specializations, volatile elements and unsupported conversions remain rejected. Allocator member or
-comparison function addresses, custom allocator types and traits, and other
+rejected. Default-delete function addresses, volatile elements and unsupported
+conversions remain rejected. Allocator member or comparison function addresses,
+custom allocator types and traits, and other
 `allocator_traits` forwarding calls remain rejected. Volatile destruction
 pointers remain rejected. Allocation requires a separate default-heap and
 exception contract. Other smart pointers and other ownership factories remain

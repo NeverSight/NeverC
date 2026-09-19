@@ -1779,6 +1779,16 @@ extern "C" int memory_make_unique_array() {
   owner[1] = 7;
   return owner && owner[0] == 0 && owner[1] == 7 ? 0 : 1;
 }
+extern "C" int memory_multidimensional(int (*pointer)[2]) {
+  std::unique_ptr<int[][2]> owner(pointer);
+  owner[1][1] = 7;
+  int (*released)[2] = owner.release();
+  std::default_delete<int[][2]> deleter;
+  deleter(released);
+  auto factory = std::make_unique<int[][3]>(2);
+  factory[1][2] = 9;
+  return owner || factory[0][0] != 0 || factory[1][2] != 9 ? 1 : 0;
+}
 """
 
     def check_memory_default_delete(data):
@@ -1788,7 +1798,7 @@ extern "C" int memory_make_unique_array() {
                 {"name": "nct_default_delete_storage", "type": "u8"}
             ]
         ]
-        assert len(deleter_records) == 4, data
+        assert len(deleter_records) == 5, data
         assert all(record["layout"] == {
             "size_bits": 8,
             "abi_align_bits": 8,
@@ -1814,11 +1824,12 @@ extern "C" int memory_make_unique_array() {
             if len(record["fields"]) == 1 and
                record["fields"][0]["name"] == "nct_unique_ptr_pointer"
         ]
-        assert len(all_unique_records) == 5, data
+        assert len(all_unique_records) == 7, data
         unique_pointer_types = {
             record["fields"][0]["type"] for record in all_unique_records
         }
-        assert {"ptr:int", "cptr:int"} <= unique_pointer_types, data
+        assert {"ptr:int", "cptr:int", "ptr:arr:2:int",
+                "ptr:arr:3:int"} <= unique_pointer_types, data
         pointer_layout = data["target"]["carrier_layout"]["default-pointer"]
         expected_layout = {
             "size_bits": data["target"]["pointer_bits"],
@@ -1830,12 +1841,13 @@ extern "C" int memory_make_unique_array() {
         external_names = {
             "memory_unique_ptr", "memory_array_unique_ptr",
             "memory_make_unique", "memory_make_unique_array",
+            "memory_multidimensional",
         }
         functions = [
             function for function in data["functions"]
             if function["name"] in external_names
         ]
-        assert len(functions) == 4, data
+        assert len(functions) == 5, data
         unique_function = next(
             function for function in functions
             if function["name"] == "memory_unique_ptr"
@@ -1871,6 +1883,15 @@ extern "C" int memory_make_unique_array() {
         )
         assert any(node.get("kind") == "index"
                    for node in walk(make_array_function["body"])), data
+        multidimensional_function = next(
+            function for function in functions
+            if function["name"] == "memory_multidimensional"
+        )
+        multidimensional_indices = [
+            node for node in walk(multidimensional_function["body"])
+            if node.get("kind") == "index"
+        ]
+        assert len(multidimensional_indices) >= 6, data
         deleter_ids = {
             record["id"] for record in data["records"]
             if record["fields"] == [

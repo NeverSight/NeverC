@@ -4066,8 +4066,8 @@ bool Adapter::requireUtilityDefaultDelete(const CXXRecordDecl *Record,
       approvedUtilityDefaultDeleteRecord(S, Sources, Record, Context);
   if (!Deleter) {
     reject(Location, "standard library record",
-           "Only the pinned one-byte std::default_delete<T> and "
-           "std::default_delete<T[]> layouts are admitted.",
+           "Only the pinned one-byte single-object and unbounded-array "
+           "std::default_delete layouts are admitted.",
            "TR0203");
     return false;
   }
@@ -4092,9 +4092,8 @@ bool Adapter::requireUtilityUniquePtr(const CXXRecordDecl *Record,
   auto Unique = approvedUtilityUniquePtrRecord(S, Sources, Record, Context);
   if (!Unique) {
     reject(Location, "standard library record",
-           "Only the pinned std::unique_ptr<T, std::default_delete<T>> and "
-           "std::unique_ptr<T[], std::default_delete<T[]>> layouts are "
-           "admitted.",
+           "Only the pinned single-object and unbounded-array std::unique_ptr "
+           "layouts with matching std::default_delete are admitted.",
            "TR0203");
     return false;
   }
@@ -4116,9 +4115,11 @@ bool Adapter::requireUtilityUniquePtr(const CXXRecordDecl *Record,
         return true;
     return false;
   };
-  if (HasClassDelete(
-          HasClassDelete,
-          Unique->ElementType.getUnqualifiedType()->getAsCXXRecordDecl(), 0)) {
+  if (HasClassDelete(HasClassDelete,
+                     Context.getBaseElementType(Unique->ElementType)
+                         .getUnqualifiedType()
+                         ->getAsCXXRecordDecl(),
+                     0)) {
     reject(Location, "unique pointer deallocation",
            "std::unique_ptr requires matching global delete selection; "
            "class-specific deallocation is unsupported.",

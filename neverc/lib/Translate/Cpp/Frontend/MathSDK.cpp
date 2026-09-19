@@ -406,8 +406,13 @@ approvedMemoryTemplateMetadata(const State &S, const SourceManager &SM,
     const auto *Array =
         Specialized.isNull() ? nullptr : Specialized->getAsArrayTypeUnsafe();
     const auto Element = Array ? Array->getElementType() : Specialized;
-    if (!Element.isNull() && !Element.isVolatileQualified() &&
-        Element->isObjectType() && !Element->isArrayType() &&
+    const auto BaseElement =
+        Element.isNull()
+            ? QualType()
+            : Specialization->getASTContext().getBaseElementType(Element);
+    if (!Element.isNull() && !BaseElement.isNull() &&
+        !BaseElement.isVolatileQualified() && Element->isObjectType() &&
+        (!Element->isArrayType() || !Element->isIncompleteType()) &&
         (!Array || isa<IncompleteArrayType>(Array)))
       return MemoryTemplateMetadata::DefaultDelete;
   }
@@ -484,10 +489,14 @@ approvedUtilityDefaultDeleteRecord(const State &S, const SourceManager &SM,
   const auto Specialized = Arguments.get(0).getAsType();
   const auto *Array =
       Specialized.isNull() ? nullptr : Context.getAsArrayType(Specialized);
-  auto Element = Array ? Context.getBaseElementType(Specialized) : Specialized;
+  const auto Element = Array ? Array->getElementType() : Specialized;
+  const auto BaseElement =
+      Element.isNull() ? QualType() : Context.getBaseElementType(Element);
   const auto &Layout = Context.getASTRecordLayout(Definition);
-  if (Element.isNull() || Element.isVolatileQualified() ||
-      !Element->isObjectType() || Element->isArrayType() ||
+  if (Element.isNull() || BaseElement.isNull() ||
+      BaseElement.isVolatileQualified() || !Element->isObjectType() ||
+      (!Array && Element->isArrayType()) ||
+      (Element->isArrayType() && Element->isIncompleteType()) ||
       (Array && !isa<IncompleteArrayType>(Array)) ||
       Layout.getSize().getQuantity() != 1 ||
       Layout.getAlignment().getQuantity() != 1)
@@ -521,9 +530,13 @@ approvedUtilityUniquePtrRecord(const State &S, const SourceManager &SM,
   const auto *Array =
       Specialized.isNull() ? nullptr : Context.getAsArrayType(Specialized);
   const auto Element = Array ? Array->getElementType() : Specialized;
+  const auto BaseElement =
+      Element.isNull() ? QualType() : Context.getBaseElementType(Element);
   const auto Pointer = Context.getPointerType(Element);
-  if (Element.isNull() || Element.isVolatileQualified() ||
-      !Element->isObjectType() || Element->isArrayType() ||
+  if (Element.isNull() || BaseElement.isNull() ||
+      BaseElement.isVolatileQualified() || !Element->isObjectType() ||
+      (!Array && Element->isArrayType()) ||
+      (Element->isArrayType() && Element->isIncompleteType()) ||
       (Array && !isa<IncompleteArrayType>(Array)) || Pointer.isNull())
     return std::nullopt;
 
@@ -3816,18 +3829,19 @@ approvedUtilityMakeUniqueCall(const State &S, const SourceManager &SM,
   }
 
   const unsigned ArgumentCount = Owner->Deleter.Array ? 0 : Call->getNumArgs();
-  if (utilityScalar(Context, Owner->ElementType)) {
+  const auto ValueElement = Context.getBaseElementType(Owner->ElementType);
+  if (utilityScalar(Context, ValueElement)) {
     if (ArgumentCount > 1 || !Allocation->getInitializer())
       return std::nullopt;
     if (ArgumentCount &&
         !utilityScalarDirectConversion(
             Context, Function->getParamDecl(0)->getType()->getPointeeType(),
-            Owner->ElementType))
+            ValueElement))
       return std::nullopt;
     return UtilityMakeUniqueCall{*Owner, Allocation, nullptr, ArrayCount};
   }
 
-  const auto *Record = definedRecord(Owner->ElementType.getUnqualifiedType());
+  const auto *Record = definedRecord(ValueElement.getUnqualifiedType());
   const auto *Construction = Allocation->getConstructExpr();
   const auto *Constructor =
       Construction ? Construction->getConstructor() : nullptr;

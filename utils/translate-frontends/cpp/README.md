@@ -78,10 +78,11 @@ authenticated parsing boundary; raw-pointer `pointer_traits`, exact
 `std::allocator` and exact `std::allocator_traits<std::allocator<T>>` metadata
 resolve at compile time. Exact `uses_allocator<T, std::allocator<U>>`
 identities, inherited aliases and constants also resolve. Exact single-object
-`std::default_delete<T>` and one-dimensional `std::default_delete<T[]>`
-objects preserve their one-byte stateless layout; their construction and calls
-lower directly through checked object or reverse array destruction and a
-source-defined global delete/delete[].
+`std::default_delete<T>` and unbounded-array `std::default_delete<T[]>`, where
+`T` may have complete bounded inner extents, preserve their one-byte stateless
+layout; their construction and calls lower directly through checked object or
+flattened reverse array destruction and a source-defined global
+delete/delete[].
 `std::addressof`, `pointer_traits::pointer_to` and scalar-pointer destruction
 and uninitialized construction algorithms lower directly. Exact runtime
 allocator objects, C++17 `destroy`, and allocator-traits destruction,
@@ -198,22 +199,25 @@ rebinds and trait constants also resolve as compile-time metadata, including
 exact `uses_allocator<T, std::allocator<U>>` identities, inherited aliases and
 values. `std::addressof` and raw-pointer
 `pointer_traits::pointer_to` return checked object addresses without a libc++
-runtime call. Exact single-object `std::default_delete<T>` and one-dimensional
-`std::default_delete<T[]>` objects use an authenticated one-byte stateless
-carrier. Default, copy/move and admitted cv-converting construction lower
+runtime call. Exact single-object `std::default_delete<T>` and unbounded-array
+`std::default_delete<T[]>`, including complete bounded inner extents, use an
+authenticated one-byte stateless carrier. Default, copy/move and admitted
+cv-converting construction lower
 directly. Calls evaluate the deleter and pointer once, destroy the complete
 object or reverse array elements, and invoke a checked source-defined global
 sized or unsized delete/delete[]. Exact single-object
-`std::unique_ptr<T, std::default_delete<T>>` and one-dimensional
-`std::unique_ptr<T[], std::default_delete<T[]>>` objects use authenticated
-pointer-sized carriers. Their default, null, raw-pointer, move, const-adding
+`std::unique_ptr<T, std::default_delete<T>>` and unbounded-array
+`std::unique_ptr<T[], std::default_delete<T[]>>`, including multidimensional
+owners, use authenticated pointer-sized carriers. Their default, null,
+raw-pointer, move, const-adding
 conversion, assignment, observation, release, reset, swap, comparison and
 destruction operations lower directly; scalar owners expose dereference and
 arrow while array owners expose subscript and the checked reverse `delete[]`
-path. Exact single-object `std::make_unique<T>(args...)` and one-dimensional
-`std::make_unique<T[]>(count)` for integer constant expressions from zero
-through 65536 lower through checked source-defined global new/delete or
-new[]/delete[]. They value-initialize scalars or call supported source-owned
+path. Exact single-object `std::make_unique<T>(args...)` and unbounded-array
+`std::make_unique<T[]>(count)`, where `T` may have complete bounded inner
+extents, for integer constant expressions from zero through 65536 lower through
+checked source-defined global new/delete or new[]/delete[]. They value-initialize
+flattened scalars or call supported source-owned
 non-template `noexcept` record constructors and return the authenticated
 pointer-sized owner without a libc++ call. Exact `destroy_at`, `destroy` and
 `destroy_n` calls on scalar object pointers retain
@@ -228,9 +232,9 @@ is supported, source-owned and `noexcept`. Allocation/deallocation accepts exact
 member and traits forwarding, including hints and runtime deallocation counts,
 when a source-defined global new/delete path exists and the allocation count is
 a constant proven within `max_size`. Default heap allocation, dynamic allocation
-counts, over-aligned elements, multidimensional ownership specializations,
-runtime-count array factories, custom-deleter `unique_ptr`, other smart pointers
-and ownership factories are not yet admitted. The driver authenticates each
+counts, over-aligned elements, runtime-count array factories, custom-deleter
+`unique_ptr`, other smart pointers and ownership factories are not yet
+admitted. The driver authenticates each
 closure before emitting output. Standard-library objects and operations beyond
 these documented surfaces, other standard headers and full C++/STL remain
 unfinished.

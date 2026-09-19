@@ -48,14 +48,16 @@ Core v2's pinned `<memory>` surface now resolves exact raw-pointer
 and trait constants as compile-time metadata. Exact
 `uses_allocator<T, std::allocator<U>>` identities, inherited aliases and
 compatible values also resolve. Exact single-object `std::default_delete<T>`
-and one-dimensional `std::default_delete<T[]>` use checked one-byte stateless
-carriers with default, copy/move and admitted cv-converting construction. Their
+and unbounded-array `std::default_delete<T[]>`, including complete bounded
+inner extents, use checked one-byte stateless carriers with default, copy/move
+and admitted cv-converting construction. Their
 call operators evaluate the receiver and pointer once, destroy the complete
 object or reverse array elements, and call a checked source-defined global
 sized or unsized delete/delete[]. Exact single-object
-`std::unique_ptr<T, std::default_delete<T>>` and one-dimensional
-`std::unique_ptr<T[], std::default_delete<T[]>>` use pointer-sized authenticated
-carriers. Default, null, raw-pointer, same-type move and const-adding converting
+`std::unique_ptr<T, std::default_delete<T>>` and unbounded-array
+`std::unique_ptr<T[], std::default_delete<T[]>>`, including multidimensional
+owners, use pointer-sized authenticated carriers. Default, null, raw-pointer,
+same-type move and const-adding converting
 move construction, same-type and const-adding converting move assignment,
 `nullptr` assignment, `get`, mutable/const `get_deleter`, explicit boolean
 conversion, `release`, `reset`, member and free `swap`, same-specialization and
@@ -66,13 +68,16 @@ Lowering preserves receiver/argument sequencing and calls the matching checked
 source-defined global delete or delete[]. Each admitted nonstatic member accepts
 either an object receiver or an exact raw pointer to that owner; pointer
 receivers retain pointee `const` and execute once. Exact single-object
-`std::make_unique<T>(args...)` and one-dimensional
-`std::make_unique<T[]>(count)` with an integer constant
+`std::make_unique<T>(args...)` and unbounded-array
+`std::make_unique<T[]>(count)`, where `T` may have complete bounded inner
+extents, with an integer constant
 expression from zero through 65536 also lower directly. They authenticate the
 pinned factory and selected allocation, value-initialize scalar elements or
 call the exact source-owned non-template `noexcept` record constructor, and
-install the resulting pointer in that owner. Array construction uses the
-checked global new[]/delete[] cookie path; runtime array counts remain rejected.
+install the resulting pointer in that owner. Multidimensional construction
+uses the outer count and fixed inner extents while the checked global
+new[]/delete[] cookie path tracks flattened base elements; runtime array counts
+remain rejected.
 Existing address operations, scalar and source-record destruction, scalar or
 trivial source-record uninitialized construction, and nothrow zero-parameter
 source-record default/value construction operations lower directly.
