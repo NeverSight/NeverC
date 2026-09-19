@@ -310,6 +310,7 @@ enum class UtilityUniquePtrOperation {
   GetDeleter,
   Arrow,
   Dereference,
+  Subscript,
   Boolean,
   Release,
   Reset,
@@ -403,6 +404,7 @@ enum class UtilityOperation {
   MemoryUniquePtrGetDeleter,
   MemoryUniquePtrArrow,
   MemoryUniquePtrDereference,
+  MemoryUniquePtrSubscript,
   MemoryUniquePtrBoolean,
   MemoryUniquePtrRelease,
   MemoryUniquePtrReset,
@@ -1089,7 +1091,8 @@ public:
                                                bool Array = false);
   const clang::FunctionDecl *allocatorHeapFunction(bool Allocate,
                                                    clang::QualType Element,
-                                                   clang::SourceLocation L);
+                                                   clang::SourceLocation L,
+                                                   bool Array = false);
   ArrayAllocationLayout arrayAllocationLayout(clang::QualType Object,
       bool UsualDeleteWantsSize, clang::SourceLocation L);
   ArrayNewInfo arrayNewInfo(const clang::CXXNewExpr *N);

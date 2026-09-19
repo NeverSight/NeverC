@@ -1499,16 +1499,23 @@ single-object deletion receives exact `sizeof(T)`; sized array deletion receives
 the original allocation extent. Calls set `memory_lifetimes: true`; array calls
 also select the target's `array_cookie_abi`. Neither form adds an SDK call,
 native-heap import or ownership field. Exact single-object
-`std::unique_ptr<T, std::default_delete<T>>` specializations preserve the
+`std::unique_ptr<T, std::default_delete<T>>` and one-dimensional
+`std::unique_ptr<T[], std::default_delete<T[]>>` specializations preserve the
 authenticated pointer-sized libc++ representation as a record with one
 synthetic `{name:"nct_unique_ptr_pointer",type:"ptr:T"}` field at bit offset
-zero. Default, null, raw-pointer, same-type move and const-adding converting move
+zero. The array record additionally authenticates libc++'s empty stateless
+bounds-checker field, which adds no response field. Default, null, compatible
+raw-pointer, same-type move and const-adding converting move
 construction; same-type and const-adding converting move assignment; `nullptr`
-assignment; pointer access, dereference, boolean conversion, release, reset,
+assignment; pointer access, boolean conversion, release, reset,
 member/free swap, all six same-specialization and qualification-compatible
 same-element comparisons, all six bidirectional `nullptr` comparisons and
 destruction lower
 to existing record, pointer, cast, comparison and checked lifetime instructions.
+Single-object owners admit dereference and arrow; array owners emit ordinary
+typed `index` expressions. Array reset, assignment and destruction reuse the
+checked cookie-based reverse destruction and global delete[] call, including
+the original extent for sized deallocation.
 Moves capture the source pointer, clear that source and cast only to the checked
 qualification-compatible destination type. Mutable and const `get_deleter`
 return a dereferenced pointer to the existing one-byte default-delete record;

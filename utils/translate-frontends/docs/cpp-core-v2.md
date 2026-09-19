@@ -490,19 +490,23 @@ Calls require a complete element within the target's default new alignment,
 enable `memory_lifetimes`, and introduce no libc++ runtime call, native-heap
 import or ownership object.
 
-Exact single-object `std::unique_ptr<T, std::default_delete<T>>`
-specializations are admitted for the same non-volatile, non-array object types.
-The pinned libc++ record must contain its exact raw pointer, two exact empty
-compressed-pair padding fields and the exact empty `default_delete<T>` field,
-all at offset zero. Its total size and alignment must equal `T *`. The response
-preserves that ABI as one synthetic `nct_unique_ptr_pointer: ptr:T` field at
-offset zero.
+Exact single-object `std::unique_ptr<T, std::default_delete<T>>` and
+one-dimensional `std::unique_ptr<T[], std::default_delete<T[]>>`
+specializations are admitted for the same non-volatile, non-array element
+types. The pinned libc++ record must contain its exact raw pointer, two exact
+empty compressed-pair padding fields and the matching empty default deleter,
+all at offset zero. The array specialization must also contain the exact empty,
+trivial `__unique_ptr_array_bounds_stateless` checker at offset zero. Its total
+size and alignment must equal `T *`. The response preserves either ABI as one
+synthetic `nct_unique_ptr_pointer: ptr:T` field at offset zero.
 
-Default, `nullptr`, exact raw-pointer, same-type move and const-adding converting
-move construction lower directly. A move captures the source once, transfers
+Default, `nullptr`, compatible raw-pointer, same-type move and const-adding
+converting move construction lower directly. Converting moves retain the same
+scalar or array ownership form. A move captures the source once, transfers
 its pointer through the checked qualification conversion and clears the
-source. `get`, `operator->`, `operator*` and explicit boolean conversion read
-the captured pointer once. The exact mutable and const `get_deleter` overloads
+source. `get` and explicit boolean conversion read the captured pointer once;
+single-object owners also admit `operator->` and `operator*`, while array owners
+admit `operator[](size_t)` as an lvalue access. The exact mutable and const `get_deleter` overloads
 evaluate the owner once and return the correspondingly qualified lvalue
 reference to its authenticated `default_delete<T>` subobject. Lowering preserves
 the pinned zero-offset empty-subobject address by passing the owner address
@@ -511,10 +515,11 @@ the one-byte deleter record; it adds no owner field or storage. `release` return
 that pointer and clears the owner without destroying it. Every admitted
 nonstatic member accepts either an object receiver or an exact raw pointer to
 the owner. A raw-pointer receiver executes once, retains its pointee `const`,
-and yields the same owner identity. `reset(pointer())` and `reset(pointer)` evaluate the
+and yields the same owner identity. `reset(pointer())`, array `reset(nullptr)`
+and compatible raw-pointer reset evaluate the
 receiver before the replacement argument, install the replacement before
-destroying the old object, and use the same checked single-object destruction
-and global delete path as `default_delete`. Same-type and const-adding
+destroying the old object, and use the matching checked single-object or reverse
+array destruction and global delete/delete[] path as `default_delete`. Same-type and const-adding
 converting move assignment evaluate the right owner before the left owner,
 release the source and then reset the destination; same-type self-move therefore
 retains ownership. Explicit member-call assignment instead evaluates its
@@ -527,9 +532,10 @@ same-unqualified-element comparisons capture raw pointers and form their common
 qualified pointer type, including either operand order with `nullptr`. Ordered
 forms reuse the checked flat-address pointer carrier that implements the
 `std::less` total order without C relational-pointer undefined behavior.
-Automatic and static destruction first clear the owner and then
-destroy and deallocate its former object. Null pointers skip destruction and
-deallocation.
+Automatic and static destruction first clear the owner and then destroy and
+deallocate its former object or reverse array elements. Array sized delete[]
+uses the checked native cookie and original allocation extent. Null pointers
+skip destruction and deallocation.
 
 The exact pinned single-object `std::make_unique<T>(args...)` overload is also
 admitted. The concrete function-template specialization, `T` and `_Args` pack,
@@ -546,11 +552,10 @@ destruction and the checked global-delete path remain shared with direct
 
 The element must be complete and within the target's default new alignment,
 and the matching global sized or unsized delete definition must be
-source-owned. Class-specific delete, `unique_ptr` array specializations, custom deleters,
-volatile elements, member-function addresses, const-removing or base-adjusting
-converting moves and base-adjusting heterogeneous comparisons remain rejected
-at this boundary. Array
-`make_unique`, class-specific allocation, throwing or default-argument record
+source-owned. Class-specific delete/delete[], multidimensional or custom-deleter
+`unique_ptr`, volatile elements, member-function addresses, const-removing or
+base-adjusting converting moves and base-adjusting heterogeneous comparisons
+remain rejected at this boundary. Array `make_unique`, class-specific allocation, throwing or default-argument record
 construction, over-aligned elements, factory function addresses and other
 ownership factories remain rejected. Every admitted operation emits no libc++
 runtime call and enables the checked `memory_lifetimes` policy.

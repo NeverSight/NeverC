@@ -53,16 +53,17 @@ carriers with default, copy/move and admitted cv-converting construction. Their
 call operators evaluate the receiver and pointer once, destroy the complete
 object or reverse array elements, and call a checked source-defined global
 sized or unsized delete/delete[]. Exact single-object
-`std::unique_ptr<T, std::default_delete<T>>` uses a pointer-sized authenticated
-carrier. Default, null, raw-pointer, same-type move and const-adding converting
+`std::unique_ptr<T, std::default_delete<T>>` and one-dimensional
+`std::unique_ptr<T[], std::default_delete<T[]>>` use pointer-sized authenticated
+carriers. Default, null, raw-pointer, same-type move and const-adding converting
 move construction, same-type and const-adding converting move assignment,
-`nullptr` assignment, `get`, mutable/const `get_deleter`, `operator->`,
-dereference, explicit boolean conversion, `release`, `reset`, member and free
-`swap`, same-specialization and
+`nullptr` assignment, `get`, mutable/const `get_deleter`, explicit boolean
+conversion, `release`, `reset`, member and free `swap`, same-specialization and
 qualification-compatible same-element comparisons, all six bidirectional
-`nullptr` comparisons and automatic destruction lower directly while preserving
-receiver/argument sequencing and calling the same checked source-defined global
-delete. Each admitted nonstatic member accepts either an object receiver or an
+`nullptr` comparisons and automatic destruction lower directly. Single-object
+owners also admit `operator->` and dereference; array owners admit `operator[]`.
+Lowering preserves receiver/argument sequencing and calls the matching checked
+source-defined global delete or delete[]. Each admitted nonstatic member accepts either an object receiver or an
 exact raw pointer to that owner; pointer receivers retain pointee `const` and
 execute once. Exact single-object
 `std::make_unique<T>(args...)` also lowers directly: it authenticates the pinned

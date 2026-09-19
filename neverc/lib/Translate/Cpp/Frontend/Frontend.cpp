@@ -3359,7 +3359,8 @@ const FunctionDecl *Adapter::allocationFunction(const FunctionDecl *F,
 
 const FunctionDecl *Adapter::allocatorHeapFunction(bool Allocate,
                                                    QualType Element,
-                                                   SourceLocation L) {
+                                                   SourceLocation L,
+                                                   bool Array) {
   if (!S.coreV2() || Element.isNull() || Element->isVoidType() ||
       Element->isIncompleteType() || Element->isFunctionType() ||
       Context.getTypeAlign(Element) > Context.getTargetInfo().getNewAlign()) {
@@ -3369,7 +3370,8 @@ const FunctionDecl *Adapter::allocatorHeapFunction(bool Allocate,
            "TR0203");
     throw Failure{};
   }
-  const auto Operator = Allocate ? OO_New : OO_Delete;
+  const auto Operator = Allocate ? (Array ? OO_Array_New : OO_New)
+                                 : (Array ? OO_Array_Delete : OO_Delete);
   const auto Name = Context.DeclarationNames.getCXXOperatorName(Operator);
   const FunctionDecl *Selected = nullptr;
   auto Match = [&](const FunctionDecl *Candidate, unsigned Parameters) {
@@ -3406,8 +3408,11 @@ const FunctionDecl *Adapter::allocatorHeapFunction(bool Allocate,
       Selected = Candidate;
     }
   };
-  Find(Allocate ? 1u : 2u);
-  if (!Allocate && Selected && Selected->getNumParams() == 2 &&
+  const bool PreferSized =
+      !Allocate && (!Array || needsDestruction(Element));
+  Find(Allocate || !PreferSized ? 1u : 2u);
+  if (!Allocate && PreferSized && Selected &&
+      Selected->getNumParams() == 2 &&
       !Selected->getDefinition()) {
     bool StandardSizedDelete = true;
     for (const auto *Declaration : Selected->redecls()) {
@@ -3432,7 +3437,7 @@ const FunctionDecl *Adapter::allocatorHeapFunction(bool Allocate,
            "A matching global allocation function is required.", "TR0203");
     throw Failure{};
   }
-  return allocationFunction(Selected, Allocate, L);
+  return allocationFunction(Selected, Allocate, L, Array);
 }
 
 ArrayAllocationLayout Adapter::arrayAllocationLayout(
@@ -3854,8 +3859,8 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
       } else if (approvedMemoryTemplateMetadata(S, Sources, D) ==
                  MemoryTemplateMetadata::UniquePtr) {
         reject(L, "standard library record",
-               "Only the pinned single-object std::unique_ptr<T, "
-               "std::default_delete<T>> layout is admitted.",
+               "Only the pinned single-object and array std::unique_ptr "
+               "layouts with matching std::default_delete are admitted.",
                "TR0203");
         return {};
       } else if (approvedUtilityDefaultDeleteRecord(S, Sources, D, Context)) {
@@ -4087,21 +4092,24 @@ bool Adapter::requireUtilityUniquePtr(const CXXRecordDecl *Record,
   auto Unique = approvedUtilityUniquePtrRecord(S, Sources, Record, Context);
   if (!Unique) {
     reject(Location, "standard library record",
-           "Only the pinned single-object std::unique_ptr<T, "
-           "std::default_delete<T>> layout is admitted.",
+           "Only the pinned std::unique_ptr<T, std::default_delete<T>> and "
+           "std::unique_ptr<T[], std::default_delete<T[]>> layouts are "
+           "admitted.",
            "TR0203");
     return false;
   }
   const auto *Canonical = Unique->Record->getCanonicalDecl();
   if (!RequiredUtilityUniquePtrs.insert(Canonical).second)
     return true;
+  const auto DeleteOperator =
+      Unique->Deleter.Array ? OO_Array_Delete : OO_Delete;
   auto HasClassDelete = [&](auto &&Self, const CXXRecordDecl *Class,
                             unsigned BaseDepth) -> bool {
     const auto *Definition = Class ? Class->getDefinition() : nullptr;
     if (!Definition || BaseDepth > 64)
       return false;
     for (const auto *Method : Definition->methods())
-      if (Method->getOverloadedOperator() == OO_Delete)
+      if (Method->getOverloadedOperator() == DeleteOperator)
         return true;
     for (const auto &Base : Definition->bases())
       if (Self(Self, Base.getType()->getAsCXXRecordDecl(), BaseDepth + 1))
@@ -4112,14 +4120,26 @@ bool Adapter::requireUtilityUniquePtr(const CXXRecordDecl *Record,
           HasClassDelete,
           Unique->ElementType.getUnqualifiedType()->getAsCXXRecordDecl(), 0)) {
     reject(Location, "unique pointer deallocation",
-           "Single-object std::unique_ptr requires global delete selection; "
-           "class-specific delete is unsupported.",
+           "std::unique_ptr requires matching global delete selection; "
+           "class-specific deallocation is unsupported.",
            "TR0203");
     return false;
   }
   if (type(Unique->PointerType, Location, false, Depth + 1).empty())
     return false;
-  allocatorHeapFunction(false, Unique->ElementType, Location);
+  const auto *Deallocation = allocatorHeapFunction(
+      false, Unique->ElementType, Location, Unique->Deleter.Array);
+  if (Unique->Deleter.Array) {
+    const bool Sized = Deallocation->getNumParams() == 2;
+    const auto Layout =
+        arrayAllocationLayout(Unique->ElementType, Sized, Location);
+    if (Sized && !Layout.CookieBytes) {
+      reject(Location, "sized array delete",
+             "The native array ABI supplies no count for this selected sized "
+             "deallocation function.");
+      return false;
+    }
+  }
   S.Module["memory_lifetimes"] = true;
   Records.push_back(const_cast<CXXRecordDecl *>(Unique->Record));
   return true;
@@ -9062,8 +9082,8 @@ public:
       }
       if (UnsupportedUtilityUniquePtr) {
         A.reject(Source.Location, "standard library record",
-                 "Only the pinned single-object std::unique_ptr<T, "
-                 "std::default_delete<T>> layout is admitted.",
+                 "Only the pinned single-object and array std::unique_ptr "
+                 "layouts with matching std::default_delete are admitted.",
                  "TR0203");
         SelectedCallSources[Source.Expression].push_back(&Source);
         continue;
@@ -13622,7 +13642,18 @@ public:
               break;
             }
             A.type(Info->Owner.ElementType, L);
-            A.allocatorHeapFunction(false, Info->Owner.ElementType, L);
+            const auto *Function = A.allocatorHeapFunction(
+                false, Info->Owner.ElementType, L,
+                Info->Owner.Deleter.Array);
+            if (Info->Owner.Deleter.Array) {
+              const bool Sized = Function->getNumParams() == 2;
+              const auto Layout = A.arrayAllocationLayout(
+                  Info->Owner.ElementType, Sized, L);
+              if (Sized && !Layout.CookieBytes)
+                A.reject(L, "sized array delete",
+                         "The native array ABI supplies no count for this "
+                         "selected sized deallocation function.");
+            }
             break;
           }
           case UtilityOperation::MemoryUniquePtrMoveAssign:
@@ -13646,7 +13677,18 @@ public:
               break;
             }
             A.type(Info->Owner.ElementType, L);
-            A.allocatorHeapFunction(false, Info->Owner.ElementType, L);
+            const auto *Function = A.allocatorHeapFunction(
+                false, Info->Owner.ElementType, L,
+                Info->Owner.Deleter.Array);
+            if (Info->Owner.Deleter.Array) {
+              const bool Sized = Function->getNumParams() == 2;
+              const auto Layout = A.arrayAllocationLayout(
+                  Info->Owner.ElementType, Sized, L);
+              if (Sized && !Layout.CookieBytes)
+                A.reject(L, "sized array delete",
+                         "The native array ABI supplies no count for this "
+                         "selected sized deallocation function.");
+            }
             break;
           }
           case UtilityOperation::MemoryDefaultDelete: {
@@ -13840,7 +13882,7 @@ public:
           A.reject(L, "standard library runtime object",
                    "Approved standard headers provide only their documented "
                    "compile-time aliases, constants, folded queries and "
-                   "std::default_delete, single-object std::unique_ptr, "
+                   "std::default_delete, single-object or array std::unique_ptr, "
                    "std::allocator, std::pair, "
                    "std::tuple, std::array, "
                    "std::initializer_list, "

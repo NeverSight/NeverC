@@ -25498,6 +25498,134 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2MemoryArrayUniquePtrRunsAtBothOptimizations) {
+  const auto Source = tmpFile("memory-array-unique-ptr.cpp");
+  const auto Output = tmpFile("memory-array-unique-ptr.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+using Size = decltype(sizeof(0));
+struct Storage { unsigned long long alignment; unsigned char bytes[64]; };
+Storage storage[10]{};
+int allocations;
+int releases;
+int sized_releases;
+int unsized_releases;
+Size allocated_bytes;
+Size released_bytes;
+int destroyed_count;
+int destroyed_sum;
+unsigned long long destroyed_order;
+struct Owned {
+  int value;
+  Owned(int value = 0) noexcept : value(value) {}
+  ~Owned() noexcept {
+    ++destroyed_count;
+    destroyed_sum += value;
+    destroyed_order = destroyed_order * 10 + value;
+  }
+};
+void *operator new[](Size size) {
+  allocated_bytes += size;
+  return storage[allocations++].bytes;
+}
+void operator delete[](void *) noexcept {
+  ++releases;
+  ++unsized_releases;
+}
+void operator delete[](void *, Size size) noexcept {
+  ++releases;
+  ++sized_releases;
+  released_bytes += size;
+}
+int main() {
+  std::unique_ptr<Owned[]> empty;
+  std::unique_ptr<Owned[]> null(nullptr);
+  if (empty || null || empty.get() != nullptr) return 1;
+
+  std::unique_ptr<Owned[]> owner(new Owned[3]{1, 2, 4});
+  std::unique_ptr<Owned[]> *owner_address = &owner;
+  owner_address->operator[](1).value = 3;
+  if (owner[0].value != 1 || owner[1].value != 3 ||
+      owner[2].value != 4 || !owner) return 2;
+  Owned *raw = owner.release();
+  if (owner || raw[2].value != 4) return 3;
+  owner.reset(raw);
+  const std::default_delete<Owned[]> &deleter = owner.get_deleter();
+  (void)deleter;
+
+  std::unique_ptr<Owned[]> moved(std::move(owner));
+  std::unique_ptr<const Owned[]> target(new Owned[1]{5});
+  target = std::move(moved);
+  if (owner || moved || target[1].value != 3 || destroyed_order != 5)
+    return 4;
+  target.reset();
+  if (destroyed_order != 5431 || destroyed_count != 4 ||
+      destroyed_sum != 13) return 5;
+
+  std::unique_ptr<Owned[]> convert_source(new Owned[1]{6});
+  std::unique_ptr<const Owned[]> converted(std::move(convert_source));
+  converted = nullptr;
+  if (convert_source || converted || destroyed_order != 54316) return 6;
+
+  Owned *qualified_raw = new Owned[1]{7};
+  std::unique_ptr<const Owned[]> qualified;
+  qualified.reset(qualified_raw);
+  if (qualified[0].value != 7) return 7;
+  qualified.reset();
+  if (destroyed_order != 543167) return 8;
+
+  std::unique_ptr<Owned[]> left(new Owned[1]{8});
+  std::unique_ptr<Owned[]> right(new Owned[1]{9});
+  Owned *left_pointer = left.get();
+  Owned *right_pointer = right.get();
+  left.swap(right);
+  std::swap(left, right);
+  if (left.get() != left_pointer || right.get() != right_pointer ||
+      left == right || !(left != right) || left == nullptr ||
+      nullptr == right) return 9;
+  left.reset();
+  right.reset();
+
+  {
+    std::unique_ptr<Owned[]> automatic(new Owned[1]{2});
+    if (automatic[0].value != 2) return 10;
+  }
+
+  std::unique_ptr<Owned[]> assignment_source(new Owned[1]{3});
+  std::unique_ptr<Owned[]> assignment_target(new Owned[1]{4});
+  assignment_target = std::move(assignment_source);
+  if (assignment_source || assignment_target[0].value != 3) return 11;
+  assignment_target.reset();
+
+  std::unique_ptr<int[]> trivial(new int[2]{10, 11});
+  if (trivial[0] != 10 || trivial[1] != 11) return 12;
+  trivial.reset();
+
+  return allocations == 10 && releases == 10 && sized_releases == 9 &&
+                 unsized_releases == 1 &&
+                 allocated_bytes == released_bytes + 2 * sizeof(int) &&
+                 destroyed_count == 11 &&
+                 destroyed_sum == 52 && destroyed_order == 54316789243ULL
+             ? 0
+             : 13;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  const auto Text = readFile(Output);
+  EXPECT_NE(Text.find("nct_unique_ptr_pointer"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("memory-array-unique-ptr" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2MemoryUniquePtrRequiresExactObjectForms) {
   struct Rejection {
     const char *Name;
@@ -25507,8 +25635,23 @@ TEST_F(TranslateTest, CoreV2MemoryUniquePtrRequiresExactObjectForms) {
   const Rejection Cases[] = {
       {"missing-delete-definition",
        "#include <memory>\nint main(){std::unique_ptr<int> value;}", "TR0203"},
-      {"array-specialization",
+      {"missing-array-delete-definition",
        "#include <memory>\nstd::unique_ptr<int[]> value;", "TR0203"},
+      {"volatile-array-element",
+       "#include <memory>\nvoid operator delete[](void*)noexcept{}"
+       "std::unique_ptr<volatile int[]> value;",
+       "TR0203"},
+      {"multidimensional-array",
+       "#include <memory>\nvoid operator delete[](void*)noexcept{}"
+       "std::unique_ptr<int[][2]> value;",
+       "TR0203"},
+      {"class-array-delete",
+       "#include <memory>\nstruct R{static void operator "
+       "delete[](void*)noexcept;};"
+       "void R::operator delete[](void*)noexcept{}"
+       "void operator delete[](void*)noexcept{}"
+       "std::unique_ptr<R[]> value;",
+       "TR0203"},
       {"custom-deleter",
        "#include <memory>\nstruct D{void operator()(int*)const noexcept{}};"
        "std::unique_ptr<int,D> value;",
@@ -25546,6 +25689,12 @@ TEST_F(TranslateTest, CoreV2MemoryUniquePtrRequiresExactObjectForms) {
        "#include <memory>\nvoid operator delete(void*)noexcept{}"
        "struct B{};struct D:B{};int f(){std::unique_ptr<D> left;"
        "std::unique_ptr<B> right;return left==right;}",
+       "TR0203"},
+      {"scalar-array-comparison",
+       "#include <memory>\nvoid operator delete(void*)noexcept{}"
+       "void operator delete[](void*)noexcept{}"
+       "int f(){std::unique_ptr<int> left;std::unique_ptr<int[]> right;"
+       "return left==right;}",
        "TR0203"},
       {"base-adjusting-ordered-comparison",
        "#include <memory>\nvoid operator delete(void*)noexcept{}"

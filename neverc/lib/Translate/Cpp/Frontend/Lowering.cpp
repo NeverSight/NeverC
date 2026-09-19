@@ -1466,6 +1466,7 @@ class FunctionLowering {
     case UtilityOperation::MemoryUniquePtrGetDeleter:
     case UtilityOperation::MemoryUniquePtrArrow:
     case UtilityOperation::MemoryUniquePtrDereference:
+    case UtilityOperation::MemoryUniquePtrSubscript:
     case UtilityOperation::MemoryUniquePtrBoolean:
     case UtilityOperation::MemoryUniquePtrRelease:
     case UtilityOperation::MemoryUniquePtrReset:
@@ -1488,6 +1489,8 @@ class FunctionLowering {
           return UtilityUniquePtrOperation::Arrow;
         case UtilityOperation::MemoryUniquePtrDereference:
           return UtilityUniquePtrOperation::Dereference;
+        case UtilityOperation::MemoryUniquePtrSubscript:
+          return UtilityUniquePtrOperation::Subscript;
         case UtilityOperation::MemoryUniquePtrBoolean:
           return UtilityUniquePtrOperation::Boolean;
         case UtilityOperation::MemoryUniquePtrRelease:
@@ -1534,6 +1537,15 @@ class FunctionLowering {
       if (Expected == UtilityUniquePtrOperation::Dereference) {
         auto Pointer = snapshot(UniquePtrMember(OwnerObject(), Info->Owner), L);
         return dereference(std::move(Pointer), L);
+      }
+      if (Expected == UtilityUniquePtrOperation::Subscript) {
+        if (Info->ArgumentIndex >= Call->getNumArgs())
+          reject(L, "unique pointer subscript",
+                 "The checked array index is missing.");
+        auto Pointer = snapshot(UniquePtrMember(OwnerObject(), Info->Owner), L);
+        auto Offset = expression(Call->getArg(Info->ArgumentIndex));
+        return index(std::move(Pointer), std::move(Offset),
+                     type(Info->Owner.ElementType, L), L);
       }
       if (Expected == UtilityUniquePtrOperation::Boolean) {
         auto Pointer = snapshot(UniquePtrMember(OwnerObject(), Info->Owner), L);
@@ -1626,19 +1638,13 @@ class FunctionLowering {
         assign(Member(),
                cast(std::move(Pointer), type(Info->Owner.PointerType, L), L),
                L);
-        const auto *Function =
-            A.allocatorHeapFunction(false, Info->Owner.ElementType, L);
-        deallocateSingle(std::move(Previous), Info->Owner.ElementType, Function,
-                         L);
+        deallocateUniquePtr(std::move(Previous), Info->Owner, L);
         return dereference(std::move(*Receiver), L);
       }
       if (Expected == UtilityUniquePtrOperation::NullAssign) {
         auto Pointer = snapshot(Member(), L);
         assign(Member(), A.zero(Info->Owner.PointerType, L), L);
-        const auto *Function =
-            A.allocatorHeapFunction(false, Info->Owner.ElementType, L);
-        deallocateSingle(std::move(Pointer), Info->Owner.ElementType, Function,
-                         L);
+        deallocateUniquePtr(std::move(Pointer), Info->Owner, L);
         return dereference(std::move(*Receiver), L);
       }
       if (Info->ArgumentIndex >= Call->getNumArgs())
@@ -1647,16 +1653,15 @@ class FunctionLowering {
       // C++17 sequences the postfix receiver before the argument. The reset
       // body observes the old pointer only after the argument has completed.
       const auto *Argument = Call->getArg(Info->ArgumentIndex);
-      auto Replacement = snapshot(isa<CXXDefaultArgExpr>(Argument)
-                                      ? A.zero(Info->Owner.PointerType, L)
-                                      : expression(Argument),
-                                  L);
+      auto Replacement = snapshot(
+          isa<CXXDefaultArgExpr>(Argument) ||
+                  Argument->getType()->isNullPtrType()
+              ? A.zero(Info->Owner.PointerType, L)
+              : cast(expression(Argument), type(Info->Owner.PointerType, L), L),
+          L);
       auto Pointer = snapshot(Member(), L);
       assign(Member(), std::move(Replacement), L);
-      const auto *Function =
-          A.allocatorHeapFunction(false, Info->Owner.ElementType, L);
-      deallocateSingle(std::move(Pointer), Info->Owner.ElementType, Function,
-                       L);
+      deallocateUniquePtr(std::move(Pointer), Info->Owner, L);
       return {};
     }
     case UtilityOperation::MemoryUniquePtrSwap: {
@@ -1707,9 +1712,11 @@ class FunctionLowering {
       const auto Right = approvedUtilityUniquePtrRecord(
           A.S, A.Sources, Call->getArg(1)->getType()->getAsCXXRecordDecl(),
           A.Context);
-      if ((!Left && !Right) || (Left && Right &&
-                                !A.Context.hasSameUnqualifiedType(
-                                    Left->ElementType, Right->ElementType)))
+      if ((!Left && !Right) ||
+          (Left && Right &&
+           (Left->Deleter.Array != Right->Deleter.Array ||
+            !A.Context.hasSameUnqualifiedType(Left->ElementType,
+                                              Right->ElementType))))
         reject(L, "unique pointer comparison",
                "Compatible checked std::unique_ptr or nullptr operands are "
                "required.");
@@ -7400,11 +7407,11 @@ class FunctionLowering {
     }
     return Result;
   }
-  void deallocateArray(const CXXDeleteExpr *Delete, Expression Pointer,
+  void deallocateArray(Expression Pointer, QualType Object,
+                       const FunctionDecl *F, bool UsualDeleteWantsSize,
                        SourceLocation L) {
-    const auto *F = A.allocationFunction(Delete->getOperatorDelete(), false, L, true);
-    const auto Layout = A.arrayAllocationLayout(Delete->getDestroyedType(),
-                                                Delete->doesUsualArrayDeleteWantSize(), L);
+    const auto Layout =
+        A.arrayAllocationLayout(Object, UsualDeleteWantsSize, L);
     Pointer = snapshot(std::move(Pointer), L);
     auto Destroy = labelName(), End = labelName();
     branch(cast(Pointer, "bool", L), Destroy, End, L);
@@ -7454,6 +7461,13 @@ class FunctionLowering {
     jump(End, L);
     label(End, L);
   }
+  void deallocateArray(const CXXDeleteExpr *Delete, Expression Pointer,
+                       SourceLocation L) {
+    const auto *F =
+        A.allocationFunction(Delete->getOperatorDelete(), false, L, true);
+    deallocateArray(std::move(Pointer), Delete->getDestroyedType(), F,
+                    Delete->doesUsualArrayDeleteWantSize(), L);
+  }
   void deallocateArray(const CXXDeleteExpr *Delete) {
     deallocateArray(Delete, expression(Delete->getArgument()),
                     Delete->getExprLoc());
@@ -7479,6 +7493,18 @@ class FunctionLowering {
                                 {"args", std::move(Args)}, {"loc", A.loc(L)}});
     jump(End, L);
     label(End, L);
+  }
+  void deallocateUniquePtr(Expression Pointer,
+                           const UtilityUniquePtrRecord &Owner,
+                           SourceLocation L) {
+    const auto *Function = A.allocatorHeapFunction(
+        false, Owner.ElementType, L, Owner.Deleter.Array);
+    if (Owner.Deleter.Array) {
+      deallocateArray(std::move(Pointer), Owner.ElementType, Function,
+                      Function->getNumParams() == 2, L);
+      return;
+    }
+    deallocateSingle(std::move(Pointer), Owner.ElementType, Function, L);
   }
   void deallocate(const CXXDeleteExpr *Delete) {
     if (Delete->isArrayForm()) {
@@ -8296,7 +8322,9 @@ class FunctionLowering {
                           {"name", "nct_unique_ptr_pointer"},
                           {"args", json::Array{json::Object(Place)}},
                           {"loc", A.loc(L)}};
-        assign(std::move(Member), expression(C->getArg(0)), L);
+        assign(std::move(Member),
+               cast(expression(C->getArg(0)), type(Unique->PointerType, L), L),
+               L);
         return;
       }
       case UtilityUniquePtrConstruction::Move:
@@ -9573,10 +9601,7 @@ public:
                           {"loc", A.loc(L)}};
         auto Pointer = snapshot(Member, L);
         assign(std::move(Member), A.zero(Unique->PointerType, L), L);
-        const auto *Deallocation =
-            A.allocatorHeapFunction(false, Unique->ElementType, L);
-        deallocateSingle(std::move(Pointer), Unique->ElementType, Deallocation,
-                         L);
+        deallocateUniquePtr(std::move(Pointer), *Unique, L);
       } else {
         destructionMembers();
       }

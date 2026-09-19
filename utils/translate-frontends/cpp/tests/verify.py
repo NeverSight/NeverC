@@ -1757,6 +1757,19 @@ extern "C" int memory_unique_ptr(int *pointer) {
   converting_target = nullptr;
   return converted || converting_target ? 13 : 0;
 }
+extern "C" int memory_array_unique_ptr(Owned *pointer) {
+  std::unique_ptr<Owned[]> value(pointer);
+  value[0].value += 1;
+  Owned *released_pointer = value.release();
+  value.reset(released_pointer);
+  std::unique_ptr<Owned[]> moved(std::move(value));
+  std::unique_ptr<const Owned[]> converted;
+  converted = std::move(moved);
+  if (value || moved || !converted || converted[0].value != pointer[0].value)
+    return 1;
+  converted.reset();
+  return converted ? 2 : 0;
+}
 extern "C" int memory_make_unique(int value) {
   auto owner = std::make_unique<int>(value);
   return owner && *owner == value ? 0 : 1;
@@ -1791,6 +1804,12 @@ extern "C" int memory_make_unique(int value) {
         }, data
 
     def check_memory_unique_ptr(data):
+        all_unique_records = [
+            record for record in data["records"]
+            if len(record["fields"]) == 1 and
+               record["fields"][0]["name"] == "nct_unique_ptr_pointer"
+        ]
+        assert len(all_unique_records) == 4, data
         unique_records = {
             record["fields"][0]["type"]: record
             for record in data["records"]
@@ -1806,17 +1825,18 @@ extern "C" int memory_make_unique(int value) {
             "field_offsets_bits": [0],
         }
         assert all(record["layout"] == expected_layout
-                   for record in unique_records.values()), data
+                   for record in all_unique_records), data
         destroy_names = {
             record["id"] + "_destroy" for record in unique_records.values()
         }
         functions = [
             function for function in data["functions"]
             if function["name"] in {
-                "memory_unique_ptr", "memory_make_unique", *destroy_names
+                "memory_unique_ptr", "memory_array_unique_ptr",
+                "memory_make_unique", *destroy_names
             }
         ]
-        assert len(functions) == 4, data
+        assert len(functions) == 5, data
         unique_function = next(
             function for function in functions
             if function["name"] == "memory_unique_ptr"
@@ -1840,6 +1860,12 @@ extern "C" int memory_make_unique(int value) {
                 for argument in node["args"])
         }
         assert {"<", ">", "<=", ">="} <= qualified_ordering, data
+        array_function = next(
+            function for function in functions
+            if function["name"] == "memory_array_unique_ptr"
+        )
+        assert any(node.get("kind") == "index"
+                   for node in walk(array_function["body"])), data
         deleter_ids = {
             record["id"] for record in data["records"]
             if record["fields"] == [
@@ -1870,20 +1896,30 @@ extern "C" int memory_make_unique(int value) {
         allocation_functions = [
             function for function in data["functions"]
             if function["result"] == "ptr:void" and
-               len(function["params"]) == 1
+               len(function["params"]) == 1 and
+               any(call["callee"] == function["name"] and
+                   "target" in call for call in calls)
         ]
         assert len(allocation_functions) == 1, data
-        assert any(call["callee"] == allocation_functions[0]["name"] and
-                   "target" in call for call in calls), data
         delete_functions = [
             function for function in data["functions"]
             if function["result"] == "void" and
                [parameter["type"] for parameter in function["params"]] ==
-               ["ptr:void"]
+               ["ptr:void"] and
+               any(call["callee"] == function["name"] for call in calls)
         ]
         assert len(delete_functions) == 1, data
-        assert any(call["callee"] == delete_functions[0]["name"]
-                   for call in calls), data
+        array_delete_functions = [
+            function for function in data["functions"]
+            if function["result"] == "void" and
+               len(function["params"]) == 2 and
+               function["params"][0]["type"] == "ptr:void"
+        ]
+        assert len(array_delete_functions) == 1, data
+        array_calls = [node for node in walk(array_function["body"])
+                       if node.get("op") == "call"]
+        assert any(call["callee"] == array_delete_functions[0]["name"]
+                   for call in array_calls), data
         assert not [node for node in walk(data["functions"])
                     if node.get("op") in ("mapped_call", "native_heap_call")], data
         assert data.get("memory_lifetimes") is True, data

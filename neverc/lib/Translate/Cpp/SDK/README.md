@@ -156,14 +156,17 @@ once, destroys the complete object or reverse array elements, and calls a
 checked source-defined global sized or unsized delete/delete[].
 Multidimensional specializations, volatile elements and function addresses
 remain rejected. Exact single-object
-`std::unique_ptr<T, std::default_delete<T>>` specializations use an
+`std::unique_ptr<T, std::default_delete<T>>` and one-dimensional
+`std::unique_ptr<T[], std::default_delete<T[]>>` specializations use an
 authenticated pointer-sized carrier. Default, null, raw-pointer, same-type move
 and const-adding converting move construction; same-type and const-adding
 converting move assignment; `nullptr` assignment; pointer access,
 mutable/const `get_deleter`, release, reset, member/free swap,
 same-specialization and qualification-compatible same-element comparisons,
-all six bidirectional `nullptr` comparisons and destruction lower
-directly through the checked global-delete path without a libc++ call. Exact
+all six bidirectional `nullptr` comparisons and destruction lower directly
+through the matching checked global-delete or global-delete[] path without a
+libc++ call. Single-object owners expose dereference and arrow; array owners
+expose subscript and use checked cookie-based reverse destruction. Exact
 raw pointers to the owner may also receive every admitted nonstatic member;
 their pointee qualification and one-time receiver evaluation are preserved.
 Exact single-object `std::make_unique<T>(args...)` authenticates the pinned factory
