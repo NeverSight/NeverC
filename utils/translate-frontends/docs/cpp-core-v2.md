@@ -439,6 +439,10 @@ from an element; unary transforms take one element and every combining
 operation takes two. Callback values are captured once, empty ranges make no
 callback calls, and the sequential scan forms retain their in-place behavior.
 Scan results use the same directly convertible writable output boundary.
+The callback forms of `inner_product` and two-range `transform_reduce` accept a
+different numeric second-range element when the transform callback accepts the
+respective element types and returns a value directly convertible to the
+accumulator type.
 
 `gcd` and `lcm` accept any non-boolean built-in integer argument combination
 through 64 bits and return libc++'s exact `common_type_t` result. Signed inputs

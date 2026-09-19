@@ -6357,6 +6357,25 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   auto NumericBinaryCallback = [&](unsigned Index, QualType Element) {
     return NumericCallback(Index, Element, 2);
   };
+  auto NumericBinaryTransformCallback = [&](unsigned Index, QualType Result,
+                                            QualType Left, QualType Right) {
+    const auto *Prototype = AlgorithmCallbackPrototype(Index);
+    if (!Prototype || Prototype->getNumParams() != 2)
+      return false;
+    Result = Result.getUnqualifiedType();
+    Left = Left.getUnqualifiedType();
+    Right = Right.getUnqualifiedType();
+    return NumericArithmetic(Result) && NumericArithmetic(Left) &&
+           NumericArithmetic(Right) &&
+           utilityScalarDirectConversion(Context, Prototype->getReturnType(),
+                                         Result) &&
+           !Prototype->getParamType(0)->isReferenceType() &&
+           !Prototype->getParamType(1)->isReferenceType() &&
+           utilityScalarDirectConversion(Context, Left,
+                                         Prototype->getParamType(0)) &&
+           utilityScalarDirectConversion(Context, Right,
+                                         Prototype->getParamType(1));
+  };
   if (Origin->Path == "__numeric/iota.h" && Name == "iota" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
       NumericPointerParameter(0, true) && NumericPointerParameter(1, true) &&
@@ -6390,12 +6409,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType()) &&
       ((Call->getNumArgs() == 4 && NumericCommonElements(0, 2)) ||
        (Call->getNumArgs() == 6 &&
-        SameAlgorithmElement(Function->getParamDecl(0)->getType(),
-                             Function->getParamDecl(2)->getType()) &&
         NumericBinaryCallback(
             4, Function->getParamDecl(0)->getType()->getPointeeType()) &&
-        NumericBinaryCallback(
-            5, Function->getParamDecl(0)->getType()->getPointeeType()))))
+        NumericBinaryTransformCallback(
+            5, Function->getParamDecl(0)->getType()->getPointeeType(),
+            Function->getParamDecl(0)->getType()->getPointeeType(),
+            Function->getParamDecl(2)->getType()->getPointeeType()))))
     return UtilityOperation::NumericInnerProduct;
   if (((Origin->Path == "__numeric/partial_sum.h" && Name == "partial_sum") ||
        (Origin->Path == "__numeric/adjacent_difference.h" &&
@@ -6448,11 +6467,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         NumericPointerParameter(2, false) && NumericValueParameter(3, 0) &&
         Same(Function->getReturnType(), Function->getParamDecl(3)->getType()) &&
         ((Call->getNumArgs() == 4 && NumericCommonElements(0, 2)) ||
-         (Call->getNumArgs() == 6 &&
-          SameAlgorithmElement(Function->getParamDecl(0)->getType(),
-                               Function->getParamDecl(2)->getType()) &&
-          NumericBinaryCallback(4, Element) &&
-          NumericBinaryCallback(5, Element))))
+         (Call->getNumArgs() == 6 && NumericBinaryCallback(4, Element) &&
+          NumericBinaryTransformCallback(
+              5, Element, Element,
+              Function->getParamDecl(2)->getType()->getPointeeType()))))
       return UtilityOperation::NumericTransformReduce;
     if (Call->getNumArgs() == 5 && NumericValueParameter(2, 0) &&
         Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&

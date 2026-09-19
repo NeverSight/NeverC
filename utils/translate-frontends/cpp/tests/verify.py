@@ -2846,7 +2846,7 @@ short multiply(float a, long b) { return short(int(a) * int(b)); }
 short square(double value) { return short(int(value) * int(value)); }
 extern "C" int numeric_callbacks() {
   int values[4]{1, 2, 3, 4};
-  int weights[4]{4, 3, 2, 1};
+  long weights[4]{4, 3, 2, 1};
   long output[4]{};
   int result = std::accumulate(values, values + 4, 1, add);
   result += std::inner_product(

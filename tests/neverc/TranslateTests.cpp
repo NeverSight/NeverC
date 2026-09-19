@@ -28130,7 +28130,7 @@ short square(double value) {
 }
 int main() {
   const int values[4]{1, 2, 3, 4};
-  const int weights[4]{4, 3, 2, 1};
+  const long weights[4]{4, 3, 2, 1};
 
   calls = 0;
   if (std::accumulate(values, values + 4, 5, add) != 15 || calls != 4)
