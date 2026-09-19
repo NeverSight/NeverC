@@ -28626,17 +28626,18 @@ TEST_F(TranslateTest,
 #include <algorithm>
 int main() {
   const int source[5]{1, 2, 3, 4, 5};
-  int copied[5]{};
+  long copied[5]{};
   int effects = 0;
   auto copied_end = std::copy((++effects, source), (++effects, source + 5),
                               (++effects, copied));
-  if (effects != 3 || copied_end != copied + 5 ||
-      !std::equal(source, source + 5, copied))
+  if (effects != 3 || copied_end != copied + 5 || copied[0] != 1 ||
+      copied[1] != 2 || copied[2] != 3 || copied[3] != 4 || copied[4] != 5)
     return 1;
 
-  int moved[5]{};
+  double moved[5]{};
   if (std::move(copied, copied + 5, moved) != moved + 5 ||
-      !std::equal(source, source + 5, moved))
+      moved[0] != 1.0 || moved[1] != 2.0 || moved[2] != 3.0 ||
+      moved[3] != 4.0 || moved[4] != 5.0)
     return 2;
   if (std::copy(source, source, moved + 2) != moved + 2 ||
       std::move(source, source, moved + 3) != moved + 3)
@@ -28648,18 +28649,18 @@ int main() {
       overlap[3] != 4 || overlap[4] != 5 || overlap[5] != 5)
     return 4;
 
-  int backward[6]{1, 2, 3, 4, 5, 9};
-  if (std::copy_backward(backward, backward + 5, backward + 6) !=
-          backward + 1 ||
-      backward[0] != 1 || backward[1] != 1 || backward[2] != 2 ||
+  long backward[6]{9, 9, 9, 9, 9, 9};
+  if (std::copy_backward(source, source + 5, backward + 6) != backward + 1 ||
+      backward[0] != 9 || backward[1] != 1 || backward[2] != 2 ||
       backward[3] != 3 || backward[4] != 4 || backward[5] != 5)
     return 5;
-  int move_backward[6]{6, 7, 8, 9, 10, 0};
-  if (std::move_backward(move_backward, move_backward + 5,
+  const int move_source[5]{6, 7, 8, 9, 10};
+  double move_backward[6]{};
+  if (std::move_backward(move_source, move_source + 5,
                          move_backward + 6) != move_backward + 1 ||
-      move_backward[1] != 6 || move_backward[2] != 7 ||
-      move_backward[3] != 8 || move_backward[4] != 9 ||
-      move_backward[5] != 10)
+      move_backward[1] != 6.0 || move_backward[2] != 7.0 ||
+      move_backward[3] != 8.0 || move_backward[4] != 9.0 ||
+      move_backward[5] != 10.0)
     return 6;
 
   double decimals[3]{0.5, 1.5, 2.5};
@@ -28669,7 +28670,7 @@ int main() {
     return 7;
   int values[3]{11, 12, 13};
   int *pointers[3]{values, values + 1, values + 2};
-  int *pointer_copy[3]{};
+  const int *pointer_copy[3]{};
   std::move(pointers, pointers + 3, pointer_copy);
   if (pointer_copy[0] != values || pointer_copy[1] != values + 1 ||
       pointer_copy[2] != values + 2)
@@ -28703,19 +28704,6 @@ int main() {
     auto Run = exec(Executable.string(), {});
     EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
   }
-}
-
-TEST_F(TranslateTest,
-       CoreV2AlgorithmTransferRequiresSameWritableScalarElement) {
-  const auto Source = tmpFile("algorithm-transfer-heterogeneous.cpp");
-  const auto Output = tmpFile("algorithm-transfer-heterogeneous.nc");
-  writeFile(Source,
-            "#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{};"
-            "return std::copy(a,a+2,b)==b+2?0:1;}");
-  expectCode(
-      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
-      "TR0203");
-  expectNoArtifacts(Output);
 }
 
 TEST_F(TranslateTest,
@@ -28761,7 +28749,7 @@ int main() {
     return 6;
 
   const int source[4]{2, 4, 6, 8};
-  int reversed[4]{};
+  long reversed[4]{};
   if (std::reverse_copy(source, source + 4, reversed) != reversed + 4 ||
       reversed[0] != 8 || reversed[1] != 6 || reversed[2] != 4 ||
       reversed[3] != 2)
@@ -28816,9 +28804,7 @@ TEST_F(TranslateTest, CoreV2AlgorithmMutationRequiresPinnedScalarForms) {
   const Rejection Cases[] = {
       {"floating-fill-count", "#include <algorithm>\nint main(){int a[3]{};"
                               "return std::fill_n(a,2.5,7)==a+2?0:1;}"},
-      {"heterogeneous-reverse-copy",
-       "#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{};"
-       "return std::reverse_copy(a,a+2,b)==b+2?0:1;}"}};
+  };
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
     const auto Source =
@@ -29671,7 +29657,7 @@ TEST_F(TranslateTest, CoreV2AlgorithmRearrangementRunsAtBothOptimizations) {
 enum Count : unsigned int { three = 3 };
 int main() {
   const int source[5]{1, 2, 3, 4, 5};
-  int copied[5]{9, 9, 9, 9, 9};
+  long copied[5]{9, 9, 9, 9, 9};
   int effects = 0;
   if (std::copy_n((++effects, source), (++effects, Count::three),
                   (++effects, copied)) != copied + 3 ||
@@ -29702,7 +29688,7 @@ int main() {
     return 5;
 
   const int rotation_source[4]{1, 2, 3, 4};
-  int rotation_copy[4]{};
+  double rotation_copy[4]{};
   if (std::rotate_copy(rotation_source, rotation_source + 2,
                        rotation_source + 4, rotation_copy) !=
           rotation_copy + 4 ||
@@ -29753,9 +29739,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmRearrangementRequiresPinnedScalarForms) {
     const char *Source;
   };
   const Rejection Cases[] = {
-      {"heterogeneous-copy-n",
-       "#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{};"
-       "return std::copy_n(a,2,b)==b+2?0:1;}"},
       {"volatile-rotate",
        "#include <algorithm>\nint main(){volatile int a[2]{1,2};"
        "return std::rotate(a,a+1,a+2)==a+1?0:1;}"},

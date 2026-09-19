@@ -5885,6 +5885,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return utilityAlgorithmScalarPointer(Context, Parameter) &&
            Same(Call->getArg(Index)->getType(), Parameter);
   };
+  auto AlgorithmTransferParameters = [&](unsigned InputIndex,
+                                         unsigned OutputIndex) {
+    if (!AlgorithmPointerParameter(InputIndex) ||
+        !AlgorithmPointerParameter(OutputIndex))
+      return false;
+    auto Input = Function->getParamDecl(InputIndex)->getType();
+    auto Output = Function->getParamDecl(OutputIndex)->getType();
+    return utilityAlgorithmWritableScalarPointer(Context, Output) &&
+           utilityScalarDirectConversion(Context, Input->getPointeeType(),
+                                         Output->getPointeeType());
+  };
   auto MemoryDestructionPointerParameter = [&](unsigned Index) {
     if (Index >= Function->getNumParams() || Index >= Call->getNumArgs())
       return false;
@@ -6536,13 +6547,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
        Name == "move_backward") &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
       Call->isPRValue() && AlgorithmPointerParameter(0) &&
-      AlgorithmPointerParameter(1) && AlgorithmPointerParameter(2) &&
+      AlgorithmPointerParameter(1) && AlgorithmTransferParameters(0, 2) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
-                           Function->getParamDecl(2)->getType()) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(2)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
     if (Origin->Path == "__algorithm/copy.h" && Name == "copy")
@@ -6604,13 +6611,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (Origin->Path == "__algorithm/reverse_copy.h" && Name == "reverse_copy" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
       Call->isPRValue() && AlgorithmPointerParameter(0) &&
-      AlgorithmPointerParameter(1) && AlgorithmPointerParameter(2) &&
+      AlgorithmPointerParameter(1) && AlgorithmTransferParameters(0, 2) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
-                           Function->getParamDecl(2)->getType()) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(2)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmReverseCopy;
@@ -6862,11 +6865,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (Origin->Path == "__algorithm/copy_n.h" && Name == "copy_n" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
       Call->isPRValue() && AlgorithmPointerParameter(0) &&
-      AlgorithmCountParameter(1) && AlgorithmPointerParameter(2) &&
-      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
-                           Function->getParamDecl(2)->getType()) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(2)->getType()) &&
+      AlgorithmCountParameter(1) && AlgorithmTransferParameters(0, 2) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmCopyN;
@@ -6899,15 +6898,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Call->getNumArgs() == 4 && Function->getNumParams() == 4 &&
       Call->isPRValue() && AlgorithmPointerParameter(0) &&
       AlgorithmPointerParameter(1) && AlgorithmPointerParameter(2) &&
-      AlgorithmPointerParameter(3) &&
+      AlgorithmTransferParameters(0, 3) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(2)->getType()) &&
-      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
-                           Function->getParamDecl(3)->getType()) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(3)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(3)->getType()) &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmRotateCopy;

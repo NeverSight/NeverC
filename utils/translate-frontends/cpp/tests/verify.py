@@ -2956,13 +2956,13 @@ extern "C" int algorithm_read_only(int *values, int *other) {
 
     algorithm_transfer_source = """\
 #include <algorithm>
-extern "C" int algorithm_transfer(const int *source, int *destination) {
-  int temporary[4]{};
-  int *copy_end = std::copy(source, source + 4, temporary);
-  int *move_end = std::move(temporary, copy_end, destination);
-  int *copy_begin = std::copy_backward(source, source + 4, temporary + 4);
-  int *move_begin = std::move_backward(temporary, temporary + 4,
-                                       destination + 4);
+extern "C" int algorithm_transfer(const int *source, double *destination) {
+  long temporary[4]{};
+  long *copy_end = std::copy(source, source + 4, temporary);
+  double *move_end = std::move(temporary, copy_end, destination);
+  long *copy_begin = std::copy_backward(source, source + 4, temporary + 4);
+  double *move_begin = std::move_backward(temporary, temporary + 4,
+                                          destination + 4);
   return static_cast<int>((move_end - destination) +
                           (copy_begin - temporary) +
                           (move_begin - destination));
@@ -2978,19 +2978,15 @@ extern "C" int algorithm_transfer(const int *source, int *destination) {
         check("v2-algorithm-transfer-" + target,
               algorithm_transfer_source, profile="cpp-core-v2",
               target=target, sdk=True)
-    check("v2-algorithm-heterogeneous-copy",
-          '#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{};return std::copy(a,a+2,b)==b+2?0:1;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
-
     algorithm_mutation_source = """\
 #include <algorithm>
 enum Count : unsigned int { two = 2 };
-extern "C" int algorithm_mutation(int *first, int *second, int *output) {
+extern "C" int algorithm_mutation(int *first, int *second, long *output) {
   std::fill(first, first + 4, 3);
   int *filled = std::fill_n(first, two, 5);
   int *swapped = std::swap_ranges(first, first + 4, second);
   std::reverse(first, first + 4);
-  int *copied = std::reverse_copy(first, first + 4, output);
+  long *copied = std::reverse_copy(first, first + 4, output);
   return static_cast<int>((filled - first) + (swapped - second) +
                           (copied - output));
 }
@@ -3008,10 +3004,6 @@ extern "C" int algorithm_mutation(int *first, int *second, int *output) {
     check("v2-algorithm-floating-fill-count",
           '#include <algorithm>\nint main(){int a[3]{};return std::fill_n(a,2.5,7)==a+2?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
-    check("v2-algorithm-heterogeneous-reverse-copy",
-          '#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{};return std::reverse_copy(a,a+2,b)==b+2?0:1;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
-
     algorithm_order_source = """\
 #include <algorithm>
 extern "C" int algorithm_order(const int *first, const int *last, int value) {
@@ -3232,11 +3224,11 @@ extern "C" long long algorithm_predicate_subrange(
     algorithm_rearrangement_source = """\
 #include <algorithm>
 extern "C" int algorithm_rearrangement(int *first, int *middle, int *last,
-                                         int *output, int count) {
-  int *copied = std::copy_n(first, count, output);
+                                         long *output, int count) {
+  long *copied = std::copy_n(first, count, output);
   std::iter_swap(first, middle);
   int *rotated = std::rotate(first, middle, last);
-  int *rotation_copy = std::rotate_copy(first, middle, last, copied);
+  long *rotation_copy = std::rotate_copy(first, middle, last, copied);
   return static_cast<int>((copied - output) + (rotated - first) +
                           (rotation_copy - output));
 }
@@ -3251,9 +3243,6 @@ extern "C" int algorithm_rearrangement(int *first, int *middle, int *last,
         check("v2-algorithm-rearrangement-" + target,
               algorithm_rearrangement_source, profile="cpp-core-v2",
               target=target, sdk=True)
-    check("v2-algorithm-rearrangement-heterogeneous-copy-n",
-          '#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{};return std::copy_n(a,2,b)==b+2?0:1;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-algorithm-rearrangement-record-rotate",
           '#include <algorithm>\nstruct R{int n;};int main(){R a[2]{{1},{2}};return std::rotate(a,a+1,a+2)==a+1?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)

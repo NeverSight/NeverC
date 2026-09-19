@@ -2715,6 +2715,10 @@ class FunctionLowering {
                                                         ->getPointeeType()
                                                         .getUnqualifiedType()
                                                   : QualType();
+      const auto OutputElementType =
+          MemoryConstruction
+              ? std::string()
+              : type(Call->getArg(2)->getType()->getPointeeType(), L);
       jump(Check, L);
       label(Check, L);
       branch(binary("!=", Current, Last, "bool", L), Transfer, End, L);
@@ -2727,13 +2731,17 @@ class FunctionLowering {
             Output,
             binary("-", Output, quantity(1, DifferenceType, L), OutputType, L),
             L);
-        assign(dereference(Output, L), dereference(Last, L), L);
+        assign(dereference(Output, L),
+               cast(dereference(Last, L), OutputElementType, L), L);
       } else {
         if (MemoryConstruction && Constructor)
           constructMemorySource(dereference(Output, L), ElementType,
                                 Constructor, json::Object(Current), L);
-        else
+        else if (MemoryConstruction)
           assign(dereference(Output, L), dereference(Current, L), L);
+        else
+          assign(dereference(Output, L),
+                 cast(dereference(Current, L), OutputElementType, L), L);
         assign(
             Current,
             binary("+", Current, quantity(1, DifferenceType, L), InputType, L),
@@ -2871,6 +2879,8 @@ class FunctionLowering {
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto InputType = type(Call->getArg(0)->getType(), L);
       const auto OutputType = type(Call->getArg(2)->getType(), L);
+      const auto OutputElementType =
+          type(Call->getArg(2)->getType()->getPointeeType(), L);
       jump(Check, L);
       label(Check, L);
       branch(binary("!=", First, Last, "bool", L), Transfer, End, L);
@@ -2878,7 +2888,8 @@ class FunctionLowering {
       assign(Last,
              binary("-", Last, quantity(1, DifferenceType, L), InputType, L),
              L);
-      assign(dereference(Output, L), dereference(Last, L), L);
+      assign(dereference(Output, L),
+             cast(dereference(Last, L), OutputElementType, L), L);
       assign(Output,
              binary("+", Output, quantity(1, DifferenceType, L), OutputType, L),
              L);
@@ -3590,6 +3601,10 @@ class FunctionLowering {
                                                         ->getPointeeType()
                                                         .getUnqualifiedType()
                                                   : QualType();
+      const auto OutputElementType =
+          MemoryConstruction
+              ? std::string()
+              : type(Call->getArg(2)->getType()->getPointeeType(), L);
       const auto Check = labelName(), Transfer = labelName();
       const auto End = labelName();
       jump(Check, L);
@@ -3600,8 +3615,11 @@ class FunctionLowering {
       if (MemoryConstruction && Constructor)
         constructMemorySource(dereference(Output, L), ElementType, Constructor,
                               json::Object(Input), L);
-      else
+      else if (MemoryConstruction)
         assign(dereference(Output, L), dereference(Input, L), L);
+      else
+        assign(dereference(Output, L),
+               cast(dereference(Input, L), OutputElementType, L), L);
       assign(Input,
              binary("+", Input, quantity(1, DifferenceType, L), InputType, L),
              L);
@@ -3688,6 +3706,8 @@ class FunctionLowering {
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto InputType = type(Call->getArg(0)->getType(), L);
       const auto OutputType = type(Call->getArg(3)->getType(), L);
+      const auto OutputElementType =
+          type(Call->getArg(3)->getType()->getPointeeType(), L);
       auto CopyRange = [&](const Expression &RangeFirst,
                            const Expression &RangeLast) {
         auto Current = snapshot(json::Object(RangeFirst), L);
@@ -3698,7 +3718,8 @@ class FunctionLowering {
         label(Check, L);
         branch(binary("!=", Current, End, "bool", L), Transfer, Done, L);
         label(Transfer, L);
-        assign(dereference(Output, L), dereference(Current, L), L);
+        assign(dereference(Output, L),
+               cast(dereference(Current, L), OutputElementType, L), L);
         assign(
             Current,
             binary("+", Current, quantity(1, DifferenceType, L), InputType, L),

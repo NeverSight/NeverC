@@ -810,8 +810,10 @@ The exact public `std::copy`, `std::copy_n`, `std::move`,
 `std::copy_backward`, `std::move_backward`, `std::fill`, `std::fill_n`,
 `std::iter_swap`, `std::swap_ranges`, `std::reverse`, `std::reverse_copy`,
 `std::rotate` and `std::rotate_copy` templates directly lower for non-volatile
-raw object pointer ranges whose unqualified element type is the same admitted
-scalar type. Transfer and fill algorithms require a writable output element;
+raw object pointer ranges of admitted scalar elements. Copy and move outputs
+accept checked direct scalar conversions from their input element. Other
+operations retain the same unqualified element type. Transfer and fill
+algorithms require a writable output element;
 `iter_swap` and `swap_ranges` require both mutated ranges to be writable, and
 `reverse` and `rotate` require a writable input range. `copy_n` and `fill_n`
 accept integral or non-scoped enum counts whose promoted type is at most 64

@@ -141,10 +141,11 @@ Iterator exposes the pinned public header and pointer `iterator_traits` metadata
 through a platform-free 171-file closure, and directly lowers bounded pointer,
 array-range and reverse-iterator operations. Stream iterators remain disabled
 until their C runtime character-state ABI is available on every target.
-Algorithm directly lowers exact scalar-pointer `copy`, `move`, `copy_backward`,
+Algorithm directly lowers scalar-pointer `copy`, `move`, `copy_backward`,
 `move_backward`, `copy_n`, `fill`, `fill_n`, `iter_swap`, `swap_ranges`,
 `reverse`, `reverse_copy`, `rotate` and `rotate_copy` calls from its
-platform-free 354-file closure. Built-in equality elements admit
+platform-free 354-file closure; copy and move outputs accept checked direct
+scalar conversions. Built-in equality elements admit
 `find`, `count`, three- or four-iterator `equal`, `adjacent_find`, `remove`,
 `remove_copy`, `replace`, `replace_copy`, `unique`, `unique_copy`, `search`,
 `find_end`, `find_first_of`, `search_n`, three- or four-iterator `mismatch` and
