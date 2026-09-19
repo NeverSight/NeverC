@@ -740,6 +740,101 @@ class FunctionLowering {
     return Left;
   }
 
+  Expression functionalOperation(const CallExpr *Call,
+                                 FunctionalOperation Operation) {
+    auto L = Call->getExprLoc();
+    const auto *Method = llvm::cast<CXXMethodDecl>(Call->getDirectCallee());
+    const bool Unary = Method->getNumParams() == 1;
+    auto Argument = [&](unsigned Index) {
+      auto Address = snapshot(
+          bind(Call->getArg(Index + 1), Method->getParamDecl(Index)->getType()),
+          L);
+      return dereference(std::move(Address), L);
+    };
+    auto Left = Argument(0);
+    std::optional<Expression> Right;
+    if (!Unary)
+      Right = Argument(1);
+    auto OperandType = Method->getParamDecl(0)->getType()->getPointeeType();
+    if (A.Context.isPromotableIntegerType(OperandType))
+      OperandType = A.Context.getPromotedIntegerType(OperandType);
+    const auto ComputationType = type(OperandType, L);
+    const auto ResultType = type(Call->getType(), L);
+    auto UnaryExpression = [&](llvm::StringRef Operator, Expression Value,
+                               llvm::StringRef Result) {
+      return Expression{{"kind", "unary"},
+                        {"type", Result.str()},
+                        {"operator", Operator.str()},
+                        {"args", json::Array{std::move(Value)}},
+                        {"loc", A.loc(L)}};
+    };
+    auto ArithmeticUnary = [&](llvm::StringRef Operator) {
+      auto Value = UnaryExpression(
+          Operator, cast(std::move(Left), ComputationType, L), ComputationType);
+      return snapshot(cast(std::move(Value), ResultType, L), L);
+    };
+    auto ArithmeticBinary = [&](llvm::StringRef Operator) {
+      auto Value = binary(Operator, cast(std::move(Left), ComputationType, L),
+                          cast(std::move(*Right), ComputationType, L),
+                          ComputationType, L);
+      return snapshot(cast(std::move(Value), ResultType, L), L);
+    };
+    auto Comparison = [&](llvm::StringRef Operator) {
+      return snapshot(
+          binary(Operator, cast(std::move(Left), ComputationType, L),
+                 cast(std::move(*Right), ComputationType, L), "bool", L),
+          L);
+    };
+    switch (Operation) {
+    case FunctionalOperation::Plus:
+      return ArithmeticBinary("+");
+    case FunctionalOperation::Minus:
+      return ArithmeticBinary("-");
+    case FunctionalOperation::Multiplies:
+      return ArithmeticBinary("*");
+    case FunctionalOperation::Divides:
+      return ArithmeticBinary("/");
+    case FunctionalOperation::Modulus:
+      return ArithmeticBinary("%");
+    case FunctionalOperation::Negate:
+      return ArithmeticUnary("-");
+    case FunctionalOperation::BitAnd:
+      return ArithmeticBinary("&");
+    case FunctionalOperation::BitOr:
+      return ArithmeticBinary("|");
+    case FunctionalOperation::BitXor:
+      return ArithmeticBinary("^");
+    case FunctionalOperation::BitNot:
+      return ArithmeticUnary("~");
+    case FunctionalOperation::Equal:
+      return Comparison("==");
+    case FunctionalOperation::NotEqual:
+      return Comparison("!=");
+    case FunctionalOperation::Less:
+      return Comparison("<");
+    case FunctionalOperation::Greater:
+      return Comparison(">");
+    case FunctionalOperation::LessEqual:
+      return Comparison("<=");
+    case FunctionalOperation::GreaterEqual:
+      return Comparison(">=");
+    case FunctionalOperation::LogicalAnd:
+    case FunctionalOperation::LogicalOr: {
+      auto BooleanLeft = cast(std::move(Left), "bool", L);
+      auto BooleanRight = cast(std::move(*Right), "bool", L);
+      auto Value =
+          binary(Operation == FunctionalOperation::LogicalAnd ? "&" : "|",
+                 cast(std::move(BooleanLeft), "int", L),
+                 cast(std::move(BooleanRight), "int", L), "int", L);
+      return snapshot(cast(std::move(Value), "bool", L), L);
+    }
+    case FunctionalOperation::LogicalNot:
+      return snapshot(
+          UnaryExpression("!", cast(std::move(Left), "bool", L), "bool"), L);
+    }
+    llvm_unreachable("unknown functional operation");
+  }
+
   void heapSiftDown(Expression First, Expression Size, Expression InitialRoot,
                     llvm::StringRef PointerType, llvm::StringRef DifferenceType,
                     SourceLocation L,
@@ -7116,6 +7211,9 @@ class FunctionLowering {
       if (auto Operation =
               approvedCstddefOperation(A.S, A.Sources, Call, A.Context))
         return cstddefOperation(Call, *Operation);
+      if (auto Operation =
+              approvedFunctionalOperation(A.S, A.Sources, Call, A.Context))
+        return functionalOperation(Call, *Operation);
       APValue UtilityValue;
       if (approvedUtilityConstant(A.S, A.Sources, Call, A.Context,
                                   UtilityValue))

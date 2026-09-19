@@ -13115,6 +13115,8 @@ public:
           Leaf = scalarDestruction(Call, A.Context);
         if (Leaf) {
           const bool Utility =
+              approvedFunctionalOperation(A.S, A.Sources, Call, A.Context)
+                  .has_value() ||
               approvedUtilityOperation(A.S, A.Sources, Call, A.Context)
                   .has_value() ||
               approvedUtilityPairAssignment(A.S, A.Sources,
@@ -13625,6 +13627,9 @@ public:
         return true;
       if (A.S.coreV2() &&
           approvedCstddefOperation(A.S, A.Sources, C, A.Context))
+        return true;
+      if (A.S.coreV2() &&
+          approvedFunctionalOperation(A.S, A.Sources, C, A.Context))
         return true;
       APValue UtilityValue;
       if (A.S.coreV2() &&

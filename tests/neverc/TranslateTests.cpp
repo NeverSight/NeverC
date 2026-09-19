@@ -33541,6 +33541,96 @@ TEST_F(TranslateTest, CoreV2IteratorRequiresPinnedPointerOperations) {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2FunctionalTypedFunctionObjectsRunAtBothOptimizations) {
+  const auto Source = tmpFile("functional-typed-objects.cpp");
+  const auto Output = tmpFile("functional-typed-objects.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+using U = unsigned long long;
+int trace;
+int next(int n) { trace = trace * 10 + n; return n + 2; }
+int main() {
+  int score = 0;
+  score += std::plus<int>{}(5, 3) == 8;
+  score += std::minus<int>{}(5, 3) == 2;
+  score += std::multiplies<int>{}(5, 3) == 15;
+  score += std::divides<int>{}(7, 3) == 2;
+  score += std::modulus<int>{}(7, 3) == 1;
+  score += std::negate<int>{}(5) == -5;
+  score += std::bit_and<int>{}(6, 3) == 2;
+  score += std::bit_or<int>{}(6, 3) == 7;
+  score += std::bit_xor<int>{}(6, 3) == 5;
+  score += std::bit_not<int>{}(6) == -7;
+  score += std::equal_to<int>{}(3, 3);
+  score += std::not_equal_to<int>{}(3, 4);
+  score += std::less<int>{}(3, 4);
+  score += std::greater<int>{}(4, 3);
+  score += std::less_equal<int>{}(3, 3);
+  score += std::greater_equal<int>{}(3, 3);
+  score += std::logical_and<int>{}(2, 3);
+  score += std::logical_or<int>{}(0, 3);
+  score += std::logical_not<int>{}(0);
+  score += std::plus<signed char>{}(100, 20) == 120;
+  score += std::plus<float>{}(1.5f, 2.25f) == 3.75f;
+  score += std::divides<double>{}(9.0, 2.0) == 4.5;
+  score += std::bit_xor<U>{}(0xff00ULL, 0x0ff0ULL) == 0xf0f0ULL;
+  int value = std::plus<int>{}(next(1), next(2));
+  score += value == 7 && (trace == 12 || trace == 21);
+  return score == 24 ? 0 : score;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("functional-typed-objects" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionalTypedFunctionObjectsRequireExactForms) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Rejection Cases[] = {
+      {"transparent",
+       "#include <functional>\nint main(){return "
+       "std::plus<>{}(1,2);}",
+       "TR0203"},
+      {"stored",
+       "#include <functional>\nint main(){std::plus<int> op;"
+       "return op(1,2)-3;}",
+       "TR0203"},
+      {"qualified",
+       "#include <functional>\nint main(){return "
+       "std::plus<const int>{}(1,2);}",
+       "TR0203"},
+      {"long-double",
+       "#include <functional>\nint main(){return "
+       "std::plus<long double>{}(1,2)==3;}",
+       "TR0201"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("functional-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("functional-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2RejectsUnsupportedErasedDeclarations) {
   struct Rejection {
     const char *Name;

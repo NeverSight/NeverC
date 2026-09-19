@@ -366,6 +366,149 @@ approvedCstddefOperation(const State &S, const SourceManager &SM,
   return CstddefOperation::ToInteger;
 }
 
+std::optional<FunctionalOperation>
+approvedFunctionalOperation(const State &S, const SourceManager &SM,
+                            const CallExpr *Call, const ASTContext &Context) {
+  const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);
+  const auto *Record = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      Method ? Method->getParent()->getDefinition() : nullptr);
+  const auto *Template = Record ? Record->getSpecializedTemplate() : nullptr;
+  const auto *CanonicalTemplate =
+      Template ? Template->getCanonicalDecl() : nullptr;
+  const auto *Reference = directMethodReference(Call);
+  if (!Call || !Operator || !Method || !Record || !Template ||
+      !CanonicalTemplate || !Reference || Operator->getOperator() != OO_Call ||
+      Method->getOverloadedOperator() != OO_Call || Method->isStatic() ||
+      !Method->isConst() || Method->isVariadic() || !Method->isConstexpr() ||
+      !Method->isInlined() || !Method->hasBody() || !Call->isPRValue() ||
+      Record->isUnion() || Record->isDependentContext() || !Record->isEmpty() ||
+      !Record->isStandardLayout() || !Record->isTriviallyCopyable() ||
+      !Record->hasTrivialDestructor() ||
+      !approvedStandardSDKDeclaration(S, SM, Record) ||
+      !approvedStandardSDKDeclaration(S, SM, Template) ||
+      !approvedStandardSDKDeclaration(S, SM, CanonicalTemplate) ||
+      !approvedStandardSDKDeclaration(S, SM, Method) ||
+      !cstddefOrigin(S, SM, Record->getLocation(), "libcxx",
+                     "__functional/operations.h") ||
+      !cstddefOrigin(S, SM, Template->getLocation(), "libcxx",
+                     "__functional/operations.h") ||
+      !cstddefOrigin(S, SM, CanonicalTemplate->getLocation(), "libcxx",
+                     "__functional/operations.h") ||
+      !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
+                     "__functional/operations.h") ||
+      !S.owns(SM, Reference->getExprLoc()))
+    return std::nullopt;
+
+  const auto &Arguments = Record->getTemplateArgs();
+  if (Arguments.size() != 1 ||
+      Arguments.get(0).getKind() != TemplateArgument::Type)
+    return std::nullopt;
+  auto ValueType = Arguments.get(0).getAsType();
+  if (ValueType.isNull() || ValueType.hasQualifiers() ||
+      !((ValueType->isIntegralType(Context) &&
+         Context.getTypeSize(ValueType) <= 64) ||
+        ValueType->isSpecificBuiltinType(BuiltinType::Float) ||
+        ValueType->isSpecificBuiltinType(BuiltinType::Double)))
+    return std::nullopt;
+
+  struct Spec {
+    llvm::StringLiteral Name;
+    FunctionalOperation Operation;
+    BinaryOperatorKind Binary;
+    UnaryOperatorKind Unary;
+    bool Integral;
+    bool BooleanResult;
+  };
+  static constexpr Spec Specs[] = {
+      {"plus", FunctionalOperation::Plus, BO_Add, UO_Plus, false, false},
+      {"minus", FunctionalOperation::Minus, BO_Sub, UO_Plus, false, false},
+      {"multiplies", FunctionalOperation::Multiplies, BO_Mul, UO_Plus, false,
+       false},
+      {"divides", FunctionalOperation::Divides, BO_Div, UO_Plus, false, false},
+      {"modulus", FunctionalOperation::Modulus, BO_Rem, UO_Plus, true, false},
+      {"negate", FunctionalOperation::Negate, BO_Comma, UO_Minus, false, false},
+      {"bit_and", FunctionalOperation::BitAnd, BO_And, UO_Plus, true, false},
+      {"bit_or", FunctionalOperation::BitOr, BO_Or, UO_Plus, true, false},
+      {"bit_xor", FunctionalOperation::BitXor, BO_Xor, UO_Plus, true, false},
+      {"bit_not", FunctionalOperation::BitNot, BO_Comma, UO_Not, true, false},
+      {"equal_to", FunctionalOperation::Equal, BO_EQ, UO_Plus, false, true},
+      {"not_equal_to", FunctionalOperation::NotEqual, BO_NE, UO_Plus, false,
+       true},
+      {"less", FunctionalOperation::Less, BO_LT, UO_Plus, false, true},
+      {"greater", FunctionalOperation::Greater, BO_GT, UO_Plus, false, true},
+      {"less_equal", FunctionalOperation::LessEqual, BO_LE, UO_Plus, false,
+       true},
+      {"greater_equal", FunctionalOperation::GreaterEqual, BO_GE, UO_Plus,
+       false, true},
+      {"logical_and", FunctionalOperation::LogicalAnd, BO_LAnd, UO_Plus, false,
+       true},
+      {"logical_or", FunctionalOperation::LogicalOr, BO_LOr, UO_Plus, false,
+       true},
+      {"logical_not", FunctionalOperation::LogicalNot, BO_Comma, UO_LNot, false,
+       true},
+  };
+  const Spec *Selected = nullptr;
+  for (const auto &Candidate : Specs)
+    if (Candidate.Name == Record->getName()) {
+      Selected = &Candidate;
+      break;
+    }
+  if (!Selected || (Selected->Integral && !ValueType->isIntegralType(Context)))
+    return std::nullopt;
+  const bool Unary = Selected->Operation == FunctionalOperation::Negate ||
+                     Selected->Operation == FunctionalOperation::BitNot ||
+                     Selected->Operation == FunctionalOperation::LogicalNot;
+  const unsigned Parameters = Unary ? 1u : 2u;
+  const auto ExpectedResult =
+      Selected->BooleanResult ? Context.BoolTy : ValueType;
+  if (Method->getNumParams() != Parameters ||
+      Call->getNumArgs() != Parameters + 1 ||
+      !Context.hasSameType(Method->getReturnType(), ExpectedResult) ||
+      !Context.hasSameType(Call->getType(), ExpectedResult) ||
+      !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
+                                      Context.getRecordType(Record)))
+    return std::nullopt;
+  for (unsigned I = 0; I < Parameters; ++I) {
+    const auto Parameter = Method->getParamDecl(I)->getType();
+    if (!Parameter->isLValueReferenceType() ||
+        !Parameter->getPointeeType().isConstQualified() ||
+        Parameter->getPointeeType().isVolatileQualified() ||
+        !Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                        ValueType) ||
+        !Context.hasSameUnqualifiedType(Call->getArg(I + 1)->getType(),
+                                        ValueType))
+      return std::nullopt;
+  }
+
+  const auto *Body = dyn_cast<CompoundStmt>(Method->getBody());
+  const auto *Return = Body && Body->size() == 1
+                           ? dyn_cast<ReturnStmt>(*Body->body_begin())
+                           : nullptr;
+  const auto *Returned = Return ? Return->getRetValue() : nullptr;
+  const auto *Operation = Returned ? Returned->IgnoreParenImpCasts() : nullptr;
+  auto ParameterReference = [&](const Expr *Expression, unsigned Index) {
+    const auto *Ref =
+        Expression ? dyn_cast<DeclRefExpr>(Expression->IgnoreParenImpCasts())
+                   : nullptr;
+    return Ref && Ref->getDecl() == Method->getParamDecl(Index);
+  };
+  if (Unary) {
+    const auto *Expression = dyn_cast_or_null<UnaryOperator>(Operation);
+    if (!Expression || Expression->getOpcode() != Selected->Unary ||
+        !ParameterReference(Expression->getSubExpr(), 0))
+      return std::nullopt;
+  } else {
+    const auto *Expression = dyn_cast_or_null<BinaryOperator>(Operation);
+    if (!Expression || Expression->getOpcode() != Selected->Binary ||
+        !ParameterReference(Expression->getLHS(), 0) ||
+        !ParameterReference(Expression->getRHS(), 1))
+      return std::nullopt;
+  }
+  return Selected->Operation;
+}
+
 std::optional<MemoryTemplateMetadata>
 approvedMemoryTemplateMetadata(const State &S, const SourceManager &SM,
                                const CXXRecordDecl *Record) {

@@ -1392,6 +1392,42 @@ extern "C" int functional_header() { return 0; }
     check("v2-functional-runtime",
           '#include <functional>\nint main(){std::function<int(int)> f;return bool(f);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
+    functional_operations_source = """\
+#include <functional>
+extern "C" int functional_operations(int a, int b) {
+  return std::plus<int>{}(a, b) + std::minus<int>{}(a, b)
+      + std::multiplies<int>{}(a, b) + std::divides<int>{}(a, b)
+      + std::modulus<int>{}(a, b) + std::negate<int>{}(a)
+      + std::bit_and<int>{}(a, b) + std::bit_or<int>{}(a, b)
+      + std::bit_xor<int>{}(a, b) + std::bit_not<int>{}(a)
+      + std::equal_to<int>{}(a, b) + std::not_equal_to<int>{}(a, b)
+      + std::less<int>{}(a, b) + std::greater<int>{}(a, b)
+      + std::less_equal<int>{}(a, b) + std::greater_equal<int>{}(a, b)
+      + std::logical_and<int>{}(a, b) + std::logical_or<int>{}(a, b)
+      + std::logical_not<int>{}(a);
+}
+"""
+    functional_operations = check("v2-functional-typed-operations",
+                                  functional_operations_source,
+                                  profile="cpp-core-v2", sdk=True)
+    assert any(function["name"] == "functional_operations"
+               for function in functional_operations["functions"]), functional_operations
+    for target in sdk_targets:
+        check("v2-functional-typed-operations-" + target,
+              functional_operations_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    for name, source, code in (
+        ("transparent", '#include <functional>\nint main(){return std::plus<>{}(1,2);}',
+         "TR0203"),
+        ("stored", '#include <functional>\nint main(){std::plus<int> op;return op(1,2);}',
+         "TR0203"),
+        ("qualified", '#include <functional>\nint main(){return std::plus<const int>{}(1,2);}',
+         "TR0203"),
+        ("long-double", '#include <functional>\nint main(){return std::plus<long double>{}(1,2)==3;}',
+         "TR0201"),
+    ):
+        check("v2-functional-typed-" + name, source, code,
+              profile="cpp-core-v2", sdk=True)
 
     new_header_source = """\
 #include <new>
@@ -3114,9 +3150,12 @@ extern "C" int algorithm_order(const int *first, const int *last, short value) {
         check("v2-algorithm-order-" + target,
               algorithm_order_source, profile="cpp-core-v2",
               target=target, sdk=True)
-    check("v2-algorithm-order-pointer-elements",
-          '#include <algorithm>\nint main(){int a[2]{};int*p[2]{a,a+1};return std::min_element(p,p+2)==p?0:1;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
+    algorithm_pointer_order = check(
+        "v2-algorithm-order-pointer-elements",
+        '#include <algorithm>\nint main(){int a[2]{};int*p[2]{a,a+1};return std::min_element(p,p+2)==p?0:1;}',
+        profile="cpp-core-v2", sdk=True)
+    assert not [node for node in walk(algorithm_pointer_order["functions"])
+                if node.get("op") in ("call", "mapped_call")], algorithm_pointer_order
     algorithm_comparator_queries_source = """\
 #include <algorithm>
 extern "C" long long algorithm_comparator_queries(
@@ -3419,7 +3458,7 @@ extern "C" int algorithm_extrema(const int *first, const int *last,
               target=target, sdk=True)
     check("v2-algorithm-extrema-enum",
           '#include <algorithm>\nenum E{low,high};int main(){E a=low,b=high;return std::min(a,b)==a?0:1;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
+          profile="cpp-core-v2", sdk=True)
     check("v2-algorithm-extrema-manual-reference-pair",
           '#include <utility>\nint main(){int a=1,b=2;std::pair<const int&,const int&> value(a,b);return value.first;}',
           "TR0201", profile="cpp-core-v2", sdk=True)
@@ -3486,7 +3525,7 @@ extern "C" int algorithm_heap(int *first, int *last) {
               profile="cpp-core-v2", target=target, sdk=True)
     check("v2-algorithm-heap-enum",
           '#include <algorithm>\nenum E{low,high};int main(){E a[2]{low,high};std::make_heap(a,a+2);return 0;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
+          profile="cpp-core-v2", sdk=True)
 
     algorithm_comparator_heap_source = """\
 #include <algorithm>
@@ -3551,7 +3590,7 @@ extern "C" int algorithm_ordering(int *first, int *middle, int *last,
               profile="cpp-core-v2", target=target, sdk=True)
     check("v2-algorithm-ordering-enum",
           '#include <algorithm>\nenum E{low,high};int main(){E a[2]{high,low};std::sort(a,a+2);return 0;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
+          profile="cpp-core-v2", sdk=True)
     algorithm_comparator_ordering_source = """\
 #include <algorithm>
 extern "C" int algorithm_comparator_ordering(
@@ -3616,7 +3655,7 @@ extern "C" void algorithm_stable_sort(
         assert_stable_sort(target_result)
     check("v2-algorithm-stable-sort-enum",
           '#include <algorithm>\nenum E{low,high};int main(){E a[2]{high,low};std::stable_sort(a,a+2);return 0;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
+          profile="cpp-core-v2", sdk=True)
     check("v2-algorithm-stable-sort-reference",
           'bool p(const int&a,int b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{2,1};std::stable_sort(a,a+2,p);return 0;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
@@ -3652,7 +3691,7 @@ extern "C" void algorithm_inplace_merge(
         assert_inplace_merge(target_result)
     check("v2-algorithm-inplace-merge-enum",
           '#include <algorithm>\nenum E{low,high};int main(){E a[2]{low,high};std::inplace_merge(a,a+1,a+2);return 0;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
+          profile="cpp-core-v2", sdk=True)
     check("v2-algorithm-inplace-merge-reference",
           'bool p(const int&a,int b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{2,1};std::inplace_merge(a,a+1,a+2,p);return 0;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
@@ -3684,7 +3723,7 @@ extern "C" int algorithm_permutation(int *first, int *last,
               target=target, sdk=True)
     check("v2-algorithm-permutation-enum",
           '#include <algorithm>\nenum E{low,high};int main(){E a[2]{low,high};return std::next_permutation(a,a+2)?0:1;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
+          profile="cpp-core-v2", sdk=True)
     algorithm_comparator_permutation_source = """\
 #include <algorithm>
 extern "C" int algorithm_comparator_permutation(

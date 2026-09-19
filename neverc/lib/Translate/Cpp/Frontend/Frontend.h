@@ -245,6 +245,31 @@ std::optional<CstddefOperation>
 approvedCstddefOperation(const State &S, const clang::SourceManager &SM,
                          const clang::CallExpr *Call,
                          const clang::ASTContext &Context);
+enum class FunctionalOperation {
+  Plus,
+  Minus,
+  Multiplies,
+  Divides,
+  Modulus,
+  Negate,
+  BitAnd,
+  BitOr,
+  BitXor,
+  BitNot,
+  Equal,
+  NotEqual,
+  Less,
+  Greater,
+  LessEqual,
+  GreaterEqual,
+  LogicalAnd,
+  LogicalOr,
+  LogicalNot,
+};
+std::optional<FunctionalOperation>
+approvedFunctionalOperation(const State &S, const clang::SourceManager &SM,
+                            const clang::CallExpr *Call,
+                            const clang::ASTContext &Context);
 enum class MemoryTemplateMetadata {
   PointerTraits,
   DefaultDelete,
