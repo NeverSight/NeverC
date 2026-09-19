@@ -547,10 +547,10 @@ receiver before its argument. `nullptr` assignment follows the same distinction.
 Member `swap` evaluates its receiver
 before its argument; free `std::swap` evaluates each owner once. Both exchange
 only the captured pointer fields, perform no destruction and retain ownership
-during self-swap. All six same-specialization comparisons capture raw pointers,
-including either operand order with `nullptr`. Owners with matching default
-deleters additionally admit qualification-compatible same-unqualified-element
-comparisons and form their common qualified pointer type. Ordered forms reuse
+during self-swap. All six comparisons capture raw pointers, including either
+operand order with `nullptr`. Two admitted owners may use different deleter
+specializations when both are scalar or both are arrays and their raw pointers
+have a qualification-compatible common type. Ordered forms reuse
 the checked flat-address pointer carrier that implements the `std::less` total
 order without C relational-pointer undefined behavior.
 Automatic and static destruction first clear the owner and then run its

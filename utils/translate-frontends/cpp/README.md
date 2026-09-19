@@ -214,8 +214,9 @@ one-byte record with trivial special members and exactly one source-defined
 `void operator()(pointer) noexcept`, optionally `const` and without a ref
 qualifier. Their default, null, raw-pointer, matching raw-pointer/null plus a
 deleter argument bound to the exact deleter lvalue or rvalue parameter, move,
-assignment, observation, release, reset, swap, comparison and destruction
-operations lower directly; scalar owners
+assignment, observation, release, reset, swap, same-category comparisons across
+deleter specializations with qualification-compatible raw pointers, and
+destruction operations lower directly; scalar owners
 expose dereference and arrow while array owners expose subscript.
 Default deleters use the checked global-delete or reverse `delete[]` path; an
 admitted custom deleter is invoked for a non-null pointer without requiring a

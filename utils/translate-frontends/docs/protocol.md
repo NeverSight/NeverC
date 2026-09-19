@@ -1516,11 +1516,12 @@ raw-pointer, matching raw-pointer/null plus an argument bound to the exact
 deleter lvalue or rvalue parameter, and same-type move construction; same-type
 move assignment; `nullptr`
 assignment; pointer access, boolean conversion, release, reset, member/free
-swap, all six same-specialization comparisons, all six
-bidirectional `nullptr` comparisons and destruction lower to existing record,
-pointer, cast, comparison and checked lifetime instructions. Matching default
-deleters additionally admit the existing const-adding converting moves and
-qualification-compatible same-element comparisons.
+swap, all six comparisons between admitted same-category owners with
+qualification-compatible raw pointers, all six bidirectional `nullptr`
+comparisons and destruction lower to existing record, pointer, cast, comparison
+and checked lifetime instructions. Owner comparisons do not require matching
+deleter specializations. Matching default deleters additionally admit the
+existing const-adding converting moves.
 An explicit deleter argument and any supported source conversion are emitted
 once; the pointer value is captured and stored while the empty deleter value
 adds no response field.

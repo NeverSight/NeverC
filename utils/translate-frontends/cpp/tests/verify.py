@@ -1721,6 +1721,9 @@ struct CustomDispose {
     custom_released += *pointer;
   }
 };
+struct AlternateDispose {
+  void operator()(int *) const noexcept {}
+};
 void *operator new(Size size) { allocated = size; return storage.bytes; }
 void operator delete(void *pointer) noexcept {
   if (pointer == storage.bytes)
@@ -1879,6 +1882,18 @@ extern "C" int memory_custom_unique_ptr(int *pointer) {
   owner.reset();
   return owner || custom_released != *pointer ? 2 : 0;
 }
+extern "C" int memory_custom_comparison(int *first, int *second) {
+  std::unique_ptr<int, CustomDispose> left(first);
+  std::unique_ptr<int, AlternateDispose> right(second);
+  const bool less = left < right;
+  const bool greater = left > right;
+  const bool valid = left != right && !(left == right) && less != greater &&
+                     (left <= right) == !greater &&
+                     (left >= right) == !less;
+  left.release();
+  right.release();
+  return valid ? 0 : 1;
+}
 """
 
     def check_memory_default_delete(data):
@@ -1914,7 +1929,7 @@ extern "C" int memory_custom_unique_ptr(int *pointer) {
             if len(record["fields"]) == 1 and
                record["fields"][0]["name"] == "nct_unique_ptr_pointer"
         ]
-        assert len(all_unique_records) == 7, data
+        assert len(all_unique_records) == 8, data
         unique_pointer_types = {
             record["fields"][0]["type"] for record in all_unique_records
         }
@@ -1933,12 +1948,13 @@ extern "C" int memory_custom_unique_ptr(int *pointer) {
             "memory_make_unique", "memory_make_unique_array",
             "memory_multidimensional",
             "memory_custom_unique_ptr",
+            "memory_custom_comparison",
         }
         functions = [
             function for function in data["functions"]
             if function["name"] in external_names
         ]
-        assert len(functions) == 6, data
+        assert len(functions) == 7, data
         unique_function = next(
             function for function in functions
             if function["name"] == "memory_unique_ptr"
@@ -1987,6 +2003,20 @@ extern "C" int memory_custom_unique_ptr(int *pointer) {
             function for function in functions
             if function["name"] == "memory_custom_unique_ptr"
         )
+        custom_comparison_function = next(
+            function for function in functions
+            if function["name"] == "memory_custom_comparison"
+        )
+        custom_comparisons = {
+            node.get("operator")
+            for node in walk(custom_comparison_function["body"])
+            if node.get("kind") == "binary" and
+               node.get("type") == "bool" and
+               len(node.get("args", [])) == 2 and
+               all(argument.get("type") == "ptr:int"
+                   for argument in node["args"])
+        }
+        assert {"==", "!=", "<", ">", "<=", ">="} <= custom_comparisons, data
         empty_source_records = {
             record["id"] for record in data["records"]
             if not record["fields"] and
@@ -2000,12 +2030,15 @@ extern "C" int memory_custom_unique_ptr(int *pointer) {
                function["params"][0]["type"][5:] in empty_source_records and
                function["params"][1]["type"] == "ptr:int"
         ]
-        assert len(custom_deleter_functions) == 1, data
-        assert any(
-            node.get("op") == "call" and
-            node.get("callee") == custom_deleter_functions[0]["name"]
-            for node in walk(custom_function["body"])
-        ), data
+        assert len(custom_deleter_functions) == 2, data
+        custom_deleter_names = {
+            function["name"] for function in custom_deleter_functions
+        }
+        assert len({
+            node["callee"] for node in walk(custom_function["body"])
+            if node.get("op") == "call" and
+               node.get("callee") in custom_deleter_names
+        }) == 1, data
         deleter_ids = {
             record["id"] for record in data["records"]
             if record["fields"] == [

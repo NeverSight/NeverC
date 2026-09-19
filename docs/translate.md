@@ -65,8 +65,9 @@ deleter argument bound to the exact deleter lvalue or rvalue parameter,
 same-type move and const-adding default-deleter converting move construction,
 corresponding move assignment, `nullptr`
 assignment, `get`, mutable/const `get_deleter`, explicit boolean conversion,
-`release`, `reset`, member and free `swap`, same-specialization and
-default-deleter qualification-compatible same-element comparisons, all six
+`release`, `reset`, member and free `swap`, all six comparisons between
+admitted owners with the same scalar/array category and qualification-compatible
+raw pointers regardless of deleter specialization, all six
 bidirectional `nullptr` comparisons and automatic destruction lower directly.
 Single-object owners also admit `operator->` and dereference; array owners admit
 `operator[]`.

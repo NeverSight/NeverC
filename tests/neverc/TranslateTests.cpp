@@ -25669,6 +25669,8 @@ int matrix_calls;
 int matrix_sum;
 int deleter_arguments;
 int deleter_conversions;
+int comparison_effects;
+int alternate_calls;
 int array_first[3] = {1, 2, 3};
 int array_second[3] = {4, 5, 6};
 int array_third[3] = {6, 7, 8};
@@ -25685,6 +25687,9 @@ struct ScalarDisposeProxy {
     return {};
   }
 };
+struct AlternateDispose {
+  void operator()(int *) const noexcept { ++alternate_calls; }
+};
 struct ArrayDispose {
   void operator()(int *pointer) noexcept {
     ++array_calls;
@@ -25697,6 +25702,16 @@ struct MatrixDispose {
     matrix_sum += pointer[0][0] + pointer[1][1];
   }
 };
+std::unique_ptr<int, ScalarDispose> &
+observe_comparison(std::unique_ptr<int, ScalarDispose> &owner) {
+  ++comparison_effects;
+  return owner;
+}
+std::unique_ptr<int, AlternateDispose> &
+observe_comparison(std::unique_ptr<int, AlternateDispose> &owner) {
+  ++comparison_effects;
+  return owner;
+}
 int main() {
   if (sizeof(std::unique_ptr<int, ScalarDispose>) != sizeof(int *) ||
       sizeof(std::unique_ptr<int[], ArrayDispose>) != sizeof(int *) ||
@@ -25738,6 +25753,36 @@ int main() {
   if (scalar_calls != 7 || scalar_sum != 24 || deleter_conversions != 1)
     return 3;
 
+  std::unique_ptr<int, ScalarDispose> comparison_left(&first);
+  std::unique_ptr<int, AlternateDispose> comparison_right(&second);
+  comparison_effects = 0;
+  const bool comparison_equal =
+      observe_comparison(comparison_left) ==
+      observe_comparison(comparison_right);
+  const bool comparison_not_equal =
+      observe_comparison(comparison_left) !=
+      observe_comparison(comparison_right);
+  const bool comparison_less =
+      observe_comparison(comparison_left) <
+      observe_comparison(comparison_right);
+  const bool comparison_greater =
+      observe_comparison(comparison_left) >
+      observe_comparison(comparison_right);
+  const bool comparison_less_equal =
+      observe_comparison(comparison_left) <=
+      observe_comparison(comparison_right);
+  const bool comparison_greater_equal =
+      observe_comparison(comparison_left) >=
+      observe_comparison(comparison_right);
+  comparison_left.release();
+  comparison_right.release();
+  if (comparison_equal || !comparison_not_equal ||
+      comparison_less == comparison_greater ||
+      comparison_less_equal != !comparison_greater ||
+      comparison_greater_equal != !comparison_less ||
+      comparison_effects != 12 || alternate_calls != 0)
+    return 4;
+
   ArrayDispose array_deleter;
   std::unique_ptr<int[], ArrayDispose> array_owner(
       array_first, (++deleter_arguments, array_deleter));
@@ -25753,21 +25798,22 @@ int main() {
   std::swap(array_target, array_empty);
   if (array_owner || array_moved || !array_target || array_target[2] != 6 ||
       array_calls != 2 || array_sum != 21)
-    return 4;
+    return 5;
   array_target.reset();
-  if (array_calls != 3 || array_sum != 30) return 5;
+  if (array_calls != 3 || array_sum != 30) return 6;
 
   std::unique_ptr<int[][2], MatrixDispose> matrix_owner(
       matrix, (++deleter_arguments, MatrixDispose{}));
   matrix_owner[1][1] = 9;
   matrix_owner.reset();
-  if (matrix_owner || matrix_calls != 1 || matrix_sum != 10) return 6;
+  if (matrix_owner || matrix_calls != 1 || matrix_sum != 10) return 7;
 
   return scalar_calls == 7 && scalar_sum == 24 && array_calls == 3 &&
                  array_sum == 30 && matrix_calls == 1 && matrix_sum == 10 &&
-                 deleter_arguments == 9 && deleter_conversions == 1
+                 deleter_arguments == 9 && deleter_conversions == 1 &&
+                 comparison_effects == 12 && alternate_calls == 0
              ? 0
-             : 7;
+             : 8;
 }
 )cpp");
   auto Result =

@@ -167,8 +167,9 @@ plus a deleter argument bound to the exact deleter lvalue or rvalue parameter,
 same-type move and const-adding default-deleter converting move construction;
 corresponding move assignment;
 `nullptr` assignment; pointer access, mutable/const `get_deleter`, release,
-reset, member/free swap, same-specialization and
-default-deleter qualification-compatible same-element comparisons, all six
+reset, member/free swap, all six comparisons between admitted owners with the
+same scalar/array category and qualification-compatible raw pointers regardless
+of deleter specialization, all six
 bidirectional `nullptr` comparisons and destruction lower directly without a
 libc++ call.
 Default deleters use the matching checked global-delete or global-delete[]
