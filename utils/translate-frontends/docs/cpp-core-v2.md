@@ -827,24 +827,27 @@ supported target, has the same dependency set on all eight targets, and
 contains no platform headers. The public header and every consumed component
 retain their original upstream bytes.
 
-Calls on temporary typed specializations of `std::plus`, `std::minus`,
-`std::multiplies`, `std::divides`, `std::modulus`, `std::negate`,
+Calls on temporary typed or transparent specializations of `std::plus`,
+`std::minus`, `std::multiplies`, `std::divides`, `std::modulus`, `std::negate`,
 `std::bit_and`, `std::bit_or`, `std::bit_xor`, `std::bit_not`,
 `std::equal_to`, `std::not_equal_to`, `std::less`, `std::greater`,
 `std::less_equal`, `std::greater_equal`, `std::logical_and`,
 `std::logical_or` and `std::logical_not` lower directly for unqualified
-integral types through 64 bits plus `float` and `double`. The frontend
-authenticates the exact libc++ specialization, call operator, concrete
-signature and single built-in operator body before emitting scalar IR. Narrow
-integers use C++ integer promotion and convert the result back to the selected
+integral types through 64 bits plus `float` and `double`. Transparent `void`
+specializations additionally accept heterogeneous admitted operands and use
+the built-in operator's Clang-selected promotions and usual arithmetic
+conversions. The frontend authenticates the exact libc++ specialization,
+member template, `std::forward` calls, concrete signature and single built-in
+operator body before emitting scalar IR. Narrow integers use C++ integer
+promotion and typed specializations convert the result back to their selected
 type. Both function arguments are captured once before a logical result is
 formed, preserving the eager argument evaluation of a function call.
 
-Transparent `void` specializations, cv-qualified template arguments, stored
-function-object values, function-object addresses, `std::function`, binders,
-searchers and invocation helpers do not yet lower. Quoted includes, shadows,
-forged declarations and other runtime uses remain rejected by the normal
-source and semantic checks.
+Cv-qualified typed template arguments, stored function-object values,
+function-object addresses, pointers and user-defined operands, `long double`,
+`std::function`, binders, searchers and invocation helpers do not yet lower.
+Quoted includes, shadows, forged declarations and other runtime uses remain
+rejected by the normal source and semantic checks.
 
 ## Algorithm header from `<algorithm>`
 

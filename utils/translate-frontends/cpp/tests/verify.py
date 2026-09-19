@@ -1416,11 +1416,46 @@ extern "C" int functional_operations(int a, int b) {
         check("v2-functional-typed-operations-" + target,
               functional_operations_source, profile="cpp-core-v2",
               target=target, sdk=True)
+    functional_transparent_source = """\
+#include <functional>
+extern "C" unsigned functional_transparent(int a, unsigned b) {
+  unsigned score = 0;
+  score += std::plus<>{}(a, b);
+  score += std::minus<>{}(b, a);
+  score += std::multiplies<>{}(short(a), b);
+  score += unsigned(std::divides<>{}(double(b), 2));
+  score += std::modulus<>{}(b, 3);
+  score += unsigned(std::negate<>{}(a));
+  score += std::bit_and<>{}(a, b) + std::bit_or<>{}(a, b);
+  score += std::bit_xor<>{}(a, b) + std::bit_not<>{}(a);
+  score += std::equal_to<>{}(a, b) + std::not_equal_to<>{}(a, b);
+  score += std::less<>{}(a, b) + std::greater<>{}(a, b);
+  score += std::less_equal<>{}(a, b) + std::greater_equal<>{}(a, b);
+  score += std::logical_and<>{}(a, b) + std::logical_or<>{}(a, b);
+  score += std::logical_not<>{}(a);
+  return score;
+}
+"""
+    functional_transparent = check("v2-functional-transparent-operations",
+                                   functional_transparent_source,
+                                   profile="cpp-core-v2", sdk=True)
+    assert any(function["name"] == "functional_transparent"
+               for function in functional_transparent["functions"]), functional_transparent
+    for target in sdk_targets:
+        check("v2-functional-transparent-operations-" + target,
+              functional_transparent_source, profile="cpp-core-v2",
+              target=target, sdk=True)
     for name, source, code in (
-        ("transparent", '#include <functional>\nint main(){return std::plus<>{}(1,2);}',
-         "TR0203"),
         ("stored", '#include <functional>\nint main(){std::plus<int> op;return op(1,2);}',
          "TR0203"),
+        ("transparent-stored", '#include <functional>\nint main(){std::plus<> op;return op(1,2);}',
+         "TR0203"),
+        ("transparent-record", '#include <functional>\nstruct X{}; X operator+(X,X){return{};} int main(){std::plus<>{}(X{},X{});}',
+         "TR0203"),
+        ("transparent-pointer", '#include <functional>\nint main(){int a[2];return std::less<>{}(a,a+1);}',
+         "TR0203"),
+        ("transparent-long-double", '#include <functional>\nint main(){return std::plus<>{}(1.0L,2.0L)==3.0L;}',
+         "TR0201"),
         ("qualified", '#include <functional>\nint main(){return std::plus<const int>{}(1,2);}',
          "TR0203"),
         ("long-double", '#include <functional>\nint main(){return std::plus<long double>{}(1,2)==3;}',

@@ -366,7 +366,7 @@ approvedCstddefOperation(const State &S, const SourceManager &SM,
   return CstddefOperation::ToInteger;
 }
 
-std::optional<FunctionalOperation>
+std::optional<FunctionalOperationInfo>
 approvedFunctionalOperation(const State &S, const SourceManager &SM,
                             const CallExpr *Call, const ASTContext &Context) {
   const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
@@ -405,12 +405,22 @@ approvedFunctionalOperation(const State &S, const SourceManager &SM,
   if (Arguments.size() != 1 ||
       Arguments.get(0).getKind() != TemplateArgument::Type)
     return std::nullopt;
-  auto ValueType = Arguments.get(0).getAsType();
-  if (ValueType.isNull() || ValueType.hasQualifiers() ||
-      !((ValueType->isIntegralType(Context) &&
-         Context.getTypeSize(ValueType) <= 64) ||
-        ValueType->isSpecificBuiltinType(BuiltinType::Float) ||
-        ValueType->isSpecificBuiltinType(BuiltinType::Double)))
+  const auto ValueType = Arguments.get(0).getAsType();
+  const bool Transparent = !ValueType.isNull() && ValueType->isVoidType();
+  auto SupportedScalar = [&](QualType Type) {
+    if (Type.isNull())
+      return false;
+    Type = Type.getNonReferenceType();
+    if (Type.isVolatileQualified())
+      return false;
+    Type = Type.getUnqualifiedType();
+    return (Type->isIntegralType(Context) && Context.getTypeSize(Type) <= 64) ||
+           Type->isSpecificBuiltinType(BuiltinType::Float) ||
+           Type->isSpecificBuiltinType(BuiltinType::Double);
+  };
+  if (ValueType.isNull() ||
+      (!Transparent && (ValueType.hasQualifiers() ||
+                        !SupportedScalar(ValueType))))
     return std::nullopt;
 
   struct Spec {
@@ -455,31 +465,94 @@ approvedFunctionalOperation(const State &S, const SourceManager &SM,
       Selected = &Candidate;
       break;
     }
-  if (!Selected || (Selected->Integral && !ValueType->isIntegralType(Context)))
+  if (!Selected ||
+      (!Transparent && Selected->Integral &&
+       !ValueType->isIntegralType(Context)))
     return std::nullopt;
   const bool Unary = Selected->Operation == FunctionalOperation::Negate ||
                      Selected->Operation == FunctionalOperation::BitNot ||
                      Selected->Operation == FunctionalOperation::LogicalNot;
   const unsigned Parameters = Unary ? 1u : 2u;
-  const auto ExpectedResult =
-      Selected->BooleanResult ? Context.BoolTy : ValueType;
+  const auto ExpectedResult = Selected->BooleanResult ? Context.BoolTy
+                                                       : ValueType;
   if (Method->getNumParams() != Parameters ||
       Call->getNumArgs() != Parameters + 1 ||
-      !Context.hasSameType(Method->getReturnType(), ExpectedResult) ||
-      !Context.hasSameType(Call->getType(), ExpectedResult) ||
+      (!Transparent &&
+       !Context.hasSameType(Method->getReturnType(), ExpectedResult)) ||
+      !Context.hasSameType(Call->getType(), Method->getReturnType()) ||
       !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
                                       Context.getRecordType(Record)))
     return std::nullopt;
-  for (unsigned I = 0; I < Parameters; ++I) {
-    const auto Parameter = Method->getParamDecl(I)->getType();
-    if (!Parameter->isLValueReferenceType() ||
-        !Parameter->getPointeeType().isConstQualified() ||
-        Parameter->getPointeeType().isVolatileQualified() ||
-        !Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
-                                        ValueType) ||
-        !Context.hasSameUnqualifiedType(Call->getArg(I + 1)->getType(),
-                                        ValueType))
+
+  const FunctionTemplateDecl *Primary = nullptr;
+  const CXXMethodDecl *Pattern = nullptr;
+  const TemplateArgumentList *SpecializedArguments = nullptr;
+  if (Transparent) {
+    Primary = Method->getPrimaryTemplate();
+    Pattern = Primary ? dyn_cast<CXXMethodDecl>(Primary->getTemplatedDecl())
+                      : nullptr;
+    SpecializedArguments = Method->getTemplateSpecializationArgs();
+    const auto *ParametersList = Primary ? Primary->getTemplateParameters()
+                                         : nullptr;
+    const TypedefNameDecl *TransparentMarker = nullptr;
+    for (const auto *Declaration : Record->decls())
+      if (const auto *Alias = dyn_cast<TypedefNameDecl>(Declaration);
+          Alias && Alias->getIdentifier() &&
+          Alias->getName() == "is_transparent") {
+        if (TransparentMarker)
+          return std::nullopt;
+        TransparentMarker = Alias;
+      }
+    if (Record->getSpecializationKind() != TSK_ExplicitSpecialization ||
+        !Primary || !Pattern || !SpecializedArguments || !ParametersList ||
+        ParametersList->size() != Parameters ||
+        SpecializedArguments->size() != Parameters ||
+        !Pattern->hasBody() || Pattern->getNumParams() != Parameters ||
+        !approvedStandardSDKDeclaration(S, SM, Primary) ||
+        !approvedStandardSDKDeclaration(S, SM, Pattern) ||
+        !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
+                       "__functional/operations.h") ||
+        !cstddefOrigin(S, SM, Pattern->getLocation(), "libcxx",
+                       "__functional/operations.h") ||
+        !TransparentMarker ||
+        !TransparentMarker->getUnderlyingType()->isVoidType() ||
+        !approvedStandardSDKDeclaration(S, SM, TransparentMarker) ||
+        !cstddefOrigin(S, SM, TransparentMarker->getLocation(), "libcxx",
+                       "__functional/operations.h"))
       return std::nullopt;
+    for (unsigned I = 0; I < Parameters; ++I) {
+      const auto *TypeParameter =
+          dyn_cast<TemplateTypeParmDecl>(ParametersList->getParam(I));
+      const auto Argument = SpecializedArguments->get(I);
+      const auto Deduced = Argument.getKind() == TemplateArgument::Type
+                               ? Argument.getAsType()
+                               : QualType();
+      const auto PatternParameter = Pattern->getParamDecl(I)->getType();
+      const auto InstantiatedParameter = Method->getParamDecl(I)->getType();
+      const auto ExpectedParameter =
+          Deduced.isNull() || Deduced->isLValueReferenceType()
+              ? Deduced
+              : Context.getRValueReferenceType(Deduced);
+      if (!TypeParameter || TypeParameter->isParameterPack() ||
+          Deduced.isNull() || !SupportedScalar(Deduced) ||
+          !PatternParameter->isRValueReferenceType() ||
+          !Context.hasSameType(InstantiatedParameter, ExpectedParameter) ||
+          !Context.hasSameUnqualifiedType(
+              Call->getArg(I + 1)->getType(), Deduced.getNonReferenceType()))
+        return std::nullopt;
+    }
+  } else {
+    for (unsigned I = 0; I < Parameters; ++I) {
+      const auto Parameter = Method->getParamDecl(I)->getType();
+      if (!Parameter->isLValueReferenceType() ||
+          !Parameter->getPointeeType().isConstQualified() ||
+          Parameter->getPointeeType().isVolatileQualified() ||
+          !Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                          ValueType) ||
+          !Context.hasSameUnqualifiedType(Call->getArg(I + 1)->getType(),
+                                          ValueType))
+        return std::nullopt;
+    }
   }
 
   const auto *Body = dyn_cast<CompoundStmt>(Method->getBody());
@@ -489,24 +562,60 @@ approvedFunctionalOperation(const State &S, const SourceManager &SM,
   const auto *Returned = Return ? Return->getRetValue() : nullptr;
   const auto *Operation = Returned ? Returned->IgnoreParenImpCasts() : nullptr;
   auto ParameterReference = [&](const Expr *Expression, unsigned Index) {
-    const auto *Ref =
-        Expression ? dyn_cast<DeclRefExpr>(Expression->IgnoreParenImpCasts())
-                   : nullptr;
+    Expression = Expression ? Expression->IgnoreParenImpCasts() : nullptr;
+    if (Transparent) {
+      const auto *Forward = dyn_cast_or_null<CallExpr>(Expression);
+      const auto *Function = Forward ? Forward->getDirectCallee() : nullptr;
+      const auto *ForwardPrimary =
+          Function ? Function->getPrimaryTemplate() : nullptr;
+      const auto *Reference = directFunctionReference(Forward);
+      const auto *ForwardArguments =
+          Function ? Function->getTemplateSpecializationArgs() : nullptr;
+      const auto Specialized = SpecializedArguments->get(Index).getAsType();
+      const auto *Ref = Forward && Forward->getNumArgs() == 1
+                            ? dyn_cast<DeclRefExpr>(
+                                  Forward->getArg(0)->IgnoreParenImpCasts())
+                            : nullptr;
+      return Function && ForwardPrimary && Reference && ForwardArguments &&
+             ForwardArguments->size() == 1 &&
+             ForwardArguments->get(0).getKind() == TemplateArgument::Type &&
+             Context.hasSameType(ForwardArguments->get(0).getAsType(),
+                                 Specialized) &&
+             Function->getIdentifier() && Function->getName() == "forward" &&
+             approvedStandardSDKDeclaration(S, SM, Function) &&
+             approvedStandardSDKDeclaration(S, SM, ForwardPrimary) &&
+             cstddefOrigin(S, SM, ForwardPrimary->getLocation(), "libcxx",
+                            "__utility/forward.h") &&
+             Ref && Ref->getDecl() == Method->getParamDecl(Index);
+    }
+    const auto *Ref = dyn_cast_or_null<DeclRefExpr>(Expression);
     return Ref && Ref->getDecl() == Method->getParamDecl(Index);
   };
+  QualType LeftType;
+  QualType RightType;
   if (Unary) {
     const auto *Expression = dyn_cast_or_null<UnaryOperator>(Operation);
     if (!Expression || Expression->getOpcode() != Selected->Unary ||
         !ParameterReference(Expression->getSubExpr(), 0))
       return std::nullopt;
+    LeftType = Expression->getSubExpr()->getType();
   } else {
     const auto *Expression = dyn_cast_or_null<BinaryOperator>(Operation);
     if (!Expression || Expression->getOpcode() != Selected->Binary ||
         !ParameterReference(Expression->getLHS(), 0) ||
         !ParameterReference(Expression->getRHS(), 1))
       return std::nullopt;
+    LeftType = Expression->getLHS()->getType();
+    RightType = Expression->getRHS()->getType();
   }
-  return Selected->Operation;
+  if (!SupportedScalar(LeftType) || (!Unary && !SupportedScalar(RightType)) ||
+      (Selected->Integral &&
+       (!LeftType->isIntegralType(Context) ||
+        (!Unary && !RightType->isIntegralType(Context)))) ||
+      !Context.hasSameType(Returned->getType(), Method->getReturnType()))
+    return std::nullopt;
+  return FunctionalOperationInfo{Selected->Operation, LeftType, RightType,
+                                 Operation->getType(), Method->getReturnType()};
 }
 
 std::optional<MemoryTemplateMetadata>

@@ -33595,17 +33595,64 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2FunctionalTypedFunctionObjectsRequireExactForms) {
+TEST_F(TranslateTest,
+       CoreV2FunctionalTransparentFunctionObjectsRunAtBothOptimizations) {
+  const auto Source = tmpFile("functional-transparent-objects.cpp");
+  const auto Output = tmpFile("functional-transparent-objects.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+int trace;
+int next(int n) { trace = trace * 10 + n; return n + 1; }
+int main() {
+  int score = 0;
+  score += std::plus<>{}(-2, 5u) == 3u;
+  score += std::minus<>{}(9u, 4) == 5u;
+  score += std::multiplies<>{}(static_cast<signed char>(4), short(3)) == 12;
+  score += std::divides<>{}(9.0, 2) == 4.5;
+  score += std::modulus<>{}(11u, 3) == 2u;
+  score += std::negate<>{}(static_cast<signed char>(5)) == -5;
+  score += std::bit_and<>{}(6u, 3) == 2u;
+  score += std::bit_or<>{}(4, 3u) == 7u;
+  score += std::bit_xor<>{}(6u, 3) == 5u;
+  score += std::bit_not<>{}(static_cast<unsigned char>(0xf0)) == -241;
+  score += std::equal_to<>{}(3, 3u);
+  score += std::not_equal_to<>{}(3u, 4);
+  score += std::less<>{}(short(3), 4.0);
+  score += std::greater<>{}(4.0f, 3);
+  score += std::less_equal<>{}(3u, 3);
+  score += std::greater_equal<>{}(3, 3u);
+  score += std::logical_and<>{}(next(1), next(2));
+  score += std::logical_or<>{}(0, 3u);
+  score += std::logical_not<>{}(0.0f);
+  const short value = 2;
+  score += std::plus<>{}(value, 1u) == 3u;
+  score += trace == 12 || trace == 21;
+  return score == 21 ? 0 : score;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-transparent-objects" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
   struct Rejection {
     const char *Name;
     const char *Source;
     const char *Code;
   };
   const Rejection Cases[] = {
-      {"transparent",
-       "#include <functional>\nint main(){return "
-       "std::plus<>{}(1,2);}",
-       "TR0203"},
       {"stored",
        "#include <functional>\nint main(){std::plus<int> op;"
        "return op(1,2)-3;}",

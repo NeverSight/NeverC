@@ -266,7 +266,14 @@ enum class FunctionalOperation {
   LogicalOr,
   LogicalNot,
 };
-std::optional<FunctionalOperation>
+struct FunctionalOperationInfo {
+  FunctionalOperation Operation;
+  clang::QualType LeftType;
+  clang::QualType RightType;
+  clang::QualType OperationType;
+  clang::QualType ResultType;
+};
+std::optional<FunctionalOperationInfo>
 approvedFunctionalOperation(const State &S, const clang::SourceManager &SM,
                             const clang::CallExpr *Call,
                             const clang::ASTContext &Context);

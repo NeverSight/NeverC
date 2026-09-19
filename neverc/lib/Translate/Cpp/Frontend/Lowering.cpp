@@ -741,8 +741,9 @@ class FunctionLowering {
   }
 
   Expression functionalOperation(const CallExpr *Call,
-                                 FunctionalOperation Operation) {
+                                 const FunctionalOperationInfo &Info) {
     auto L = Call->getExprLoc();
+    const auto Operation = Info.Operation;
     const auto *Method = llvm::cast<CXXMethodDecl>(Call->getDirectCallee());
     const bool Unary = Method->getNumParams() == 1;
     auto Argument = [&](unsigned Index) {
@@ -755,11 +756,10 @@ class FunctionLowering {
     std::optional<Expression> Right;
     if (!Unary)
       Right = Argument(1);
-    auto OperandType = Method->getParamDecl(0)->getType()->getPointeeType();
-    if (A.Context.isPromotableIntegerType(OperandType))
-      OperandType = A.Context.getPromotedIntegerType(OperandType);
-    const auto ComputationType = type(OperandType, L);
-    const auto ResultType = type(Call->getType(), L);
+    const auto LeftType = type(Info.LeftType, L);
+    const auto RightType = Unary ? std::string() : type(Info.RightType, L);
+    const auto OperationType = type(Info.OperationType, L);
+    const auto ResultType = type(Info.ResultType, L);
     auto UnaryExpression = [&](llvm::StringRef Operator, Expression Value,
                                llvm::StringRef Result) {
       return Expression{{"kind", "unary"},
@@ -770,19 +770,19 @@ class FunctionLowering {
     };
     auto ArithmeticUnary = [&](llvm::StringRef Operator) {
       auto Value = UnaryExpression(
-          Operator, cast(std::move(Left), ComputationType, L), ComputationType);
+          Operator, cast(std::move(Left), LeftType, L), OperationType);
       return snapshot(cast(std::move(Value), ResultType, L), L);
     };
     auto ArithmeticBinary = [&](llvm::StringRef Operator) {
-      auto Value = binary(Operator, cast(std::move(Left), ComputationType, L),
-                          cast(std::move(*Right), ComputationType, L),
-                          ComputationType, L);
+      auto Value = binary(Operator, cast(std::move(Left), LeftType, L),
+                          cast(std::move(*Right), RightType, L), OperationType,
+                          L);
       return snapshot(cast(std::move(Value), ResultType, L), L);
     };
     auto Comparison = [&](llvm::StringRef Operator) {
       return snapshot(
-          binary(Operator, cast(std::move(Left), ComputationType, L),
-                 cast(std::move(*Right), ComputationType, L), "bool", L),
+          binary(Operator, cast(std::move(Left), LeftType, L),
+                 cast(std::move(*Right), RightType, L), "bool", L),
           L);
     };
     switch (Operation) {
