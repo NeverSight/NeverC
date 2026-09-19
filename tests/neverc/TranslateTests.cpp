@@ -23630,6 +23630,69 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2TupleCatRunsAtBothOptimizations) {
+  const auto Source = tmpFile("tuple-cat.cpp");
+  const auto Output = tmpFile("tuple-cat.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <tuple>
+#include <utility>
+using One = std::tuple<int>;
+int effects;
+One &select(One &value) {
+  ++effects;
+  return value;
+}
+One &change(One &value) {
+  ++effects;
+  std::get<0>(value) = 7;
+  return value;
+}
+int main() {
+  One shared(1);
+  effects = 0;
+  auto observed = std::tuple_cat(select(shared), change(shared));
+  if (effects != 2 || std::get<0>(observed) != 7 ||
+      std::get<1>(observed) != 7)
+    return 1;
+
+  int object = 9;
+  std::pair<short, int *> pair(short(2), &object);
+  std::array<unsigned, 2> array{{3u, 4u}};
+  const std::tuple<double> constant(5.5);
+  auto mixed = std::tuple_cat(std::make_tuple(1), pair, array, constant,
+                              std::tuple<>());
+  if (std::get<0>(mixed) != 1 || std::get<1>(mixed) != 2 ||
+      std::get<2>(mixed) != &object || std::get<3>(mixed) != 3u ||
+      std::get<4>(mixed) != 4u || std::get<5>(mixed) != 5.5)
+    return 2;
+
+  auto temporary = std::tuple_cat(std::make_tuple(6), std::tuple<>());
+  if (std::get<0>(temporary) != 6)
+    return 3;
+  auto empty = std::tuple_cat();
+  auto empty_array = std::tuple_cat(std::array<int, 0>{});
+  return std::tuple_size<decltype(empty)>::value == 0 && sizeof(empty) == 1 &&
+                 std::tuple_size<decltype(empty_array)>::value == 0 &&
+                 sizeof(empty_array) == 1
+             ? 0
+             : 4;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("tuple-cat" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2EmptyTupleRunsAtBothOptimizations) {
   const auto Source = tmpFile("tuple-empty.cpp");
   const auto Output = tmpFile("tuple-empty.nc");
@@ -23907,13 +23970,10 @@ TEST_F(TranslateTest, CoreV2TupleRequiresPinnedOperations) {
        "#include <tuple>\nint main(){std::tuple<int,int>v(1,2);"
        "return std::get<int>(v);}",
        "TR0202"},
-      {"tuple-cat",
-       "#include <tuple>\nint main(){auto a=std::make_tuple(1);"
-       "auto b=std::tuple_cat(a,a);return std::get<0>(b);}",
-       "TR0203"},
-      {"empty-tuple-cat",
-       "#include <tuple>\nint main(){auto value=std::tuple_cat();"
-       "return sizeof(value)!=1;}",
+      {"tuple-cat-record",
+       "#include <tuple>\nstruct R{int n;};int main(){"
+       "std::tuple<R> source(R{1});auto value=std::tuple_cat(source);"
+       "return std::get<0>(value).n;}",
        "TR0203"},
       {"apply-converted-parameter",
        "#include <tuple>\nint add(int a,int b){return a+b;}int main(){"

@@ -472,6 +472,7 @@ enum class UtilityOperation {
   PairGetSecond,
   MakeTuple,
   TupleApply,
+  TupleCat,
   TupleSwap,
   TupleMemberSwap,
   TupleEqual,
@@ -738,6 +739,20 @@ approvedUtilityArrayAssignment(const State &S,
                                const clang::SourceManager &SM,
                                const clang::CXXOperatorCallExpr *Assignment,
                                const clang::ASTContext &Context);
+struct UtilityTupleCatSource {
+  std::vector<const clang::FieldDecl *> Elements;
+  const clang::FieldDecl *ArrayElements;
+  clang::QualType ArrayElementType;
+  uint64_t ArraySize;
+};
+struct UtilityTupleCatCall {
+  UtilityTupleRecord Result;
+  std::vector<UtilityTupleCatSource> Sources;
+};
+std::optional<UtilityTupleCatCall>
+approvedUtilityTupleCatCall(const State &S, const clang::SourceManager &SM,
+                            const clang::CallExpr *Call,
+                            const clang::ASTContext &Context);
 struct UtilityInitializerListRecord {
   const clang::CXXRecordDecl *Record;
   const clang::FieldDecl *Begin, *Size;

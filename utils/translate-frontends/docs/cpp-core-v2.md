@@ -225,6 +225,15 @@ scalar. Mutable and const lvalues and materialized tuple temporaries are
 accepted. The callable and tuple expressions are each evaluated once, fields
 are passed in tuple order, and no libc++ apply helper is emitted.
 
+Exact `std::tuple_cat` calls lower directly when every source is an
+authenticated `std::tuple`, `std::pair` or `std::array` containing only
+admitted scalar elements and the selected result is the exact concatenated
+tuple type. Zero arguments, empty tuple sources and zero-length array sources
+are included. Mutable or const lvalues and materialized temporaries are
+accepted. Each source expression is evaluated once, all source addresses are
+captured before any element is read, and fields are copied in concatenation
+order without a libc++ tuple-cat helper.
+
 Two-element tuples also accept admitted scalar or composite `std::pair<U, V>`
 lvalues and rvalues for construction and assignment under the same per-element
 conversion rules. Scalar pair conversion requires `<tuple>` and `<utility>` and
@@ -242,8 +251,9 @@ leaf. Generated programs contain no tuple helper calls and do not link libc++.
 The standalone empty tuple remains supported, but empty-base-optimized record
 or tuple elements do not have the authenticated one-field leaf representation
 and remain rejected. References, nontrivial records, `long double`, function
-pointers and source-record comparisons also remain outside this surface. `tie`,
-`forward_as_tuple` and `tuple_cat` are rejected. Apply calls with callable
+pointers and source-record comparisons also remain outside this surface. `tie`
+and `forward_as_tuple` are rejected. Tuple-cat sources with record, array, pair
+or nested-tuple composite elements remain rejected. Apply calls with callable
 objects, converted or reference parameters, record parameters, variadic
 callbacks, or reference/record results remain rejected. Quoted includes, user
 shadows, standard-function addresses and forged declarations remain rejected.

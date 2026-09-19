@@ -514,6 +514,10 @@ extern "C" int tuple_all(int *pointer) {
             4 * (narrow < greater);
   result += 8 * (greater > narrow) + 16 * (narrow <= wide) +
             32 * (narrow >= wide);
+  auto concatenated = std::tuple_cat(empty, first, std::make_tuple(10));
+  auto no_elements = std::tuple_cat();
+  result += std::get<0>(concatenated) + std::get<3>(concatenated) +
+            int(sizeof(no_elements));
   result += std::apply(tuple_apply_sum, first);
   return result;
 }
@@ -528,8 +532,10 @@ extern "C" int tuple_all(int *pointer) {
                   for record in tuple_module["records"]) == [
                       [],
                       ["i16", "float"],
+                      ["int"],
                       ["int", "double"],
                       ["int", "double", "ptr:int"],
+                      ["int", "double", "ptr:int", "int"],
                       ["int", "int", "int"],
                   ], tuple_module["records"]
     empty_tuple = next(record for record in tuple_module["records"]
@@ -609,9 +615,15 @@ extern "C" int tuple_composite() {
   Duo from_pair(source);
   Duo assigned{};
   assigned = source;
+  Pair scalar_pair{22, 23};
+  Array scalar_array{{24, 25}};
+  auto concatenated = std::tuple_cat(scalar_pair, scalar_array);
+  auto empty_concatenated = std::tuple_cat(std::array<int, 0>{});
   return std::get<Point>(zero).x + std::get<Array>(made)[1] +
          std::get<0>(std::get<0>(nested)) +
-         std::get<Point>(from_pair).y + std::get<Array>(assigned)[0];
+         std::get<Point>(from_pair).y + std::get<Array>(assigned)[0] +
+         std::get<0>(concatenated) + std::get<3>(concatenated) +
+         int(sizeof(empty_concatenated));
 }
 """
     tuple_composite = check("v2-tuple-composite", tuple_composite_source,
@@ -678,11 +690,8 @@ extern "C" int tuple_composite() {
         ("ambiguous-type-get",
          '#include <tuple>\nint main(){std::tuple<int,int>v(1,2);return std::get<int>(v);}',
          "TR0202"),
-        ("tuple-cat",
-         '#include <tuple>\nint main(){auto a=std::make_tuple(1);auto b=std::tuple_cat(a,a);return std::get<0>(b);}',
-         "TR0203"),
-        ("empty-tuple-cat",
-         '#include <tuple>\nint main(){auto value=std::tuple_cat();return sizeof(value)!=1;}',
+        ("tuple-cat-record",
+         '#include <tuple>\nstruct R{int n;};int main(){std::tuple<R> source(R{1});auto value=std::tuple_cat(source);return std::get<0>(value).n;}',
          "TR0203"),
         ("apply-converted-parameter",
          '#include <tuple>\nint add(int a,int b){return a+b;}int main(){return std::apply(add,std::make_tuple(short(1),2));}',

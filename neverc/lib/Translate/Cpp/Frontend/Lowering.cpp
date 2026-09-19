@@ -5785,6 +5785,58 @@ class FunctionLowering {
                    Call->getArg(I), L);
       return Place;
     }
+    case UtilityOperation::TupleCat: {
+      auto Cat = approvedUtilityTupleCatCall(A.S, A.Sources, Call, A.Context);
+      if (!Cat)
+        reject(L, "utility tuple cat",
+               "The selected std::tuple_cat operation is unavailable.");
+      auto Place = Destination ? std::move(*Destination)
+                               : objectTemporary(Call->getType(), L);
+      if (Place.getString("type") != type(Call->getType(), L) ||
+          Cat->Sources.size() != Call->getNumArgs())
+        reject(L, "utility tuple cat",
+               "The std::tuple_cat destination differs from its result.");
+
+      std::vector<Expression> Sources;
+      Sources.reserve(Call->getNumArgs());
+      for (unsigned I = 0; I < Call->getNumArgs(); ++I) {
+        auto Pointer = snapshot(
+            address(lvalue(Call->getArg(I)), Call->getArg(I)->getType(), L), L);
+        Sources.push_back(dereference(std::move(Pointer), L));
+      }
+
+      const auto SizeType = type(A.Context.getSizeType(), L);
+      unsigned ResultIndex = 0;
+      for (unsigned I = 0; I < Cat->Sources.size(); ++I) {
+        const auto &Source = Cat->Sources[I];
+        if (Source.ArrayElements) {
+          if (!Source.ArraySize)
+            continue;
+          auto Storage =
+              fieldStorage(json::Object(Sources[I]), Source.ArrayElements, L);
+          auto Pointer = decay(std::move(Storage),
+                               type(A.Context.getPointerType(
+                                        Source.ArrayElementType.withConst()),
+                                    L),
+                               L);
+          for (uint64_t N = 0; N < Source.ArraySize; ++N)
+            assign(fieldStorage(json::Object(Place),
+                                Cat->Result.Elements[ResultIndex++], L),
+                   index(json::Object(Pointer), quantity(N, SizeType, L),
+                         type(Source.ArrayElementType, L), L),
+                   L);
+          continue;
+        }
+        for (const auto *Element : Source.Elements)
+          assign(fieldStorage(json::Object(Place),
+                              Cat->Result.Elements[ResultIndex++], L),
+                 fieldStorage(json::Object(Sources[I]), Element, L), L);
+      }
+      if (ResultIndex != Cat->Result.Elements.size())
+        reject(L, "utility tuple cat",
+               "The std::tuple_cat element count differs from its result.");
+      return Place;
+    }
     case UtilityOperation::TupleApply: {
       auto Tuple = TupleFor(Call->getArg(1)->getType());
       auto CallableType = Call->getArg(0)->getType();

@@ -4643,12 +4643,117 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
   return Literal && Literal->getValue() == 1;
 }
 
+static std::optional<UtilityTupleCatSource>
+utilityTupleCatSource(const State &S, const SourceManager &SM, QualType Type,
+                      const ASTContext &Context) {
+  const auto *Record =
+      Type.isNull() ? nullptr : Type.getUnqualifiedType()->getAsCXXRecordDecl();
+  if (const auto Tuple = approvedUtilityTupleRecord(S, SM, Record, Context)) {
+    for (const auto *Element : Tuple->Elements)
+      if (!utilityScalar(Context, Element->getType()))
+        return std::nullopt;
+    return UtilityTupleCatSource{Tuple->Elements, nullptr, {}, 0};
+  }
+  if (const auto Pair = approvedUtilityPairRecord(S, SM, Record, Context)) {
+    if (!utilityScalar(Context, Pair->First->getType()) ||
+        !utilityScalar(Context, Pair->Second->getType()))
+      return std::nullopt;
+    return UtilityTupleCatSource{{Pair->First, Pair->Second}, nullptr, {}, 0};
+  }
+  if (const auto Array = approvedUtilityArrayRecord(S, SM, Record, Context)) {
+    if (!utilityScalar(Context, Array->ElementType))
+      return std::nullopt;
+    return UtilityTupleCatSource{
+        {}, Array->Elements, Array->ElementType, Array->Size};
+  }
+  return std::nullopt;
+}
+
+std::optional<UtilityTupleCatCall>
+approvedUtilityTupleCatCall(const State &S, const SourceManager &SM,
+                            const CallExpr *Call, const ASTContext &Context) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+  const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+  const auto *Identifier = Function ? Function->getIdentifier() : nullptr;
+  const auto Origin =
+      Function ? S.sdkFile(SM, Function->getLocation()) : std::nullopt;
+  if (!Call || !Function || !Identifier ||
+      Identifier->getName() != "tuple_cat" || !Origin ||
+      Origin->Root != "libcxx" || Origin->Path != "tuple" ||
+      Call->isTypeDependent() || Call->isValueDependent() ||
+      Call->isInstantiationDependent() || !Call->isPRValue() ||
+      Function->isVariadic() || !Function->isInlined() ||
+      !Function->isConstexpr() || !Function->hasBody() ||
+      Function->getReturnType()->isReferenceType() ||
+      Call->getNumArgs() != Function->getNumParams() ||
+      !Context.hasSameType(Call->getType(), Function->getReturnType()) ||
+      !approvedStandardSDKDeclaration(S, SM, Function) ||
+      !approvedUtilityReference(S, SM, Call, Function))
+    return std::nullopt;
+
+  const auto Result = approvedUtilityTupleRecord(
+      S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
+  if (!Result)
+    return std::nullopt;
+  if (!Call->getNumArgs()) {
+    if (Primary || !Result->Elements.empty())
+      return std::nullopt;
+    return UtilityTupleCatCall{*Result, {}};
+  }
+  const auto PrimaryOrigin =
+      Primary ? S.sdkFile(SM, Primary->getLocation()) : std::nullopt;
+  if (!Primary || !Pattern || !Pattern->hasBody() || !PrimaryOrigin ||
+      PrimaryOrigin->Root != "libcxx" || PrimaryOrigin->Path != "tuple" ||
+      !approvedStandardSDKDeclaration(S, SM, Primary) ||
+      !approvedStandardSDKDeclaration(S, SM, Pattern))
+    return std::nullopt;
+
+  UtilityTupleCatCall Approved{*Result, {}};
+  Approved.Sources.reserve(Call->getNumArgs());
+  unsigned ResultIndex = 0;
+  for (unsigned I = 0; I < Call->getNumArgs(); ++I) {
+    const auto Parameter = Function->getParamDecl(I)->getType();
+    if (!Parameter->isReferenceType() ||
+        Parameter->getPointeeType().isVolatileQualified() ||
+        !Context.hasSameType(Parameter->getPointeeType(),
+                             Call->getArg(I)->getType()))
+      return std::nullopt;
+    auto Source =
+        utilityTupleCatSource(S, SM, Call->getArg(I)->getType(), Context);
+    if (!Source)
+      return std::nullopt;
+    const uint64_t SourceSize =
+        Source->ArrayElements ? Source->ArraySize : Source->Elements.size();
+    if (ResultIndex > Result->Elements.size() ||
+        SourceSize > Result->Elements.size() - ResultIndex)
+      return std::nullopt;
+    if (Source->ArrayElements) {
+      for (uint64_t N = 0; N < Source->ArraySize; ++N)
+        if (!Context.hasSameType(Source->ArrayElementType,
+                                 Result->Elements[ResultIndex++]->getType()))
+          return std::nullopt;
+    } else {
+      for (const auto *Element : Source->Elements)
+        if (!Context.hasSameType(Element->getType(),
+                                 Result->Elements[ResultIndex++]->getType()))
+          return std::nullopt;
+    }
+    Approved.Sources.push_back(std::move(*Source));
+  }
+  if (ResultIndex != Result->Elements.size())
+    return std::nullopt;
+  return Approved;
+}
+
 std::optional<UtilityOperation>
 approvedUtilityOperation(const State &S, const SourceManager &SM,
                          const CallExpr *Call, const ASTContext &Context) {
   if (!Call || Call->isTypeDependent() || Call->isValueDependent() ||
       Call->isInstantiationDependent())
     return std::nullopt;
+  if (approvedUtilityTupleCatCall(S, SM, Call, Context))
+    return UtilityOperation::TupleCat;
   const auto *Function = Call->getDirectCallee();
   const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
   const auto *OptionalObject = [&]() -> const Expr * {

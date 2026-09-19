@@ -1838,6 +1838,13 @@ tuple order, and supplies the exact by-value callback parameter types. Empty
 tuples produce an empty `args` array; scalar and void results retain the normal
 `indirect_call` target rule.
 
+Pinned scalar `std::tuple_cat` lowering adds no protocol opcode. It materializes
+the exact result record, evaluates and captures every authenticated tuple, pair
+or array source address before reading any element, then uses existing member,
+array-decay, index and assign nodes in concatenation order. The zero-argument
+and all-empty cases produce the authenticated empty result without element
+operations.
+
 The emitter uses recursive typed declarators, prior function prototypes and
 signature-specific layout guards. New enum values are appended, preserving old
 project fingerprints. The existing project and math profiles reject callback
