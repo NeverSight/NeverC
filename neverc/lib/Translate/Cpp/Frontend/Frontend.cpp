@@ -4061,8 +4061,8 @@ bool Adapter::requireUtilityDefaultDelete(const CXXRecordDecl *Record,
       approvedUtilityDefaultDeleteRecord(S, Sources, Record, Context);
   if (!Deleter) {
     reject(Location, "standard library record",
-           "Only the pinned one-byte std::default_delete<T> layout is "
-           "admitted.",
+           "Only the pinned one-byte std::default_delete<T> and "
+           "std::default_delete<T[]> layouts are admitted.",
            "TR0203");
     return false;
   }
@@ -13659,12 +13659,17 @@ public:
             }
             A.type(Info->Deleter.ElementType, L);
             const auto *Function =
-                A.allocatorHeapFunction(false, Info->Deleter.ElementType, L);
+                Info->Deleter.Array
+                    ? A.allocationFunction(Info->Delete->getOperatorDelete(),
+                                           false, L, true)
+                    : A.allocatorHeapFunction(false, Info->Deleter.ElementType,
+                                              L);
             unsigned Index = 1;
-            if (Index < Function->getNumParams() &&
-                A.Context.hasSameUnqualifiedType(
-                    Function->getParamDecl(Index)->getType(),
-                    A.Context.getSizeType()))
+            const bool Sized = Index < Function->getNumParams() &&
+                               A.Context.hasSameUnqualifiedType(
+                                   Function->getParamDecl(Index)->getType(),
+                                   A.Context.getSizeType());
+            if (Sized)
               ++Index;
             if (Index < Function->getNumParams() &&
                 Function->getParamDecl(Index)->getType()->isAlignValT())
@@ -13674,6 +13679,15 @@ public:
               A.reject(L, "default delete arguments",
                        "Usual deallocation requires a pointer followed only "
                        "by selected size and alignment values.");
+            if (Info->Deleter.Array) {
+              const auto Layout = A.arrayAllocationLayout(
+                  Info->Deleter.ElementType,
+                  Info->Delete->doesUsualArrayDeleteWantSize(), L);
+              if (Sized && !Layout.CookieBytes)
+                A.reject(L, "sized array delete",
+                         "The native array ABI supplies no count for this "
+                         "selected sized deallocation function.");
+            }
             break;
           }
           case UtilityOperation::MemoryUninitializedDefaultConstruct:

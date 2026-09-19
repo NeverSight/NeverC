@@ -78,9 +78,10 @@ authenticated parsing boundary; raw-pointer `pointer_traits`, exact
 `std::allocator` and exact `std::allocator_traits<std::allocator<T>>` metadata
 resolve at compile time. Exact `uses_allocator<T, std::allocator<U>>`
 identities, inherited aliases and constants also resolve. Exact single-object
-`std::default_delete<T>` objects preserve their one-byte stateless layout;
-their construction and calls lower directly through checked object destruction
-and a source-defined global delete.
+`std::default_delete<T>` and one-dimensional `std::default_delete<T[]>`
+objects preserve their one-byte stateless layout; their construction and calls
+lower directly through checked object or reverse array destruction and a
+source-defined global delete/delete[].
 `std::addressof`, `pointer_traits::pointer_to` and scalar-pointer destruction
 and uninitialized construction algorithms lower directly. Exact runtime
 allocator objects, C++17 `destroy`, and allocator-traits destruction,
@@ -197,11 +198,12 @@ rebinds and trait constants also resolve as compile-time metadata, including
 exact `uses_allocator<T, std::allocator<U>>` identities, inherited aliases and
 values. `std::addressof` and raw-pointer
 `pointer_traits::pointer_to` return checked object addresses without a libc++
-runtime call. Exact single-object `std::default_delete<T>` objects use an
-authenticated one-byte stateless carrier. Default, copy/move and admitted
-cv-converting construction lower directly. Calls evaluate the deleter and
-pointer once, destroy the complete object, and invoke a checked source-defined
-global sized or unsized delete. Exact
+runtime call. Exact single-object `std::default_delete<T>` and one-dimensional
+`std::default_delete<T[]>` objects use an authenticated one-byte stateless
+carrier. Default, copy/move and admitted cv-converting construction lower
+directly. Calls evaluate the deleter and pointer once, destroy the complete
+object or reverse array elements, and invoke a checked source-defined global
+sized or unsized delete/delete[]. Exact
 `destroy_at`, `destroy` and `destroy_n` calls on scalar object pointers retain
 argument evaluation and counted iterator results without emitting a trivial
 destructor call. The ten C++17 `uninitialized_*` copy, move, fill, default and
@@ -214,8 +216,9 @@ is supported, source-owned and `noexcept`. Allocation/deallocation accepts exact
 member and traits forwarding, including hints and runtime deallocation counts,
 when a source-defined global new/delete path exists and the allocation count is
 a constant proven within `max_size`. Default heap allocation, dynamic allocation
-counts, over-aligned elements, `default_delete<T[]>`, smart pointers and
-ownership factories are not yet admitted.
+counts, over-aligned elements, multidimensional `default_delete`, array
+`unique_ptr`, other smart pointers and ownership factories are not yet
+admitted.
 The driver authenticates each closure before
 emitting output. Standard-library objects and operations beyond these documented
 surfaces, other standard headers and full C++/STL remain unfinished.

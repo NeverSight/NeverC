@@ -1485,17 +1485,20 @@ aliases, rebinds and constants, plus exact
 `uses_allocator<T, std::allocator<U>>` identities and inherited aliases, close
 through the existing checked type/query graph without allocator storage or a
 runtime call. Their compatible values also fold. Exact single-object
-`std::default_delete<T>` specializations preserve the authenticated one-byte,
-one-byte-aligned empty libc++ representation as a record with one synthetic
+`std::default_delete<T>` and one-dimensional `std::default_delete<T[]>`
+specializations preserve the authenticated one-byte, one-byte-aligned empty
+libc++ representation as a record with one synthetic
 `{name:"nct_default_delete_storage",type:"u8"}` field at bit offset zero.
 Default, implicit trivial copy/move and admitted cv-converting construction
 evaluate their operands and emit no SDK call. An authenticated call operator
-captures its receiver and pointer once, uses the existing null-guarded
-single-object destruction path, and emits an ordinary `call` to a checked
-source-defined sized or unsized global delete. The selected function receives
-the saved pointer and, for sized delete, exact `sizeof(T)`. Calls set
-`memory_lifetimes: true` and add no opcode, SDK call, native-heap import or
-ownership field. Exact single-object
+captures its receiver and pointer once, then uses the matching null-guarded
+single-object or array destruction path. Array calls consume the checked native
+cookie, destroy nontrivial elements in reverse order and emit an ordinary
+`call` to the checked source-defined sized or unsized global delete[]. Sized
+single-object deletion receives exact `sizeof(T)`; sized array deletion receives
+the original allocation extent. Calls set `memory_lifetimes: true`; array calls
+also select the target's `array_cookie_abi`. Neither form adds an SDK call,
+native-heap import or ownership field. Exact single-object
 `std::unique_ptr<T, std::default_delete<T>>` specializations preserve the
 authenticated pointer-sized libc++ representation as a record with one
 synthetic `{name:"nct_unique_ptr_pointer",type:"ptr:T"}` field at bit offset

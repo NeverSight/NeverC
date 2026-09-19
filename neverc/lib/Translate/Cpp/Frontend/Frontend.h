@@ -259,6 +259,7 @@ approvedMemoryTemplateMetadata(const State &S, const clang::SourceManager &SM,
 struct UtilityDefaultDeleteRecord {
   const clang::CXXRecordDecl *Record;
   clang::QualType ElementType;
+  bool Array;
 };
 std::optional<UtilityDefaultDeleteRecord> approvedUtilityDefaultDeleteRecord(
     const State &S, const clang::SourceManager &SM,
@@ -271,8 +272,7 @@ enum class UtilityDefaultDeleteConstruction {
 std::optional<UtilityDefaultDeleteConstruction>
 approvedUtilityDefaultDeleteConstruction(
     const State &S, const clang::SourceManager &SM,
-    const clang::CXXConstructExpr *Construction,
-    const clang::ASTContext &Context);
+    const clang::CXXConstructExpr *Construction, clang::ASTContext &Context);
 struct UtilityDefaultDeleteCall {
   UtilityDefaultDeleteRecord Deleter;
   const clang::CXXDeleteExpr *Delete;

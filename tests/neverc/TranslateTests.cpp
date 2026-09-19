@@ -25094,14 +25094,20 @@ TEST_F(TranslateTest, CoreV2MemoryDefaultDeleteRunsAtBothOptimizations) {
 using Size = decltype(sizeof(0));
 struct Storage { unsigned long long alignment; unsigned char bytes[64]; };
 Storage storage{};
+Storage array_storage{};
 Size allocated;
 Size released;
+Size array_allocated;
+Size array_released;
 int allocations;
 int releases;
+int array_allocations;
+int array_releases;
 int destroyed;
 struct Owned {
   int value;
-  ~Owned() noexcept { destroyed += value; }
+  Owned(int value = 0) noexcept : value(value) {}
+  ~Owned() noexcept { destroyed = destroyed * 10 + value; }
 };
 void *operator new(Size size) {
   ++allocations;
@@ -25114,12 +25120,33 @@ void operator delete(void *pointer, Size size) noexcept {
     released = size;
   }
 }
+void *operator new[](Size size) {
+  ++array_allocations;
+  array_allocated = size;
+  return array_storage.bytes;
+}
+void operator delete[](void *pointer) noexcept {
+  if (pointer == array_storage.bytes)
+    ++array_releases;
+}
+void operator delete[](void *pointer, Size size) noexcept {
+  if (pointer == array_storage.bytes) {
+    ++array_releases;
+    array_released = size;
+  }
+}
 int effects;
 std::default_delete<int> &observe(std::default_delete<int> &value, int bit) {
   effects |= bit;
   return value;
 }
 int *observe(int *value, int bit) { effects |= bit; return value; }
+std::default_delete<Owned[]> &observe(std::default_delete<Owned[]> &value,
+                                      int bit) {
+  effects |= bit;
+  return value;
+}
+Owned *observe(Owned *value, int bit) { effects |= bit; return value; }
 int main() {
   std::default_delete<int> first;
   std::default_delete<int> copied(first);
@@ -25139,10 +25166,23 @@ int main() {
 
   std::default_delete<int>{}(new int(43));
   std::default_delete<Owned>{}(new Owned{7});
-  return allocations == 4 && releases == 4 && destroyed == 7 &&
-                 allocated == sizeof(Owned) && released == sizeof(Owned)
+  std::default_delete<Owned[]> array_deleter;
+  std::default_delete<Owned[]> copied_array(array_deleter);
+  std::default_delete<Owned[]> moved_array(
+      static_cast<std::default_delete<Owned[]> &&>(copied_array));
+  std::default_delete<const Owned[]> converted_array(moved_array);
+  Owned *many = new Owned[3]{Owned(1), Owned(2), Owned(4)};
+  effects = 0;
+  observe(moved_array, 1).operator()(observe(many, 2));
+  if (effects != 3 || destroyed != 7421) return 5;
+  const Owned *nothing = nullptr;
+  converted_array(nothing);
+  return allocations == 4 && releases == 4 && destroyed == 7421 &&
+                 allocated == sizeof(Owned) && released == sizeof(Owned) &&
+                 array_allocations == 1 && array_releases == 1 &&
+                 array_allocated == array_released
              ? 0
-             : 5;
+             : 6;
 }
 )cpp");
   auto Result =
@@ -25183,10 +25223,16 @@ TEST_F(TranslateTest, CoreV2MemoryDefaultDeleteRequiresExactObjectForms) {
       {"missing-delete-definition",
        "#include <memory>\nvoid f(int*p){std::default_delete<int>{}(p);}",
        "TR0203"},
-      {"array-specialization",
-       "#include <memory>\nstd::default_delete<int[]> value;", "TR0203"},
+      {"missing-array-delete-definition",
+       "#include <memory>\nvoid f(int*p){std::default_delete<int[]>{}(p);}",
+       "TR0203"},
       {"volatile-element",
        "#include <memory>\nstd::default_delete<volatile int> value;", "TR0201"},
+      {"volatile-array-element",
+       "#include <memory>\nstd::default_delete<volatile int[]> value;",
+       "TR0201"},
+      {"multidimensional-array",
+       "#include <memory>\nstd::default_delete<int[][2]> value;", "TR0203"},
       {"class-delete",
        "#include <memory>\nstruct R{static void operator "
        "delete(void*)noexcept;};"

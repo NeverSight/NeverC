@@ -48,10 +48,11 @@ Core v2's pinned `<memory>` surface now resolves exact raw-pointer
 and trait constants as compile-time metadata. Exact
 `uses_allocator<T, std::allocator<U>>` identities, inherited aliases and
 compatible values also resolve. Exact single-object `std::default_delete<T>`
-uses a checked one-byte stateless carrier with default, copy/move and admitted
-cv-converting construction. Its call operator evaluates the receiver and
-pointer once, destroys the complete object and calls a checked source-defined
-global sized or unsized delete. Exact single-object
+and one-dimensional `std::default_delete<T[]>` use checked one-byte stateless
+carriers with default, copy/move and admitted cv-converting construction. Their
+call operators evaluate the receiver and pointer once, destroy the complete
+object or reverse array elements, and call a checked source-defined global
+sized or unsized delete/delete[]. Exact single-object
 `std::unique_ptr<T, std::default_delete<T>>` uses a pointer-sized authenticated
 carrier. Default, null, raw-pointer, same-type move and const-adding converting
 move construction, same-type and const-adding converting move assignment,

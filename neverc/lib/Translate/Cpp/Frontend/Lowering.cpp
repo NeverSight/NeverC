@@ -1401,6 +1401,11 @@ class FunctionLowering {
         reject(L, "default delete",
                "A checked std::default_delete call is required.");
       discard(Info->Object);
+      if (Info->Deleter.Array) {
+        deallocateArray(Info->Delete,
+                        expression(Call->getArg(Info->PointerIndex)), L);
+        return {};
+      }
       const auto *Function =
           A.allocatorHeapFunction(false, Info->Deleter.ElementType, L);
       deallocateSingle(expression(Call->getArg(Info->PointerIndex)),
@@ -7395,12 +7400,12 @@ class FunctionLowering {
     }
     return Result;
   }
-  void deallocateArray(const CXXDeleteExpr *Delete) {
-    const auto L = Delete->getExprLoc();
+  void deallocateArray(const CXXDeleteExpr *Delete, Expression Pointer,
+                       SourceLocation L) {
     const auto *F = A.allocationFunction(Delete->getOperatorDelete(), false, L, true);
     const auto Layout = A.arrayAllocationLayout(Delete->getDestroyedType(),
                                                 Delete->doesUsualArrayDeleteWantSize(), L);
-    auto Pointer = snapshot(expression(Delete->getArgument()), L);
+    Pointer = snapshot(std::move(Pointer), L);
     auto Destroy = labelName(), End = labelName();
     branch(cast(Pointer, "bool", L), Destroy, End, L);
     label(Destroy, L);
@@ -7448,6 +7453,10 @@ class FunctionLowering {
                                 {"args", std::move(Args)}, {"loc", A.loc(L)}});
     jump(End, L);
     label(End, L);
+  }
+  void deallocateArray(const CXXDeleteExpr *Delete) {
+    deallocateArray(Delete, expression(Delete->getArgument()),
+                    Delete->getExprLoc());
   }
   void deallocateSingle(Expression Pointer, QualType Object,
                         const FunctionDecl *F, SourceLocation L) {
@@ -8332,9 +8341,9 @@ class FunctionLowering {
     if (auto Kind = approvedUtilityDefaultDeleteConstruction(A.S, A.Sources, C,
                                                              A.Context)) {
       if (*Kind != UtilityDefaultDeleteConstruction::Default) {
-        if (C->getNumArgs() != 1)
+        if (!C->getNumArgs())
           reject(L, "default delete construction",
-                 "A copied or converted std::default_delete needs one source.");
+                 "A copied or converted std::default_delete needs a source.");
         expression(C->getArg(0));
       }
       assign(std::move(Place), A.zero(T, L), L);

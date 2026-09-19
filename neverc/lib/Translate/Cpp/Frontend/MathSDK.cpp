@@ -402,9 +402,13 @@ approvedMemoryTemplateMetadata(const State &S, const SourceManager &SM,
                     "__memory/unique_ptr.h") &&
       cstddefOrigin(S, SM, CanonicalTemplate->getLocation(), "libcxx",
                     "__memory/unique_ptr.h")) {
-    const auto Element = Arguments.get(0).getAsType();
+    const auto Specialized = Arguments.get(0).getAsType();
+    const auto *Array =
+        Specialized.isNull() ? nullptr : Specialized->getAsArrayTypeUnsafe();
+    const auto Element = Array ? Array->getElementType() : Specialized;
     if (!Element.isNull() && !Element.isVolatileQualified() &&
-        Element->isObjectType() && !Element->isArrayType())
+        Element->isObjectType() && !Element->isArrayType() &&
+        (!Array || isa<IncompleteArrayType>(Array)))
       return MemoryTemplateMetadata::DefaultDelete;
   }
   if (Name == "unique_ptr" && Arguments.size() == 2 &&
@@ -477,14 +481,18 @@ approvedUtilityDefaultDeleteRecord(const State &S, const SourceManager &SM,
   if (Arguments.size() != 1 ||
       Arguments.get(0).getKind() != TemplateArgument::Type)
     return std::nullopt;
-  const auto Element = Arguments.get(0).getAsType();
+  const auto Specialized = Arguments.get(0).getAsType();
+  const auto *Array =
+      Specialized.isNull() ? nullptr : Context.getAsArrayType(Specialized);
+  auto Element = Array ? Context.getBaseElementType(Specialized) : Specialized;
   const auto &Layout = Context.getASTRecordLayout(Definition);
   if (Element.isNull() || Element.isVolatileQualified() ||
       !Element->isObjectType() || Element->isArrayType() ||
+      (Array && !isa<IncompleteArrayType>(Array)) ||
       Layout.getSize().getQuantity() != 1 ||
       Layout.getAlignment().getQuantity() != 1)
     return std::nullopt;
-  return UtilityDefaultDeleteRecord{Definition, Element};
+  return UtilityDefaultDeleteRecord{Definition, Element, Array != nullptr};
 }
 
 std::optional<UtilityUniquePtrRecord>
@@ -2833,7 +2841,7 @@ std::optional<UtilityDefaultDeleteConstruction>
 approvedUtilityDefaultDeleteConstruction(const State &S,
                                          const SourceManager &SM,
                                          const CXXConstructExpr *Construction,
-                                         const ASTContext &Context) {
+                                         ASTContext &Context) {
   if (!Construction || Construction->isTypeDependent() ||
       Construction->isValueDependent() ||
       Construction->isInstantiationDependent() ||
@@ -2857,7 +2865,7 @@ approvedUtilityDefaultDeleteConstruction(const State &S,
   if (!Construction->getNumArgs() && Constructor->isDefaultConstructor() &&
       Constructor->isDefaulted())
     return UtilityDefaultDeleteConstruction::Default;
-  if (Construction->getNumArgs() != 1)
+  if (!Construction->getNumArgs())
     return std::nullopt;
   const auto Source = approvedUtilityDefaultDeleteRecord(
       S, SM, Construction->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
@@ -2872,10 +2880,25 @@ approvedUtilityDefaultDeleteConstruction(const State &S,
       Constructor->isImplicit() && Constructor->isTrivial() &&
       Constructor->isCopyOrMoveConstructor())
     return UtilityDefaultDeleteConstruction::CopyOrMove;
+  if (Construction->getNumArgs() != (Deleter->Array ? 2u : 1u))
+    return std::nullopt;
+  if (Deleter->Array) {
+    const auto *Default = dyn_cast<CXXDefaultArgExpr>(Construction->getArg(1));
+    const auto Enable = Constructor->getParamDecl(1)->getType();
+    const auto *Init = Default ? Default->getExpr() : nullptr;
+    if (!Default || !Enable->isPointerType() ||
+        !Enable->getPointeeType()->isVoidType() || !Init ||
+        Init->isTypeDependent() || Init->isValueDependent() ||
+        Init->isInstantiationDependent() ||
+        !Context.hasSameType(Default->getType(), Init->getType()) ||
+        !Init->isNullPointerConstant(Context,
+                                     Expr::NPC_ValueDependentIsNotNull))
+      return std::nullopt;
+  }
   const auto *Primary = Constructor->getPrimaryTemplate();
   const auto *Body = dyn_cast_or_null<CompoundStmt>(Constructor->getBody());
   if (!Primary || !Body || !Body->body_empty() ||
-      !Parameter->isLValueReferenceType() ||
+      Source->Array != Deleter->Array || !Parameter->isLValueReferenceType() ||
       !Parameter->getPointeeType().isConstQualified() ||
       !approvedStandardSDKDeclaration(S, SM, Primary) ||
       !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
@@ -2948,10 +2971,12 @@ approvedUtilityDefaultDeleteCall(const State &S, const SourceManager &SM,
                : nullptr;
   const auto *DeleteFunction =
       Deletion ? Deletion->getOperatorDelete() : nullptr;
-  if (!Deletion || Deletions != 1 || Deletion->isArrayForm() || !Argument ||
+  if (!Deletion || Deletions != 1 ||
+      Deletion->isArrayForm() != Deleter->Array || !Argument ||
       Argument->getDecl() != Method->getParamDecl(0) || !DeleteFunction ||
       isa<CXXMethodDecl>(DeleteFunction) ||
-      DeleteFunction->getOverloadedOperator() != OO_Delete ||
+      DeleteFunction->getOverloadedOperator() !=
+          (Deleter->Array ? OO_Array_Delete : OO_Delete) ||
       !DeleteFunction->getDeclContext()
            ->getRedeclContext()
            ->isTranslationUnit() ||
@@ -4157,6 +4182,36 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
   const auto *Parameter = Default ? Default->getParam() : nullptr;
   const auto *Owner =
       Parameter ? dyn_cast<FunctionDecl>(Parameter->getDeclContext()) : nullptr;
+  if (const auto *Constructor =
+          dyn_cast_or_null<CXXConstructorDecl>(Function)) {
+    const auto Deleter = approvedUtilityDefaultDeleteRecord(
+        S, SM, Constructor->getParent(), Context);
+    const auto *Primary = Constructor->getPrimaryTemplate();
+    const auto *Body = dyn_cast_or_null<CompoundStmt>(Constructor->getBody());
+    const auto *Init = Default ? Default->getExpr() : nullptr;
+    if (Default && Parameter && Owner && Deleter && Deleter->Array && Primary &&
+        Body && Body->body_empty() &&
+        Owner->getCanonicalDecl() == Constructor->getCanonicalDecl() &&
+        Index == 1 && Constructor->getNumParams() == 2 &&
+        Parameter == Constructor->getParamDecl(Index) &&
+        Parameter->getFunctionScopeIndex() == Index &&
+        !Constructor->isVariadic() && Constructor->isInlined() &&
+        approvedStandardSDKDeclaration(S, SM, Constructor) &&
+        approvedStandardSDKDeclaration(S, SM, Primary) &&
+        cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx",
+                      "__memory/unique_ptr.h") &&
+        cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
+                      "__memory/unique_ptr.h") &&
+        Parameter->getType()->isPointerType() &&
+        Parameter->getType()->getPointeeType()->isVoidType() && Init &&
+        !Init->isTypeDependent() && !Init->isValueDependent() &&
+        !Init->isInstantiationDependent() &&
+        Context.hasSameType(Default->getType(), Init->getType()) &&
+        cstddefOrigin(S, SM, Init->getExprLoc(), "libcxx",
+                      "__memory/unique_ptr.h") &&
+        Init->isNullPointerConstant(Context, Expr::NPC_ValueDependentIsNotNull))
+      return true;
+  }
   if (const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function)) {
     const auto Unique =
         approvedUtilityUniquePtrRecord(S, SM, Method->getParent(), Context);

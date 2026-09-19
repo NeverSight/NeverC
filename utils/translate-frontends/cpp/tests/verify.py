@@ -1635,12 +1635,38 @@ extern "C" int memory_allocator_heap() {
 using Size = decltype(sizeof(0));
 struct Storage { unsigned long long alignment; unsigned char bytes[64]; };
 Storage storage{};
+Storage array_storage{};
 Size allocated;
 int released;
+Size array_allocated;
+Size array_released;
+int array_released_count;
+int destroyed;
+struct Owned {
+  int value;
+  Owned(int value = 0) noexcept : value(value) {}
+  ~Owned() noexcept { destroyed = destroyed * 10 + value; }
+};
 void *operator new(Size size) { allocated = size; return storage.bytes; }
 void operator delete(void *pointer) noexcept {
   if (pointer == storage.bytes)
     ++released;
+}
+void *operator new[](Size size) {
+  array_allocated = size;
+  return array_storage.bytes;
+}
+void operator delete[](void *pointer) noexcept {
+  if (pointer == array_storage.bytes) {
+    ++array_released_count;
+    array_released = array_allocated;
+  }
+}
+void operator delete[](void *pointer, Size size) noexcept {
+  if (pointer == array_storage.bytes) {
+    ++array_released_count;
+    array_released = size;
+  }
 }
 extern "C" int memory_default_delete() {
   std::default_delete<int> deleter;
@@ -1649,7 +1675,21 @@ extern "C" int memory_default_delete() {
   std::default_delete<const int> converted(deleter);
   const int *second = new int(5);
   converted.operator()(second);
-  return allocated == sizeof(int) && released == 2 ? 0 : 1;
+  std::default_delete<Owned[]> array_deleter;
+  std::default_delete<Owned[]> copied_array(array_deleter);
+  std::default_delete<Owned[]> moved_array(
+      static_cast<std::default_delete<Owned[]> &&>(copied_array));
+  std::default_delete<const Owned[]> converted_array(moved_array);
+  const Owned *many =
+      new const Owned[3]{Owned(1), Owned(2), Owned(4)};
+  converted_array(many);
+  const Owned *nothing = nullptr;
+  converted_array(nothing);
+  return allocated == sizeof(int) && released == 2 && destroyed == 421 &&
+                 array_released_count == 1 &&
+                 array_released == array_allocated
+             ? 0
+             : 1;
 }
 extern "C" int memory_unique_ptr(int *pointer) {
   std::unique_ptr<int> empty;
@@ -1730,7 +1770,7 @@ extern "C" int memory_make_unique(int value) {
                 {"name": "nct_default_delete_storage", "type": "u8"}
             ]
         ]
-        assert len(deleter_records) == 2, data
+        assert len(deleter_records) == 4, data
         assert all(record["layout"] == {
             "size_bits": 8,
             "abi_align_bits": 8,
@@ -1741,11 +1781,14 @@ extern "C" int memory_make_unique(int value) {
         assert len(functions) == 1, data
         calls = [node for node in walk(functions[0]["body"])
                  if node.get("op") == "call"]
-        assert len(calls) == 4, data
-        assert len([call for call in calls if "target" in call]) == 2, data
+        assert len(calls) == 12, data
+        assert len([call for call in calls if "target" in call]) == 3, data
         assert not [node for node in walk(data["functions"])
                     if node.get("op") in ("mapped_call", "native_heap_call")], data
         assert data.get("memory_lifetimes") is True, data
+        assert data.get("array_cookie_abi") in {
+            "itanium", "apple-arm64", "msvc"
+        }, data
 
     def check_memory_unique_ptr(data):
         unique_records = {

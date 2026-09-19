@@ -464,26 +464,31 @@ all consumed component headers retain their upstream bytes and are authenticated
 before translation. Raw-pointer `std::pointer_traits<T *>` exposes its exact
 `pointer`, `element_type`, `difference_type` and `rebind<U>` aliases.
 
-Exact single-object `std::default_delete<T>` specializations are admitted for a
-non-volatile, non-array object type. The pinned libc++ specialization must be
-an empty, standard-layout record with no fields or bases, trivial default
-construction and destruction, and an exact one-byte size and alignment. The
-response preserves that representation as one synthetic
+Exact single-object `std::default_delete<T>` and one-dimensional array
+`std::default_delete<T[]>` specializations are admitted for a non-volatile,
+non-array object type `T`. Each pinned libc++ specialization must be an empty,
+standard-layout record with no fields or bases, trivial default construction
+and destruction, and an exact one-byte size and alignment. The response
+preserves that representation as one synthetic
 `nct_default_delete_storage: u8` field at offset zero. Default construction and
 implicit trivial copy/move construction lower directly. The pinned converting
-constructor is admitted when its pointer conversion keeps the same unqualified
-element type and only adds `const`; every source expression is still evaluated.
+constructor is admitted when both specializations have the same scalar or array
+form and its pointer conversion keeps the same unqualified element type while
+only adding `const`; every source expression is still evaluated.
 
-The exact `const noexcept` call operator must contain the authenticated single
-object `delete` body from `__memory/unique_ptr.h`. Both `deleter(pointer)` and
-explicit `deleter.operator()(pointer)` evaluate the receiver before the pointer,
-capture the pointer once, preserve the normal null check, destroy a nontrivial
-complete source object, and call the checked source-defined global delete. A
-source-defined sized delete receives the exact object size; when libc++ supplies
-only its standard sized declaration, a checked source-defined unsized delete is
-selected instead. Calls require a complete element within the target's default
-new alignment, enable `memory_lifetimes`, and introduce no libc++ runtime call,
-native-heap import or ownership object.
+The exact `const noexcept` call operator must contain the authenticated matching
+`delete` or `delete[]` body from `__memory/unique_ptr.h`. Both
+`deleter(pointer)` and explicit `deleter.operator()(pointer)` evaluate the
+receiver before the pointer, capture the pointer once and preserve the normal
+null check. Single-object calls destroy a nontrivial complete source object and
+call the checked source-defined global delete. Array calls read the checked
+native array cookie, destroy nontrivial elements in reverse order and call the
+selected checked source-defined global `delete[]`; sized deallocation receives
+the original allocation extent. When libc++ supplies only a standard sized
+declaration, a checked source-defined unsized operator is selected instead.
+Calls require a complete element within the target's default new alignment,
+enable `memory_lifetimes`, and introduce no libc++ runtime call, native-heap
+import or ownership object.
 
 Exact single-object `std::unique_ptr<T, std::default_delete<T>>`
 specializations are admitted for the same non-volatile, non-array object types.
@@ -541,7 +546,7 @@ destruction and the checked global-delete path remain shared with direct
 
 The element must be complete and within the target's default new alignment,
 and the matching global sized or unsized delete definition must be
-source-owned. Class-specific delete, array specializations, custom deleters,
+source-owned. Class-specific delete, `unique_ptr` array specializations, custom deleters,
 volatile elements, member-function addresses, const-removing or base-adjusting
 converting moves and base-adjusting heterogeneous comparisons remain rejected
 at this boundary. Array
@@ -700,8 +705,8 @@ heterogeneous, union or non-source-record uninitialized construction, function
 addresses, quoted includes, shadows and forged declarations remain rejected.
 Potentially throwing constructors, constructors with extra default arguments,
 constructor templates and unsupported source-record definitions remain
-rejected. Default-delete function addresses, array specializations, volatile
-elements and unsupported conversions remain rejected. Allocator member or
+rejected. Default-delete function addresses, multidimensional array
+specializations, volatile elements and unsupported conversions remain rejected. Allocator member or
 comparison function addresses, custom allocator types and traits, and other
 `allocator_traits` forwarding calls remain rejected. Volatile destruction
 pointers remain rejected. Allocation requires a separate default-heap and

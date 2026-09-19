@@ -148,12 +148,14 @@ exact `std::allocator<T>` and
 admitted as compile-time metadata. Exact `uses_allocator<T,
 std::allocator<U>>` identities, inherited aliases and constants also resolve
 without materializing a standard-library object. Exact single-object
-`std::default_delete<T>` specializations preserve the pinned empty one-byte
-layout through a synthetic byte carrier. Default, copy/move and admitted
-cv-converting construction lower directly. Their authenticated call operator
-evaluates the receiver and pointer once, destroys the complete object and calls
-a checked source-defined global sized or unsized delete. Array specializations,
-volatile elements and function addresses remain rejected. Exact single-object
+`std::default_delete<T>` and one-dimensional `std::default_delete<T[]>`
+specializations preserve the pinned empty one-byte layout through a synthetic
+byte carrier. Default, copy/move and admitted cv-converting construction lower
+directly. Their authenticated call operator evaluates the receiver and pointer
+once, destroys the complete object or reverse array elements, and calls a
+checked source-defined global sized or unsized delete/delete[].
+Multidimensional specializations, volatile elements and function addresses
+remain rejected. Exact single-object
 `std::unique_ptr<T, std::default_delete<T>>` specializations use an
 authenticated pointer-sized carrier. Default, null, raw-pointer, same-type move
 and const-adding converting move construction; same-type and const-adding
