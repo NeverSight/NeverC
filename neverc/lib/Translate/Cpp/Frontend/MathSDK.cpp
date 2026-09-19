@@ -6421,6 +6421,18 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            utilityScalarDirectConversion(Context, Value,
                                          Iterator->getPointeeType());
   };
+  auto NumericValueOutputParameter = [&](unsigned ValueIndex,
+                                         unsigned OutputIndex) {
+    if (ValueIndex >= Function->getNumParams() ||
+        OutputIndex >= Function->getNumParams())
+      return false;
+    auto Value = Function->getParamDecl(ValueIndex)->getType();
+    auto Output = Function->getParamDecl(OutputIndex)->getType();
+    return NumericArithmetic(Value) &&
+           utilityAlgorithmWritableScalarPointer(Context, Output) &&
+           utilityScalarDirectConversion(Context, Value,
+                                         Output->getPointeeType());
+  };
   auto NumericIntegerValueParameter = [&](unsigned Index) {
     if (Index >= Function->getNumParams() || Index >= Call->getNumArgs())
       return false;
@@ -6589,18 +6601,25 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       NumericPointerParameter(2, true) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      AlgorithmTransferParameters(0, 2) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
     auto Element = Function->getParamDecl(0)->getType()->getPointeeType();
     if (Name == "inclusive_scan") {
-      if (Call->getNumArgs() == 3 ||
-          (Call->getNumArgs() == 4 && NumericBinaryCallback(3, Element)) ||
-          (Call->getNumArgs() == 5 && NumericBinaryCallback(3, Element) &&
-           NumericValueParameter(4, 0)))
+      if (((Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
+           AlgorithmTransferParameters(0, 2) &&
+           (Call->getNumArgs() == 3 || NumericBinaryCallback(3, Element))) ||
+          (Call->getNumArgs() == 5 && NumericReductionValueParameter(4, 0) &&
+           NumericValueOutputParameter(4, 2) &&
+           NumericBinaryTransformCallback(
+               3, Function->getParamDecl(4)->getType(),
+               Function->getParamDecl(4)->getType(), Element)))
         return UtilityOperation::NumericInclusiveScan;
-    } else if (NumericValueParameter(3, 0) &&
-               (Call->getNumArgs() == 4 || NumericBinaryCallback(4, Element))) {
+    } else if (NumericReductionValueParameter(3, 0) &&
+               NumericValueOutputParameter(3, 2) &&
+               (Call->getNumArgs() == 4 ||
+                NumericBinaryTransformCallback(
+                    4, Function->getParamDecl(3)->getType(),
+                    Function->getParamDecl(3)->getType(), Element))) {
       return UtilityOperation::NumericExclusiveScan;
     }
   }
@@ -6614,17 +6633,24 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       NumericPointerParameter(2, true) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      AlgorithmTransferParameters(0, 2) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
     auto Element = Function->getParamDecl(0)->getType()->getPointeeType();
     if (Name == "transform_inclusive_scan") {
-      if (NumericBinaryCallback(3, Element) &&
-          NumericUnaryCallback(4, Element) &&
-          (Call->getNumArgs() == 5 || NumericValueParameter(5, 0)))
+      if (NumericUnaryCallback(4, Element) &&
+          ((Call->getNumArgs() == 5 && AlgorithmTransferParameters(0, 2) &&
+            NumericBinaryCallback(3, Element)) ||
+           (Call->getNumArgs() == 6 && NumericReductionValueParameter(5, 0) &&
+            NumericValueOutputParameter(5, 2) &&
+            NumericBinaryTransformCallback(
+                3, Function->getParamDecl(5)->getType(),
+                Function->getParamDecl(5)->getType(), Element))))
         return UtilityOperation::NumericTransformInclusiveScan;
-    } else if (NumericValueParameter(3, 0) &&
-               NumericBinaryCallback(4, Element) &&
+    } else if (NumericReductionValueParameter(3, 0) &&
+               NumericValueOutputParameter(3, 2) &&
+               NumericBinaryTransformCallback(
+                   4, Function->getParamDecl(3)->getType(),
+                   Function->getParamDecl(3)->getType(), Element) &&
                NumericUnaryCallback(5, Element)) {
       return UtilityOperation::NumericTransformExclusiveScan;
     }

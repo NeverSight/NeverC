@@ -2291,6 +2291,7 @@ class FunctionLowering {
       if (Operation == UtilityOperation::NumericInclusiveScan &&
           Call->getNumArgs() == 5) {
         auto Value = snapshot(expression(Call->getArg(4)), L);
+        const auto ValueType = type(Call->getArg(4)->getType(), L);
         const auto Check = labelName(), Store = labelName(), End = labelName();
         jump(Check, L);
         label(Check, L);
@@ -2304,7 +2305,7 @@ class FunctionLowering {
             Value,
             cast(emitAlgorithmCallback(json::Object(*Callback), *CallbackType,
                                        std::move(Arguments), L),
-                 ElementType, L),
+                 ValueType, L),
             L);
         assign(dereference(Output, L),
                cast(json::Object(Value), OutputElementType, L), L);
@@ -2386,11 +2387,20 @@ class FunctionLowering {
       }
       const auto FirstType = type(Call->getArg(0)->getType(), L);
       const auto OutputType = type(Call->getArg(2)->getType(), L);
-      const auto ValueType = type(Call->getArg(3)->getType(), L);
+      const auto ValueQualType = Call->getArg(3)->getType();
+      const auto ElementQualType = Call->getArg(0)->getType()->getPointeeType();
+      const auto ValueType = type(ValueQualType, L);
+      const auto ElementType = type(ElementQualType, L);
+      auto Common = utilityScalarComparisonType(A.Context, ValueQualType,
+                                                ElementQualType, false);
+      if (!Common)
+        reject(L, "exclusive scan",
+               "The accumulator and input have no arithmetic common type.");
+      const auto DefaultSumType = type(*Common, L);
       const auto OutputElementType =
           type(Call->getArg(2)->getType()->getPointeeType(), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      auto InputValue = temporary(ValueType, L);
+      auto InputValue = temporary(ElementType, L);
       auto Next = temporary(ValueType, L);
       const auto Check = labelName(), Store = labelName(), End = labelName();
       jump(Check, L);
@@ -2409,7 +2419,12 @@ class FunctionLowering {
                  ValueType, L),
             L);
       } else {
-        assign(Next, binary("+", Value, InputValue, ValueType, L), L);
+        assign(Next,
+               cast(binary("+", cast(json::Object(Value), DefaultSumType, L),
+                           cast(json::Object(InputValue), DefaultSumType, L),
+                           DefaultSumType, L),
+                    ValueType, L),
+               L);
       }
       assign(dereference(Output, L),
              cast(json::Object(Value), OutputElementType, L), L);
@@ -2452,6 +2467,9 @@ class FunctionLowering {
       const auto OutputType = type(Call->getArg(2)->getType(), L);
       const auto ElementType =
           type(Call->getArg(0)->getType()->getPointeeType(), L);
+      const auto AccumulatorType =
+          Accumulator ? type(Call->getArg(Inclusive ? 5 : 3)->getType(), L)
+                      : ElementType;
       const auto OutputElementType =
           type(Call->getArg(2)->getType()->getPointeeType(), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
@@ -2459,7 +2477,7 @@ class FunctionLowering {
         Accumulator = temporary(ElementType, L);
       auto InputValue = temporary(ElementType, L);
       auto Transformed = temporary(ElementType, L);
-      auto Next = temporary(ElementType, L);
+      auto Next = temporary(AccumulatorType, L);
       auto ApplyUnary = [&] {
         json::Array Arguments;
         Arguments.push_back(json::Object(InputValue));
@@ -2475,7 +2493,7 @@ class FunctionLowering {
         return cast(emitAlgorithmCallback(json::Object(*BinaryCallback),
                                           *BinaryCallbackType,
                                           std::move(Arguments), L),
-                    ElementType, L);
+                    AccumulatorType, L);
       };
       auto Advance = [&] {
         assign(First,

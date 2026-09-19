@@ -28053,10 +28053,10 @@ int main() {
       std::inclusive_scan(values, values, inclusive) != inclusive)
     return 3;
 
-  long exclusive[4]{};
-  long *exclusive_end = std::exclusive_scan(
+  double exclusive[4]{};
+  double *exclusive_end = std::exclusive_scan(
       (++effects, values), (++effects, values + 4), (++effects, exclusive),
-      (++effects, 5));
+      (++effects, 5L));
   if (effects != 14 || exclusive_end != exclusive + 4 ||
       exclusive[0] != 5 || exclusive[1] != 6 || exclusive[2] != 8 ||
       exclusive[3] != 11 ||
@@ -28123,6 +28123,10 @@ short multiply(float left, long right) {
 short square(double value) {
   ++calls;
   return short(int(value) * int(value));
+}
+long add_scaled(long left, double right) {
+  ++calls;
+  return left + long(right * 2.0);
 }
 int main() {
   const int values[4]{1, 2, 3, 4};
@@ -28201,6 +28205,19 @@ int main() {
       calls != 4 || in_place[0] != 0 || in_place[1] != 1 ||
       in_place[2] != 3 || in_place[3] != 6)
     return 12;
+
+  const double fractions[2]{0.5, 1.5};
+  long precise[2]{};
+  calls = 0;
+  if (std::inclusive_scan(fractions, fractions + 2, precise, add_scaled, 1L) !=
+          precise + 2 ||
+      calls != 2 || precise[0] != 2 || precise[1] != 5)
+    return 13;
+  calls = 0;
+  if (std::exclusive_scan(fractions, fractions + 2, precise, 1L,
+                          add_scaled) != precise + 2 ||
+      calls != 2 || precise[0] != 1 || precise[1] != 2)
+    return 14;
   return 0;
 }
 )cpp");
@@ -28234,11 +28251,11 @@ float half(float value) { return value / 2.0f; }
 float plus(float left, float right) { return left + right; }
 int main() {
   const int values[4]{1, 2, 3, 4};
-  long output[4]{};
+  double output[4]{};
   int effects = 0;
 
   unary_calls = binary_calls = 0;
-  long *end = std::transform_inclusive_scan(
+  double *end = std::transform_inclusive_scan(
       (++effects, values), (++effects, values + 4), (++effects, output),
       (++effects, add), (++effects, twice));
   if (effects != 5 || end != output + 4 || unary_calls != 4 ||
@@ -28249,7 +28266,7 @@ int main() {
   unary_calls = binary_calls = 0;
   end = std::transform_inclusive_scan(
       (++effects, values), (++effects, values + 4), (++effects, output),
-      (++effects, add), (++effects, twice), (++effects, 5));
+      (++effects, add), (++effects, twice), (++effects, 5L));
   if (effects != 11 || end != output + 4 || unary_calls != 4 ||
       binary_calls != 4 || output[0] != 7 || output[1] != 11 ||
       output[2] != 17 || output[3] != 25)
@@ -28258,7 +28275,7 @@ int main() {
   unary_calls = binary_calls = 0;
   end = std::transform_exclusive_scan(
       (++effects, values), (++effects, values + 4), (++effects, output),
-      (++effects, 5), (++effects, add), (++effects, twice));
+      (++effects, 5L), (++effects, add), (++effects, twice));
   if (effects != 17 || end != output + 4 || unary_calls != 4 ||
       binary_calls != 4 || output[0] != 5 || output[1] != 7 ||
       output[2] != 11 || output[3] != 17)
@@ -28267,9 +28284,9 @@ int main() {
   unary_calls = binary_calls = 0;
   if (std::transform_inclusive_scan(values, values, output, add, twice) !=
           output ||
-      std::transform_inclusive_scan(values, values, output, add, twice, 5) !=
+      std::transform_inclusive_scan(values, values, output, add, twice, 5L) !=
           output ||
-      std::transform_exclusive_scan(values, values, output, 5, add, twice) !=
+      std::transform_exclusive_scan(values, values, output, 5L, add, twice) !=
           output ||
       unary_calls != 0 || binary_calls != 0)
     return 4;
@@ -28330,14 +28347,6 @@ TEST_F(TranslateTest, CoreV2NumericTransformScansRequirePinnedScalarForms) {
        "#include <numeric>\nshort add(short a,short b){return a+b;}"
        "short twice(short a){return a*2;}int main(){short a[2]{1,2},b[2]{};"
        "return std::transform_inclusive_scan(a,a+2,b,add,twice)==b+2?0:1;}"},
-      {"heterogeneous-inclusive-init",
-       "#include <numeric>\nint add(int a,int b){return a+b;}"
-       "int twice(int a){return a*2;}int main(){int a[2]{1,2},b[2]{};"
-       "return std::transform_inclusive_scan(a,a+2,b,add,twice,0L)==b+2?0:1;}"},
-      {"heterogeneous-exclusive-init",
-       "#include <numeric>\nint add(int a,int b){return a+b;}"
-       "int twice(int a){return a*2;}int main(){int a[2]{1,2},b[2]{};"
-       "return std::transform_exclusive_scan(a,a+2,b,0L,add,twice)==b+2?0:1;}"},
       {"callable-object",
        "#include <numeric>\nstruct Add{int operator()(int a,int b)const{"
        "return a+b;}};struct Twice{int operator()(int a)const{return a*2;}};"
@@ -28437,11 +28446,6 @@ TEST_F(TranslateTest, CoreV2NumericCxx17DefaultsRequirePinnedScalarForms) {
   const Rejection Cases[] = {
       {"promoted-reduce", "#include <numeric>\nint main(){short a[2]{1,2};"
                           "return std::reduce(a,a+2);}"},
-      {"heterogeneous-reduce", "#include <numeric>\nint main(){int a[2]{1,2};"
-                               "return std::reduce(a,a+2,0L)==3?0:1;}"},
-      {"heterogeneous-exclusive-init",
-       "#include <numeric>\nint main(){int a[2]{1,2},b[2]{};"
-       "return std::exclusive_scan(a,a+2,b,0L)==b+2?0:1;}"},
   };
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);

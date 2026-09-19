@@ -419,12 +419,14 @@ ranges use admitted non-promoted built-in integers through 64 bits, `float` or
 `double`. `partial_sum`, `adjacent_difference`, `inclusive_scan` and
 `exclusive_scan` accept a writable scalar output whose element accepts a
 checked direct conversion from the input element. Default `accumulate`,
-`inner_product`, initialized `reduce` and two-range `transform_reduce` accept an
-independent arithmetic initial value, use checked common arithmetic for their
-default operations and convert each result back to the initial value type.
+`inner_product`, initialized `reduce`, two-range `transform_reduce` and
+`exclusive_scan` accept an independent arithmetic initial value, use checked
+common arithmetic for their default operations and convert each result back to
+the initial value type. Initialized scans additionally accept a writable output
+element to which that accumulator converts directly.
 `iota` likewise accepts an independent initial arithmetic type when its values
 convert directly to the output element, and increments in that initial type.
-Other initial or generated values retain the input type.
+Other generated values retain the input type.
 Two-argument `reduce` starts from the element type's zero value. The sequential
 scan operations preserve empty-range and in-place behavior. Every argument is
 captured once before the loop. Default `inner_product` and two-range
@@ -438,12 +440,15 @@ The operation-taking overloads of `accumulate`, `inner_product`, `partial_sum`,
 lower directly. The no-init and initialized `transform_inclusive_scan` forms
 and initialized `transform_exclusive_scan` are admitted on the same ranges.
 Each operation must be an ordinary function pointer whose return and by-value
-parameters are admitted scalars. The return converts directly to the range
-element type, while each parameter accepts the checked direct scalar conversion
-from an element; unary transforms take one element and every combining
-operation takes two. Callback values are captured once, empty ranges make no
-callback calls, and the sequential scan forms retain their in-place behavior.
-Scan results use the same directly convertible writable output boundary.
+parameters are admitted scalars. Uninitialized scans combine in the input
+element type. Initialized scans may use an independent arithmetic accumulator:
+the binary callback accepts that accumulator and an input or unary-transformed
+element, its return converts directly back to the accumulator, and the
+accumulator converts directly to the writable output element. Other callbacks
+return an input-range element, and each parameter accepts the checked direct
+scalar conversion from its corresponding element. Callback values are captured
+once, empty ranges make no callback calls, and the sequential scan forms retain
+their in-place behavior.
 The callback forms of `inner_product` and two-range `transform_reduce` accept a
 different numeric second-range element when the transform callback accepts the
 respective element types and returns a value directly convertible to the
@@ -457,8 +462,8 @@ representability preconditions. Each argument is evaluated once.
 
 Callable objects, reference callback parameters or results, record callback
 results, heterogeneous input ranges in callback-taking forms, heterogeneous
-initial values outside `iota` and the documented default reductions, promotable
-range integers, enums, records, custom iterators and the other range-based
+initial values outside the documented operations, promotable range integers,
+enums, records, custom iterators and the other range-based
 numeric algorithms remain outside the runtime boundary.
 Integer arguments wider than 64 bits, quoted includes, shadows, function
 addresses for the numeric algorithms themselves and forged declarations remain

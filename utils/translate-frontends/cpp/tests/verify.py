@@ -2807,14 +2807,14 @@ extern "C" int numeric_cxx17() {
   int values[4]{1, 2, 3, 4};
   long weights[4]{4, 3, 2, 1};
   long inclusive[4]{};
-  long exclusive[4]{};
+  double exclusive[4]{};
   int reduced = std::reduce(values, values + 4);
   long initialized = std::reduce(values, values + 4, 5L);
   double transformed = std::transform_reduce(values, values + 4, weights, 1.0);
   long *inclusive_end = std::inclusive_scan(
       values, values + 4, inclusive);
-  long *exclusive_end = std::exclusive_scan(
-      values, values + 4, exclusive, 5);
+  double *exclusive_end = std::exclusive_scan(
+      values, values + 4, exclusive, 5L);
   short narrow_left = -12;
   short narrow_right = 18;
   short narrow_gcd = std::gcd(narrow_left, narrow_right);
@@ -2844,7 +2844,7 @@ short square(double value) { return short(int(value) * int(value)); }
 extern "C" int numeric_callbacks() {
   int values[4]{1, 2, 3, 4};
   long weights[4]{4, 3, 2, 1};
-  long output[4]{};
+  double output[4]{};
   int result = std::accumulate(values, values + 4, 1, add);
   result += std::inner_product(
       values, values + 4, weights, 1, add, multiply);
@@ -2857,15 +2857,15 @@ extern "C" int numeric_callbacks() {
   result += std::transform_reduce(values, values + 4, 1, add, square);
   result += int(std::inclusive_scan(values, values + 4, output, add) - output);
   result += int(
-      std::inclusive_scan(values, values + 4, output, add, 1) - output);
+      std::inclusive_scan(values, values + 4, output, add, 1L) - output);
   result += int(
-      std::exclusive_scan(values, values + 4, output, 1, add) - output);
+      std::exclusive_scan(values, values + 4, output, 1L, add) - output);
   result += int(std::transform_inclusive_scan(
       values, values + 4, output, add, square) - output);
   result += int(std::transform_inclusive_scan(
-      values, values + 4, output, add, square, 1) - output);
+      values, values + 4, output, add, square, 1L) - output);
   result += int(std::transform_exclusive_scan(
-      values, values + 4, output, 1, add, square) - output);
+      values, values + 4, output, 1L, add, square) - output);
   return result;
 }
 """
@@ -2879,10 +2879,6 @@ extern "C" int numeric_callbacks() {
     for name, source in (
         ("promoted-reduce",
          '#include <numeric>\nint main(){short a[2]{1,2};return std::reduce(a,a+2); }'),
-        ("heterogeneous-exclusive-init",
-         '#include <numeric>\nint main(){int a[2]{1,2},b[2]{};return std::exclusive_scan(a,a+2,b,0L)==b+2?0:1;}'),
-        ("heterogeneous-transform-exclusive-init",
-         '#include <numeric>\nint add(int a,int b){return a+b;}int square(int a){return a*a;}int main(){int a[2]{1,2},b[2]{};return std::transform_exclusive_scan(a,a+2,b,0L,add,square)==b+2?0:1;}'),
     ):
         check("v2-numeric-cxx17-" + name, source, "TR0203",
               profile="cpp-core-v2", sdk=True)
