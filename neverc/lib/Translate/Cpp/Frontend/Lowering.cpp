@@ -2200,9 +2200,10 @@ class FunctionLowering {
         Arguments.push_back(std::move(Term));
         if (Second)
           Arguments.push_back(dereference(*Second, L));
-        Term = emitAlgorithmCallback(json::Object(*TransformCallback),
-                                     *TransformCallbackType,
-                                     std::move(Arguments), L);
+        Term = cast(emitAlgorithmCallback(json::Object(*TransformCallback),
+                                          *TransformCallbackType,
+                                          std::move(Arguments), L),
+                    ResultType, L);
       } else if (Second) {
         Term = binary("*", std::move(Term), dereference(*Second, L), ResultType,
                       L);
@@ -2212,9 +2213,10 @@ class FunctionLowering {
         Arguments.push_back(json::Object(Result));
         Arguments.push_back(std::move(Term));
         assign(Result,
-               emitAlgorithmCallback(json::Object(*ReductionCallback),
-                                     *ReductionCallbackType,
-                                     std::move(Arguments), L),
+               cast(emitAlgorithmCallback(json::Object(*ReductionCallback),
+                                          *ReductionCallbackType,
+                                          std::move(Arguments), L),
+                    ResultType, L),
                L);
       } else {
         assign(Result, binary("+", Result, std::move(Term), ResultType, L), L);
@@ -2264,10 +2266,12 @@ class FunctionLowering {
         json::Array Arguments;
         Arguments.push_back(json::Object(Value));
         Arguments.push_back(json::Object(CurrentValue));
-        assign(Value,
-               emitAlgorithmCallback(json::Object(*Callback), *CallbackType,
-                                     std::move(Arguments), L),
-               L);
+        assign(
+            Value,
+            cast(emitAlgorithmCallback(json::Object(*Callback), *CallbackType,
+                                       std::move(Arguments), L),
+                 ElementType, L),
+            L);
         assign(dereference(Output, L), Value, L);
         assign(First,
                binary("+", First, quantity(1, DifferenceType, L), FirstType, L),
@@ -2308,8 +2312,10 @@ class FunctionLowering {
         json::Array Arguments;
         Arguments.push_back(std::move(Left));
         Arguments.push_back(std::move(Right));
-        return emitAlgorithmCallback(json::Object(*Callback), *CallbackType,
-                                     std::move(Arguments), L);
+        return cast(emitAlgorithmCallback(json::Object(*Callback),
+                                          *CallbackType, std::move(Arguments),
+                                          L),
+                    ElementType, L);
       };
       if (Adjacent) {
         assign(dereference(Output, L), Combine(CurrentValue, Previous, "-"), L);
@@ -2355,10 +2361,12 @@ class FunctionLowering {
         json::Array Arguments;
         Arguments.push_back(json::Object(Value));
         Arguments.push_back(json::Object(InputValue));
-        assign(Next,
-               emitAlgorithmCallback(json::Object(*Callback), *CallbackType,
-                                     std::move(Arguments), L),
-               L);
+        assign(
+            Next,
+            cast(emitAlgorithmCallback(json::Object(*Callback), *CallbackType,
+                                       std::move(Arguments), L),
+                 ValueType, L),
+            L);
       } else {
         assign(Next, binary("+", Value, InputValue, ValueType, L), L);
       }
@@ -2411,17 +2419,19 @@ class FunctionLowering {
       auto ApplyUnary = [&] {
         json::Array Arguments;
         Arguments.push_back(json::Object(InputValue));
-        return emitAlgorithmCallback(json::Object(*UnaryCallback),
-                                     *UnaryCallbackType, std::move(Arguments),
-                                     L);
+        return cast(emitAlgorithmCallback(json::Object(*UnaryCallback),
+                                          *UnaryCallbackType,
+                                          std::move(Arguments), L),
+                    ElementType, L);
       };
       auto ApplyBinary = [&] {
         json::Array Arguments;
         Arguments.push_back(json::Object(*Accumulator));
         Arguments.push_back(json::Object(Transformed));
-        return emitAlgorithmCallback(json::Object(*BinaryCallback),
-                                     *BinaryCallbackType, std::move(Arguments),
-                                     L);
+        return cast(emitAlgorithmCallback(json::Object(*BinaryCallback),
+                                          *BinaryCallbackType,
+                                          std::move(Arguments), L),
+                    ElementType, L);
       };
       auto Advance = [&] {
         assign(First,

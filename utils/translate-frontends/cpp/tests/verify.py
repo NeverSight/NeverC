@@ -2792,18 +2792,14 @@ extern "C" int numeric_sequential() {
          '#include <numeric>\nint main(){int a[2]{};std::iota(a,a+2,1L);return 0;}'),
         ("heterogeneous-accumulate",
          '#include <numeric>\nint main(){int a[2]{1,2};return std::accumulate(a,a+2,0L)==3?0:1;}'),
-        ("mismatched-callback-accumulate",
-         '#include <numeric>\nlong add(short a,double b){return a+long(b);}int main(){int a[2]{1,2};return std::accumulate(a,a+2,0,add);}'),
         ("reference-callback-accumulate",
          '#include <numeric>\nint add(const int&a,const int&b){return a+b;}int main(){int v[2]{1,2};return std::accumulate(v,v+2,0,add);}'),
+        ("reference-callback-result",
+         '#include <numeric>\nint value;int&add(int a,int b){value=a+b;return value;}int main(){int v[2]{1,2};return std::accumulate(v,v+2,0,add);}'),
+        ("record-callback-result",
+         '#include <numeric>\nstruct R{int n;operator int()const{return n;}};R add(int a,int b){return {a+b};}int main(){int v[2]{1,2};return std::accumulate(v,v+2,0,add);}'),
         ("callable-object-accumulate",
          '#include <numeric>\nstruct Add{int operator()(int a,int b)const{return a+b;}};int main(){int v[2]{1,2};return std::accumulate(v,v+2,0,Add{});}'),
-        ("mismatched-callback-inner-product",
-         '#include <numeric>\nlong add(long a,long b){return a+b;}long mul(long a,long b){return a*b;}int main(){int a[2]{1,2};return std::inner_product(a,a+2,a,0,add,mul);}'),
-        ("mismatched-callback-partial-sum",
-         '#include <numeric>\nlong add(long a,long b){return a+b;}int main(){int a[2]{1,2},b[2]{};return std::partial_sum(a,a+2,b,add)==b+2?0:1;}'),
-        ("mismatched-callback-adjacent-difference",
-         '#include <numeric>\nlong sub(long a,long b){return a-b;}int main(){int a[2]{1,2},b[2]{};return std::adjacent_difference(a,a+2,b,sub)==b+2?0:1;}'),
         ("heterogeneous-partial-sum",
          '#include <numeric>\nint main(){int a[2]{1,2};long b[2]{};return std::partial_sum(a,a+2,b)==b+2?0:1;}'),
         ("heterogeneous-adjacent-difference",
@@ -2848,10 +2844,10 @@ extern "C" int numeric_cxx17() {
 
     numeric_callbacks_source = """\
 #include <numeric>
-int add(short a, double b) { return int(a) + int(b); }
-int subtract(double a, short b) { return int(a) - int(b); }
-int multiply(float a, long b) { return int(a) * int(b); }
-int square(double value) { return int(value) * int(value); }
+short add(short a, double b) { return short(int(a) + int(b)); }
+short subtract(double a, short b) { return short(int(a) - int(b)); }
+short multiply(float a, long b) { return short(int(a) * int(b)); }
+short square(double value) { return short(int(value) * int(value)); }
 extern "C" int numeric_callbacks() {
   int values[4]{1, 2, 3, 4};
   int weights[4]{4, 3, 2, 1};
@@ -2892,30 +2888,14 @@ extern "C" int numeric_callbacks() {
          '#include <numeric>\nint main(){short a[2]{1,2};return std::reduce(a,a+2); }'),
         ("heterogeneous-reduce",
          '#include <numeric>\nint main(){int a[2]{1,2};return std::reduce(a,a+2,0L)==3?0:1;}'),
-        ("mismatched-callback-reduce",
-         '#include <numeric>\nlong add(long a,long b){return a+b;}int main(){int a[2]{1,2};return std::reduce(a,a+2,0,add); }'),
         ("heterogeneous-transform-reduce",
          '#include <numeric>\nint main(){int a[2]{1,2};long b[2]{3,4};return std::transform_reduce(a,a+2,b,0); }'),
-        ("mismatched-callback-transform-reduce",
-         '#include <numeric>\nlong add(long a,long b){return a+b;}long mul(long a,long b){return a*b;}int main(){int a[2]{1,2};return std::transform_reduce(a,a+2,a,0,add,mul); }'),
-        ("mismatched-callback-unary-transform-reduce",
-         '#include <numeric>\nlong add(long a,long b){return a+b;}long square(long a){return a*a;}int main(){int a[2]{1,2};return std::transform_reduce(a,a+2,0,add,square); }'),
         ("heterogeneous-inclusive-scan",
          '#include <numeric>\nint main(){int a[2]{1,2};long b[2]{};return std::inclusive_scan(a,a+2,b)==b+2?0:1;}'),
-        ("mismatched-callback-inclusive-scan",
-         '#include <numeric>\nlong add(long a,long b){return a+b;}int main(){int a[2]{1,2},b[2]{};return std::inclusive_scan(a,a+2,b,add)==b+2?0:1;}'),
-        ("mismatched-callback-inclusive-scan-init",
-         '#include <numeric>\nlong add(long a,long b){return a+b;}int main(){int a[2]{1,2},b[2]{};return std::inclusive_scan(a,a+2,b,add,0)==b+2?0:1;}'),
         ("heterogeneous-exclusive-scan",
          '#include <numeric>\nint main(){int a[2]{1,2};long b[2]{};return std::exclusive_scan(a,a+2,b,0)==b+2?0:1;}'),
         ("heterogeneous-exclusive-init",
          '#include <numeric>\nint main(){int a[2]{1,2},b[2]{};return std::exclusive_scan(a,a+2,b,0L)==b+2?0:1;}'),
-        ("mismatched-callback-exclusive-scan",
-         '#include <numeric>\nlong add(long a,long b){return a+b;}int main(){int a[2]{1,2},b[2]{};return std::exclusive_scan(a,a+2,b,0,add)==b+2?0:1;}'),
-        ("mismatched-transform-scan-binary",
-         '#include <numeric>\nlong add(long a,long b){return a+b;}int square(int a){return a*a;}int main(){int a[2]{1,2},b[2]{};return std::transform_inclusive_scan(a,a+2,b,add,square)==b+2?0:1;}'),
-        ("mismatched-transform-scan-unary",
-         '#include <numeric>\nint add(int a,int b){return a+b;}long square(long a){return a*a;}int main(){int a[2]{1,2},b[2]{};return std::transform_inclusive_scan(a,a+2,b,add,square)==b+2?0:1;}'),
         ("heterogeneous-transform-exclusive-init",
          '#include <numeric>\nint add(int a,int b){return a+b;}int square(int a){return a*a;}int main(){int a[2]{1,2},b[2]{};return std::transform_exclusive_scan(a,a+2,b,0L,add,square)==b+2?0:1;}'),
     ):

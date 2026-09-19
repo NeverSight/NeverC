@@ -428,11 +428,11 @@ The operation-taking overloads of `accumulate`, `inner_product`, `partial_sum`,
 lower directly. The no-init and initialized `transform_inclusive_scan` forms
 and initialized `transform_exclusive_scan` are admitted on the same ranges.
 Each operation must be an ordinary function pointer whose return and by-value
-parameters are admitted scalars. The return exactly matches the range element
-type, while each parameter accepts the checked direct scalar conversion from an
-element; unary transforms take one element and every combining operation takes
-two. Callback values are captured once, empty ranges make no callback calls,
-and the sequential scan forms retain their in-place behavior.
+parameters are admitted scalars. The return converts directly to the range
+element type, while each parameter accepts the checked direct scalar conversion
+from an element; unary transforms take one element and every combining
+operation takes two. Callback values are captured once, empty ranges make no
+callback calls, and the sequential scan forms retain their in-place behavior.
 
 `gcd` and `lcm` accept any non-boolean built-in integer argument combination
 through 64 bits and return libc++'s exact `common_type_t` result. Signed inputs
@@ -440,9 +440,9 @@ are converted to unsigned magnitudes before the Euclidean loop, so supported
 negative, narrow and mixed-signedness calls retain the standard result and
 representability preconditions. Each argument is evaluated once.
 
-Callable objects, reference callback parameters, converted callback results,
-heterogeneous range values, promotable range integers, enums, records, custom
-iterators and the other range-based numeric algorithms remain outside the
+Callable objects, reference callback parameters or results, record callback
+results, heterogeneous range values, promotable range integers, enums, records,
+custom iterators and the other range-based numeric algorithms remain outside the
 runtime boundary.
 Integer arguments wider than 64 bits, quoted includes, shadows, function
 addresses for the numeric algorithms themselves and forged declarations remain

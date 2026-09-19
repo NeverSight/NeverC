@@ -6296,7 +6296,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return false;
     Element = Element.getUnqualifiedType();
     if (!NumericArithmetic(Element) ||
-        !Same(Prototype->getReturnType(), Element))
+        !utilityScalarDirectConversion(Context, Prototype->getReturnType(),
+                                       Element))
       return false;
     for (QualType Parameter : Prototype->param_types())
       if (Parameter->isReferenceType() ||

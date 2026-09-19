@@ -136,12 +136,12 @@ core-v2 target. The exact default `iota`, `accumulate`, `inner_product`,
 scalar arithmetic pointer ranges. Their operation-taking overloads, including
 unary `transform_reduce`, initialized `inclusive_scan`, both
 `transform_inclusive_scan` forms and `transform_exclusive_scan`, accept
-function pointers with exact element results and directly convertible by-value
-scalar parameters. `gcd` and `lcm` lower for non-boolean built-in integer
+function pointers with directly convertible scalar results and by-value scalar
+parameters. `gcd` and `lcm` lower for non-boolean built-in integer
 combinations through 64 bits. None of these operations requires platform
-headers or a libc++ runtime. Callable objects, reference parameters, converted
-callback results and the remaining C++17 numeric components stay outside the
-admitted runtime boundary.
+headers or a libc++ runtime. Callable objects, reference parameters or results,
+record callback results and the remaining C++17 numeric components stay outside
+the admitted runtime boundary.
 The `<new>` surface has a 37-file libc++/resource closure on every core-v2
 target. Its exact public C++17 header exposes `std::nothrow_t`, the scalar
 `std::align_val_t` enum and folded hardware interference-size constants.

@@ -27981,7 +27981,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2NumericSequentialRequiresExactScalarForms) {
+TEST_F(TranslateTest, CoreV2NumericSequentialRequiresPinnedScalarForms) {
   struct Rejection {
     const char *Name;
     const char *Source;
@@ -27994,29 +27994,21 @@ TEST_F(TranslateTest, CoreV2NumericSequentialRequiresExactScalarForms) {
       {"heterogeneous-accumulate",
        "#include <numeric>\nint main(){int a[2]{1,2};"
        "return std::accumulate(a,a+2,0L)==3?0:1;}"},
-      {"mismatched-callback-accumulate",
-       "#include <numeric>\nlong add(short a,double b){return a+long(b);}"
-       "int main(){int a[2]{1,2};return std::accumulate(a,a+2,0,add);}"},
       {"reference-callback-accumulate",
        "#include <numeric>\nint add(const int&a,const int&b){return a+b;}"
+       "int main(){int v[2]{1,2};return std::accumulate(v,v+2,0,add);}"},
+      {"reference-callback-result",
+       "#include <numeric>\nint value;int&add(int a,int b){value=a+b;return "
+       "value;}"
+       "int main(){int v[2]{1,2};return std::accumulate(v,v+2,0,add);}"},
+      {"record-callback-result",
+       "#include <numeric>\nstruct R{int n;operator int()const{return n;}};"
+       "R add(int a,int b){return {a+b};}"
        "int main(){int v[2]{1,2};return std::accumulate(v,v+2,0,add);}"},
       {"callable-object-accumulate",
        "#include <numeric>\nstruct Add{int operator()(int a,int b)const{"
        "return a+b;}};int main(){int v[2]{1,2};"
        "return std::accumulate(v,v+2,0,Add{});}"},
-      {"mismatched-callback-inner-product",
-       "#include <numeric>\nlong add(long a,long b){return a+b;}"
-       "long mul(long a,long b){return a*b;}"
-       "int main(){int a[2]{1,2};return "
-       "std::inner_product(a,a+2,a,0,add,mul);}"},
-      {"mismatched-callback-partial-sum",
-       "#include <numeric>\nlong add(long a,long b){return a+b;}"
-       "int main(){int a[2]{1,2},b[2]{};return "
-       "std::partial_sum(a,a+2,b,add)==b+2?0:1;}"},
-      {"mismatched-callback-adjacent-difference",
-       "#include <numeric>\nlong sub(long a,long b){return a-b;}"
-       "int main(){int a[2]{1,2},b[2]{};return "
-       "std::adjacent_difference(a,a+2,b,sub)==b+2?0:1;}"},
       {"heterogeneous-partial-sum",
        "#include <numeric>\nint main(){int a[2]{1,2};long b[2]{};"
        "return std::partial_sum(a,a+2,b)==b+2?0:1;}"},
@@ -28125,10 +28117,22 @@ TEST_F(TranslateTest,
   writeFile(Source, R"cpp(
 #include <numeric>
 int calls;
-int add(short left, double right) { ++calls; return int(left) + int(right); }
-int subtract(double left, short right) { ++calls; return int(left) - int(right); }
-int multiply(float left, long right) { ++calls; return int(left) * int(right); }
-int square(double value) { ++calls; return int(value) * int(value); }
+short add(short left, double right) {
+  ++calls;
+  return short(int(left) + int(right));
+}
+short subtract(double left, short right) {
+  ++calls;
+  return short(int(left) - int(right));
+}
+short multiply(float left, long right) {
+  ++calls;
+  return short(int(left) * int(right));
+}
+short square(double value) {
+  ++calls;
+  return short(int(value) * int(value));
+}
 int main() {
   const int values[4]{1, 2, 3, 4};
   const int weights[4]{4, 3, 2, 1};
@@ -28230,13 +28234,13 @@ TEST_F(TranslateTest, CoreV2NumericTransformScansRunAtBothOptimizations) {
 #include <numeric>
 int unary_calls;
 int binary_calls;
-int twice(double value) { ++unary_calls; return int(value) * 2; }
-int add(short left, double right) {
+short twice(double value) { ++unary_calls; return short(int(value) * 2); }
+short add(short left, double right) {
   ++binary_calls;
-  return int(left) + int(right);
+  return short(int(left) + int(right));
 }
-double half(double value) { return value / 2.0; }
-double plus(double left, double right) { return left + right; }
+float half(float value) { return value / 2.0f; }
+float plus(float left, float right) { return left + right; }
 int main() {
   const int values[4]{1, 2, 3, 4};
   int output[4]{};
@@ -28325,7 +28329,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2NumericTransformScansRequireExactScalarForms) {
+TEST_F(TranslateTest, CoreV2NumericTransformScansRequirePinnedScalarForms) {
   struct Rejection {
     const char *Name;
     const char *Source;
@@ -28338,14 +28342,6 @@ TEST_F(TranslateTest, CoreV2NumericTransformScansRequireExactScalarForms) {
       {"heterogeneous-output",
        "#include <numeric>\nint add(int a,int b){return a+b;}"
        "int twice(int a){return a*2;}int main(){int a[2]{1,2};long b[2]{};"
-       "return std::transform_inclusive_scan(a,a+2,b,add,twice)==b+2?0:1;}"},
-      {"mismatched-binary",
-       "#include <numeric>\nlong add(long a,long b){return a+b;}"
-       "int twice(int a){return a*2;}int main(){int a[2]{1,2},b[2]{};"
-       "return std::transform_inclusive_scan(a,a+2,b,add,twice)==b+2?0:1;}"},
-      {"mismatched-unary",
-       "#include <numeric>\nint add(int a,int b){return a+b;}"
-       "long twice(long a){return a*2;}int main(){int a[2]{1,2},b[2]{};"
        "return std::transform_inclusive_scan(a,a+2,b,add,twice)==b+2?0:1;}"},
       {"heterogeneous-inclusive-init",
        "#include <numeric>\nint add(int a,int b){return a+b;}"
@@ -28446,7 +28442,7 @@ TEST_F(TranslateTest, CoreV2NumericGcdLcmRejectsUnsupportedForms) {
   expectNoArtifacts(AddressOutput);
 }
 
-TEST_F(TranslateTest, CoreV2NumericCxx17DefaultsRequireExactScalarForms) {
+TEST_F(TranslateTest, CoreV2NumericCxx17DefaultsRequirePinnedScalarForms) {
   struct Rejection {
     const char *Name;
     const char *Source;
@@ -28456,43 +28452,19 @@ TEST_F(TranslateTest, CoreV2NumericCxx17DefaultsRequireExactScalarForms) {
                           "return std::reduce(a,a+2);}"},
       {"heterogeneous-reduce", "#include <numeric>\nint main(){int a[2]{1,2};"
                                "return std::reduce(a,a+2,0L)==3?0:1;}"},
-      {"mismatched-callback-reduce",
-       "#include <numeric>\nlong add(long a,long b){return a+b;}"
-       "int main(){int a[2]{1,2};return std::reduce(a,a+2,0,add);}"},
       {"heterogeneous-transform-reduce",
        "#include <numeric>\nint main(){int a[2]{1,2};long b[2]{3,4};"
        "return std::transform_reduce(a,a+2,b,0);}"},
-      {"mismatched-callback-transform-reduce",
-       "#include <numeric>\nlong add(long a,long b){return a+b;}"
-       "long mul(long a,long b){return a*b;}"
-       "int main(){int a[2]{1,2};return "
-       "std::transform_reduce(a,a+2,a,0,add,mul);}"},
-      {"mismatched-callback-unary-transform-reduce",
-       "#include <numeric>\nlong add(long a,long b){return a+b;}"
-       "long square(long a){return a*a;}"
-       "int main(){int a[2]{1,2};return "
-       "std::transform_reduce(a,a+2,0,add,square);}"},
       {"heterogeneous-inclusive-scan",
        "#include <numeric>\nint main(){int a[2]{1,2};long b[2]{};"
        "return std::inclusive_scan(a,a+2,b)==b+2?0:1;}"},
-      {"mismatched-callback-inclusive-scan",
-       "#include <numeric>\nlong add(long a,long b){return a+b;}"
-       "int main(){int a[2]{1,2},b[2]{};"
-       "return std::inclusive_scan(a,a+2,b,add)==b+2?0:1;}"},
-      {"mismatched-callback-inclusive-scan-init",
-       "#include <numeric>\nlong add(long a,long b){return a+b;}"
-       "int main(){int a[2]{1,2},b[2]{};"
-       "return std::inclusive_scan(a,a+2,b,add,0)==b+2?0:1;}"},
       {"heterogeneous-exclusive-scan",
        "#include <numeric>\nint main(){int a[2]{1,2};long b[2]{};"
        "return std::exclusive_scan(a,a+2,b,0)==b+2?0:1;}"},
       {"heterogeneous-exclusive-init",
        "#include <numeric>\nint main(){int a[2]{1,2},b[2]{};"
        "return std::exclusive_scan(a,a+2,b,0L)==b+2?0:1;}"},
-      {"mismatched-callback-exclusive-scan",
-       "#include <numeric>\nlong add(long a,long b){return a+b;}"
-       "int main(){int a[2]{1,2},b[2]{};"
-       "return std::exclusive_scan(a,a+2,b,0,add)==b+2?0:1;}"}};
+  };
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
     const auto Source =

@@ -68,7 +68,7 @@ algorithm surface. The exact
 [`<numeric>`](../docs/cpp-core-v2.md#numeric-header-from-numeric) header is also
 authenticated; its sequential scalar-pointer operations, default C++17
 reductions and scans, function-pointer operations with directly convertible
-scalar parameters and exact results including transformed scans, and integer
+scalar parameters and results including transformed scans, and integer
 `gcd`/`lcm` lower directly. The exact
 [`<new>`](../docs/cpp-core-v2.md#new-header-from-new) header is also
 authenticated; its allocation metadata resolves at compile time and exact
