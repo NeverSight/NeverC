@@ -28658,6 +28658,84 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2AlgorithmDefaultObjectPointersRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-default-object-pointers.cpp");
+  const auto Output = tmpFile("algorithm-default-object-pointers.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+int main() {
+  int values[8]{};
+  int *pointers[6]{values + 5, values + 1, values + 4,
+                   values + 2, values + 0, values + 3};
+  std::sort(pointers, pointers + 6);
+  for (int i = 0; i != 6; ++i)
+    if (pointers[i] != values + i)
+      return 1;
+  if (!std::is_sorted(pointers, pointers + 6) ||
+      std::lower_bound(pointers, pointers + 6, values + 3) != pointers + 3 ||
+      std::upper_bound(pointers, pointers + 6, values + 3) != pointers + 4 ||
+      !std::binary_search(pointers, pointers + 6, values + 4))
+    return 2;
+  auto range = std::equal_range(pointers, pointers + 6, values + 2);
+  if (range.first != pointers + 2 || range.second != pointers + 3 ||
+      std::min_element(pointers, pointers + 6) != pointers ||
+      std::max_element(pointers, pointers + 6) != pointers + 5)
+    return 3;
+
+  int *left = values + 2;
+  int *right = values + 6;
+  if (&std::min(left, right) != &left || &std::max(left, right) != &right ||
+      std::clamp(values + 4, left, right) != values + 4)
+    return 4;
+
+  int *first[3]{values + 0, values + 2, values + 5};
+  const int *second[3]{values + 1, values + 3, values + 4};
+  const int *merged[6]{};
+  if (std::merge(first, first + 3, second, second + 3, merged) != merged + 6)
+    return 5;
+  for (int i = 0; i != 6; ++i)
+    if (merged[i] != values + i)
+      return 6;
+  if (!std::lexicographical_compare(first, first + 3, second, second + 3) ||
+      std::includes(first, first + 3, second, second + 1))
+    return 7;
+
+  int *heap[5]{values + 1, values + 4, values + 0, values + 3, values + 2};
+  std::make_heap(heap, heap + 5);
+  if (!std::is_heap(heap, heap + 5) || heap[0] != values + 4)
+    return 8;
+  std::sort_heap(heap, heap + 5);
+  for (int i = 0; i != 5; ++i)
+    if (heap[i] != values + i)
+      return 9;
+
+  int *permutation[3]{values + 0, values + 1, values + 2};
+  if (!std::next_permutation(permutation, permutation + 3) ||
+      permutation[0] != values || permutation[1] != values + 2 ||
+      permutation[2] != values + 1 ||
+      !std::prev_permutation(permutation, permutation + 3) ||
+      permutation[0] != values || permutation[1] != values + 1 ||
+      permutation[2] != values + 2)
+    return 10;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("algorithm-default-object-pointers" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmReadOnlyRequiresPinnedPointerForms) {
   struct Rejection {
     const char *Name;
@@ -30177,9 +30255,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmExtremaRequirePinnedScalarForms) {
     const char *Code = "TR0203";
   };
   const Rejection Cases[] = {
-      {"pointer-max",
-       "#include <algorithm>\nint main(){int a[2]{};int*p=a;int*q=a+1;"
-       "return std::max(p,q)==q?0:1;}"},
       {"record-minmax-element",
        "#include <algorithm>\nstruct R{int n;};"
        "bool operator<(const R&a,const R&b){return a.n<b.n;}"
@@ -30449,9 +30524,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmHeapRequirePinnedScalarForms) {
     const char *Source;
   };
   const Rejection Cases[] = {
-      {"pointer-query",
-       "#include <algorithm>\nint main(){int a=1,b=2;int*p[2]{&a,&b};"
-       "return std::is_heap(p,p+2)?0:1;}"},
       {"record-sort",
        "#include <algorithm>\nstruct R{int n;};"
        "bool operator<(const R&a,const R&b){return a.n<b.n;}"
@@ -30792,9 +30864,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmOrderingRequirePinnedScalarForms) {
        "#include <algorithm>\nenum E{low,high};"
        "bool operator<(E,E){return true;}"
        "int main(){E a[2]{high,low};std::sort(a,a+2);return 0;}"},
-      {"pointer-sort",
-       "#include <algorithm>\nint main(){int a=1,b=2;int*p[2]{&a,&b};"
-       "std::sort(p,p+2);return 0;}"},
       {"record-nth",
        "#include <algorithm>\nstruct R{int n;};"
        "bool operator<(const R&a,const R&b){return a.n<b.n;}"
@@ -31404,9 +31473,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmPermutationRequirePinnedScalarForms) {
     const char *Source;
   };
   const Rejection Cases[] = {
-      {"pointer-prev",
-       "#include <algorithm>\nint main(){int a=1,b=2;int*p[2]{&a,&b};"
-       "return std::prev_permutation(p,p+2)?0:1;}"},
       {"record-prev", "#include <algorithm>\nstruct R{int n;};"
                       "bool operator<(const R&a,const R&b){return a.n<b.n;}"
                       "int main(){R a[2]{{1},{2}};"

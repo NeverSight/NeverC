@@ -5992,10 +5992,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                        ->getType()
                        ->getPointeeType()
                        .getUnqualifiedType();
-    return ((Element->isIntegralOrEnumerationType() &&
-             Context.getTypeSize(Element) <= 64) ||
-            Element->isSpecificBuiltinType(BuiltinType::Float) ||
-            Element->isSpecificBuiltinType(BuiltinType::Double)) &&
+    return utilityScalarComparisonType(Context, Element, Element, true)
+               .has_value() &&
            !utilityEnumHasSourceOperator(S, SM, Context, Element, OO_Less);
   };
   auto AlgorithmOrderedParameters = [&](unsigned LeftIndex,
@@ -6251,10 +6249,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return false;
     auto Parameter = Function->getParamDecl(Index)->getType();
     auto Element = Parameter->getPointeeType().getUnqualifiedType();
-    return ((Element->isIntegralOrEnumerationType() &&
-             Context.getTypeSize(Element) <= 64) ||
-            Element->isSpecificBuiltinType(BuiltinType::Float) ||
-            Element->isSpecificBuiltinType(BuiltinType::Double)) &&
+    return utilityScalarComparisonType(Context, Element, Element, true)
+               .has_value() &&
            !utilityEnumHasSourceOperator(S, SM, Context, Element, OO_Less);
   };
   auto AlgorithmCallbackPrototype =

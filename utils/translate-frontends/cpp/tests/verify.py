@@ -2944,6 +2944,43 @@ extern "C" int algorithm_default_enums() {
               algorithm_default_enums_source, profile="cpp-core-v2",
               target=target, sdk=True)
 
+    algorithm_default_object_pointers_source = """\
+#include <algorithm>
+extern "C" int algorithm_default_object_pointers() {
+  int values[7]{};
+  int *pointers[5]{values + 4, values + 0, values + 3,
+                   values + 1, values + 2};
+  std::sort(pointers, pointers + 5);
+  int **lower = std::lower_bound(pointers, pointers + 5, values + 2);
+  int **minimum = std::min_element(pointers, pointers + 5);
+  int *first[2]{values + 0, values + 3};
+  const int *second[2]{values + 1, values + 2};
+  const int *merged[4]{};
+  const int **end = std::merge(first, first + 2, second, second + 2, merged);
+  std::make_heap(pointers, pointers + 5);
+  bool heap = std::is_heap(pointers, pointers + 5);
+  std::sort_heap(pointers, pointers + 5);
+  bool next = std::next_permutation(pointers, pointers + 5);
+  int *left = values + 1;
+  int *right = values + 5;
+  int *selected = std::max(left, right);
+  return static_cast<int>((lower - pointers) + (minimum - pointers) +
+                          (end - merged) + (selected - values)) +
+         (heap ? 1 : 0) + (next ? 1 : 0);
+}
+"""
+    algorithm_default_object_pointers = check(
+        "v2-algorithm-default-object-pointers",
+        algorithm_default_object_pointers_source,
+        profile="cpp-core-v2", sdk=True)
+    assert len(algorithm_default_object_pointers["sdk_dependencies"]) == 354, algorithm_default_object_pointers
+    assert not [node for node in walk(algorithm_default_object_pointers["functions"])
+                if node.get("op") in ("call", "mapped_call", "indirect_call")], algorithm_default_object_pointers
+    for target in sdk_targets:
+        check("v2-algorithm-default-object-pointers-" + target,
+              algorithm_default_object_pointers_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+
     algorithm_read_only_source = """\
 #include <algorithm>
 extern "C" int algorithm_read_only(int *values, long *other, short value) {

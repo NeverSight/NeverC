@@ -960,8 +960,9 @@ The exact two-argument `std::min_element`, `std::max_element`, `std::is_sorted`
 and `std::is_sorted_until` templates and exact three-argument
 `std::lower_bound`, `std::upper_bound`, `std::equal_range` and
 `std::binary_search` templates lower for raw pointers to built-in integer,
-enum, `float` or `double` elements. The searched value may use a different arithmetic
-type when both have a checked ordered common type. Binary bounds use the target
+enum, `float`, `double` or complete non-function object-pointer elements. The
+searched value may use a different compatible scalar type when both have a
+checked ordered common type. Binary bounds use the target
 `ptrdiff_t` and preserve logarithmic bisection; `equal_range` returns an
 authenticated pair of the lower and upper pointers. Enum forms require built-in
 ordering with no source `operator<` accepting the enum.
@@ -984,7 +985,8 @@ outside this boundary.
 
 The exact two-argument `std::min` and `std::max`, three-argument `std::clamp`,
 two-argument `std::minmax` and two-iterator `std::minmax_element` templates use
-the same built-in arithmetic-or-enum ordering boundary. `min`, `max` and `clamp`
+the same built-in arithmetic, enum or complete object-pointer ordering boundary.
+`min`, `max` and `clamp`
 preserve the selected const-reference identity. `minmax` constructs only its
 exact authenticated `std::pair<const T&, const T&>` result; its fields retain
 the two argument referents on every pointer width. `minmax_element` returns an
@@ -1004,7 +1006,7 @@ rejected.
 
 The exact two-iterator `std::is_heap`, `std::is_heap_until`, `std::make_heap`,
 `std::push_heap`, `std::pop_heap` and `std::sort_heap` templates use the same
-built-in arithmetic-or-enum ordering boundary. Heap queries accept const or writable
+built-in arithmetic, enum or complete object-pointer ordering boundary. Heap queries accept const or writable
 raw pointers; heap mutation requires a writable range. `is_heap_until` returns
 the first child greater than its parent. `make_heap` builds a max heap,
 `push_heap` filters the appended final element upward, `pop_heap` moves the
@@ -1024,8 +1026,8 @@ Reference callback signatures, non-boolean results, variadic functions,
 callable objects and record elements remain rejected.
 
 The exact default-order `std::sort`, `std::partial_sort`,
-`std::partial_sort_copy` and `std::nth_element` templates use that arithmetic
-or enum ordering boundary. `sort`, `partial_sort` and `nth_element` require writable
+`std::partial_sort_copy` and `std::nth_element` templates use that arithmetic,
+enum or complete object-pointer ordering boundary. `sort`, `partial_sort` and `nth_element` require writable
 same-type ranges. `partial_sort_copy` accepts a const or writable input range
 and a writable scalar output whose element accepts a checked direct conversion
 from the input, returning the advanced output pointer. `sort` uses worst-case
@@ -1047,7 +1049,8 @@ once. Empty selected prefixes and outputs make no callback calls, and the
 three-way `nth_element` partition still terminates directly on equivalent
 values. Unsupported callbacks and record elements remain rejected.
 
-The exact `std::stable_sort` overloads use the same default arithmetic-or-enum and
+The exact `std::stable_sort` overloads use the same default arithmetic, enum or
+complete object-pointer ordering and
 checked function-pointer comparator boundaries on writable scalar ranges. An in-place
 bottom-up merge retains the relative order of equivalent elements without a
 heap or libc++ runtime dependency and performs `O(N log N)` comparisons. The
@@ -1060,12 +1063,14 @@ The exact `std::inplace_merge` overloads reuse the same stable in-place merge
 for two adjacent, already ordered writable scalar ranges. Equivalent elements
 from the first half remain before equivalent elements from the second half,
 and at most `N - 1` comparisons are made. An empty half performs no comparison.
-The default overload uses built-in arithmetic-or-enum ordering; the comparator overload
+The default overload uses built-in arithmetic, enum or complete object-pointer
+ordering; the comparator overload
 also admits enum and object-pointer elements through the checked callback
 boundary.
 
 The exact default-order `std::next_permutation` and `std::prev_permutation`
-templates use the same writable built-in arithmetic-or-enum pointer boundary. They
+templates use the same writable built-in arithmetic, enum or complete
+object-pointer element boundary. They
 find the rightmost movable pivot, exchange it with the rightmost qualifying
 element, reverse the suffix and return whether a lexicographically adjacent
 permutation existed. Empty and single-element ranges return false. A range at
@@ -1101,8 +1106,9 @@ from both inputs and return its advanced pointer. Merge keeps equivalent
 elements from the first range first; set operations preserve their
 standard maximum, minimum and excess duplicate counts. Default-order enum ranges
 must share the same enum type and have no source `operator<` accepting that
-enum. Pointer elements remain outside this boundary because their ordering can
-be non-portable.
+enum. Object-pointer ranges use a checked compatible common pointer type; as
+with source C++, relational ordering is guaranteed for pointers into the same
+complete object or array.
 
 The corresponding comparator overloads admit heterogeneous scalar ranges with
 a checked function pointer whose two by-value scalar parameters are reachable
