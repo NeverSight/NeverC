@@ -822,9 +822,11 @@ The exact public `std::copy`, `std::copy_n`, `std::move`,
 `std::iter_swap`, `std::swap_ranges`, `std::reverse`, `std::reverse_copy`,
 `std::rotate` and `std::rotate_copy` templates directly lower for non-volatile
 raw object pointer ranges of admitted scalar elements. Copy and move outputs
-accept checked direct scalar conversions from their input element. Other
-operations retain the same unqualified element type. Transfer and fill
-algorithms require a writable output element;
+accept checked direct scalar conversions from their input element. Swap and
+in-place reorder operations retain the same unqualified element type. Fill
+values may use a different scalar type with a checked direct conversion to the
+writable output element. Transfer and fill algorithms require a writable output
+element;
 `iter_swap` and `swap_ranges` require both mutated ranges to be writable, and
 `reverse` and `rotate` require a writable input range. `copy_n` and `fill_n`
 accept integral or non-scoped enum counts whose promoted type is at most 64
@@ -889,13 +891,14 @@ unary predicate boundary. Copy variants require a writable output whose element
 accepts a checked direct scalar conversion from the input;
 `remove_if` and `replace_if` require a writable input range. `copy_if` and both
 remove forms preserve the relative order of retained elements and return the
-advanced output or new logical end. The replace
-forms require an exact scalar `const` value reference, retain that reference
-through the loop, and therefore observe changes when a callback mutates an
-aliased replacement object. `replace_copy_if` writes exactly one output per input
-and returns the advanced output. Every range, output, callback and replacement
-argument is evaluated once; empty ranges return their unadvanced iterator and do
-not invoke the predicate.
+advanced output or new logical end. The replace forms accept a scalar `const`
+value reference with a checked direct conversion to the mutated input or copy
+output element, retain that reference through the loop, and therefore observe
+changes when a callback mutates an aliased replacement object.
+`replace_copy_if` writes exactly one output per input and returns the advanced
+output. Every range, output, callback and replacement argument is evaluated
+once; empty ranges return their unadvanced iterator and do not invoke the
+predicate.
 
 The exact `std::is_partitioned`, `std::partition`, `std::stable_partition`,
 `std::partition_copy` and `std::partition_point` templates use that predicate

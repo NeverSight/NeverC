@@ -2840,6 +2840,8 @@ class FunctionLowering {
           address(lvalue(Call->getArg(2)), Call->getArg(2)->getType(), L), L);
       const auto Check = labelName(), Store = labelName(), End = labelName();
       const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto OutputElementType =
+          type(Call->getArg(0)->getType()->getPointeeType(), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const bool MemoryConstruction =
           Operation == UtilityOperation::MemoryUninitializedFill ||
@@ -2864,7 +2866,8 @@ class FunctionLowering {
         constructMemorySource(dereference(Current, L), ElementType, Constructor,
                               json::Object(ValueAddress), L);
       else
-        assign(dereference(Current, L), dereference(ValueAddress, L), L);
+        assign(dereference(Current, L),
+               cast(dereference(ValueAddress, L), OutputElementType, L), L);
       assign(
           Current,
           binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),
@@ -5411,6 +5414,8 @@ class FunctionLowering {
           address(lvalue(Call->getArg(3)), Call->getArg(3)->getType(), L), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto ElementType =
+          type(Call->getArg(0)->getType()->getPointeeType(), L);
       const auto Check = labelName(), Test = labelName();
       const auto Replace = labelName(), Advance = labelName();
       const auto End = labelName();
@@ -5425,7 +5430,8 @@ class FunctionLowering {
         branch(std::move(Selected), Replace, Advance, L);
       }
       label(Replace, L);
-      assign(dereference(Current, L), dereference(ValueAddress, L), L);
+      assign(dereference(Current, L),
+             cast(dereference(ValueAddress, L), ElementType, L), L);
       jump(Advance, L);
       label(Advance, L);
       assign(

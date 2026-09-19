@@ -6702,7 +6702,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Function->getParamDecl(1)->getType()) &&
       utilityAlgorithmWritableScalarPointer(
           Context, Function->getParamDecl(0)->getType()) &&
-      AlgorithmValueParameter(2, 0) &&
+      AlgorithmTransferValueParameter(2, 0) &&
       Function->getReturnType()->isVoidType() &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmFill;
@@ -6711,7 +6711,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Call->isPRValue() && AlgorithmPointerParameter(0) &&
       utilityAlgorithmWritableScalarPointer(
           Context, Function->getParamDecl(0)->getType()) &&
-      AlgorithmCountParameter(1) && AlgorithmValueParameter(2, 0) &&
+      AlgorithmCountParameter(1) && AlgorithmTransferValueParameter(2, 0) &&
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmFillN;
@@ -7425,7 +7425,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Function->getParamDecl(1)->getType()) &&
       utilityAlgorithmWritableScalarPointer(
           Context, Function->getParamDecl(0)->getType()) &&
-      AlgorithmUnaryPredicateParameter(2, 0) && AlgorithmValueParameter(3, 0) &&
+      AlgorithmUnaryPredicateParameter(2, 0) &&
+      AlgorithmTransferValueParameter(3, 0) &&
       Function->getReturnType()->isVoidType() &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmReplaceIf;
@@ -7436,7 +7437,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       AlgorithmTransferParameters(0, 2) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      AlgorithmUnaryPredicateParameter(3, 0) && AlgorithmValueParameter(4, 0) &&
+      AlgorithmUnaryPredicateParameter(3, 0) &&
+      AlgorithmTransferValueParameter(4, 2) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmReplaceCopyIf;

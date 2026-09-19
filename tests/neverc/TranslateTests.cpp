@@ -28695,13 +28695,14 @@ enum Count : unsigned int { two = 2 };
 int main() {
   int values[5]{1, 2, 3, 4, 5};
   int effects = 0;
-  int fill_value = 9;
+  long fill_value = 9;
   std::fill((++effects, values + 1), (++effects, values + 4),
             (++effects, fill_value));
   if (effects != 3 || values[0] != 1 || values[1] != 9 ||
       values[2] != 9 || values[3] != 9 || values[4] != 5)
     return 1;
-  if (std::fill_n(values, two, 7) != values + 2 ||
+  short fill_n_value = 7;
+  if (std::fill_n(values, two, fill_n_value) != values + 2 ||
       values[0] != 7 || values[1] != 7)
     return 2;
   short negative = -3;
@@ -31740,7 +31741,7 @@ TEST_F(TranslateTest, CoreV2AlgorithmPredicateMutationRunAtBothOptimizations) {
   writeFile(Source, R"cpp(
 #include <algorithm>
 int calls;
-int replacement_value;
+long replacement_value;
 bool even(long n) { ++calls; return n % 2 == 0; }
 bool odd_update(double n) {
   ++calls;
@@ -31800,11 +31801,11 @@ int main() {
       replaced[0] != 7 || replaced[1] != 9 || replaced[2] != 9)
     return 5;
 
-  long replacement_copy[4]{};
+  double replacement_copy[4]{};
   int replacement_input[4]{1, 2, 3, 4};
   replacement_value = 8;
   calls = 0;
-  long *replacement_end = std::replace_copy_if(
+  double *replacement_end = std::replace_copy_if(
       replacement_input, replacement_input + 4, replacement_copy, odd_update,
       replacement_value);
   if (replacement_end != replacement_copy + 4 || calls != 4 ||
@@ -31870,19 +31871,19 @@ int main() {
 }
 
 TEST_F(TranslateTest,
-       CoreV2AlgorithmPredicateMutationRequiresExactScalarForms) {
+       CoreV2AlgorithmPredicateMutationRequiresPinnedScalarForms) {
   struct Rejection {
     const char *Name;
     const char *Source;
   };
   const Rejection Cases[] = {
-      {"converted-replace-value",
+      {"volatile-replace-value",
        "bool p(int n){return n>0;}\n#include <algorithm>\n"
-       "int main(){int a[2]{1,2};long value=3;"
+       "int main(){int a[2]{1,2};volatile int value=3;"
        "std::replace_if(a,a+2,p,value);return 0;}"},
-      {"converted-replace-copy-value",
+      {"volatile-replace-copy-value",
        "bool p(int n){return n>0;}\n#include <algorithm>\n"
-       "int main(){int a[2]{1,2},out[2]{};long value=3;"
+       "int main(){int a[2]{1,2},out[2]{};volatile int value=3;"
        "return std::replace_copy_if(a,a+2,out,p,value)==out+2?0:1;}"}};
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);

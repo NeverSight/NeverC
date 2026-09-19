@@ -2969,8 +2969,10 @@ extern "C" int algorithm_transfer(const int *source, double *destination) {
 #include <algorithm>
 enum Count : unsigned int { two = 2 };
 extern "C" int algorithm_mutation(int *first, int *second, long *output) {
-  std::fill(first, first + 4, 3);
-  int *filled = std::fill_n(first, two, 5);
+  long fill_value = 3;
+  std::fill(first, first + 4, fill_value);
+  short fill_n_value = 5;
+  int *filled = std::fill_n(first, two, fill_n_value);
   int *swapped = std::swap_ranges(first, first + 4, second);
   std::reverse(first, first + 4);
   long *copied = std::reverse_copy(first, first + 4, output);
@@ -3724,14 +3726,14 @@ extern "C" int algorithm_predicate_queries(const int *first,
 #include <algorithm>
 extern "C" int algorithm_predicate_mutation(
     int *first, int *last, const int *input_first, const int *input_last,
-    long *output, bool (*predicate)(long), const int &replacement) {
-  long *copied = std::copy_if(input_first, input_last, output, predicate);
+    double *output, bool (*predicate)(long), const long &replacement) {
+  double *copied = std::copy_if(input_first, input_last, output, predicate);
   int *removed = std::remove_if(first, last, predicate);
-  long *rejected = std::remove_copy_if(input_first, input_last, output,
-                                       predicate);
+  double *rejected = std::remove_copy_if(input_first, input_last, output,
+                                         predicate);
   std::replace_if(first, last, predicate, replacement);
-  long *replaced = std::replace_copy_if(input_first, input_last, output,
-                                        predicate, replacement);
+  double *replaced = std::replace_copy_if(input_first, input_last, output,
+                                          predicate, replacement);
   return static_cast<int>((copied - output) + (removed - first) +
                           (rejected - output) + (replaced - output));
 }
@@ -3754,8 +3756,8 @@ extern "C" int algorithm_predicate_mutation(
                               algorithm_predicate_mutation_source,
                               profile="cpp-core-v2", target=target, sdk=True)
         assert_predicate_mutation(target_result)
-    check("v2-algorithm-predicate-mutation-converted-value",
-          'bool p(int n){return n>0;}\n#include <algorithm>\nint main(){int a[2]{1,2};long value=3;std::replace_if(a,a+2,p,value);return 0;}',
+    check("v2-algorithm-predicate-mutation-volatile-value",
+          'bool p(int n){return n>0;}\n#include <algorithm>\nint main(){int a[2]{1,2};volatile int value=3;std::replace_if(a,a+2,p,value);return 0;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
     algorithm_partition_source = """\
