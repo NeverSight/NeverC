@@ -266,6 +266,23 @@ enum class FunctionalOperation {
   LogicalOr,
   LogicalNot,
 };
+struct FunctionalObjectRecord {
+  const clang::CXXRecordDecl *Record;
+};
+std::optional<FunctionalObjectRecord>
+approvedFunctionalObjectRecord(const State &S, const clang::SourceManager &SM,
+                               const clang::CXXRecordDecl *Record,
+                               const clang::ASTContext &Context);
+enum class FunctionalObjectConstruction { Default, CopyOrMove };
+std::optional<FunctionalObjectConstruction>
+approvedFunctionalObjectConstruction(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction,
+    const clang::ASTContext &Context);
+bool approvedFunctionalObjectAssignment(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXOperatorCallExpr *Assignment,
+    const clang::ASTContext &Context);
 struct FunctionalOperationInfo {
   FunctionalOperation Operation;
   clang::QualType LeftType;
@@ -1087,6 +1104,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredUtilityDefaultDeletes;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityUniquePtrs;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityAllocators;
+  std::set<const clang::CXXRecordDecl *> RequiredFunctionalObjects;
   std::map<const clang::CXXRecordDecl *, CheckedEmptyBase> EmptyBases;
   std::map<const clang::VarDecl *, const clang::CXXForRangeStmt *> RangeDeclarations;
   std::size_t ExpandedNodes = 0;
@@ -1126,6 +1144,9 @@ public:
                                clang::SourceLocation Location,
                                unsigned Depth = 0);
   bool requireUtilityAllocator(const clang::CXXRecordDecl *Record,
+                               clang::SourceLocation Location,
+                               unsigned Depth = 0);
+  bool requireFunctionalObject(const clang::CXXRecordDecl *Record,
                                clang::SourceLocation Location,
                                unsigned Depth = 0);
   std::string functionPointerType(clang::QualType T, clang::SourceLocation L,

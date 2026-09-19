@@ -33646,6 +33646,82 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2StoredFunctionalObjectsRunAtBothOptimizations) {
+  const auto Source = tmpFile("functional-stored-objects.cpp");
+  const auto Output = tmpFile("functional-stored-objects.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+std::plus<int> global_plus;
+int apply(std::plus<int> op, int a, int b) { return op(a, b); }
+int main() {
+  std::plus<int> plus;
+  std::minus<int> minus;
+  std::multiplies<int> multiplies;
+  std::divides<int> divides;
+  std::modulus<int> modulus;
+  std::negate<int> negate;
+  std::bit_and<int> bit_and;
+  std::bit_or<int> bit_or;
+  std::bit_xor<int> bit_xor;
+  std::bit_not<int> bit_not;
+  std::equal_to<int> equal_to;
+  std::not_equal_to<int> not_equal_to;
+  std::less<int> less;
+  std::greater<int> greater;
+  std::less_equal<int> less_equal;
+  std::greater_equal<int> greater_equal;
+  std::logical_and<int> logical_and;
+  std::logical_or<int> logical_or;
+  std::logical_not<int> logical_not;
+  std::plus<> transparent{};
+  auto copy = plus;
+  std::plus<int> assigned;
+  assigned = copy;
+  int score = 0;
+  score += plus(5, 3) == 8;
+  score += minus(5, 3) == 2;
+  score += multiplies(5, 3) == 15;
+  score += divides(7, 3) == 2;
+  score += modulus(7, 3) == 1;
+  score += negate(5) == -5;
+  score += bit_and(6, 3) == 2;
+  score += bit_or(6, 3) == 7;
+  score += bit_xor(6, 3) == 5;
+  score += bit_not(6) == -7;
+  score += equal_to(3, 3);
+  score += not_equal_to(3, 4);
+  score += less(3, 4);
+  score += greater(4, 3);
+  score += less_equal(3, 3);
+  score += greater_equal(3, 3);
+  score += logical_and(2, 3);
+  score += logical_or(0, 3);
+  score += logical_not(0);
+  score += transparent(-2, 5u) == 3u;
+  score += copy(4, 5) == 9;
+  score += assigned(6, 7) == 13;
+  score += apply(plus, 8, 9) == 17;
+  score += global_plus(10, 11) == 21;
+  return score == 24 ? 0 : score;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  EXPECT_NE(Generated.find("nct_functional_storage"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("functional-stored-objects" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
   struct Rejection {
     const char *Name;
@@ -33653,10 +33729,6 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
     const char *Code;
   };
   const Rejection Cases[] = {
-      {"stored",
-       "#include <functional>\nint main(){std::plus<int> op;"
-       "return op(1,2)-3;}",
-       "TR0203"},
       {"qualified",
        "#include <functional>\nint main(){return "
        "std::plus<const int>{}(1,2);}",

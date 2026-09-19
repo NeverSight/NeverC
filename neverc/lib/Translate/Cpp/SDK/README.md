@@ -270,12 +270,14 @@ smart pointers and the
 remaining memory operations stay outside the direct lowering boundary.
 The `<functional>` surface has a 346-file libc++/resource closure on every
 core-v2 target. The exact C++17 public header and all consumed component
-headers are authenticated without platform headers. Temporary typed and
-transparent specializations of all 19 C++17 arithmetic, bitwise, comparison and
-logical standard function objects lower directly for admitted arithmetic types,
-including heterogeneous transparent operands. Stored function objects and the
-remaining callable facilities stay outside the documented direct lowering
-boundary.
+headers are authenticated without platform headers. Typed and transparent
+specializations of all 19 C++17 arithmetic, bitwise, comparison and logical
+standard function objects lower directly for admitted arithmetic types,
+including heterogeneous transparent operands. Exact empty objects use an
+authenticated one-byte carrier and support trivial default, copy and move
+construction, copy or move assignment, local and global storage, and by-value
+passing. The remaining callable facilities stay outside the documented direct
+lowering boundary.
 Core v2 never admits the `platform` root.
 Math v1 continues to use its separately checked libc++, resource and Darwin
 platform closure for `<cmath>`.

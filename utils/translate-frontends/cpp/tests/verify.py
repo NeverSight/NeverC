@@ -1445,11 +1445,38 @@ extern "C" unsigned functional_transparent(int a, unsigned b) {
         check("v2-functional-transparent-operations-" + target,
               functional_transparent_source, profile="cpp-core-v2",
               target=target, sdk=True)
+    functional_stored_source = """\
+#include <functional>
+std::plus<int> global_plus;
+int apply(std::plus<int> op, int a, int b) { return op(a, b); }
+extern "C" unsigned functional_stored(int a, unsigned b) {
+  std::plus<int> typed;
+  std::plus<> transparent{};
+  auto copied = typed;
+  std::plus<int> assigned;
+  assigned = copied;
+  return unsigned(typed(a, int(b)) + transparent(a, b) +
+                  assigned(a, int(b)) + apply(typed, a, int(b)) +
+                  global_plus(a, int(b)));
+}
+"""
+    functional_stored = check("v2-functional-stored-objects",
+                              functional_stored_source,
+                              profile="cpp-core-v2", sdk=True)
+    assert len(functional_stored["records"]) == 2, functional_stored
+    for record in functional_stored["records"]:
+        assert record["fields"] == [
+            {"name": "nct_functional_storage", "type": "u8"}
+        ], record
+        assert record["layout"] == {
+            "size_bits": 8, "abi_align_bits": 8,
+            "field_offsets_bits": [0]
+        }, record
+    for target in sdk_targets:
+        check("v2-functional-stored-objects-" + target,
+              functional_stored_source, profile="cpp-core-v2",
+              target=target, sdk=True)
     for name, source, code in (
-        ("stored", '#include <functional>\nint main(){std::plus<int> op;return op(1,2);}',
-         "TR0203"),
-        ("transparent-stored", '#include <functional>\nint main(){std::plus<> op;return op(1,2);}',
-         "TR0203"),
         ("transparent-record", '#include <functional>\nstruct X{}; X operator+(X,X){return{};} int main(){std::plus<>{}(X{},X{});}',
          "TR0203"),
         ("transparent-pointer", '#include <functional>\nint main(){int a[2];return std::less<>{}(a,a+1);}',

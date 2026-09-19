@@ -827,7 +827,7 @@ supported target, has the same dependency set on all eight targets, and
 contains no platform headers. The public header and every consumed component
 retain their original upstream bytes.
 
-Calls on temporary typed or transparent specializations of `std::plus`,
+Calls on typed or transparent specializations of `std::plus`,
 `std::minus`, `std::multiplies`, `std::divides`, `std::modulus`, `std::negate`,
 `std::bit_and`, `std::bit_or`, `std::bit_xor`, `std::bit_not`,
 `std::equal_to`, `std::not_equal_to`, `std::less`, `std::greater`,
@@ -843,9 +843,15 @@ promotion and typed specializations convert the result back to their selected
 type. Both function arguments are captured once before a logical result is
 formed, preserving the eager argument evaluation of a function call.
 
-Cv-qualified typed template arguments, stored function-object values,
-function-object addresses, pointers and user-defined operands, `long double`,
-`std::function`, binders, searchers and invocation helpers do not yet lower.
+The exact empty specializations may also be stored in local or global objects,
+passed by value, and trivially default/copy/move constructed or copy/move
+assigned. Their authenticated C++ one-byte size and alignment map to a single
+`u8` carrier field at offset zero; calls still lower to the verified built-in
+operation without a libc++ runtime dependency.
+
+Cv-qualified typed template arguments, function-object addresses, pointers and
+user-defined operands, `long double`, `std::function`, binders, searchers and
+invocation helpers do not yet lower.
 Quoted includes, shadows, forged declarations and other runtime uses remain
 rejected by the normal source and semantic checks.
 

@@ -3910,7 +3910,10 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
     const auto *D = dyn_cast<CXXRecordDecl>(R->getDecl());
     if (D && D->getDefinition() && !D->isUnion()) {
       D = D->getDefinition();
-      if (approvedUtilityUniquePtrRecord(S, Sources, D, Context)) {
+      if (approvedFunctionalObjectRecord(S, Sources, D, Context)) {
+        if (!requireFunctionalObject(D, L, Depth + 1))
+          return {};
+      } else if (approvedUtilityUniquePtrRecord(S, Sources, D, Context)) {
         if (!requireUtilityUniquePtr(D, L, Depth + 1))
           return {};
       } else if (approvedMemoryTemplateMetadata(S, Sources, D) ==
@@ -4195,6 +4198,30 @@ bool Adapter::requireUtilityAllocator(const CXXRecordDecl *Record,
   return true;
 }
 
+bool Adapter::requireFunctionalObject(const CXXRecordDecl *Record,
+                                      SourceLocation Location,
+                                      unsigned Depth) {
+  if (Depth > 64) {
+    reject(Location, "functional object type",
+           "Nested standard function-object types exceed the protocol limit.");
+    return false;
+  }
+  const auto Object =
+      approvedFunctionalObjectRecord(S, Sources, Record, Context);
+  if (!Object) {
+    reject(Location, "standard library record",
+           "Only pinned one-byte arithmetic, bitwise, comparison and logical "
+           "standard function objects are admitted.",
+           "TR0203");
+    return false;
+  }
+  const auto *Canonical = Object->Record->getCanonicalDecl();
+  if (!RequiredFunctionalObjects.insert(Canonical).second)
+    return true;
+  Records.push_back(const_cast<CXXRecordDecl *>(Object->Record));
+  return true;
+}
+
 json::Object Adapter::literal(const llvm::APSInt &V, llvm::StringRef T,
                               SourceLocation L) {
   json::Object O{{"kind", "literal"}, {"type", T.str()}, {"loc", loc(L)}};
@@ -4232,7 +4259,10 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
     return json::Object{{"kind", "null"}, {"type", Kind}, {"loc", loc(L)}};
   if (const auto *R = T->getAsCXXRecordDecl()) {
     json::Array Args;
-    if (auto Unique = approvedUtilityUniquePtrRecord(S, Sources, R, Context)) {
+    if (approvedFunctionalObjectRecord(S, Sources, R, Context)) {
+      Args.push_back(zero(Context.UnsignedCharTy, L));
+    } else if (auto Unique = approvedUtilityUniquePtrRecord(S, Sources, R,
+                                                           Context)) {
       Args.push_back(zero(Unique->PointerType, L));
     } else if (approvedUtilityDefaultDeleteRecord(S, Sources, R, Context) ||
                approvedUtilityAllocatorRecord(S, Sources, R, Context)) {
@@ -4629,7 +4659,9 @@ json::Object Adapter::constant(const APValue &V, QualType T, SourceLocation L) {
       reject(L, "constant record", "A folded record must retain every actual base and field value.");
       throw Failure{};
     }
-    if (auto Unique =
+    if (approvedFunctionalObjectRecord(S, Sources, Record, Context)) {
+      Args.push_back(zero(Context.UnsignedCharTy, L));
+    } else if (auto Unique =
             approvedUtilityUniquePtrRecord(S, Sources, Record, Context)) {
       Args.push_back(constant(V.getStructField(0), Unique->PointerType, L));
     } else if (approvedUtilityDefaultDeleteRecord(S, Sources, Record,
@@ -7010,7 +7042,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return;
     const auto *Constructor = C->getConstructor();
     if (A.S.coreV2() &&
-        (approvedUtilityUniquePtrConstruction(A.S, A.Sources, C, A.Context) ||
+        (approvedFunctionalObjectConstruction(A.S, A.Sources, C, A.Context) ||
+         approvedUtilityUniquePtrConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityDefaultDeleteConstruction(A.S, A.Sources, C,
                                                   A.Context) ||
          approvedUtilityAllocatorConstruction(A.S, A.Sources, C, A.Context) ||
@@ -13526,6 +13559,9 @@ public:
           return true; // A trivial defaulted destructor need not have a body.
         }
       const auto *Operator = dyn_cast<CXXOperatorCallExpr>(C);
+      const bool FunctionalObjectAssignment =
+          A.S.coreV2() && approvedFunctionalObjectAssignment(
+                              A.S, A.Sources, Operator, A.Context);
       const bool UtilityPairAssignment =
           A.S.coreV2() &&
           approvedUtilityPairAssignment(A.S, A.Sources, Operator, A.Context)
@@ -13573,7 +13609,8 @@ public:
                                  Operator->getNumArgs() == 2;
         const bool Ordinary = ordinaryOperator(F) &&
             F->getOverloadedOperator() == Operator->getOperator();
-        if (!TrivialAssignment && !UtilityPairAssignment &&
+        if (!TrivialAssignment && !FunctionalObjectAssignment &&
+            !UtilityPairAssignment &&
             !UtilityTupleAssignment && !UtilityArrayAssignment &&
             !UtilityInitializerListAssignment && !UtilityOptionalAssignment &&
             !UtilityReverseIteratorAssignment && !UtilityAllocatorAssignment &&
@@ -13811,6 +13848,8 @@ public:
           }
           return true;
         }
+      if (A.S.coreV2() && FunctionalObjectAssignment)
+        return true;
       if (A.S.coreV2() && UtilityPairAssignment)
         return true;
       if (A.S.coreV2() && UtilityTupleAssignment)
@@ -13876,7 +13915,9 @@ public:
             approvedUtilityInPlaceExpression(A.S, A.Sources, C, A.Context)) {
           // std::nullopt_t and std::in_place_t are erased tags consumed only
           // by authenticated optional operations.
-        } else if (approvedUtilityUniquePtrConstruction(A.S, A.Sources, C,
+        } else if (approvedFunctionalObjectConstruction(A.S, A.Sources, C,
+                                                        A.Context) ||
+                   approvedUtilityUniquePtrConstruction(A.S, A.Sources, C,
                                                         A.Context) ||
                    approvedUtilityDefaultDeleteConstruction(A.S, A.Sources, C,
                                                             A.Context) ||
@@ -13899,7 +13940,8 @@ public:
           A.reject(L, "standard library runtime object",
                    "Approved standard headers provide only their documented "
                    "compile-time aliases, constants, folded queries and "
-                   "std::default_delete, single-object or array std::unique_ptr, "
+                   "standard function objects, std::default_delete, "
+                   "single-object or array std::unique_ptr, "
                    "std::allocator, std::pair, "
                    "std::tuple, std::array, "
                    "std::initializer_list, "
@@ -14077,7 +14119,10 @@ static void orderCoreV2Records(Adapter &A) {
         approvedUtilityDefaultDeleteRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityAllocator =
         approvedUtilityAllocatorRecord(A.S, A.Sources, R, A.Context);
-    if (const auto *Base = UtilityReverse || UtilityTuple || UtilityArray ||
+    const auto FunctionalObject =
+        approvedFunctionalObjectRecord(A.S, A.Sources, R, A.Context);
+    if (const auto *Base = FunctionalObject || UtilityReverse || UtilityTuple ||
+                                   UtilityArray ||
                                    UtilityOptional || UtilityUniquePtr ||
                                    UtilityDefaultDelete || UtilityAllocator
                                ? nullptr
@@ -14240,7 +14285,11 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
     const auto UtilityAllocator =
         S.coreV2() ? approvedUtilityAllocatorRecord(S, Sources, R, Context)
                    : std::optional<UtilityAllocatorRecord>();
-    const auto *Base = S.coreV2() && !UtilityReverse && !UtilityTuple &&
+    const auto FunctionalObject =
+        S.coreV2() ? approvedFunctionalObjectRecord(S, Sources, R, Context)
+                   : std::optional<FunctionalObjectRecord>();
+    const auto *Base = S.coreV2() && !FunctionalObject && !UtilityReverse &&
+                               !UtilityTuple &&
                                !UtilityArray && !UtilityOptional &&
                                !UtilityUniquePtr && !UtilityDefaultDelete &&
                                !UtilityAllocator
@@ -14251,7 +14300,10 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
     if (Base)
       Fields.push_back(json::Object{{"name", Base->Member},
           {"type", type(Context.getRecordType(Base->Base), R->getLocation())}});
-    if (UtilityUniquePtr) {
+    if (FunctionalObject) {
+      Fields.push_back(json::Object{{"name", "nct_functional_storage"},
+                                    {"type", "u8"}});
+    } else if (UtilityUniquePtr) {
       Fields.push_back(json::Object{
           {"name", "nct_unique_ptr_pointer"},
           {"type", type(UtilityUniquePtr->PointerType, R->getLocation())}});
@@ -14286,7 +14338,8 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
       json::Array Offsets;
       if (Base)
         Offsets.push_back(uint64_t(Layout.getBaseClassOffset(Base->Base).getQuantity()) * 8);
-      if (UtilityUniquePtr || UtilityDefaultDelete || UtilityAllocator) {
+      if (FunctionalObject || UtilityUniquePtr || UtilityDefaultDelete ||
+          UtilityAllocator) {
         Offsets.push_back(uint64_t(0));
       } else if (UtilityTuple) {
         for (uint64_t Offset : UtilityTuple->Offsets)

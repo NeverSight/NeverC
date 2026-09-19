@@ -92,11 +92,12 @@ allocation/deallocation forwarders call checked source-defined global new/delete
 for complete default-new-aligned elements and constant nonoverflowing allocation
 counts; ownership objects remain separate. The
 exact [`<functional>`](../docs/cpp-core-v2.md#functional-header-from-functional)
-header directly lowers calls on temporary typed and transparent specializations
-of all 19 C++17 arithmetic, bitwise, comparison and logical standard function
-objects for admitted arithmetic types, including heterogeneous transparent
-operands. Stored function objects and the remaining callable facilities stay
-outside this boundary. The
+header directly lowers calls on typed and transparent specializations of all 19
+C++17 arithmetic, bitwise, comparison and logical standard function objects for
+admitted arithmetic types, including heterogeneous transparent operands. Exact
+empty objects use a one-byte carrier and support trivial construction,
+assignment, local and global storage, copying and by-value passing. The
+remaining callable facilities stay outside this boundary. The
 frontend uses the pinned embedded libc++/resource VFS and exposes resolved type
 aliases plus integral/enum constant results. It records all consumed header
 hashes: 101 for the `<type_traits>` closure, nine for standalone `<cstdint>`,

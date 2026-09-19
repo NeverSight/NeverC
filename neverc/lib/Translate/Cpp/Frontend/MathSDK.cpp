@@ -366,6 +366,180 @@ approvedCstddefOperation(const State &S, const SourceManager &SM,
   return CstddefOperation::ToInteger;
 }
 
+static bool supportedFunctionalScalar(QualType Type,
+                                      const ASTContext &Context) {
+  if (Type.isNull() || Type->isReferenceType() || Type.hasQualifiers())
+    return false;
+  return (Type->isIntegralType(Context) && Context.getTypeSize(Type) <= 64) ||
+         Type->isSpecificBuiltinType(BuiltinType::Float) ||
+         Type->isSpecificBuiltinType(BuiltinType::Double);
+}
+
+static bool functionalObjectName(llvm::StringRef Name) {
+  return Name == "plus" || Name == "minus" || Name == "multiplies" ||
+         Name == "divides" || Name == "modulus" || Name == "negate" ||
+         Name == "bit_and" || Name == "bit_or" || Name == "bit_xor" ||
+         Name == "bit_not" || Name == "equal_to" ||
+         Name == "not_equal_to" || Name == "less" || Name == "greater" ||
+         Name == "less_equal" || Name == "greater_equal" ||
+         Name == "logical_and" || Name == "logical_or" ||
+         Name == "logical_not";
+}
+
+static bool integralFunctionalObject(llvm::StringRef Name) {
+  return Name == "modulus" || Name == "bit_and" || Name == "bit_or" ||
+         Name == "bit_xor" || Name == "bit_not";
+}
+
+std::optional<FunctionalObjectRecord>
+approvedFunctionalObjectRecord(const State &S, const SourceManager &SM,
+                               const CXXRecordDecl *Record,
+                               const ASTContext &Context) {
+  const auto *Definition = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      Record ? Record->getDefinition() : nullptr);
+  const auto *Template = Definition ? Definition->getSpecializedTemplate()
+                                    : nullptr;
+  const auto *CanonicalTemplate =
+      Template ? Template->getCanonicalDecl() : nullptr;
+  if (!Definition || !Template || !CanonicalTemplate ||
+      !functionalObjectName(Definition->getName()) || Definition->isUnion() ||
+      Definition->isDependentContext() || !Definition->isEmpty() ||
+      !Definition->isStandardLayout() || !Definition->isTriviallyCopyable() ||
+      !Definition->hasTrivialDestructor() || !Definition->field_empty() ||
+      Context.getTypeSize(Context.getRecordType(Definition)) !=
+          Context.getCharWidth() ||
+      Context.getTypeAlign(Context.getRecordType(Definition)) !=
+          Context.getTypeAlign(Context.UnsignedCharTy) ||
+      !approvedStandardSDKDeclaration(S, SM, Definition) ||
+      !approvedStandardSDKDeclaration(S, SM, Template) ||
+      !approvedStandardSDKDeclaration(S, SM, CanonicalTemplate) ||
+      !cstddefOrigin(S, SM, Definition->getLocation(), "libcxx",
+                     "__functional/operations.h") ||
+      !cstddefOrigin(S, SM, Template->getLocation(), "libcxx",
+                     "__functional/operations.h") ||
+      !cstddefOrigin(S, SM, CanonicalTemplate->getLocation(), "libcxx",
+                     "__functional/operations.h"))
+    return std::nullopt;
+  const auto &Arguments = Definition->getTemplateArgs();
+  if (Arguments.size() != 1 ||
+      Arguments.get(0).getKind() != TemplateArgument::Type)
+    return std::nullopt;
+  const auto ValueType = Arguments.get(0).getAsType();
+  if (!ValueType.isNull() && ValueType->isVoidType()) {
+    const TypedefNameDecl *TransparentMarker = nullptr;
+    for (const auto *Declaration : Definition->decls())
+      if (const auto *Alias = dyn_cast<TypedefNameDecl>(Declaration);
+          Alias && Alias->getIdentifier() &&
+          Alias->getName() == "is_transparent") {
+        if (TransparentMarker)
+          return std::nullopt;
+        TransparentMarker = Alias;
+      }
+    if (Definition->getSpecializationKind() != TSK_ExplicitSpecialization ||
+        !TransparentMarker ||
+        !TransparentMarker->getUnderlyingType()->isVoidType() ||
+        !approvedStandardSDKDeclaration(S, SM, TransparentMarker) ||
+        !cstddefOrigin(S, SM, TransparentMarker->getLocation(), "libcxx",
+                       "__functional/operations.h"))
+      return std::nullopt;
+  } else if (!supportedFunctionalScalar(ValueType, Context) ||
+             (integralFunctionalObject(Definition->getName()) &&
+              !ValueType->isIntegralType(Context))) {
+    return std::nullopt;
+  }
+  return FunctionalObjectRecord{Definition};
+}
+
+std::optional<FunctionalObjectConstruction>
+approvedFunctionalObjectConstruction(const State &S, const SourceManager &SM,
+                                     const CXXConstructExpr *Construction,
+                                     const ASTContext &Context) {
+  if (!Construction || Construction->isTypeDependent() ||
+      Construction->isValueDependent() ||
+      Construction->isInstantiationDependent() ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete)
+    return std::nullopt;
+  const auto *Constructor = Construction->getConstructor();
+  const auto Object = approvedFunctionalObjectRecord(
+      S, SM, Construction->getType()->getAsCXXRecordDecl(), Context);
+  const auto *Prototype =
+      Constructor ? Constructor->getType()->getAs<FunctionProtoType>()
+                  : nullptr;
+  if (!Constructor || !Object || !Prototype || !Prototype->isNothrow() ||
+      Constructor->getParent()->getCanonicalDecl() !=
+          Object->Record->getCanonicalDecl() ||
+      Constructor->isVariadic() || !Constructor->isImplicit() ||
+      !Constructor->isTrivial() ||
+      Construction->getNumArgs() != Constructor->getNumParams() ||
+      !approvedStandardSDKDeclaration(S, SM, Constructor) ||
+      !cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx",
+                     "__functional/operations.h"))
+    return std::nullopt;
+  if (!Construction->getNumArgs() && Constructor->isDefaultConstructor() &&
+      Constructor->isDefaulted())
+    return FunctionalObjectConstruction::Default;
+  if (Construction->getNumArgs() != 1 ||
+      !Constructor->isCopyOrMoveConstructor())
+    return std::nullopt;
+  const auto Source = approvedFunctionalObjectRecord(
+      S, SM, Construction->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
+  const auto Parameter = Constructor->getParamDecl(0)->getType();
+  if (!Source || Source->Record->getCanonicalDecl() !=
+                     Object->Record->getCanonicalDecl() ||
+      !Parameter->isReferenceType() ||
+      Parameter->getPointeeType().isVolatileQualified() ||
+      !Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                      Context.getRecordType(Source->Record)))
+    return std::nullopt;
+  return FunctionalObjectConstruction::CopyOrMove;
+}
+
+bool approvedFunctionalObjectAssignment(const State &S,
+                                        const SourceManager &SM,
+                                        const CXXOperatorCallExpr *Assignment,
+                                        const ASTContext &Context) {
+  if (!Assignment || Assignment->isTypeDependent() ||
+      Assignment->isValueDependent() ||
+      Assignment->isInstantiationDependent() ||
+      Assignment->getOperator() != OO_Equal || Assignment->getNumArgs() != 2 ||
+      !Assignment->isLValue())
+    return false;
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Assignment->getDirectCallee());
+  const auto Destination = approvedFunctionalObjectRecord(
+      S, SM, Method ? Method->getParent() : nullptr, Context);
+  const auto Source = approvedFunctionalObjectRecord(
+      S, SM, Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
+  const auto *Reference = directMethodReference(Assignment);
+  if (!Method || !Destination || !Source || !Reference || Method->isStatic() ||
+      Method->isVariadic() || Method->getNumParams() != 1 ||
+      Method->getOverloadedOperator() != OO_Equal || !Method->isImplicit() ||
+      !Method->isTrivial() ||
+      (!Method->isCopyAssignmentOperator() &&
+       !Method->isMoveAssignmentOperator()) ||
+      Destination->Record->getCanonicalDecl() !=
+          Source->Record->getCanonicalDecl() ||
+      !approvedStandardSDKDeclaration(S, SM, Method) ||
+      !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
+                     "__functional/operations.h") ||
+      !S.owns(SM, Reference->getExprLoc()) ||
+      !Context.hasSameUnqualifiedType(
+          Assignment->getArg(0)->getType(),
+          Context.getRecordType(Destination->Record)) ||
+      !Context.hasSameUnqualifiedType(Assignment->getArg(1)->getType(),
+                                      Context.getRecordType(Source->Record)) ||
+      !Method->getReturnType()->isLValueReferenceType() ||
+      !Context.hasSameUnqualifiedType(
+          Method->getReturnType()->getPointeeType(),
+          Context.getRecordType(Destination->Record)))
+    return false;
+  const auto Parameter = Method->getParamDecl(0)->getType();
+  return Parameter->isReferenceType() &&
+         !Parameter->getPointeeType().isVolatileQualified() &&
+         Context.hasSameUnqualifiedType(
+             Parameter->getPointeeType(), Context.getRecordType(Source->Record));
+}
+
 std::optional<FunctionalOperationInfo>
 approvedFunctionalOperation(const State &S, const SourceManager &SM,
                             const CallExpr *Call, const ASTContext &Context) {
@@ -399,6 +573,12 @@ approvedFunctionalOperation(const State &S, const SourceManager &SM,
       !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
                      "__functional/operations.h") ||
       !S.owns(SM, Reference->getExprLoc()))
+    return std::nullopt;
+
+  const auto FunctionalRecord =
+      approvedFunctionalObjectRecord(S, SM, Record, Context);
+  if (!FunctionalRecord || FunctionalRecord->Record->getCanonicalDecl() !=
+                               Record->getCanonicalDecl())
     return std::nullopt;
 
   const auto &Arguments = Record->getTemplateArgs();

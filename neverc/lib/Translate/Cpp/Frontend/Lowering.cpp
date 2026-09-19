@@ -7221,6 +7221,19 @@ class FunctionLowering {
       if (auto Operation =
               approvedUtilityOperation(A.S, A.Sources, Call, A.Context))
         return utilityOperation(Call, *Operation, std::move(Destination));
+      if (approvedFunctionalObjectAssignment(
+              A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call), A.Context)) {
+        if (Destination)
+          reject(L, "functional object assignment",
+                 "Standard function-object assignment cannot initialize a "
+                 "record result.");
+        expression(Call->getArg(1));
+        auto LeftAddress = snapshot(
+            address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
+        auto Left = dereference(std::move(LeftAddress), L);
+        assign(Left, A.zero(Call->getArg(0)->getType(), L), L);
+        return Left;
+      }
       if (approvedUtilityAllocatorAssignment(
               A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call), A.Context)) {
         if (Destination)
@@ -8881,6 +8894,17 @@ class FunctionLowering {
       }
       reject(L, "unique pointer construction",
              "Unknown approved std::unique_ptr construction.");
+    }
+    if (auto Kind = approvedFunctionalObjectConstruction(A.S, A.Sources, C,
+                                                         A.Context)) {
+      if (*Kind == FunctionalObjectConstruction::CopyOrMove) {
+        if (C->getNumArgs() != 1)
+          reject(L, "functional object construction",
+                 "A copied standard function object needs one source.");
+        expression(C->getArg(0));
+      }
+      assign(std::move(Place), A.zero(T, L), L);
+      return;
     }
     if (auto Kind = approvedUtilityDefaultDeleteConstruction(A.S, A.Sources, C,
                                                              A.Context)) {
