@@ -995,8 +995,10 @@ The exact default-order `std::sort`, `std::partial_sort`,
 `std::partial_sort_copy` and `std::nth_element` templates use that arithmetic
 ordering boundary. `sort`, `partial_sort` and `nth_element` require writable
 same-type ranges. `partial_sort_copy` accepts a const or writable input range
-and a writable same-element output range, returning the advanced output
-pointer. `sort` uses worst-case `O(N log N)` heap sorting. The partial forms
+and a writable scalar output whose element accepts a checked direct conversion
+from the input, returning the advanced output pointer. `sort` uses worst-case
+`O(N log N)` heap sorting. Default mixed input/output comparisons use their
+checked arithmetic common type. The partial forms
 retain a maximum heap of the selected prefix or output capacity for
 `O(N log M)` comparison complexity. `nth_element` uses an in-place three-way
 partition around a retained scalar pivot, provides average linear comparison
@@ -1007,12 +1009,11 @@ original output pointer.
 The corresponding comparator overloads accept the same checked scalar
 function-pointer boundary. `sort`, `partial_sort` and `nth_element` require a
 writable same-element range; `partial_sort_copy` accepts a read-only input and
-writable same-element output. A greater-than callback therefore sorts or
+writable directly convertible output. A greater-than callback therefore sorts or
 selects in descending order. All callback and iterator arguments are retained
 once. Empty selected prefixes and outputs make no callback calls, and the
 three-way `nth_element` partition still terminates directly on equivalent
-values. Unsupported callbacks, record elements and heterogeneous output elements
-remain rejected.
+values. Unsupported callbacks and record elements remain rejected.
 
 The exact `std::stable_sort` overloads use the same default arithmetic and
 checked function-pointer comparator boundaries on writable scalar ranges. An in-place

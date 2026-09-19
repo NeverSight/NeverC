@@ -7149,20 +7149,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       (Call->getNumArgs() == 4 || Call->getNumArgs() == 5) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
       AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
-      AlgorithmPointerParameter(2) && AlgorithmPointerParameter(3) &&
+      AlgorithmTransferParameters(0, 2) && AlgorithmPointerParameter(3) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getParamDecl(2)->getType(),
            Function->getParamDecl(3)->getType()) &&
-      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
-                           Function->getParamDecl(2)->getType()) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(2)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType()) &&
       ((Call->getNumArgs() == 4 && AlgorithmOrderedPointerParameter(0) &&
         AlgorithmOrderedPointerParameter(2)) ||
-       (Call->getNumArgs() == 5 && AlgorithmBinaryPredicateParameter(4, 0, 2))))
+       (Call->getNumArgs() == 5 && AlgorithmBinaryPredicateParameter(4, 0, 2) &&
+        AlgorithmBinaryPredicateParameter(4, 2, 2))))
     return UtilityOperation::AlgorithmPartialSortCopy;
   if (Origin->Path == "__algorithm/nth_element.h" && Name == "nth_element" &&
       (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&

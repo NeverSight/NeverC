@@ -4645,15 +4645,29 @@ class FunctionLowering {
         Comparator = snapshot(expression(Call->getArg(4)), L);
       const auto ComparatorType =
           Comparator ? Call->getArg(4)->getType() : QualType{};
+      std::optional<std::string> DefaultComparisonType;
+      if (!Comparator) {
+        auto Common = utilityScalarComparisonType(
+            A.Context, Call->getArg(0)->getType()->getPointeeType(),
+            Call->getArg(2)->getType()->getPointeeType(), true);
+        if (!Common)
+          reject(L, "algorithm partial_sort_copy",
+                 "The input and output elements have no ordered common type.");
+        DefaultComparisonType = type(*Common, L);
+      }
       auto Less = [&](Expression Left, Expression Right) {
         if (Comparator)
           return emitBinaryPredicate(json::Object(*Comparator), ComparatorType,
                                      std::move(Left), std::move(Right), L);
-        return binary("<", std::move(Left), std::move(Right), "bool", L);
+        return binary("<", cast(std::move(Left), *DefaultComparisonType, L),
+                      cast(std::move(Right), *DefaultComparisonType, L), "bool",
+                      L);
       };
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto InputType = type(Call->getArg(0)->getType(), L);
       const auto OutputType = type(Call->getArg(2)->getType(), L);
+      const auto OutputElementType =
+          type(Call->getArg(2)->getType()->getPointeeType(), L);
       auto Input = snapshot(json::Object(InputFirst), L);
       auto Output = snapshot(json::Object(OutputFirst), L);
       auto HeapSize = temporary(DifferenceType, L);
@@ -4670,7 +4684,8 @@ class FunctionLowering {
       label(CheckOutput, L);
       branch(binary("!=", Output, OutputLast, "bool", L), Fill, Prepared, L);
       label(Fill, L);
-      assign(dereference(Output, L), dereference(Input, L), L);
+      assign(dereference(Output, L),
+             cast(dereference(Input, L), OutputElementType, L), L);
       assign(Input,
              binary("+", Input, quantity(1, DifferenceType, L), InputType, L),
              L);
@@ -4693,8 +4708,8 @@ class FunctionLowering {
                   dereference(json::Object(OutputFirst), L)),
              Replace, Advance, L);
       label(Replace, L);
-      assign(dereference(json::Object(OutputFirst), L), dereference(Input, L),
-             L);
+      assign(dereference(json::Object(OutputFirst), L),
+             cast(dereference(Input, L), OutputElementType, L), L);
       heapSiftDown(json::Object(OutputFirst), json::Object(HeapSize),
                    quantity(0, DifferenceType, L), OutputType, DifferenceType,
                    L, Comparator, ComparatorType);

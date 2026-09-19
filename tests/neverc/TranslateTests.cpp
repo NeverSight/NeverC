@@ -30604,9 +30604,9 @@ int main() {
     return 5;
 
   const int input[10]{9, 1, 8, 2, 7, 3, 6, 4, 5, 0};
-  int output[5]{-1, -1, -1, -1, -1};
+  long output[5]{-1, -1, -1, -1, -1};
   effects = 0;
-  int *output_end = std::partial_sort_copy(
+  long *output_end = std::partial_sort_copy(
       (++effects, input), (++effects, input + 10), (++effects, output),
       (++effects, output + 4));
   if (effects != 4 || output_end != output + 4)
@@ -30617,7 +30617,7 @@ int main() {
   if (output[4] != -1 || input[0] != 9)
     return 8;
   const int short_input[3]{3, 1, 2};
-  int long_output[5]{9, 9, 9, 9, 9};
+  long long_output[5]{9, 9, 9, 9, 9};
   output_end = std::partial_sort_copy(short_input, short_input + 3, long_output,
                                       long_output + 5);
   if (output_end != long_output + 3 || long_output[0] != 1 ||
@@ -30744,10 +30744,7 @@ TEST_F(TranslateTest, CoreV2AlgorithmOrderingRequirePinnedScalarForms) {
       {"record-nth",
        "#include <algorithm>\nstruct R{int n;};"
        "bool operator<(const R&a,const R&b){return a.n<b.n;}"
-       "int main(){R a[2]{{2},{1}};std::nth_element(a,a+1,a+2);return 0;}"},
-      {"heterogeneous-partial-copy",
-       "#include <algorithm>\nint main(){int a[2]{2,1};long out[2]{};"
-       "return std::partial_sort_copy(a,a+2,out,out+2)==out+2?0:1;}"}};
+       "int main(){R a[2]{{2},{1}};std::nth_element(a,a+1,a+2);return 0;}"}};
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
     const auto Source =
@@ -30807,9 +30804,9 @@ int main() {
     return 5;
 
   const int input[10]{0, 9, 1, 8, 2, 7, 3, 6, 4, 5};
-  int output[5]{-1, -1, -1, -1, -1};
+  long output[5]{-1, -1, -1, -1, -1};
   effects = 0;
-  int *output_end = std::partial_sort_copy(
+  long *output_end = std::partial_sort_copy(
       (++effects, input), (++effects, input + 10), (++effects, output),
       (++effects, output + 4), (++effects, comparator));
   if (effects != 5 || output_end != output + 4)
@@ -30820,7 +30817,7 @@ int main() {
   if (output[4] != -1 || input[0] != 0)
     return 8;
   const int short_input[3]{1, 3, 2};
-  int long_output[5]{9, 9, 9, 9, 9};
+  long long_output[5]{9, 9, 9, 9, 9};
   output_end = std::partial_sort_copy(short_input, short_input + 3, long_output,
                                       long_output + 5, greater_value);
   if (output_end != long_output + 3 || long_output[0] != 3 ||
@@ -30913,10 +30910,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmComparatorOrderingRequiresValueCallbacks) {
        "struct P{bool operator()(int a,int b)const{return a>b;}};\n"
        "#include <algorithm>\nint main(){int a[2]{1,2},out[2]{};return "
        "std::partial_sort_copy(a,a+2,out,out+2,P{})==out+2?0:1;}"},
-      {"heterogeneous-output",
-       "bool p(int a,long b){return a>b;}\n#include <algorithm>\n"
-       "int main(){int a[2]{1,2};long out[2]{};return "
-       "std::partial_sort_copy(a,a+2,out,out+2,p)==out+2?0:1;}"},
       {"record-elements", "struct R{int n;};bool p(R a,R b){return a.n>b.n;}\n"
                           "#include <algorithm>\nint main(){R a[2]{{1},{2}};"
                           "std::sort(a,a+2,p);return 0;}"},
