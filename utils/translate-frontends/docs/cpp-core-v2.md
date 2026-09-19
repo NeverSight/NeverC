@@ -422,7 +422,10 @@ checked direct conversion from the input element; accumulation retains the
 input element type. Initial or generated values retain that input type.
 Two-argument `reduce` starts from the element type's zero value. The sequential
 scan operations preserve empty-range and in-place behavior. Every argument is
-captured once before the loop.
+captured once before the loop. Default `inner_product` and two-range
+`transform_reduce` may use a different numeric second-range element; their
+product and sum follow checked arithmetic common types before conversion back
+to the accumulator type.
 
 The operation-taking overloads of `accumulate`, `inner_product`, `partial_sum`,
 `adjacent_difference`, `reduce`, unary and two-range `transform_reduce`,
@@ -444,9 +447,9 @@ negative, narrow and mixed-signedness calls retain the standard result and
 representability preconditions. Each argument is evaluated once.
 
 Callable objects, reference callback parameters or results, record callback
-results, heterogeneous input ranges or initial values, promotable range
-integers, enums, records, custom iterators and the other range-based numeric
-algorithms remain outside the
+results, heterogeneous input ranges in callback-taking forms, heterogeneous
+initial values, promotable range integers, enums, records, custom iterators and
+the other range-based numeric algorithms remain outside the
 runtime boundary.
 Integer arguments wider than 64 bits, quoted includes, shadows, function
 addresses for the numeric algorithms themselves and forged declarations remain

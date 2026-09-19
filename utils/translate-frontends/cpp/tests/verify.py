@@ -2767,7 +2767,7 @@ extern "C" int numeric_sequential() {
   int values[4]{};
   long sums[4]{};
   long differences[4]{};
-  int weights[4]{4, 3, 2, 1};
+  long weights[4]{4, 3, 2, 1};
   std::iota(values, values + 4, 1);
   int total = std::accumulate(values, values + 4, 0);
   int product = std::inner_product(values, values + 4, weights, 0);
@@ -2808,7 +2808,7 @@ extern "C" int numeric_sequential() {
 #include <numeric>
 extern "C" int numeric_cxx17() {
   int values[4]{1, 2, 3, 4};
-  int weights[4]{4, 3, 2, 1};
+  long weights[4]{4, 3, 2, 1};
   long inclusive[4]{};
   long exclusive[4]{};
   int reduced = std::reduce(values, values + 4);
@@ -2884,8 +2884,6 @@ extern "C" int numeric_callbacks() {
          '#include <numeric>\nint main(){short a[2]{1,2};return std::reduce(a,a+2); }'),
         ("heterogeneous-reduce",
          '#include <numeric>\nint main(){int a[2]{1,2};return std::reduce(a,a+2,0L)==3?0:1;}'),
-        ("heterogeneous-transform-reduce",
-         '#include <numeric>\nint main(){int a[2]{1,2};long b[2]{3,4};return std::transform_reduce(a,a+2,b,0); }'),
         ("heterogeneous-exclusive-init",
          '#include <numeric>\nint main(){int a[2]{1,2},b[2]{};return std::exclusive_scan(a,a+2,b,0L)==b+2?0:1;}'),
         ("heterogeneous-transform-exclusive-init",

@@ -2194,6 +2194,24 @@ class FunctionLowering {
         TransformCallback =
             snapshot(expression(Call->getArg(TransformIndex)), L);
       }
+      auto DefaultTermQualType =
+          Call->getArg(0)->getType()->getPointeeType().getUnqualifiedType();
+      if (Second && !TransformCallback) {
+        auto Common = utilityScalarComparisonType(
+            A.Context, DefaultTermQualType,
+            Call->getArg(2)->getType()->getPointeeType(), false);
+        if (!Common)
+          reject(L, "numeric product",
+                 "The input elements have no arithmetic common type.");
+        DefaultTermQualType = *Common;
+      }
+      auto DefaultSumQualType = utilityScalarComparisonType(
+          A.Context, ResultQualType, DefaultTermQualType, false);
+      if (!DefaultSumQualType)
+        reject(L, "numeric reduction",
+               "The accumulator and term have no arithmetic common type.");
+      const auto DefaultTermType = type(DefaultTermQualType, L);
+      const auto DefaultSumType = type(*DefaultSumQualType, L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto Check = labelName(), Add = labelName(), End = labelName();
       jump(Check, L);
@@ -2211,8 +2229,9 @@ class FunctionLowering {
                                           std::move(Arguments), L),
                     ResultType, L);
       } else if (Second) {
-        Term = binary("*", std::move(Term), dereference(*Second, L), ResultType,
-                      L);
+        Term = binary("*", cast(std::move(Term), DefaultTermType, L),
+                      cast(dereference(*Second, L), DefaultTermType, L),
+                      DefaultTermType, L);
       }
       if (ReductionCallback) {
         json::Array Arguments;
@@ -2225,7 +2244,12 @@ class FunctionLowering {
                     ResultType, L),
                L);
       } else {
-        assign(Result, binary("+", Result, std::move(Term), ResultType, L), L);
+        assign(Result,
+               cast(binary("+", cast(json::Object(Result), DefaultSumType, L),
+                           cast(std::move(Term), DefaultSumType, L),
+                           DefaultSumType, L),
+                    ResultType, L),
+               L);
       }
       assign(First,
              binary("+", First, quantity(1, DifferenceType, L), FirstType, L),

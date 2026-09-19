@@ -6289,6 +6289,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            (!Writable ||
             utilityAlgorithmWritableScalarPointer(Context, Pointer));
   };
+  auto NumericCommonElements = [&](unsigned LeftIndex, unsigned RightIndex) {
+    if (!NumericPointerParameter(LeftIndex, false) ||
+        !NumericPointerParameter(RightIndex, false))
+      return false;
+    return utilityScalarComparisonType(
+               Context,
+               Function->getParamDecl(LeftIndex)->getType()->getPointeeType(),
+               Function->getParamDecl(RightIndex)->getType()->getPointeeType(),
+               false)
+        .has_value();
+  };
   auto NumericValueParameter = [&](unsigned ValueIndex,
                                    unsigned IteratorIndex) {
     if (ValueIndex >= Function->getNumParams() ||
@@ -6362,13 +6373,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       NumericPointerParameter(2, false) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
-                           Function->getParamDecl(2)->getType()) &&
       NumericValueParameter(3, 0) &&
       Same(Function->getReturnType(), Function->getParamDecl(3)->getType()) &&
       Same(Call->getType(), Function->getReturnType()) &&
-      (Call->getNumArgs() == 4 ||
-       (NumericBinaryCallback(
+      ((Call->getNumArgs() == 4 && NumericCommonElements(0, 2)) ||
+       (Call->getNumArgs() == 6 &&
+        SameAlgorithmElement(Function->getParamDecl(0)->getType(),
+                             Function->getParamDecl(2)->getType()) &&
+        NumericBinaryCallback(
             4, Function->getParamDecl(0)->getType()->getPointeeType()) &&
         NumericBinaryCallback(
             5, Function->getParamDecl(0)->getType()->getPointeeType()))))
@@ -6421,13 +6433,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Function->getParamDecl(1)->getType())) {
     auto Element = Function->getParamDecl(0)->getType()->getPointeeType();
     if ((Call->getNumArgs() == 4 || Call->getNumArgs() == 6) &&
-        NumericPointerParameter(2, false) &&
-        SameAlgorithmElement(Function->getParamDecl(0)->getType(),
-                             Function->getParamDecl(2)->getType()) &&
-        NumericValueParameter(3, 0) &&
+        NumericPointerParameter(2, false) && NumericValueParameter(3, 0) &&
         Same(Function->getReturnType(), Function->getParamDecl(3)->getType()) &&
-        (Call->getNumArgs() == 4 || (NumericBinaryCallback(4, Element) &&
-                                     NumericBinaryCallback(5, Element))))
+        ((Call->getNumArgs() == 4 && NumericCommonElements(0, 2)) ||
+         (Call->getNumArgs() == 6 &&
+          SameAlgorithmElement(Function->getParamDecl(0)->getType(),
+                               Function->getParamDecl(2)->getType()) &&
+          NumericBinaryCallback(4, Element) &&
+          NumericBinaryCallback(5, Element))))
       return UtilityOperation::NumericTransformReduce;
     if (Call->getNumArgs() == 5 && NumericValueParameter(2, 0) &&
         Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&

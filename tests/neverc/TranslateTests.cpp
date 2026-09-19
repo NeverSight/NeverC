@@ -27922,7 +27922,7 @@ int main() {
       std::accumulate(values, values, 7) != 7)
     return 2;
 
-  const int weights[4]{4, 3, 2, 1};
+  const long weights[4]{4, 3, 2, 1};
   int product = std::inner_product((++effects, values),
                                    (++effects, values + 4),
                                    (++effects, weights), (++effects, 2));
@@ -28032,7 +28032,7 @@ TEST_F(TranslateTest,
 #include <numeric>
 int main() {
   const int values[4]{1, 2, 3, 4};
-  const int weights[4]{4, 3, 2, 1};
+  const long weights[4]{4, 3, 2, 1};
   int effects = 0;
   int reduced = std::reduce((++effects, values), (++effects, values + 4),
                             (++effects, 5));
@@ -28443,9 +28443,6 @@ TEST_F(TranslateTest, CoreV2NumericCxx17DefaultsRequirePinnedScalarForms) {
                           "return std::reduce(a,a+2);}"},
       {"heterogeneous-reduce", "#include <numeric>\nint main(){int a[2]{1,2};"
                                "return std::reduce(a,a+2,0L)==3?0:1;}"},
-      {"heterogeneous-transform-reduce",
-       "#include <numeric>\nint main(){int a[2]{1,2};long b[2]{3,4};"
-       "return std::transform_reduce(a,a+2,b,0);}"},
       {"heterogeneous-exclusive-init",
        "#include <numeric>\nint main(){int a[2]{1,2},b[2]{};"
        "return std::exclusive_scan(a,a+2,b,0L)==b+2?0:1;}"},
