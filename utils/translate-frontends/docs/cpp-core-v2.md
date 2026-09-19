@@ -419,7 +419,9 @@ ranges use admitted non-promoted built-in integers through 64 bits, `float` or
 `double`. `partial_sum`, `adjacent_difference`, `inclusive_scan` and
 `exclusive_scan` accept a writable scalar output whose element accepts a
 checked direct conversion from the input element; accumulation retains the
-input element type. Initial or generated values retain that input type.
+input element type. `iota` accepts an independent initial arithmetic type when
+its values convert directly to the output element, and increments in that
+initial type. Other initial or generated values retain the input type.
 Two-argument `reduce` starts from the element type's zero value. The sequential
 scan operations preserve empty-range and in-place behavior. Every argument is
 captured once before the loop. Default `inner_product` and two-range
@@ -452,8 +454,8 @@ representability preconditions. Each argument is evaluated once.
 
 Callable objects, reference callback parameters or results, record callback
 results, heterogeneous input ranges in callback-taking forms, heterogeneous
-initial values, promotable range integers, enums, records, custom iterators and
-the other range-based numeric algorithms remain outside the
+initial values outside `iota`, promotable range integers, enums, records, custom
+iterators and the other range-based numeric algorithms remain outside the
 runtime boundary.
 Integer arguments wider than 64 bits, quoted includes, shadows, function
 addresses for the numeric algorithms themselves and forged declarations remain

@@ -2768,7 +2768,8 @@ extern "C" int numeric_sequential() {
   long sums[4]{};
   long differences[4]{};
   long weights[4]{4, 3, 2, 1};
-  std::iota(values, values + 4, 1);
+  long initial = 1;
+  std::iota(values, values + 4, initial);
   int total = std::accumulate(values, values + 4, 0);
   int product = std::inner_product(values, values + 4, weights, 0);
   long *sum_end = std::partial_sum(values, values + 4, sums);
@@ -2788,8 +2789,6 @@ extern "C" int numeric_sequential() {
     for name, source in (
         ("promoted-iota",
          '#include <numeric>\nint main(){short a[2]{};std::iota(a,a+2,(short)1);return 0;}'),
-        ("heterogeneous-iota",
-         '#include <numeric>\nint main(){int a[2]{};std::iota(a,a+2,1L);return 0;}'),
         ("heterogeneous-accumulate",
          '#include <numeric>\nint main(){int a[2]{1,2};return std::accumulate(a,a+2,0L)==3?0:1;}'),
         ("reference-callback-accumulate",

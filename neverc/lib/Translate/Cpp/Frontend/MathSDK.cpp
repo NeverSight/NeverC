@@ -6391,6 +6391,20 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Same(Call->getArg(ValueIndex)->getType(), Value) &&
            Context.hasSameUnqualifiedType(Value, Iterator->getPointeeType());
   };
+  auto NumericIotaValueParameter = [&](unsigned ValueIndex,
+                                       unsigned IteratorIndex) {
+    if (ValueIndex >= Function->getNumParams() ||
+        ValueIndex >= Call->getNumArgs() ||
+        IteratorIndex >= Function->getNumParams())
+      return false;
+    auto Iterator = Function->getParamDecl(IteratorIndex)->getType();
+    auto Value = Function->getParamDecl(ValueIndex)->getType();
+    return utilityAlgorithmWritableScalarPointer(Context, Iterator) &&
+           NumericArithmetic(Value) &&
+           Same(Call->getArg(ValueIndex)->getType(), Value) &&
+           utilityScalarDirectConversion(Context, Value,
+                                         Iterator->getPointeeType());
+  };
   auto NumericIntegerValueParameter = [&](unsigned Index) {
     if (Index >= Function->getNumParams() || Index >= Call->getNumArgs())
       return false;
@@ -6446,7 +6460,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       NumericPointerParameter(0, true) && NumericPointerParameter(1, true) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      NumericValueParameter(2, 0) && Function->getReturnType()->isVoidType() &&
+      NumericIotaValueParameter(2, 0) &&
+      Function->getReturnType()->isVoidType() &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::NumericIota;
   if (Origin->Path == "__numeric/accumulate.h" && Name == "accumulate" &&

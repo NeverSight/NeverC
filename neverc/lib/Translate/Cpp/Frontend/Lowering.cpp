@@ -2127,13 +2127,15 @@ class FunctionLowering {
       auto Value = snapshot(expression(Call->getArg(2)), L);
       const auto PointerType = type(Call->getArg(0)->getType(), L);
       const auto ValueType = type(Call->getArg(2)->getType(), L);
+      const auto ElementType =
+          type(Call->getArg(0)->getType()->getPointeeType(), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto Check = labelName(), Store = labelName(), End = labelName();
       jump(Check, L);
       label(Check, L);
       branch(binary("!=", Current, Last, "bool", L), Store, End, L);
       label(Store, L);
-      assign(dereference(Current, L), Value, L);
+      assign(dereference(Current, L), cast(Value, ElementType, L), L);
       assign(
           Current,
           binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),

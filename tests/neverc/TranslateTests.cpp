@@ -27910,8 +27910,9 @@ TEST_F(TranslateTest,
 int main() {
   int effects = 0;
   int sequence[5]{};
+  long initial = -2;
   std::iota((++effects, sequence), (++effects, sequence + 5),
-            (++effects, -2));
+            (++effects, initial));
   if (effects != 3 || sequence[0] != -2 || sequence[4] != 2)
     return 1;
 
@@ -27989,8 +27990,6 @@ TEST_F(TranslateTest, CoreV2NumericSequentialRequiresPinnedScalarForms) {
   const Rejection Cases[] = {
       {"promoted-iota", "#include <numeric>\nint main(){short a[2]{};"
                         "std::iota(a,a+2,(short)1);return 0;}"},
-      {"heterogeneous-iota", "#include <numeric>\nint main(){int a[2]{};"
-                             "std::iota(a,a+2,1L);return 0;}"},
       {"heterogeneous-accumulate",
        "#include <numeric>\nint main(){int a[2]{1,2};"
        "return std::accumulate(a,a+2,0L)==3?0:1;}"},
