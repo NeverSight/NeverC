@@ -159,8 +159,8 @@ authenticated pointer-sized carrier. Default, null, raw-pointer, same-type move
 and const-adding converting move construction; same-type and const-adding
 converting move assignment; `nullptr` assignment; pointer access,
 mutable/const `get_deleter`, release, reset, member/free swap,
-same-specialization and qualification-compatible same-element
-equality/inequality, bidirectional `nullptr` comparison and destruction lower
+same-specialization and qualification-compatible same-element comparisons,
+all six bidirectional `nullptr` comparisons and destruction lower
 directly through the checked global-delete path without a libc++ call. Exact
 raw pointers to the owner may also receive every admitted nonstatic member;
 their pointee qualification and one-time receiver evaluation are preserved.

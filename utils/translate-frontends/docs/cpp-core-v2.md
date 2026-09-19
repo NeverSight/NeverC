@@ -517,10 +517,12 @@ receiver before its argument. `nullptr` assignment follows the same distinction.
 Member `swap` evaluates its receiver
 before its argument; free `std::swap` evaluates each owner once. Both exchange
 only the captured pointer fields, perform no destruction and retain ownership
-during self-swap. Same-specialization and qualification-compatible
-same-unqualified-element `==` and `!=` compare captured raw pointers after
-forming the common qualified pointer type, including either operand order with
-`nullptr`. Automatic and static destruction first clear the owner and then
+during self-swap. All six same-specialization and qualification-compatible
+same-unqualified-element comparisons capture raw pointers and form their common
+qualified pointer type, including either operand order with `nullptr`. Ordered
+forms reuse the checked flat-address pointer carrier that implements the
+`std::less` total order without C relational-pointer undefined behavior.
+Automatic and static destruction first clear the owner and then
 destroy and deallocate its former object. Null pointers skip destruction and
 deallocation.
 
@@ -541,8 +543,8 @@ The element must be complete and within the target's default new alignment,
 and the matching global sized or unsized delete definition must be
 source-owned. Class-specific delete, array specializations, custom deleters,
 volatile elements, member-function addresses, const-removing or base-adjusting
-converting moves, base-adjusting heterogeneous comparisons and
-ordered comparisons remain rejected at this boundary. Array
+converting moves and base-adjusting heterogeneous comparisons remain rejected
+at this boundary. Array
 `make_unique`, class-specific allocation, throwing or default-argument record
 construction, over-aligned elements, factory function addresses and other
 ownership factories remain rejected. Every admitted operation emits no libc++

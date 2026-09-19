@@ -4968,6 +4968,31 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         S, SM, Call->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
     const bool LeftNull = Call->getArg(0)->getType()->isNullPtrType();
     const bool RightNull = Call->getArg(1)->getType()->isNullPtrType();
+    std::optional<UtilityOperation> Comparison;
+    if (Operator) {
+      switch (Kind) {
+      case OO_EqualEqual:
+        Comparison = UtilityOperation::MemoryUniquePtrEqual;
+        break;
+      case OO_ExclaimEqual:
+        Comparison = UtilityOperation::MemoryUniquePtrNotEqual;
+        break;
+      case OO_Less:
+        Comparison = UtilityOperation::MemoryUniquePtrLess;
+        break;
+      case OO_Greater:
+        Comparison = UtilityOperation::MemoryUniquePtrGreater;
+        break;
+      case OO_LessEqual:
+        Comparison = UtilityOperation::MemoryUniquePtrLessEqual;
+        break;
+      case OO_GreaterEqual:
+        Comparison = UtilityOperation::MemoryUniquePtrGreaterEqual;
+        break;
+      default:
+        break;
+      }
+    }
     auto ParameterMatches =
         [&](unsigned Index, const std::optional<UtilityUniquePtrRecord> &Unique,
             bool Null) {
@@ -4986,9 +5011,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                      Call->getArg(Index)->getType(),
                      Context.getRecordType(Unique->Record));
         };
-    if (Operator && (Kind == OO_EqualEqual || Kind == OO_ExclaimEqual) &&
-        (Left || LeftNull) && (Right || RightNull) &&
+    const bool Ordered =
+        Comparison && *Comparison != UtilityOperation::MemoryUniquePtrEqual &&
+        *Comparison != UtilityOperation::MemoryUniquePtrNotEqual;
+    if (Comparison && (Left || LeftNull) && (Right || RightNull) &&
         !(LeftNull && RightNull) &&
+        (!Ordered || ((!Left || !Left->ElementType->isIncompleteType()) &&
+                      (!Right || !Right->ElementType->isIncompleteType()))) &&
         (!Left || !Right ||
          Left->Record->getCanonicalDecl() ==
              Right->Record->getCanonicalDecl() ||
@@ -4998,8 +5027,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                   Left->PointerType)) &&
         ParameterMatches(0, Left, LeftNull) &&
         ParameterMatches(1, Right, RightNull))
-      return Kind == OO_EqualEqual ? UtilityOperation::MemoryUniquePtrEqual
-                                   : UtilityOperation::MemoryUniquePtrNotEqual;
+      return Comparison;
   }
   if (Origin->Path == "__memory/allocator.h" && Call->getNumArgs() == 2 &&
       Function->getNumParams() == 2 && Function->isInlined() &&

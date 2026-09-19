@@ -1502,8 +1502,9 @@ synthetic `{name:"nct_unique_ptr_pointer",type:"ptr:T"}` field at bit offset
 zero. Default, null, raw-pointer, same-type move and const-adding converting move
 construction; same-type and const-adding converting move assignment; `nullptr`
 assignment; pointer access, dereference, boolean conversion, release, reset,
-member/free swap, same-specialization and qualification-compatible same-element
-equality/inequality, bidirectional `nullptr` comparison and destruction lower
+member/free swap, all six same-specialization and qualification-compatible
+same-element comparisons, all six bidirectional `nullptr` comparisons and
+destruction lower
 to existing record, pointer, cast, comparison and checked lifetime instructions.
 Moves capture the source pointer, clear that source and cast only to the checked
 qualification-compatible destination type. Mutable and const `get_deleter`
@@ -1511,7 +1512,9 @@ return a dereferenced pointer to the existing one-byte default-delete record;
 the owner address is cast through `ptr:void` or `cptr:void` before being retyped,
 which preserves the authenticated zero-offset subobject identity without a new
 field. Swaps capture both owners and exchange only their pointer fields;
-comparison operands are evaluated once. Each admitted nonstatic member also
+comparison operands are evaluated once. Ordered ownership comparisons use the
+existing flat-address relational-pointer carrier. Each admitted nonstatic
+member also
 accepts an exact raw pointer to its owner. Its pointee `const` selects the
 corresponding access, and the receiver expression is retained once; explicit
 member-call assignment places that receiver before its argument.

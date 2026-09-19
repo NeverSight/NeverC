@@ -1688,7 +1688,11 @@ class FunctionLowering {
       return {};
     }
     case UtilityOperation::MemoryUniquePtrEqual:
-    case UtilityOperation::MemoryUniquePtrNotEqual: {
+    case UtilityOperation::MemoryUniquePtrNotEqual:
+    case UtilityOperation::MemoryUniquePtrLess:
+    case UtilityOperation::MemoryUniquePtrGreater:
+    case UtilityOperation::MemoryUniquePtrLessEqual:
+    case UtilityOperation::MemoryUniquePtrGreaterEqual: {
       if (Call->getNumArgs() != 2)
         reject(L, "unique pointer comparison",
                "Two checked std::unique_ptr comparison operands are required.");
@@ -1723,9 +1727,31 @@ class FunctionLowering {
       };
       auto LeftValue = Operand(0, Left);
       auto RightValue = Operand(1, Right);
-      return binary(Operation == UtilityOperation::MemoryUniquePtrEqual ? "=="
-                                                                        : "!=",
-                    std::move(LeftValue), std::move(RightValue), "bool", L);
+      const char *Operator = nullptr;
+      switch (Operation) {
+      case UtilityOperation::MemoryUniquePtrEqual:
+        Operator = "==";
+        break;
+      case UtilityOperation::MemoryUniquePtrNotEqual:
+        Operator = "!=";
+        break;
+      case UtilityOperation::MemoryUniquePtrLess:
+        Operator = "<";
+        break;
+      case UtilityOperation::MemoryUniquePtrGreater:
+        Operator = ">";
+        break;
+      case UtilityOperation::MemoryUniquePtrLessEqual:
+        Operator = "<=";
+        break;
+      case UtilityOperation::MemoryUniquePtrGreaterEqual:
+        Operator = ">=";
+        break;
+      default:
+        llvm_unreachable("not a unique pointer comparison");
+      }
+      return binary(Operator, std::move(LeftValue), std::move(RightValue),
+                    "bool", L);
     }
     case UtilityOperation::MemoryAllocatorAddress: {
       const auto *Object = MemberObject();

@@ -1683,6 +1683,12 @@ extern "C" int memory_unique_ptr(int *pointer) {
       !(nullptr != assigned) || !(other == nullptr) || !(nullptr == other) ||
       other != nullptr || nullptr != other)
     return 8;
+  if (assigned < assigned || assigned > assigned ||
+      !(assigned <= assigned) || !(assigned >= assigned) ||
+      other < nullptr || nullptr < other || other > nullptr ||
+      nullptr > other || !(other <= nullptr) || !(nullptr <= other) ||
+      !(other >= nullptr) || !(nullptr >= other))
+    return 9;
   const std::unique_ptr<int> &assigned_view = assigned;
   std::unique_ptr<int> *assigned_pointer = &assigned;
   const std::unique_ptr<int> *assigned_view_pointer = &assigned_view;
@@ -1695,9 +1701,14 @@ extern "C" int memory_unique_ptr(int *pointer) {
     return 10;
   std::unique_ptr<int> converting_source(new int(3));
   std::unique_ptr<const int> converting_target(new int(4));
+  const bool converted_less = converted < converting_source;
+  const bool source_less = converting_source < converted;
   if (converted == converting_source || converting_source == converted ||
       !(converted != converting_source) ||
-      !(converting_source != converted))
+      !(converting_source != converted) || converted_less == source_less ||
+      (converted <= converting_source) != !source_less ||
+      (converted > converting_source) != source_less ||
+      (converted >= converting_source) != !converted_less)
     return 11;
   converting_target = std::move(converting_source);
   if (converting_source || !converting_target || *converting_target != 3)
@@ -1770,6 +1781,22 @@ extern "C" int memory_make_unique(int value) {
         assert any(node.get("kind") == "cast" and
                    node.get("type") == "cptr:int"
                    for node in walk(unique_function["body"])), data
+        pointer_comparisons = {
+            node.get("operator") for node in walk(unique_function["body"])
+            if node.get("kind") == "binary" and node.get("type") == "bool" and
+            len(node.get("args", [])) == 2 and
+            all(argument.get("type") == "ptr:int"
+                for argument in node["args"])
+        }
+        assert {"==", "!=", "<", ">", "<=", ">="} <= pointer_comparisons, data
+        qualified_ordering = {
+            node.get("operator") for node in walk(unique_function["body"])
+            if node.get("kind") == "binary" and node.get("type") == "bool" and
+            len(node.get("args", [])) == 2 and
+            all(argument.get("type") == "cptr:int"
+                for argument in node["args"])
+        }
+        assert {"<", ">", "<=", ">="} <= qualified_ordering, data
         deleter_ids = {
             record["id"] for record in data["records"]
             if record["fields"] == [

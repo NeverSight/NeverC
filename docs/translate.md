@@ -58,8 +58,8 @@ move construction, same-type and const-adding converting move assignment,
 `nullptr` assignment, `get`, mutable/const `get_deleter`, `operator->`,
 dereference, explicit boolean conversion, `release`, `reset`, member and free
 `swap`, same-specialization and
-qualification-compatible same-element equality/inequality, bidirectional `nullptr`
-comparison and automatic destruction lower directly while preserving
+qualification-compatible same-element comparisons, all six bidirectional
+`nullptr` comparisons and automatic destruction lower directly while preserving
 receiver/argument sequencing and calling the same checked source-defined global
 delete. Each admitted nonstatic member accepts either an object receiver or an
 exact raw pointer to that owner; pointer receivers retain pointee `const` and

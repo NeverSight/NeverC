@@ -25314,10 +25314,20 @@ int main() {
         std::move(observe(mutable_qualified, 1)));
     std::unique_ptr<int> assignment_source(new int(6));
     std::unique_ptr<const int> assignment_target(new int(7));
+    const bool qualified_less = qualified < assignment_source;
+    const bool source_less = assignment_source < qualified;
     if (effects != 1 || mutable_qualified || !qualified || *qualified != 5 ||
         qualified == assignment_source || assignment_source == qualified ||
         !(qualified != assignment_source) ||
-        !(assignment_source != qualified)) return 8;
+        !(assignment_source != qualified) ||
+        qualified_less == source_less ||
+        (qualified <= assignment_source) != !source_less ||
+        (qualified > assignment_source) != source_less ||
+        (qualified >= assignment_source) != !qualified_less ||
+        (assignment_source <= qualified) != !qualified_less ||
+        (assignment_source > qualified) != qualified_less ||
+        (assignment_source >= qualified) != !source_less)
+      return 8;
     const int releases_before_assignment = releases;
     effects = 0;
     observe(assignment_target, 2) =
@@ -25362,6 +25372,17 @@ int main() {
   bool different = observe(left, 1) != observe(right, 2);
   if (!different || (effects != 12 && effects != 21)) return 15;
   effects = 0;
+  const bool observed_less = observe(left, 1) < observe(right, 2);
+  const bool left_less = left < right;
+  const bool right_less = right < left;
+  if (observed_less != left_less || (effects != 12 && effects != 21) ||
+      left_less == right_less || (left <= right) != !right_less ||
+      (left > right) != right_less || (left >= right) != !left_less ||
+      (right <= left) != !left_less || (right > left) != left_less ||
+      (right >= left) != !right_less || left < left || left > left ||
+      !(left <= left) || !(left >= left))
+    return 15;
+  effects = 0;
   if (observe(left, 3) == nullptr || effects != 3) return 15;
   effects = 0;
   if (nullptr == observe(left, 4) || effects != 4) return 15;
@@ -25376,6 +25397,22 @@ int main() {
   if (!(comparison_empty == nullptr) || !(nullptr == comparison_empty) ||
       comparison_empty != nullptr || nullptr != comparison_empty ||
       comparison_empty == left || !(comparison_empty != left)) return 16;
+  const bool empty_less = comparison_empty < left;
+  const bool left_less_empty = left < comparison_empty;
+  const bool null_less = nullptr < left;
+  const bool left_less_null = left < nullptr;
+  if (empty_less == left_less_empty || null_less == left_less_null ||
+      (comparison_empty <= left) != !left_less_empty ||
+      (comparison_empty > left) != left_less_empty ||
+      (comparison_empty >= left) != !empty_less ||
+      (nullptr <= left) != !left_less_null ||
+      (nullptr > left) != left_less_null ||
+      (nullptr >= left) != !null_less || comparison_empty < nullptr ||
+      nullptr < comparison_empty || comparison_empty > nullptr ||
+      nullptr > comparison_empty || !(comparison_empty <= nullptr) ||
+      !(nullptr <= comparison_empty) || !(comparison_empty >= nullptr) ||
+      !(nullptr >= comparison_empty))
+    return 16;
   left.reset();
   right.reset();
 
@@ -25464,10 +25501,14 @@ TEST_F(TranslateTest, CoreV2MemoryUniquePtrRequiresExactObjectForms) {
        "struct B{};struct D:B{};int f(){std::unique_ptr<D> left;"
        "std::unique_ptr<B> right;return left==right;}",
        "TR0203"},
-      {"ordered-comparison",
+      {"base-adjusting-ordered-comparison",
        "#include <memory>\nvoid operator delete(void*)noexcept{}"
-       "int f(){std::unique_ptr<int> left;"
-       "std::unique_ptr<int> right;return left<right;}",
+       "struct B{};struct D:B{};int f(){std::unique_ptr<D> left;"
+       "std::unique_ptr<B> right;return left<right;}",
+       "TR0203"},
+      {"incomplete-ordered-comparison",
+       "#include <memory>\nstruct I;int f(const std::unique_ptr<I>&left,"
+       "const std::unique_ptr<I>&right){return left<right;}",
        "TR0203"},
       {"function-address",
        "#include <memory>\nvoid operator delete(void*)noexcept{}"
