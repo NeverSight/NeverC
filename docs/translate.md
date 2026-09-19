@@ -56,18 +56,24 @@ object or reverse array elements, and call a checked source-defined global
 sized or unsized delete/delete[]. Exact single-object
 `std::unique_ptr<T, std::default_delete<T>>` and unbounded-array
 `std::unique_ptr<T[], std::default_delete<T[]>>`, including multidimensional
-owners, use pointer-sized authenticated carriers. Default, null, raw-pointer,
-same-type move and const-adding converting
-move construction, same-type and const-adding converting move assignment,
+owners, use pointer-sized authenticated carriers. The same owners also admit a
+source-owned by-value custom deleter when it is an empty, standard-layout,
+trivial one-byte record with trivial special members and exactly one
+source-defined `void operator()(pointer) noexcept`, optionally `const` and with
+no ref qualifier. Default, null, raw-pointer, same-type move and const-adding
+default-deleter converting move construction, corresponding move assignment,
 `nullptr` assignment, `get`, mutable/const `get_deleter`, explicit boolean
 conversion, `release`, `reset`, member and free `swap`, same-specialization and
-qualification-compatible same-element comparisons, all six bidirectional
-`nullptr` comparisons and automatic destruction lower directly. Single-object
-owners also admit `operator->` and dereference; array owners admit `operator[]`.
-Lowering preserves receiver/argument sequencing and calls the matching checked
-source-defined global delete or delete[]. Each admitted nonstatic member accepts
-either an object receiver or an exact raw pointer to that owner; pointer
-receivers retain pointee `const` and execute once. Exact single-object
+default-deleter qualification-compatible same-element comparisons, all six
+bidirectional `nullptr` comparisons and automatic destruction lower directly.
+Single-object owners also admit `operator->` and dereference; array owners admit
+`operator[]`.
+Lowering preserves receiver/argument sequencing. Default deleters call the
+matching checked source-defined global delete or delete[]; an admitted custom
+deleter is invoked once for a non-null pointer and requires no global delete
+definition. Each admitted nonstatic member accepts either an object receiver
+or an exact raw pointer to that owner; pointer receivers retain pointee `const`
+and execute once. Exact single-object
 `std::make_unique<T>(args...)` and unbounded-array
 `std::make_unique<T[]>(count)`, where `T` may have complete bounded inner
 extents, with an integer constant

@@ -1642,10 +1642,16 @@ Size array_allocated;
 Size array_released;
 int array_released_count;
 int destroyed;
+int custom_released;
 struct Owned {
   int value;
   Owned(int value = 0) noexcept : value(value) {}
   ~Owned() noexcept { destroyed = destroyed * 10 + value; }
+};
+struct CustomDispose {
+  void operator()(int *pointer) const noexcept {
+    custom_released += *pointer;
+  }
 };
 void *operator new(Size size) { allocated = size; return storage.bytes; }
 void operator delete(void *pointer) noexcept {
@@ -1789,6 +1795,13 @@ extern "C" int memory_multidimensional(int (*pointer)[2]) {
   factory[1][2] = 9;
   return owner || factory[0][0] != 0 || factory[1][2] != 9 ? 1 : 0;
 }
+extern "C" int memory_custom_unique_ptr(int *pointer) {
+  std::unique_ptr<int, CustomDispose> owner(pointer);
+  if (!owner || owner.get() != pointer)
+    return 1;
+  owner.reset();
+  return owner || custom_released != *pointer ? 2 : 0;
+}
 """
 
     def check_memory_default_delete(data):
@@ -1824,7 +1837,7 @@ extern "C" int memory_multidimensional(int (*pointer)[2]) {
             if len(record["fields"]) == 1 and
                record["fields"][0]["name"] == "nct_unique_ptr_pointer"
         ]
-        assert len(all_unique_records) == 7, data
+        assert len(all_unique_records) == 8, data
         unique_pointer_types = {
             record["fields"][0]["type"] for record in all_unique_records
         }
@@ -1842,12 +1855,13 @@ extern "C" int memory_multidimensional(int (*pointer)[2]) {
             "memory_unique_ptr", "memory_array_unique_ptr",
             "memory_make_unique", "memory_make_unique_array",
             "memory_multidimensional",
+            "memory_custom_unique_ptr",
         }
         functions = [
             function for function in data["functions"]
             if function["name"] in external_names
         ]
-        assert len(functions) == 5, data
+        assert len(functions) == 6, data
         unique_function = next(
             function for function in functions
             if function["name"] == "memory_unique_ptr"
@@ -1892,6 +1906,29 @@ extern "C" int memory_multidimensional(int (*pointer)[2]) {
             if node.get("kind") == "index"
         ]
         assert len(multidimensional_indices) >= 6, data
+        custom_function = next(
+            function for function in functions
+            if function["name"] == "memory_custom_unique_ptr"
+        )
+        empty_source_records = {
+            record["id"] for record in data["records"]
+            if not record["fields"] and
+               record["loc"]["file"] == "input.cpp"
+        }
+        custom_deleter_functions = [
+            function for function in data["functions"]
+            if function["result"] == "void" and
+               len(function["params"]) == 2 and
+               function["params"][0]["type"].startswith("cptr:") and
+               function["params"][0]["type"][5:] in empty_source_records and
+               function["params"][1]["type"] == "ptr:int"
+        ]
+        assert len(custom_deleter_functions) == 1, data
+        assert any(
+            node.get("op") == "call" and
+            node.get("callee") == custom_deleter_functions[0]["name"]
+            for node in walk(custom_function["body"])
+        ), data
         deleter_ids = {
             record["id"] for record in data["records"]
             if record["fields"] == [

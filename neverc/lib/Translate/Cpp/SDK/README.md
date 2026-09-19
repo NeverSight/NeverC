@@ -158,18 +158,24 @@ checked source-defined global sized or unsized delete/delete[]. Volatile base
 elements and function addresses remain rejected. Exact single-object
 `std::unique_ptr<T, std::default_delete<T>>` and unbounded-array
 `std::unique_ptr<T[], std::default_delete<T[]>>`, including multidimensional
-owners, use an
-authenticated pointer-sized carrier. Default, null, raw-pointer, same-type move
-and const-adding converting move construction; same-type and const-adding
-converting move assignment; `nullptr` assignment; pointer access,
-mutable/const `get_deleter`, release, reset, member/free swap,
-same-specialization and qualification-compatible same-element comparisons,
-all six bidirectional `nullptr` comparisons and destruction lower directly
-through the matching checked global-delete or global-delete[] path without a
-libc++ call. Single-object owners expose dereference and arrow; array owners
-expose subscript and use checked cookie-based reverse destruction. Exact
-raw pointers to the owner may also receive every admitted nonstatic member;
-their pointee qualification and one-time receiver evaluation are preserved.
+owners, use an authenticated pointer-sized carrier. The same owner forms admit
+a source-owned by-value custom deleter only when it is an empty,
+standard-layout, trivial one-byte record with trivial special members and one
+source-defined `void operator()(pointer) noexcept`, optionally `const` and
+without a ref qualifier. Default, null, raw-pointer, same-type move and
+const-adding default-deleter converting move construction; corresponding move
+assignment; `nullptr` assignment; pointer access, mutable/const `get_deleter`,
+release, reset, member/free swap, same-specialization and
+default-deleter qualification-compatible same-element comparisons, all six
+bidirectional `nullptr` comparisons and destruction lower directly without a
+libc++ call.
+Default deleters use the matching checked global-delete or global-delete[]
+path. An admitted custom deleter is called once for a non-null pointer and
+needs no global delete definition. Single-object owners expose dereference and
+arrow; array owners expose subscript and use checked cookie-based reverse
+destruction only for default deletion. Exact raw pointers to the owner may also
+receive every admitted nonstatic member; their pointee qualification and
+one-time receiver evaluation are preserved.
 Exact single-object `std::make_unique<T>(args...)` authenticates the pinned
 factory body and lowers through checked source-defined global new/delete. Exact
 unbounded-array `std::make_unique<T[]>(count)`, where `T` may have complete

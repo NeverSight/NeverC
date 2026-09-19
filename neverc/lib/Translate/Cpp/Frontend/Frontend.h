@@ -288,6 +288,7 @@ struct UtilityUniquePtrRecord {
   clang::QualType ElementType;
   clang::QualType PointerType;
   UtilityDefaultDeleteRecord Deleter;
+  const clang::CXXMethodDecl *CustomDeleter = nullptr;
 };
 std::optional<UtilityUniquePtrRecord>
 approvedUtilityUniquePtrRecord(const State &S, const clang::SourceManager &SM,

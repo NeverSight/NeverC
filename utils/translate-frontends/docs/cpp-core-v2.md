@@ -493,27 +493,34 @@ import or ownership object. Multidimensional deletion uses each fixed inner
 extent to flatten the native cookie count and destroy base elements in reverse
 order.
 
-Exact single-object `std::unique_ptr<T, std::default_delete<T>>` and
-unbounded-array `std::unique_ptr<T[], std::default_delete<T[]>>`
-specializations are admitted for the same non-volatile base element types,
-including complete bounded inner extents. The pinned libc++ record must contain
-its exact raw pointer, two exact
-empty compressed-pair padding fields and the matching empty default deleter,
-all at offset zero. The array specialization must also contain the exact empty,
-trivial `__unique_ptr_array_bounds_stateless` checker at offset zero. Its total
-size and alignment must equal `T *`. The response preserves either ABI as one
-synthetic `nct_unique_ptr_pointer: ptr:T` field at offset zero. For a
-multidimensional owner this is a pointer to its first bounded row.
+Exact single-object `std::unique_ptr<T, D>` and unbounded-array
+`std::unique_ptr<T[], D>` specializations are admitted for the same
+non-volatile base element types, including complete bounded inner extents. `D`
+may be the matching `std::default_delete` or a source-owned by-value custom
+deleter. A custom deleter must be an empty, standard-layout, trivial one-byte
+record with no fields or bases and trivial default/copy/move construction,
+assignment and destruction. It must define exactly one ordinary, nonstatic
+`void operator()(pointer) noexcept`, optionally `const`, with no ref qualifier;
+`pointer` remains the owner's exact raw element or row-pointer type. The pinned
+libc++ owner record must contain its exact raw pointer, two exact empty
+compressed-pair padding fields and the matching empty deleter, all at offset
+zero. The array specialization must also contain the exact empty, trivial
+`__unique_ptr_array_bounds_stateless` checker at offset zero. Its total size and
+alignment must equal `T *`. The response preserves either ABI as one synthetic
+`nct_unique_ptr_pointer: ptr:T` field at offset zero. For a multidimensional
+owner this is a pointer to its first bounded row; the empty custom deleter adds
+no response field.
 
-Default, `nullptr`, compatible raw-pointer, same-type move and const-adding
-converting move construction lower directly. Converting moves retain the same
-scalar or array ownership form. A move captures the source once, transfers
-its pointer through the checked qualification conversion and clears the
-source. `get` and explicit boolean conversion read the captured pointer once;
+Default, `nullptr`, compatible raw-pointer and same-type move construction lower
+directly for either deleter. Const-adding converting moves retain the same
+scalar or array ownership form and matching default deleters. A move captures
+the source once, transfers its pointer through the checked qualification
+conversion and clears the source. `get` and explicit boolean conversion read
+the captured pointer once;
 single-object owners also admit `operator->` and `operator*`, while array owners
 admit `operator[](size_t)` as an lvalue access. The exact mutable and const `get_deleter` overloads
 evaluate the owner once and return the correspondingly qualified lvalue
-reference to its authenticated `default_delete<T>` subobject. Lowering preserves
+reference to its authenticated deleter subobject. Lowering preserves
 the pinned zero-offset empty-subobject address by passing the owner address
 through a qualification-preserving `void *` conversion before retyping it as
 the one-byte deleter record; it adds no owner field or storage. `release` returns
@@ -523,24 +530,33 @@ the owner. A raw-pointer receiver executes once, retains its pointee `const`,
 and yields the same owner identity. `reset(pointer())`, array `reset(nullptr)`
 and compatible raw-pointer reset evaluate the
 receiver before the replacement argument, install the replacement before
-destroying the old object, and use the matching checked single-object or reverse
-array destruction and global delete/delete[] path as `default_delete`. Same-type and const-adding
-converting move assignment evaluate the right owner before the left owner,
+destroying the old object. A default deleter uses the matching checked
+single-object or reverse-array destruction and global delete/delete[] path. A
+custom deleter receives the old non-null pointer exactly once through its
+source-defined call operator and does not require any global delete definition.
+Same-type and admitted const-adding converting move assignment evaluate the
+right owner before the left owner,
 release the source and then reset the destination; same-type self-move therefore
 retains ownership. Explicit member-call assignment instead evaluates its
 receiver before its argument. `nullptr` assignment follows the same distinction.
 Member `swap` evaluates its receiver
 before its argument; free `std::swap` evaluates each owner once. Both exchange
 only the captured pointer fields, perform no destruction and retain ownership
-during self-swap. All six same-specialization and qualification-compatible
-same-unqualified-element comparisons capture raw pointers and form their common
-qualified pointer type, including either operand order with `nullptr`. Ordered
-forms reuse the checked flat-address pointer carrier that implements the
-`std::less` total order without C relational-pointer undefined behavior.
-Automatic and static destruction first clear the owner and then destroy and
-deallocate its former object or reverse array elements. Array sized delete[]
-uses the checked native cookie and original allocation extent. Null pointers
-skip destruction and deallocation.
+during self-swap. All six same-specialization comparisons capture raw pointers,
+including either operand order with `nullptr`. Owners with matching default
+deleters additionally admit qualification-compatible same-unqualified-element
+comparisons and form their common qualified pointer type. Ordered forms reuse
+the checked flat-address pointer carrier that implements the `std::less` total
+order without C relational-pointer undefined behavior.
+Automatic and static destruction first clear the owner and then run its
+matching deleter on the former pointer. Default array sized delete[] uses the
+checked native cookie and original allocation extent. Null pointers skip every
+deleter call.
+
+Stateful, reference, non-raw-pointer, nontrivial, overloaded, ref-qualified and
+throwing custom deleters remain rejected. Construction with an explicit
+deleter object is also outside this boundary; admitted custom deleters are
+implicitly materialized through their trivial default state.
 
 The exact pinned single-object `std::make_unique<T>(args...)` overload and
 unbounded-array `std::make_unique<T[]>(count)` overload are also admitted;
@@ -568,16 +584,16 @@ automatic destruction and the checked global-delete or reverse global-delete[]
 path remain shared with direct `unique_ptr` construction. Neither factory emits
 a libc++ runtime call.
 
-The base element must be complete and within the target's default new alignment,
-and the matching global sized or unsized delete definition must be
-source-owned. Class-specific delete/delete[], custom-deleter `unique_ptr`,
-volatile elements, member-function addresses, const-removing or base-adjusting
-converting moves and base-adjusting heterogeneous comparisons remain rejected
-at this boundary. Runtime-count `make_unique`, class-specific allocation,
-throwing or default-argument record
-construction, over-aligned elements, factory function addresses and other
-ownership factories remain rejected. Every admitted operation emits no libc++
-runtime call and enables the checked `memory_lifetimes` policy.
+Default deletion requires a complete base element within the target's default
+new alignment and a matching source-owned global sized or unsized delete
+definition. Class-specific delete/delete[], volatile elements,
+member-function addresses, const-removing or base-adjusting converting moves
+and base-adjusting heterogeneous comparisons remain rejected at this boundary.
+Runtime-count `make_unique`, class-specific allocation, throwing or
+default-argument record construction, over-aligned elements, factory function
+addresses and other ownership factories remain rejected. Every admitted
+operation emits no libc++ runtime call and enables the checked
+`memory_lifetimes` policy.
 
 Exact `std::allocator<T>` metadata is admitted when `T` is non-cv `void` or a
 non-array object type, including an incomplete object. Its C++17 nested value,

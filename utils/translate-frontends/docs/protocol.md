@@ -1501,31 +1501,38 @@ the original allocation extent. Multidimensional calls flatten the fixed inner
 shape for cookie counts and reverse destruction. Calls set
 `memory_lifetimes: true`; array calls also select the target's
 `array_cookie_abi`. Neither form adds an SDK call, native-heap import or
-ownership field. Exact single-object
-`std::unique_ptr<T, std::default_delete<T>>` and unbounded-array
-`std::unique_ptr<T[], std::default_delete<T[]>>`, including multidimensional
-owners, preserve the
-authenticated pointer-sized libc++ representation as a record with one
-synthetic `{name:"nct_unique_ptr_pointer",type:"ptr:T"}` field at bit offset
-zero. The array record additionally authenticates libc++'s empty stateless
+ownership field. Exact single-object `std::unique_ptr<T, D>` and
+unbounded-array `std::unique_ptr<T[], D>`, including multidimensional owners,
+preserve the authenticated pointer-sized libc++ representation as a record
+with one synthetic
+`{name:"nct_unique_ptr_pointer",type:"ptr:T"}` field at bit offset zero.
+`D` may be the matching `std::default_delete` or an exact source-owned,
+by-value, empty, standard-layout, trivial one-byte custom record with trivial
+special members and exactly one source-defined ordinary nonstatic
+`void operator()(pointer) noexcept`, optionally `const` and without a ref
+qualifier. The array record additionally authenticates libc++'s empty stateless
 bounds-checker field, which adds no response field. Default, null, compatible
-raw-pointer, same-type move and const-adding converting move
-construction; same-type and const-adding converting move assignment; `nullptr`
-assignment; pointer access, boolean conversion, release, reset,
-member/free swap, all six same-specialization and qualification-compatible
-same-element comparisons, all six bidirectional `nullptr` comparisons and
-destruction lower
-to existing record, pointer, cast, comparison and checked lifetime instructions.
+raw-pointer and same-type move construction; same-type move assignment;
+`nullptr` assignment; pointer access, boolean conversion, release, reset,
+member/free swap, all six same-specialization comparisons, all six
+bidirectional `nullptr` comparisons and destruction lower to existing record,
+pointer, cast, comparison and checked lifetime instructions. Matching default
+deleters additionally admit the existing const-adding converting moves and
+qualification-compatible same-element comparisons.
 Single-object owners admit dereference and arrow; array owners emit ordinary
-typed `index` expressions. Array reset, assignment and destruction reuse the
-checked cookie-based reverse destruction and global delete[] call, including
-the original extent for sized deallocation.
+typed `index` expressions. Default-deleter array reset, assignment and
+destruction reuse the checked cookie-based reverse destruction and global
+delete[] call, including the original extent for sized deallocation.
 Moves capture the source pointer, clear that source and cast only to the checked
 qualification-compatible destination type. Mutable and const `get_deleter`
-return a dereferenced pointer to the existing one-byte default-delete record;
+return a dereferenced pointer to the existing one-byte deleter record;
 the owner address is cast through `ptr:void` or `cptr:void` before being retyped,
 which preserves the authenticated zero-offset subobject identity without a new
-field. Swaps capture both owners and exchange only their pointer fields;
+field. Default deletion retains the existing checked destruction and global
+delete/delete[] instructions. Custom deletion emits an ordinary `call` to the
+source-defined operator with the zero-offset deleter address and exact raw
+pointer, guarded by the same null branch; it adds no SDK call or global delete
+requirement. Swaps capture both owners and exchange only their pointer fields;
 comparison operands are evaluated once. Ordered ownership comparisons use the
 existing flat-address relational-pointer carrier. Each admitted nonstatic
 member also
@@ -1544,9 +1551,12 @@ construction. The call-site count must be an integer constant expression from
 zero through 65536. It emits the checked global-new[] `call`, target cookie and
 flattened scalar value initialization or exact zero-parameter source-owned
 non-template `noexcept` base-record constructor calls.
-Later destruction uses the existing checked global-delete or reverse
-global-delete[] path. These operations add no wire instruction, SDK call,
-native-heap import or hidden deleter storage. Exact runtime allocator
+Later default destruction uses the existing checked global-delete or reverse
+global-delete[] path. Custom destruction calls the admitted operator instead.
+These operations add no wire instruction, SDK call, native-heap import or
+hidden deleter storage. Stateful, reference, non-raw-pointer, nontrivial,
+overloaded, ref-qualified and throwing custom deleters, plus explicit
+deleter-object construction, remain rejected. Exact runtime allocator
 specializations preserve the authenticated one-byte, one-byte-aligned empty
 libc++ representation as a record with one synthetic
 `{name:"nct_allocator_storage",type:"u8"}` field at bit offset zero. Their

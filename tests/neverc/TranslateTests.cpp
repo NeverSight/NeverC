@@ -25624,6 +25624,116 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2MemoryStatelessCustomDeleterRunsAtBothOptimizations) {
+  const auto Source = tmpFile("memory-stateless-custom-deleter.cpp");
+  const auto Output = tmpFile("memory-stateless-custom-deleter.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+int first = 2;
+int second = 3;
+int third = 5;
+int scalar_calls;
+int scalar_sum;
+int array_calls;
+int array_sum;
+int matrix_calls;
+int matrix_sum;
+int array_first[3] = {1, 2, 3};
+int array_second[3] = {4, 5, 6};
+int array_third[3] = {6, 7, 8};
+int matrix[2][2] = {{1, 2}, {3, 4}};
+struct ScalarDispose {
+  void operator()(int *pointer) const noexcept {
+    ++scalar_calls;
+    scalar_sum += *pointer;
+  }
+};
+struct ArrayDispose {
+  void operator()(int *pointer) noexcept {
+    ++array_calls;
+    array_sum += pointer[0] + pointer[1];
+  }
+};
+struct MatrixDispose {
+  void operator()(int (*pointer)[2]) const noexcept {
+    ++matrix_calls;
+    matrix_sum += pointer[0][0] + pointer[1][1];
+  }
+};
+int main() {
+  if (sizeof(std::unique_ptr<int, ScalarDispose>) != sizeof(int *) ||
+      sizeof(std::unique_ptr<int[], ArrayDispose>) != sizeof(int *) ||
+      sizeof(std::unique_ptr<int[][2], MatrixDispose>) != sizeof(int *))
+    return 1;
+
+  std::unique_ptr<int, ScalarDispose> owner(&first);
+  owner.get_deleter()(&third);
+  const std::unique_ptr<int, ScalarDispose> &owner_view = owner;
+  owner_view.get_deleter()(&first);
+  owner.reset(&second);
+  std::unique_ptr<int, ScalarDispose> moved(std::move(owner));
+  int *released = moved.release();
+  moved.reset(released);
+  std::unique_ptr<int, ScalarDispose> target(&third);
+  target = std::move(moved);
+  std::unique_ptr<int, ScalarDispose> scalar_empty;
+  if (owner || moved || !target || *target != 3 || target == scalar_empty ||
+      !(target != scalar_empty) || target == nullptr || nullptr == target ||
+      !(target != nullptr) || !(nullptr != target) || scalar_calls != 4 ||
+      scalar_sum != 14)
+    return 2;
+  target = nullptr;
+  {
+    std::unique_ptr<int, ScalarDispose> destructor_owner(&first);
+  }
+  if (target || scalar_empty || target != scalar_empty ||
+      !(target == scalar_empty) || scalar_calls != 6 || scalar_sum != 19)
+    return 3;
+
+  std::unique_ptr<int[], ArrayDispose> array_owner(array_first);
+  array_owner[1] = 7;
+  array_owner.reset(array_second);
+  std::unique_ptr<int[], ArrayDispose> array_moved(std::move(array_owner));
+  std::unique_ptr<int[], ArrayDispose> array_target(array_third);
+  array_target = std::move(array_moved);
+  std::unique_ptr<int[], ArrayDispose> array_empty;
+  array_target.swap(array_empty);
+  std::swap(array_target, array_empty);
+  if (array_owner || array_moved || !array_target || array_target[2] != 6 ||
+      array_calls != 2 || array_sum != 21)
+    return 4;
+  array_target.reset();
+  if (array_calls != 3 || array_sum != 30) return 5;
+
+  std::unique_ptr<int[][2], MatrixDispose> matrix_owner(matrix);
+  matrix_owner[1][1] = 9;
+  matrix_owner.reset();
+  if (matrix_owner || matrix_calls != 1 || matrix_sum != 10) return 6;
+
+  return scalar_calls == 6 && scalar_sum == 19 && array_calls == 3 &&
+                 array_sum == 30 && matrix_calls == 1 && matrix_sum == 10
+             ? 0
+             : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  const auto Text = readFile(Output);
+  EXPECT_NE(Text.find("nct_unique_ptr_pointer"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("memory-stateless-custom-deleter" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2MemoryUniquePtrRequiresExactObjectForms) {
   struct Rejection {
     const char *Name;
@@ -25657,10 +25767,40 @@ TEST_F(TranslateTest, CoreV2MemoryUniquePtrRequiresExactObjectForms) {
        "void operator delete[](void*)noexcept{}"
        "std::unique_ptr<R[][2]> value;",
        "TR0203"},
-      {"custom-deleter",
-       "#include <memory>\nstruct D{void operator()(int*)const noexcept{}};"
+      {"stateful-custom-deleter",
+       "#include <memory>\nstruct D{int state;"
+       "void operator()(int*)const noexcept{}};"
        "std::unique_ptr<int,D> value;",
        "TR0203"},
+      {"throwing-custom-deleter",
+       "#include <memory>\nstruct D{void operator()(int*)const{}};"
+       "std::unique_ptr<int,D> value;",
+       "TR0203"},
+      {"ref-qualified-custom-deleter",
+       "#include <memory>\nstruct D{void operator()(int*)&noexcept{}};"
+       "std::unique_ptr<int,D> value;",
+       "TR0203"},
+      {"overloaded-custom-deleter",
+       "#include <memory>\nstruct D{"
+       "void operator()(int*)const noexcept{}"
+       "void operator()(void*)const noexcept{}};"
+       "std::unique_ptr<int,D> value;",
+       "TR0203"},
+      {"custom-pointer-deleter",
+       "#include <memory>\nstruct D{using pointer=void*;"
+       "void operator()(void*)const noexcept{}};"
+       "std::unique_ptr<int,D> value;",
+       "TR0203"},
+      {"nontrivial-custom-deleter",
+       "#include <memory>\nstruct D{D(){}"
+       "void operator()(int*)const noexcept{}};"
+       "std::unique_ptr<int,D> value;",
+       "TR0203"},
+      {"explicit-custom-deleter-construction",
+       "#include <memory>\nint value;"
+       "struct D{void operator()(int*)const noexcept{}};"
+       "int main(){D d;std::unique_ptr<int,D> owner(&value,d);}",
+       "TR0201"},
       {"volatile-element",
        "#include <memory>\nstd::unique_ptr<volatile int> value;", "TR0203"},
       {"class-delete",

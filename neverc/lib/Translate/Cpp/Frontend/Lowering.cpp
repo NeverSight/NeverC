@@ -1648,13 +1648,15 @@ class FunctionLowering {
         assign(Member(),
                cast(std::move(Pointer), type(Info->Owner.PointerType, L), L),
                L);
-        deallocateUniquePtr(std::move(Previous), Info->Owner, L);
+        deallocateUniquePtr(std::move(Previous), json::Object(*Receiver),
+                            Info->Owner, L);
         return dereference(std::move(*Receiver), L);
       }
       if (Expected == UtilityUniquePtrOperation::NullAssign) {
         auto Pointer = snapshot(Member(), L);
         assign(Member(), A.zero(Info->Owner.PointerType, L), L);
-        deallocateUniquePtr(std::move(Pointer), Info->Owner, L);
+        deallocateUniquePtr(std::move(Pointer), json::Object(*Receiver),
+                            Info->Owner, L);
         return dereference(std::move(*Receiver), L);
       }
       if (Info->ArgumentIndex >= Call->getNumArgs())
@@ -1671,7 +1673,8 @@ class FunctionLowering {
           L);
       auto Pointer = snapshot(Member(), L);
       assign(Member(), std::move(Replacement), L);
-      deallocateUniquePtr(std::move(Pointer), Info->Owner, L);
+      deallocateUniquePtr(std::move(Pointer), json::Object(*Receiver),
+                          Info->Owner, L);
       return {};
     }
     case UtilityOperation::MemoryUniquePtrSwap: {
@@ -7514,9 +7517,34 @@ class FunctionLowering {
     jump(End, L);
     label(End, L);
   }
-  void deallocateUniquePtr(Expression Pointer,
+  void deallocateUniquePtr(Expression Pointer, Expression OwnerAddress,
                            const UtilityUniquePtrRecord &Owner,
                            SourceLocation L) {
+    if (Owner.CustomDeleter) {
+      Pointer = snapshot(std::move(Pointer), L);
+      auto Invoke = labelName(), End = labelName();
+      branch(cast(Pointer, "bool", L), Invoke, End, L);
+      label(Invoke, L);
+      json::Array Args;
+      const auto ThisType = Owner.CustomDeleter->getThisType();
+      auto ErasedAddress =
+          cast(std::move(OwnerAddress),
+               ThisType->getPointeeType().isConstQualified() ? "cptr:void"
+                                                             : "ptr:void",
+               L);
+      Args.push_back(cast(std::move(ErasedAddress), type(ThisType, L), L));
+      Args.push_back(
+          cast(std::move(Pointer),
+               type(Owner.CustomDeleter->getParamDecl(0)->getType(), L), L));
+      chargeCall(Args, L);
+      Body.push_back(json::Object{{"op", "call"},
+                                  {"callee", A.name(Owner.CustomDeleter)},
+                                  {"args", std::move(Args)},
+                                  {"loc", A.loc(L)}});
+      jump(End, L);
+      label(End, L);
+      return;
+    }
     const auto *Function = A.allocatorHeapFunction(
         false, Owner.ElementType, L, Owner.Deleter.Array);
     if (Owner.Deleter.Array) {
@@ -9626,7 +9654,8 @@ public:
                           {"loc", A.loc(L)}};
         auto Pointer = snapshot(Member, L);
         assign(std::move(Member), A.zero(Unique->PointerType, L), L);
-        deallocateUniquePtr(std::move(Pointer), *Unique, L);
+        deallocateUniquePtr(std::move(Pointer), json::Object(*ThisPointer),
+                            *Unique, L);
       } else {
         destructionMembers();
       }

@@ -552,14 +552,60 @@ approvedUtilityUniquePtrRecord(const State &S, const SourceManager &SM,
       (Array && Fields[4]->getName() != "__checker_") ||
       !Context.hasSameType(Fields[0]->getType(), Pointer))
     return std::nullopt;
-  const auto Deleter = approvedUtilityDefaultDeleteRecord(
-      S, SM, Fields[2]->getType()->getAsCXXRecordDecl(), Context);
-  if (!Deleter ||
-      !Context.hasSameType(Arguments.get(1).getAsType(),
-                           Fields[2]->getType()) ||
-      !Context.hasSameType(Deleter->ElementType, Element) ||
-      Deleter->Array != (Array != nullptr))
+  if (!Context.hasSameType(Arguments.get(1).getAsType(), Fields[2]->getType()))
     return std::nullopt;
+
+  auto Deleter = approvedUtilityDefaultDeleteRecord(
+      S, SM, Fields[2]->getType()->getAsCXXRecordDecl(), Context);
+  const CXXMethodDecl *CustomDeleter = nullptr;
+  if (Deleter) {
+    if (!Context.hasSameType(Deleter->ElementType, Element) ||
+        Deleter->Array != (Array != nullptr))
+      return std::nullopt;
+  } else {
+    const auto *CustomRecord = Fields[2]->getType()->getAsCXXRecordDecl();
+    const auto *CustomDefinition =
+        CustomRecord ? CustomRecord->getDefinition() : nullptr;
+    if (!CustomDefinition || CustomDefinition->isInvalidDecl() ||
+        CustomDefinition->isUnion() || CustomDefinition->isDependentContext() ||
+        !S.owns(SM, CustomDefinition->getLocation()) ||
+        !CustomDefinition->field_empty() || CustomDefinition->getNumBases() ||
+        CustomDefinition->isDynamicClass() || !CustomDefinition->isEmpty() ||
+        !CustomDefinition->isStandardLayout() ||
+        !CustomDefinition->isTrivial() ||
+        !CustomDefinition->hasTrivialDefaultConstructor() ||
+        !CustomDefinition->hasTrivialCopyConstructor() ||
+        !CustomDefinition->hasTrivialMoveConstructor() ||
+        !CustomDefinition->hasTrivialCopyAssignment() ||
+        !CustomDefinition->hasTrivialMoveAssignment() ||
+        !CustomDefinition->hasTrivialDestructor())
+      return std::nullopt;
+    const auto &CustomLayout = Context.getASTRecordLayout(CustomDefinition);
+    if (CustomLayout.getSize().getQuantity() != 1 ||
+        CustomLayout.getAlignment().getQuantity() != 1)
+      return std::nullopt;
+    unsigned CallOperators = 0;
+    for (const auto *Method : CustomDefinition->methods()) {
+      if (Method->getOverloadedOperator() != OO_Call)
+        continue;
+      ++CallOperators;
+      const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
+      const FunctionDecl *BodyDefinition = nullptr;
+      if (!ordinaryOperator(Method) || !Prototype || !Prototype->isNothrow() ||
+          Method->isStatic() || Method->getRefQualifier() != RQ_None ||
+          Method->getNumParams() != 1 ||
+          !Method->getReturnType()->isVoidType() ||
+          !Context.hasSameType(Method->getParamDecl(0)->getType(), Pointer) ||
+          !Method->hasBody(BodyDefinition) || !BodyDefinition ||
+          !S.owns(SM, BodyDefinition->getLocation()))
+        return std::nullopt;
+      CustomDeleter = cast<CXXMethodDecl>(BodyDefinition);
+    }
+    if (CallOperators != 1 || !CustomDeleter)
+      return std::nullopt;
+    Deleter =
+        UtilityDefaultDeleteRecord{CustomDefinition, Element, Array != nullptr};
+  }
 
   auto Padding = [&](const FieldDecl *Field, QualType Padded) {
     const auto *PaddingDefinition =
@@ -626,7 +672,8 @@ approvedUtilityUniquePtrRecord(const State &S, const SourceManager &SM,
   for (unsigned I = 0; I != ExpectedFields; ++I)
     if (Layout.getFieldOffset(I) != 0)
       return std::nullopt;
-  return UtilityUniquePtrRecord{Definition, Element, Pointer, *Deleter};
+  return UtilityUniquePtrRecord{Definition, Element, Pointer, *Deleter,
+                                CustomDeleter};
 }
 
 std::optional<UtilityAllocatorRecord>
@@ -3129,8 +3176,8 @@ approvedUtilityUniquePtrConstruction(const State &S, const SourceManager &SM,
   const auto *Primary = Constructor->getPrimaryTemplate();
   if (Source && Primary &&
       Source->Record->getCanonicalDecl() != Owner->Record->getCanonicalDecl() &&
-      Source->Deleter.Array == Owner->Deleter.Array &&
-      Parameter->isRValueReferenceType() &&
+      Source->Deleter.Array == Owner->Deleter.Array && !Source->CustomDeleter &&
+      !Owner->CustomDeleter && Parameter->isRValueReferenceType() &&
       Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
                                      Context.getRecordType(Source->Record)) &&
       Context.hasSameUnqualifiedType(Argument,
@@ -3265,6 +3312,7 @@ approvedUtilityUniquePtrCall(const State &S, const SourceManager &SM,
         !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
                        "__memory/unique_ptr.h") ||
         Source->Deleter.Array != Owner->Deleter.Array ||
+        Source->CustomDeleter || Owner->CustomDeleter ||
         !utilityPointerConversion(Context, Source->PointerType,
                                   Owner->PointerType))
       return std::nullopt;
