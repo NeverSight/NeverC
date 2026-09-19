@@ -3454,8 +3454,8 @@ Adapter::defaultDeleteFunction(const UtilityDefaultDeleteRecord &Deleter,
   }
   const auto *Selected = Delete->getOperatorDelete();
   const auto *Function =
-      !Deleter.Array && !isa_and_nonnull<CXXMethodDecl>(Selected)
-          ? allocatorHeapFunction(false, Deleter.ElementType, L)
+      !isa_and_nonnull<CXXMethodDecl>(Selected)
+          ? allocatorHeapFunction(false, Deleter.ElementType, L, Deleter.Array)
           : allocationFunction(Selected, false, L, Deleter.Array);
   unsigned Index = 1;
   const bool Sized =
@@ -3494,44 +3494,7 @@ Adapter::uniquePtrDeleteFunction(const UtilityUniquePtrRecord &Owner,
            "A default deleter is required for this deallocation path.");
     throw Failure{};
   }
-  if (!Owner.Deleter.Array)
-    return defaultDeleteFunction(Owner.Deleter, Owner.DefaultDeletion, L);
-
-  auto HasClassArrayDelete = [&](auto &&Self, const CXXRecordDecl *Class,
-                                 unsigned Depth) -> bool {
-    const auto *Definition = Class ? Class->getDefinition() : nullptr;
-    if (!Definition || Depth > 64)
-      return false;
-    for (const auto *Method : Definition->methods())
-      if (Method->getOverloadedOperator() == OO_Array_Delete)
-        return true;
-    for (const auto &Base : Definition->bases())
-      if (Self(Self, Base.getType()->getAsCXXRecordDecl(), Depth + 1))
-        return true;
-    return false;
-  };
-  if (HasClassArrayDelete(HasClassArrayDelete,
-                          Context.getBaseElementType(Owner.ElementType)
-                              .getUnqualifiedType()
-                              ->getAsCXXRecordDecl(),
-                          0)) {
-    reject(L, "unique pointer deallocation",
-           "Array std::unique_ptr requires matching global delete[] "
-           "selection; class-specific array deallocation is unsupported.",
-           "TR0203");
-    throw Failure{};
-  }
-  const auto *Function =
-      allocatorHeapFunction(false, Owner.ElementType, L, true);
-  const bool Sized = Function->getNumParams() == 2;
-  const auto Layout = arrayAllocationLayout(Owner.ElementType, Sized, L);
-  if (Sized && !Layout.CookieBytes) {
-    reject(L, "sized array delete",
-           "The native array ABI supplies no count for this selected sized "
-           "deallocation function.");
-    throw Failure{};
-  }
-  return Function;
+  return defaultDeleteFunction(Owner.Deleter, Owner.DefaultDeletion, L);
 }
 
 ArrayAllocationLayout Adapter::arrayAllocationLayout(
@@ -13684,15 +13647,15 @@ public:
             const bool Array = Info->Owner.Deleter.Array;
             A.allocationFunction(Info->Allocation->getOperatorNew(), true, L,
                                  Array);
-            const auto *Deallocation =
-                A.uniquePtrDeleteFunction(Info->Owner, L);
+            A.uniquePtrDeleteFunction(Info->Owner, L);
             if (Array) {
               if (!Info->ArrayCount)
                 A.reject(L, "make_unique array extent",
                          "A constant array extent within the expansion limit "
                          "is required.",
                          "TR0203");
-              const bool Sized = Deallocation->getNumParams() == 2;
+              const bool Sized =
+                  Info->Owner.DefaultDeletion->doesUsualArrayDeleteWantSize();
               const auto Layout =
                   A.arrayAllocationLayout(Info->Owner.ElementType, Sized, L);
               if (Sized && !Layout.CookieBytes)
@@ -13719,9 +13682,10 @@ public:
             }
             A.type(Info->Owner.ElementType, L);
             if (!Info->Owner.CustomDeleter) {
-              const auto *Function = A.uniquePtrDeleteFunction(Info->Owner, L);
+              A.uniquePtrDeleteFunction(Info->Owner, L);
               if (Info->Owner.Deleter.Array) {
-                const bool Sized = Function->getNumParams() == 2;
+                const bool Sized =
+                    Info->Owner.DefaultDeletion->doesUsualArrayDeleteWantSize();
                 const auto Layout =
                     A.arrayAllocationLayout(Info->Owner.ElementType, Sized, L);
                 if (Sized && !Layout.CookieBytes)
@@ -13754,9 +13718,10 @@ public:
             }
             A.type(Info->Owner.ElementType, L);
             if (!Info->Owner.CustomDeleter) {
-              const auto *Function = A.uniquePtrDeleteFunction(Info->Owner, L);
+              A.uniquePtrDeleteFunction(Info->Owner, L);
               if (Info->Owner.Deleter.Array) {
-                const bool Sized = Function->getNumParams() == 2;
+                const bool Sized =
+                    Info->Owner.DefaultDeletion->doesUsualArrayDeleteWantSize();
                 const auto Layout =
                     A.arrayAllocationLayout(Info->Owner.ElementType, Sized, L);
                 if (Sized && !Layout.CookieBytes)

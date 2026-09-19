@@ -1495,8 +1495,8 @@ evaluate their operands and emit no SDK call. An authenticated call operator
 captures its receiver and pointer once, then uses the matching null-guarded
 single-object or array destruction path. Array calls consume the checked native
 cookie, destroy nontrivial elements in reverse order and emit an ordinary
-`call` to the checked source-defined sized or unsized global delete[]. Sized
-single-object deletion emits an ordinary `call` to the exact source-defined
+`call` to the checked source-defined sized or unsized class/global delete[].
+Sized single-object deletion emits an ordinary `call` to the exact source-defined
 class member selected by Clang, or to the checked global delete when lookup
 remains global, and receives exact `sizeof(T)` when selected. Sized array
 deletion receives the original allocation extent. Multidimensional calls
@@ -1529,16 +1529,16 @@ once; the pointer value is captured and stored while the empty deleter value
 adds no response field.
 Single-object owners admit dereference and arrow; array owners emit ordinary
 typed `index` expressions. Default-deleter array reset, assignment and
-destruction reuse the checked cookie-based reverse destruction and global
-delete[] call, including the original extent for sized deallocation.
+destruction reuse the checked cookie-based reverse destruction and selected
+class/global delete[] call, including the original extent for sized
+deallocation.
 Moves capture the source pointer, clear that source and cast only to the checked
 qualification-compatible destination type. Mutable and const `get_deleter`
 return a dereferenced pointer to the existing one-byte deleter record;
 the owner address is cast through `ptr:void` or `cptr:void` before being retyped,
 which preserves the authenticated zero-offset subobject identity without a new
-field. Scalar default deletion retains the checked destruction and selected
-class/global delete instructions; array default deletion retains the checked
-reverse destruction and global delete[] instructions. Custom deletion emits an
+field. Default deletion retains the checked destruction and selected scalar or
+array class/global delete instructions. Custom deletion emits an
 ordinary `call` to the source-defined operator with the zero-offset deleter
 address and exact raw pointer, guarded by the same null branch; it adds no SDK
 call or global delete requirement. Swaps capture both owners and exchange only
@@ -1561,14 +1561,15 @@ once. Exact unbounded-array
 extents, authenticates its `T[]` specialization, one `size_t` parameter,
 value-initializing `new[]` expression and libc++ private array-owner
 construction. The call-site count must be an integer constant expression from
-zero through 65536. It emits the checked global-new[] `call`, target cookie and
-flattened scalar value initialization or exact zero-explicit-argument
+zero through 65536. It emits the checked selected global or class
+`operator new[]` call, target cookie and flattened scalar value initialization
+or exact zero-explicit-argument
 source-owned non-template `noexcept` base-record constructor calls. Such a
 constructor may have parameters only when every semantic argument is its
 selected unrewritten source-owned default expression; each default is evaluated
 independently for every flattened base element.
-Later default destruction uses the existing checked scalar class/global delete
-or reverse global-delete[] path. Custom destruction calls the admitted operator
+Later default destruction uses the existing checked scalar or reverse-array
+class/global delete path. Custom destruction calls the admitted operator
 instead. These operations add no wire instruction, SDK call, native-heap import
 or hidden deleter storage. Stateful, reference, non-raw-pointer, nontrivial,
 overloaded, ref-qualified and throwing custom deleters remain rejected. Exact

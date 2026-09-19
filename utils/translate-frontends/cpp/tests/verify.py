@@ -2206,13 +2206,24 @@ struct DeleteOnly {
   explicit DeleteOnly(int initial) noexcept : value(initial) {}
   static void operator delete(void *) noexcept { ++class_deletions; }
 };
+struct ArrayOwned {
+  int value;
+  ArrayOwned() noexcept : value(0) {}
+  ~ArrayOwned() noexcept {}
+  static void *operator new[](Size) {
+    return class_storage[class_allocations++].bytes;
+  }
+  static void operator delete[](void *) noexcept { ++class_deletions; }
+};
 extern "C" int memory_class_allocation() {
   std::default_delete<Owned>{}(new Owned(1));
   auto owner = std::make_unique<Owned>(2);
   owner.reset();
   auto delete_only = std::make_unique<DeleteOnly>(3);
   delete_only.reset();
-  return class_allocations == 2 && class_deletions == 3 &&
+  auto array_owner = std::make_unique<ArrayOwned[][2]>(1);
+  array_owner.reset();
+  return class_allocations == 3 && class_deletions == 4 &&
                  global_allocations == 1 && global_deletions == 0
              ? 0
              : 1;
@@ -2232,12 +2243,12 @@ extern "C" int memory_class_allocation() {
         }
         allocation_calls = [call for call in calls
                             if call["callee"] in allocation_functions]
-        assert len(allocation_functions) == 2, data
-        assert len(allocation_calls) == 3, data
+        assert len(allocation_functions) == 3, data
+        assert len(allocation_calls) == 4, data
         allocation_counts = sorted(
             sum(call["callee"] == name for call in allocation_calls)
             for name in allocation_functions)
-        assert allocation_counts == [1, 2], data
+        assert allocation_counts == [1, 1, 2], data
         delete_functions = {
             name for name, function in functions.items()
             if function["result"] == "void" and
@@ -2246,16 +2257,16 @@ extern "C" int memory_class_allocation() {
         }
         delete_calls = [call for call in calls
                         if call["callee"] in delete_functions]
-        assert len(delete_functions) == 3, data
-        assert len(delete_calls) == 3, data
+        assert len(delete_functions) == 4, data
+        assert len(delete_calls) == 4, data
         delete_counts = sorted(
             sum(call["callee"] == name for call in delete_calls)
             for name in delete_functions)
-        assert delete_counts == [0, 1, 2], data
+        assert delete_counts == [0, 1, 1, 2], data
         assert len([record for record in data["records"]
                     if len(record["fields"]) == 1 and
                        record["fields"][0]["name"] ==
-                       "nct_unique_ptr_pointer"]) == 2, data
+                       "nct_unique_ptr_pointer"]) == 3, data
         assert not [node for node in walk(data["functions"])
                     if node.get("op") in
                        ("mapped_call", "native_heap_call")], data

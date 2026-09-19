@@ -551,7 +551,6 @@ utilityDefaultDeleteExpression(const State &S, const SourceManager &SM,
     if (!Deletion || Deletions != 1 ||
         Deletion->isArrayForm() != Deleter.Array || !Argument ||
         Argument->getDecl() != Method->getParamDecl(0) || !DeleteFunction ||
-        (Deleter.Array && DeleteMethod) ||
         DeleteFunction->getOverloadedOperator() !=
             (Deleter.Array ? OO_Array_Delete : OO_Delete) ||
         (!DeleteMethod && !DeleteFunction->getDeclContext()
@@ -569,17 +568,34 @@ utilityDefaultDeleteExpression(const State &S, const SourceManager &SM,
   if (Expected)
     return Inspect(Expected);
   const CXXDeleteExpr *Result = nullptr;
+  bool Ambiguous = false;
+  std::set<const CXXMethodDecl *> Seen;
+  auto Consider = [&](const CXXMethodDecl *Method) {
+    if (!Method || !Seen.insert(Method->getCanonicalDecl()).second)
+      return;
+    const auto *Deletion = Inspect(Method);
+    if (!Deletion)
+      return;
+    if (Result) {
+      Ambiguous = true;
+      return;
+    }
+    Result = Deletion;
+  };
   for (const auto *Method : Deleter.Record->methods()) {
     if (Method->getOverloadedOperator() != OO_Call)
       continue;
-    const auto *Deletion = Inspect(Method);
-    if (!Deletion)
-      continue;
-    if (Result)
-      return nullptr;
-    Result = Deletion;
+    Consider(Method);
   }
-  return Result;
+  for (const auto *Member : Deleter.Record->decls()) {
+    const auto *Template = dyn_cast<FunctionTemplateDecl>(Member);
+    if (!Template ||
+        Template->getTemplatedDecl()->getOverloadedOperator() != OO_Call)
+      continue;
+    for (const auto *Specialization : Template->specializations())
+      Consider(dyn_cast<CXXMethodDecl>(Specialization));
+  }
+  return Ambiguous ? nullptr : Result;
 }
 
 std::optional<UtilityUniquePtrRecord>
@@ -752,10 +768,9 @@ approvedUtilityUniquePtrRecord(const State &S, const SourceManager &SM,
     if (Layout.getFieldOffset(I) != 0)
       return std::nullopt;
   const auto *DefaultDeletion =
-      StandardDeleter && !Deleter->Array
-          ? utilityDefaultDeleteExpression(S, SM, *Deleter, Context)
-          : nullptr;
-  if (StandardDeleter && !Deleter->Array && !DefaultDeletion)
+      StandardDeleter ? utilityDefaultDeleteExpression(S, SM, *Deleter, Context)
+                      : nullptr;
+  if (StandardDeleter && !DefaultDeletion)
     return std::nullopt;
   return UtilityUniquePtrRecord{Definition, Element,         Pointer,
                                 *Deleter,   DefaultDeletion, CustomDeleter};
@@ -3967,7 +3982,6 @@ approvedUtilityMakeUniqueCall(const State &S, const SourceManager &SM,
                            Context.getSizeType()) ||
       AllocationFunction->getOverloadedOperator() !=
           (Owner->Deleter.Array ? OO_Array_New : OO_New) ||
-      (Owner->Deleter.Array && isa<CXXMethodDecl>(AllocationFunction)) ||
       (!isa<CXXMethodDecl>(AllocationFunction) &&
        !AllocationFunction->getDeclContext()
             ->getRedeclContext()

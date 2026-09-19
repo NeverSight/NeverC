@@ -154,8 +154,8 @@ layout through a synthetic
 byte carrier. Default, copy/move and admitted cv-converting construction lower
 directly. Their authenticated call operator evaluates the receiver and pointer
 once, destroys the complete object or reverse array elements, and calls a
-checked source-defined scalar class/global delete selected by Clang or a
-checked global delete[]. Volatile base
+checked source-defined scalar or array class/global delete selected by Clang.
+Volatile base
 elements and function addresses remain rejected. Exact single-object
 `std::unique_ptr<T, std::default_delete<T>>` and unbounded-array
 `std::unique_ptr<T[], std::default_delete<T[]>>`, including multidimensional
@@ -173,9 +173,8 @@ same scalar/array category and qualification-compatible raw pointers regardless
 of deleter specialization, all six
 bidirectional `nullptr` comparisons and destruction lower directly without a
 libc++ call.
-Scalar default deleters use the matching checked class or global delete;
-array default deleters use the matching checked global delete[] path. An
-admitted custom deleter is called once for a non-null pointer and
+Default deleters use the matching checked scalar or array class/global delete.
+An admitted custom deleter is called once for a non-null pointer and
 needs no global delete definition. Single-object owners expose dereference and
 arrow; array owners expose subscript and use checked cookie-based reverse
 destruction only for default deletion. Exact raw pointers to the owner may also
@@ -186,8 +185,8 @@ factory body and lowers through the checked source-defined global or
 class-specific scalar new/delete selected by Clang. Exact
 unbounded-array `std::make_unique<T[]>(count)`, where `T` may have complete
 bounded inner extents, additionally accepts an integer constant expression from
-zero through 65536 and lowers through the matching checked global new[]/delete[]
-cookie path. The scalar factory value-initializes
+zero through 65536 and lowers through the matching checked global or
+class-specific new[]/delete[] cookie path. The scalar factory value-initializes
 its object or calls an exact source-owned non-template `noexcept` record
 constructor with the call-site arguments and any authenticated source-owned
 trailing defaults. The array factory value-initializes each scalar element or

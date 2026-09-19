@@ -7549,7 +7549,7 @@ class FunctionLowering {
     const auto *Function = A.uniquePtrDeleteFunction(Owner, L);
     if (Owner.Deleter.Array) {
       deallocateArray(std::move(Pointer), Owner.ElementType, Function,
-                      Function->getNumParams() == 2, L);
+                      Owner.DefaultDeletion->doesUsualArrayDeleteWantSize(), L);
       return;
     }
     deallocateSingle(std::move(Pointer), Owner.ElementType, Function, L);

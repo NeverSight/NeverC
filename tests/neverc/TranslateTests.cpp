@@ -25851,17 +25851,15 @@ TEST_F(TranslateTest, CoreV2MemoryUniquePtrRequiresExactObjectForms) {
        "#include <memory>\nvoid operator delete[](void*)noexcept{}"
        "std::unique_ptr<volatile int[][2]> value;",
        "TR0203"},
-      {"class-array-delete",
+      {"class-array-delete-missing-definition",
        "#include <memory>\nstruct R{static void operator "
        "delete[](void*)noexcept;};"
-       "void R::operator delete[](void*)noexcept{}"
        "void operator delete[](void*)noexcept{}"
        "std::unique_ptr<R[]> value;",
        "TR0203"},
-      {"multidimensional-class-array-delete",
+      {"multidimensional-class-array-delete-missing-definition",
        "#include <memory>\nstruct R{static void operator "
        "delete[](void*)noexcept;};"
-       "void R::operator delete[](void*)noexcept{}"
        "void operator delete[](void*)noexcept{}"
        "std::unique_ptr<R[][2]> value;",
        "TR0203"},
@@ -26086,21 +26084,35 @@ TEST_F(TranslateTest, CoreV2MemoryClassAllocationOwnersRunAtBothOptimizations) {
 #include <memory>
 using Size = decltype(sizeof(0));
 struct Storage { unsigned long long alignment; unsigned char bytes[64]; };
-Storage class_storage[8]{};
-Storage global_storage[2]{};
+Storage class_storage[12]{};
+Storage global_storage[4]{};
 int class_allocations;
 int class_deletions;
 int global_allocations;
 int global_deletions;
 int destroyed;
+int array_allocations;
+int array_deletions;
+int array_constructed;
+int array_destroyed;
 Size class_allocated_bytes;
 Size sized_released_bytes;
 Size global_allocated_bytes;
+Size sized_array_allocated_bytes;
+Size sized_array_released_bytes;
 void *operator new(Size size) {
   global_allocated_bytes += size;
   return global_storage[global_allocations++].bytes;
 }
 void operator delete(void *) noexcept { ++global_deletions; }
+void *operator new[](Size) {
+  ++array_allocations;
+  return global_storage[global_allocations++].bytes;
+}
+void operator delete[](void *) noexcept {
+  ++array_deletions;
+  ++global_deletions;
+}
 struct Unsized {
   int value;
   explicit Unsized(int initial) noexcept : value(initial) {}
@@ -26139,6 +26151,52 @@ struct DeleteOnly {
   ~DeleteOnly() noexcept { destroyed += value; }
   static void operator delete(void *) noexcept { ++class_deletions; }
 };
+struct ArrayUnsized {
+  int value;
+  ArrayUnsized() noexcept : value(++array_constructed) {}
+  ~ArrayUnsized() noexcept { ++array_destroyed; }
+  static void *operator new[](Size) {
+    ++array_allocations;
+    return class_storage[class_allocations++].bytes;
+  }
+  static void operator delete[](void *) noexcept {
+    ++array_deletions;
+    ++class_deletions;
+  }
+};
+struct ArraySized {
+  int value;
+  ArraySized() noexcept : value(++array_constructed) {}
+  ~ArraySized() noexcept { ++array_destroyed; }
+  static void *operator new[](Size size) {
+    ++array_allocations;
+    sized_array_allocated_bytes += size;
+    return class_storage[class_allocations++].bytes;
+  }
+  static void operator delete[](void *, Size size) noexcept {
+    ++array_deletions;
+    ++class_deletions;
+    sized_array_released_bytes += size;
+  }
+};
+struct ArrayGlobalDeleted {
+  int value;
+  ArrayGlobalDeleted() noexcept : value(++array_constructed) {}
+  ~ArrayGlobalDeleted() noexcept { ++array_destroyed; }
+  static void *operator new[](Size) {
+    ++array_allocations;
+    return class_storage[class_allocations++].bytes;
+  }
+};
+struct ArrayDeleteOnly {
+  int value;
+  ArrayDeleteOnly() noexcept : value(++array_constructed) {}
+  ~ArrayDeleteOnly() noexcept { ++array_destroyed; }
+  static void operator delete[](void *) noexcept {
+    ++array_deletions;
+    ++class_deletions;
+  }
+};
 int main() {
   std::default_delete<Unsized>{}(new Unsized(1));
   std::unique_ptr<Unsized> owner(new Unsized(2));
@@ -26157,15 +26215,34 @@ int main() {
   auto delete_only = std::make_unique<DeleteOnly>(8);
   delete_only.reset();
 
+  auto unsized_array = std::make_unique<ArrayUnsized[]>(3);
+  if (unsized_array[0].value != 1 || unsized_array[2].value != 3) return 2;
+  unsized_array.reset();
+  std::unique_ptr<ArraySized[]> sized_array(new ArraySized[2]());
+  if (sized_array[0].value != 4 || sized_array[1].value != 5) return 3;
+  sized_array.reset();
+  std::default_delete<ArrayUnsized[]>{}(new ArrayUnsized[1]());
+  auto globally_deleted_array = std::make_unique<ArrayGlobalDeleted[]>(1);
+  globally_deleted_array.reset();
+  auto delete_only_array = std::make_unique<ArrayDeleteOnly[]>(1);
+  delete_only_array.reset();
+  auto array_matrix = std::make_unique<ArrayUnsized[][2]>(1);
+  if (array_matrix[0][0].value != 9 || array_matrix[0][1].value != 10) return 4;
+  array_matrix.reset();
+
   const Size expected_class_bytes = 4 * sizeof(Unsized) +
                                     2 * sizeof(Sized) +
                                     sizeof(GlobalDeleted);
-  return class_allocations == 7 && class_deletions == 7 &&
-                 global_allocations == 1 && global_deletions == 1 &&
+  return class_allocations == 12 && class_deletions == 12 &&
+                 global_allocations == 2 && global_deletions == 2 &&
                  destroyed == 36 &&
+                 array_allocations == 6 && array_deletions == 6 &&
+                 array_constructed == 10 && array_destroyed == 10 &&
                  class_allocated_bytes == expected_class_bytes &&
                  sized_released_bytes == 2 * sizeof(Sized) &&
-                 global_allocated_bytes == sizeof(DeleteOnly)
+                 global_allocated_bytes == sizeof(DeleteOnly) &&
+                 sized_array_allocated_bytes == sized_array_released_bytes &&
+                 sized_array_allocated_bytes > 2 * sizeof(ArraySized)
              ? 0
              : 1;
 }
@@ -26446,10 +26523,17 @@ TEST_F(TranslateTest, CoreV2MemoryMakeUniqueRequiresExactObjectForms) {
        "int main(){auto value=std::make_unique<int[][65536]>(4);"
        "return value[0][0];}",
        "TR0201"},
-      {"array-class-specific-new",
+      {"array-class-specific-new-missing-definition",
        "#include <memory>\nusing S=decltype(sizeof(0));unsigned char b[16];"
        "void operator delete[](void*)noexcept{}"
-       "struct R{static void*operator new[](S){return b;}R()noexcept{}};"
+       "struct R{static void*operator new[](S);R()noexcept{}};"
+       "int main(){auto value=std::make_unique<R[]>(1);}",
+       "TR0203"},
+      {"array-class-specific-delete-missing-definition",
+       "#include <memory>\nusing S=decltype(sizeof(0));unsigned char b[16];"
+       "void*operator new[](S){return b;}void operator "
+       "delete[](void*)noexcept{}"
+       "struct R{static void operator delete[](void*)noexcept;R()noexcept{}};"
        "int main(){auto value=std::make_unique<R[]>(1);}",
        "TR0203"},
       {"throwing-constructor",
