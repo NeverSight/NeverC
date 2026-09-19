@@ -5972,24 +5972,6 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                true)
         .has_value();
   };
-  auto AlgorithmValueParameter = [&](unsigned ValueIndex,
-                                     unsigned IteratorIndex) {
-    if (ValueIndex >= Function->getNumParams() ||
-        ValueIndex >= Call->getNumArgs() ||
-        IteratorIndex >= Function->getNumParams())
-      return false;
-    auto Iterator = Function->getParamDecl(IteratorIndex)->getType();
-    auto Value = Function->getParamDecl(ValueIndex)->getType();
-    return utilityAlgorithmScalarPointer(Context, Iterator) &&
-           Value->isLValueReferenceType() &&
-           Value->getPointeeType().isConstQualified() &&
-           !Value->getPointeeType().isVolatileQualified() &&
-           utilityScalar(Context, Value->getPointeeType()) &&
-           Context.hasSameUnqualifiedType(Value->getPointeeType(),
-                                          Iterator->getPointeeType()) &&
-           Context.hasSameUnqualifiedType(Call->getArg(ValueIndex)->getType(),
-                                          Value->getPointeeType());
-  };
   auto AlgorithmScalarValueParameter = [&](unsigned ValueIndex,
                                            unsigned IteratorIndex) {
     if (ValueIndex >= Function->getNumParams() ||
@@ -6950,7 +6932,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
     if (Call->getNumArgs() == 4 && AlgorithmEqualityPointerParameter(0) &&
-        AlgorithmEqualityPointerParameter(1) && AlgorithmValueParameter(3, 0))
+        AlgorithmEqualityPointerParameter(1) &&
+        AlgorithmEqualityValueParameter(3, 0))
       return UtilityOperation::AlgorithmSearchN;
     if (Call->getNumArgs() == 5 &&
         AlgorithmBinaryPredicateValueParameter(4, 0, 3))

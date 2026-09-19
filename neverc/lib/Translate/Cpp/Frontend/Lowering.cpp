@@ -3556,6 +3556,16 @@ class FunctionLowering {
       std::optional<Expression> Predicate;
       if (Call->getNumArgs() == 5)
         Predicate = snapshot(expression(Call->getArg(4)), L);
+      std::optional<std::string> DefaultComparisonType;
+      if (!Predicate) {
+        auto Common = utilityScalarComparisonType(
+            A.Context, Call->getArg(0)->getType()->getPointeeType(),
+            Call->getArg(3)->getType(), false);
+        if (!Common)
+          reject(L, "algorithm search_n",
+                 "The range element and value have no equality common type.");
+        DefaultComparisonType = type(*Common, L);
+      }
       auto Candidate = snapshot(json::Object(First), L);
       auto Current = snapshot(json::Object(First), L);
       auto Remaining = temporary(CountTypeName, L);
@@ -3580,14 +3590,18 @@ class FunctionLowering {
       label(CheckSource, L);
       branch(binary("!=", Current, Last, "bool", L), Compare, NotFound, L);
       label(Compare, L);
-      branch(Predicate
-                 ? emitBinaryPredicate(
-                       json::Object(*Predicate), Call->getArg(4)->getType(),
-                       dereference(json::Object(Current), L),
-                       dereference(json::Object(ValueAddress), L), L)
-                 : binary("==", dereference(Current, L),
-                          dereference(ValueAddress, L), "bool", L),
-             Advance, Mismatch, L);
+      branch(
+          Predicate
+              ? emitBinaryPredicate(
+                    json::Object(*Predicate), Call->getArg(4)->getType(),
+                    dereference(json::Object(Current), L),
+                    dereference(json::Object(ValueAddress), L), L)
+              : binary("==",
+                       cast(dereference(Current, L), *DefaultComparisonType, L),
+                       cast(dereference(ValueAddress, L),
+                            *DefaultComparisonType, L),
+                       "bool", L),
+          Advance, Mismatch, L);
       label(Advance, L);
       assign(
           Current,

@@ -29365,12 +29365,13 @@ int main() {
       std::find_first_of(source, source + 10, choices, choices) != source + 10)
     return 4;
   const int runs[7]{1, 2, 2, 2, 3, 2, 2};
+  short run_value = 2;
   short negative = -1;
-  if (std::search_n(runs, runs + 7, Count::two, 2) != runs + 1 ||
-      std::search_n(runs, runs + 7, 3, 2) != runs + 1 ||
-      std::search_n(runs, runs + 7, 4, 2) != runs + 7 ||
-      std::search_n(runs, runs + 7, 0, 2) != runs ||
-      std::search_n(runs, runs + 7, negative, 2) != runs)
+  if (std::search_n(runs, runs + 7, Count::two, run_value) != runs + 1 ||
+      std::search_n(runs, runs + 7, 3, run_value) != runs + 1 ||
+      std::search_n(runs, runs + 7, 4, run_value) != runs + 7 ||
+      std::search_n(runs, runs + 7, 0, run_value) != runs ||
+      std::search_n(runs, runs + 7, negative, run_value) != runs)
     return 5;
 
   const int left[4]{1, 2, 3, 4};

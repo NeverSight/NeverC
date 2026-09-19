@@ -3137,7 +3137,7 @@ extern "C" int algorithm_predicate_unique(
 #include <algorithm>
 extern "C" int algorithm_subrange(const int *first, const int *last,
                                     const long *pattern,
-                                    const long *pattern_last, int value) {
+                                    const long *pattern_last, short value) {
   const int *found = std::search(first, last, pattern, pattern_last);
   const int *final = std::find_end(first, last, pattern, pattern_last);
   const int *choice = std::find_first_of(first, last, pattern, pattern_last);
