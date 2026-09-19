@@ -482,11 +482,13 @@ The exact `const noexcept` call operator must contain the authenticated matching
 `deleter(pointer)` and explicit `deleter.operator()(pointer)` evaluate the
 receiver before the pointer, capture the pointer once and preserve the normal
 null check. Single-object calls destroy a nontrivial complete source object and
-call the checked source-defined global delete. Array calls read the checked
-native array cookie, destroy nontrivial elements in reverse order and call the
-selected checked source-defined global `delete[]`; sized deallocation receives
-the original allocation extent. When libc++ supplies only a standard sized
-declaration, a checked source-defined unsized operator is selected instead.
+call the exact checked source-defined class delete selected by Clang, or the
+checked global sized/unsized delete when lookup remains global. Array calls
+read the checked native array cookie, destroy nontrivial elements in reverse
+order and call the selected checked source-defined global `delete[]`; sized
+deallocation receives the original allocation extent. When libc++ supplies
+only a standard sized declaration, a checked source-defined unsized operator
+is selected instead.
 Calls require a complete element within the target's default new alignment,
 enable `memory_lifetimes`, and introduce no libc++ runtime call, native-heap
 import or ownership object. Multidimensional deletion uses each fixed inner
@@ -536,7 +538,7 @@ and yields the same owner identity. `reset(pointer())`, array `reset(nullptr)`
 and compatible raw-pointer reset evaluate the
 receiver before the replacement argument, install the replacement before
 destroying the old object. A default deleter uses the matching checked
-single-object or reverse-array destruction and global delete/delete[] path. A
+single-object class/global delete or reverse-array global delete[] path. A
 custom deleter receives the old non-null pointer exactly once through its
 source-defined call operator and does not require any global delete definition.
 Same-type and admitted const-adding converting move assignment evaluate the
@@ -566,10 +568,12 @@ unbounded-array `std::make_unique<T[]>(count)` overload are also admitted;
 array `T` may contain complete bounded inner extents. The
 single-object path authenticates the concrete function-template specialization,
 `T` and `_Args` pack, non-array `new T(...)`, raw-pointer `unique_ptr<T>`
-construction and selected global allocation function together. Allocation uses
-the checked source-defined global new path before evaluating construction
-arguments. A scalar accepts value initialization or one admitted direct scalar
-conversion. A complete source-owned non-union record calls the exact
+construction and selected allocation function together. Allocation uses the
+exact checked source-defined global or class-specific `operator new` selected
+by Clang before evaluating construction arguments. The resulting owner uses
+the independently selected scalar class/global delete path. A scalar accepts
+value initialization or one admitted direct scalar conversion. A complete
+source-owned non-union record calls the exact
 source-owned non-template `noexcept` constructor selected by Clang, including
 default, copy, move and multi-argument forms. Omitted trailing parameters must
 be represented by the exact selected constructor's unrewritten source-owned
@@ -589,16 +593,17 @@ parameter's unrewritten source-owned default expression. The constructor and its
 defaults are evaluated independently once for each flattened element, with
 temporary cleanup before construction advances to the next element. The
 resulting raw pointer is installed in the normal pointer-sized owner, so return
-destinations, automatic destruction and the checked global-delete or reverse
-global-delete[] path remain shared with direct `unique_ptr` construction.
+destinations, automatic destruction and the checked scalar class/global delete
+or reverse global-delete[] path remain shared with direct `unique_ptr`
+construction.
 Neither factory emits a libc++ runtime call.
 
 Default deletion requires a complete base element within the target's default
-new alignment and a matching source-owned global sized or unsized delete
-definition. Class-specific delete/delete[], volatile elements,
+new alignment and a matching source-owned selected scalar class/global delete
+or global delete[] definition. Class-specific delete[], volatile elements,
 member-function addresses, const-removing or base-adjusting converting moves
 and base-adjusting heterogeneous comparisons remain rejected at this boundary.
-Runtime-count `make_unique`, class-specific allocation, throwing record
+Runtime-count or class-specific array `make_unique`, throwing record
 construction, over-aligned elements, factory function addresses and other
 ownership factories remain rejected. Every admitted operation emits no libc++
 runtime call and enables the checked

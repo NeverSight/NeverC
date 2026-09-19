@@ -81,8 +81,8 @@ identities, inherited aliases and constants also resolve. Exact single-object
 `std::default_delete<T>` and unbounded-array `std::default_delete<T[]>`, where
 `T` may have complete bounded inner extents, preserve their one-byte stateless
 layout; their construction and calls lower directly through checked object or
-flattened reverse array destruction and a source-defined global
-delete/delete[].
+flattened reverse array destruction and the checked source-defined scalar
+class/global delete or global delete[] selected by Clang.
 `std::addressof`, `pointer_traits::pointer_to` and scalar-pointer destruction
 and uninitialized construction algorithms lower directly. Exact runtime
 allocator objects, C++17 `destroy`, and allocator-traits destruction,
@@ -204,8 +204,9 @@ runtime call. Exact single-object `std::default_delete<T>` and unbounded-array
 authenticated one-byte stateless carrier. Default, copy/move and admitted
 cv-converting construction lower
 directly. Calls evaluate the deleter and pointer once, destroy the complete
-object or reverse array elements, and invoke a checked source-defined global
-sized or unsized delete/delete[]. Exact single-object
+object or reverse array elements, and invoke the checked source-defined scalar
+class/global delete selected by Clang or a checked global delete[]. Exact
+single-object
 `std::unique_ptr<T, std::default_delete<T>>` and unbounded-array
 `std::unique_ptr<T[], std::default_delete<T[]>>`, including multidimensional
 owners, use authenticated pointer-sized carriers. The same owner forms admit a
@@ -218,13 +219,15 @@ assignment, observation, release, reset, swap, same-category comparisons across
 deleter specializations with qualification-compatible raw pointers, and
 destruction operations lower directly; scalar owners
 expose dereference and arrow while array owners expose subscript.
-Default deleters use the checked global-delete or reverse `delete[]` path; an
+Scalar default deleters use Clang's selected checked class or global delete;
+array default deleters use the checked reverse global `delete[]` path. An
 admitted custom deleter is invoked for a non-null pointer without requiring a
 global delete definition. Exact single-object `std::make_unique<T>(args...)`
 and unbounded-array
 `std::make_unique<T[]>(count)`, where `T` may have complete bounded inner
 extents, for integer constant expressions from zero through 65536 lower through
-checked source-defined global new/delete or new[]/delete[]. They value-initialize
+the selected checked source-defined global/class-specific scalar new/delete or
+global new[]/delete[]. They value-initialize
 flattened scalars or call supported source-owned
 non-template `noexcept` record constructors, including authenticated
 source-owned trailing defaults. Defaults are evaluated once per constructed

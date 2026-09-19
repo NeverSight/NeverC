@@ -504,6 +504,84 @@ approvedUtilityDefaultDeleteRecord(const State &S, const SourceManager &SM,
   return UtilityDefaultDeleteRecord{Definition, Element, Array != nullptr};
 }
 
+static const CXXDeleteExpr *
+utilityDefaultDeleteExpression(const State &S, const SourceManager &SM,
+                               const UtilityDefaultDeleteRecord &Deleter,
+                               const ASTContext &Context,
+                               const CXXMethodDecl *Expected = nullptr) {
+  auto Inspect = [&](const CXXMethodDecl *Method) -> const CXXDeleteExpr * {
+    const auto *Prototype =
+        Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
+    if (!Method || !Prototype || !Prototype->isNothrow() ||
+        Method->getParent()->getCanonicalDecl() !=
+            Deleter.Record->getCanonicalDecl() ||
+        Method->isStatic() || !Method->isConst() || Method->isVariadic() ||
+        Method->getOverloadedOperator() != OO_Call ||
+        Method->getNumParams() != 1 || !Method->getReturnType()->isVoidType() ||
+        !Method->isInlined() || !Method->hasBody() ||
+        !approvedStandardSDKDeclaration(S, SM, Method) ||
+        !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
+                       "__memory/unique_ptr.h"))
+      return nullptr;
+    const auto Pointer = Context.getPointerType(Deleter.ElementType);
+    if (!Context.hasSameType(Method->getParamDecl(0)->getType(), Pointer))
+      return nullptr;
+
+    const CXXDeleteExpr *Deletion = nullptr;
+    unsigned Deletions = 0;
+    auto FindDeletion = [&](auto &&Self, const Stmt *Node,
+                            unsigned Depth) -> void {
+      if (!Node || Depth > 32)
+        return;
+      if (const auto *Delete = dyn_cast<CXXDeleteExpr>(Node)) {
+        ++Deletions;
+        Deletion = Delete;
+      }
+      for (const auto *Child : Node->children())
+        Self(Self, Child, Depth + 1);
+    };
+    FindDeletion(FindDeletion, Method->getBody(), 0);
+    const auto *Argument =
+        Deletion ? dyn_cast<DeclRefExpr>(
+                       Deletion->getArgument()->IgnoreParenImpCasts())
+                 : nullptr;
+    const auto *DeleteFunction =
+        Deletion ? Deletion->getOperatorDelete() : nullptr;
+    const auto *DeleteMethod = dyn_cast_or_null<CXXMethodDecl>(DeleteFunction);
+    if (!Deletion || Deletions != 1 ||
+        Deletion->isArrayForm() != Deleter.Array || !Argument ||
+        Argument->getDecl() != Method->getParamDecl(0) || !DeleteFunction ||
+        (Deleter.Array && DeleteMethod) ||
+        DeleteFunction->getOverloadedOperator() !=
+            (Deleter.Array ? OO_Array_Delete : OO_Delete) ||
+        (!DeleteMethod && !DeleteFunction->getDeclContext()
+                               ->getRedeclContext()
+                               ->isTranslationUnit()) ||
+        !Context.hasSameType(Deletion->getArgument()->getType(), Pointer) ||
+        !Context.hasSameType(Deletion->getDestroyedType(),
+                             Deleter.ElementType) ||
+        !cstddefOrigin(S, SM, Deletion->getExprLoc(), "libcxx",
+                       "__memory/unique_ptr.h"))
+      return nullptr;
+    return Deletion;
+  };
+
+  if (Expected)
+    return Inspect(Expected);
+  const CXXDeleteExpr *Result = nullptr;
+  for (const auto *Method : Deleter.Record->methods()) {
+    if (Method->getOverloadedOperator() != OO_Call)
+      continue;
+    const auto *Deletion = Inspect(Method);
+    if (!Deletion)
+      continue;
+    if (Result)
+      return nullptr;
+    Result = Deletion;
+  }
+  return Result;
+}
+
 std::optional<UtilityUniquePtrRecord>
 approvedUtilityUniquePtrRecord(const State &S, const SourceManager &SM,
                                const CXXRecordDecl *Record,
@@ -557,6 +635,7 @@ approvedUtilityUniquePtrRecord(const State &S, const SourceManager &SM,
 
   auto Deleter = approvedUtilityDefaultDeleteRecord(
       S, SM, Fields[2]->getType()->getAsCXXRecordDecl(), Context);
+  const bool StandardDeleter = Deleter.has_value();
   const CXXMethodDecl *CustomDeleter = nullptr;
   if (Deleter) {
     if (!Context.hasSameType(Deleter->ElementType, Element) ||
@@ -672,8 +751,14 @@ approvedUtilityUniquePtrRecord(const State &S, const SourceManager &SM,
   for (unsigned I = 0; I != ExpectedFields; ++I)
     if (Layout.getFieldOffset(I) != 0)
       return std::nullopt;
-  return UtilityUniquePtrRecord{Definition, Element, Pointer, *Deleter,
-                                CustomDeleter};
+  const auto *DefaultDeletion =
+      StandardDeleter && !Deleter->Array
+          ? utilityDefaultDeleteExpression(S, SM, *Deleter, Context)
+          : nullptr;
+  if (StandardDeleter && !Deleter->Array && !DefaultDeletion)
+    return std::nullopt;
+  return UtilityUniquePtrRecord{Definition, Element,         Pointer,
+                                *Deleter,   DefaultDeletion, CustomDeleter};
 }
 
 std::optional<UtilityAllocatorRecord>
@@ -3039,40 +3124,9 @@ approvedUtilityDefaultDeleteCall(const State &S, const SourceManager &SM,
       !Context.hasSameType(Call->getArg(PointerIndex)->getType(), Pointer))
     return std::nullopt;
 
-  const CXXDeleteExpr *Deletion = nullptr;
-  unsigned Deletions = 0;
-  auto FindDeletion = [&](auto &&Self, const Stmt *Node,
-                          unsigned Depth) -> void {
-    if (!Node || Depth > 32)
-      return;
-    if (const auto *Delete = dyn_cast<CXXDeleteExpr>(Node)) {
-      ++Deletions;
-      Deletion = Delete;
-    }
-    for (const auto *Child : Node->children())
-      Self(Self, Child, Depth + 1);
-  };
-  FindDeletion(FindDeletion, Method->getBody(), 0);
-  const auto *Argument =
-      Deletion ? dyn_cast<DeclRefExpr>(
-                     Deletion->getArgument()->IgnoreParenImpCasts())
-               : nullptr;
-  const auto *DeleteFunction =
-      Deletion ? Deletion->getOperatorDelete() : nullptr;
-  if (!Deletion || Deletions != 1 ||
-      Deletion->isArrayForm() != Deleter->Array || !Argument ||
-      Argument->getDecl() != Method->getParamDecl(0) || !DeleteFunction ||
-      isa<CXXMethodDecl>(DeleteFunction) ||
-      DeleteFunction->getOverloadedOperator() !=
-          (Deleter->Array ? OO_Array_Delete : OO_Delete) ||
-      !DeleteFunction->getDeclContext()
-           ->getRedeclContext()
-           ->isTranslationUnit() ||
-      !Context.hasSameType(Deletion->getArgument()->getType(), Pointer) ||
-      !Context.hasSameType(Deletion->getDestroyedType(),
-                           Deleter->ElementType) ||
-      !cstddefOrigin(S, SM, Deletion->getExprLoc(), "libcxx",
-                     "__memory/unique_ptr.h"))
+  const auto *Deletion =
+      utilityDefaultDeleteExpression(S, SM, *Deleter, Context, Method);
+  if (!Deletion)
     return std::nullopt;
   return UtilityDefaultDeleteCall{*Deleter, Deletion, Object, PointerIndex};
 }
@@ -3903,14 +3957,23 @@ approvedUtilityMakeUniqueCall(const State &S, const SourceManager &SM,
   if (!Allocation || Allocations != 1 || !OwnerConstruction ||
       OwnerConstructions != 1 ||
       Allocation->isArray() != Owner->Deleter.Array ||
-      Allocation->getNumPlacementArgs() || !AllocationFunction ||
-      isa<CXXMethodDecl>(AllocationFunction) ||
-      AllocationFunction->isVariadic() ||
+      Allocation->getNumPlacementArgs() || Allocation->passAlignment() ||
+      !AllocationFunction || AllocationFunction->isVariadic() ||
+      AllocationFunction->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+      AllocationFunction->getNumParams() != 1 ||
+      !Context.hasSameType(AllocationFunction->getReturnType(),
+                           Context.VoidPtrTy) ||
+      !Context.hasSameType(AllocationFunction->getParamDecl(0)->getType(),
+                           Context.getSizeType()) ||
       AllocationFunction->getOverloadedOperator() !=
           (Owner->Deleter.Array ? OO_Array_New : OO_New) ||
-      !AllocationFunction->getDeclContext()
-           ->getRedeclContext()
-           ->isTranslationUnit() ||
+      (Owner->Deleter.Array && isa<CXXMethodDecl>(AllocationFunction)) ||
+      (!isa<CXXMethodDecl>(AllocationFunction) &&
+       !AllocationFunction->getDeclContext()
+            ->getRedeclContext()
+            ->isTranslationUnit()) ||
+      Context.getTypeAlign(Owner->ElementType) >
+          Context.getTargetInfo().getNewAlign() ||
       !Context.hasSameType(Allocation->getAllocatedType(),
                            Owner->ElementType) ||
       !Context.hasSameType(Allocation->getType(), Owner->PointerType) ||

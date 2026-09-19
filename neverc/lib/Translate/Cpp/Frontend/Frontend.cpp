@@ -3441,6 +3441,99 @@ const FunctionDecl *Adapter::allocatorHeapFunction(bool Allocate,
   return allocationFunction(Selected, Allocate, L, Array);
 }
 
+const FunctionDecl *
+Adapter::defaultDeleteFunction(const UtilityDefaultDeleteRecord &Deleter,
+                               const CXXDeleteExpr *Delete, SourceLocation L) {
+  if (!Delete || Delete->isArrayForm() != Deleter.Array ||
+      !Context.hasSameType(Delete->getDestroyedType(), Deleter.ElementType) ||
+      Context.getTypeAlign(Deleter.ElementType) >
+          Context.getTargetInfo().getNewAlign()) {
+    reject(L, "default delete selection",
+           "An authenticated matching delete expression is required.");
+    throw Failure{};
+  }
+  const auto *Selected = Delete->getOperatorDelete();
+  const auto *Function =
+      !Deleter.Array && !isa_and_nonnull<CXXMethodDecl>(Selected)
+          ? allocatorHeapFunction(false, Deleter.ElementType, L)
+          : allocationFunction(Selected, false, L, Deleter.Array);
+  unsigned Index = 1;
+  const bool Sized =
+      Index < Function->getNumParams() &&
+      Context.hasSameUnqualifiedType(Function->getParamDecl(Index)->getType(),
+                                     Context.getSizeType());
+  if (Sized)
+    ++Index;
+  if (Index < Function->getNumParams() &&
+      Function->getParamDecl(Index)->getType()->isAlignValT())
+    ++Index;
+  if (Index != Function->getNumParams() || concreteFunctionTemplate(Function)) {
+    reject(L, "default delete arguments",
+           "Usual deallocation requires a pointer followed only by selected "
+           "size and alignment values.");
+    throw Failure{};
+  }
+  if (Deleter.Array) {
+    const auto Layout = arrayAllocationLayout(
+        Deleter.ElementType, Delete->doesUsualArrayDeleteWantSize(), L);
+    if (Sized && !Layout.CookieBytes) {
+      reject(L, "sized array delete",
+             "The native array ABI supplies no count for this selected sized "
+             "deallocation function.");
+      throw Failure{};
+    }
+  }
+  return Function;
+}
+
+const FunctionDecl *
+Adapter::uniquePtrDeleteFunction(const UtilityUniquePtrRecord &Owner,
+                                 SourceLocation L) {
+  if (Owner.CustomDeleter) {
+    reject(L, "unique pointer deallocation",
+           "A default deleter is required for this deallocation path.");
+    throw Failure{};
+  }
+  if (!Owner.Deleter.Array)
+    return defaultDeleteFunction(Owner.Deleter, Owner.DefaultDeletion, L);
+
+  auto HasClassArrayDelete = [&](auto &&Self, const CXXRecordDecl *Class,
+                                 unsigned Depth) -> bool {
+    const auto *Definition = Class ? Class->getDefinition() : nullptr;
+    if (!Definition || Depth > 64)
+      return false;
+    for (const auto *Method : Definition->methods())
+      if (Method->getOverloadedOperator() == OO_Array_Delete)
+        return true;
+    for (const auto &Base : Definition->bases())
+      if (Self(Self, Base.getType()->getAsCXXRecordDecl(), Depth + 1))
+        return true;
+    return false;
+  };
+  if (HasClassArrayDelete(HasClassArrayDelete,
+                          Context.getBaseElementType(Owner.ElementType)
+                              .getUnqualifiedType()
+                              ->getAsCXXRecordDecl(),
+                          0)) {
+    reject(L, "unique pointer deallocation",
+           "Array std::unique_ptr requires matching global delete[] "
+           "selection; class-specific array deallocation is unsupported.",
+           "TR0203");
+    throw Failure{};
+  }
+  const auto *Function =
+      allocatorHeapFunction(false, Owner.ElementType, L, true);
+  const bool Sized = Function->getNumParams() == 2;
+  const auto Layout = arrayAllocationLayout(Owner.ElementType, Sized, L);
+  if (Sized && !Layout.CookieBytes) {
+    reject(L, "sized array delete",
+           "The native array ABI supplies no count for this selected sized "
+           "deallocation function.");
+    throw Failure{};
+  }
+  return Function;
+}
+
 ArrayAllocationLayout Adapter::arrayAllocationLayout(
     QualType Object, bool UsualDeleteWantsSize, SourceLocation L) {
   const auto &Target = Context.getTargetInfo();
@@ -4111,45 +4204,7 @@ bool Adapter::requireUtilityUniquePtr(const CXXRecordDecl *Record,
             .empty())
       return false;
   } else {
-    const auto DeleteOperator =
-        Unique->Deleter.Array ? OO_Array_Delete : OO_Delete;
-    auto HasClassDelete = [&](auto &&Self, const CXXRecordDecl *Class,
-                              unsigned BaseDepth) -> bool {
-      const auto *Definition = Class ? Class->getDefinition() : nullptr;
-      if (!Definition || BaseDepth > 64)
-        return false;
-      for (const auto *Method : Definition->methods())
-        if (Method->getOverloadedOperator() == DeleteOperator)
-          return true;
-      for (const auto &Base : Definition->bases())
-        if (Self(Self, Base.getType()->getAsCXXRecordDecl(), BaseDepth + 1))
-          return true;
-      return false;
-    };
-    if (HasClassDelete(HasClassDelete,
-                       Context.getBaseElementType(Unique->ElementType)
-                           .getUnqualifiedType()
-                           ->getAsCXXRecordDecl(),
-                       0)) {
-      reject(Location, "unique pointer deallocation",
-             "std::unique_ptr requires matching global delete selection; "
-             "class-specific deallocation is unsupported.",
-             "TR0203");
-      return false;
-    }
-    const auto *Deallocation = allocatorHeapFunction(
-        false, Unique->ElementType, Location, Unique->Deleter.Array);
-    if (Unique->Deleter.Array) {
-      const bool Sized = Deallocation->getNumParams() == 2;
-      const auto Layout =
-          arrayAllocationLayout(Unique->ElementType, Sized, Location);
-      if (Sized && !Layout.CookieBytes) {
-        reject(Location, "sized array delete",
-               "The native array ABI supplies no count for this selected "
-               "sized deallocation function.");
-        return false;
-      }
-    }
+    uniquePtrDeleteFunction(*Unique, Location);
   }
   S.Module["memory_lifetimes"] = true;
   Records.push_back(const_cast<CXXRecordDecl *>(Unique->Record));
@@ -13627,16 +13682,10 @@ public:
             }
             A.type(Info->Owner.ElementType, L);
             const bool Array = Info->Owner.Deleter.Array;
-            const auto *Function = A.allocatorHeapFunction(
-                true, Info->Owner.ElementType, L, Array);
-            if (Function->getCanonicalDecl() !=
-                Info->Allocation->getOperatorNew()->getCanonicalDecl())
-              A.reject(L, "make_unique allocation",
-                       "The authenticated template and selected global "
-                       "allocation function differ.",
-                       "TR0203");
-            const auto *Deallocation = A.allocatorHeapFunction(
-                false, Info->Owner.ElementType, L, Array);
+            A.allocationFunction(Info->Allocation->getOperatorNew(), true, L,
+                                 Array);
+            const auto *Deallocation =
+                A.uniquePtrDeleteFunction(Info->Owner, L);
             if (Array) {
               if (!Info->ArrayCount)
                 A.reject(L, "make_unique array extent",
@@ -13670,8 +13719,7 @@ public:
             }
             A.type(Info->Owner.ElementType, L);
             if (!Info->Owner.CustomDeleter) {
-              const auto *Function = A.allocatorHeapFunction(
-                  false, Info->Owner.ElementType, L, Info->Owner.Deleter.Array);
+              const auto *Function = A.uniquePtrDeleteFunction(Info->Owner, L);
               if (Info->Owner.Deleter.Array) {
                 const bool Sized = Function->getNumParams() == 2;
                 const auto Layout =
@@ -13706,8 +13754,7 @@ public:
             }
             A.type(Info->Owner.ElementType, L);
             if (!Info->Owner.CustomDeleter) {
-              const auto *Function = A.allocatorHeapFunction(
-                  false, Info->Owner.ElementType, L, Info->Owner.Deleter.Array);
+              const auto *Function = A.uniquePtrDeleteFunction(Info->Owner, L);
               if (Info->Owner.Deleter.Array) {
                 const bool Sized = Function->getNumParams() == 2;
                 const auto Layout =
@@ -13729,36 +13776,7 @@ public:
               break;
             }
             A.type(Info->Deleter.ElementType, L);
-            const auto *Function =
-                Info->Deleter.Array
-                    ? A.allocationFunction(Info->Delete->getOperatorDelete(),
-                                           false, L, true)
-                    : A.allocatorHeapFunction(false, Info->Deleter.ElementType,
-                                              L);
-            unsigned Index = 1;
-            const bool Sized = Index < Function->getNumParams() &&
-                               A.Context.hasSameUnqualifiedType(
-                                   Function->getParamDecl(Index)->getType(),
-                                   A.Context.getSizeType());
-            if (Sized)
-              ++Index;
-            if (Index < Function->getNumParams() &&
-                Function->getParamDecl(Index)->getType()->isAlignValT())
-              ++Index;
-            if (Index != Function->getNumParams() ||
-                concreteFunctionTemplate(Function))
-              A.reject(L, "default delete arguments",
-                       "Usual deallocation requires a pointer followed only "
-                       "by selected size and alignment values.");
-            if (Info->Deleter.Array) {
-              const auto Layout = A.arrayAllocationLayout(
-                  Info->Deleter.ElementType,
-                  Info->Delete->doesUsualArrayDeleteWantSize(), L);
-              if (Sized && !Layout.CookieBytes)
-                A.reject(L, "sized array delete",
-                         "The native array ABI supplies no count for this "
-                         "selected sized deallocation function.");
-            }
+            A.defaultDeleteFunction(Info->Deleter, Info->Delete, L);
             break;
           }
           case UtilityOperation::MemoryUninitializedDefaultConstruct:

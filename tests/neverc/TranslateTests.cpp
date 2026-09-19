@@ -25246,10 +25246,9 @@ TEST_F(TranslateTest, CoreV2MemoryDefaultDeleteRequiresExactObjectForms) {
       {"volatile-array-element",
        "#include <memory>\nstd::default_delete<volatile int[]> value;",
        "TR0201"},
-      {"class-delete",
+      {"class-delete-missing-definition",
        "#include <memory>\nstruct R{static void operator "
        "delete(void*)noexcept;};"
-       "void R::operator delete(void*)noexcept{}"
        "void operator delete(void*)noexcept{}"
        "void f(R*p){std::default_delete<R>{}(p);}",
        "TR0203"},
@@ -25897,10 +25896,9 @@ TEST_F(TranslateTest, CoreV2MemoryUniquePtrRequiresExactObjectForms) {
        "TR0203"},
       {"volatile-element",
        "#include <memory>\nstd::unique_ptr<volatile int> value;", "TR0203"},
-      {"class-delete",
+      {"class-delete-missing-definition",
        "#include <memory>\nstruct R{static void operator "
        "delete(void*)noexcept;};"
-       "void R::operator delete(void*)noexcept{}"
        "void operator delete(void*)noexcept{}"
        "std::unique_ptr<R> value;",
        "TR0203"},
@@ -26074,6 +26072,115 @@ int main() {
   for (const std::string &Optimization : {"-O0", "-O2"}) {
     SCOPED_TRACE(Optimization);
     const auto Executable = tmpFile("memory-make-unique" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2MemoryClassAllocationOwnersRunAtBothOptimizations) {
+  const auto Source = tmpFile("memory-class-allocation-owners.cpp");
+  const auto Output = tmpFile("memory-class-allocation-owners.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+using Size = decltype(sizeof(0));
+struct Storage { unsigned long long alignment; unsigned char bytes[64]; };
+Storage class_storage[8]{};
+Storage global_storage[2]{};
+int class_allocations;
+int class_deletions;
+int global_allocations;
+int global_deletions;
+int destroyed;
+Size class_allocated_bytes;
+Size sized_released_bytes;
+Size global_allocated_bytes;
+void *operator new(Size size) {
+  global_allocated_bytes += size;
+  return global_storage[global_allocations++].bytes;
+}
+void operator delete(void *) noexcept { ++global_deletions; }
+struct Unsized {
+  int value;
+  explicit Unsized(int initial) noexcept : value(initial) {}
+  ~Unsized() noexcept { destroyed += value; }
+  static void *operator new(Size size) {
+    class_allocated_bytes += size;
+    return class_storage[class_allocations++].bytes;
+  }
+  static void operator delete(void *) noexcept { ++class_deletions; }
+};
+struct Sized {
+  int value;
+  explicit Sized(int initial) noexcept : value(initial) {}
+  ~Sized() noexcept { destroyed += value; }
+  static void *operator new(Size size) {
+    class_allocated_bytes += size;
+    return class_storage[class_allocations++].bytes;
+  }
+  static void operator delete(void *, Size size) noexcept {
+    ++class_deletions;
+    sized_released_bytes += size;
+  }
+};
+struct GlobalDeleted {
+  int value;
+  explicit GlobalDeleted(int initial) noexcept : value(initial) {}
+  ~GlobalDeleted() noexcept { destroyed += value; }
+  static void *operator new(Size size) {
+    class_allocated_bytes += size;
+    return class_storage[class_allocations++].bytes;
+  }
+};
+struct DeleteOnly {
+  int value;
+  explicit DeleteOnly(int initial) noexcept : value(initial) {}
+  ~DeleteOnly() noexcept { destroyed += value; }
+  static void operator delete(void *) noexcept { ++class_deletions; }
+};
+int main() {
+  std::default_delete<Unsized>{}(new Unsized(1));
+  std::unique_ptr<Unsized> owner(new Unsized(2));
+  owner.reset(new Unsized(3));
+  owner.reset();
+  auto factory = std::make_unique<Unsized>(4);
+  factory.reset();
+
+  auto sized_factory = std::make_unique<Sized>(5);
+  sized_factory.reset();
+  std::unique_ptr<Sized> sized_owner(new Sized(6));
+  sized_owner.reset();
+
+  auto globally_deleted = std::make_unique<GlobalDeleted>(7);
+  globally_deleted.reset();
+  auto delete_only = std::make_unique<DeleteOnly>(8);
+  delete_only.reset();
+
+  const Size expected_class_bytes = 4 * sizeof(Unsized) +
+                                    2 * sizeof(Sized) +
+                                    sizeof(GlobalDeleted);
+  return class_allocations == 7 && class_deletions == 7 &&
+                 global_allocations == 1 && global_deletions == 1 &&
+                 destroyed == 36 &&
+                 class_allocated_bytes == expected_class_bytes &&
+                 sized_released_bytes == 2 * sizeof(Sized) &&
+                 global_allocated_bytes == sizeof(DeleteOnly)
+             ? 0
+             : 1;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  const auto Text = readFile(Output);
+  EXPECT_NE(Text.find("nct_unique_ptr_pointer"), std::string::npos);
+  EXPECT_EQ(Text.find("make_unique"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("memory-class-allocation-owners" + Optimization);
     auto Compile = compileGenerated(Output, Executable, Optimization);
     ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
     auto Run = exec(Executable.string(), {});
@@ -26350,10 +26457,16 @@ TEST_F(TranslateTest, CoreV2MemoryMakeUniqueRequiresExactObjectForms) {
        "void*operator new(S){return b;}void operator delete(void*)noexcept{}"
        "struct R{R(){}};int main(){auto value=std::make_unique<R>();}",
        "TR0203"},
-      {"class-specific-new",
+      {"class-specific-new-missing-definition",
        "#include <memory>\nusing S=decltype(sizeof(0));unsigned char b[8];"
        "void*operator new(S){return b;}void operator delete(void*)noexcept{}"
-       "struct R{static void*operator new(S){return b;}R()noexcept{}};"
+       "struct R{static void*operator new(S);R()noexcept{}};"
+       "int main(){auto value=std::make_unique<R>();}",
+       "TR0203"},
+      {"class-specific-delete-missing-definition",
+       "#include <memory>\nusing S=decltype(sizeof(0));unsigned char b[8];"
+       "void*operator new(S){return b;}void operator delete(void*)noexcept{}"
+       "struct R{static void operator delete(void*)noexcept;R()noexcept{}};"
        "int main(){auto value=std::make_unique<R>();}",
        "TR0203"},
       {"over-aligned-element",

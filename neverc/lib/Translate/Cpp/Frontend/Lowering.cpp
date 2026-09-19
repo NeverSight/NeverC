@@ -1414,7 +1414,7 @@ class FunctionLowering {
         return {};
       }
       const auto *Function =
-          A.allocatorHeapFunction(false, Info->Deleter.ElementType, L);
+          A.defaultDeleteFunction(Info->Deleter, Info->Delete, L);
       deallocateSingle(expression(Call->getArg(Info->PointerIndex)),
                        Info->Deleter.ElementType, Function, L);
       return {};
@@ -1426,15 +1426,9 @@ class FunctionLowering {
         reject(L, "make_unique",
                "A checked std::make_unique call is required.");
       const bool Array = Info->Owner.Deleter.Array;
-      const auto *Function =
-          A.allocatorHeapFunction(true, Info->Owner.ElementType, L, Array);
-      if (!Info->Allocation->getOperatorNew() ||
-          Function->getCanonicalDecl() !=
-              Info->Allocation->getOperatorNew()->getCanonicalDecl())
-        reject(L, "make_unique allocation",
-               "The authenticated template and selected global allocation "
-               "function differ.");
-      A.allocatorHeapFunction(false, Info->Owner.ElementType, L, Array);
+      const auto *Function = A.allocationFunction(
+          Info->Allocation->getOperatorNew(), true, L, Array);
+      A.uniquePtrDeleteFunction(Info->Owner, L);
 
       auto Pointer = [&]() -> Expression {
         if (Array) {
@@ -7552,8 +7546,7 @@ class FunctionLowering {
       label(End, L);
       return;
     }
-    const auto *Function = A.allocatorHeapFunction(
-        false, Owner.ElementType, L, Owner.Deleter.Array);
+    const auto *Function = A.uniquePtrDeleteFunction(Owner, L);
     if (Owner.Deleter.Array) {
       deallocateArray(std::move(Pointer), Owner.ElementType, Function,
                       Function->getNumParams() == 2, L);

@@ -154,7 +154,8 @@ layout through a synthetic
 byte carrier. Default, copy/move and admitted cv-converting construction lower
 directly. Their authenticated call operator evaluates the receiver and pointer
 once, destroys the complete object or reverse array elements, and calls a
-checked source-defined global sized or unsized delete/delete[]. Volatile base
+checked source-defined scalar class/global delete selected by Clang or a
+checked global delete[]. Volatile base
 elements and function addresses remain rejected. Exact single-object
 `std::unique_ptr<T, std::default_delete<T>>` and unbounded-array
 `std::unique_ptr<T[], std::default_delete<T[]>>`, including multidimensional
@@ -172,15 +173,17 @@ same scalar/array category and qualification-compatible raw pointers regardless
 of deleter specialization, all six
 bidirectional `nullptr` comparisons and destruction lower directly without a
 libc++ call.
-Default deleters use the matching checked global-delete or global-delete[]
-path. An admitted custom deleter is called once for a non-null pointer and
+Scalar default deleters use the matching checked class or global delete;
+array default deleters use the matching checked global delete[] path. An
+admitted custom deleter is called once for a non-null pointer and
 needs no global delete definition. Single-object owners expose dereference and
 arrow; array owners expose subscript and use checked cookie-based reverse
 destruction only for default deletion. Exact raw pointers to the owner may also
 receive every admitted nonstatic member; their pointee qualification and
 one-time receiver evaluation are preserved.
 Exact single-object `std::make_unique<T>(args...)` authenticates the pinned
-factory body and lowers through checked source-defined global new/delete. Exact
+factory body and lowers through the checked source-defined global or
+class-specific scalar new/delete selected by Clang. Exact
 unbounded-array `std::make_unique<T[]>(count)`, where `T` may have complete
 bounded inner extents, additionally accepts an integer constant expression from
 zero through 65536 and lowers through the matching checked global new[]/delete[]

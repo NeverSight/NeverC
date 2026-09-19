@@ -1496,9 +1496,11 @@ captures its receiver and pointer once, then uses the matching null-guarded
 single-object or array destruction path. Array calls consume the checked native
 cookie, destroy nontrivial elements in reverse order and emit an ordinary
 `call` to the checked source-defined sized or unsized global delete[]. Sized
-single-object deletion receives exact `sizeof(T)`; sized array deletion receives
-the original allocation extent. Multidimensional calls flatten the fixed inner
-shape for cookie counts and reverse destruction. Calls set
+single-object deletion emits an ordinary `call` to the exact source-defined
+class member selected by Clang, or to the checked global delete when lookup
+remains global, and receives exact `sizeof(T)` when selected. Sized array
+deletion receives the original allocation extent. Multidimensional calls
+flatten the fixed inner shape for cookie counts and reverse destruction. Calls set
 `memory_lifetimes: true`; array calls also select the target's
 `array_cookie_abi`. Neither form adds an SDK call, native-heap import or
 ownership field. Exact single-object `std::unique_ptr<T, D>` and
@@ -1534,11 +1536,13 @@ qualification-compatible destination type. Mutable and const `get_deleter`
 return a dereferenced pointer to the existing one-byte deleter record;
 the owner address is cast through `ptr:void` or `cptr:void` before being retyped,
 which preserves the authenticated zero-offset subobject identity without a new
-field. Default deletion retains the existing checked destruction and global
-delete/delete[] instructions. Custom deletion emits an ordinary `call` to the
-source-defined operator with the zero-offset deleter address and exact raw
-pointer, guarded by the same null branch; it adds no SDK call or global delete
-requirement. Swaps capture both owners and exchange only their pointer fields;
+field. Scalar default deletion retains the checked destruction and selected
+class/global delete instructions; array default deletion retains the checked
+reverse destruction and global delete[] instructions. Custom deletion emits an
+ordinary `call` to the source-defined operator with the zero-offset deleter
+address and exact raw pointer, guarded by the same null branch; it adds no SDK
+call or global delete requirement. Swaps capture both owners and exchange only
+their pointer fields;
 comparison operands are evaluated once. Ordered ownership comparisons use the
 existing flat-address relational-pointer carrier. Each admitted nonstatic
 member also
@@ -1547,7 +1551,8 @@ corresponding access, and the receiver expression is retained once; explicit
 member-call assignment places that receiver before its argument.
 Exact single-object `std::make_unique<T>(args...)` authenticates its pinned
 template specialization, non-array `new` and raw-pointer owner construction,
-then emits an ordinary checked source-defined global-new `call`, scalar
+then emits an ordinary `call` to the checked source-defined global or
+class-specific `operator new` selected by Clang, scalar
 initialization or the selected source-owned non-template `noexcept` constructor
 call with authenticated source-owned trailing defaults, and the same synthetic
 owner field store. Supplied arguments and selected defaults are each evaluated
@@ -1562,12 +1567,13 @@ source-owned non-template `noexcept` base-record constructor calls. Such a
 constructor may have parameters only when every semantic argument is its
 selected unrewritten source-owned default expression; each default is evaluated
 independently for every flattened base element.
-Later default destruction uses the existing checked global-delete or reverse
-global-delete[] path. Custom destruction calls the admitted operator instead.
-These operations add no wire instruction, SDK call, native-heap import or
-hidden deleter storage. Stateful, reference, non-raw-pointer, nontrivial,
-overloaded, ref-qualified and throwing custom deleters remain rejected. Exact runtime allocator
-specializations preserve the authenticated one-byte, one-byte-aligned empty
+Later default destruction uses the existing checked scalar class/global delete
+or reverse global-delete[] path. Custom destruction calls the admitted operator
+instead. These operations add no wire instruction, SDK call, native-heap import
+or hidden deleter storage. Stateful, reference, non-raw-pointer, nontrivial,
+overloaded, ref-qualified and throwing custom deleters remain rejected. Exact
+runtime allocator specializations preserve the authenticated one-byte,
+one-byte-aligned empty
 libc++ representation as a record with one synthetic
 `{name:"nct_allocator_storage",type:"u8"}` field at bit offset zero. Their
 default, copy/move and non-void converting construction, same-type assignment,

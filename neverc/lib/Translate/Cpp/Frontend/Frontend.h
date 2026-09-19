@@ -288,6 +288,7 @@ struct UtilityUniquePtrRecord {
   clang::QualType ElementType;
   clang::QualType PointerType;
   UtilityDefaultDeleteRecord Deleter;
+  const clang::CXXDeleteExpr *DefaultDeletion = nullptr;
   const clang::CXXMethodDecl *CustomDeleter = nullptr;
 };
 std::optional<UtilityUniquePtrRecord>
@@ -1102,6 +1103,13 @@ public:
                                                    clang::QualType Element,
                                                    clang::SourceLocation L,
                                                    bool Array = false);
+  const clang::FunctionDecl *
+  defaultDeleteFunction(const UtilityDefaultDeleteRecord &Deleter,
+                        const clang::CXXDeleteExpr *Delete,
+                        clang::SourceLocation L);
+  const clang::FunctionDecl *
+  uniquePtrDeleteFunction(const UtilityUniquePtrRecord &Owner,
+                          clang::SourceLocation L);
   ArrayAllocationLayout arrayAllocationLayout(clang::QualType Object,
       bool UsualDeleteWantsSize, clang::SourceLocation L);
   ArrayNewInfo arrayNewInfo(const clang::CXXNewExpr *N);

@@ -52,8 +52,8 @@ and unbounded-array `std::default_delete<T[]>`, including complete bounded
 inner extents, use checked one-byte stateless carriers with default, copy/move
 and admitted cv-converting construction. Their
 call operators evaluate the receiver and pointer once, destroy the complete
-object or reverse array elements, and call a checked source-defined global
-sized or unsized delete/delete[]. Exact single-object
+object or reverse array elements, and call Clang's checked source-defined
+scalar class/global delete or the checked global delete[]. Exact single-object
 `std::unique_ptr<T, std::default_delete<T>>` and unbounded-array
 `std::unique_ptr<T[], std::default_delete<T[]>>`, including multidimensional
 owners, use pointer-sized authenticated carriers. The same owners also admit a
@@ -71,18 +71,23 @@ raw pointers regardless of deleter specialization, all six
 bidirectional `nullptr` comparisons and automatic destruction lower directly.
 Single-object owners also admit `operator->` and dereference; array owners admit
 `operator[]`.
-Lowering preserves receiver/argument sequencing. Default deleters call the
-matching checked source-defined global delete or delete[]; an admitted custom
-deleter is invoked once for a non-null pointer and requires no global delete
-definition. Each admitted nonstatic member accepts either an object receiver
-or an exact raw pointer to that owner; pointer receivers retain pointee `const`
-and execute once. Exact single-object
+Lowering preserves receiver/argument sequencing. Scalar default deleters call
+the exact checked source-defined class delete selected by Clang, or the
+matching checked global delete when lookup remains global; array default
+deleters use global delete[]. An admitted custom deleter is invoked once for a
+non-null pointer and requires no global delete definition. Each admitted
+nonstatic member accepts either an object receiver or an exact raw pointer to
+that owner; pointer receivers retain pointee `const` and execute once. Exact
+single-object
 `std::make_unique<T>(args...)` and unbounded-array
 `std::make_unique<T[]>(count)`, where `T` may have complete bounded inner
 extents, with an integer constant
 expression from zero through 65536 also lower directly. They authenticate the
-pinned factory and selected allocation, value-initialize scalar elements or
-call the exact source-owned non-template `noexcept` record constructor, and
+pinned factory and selected allocation. A scalar factory calls the exact
+source-defined global or class-specific `operator new` selected by Clang and
+uses the owner's matching scalar delete path; an array factory retains the
+checked global new[]/delete[] path. Factories value-initialize scalar elements
+or call the exact source-owned non-template `noexcept` record constructor, and
 install the resulting pointer in that owner. Multidimensional construction
 uses the outer count and fixed inner extents while the checked global
 new[]/delete[] cookie path tracks flattened base elements; runtime array counts

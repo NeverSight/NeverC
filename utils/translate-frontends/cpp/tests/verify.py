@@ -2178,6 +2178,102 @@ extern "C" int memory_custom_comparison(int *first, int *second) {
         check_memory_default_delete(target_result)
         check_memory_unique_ptr(target_result)
 
+    memory_class_allocation_source = """\
+#include <memory>
+using Size = decltype(sizeof(0));
+struct Storage { unsigned long long alignment; unsigned char bytes[64]; };
+Storage class_storage[4]{};
+Storage global_storage{};
+int class_allocations;
+int class_deletions;
+int global_allocations;
+int global_deletions;
+void *operator new(Size) {
+  ++global_allocations;
+  return global_storage.bytes;
+}
+void operator delete(void *) noexcept { ++global_deletions; }
+struct Owned {
+  int value;
+  explicit Owned(int initial) noexcept : value(initial) {}
+  static void *operator new(Size) {
+    return class_storage[class_allocations++].bytes;
+  }
+  static void operator delete(void *) noexcept { ++class_deletions; }
+};
+struct DeleteOnly {
+  int value;
+  explicit DeleteOnly(int initial) noexcept : value(initial) {}
+  static void operator delete(void *) noexcept { ++class_deletions; }
+};
+extern "C" int memory_class_allocation() {
+  std::default_delete<Owned>{}(new Owned(1));
+  auto owner = std::make_unique<Owned>(2);
+  owner.reset();
+  auto delete_only = std::make_unique<DeleteOnly>(3);
+  delete_only.reset();
+  return class_allocations == 2 && class_deletions == 3 &&
+                 global_allocations == 1 && global_deletions == 0
+             ? 0
+             : 1;
+}
+"""
+
+    def check_memory_class_allocation(data):
+        functions = {function["name"]: function
+                     for function in data["functions"]}
+        exported = functions["memory_class_allocation"]
+        calls = [node for node in walk(exported["body"])
+                 if node.get("op") == "call"]
+        allocation_functions = {
+            name for name, function in functions.items()
+            if function["result"] == "ptr:void" and
+               len(function["params"]) == 1
+        }
+        allocation_calls = [call for call in calls
+                            if call["callee"] in allocation_functions]
+        assert len(allocation_functions) == 2, data
+        assert len(allocation_calls) == 3, data
+        allocation_counts = sorted(
+            sum(call["callee"] == name for call in allocation_calls)
+            for name in allocation_functions)
+        assert allocation_counts == [1, 2], data
+        delete_functions = {
+            name for name, function in functions.items()
+            if function["result"] == "void" and
+               [parameter["type"] for parameter in function["params"]] ==
+               ["ptr:void"]
+        }
+        delete_calls = [call for call in calls
+                        if call["callee"] in delete_functions]
+        assert len(delete_functions) == 3, data
+        assert len(delete_calls) == 3, data
+        delete_counts = sorted(
+            sum(call["callee"] == name for call in delete_calls)
+            for name in delete_functions)
+        assert delete_counts == [0, 1, 2], data
+        assert len([record for record in data["records"]
+                    if len(record["fields"]) == 1 and
+                       record["fields"][0]["name"] ==
+                       "nct_unique_ptr_pointer"]) == 2, data
+        assert not [node for node in walk(data["functions"])
+                    if node.get("op") in
+                       ("mapped_call", "native_heap_call")], data
+        assert data.get("memory_lifetimes") is True, data
+
+    memory_class_allocation = check(
+        "v2-memory-class-allocation", memory_class_allocation_source,
+        profile="cpp-core-v2", sdk=True)
+    assert memory_class_allocation["sdk_dependencies"] == memory_allocator_objects["sdk_dependencies"], memory_class_allocation
+    check_memory_class_allocation(memory_class_allocation)
+    for target in sdk_targets:
+        target_result = check(
+            "v2-memory-class-allocation-" + target,
+            memory_class_allocation_source, profile="cpp-core-v2",
+            target=target, sdk=True)
+        assert target_result["sdk_dependencies"] == memory_allocator_objects["sdk_dependencies"], target_result
+        check_memory_class_allocation(target_result)
+
     memory_address_source = """\
 #include <memory>
 using Pointer = std::pointer_traits<int *>::pointer;
