@@ -485,6 +485,32 @@ selected instead. Calls require a complete element within the target's default
 new alignment, enable `memory_lifetimes`, and introduce no libc++ runtime call,
 native-heap import or ownership object.
 
+Exact single-object `std::unique_ptr<T, std::default_delete<T>>`
+specializations are admitted for the same non-volatile, non-array object types.
+The pinned libc++ record must contain its exact raw pointer, two exact empty
+compressed-pair padding fields and the exact empty `default_delete<T>` field,
+all at offset zero. Its total size and alignment must equal `T *`. The response
+preserves that ABI as one synthetic `nct_unique_ptr_pointer: ptr:T` field at
+offset zero.
+
+Default, `nullptr` and exact raw-pointer construction lower directly. `get`,
+`operator->`, `operator*` and explicit boolean conversion read the captured
+pointer once. `release` returns that pointer and clears the owner without
+destroying it. `reset(pointer())` and `reset(pointer)` evaluate the receiver
+before the replacement argument, install the replacement before destroying the
+old object, and use the same checked single-object destruction and global
+delete path as `default_delete`. Automatic and static destruction first clear
+the owner and then destroy and deallocate its former object. Null pointers skip
+destruction and deallocation.
+
+The element must be complete and within the target's default new alignment,
+and the matching global sized or unsized delete definition must be
+source-owned. Class-specific delete, array specializations, custom deleters,
+volatile elements, `get_deleter`, member-function addresses, move construction,
+move assignment, `swap`, comparisons and ownership factories remain rejected
+at this boundary. Every admitted operation emits no libc++ runtime call and
+enables the checked `memory_lifetimes` policy.
+
 Exact `std::allocator<T>` metadata is admitted when `T` is non-cv `void` or a
 non-array object type, including an incomplete object. Its C++17 nested value,
 pointer, reference, size, difference and `rebind` aliases remain compile-time
@@ -640,8 +666,8 @@ elements and unsupported conversions remain rejected. Allocator member or
 comparison function addresses, custom allocator types and traits, and other
 `allocator_traits` forwarding calls remain rejected. Volatile destruction
 pointers remain rejected. Allocation requires a separate default-heap and
-exception contract. Smart pointers and ownership factories also remain outside
-this boundary.
+exception contract. Other smart pointers and ownership factories remain
+outside this boundary.
 
 ## Algorithm header from `<algorithm>`
 

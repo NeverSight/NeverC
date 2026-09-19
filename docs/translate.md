@@ -51,7 +51,13 @@ compatible values also resolve. Exact single-object `std::default_delete<T>`
 uses a checked one-byte stateless carrier with default, copy/move and admitted
 cv-converting construction. Its call operator evaluates the receiver and
 pointer once, destroys the complete object and calls a checked source-defined
-global sized or unsized delete. The existing address operations, scalar and
+global sized or unsized delete. Exact single-object
+`std::unique_ptr<T, std::default_delete<T>>` uses a pointer-sized authenticated
+carrier. Default, null and raw-pointer construction, `get`, `operator->`,
+dereference, explicit boolean conversion, `release`, `reset` and automatic
+destruction lower directly while preserving receiver/argument sequencing and
+calling the same checked source-defined global delete. The existing address
+operations, scalar and
 source-record destruction, scalar or trivial source-record uninitialized
 construction, and nothrow zero-parameter source-record default/value
 construction operations lower directly. Uninitialized copy, fill and move also

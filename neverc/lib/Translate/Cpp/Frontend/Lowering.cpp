@@ -950,6 +950,14 @@ class FunctionLowering {
         return Member->getImplicitObjectArgument();
       return nullptr;
     };
+    auto UniquePtrMember = [&](Expression Base,
+                               const UtilityUniquePtrRecord &Unique) {
+      return Expression{{"kind", "member"},
+                        {"type", type(Unique.PointerType, L)},
+                        {"name", "nct_unique_ptr_pointer"},
+                        {"args", json::Array{std::move(Base)}},
+                        {"loc", A.loc(L)}};
+    };
     auto OptionalObject = [&]() -> const Expr * {
       const Expr *Object = MemberObject();
       while (const auto *Cast = dyn_cast_or_null<ImplicitCastExpr>(Object)) {
@@ -1390,6 +1398,84 @@ class FunctionLowering {
           A.allocatorHeapFunction(false, Info->Deleter.ElementType, L);
       deallocateSingle(expression(Call->getArg(Info->PointerIndex)),
                        Info->Deleter.ElementType, Function, L);
+      return {};
+    }
+    case UtilityOperation::MemoryUniquePtrGet:
+    case UtilityOperation::MemoryUniquePtrArrow:
+    case UtilityOperation::MemoryUniquePtrDereference:
+    case UtilityOperation::MemoryUniquePtrBoolean:
+    case UtilityOperation::MemoryUniquePtrRelease:
+    case UtilityOperation::MemoryUniquePtrReset: {
+      const auto Info =
+          approvedUtilityUniquePtrCall(A.S, A.Sources, Call, A.Context);
+      if (!Info)
+        reject(L, "unique pointer operation",
+               "A checked std::unique_ptr operation is required.");
+      auto Expected = [&] {
+        switch (Operation) {
+        case UtilityOperation::MemoryUniquePtrGet:
+          return UtilityUniquePtrOperation::Get;
+        case UtilityOperation::MemoryUniquePtrArrow:
+          return UtilityUniquePtrOperation::Arrow;
+        case UtilityOperation::MemoryUniquePtrDereference:
+          return UtilityUniquePtrOperation::Dereference;
+        case UtilityOperation::MemoryUniquePtrBoolean:
+          return UtilityUniquePtrOperation::Boolean;
+        case UtilityOperation::MemoryUniquePtrRelease:
+          return UtilityUniquePtrOperation::Release;
+        case UtilityOperation::MemoryUniquePtrReset:
+          return UtilityUniquePtrOperation::Reset;
+        default:
+          llvm_unreachable("not a unique pointer operation");
+        }
+      }();
+      if (Info->Operation != Expected)
+        reject(
+            L, "unique pointer operation",
+            "The selected std::unique_ptr operation changed after checking.");
+
+      if (Expected == UtilityUniquePtrOperation::Get ||
+          Expected == UtilityUniquePtrOperation::Arrow) {
+        return snapshot(UniquePtrMember(lvalue(Info->Object), Info->Owner), L);
+      }
+      if (Expected == UtilityUniquePtrOperation::Dereference) {
+        auto Pointer =
+            snapshot(UniquePtrMember(lvalue(Info->Object), Info->Owner), L);
+        return dereference(std::move(Pointer), L);
+      }
+      if (Expected == UtilityUniquePtrOperation::Boolean) {
+        auto Pointer =
+            snapshot(UniquePtrMember(lvalue(Info->Object), Info->Owner), L);
+        return cast(std::move(Pointer), "bool", L);
+      }
+
+      const auto RecordType = A.Context.getRecordType(Info->Owner.Record);
+      auto Receiver = snapshot(address(lvalue(Info->Object), RecordType, L), L);
+      auto Member = [&] {
+        return UniquePtrMember(dereference(json::Object(Receiver), L),
+                               Info->Owner);
+      };
+      if (Expected == UtilityUniquePtrOperation::Release) {
+        auto Pointer = snapshot(Member(), L);
+        assign(Member(), A.zero(Info->Owner.PointerType, L), L);
+        return Pointer;
+      }
+      if (Info->ArgumentIndex >= Call->getNumArgs())
+        reject(L, "unique pointer reset",
+               "The checked replacement pointer is missing.");
+      // C++17 sequences the postfix receiver before the argument. The reset
+      // body observes the old pointer only after the argument has completed.
+      const auto *Argument = Call->getArg(Info->ArgumentIndex);
+      auto Replacement = snapshot(isa<CXXDefaultArgExpr>(Argument)
+                                      ? A.zero(Info->Owner.PointerType, L)
+                                      : expression(Argument),
+                                  L);
+      auto Pointer = snapshot(Member(), L);
+      assign(Member(), std::move(Replacement), L);
+      const auto *Function =
+          A.allocatorHeapFunction(false, Info->Owner.ElementType, L);
+      deallocateSingle(std::move(Pointer), Info->Owner.ElementType, Function,
+                       L);
       return {};
     }
     case UtilityOperation::MemoryAllocatorAddress: {
@@ -7899,6 +7985,40 @@ class FunctionLowering {
             Constructor->getParent()->getCanonicalDecl() ||
         Place.getString("type") != type(T, L))
       reject(L, "construction", "Constructor and destination types differ.");
+    if (auto Kind = approvedUtilityUniquePtrConstruction(A.S, A.Sources, C,
+                                                         A.Context)) {
+      auto Unique = approvedUtilityUniquePtrRecord(
+          A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context);
+      if (!Unique)
+        reject(L, "unique pointer construction",
+               "The selected std::unique_ptr layout is unavailable.");
+      switch (*Kind) {
+      case UtilityUniquePtrConstruction::Default:
+        assign(std::move(Place), A.zero(T, L), L);
+        return;
+      case UtilityUniquePtrConstruction::Null:
+        if (C->getNumArgs() != 1)
+          reject(L, "unique pointer construction",
+                 "A null std::unique_ptr construction needs one argument.");
+        discard(C->getArg(0));
+        assign(std::move(Place), A.zero(T, L), L);
+        return;
+      case UtilityUniquePtrConstruction::Pointer: {
+        if (C->getNumArgs() != 1)
+          reject(L, "unique pointer construction",
+                 "An owning std::unique_ptr construction needs one pointer.");
+        Expression Member{{"kind", "member"},
+                          {"type", type(Unique->PointerType, L)},
+                          {"name", "nct_unique_ptr_pointer"},
+                          {"args", json::Array{json::Object(Place)}},
+                          {"loc", A.loc(L)}};
+        assign(std::move(Member), expression(C->getArg(0)), L);
+        return;
+      }
+      }
+      reject(L, "unique pointer construction",
+             "Unknown approved std::unique_ptr construction.");
+    }
     if (auto Kind = approvedUtilityDefaultDeleteConstruction(A.S, A.Sources, C,
                                                              A.Context)) {
       if (*Kind != UtilityDefaultDeleteConstruction::Default) {
@@ -9047,8 +9167,17 @@ public:
   }
   FunctionLowering(Adapter &A, const CXXRecordDecl *R)
       : A(A), Function(nullptr), DestroyedRecord(R->getDefinition()) {
-    if (const auto *D = DestroyedRecord->getDestructor();
-        D && !D->isImplicit() && !defaultedLifecycle(D)) {
+    const auto *D = DestroyedRecord->getDestructor();
+    const bool UniquePtrDestructor =
+        approvedUtilityUniquePtrDestructor(A.S, A.Sources, D, A.Context);
+    if (approvedUtilityUniquePtrRecord(A.S, A.Sources, DestroyedRecord,
+                                       A.Context) &&
+        !UniquePtrDestructor)
+      reject(D ? D->getLocation() : DestroyedRecord->getLocation(),
+             "unique pointer destructor",
+             "The pinned std::unique_ptr destructor definition is required.");
+    if (D && !UniquePtrDestructor && !D->isImplicit() &&
+        !defaultedLifecycle(D)) {
       if (!ordinaryDestructor(D))
         reject(D->getLocation(), "destructor", "An admitted owned destructor definition is required.");
       if (!D->hasBody()) {
@@ -9116,7 +9245,22 @@ public:
         jump(DestructionEnd, L);
       }
       label(DestructionEnd, L);
-      destructionMembers();
+      if (auto Unique = approvedUtilityUniquePtrRecord(
+              A.S, A.Sources, DestroyedRecord, A.Context)) {
+        Expression Member{{"kind", "member"},
+                          {"type", type(Unique->PointerType, L)},
+                          {"name", "nct_unique_ptr_pointer"},
+                          {"args", json::Array{dereference(*ThisPointer, L)}},
+                          {"loc", A.loc(L)}};
+        auto Pointer = snapshot(Member, L);
+        assign(std::move(Member), A.zero(Unique->PointerType, L), L);
+        const auto *Deallocation =
+            A.allocatorHeapFunction(false, Unique->ElementType, L);
+        deallocateSingle(std::move(Pointer), Unique->ElementType, Deallocation,
+                         L);
+      } else {
+        destructionMembers();
+      }
       Body.push_back(json::Object{{"op", "return"}, {"loc", A.loc(L)}});
       Open = false;
     } else if (Open && reachable().count(Current)) {

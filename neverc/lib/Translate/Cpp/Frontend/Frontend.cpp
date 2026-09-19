@@ -3848,7 +3848,17 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
     const auto *D = dyn_cast<CXXRecordDecl>(R->getDecl());
     if (D && D->getDefinition() && !D->isUnion()) {
       D = D->getDefinition();
-      if (approvedUtilityDefaultDeleteRecord(S, Sources, D, Context)) {
+      if (approvedUtilityUniquePtrRecord(S, Sources, D, Context)) {
+        if (!requireUtilityUniquePtr(D, L, Depth + 1))
+          return {};
+      } else if (approvedMemoryTemplateMetadata(S, Sources, D) ==
+                 MemoryTemplateMetadata::UniquePtr) {
+        reject(L, "standard library record",
+               "Only the pinned single-object std::unique_ptr<T, "
+               "std::default_delete<T>> layout is admitted.",
+               "TR0203");
+        return {};
+      } else if (approvedUtilityDefaultDeleteRecord(S, Sources, D, Context)) {
         if (!requireUtilityDefaultDelete(D, L, Depth + 1))
           return {};
       } else if (approvedUtilityAllocatorRecord(S, Sources, D, Context)) {
@@ -4067,6 +4077,54 @@ bool Adapter::requireUtilityDefaultDelete(const CXXRecordDecl *Record,
   return true;
 }
 
+bool Adapter::requireUtilityUniquePtr(const CXXRecordDecl *Record,
+                                      SourceLocation Location, unsigned Depth) {
+  if (Depth > 64) {
+    reject(Location, "unique pointer type",
+           "Nested std::unique_ptr types exceed the protocol limit.");
+    return false;
+  }
+  auto Unique = approvedUtilityUniquePtrRecord(S, Sources, Record, Context);
+  if (!Unique) {
+    reject(Location, "standard library record",
+           "Only the pinned single-object std::unique_ptr<T, "
+           "std::default_delete<T>> layout is admitted.",
+           "TR0203");
+    return false;
+  }
+  const auto *Canonical = Unique->Record->getCanonicalDecl();
+  if (!RequiredUtilityUniquePtrs.insert(Canonical).second)
+    return true;
+  auto HasClassDelete = [&](auto &&Self, const CXXRecordDecl *Class,
+                            unsigned BaseDepth) -> bool {
+    const auto *Definition = Class ? Class->getDefinition() : nullptr;
+    if (!Definition || BaseDepth > 64)
+      return false;
+    for (const auto *Method : Definition->methods())
+      if (Method->getOverloadedOperator() == OO_Delete)
+        return true;
+    for (const auto &Base : Definition->bases())
+      if (Self(Self, Base.getType()->getAsCXXRecordDecl(), BaseDepth + 1))
+        return true;
+    return false;
+  };
+  if (HasClassDelete(
+          HasClassDelete,
+          Unique->ElementType.getUnqualifiedType()->getAsCXXRecordDecl(), 0)) {
+    reject(Location, "unique pointer deallocation",
+           "Single-object std::unique_ptr requires global delete selection; "
+           "class-specific delete is unsupported.",
+           "TR0203");
+    return false;
+  }
+  if (type(Unique->PointerType, Location, false, Depth + 1).empty())
+    return false;
+  allocatorHeapFunction(false, Unique->ElementType, Location);
+  S.Module["memory_lifetimes"] = true;
+  Records.push_back(const_cast<CXXRecordDecl *>(Unique->Record));
+  return true;
+}
+
 bool Adapter::requireUtilityAllocator(const CXXRecordDecl *Record,
                                       SourceLocation Location, unsigned Depth) {
   if (Depth > 64) {
@@ -4125,8 +4183,10 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
     return json::Object{{"kind", "null"}, {"type", Kind}, {"loc", loc(L)}};
   if (const auto *R = T->getAsCXXRecordDecl()) {
     json::Array Args;
-    if (approvedUtilityDefaultDeleteRecord(S, Sources, R, Context) ||
-        approvedUtilityAllocatorRecord(S, Sources, R, Context)) {
+    if (auto Unique = approvedUtilityUniquePtrRecord(S, Sources, R, Context)) {
+      Args.push_back(zero(Unique->PointerType, L));
+    } else if (approvedUtilityDefaultDeleteRecord(S, Sources, R, Context) ||
+               approvedUtilityAllocatorRecord(S, Sources, R, Context)) {
       Args.push_back(zero(Context.UnsignedCharTy, L));
     } else if (auto Tuple =
                    approvedUtilityTupleRecord(S, Sources, R, Context)) {
@@ -4520,8 +4580,12 @@ json::Object Adapter::constant(const APValue &V, QualType T, SourceLocation L) {
       reject(L, "constant record", "A folded record must retain every actual base and field value.");
       throw Failure{};
     }
-    if (approvedUtilityDefaultDeleteRecord(S, Sources, Record, Context) ||
-        approvedUtilityAllocatorRecord(S, Sources, Record, Context)) {
+    if (auto Unique =
+            approvedUtilityUniquePtrRecord(S, Sources, Record, Context)) {
+      Args.push_back(constant(V.getStructField(0), Unique->PointerType, L));
+    } else if (approvedUtilityDefaultDeleteRecord(S, Sources, Record,
+                                                  Context) ||
+               approvedUtilityAllocatorRecord(S, Sources, Record, Context)) {
       Args.push_back(zero(Context.UnsignedCharTy, L));
     } else if (auto Array =
                    approvedUtilityArrayRecord(S, Sources, Record, Context);
@@ -6897,7 +6961,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return;
     const auto *Constructor = C->getConstructor();
     if (A.S.coreV2() &&
-        (approvedUtilityDefaultDeleteConstruction(A.S, A.Sources, C,
+        (approvedUtilityUniquePtrConstruction(A.S, A.Sources, C, A.Context) ||
+         approvedUtilityDefaultDeleteConstruction(A.S, A.Sources, C,
                                                   A.Context) ||
          approvedUtilityAllocatorConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityPairConstruction(A.S, A.Sources, C, A.Context) ||
@@ -8955,13 +9020,23 @@ public:
       const auto *Construction =
           dyn_cast_or_null<CXXConstructExpr>(Source.Expression);
       const auto *UtilityCall = dyn_cast_or_null<CallExpr>(Source.Expression);
+      const auto *ConstructionRecord =
+          Construction ? Construction->getType()->getAsCXXRecordDecl()
+                       : nullptr;
+      const bool UnsupportedUtilityUniquePtr =
+          ConstructionRecord &&
+          approvedMemoryTemplateMetadata(A.S, A.Sources, ConstructionRecord) ==
+              MemoryTemplateMetadata::UniquePtr &&
+          !approvedUtilityUniquePtrRecord(A.S, A.Sources, ConstructionRecord,
+                                          A.Context);
       const bool UtilityOptionalMetadata =
           Construction &&
-          approvedUtilityOptionalMetadata(
-              A.S, A.Sources, Construction->getType()->getAsCXXRecordDecl());
+          approvedUtilityOptionalMetadata(A.S, A.Sources, ConstructionRecord);
       const bool UtilityConstruction =
           Construction &&
-          (approvedUtilityDefaultDeleteConstruction(A.S, A.Sources,
+          (approvedUtilityUniquePtrConstruction(A.S, A.Sources, Construction,
+                                                A.Context) ||
+           approvedUtilityDefaultDeleteConstruction(A.S, A.Sources,
                                                     Construction, A.Context) ||
            approvedUtilityAllocatorConstruction(A.S, A.Sources, Construction,
                                                 A.Context) ||
@@ -8981,9 +9056,22 @@ public:
           !(isa<CXXNewExpr>(Source.Expression)
                 ? concreteFunctionTemplate(Selected)
                 : concreteMemberFunctionTemplate(Selected)) ||
-          (!UtilityConstruction && !ApprovedUtilityCall && !owned(Selected)) ||
           !A.S.owns(A.Sources, Source.Location)) {
         A.reject(Source.Location, "selected member template source", "A retained record requires its actual direct source-owned template call.");
+        continue;
+      }
+      if (UnsupportedUtilityUniquePtr) {
+        A.reject(Source.Location, "standard library record",
+                 "Only the pinned single-object std::unique_ptr<T, "
+                 "std::default_delete<T>> layout is admitted.",
+                 "TR0203");
+        SelectedCallSources[Source.Expression].push_back(&Source);
+        continue;
+      }
+      if (!UtilityConstruction && !ApprovedUtilityCall && !owned(Selected)) {
+        A.reject(Source.Location, "selected member template source",
+                 "A retained record requires its actual direct source-owned "
+                 "template call.");
         continue;
       }
       SelectedCallSources[Source.Expression].push_back(&Source);
@@ -13417,6 +13505,10 @@ public:
           A.S.coreV2() &&
           approvedUtilityDefaultDeleteCall(A.S, A.Sources, C, A.Context)
               .has_value();
+      const bool UtilityUniquePtr =
+          A.S.coreV2() &&
+          approvedUtilityUniquePtrCall(A.S, A.Sources, C, A.Context)
+              .has_value();
       unsigned ArgumentOffset = Operator && Method && !Method->isStatic() ? 1 : 0;
       // This inline operator form already supports materialized temporaries.
       // Keep its narrow boundary while sharing reference capture and stores.
@@ -13433,7 +13525,7 @@ public:
             !UtilityTupleAssignment && !UtilityArrayAssignment &&
             !UtilityInitializerListAssignment && !UtilityOptionalAssignment &&
             !UtilityReverseIteratorAssignment && !UtilityAllocatorAssignment &&
-            !UtilityDefaultDelete && !Ordinary &&
+            !UtilityDefaultDelete && !UtilityUniquePtr && !Ordinary &&
             !(supportedAssignment(Method) &&
               Operator->getOperator() == OO_Equal &&
               Operator->getNumArgs() == 2))
@@ -13460,7 +13552,8 @@ public:
                      "A supported live or full-expression temporary receiver is required.");
         }
       }
-      if (A.S.coreV2() && F && !InlineMove && (!Method || callableMethod(Method)))
+      if (A.S.coreV2() && F && !InlineMove && !UtilityUniquePtr &&
+          (!Method || callableMethod(Method)))
         for (unsigned I = 0; I < F->getNumParams() && I + ArgumentOffset < C->getNumArgs(); ++I) {
           checkDefaultArgument(C->getArg(I + ArgumentOffset), F, I, L);
           if (F->getParamDecl(I)->getType()->isReferenceType())
@@ -13492,6 +13585,18 @@ public:
         if (auto Operation =
                 approvedUtilityOperation(A.S, A.Sources, C, A.Context)) {
           switch (*Operation) {
+          case UtilityOperation::MemoryUniquePtrReset: {
+            const auto Info =
+                approvedUtilityUniquePtrCall(A.S, A.Sources, C, A.Context);
+            if (!Info || Info->Operation != UtilityUniquePtrOperation::Reset) {
+              A.reject(L, "unique pointer reset",
+                       "A checked std::unique_ptr reset call is required.");
+              break;
+            }
+            A.type(Info->Owner.ElementType, L);
+            A.allocatorHeapFunction(false, Info->Owner.ElementType, L);
+            break;
+          }
           case UtilityOperation::MemoryDefaultDelete: {
             const auto Info =
                 approvedUtilityDefaultDeleteCall(A.S, A.Sources, C, A.Context);
@@ -13548,6 +13653,7 @@ public:
           }
           switch (*Operation) {
           case UtilityOperation::MemoryDefaultDelete:
+          case UtilityOperation::MemoryUniquePtrReset:
           case UtilityOperation::MemoryAllocatorAllocate:
           case UtilityOperation::MemoryAllocatorConstruct:
           case UtilityOperation::MemoryAllocatorDeallocate:
@@ -13641,7 +13747,9 @@ public:
             approvedUtilityInPlaceExpression(A.S, A.Sources, C, A.Context)) {
           // std::nullopt_t and std::in_place_t are erased tags consumed only
           // by authenticated optional operations.
-        } else if (approvedUtilityDefaultDeleteConstruction(A.S, A.Sources, C,
+        } else if (approvedUtilityUniquePtrConstruction(A.S, A.Sources, C,
+                                                        A.Context) ||
+                   approvedUtilityDefaultDeleteConstruction(A.S, A.Sources, C,
                                                             A.Context) ||
                    approvedUtilityAllocatorConstruction(A.S, A.Sources, C,
                                                         A.Context) ||
@@ -13662,7 +13770,8 @@ public:
           A.reject(L, "standard library runtime object",
                    "Approved standard headers provide only their documented "
                    "compile-time aliases, constants, folded queries and "
-                   "std::default_delete, std::allocator, std::pair, "
+                   "std::default_delete, single-object std::unique_ptr, "
+                   "std::allocator, std::pair, "
                    "std::tuple, std::array, "
                    "std::initializer_list, "
                    "std::optional and pointer std::reverse_iterator "
@@ -13833,13 +13942,15 @@ static void orderCoreV2Records(Adapter &A) {
         approvedUtilityArrayRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityOptional =
         approvedUtilityOptionalRecord(A.S, A.Sources, R, A.Context);
+    const auto UtilityUniquePtr =
+        approvedUtilityUniquePtrRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityDefaultDelete =
         approvedUtilityDefaultDeleteRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityAllocator =
         approvedUtilityAllocatorRecord(A.S, A.Sources, R, A.Context);
     if (const auto *Base = UtilityReverse || UtilityTuple || UtilityArray ||
-                                   UtilityOptional || UtilityDefaultDelete ||
-                                   UtilityAllocator
+                                   UtilityOptional || UtilityUniquePtr ||
+                                   UtilityDefaultDelete || UtilityAllocator
                                ? nullptr
                                : A.emptyBase(R)) {
       auto Found = Indices.find(Base->Base);
@@ -13868,6 +13979,9 @@ static void orderCoreV2Records(Adapter &A) {
                                    UtilityOptional->Value->getLocation());
       DependencyTypes.emplace_back(UtilityOptional->Engaged->getType(),
                                    UtilityOptional->Engaged->getLocation());
+    } else if (UtilityUniquePtr) {
+      DependencyTypes.emplace_back(UtilityUniquePtr->PointerType,
+                                   UtilityUniquePtr->Record->getLocation());
     } else {
       for (const auto *Field : R->fields())
         DependencyTypes.emplace_back(Field->getType(), Field->getLocation());
@@ -13988,6 +14102,9 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
     const auto UtilityOptional =
         S.coreV2() ? approvedUtilityOptionalRecord(S, Sources, R, Context)
                    : std::optional<UtilityOptionalRecord>();
+    const auto UtilityUniquePtr =
+        S.coreV2() ? approvedUtilityUniquePtrRecord(S, Sources, R, Context)
+                   : std::optional<UtilityUniquePtrRecord>();
     const auto UtilityDefaultDelete =
         S.coreV2() ? approvedUtilityDefaultDeleteRecord(S, Sources, R, Context)
                    : std::optional<UtilityDefaultDeleteRecord>();
@@ -13996,7 +14113,8 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
                    : std::optional<UtilityAllocatorRecord>();
     const auto *Base = S.coreV2() && !UtilityReverse && !UtilityTuple &&
                                !UtilityArray && !UtilityOptional &&
-                               !UtilityDefaultDelete && !UtilityAllocator
+                               !UtilityUniquePtr && !UtilityDefaultDelete &&
+                               !UtilityAllocator
                            ? emptyBase(R)
                            : nullptr;
     if (Base)
@@ -14004,7 +14122,11 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
     if (Base)
       Fields.push_back(json::Object{{"name", Base->Member},
           {"type", type(Context.getRecordType(Base->Base), R->getLocation())}});
-    if (UtilityDefaultDelete) {
+    if (UtilityUniquePtr) {
+      Fields.push_back(json::Object{
+          {"name", "nct_unique_ptr_pointer"},
+          {"type", type(UtilityUniquePtr->PointerType, R->getLocation())}});
+    } else if (UtilityDefaultDelete) {
       Fields.push_back(
           json::Object{{"name", "nct_default_delete_storage"}, {"type", "u8"}});
     } else if (UtilityAllocator) {
@@ -14035,7 +14157,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
       json::Array Offsets;
       if (Base)
         Offsets.push_back(uint64_t(Layout.getBaseClassOffset(Base->Base).getQuantity()) * 8);
-      if (UtilityDefaultDelete || UtilityAllocator) {
+      if (UtilityUniquePtr || UtilityDefaultDelete || UtilityAllocator) {
         Offsets.push_back(uint64_t(0));
       } else if (UtilityTuple) {
         for (uint64_t Offset : UtilityTuple->Offsets)

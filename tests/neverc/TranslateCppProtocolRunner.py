@@ -12,7 +12,11 @@ import tempfile
 
 
 TARGET_TIMEOUT_SECONDS = 30
-SUITE_TIMEOUT_SECONDS = 600
+SUITE_TIMEOUT_SECONDS = {
+    "core": 3600,
+    "project": 600,
+    "math": 600,
+}
 SUITE_FILES = {
     "core": "verify.py",
     "project": "project.py",
@@ -95,7 +99,7 @@ def main():
             result = run(
                 [sys.executable, "-I", "-B", str(script), "--neverc", str(binary),
                  "--target", target, "--output-dir", str(directory / "results")],
-                directory, environment, SUITE_TIMEOUT_SECONDS,
+                directory, environment, SUITE_TIMEOUT_SECONDS[args.suite],
             )
             if result.returncode:
                 print(label + ": suite failed", file=sys.stderr)

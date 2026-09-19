@@ -248,6 +248,7 @@ approvedCstddefOperation(const State &S, const clang::SourceManager &SM,
 enum class MemoryTemplateMetadata {
   PointerTraits,
   DefaultDelete,
+  UniquePtr,
   Allocator,
   AllocatorTraits,
   UsesAllocator,
@@ -282,6 +283,48 @@ std::optional<UtilityDefaultDeleteCall>
 approvedUtilityDefaultDeleteCall(const State &S, const clang::SourceManager &SM,
                                  const clang::CallExpr *Call,
                                  const clang::ASTContext &Context);
+struct UtilityUniquePtrRecord {
+  const clang::CXXRecordDecl *Record;
+  clang::QualType ElementType;
+  clang::QualType PointerType;
+  UtilityDefaultDeleteRecord Deleter;
+};
+std::optional<UtilityUniquePtrRecord>
+approvedUtilityUniquePtrRecord(const State &S, const clang::SourceManager &SM,
+                               const clang::CXXRecordDecl *Record,
+                               const clang::ASTContext &Context);
+enum class UtilityUniquePtrConstruction {
+  Default,
+  Null,
+  Pointer,
+};
+std::optional<UtilityUniquePtrConstruction>
+approvedUtilityUniquePtrConstruction(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction,
+    const clang::ASTContext &Context);
+enum class UtilityUniquePtrOperation {
+  Get,
+  Arrow,
+  Dereference,
+  Boolean,
+  Release,
+  Reset,
+};
+struct UtilityUniquePtrCall {
+  UtilityUniquePtrRecord Owner;
+  UtilityUniquePtrOperation Operation;
+  const clang::Expr *Object;
+  unsigned ArgumentIndex;
+};
+std::optional<UtilityUniquePtrCall>
+approvedUtilityUniquePtrCall(const State &S, const clang::SourceManager &SM,
+                             const clang::CallExpr *Call,
+                             const clang::ASTContext &Context);
+bool approvedUtilityUniquePtrDestructor(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXDestructorDecl *Destructor,
+    const clang::ASTContext &Context);
 struct UtilityAllocatorRecord {
   const clang::CXXRecordDecl *Record;
   clang::QualType ElementType;
@@ -338,6 +381,12 @@ enum class UtilityOperation {
   AsConst,
   NewLaunder,
   MemoryDefaultDelete,
+  MemoryUniquePtrGet,
+  MemoryUniquePtrArrow,
+  MemoryUniquePtrDereference,
+  MemoryUniquePtrBoolean,
+  MemoryUniquePtrRelease,
+  MemoryUniquePtrReset,
   MemoryAllocatorAddress,
   MemoryAllocatorAllocate,
   MemoryAllocatorDeallocate,
@@ -945,6 +994,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredUtilityOptionals;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityReverseIterators;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityDefaultDeletes;
+  std::set<const clang::CXXRecordDecl *> RequiredUtilityUniquePtrs;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityAllocators;
   std::map<const clang::CXXRecordDecl *, CheckedEmptyBase> EmptyBases;
   std::map<const clang::VarDecl *, const clang::CXXForRangeStmt *> RangeDeclarations;
@@ -981,6 +1031,9 @@ public:
   bool requireUtilityDefaultDelete(const clang::CXXRecordDecl *Record,
                                    clang::SourceLocation Location,
                                    unsigned Depth = 0);
+  bool requireUtilityUniquePtr(const clang::CXXRecordDecl *Record,
+                               clang::SourceLocation Location,
+                               unsigned Depth = 0);
   bool requireUtilityAllocator(const clang::CXXRecordDecl *Record,
                                clang::SourceLocation Location,
                                unsigned Depth = 0);

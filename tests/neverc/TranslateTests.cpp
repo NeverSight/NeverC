@@ -25213,6 +25213,151 @@ TEST_F(TranslateTest, CoreV2MemoryDefaultDeleteRequiresExactObjectForms) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2MemoryUniquePtrRunsAtBothOptimizations) {
+  const auto Source = tmpFile("memory-unique-ptr.cpp");
+  const auto Output = tmpFile("memory-unique-ptr.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+using Size = decltype(sizeof(0));
+struct Storage { unsigned long long alignment; unsigned char bytes[64]; };
+Storage storage[8]{};
+int allocations;
+int releases;
+int destroyed;
+Size released_size;
+struct Owned {
+  int value;
+  ~Owned() noexcept { destroyed += value; }
+};
+void *operator new(Size) { return storage[allocations++].bytes; }
+void operator delete(void *, Size size) noexcept {
+  ++releases;
+  released_size = size;
+}
+std::unique_ptr<Owned> static_owner(new Owned{8});
+int effects;
+std::unique_ptr<Owned> &observe(std::unique_ptr<Owned> &value, int digit) {
+  effects = effects * 10 + digit;
+  return value;
+}
+Owned *observe(Owned *value, int digit) {
+  effects = effects * 10 + digit;
+  return value;
+}
+int main() {
+  std::unique_ptr<Owned> empty;
+  std::unique_ptr<Owned> null((effects = 9, nullptr));
+  if (empty || null || empty.get() != nullptr || effects != 9) return 1;
+
+  std::unique_ptr<Owned> owner(new Owned{1});
+  const std::unique_ptr<Owned> &view = owner;
+  if (!owner || view.get() != owner.get() || owner->value != 1 ||
+      (*owner).value != 1) return 2;
+  Owned *raw = owner.release();
+  if (owner || raw->value != 1 || releases || destroyed) return 3;
+  owner.reset(raw);
+
+  effects = 0;
+  observe(owner, 1).reset(observe(new Owned{2}, 2));
+  if (effects != 12 || releases != 1 || destroyed != 1 ||
+      owner->value != 2) return 4;
+  owner.reset();
+  if (owner || releases != 2 || destroyed != 3) return 5;
+
+  {
+    std::unique_ptr<Owned> automatic(new Owned{4});
+    if (!automatic) return 6;
+  }
+  if (releases != 3 || destroyed != 7) return 7;
+
+  {
+    std::unique_ptr<const int> qualified(new int(5));
+    if (!qualified || *qualified != 5) return 8;
+  }
+  return allocations == 5 && releases == 4 && destroyed == 7 &&
+                 released_size == sizeof(int)
+             ? 0
+             : 9;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  const auto Text = readFile(Output);
+  EXPECT_NE(Text.find("nct_unique_ptr_pointer"), std::string::npos);
+  EXPECT_NE(Text.find(isWindows() ? "atexit" : "__cxa_atexit"),
+            std::string::npos);
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Root = Manifest->getAsObject();
+  ASSERT_NE(Root, nullptr);
+  const auto *SDK = Root->getObject("sdk");
+  ASSERT_NE(SDK, nullptr);
+  const auto *Dependencies = SDK->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 267u);
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("memory-unique-ptr" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2MemoryUniquePtrRequiresExactObjectForms) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Rejection Cases[] = {
+      {"missing-delete-definition",
+       "#include <memory>\nint main(){std::unique_ptr<int> value;}", "TR0203"},
+      {"array-specialization",
+       "#include <memory>\nstd::unique_ptr<int[]> value;", "TR0203"},
+      {"custom-deleter",
+       "#include <memory>\nstruct D{void operator()(int*)const noexcept{}};"
+       "std::unique_ptr<int,D> value;",
+       "TR0203"},
+      {"volatile-element",
+       "#include <memory>\nstd::unique_ptr<volatile int> value;", "TR0203"},
+      {"class-delete",
+       "#include <memory>\nstruct R{static void operator "
+       "delete(void*)noexcept;};"
+       "void R::operator delete(void*)noexcept{}"
+       "void operator delete(void*)noexcept{}"
+       "std::unique_ptr<R> value;",
+       "TR0203"},
+      {"get-deleter",
+       "#include <memory>\nvoid operator delete(void*)noexcept{}"
+       "int f(){std::unique_ptr<int> value;"
+       "return &value.get_deleter()!=nullptr;}",
+       "TR0203"},
+      {"function-address",
+       "#include <memory>\nvoid operator delete(void*)noexcept{}"
+       "using P=std::unique_ptr<int>;using F=int*(P::*)()const noexcept;"
+       "F f(){return &P::get;}",
+       "TR0201"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("memory-unique-ptr-reject-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("memory-unique-ptr-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2MemoryAllocatorMetadataRequiresExactTemplates) {
   struct Rejection {
     const char *Name;

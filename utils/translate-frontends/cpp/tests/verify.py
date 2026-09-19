@@ -1651,6 +1651,18 @@ extern "C" int memory_default_delete() {
   converted.operator()(second);
   return allocated == sizeof(int) && released == 2 ? 0 : 1;
 }
+extern "C" int memory_unique_ptr(int *pointer) {
+  std::unique_ptr<int> empty;
+  std::unique_ptr<int> value(pointer);
+  if (empty || !value || value.get() != pointer || *value != *pointer)
+    return 1;
+  int *released_pointer = value.release();
+  if (value || released_pointer != pointer)
+    return 2;
+  value.reset(released_pointer);
+  value.reset();
+  return value ? 3 : 0;
+}
 """
 
     def check_memory_default_delete(data):
@@ -1666,10 +1678,50 @@ extern "C" int memory_default_delete() {
             "abi_align_bits": 8,
             "field_offsets_bits": [0],
         } for record in deleter_records), data
-        calls = [node for node in walk(data["functions"])
+        functions = [function for function in data["functions"]
+                     if function["name"] == "memory_default_delete"]
+        assert len(functions) == 1, data
+        calls = [node for node in walk(functions[0]["body"])
                  if node.get("op") == "call"]
         assert len(calls) == 4, data
         assert len([call for call in calls if "target" in call]) == 2, data
+        assert not [node for node in walk(data["functions"])
+                    if node.get("op") in ("mapped_call", "native_heap_call")], data
+        assert data.get("memory_lifetimes") is True, data
+
+    def check_memory_unique_ptr(data):
+        unique_records = [
+            record for record in data["records"]
+            if record["fields"] == [
+                {"name": "nct_unique_ptr_pointer", "type": "ptr:int"}
+            ]
+        ]
+        assert len(unique_records) == 1, data
+        pointer_layout = data["target"]["carrier_layout"]["default-pointer"]
+        assert unique_records[0]["layout"] == {
+            "size_bits": data["target"]["pointer_bits"],
+            "abi_align_bits": pointer_layout["abi_align_bits"],
+            "field_offsets_bits": [0],
+        }, data
+        functions = [
+            function for function in data["functions"]
+            if function["name"] in (
+                "memory_unique_ptr", unique_records[0]["id"] + "_destroy")
+        ]
+        assert len(functions) == 2, data
+        calls = [node for node in walk(functions)
+                 if node.get("op") == "call"]
+        assert calls, data
+        assert all("callee" in call for call in calls), data
+        delete_functions = [
+            function for function in data["functions"]
+            if function["result"] == "void" and
+               [parameter["type"] for parameter in function["params"]] ==
+               ["ptr:void"]
+        ]
+        assert len(delete_functions) == 1, data
+        assert any(call["callee"] == delete_functions[0]["name"]
+                   for call in calls), data
         assert not [node for node in walk(data["functions"])
                     if node.get("op") in ("mapped_call", "native_heap_call")], data
         assert data.get("memory_lifetimes") is True, data
@@ -1679,6 +1731,7 @@ extern "C" int memory_default_delete() {
         profile="cpp-core-v2", sdk=True)
     assert memory_default_delete["sdk_dependencies"] == memory_allocator_objects["sdk_dependencies"], memory_default_delete
     check_memory_default_delete(memory_default_delete)
+    check_memory_unique_ptr(memory_default_delete)
     for target in sdk_targets:
         target_result = check(
             "v2-memory-default-delete-" + target,
@@ -1686,6 +1739,7 @@ extern "C" int memory_default_delete() {
             target=target, sdk=True)
         assert target_result["sdk_dependencies"] == memory_allocator_objects["sdk_dependencies"], target_result
         check_memory_default_delete(target_result)
+        check_memory_unique_ptr(target_result)
 
     memory_address_source = """\
 #include <memory>

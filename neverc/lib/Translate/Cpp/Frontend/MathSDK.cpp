@@ -407,6 +407,14 @@ approvedMemoryTemplateMetadata(const State &S, const SourceManager &SM,
         Element->isObjectType() && !Element->isArrayType())
       return MemoryTemplateMetadata::DefaultDelete;
   }
+  if (Name == "unique_ptr" && Arguments.size() == 2 &&
+      Arguments.get(0).getKind() == TemplateArgument::Type &&
+      Arguments.get(1).getKind() == TemplateArgument::Type &&
+      cstddefOrigin(S, SM, Template->getLocation(), "libcxx",
+                    "__memory/unique_ptr.h") &&
+      cstddefOrigin(S, SM, CanonicalTemplate->getLocation(), "libcxx",
+                    "__memory/unique_ptr.h"))
+    return MemoryTemplateMetadata::UniquePtr;
   if (Name == "allocator" && OneTypeArgument() &&
       cstddefOrigin(S, SM, Template->getLocation(), "libcxx",
                     "__memory/allocator.h") &&
@@ -477,6 +485,99 @@ approvedUtilityDefaultDeleteRecord(const State &S, const SourceManager &SM,
       Layout.getAlignment().getQuantity() != 1)
     return std::nullopt;
   return UtilityDefaultDeleteRecord{Definition, Element};
+}
+
+std::optional<UtilityUniquePtrRecord>
+approvedUtilityUniquePtrRecord(const State &S, const SourceManager &SM,
+                               const CXXRecordDecl *Record,
+                               const ASTContext &Context) {
+  const auto *Definition = Record ? Record->getDefinition() : nullptr;
+  const auto *Specialization =
+      dyn_cast_or_null<ClassTemplateSpecializationDecl>(Definition);
+  if (!Definition || !Specialization || Definition->isInvalidDecl() ||
+      Definition->isUnion() || Definition->isDependentContext() ||
+      approvedMemoryTemplateMetadata(S, SM, Definition) !=
+          MemoryTemplateMetadata::UniquePtr ||
+      !approvedStandardSDKDeclaration(S, SM, Definition) ||
+      !cstddefOrigin(S, SM, Definition->getLocation(), "libcxx",
+                     "__memory/unique_ptr.h") ||
+      Definition->getNumBases() || Definition->isDynamicClass() ||
+      !Definition->isStandardLayout() ||
+      std::distance(Definition->field_begin(), Definition->field_end()) != 4)
+    return std::nullopt;
+  const auto &Arguments = Specialization->getTemplateArgs();
+  if (Arguments.size() != 2 ||
+      Arguments.get(0).getKind() != TemplateArgument::Type ||
+      Arguments.get(1).getKind() != TemplateArgument::Type)
+    return std::nullopt;
+  const auto Element = Arguments.get(0).getAsType();
+  const auto Pointer = Context.getPointerType(Element);
+  if (Element.isNull() || Element.isVolatileQualified() ||
+      !Element->isObjectType() || Element->isArrayType() || Pointer.isNull())
+    return std::nullopt;
+
+  std::vector<const FieldDecl *> Fields;
+  for (const auto *Field : Definition->fields())
+    Fields.push_back(Field);
+  if (Fields[0]->getName() != "__ptr_" ||
+      Fields[1]->getName() != "__padding1_162_" ||
+      Fields[2]->getName() != "__deleter_" ||
+      Fields[3]->getName() != "__padding2_162_" ||
+      !Context.hasSameType(Fields[0]->getType(), Pointer))
+    return std::nullopt;
+  const auto Deleter = approvedUtilityDefaultDeleteRecord(
+      S, SM, Fields[2]->getType()->getAsCXXRecordDecl(), Context);
+  if (!Deleter ||
+      !Context.hasSameType(Arguments.get(1).getAsType(),
+                           Fields[2]->getType()) ||
+      !Context.hasSameType(Deleter->ElementType, Element))
+    return std::nullopt;
+
+  auto Padding = [&](const FieldDecl *Field, QualType Padded) {
+    const auto *PaddingDefinition =
+        Field->getType()->getAsCXXRecordDecl()
+            ? Field->getType()->getAsCXXRecordDecl()->getDefinition()
+            : nullptr;
+    const auto *PaddingSpecialization =
+        dyn_cast_or_null<ClassTemplateSpecializationDecl>(PaddingDefinition);
+    const auto *PaddingTemplate =
+        PaddingSpecialization ? PaddingSpecialization->getSpecializedTemplate()
+                              : nullptr;
+    if (!PaddingDefinition || !PaddingSpecialization || !PaddingTemplate ||
+        PaddingDefinition->isInvalidDecl() || PaddingDefinition->isUnion() ||
+        PaddingDefinition->isDependentContext() ||
+        PaddingDefinition->getName() != "__compressed_pair_padding" ||
+        !approvedStandardSDKDeclaration(S, SM, PaddingDefinition) ||
+        !approvedStandardSDKDeclaration(S, SM, PaddingTemplate) ||
+        !cstddefOrigin(S, SM, PaddingDefinition->getLocation(), "libcxx",
+                       "__memory/compressed_pair.h") ||
+        !cstddefOrigin(S, SM, PaddingTemplate->getLocation(), "libcxx",
+                       "__memory/compressed_pair.h") ||
+        !PaddingDefinition->field_empty() || PaddingDefinition->getNumBases() ||
+        !PaddingDefinition->isEmpty() || !PaddingDefinition->isStandardLayout())
+      return false;
+    const auto &PaddingArguments = PaddingSpecialization->getTemplateArgs();
+    if (PaddingArguments.size() != 2 ||
+        PaddingArguments.get(0).getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(PaddingArguments.get(0).getAsType(), Padded))
+      return false;
+    const auto &PaddingLayout = Context.getASTRecordLayout(PaddingDefinition);
+    return PaddingLayout.getSize().getQuantity() == 1 &&
+           PaddingLayout.getAlignment().getQuantity() == 1;
+  };
+  if (!Padding(Fields[1], Pointer) || !Padding(Fields[3], Fields[2]->getType()))
+    return std::nullopt;
+
+  const auto &Layout = Context.getASTRecordLayout(Definition);
+  if (Layout.getSize().getQuantity() !=
+          Context.getTypeSizeInChars(Pointer).getQuantity() ||
+      Layout.getAlignment().getQuantity() !=
+          Context.getTypeAlignInChars(Pointer).getQuantity())
+    return std::nullopt;
+  for (unsigned I = 0; I != 4; ++I)
+    if (Layout.getFieldOffset(I) != 0)
+      return std::nullopt;
+  return UtilityUniquePtrRecord{Definition, Element, Pointer, *Deleter};
 }
 
 std::optional<UtilityAllocatorRecord>
@@ -2863,6 +2964,175 @@ approvedUtilityDefaultDeleteCall(const State &S, const SourceManager &SM,
   return UtilityDefaultDeleteCall{*Deleter, Deletion, Object, PointerIndex};
 }
 
+std::optional<UtilityUniquePtrConstruction>
+approvedUtilityUniquePtrConstruction(const State &S, const SourceManager &SM,
+                                     const CXXConstructExpr *Construction,
+                                     const ASTContext &Context) {
+  if (!Construction || Construction->isTypeDependent() ||
+      Construction->isValueDependent() ||
+      Construction->isInstantiationDependent() ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete)
+    return std::nullopt;
+  const auto *Constructor = Construction->getConstructor();
+  const auto Owner = approvedUtilityUniquePtrRecord(
+      S, SM, Construction->getType()->getAsCXXRecordDecl(), Context);
+  const auto *Prototype =
+      Constructor ? Constructor->getType()->getAs<FunctionProtoType>()
+                  : nullptr;
+  if (!Constructor || !Owner || !Prototype || !Prototype->isNothrow() ||
+      Constructor->getParent()->getCanonicalDecl() !=
+          Owner->Record->getCanonicalDecl() ||
+      Constructor->isVariadic() || Constructor->isDeleted() ||
+      Construction->getNumArgs() != Constructor->getNumParams() ||
+      !Constructor->isInlined() || !Constructor->hasBody() ||
+      !approvedStandardSDKDeclaration(S, SM, Constructor) ||
+      !cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx",
+                     "__memory/unique_ptr.h"))
+    return std::nullopt;
+  if (!Construction->getNumArgs())
+    return Constructor->isDefaultConstructor()
+               ? std::optional(UtilityUniquePtrConstruction::Default)
+               : std::nullopt;
+  if (Construction->getNumArgs() != 1)
+    return std::nullopt;
+  const auto Parameter = Constructor->getParamDecl(0)->getType();
+  const auto Argument = Construction->getArg(0)->getType();
+  if (Parameter->isNullPtrType() && Argument->isNullPtrType())
+    return UtilityUniquePtrConstruction::Null;
+  if (Context.hasSameType(Parameter, Owner->PointerType) &&
+      Context.hasSameType(Argument, Owner->PointerType))
+    return UtilityUniquePtrConstruction::Pointer;
+  return std::nullopt;
+}
+
+std::optional<UtilityUniquePtrCall>
+approvedUtilityUniquePtrCall(const State &S, const SourceManager &SM,
+                             const CallExpr *Call, const ASTContext &Context) {
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);
+  const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  const auto *Member = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const Expr *Object = nullptr;
+  unsigned ArgumentIndex = 0;
+  if (Operator) {
+    if (!Operator->getNumArgs())
+      return std::nullopt;
+    Object = Operator->getArg(0);
+    ArgumentIndex = 1;
+  } else if (Member) {
+    Object = Member->getImplicitObjectArgument();
+  }
+  const auto *Reference = directMethodReference(Call);
+  const auto Owner = approvedUtilityUniquePtrRecord(
+      S, SM, Method ? Method->getParent() : nullptr, Context);
+  const auto *Prototype =
+      Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
+  if (Member && Method && Object && Owner && Prototype &&
+      Method->getDeclName().getNameKind() ==
+          DeclarationName::CXXConversionFunctionName &&
+      Method->getNameAsString() == "operator bool" && Prototype->isNothrow() &&
+      !Method->isStatic() && !Method->isVariadic() && Method->isConst() &&
+      !Method->getNumParams() && !Call->getNumArgs() && Method->isInlined() &&
+      Method->hasBody() && approvedStandardSDKDeclaration(S, SM, Method) &&
+      cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
+                    "__memory/unique_ptr.h") &&
+      S.owns(SM, Call->getExprLoc()) &&
+      Context.hasSameUnqualifiedType(Object->getType(),
+                                     Context.getRecordType(Owner->Record)) &&
+      Context.hasSameType(Call->getType(), Context.BoolTy) && Call->isPRValue())
+    return UtilityUniquePtrCall{*Owner, UtilityUniquePtrOperation::Boolean,
+                                Object, 0};
+  if (!Call || !Method || !Object || !Reference || !Owner || !Prototype ||
+      !Prototype->isNothrow() || Method->isStatic() || Method->isVariadic() ||
+      !Method->isInlined() || !Method->hasBody() ||
+      !approvedStandardSDKDeclaration(S, SM, Method) ||
+      !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
+                     "__memory/unique_ptr.h") ||
+      !S.owns(SM, Reference->getExprLoc()) ||
+      !Context.hasSameUnqualifiedType(Object->getType(),
+                                      Context.getRecordType(Owner->Record)) ||
+      Call->getNumArgs() != Method->getNumParams() + ArgumentIndex)
+    return std::nullopt;
+
+  auto ResultIs = [&](QualType Type) {
+    return Context.hasSameType(Method->getReturnType(), Type) &&
+           Context.hasSameType(Call->getType(), Type);
+  };
+  UtilityUniquePtrOperation Operation;
+  if (Method->getOverloadedOperator() == OO_Arrow && !Method->getNumParams() &&
+      Method->isConst() && ResultIs(Owner->PointerType) && Call->isPRValue()) {
+    Operation = UtilityUniquePtrOperation::Arrow;
+  } else if (Method->getOverloadedOperator() == OO_Star &&
+             !Method->getNumParams() && Method->isConst() &&
+             Method->getReturnType()->isLValueReferenceType() &&
+             Context.hasSameType(Method->getReturnType()->getPointeeType(),
+                                 Owner->ElementType) &&
+             Context.hasSameType(Call->getType(), Owner->ElementType) &&
+             Call->isLValue()) {
+    Operation = UtilityUniquePtrOperation::Dereference;
+  } else if (Method->getIdentifier() && Method->getName() == "get" &&
+             !Method->getNumParams() && Method->isConst() &&
+             ResultIs(Owner->PointerType) && Call->isPRValue()) {
+    Operation = UtilityUniquePtrOperation::Get;
+  } else if (Method->getIdentifier() && Method->getName() == "release" &&
+             !Method->getNumParams() && !Method->isConst() &&
+             !Object->getType().isConstQualified() &&
+             ResultIs(Owner->PointerType) && Call->isPRValue()) {
+    Operation = UtilityUniquePtrOperation::Release;
+  } else if (Method->getIdentifier() && Method->getName() == "reset" &&
+             Method->getNumParams() == 1 && !Method->isConst() &&
+             !Object->getType().isConstQualified() &&
+             Method->getReturnType()->isVoidType() &&
+             Call->getType()->isVoidType() &&
+             Context.hasSameType(Method->getParamDecl(0)->getType(),
+                                 Owner->PointerType) &&
+             Context.hasSameType(Call->getArg(ArgumentIndex)->getType(),
+                                 Owner->PointerType)) {
+    Operation = UtilityUniquePtrOperation::Reset;
+  } else {
+    return std::nullopt;
+  }
+  return UtilityUniquePtrCall{*Owner, Operation, Object, ArgumentIndex};
+}
+
+bool approvedUtilityUniquePtrDestructor(const State &S, const SourceManager &SM,
+                                        const CXXDestructorDecl *Destructor,
+                                        const ASTContext &Context) {
+  const auto Owner = approvedUtilityUniquePtrRecord(
+      S, SM, Destructor ? Destructor->getParent() : nullptr, Context);
+  const auto *Prototype =
+      Destructor ? Destructor->getType()->getAs<FunctionProtoType>() : nullptr;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(
+      Destructor ? Destructor->getBody() : nullptr);
+  if (!Destructor || !Owner || !Prototype || !Prototype->isNothrow() ||
+      Destructor->getParent()->getCanonicalDecl() !=
+          Owner->Record->getCanonicalDecl() ||
+      Destructor->isImplicit() || Destructor->isVirtual() ||
+      Destructor->isDeleted() || Destructor->getNumParams() ||
+      !Destructor->isInlined() || !Body || Body->size() != 1 ||
+      !approvedStandardSDKDeclaration(S, SM, Destructor) ||
+      !cstddefOrigin(S, SM, Destructor->getLocation(), "libcxx",
+                     "__memory/unique_ptr.h"))
+    return false;
+  const auto *Reset = dyn_cast<CXXMemberCallExpr>(*Body->body_begin());
+  const auto *Method = Reset ? Reset->getMethodDecl() : nullptr;
+  const auto *Object = Reset ? Reset->getImplicitObjectArgument() : nullptr;
+  const auto *This =
+      Object ? dyn_cast<CXXThisExpr>(Object->IgnoreParenImpCasts()) : nullptr;
+  return Reset && Method && This && Reset->getNumArgs() == 1 &&
+         isa<CXXDefaultArgExpr>(Reset->getArg(0)) && Method->getIdentifier() &&
+         Method->getName() == "reset" && !Method->isConst() &&
+         Method->getParent()->getCanonicalDecl() ==
+             Owner->Record->getCanonicalDecl() &&
+         Method->getNumParams() == 1 &&
+         Context.hasSameType(Method->getParamDecl(0)->getType(),
+                             Owner->PointerType) &&
+         Method->getReturnType()->isVoidType() &&
+         approvedStandardSDKDeclaration(S, SM, Method) &&
+         cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
+                       "__memory/unique_ptr.h");
+}
+
 bool approvedUtilityReverseIteratorMetadata(const State &S,
                                             const SourceManager &SM,
                                             const CXXRecordDecl *Record) {
@@ -3595,6 +3865,28 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
   const auto *Parameter = Default ? Default->getParam() : nullptr;
   const auto *Owner =
       Parameter ? dyn_cast<FunctionDecl>(Parameter->getDeclContext()) : nullptr;
+  if (const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function)) {
+    const auto Unique =
+        approvedUtilityUniquePtrRecord(S, SM, Method->getParent(), Context);
+    const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
+    const auto *Init = selectedDefaultArgument(Default, Context);
+    if (Default && Parameter && Owner && Unique && Prototype &&
+        Prototype->isNothrow() &&
+        Owner->getCanonicalDecl() == Function->getCanonicalDecl() &&
+        Index == 0 && Function->getNumParams() == 1 &&
+        Parameter == Function->getParamDecl(0) &&
+        Parameter->getFunctionScopeIndex() == 0 && !Function->isVariadic() &&
+        Function->isInlined() && Function->hasBody() &&
+        Function->getIdentifier() && Function->getName() == "reset" &&
+        approvedStandardSDKDeclaration(S, SM, Function) &&
+        cstddefOrigin(S, SM, Function->getLocation(), "libcxx",
+                      "__memory/unique_ptr.h") &&
+        S.owns(SM, Default->getExprLoc()) && Init &&
+        Context.hasSameType(Parameter->getType(), Unique->PointerType) &&
+        Context.hasSameType(Init->getType(), Unique->PointerType) &&
+        isa<CXXScalarValueInitExpr>(Init->IgnoreParenImpCasts()))
+      return true;
+  }
   const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
   const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
   if (!Default || !Parameter || !Owner || !Function || !Primary || !Pattern ||
@@ -3710,6 +4002,22 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           approvedUtilityAllocatorHeapCall(S, SM, Call, false, Context))
     return Heap->Allocate ? UtilityOperation::MemoryAllocatorAllocate
                           : UtilityOperation::MemoryAllocatorDeallocate;
+  if (const auto Unique = approvedUtilityUniquePtrCall(S, SM, Call, Context)) {
+    switch (Unique->Operation) {
+    case UtilityUniquePtrOperation::Get:
+      return UtilityOperation::MemoryUniquePtrGet;
+    case UtilityUniquePtrOperation::Arrow:
+      return UtilityOperation::MemoryUniquePtrArrow;
+    case UtilityUniquePtrOperation::Dereference:
+      return UtilityOperation::MemoryUniquePtrDereference;
+    case UtilityUniquePtrOperation::Boolean:
+      return UtilityOperation::MemoryUniquePtrBoolean;
+    case UtilityUniquePtrOperation::Release:
+      return UtilityOperation::MemoryUniquePtrRelease;
+    case UtilityUniquePtrOperation::Reset:
+      return UtilityOperation::MemoryUniquePtrReset;
+    }
+  }
   if (approvedUtilityDefaultDeleteCall(S, SM, Call, Context))
     return UtilityOperation::MemoryDefaultDelete;
   if (approvedUtilityAllocatorConstructCall(S, SM, Call, true, Context))
