@@ -1532,9 +1532,16 @@ Exact single-object `std::make_unique<T>(args...)` authenticates its pinned
 template specialization, non-array `new` and raw-pointer owner construction,
 then emits an ordinary checked source-defined global-new `call`, scalar
 initialization or the selected source-owned non-template `noexcept` constructor
-call, and the same synthetic owner field store. Its later destruction uses the
-existing checked global-delete call. These operations add no wire instruction,
-SDK call, native-heap import or hidden deleter storage. Exact runtime allocator
+call, and the same synthetic owner field store. Exact one-dimensional
+`std::make_unique<T[]>(count)` authenticates its `T[]` specialization, one
+`size_t` parameter, value-initializing `new[]` expression and libc++ private
+array-owner construction. The call-site count must be an integer constant
+expression from zero through 65536. It emits the checked global-new[] `call`,
+target cookie and per-element scalar value initialization or exact
+zero-parameter source-owned non-template `noexcept` record-constructor calls.
+Later destruction uses the existing checked global-delete or reverse
+global-delete[] path. These operations add no wire instruction, SDK call,
+native-heap import or hidden deleter storage. Exact runtime allocator
 specializations preserve the authenticated one-byte, one-byte-aligned empty
 libc++ representation as a record with one synthetic
 `{name:"nct_allocator_storage",type:"u8"}` field at bit offset zero. Their

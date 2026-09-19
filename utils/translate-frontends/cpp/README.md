@@ -210,8 +210,13 @@ pointer-sized carriers. Their default, null, raw-pointer, move, const-adding
 conversion, assignment, observation, release, reset, swap, comparison and
 destruction operations lower directly; scalar owners expose dereference and
 arrow while array owners expose subscript and the checked reverse `delete[]`
-path. Exact
-`destroy_at`, `destroy` and `destroy_n` calls on scalar object pointers retain
+path. Exact single-object `std::make_unique<T>(args...)` and one-dimensional
+`std::make_unique<T[]>(count)` for integer constant expressions from zero
+through 65536 lower through checked source-defined global new/delete or
+new[]/delete[]. They value-initialize scalars or call supported source-owned
+non-template `noexcept` record constructors and return the authenticated
+pointer-sized owner without a libc++ call. Exact `destroy_at`, `destroy` and
+`destroy_n` calls on scalar object pointers retain
 argument evaluation and counted iterator results without emitting a trivial
 destructor call. The ten C++17 `uninitialized_*` copy, move, fill, default and
 value construction forms directly initialize scalar pointer ranges and retain
@@ -224,11 +229,11 @@ member and traits forwarding, including hints and runtime deallocation counts,
 when a source-defined global new/delete path exists and the allocation count is
 a constant proven within `max_size`. Default heap allocation, dynamic allocation
 counts, over-aligned elements, multidimensional ownership specializations,
-custom-deleter `unique_ptr`, other smart pointers and ownership factories are not yet
-admitted.
-The driver authenticates each closure before
-emitting output. Standard-library objects and operations beyond these documented
-surfaces, other standard headers and full C++/STL remain unfinished.
+runtime-count array factories, custom-deleter `unique_ptr`, other smart pointers
+and ownership factories are not yet admitted. The driver authenticates each
+closure before emitting output. Standard-library objects and operations beyond
+these documented surfaces, other standard headers and full C++/STL remain
+unfinished.
 
 The adapter first inspects every owned declaration and expression, including
 unused functions and unreachable statements. It accepts supported 32-bit integer,

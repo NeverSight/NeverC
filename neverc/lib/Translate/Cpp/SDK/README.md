@@ -169,12 +169,17 @@ libc++ call. Single-object owners expose dereference and arrow; array owners
 expose subscript and use checked cookie-based reverse destruction. Exact
 raw pointers to the owner may also receive every admitted nonstatic member;
 their pointee qualification and one-time receiver evaluation are preserved.
-Exact single-object `std::make_unique<T>(args...)` authenticates the pinned factory
-body and lowers through checked source-defined global new/delete. It
-value-initializes scalars or calls an exact source-owned non-template `noexcept`
-record constructor with the call-site arguments, then returns the same
-pointer-sized owner without a libc++ call. Exact runtime allocator
-specializations use an authenticated one-byte stateless carrier. Default,
+Exact single-object `std::make_unique<T>(args...)` authenticates the pinned
+factory body and lowers through checked source-defined global new/delete. Exact
+one-dimensional `std::make_unique<T[]>(count)` additionally accepts an integer
+constant expression from zero through 65536 and lowers through the matching
+checked global new[]/delete[] cookie path. The scalar factory value-initializes
+its object or calls an exact source-owned non-template `noexcept` record
+constructor with the call-site arguments. The array factory value-initializes
+each scalar element or calls an exact zero-parameter source-owned non-template
+`noexcept` record constructor. Both return the same pointer-sized owner without
+a libc++ call. Exact runtime allocator specializations use an authenticated
+one-byte stateless carrier. Default,
 copy/move and non-void converting construction, same-type assignment,
 heterogeneous equality, deprecated C++17 `address` and complete-element
 `max_size` lower directly without a libc++ call. Exact allocator `destroy`
@@ -226,8 +231,9 @@ or copy fallback. Default-heap allocation, dynamic or overflowing allocation
 counts, over-aligned elements, other allocator-traits forwarding calls,
 potentially throwing, default-argument or
 constructor-template source-record construction, nontrivial by-value record
-parameters, other smart pointers, array or other ownership factories and the
-remaining memory operations stay outside the direct lowering boundary.
+parameters, runtime-count or multidimensional ownership factories, other smart
+pointers and the remaining memory operations stay outside the direct lowering
+boundary.
 Core v2 never admits the `platform` root.
 Math v1 continues to use its separately checked libc++, resource and Darwin
 platform closure for `<cmath>`.

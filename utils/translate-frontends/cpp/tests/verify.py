@@ -1774,6 +1774,11 @@ extern "C" int memory_make_unique(int value) {
   auto owner = std::make_unique<int>(value);
   return owner && *owner == value ? 0 : 1;
 }
+extern "C" int memory_make_unique_array() {
+  auto owner = std::make_unique<int[]>(2);
+  owner[1] = 7;
+  return owner && owner[0] == 0 && owner[1] == 7 ? 0 : 1;
+}
 """
 
     def check_memory_default_delete(data):
@@ -1809,15 +1814,11 @@ extern "C" int memory_make_unique(int value) {
             if len(record["fields"]) == 1 and
                record["fields"][0]["name"] == "nct_unique_ptr_pointer"
         ]
-        assert len(all_unique_records) == 4, data
-        unique_records = {
-            record["fields"][0]["type"]: record
-            for record in data["records"]
-            if len(record["fields"]) == 1 and
-               record["fields"][0]["name"] == "nct_unique_ptr_pointer" and
-               record["fields"][0]["type"] in ("ptr:int", "cptr:int")
+        assert len(all_unique_records) == 5, data
+        unique_pointer_types = {
+            record["fields"][0]["type"] for record in all_unique_records
         }
-        assert set(unique_records) == {"ptr:int", "cptr:int"}, data
+        assert {"ptr:int", "cptr:int"} <= unique_pointer_types, data
         pointer_layout = data["target"]["carrier_layout"]["default-pointer"]
         expected_layout = {
             "size_bits": data["target"]["pointer_bits"],
@@ -1826,17 +1827,15 @@ extern "C" int memory_make_unique(int value) {
         }
         assert all(record["layout"] == expected_layout
                    for record in all_unique_records), data
-        destroy_names = {
-            record["id"] + "_destroy" for record in unique_records.values()
+        external_names = {
+            "memory_unique_ptr", "memory_array_unique_ptr",
+            "memory_make_unique", "memory_make_unique_array",
         }
         functions = [
             function for function in data["functions"]
-            if function["name"] in {
-                "memory_unique_ptr", "memory_array_unique_ptr",
-                "memory_make_unique", *destroy_names
-            }
+            if function["name"] in external_names
         ]
-        assert len(functions) == 5, data
+        assert len(functions) == 4, data
         unique_function = next(
             function for function in functions
             if function["name"] == "memory_unique_ptr"
@@ -1866,13 +1865,31 @@ extern "C" int memory_make_unique(int value) {
         )
         assert any(node.get("kind") == "index"
                    for node in walk(array_function["body"])), data
+        make_array_function = next(
+            function for function in functions
+            if function["name"] == "memory_make_unique_array"
+        )
+        assert any(node.get("kind") == "index"
+                   for node in walk(make_array_function["body"])), data
         deleter_ids = {
             record["id"] for record in data["records"]
             if record["fields"] == [
                 {"name": "nct_default_delete_storage", "type": "u8"}
             ]
         }
-        owner_id = unique_records["ptr:int"]["id"]
+        int_owner_ids = {
+            record["id"] for record in all_unique_records
+            if record["fields"][0]["type"] == "ptr:int"
+        }
+        owner_ids_in_function = {
+            node["type"][4:]
+            for node in walk(unique_function["body"])
+            if node.get("kind") == "address" and
+               node.get("type", "").startswith("ptr:") and
+               node["type"][4:] in int_owner_ids
+        }
+        assert len(owner_ids_in_function) == 1, data
+        owner_id = next(iter(owner_ids_in_function))
         def has_deleter_alias(prefix):
             for node in walk(unique_function["body"]):
                 if (node.get("kind") != "cast" or
@@ -1889,8 +1906,30 @@ extern "C" int memory_make_unique(int value) {
                     return True
             return False
         assert has_deleter_alias("ptr") and has_deleter_alias("cptr"), data
-        calls = [node for node in walk(functions)
-                 if node.get("op") == "call"]
+        functions_by_name = {
+            function["name"]: function for function in data["functions"]
+        }
+        def reachable_calls(root_names):
+            pending = list(root_names)
+            visited = set()
+            result = []
+            while pending:
+                name = pending.pop()
+                if name in visited or name not in functions_by_name:
+                    continue
+                visited.add(name)
+                for node in walk(functions_by_name[name]["body"]):
+                    if node.get("op") != "call":
+                        continue
+                    result.append(node)
+                    pending.append(node["callee"])
+            return result
+        scalar_calls = reachable_calls({
+            "memory_unique_ptr", "memory_make_unique"
+        })
+        array_calls = reachable_calls({"memory_array_unique_ptr"})
+        array_factory_calls = reachable_calls({"memory_make_unique_array"})
+        calls = scalar_calls + array_calls + array_factory_calls
         assert calls, data
         assert all("callee" in call for call in calls), data
         allocation_functions = [
@@ -1898,17 +1937,39 @@ extern "C" int memory_make_unique(int value) {
             if function["result"] == "ptr:void" and
                len(function["params"]) == 1 and
                any(call["callee"] == function["name"] and
-                   "target" in call for call in calls)
+                   "target" in call for call in scalar_calls)
         ]
         assert len(allocation_functions) == 1, data
+        array_allocation_functions = [
+            function for function in data["functions"]
+            if function["result"] == "ptr:void" and
+               len(function["params"]) == 1 and
+               any(call["callee"] == function["name"] and
+                   "target" in call for call in array_factory_calls)
+        ]
+        assert len(array_allocation_functions) == 1, data
+        assert (array_allocation_functions[0]["name"] !=
+                allocation_functions[0]["name"]), data
         delete_functions = [
             function for function in data["functions"]
             if function["result"] == "void" and
                [parameter["type"] for parameter in function["params"]] ==
                ["ptr:void"] and
-               any(call["callee"] == function["name"] for call in calls)
+               any(call["callee"] == function["name"]
+                   for call in scalar_calls)
         ]
         assert len(delete_functions) == 1, data
+        array_unsized_delete_functions = [
+            function for function in data["functions"]
+            if function["result"] == "void" and
+               [parameter["type"] for parameter in function["params"]] ==
+               ["ptr:void"] and
+               any(call["callee"] == function["name"]
+                   for call in array_factory_calls)
+        ]
+        assert len(array_unsized_delete_functions) == 1, data
+        assert (array_unsized_delete_functions[0]["name"] !=
+                delete_functions[0]["name"]), data
         array_delete_functions = [
             function for function in data["functions"]
             if function["result"] == "void" and
@@ -1916,8 +1977,6 @@ extern "C" int memory_make_unique(int value) {
                function["params"][0]["type"] == "ptr:void"
         ]
         assert len(array_delete_functions) == 1, data
-        array_calls = [node for node in walk(array_function["body"])
-                       if node.get("op") == "call"]
         assert any(call["callee"] == array_delete_functions[0]["name"]
                    for call in array_calls), data
         assert not [node for node in walk(data["functions"])

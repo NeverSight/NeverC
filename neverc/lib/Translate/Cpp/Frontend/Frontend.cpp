@@ -13610,20 +13610,35 @@ public:
                 approvedUtilityMakeUniqueCall(A.S, A.Sources, C, A.Context);
             if (!Info || !Info->Allocation->getOperatorNew()) {
               A.reject(L, "make_unique",
-                       "A checked single-object std::make_unique call is "
-                       "required.");
+                       "A checked std::make_unique call is required.");
               break;
             }
             A.type(Info->Owner.ElementType, L);
-            const auto *Function =
-                A.allocatorHeapFunction(true, Info->Owner.ElementType, L);
+            const bool Array = Info->Owner.Deleter.Array;
+            const auto *Function = A.allocatorHeapFunction(
+                true, Info->Owner.ElementType, L, Array);
             if (Function->getCanonicalDecl() !=
                 Info->Allocation->getOperatorNew()->getCanonicalDecl())
               A.reject(L, "make_unique allocation",
                        "The authenticated template and selected global "
                        "allocation function differ.",
                        "TR0203");
-            A.allocatorHeapFunction(false, Info->Owner.ElementType, L);
+            const auto *Deallocation = A.allocatorHeapFunction(
+                false, Info->Owner.ElementType, L, Array);
+            if (Array) {
+              if (!Info->ArrayCount)
+                A.reject(L, "make_unique array extent",
+                         "A constant array extent within the expansion limit "
+                         "is required.",
+                         "TR0203");
+              const bool Sized = Deallocation->getNumParams() == 2;
+              const auto Layout =
+                  A.arrayAllocationLayout(Info->Owner.ElementType, Sized, L);
+              if (Sized && !Layout.CookieBytes)
+                A.reject(L, "sized array delete",
+                         "The native array ABI supplies no count for this "
+                         "selected sized deallocation function.");
+            }
             if (const auto *Constructor = Info->Constructor)
               if (!Constructor->isTrivial() &&
                   ((Constructor->isDefaultConstructor() &&

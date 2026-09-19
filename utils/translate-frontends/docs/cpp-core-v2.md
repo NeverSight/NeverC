@@ -537,25 +537,37 @@ deallocate its former object or reverse array elements. Array sized delete[]
 uses the checked native cookie and original allocation extent. Null pointers
 skip destruction and deallocation.
 
-The exact pinned single-object `std::make_unique<T>(args...)` overload is also
-admitted. The concrete function-template specialization, `T` and `_Args` pack,
-single non-array `new T(...)`, raw-pointer `unique_ptr<T>` construction and
-selected global allocation function are authenticated together. Allocation
-uses the checked source-defined global new path before evaluating construction
+The exact pinned single-object `std::make_unique<T>(args...)` overload and
+one-dimensional `std::make_unique<T[]>(count)` overload are also admitted. The
+single-object path authenticates the concrete function-template specialization,
+`T` and `_Args` pack, non-array `new T(...)`, raw-pointer `unique_ptr<T>`
+construction and selected global allocation function together. Allocation uses
+the checked source-defined global new path before evaluating construction
 arguments. A scalar accepts value initialization or one admitted direct scalar
 conversion. A complete source-owned non-union record calls the exact
 source-owned non-template `noexcept` constructor selected by Clang, including
-default, copy, move and multi-argument forms. The resulting raw pointer is
-installed in the normal pointer-sized owner, so return destinations, automatic
-destruction and the checked global-delete path remain shared with direct
-`unique_ptr` construction. The factory itself emits no libc++ runtime call.
+default, copy, move and multi-argument forms.
+
+The array path authenticates its concrete `T[]` specialization, one `size_t`
+parameter, `new T[count]()` expression, libc++ private array-owner construction
+and selected global allocation function together. The call-site count must be
+an integer constant expression from zero through 65536. Lowering computes the
+checked byte extent, stores the target array cookie when required and
+value-initializes every scalar element. A complete source-owned non-union record
+must select an exact zero-parameter source-owned non-template `noexcept` default
+constructor, which is called once for each element. The resulting raw pointer
+is installed in the normal pointer-sized owner, so return destinations,
+automatic destruction and the checked global-delete or reverse global-delete[]
+path remain shared with direct `unique_ptr` construction. Neither factory emits
+a libc++ runtime call.
 
 The element must be complete and within the target's default new alignment,
 and the matching global sized or unsized delete definition must be
 source-owned. Class-specific delete/delete[], multidimensional or custom-deleter
 `unique_ptr`, volatile elements, member-function addresses, const-removing or
 base-adjusting converting moves and base-adjusting heterogeneous comparisons
-remain rejected at this boundary. Array `make_unique`, class-specific allocation, throwing or default-argument record
+remain rejected at this boundary. Runtime-count or multidimensional
+`make_unique`, class-specific allocation, throwing or default-argument record
 construction, over-aligned elements, factory function addresses and other
 ownership factories remain rejected. Every admitted operation emits no libc++
 runtime call and enables the checked `memory_lifetimes` policy.

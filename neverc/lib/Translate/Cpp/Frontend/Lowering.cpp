@@ -1417,39 +1417,49 @@ class FunctionLowering {
           approvedUtilityMakeUniqueCall(A.S, A.Sources, Call, A.Context);
       if (!Info)
         reject(L, "make_unique",
-               "A checked single-object std::make_unique call is required.");
+               "A checked std::make_unique call is required.");
+      const bool Array = Info->Owner.Deleter.Array;
       const auto *Function =
-          A.allocatorHeapFunction(true, Info->Owner.ElementType, L);
+          A.allocatorHeapFunction(true, Info->Owner.ElementType, L, Array);
       if (!Info->Allocation->getOperatorNew() ||
           Function->getCanonicalDecl() !=
               Info->Allocation->getOperatorNew()->getCanonicalDecl())
         reject(L, "make_unique allocation",
                "The authenticated template and selected global allocation "
                "function differ.");
-      A.allocatorHeapFunction(false, Info->Owner.ElementType, L);
+      A.allocatorHeapFunction(false, Info->Owner.ElementType, L, Array);
 
-      json::Array Args;
-      Args.push_back(allocationExtent(Info->Owner.ElementType,
-                                      Function->getParamDecl(0)->getType(),
-                                      false, L));
-      chargeCall(Args, L);
-      auto Storage = temporary(type(Function->getReturnType(), L), L);
-      Body.push_back(json::Object{{"op", "call"},
-                                  {"callee", A.name(Function)},
-                                  {"args", std::move(Args)},
-                                  {"target", json::Object(Storage)},
-                                  {"loc", A.loc(L)}});
-      auto Pointer = snapshot(
-          cast(std::move(Storage), type(Info->Owner.PointerType, L), L), L);
-      auto MutablePointer =
-          cast(json::Object(Pointer),
-               type(A.Context.getPointerType(
-                        Info->Owner.ElementType.getUnqualifiedType()),
-                    L),
-               L);
-      ConstructAt(dereference(std::move(MutablePointer), L),
-                  Info->Owner.ElementType, Info->Constructor, 0,
-                  "make_unique construction");
+      auto Pointer = [&]() -> Expression {
+        if (Array) {
+          if (!Info->ArrayCount)
+            reject(L, "make_unique array extent",
+                   "An authenticated constant array extent is required.");
+          return allocateArray(Info->Allocation, Info->ArrayCount, L);
+        }
+        json::Array Args;
+        Args.push_back(allocationExtent(Info->Owner.ElementType,
+                                        Function->getParamDecl(0)->getType(),
+                                        false, L));
+        chargeCall(Args, L);
+        auto Storage = temporary(type(Function->getReturnType(), L), L);
+        Body.push_back(json::Object{{"op", "call"},
+                                    {"callee", A.name(Function)},
+                                    {"args", std::move(Args)},
+                                    {"target", json::Object(Storage)},
+                                    {"loc", A.loc(L)}});
+        auto Result = snapshot(
+            cast(std::move(Storage), type(Info->Owner.PointerType, L), L), L);
+        auto MutablePointer =
+            cast(json::Object(Result),
+                 type(A.Context.getPointerType(
+                          Info->Owner.ElementType.getUnqualifiedType()),
+                      L),
+                 L);
+        ConstructAt(dereference(std::move(MutablePointer), L),
+                    Info->Owner.ElementType, Info->Constructor, 0,
+                    "make_unique construction");
+        return Result;
+      }();
 
       const auto RecordType = A.Context.getRecordType(Info->Owner.Record);
       auto Place = Destination ? std::move(*Destination)
@@ -7270,11 +7280,20 @@ class FunctionLowering {
     jump(Check, L);
     label(End, L);
   }
-  Expression allocateArray(const CXXNewExpr *N) {
-    const auto L = N->getExprLoc();
+  Expression
+  allocateArray(const CXXNewExpr *N,
+                std::optional<uint64_t> AuthenticatedCount = std::nullopt,
+                SourceLocation UseLocation = SourceLocation()) {
+    const auto L = UseLocation.isValid() ? UseLocation : N->getExprLoc();
     const auto *F = A.allocationFunction(N->getOperatorNew(), true, L, true);
     const auto Object = N->getAllocatedType();
-    const auto Info = A.arrayNewInfo(N);
+    ArrayNewInfo Info;
+    if (AuthenticatedCount) {
+      Info.Count = AuthenticatedCount;
+      Info.Initializer = N->getInitializer();
+    } else {
+      Info = A.arrayNewInfo(N);
+    }
     const auto Layout = A.arrayAllocationLayout(Object, N->doesUsualArrayDeleteWantSize(), L);
     const uint64_t ObjectBytes = A.Context.getTypeSizeInChars(Object).getQuantity();
     const auto Size = type(A.Context.getSizeType(), L);
@@ -7283,7 +7302,8 @@ class FunctionLowering {
     std::string End;
     Expression Count;
     if (Info.Count) {
-      discard(*N->getArraySize());
+      if (!AuthenticatedCount)
+        discard(*N->getArraySize());
       Count = quantity(*Info.Count, Size, L);
     } else {
       End = labelName();
@@ -8327,6 +8347,11 @@ class FunctionLowering {
                L);
         return;
       }
+      case UtilityUniquePtrConstruction::FactoryArray:
+        reject(L, "unique pointer construction",
+               "The private array owner construction is lowered only through "
+               "its authenticated std::make_unique call.");
+        return;
       case UtilityUniquePtrConstruction::Move:
       case UtilityUniquePtrConstruction::ConvertingMove: {
         if (C->getNumArgs() != 1)

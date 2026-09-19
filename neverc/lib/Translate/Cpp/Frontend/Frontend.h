@@ -297,6 +297,7 @@ enum class UtilityUniquePtrConstruction {
   Default,
   Null,
   Pointer,
+  FactoryArray,
   Move,
   ConvertingMove,
 };
@@ -335,6 +336,7 @@ struct UtilityMakeUniqueCall {
   UtilityUniquePtrRecord Owner;
   const clang::CXXNewExpr *Allocation;
   const clang::CXXConstructorDecl *Constructor;
+  std::optional<uint64_t> ArrayCount = std::nullopt;
 };
 std::optional<UtilityMakeUniqueCall>
 approvedUtilityMakeUniqueCall(const State &S, const clang::SourceManager &SM,

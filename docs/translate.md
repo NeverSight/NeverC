@@ -63,17 +63,20 @@ qualification-compatible same-element comparisons, all six bidirectional
 `nullptr` comparisons and automatic destruction lower directly. Single-object
 owners also admit `operator->` and dereference; array owners admit `operator[]`.
 Lowering preserves receiver/argument sequencing and calls the matching checked
-source-defined global delete or delete[]. Each admitted nonstatic member accepts either an object receiver or an
-exact raw pointer to that owner; pointer receivers retain pointee `const` and
-execute once. Exact single-object
-`std::make_unique<T>(args...)` also lowers directly: it authenticates the pinned
-factory and selected allocation, value-initializes a scalar or calls the exact
-source-owned non-template `noexcept` record constructor, and installs the
-resulting pointer in that owner. The existing address
-operations, scalar and
-source-record destruction, scalar or trivial source-record uninitialized
-construction, and nothrow zero-parameter source-record default/value
-construction operations lower directly. Uninitialized copy, fill and move also
+source-defined global delete or delete[]. Each admitted nonstatic member accepts
+either an object receiver or an exact raw pointer to that owner; pointer
+receivers retain pointee `const` and execute once. Exact single-object
+`std::make_unique<T>(args...)` and one-dimensional
+`std::make_unique<T[]>(count)` with an integer constant
+expression from zero through 65536 also lower directly. They authenticate the
+pinned factory and selected allocation, value-initialize scalar elements or
+call the exact source-owned non-template `noexcept` record constructor, and
+install the resulting pointer in that owner. Array construction uses the
+checked global new[]/delete[] cookie path; runtime array counts remain rejected.
+Existing address operations, scalar and source-record destruction, scalar or
+trivial source-record uninitialized construction, and nothrow zero-parameter
+source-record default/value construction operations lower directly.
+Uninitialized copy, fill and move also
 call the exact source-owned non-template `noexcept` copy or move constructor
 selected by the authenticated libc++ helper for complete source-owned records;
 exact runtime allocator objects use a checked one-byte stateless carrier with

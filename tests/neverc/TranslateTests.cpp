@@ -25827,6 +25827,81 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2MemoryArrayMakeUniqueRunsAtBothOptimizations) {
+  const auto Source = tmpFile("memory-array-make-unique.cpp");
+  const auto Output = tmpFile("memory-array-make-unique.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+using Size = decltype(sizeof(0));
+struct Storage { unsigned long long alignment; unsigned char bytes[64]; };
+Storage storage[4]{};
+int allocations;
+int releases;
+int sized_releases;
+int unsized_releases;
+Size allocated_bytes;
+Size released_bytes;
+int constructed;
+int destroyed_order;
+struct Owned {
+  int value;
+  Owned() noexcept : value(++constructed) {}
+  ~Owned() noexcept { destroyed_order = destroyed_order * 10 + value; }
+};
+void *operator new[](Size size) {
+  allocated_bytes += size;
+  return storage[allocations++].bytes;
+}
+void operator delete[](void *) noexcept {
+  ++releases;
+  ++unsized_releases;
+}
+void operator delete[](void *, Size size) noexcept {
+  ++releases;
+  ++sized_releases;
+  released_bytes += size;
+}
+int main() {
+  auto values = std::make_unique<int[]>(3);
+  auto qualified = std::make_unique<const int[]>(2);
+  auto objects = std::make_unique<Owned[]>(2);
+  auto empty = std::make_unique<int[]>(0);
+  if (!values || !qualified || !objects || !empty || values[0] != 0 ||
+      values[1] != 0 || values[2] != 0 || qualified[0] != 0 ||
+      qualified[1] != 0 || objects[0].value != 1 ||
+      objects[1].value != 2)
+    return 1;
+  values[1] = 7;
+  if (values[1] != 7) return 2;
+  objects.reset();
+  values.reset();
+  qualified.reset();
+  empty.reset();
+  return allocations == 4 && releases == 4 && sized_releases == 1 &&
+                 unsized_releases == 3 && constructed == 2 &&
+                 destroyed_order == 21 &&
+                 allocated_bytes == released_bytes + 5 * sizeof(int)
+             ? 0
+             : 3;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  const auto Text = readFile(Output);
+  EXPECT_NE(Text.find("nct_unique_ptr_pointer"), std::string::npos);
+  EXPECT_EQ(Text.find("make_unique"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("memory-array-make-unique" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2MemoryMakeUniqueRequiresExactObjectForms) {
   struct Rejection {
     const char *Name;
@@ -25843,10 +25918,45 @@ TEST_F(TranslateTest, CoreV2MemoryMakeUniqueRequiresExactObjectForms) {
        "void*operator new(S){return b;}"
        "int main(){auto value=std::make_unique<int>(1);return *value;}",
        "TR0203"},
-      {"array-specialization",
-       "#include <memory>\nusing S=decltype(sizeof(0));unsigned char b[16];"
-       "void*operator new(S){return b;}void operator delete(void*)noexcept{}"
+      {"array-missing-new-definition",
+       "#include <memory>\nvoid operator delete[](void*)noexcept{}"
        "int main(){auto value=std::make_unique<int[]>(2);return value[0];}",
+       "TR0203"},
+      {"array-missing-delete-definition",
+       "#include <memory>\nusing S=decltype(sizeof(0));unsigned char b[16];"
+       "void*operator new[](S){return b;}"
+       "int main(){auto value=std::make_unique<int[]>(2);return value[0];}",
+       "TR0203"},
+      {"array-runtime-count",
+       "#include <memory>\nusing S=decltype(sizeof(0));unsigned char b[16];"
+       "void*operator new[](S){return b;}void operator "
+       "delete[](void*)noexcept{}"
+       "int f(S n){auto value=std::make_unique<int[]>(n);return value[0];}",
+       "TR0203"},
+      {"array-expansion-limit",
+       "#include <memory>\nusing S=decltype(sizeof(0));unsigned char b[16];"
+       "void*operator new[](S){return b;}void operator "
+       "delete[](void*)noexcept{}"
+       "int main(){auto value=std::make_unique<int[]>(65537);return value[0];}",
+       "TR0203"},
+      {"array-throwing-constructor",
+       "#include <memory>\nusing S=decltype(sizeof(0));unsigned char b[16];"
+       "void*operator new[](S){return b;}void operator "
+       "delete[](void*)noexcept{}"
+       "struct R{R(){}};int main(){auto value=std::make_unique<R[]>(1);}",
+       "TR0203"},
+      {"array-default-constructor-argument",
+       "#include <memory>\nusing S=decltype(sizeof(0));unsigned char b[16];"
+       "void*operator new[](S){return b;}void operator "
+       "delete[](void*)noexcept{}"
+       "struct R{R(int=1)noexcept{}};"
+       "int main(){auto value=std::make_unique<R[]>(1);}",
+       "TR0203"},
+      {"array-class-specific-new",
+       "#include <memory>\nusing S=decltype(sizeof(0));unsigned char b[16];"
+       "void operator delete[](void*)noexcept{}"
+       "struct R{static void*operator new[](S){return b;}R()noexcept{}};"
+       "int main(){auto value=std::make_unique<R[]>(1);}",
        "TR0203"},
       {"throwing-constructor",
        "#include <memory>\nusing S=decltype(sizeof(0));unsigned char b[8];"
