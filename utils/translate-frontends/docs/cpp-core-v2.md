@@ -824,7 +824,8 @@ The exact default-equality `std::find`, `std::count`, three- and four-iterator
 `std::replace`, `std::replace_copy`, `std::unique` and `std::unique_copy`
 templates lower for same-element built-in integer, `float`, `double`, object
 pointer or `nullptr_t` values. Algorithms that compact or replace an input
-range require it to be writable; copy variants require a writable output.
+range require it to be writable; copy variants require a writable scalar
+output whose element accepts a checked direct conversion from the input.
 Value references remain live through the loop, including when they alias an
 element that an earlier iteration changes. Enum elements stay outside this
 default-equality boundary because ADL can select a user-defined `operator==`.
@@ -842,7 +843,8 @@ likewise use a different scalar type for its retained `const` search value.
 `adjacent_find`, `unique`, `unique_copy` and `is_permutation` require one common
 element type because they compare elements within one range. Predicate `unique`
 requires a writable range, and predicate `unique_copy` requires a writable
-same-element output range. The callback value is evaluated and retained once.
+scalar output whose element accepts a checked direct conversion from the input.
+The callback value is evaluated and retained once.
 Adjacent and equality scans stop on their first decisive comparison, mismatch
 returns its authenticated pointer pair, and bounded permutation checks unequal
 lengths before invoking the predicate. Empty patterns and ranges perform no
@@ -850,8 +852,8 @@ predicate calls; nonempty unique operations make one call per element after the
 first. Non-positive `search_n` counts return the first iterator without a call,
 and a positive unsuccessful run applies its predicate at most once per input
 element. Reference parameters, variadic functions, non-boolean results,
-callable objects and heterogeneous permutation or unique-copy output ranges
-stay outside this boundary.
+callable objects and heterogeneous permutation ranges stay outside this
+boundary.
 
 The exact three-argument `std::find_if`, `std::find_if_not`, `std::count_if`,
 `std::all_of`, `std::any_of` and `std::none_of` templates accept the same raw
@@ -868,10 +870,11 @@ non-boolean results and callable objects stay outside this boundary.
 
 The exact `std::copy_if`, `std::remove_if`, `std::remove_copy_if`,
 `std::replace_if` and `std::replace_copy_if` templates use the same checked
-unary predicate boundary. Copy variants require a writable output with the same
-unqualified scalar element type; `remove_if` and `replace_if` require a writable
-input range. `copy_if` and both remove forms preserve the relative order of
-retained elements and return the advanced output or new logical end. The replace
+unary predicate boundary. Copy variants require a writable output whose element
+accepts a checked direct scalar conversion from the input;
+`remove_if` and `replace_if` require a writable input range. `copy_if` and both
+remove forms preserve the relative order of retained elements and return the
+advanced output or new logical end. The replace
 forms require an exact scalar `const` value reference, retain that reference
 through the loop, and therefore observe changes when a callback mutates an
 aliased replacement object. `replace_copy_if` writes exactly one output per input
@@ -889,8 +892,9 @@ selected and rejected elements; it does not promise stable ordering.
 `stable_partition` requires the same writable range, invokes the predicate
 exactly once for every element, and uses in-place scalar shifts to preserve the
 relative order of both groups. It returns the first rejected element.
-`partition_copy` requires two writable same-element outputs, preserves the input
-order within both output groups, and returns their advanced pointers in an
+`partition_copy` requires two writable scalar outputs whose elements each
+accept a checked direct conversion from the input, preserves the input order
+within both output groups, and returns their advanced pointers in an
 authenticated `std::pair`. `partition_point` accepts a range already partitioned
 by the predicate and uses logarithmic bisection. Empty ranges return their input
 or output iterators without invoking the predicate, and all arguments are

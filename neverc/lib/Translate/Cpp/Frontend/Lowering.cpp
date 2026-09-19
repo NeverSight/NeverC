@@ -3140,6 +3140,9 @@ class FunctionLowering {
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto InputType = type(Call->getArg(0)->getType(), L);
       const auto OutputType = type(Call->getArg(Copying ? 2 : 0)->getType(), L);
+      const auto OutputElementType =
+          Copying ? type(Call->getArg(2)->getType()->getPointeeType(), L)
+                  : std::string();
       const auto Check = labelName(), Compare = labelName();
       const auto Transfer = labelName(), Next = labelName();
       const auto End = labelName();
@@ -3151,7 +3154,10 @@ class FunctionLowering {
                     "bool", L),
              Next, Transfer, L);
       label(Transfer, L);
-      assign(dereference(Output, L), dereference(Current, L), L);
+      assign(dereference(Output, L),
+             Copying ? cast(dereference(Current, L), OutputElementType, L)
+                     : dereference(Current, L),
+             L);
       assign(Output,
              binary("+", Output, quantity(1, DifferenceType, L), OutputType, L),
              L);
@@ -3183,6 +3189,9 @@ class FunctionLowering {
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto InputType = type(Call->getArg(0)->getType(), L);
       const auto OutputType = type(Call->getArg(Copying ? 2 : 0)->getType(), L);
+      const auto OutputElementType =
+          Copying ? type(Call->getArg(2)->getType()->getPointeeType(), L)
+                  : std::string();
       const auto Check = labelName(), Compare = labelName();
       const auto Match = labelName(), Mismatch = labelName();
       const auto Next = labelName(), End = labelName();
@@ -3195,11 +3204,14 @@ class FunctionLowering {
              Match, Mismatch, L);
       label(Match, L);
       assign(dereference(Output ? *Output : Current, L),
-             dereference(NewAddress, L), L);
+             Copying ? cast(dereference(NewAddress, L), OutputElementType, L)
+                     : dereference(NewAddress, L),
+             L);
       jump(Next, L);
       label(Mismatch, L);
       if (Output)
-        assign(dereference(*Output, L), dereference(Current, L), L);
+        assign(dereference(*Output, L),
+               cast(dereference(Current, L), OutputElementType, L), L);
       jump(Next, L);
       label(Next, L);
       assign(Current,
@@ -3278,12 +3290,15 @@ class FunctionLowering {
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto InputType = type(Call->getArg(0)->getType(), L);
       const auto OutputType = type(Call->getArg(2)->getType(), L);
+      const auto OutputElementType =
+          type(Call->getArg(2)->getType()->getPointeeType(), L);
       const auto Initialize = labelName(), Check = labelName();
       const auto Compare = labelName(), Transfer = labelName();
       const auto Next = labelName(), End = labelName();
       branch(binary("!=", Current, Last, "bool", L), Initialize, End, L);
       label(Initialize, L);
-      assign(dereference(Output, L), dereference(Current, L), L);
+      assign(dereference(Output, L),
+             cast(dereference(Current, L), OutputElementType, L), L);
       assign(Output,
              binary("+", Output, quantity(1, DifferenceType, L), OutputType, L),
              L);
@@ -3303,7 +3318,8 @@ class FunctionLowering {
                           dereference(Current, L), "bool", L),
              Next, Transfer, L);
       label(Transfer, L);
-      assign(dereference(Output, L), dereference(Current, L), L);
+      assign(dereference(Output, L),
+             cast(dereference(Current, L), OutputElementType, L), L);
       assign(Output,
              binary("+", Output, quantity(1, DifferenceType, L), OutputType, L),
              L);
@@ -5169,6 +5185,8 @@ class FunctionLowering {
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto InputType = type(Call->getArg(0)->getType(), L);
       const auto OutputType = type(Call->getArg(2)->getType(), L);
+      const auto OutputElementType =
+          type(Call->getArg(2)->getType()->getPointeeType(), L);
       const auto Check = labelName(), Test = labelName();
       const auto Copy = labelName(), Advance = labelName();
       const auto End = labelName();
@@ -5184,7 +5202,8 @@ class FunctionLowering {
                CopyMatches ? Advance : Copy, L);
       }
       label(Copy, L);
-      assign(dereference(Output, L), dereference(Input, L), L);
+      assign(dereference(Output, L),
+             cast(dereference(Input, L), OutputElementType, L), L);
       assign(Output,
              binary("+", Output, quantity(1, DifferenceType, L), OutputType, L),
              L);
@@ -5282,6 +5301,8 @@ class FunctionLowering {
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto InputType = type(Call->getArg(0)->getType(), L);
       const auto OutputType = type(Call->getArg(2)->getType(), L);
+      const auto OutputElementType =
+          type(Call->getArg(2)->getType()->getPointeeType(), L);
       const auto Check = labelName(), Test = labelName();
       const auto Replace = labelName(), Copy = labelName();
       const auto Advance = labelName(), End = labelName();
@@ -5296,10 +5317,12 @@ class FunctionLowering {
         branch(std::move(Selected), Replace, Copy, L);
       }
       label(Replace, L);
-      assign(dereference(Output, L), dereference(ValueAddress, L), L);
+      assign(dereference(Output, L),
+             cast(dereference(ValueAddress, L), OutputElementType, L), L);
       jump(Advance, L);
       label(Copy, L);
-      assign(dereference(Output, L), dereference(Input, L), L);
+      assign(dereference(Output, L),
+             cast(dereference(Input, L), OutputElementType, L), L);
       jump(Advance, L);
       label(Advance, L);
       assign(Input,
@@ -5507,6 +5530,10 @@ class FunctionLowering {
       const auto InputType = type(Call->getArg(0)->getType(), L);
       const auto TrueOutputType = type(Call->getArg(2)->getType(), L);
       const auto FalseOutputType = type(Call->getArg(3)->getType(), L);
+      const auto TrueOutputElementType =
+          type(Call->getArg(2)->getType()->getPointeeType(), L);
+      const auto FalseOutputElementType =
+          type(Call->getArg(3)->getType()->getPointeeType(), L);
       const auto Check = labelName(), Test = labelName();
       const auto CopyTrue = labelName(), CopyFalse = labelName();
       const auto Advance = labelName(), End = labelName();
@@ -5521,14 +5548,16 @@ class FunctionLowering {
         branch(std::move(Selected), CopyTrue, CopyFalse, L);
       }
       label(CopyTrue, L);
-      assign(dereference(TrueOutput, L), dereference(Input, L), L);
+      assign(dereference(TrueOutput, L),
+             cast(dereference(Input, L), TrueOutputElementType, L), L);
       assign(TrueOutput,
              binary("+", TrueOutput, quantity(1, DifferenceType, L),
                     TrueOutputType, L),
              L);
       jump(Advance, L);
       label(CopyFalse, L);
-      assign(dereference(FalseOutput, L), dereference(Input, L), L);
+      assign(dereference(FalseOutput, L),
+             cast(dereference(Input, L), FalseOutputElementType, L), L);
       assign(FalseOutput,
              binary("+", FalseOutput, quantity(1, DifferenceType, L),
                     FalseOutputType, L),

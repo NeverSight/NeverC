@@ -3083,15 +3083,15 @@ extern "C" long long algorithm_comparator_queries(
     algorithm_equality_mutation_source = """\
 #include <algorithm>
 extern "C" int algorithm_equality_mutation(int *first, int *last,
-                                             int *output, int value) {
+                                             long *output, int value) {
   int *adjacent = std::adjacent_find(first, last);
   int *removed = std::remove(first, last, value);
-  int *removed_copy = std::remove_copy(first, removed, output, value);
+  long *removed_copy = std::remove_copy(first, removed, output, value);
   std::replace(first, removed, value, value + 1);
-  int *replaced_copy = std::replace_copy(first, removed, output, value,
-                                          value + 1);
+  long *replaced_copy = std::replace_copy(first, removed, output, value,
+                                           value + 1);
   int *unique = std::unique(first, removed);
-  int *unique_copy = std::unique_copy(first, unique, output);
+  long *unique_copy = std::unique_copy(first, unique, output);
   return static_cast<int>((adjacent - first) + (removed - first) +
                           (removed_copy - output) +
                           (replaced_copy - output) + (unique - first) +
@@ -3108,9 +3108,6 @@ extern "C" int algorithm_equality_mutation(int *first, int *last,
         check("v2-algorithm-equality-mutation-" + target,
               algorithm_equality_mutation_source, profile="cpp-core-v2",
               target=target, sdk=True)
-    check("v2-algorithm-equality-mutation-heterogeneous-output",
-          '#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{};return std::remove_copy(a,a+2,b,1)==b+1?0:1;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-algorithm-overloaded-enum-equality",
           '#include <algorithm>\nenum E{one,two};bool operator==(E,E){return true;}int main(){E a[1]{one};return std::find(a,a+1,two)==a?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
@@ -3118,9 +3115,9 @@ extern "C" int algorithm_equality_mutation(int *first, int *last,
     algorithm_predicate_unique_source = """\
 #include <algorithm>
 extern "C" int algorithm_predicate_unique(
-    int *first, int *last, int *output, bool (*predicate)(long, double)) {
+    int *first, int *last, long *output, bool (*predicate)(long, double)) {
   int *unique = std::unique(first, last, predicate);
-  int *copied = std::unique_copy(first, unique, output, predicate);
+  long *copied = std::unique_copy(first, unique, output, predicate);
   return static_cast<int>((unique - first) + (copied - output));
 }
 """
@@ -3144,9 +3141,6 @@ extern "C" int algorithm_predicate_unique(
         assert_predicate_unique(target_result)
     check("v2-algorithm-predicate-unique-reference",
           'bool p(const int&a,int b){return a==b;}\n#include <algorithm>\nint main(){int a[2]{1,1};return std::unique(a,a+2,p)==a+1?0:1;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
-    check("v2-algorithm-predicate-unique-output",
-          'bool p(int a,int b){return a==b;}\n#include <algorithm>\nint main(){int a[2]{1,1};long b[2]{};return std::unique_copy(a,a+2,b,p)==b+1?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
     algorithm_subrange_source = """\
@@ -3766,14 +3760,14 @@ extern "C" int algorithm_predicate_queries(const int *first,
 #include <algorithm>
 extern "C" int algorithm_predicate_mutation(
     int *first, int *last, const int *input_first, const int *input_last,
-    int *output, bool (*predicate)(long), const int &replacement) {
-  int *copied = std::copy_if(input_first, input_last, output, predicate);
+    long *output, bool (*predicate)(long), const int &replacement) {
+  long *copied = std::copy_if(input_first, input_last, output, predicate);
   int *removed = std::remove_if(first, last, predicate);
-  int *rejected = std::remove_copy_if(input_first, input_last, output,
-                                      predicate);
+  long *rejected = std::remove_copy_if(input_first, input_last, output,
+                                       predicate);
   std::replace_if(first, last, predicate, replacement);
-  int *replaced = std::replace_copy_if(input_first, input_last, output,
-                                       predicate, replacement);
+  long *replaced = std::replace_copy_if(input_first, input_last, output,
+                                        predicate, replacement);
   return static_cast<int>((copied - output) + (removed - first) +
                           (rejected - output) + (replaced - output));
 }
@@ -3796,9 +3790,6 @@ extern "C" int algorithm_predicate_mutation(
                               algorithm_predicate_mutation_source,
                               profile="cpp-core-v2", target=target, sdk=True)
         assert_predicate_mutation(target_result)
-    check("v2-algorithm-predicate-mutation-heterogeneous-output",
-          'bool p(int n){return n>0;}\n#include <algorithm>\nint main(){int a[2]{1,2};long out[2]{};return std::copy_if(a,a+2,out,p)==out+2?0:1;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-algorithm-predicate-mutation-converted-value",
           'bool p(int n){return n>0;}\n#include <algorithm>\nint main(){int a[2]{1,2};long value=3;std::replace_if(a,a+2,p,value);return 0;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
@@ -3807,7 +3798,7 @@ extern "C" int algorithm_predicate_mutation(
 #include <algorithm>
 extern "C" int algorithm_partition(
     int *first, int *last, const int *read_first, const int *read_last,
-    int *true_output, int *false_output, bool (*predicate)(long)) {
+    long *true_output, double *false_output, bool (*predicate)(long)) {
   bool checked = std::is_partitioned(read_first, read_last, predicate);
   int *boundary = std::partition(first, last, predicate);
   auto outputs = std::partition_copy(read_first, read_last, true_output,
@@ -3837,9 +3828,6 @@ extern "C" int algorithm_partition(
                               algorithm_partition_source,
                               profile="cpp-core-v2", target=target, sdk=True)
         assert_partition_algorithms(target_result)
-    check("v2-algorithm-partition-heterogeneous-output",
-          'bool p(int n){return n>0;}\n#include <algorithm>\nint main(){int a[2]{1,2};long yes[2]{},no[2]{};auto r=std::partition_copy(a,a+2,yes,no,p);return r.first==yes+2?0:1;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-algorithm-partition-functor",
           'struct P{bool operator()(int n)const{return n>0;}};\n#include <algorithm>\nint main(){int a[2]{1,2};return std::partition(a,a+2,P{})==a+2?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)

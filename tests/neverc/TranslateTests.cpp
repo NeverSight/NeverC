@@ -29129,7 +29129,7 @@ int main() {
       removed[2] != 4 || removed[3] != 5)
     return 2;
   const int source[7]{1, 2, 3, 2, 4, 2, 5};
-  int copied[7]{};
+  long copied[7]{};
   if (std::remove_copy(source, source + 7, copied, 2) != copied + 4 ||
       copied[0] != 1 || copied[1] != 3 || copied[2] != 4 ||
       copied[3] != 5)
@@ -29137,7 +29137,7 @@ int main() {
 
   int replaced[5]{1, 2, 3, 2, 4};
   std::replace(replaced, replaced + 5, 2, 9);
-  int replacement_copy[5]{};
+  double replacement_copy[5]{};
   if (replaced[1] != 9 || replaced[3] != 9 ||
       std::replace_copy(source, source + 5, replacement_copy, 2, 8) !=
           replacement_copy + 5 ||
@@ -29152,7 +29152,7 @@ int main() {
       duplicates[1] != 2 || duplicates[2] != 3 || duplicates[3] != 1 ||
       duplicates[4] != 4 || std::unique(duplicates, duplicates) != duplicates)
     return 5;
-  int unique_copy[9]{};
+  long unique_copy[9]{};
   if (std::unique_copy(source, source + 7, unique_copy) != unique_copy + 7 ||
       std::unique_copy(source, source, unique_copy) != unique_copy)
     return 6;
@@ -29216,30 +29216,6 @@ int main() {
 }
 
 TEST_F(TranslateTest,
-       CoreV2AlgorithmEqualityMutationRequiresPinnedScalarForms) {
-  struct Rejection {
-    const char *Name;
-    const char *Source;
-  };
-  const Rejection Cases[] = {
-      {"heterogeneous-remove-copy",
-       "#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{};"
-       "return std::remove_copy(a,a+2,b,1)==b+1?0:1;}"}};
-  for (const auto &Case : Cases) {
-    SCOPED_TRACE(Case.Name);
-    const auto Source = tmpFile(std::string("algorithm-equality-mutation-") +
-                                Case.Name + ".cpp");
-    const auto Output = tmpFile(std::string("algorithm-equality-mutation-") +
-                                Case.Name + ".nc");
-    writeFile(Source, Case.Source);
-    expectCode(
-        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
-        "TR0203");
-    expectNoArtifacts(Output);
-  }
-}
-
-TEST_F(TranslateTest,
        CoreV2AlgorithmPredicateUniqueOperationsRunAtBothOptimizations) {
   const auto Source = tmpFile("algorithm-predicate-unique.cpp");
   const auto Output = tmpFile("algorithm-predicate-unique.nc");
@@ -29279,13 +29255,13 @@ int main() {
     return 3;
 
   const int input[7]{1, 3, 2, 4, 6, 7, 9};
-  int output[7]{};
+  long output[7]{};
   effects = 0;
   calls = 0;
-  int *copy_end = std::unique_copy((++effects, input),
-                                   (++effects, input + 7),
-                                   (++effects, output),
-                                   (++effects, predicate));
+  long *copy_end = std::unique_copy((++effects, input),
+                                    (++effects, input + 7),
+                                    (++effects, output),
+                                    (++effects, predicate));
   if (effects != 4 || calls != 6 || copy_end != output + 3 ||
       output[0] != 1 || output[1] != 2 || output[2] != 7)
     return 4;
@@ -29364,10 +29340,6 @@ TEST_F(TranslateTest,
        "struct P{bool operator()(int a,int b)const{return a==b;}};\n"
        "#include <algorithm>\nint main(){int a[2]{1,1};"
        "return std::unique_copy(a,a+2,a,P{})==a+1?0:1;}"},
-      {"heterogeneous-output",
-       "bool p(int a,int b){return a==b;}\n#include <algorithm>\n"
-       "int main(){int a[2]{1,1};long out[2]{};"
-       "return std::unique_copy(a,a+2,out,p)==out+1?0:1;}"},
       {"variadic-predicate",
        "bool p(int a,int b,...){return a==b;}\n#include <algorithm>\n"
        "int main(){int a[2]{1,1};return std::unique(a,a+2,p)==a+1?0:1;}",
@@ -31838,19 +31810,19 @@ bool is_high(Level value) { ++calls; return value == high; }
 bool is_null(int *value) { ++calls; return value == nullptr; }
 int main() {
   int input[6]{1, 2, 3, 4, 5, 6};
-  int copied[6]{};
+  long copied[6]{};
   bool (*predicate)(long) = even;
   int effects = 0;
   calls = 0;
-  int *copy_end = std::copy_if((++effects, input), (++effects, input + 6),
-                               (++effects, copied), (++effects, predicate));
+  long *copy_end = std::copy_if((++effects, input), (++effects, input + 6),
+                                (++effects, copied), (++effects, predicate));
   if (effects != 4 || copy_end != copied + 3 || calls != 6 ||
       copied[0] != 2 || copied[1] != 4 || copied[2] != 6)
     return 1;
 
-  int rejected[6]{};
+  double rejected[6]{};
   calls = 0;
-  int *reject_end = std::remove_copy_if(input, input + 6, rejected, even);
+  double *reject_end = std::remove_copy_if(input, input + 6, rejected, even);
   if (reject_end != rejected + 3 || calls != 6 || rejected[0] != 1 ||
       rejected[1] != 3 || rejected[2] != 5)
     return 2;
@@ -31879,11 +31851,11 @@ int main() {
       replaced[0] != 7 || replaced[1] != 9 || replaced[2] != 9)
     return 5;
 
-  int replacement_copy[4]{};
+  long replacement_copy[4]{};
   int replacement_input[4]{1, 2, 3, 4};
   replacement_value = 8;
   calls = 0;
-  int *replacement_end = std::replace_copy_if(
+  long *replacement_end = std::replace_copy_if(
       replacement_input, replacement_input + 4, replacement_copy, odd_update,
       replacement_value);
   if (replacement_end != replacement_copy + 4 || calls != 4 ||
@@ -31955,14 +31927,6 @@ TEST_F(TranslateTest,
     const char *Source;
   };
   const Rejection Cases[] = {
-      {"heterogeneous-copy",
-       "bool p(int n){return n>0;}\n#include <algorithm>\n"
-       "int main(){int a[2]{1,2};long out[2]{};"
-       "return std::copy_if(a,a+2,out,p)==out+2?0:1;}"},
-      {"heterogeneous-remove-copy",
-       "bool p(int n){return n>0;}\n#include <algorithm>\n"
-       "int main(){int a[2]{1,2};long out[2]{};"
-       "return std::remove_copy_if(a,a+2,out,p)==out?0:1;}"},
       {"converted-replace-value",
        "bool p(int n){return n>0;}\n#include <algorithm>\n"
        "int main(){int a[2]{1,2};long value=3;"
@@ -32042,8 +32006,8 @@ int main() {
     return 9;
 
   const int input[6]{1, 2, 3, 4, 5, 6};
-  int selected[6]{};
-  int rejected[6]{};
+  long selected[6]{};
+  double rejected[6]{};
   effects = 0;
   calls = 0;
   auto outputs = std::partition_copy(
@@ -32114,11 +32078,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmPartitionOperationsRequireExactForms) {
     const char *Source;
   };
   const Rejection Cases[] = {
-      {"heterogeneous-output",
-       "bool p(int n){return n>0;}\n#include <algorithm>\n"
-       "int main(){int a[2]{1,2};long yes[2]{},no[2]{};"
-       "auto r=std::partition_copy(a,a+2,yes,no,p);"
-       "return r.first==yes+2?0:1;}"},
       {"function-object",
        "struct P{bool operator()(int n)const{return n>0;}};\n"
        "#include <algorithm>\nint main(){int a[2]{1,2};"

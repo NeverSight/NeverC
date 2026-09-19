@@ -6707,13 +6707,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (Origin->Path == "__algorithm/remove_copy.h" && Name == "remove_copy" &&
       Call->getNumArgs() == 4 && Function->getNumParams() == 4 &&
       Call->isPRValue() && AlgorithmEqualityPointerParameter(0) &&
-      AlgorithmEqualityPointerParameter(1) && AlgorithmPointerParameter(2) &&
+      AlgorithmEqualityPointerParameter(1) &&
+      AlgorithmTransferParameters(0, 2) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
-                           Function->getParamDecl(2)->getType()) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(2)->getType()) &&
       AlgorithmValueParameter(3, 0) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType()))
@@ -6733,13 +6730,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (Origin->Path == "__algorithm/replace_copy.h" && Name == "replace_copy" &&
       Call->getNumArgs() == 5 && Function->getNumParams() == 5 &&
       Call->isPRValue() && AlgorithmEqualityPointerParameter(0) &&
-      AlgorithmEqualityPointerParameter(1) && AlgorithmPointerParameter(2) &&
+      AlgorithmEqualityPointerParameter(1) &&
+      AlgorithmTransferParameters(0, 2) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
-                           Function->getParamDecl(2)->getType()) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(2)->getType()) &&
       AlgorithmValueParameter(3, 0) && AlgorithmValueParameter(4, 0) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType()))
@@ -6764,13 +6758,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
       AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
-      AlgorithmPointerParameter(2) &&
+      AlgorithmTransferParameters(0, 2) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
-                           Function->getParamDecl(2)->getType()) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(2)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
     if (Call->getNumArgs() == 3 && AlgorithmEqualityPointerParameter(0) &&
@@ -7284,13 +7274,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (PredicateCopy && Call->getNumArgs() == 4 &&
       Function->getNumParams() == 4 && Call->isPRValue() &&
       AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
-      AlgorithmPointerParameter(2) &&
+      AlgorithmTransferParameters(0, 2) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
-                           Function->getParamDecl(2)->getType()) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(2)->getType()) &&
       AlgorithmUnaryPredicateParameter(3, 0) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType()))
@@ -7323,13 +7309,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Name == "replace_copy_if" && Call->getNumArgs() == 5 &&
       Function->getNumParams() == 5 && Call->isPRValue() &&
       AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
-      AlgorithmPointerParameter(2) &&
+      AlgorithmTransferParameters(0, 2) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
-                           Function->getParamDecl(2)->getType()) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(2)->getType()) &&
       AlgorithmUnaryPredicateParameter(3, 0) && AlgorithmValueParameter(4, 0) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType()))
@@ -7380,17 +7362,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Name == "partition_copy" && Call->getNumArgs() == 5 &&
       Function->getNumParams() == 5 && Call->isPRValue() &&
       AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
-      AlgorithmPointerParameter(2) && AlgorithmPointerParameter(3) &&
+      AlgorithmTransferParameters(0, 2) && AlgorithmTransferParameters(0, 3) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
-                           Function->getParamDecl(2)->getType()) &&
-      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
-                           Function->getParamDecl(3)->getType()) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(2)->getType()) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(3)->getType()) &&
       AlgorithmUnaryPredicateParameter(4, 0) &&
       Same(Call->getType(), Function->getReturnType())) {
     auto Pair = approvedUtilityPairRecord(

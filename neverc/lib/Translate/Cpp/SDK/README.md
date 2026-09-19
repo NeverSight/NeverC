@@ -86,7 +86,9 @@ shim are available without platform headers. Scalar-pointer `copy`,
 `copy_n`, `move`, `copy_backward`, `move_backward`, `fill`, `fill_n`,
 `iter_swap`, `swap_ranges`, `reverse`, `reverse_copy`, `rotate` and
 `rotate_copy` calls lower without a libc++ runtime dependency; copy and move
-outputs accept checked direct scalar conversions.
+outputs accept checked direct scalar conversions. The copy-producing equality
+and predicate algorithms below accept the same conversions for their writable
+outputs.
 The same is true for built-in equality elements with `find`, `count`, three- or
 four-iterator `equal`, `adjacent_find`, `remove`, `remove_copy`, `replace`,
 `replace_copy`, `unique`, `unique_copy`, `search`, `find_end`,

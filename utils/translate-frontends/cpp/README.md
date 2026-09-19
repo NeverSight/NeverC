@@ -145,7 +145,8 @@ Algorithm directly lowers scalar-pointer `copy`, `move`, `copy_backward`,
 `move_backward`, `copy_n`, `fill`, `fill_n`, `iter_swap`, `swap_ranges`,
 `reverse`, `reverse_copy`, `rotate` and `rotate_copy` calls from its
 platform-free 354-file closure; copy and move outputs accept checked direct
-scalar conversions. Built-in equality elements admit
+scalar conversions. The copy-producing equality and predicate algorithms below
+accept the same conversions for their writable outputs. Built-in equality elements admit
 `find`, `count`, three- or four-iterator `equal`, `adjacent_find`, `remove`,
 `remove_copy`, `replace`, `replace_copy`, `unique`, `unique_copy`, `search`,
 `find_end`, `find_first_of`, `search_n`, three- or four-iterator `mismatch` and
