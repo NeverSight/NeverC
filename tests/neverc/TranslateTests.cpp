@@ -25427,6 +25427,172 @@ TEST_F(TranslateTest, CoreV2MemoryUniquePtrRequiresExactObjectForms) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2MemoryMakeUniqueRunsAtBothOptimizations) {
+  const auto Source = tmpFile("memory-make-unique.cpp");
+  const auto Output = tmpFile("memory-make-unique.nc");
+  writeFile(Source, R"cpp(
+#include <memory>
+using Size = decltype(sizeof(0));
+struct Storage { unsigned long long alignment; unsigned char bytes[64]; };
+Storage storage[9]{};
+int allocations;
+int releases;
+int destroyed;
+int effects;
+Size allocated_bytes;
+Size released_bytes;
+void *operator new(Size size) {
+  allocated_bytes += size;
+  return storage[allocations++].bytes;
+}
+void operator delete(void *, Size size) noexcept {
+  ++releases;
+  released_bytes += size;
+}
+int mark(int value) {
+  effects = effects * 10 + value;
+  return value;
+}
+struct Owned {
+  int first;
+  int second;
+  Owned(int left, int right) noexcept : first(left), second(right) {}
+  ~Owned() noexcept { destroyed += first + second; }
+};
+struct Reference {
+  int value;
+  Reference(const int &source) noexcept : value(source) {}
+  ~Reference() noexcept { destroyed += value; }
+};
+struct Aggregate { int value; };
+struct Copyable {
+  int value;
+  Copyable(int source) noexcept : value(source) {}
+  Copyable(const Copyable &source) noexcept : value(source.value) {}
+  Copyable(Copyable &&source) noexcept : value(source.value) {
+    source.value = 0;
+  }
+  ~Copyable() noexcept { destroyed += value; }
+};
+std::unique_ptr<int> create(int value) {
+  return std::make_unique<int>(value);
+}
+int main() {
+  auto zero = std::make_unique<int>();
+  auto scalar = create(mark(3));
+  auto qualified = std::make_unique<const int>(7);
+  auto object = std::make_unique<Owned>(mark(4), mark(5));
+  int source = 6;
+  auto reference = std::make_unique<Reference>(source);
+  auto aggregate = std::make_unique<Aggregate>();
+  auto converted = std::make_unique<long>(short(8));
+  Copyable copy_source(9);
+  auto copied = std::make_unique<Copyable>(copy_source);
+  auto moved = std::make_unique<Copyable>(static_cast<Copyable &&>(copy_source));
+  if (*zero != 0 || *scalar != 3 || *qualified != 7 ||
+      object->first != 4 || object->second != 5 ||
+      reference->value != 6 || aggregate->value != 0 || *converted != 8 ||
+      copied->value != 9 || moved->value != 9 || copy_source.value != 0 ||
+      (effects != 345 && effects != 354))
+    return 1;
+  zero.reset();
+  scalar.reset();
+  qualified.reset();
+  object.reset();
+  reference.reset();
+  aggregate.reset();
+  converted.reset();
+  copied.reset();
+  moved.reset();
+  const Size expected = 3 * sizeof(int) + sizeof(long) + sizeof(Owned) +
+                        sizeof(Reference) + sizeof(Aggregate) +
+                        2 * sizeof(Copyable);
+  return allocations == 9 && releases == 9 && destroyed == 33 &&
+                 allocated_bytes == expected && released_bytes == expected
+             ? 0
+             : 2;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  const auto Text = readFile(Output);
+  EXPECT_NE(Text.find("nct_unique_ptr_pointer"), std::string::npos);
+  EXPECT_EQ(Text.find("make_unique"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("memory-make-unique" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2MemoryMakeUniqueRequiresExactObjectForms) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Rejection Cases[] = {
+      {"missing-new-definition",
+       "#include <memory>\nvoid operator delete(void*)noexcept{}"
+       "int main(){auto value=std::make_unique<int>(1);return *value;}",
+       "TR0203"},
+      {"missing-delete-definition",
+       "#include <memory>\nusing S=decltype(sizeof(0));unsigned char b[8];"
+       "void*operator new(S){return b;}"
+       "int main(){auto value=std::make_unique<int>(1);return *value;}",
+       "TR0203"},
+      {"array-specialization",
+       "#include <memory>\nusing S=decltype(sizeof(0));unsigned char b[16];"
+       "void*operator new(S){return b;}void operator delete(void*)noexcept{}"
+       "int main(){auto value=std::make_unique<int[]>(2);return value[0];}",
+       "TR0203"},
+      {"throwing-constructor",
+       "#include <memory>\nusing S=decltype(sizeof(0));unsigned char b[8];"
+       "void*operator new(S){return b;}void operator delete(void*)noexcept{}"
+       "struct R{R(){}};int main(){auto value=std::make_unique<R>();}",
+       "TR0203"},
+      {"default-constructor-argument",
+       "#include <memory>\nusing S=decltype(sizeof(0));unsigned char b[8];"
+       "void*operator new(S){return b;}void operator delete(void*)noexcept{}"
+       "struct R{R(int=1)noexcept{}};"
+       "int main(){auto value=std::make_unique<R>();}",
+       "TR0203"},
+      {"class-specific-new",
+       "#include <memory>\nusing S=decltype(sizeof(0));unsigned char b[8];"
+       "void*operator new(S){return b;}void operator delete(void*)noexcept{}"
+       "struct R{static void*operator new(S){return b;}R()noexcept{}};"
+       "int main(){auto value=std::make_unique<R>();}",
+       "TR0203"},
+      {"over-aligned-element",
+       "#include <memory>\nusing S=decltype(sizeof(0));"
+       "alignas(64) unsigned char b[64];void*operator new(S){return b;}"
+       "void operator delete(void*)noexcept{}"
+       "struct alignas(64) R{R()noexcept{}};"
+       "int main(){auto value=std::make_unique<R>();}",
+       "TR0201"},
+      {"function-address",
+       "#include <memory>\nusing P=std::unique_ptr<int>;"
+       "P(*factory)()=&std::make_unique<int>;",
+       "TR0201"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("memory-make-unique-reject-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("memory-make-unique-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2MemoryAllocatorMetadataRequiresExactTemplates) {
   struct Rejection {
     const char *Name;

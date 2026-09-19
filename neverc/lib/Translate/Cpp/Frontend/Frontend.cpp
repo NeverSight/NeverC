@@ -13585,6 +13585,34 @@ public:
         if (auto Operation =
                 approvedUtilityOperation(A.S, A.Sources, C, A.Context)) {
           switch (*Operation) {
+          case UtilityOperation::MemoryMakeUnique: {
+            const auto Info =
+                approvedUtilityMakeUniqueCall(A.S, A.Sources, C, A.Context);
+            if (!Info || !Info->Allocation->getOperatorNew()) {
+              A.reject(L, "make_unique",
+                       "A checked single-object std::make_unique call is "
+                       "required.");
+              break;
+            }
+            A.type(Info->Owner.ElementType, L);
+            const auto *Function =
+                A.allocatorHeapFunction(true, Info->Owner.ElementType, L);
+            if (Function->getCanonicalDecl() !=
+                Info->Allocation->getOperatorNew()->getCanonicalDecl())
+              A.reject(L, "make_unique allocation",
+                       "The authenticated template and selected global "
+                       "allocation function differ.",
+                       "TR0203");
+            A.allocatorHeapFunction(false, Info->Owner.ElementType, L);
+            if (const auto *Constructor = Info->Constructor)
+              if (!Constructor->isTrivial() &&
+                  ((Constructor->isDefaultConstructor() &&
+                    defaultedLifecycle(Constructor)) ||
+                   (Constructor->isCopyOrMoveConstructor() &&
+                    defaultedCopyOrMoveConstructor(Constructor))))
+                queueGenerated(Constructor, L);
+            break;
+          }
           case UtilityOperation::MemoryUniquePtrReset: {
             const auto Info =
                 approvedUtilityUniquePtrCall(A.S, A.Sources, C, A.Context);
@@ -13670,6 +13698,7 @@ public:
           }
           switch (*Operation) {
           case UtilityOperation::MemoryDefaultDelete:
+          case UtilityOperation::MemoryMakeUnique:
           case UtilityOperation::MemoryUniquePtrReset:
           case UtilityOperation::MemoryUniquePtrMoveAssign:
           case UtilityOperation::MemoryUniquePtrNullAssign:

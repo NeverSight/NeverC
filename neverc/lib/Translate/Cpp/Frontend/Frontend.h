@@ -325,6 +325,15 @@ std::optional<UtilityUniquePtrCall>
 approvedUtilityUniquePtrCall(const State &S, const clang::SourceManager &SM,
                              const clang::CallExpr *Call,
                              const clang::ASTContext &Context);
+struct UtilityMakeUniqueCall {
+  UtilityUniquePtrRecord Owner;
+  const clang::CXXNewExpr *Allocation;
+  const clang::CXXConstructorDecl *Constructor;
+};
+std::optional<UtilityMakeUniqueCall>
+approvedUtilityMakeUniqueCall(const State &S, const clang::SourceManager &SM,
+                              const clang::CallExpr *Call,
+                              const clang::ASTContext &Context);
 bool approvedUtilityUniquePtrDestructor(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXDestructorDecl *Destructor,
@@ -397,6 +406,7 @@ enum class UtilityOperation {
   MemoryUniquePtrSwap,
   MemoryUniquePtrEqual,
   MemoryUniquePtrNotEqual,
+  MemoryMakeUnique,
   MemoryAllocatorAddress,
   MemoryAllocatorAllocate,
   MemoryAllocatorDeallocate,

@@ -512,13 +512,28 @@ destruction and retain ownership during self-swap. Same-specialization `==` and
 destroy and deallocate its former object. Null pointers skip destruction and
 deallocation.
 
+The exact pinned single-object `std::make_unique<T>(args...)` overload is also
+admitted. The concrete function-template specialization, `T` and `_Args` pack,
+single non-array `new T(...)`, raw-pointer `unique_ptr<T>` construction and
+selected global allocation function are authenticated together. Allocation
+uses the checked source-defined global new path before evaluating construction
+arguments. A scalar accepts value initialization or one admitted direct scalar
+conversion. A complete source-owned non-union record calls the exact
+source-owned non-template `noexcept` constructor selected by Clang, including
+default, copy, move and multi-argument forms. The resulting raw pointer is
+installed in the normal pointer-sized owner, so return destinations, automatic
+destruction and the checked global-delete path remain shared with direct
+`unique_ptr` construction. The factory itself emits no libc++ runtime call.
+
 The element must be complete and within the target's default new alignment,
 and the matching global sized or unsized delete definition must be
 source-owned. Class-specific delete, array specializations, custom deleters,
 volatile elements, `get_deleter`, member-function addresses, converting moves,
-heterogeneous or ordered comparisons and ownership factories remain rejected at
-this boundary. Every admitted operation emits no libc++ runtime call and enables
-the checked `memory_lifetimes` policy.
+heterogeneous or ordered comparisons remain rejected at this boundary. Array
+`make_unique`, class-specific allocation, throwing or default-argument record
+construction, over-aligned elements, factory function addresses and other
+ownership factories remain rejected. Every admitted operation emits no libc++
+runtime call and enables the checked `memory_lifetimes` policy.
 
 Exact `std::allocator<T>` metadata is admitted when `T` is non-cv `void` or a
 non-array object type, including an incomplete object. Its C++17 nested value,
@@ -675,8 +690,9 @@ elements and unsupported conversions remain rejected. Allocator member or
 comparison function addresses, custom allocator types and traits, and other
 `allocator_traits` forwarding calls remain rejected. Volatile destruction
 pointers remain rejected. Allocation requires a separate default-heap and
-exception contract. Other smart pointers and ownership factories remain
-outside this boundary.
+exception contract. Other smart pointers and other ownership factories remain
+outside this boundary, as do array and unsupported single-object factory
+forms.
 
 ## Algorithm header from `<algorithm>`
 

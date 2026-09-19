@@ -3443,6 +3443,175 @@ static const DeclRefExpr *approvedUtilityReference(
              : nullptr;
 }
 
+std::optional<UtilityMakeUniqueCall>
+approvedUtilityMakeUniqueCall(const State &S, const SourceManager &SM,
+                              const CallExpr *Call, const ASTContext &Context) {
+  if (!Call || Call->isTypeDependent() || Call->isValueDependent() ||
+      Call->isInstantiationDependent() || !Call->isPRValue())
+    return std::nullopt;
+  const auto *Function = Call->getDirectCallee();
+  const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+  const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+  const auto *Reference = approvedUtilityReference(S, SM, Call, Function);
+  const auto *Arguments =
+      Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  const auto Owner = approvedUtilityUniquePtrRecord(
+      S, SM,
+      Function ? Function->getReturnType()->getAsCXXRecordDecl() : nullptr,
+      Context);
+  if (!Function || !Primary || !Pattern || !Reference || !Arguments || !Owner ||
+      !Function->getIdentifier() || Function->getName() != "make_unique" ||
+      Function->isVariadic() || !Function->isInlined() ||
+      !Function->hasBody() || !Pattern->hasBody() ||
+      Function->getNumParams() != Call->getNumArgs() ||
+      !Context.hasSameType(Call->getType(), Function->getReturnType()) ||
+      !Context.hasSameUnqualifiedType(Function->getReturnType(),
+                                      Context.getRecordType(Owner->Record)) ||
+      !approvedStandardSDKDeclaration(S, SM, Function) ||
+      !approvedStandardSDKDeclaration(S, SM, Primary) ||
+      !cstddefOrigin(S, SM, Function->getLocation(), "libcxx",
+                     "__memory/unique_ptr.h") ||
+      !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
+                     "__memory/unique_ptr.h"))
+    return std::nullopt;
+
+  // The pinned single-object overload has T, Args..., and its enable-if
+  // parameter. Authenticate the concrete specialization so the array overload
+  // and any future overload with the same public name cannot enter this path.
+  if (Arguments->size() != 3 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Arguments->get(0).getAsType(), Owner->ElementType) ||
+      Arguments->get(1).getKind() != TemplateArgument::Pack ||
+      Arguments->get(1).pack_size() != Call->getNumArgs() ||
+      Arguments->get(2).getKind() != TemplateArgument::Integral ||
+      !Arguments->get(2).getIntegralType()->isIntegerType() ||
+      !Arguments->get(2).getAsIntegral().isZero())
+    return std::nullopt;
+  unsigned PackIndex = 0;
+  for (const auto &Argument : Arguments->get(1).pack_elements()) {
+    const auto Parameter = Function->getParamDecl(PackIndex)->getType();
+    const auto *Actual = Call->getArg(PackIndex++);
+    if (Argument.getKind() != TemplateArgument::Type ||
+        !Parameter->isReferenceType() ||
+        Parameter->getPointeeType().isVolatileQualified() ||
+        Parameter->getPointeeType().isRestrictQualified() ||
+        !Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                        Actual->getType()) ||
+        (Parameter->isLValueReferenceType() ? !Actual->isLValue()
+                                            : Actual->isLValue()))
+      return std::nullopt;
+    auto Deduced = Argument.getAsType();
+    if (Deduced->isLValueReferenceType()) {
+      if (!Parameter->isLValueReferenceType() ||
+          !Context.hasSameType(Deduced->getPointeeType(),
+                               Parameter->getPointeeType()))
+        return std::nullopt;
+    } else if (Deduced->isReferenceType() ||
+               !Parameter->isRValueReferenceType() ||
+               !Context.hasSameType(Deduced, Parameter->getPointeeType())) {
+      return std::nullopt;
+    }
+  }
+
+  const CXXNewExpr *Allocation = nullptr;
+  const CXXConstructExpr *OwnerConstruction = nullptr;
+  unsigned Allocations = 0;
+  unsigned OwnerConstructions = 0;
+  auto Inspect = [&](auto &&Self, const Stmt *Node, unsigned Depth) -> void {
+    if (!Node || Depth > 32)
+      return;
+    if (const auto *New = dyn_cast<CXXNewExpr>(Node)) {
+      ++Allocations;
+      Allocation = New;
+    }
+    if (const auto *Construction = dyn_cast<CXXConstructExpr>(Node))
+      if (Context.hasSameUnqualifiedType(
+              Construction->getType(), Context.getRecordType(Owner->Record))) {
+        ++OwnerConstructions;
+        OwnerConstruction = Construction;
+      }
+    for (const auto *Child : Node->children())
+      Self(Self, Child, Depth + 1);
+  };
+  Inspect(Inspect, Function->getBody(), 0);
+  const auto *AllocationFunction =
+      Allocation ? Allocation->getOperatorNew() : nullptr;
+  if (!Allocation || Allocations != 1 || !OwnerConstruction ||
+      OwnerConstructions != 1 || Allocation->isArray() ||
+      Allocation->getNumPlacementArgs() || !AllocationFunction ||
+      isa<CXXMethodDecl>(AllocationFunction) ||
+      AllocationFunction->isVariadic() ||
+      AllocationFunction->getOverloadedOperator() != OO_New ||
+      !AllocationFunction->getDeclContext()
+           ->getRedeclContext()
+           ->isTranslationUnit() ||
+      !Context.hasSameType(Allocation->getAllocatedType(),
+                           Owner->ElementType) ||
+      !Context.hasSameType(Allocation->getType(), Owner->PointerType) ||
+      !cstddefOrigin(S, SM, Allocation->getExprLoc(), "libcxx",
+                     "__memory/unique_ptr.h") ||
+      approvedUtilityUniquePtrConstruction(S, SM, OwnerConstruction, Context) !=
+          UtilityUniquePtrConstruction::Pointer)
+    return std::nullopt;
+
+  const unsigned ArgumentCount = Call->getNumArgs();
+  if (utilityScalar(Context, Owner->ElementType)) {
+    if (ArgumentCount > 1 || !Allocation->getInitializer())
+      return std::nullopt;
+    if (ArgumentCount &&
+        !utilityScalarDirectConversion(
+            Context, Function->getParamDecl(0)->getType()->getPointeeType(),
+            Owner->ElementType))
+      return std::nullopt;
+    return UtilityMakeUniqueCall{*Owner, Allocation, nullptr};
+  }
+
+  const auto *Record = definedRecord(Owner->ElementType.getUnqualifiedType());
+  const auto *Construction = Allocation->getConstructExpr();
+  const auto *Constructor =
+      Construction ? Construction->getConstructor() : nullptr;
+  const auto *Prototype =
+      Constructor ? Constructor->getType()->getAs<FunctionProtoType>()
+                  : nullptr;
+  if (!Record || Record->isUnion() || Record->isDependentContext() ||
+      !S.owns(SM, Record->getLocation()) || !Construction || !Constructor ||
+      Constructor->getParent()->getCanonicalDecl() !=
+          Record->getCanonicalDecl() ||
+      Construction->getNumArgs() != ArgumentCount ||
+      Constructor->getNumParams() != ArgumentCount ||
+      Constructor->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+      !supportedConstructor(Constructor) || !Prototype ||
+      !Prototype->isNothrow() || !S.owns(SM, Constructor->getLocation()))
+    return std::nullopt;
+  for (unsigned I = 0; I < ArgumentCount; ++I) {
+    const auto Forwarded =
+        Function->getParamDecl(I)->getType()->getPointeeType();
+    const auto Parameter = Constructor->getParamDecl(I)->getType();
+    if (Parameter->isReferenceType()) {
+      if (Parameter->getPointeeType().isVolatileQualified() ||
+          Parameter->getPointeeType().isRestrictQualified() ||
+          !Context.hasSameUnqualifiedType(Forwarded,
+                                          Parameter->getPointeeType()))
+        return std::nullopt;
+    } else if (utilityScalar(Context, Parameter)) {
+      if (!utilityScalarDirectConversion(Context, Forwarded, Parameter))
+        return std::nullopt;
+    } else if (!Parameter->isRecordType() ||
+               !Context.hasSameUnqualifiedType(Forwarded, Parameter) ||
+               !utilityMemoryTrivialValue(S, SM, Context, Parameter)) {
+      return std::nullopt;
+    }
+  }
+  if (!Constructor->isTrivial()) {
+    const FunctionDecl *Definition = nullptr;
+    if (!Constructor->hasBody(Definition) || !Definition ||
+        !S.owns(SM, Definition->getLocation()))
+      return std::nullopt;
+    Constructor = cast<CXXConstructorDecl>(Definition);
+  }
+  return UtilityMakeUniqueCall{*Owner, Allocation, Constructor};
+}
+
 static bool utilityAllocatorForwardingArguments(
     const CallExpr *Call, const CXXMethodDecl *Method, unsigned Offset,
     const ASTContext &Context) {
@@ -4074,6 +4243,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return UtilityOperation::MemoryUniquePtrMemberSwap;
     }
   }
+  if (approvedUtilityMakeUniqueCall(S, SM, Call, Context))
+    return UtilityOperation::MemoryMakeUnique;
   if (approvedUtilityDefaultDeleteCall(S, SM, Call, Context))
     return UtilityOperation::MemoryDefaultDelete;
   if (approvedUtilityAllocatorConstructCall(S, SM, Call, true, Context))

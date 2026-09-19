@@ -58,7 +58,11 @@ move and `nullptr` assignment, `get`, `operator->`, dereference, explicit
 boolean conversion, `release`, `reset`, member and free `swap`, same-specialization
 equality/inequality, bidirectional `nullptr` comparison and automatic
 destruction lower directly while preserving receiver/argument sequencing and
-calling the same checked source-defined global delete. The existing address
+calling the same checked source-defined global delete. Exact single-object
+`std::make_unique<T>(args...)` also lowers directly: it authenticates the pinned
+factory and selected allocation, value-initializes a scalar or calls the exact
+source-owned non-template `noexcept` record constructor, and installs the
+resulting pointer in that owner. The existing address
 operations, scalar and
 source-record destruction, scalar or trivial source-record uninitialized
 construction, and nothrow zero-parameter source-record default/value

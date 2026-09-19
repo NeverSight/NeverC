@@ -1239,54 +1239,50 @@ class FunctionLowering {
                "The allocator element must have positive complete size.");
       return quantity(Maximum / ElementBytes, ResultType, L);
     };
-    auto AllocatorConstruct = [&](const UtilityAllocatorConstructCall &Info,
-                                  unsigned PointerIndex,
-                                  unsigned ArgumentIndex) {
-      if (PointerIndex >= Call->getNumArgs() ||
-          ArgumentIndex > Call->getNumArgs())
-        reject(L, "allocator construct",
-               "The checked pointer and construction arguments are missing.");
-      auto Pointer = snapshot(expression(Call->getArg(PointerIndex)), L);
-      auto Place = dereference(std::move(Pointer), L);
+    auto ConstructAt = [&](Expression Place, QualType ElementType,
+                           const CXXConstructorDecl *Constructor,
+                           unsigned ArgumentIndex,
+                           llvm::StringRef Description) {
+      if (ArgumentIndex > Call->getNumArgs())
+        reject(L, Description,
+               "The checked construction arguments are missing.");
       const unsigned ArgumentCount = Call->getNumArgs() - ArgumentIndex;
-      if (!Info.Constructor) {
+      if (!Constructor) {
         if (!ArgumentCount) {
-          initializeZero(std::move(Place), Info.ElementType, L);
+          initializeZero(std::move(Place), ElementType, L);
           return;
         }
         if (ArgumentCount != 1)
-          reject(L, "allocator construct",
+          reject(L, Description,
                  "A scalar construction needs zero or one argument.");
         assign(std::move(Place),
                cast(expression(Call->getArg(ArgumentIndex)),
-                    type(Info.ElementType, L), L),
+                    type(ElementType, L), L),
                L);
         return;
       }
 
-      const auto *Constructor = Info.Constructor;
       if (Constructor->getNumParams() != ArgumentCount)
-        reject(L, "allocator construct",
+        reject(L, Description,
                "The selected constructor and argument counts differ.");
       if (!ArgumentCount && Constructor->isDefaultConstructor()) {
-        constructMemoryDefault(std::move(Place), Info.ElementType,
-                               Constructor, true, L);
+        constructMemoryDefault(std::move(Place), ElementType, Constructor, true,
+                               L);
         return;
       }
       if (ArgumentCount == 1 && Constructor->isCopyOrMoveConstructor()) {
         auto Source = argument(Call->getArg(ArgumentIndex),
                                Constructor->getParamDecl(0)->getType());
-        constructMemorySource(std::move(Place), Info.ElementType, Constructor,
+        constructMemorySource(std::move(Place), ElementType, Constructor,
                               std::move(Source), L);
         return;
       }
       if (Constructor->isTrivial() || !Constructor->hasBody())
-        reject(L, "allocator construct",
+        reject(L, Description,
                "The selected source constructor has no checked body.");
       json::Array Args;
-      Args.push_back(snapshot(address(std::move(Place),
-                                      Info.ElementType.getUnqualifiedType(), L),
-                              L));
+      Args.push_back(snapshot(
+          address(std::move(Place), ElementType.getUnqualifiedType(), L), L));
       for (unsigned I = 0; I < ArgumentCount; ++I) {
         const auto Parameter = Constructor->getParamDecl(I)->getType();
         const auto *Actual = Call->getArg(ArgumentIndex + I);
@@ -1301,6 +1297,17 @@ class FunctionLowering {
                                   {"callee", A.name(Constructor)},
                                   {"args", std::move(Args)},
                                   {"loc", A.loc(L)}});
+    };
+    auto AllocatorConstruct = [&](const UtilityAllocatorConstructCall &Info,
+                                  unsigned PointerIndex,
+                                  unsigned ArgumentIndex) {
+      if (PointerIndex >= Call->getNumArgs() ||
+          ArgumentIndex > Call->getNumArgs())
+        reject(L, "allocator construct",
+               "The checked pointer and construction arguments are missing.");
+      auto Pointer = snapshot(expression(Call->getArg(PointerIndex)), L);
+      ConstructAt(dereference(std::move(Pointer), L), Info.ElementType,
+                  Info.Constructor, ArgumentIndex, "allocator construct");
     };
     auto AllocatorHeap = [&](const UtilityAllocatorHeapCall &Info) {
       if (Info.Traits) {
@@ -1399,6 +1406,56 @@ class FunctionLowering {
       deallocateSingle(expression(Call->getArg(Info->PointerIndex)),
                        Info->Deleter.ElementType, Function, L);
       return {};
+    }
+    case UtilityOperation::MemoryMakeUnique: {
+      const auto Info =
+          approvedUtilityMakeUniqueCall(A.S, A.Sources, Call, A.Context);
+      if (!Info)
+        reject(L, "make_unique",
+               "A checked single-object std::make_unique call is required.");
+      const auto *Function =
+          A.allocatorHeapFunction(true, Info->Owner.ElementType, L);
+      if (!Info->Allocation->getOperatorNew() ||
+          Function->getCanonicalDecl() !=
+              Info->Allocation->getOperatorNew()->getCanonicalDecl())
+        reject(L, "make_unique allocation",
+               "The authenticated template and selected global allocation "
+               "function differ.");
+      A.allocatorHeapFunction(false, Info->Owner.ElementType, L);
+
+      json::Array Args;
+      Args.push_back(allocationExtent(Info->Owner.ElementType,
+                                      Function->getParamDecl(0)->getType(),
+                                      false, L));
+      chargeCall(Args, L);
+      auto Storage = temporary(type(Function->getReturnType(), L), L);
+      Body.push_back(json::Object{{"op", "call"},
+                                  {"callee", A.name(Function)},
+                                  {"args", std::move(Args)},
+                                  {"target", json::Object(Storage)},
+                                  {"loc", A.loc(L)}});
+      auto Pointer = snapshot(
+          cast(std::move(Storage), type(Info->Owner.PointerType, L), L), L);
+      auto MutablePointer =
+          cast(json::Object(Pointer),
+               type(A.Context.getPointerType(
+                        Info->Owner.ElementType.getUnqualifiedType()),
+                    L),
+               L);
+      ConstructAt(dereference(std::move(MutablePointer), L),
+                  Info->Owner.ElementType, Info->Constructor, 0,
+                  "make_unique construction");
+
+      const auto RecordType = A.Context.getRecordType(Info->Owner.Record);
+      auto Place = Destination ? std::move(*Destination)
+                               : objectTemporary(RecordType, L);
+      Destination.reset();
+      if (Place.getString("type") != type(RecordType, L))
+        reject(L, "make_unique result",
+               "The destination type differs from the unique_ptr result.");
+      assign(UniquePtrMember(json::Object(Place), Info->Owner),
+             std::move(Pointer), L);
+      return Place;
     }
     case UtilityOperation::MemoryUniquePtrGet:
     case UtilityOperation::MemoryUniquePtrArrow:

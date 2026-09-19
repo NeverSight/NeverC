@@ -1686,6 +1686,10 @@ extern "C" int memory_unique_ptr(int *pointer) {
   assigned = nullptr;
   return assigned ? 9 : 0;
 }
+extern "C" int memory_make_unique(int value) {
+  auto owner = std::make_unique<int>(value);
+  return owner && *owner == value ? 0 : 1;
+}
 """
 
     def check_memory_default_delete(data):
@@ -1729,13 +1733,22 @@ extern "C" int memory_unique_ptr(int *pointer) {
         functions = [
             function for function in data["functions"]
             if function["name"] in (
-                "memory_unique_ptr", unique_records[0]["id"] + "_destroy")
+                "memory_unique_ptr", "memory_make_unique",
+                unique_records[0]["id"] + "_destroy")
         ]
-        assert len(functions) == 2, data
+        assert len(functions) == 3, data
         calls = [node for node in walk(functions)
                  if node.get("op") == "call"]
         assert calls, data
         assert all("callee" in call for call in calls), data
+        allocation_functions = [
+            function for function in data["functions"]
+            if function["result"] == "ptr:void" and
+               len(function["params"]) == 1
+        ]
+        assert len(allocation_functions) == 1, data
+        assert any(call["callee"] == allocation_functions[0]["name"] and
+                   "target" in call for call in calls), data
         delete_functions = [
             function for function in data["functions"]
             if function["result"] == "void" and

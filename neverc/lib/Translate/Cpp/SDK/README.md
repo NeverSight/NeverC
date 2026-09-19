@@ -159,7 +159,12 @@ authenticated pointer-sized carrier. Default, null, raw-pointer and same-type
 move construction; same-type move and `nullptr` assignment; pointer access,
 release, reset, member/free swap, same-specialization equality/inequality,
 bidirectional `nullptr` comparison and destruction lower directly through the
-checked global-delete path without a libc++ call. Exact runtime allocator
+checked global-delete path without a libc++ call. Exact single-object
+`std::make_unique<T>(args...)` authenticates the pinned factory body and lowers
+through checked source-defined global new/delete. It value-initializes scalars
+or calls an exact source-owned non-template `noexcept` record constructor with
+the call-site arguments, then returns the same pointer-sized owner without a
+libc++ call. Exact runtime allocator
 specializations use an authenticated one-byte stateless carrier. Default,
 copy/move and non-void converting construction, same-type assignment,
 heterogeneous equality, deprecated C++17 `address` and complete-element
@@ -212,8 +217,8 @@ or copy fallback. Default-heap allocation, dynamic or overflowing allocation
 counts, over-aligned elements, other allocator-traits forwarding calls,
 potentially throwing, default-argument or
 constructor-template source-record construction, nontrivial by-value record
-parameters, smart pointers, ownership factories and the remaining memory
-operations stay outside the direct lowering boundary.
+parameters, other smart pointers, array or other ownership factories and the
+remaining memory operations stay outside the direct lowering boundary.
 Core v2 never admits the `platform` root.
 Math v1 continues to use its separately checked libc++, resource and Darwin
 platform closure for `<cmath>`.
