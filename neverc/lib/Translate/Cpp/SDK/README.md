@@ -38,7 +38,10 @@ offsets for nonempty tuples and the dedicated empty specialization, then
 directly lowers scalar or recursively composite construction, compatible
 per-element converting construction and assignment from tuples or pairs,
 factories, swaps, recursive same-length heterogeneous comparisons and index or
-unique-type access without a runtime libc++ link. Composite elements may be
+unique-type access without a runtime libc++ link. Exact `apply` over scalar
+tuples lowers named functions or stored function pointers with exact by-value
+scalar parameters to an ordinary indirect call, including empty tuples and
+scalar or void results. Composite elements may be
 source-owned nonempty trivial standard-layout records, admitted arrays or
 pairs, or nonempty nested tuples; their conversions keep the exact unqualified
 type and mutation requires recursive assignability. Programs using scalar pair

@@ -122,11 +122,21 @@ supported targets.
 
 Core v2 also accepts the pinned `<utility>` header. Scalar `move`, `forward`,
 `move_if_noexcept`, `as_const`, `exchange` and `swap` lower directly, as do
-scalar `std::pair` construction, assignment, swapping, comparison, `make_pair`
-and `get`. Tuple metadata and `integer_sequence::size()` remain compile-time
-values. The authenticated 87-file closure adds no libc++ runtime dependency;
-nested or record-valued pairs and standard-function addresses remain rejected.
+scalar or recursively admitted composite `std::pair` construction, assignment,
+swapping, comparison, `make_pair` and `get`. Tuple metadata and
+`integer_sequence::size()` remain compile-time values. The authenticated
+87-file closure adds no libc++ runtime dependency; standard-function addresses
+remain rejected.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#scalar-utilities-and-pairs-from-utility).
+
+Core v2 accepts authenticated empty and nonempty `<tuple>` values, including
+construction, assignment, factories, swaps, comparisons and `get`. Exact
+`std::apply` calls over scalar tuples accept named functions or stored function
+pointers with exact by-value scalar parameters and a scalar or void result. The
+callable and tuple are evaluated once and lower to an ordinary indirect call,
+without a libc++ runtime dependency. Callable objects and converted, reference
+or record callback parameters remain rejected.
+[C++17](../utils/translate-frontends/docs/cpp-core-v2.md#value-tuples-from-tuple).
 
 Core v2 type metadata now accepts owned incomplete non-union classes, including forward declarations and uninstantiated template types. Classification and array dimensions retain exact source identity without generating record storage; runtime carriers and callbacks still require complete admitted types. Reference/pointer operation queries can use these identities with exact retained source proof; selected lazy method return signatures keep their complete-carrier checks. Native verification requires the implementing revision’s CI. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#incomplete-record-type-metadata).
 

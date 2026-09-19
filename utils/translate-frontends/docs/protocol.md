@@ -1831,6 +1831,13 @@ source frontend captures the entire postfix value before lowering arguments.
 Synthetic IR independently validates the callable's declared storage and typed
 operands; it does not introduce a new definite-initialization analysis.
 
+Pinned `std::apply` lowering reuses this instruction and introduces no tuple
+callback opcode. The frontend snapshots the named function or stored function
+pointer and the authenticated tuple expression once, projects scalar fields in
+tuple order, and supplies the exact by-value callback parameter types. Empty
+tuples produce an empty `args` array; scalar and void results retain the normal
+`indirect_call` target rule.
+
 The emitter uses recursive typed declarators, prior function prototypes and
 signature-specific layout guards. New enum values are appended, preserving old
 project fingerprints. The existing project and math profiles reject callback

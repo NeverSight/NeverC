@@ -23558,6 +23558,78 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2TupleApplyRunsAtBothOptimizations) {
+  const auto Source = tmpFile("tuple-apply.cpp");
+  const auto Output = tmpFile("tuple-apply.nc");
+  writeFile(Source, R"cpp(
+#include <tuple>
+using Triple = std::tuple<int, double, int *>;
+int callable_effects;
+int tuple_effects;
+int callback_calls;
+int captured;
+int combine(int integer, double real, int *pointer) {
+  ++callback_calls;
+  return integer + int(real) + *pointer;
+}
+using Callback = int (*)(int, double, int *);
+Callback select_callback() {
+  ++callable_effects;
+  return combine;
+}
+Triple &select_tuple(Triple &value) {
+  ++tuple_effects;
+  return value;
+}
+int empty_value() {
+  ++callback_calls;
+  return 13;
+}
+void capture(int first, int second) {
+  ++callback_calls;
+  captured = first * 10 + second;
+}
+int main() {
+  int object = 4;
+  Triple value(2, 3.0, &object);
+  callable_effects = tuple_effects = callback_calls = captured = 0;
+  if (std::apply(select_callback(), select_tuple(value)) != 9 ||
+      callable_effects != 1 || tuple_effects != 1 || callback_calls != 1)
+    return 1;
+  Callback stored = combine;
+  if (std::apply(stored, value) != 9 || callback_calls != 2)
+    return 2;
+  const Triple view(value);
+  if (std::apply(combine, view) != 9 || callback_calls != 3)
+    return 3;
+  if (std::apply(combine, std::make_tuple(1, 2.0, &object)) != 7 ||
+      callback_calls != 4)
+    return 4;
+  if (std::apply(empty_value, std::tuple<>()) != 13 || callback_calls != 5)
+    return 5;
+  std::apply(capture, std::make_tuple(6, 7));
+  return callback_calls == 6 && captured == 67 ? 0 : 6;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("__apply_tuple_impl"), std::string::npos);
+  EXPECT_EQ(Text.find("mapped_call"), std::string::npos);
+  EXPECT_NE(Text.find("translated function pointer size mismatch"),
+            std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("tuple-apply" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2EmptyTupleRunsAtBothOptimizations) {
   const auto Source = tmpFile("tuple-empty.cpp");
   const auto Output = tmpFile("tuple-empty.nc");
@@ -23843,9 +23915,22 @@ TEST_F(TranslateTest, CoreV2TupleRequiresPinnedOperations) {
        "#include <tuple>\nint main(){auto value=std::tuple_cat();"
        "return sizeof(value)!=1;}",
        "TR0203"},
-      {"apply",
+      {"apply-converted-parameter",
        "#include <tuple>\nint add(int a,int b){return a+b;}int main(){"
-       "return std::apply(add,std::make_tuple(1,2));}",
+       "return std::apply(add,std::make_tuple(short(1),2));}",
+       "TR0203"},
+      {"apply-reference-parameter",
+       "#include <tuple>\nint add(int&a,int&b){return a+b;}int main(){"
+       "auto value=std::make_tuple(1,2);return std::apply(add,value);}",
+       "TR0203"},
+      {"apply-callable-object",
+       "#include <tuple>\nstruct F{int operator()(int value)const{return "
+       "value;}};int main(){return std::apply(F{},std::make_tuple(1));}",
+       "TR0203"},
+      {"apply-record-parameter",
+       "#include <tuple>\nstruct R{int value;};int take(R value){return "
+       "value.value;}int main(){return "
+       "std::apply(take,std::make_tuple(R{1}));}",
        "TR0203"}};
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);

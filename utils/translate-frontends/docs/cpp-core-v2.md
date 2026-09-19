@@ -216,6 +216,15 @@ unique-type `std::get` use the same authenticated records. `get` preserves
 const and lvalue/rvalue reference categories; type selection requires exactly
 one matching element, as in C++17.
 
+Exact `std::apply` calls over an authenticated empty or nonempty tuple lower to
+one ordinary indirect callback call. The callable may be a named function or a
+stored function pointer with a fixed nonvariadic signature. Every tuple element
+and corresponding callback parameter must be an admitted scalar with the same
+unqualified type, passed by value; the result must be `void` or an admitted
+scalar. Mutable and const lvalues and materialized tuple temporaries are
+accepted. The callable and tuple expressions are each evaluated once, fields
+are passed in tuple order, and no libc++ apply helper is emitted.
+
 Two-element tuples also accept admitted scalar or composite `std::pair<U, V>`
 lvalues and rvalues for construction and assignment under the same per-element
 conversion rules. Scalar pair conversion requires `<tuple>` and `<utility>` and
@@ -234,8 +243,10 @@ The standalone empty tuple remains supported, but empty-base-optimized record
 or tuple elements do not have the authenticated one-field leaf representation
 and remain rejected. References, nontrivial records, `long double`, function
 pointers and source-record comparisons also remain outside this surface. `tie`,
-`forward_as_tuple`, `tuple_cat` and `apply` are rejected. Quoted includes, user
-shadows, function addresses and forged declarations remain rejected.
+`forward_as_tuple` and `tuple_cat` are rejected. Apply calls with callable
+objects, converted or reference parameters, record parameters, variadic
+callbacks, or reference/record results remain rejected. Quoted includes, user
+shadows, standard-function addresses and forged declarations remain rejected.
 
 ## Fixed value arrays from `<array>`
 

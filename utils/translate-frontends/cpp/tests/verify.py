@@ -474,6 +474,9 @@ static_assert(std::tuple_size<std::tuple<int, double, int *>>::value == 3);
 static_assert(sizeof(std::tuple_element<1,
                                         std::tuple<int, double, int *>>::type)
               == sizeof(double));
+int tuple_apply_sum(int integer, double real, int *pointer) {
+  return integer + int(real) + *pointer;
+}
 extern "C" int tuple_all(int *pointer) {
   std::tuple<> empty, empty_copy(empty), empty_move(
       static_cast<std::tuple<> &&>(empty_copy));
@@ -511,6 +514,7 @@ extern "C" int tuple_all(int *pointer) {
             4 * (narrow < greater);
   result += 8 * (greater > narrow) + 16 * (narrow <= wide) +
             32 * (narrow >= wide);
+  result += std::apply(tuple_apply_sum, first);
   return result;
 }
 """
@@ -540,6 +544,8 @@ extern "C" int tuple_all(int *pointer) {
     assert set(exports) == {"tuple_all"}, exports
     assert not [node for node in walk(tuple_module["functions"])
                 if node.get("op") in ("call", "mapped_call")], tuple_module
+    assert len([node for node in walk(tuple_module["functions"])
+                if node.get("op") == "indirect_call"]) == 1, tuple_module
     for target in sdk_targets:
         check("v2-tuple-" + target, tuple_source,
               profile="cpp-core-v2", target=target, sdk=True)
@@ -678,8 +684,17 @@ extern "C" int tuple_composite() {
         ("empty-tuple-cat",
          '#include <tuple>\nint main(){auto value=std::tuple_cat();return sizeof(value)!=1;}',
          "TR0203"),
-        ("apply",
-         '#include <tuple>\nint add(int a,int b){return a+b;}int main(){return std::apply(add,std::make_tuple(1,2));}',
+        ("apply-converted-parameter",
+         '#include <tuple>\nint add(int a,int b){return a+b;}int main(){return std::apply(add,std::make_tuple(short(1),2));}',
+         "TR0203"),
+        ("apply-reference-parameter",
+         '#include <tuple>\nint add(int&a,int&b){return a+b;}int main(){auto value=std::make_tuple(1,2);return std::apply(add,value);}',
+         "TR0203"),
+        ("apply-callable-object",
+         '#include <tuple>\nstruct F{int operator()(int value)const{return value;}};int main(){return std::apply(F{},std::make_tuple(1));}',
+         "TR0203"),
+        ("apply-record-parameter",
+         '#include <tuple>\nstruct R{int value;};int take(R value){return value.value;}int main(){return std::apply(take,std::make_tuple(R{1}));}',
          "TR0203"),
     ):
         check("v2-tuple-" + name, source, code,

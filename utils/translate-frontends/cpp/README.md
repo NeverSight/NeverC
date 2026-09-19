@@ -111,7 +111,10 @@ comparisons; and
 lowers authenticated empty and nonempty scalar or recursively composite tuple
 construction, compatible scalar or exact composite per-element construction
 and assignment from tuples or pairs, factories, swaps, recursive same-length
-heterogeneous lexicographic comparisons and index or unique-type access. Array
+heterogeneous lexicographic comparisons and index or unique-type access. Exact
+`apply` over scalar tuples lowers named functions or stored function pointers
+with exact by-value scalar parameters to one indirect call, including empty
+tuples and scalar or void results. Array
 directly lowers nonempty fixed scalar,
 trivial-record and nested-array storage, iterators, element access, fill, swap,
 scalar and recursive nested-array comparisons and tuple access.

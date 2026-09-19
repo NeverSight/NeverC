@@ -7626,6 +7626,39 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     }
     return UtilityOperation::MakeTuple;
   }
+  if (Origin->Path == "tuple" && Name == "apply" && Call->getNumArgs() == 2 &&
+      Function->getNumParams() == 2 && Call->isPRValue() &&
+      !Function->getReturnType()->isReferenceType() &&
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto Callable = Call->getArg(0)->getType();
+    const auto *Prototype =
+        Callable->isFunctionType() ? Callable->getAs<FunctionProtoType>()
+        : Callable->isFunctionPointerType()
+            ? Callable->getPointeeType()->getAs<FunctionProtoType>()
+            : nullptr;
+    const auto CallableParameter = Function->getParamDecl(0)->getType();
+    const auto TupleParameter = Function->getParamDecl(1)->getType();
+    const auto Tuple = TupleFor(Call->getArg(1)->getType());
+    if (!Prototype || Prototype->isVariadic() ||
+        !CallableParameter->isReferenceType() ||
+        !Same(CallableParameter->getPointeeType(), Callable) ||
+        !TupleParameter->isReferenceType() ||
+        !Same(TupleParameter->getPointeeType(), Call->getArg(1)->getType()) ||
+        !Tuple || Prototype->getNumParams() != Tuple->Elements.size() ||
+        !Same(Prototype->getReturnType(), Function->getReturnType()) ||
+        (!Function->getReturnType()->isVoidType() &&
+         !utilityScalar(Context, Function->getReturnType())))
+      return std::nullopt;
+    for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
+      const auto Element = Tuple->Elements[I]->getType();
+      const auto Parameter = Prototype->getParamType(I);
+      if (!utilityScalar(Context, Element) || Parameter->isReferenceType() ||
+          !utilityScalar(Context, Parameter) ||
+          !Context.hasSameUnqualifiedType(Element, Parameter))
+        return std::nullopt;
+    }
+    return UtilityOperation::TupleApply;
+  }
   if (Origin->Path == "__utility/pair.h" && Call->getNumArgs() == 2 &&
       Call->isPRValue() && Function->getReturnType()->isBooleanType() &&
       Same(Call->getType(), Function->getReturnType())) {

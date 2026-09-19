@@ -471,6 +471,7 @@ enum class UtilityOperation {
   PairGetFirst,
   PairGetSecond,
   MakeTuple,
+  TupleApply,
   TupleSwap,
   TupleMemberSwap,
   TupleEqual,

@@ -5785,6 +5785,34 @@ class FunctionLowering {
                    Call->getArg(I), L);
       return Place;
     }
+    case UtilityOperation::TupleApply: {
+      auto Tuple = TupleFor(Call->getArg(1)->getType());
+      auto CallableType = Call->getArg(0)->getType();
+      const auto *Prototype =
+          CallableType->isFunctionType()
+              ? CallableType->getAs<FunctionProtoType>()
+          : CallableType->isFunctionPointerType()
+              ? CallableType->getPointeeType()->getAs<FunctionProtoType>()
+              : nullptr;
+      if (!Tuple || !Prototype || Prototype->isVariadic() ||
+          Prototype->getNumParams() != Tuple->Elements.size())
+        reject(L, "utility tuple apply",
+               "The selected std::tuple callback is unavailable.");
+      auto Callable = snapshot(CallableType->isFunctionType()
+                                   ? functionValue(Call->getArg(0))
+                                   : expression(Call->getArg(0)),
+                               L);
+      auto TupleAddress = snapshot(
+          address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
+      auto TupleValue = dereference(std::move(TupleAddress), L);
+      json::Array Arguments;
+      for (unsigned I = 0; I < Tuple->Elements.size(); ++I)
+        Arguments.push_back(
+            cast(fieldStorage(json::Object(TupleValue), Tuple->Elements[I], L),
+                 type(Prototype->getParamType(I), L), L));
+      return emitIndirectCall(std::move(Callable), std::move(Arguments),
+                              Prototype->getReturnType(), L);
+    }
     case UtilityOperation::TupleSwap:
     case UtilityOperation::PairSwap: {
       auto LeftAddress = snapshot(
