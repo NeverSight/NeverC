@@ -29771,7 +29771,7 @@ int main() {
       !std::includes(left, left + 5, subset, subset))
     return 4;
 
-  int merged[10]{};
+  long merged[10]{};
   effects = 0;
   if (std::merge((++effects, left), (++effects, left + 5),
                  (++effects, right), (++effects, right + 5),
@@ -29783,7 +29783,7 @@ int main() {
     if (merged[i] != expected_merge[i])
       return 6;
 
-  int combined[7]{};
+  double combined[7]{};
   if (std::set_union(left, left + 5, right, right + 5, combined) !=
       combined + 7)
     return 7;
@@ -29792,17 +29792,17 @@ int main() {
     if (combined[i] != expected_union[i])
       return 8;
 
-  int common[3]{};
+  long common[3]{};
   if (std::set_intersection(left, left + 5, right, right + 5, common) !=
           common + 3 ||
       common[0] != 1 || common[1] != 2 || common[2] != 6)
     return 9;
-  int remaining[2]{};
+  double remaining[2]{};
   if (std::set_difference(left, left + 5, right, right + 5, remaining) !=
           remaining + 2 ||
       remaining[0] != 1 || remaining[1] != 4)
     return 10;
-  int symmetric[4]{};
+  long symmetric[4]{};
   if (std::set_symmetric_difference(left, left + 5, right, right + 5,
                                     symmetric) != symmetric + 4 ||
       symmetric[0] != 1 || symmetric[1] != 2 || symmetric[2] != 3 ||
@@ -29848,9 +29848,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmOrderedRangesRequirePinnedScalarForms) {
       {"heterogeneous-lexicographical",
        "#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{1,3};"
        "return std::lexicographical_compare(a,a+2,b,b+2)?0:1;}"},
-      {"heterogeneous-merge-output",
-       "#include <algorithm>\nint main(){int a[2]{1,2};long out[4]{};"
-       "return std::merge(a,a+2,a,a+2,out)==out+4?0:1;}"},
       {"record-equal-range",
        "#include <algorithm>\nstruct R{int n;};"
        "bool operator<(const R&a,const R&b){return a.n<b.n;}"
@@ -29906,7 +29903,7 @@ int main() {
       !std::includes(left, left, right, right, greater_value) || calls != 0)
     return 2;
 
-  int merged[9]{};
+  long merged[9]{};
   int effects = 0;
   auto comparator = &greater_value;
   if (std::merge((++effects, left), (++effects, left + 5),
@@ -29919,7 +29916,7 @@ int main() {
     if (merged[i] != expected_merge[i])
       return 4;
 
-  int combined[7]{};
+  double combined[7]{};
   if (std::set_union(left, left + 5, right, right + 4, combined,
                      greater_value) != combined + 7)
     return 5;
@@ -29928,17 +29925,17 @@ int main() {
     if (combined[i] != expected_union[i])
       return 6;
 
-  int common[2]{};
+  long common[2]{};
   if (std::set_intersection(left, left + 5, right, right + 4, common,
                             greater_value) != common + 2 ||
       common[0] != 7 || common[1] != 1)
     return 7;
-  int remaining[3]{};
+  double remaining[3]{};
   if (std::set_difference(left, left + 5, right, right + 4, remaining,
                           greater_value) != remaining + 3 ||
       remaining[0] != 9 || remaining[1] != 7 || remaining[2] != 4)
     return 8;
-  int symmetric[5]{};
+  long symmetric[5]{};
   if (std::set_symmetric_difference(left, left + 5, right, right + 4,
                                     symmetric, greater_value) != symmetric + 5)
     return 9;
@@ -30015,10 +30012,6 @@ TEST_F(TranslateTest,
        "bool p(int a,long b){return a>b;}\n#include <algorithm>\n"
        "int main(){int a[2]{2,1};long b[2]{2,1};return "
        "std::includes(a,a+2,b,b+2,p)?0:1;}"},
-      {"heterogeneous-output",
-       "bool p(int a,int b){return a>b;}\n#include <algorithm>\n"
-       "int main(){int a[2]{2,1};long out[4]{};return "
-       "std::set_difference(a,a+2,a,a+2,out,p)==out?0:1;}"},
       {"variadic-comparator",
        "bool p(int a,int b,...){return a>b;}\n#include <algorithm>\n"
        "int main(){int a[2]{2,1},out[4]{};return "

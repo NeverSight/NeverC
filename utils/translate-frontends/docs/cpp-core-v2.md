@@ -1061,8 +1061,9 @@ templates and exact five-iterator `std::merge`, `std::set_union`,
 `std::set_intersection`, `std::set_difference` and
 `std::set_symmetric_difference` templates lower for two ranges with that same
 unqualified arithmetic element type. Ordered output algorithms require a
-writable same-element destination and return its advanced pointer. Merge keeps
-equivalent elements from the first range first; set operations preserve their
+writable scalar destination whose element accepts a checked direct conversion
+from the input and return its advanced pointer. Merge keeps equivalent elements
+from the first range first; set operations preserve their
 standard maximum, minimum and excess duplicate counts. Default-order enum
 elements, pointer elements and heterogeneous values or ranges remain outside
 this boundary because they can require overloaded or otherwise non-portable
@@ -1073,11 +1074,11 @@ a checked function pointer whose two by-value scalar parameters are reachable
 through direct conversions from the element type and whose result is exactly
 `bool`. This includes enum and pointer elements whose ordering is supplied
 entirely by the callback. Ordered output
-forms still require a writable destination with the same element type. The
+forms use the same directly convertible writable destination boundary. The
 callback object is retained once, and the generated loops invoke it in both
 argument orientations when distinguishing equivalent elements. Function
 objects, reference parameters, converted result types,
-heterogeneous ranges and heterogeneous destinations remain rejected.
+heterogeneous ranges remain rejected.
 
 Each call evaluates and retains its arguments once before entering generated
 pointer loops. `find` preserves the bound value reference, `count` uses the

@@ -3245,16 +3245,16 @@ extern "C" int algorithm_rearrangement(int *first, int *middle, int *last,
 #include <algorithm>
 extern "C" int algorithm_ordered_ranges(const int *first, const int *last,
                                           const int *second,
-                                          const int *second_last, int *output,
+                                          const int *second_last, long *output,
                                           int value) {
   auto equal = std::equal_range(first, last, value);
   bool lexical = std::lexicographical_compare(first, last, second, second_last);
   bool contained = std::includes(first, last, second, second_last);
-  int *merged = std::merge(first, last, second, second_last, output);
-  int *united = std::set_union(first, last, second, second_last, output);
-  int *common = std::set_intersection(first, last, second, second_last, output);
-  int *remaining = std::set_difference(first, last, second, second_last, output);
-  int *symmetric =
+  long *merged = std::merge(first, last, second, second_last, output);
+  long *united = std::set_union(first, last, second, second_last, output);
+  long *common = std::set_intersection(first, last, second, second_last, output);
+  long *remaining = std::set_difference(first, last, second, second_last, output);
+  long *symmetric =
       std::set_symmetric_difference(first, last, second, second_last, output);
   return static_cast<int>((equal.first - first) + (equal.second - first) +
                           (merged - output) + (united - output) +
@@ -3280,19 +3280,19 @@ extern "C" int algorithm_ordered_ranges(const int *first, const int *last,
 #include <algorithm>
 extern "C" int algorithm_comparator_ordered_ranges(
     const int *first, const int *last, const int *second,
-    const int *second_last, int *output, bool (*comparator)(long, double)) {
+    const int *second_last, long *output, bool (*comparator)(long, double)) {
   bool lexical = std::lexicographical_compare(first, last, second, second_last,
                                                comparator);
   bool contained = std::includes(first, last, second, second_last, comparator);
-  int *merged =
+  long *merged =
       std::merge(first, last, second, second_last, output, comparator);
-  int *united =
+  long *united =
       std::set_union(first, last, second, second_last, output, comparator);
-  int *common =
+  long *common =
       std::set_intersection(first, last, second, second_last, output, comparator);
-  int *remaining =
+  long *remaining =
       std::set_difference(first, last, second, second_last, output, comparator);
-  int *symmetric = std::set_symmetric_difference(
+  long *symmetric = std::set_symmetric_difference(
       first, last, second, second_last, output, comparator);
   return static_cast<int>((merged - output) + (united - output) +
                           (common - output) + (remaining - output) +

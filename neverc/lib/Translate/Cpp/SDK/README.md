@@ -127,7 +127,8 @@ Checked function-pointer callbacks with directly convertible by-value scalar
 parameters also admit `for_each`, `for_each_n`, unary and binary `transform`;
 transform results and zero-parameter generator results may directly convert to
 the output scalar.
-Predicate mutation and ordered output algorithms require writable destinations;
+Predicate mutation algorithms require writable destinations; ordered output
+algorithms accept directly convertible writable scalar destinations;
 `copy_n`, `fill_n` and `search_n` accept at-most-64-bit integral and non-scoped
 enum counts after the libc++ integer promotion.
 `shuffle` and `sample` stay disabled until the same authenticated cross-target

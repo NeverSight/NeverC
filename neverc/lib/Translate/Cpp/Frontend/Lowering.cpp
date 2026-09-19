@@ -3974,10 +3974,13 @@ class FunctionLowering {
       const auto FirstType = type(Call->getArg(0)->getType(), L);
       const auto SecondType = type(Call->getArg(2)->getType(), L);
       const auto OutputType = type(Call->getArg(4)->getType(), L);
+      const auto OutputElementType =
+          type(Call->getArg(4)->getType()->getPointeeType(), L);
       auto Emit = [&](Expression &Input, llvm::StringRef InputType,
                       bool Write) {
         if (Write) {
-          assign(dereference(Output, L), dereference(Input, L), L);
+          assign(dereference(Output, L),
+                 cast(dereference(Input, L), OutputElementType, L), L);
           assign(Output,
                  binary("+", Output, quantity(1, DifferenceType, L), OutputType,
                         L),

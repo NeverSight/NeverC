@@ -6950,17 +6950,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
       AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
       AlgorithmPointerParameter(2) && AlgorithmPointerParameter(3) &&
-      AlgorithmPointerParameter(4) &&
+      AlgorithmTransferParameters(0, 4) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getParamDecl(2)->getType(),
            Function->getParamDecl(3)->getType()) &&
       SameAlgorithmElement(Function->getParamDecl(0)->getType(),
                            Function->getParamDecl(2)->getType()) &&
-      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
-                           Function->getParamDecl(4)->getType()) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(4)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(4)->getType()) &&
       Same(Call->getType(), Function->getReturnType()) &&
       ((Call->getNumArgs() == 5 && AlgorithmOrderedPointerParameter(0) &&
