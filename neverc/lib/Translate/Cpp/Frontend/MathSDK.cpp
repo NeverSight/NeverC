@@ -7414,10 +7414,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType())) {
     const auto *Callback = AlgorithmCallbackPrototype(2);
     if (Callback && Callback->getNumParams() == 1 &&
-        utilityScalar(Context, Callback->getParamType(0)) &&
-        Context.hasSameUnqualifiedType(
-            Callback->getParamType(0),
-            Function->getParamDecl(0)->getType()->getPointeeType()) &&
+        utilityScalarDirectConversion(
+            Context, Function->getParamDecl(0)->getType()->getPointeeType(),
+            Callback->getParamType(0)) &&
         (Callback->getReturnType()->isVoidType() ||
          utilityScalar(Context, Callback->getReturnType())))
       return UtilityOperation::AlgorithmForEach;
@@ -7430,10 +7429,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType())) {
     const auto *Callback = AlgorithmCallbackPrototype(2);
     if (Callback && Callback->getNumParams() == 1 &&
-        utilityScalar(Context, Callback->getParamType(0)) &&
-        Context.hasSameUnqualifiedType(
-            Callback->getParamType(0),
-            Function->getParamDecl(0)->getType()->getPointeeType()) &&
+        utilityScalarDirectConversion(
+            Context, Function->getParamDecl(0)->getType()->getPointeeType(),
+            Callback->getParamType(0)) &&
         (Callback->getReturnType()->isVoidType() ||
          utilityScalar(Context, Callback->getReturnType())))
       return UtilityOperation::AlgorithmForEachN;
@@ -7453,11 +7451,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         utilityAlgorithmWritableScalarPointer(
             Context, Function->getParamDecl(OutputIndex)->getType()) &&
         Callback && Callback->getNumParams() == (Binary ? 2u : 1u) &&
-        utilityScalar(Context, Callback->getParamType(0)) &&
+        utilityScalarDirectConversion(
+            Context, Function->getParamDecl(0)->getType()->getPointeeType(),
+            Callback->getParamType(0)) &&
         utilityScalar(Context, Callback->getReturnType()) &&
-        Context.hasSameUnqualifiedType(
-            Callback->getParamType(0),
-            Function->getParamDecl(0)->getType()->getPointeeType()) &&
         Context.hasSameUnqualifiedType(
             Callback->getReturnType(),
             Function->getParamDecl(OutputIndex)->getType()->getPointeeType()) &&
@@ -7465,11 +7462,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
              Function->getParamDecl(OutputIndex)->getType()) &&
         Same(Call->getType(), Function->getReturnType());
     if (Binary)
-      Valid = Valid && AlgorithmPointerParameter(2) &&
-              utilityScalar(Context, Callback->getParamType(1)) &&
-              Context.hasSameUnqualifiedType(
-                  Callback->getParamType(1),
-                  Function->getParamDecl(2)->getType()->getPointeeType());
+      Valid =
+          Valid && AlgorithmPointerParameter(2) &&
+          utilityScalarDirectConversion(
+              Context, Function->getParamDecl(2)->getType()->getPointeeType(),
+              Callback->getParamType(1));
     if (Valid)
       return Binary ? UtilityOperation::AlgorithmTransformBinary
                     : UtilityOperation::AlgorithmTransformUnary;

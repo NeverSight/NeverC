@@ -3911,8 +3911,8 @@ extern "C" int *algorithm_stable_partition(
 #include <algorithm>
 extern "C" long algorithm_callback_traversal(
     const int *first, const int *last, const short *second, long *output,
-    int *generated, int count, void (*visit)(int), long (*unary)(int),
-    long (*binary)(int, short), int (*generator)()) {
+    int *generated, int count, void (*visit)(long), long (*unary)(double),
+    long (*binary)(long, double), int (*generator)()) {
   auto returned = std::for_each(first, last, visit);
   const int *visited = std::for_each_n(first, count, visit);
   long *unary_end = std::transform(first, last, output, unary);
@@ -3944,10 +3944,6 @@ extern "C" long algorithm_callback_traversal(
     check("v2-algorithm-callback-traversal-reference",
           'void visit(const int&){}\n#include <algorithm>\nint main(){int a[2]{1,2};std::for_each(a,a+2,visit);return 0;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
-    check("v2-algorithm-callback-traversal-conversion",
-          'long op(long n){return n;}\n#include <algorithm>\nint main(){int a[2]{1,2};long out[2]{};return std::transform(a,a+2,out,op)==out+2?0:1;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
-
     # Windows driver defaults must not change core-v2 source visibility or
     # standard diagnostics. Exercise both MSVC architectures on every CI host.
     standard_template_parsing = {

@@ -32332,10 +32332,10 @@ TEST_F(TranslateTest, CoreV2AlgorithmCallbackTraversalRunAtBothOptimizations) {
 int calls;
 int total;
 int generated;
-void accumulate(int n) { ++calls; total += n; }
-int observe(int n) { ++calls; total += n; return n; }
-long square(int n) { ++calls; return static_cast<long>(n) * n; }
-long combine(int left, short right) { ++calls; return left + right; }
+void accumulate(long n) { ++calls; total += n; }
+int observe(double n) { ++calls; total += n; return int(n); }
+long square(double n) { ++calls; return long(n * n); }
+long combine(long left, double right) { ++calls; return left + long(right); }
 int next_value() { ++calls; return ++generated; }
 enum Level : unsigned char { low, high };
 Level next_level() { ++calls; return calls % 2 ? low : high; }
@@ -32346,7 +32346,7 @@ int main() {
   int effects = 0;
   calls = 0;
   total = 0;
-  void (*action)(int) = accumulate;
+  void (*action)(long) = accumulate;
   auto returned = std::for_each((++effects, input), (++effects, input + 4),
                                 (++effects, action));
   if (effects != 3 || returned != action || calls != 4 || total != 10)
@@ -32443,7 +32443,8 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2AlgorithmCallbackTraversalRequiresExactFunctions) {
+TEST_F(TranslateTest,
+       CoreV2AlgorithmCallbackTraversalRequiresValueCallbacksAndExactResults) {
   struct Rejection {
     const char *Name;
     const char *Source;
@@ -32455,10 +32456,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmCallbackTraversalRequiresExactFunctions) {
       {"function-object",
        "struct F{void operator()(int)const{}};\n#include <algorithm>\n"
        "int main(){int a[2]{1,2};std::for_each(a,a+2,F{});return 0;}"},
-      {"converted-transform-parameter",
-       "long op(long n){return n;}\n#include <algorithm>\n"
-       "int main(){int a[2]{1,2};long out[2]{};"
-       "return std::transform(a,a+2,out,op)==out+2?0:1;}"},
       {"converted-transform-result",
        "int op(int n){return n;}\n#include <algorithm>\n"
        "int main(){int a[2]{1,2};long out[2]{};"
