@@ -6769,7 +6769,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Function->getParamDecl(1)->getType()) &&
       utilityAlgorithmWritableScalarPointer(
           Context, Function->getParamDecl(0)->getType()) &&
-      AlgorithmValueParameter(2, 0) &&
+      AlgorithmEqualityValueParameter(2, 0) &&
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmRemove;
@@ -6780,7 +6780,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       AlgorithmTransferParameters(0, 2) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      AlgorithmValueParameter(3, 0) &&
+      AlgorithmEqualityValueParameter(3, 0) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmRemoveCopy;

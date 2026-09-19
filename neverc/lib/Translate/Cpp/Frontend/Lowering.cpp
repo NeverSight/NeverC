@@ -3198,6 +3198,13 @@ class FunctionLowering {
           snapshot(address(lvalue(Call->getArg(ValueIndex)),
                            Call->getArg(ValueIndex)->getType(), L),
                    L);
+      auto Common = utilityScalarComparisonType(
+          A.Context, Call->getArg(0)->getType()->getPointeeType(),
+          Call->getArg(ValueIndex)->getType(), false);
+      if (!Common)
+        reject(L, "algorithm remove",
+               "The range element and value have no equality common type.");
+      const auto ComparisonType = type(*Common, L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto InputType = type(Call->getArg(0)->getType(), L);
       const auto OutputType = type(Call->getArg(Copying ? 2 : 0)->getType(), L);
@@ -3211,7 +3218,8 @@ class FunctionLowering {
       label(Check, L);
       branch(binary("!=", Current, Last, "bool", L), Compare, End, L);
       label(Compare, L);
-      branch(binary("==", dereference(Current, L), dereference(ValueAddress, L),
+      branch(binary("==", cast(dereference(Current, L), ComparisonType, L),
+                    cast(dereference(ValueAddress, L), ComparisonType, L),
                     "bool", L),
              Next, Transfer, L);
       label(Transfer, L);

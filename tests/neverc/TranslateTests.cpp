@@ -29103,13 +29103,14 @@ int main() {
     return 1;
 
   int removed[7]{1, 2, 3, 2, 4, 2, 5};
-  int *removed_end = std::remove(removed, removed + 7, 2);
+  short remove_needle = 2;
+  int *removed_end = std::remove(removed, removed + 7, remove_needle);
   if (removed_end != removed + 4 || removed[0] != 1 || removed[1] != 3 ||
       removed[2] != 4 || removed[3] != 5)
     return 2;
   const int source[7]{1, 2, 3, 2, 4, 2, 5};
   long copied[7]{};
-  if (std::remove_copy(source, source + 7, copied, 2) != copied + 4 ||
+  if (std::remove_copy(source, source + 7, copied, remove_needle) != copied + 4 ||
       copied[0] != 1 || copied[1] != 3 || copied[2] != 4 ||
       copied[3] != 5)
     return 3;
