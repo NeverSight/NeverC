@@ -185,10 +185,13 @@ bounded inner extents, additionally accepts an integer constant expression from
 zero through 65536 and lowers through the matching checked global new[]/delete[]
 cookie path. The scalar factory value-initializes
 its object or calls an exact source-owned non-template `noexcept` record
-constructor with the call-site arguments. The array factory value-initializes
-each scalar element or calls an exact zero-parameter source-owned non-template
-`noexcept` record constructor. Multidimensional factories apply the outer count
-to the fixed inner shape and flatten base-element construction and destruction.
+constructor with the call-site arguments and any authenticated source-owned
+trailing defaults. The array factory value-initializes each scalar element or
+calls an exact source-owned non-template `noexcept` record constructor whose
+parameters all have authenticated source-owned defaults. Supplied arguments
+and selected defaults are evaluated once per constructed object.
+Multidimensional factories apply the outer count to the fixed inner shape and
+flatten base-element construction and destruction.
 Both return the same pointer-sized owner without a libc++ call. Exact runtime allocator specializations use an authenticated
 one-byte stateless carrier. Default,
 copy/move and non-void converting construction, same-type assignment,
@@ -240,9 +243,9 @@ exactly one same-record reference parameter, a supported definition and a
 resolved `noexcept(true)` specification. Move preserves Clang's selected move
 or copy fallback. Default-heap allocation, dynamic or overflowing allocation
 counts, over-aligned elements, other allocator-traits forwarding calls,
-potentially throwing, default-argument or
-constructor-template source-record construction, nontrivial by-value record
-parameters, runtime-count ownership factories, other smart pointers and the
+potentially throwing or constructor-template source-record construction,
+default-argument allocator construction, nontrivial by-value record parameters,
+runtime-count ownership factories, other smart pointers and the
 remaining memory operations stay outside the direct lowering boundary.
 Core v2 never admits the `platform` root.
 Math v1 continues to use its separately checked libc++, resource and Darwin

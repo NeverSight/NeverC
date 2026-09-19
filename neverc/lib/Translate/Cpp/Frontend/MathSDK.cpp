@@ -3925,7 +3925,8 @@ approvedUtilityMakeUniqueCall(const State &S, const SourceManager &SM,
             Context, Function->getParamDecl(0)->getType()->getPointeeType(),
             ValueElement))
       return std::nullopt;
-    return UtilityMakeUniqueCall{*Owner, Allocation, nullptr, ArrayCount};
+    return UtilityMakeUniqueCall{*Owner, Allocation, nullptr, nullptr,
+                                 ArrayCount};
   }
 
   const auto *Record = definedRecord(ValueElement.getUnqualifiedType());
@@ -3939,13 +3940,15 @@ approvedUtilityMakeUniqueCall(const State &S, const SourceManager &SM,
       !S.owns(SM, Record->getLocation()) || !Construction || !Constructor ||
       Constructor->getParent()->getCanonicalDecl() !=
           Record->getCanonicalDecl() ||
-      Construction->getNumArgs() != ArgumentCount ||
-      Constructor->getNumParams() != ArgumentCount ||
+      Construction->getNumArgs() < ArgumentCount ||
+      Constructor->getNumParams() != Construction->getNumArgs() ||
       Constructor->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
       !supportedConstructor(Constructor) || !Prototype ||
       !Prototype->isNothrow() || !S.owns(SM, Constructor->getLocation()))
     return std::nullopt;
   for (unsigned I = 0; I < ArgumentCount; ++I) {
+    if (isa<CXXDefaultArgExpr>(Construction->getArg(I)))
+      return std::nullopt;
     const auto Forwarded =
         Function->getParamDecl(I)->getType()->getPointeeType();
     const auto Parameter = Constructor->getParamDecl(I)->getType();
@@ -3964,6 +3967,16 @@ approvedUtilityMakeUniqueCall(const State &S, const SourceManager &SM,
       return std::nullopt;
     }
   }
+  for (unsigned I = ArgumentCount; I < Construction->getNumArgs(); ++I) {
+    const auto *Default = dyn_cast<CXXDefaultArgExpr>(Construction->getArg(I));
+    const auto *Init = selectedDefaultArgument(Default, Context);
+    const auto *Parameter = Default ? Default->getParam() : nullptr;
+    if (!Default || !Init || !Parameter || Default->hasRewrittenInit() ||
+        Parameter != Constructor->getParamDecl(I) ||
+        Parameter->getFunctionScopeIndex() != I ||
+        !S.owns(SM, Init->getExprLoc()))
+      return std::nullopt;
+  }
   if (!Constructor->isTrivial()) {
     const FunctionDecl *Definition = nullptr;
     if (!Constructor->hasBody(Definition) || !Definition ||
@@ -3971,7 +3984,8 @@ approvedUtilityMakeUniqueCall(const State &S, const SourceManager &SM,
       return std::nullopt;
     Constructor = cast<CXXConstructorDecl>(Definition);
   }
-  return UtilityMakeUniqueCall{*Owner, Allocation, Constructor, ArrayCount};
+  return UtilityMakeUniqueCall{*Owner, Allocation, Construction, Constructor,
+                               ArrayCount};
 }
 
 static bool utilityAllocatorForwardingArguments(

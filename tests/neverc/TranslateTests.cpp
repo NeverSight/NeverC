@@ -25909,11 +25909,13 @@ TEST_F(TranslateTest, CoreV2MemoryMakeUniqueRunsAtBothOptimizations) {
 #include <memory>
 using Size = decltype(sizeof(0));
 struct Storage { unsigned long long alignment; unsigned char bytes[64]; };
-Storage storage[9]{};
+Storage storage[11]{};
 int allocations;
 int releases;
 int destroyed;
 int effects;
+int default_calls;
+int default_sum;
 Size allocated_bytes;
 Size released_bytes;
 void *operator new(Size size) {
@@ -25928,10 +25930,16 @@ int mark(int value) {
   effects = effects * 10 + value;
   return value;
 }
+int default_mark(int value) noexcept {
+  ++default_calls;
+  default_sum += value;
+  return value;
+}
 struct Owned {
   int first;
   int second;
-  Owned(int left, int right) noexcept : first(left), second(right) {}
+  Owned(int left = default_mark(1), int right = default_mark(2)) noexcept
+      : first(left), second(right) {}
   ~Owned() noexcept { destroyed += first + second; }
 };
 struct Reference {
@@ -25957,6 +25965,8 @@ int main() {
   auto scalar = create(mark(3));
   auto qualified = std::make_unique<const int>(7);
   auto object = std::make_unique<Owned>(mark(4), mark(5));
+  auto defaulted = std::make_unique<Owned>();
+  auto trailing_default = std::make_unique<Owned>(6);
   int source = 6;
   auto reference = std::make_unique<Reference>(source);
   auto aggregate = std::make_unique<Aggregate>();
@@ -25966,14 +25976,19 @@ int main() {
   auto moved = std::make_unique<Copyable>(static_cast<Copyable &&>(copy_source));
   if (*zero != 0 || *scalar != 3 || *qualified != 7 ||
       object->first != 4 || object->second != 5 ||
+      defaulted->first != 1 || defaulted->second != 2 ||
+      trailing_default->first != 6 || trailing_default->second != 2 ||
       reference->value != 6 || aggregate->value != 0 || *converted != 8 ||
       copied->value != 9 || moved->value != 9 || copy_source.value != 0 ||
-      (effects != 345 && effects != 354))
+      (effects != 345 && effects != 354) || default_calls != 3 ||
+      default_sum != 5)
     return 1;
   zero.reset();
   scalar.reset();
   qualified.reset();
   object.reset();
+  defaulted.reset();
+  trailing_default.reset();
   reference.reset();
   aggregate.reset();
   converted.reset();
@@ -25981,8 +25996,8 @@ int main() {
   moved.reset();
   const Size expected = 3 * sizeof(int) + sizeof(long) + sizeof(Owned) +
                         sizeof(Reference) + sizeof(Aggregate) +
-                        2 * sizeof(Copyable);
-  return allocations == 9 && releases == 9 && destroyed == 33 &&
+                        2 * sizeof(Copyable) + 2 * sizeof(Owned);
+  return allocations == 11 && releases == 11 && destroyed == 44 &&
                  allocated_bytes == expected && released_bytes == expected
              ? 0
              : 2;
@@ -26021,9 +26036,10 @@ Size allocated_bytes;
 Size released_bytes;
 int constructed;
 int destroyed_order;
+int next_owned() noexcept { return ++constructed; }
 struct Owned {
   int value;
-  Owned() noexcept : value(++constructed) {}
+  Owned(int initial = next_owned()) noexcept : value(initial) {}
   ~Owned() noexcept { destroyed_order = destroyed_order * 10 + value; }
 };
 void *operator new[](Size size) {
@@ -26262,13 +26278,6 @@ TEST_F(TranslateTest, CoreV2MemoryMakeUniqueRequiresExactObjectForms) {
        "int main(){auto value=std::make_unique<int[][65536]>(4);"
        "return value[0][0];}",
        "TR0201"},
-      {"array-default-constructor-argument",
-       "#include <memory>\nusing S=decltype(sizeof(0));unsigned char b[16];"
-       "void*operator new[](S){return b;}void operator "
-       "delete[](void*)noexcept{}"
-       "struct R{R(int=1)noexcept{}};"
-       "int main(){auto value=std::make_unique<R[]>(1);}",
-       "TR0203"},
       {"array-class-specific-new",
        "#include <memory>\nusing S=decltype(sizeof(0));unsigned char b[16];"
        "void operator delete[](void*)noexcept{}"
@@ -26279,12 +26288,6 @@ TEST_F(TranslateTest, CoreV2MemoryMakeUniqueRequiresExactObjectForms) {
        "#include <memory>\nusing S=decltype(sizeof(0));unsigned char b[8];"
        "void*operator new(S){return b;}void operator delete(void*)noexcept{}"
        "struct R{R(){}};int main(){auto value=std::make_unique<R>();}",
-       "TR0203"},
-      {"default-constructor-argument",
-       "#include <memory>\nusing S=decltype(sizeof(0));unsigned char b[8];"
-       "void*operator new(S){return b;}void operator delete(void*)noexcept{}"
-       "struct R{R(int=1)noexcept{}};"
-       "int main(){auto value=std::make_unique<R>();}",
        "TR0203"},
       {"class-specific-new",
        "#include <memory>\nusing S=decltype(sizeof(0));unsigned char b[8];"

@@ -1548,14 +1548,19 @@ Exact single-object `std::make_unique<T>(args...)` authenticates its pinned
 template specialization, non-array `new` and raw-pointer owner construction,
 then emits an ordinary checked source-defined global-new `call`, scalar
 initialization or the selected source-owned non-template `noexcept` constructor
-call, and the same synthetic owner field store. Exact unbounded-array
+call with authenticated source-owned trailing defaults, and the same synthetic
+owner field store. Supplied arguments and selected defaults are each evaluated
+once. Exact unbounded-array
 `std::make_unique<T[]>(count)`, where `T` may have complete bounded inner
 extents, authenticates its `T[]` specialization, one `size_t` parameter,
 value-initializing `new[]` expression and libc++ private array-owner
 construction. The call-site count must be an integer constant expression from
 zero through 65536. It emits the checked global-new[] `call`, target cookie and
-flattened scalar value initialization or exact zero-parameter source-owned
-non-template `noexcept` base-record constructor calls.
+flattened scalar value initialization or exact zero-explicit-argument
+source-owned non-template `noexcept` base-record constructor calls. Such a
+constructor may have parameters only when every semantic argument is its
+selected unrewritten source-owned default expression; each default is evaluated
+independently for every flattened base element.
 Later default destruction uses the existing checked global-delete or reverse
 global-delete[] path. Custom destruction calls the admitted operator instead.
 These operations add no wire instruction, SDK call, native-heap import or

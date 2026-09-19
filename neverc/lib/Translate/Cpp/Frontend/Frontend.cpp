@@ -1365,7 +1365,8 @@ static bool lazyTemplateDefault(const ParmVarDecl *P) {
          concreteFriendFunction(Function);
 }
 
-const Expr *defaultArgumentInitializer(const ParmVarDecl *P, ASTContext &Context) {
+const Expr *defaultArgumentInitializer(const ParmVarDecl *P,
+                                       const ASTContext &Context) {
   if (!P || P->isImplicit() || P->isInvalidDecl() || !P->hasDefaultArg() ||
       P->hasUnparsedDefaultArg() || P->hasUninstantiatedDefaultArg() ||
       P->getType().isNull() || P->getType()->isDependentType())
@@ -1387,7 +1388,7 @@ const Expr *defaultArgumentInitializer(const ParmVarDecl *P, ASTContext &Context
 }
 
 const Expr *selectedDefaultArgument(const CXXDefaultArgExpr *Default,
-                                    ASTContext &Context) {
+                                    const ASTContext &Context) {
   if (!Default || !defaultArgumentInitializer(Default->getParam(), Context) ||
       Default->getType().isNull() || Default->isTypeDependent() ||
       Default->isValueDependent() || Default->isInstantiationDependent())

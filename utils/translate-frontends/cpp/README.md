@@ -225,8 +225,11 @@ and unbounded-array
 extents, for integer constant expressions from zero through 65536 lower through
 checked source-defined global new/delete or new[]/delete[]. They value-initialize
 flattened scalars or call supported source-owned
-non-template `noexcept` record constructors and return the authenticated
-pointer-sized owner without a libc++ call. Exact `destroy_at`, `destroy` and
+non-template `noexcept` record constructors, including authenticated
+source-owned trailing defaults. Defaults are evaluated once per constructed
+object, including independently for every flattened array element. The
+factories return the authenticated pointer-sized owner without a libc++ call.
+Exact `destroy_at`, `destroy` and
 `destroy_n` calls on scalar object pointers retain
 argument evaluation and counted iterator results without emitting a trivial
 destructor call. The ten C++17 `uninitialized_*` copy, move, fill, default and

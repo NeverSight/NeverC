@@ -1241,6 +1241,7 @@ class FunctionLowering {
     };
     auto ConstructAt = [&](Expression Place, QualType ElementType,
                            const CXXConstructorDecl *Constructor,
+                           const CXXConstructExpr *Construction,
                            unsigned ArgumentIndex,
                            llvm::StringRef Description) {
       if (ArgumentIndex > Call->getNumArgs())
@@ -1262,15 +1263,19 @@ class FunctionLowering {
         return;
       }
 
-      if (Constructor->getNumParams() != ArgumentCount)
+      const unsigned ConstructionArguments =
+          Construction ? Construction->getNumArgs() : ArgumentCount;
+      if (ConstructionArguments < ArgumentCount ||
+          Constructor->getNumParams() != ConstructionArguments)
         reject(L, Description,
                "The selected constructor and argument counts differ.");
-      if (!ArgumentCount && Constructor->isDefaultConstructor()) {
+      if (!ConstructionArguments && Constructor->isDefaultConstructor()) {
         constructMemoryDefault(std::move(Place), ElementType, Constructor, true,
                                L);
         return;
       }
-      if (ArgumentCount == 1 && Constructor->isCopyOrMoveConstructor()) {
+      if (ArgumentCount == 1 && ConstructionArguments == 1 &&
+          Constructor->isCopyOrMoveConstructor()) {
         auto Source = argument(Call->getArg(ArgumentIndex),
                                Constructor->getParamDecl(0)->getType());
         constructMemorySource(std::move(Place), ElementType, Constructor,
@@ -1283,14 +1288,15 @@ class FunctionLowering {
       json::Array Args;
       Args.push_back(snapshot(
           address(std::move(Place), ElementType.getUnqualifiedType(), L), L));
-      for (unsigned I = 0; I < ArgumentCount; ++I) {
+      for (unsigned I = 0; I < ConstructionArguments; ++I) {
         const auto Parameter = Constructor->getParamDecl(I)->getType();
-        const auto *Actual = Call->getArg(ArgumentIndex + I);
+        const auto *Actual = I < ArgumentCount ? Call->getArg(ArgumentIndex + I)
+                                               : Construction->getArg(I);
         if (Parameter->isReferenceType() || recordValue(Parameter))
           Args.push_back(argument(Actual, Parameter));
         else
           Args.push_back(snapshot(
-              cast(expression(Actual), type(Parameter, L), L), L));
+              cast(argument(Actual, Parameter), type(Parameter, L), L), L));
       }
       chargeCall(Args, L);
       Body.push_back(json::Object{{"op", "call"},
@@ -1307,7 +1313,8 @@ class FunctionLowering {
                "The checked pointer and construction arguments are missing.");
       auto Pointer = snapshot(expression(Call->getArg(PointerIndex)), L);
       ConstructAt(dereference(std::move(Pointer), L), Info.ElementType,
-                  Info.Constructor, ArgumentIndex, "allocator construct");
+                  Info.Constructor, nullptr, ArgumentIndex,
+                  "allocator construct");
     };
     auto AllocatorHeap = [&](const UtilityAllocatorHeapCall &Info) {
       if (Info.Traits) {
@@ -1456,8 +1463,8 @@ class FunctionLowering {
                       L),
                  L);
         ConstructAt(dereference(std::move(MutablePointer), L),
-                    Info->Owner.ElementType, Info->Constructor, 0,
-                    "make_unique construction");
+                    Info->Owner.ElementType, Info->Constructor,
+                    Info->Construction, 0, "make_unique construction");
         return Result;
       }();
 

@@ -338,6 +338,7 @@ approvedUtilityUniquePtrCall(const State &S, const clang::SourceManager &SM,
 struct UtilityMakeUniqueCall {
   UtilityUniquePtrRecord Owner;
   const clang::CXXNewExpr *Allocation;
+  const clang::CXXConstructExpr *Construction;
   const clang::CXXConstructorDecl *Constructor;
   std::optional<uint64_t> ArrayCount = std::nullopt;
 };
@@ -924,10 +925,12 @@ std::optional<unsigned> concretePackSize(const clang::SizeOfPackExpr *E);
 const clang::Expr *scalarTemplateReplacement(
     const clang::SubstNonTypeTemplateParmExpr *Substitution,
     clang::ASTContext &Context);
-const clang::Expr *defaultArgumentInitializer(const clang::ParmVarDecl *Parameter,
-                                               clang::ASTContext &Context);
-const clang::Expr *selectedDefaultArgument(const clang::CXXDefaultArgExpr *Default,
-                                          clang::ASTContext &Context);
+const clang::Expr *
+defaultArgumentInitializer(const clang::ParmVarDecl *Parameter,
+                           const clang::ASTContext &Context);
+const clang::Expr *
+selectedDefaultArgument(const clang::CXXDefaultArgExpr *Default,
+                        const clang::ASTContext &Context);
 struct RangeForComponents {
   const clang::VarDecl *Range, *Begin, *End, *Variable;
 };

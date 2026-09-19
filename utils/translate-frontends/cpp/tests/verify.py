@@ -1644,9 +1644,11 @@ int array_released_count;
 int destroyed;
 int custom_released;
 int custom_deleter_arguments;
+int default_arguments;
+int next_default_owned() noexcept { return ++default_arguments; }
 struct Owned {
   int value;
-  Owned(int value = 0) noexcept : value(value) {}
+  Owned(int value = next_default_owned()) noexcept : value(value) {}
   ~Owned() noexcept { destroyed = destroyed * 10 + value; }
 };
 struct CustomDispose {
@@ -1783,9 +1785,12 @@ extern "C" int memory_make_unique(int value) {
   return owner && *owner == value ? 0 : 1;
 }
 extern "C" int memory_make_unique_array() {
-  auto owner = std::make_unique<int[]>(2);
-  owner[1] = 7;
-  return owner && owner[0] == 0 && owner[1] == 7 ? 0 : 1;
+  auto owner = std::make_unique<Owned[]>(2);
+  owner[1].value = 7;
+  return owner && owner[0].value == 1 && owner[1].value == 7 &&
+                 default_arguments == 2
+             ? 0
+             : 1;
 }
 extern "C" int memory_multidimensional(int (*pointer)[2]) {
   std::unique_ptr<int[][2]> owner(pointer);
@@ -1844,7 +1849,7 @@ extern "C" int memory_custom_unique_ptr(int *pointer) {
             if len(record["fields"]) == 1 and
                record["fields"][0]["name"] == "nct_unique_ptr_pointer"
         ]
-        assert len(all_unique_records) == 8, data
+        assert len(all_unique_records) == 7, data
         unique_pointer_types = {
             record["fields"][0]["type"] for record in all_unique_records
         }
@@ -1997,6 +2002,18 @@ extern "C" int memory_custom_unique_ptr(int *pointer) {
         calls = scalar_calls + array_calls + array_factory_calls
         assert calls, data
         assert all("callee" in call for call in calls), data
+        default_argument_functions = [
+            function for function in data["functions"]
+            if function["result"] == "int" and not function["params"] and
+               any(call["callee"] == function["name"] and
+                   "target" in call for call in array_factory_calls)
+        ]
+        assert len(default_argument_functions) == 1, data
+        assert len([
+            call for call in array_factory_calls
+            if call["callee"] == default_argument_functions[0]["name"] and
+               "target" in call
+        ]) == 2, data
         allocation_functions = [
             function for function in data["functions"]
             if function["result"] == "ptr:void" and
@@ -2024,16 +2041,16 @@ extern "C" int memory_custom_unique_ptr(int *pointer) {
                    for call in scalar_calls)
         ]
         assert len(delete_functions) == 1, data
-        array_unsized_delete_functions = [
+        array_factory_delete_functions = [
             function for function in data["functions"]
             if function["result"] == "void" and
-               [parameter["type"] for parameter in function["params"]] ==
-               ["ptr:void"] and
+               function["params"] and
+               function["params"][0]["type"] == "ptr:void" and
                any(call["callee"] == function["name"]
                    for call in array_factory_calls)
         ]
-        assert len(array_unsized_delete_functions) == 1, data
-        assert (array_unsized_delete_functions[0]["name"] !=
+        assert len(array_factory_delete_functions) == 1, data
+        assert (array_factory_delete_functions[0]["name"] !=
                 delete_functions[0]["name"]), data
         array_delete_functions = [
             function for function in data["functions"]

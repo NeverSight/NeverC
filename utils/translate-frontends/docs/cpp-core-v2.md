@@ -571,7 +571,10 @@ the checked source-defined global new path before evaluating construction
 arguments. A scalar accepts value initialization or one admitted direct scalar
 conversion. A complete source-owned non-union record calls the exact
 source-owned non-template `noexcept` constructor selected by Clang, including
-default, copy, move and multi-argument forms.
+default, copy, move and multi-argument forms. Omitted trailing parameters must
+be represented by the exact selected constructor's unrewritten source-owned
+default expressions. Supplied arguments and selected defaults are each
+evaluated once after allocation.
 
 The array path authenticates its concrete `T[]` specialization, one `size_t`
 parameter, `new T[count]()` expression, libc++ private array-owner construction
@@ -580,22 +583,25 @@ outer extent and must be an integer constant expression from zero through
 65536. Lowering combines it with all fixed inner extents, computes the checked
 byte extent, stores the target array cookie when required and value-initializes
 every flattened scalar element. A complete source-owned non-union base record
-must select an exact zero-parameter source-owned non-template `noexcept` default
-constructor, which is called once for each flattened element. The resulting raw
-pointer is installed in the normal pointer-sized owner, so return destinations,
-automatic destruction and the checked global-delete or reverse global-delete[]
-path remain shared with direct `unique_ptr` construction. Neither factory emits
-a libc++ runtime call.
+must select an exact source-owned non-template `noexcept` constructor callable
+with zero explicit arguments. Every semantic argument must be the selected
+parameter's unrewritten source-owned default expression. The constructor and its
+defaults are evaluated independently once for each flattened element, with
+temporary cleanup before construction advances to the next element. The
+resulting raw pointer is installed in the normal pointer-sized owner, so return
+destinations, automatic destruction and the checked global-delete or reverse
+global-delete[] path remain shared with direct `unique_ptr` construction.
+Neither factory emits a libc++ runtime call.
 
 Default deletion requires a complete base element within the target's default
 new alignment and a matching source-owned global sized or unsized delete
 definition. Class-specific delete/delete[], volatile elements,
 member-function addresses, const-removing or base-adjusting converting moves
 and base-adjusting heterogeneous comparisons remain rejected at this boundary.
-Runtime-count `make_unique`, class-specific allocation, throwing or
-default-argument record construction, over-aligned elements, factory function
-addresses and other ownership factories remain rejected. Every admitted
-operation emits no libc++ runtime call and enables the checked
+Runtime-count `make_unique`, class-specific allocation, throwing record
+construction, over-aligned elements, factory function addresses and other
+ownership factories remain rejected. Every admitted operation emits no libc++
+runtime call and enables the checked
 `memory_lifetimes` policy.
 
 Exact `std::allocator<T>` metadata is admitted when `T` is non-cv `void` or a

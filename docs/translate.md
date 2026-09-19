@@ -85,7 +85,9 @@ call the exact source-owned non-template `noexcept` record constructor, and
 install the resulting pointer in that owner. Multidimensional construction
 uses the outer count and fixed inner extents while the checked global
 new[]/delete[] cookie path tracks flattened base elements; runtime array counts
-remain rejected.
+remain rejected. Supplied constructor arguments and authenticated source-owned
+trailing defaults are each evaluated once. Array factories evaluate those
+defaults independently for every flattened base element.
 Existing address operations, scalar and source-record destruction, scalar or
 trivial source-record uninitialized construction, and nothrow zero-parameter
 source-record default/value construction operations lower directly.
