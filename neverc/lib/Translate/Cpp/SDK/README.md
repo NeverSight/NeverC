@@ -2,9 +2,9 @@
 
 This directory supplies the immutable header inputs for NeverC's built-in C++
 frontend. The distribution is
-`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r9`. It contains the 562 header
+`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r10`. It contains the 608 header
 files admitted by the current
-`clang20.1.8-libcxx200100-macos15.5` catalog: 466 libc++ headers, 14 Clang
+`clang20.1.8-libcxx200100-macos15.5` catalog: 512 libc++ headers, 14 Clang
 resource headers, one NeverC resource header, and 81 Darwin platform headers.
 The upstream-source bytes, including copyright and license notices, are
 preserved; the NeverC-authored C string declaration shim is identified
@@ -268,6 +268,11 @@ potentially throwing or constructor-template source-record construction,
 nontrivial by-value record parameters, runtime-count ownership factories, other
 smart pointers and the
 remaining memory operations stay outside the direct lowering boundary.
+The `<functional>` surface has a 346-file libc++/resource closure on every
+core-v2 target. The exact C++17 public header and all consumed component
+headers are authenticated without platform headers. This increment admits
+header parsing; standard callable objects and runtime operations remain outside
+the documented direct lowering boundary.
 Core v2 never admits the `platform` root.
 Math v1 continues to use its separately checked libc++, resource and Darwin
 platform closure for `<cmath>`.

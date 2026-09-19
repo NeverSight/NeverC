@@ -14576,15 +14576,16 @@ public:
             Name != "cstddef" && Name != "utility" && Name != "array" &&
             Name != "tuple" && Name != "iterator" && Name != "algorithm" &&
             Name != "numeric" && Name != "initializer_list" &&
-            Name != "optional" && Name != "memory" && Name != "new"))) {
+            Name != "optional" && Name != "memory" && Name != "new" &&
+            Name != "functional"))) {
         reject(L, "include",
                "Only exact #include <type_traits>, #include <cstdint> and "
                "#include <limits>, #include <cstddef>, #include <utility> and "
                "#include <array>, #include <tuple>, #include <iterator>, "
                "#include <algorithm>, #include <numeric>, "
                "#include <initializer_list>, #include <optional> and "
-               "#include <memory> and #include <new> entries are admitted in "
-               "cpp-core-v2.");
+               "#include <memory>, #include <new> and #include <functional> "
+               "entries are admitted in cpp-core-v2.");
         return;
       }
       if (!S.owns(SM, L) && !S.sdkFile(SM, L))

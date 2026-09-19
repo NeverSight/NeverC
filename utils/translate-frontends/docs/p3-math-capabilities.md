@@ -34,13 +34,13 @@ source `fenv` API is implied by the runtime probes.
 ## Built-in SDK and approved catalog
 
 `cpp-math-v1` always uses distribution
-`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r9`. No SDK descriptor, host SDK
+`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r10`. No SDK descriptor, host SDK
 discovery or external root selection is involved. The removed `--cpp-sdk` option
 is rejected; `NEVERC_CPP_SDK` is ignored. Failed built-in SDK integrity checks use
 `TR0101` with the required distribution identity.
 
 The implementation-owned [catalog.json](../../../neverc/lib/Translate/Cpp/SDK/catalog.json)
-and its source files are compiled into NeverC. The catalog contains 562 approved
+and its source files are compiled into NeverC. The catalog contains 608 approved
 headers; the `<cmath>` dependency union remains 209 headers: 127 libc++ headers,
 one Clang resource header and
 81 platform headers. The original full Apple `SDKSettings.json` is not distributed.
@@ -49,7 +49,7 @@ NeverC supplies only `Version: "15.5"` and
 macOS targets. Its metadata SHA-256 is
 `58499bbeb3eb1aa9ca96358a097bc237a9beb14cfd3db9876d986534e59ea17e`.
 Catalog SHA-256 is
-`b01cc7085f50e8c6d80e8319c2ffa2184460f40e9dea98768e547b1ad37468e5`.
+`d5e0089c8b6da5df225a758113b6ce4498ee7f5a0eeb6aea1065690108ea20d1`.
 The [SDK provenance and license inventory](../../../neverc/lib/Translate/Cpp/SDK/README.md)
 records original byte hashes, public upstream sources and retained notices.
 This is a bounded header distribution, not a complete Apple SDK.
@@ -81,7 +81,7 @@ The request adds a single SDK envelope:
 ```json
 {
   "sdk": {
-    "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r9",
+    "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r10",
     "catalog_sha256": "<compiled catalog SHA-256>"
   }
 }

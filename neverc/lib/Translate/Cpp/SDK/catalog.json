@@ -1,7 +1,7 @@
 {
   "schema": "neverc.cpp.sdk.catalog",
   "version": 1,
-  "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r9",
+  "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r10",
   "clang_version": "20.1.8",
   "libcxx_version": 200100,
   "platform_sdk_version": "15.5",
@@ -159,6 +159,11 @@
       "root": "libcxx",
       "path": "__algorithm/half_positive.h",
       "sha256": "f1492d7a43e994f4d61f66cd41f28d91686351415382fe92fb4c5f70d2dc4e8f"
+    },
+    {
+      "root": "libcxx",
+      "path": "__algorithm/in_out_result.h",
+      "sha256": "dac26981ded3f0d0dae643f4b902c2832bab2cf2939e0df66ba3153b61bd3be2"
     },
     {
       "root": "libcxx",
@@ -349,6 +354,16 @@
       "root": "libcxx",
       "path": "__algorithm/radix_sort.h",
       "sha256": "f528c0a237e93dc2ebd1ac41551e69cc417f32e384aba3af65a0b350b651b703"
+    },
+    {
+      "root": "libcxx",
+      "path": "__algorithm/ranges_copy.h",
+      "sha256": "a5eec3253b9f4133ec367327aad922c1ed38bd3efceb3110b0fa97a480ea00b9"
+    },
+    {
+      "root": "libcxx",
+      "path": "__algorithm/ranges_copy_n.h",
+      "sha256": "0210016a0b92a7b4fcbe119308f8bcf3ae9dce8aeb8b81509efe21eb3a3d8dfc"
     },
     {
       "root": "libcxx",
@@ -782,6 +797,11 @@
     },
     {
       "root": "libcxx",
+      "path": "__debug_utils/sanitizers.h",
+      "sha256": "50036b4f7cd1c48eff51bfe516843693d2e843a00342b5726fa97266878e0b6b"
+    },
+    {
+      "root": "libcxx",
       "path": "__debug_utils/strict_weak_ordering_check.h",
       "sha256": "9f55cbf4ca5ad88d5f061e2bf875b562bf97de3d5e0ed50b29f724d5be8cedc6"
     },
@@ -812,8 +832,48 @@
     },
     {
       "root": "libcxx",
+      "path": "__format/enable_insertable.h",
+      "sha256": "c641200a886604038bd5cb4cce71bd764333ee58656917b54af3b0bccb4e4473"
+    },
+    {
+      "root": "libcxx",
       "path": "__functional/binary_function.h",
       "sha256": "caba108d7ad5fc25fd6fa6c84226a89fc8b7f278a3d8cf3df3015902e1a6ecc4"
+    },
+    {
+      "root": "libcxx",
+      "path": "__functional/binary_negate.h",
+      "sha256": "f823ba67644e5ca9487c79c62a6e33bbaa549d13f08edaad1a8a9a11b9f25b6f"
+    },
+    {
+      "root": "libcxx",
+      "path": "__functional/bind.h",
+      "sha256": "79a5beaa4c4f450ca05bdf6a54e982f56fac8b007c45b526cf88b64e2c786635"
+    },
+    {
+      "root": "libcxx",
+      "path": "__functional/binder1st.h",
+      "sha256": "6e3e12b04b3acdcd5142d3b2fd96755513bdf3345de7ac637444155c9292dda1"
+    },
+    {
+      "root": "libcxx",
+      "path": "__functional/binder2nd.h",
+      "sha256": "1480de07e2a6db8b21866223650cfdf744f2d2a261a35b1cd76263f7636b96d0"
+    },
+    {
+      "root": "libcxx",
+      "path": "__functional/boyer_moore_searcher.h",
+      "sha256": "1a678dc2a3f2fd64b80ebc9bf786858a3bf65fedbda8e47f76279ba2a868f9ec"
+    },
+    {
+      "root": "libcxx",
+      "path": "__functional/default_searcher.h",
+      "sha256": "3c826fcb5c01655be36e7d016522f3751df1743a5e5075d8244cb92d37589444"
+    },
+    {
+      "root": "libcxx",
+      "path": "__functional/function.h",
+      "sha256": "e5d9c43056bdaa559158f351cffec5b6f2dc2950e624c04e7434433588bf2578"
     },
     {
       "root": "libcxx",
@@ -832,8 +892,43 @@
     },
     {
       "root": "libcxx",
+      "path": "__functional/is_transparent.h",
+      "sha256": "111a382ad2005586d01592ffb40a41544504fd400f44c47c0ae6efb06ff39a16"
+    },
+    {
+      "root": "libcxx",
+      "path": "__functional/mem_fn.h",
+      "sha256": "be2533927b79d76701755e1df1177d8e0b3b49115660b395889ea293924b62da"
+    },
+    {
+      "root": "libcxx",
+      "path": "__functional/mem_fun_ref.h",
+      "sha256": "3e677f15b402043b8caaad22a4ecb4403cb02894ef9312675bfc22ee0634220a"
+    },
+    {
+      "root": "libcxx",
+      "path": "__functional/not_fn.h",
+      "sha256": "2e45e6c90cde94c77004866801dca82f81d5d80f56859a078d071ec54d01d371"
+    },
+    {
+      "root": "libcxx",
       "path": "__functional/operations.h",
       "sha256": "9b004f333a2b8db17d4d48194f794ba219dfd00f1f6798db2a02e25c3f70d820"
+    },
+    {
+      "root": "libcxx",
+      "path": "__functional/perfect_forward.h",
+      "sha256": "45f100aa22f870682be816fb2f300c58994247af38f06d1e0b6bcd5ed31ec566"
+    },
+    {
+      "root": "libcxx",
+      "path": "__functional/pointer_to_binary_function.h",
+      "sha256": "10c61729744297462374323578eb46967404e1f5da566c2301a800b113773928"
+    },
+    {
+      "root": "libcxx",
+      "path": "__functional/pointer_to_unary_function.h",
+      "sha256": "55b37e9ab88333dc9eb7a6a0be89531548be78575c701edd32cc2277e351c601"
     },
     {
       "root": "libcxx",
@@ -849,6 +944,11 @@
       "root": "libcxx",
       "path": "__functional/unary_function.h",
       "sha256": "b49095b80a3b409446197ac774c4597e66b4a64dce96bd819480b1c46a1f5d39"
+    },
+    {
+      "root": "libcxx",
+      "path": "__functional/unary_negate.h",
+      "sha256": "b203fb270c2d779aa9740fbeed00dacf08455a2b9df735669b8abc4951dfcf29"
     },
     {
       "root": "libcxx",
@@ -942,6 +1042,16 @@
     },
     {
       "root": "libcxx",
+      "path": "__fwd/vector.h",
+      "sha256": "3c66c16dce0b38a56af101c055015d50a54b9c979dd445738b31602fc3ee429d"
+    },
+    {
+      "root": "libcxx",
+      "path": "__hash_table",
+      "sha256": "93f4c4f47b3e5f597669bb9b39f20f9dc3d315d3ff37cf3434b387fc8add008f"
+    },
+    {
+      "root": "libcxx",
       "path": "__iterator/access.h",
       "sha256": "bbce9419527d68ad3188a30bf82afc4c45467fb320fde7cfe21b229f0e893849"
     },
@@ -962,6 +1072,11 @@
     },
     {
       "root": "libcxx",
+      "path": "__iterator/bounded_iter.h",
+      "sha256": "8365f1a07a443b6ab122986e2433f4ace17f41a7cea29227070590a921fe730a"
+    },
+    {
+      "root": "libcxx",
       "path": "__iterator/concepts.h",
       "sha256": "1721ad75d27e4f4ebaf2bc6fcfc3bae8fe35c5fdbdea282c45ebabc92d8361e8"
     },
@@ -979,6 +1094,11 @@
       "root": "libcxx",
       "path": "__iterator/empty.h",
       "sha256": "0509c177d6712428dd9d38b4b2f45cbe05af430b4b493396b2856bbe23cd5245"
+    },
+    {
+      "root": "libcxx",
+      "path": "__iterator/erase_if_container.h",
+      "sha256": "b89716184bd6ecee76c6150f17d1c81ec2cd2d956f9a8d9ee9b613f1ca3671a0"
     },
     {
       "root": "libcxx",
@@ -1057,6 +1177,11 @@
     },
     {
       "root": "libcxx",
+      "path": "__iterator/ranges_iterator_traits.h",
+      "sha256": "3ae56a9ca9db7f439fe562d6cb483307fd1a722d6b7d02ad257a5f1f7cf67672"
+    },
+    {
+      "root": "libcxx",
       "path": "__iterator/readable_traits.h",
       "sha256": "2010a8faf858510c62a085569f43711e1780f8870a8e7ba399f2652a63f270ab"
     },
@@ -1084,6 +1209,11 @@
       "root": "libcxx",
       "path": "__iterator/static_bounded_iter.h",
       "sha256": "dadd72ab7d7bb0779ea2b7e3973a2e4d530c52650ca915fce29d4f5092542361"
+    },
+    {
+      "root": "libcxx",
+      "path": "__iterator/unreachable_sentinel.h",
+      "sha256": "f23c13fe34b1f11dcab06e1cd6b79f1b9b71c9da07a6ccd83cb8f8053655f2e9"
     },
     {
       "root": "libcxx",
@@ -1267,6 +1397,11 @@
     },
     {
       "root": "libcxx",
+      "path": "__memory/noexcept_move_assign_container.h",
+      "sha256": "d98ceb90307578b64c6e9f7d09ec7791e644f2bcf5a2698234f0629f0e474f92"
+    },
+    {
+      "root": "libcxx",
       "path": "__memory/out_ptr.h",
       "sha256": "436581152af118ffffd3e3c6becb282b03d39dc0dd0544d77c638acf2597dd94"
     },
@@ -1292,6 +1427,16 @@
     },
     {
       "root": "libcxx",
+      "path": "__memory/swap_allocator.h",
+      "sha256": "06fab932c2c39f6b0a1b1cccae94c4308ddba216e0cd4f715dc3f63ce1092453"
+    },
+    {
+      "root": "libcxx",
+      "path": "__memory/temp_value.h",
+      "sha256": "22c81c1341365e3e48f21b0a868a59d7daee523e07e474d3c7524f2d1ea04669"
+    },
+    {
+      "root": "libcxx",
       "path": "__memory/temporary_buffer.h",
       "sha256": "fc26542776d089c6acb460995ce1378740808ebcb0eab377940602f4b87e991f"
     },
@@ -1314,6 +1459,16 @@
       "root": "libcxx",
       "path": "__memory/uses_allocator.h",
       "sha256": "0f0e979c6749d2e90ac1e837425f0de5928f79a0e94b02ea43e5d7610eec4ba3"
+    },
+    {
+      "root": "libcxx",
+      "path": "__memory_resource/memory_resource.h",
+      "sha256": "714639f9c1f06bfd2d1b0b378b666161018b0d591eb73e4de4cebec3edb8c698"
+    },
+    {
+      "root": "libcxx",
+      "path": "__memory_resource/polymorphic_allocator.h",
+      "sha256": "478a1a63d22410d65b1883443680f3ea5db10e14d4aa608edb036bc44bc31129"
     },
     {
       "root": "libcxx",
@@ -1359,6 +1514,11 @@
       "root": "libcxx",
       "path": "__new/placement_new_delete.h",
       "sha256": "1d4af0082dd3253fd23aad4b3c9f926848dc7bee4aef0ff092b3f88d156e8af1"
+    },
+    {
+      "root": "libcxx",
+      "path": "__node_handle",
+      "sha256": "4f18ffe7ac280ed45d25a487f251878d77e353bfa61d9492d4ba9afb686ff569"
     },
     {
       "root": "libcxx",
@@ -1437,6 +1597,11 @@
     },
     {
       "root": "libcxx",
+      "path": "__ranges/container_compatible_range.h",
+      "sha256": "e76ede621ce8d5a0d1884aecaddb94ce2104a9ac19193be2b091f408f4405f01"
+    },
+    {
+      "root": "libcxx",
       "path": "__ranges/dangling.h",
       "sha256": "1e6905e7ac85ff945a9ef05feb69237ca69932cf4db7d32b90a1de4054e39a7e"
     },
@@ -1462,6 +1627,11 @@
     },
     {
       "root": "libcxx",
+      "path": "__ranges/from_range.h",
+      "sha256": "02252a9d8692e5de1df740bb7526dfa8fe1317f82e53aca4b26d8bc0922541ba"
+    },
+    {
+      "root": "libcxx",
       "path": "__ranges/movable_box.h",
       "sha256": "90bacf7a5586b4392a5970699bcb400c93cad2c9f4405eecd90120b6e4726db0"
     },
@@ -1479,6 +1649,11 @@
       "root": "libcxx",
       "path": "__ranges/view_interface.h",
       "sha256": "0a063d28315015fed6eaac18b90e595281b4fee283fa9d7fdf043c0d6ed3418d"
+    },
+    {
+      "root": "libcxx",
+      "path": "__split_buffer",
+      "sha256": "a7527b44ed3f6d37eb1aedc7c8ee824220d4d4bff04a0736f9d70759d1b95874"
     },
     {
       "root": "libcxx",
@@ -1577,6 +1752,11 @@
     },
     {
       "root": "libcxx",
+      "path": "__type_traits/can_extract_key.h",
+      "sha256": "b8ddc385b7c969e8deebf523d58e5a4214eae7561c41085db7cb18ba447208b2"
+    },
+    {
+      "root": "libcxx",
       "path": "__type_traits/common_reference.h",
       "sha256": "c8c3d7525a9479b69b668b5433880ac01db1bd4269a6d09dabdcdac03246eac9"
     },
@@ -1594,6 +1774,11 @@
       "root": "libcxx",
       "path": "__type_traits/conjunction.h",
       "sha256": "c1664a9b0620730d8645ac68853c280bc3de735edf4fc740dd04c286d71b3140"
+    },
+    {
+      "root": "libcxx",
+      "path": "__type_traits/container_traits.h",
+      "sha256": "d75eaf9058d93ae827cce027fd70af2365ae8ce1a4fa94ece6f64c8c8d154584"
     },
     {
       "root": "libcxx",
@@ -1674,6 +1859,11 @@
       "root": "libcxx",
       "path": "__type_traits/is_aggregate.h",
       "sha256": "ad0d083cb2ef59e5e55bb0d46c2a88c8283d6670c6607ca7217d459d14462b2d"
+    },
+    {
+      "root": "libcxx",
+      "path": "__type_traits/is_allocator.h",
+      "sha256": "eab72540c4b6edb6dbe426e6c313308de43e3ee4a724fd39f60f955156142058"
     },
     {
       "root": "libcxx",
@@ -2027,6 +2217,11 @@
     },
     {
       "root": "libcxx",
+      "path": "__type_traits/remove_const_ref.h",
+      "sha256": "f6a499c7d0c9a0a23ac176018bbaf71f5a0739e23be6254557fcb0d555ea4c89"
+    },
+    {
+      "root": "libcxx",
       "path": "__type_traits/remove_cv.h",
       "sha256": "76d2bcf641580f423c25d50b16088ee8cb880d20f80a511f1ffe03483035b7cf"
     },
@@ -2059,6 +2254,11 @@
       "root": "libcxx",
       "path": "__type_traits/result_of.h",
       "sha256": "79f10b6ecdd7d86078c43cb27f4f010522b798be1f2ed3999484a2b2aae1d6a3"
+    },
+    {
+      "root": "libcxx",
+      "path": "__type_traits/strip_signature.h",
+      "sha256": "00fab804c9b7e9293e2deb3468020ef4bb8f5dc144be221dbabd09e06b2b9aa5"
     },
     {
       "root": "libcxx",
@@ -2192,6 +2392,26 @@
     },
     {
       "root": "libcxx",
+      "path": "__vector/comparison.h",
+      "sha256": "ec1e167199db33c1b108a354008478676dc4a2a9f1a3a003b5358ef298ef370e"
+    },
+    {
+      "root": "libcxx",
+      "path": "__vector/container_traits.h",
+      "sha256": "17956ce1ab1d3c3040b68104ac3c165f47f70846ff0369ab365b7401a640abd0"
+    },
+    {
+      "root": "libcxx",
+      "path": "__vector/swap.h",
+      "sha256": "0fe1aabe2f751959559c11ddb4b1277df411d0fd931a3f2a9f179c74b123d887"
+    },
+    {
+      "root": "libcxx",
+      "path": "__vector/vector.h",
+      "sha256": "2165b450d03957b8a06adcb73290979b4fb0ce4b71c44c5aec9f83cc37531f74"
+    },
+    {
+      "root": "libcxx",
       "path": "__verbose_abort",
       "sha256": "049e6d2b09da2dd693d1e787297152cf7798563a9774a1bd1566309f54c16b6a"
     },
@@ -2249,6 +2469,11 @@
       "root": "libcxx",
       "path": "exception",
       "sha256": "d118c8218c862fac02a74a0fd6a5388194a3e762d374b9474b0bcff5975714f0"
+    },
+    {
+      "root": "libcxx",
+      "path": "functional",
+      "sha256": "feaa52107978d3deb25785e66b3f5dbec0dc8f372be2b22ddffb7423f9a11e51"
     },
     {
       "root": "libcxx",
@@ -2329,6 +2554,11 @@
       "root": "libcxx",
       "path": "typeinfo",
       "sha256": "f1d7bbcf06ca2078fd60e39408098f07ebd0b57bcbe9cefd33ac241aa996602f"
+    },
+    {
+      "root": "libcxx",
+      "path": "unordered_map",
+      "sha256": "6545a8956754fc98d7d2e9918705f3d2725e60599f0f9607a48a6190e3d0208f"
     },
     {
       "root": "libcxx",

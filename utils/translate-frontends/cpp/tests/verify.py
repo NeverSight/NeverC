@@ -29,8 +29,8 @@ def main():
     repository = Path(__file__).resolve().parents[4]
     count = 0
     sdk_identity = {
-        "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r9",
-        "catalog_sha256": "b01cc7085f50e8c6d80e8319c2ffa2184460f40e9dea98768e547b1ad37468e5",
+        "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r10",
+        "catalog_sha256": "d5e0089c8b6da5df225a758113b6ce4498ee7f5a0eeb6aea1065690108ea20d1",
     }
 
     def check(name, source, code=None, options=(), root=None, profile="cpp-core-v1",
@@ -1368,6 +1368,30 @@ extern "C" int iterator_operations() {
     ):
         check("v2-iterator-" + name, source, code,
               profile="cpp-core-v2", sdk=True)
+
+    functional_header_source = """\
+#include <functional>
+extern "C" int functional_header() { return 0; }
+"""
+    functional_header = check("v2-functional-header", functional_header_source,
+                              profile="cpp-core-v2", sdk=True)
+    assert len(functional_header["sdk_dependencies"]) == 346, functional_header
+    assert any(dependency["root"] == "libcxx" and
+               dependency["path"] == "functional"
+               for dependency in functional_header["sdk_dependencies"]), functional_header
+    assert not any(dependency["root"] == "platform"
+                   for dependency in functional_header["sdk_dependencies"]), functional_header
+    for target in sdk_targets:
+        target_result = check("v2-functional-header-" + target,
+                              functional_header_source, profile="cpp-core-v2",
+                              target=target, sdk=True)
+        assert target_result["sdk_dependencies"] == functional_header["sdk_dependencies"], target_result
+    check("v2-functional-quoted",
+          '#include "functional"\nint main(){return 0;}', "TR0201",
+          profile="cpp-core-v2", sdk=True)
+    check("v2-functional-runtime",
+          '#include <functional>\nint main(){std::function<int(int)> f;return bool(f);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
 
     new_header_source = """\
 #include <new>

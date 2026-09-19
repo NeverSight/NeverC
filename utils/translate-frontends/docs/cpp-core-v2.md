@@ -819,6 +819,20 @@ exception contract. Other smart pointers and other ownership factories remain
 outside this boundary, as do array and unsupported single-object factory
 forms.
 
+## Functional header from `<functional>`
+
+Core v2 admits the exact angled `<functional>` entry from the pinned embedded
+VFS. The authenticated C++17 closure contains 346 libc++/resource files on every
+supported target, has the same dependency set on all eight targets, and
+contains no platform headers. The public header and every consumed component
+retain their original upstream bytes.
+
+This increment establishes the header and declaration provenance boundary.
+Standard function objects, `std::function`, binders, searchers, invocation
+helpers and callable-object storage or invocation do not yet lower. Quoted
+includes, shadows, forged declarations and runtime uses remain rejected by the
+normal source and semantic checks.
+
 ## Algorithm header from `<algorithm>`
 
 Core v2 admits the exact angled `<algorithm>` entry from the pinned embedded
