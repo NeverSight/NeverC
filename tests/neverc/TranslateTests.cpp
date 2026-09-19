@@ -29292,22 +29292,22 @@ TEST_F(TranslateTest,
   writeFile(Source, R"cpp(
 #include <algorithm>
 int calls;
-bool same_parity(int left, int right) {
+bool same_parity(long left, double right) {
   ++calls;
-  return left % 2 == right % 2;
+  return left % 2 == int(right) % 2;
 }
 enum Level : unsigned char { low, high };
-bool same_level(Level left, Level right) {
+bool same_level(int left, unsigned right) {
   ++calls;
   return left == right;
 }
-bool same_pointer(int *left, int *right) {
+bool same_pointer(const void *left, const void *right) {
   ++calls;
   return left == right;
 }
 int main() {
   int values[7]{1, 3, 2, 4, 6, 7, 9};
-  bool (*predicate)(int, int) = same_parity;
+  bool (*predicate)(long, double) = same_parity;
   int effects = 0;
   calls = 0;
   int *unique_end = std::unique((++effects, values),
@@ -29393,7 +29393,7 @@ int main() {
 }
 
 TEST_F(TranslateTest,
-       CoreV2AlgorithmPredicateUniqueOperationsRequireExactFunctions) {
+       CoreV2AlgorithmPredicateUniqueOperationsRequireValueFunctions) {
   struct Rejection {
     const char *Name;
     const char *Source;
@@ -29405,9 +29405,6 @@ TEST_F(TranslateTest,
        "int main(){int a[2]{1,1};return std::unique(a,a+2,p)==a+1?0:1;}"},
       {"non-bool-result",
        "int p(int a,int b){return a==b;}\n#include <algorithm>\n"
-       "int main(){int a[2]{1,1};return std::unique(a,a+2,p)==a+1?0:1;}"},
-      {"converted-parameter",
-       "bool p(long a,long b){return a==b;}\n#include <algorithm>\n"
        "int main(){int a[2]{1,1};return std::unique(a,a+2,p)==a+1?0:1;}"},
       {"function-object",
        "struct P{bool operator()(int a,int b)const{return a==b;}};\n"
@@ -29530,19 +29527,19 @@ TEST_F(TranslateTest, CoreV2AlgorithmPredicateSubrangesRunAtBothOptimizations) {
   writeFile(Source, R"cpp(
 #include <algorithm>
 int calls;
-bool same_last_digit(int left, long right) {
+bool same_last_digit(long left, double right) {
   ++calls;
-  return left % 10 == right % 10;
+  return left % 10 == int(right) % 10;
 }
 enum Level : unsigned char { low, high };
-bool same_level(Level left, Level right) {
+bool same_level(int left, unsigned right) {
   ++calls;
   return left == right;
 }
 int main() {
   const int source[7]{1, 2, 3, 2, 3, 2, 4};
   const long pattern[2]{12, 13};
-  bool (*predicate)(int, long) = same_last_digit;
+  bool (*predicate)(long, double) = same_last_digit;
   int effects = 0;
   calls = 0;
   if (std::search((++effects, source), (++effects, source + 7),
@@ -29647,10 +29644,7 @@ TEST_F(TranslateTest, CoreV2AlgorithmSubrangeRequiresPinnedScalarForms) {
       {"heterogeneous-mismatch",
        "#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{1,3};"
        "return std::mismatch(a,a+2,b).first==a+1?0:1;}"},
-      {"converted-predicate-search",
-       "#include <algorithm>\nbool same(long a,long b){return a==b;}"
-       "int main(){int a[2]{1,2};return "
-       "std::search(a,a+2,a,a+1,&same)==a?0:1;}"}};
+  };
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
     const auto Source =
@@ -29665,7 +29659,7 @@ TEST_F(TranslateTest, CoreV2AlgorithmSubrangeRequiresPinnedScalarForms) {
   }
 }
 
-TEST_F(TranslateTest, CoreV2AlgorithmPredicateSubrangesRequireExactFunctions) {
+TEST_F(TranslateTest, CoreV2AlgorithmPredicateSubrangesRequireValueFunctions) {
   struct Rejection {
     const char *Name;
     const char *Source;
@@ -29679,18 +29673,10 @@ TEST_F(TranslateTest, CoreV2AlgorithmPredicateSubrangesRequireExactFunctions) {
        "int p(int a,long b){return a==b;}\n#include <algorithm>\n"
        "int main(){int a[2]{1,2};long b[1]{2};"
        "return std::find_end(a,a+2,b,b+1,p)==a+1?0:1;}"},
-      {"converted-parameter",
-       "bool p(long a,long b){return a==b;}\n#include <algorithm>\n"
-       "int main(){int a[2]{1,2};long b[1]{2};"
-       "return std::find_first_of(a,a+2,b,b+1,p)==a+1?0:1;}"},
       {"function-object",
        "struct P{bool operator()(int a,long b)const{return a==b;}};\n"
        "#include <algorithm>\nint main(){int a[2]{1,2};long b[1]{2};"
        "return std::search(a,a+2,b,b+1,P{})==a+1?0:1;}"},
-      {"converted-search-n-value",
-       "bool p(int a,int b){return a==b;}\n#include <algorithm>\n"
-       "int main(){int a[2]{1,1};long v=1;"
-       "return std::search_n(a,a+2,2,v,p)==a?0:1;}"},
       {"reference-search-n-value",
        "bool p(int a,const long&b){return a==b;}\n#include <algorithm>\n"
        "int main(){int a[2]{1,1};long v=1;"
@@ -31491,11 +31477,7 @@ TEST_F(TranslateTest, CoreV2AlgorithmPermutationRequirePinnedScalarForms) {
        "#include <algorithm>\nstruct R{int n;};"
        "bool operator==(const R&a,const R&b){return a.n==b.n;}"
        "int main(){R a[2]{{1},{2}};"
-       "return std::is_permutation(a,a+2,a,a+2)?0:1;}"},
-      {"converted-predicate-is-permutation",
-       "#include <algorithm>\nbool equal(long a,long b){return a==b;}"
-       "int main(){int a[2]{1,2};"
-       "return std::is_permutation(a,a+2,a,&equal)?0:1;}"}};
+       "return std::is_permutation(a,a+2,a,a+2)?0:1;}"}};
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
     const auto Source =
@@ -31658,21 +31640,21 @@ TEST_F(TranslateTest, CoreV2AlgorithmBinaryPredicatesRunAtBothOptimizations) {
 #include <algorithm>
 int calls;
 enum Level : unsigned char { low, high };
-bool high_then_low(Level left, Level right) {
+bool high_then_low(int left, unsigned right) {
   ++calls;
   return left == high && right == low;
 }
-bool same_last_digit(int left, long right) {
+bool same_last_digit(short left, double right) {
   ++calls;
-  return left == right % 10;
+  return left == int(right) % 10;
 }
-bool same_parity(int left, int right) {
+bool same_parity(long left, double right) {
   ++calls;
-  return left % 2 == right % 2;
+  return left % 2 == int(right) % 2;
 }
 int main() {
   Level levels[3]{low, high, low};
-  bool (*adjacent_predicate)(Level, Level) = high_then_low;
+  bool (*adjacent_predicate)(int, unsigned) = high_then_low;
   int effects = 0;
   calls = 0;
   if (std::adjacent_find((++effects, levels), (++effects, levels + 3),
@@ -31771,7 +31753,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2AlgorithmBinaryPredicatesRequireExactFunctions) {
+TEST_F(TranslateTest, CoreV2AlgorithmBinaryPredicatesRequireValueFunctions) {
   struct Rejection {
     const char *Name;
     const char *Source;
@@ -31786,10 +31768,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmBinaryPredicatesRequireExactFunctions) {
        "int p(int a,long b){return a==b;}\n#include <algorithm>\n"
        "int main(){int a[2]{1,2};long b[2]{1,2};"
        "return std::equal(a,a+2,b,p)?0:1;}"},
-      {"converted-parameter",
-       "bool p(int a,int b){return a==b;}\n#include <algorithm>\n"
-       "int main(){int a[2]{1,2};long b[2]{1,2};"
-       "auto r=std::mismatch(a,a+2,b,p);return r.first==a+2?0:1;}"},
       {"function-object",
        "struct P{bool operator()(int a,int b)const{return a==b;}};\n"
        "#include <algorithm>\nint main(){int a[2]{1,2};"

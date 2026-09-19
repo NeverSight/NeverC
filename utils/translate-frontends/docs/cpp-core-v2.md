@@ -832,11 +832,11 @@ four-iterator `std::equal`, three- and four-iterator `std::mismatch`, and three-
 and four-iterator `std::is_permutation`, plus `std::unique`,
 `std::unique_copy`, `std::search`, `std::find_end`, `std::find_first_of` and
 `std::search_n`, accept checked ordinary function pointers. Each predicate
-takes the two compared unqualified scalar types by value and returns `bool`
-exactly. This admits enums and the other scalar carriers; `equal`, `mismatch`
-and the two-range search operations may compare two different element types
-when both callback parameters match exactly. `search_n` may likewise use a
-different exact scalar type for its retained `const` search value.
+takes two admitted by-value scalar parameters reachable through checked direct
+conversions from the compared values and returns `bool` exactly. This admits
+enums and the other scalar carriers; `equal`, `mismatch` and the two-range
+search operations may compare two different element types. `search_n` may
+likewise use a different scalar type for its retained `const` search value.
 `adjacent_find`, `unique`, `unique_copy` and `is_permutation` require one common
 element type because they compare elements within one range. Predicate `unique`
 requires a writable range, and predicate `unique_copy` requires a writable
@@ -847,9 +847,9 @@ lengths before invoking the predicate. Empty patterns and ranges perform no
 predicate calls; nonempty unique operations make one call per element after the
 first. Non-positive `search_n` counts return the first iterator without a call,
 and a positive unsuccessful run applies its predicate at most once per input
-element. Reference or converted parameters, variadic functions, non-boolean
-results, callable objects and heterogeneous permutation or unique-copy output
-ranges stay outside this boundary.
+element. Reference parameters, variadic functions, non-boolean results,
+callable objects and heterogeneous permutation or unique-copy output ranges
+stay outside this boundary.
 
 The exact three-argument `std::find_if`, `std::find_if_not`, `std::count_if`,
 `std::all_of`, `std::any_of` and `std::none_of` templates accept the same raw

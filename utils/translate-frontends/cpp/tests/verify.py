@@ -3149,7 +3149,7 @@ extern "C" int algorithm_equality_mutation(int *first, int *last,
     algorithm_predicate_unique_source = """\
 #include <algorithm>
 extern "C" int algorithm_predicate_unique(
-    int *first, int *last, int *output, bool (*predicate)(int, int)) {
+    int *first, int *last, int *output, bool (*predicate)(long, double)) {
   int *unique = std::unique(first, last, predicate);
   int *copied = std::unique_copy(first, unique, output, predicate);
   return static_cast<int>((unique - first) + (copied - output));
@@ -3175,9 +3175,6 @@ extern "C" int algorithm_predicate_unique(
         assert_predicate_unique(target_result)
     check("v2-algorithm-predicate-unique-reference",
           'bool p(const int&a,int b){return a==b;}\n#include <algorithm>\nint main(){int a[2]{1,1};return std::unique(a,a+2,p)==a+1?0:1;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
-    check("v2-algorithm-predicate-unique-conversion",
-          'bool p(long a,long b){return a==b;}\n#include <algorithm>\nint main(){int a[2]{1,1};return std::unique(a,a+2,p)==a+1?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-algorithm-predicate-unique-output",
           'bool p(int a,int b){return a==b;}\n#include <algorithm>\nint main(){int a[2]{1,1};long b[2]{};return std::unique_copy(a,a+2,b,p)==b+1?0:1;}',
@@ -3212,16 +3209,13 @@ extern "C" int algorithm_subrange(const int *first, const int *last,
     check("v2-algorithm-subrange-heterogeneous-search",
           '#include <algorithm>\nint main(){int a[2]{1,2};long b[1]{2};return std::search(a,a+2,b,b+1)==a+1?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
-    check("v2-algorithm-subrange-converted-predicate-search",
-          '#include <algorithm>\nbool same(long a,long b){return a==b;}int main(){int a[2]{1,2};return std::search(a,a+2,a,a+1,&same)==a?0:1;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
 
     algorithm_predicate_subrange_source = """\
 #include <algorithm>
 extern "C" long long algorithm_predicate_subrange(
     const int *first, const int *last, const long *pattern,
     const long *pattern_last, int count, const long &value,
-    bool (*predicate)(int, long)) {
+    bool (*predicate)(long, double)) {
   const int *found =
       std::search(first, last, pattern, pattern_last, predicate);
   const int *final =
@@ -3256,9 +3250,6 @@ extern "C" long long algorithm_predicate_subrange(
           "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-algorithm-predicate-subrange-result",
           'int p(int a,long b){return a==b;}\n#include <algorithm>\nint main(){int a[2]{1,2};long b[1]{2};return std::find_end(a,a+2,b,b+1,p)==a+1?0:1;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
-    check("v2-algorithm-predicate-subrange-conversion",
-          'bool p(int a,int b){return a==b;}\n#include <algorithm>\nint main(){int a[2]{1,1};long v=1;return std::search_n(a,a+2,2,v,p)==a?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
     algorithm_rearrangement_source = """\
@@ -3691,9 +3682,6 @@ extern "C" int algorithm_permutation(int *first, int *last,
     check("v2-algorithm-permutation-heterogeneous",
           '#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{2,1};return std::is_permutation(a,a+2,b,b+2)?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
-    check("v2-algorithm-permutation-converted-predicate",
-          '#include <algorithm>\nbool equal(long a,long b){return a==b;}int main(){int a[2]{1,2};return std::is_permutation(a,a+2,a,&equal)?0:1;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
 
     algorithm_comparator_permutation_source = """\
 #include <algorithm>
@@ -3739,8 +3727,8 @@ enum Level : unsigned char { low, high };
 extern "C" long algorithm_binary_predicates(
     const int *first, const int *last, const long *second,
     const long *second_last, const Level *levels, const Level *levels_last,
-    bool (*heterogeneous)(int, long), bool (*same)(int, int),
-    bool (*level_predicate)(Level, Level)) {
+    bool (*heterogeneous)(short, double), bool (*same)(long, double),
+    bool (*level_predicate)(int, unsigned)) {
   const Level *adjacent =
       std::adjacent_find(levels, levels_last, level_predicate);
   bool equal_unbounded = std::equal(first, last, second, heterogeneous);
@@ -3783,9 +3771,6 @@ extern "C" long algorithm_binary_predicates(
           "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-algorithm-binary-predicates-result",
           'int p(int a,long b){return a==b;}\n#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{1,2};return std::equal(a,a+2,b,p)?0:1;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
-    check("v2-algorithm-binary-predicates-conversion",
-          'bool p(int a,int b){return a==b;}\n#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{1,2};auto r=std::mismatch(a,a+2,b,p);return r.first==a+2?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
     algorithm_predicate_queries_source = """\

@@ -6179,7 +6179,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   };
   auto AlgorithmBinaryPredicateParameter = [&](unsigned PredicateIndex,
                                                unsigned LeftIteratorIndex,
-                                               unsigned RightIteratorIndex) {
+                                               unsigned RightIteratorIndex,
+                                               bool DirectConversions = false) {
     if (PredicateIndex >= Function->getNumParams() ||
         PredicateIndex >= Call->getNumArgs() ||
         LeftIteratorIndex >= Function->getNumParams() ||
@@ -6196,9 +6197,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return false;
     auto LeftParameter = Prototype->getParamType(0);
     auto RightParameter = Prototype->getParamType(1);
-    return utilityScalar(Context, LeftParameter) &&
-           utilityScalar(Context, RightParameter) &&
-           Context.hasSameUnqualifiedType(LeftParameter,
+    if (DirectConversions)
+      return utilityScalarDirectConversion(Context, Left->getPointeeType(),
+                                           LeftParameter) &&
+             utilityScalarDirectConversion(Context, Right->getPointeeType(),
+                                           RightParameter);
+    return Context.hasSameUnqualifiedType(LeftParameter,
                                           Left->getPointeeType()) &&
            Context.hasSameUnqualifiedType(RightParameter,
                                           Right->getPointeeType());
@@ -6228,12 +6232,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return false;
     auto LeftParameter = Prototype->getParamType(0);
     auto RightParameter = Prototype->getParamType(1);
-    return utilityScalar(Context, LeftParameter) &&
-           utilityScalar(Context, RightParameter) &&
-           Context.hasSameUnqualifiedType(LeftParameter,
-                                          Iterator->getPointeeType()) &&
-           Context.hasSameUnqualifiedType(RightParameter,
-                                          Value->getPointeeType());
+    return utilityScalarDirectConversion(Context, Iterator->getPointeeType(),
+                                         LeftParameter) &&
+           utilityScalarDirectConversion(Context, Value->getPointeeType(),
+                                         RightParameter);
   };
   auto AlgorithmBinaryPredicateReferenceParameter =
       [&](unsigned PredicateIndex, unsigned ReferenceIndex) {
@@ -6522,13 +6524,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Same(Function->getParamDecl(2)->getType(),
                Function->getParamDecl(3)->getType()))
         return UtilityOperation::AlgorithmEqual;
-      if (AlgorithmBinaryPredicateParameter(3, 0, 2))
+      if (AlgorithmBinaryPredicateParameter(3, 0, 2, true))
         return UtilityOperation::AlgorithmEqual;
     }
     if (Call->getNumArgs() == 5 && AlgorithmPointerParameter(3) &&
         Same(Function->getParamDecl(2)->getType(),
              Function->getParamDecl(3)->getType()) &&
-        AlgorithmBinaryPredicateParameter(4, 0, 2))
+        AlgorithmBinaryPredicateParameter(4, 0, 2, true))
       return UtilityOperation::AlgorithmEqual;
   }
   if ((Origin->Path == "__algorithm/copy.h" ||
@@ -6689,7 +6691,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if (Call->getNumArgs() == 2 && AlgorithmEqualityPointerParameter(0) &&
         AlgorithmEqualityPointerParameter(1))
       return UtilityOperation::AlgorithmAdjacentFind;
-    if (Call->getNumArgs() == 3 && AlgorithmBinaryPredicateParameter(2, 0, 0))
+    if (Call->getNumArgs() == 3 &&
+        AlgorithmBinaryPredicateParameter(2, 0, 0, true))
       return UtilityOperation::AlgorithmAdjacentFind;
   }
   if (Origin->Path == "__algorithm/remove.h" && Name == "remove" &&
@@ -6757,7 +6760,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if (Call->getNumArgs() == 2 && AlgorithmEqualityPointerParameter(0) &&
         AlgorithmEqualityPointerParameter(1))
       return UtilityOperation::AlgorithmUnique;
-    if (Call->getNumArgs() == 3 && AlgorithmBinaryPredicateParameter(2, 0, 0))
+    if (Call->getNumArgs() == 3 &&
+        AlgorithmBinaryPredicateParameter(2, 0, 0, true))
       return UtilityOperation::AlgorithmUnique;
   }
   if (Origin->Path == "__algorithm/unique_copy.h" && Name == "unique_copy" &&
@@ -6776,7 +6780,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if (Call->getNumArgs() == 3 && AlgorithmEqualityPointerParameter(0) &&
         AlgorithmEqualityPointerParameter(1))
       return UtilityOperation::AlgorithmUniqueCopy;
-    if (Call->getNumArgs() == 4 && AlgorithmBinaryPredicateParameter(3, 0, 0))
+    if (Call->getNumArgs() == 4 &&
+        AlgorithmBinaryPredicateParameter(3, 0, 0, true))
       return UtilityOperation::AlgorithmUniqueCopy;
   }
   if (((Origin->Path == "__algorithm/search.h" && Name == "search") ||
@@ -6802,7 +6807,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                              Function->getParamDecl(2)->getType());
     if (!((Call->getNumArgs() == 4 && DefaultElements) ||
           (Call->getNumArgs() == 5 &&
-           AlgorithmBinaryPredicateParameter(4, 0, 2))))
+           AlgorithmBinaryPredicateParameter(4, 0, 2, true))))
       return std::nullopt;
     if (Name == "search")
       return UtilityOperation::AlgorithmSearch;
@@ -6852,13 +6857,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
             Same(Function->getParamDecl(2)->getType(),
                  Function->getParamDecl(3)->getType()))
           return UtilityOperation::AlgorithmMismatch;
-        if (AlgorithmBinaryPredicateParameter(3, 0, 2))
+        if (AlgorithmBinaryPredicateParameter(3, 0, 2, true))
           return UtilityOperation::AlgorithmMismatch;
       }
       if (Call->getNumArgs() == 5 && AlgorithmPointerParameter(3) &&
           Same(Function->getParamDecl(2)->getType(),
                Function->getParamDecl(3)->getType()) &&
-          AlgorithmBinaryPredicateParameter(4, 0, 2))
+          AlgorithmBinaryPredicateParameter(4, 0, 2, true))
         return UtilityOperation::AlgorithmMismatch;
     }
   }
@@ -7244,13 +7249,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Same(Function->getParamDecl(2)->getType(),
                Function->getParamDecl(3)->getType()))
         return UtilityOperation::AlgorithmIsPermutation;
-      if (AlgorithmBinaryPredicateParameter(3, 0, 2))
+      if (AlgorithmBinaryPredicateParameter(3, 0, 2, true))
         return UtilityOperation::AlgorithmIsPermutation;
     }
     if (Call->getNumArgs() == 5 && AlgorithmPointerParameter(3) &&
         Same(Function->getParamDecl(2)->getType(),
              Function->getParamDecl(3)->getType()) &&
-        AlgorithmBinaryPredicateParameter(4, 0, 2))
+        AlgorithmBinaryPredicateParameter(4, 0, 2, true))
       return UtilityOperation::AlgorithmIsPermutation;
   }
   const bool UnaryPredicateQuery =
