@@ -23572,6 +23572,12 @@ int combine(int integer, double real, int *pointer) {
   ++callback_calls;
   return integer + int(real) + *pointer;
 }
+int converted(int integer, double real, const void *pointer, bool present,
+              int *null_pointer) {
+  ++callback_calls;
+  return integer + int(real) + (pointer != nullptr) + present +
+         (null_pointer == nullptr);
+}
 using Callback = int (*)(int, double, int *);
 Callback select_callback() {
   ++callable_effects;
@@ -23607,8 +23613,13 @@ int main() {
     return 4;
   if (std::apply(empty_value, std::tuple<>()) != 13 || callback_calls != 5)
     return 5;
+  if (std::apply(converted,
+                 std::make_tuple(short(2), float(3.5), &object, &object,
+                                 nullptr)) != 8 ||
+      callback_calls != 6)
+    return 6;
   std::apply(capture, std::make_tuple(6, 7));
-  return callback_calls == 6 && captured == 67 ? 0 : 6;
+  return callback_calls == 7 && captured == 67 ? 0 : 7;
 }
 )cpp");
   auto Result =
@@ -23987,10 +23998,10 @@ TEST_F(TranslateTest, CoreV2TupleRequiresPinnedOperations) {
        "#include <tuple>\nint main(){std::tuple<int,int>v(1,2);"
        "return std::get<int>(v);}",
        "TR0202"},
-      {"apply-converted-parameter",
-       "#include <tuple>\nint add(int a,int b){return a+b;}int main(){"
-       "return std::apply(add,std::make_tuple(short(1),2));}",
-       "TR0203"},
+      {"apply-incompatible-parameter",
+       "#include <tuple>\nint take(int*p){return p!=nullptr;}int main(){"
+       "return std::apply(take,std::make_tuple(1));}",
+       "TR0202"},
       {"apply-reference-parameter",
        "#include <tuple>\nint add(int&a,int&b){return a+b;}int main(){"
        "auto value=std::make_tuple(1,2);return std::apply(add,value);}",

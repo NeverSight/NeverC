@@ -7759,7 +7759,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       const auto Parameter = Prototype->getParamType(I);
       if (!utilityScalar(Context, Element) || Parameter->isReferenceType() ||
           !utilityScalar(Context, Parameter) ||
-          !Context.hasSameUnqualifiedType(Element, Parameter))
+          !utilityScalarDirectConversion(Context, Element, Parameter))
         return std::nullopt;
     }
     return UtilityOperation::TupleApply;

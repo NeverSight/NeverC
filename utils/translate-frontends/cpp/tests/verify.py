@@ -477,6 +477,9 @@ static_assert(sizeof(std::tuple_element<1,
 int tuple_apply_sum(int integer, double real, int *pointer) {
   return integer + int(real) + *pointer;
 }
+int tuple_apply_wide(int integer, double real) {
+  return integer + int(real);
+}
 extern "C" int tuple_all(int *pointer) {
   std::tuple<> empty, empty_copy(empty), empty_move(
       static_cast<std::tuple<> &&>(empty_copy));
@@ -514,6 +517,7 @@ extern "C" int tuple_all(int *pointer) {
             4 * (narrow < greater);
   result += 8 * (greater > narrow) + 16 * (narrow <= wide) +
             32 * (narrow >= wide);
+  result += std::apply(tuple_apply_wide, narrow);
   auto concatenated = std::tuple_cat(empty, first, std::make_tuple(10));
   auto no_elements = std::tuple_cat();
   result += std::get<0>(concatenated) + std::get<3>(concatenated) +
@@ -551,7 +555,7 @@ extern "C" int tuple_all(int *pointer) {
     assert not [node for node in walk(tuple_module["functions"])
                 if node.get("op") in ("call", "mapped_call")], tuple_module
     assert len([node for node in walk(tuple_module["functions"])
-                if node.get("op") == "indirect_call"]) == 1, tuple_module
+                if node.get("op") == "indirect_call"]) == 2, tuple_module
     for target in sdk_targets:
         check("v2-tuple-" + target, tuple_source,
               profile="cpp-core-v2", target=target, sdk=True)
@@ -696,9 +700,9 @@ extern "C" int tuple_composite() {
         ("ambiguous-type-get",
          '#include <tuple>\nint main(){std::tuple<int,int>v(1,2);return std::get<int>(v);}',
          "TR0202"),
-        ("apply-converted-parameter",
-         '#include <tuple>\nint add(int a,int b){return a+b;}int main(){return std::apply(add,std::make_tuple(short(1),2));}',
-         "TR0203"),
+        ("apply-incompatible-parameter",
+         '#include <tuple>\nint take(int*p){return p!=nullptr;}int main(){return std::apply(take,std::make_tuple(1));}',
+         "TR0202"),
         ("apply-reference-parameter",
          '#include <tuple>\nint add(int&a,int&b){return a+b;}int main(){auto value=std::make_tuple(1,2);return std::apply(add,value);}',
          "TR0203"),

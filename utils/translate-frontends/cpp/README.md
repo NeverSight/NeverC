@@ -113,9 +113,10 @@ construction, compatible scalar or exact composite per-element construction
 and assignment from tuples or pairs, factories, swaps, recursive same-length
 heterogeneous lexicographic comparisons and index or unique-type access. Exact
 `apply` over scalar tuples lowers named functions or stored function pointers
-with exact by-value scalar parameters to one indirect call, including empty
-tuples and scalar or void results. Exact `tuple_cat` handles zero arguments and
-authenticated scalar or recursively composite tuple, pair or array sources,
+with directly convertible by-value scalar parameters to one indirect call,
+including empty tuples and scalar or void results. Exact `tuple_cat` handles
+zero arguments and authenticated scalar or recursively composite tuple, pair
+or array sources,
 evaluating every source once before copying elements into the exact
 concatenated tuple. Array directly lowers nonempty fixed scalar, trivial-record
 and nested-array storage, iterators, element access, fill, swap, scalar and

@@ -219,11 +219,14 @@ one matching element, as in C++17.
 Exact `std::apply` calls over an authenticated empty or nonempty tuple lower to
 one ordinary indirect callback call. The callable may be a named function or a
 stored function pointer with a fixed nonvariadic signature. Every tuple element
-and corresponding callback parameter must be an admitted scalar with the same
-unqualified type, passed by value; the result must be `void` or an admitted
-scalar. Mutable and const lvalues and materialized tuple temporaries are
-accepted. The callable and tuple expressions are each evaluated once, fields
-are passed in tuple order, and no libc++ apply helper is emitted.
+and corresponding callback parameter must be admitted scalars connected by a
+checked direct scalar conversion and passed by value; the result must be `void`
+or an admitted scalar. This includes arithmetic conversions,
+`nullptr_t` to object pointers or `bool`, and compatible object-pointer,
+pointer-to-void and pointer-to-`bool` conversions. Mutable and const lvalues
+and materialized tuple temporaries are accepted. The callable and tuple
+expressions are each evaluated once, fields are converted and passed in tuple
+order, and no libc++ apply helper is emitted.
 
 Exact `std::tuple_cat` calls lower directly when every source is an
 authenticated `std::tuple`, `std::pair` or `std::array` containing admitted
@@ -255,9 +258,9 @@ or tuple elements do not have the authenticated one-field leaf representation
 and remain rejected. References, nontrivial records, `long double`, function
 pointers and source-record comparisons also remain outside this surface. `tie`
 and `forward_as_tuple` are rejected. Apply calls with callable objects,
-converted or reference parameters, record parameters, variadic callbacks, or
-reference/record results remain rejected. Quoted includes, user
-shadows, standard-function addresses and forged declarations remain rejected.
+reference parameters, record parameters, variadic callbacks, or
+reference/record results remain rejected. Quoted includes, user shadows,
+standard-function addresses and forged declarations remain rejected.
 
 ## Fixed value arrays from `<array>`
 

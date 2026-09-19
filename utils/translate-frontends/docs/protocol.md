@@ -1834,9 +1834,10 @@ operands; it does not introduce a new definite-initialization analysis.
 Pinned `std::apply` lowering reuses this instruction and introduces no tuple
 callback opcode. The frontend snapshots the named function or stored function
 pointer and the authenticated tuple expression once, projects scalar fields in
-tuple order, and supplies the exact by-value callback parameter types. Empty
-tuples produce an empty `args` array; scalar and void results retain the normal
-`indirect_call` target rule.
+tuple order, converts each field through the approved direct scalar boundary,
+and supplies the exact by-value callback parameter types. Empty tuples produce
+an empty `args` array; scalar and void results retain the normal `indirect_call`
+target rule.
 
 Pinned `std::tuple_cat` lowering adds no protocol opcode. It materializes the
 exact result record, evaluates and captures every authenticated tuple, pair or

@@ -39,10 +39,11 @@ directly lowers scalar or recursively composite construction, compatible
 per-element converting construction and assignment from tuples or pairs,
 factories, swaps, recursive same-length heterogeneous comparisons and index or
 unique-type access without a runtime libc++ link. Exact `apply` over scalar
-tuples lowers named functions or stored function pointers with exact by-value
-scalar parameters to an ordinary indirect call, including empty tuples and
-scalar or void results. Exact `tuple_cat` handles zero arguments and
-authenticated scalar or recursively composite tuple, pair or array sources,
+tuples lowers named functions or stored function pointers with directly
+convertible by-value scalar parameters to an ordinary indirect call, including
+empty tuples and scalar or void results. Exact `tuple_cat` handles zero
+arguments and authenticated scalar or recursively composite tuple, pair or
+array sources,
 capturing every source once before copying elements into the exact concatenated
 tuple. Composite elements may be source-owned nonempty trivial standard-layout
 records, admitted arrays or pairs, or nonempty nested tuples; their
