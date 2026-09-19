@@ -29116,11 +29116,14 @@ int main() {
     return 3;
 
   int replaced[5]{1, 2, 3, 2, 4};
-  std::replace(replaced, replaced + 5, 2, 9);
+  short old_needle = 2;
+  short replacement_value = 9;
+  std::replace(replaced, replaced + 5, old_needle, replacement_value);
   double replacement_copy[5]{};
+  short copy_value = 8;
   if (replaced[1] != 9 || replaced[3] != 9 ||
-      std::replace_copy(source, source + 5, replacement_copy, 2, 8) !=
-          replacement_copy + 5 ||
+      std::replace_copy(source, source + 5, replacement_copy, old_needle,
+                        copy_value) != replacement_copy + 5 ||
       replacement_copy[0] != 1 || replacement_copy[1] != 8 ||
       replacement_copy[2] != 3 || replacement_copy[3] != 8 ||
       replacement_copy[4] != 4)

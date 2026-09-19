@@ -2977,9 +2977,14 @@ extern "C" int algorithm_mutation(int *first, int *second, long *output) {
   short removed = 5;
   int *removed_end = std::remove(first, first + 4, removed);
   long *remove_copy_end = std::remove_copy(second, second + 4, output, removed);
+  short replacement = 7;
+  std::replace(first, first + 4, removed, replacement);
+  long *replace_copy_end =
+      std::replace_copy(second, second + 4, output, removed, replacement);
   return static_cast<int>((filled - first) + (swapped - second) +
                           (copied - output) + (removed_end - first) +
-                          (remove_copy_end - output));
+                          (remove_copy_end - output) +
+                          (replace_copy_end - output));
 }
 """
     algorithm_mutation = check("v2-algorithm-mutation",

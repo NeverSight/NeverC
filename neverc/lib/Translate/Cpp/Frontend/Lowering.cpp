@@ -3255,12 +3255,18 @@ class FunctionLowering {
       auto NewAddress = snapshot(address(lvalue(Call->getArg(NewIndex)),
                                          Call->getArg(NewIndex)->getType(), L),
                                  L);
+      auto Common = utilityScalarComparisonType(
+          A.Context, Call->getArg(0)->getType()->getPointeeType(),
+          Call->getArg(OldIndex)->getType(), false);
+      if (!Common)
+        reject(L, "algorithm replace",
+               "The range element and old value have no equality common type.");
+      const auto ComparisonType = type(*Common, L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto InputType = type(Call->getArg(0)->getType(), L);
       const auto OutputType = type(Call->getArg(Copying ? 2 : 0)->getType(), L);
       const auto OutputElementType =
-          Copying ? type(Call->getArg(2)->getType()->getPointeeType(), L)
-                  : std::string();
+          type(Call->getArg(Copying ? 2 : 0)->getType()->getPointeeType(), L);
       const auto Check = labelName(), Compare = labelName();
       const auto Match = labelName(), Mismatch = labelName();
       const auto Next = labelName(), End = labelName();
@@ -3268,14 +3274,13 @@ class FunctionLowering {
       label(Check, L);
       branch(binary("!=", Current, Last, "bool", L), Compare, End, L);
       label(Compare, L);
-      branch(binary("==", dereference(Current, L), dereference(OldAddress, L),
-                    "bool", L),
+      branch(binary("==", cast(dereference(Current, L), ComparisonType, L),
+                    cast(dereference(OldAddress, L), ComparisonType, L), "bool",
+                    L),
              Match, Mismatch, L);
       label(Match, L);
       assign(dereference(Output ? *Output : Current, L),
-             Copying ? cast(dereference(NewAddress, L), OutputElementType, L)
-                     : dereference(NewAddress, L),
-             L);
+             cast(dereference(NewAddress, L), OutputElementType, L), L);
       jump(Next, L);
       label(Mismatch, L);
       if (Output)

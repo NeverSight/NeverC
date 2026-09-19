@@ -6010,6 +6010,24 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                        Value->getPointeeType(), false)
         .has_value();
   };
+  auto AlgorithmTransferValueParameter = [&](unsigned ValueIndex,
+                                             unsigned OutputIndex) {
+    if (ValueIndex >= Function->getNumParams() ||
+        ValueIndex >= Call->getNumArgs() ||
+        OutputIndex >= Function->getNumParams())
+      return false;
+    auto Value = Function->getParamDecl(ValueIndex)->getType();
+    auto Output = Function->getParamDecl(OutputIndex)->getType();
+    return Value->isLValueReferenceType() &&
+           Value->getPointeeType().isConstQualified() &&
+           !Value->getPointeeType().isVolatileQualified() &&
+           utilityScalar(Context, Value->getPointeeType()) &&
+           Context.hasSameUnqualifiedType(Call->getArg(ValueIndex)->getType(),
+                                          Value->getPointeeType()) &&
+           utilityAlgorithmWritableScalarPointer(Context, Output) &&
+           utilityScalarDirectConversion(Context, Value->getPointeeType(),
+                                         Output->getPointeeType());
+  };
   auto MemoryConstructionValueParameter = [&](unsigned ValueIndex,
                                               unsigned IteratorIndex) {
     if (ValueIndex >= Function->getNumParams() ||
@@ -6792,7 +6810,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Function->getParamDecl(1)->getType()) &&
       utilityAlgorithmWritableScalarPointer(
           Context, Function->getParamDecl(0)->getType()) &&
-      AlgorithmValueParameter(2, 0) && AlgorithmValueParameter(3, 0) &&
+      AlgorithmEqualityValueParameter(2, 0) &&
+      AlgorithmTransferValueParameter(3, 0) &&
       Function->getReturnType()->isVoidType() &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmReplace;
@@ -6803,7 +6822,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       AlgorithmTransferParameters(0, 2) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      AlgorithmValueParameter(3, 0) && AlgorithmValueParameter(4, 0) &&
+      AlgorithmEqualityValueParameter(3, 0) &&
+      AlgorithmTransferValueParameter(4, 2) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmReplaceCopy;
