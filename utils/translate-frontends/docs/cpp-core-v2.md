@@ -900,10 +900,9 @@ ordinary function pointers too. Traversal and transform callbacks take each
 input through a directly convertible by-value scalar parameter. `for_each`
 permits a `void` or admitted scalar result, ignores that result, and returns the
 retained function pointer; `for_each_n` returns the advanced input. Transform
-callbacks must return the output's exact unqualified scalar element type, so
-different input and output scalar types are admitted while callback results
-stay exact.
-Generators take no arguments and return the output's exact scalar element type.
+callback results must be directly convertible to the output's scalar element
+type. Generators take no arguments and their scalar results must be directly
+convertible to the output element.
 Output ranges are writable, callback values are retained once, and each visited
 or generated element invokes its callback exactly once. The counted forms use
 the same promoted integral or non-scoped enum count boundary as `copy_n`; a

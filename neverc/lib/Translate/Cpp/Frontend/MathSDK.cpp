@@ -7454,9 +7454,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         utilityScalarDirectConversion(
             Context, Function->getParamDecl(0)->getType()->getPointeeType(),
             Callback->getParamType(0)) &&
-        utilityScalar(Context, Callback->getReturnType()) &&
-        Context.hasSameUnqualifiedType(
-            Callback->getReturnType(),
+        utilityScalarDirectConversion(
+            Context, Callback->getReturnType(),
             Function->getParamDecl(OutputIndex)->getType()->getPointeeType()) &&
         Same(Function->getReturnType(),
              Function->getParamDecl(OutputIndex)->getType()) &&
@@ -7489,9 +7488,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                 : Function->getReturnType()->isVoidType();
     if (Bound && Result && Same(Call->getType(), Function->getReturnType()) &&
         Callback && Callback->getNumParams() == 0 &&
-        utilityScalar(Context, Callback->getReturnType()) &&
-        Context.hasSameUnqualifiedType(
-            Callback->getReturnType(),
+        utilityScalarDirectConversion(
+            Context, Callback->getReturnType(),
             Function->getParamDecl(0)->getType()->getPointeeType()))
       return Counted ? UtilityOperation::AlgorithmGenerateN
                      : UtilityOperation::AlgorithmGenerate;

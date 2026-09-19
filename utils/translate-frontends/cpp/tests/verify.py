@@ -3911,8 +3911,8 @@ extern "C" int *algorithm_stable_partition(
 #include <algorithm>
 extern "C" long algorithm_callback_traversal(
     const int *first, const int *last, const short *second, long *output,
-    int *generated, int count, void (*visit)(long), long (*unary)(double),
-    long (*binary)(long, double), int (*generator)()) {
+    int *generated, int count, void (*visit)(long), short (*unary)(double),
+    int (*binary)(long, double), short (*generator)()) {
   auto returned = std::for_each(first, last, visit);
   const int *visited = std::for_each_n(first, count, visit);
   long *unary_end = std::transform(first, last, output, unary);

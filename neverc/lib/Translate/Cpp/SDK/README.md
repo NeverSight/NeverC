@@ -122,7 +122,8 @@ and `sort_heap`, plus `sort`, `stable_sort`, `inplace_merge`, `partial_sort`,
 `partial_sort_copy`, `nth_element`, `next_permutation` and `prev_permutation`.
 Checked function-pointer callbacks with directly convertible by-value scalar
 parameters also admit `for_each`, `for_each_n`, unary and binary `transform`;
-exact zero-parameter callbacks admit `generate` and `generate_n`.
+transform results and zero-parameter generator results may directly convert to
+the output scalar.
 Predicate mutation and ordered output algorithms require writable destinations;
 `copy_n`, `fill_n` and `search_n` accept at-most-64-bit integral and non-scoped
 enum counts after the libc++ integer promotion.

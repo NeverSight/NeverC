@@ -32334,9 +32334,9 @@ int total;
 int generated;
 void accumulate(long n) { ++calls; total += n; }
 int observe(double n) { ++calls; total += n; return int(n); }
-long square(double n) { ++calls; return long(n * n); }
-long combine(long left, double right) { ++calls; return left + long(right); }
-int next_value() { ++calls; return ++generated; }
+short square(double n) { ++calls; return short(n * n); }
+int combine(long left, double right) { ++calls; return int(left + long(right)); }
+short next_value() { ++calls; return short(++generated); }
 enum Level : unsigned char { low, high };
 Level next_level() { ++calls; return calls % 2 ? low : high; }
 int pointed;
@@ -32406,7 +32406,7 @@ int main() {
   if (calls != 3 || levels[0] != low || levels[1] != high ||
       levels[2] != low)
     return 11;
-  int *pointers[2]{};
+  const int *pointers[2]{};
   calls = 0;
   if (std::generate_n(pointers, 2, next_pointer) != pointers + 2 ||
       calls != 2 || pointers[0] != &pointed || pointers[1] != &pointed)
@@ -32444,7 +32444,7 @@ int main() {
 }
 
 TEST_F(TranslateTest,
-       CoreV2AlgorithmCallbackTraversalRequiresValueCallbacksAndExactResults) {
+       CoreV2AlgorithmCallbackTraversalRequiresValueCallbacksAndScalarResults) {
   struct Rejection {
     const char *Name;
     const char *Source;
@@ -32456,12 +32456,14 @@ TEST_F(TranslateTest,
       {"function-object",
        "struct F{void operator()(int)const{}};\n#include <algorithm>\n"
        "int main(){int a[2]{1,2};std::for_each(a,a+2,F{});return 0;}"},
-      {"converted-transform-result",
-       "int op(int n){return n;}\n#include <algorithm>\n"
-       "int main(){int a[2]{1,2};long out[2]{};"
+      {"record-transform-result",
+       "struct R{int n;operator int()const{return n;}};"
+       "R op(int n){return {n};}\n#include <algorithm>\n"
+       "int main(){int a[2]{1,2},out[2]{};"
        "return std::transform(a,a+2,out,op)==out+2?0:1;}"},
-      {"converted-generator-result",
-       "short gen(){return 3;}\n#include <algorithm>\n"
+      {"record-generator-result",
+       "struct R{int n;operator int()const{return n;}};"
+       "R gen(){return {3};}\n#include <algorithm>\n"
        "int main(){int out[2]{};std::generate(out,out+2,gen);return 0;}"}};
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);

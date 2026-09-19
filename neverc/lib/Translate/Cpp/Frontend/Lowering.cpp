@@ -5665,7 +5665,10 @@ class FunctionLowering {
         auto Value = emitAlgorithmCallback(
             json::Object(Callback), Call->getArg(CallbackIndex)->getType(),
             std::move(Arguments), L);
-        assign(dereference(Output, L), std::move(Value), L);
+        const auto ElementType =
+            type(Call->getArg(OutputIndex)->getType()->getPointeeType(), L);
+        assign(dereference(Output, L), cast(std::move(Value), ElementType, L),
+               L);
       }
       assign(First,
              binary("+", First, quantity(1, DifferenceType, L), FirstType, L),
@@ -5717,7 +5720,10 @@ class FunctionLowering {
         auto Value = emitAlgorithmCallback(json::Object(Callback),
                                            Call->getArg(2)->getType(),
                                            std::move(Arguments), L);
-        assign(dereference(Current, L), std::move(Value), L);
+        const auto ElementType =
+            type(Call->getArg(0)->getType()->getPointeeType(), L);
+        assign(dereference(Current, L), cast(std::move(Value), ElementType, L),
+               L);
       }
       assign(
           Current,

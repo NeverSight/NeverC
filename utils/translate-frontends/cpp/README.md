@@ -176,8 +176,8 @@ with directly convertible by-value scalar parameters additionally admit `min_ele
 `stable_sort`, `inplace_merge`, `partial_sort`, `partial_sort_copy`, `nth_element`,
 `next_permutation` and `prev_permutation`.
 Other checked callbacks with directly convertible by-value scalar parameters
-admit `for_each`, `for_each_n`, unary and binary `transform`; exact
-zero-parameter callbacks admit `generate` and `generate_n`.
+admit `for_each`, `for_each_n`, unary and binary `transform`; transform results
+and zero-parameter generator results may directly convert to the output scalar.
 Predicate mutation and ordered output algorithms require writable destinations,
 and `copy_n`, `fill_n` and `search_n` accept integral or non-scoped enum counts
 through 64 bits after integer promotion.
