@@ -25274,10 +25274,27 @@ int main() {
     std::unique_ptr<const int> qualified(new int(5));
     if (!qualified || *qualified != 5) return 8;
   }
-  return allocations == 5 && releases == 4 && destroyed == 7 &&
+
+  effects = 0;
+  std::unique_ptr<Owned> source(new Owned{6});
+  std::unique_ptr<Owned> moved(std::move(observe(source, 1)));
+  if (source || !moved || moved->value != 6 || effects != 1) return 9;
+  std::unique_ptr<Owned> target(new Owned{7});
+  effects = 0;
+  observe(target, 2) = std::move(observe(moved, 1));
+  if (effects != 12 || moved || !target || target->value != 6 ||
+      releases != 5 || destroyed != 14) return 10;
+  Owned *same = target.get();
+  target = std::move(target);
+  if (target.get() != same || releases != 5 || destroyed != 14) return 11;
+  effects = 0;
+  observe(target, 3) = (effects = effects * 10 + 4, nullptr);
+  if (effects != 43 || target || releases != 6 || destroyed != 20) return 12;
+
+  return allocations == 7 && releases == 6 && destroyed == 20 &&
                  released_size == sizeof(int)
              ? 0
-             : 9;
+             : 13;
 }
 )cpp");
   auto Result =
@@ -25339,6 +25356,13 @@ TEST_F(TranslateTest, CoreV2MemoryUniquePtrRequiresExactObjectForms) {
        "int f(){std::unique_ptr<int> value;"
        "return &value.get_deleter()!=nullptr;}",
        "TR0203"},
+      {"converting-move",
+       "#include <memory>\nvoid operator delete(void*)noexcept{}"
+       "int f(){std::unique_ptr<int> source;"
+       "std::unique_ptr<const int> destination("
+       "static_cast<std::unique_ptr<int>&&>(source));"
+       "return destination ? 1 : 0;}",
+       "TR0201"},
       {"function-address",
        "#include <memory>\nvoid operator delete(void*)noexcept{}"
        "using P=std::unique_ptr<int>;using F=int*(P::*)()const noexcept;"

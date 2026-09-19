@@ -297,6 +297,7 @@ enum class UtilityUniquePtrConstruction {
   Default,
   Null,
   Pointer,
+  Move,
 };
 std::optional<UtilityUniquePtrConstruction>
 approvedUtilityUniquePtrConstruction(
@@ -310,6 +311,8 @@ enum class UtilityUniquePtrOperation {
   Boolean,
   Release,
   Reset,
+  MoveAssign,
+  NullAssign,
 };
 struct UtilityUniquePtrCall {
   UtilityUniquePtrRecord Owner;
@@ -387,6 +390,8 @@ enum class UtilityOperation {
   MemoryUniquePtrBoolean,
   MemoryUniquePtrRelease,
   MemoryUniquePtrReset,
+  MemoryUniquePtrMoveAssign,
+  MemoryUniquePtrNullAssign,
   MemoryAllocatorAddress,
   MemoryAllocatorAllocate,
   MemoryAllocatorDeallocate,

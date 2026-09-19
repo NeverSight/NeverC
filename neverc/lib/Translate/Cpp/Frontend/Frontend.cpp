@@ -13597,6 +13597,23 @@ public:
             A.allocatorHeapFunction(false, Info->Owner.ElementType, L);
             break;
           }
+          case UtilityOperation::MemoryUniquePtrMoveAssign:
+          case UtilityOperation::MemoryUniquePtrNullAssign: {
+            const auto Info =
+                approvedUtilityUniquePtrCall(A.S, A.Sources, C, A.Context);
+            const auto Expected =
+                *Operation == UtilityOperation::MemoryUniquePtrMoveAssign
+                    ? UtilityUniquePtrOperation::MoveAssign
+                    : UtilityUniquePtrOperation::NullAssign;
+            if (!Info || Info->Operation != Expected) {
+              A.reject(L, "unique pointer assignment",
+                       "A checked std::unique_ptr assignment is required.");
+              break;
+            }
+            A.type(Info->Owner.ElementType, L);
+            A.allocatorHeapFunction(false, Info->Owner.ElementType, L);
+            break;
+          }
           case UtilityOperation::MemoryDefaultDelete: {
             const auto Info =
                 approvedUtilityDefaultDeleteCall(A.S, A.Sources, C, A.Context);
@@ -13654,6 +13671,8 @@ public:
           switch (*Operation) {
           case UtilityOperation::MemoryDefaultDelete:
           case UtilityOperation::MemoryUniquePtrReset:
+          case UtilityOperation::MemoryUniquePtrMoveAssign:
+          case UtilityOperation::MemoryUniquePtrNullAssign:
           case UtilityOperation::MemoryAllocatorAllocate:
           case UtilityOperation::MemoryAllocatorConstruct:
           case UtilityOperation::MemoryAllocatorDeallocate:

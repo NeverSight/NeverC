@@ -1660,8 +1660,15 @@ extern "C" int memory_unique_ptr(int *pointer) {
   if (value || released_pointer != pointer)
     return 2;
   value.reset(released_pointer);
-  value.reset();
-  return value ? 3 : 0;
+  std::unique_ptr<int> moved(std::move(value));
+  if (value || !moved)
+    return 3;
+  std::unique_ptr<int> assigned;
+  assigned = std::move(moved);
+  if (moved || !assigned)
+    return 4;
+  assigned = nullptr;
+  return assigned ? 5 : 0;
 }
 """
 

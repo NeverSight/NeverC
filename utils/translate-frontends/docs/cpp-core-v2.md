@@ -493,23 +493,27 @@ all at offset zero. Its total size and alignment must equal `T *`. The response
 preserves that ABI as one synthetic `nct_unique_ptr_pointer: ptr:T` field at
 offset zero.
 
-Default, `nullptr` and exact raw-pointer construction lower directly. `get`,
-`operator->`, `operator*` and explicit boolean conversion read the captured
-pointer once. `release` returns that pointer and clears the owner without
-destroying it. `reset(pointer())` and `reset(pointer)` evaluate the receiver
-before the replacement argument, install the replacement before destroying the
-old object, and use the same checked single-object destruction and global
-delete path as `default_delete`. Automatic and static destruction first clear
-the owner and then destroy and deallocate its former object. Null pointers skip
-destruction and deallocation.
+Default, `nullptr`, exact raw-pointer and same-type move construction lower
+directly. A move captures the source once, transfers its pointer and clears the
+source. `get`, `operator->`, `operator*` and explicit boolean conversion read
+the captured pointer once. `release` returns that pointer and clears the owner
+without destroying it. `reset(pointer())` and `reset(pointer)` evaluate the
+receiver before the replacement argument, install the replacement before
+destroying the old object, and use the same checked single-object destruction
+and global delete path as `default_delete`. Same-type move assignment evaluates
+the right owner before the left owner, releases the source and then resets the
+destination; self-move therefore retains ownership. `nullptr` assignment keeps
+the same right-before-left ordering and resets the destination. Automatic and
+static destruction first clear the owner and then destroy and deallocate its
+former object. Null pointers skip destruction and deallocation.
 
 The element must be complete and within the target's default new alignment,
 and the matching global sized or unsized delete definition must be
 source-owned. Class-specific delete, array specializations, custom deleters,
-volatile elements, `get_deleter`, member-function addresses, move construction,
-move assignment, `swap`, comparisons and ownership factories remain rejected
-at this boundary. Every admitted operation emits no libc++ runtime call and
-enables the checked `memory_lifetimes` policy.
+volatile elements, `get_deleter`, member-function addresses, converting moves,
+`swap`, comparisons and ownership factories remain rejected at this boundary.
+Every admitted operation emits no libc++ runtime call and enables the checked
+`memory_lifetimes` policy.
 
 Exact `std::allocator<T>` metadata is admitted when `T` is non-cv `void` or a
 non-array object type, including an incomplete object. Its C++17 nested value,

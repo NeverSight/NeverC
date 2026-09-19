@@ -2997,6 +2997,13 @@ approvedUtilityUniquePtrConstruction(const State &S, const SourceManager &SM,
     return std::nullopt;
   const auto Parameter = Constructor->getParamDecl(0)->getType();
   const auto Argument = Construction->getArg(0)->getType();
+  const auto OwnerType = Context.getRecordType(Owner->Record);
+  if (Constructor->isMoveConstructor() && !Constructor->getPrimaryTemplate() &&
+      Parameter->isRValueReferenceType() &&
+      Context.hasSameType(Parameter->getPointeeType(), OwnerType) &&
+      Context.hasSameUnqualifiedType(Argument, OwnerType) &&
+      Construction->getArg(0)->isXValue())
+    return UtilityUniquePtrConstruction::Move;
   if (Parameter->isNullPtrType() && Argument->isNullPtrType())
     return UtilityUniquePtrConstruction::Null;
   if (Context.hasSameType(Parameter, Owner->PointerType) &&
@@ -3058,9 +3065,34 @@ approvedUtilityUniquePtrCall(const State &S, const SourceManager &SM,
     return Context.hasSameType(Method->getReturnType(), Type) &&
            Context.hasSameType(Call->getType(), Type);
   };
+  const auto OwnerType = Context.getRecordType(Owner->Record);
+  const auto AssignmentResult = [&] {
+    return Method->getReturnType()->isLValueReferenceType() &&
+           Context.hasSameType(Method->getReturnType()->getPointeeType(),
+                               OwnerType) &&
+           Context.hasSameUnqualifiedType(Call->getType(), OwnerType) &&
+           Call->isLValue() && !Object->getType().isConstQualified();
+  };
   UtilityUniquePtrOperation Operation;
-  if (Method->getOverloadedOperator() == OO_Arrow && !Method->getNumParams() &&
-      Method->isConst() && ResultIs(Owner->PointerType) && Call->isPRValue()) {
+  if (Method->getOverloadedOperator() == OO_Equal &&
+      Method->isMoveAssignmentOperator() && !Method->getPrimaryTemplate() &&
+      Method->getNumParams() == 1 && AssignmentResult() &&
+      Method->getParamDecl(0)->getType()->isRValueReferenceType() &&
+      Context.hasSameType(Method->getParamDecl(0)->getType()->getPointeeType(),
+                          OwnerType) &&
+      Context.hasSameUnqualifiedType(Call->getArg(ArgumentIndex)->getType(),
+                                     OwnerType) &&
+      Call->getArg(ArgumentIndex)->isXValue()) {
+    Operation = UtilityUniquePtrOperation::MoveAssign;
+  } else if (Method->getOverloadedOperator() == OO_Equal &&
+             !Method->getPrimaryTemplate() && Method->getNumParams() == 1 &&
+             AssignmentResult() &&
+             Method->getParamDecl(0)->getType()->isNullPtrType() &&
+             Call->getArg(ArgumentIndex)->getType()->isNullPtrType()) {
+    Operation = UtilityUniquePtrOperation::NullAssign;
+  } else if (Method->getOverloadedOperator() == OO_Arrow &&
+             !Method->getNumParams() && Method->isConst() &&
+             ResultIs(Owner->PointerType) && Call->isPRValue()) {
     Operation = UtilityUniquePtrOperation::Arrow;
   } else if (Method->getOverloadedOperator() == OO_Star &&
              !Method->getNumParams() && Method->isConst() &&
@@ -4016,6 +4048,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return UtilityOperation::MemoryUniquePtrRelease;
     case UtilityUniquePtrOperation::Reset:
       return UtilityOperation::MemoryUniquePtrReset;
+    case UtilityUniquePtrOperation::MoveAssign:
+      return UtilityOperation::MemoryUniquePtrMoveAssign;
+    case UtilityUniquePtrOperation::NullAssign:
+      return UtilityOperation::MemoryUniquePtrNullAssign;
     }
   }
   if (approvedUtilityDefaultDeleteCall(S, SM, Call, Context))
