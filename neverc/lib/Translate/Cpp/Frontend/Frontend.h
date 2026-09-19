@@ -298,6 +298,8 @@ enum class UtilityUniquePtrConstruction {
   Default,
   Null,
   Pointer,
+  NullDeleter,
+  PointerDeleter,
   FactoryArray,
   Move,
   ConvertingMove,

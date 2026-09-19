@@ -1512,13 +1512,18 @@ special members and exactly one source-defined ordinary nonstatic
 `void operator()(pointer) noexcept`, optionally `const` and without a ref
 qualifier. The array record additionally authenticates libc++'s empty stateless
 bounds-checker field, which adds no response field. Default, null, compatible
-raw-pointer and same-type move construction; same-type move assignment;
-`nullptr` assignment; pointer access, boolean conversion, release, reset,
-member/free swap, all six same-specialization comparisons, all six
+raw-pointer, matching raw-pointer/null plus an argument bound to the exact
+deleter lvalue or rvalue parameter, and same-type move construction; same-type
+move assignment; `nullptr`
+assignment; pointer access, boolean conversion, release, reset, member/free
+swap, all six same-specialization comparisons, all six
 bidirectional `nullptr` comparisons and destruction lower to existing record,
 pointer, cast, comparison and checked lifetime instructions. Matching default
 deleters additionally admit the existing const-adding converting moves and
 qualification-compatible same-element comparisons.
+An explicit deleter argument and any supported source conversion are emitted
+once; the pointer value is captured and stored while the empty deleter value
+adds no response field.
 Single-object owners admit dereference and arrow; array owners emit ordinary
 typed `index` expressions. Default-deleter array reset, assignment and
 destruction reuse the checked cookie-based reverse destruction and global
@@ -1555,8 +1560,7 @@ Later default destruction uses the existing checked global-delete or reverse
 global-delete[] path. Custom destruction calls the admitted operator instead.
 These operations add no wire instruction, SDK call, native-heap import or
 hidden deleter storage. Stateful, reference, non-raw-pointer, nontrivial,
-overloaded, ref-qualified and throwing custom deleters, plus explicit
-deleter-object construction, remain rejected. Exact runtime allocator
+overloaded, ref-qualified and throwing custom deleters remain rejected. Exact runtime allocator
 specializations preserve the authenticated one-byte, one-byte-aligned empty
 libc++ representation as a record with one synthetic
 `{name:"nct_allocator_storage",type:"u8"}` field at bit offset zero. Their

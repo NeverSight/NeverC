@@ -60,10 +60,12 @@ owners, use pointer-sized authenticated carriers. The same owners also admit a
 source-owned by-value custom deleter when it is an empty, standard-layout,
 trivial one-byte record with trivial special members and exactly one
 source-defined `void operator()(pointer) noexcept`, optionally `const` and with
-no ref qualifier. Default, null, raw-pointer, same-type move and const-adding
-default-deleter converting move construction, corresponding move assignment,
-`nullptr` assignment, `get`, mutable/const `get_deleter`, explicit boolean
-conversion, `release`, `reset`, member and free `swap`, same-specialization and
+no ref qualifier. Default, null, raw-pointer, matching raw-pointer/null plus a
+deleter argument bound to the exact deleter lvalue or rvalue parameter,
+same-type move and const-adding default-deleter converting move construction,
+corresponding move assignment, `nullptr`
+assignment, `get`, mutable/const `get_deleter`, explicit boolean conversion,
+`release`, `reset`, member and free `swap`, same-specialization and
 default-deleter qualification-compatible same-element comparisons, all six
 bidirectional `nullptr` comparisons and automatic destruction lower directly.
 Single-object owners also admit `operator->` and dereference; array owners admit

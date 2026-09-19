@@ -212,9 +212,11 @@ owners, use authenticated pointer-sized carriers. The same owner forms admit a
 source-owned by-value deleter that is an empty, standard-layout, trivial
 one-byte record with trivial special members and exactly one source-defined
 `void operator()(pointer) noexcept`, optionally `const` and without a ref
-qualifier. Their default, null, raw-pointer, move, assignment, observation,
-release, reset, swap, comparison and destruction operations lower directly;
-scalar owners expose dereference and arrow while array owners expose subscript.
+qualifier. Their default, null, raw-pointer, matching raw-pointer/null plus a
+deleter argument bound to the exact deleter lvalue or rvalue parameter, move,
+assignment, observation, release, reset, swap, comparison and destruction
+operations lower directly; scalar owners
+expose dereference and arrow while array owners expose subscript.
 Default deleters use the checked global-delete or reverse `delete[]` path; an
 admitted custom deleter is invoked for a non-null pointer without requiring a
 global delete definition. Exact single-object `std::make_unique<T>(args...)`
@@ -239,8 +241,8 @@ when a source-defined global new/delete path exists and the allocation count is
 a constant proven within `max_size`. Default heap allocation, dynamic allocation
 counts, over-aligned elements, runtime-count array factories, stateful,
 reference, non-raw-pointer, nontrivial, overloaded, ref-qualified or throwing
-custom deleters, explicit deleter-object construction, other smart pointers
-and ownership factories are not yet admitted. The driver authenticates each
+custom deleters, other smart pointers and ownership factories are not yet
+admitted. The driver authenticates each
 closure before emitting output. Standard-library objects and operations beyond
 these documented surfaces, other standard headers and full C++/STL remain
 unfinished.

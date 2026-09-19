@@ -162,10 +162,12 @@ owners, use an authenticated pointer-sized carrier. The same owner forms admit
 a source-owned by-value custom deleter only when it is an empty,
 standard-layout, trivial one-byte record with trivial special members and one
 source-defined `void operator()(pointer) noexcept`, optionally `const` and
-without a ref qualifier. Default, null, raw-pointer, same-type move and
-const-adding default-deleter converting move construction; corresponding move
-assignment; `nullptr` assignment; pointer access, mutable/const `get_deleter`,
-release, reset, member/free swap, same-specialization and
+without a ref qualifier. Default, null, raw-pointer, matching raw-pointer/null
+plus a deleter argument bound to the exact deleter lvalue or rvalue parameter,
+same-type move and const-adding default-deleter converting move construction;
+corresponding move assignment;
+`nullptr` assignment; pointer access, mutable/const `get_deleter`, release,
+reset, member/free swap, same-specialization and
 default-deleter qualification-compatible same-element comparisons, all six
 bidirectional `nullptr` comparisons and destruction lower directly without a
 libc++ call.

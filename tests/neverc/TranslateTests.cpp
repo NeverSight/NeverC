@@ -25309,9 +25309,15 @@ std::unique_ptr<const int> &observe(std::unique_ptr<const int> &value,
 int main() {
   std::unique_ptr<Owned> empty;
   std::unique_ptr<Owned> null((effects = 9, nullptr));
-  if (empty || null || empty.get() != nullptr || effects != 9) return 1;
+  std::default_delete<Owned> explicit_deleter;
+  std::unique_ptr<Owned> explicit_null(nullptr, explicit_deleter);
+  std::unique_ptr<Owned> explicit_null_rvalue(
+      nullptr, std::default_delete<Owned>{});
+  if (empty || null || explicit_null || explicit_null_rvalue ||
+      empty.get() != nullptr || effects != 9)
+    return 1;
 
-  std::unique_ptr<Owned> owner(new Owned{1});
+  std::unique_ptr<Owned> owner(new Owned{1}, explicit_deleter);
   const std::unique_ptr<Owned> &view = owner;
   std::unique_ptr<Owned> *owner_pointer = &owner;
   const std::unique_ptr<Owned> *view_pointer = &view;
@@ -25346,7 +25352,8 @@ int main() {
   if (effects != 1 || owner || releases != 2 || destroyed != 3) return 5;
 
   {
-    std::unique_ptr<Owned> automatic(new Owned{4});
+    std::unique_ptr<Owned> automatic(new Owned{4},
+                                     std::default_delete<Owned>{});
     if (!automatic) return 6;
   }
   if (releases != 3 || destroyed != 7) return 7;
@@ -25538,9 +25545,15 @@ void operator delete[](void *, Size size) noexcept {
 int main() {
   std::unique_ptr<Owned[]> empty;
   std::unique_ptr<Owned[]> null(nullptr);
-  if (empty || null || empty.get() != nullptr) return 1;
+  std::default_delete<Owned[]> explicit_deleter;
+  std::unique_ptr<Owned[]> explicit_null(nullptr, explicit_deleter);
+  std::unique_ptr<Owned[]> explicit_null_rvalue(
+      nullptr, std::default_delete<Owned[]>{});
+  if (empty || null || explicit_null || explicit_null_rvalue ||
+      empty.get() != nullptr)
+    return 1;
 
-  std::unique_ptr<Owned[]> owner(new Owned[3]{1, 2, 4});
+  std::unique_ptr<Owned[]> owner(new Owned[3]{1, 2, 4}, explicit_deleter);
   std::unique_ptr<Owned[]> *owner_address = &owner;
   owner_address->operator[](1).value = 3;
   if (owner[0].value != 1 || owner[1].value != 3 ||
@@ -25639,6 +25652,8 @@ int array_calls;
 int array_sum;
 int matrix_calls;
 int matrix_sum;
+int deleter_arguments;
+int deleter_conversions;
 int array_first[3] = {1, 2, 3};
 int array_second[3] = {4, 5, 6};
 int array_third[3] = {6, 7, 8};
@@ -25647,6 +25662,12 @@ struct ScalarDispose {
   void operator()(int *pointer) const noexcept {
     ++scalar_calls;
     scalar_sum += *pointer;
+  }
+};
+struct ScalarDisposeProxy {
+  operator ScalarDispose() const noexcept {
+    ++deleter_conversions;
+    return {};
   }
 };
 struct ArrayDispose {
@@ -25667,7 +25688,9 @@ int main() {
       sizeof(std::unique_ptr<int[][2], MatrixDispose>) != sizeof(int *))
     return 1;
 
-  std::unique_ptr<int, ScalarDispose> owner(&first);
+  ScalarDispose scalar_deleter;
+  std::unique_ptr<int, ScalarDispose> owner(
+      &first, (++deleter_arguments, scalar_deleter));
   owner.get_deleter()(&third);
   const std::unique_ptr<int, ScalarDispose> &owner_view = owner;
   owner_view.get_deleter()(&first);
@@ -25675,9 +25698,11 @@ int main() {
   std::unique_ptr<int, ScalarDispose> moved(std::move(owner));
   int *released = moved.release();
   moved.reset(released);
-  std::unique_ptr<int, ScalarDispose> target(&third);
+  std::unique_ptr<int, ScalarDispose> target(
+      &third, (++deleter_arguments, ScalarDispose{}));
   target = std::move(moved);
-  std::unique_ptr<int, ScalarDispose> scalar_empty;
+  std::unique_ptr<int, ScalarDispose> scalar_empty(
+      nullptr, (++deleter_arguments, scalar_deleter));
   if (owner || moved || !target || *target != 3 || target == scalar_empty ||
       !(target != scalar_empty) || target == nullptr || nullptr == target ||
       !(target != nullptr) || !(nullptr != target) || scalar_calls != 4 ||
@@ -25685,19 +25710,30 @@ int main() {
     return 2;
   target = nullptr;
   {
-    std::unique_ptr<int, ScalarDispose> destructor_owner(&first);
+    std::unique_ptr<int, ScalarDispose> destructor_owner(
+        &first, (++deleter_arguments, ScalarDispose{}));
   }
   if (target || scalar_empty || target != scalar_empty ||
       !(target == scalar_empty) || scalar_calls != 6 || scalar_sum != 19)
     return 3;
+  {
+    std::unique_ptr<int, ScalarDispose> converted_owner(
+        &third, (++deleter_arguments, ScalarDisposeProxy{}));
+  }
+  if (scalar_calls != 7 || scalar_sum != 24 || deleter_conversions != 1)
+    return 3;
 
-  std::unique_ptr<int[], ArrayDispose> array_owner(array_first);
+  ArrayDispose array_deleter;
+  std::unique_ptr<int[], ArrayDispose> array_owner(
+      array_first, (++deleter_arguments, array_deleter));
   array_owner[1] = 7;
   array_owner.reset(array_second);
   std::unique_ptr<int[], ArrayDispose> array_moved(std::move(array_owner));
-  std::unique_ptr<int[], ArrayDispose> array_target(array_third);
+  std::unique_ptr<int[], ArrayDispose> array_target(
+      array_third, (++deleter_arguments, ArrayDispose{}));
   array_target = std::move(array_moved);
-  std::unique_ptr<int[], ArrayDispose> array_empty;
+  std::unique_ptr<int[], ArrayDispose> array_empty(
+      nullptr, (++deleter_arguments, array_deleter));
   array_target.swap(array_empty);
   std::swap(array_target, array_empty);
   if (array_owner || array_moved || !array_target || array_target[2] != 6 ||
@@ -25706,13 +25742,15 @@ int main() {
   array_target.reset();
   if (array_calls != 3 || array_sum != 30) return 5;
 
-  std::unique_ptr<int[][2], MatrixDispose> matrix_owner(matrix);
+  std::unique_ptr<int[][2], MatrixDispose> matrix_owner(
+      matrix, (++deleter_arguments, MatrixDispose{}));
   matrix_owner[1][1] = 9;
   matrix_owner.reset();
   if (matrix_owner || matrix_calls != 1 || matrix_sum != 10) return 6;
 
-  return scalar_calls == 6 && scalar_sum == 19 && array_calls == 3 &&
-                 array_sum == 30 && matrix_calls == 1 && matrix_sum == 10
+  return scalar_calls == 7 && scalar_sum == 24 && array_calls == 3 &&
+                 array_sum == 30 && matrix_calls == 1 && matrix_sum == 10 &&
+                 deleter_arguments == 9 && deleter_conversions == 1
              ? 0
              : 7;
 }
@@ -25796,11 +25834,6 @@ TEST_F(TranslateTest, CoreV2MemoryUniquePtrRequiresExactObjectForms) {
        "void operator()(int*)const noexcept{}};"
        "std::unique_ptr<int,D> value;",
        "TR0203"},
-      {"explicit-custom-deleter-construction",
-       "#include <memory>\nint value;"
-       "struct D{void operator()(int*)const noexcept{}};"
-       "int main(){D d;std::unique_ptr<int,D> owner(&value,d);}",
-       "TR0201"},
       {"volatile-element",
        "#include <memory>\nstd::unique_ptr<volatile int> value;", "TR0203"},
       {"class-delete",

@@ -512,8 +512,13 @@ owner this is a pointer to its first bounded row; the empty custom deleter adds
 no response field.
 
 Default, `nullptr`, compatible raw-pointer and same-type move construction lower
-directly for either deleter. Const-adding converting moves retain the same
-scalar or array ownership form and matching default deleters. A move captures
+directly for either deleter. The pointer and `nullptr` constructors also accept
+an argument that Clang binds to the exact deleter lvalue or rvalue parameter,
+including a supported source conversion to that record. Both arguments and
+the conversion are evaluated once; the captured pointer is stored while the
+empty trivial deleter value is elided without adding a carrier field.
+Const-adding converting moves retain the same scalar or array ownership form
+and matching default deleters. A move captures
 the source once, transfers its pointer through the checked qualification
 conversion and clears the source. `get` and explicit boolean conversion read
 the captured pointer once;
@@ -554,9 +559,7 @@ checked native cookie and original allocation extent. Null pointers skip every
 deleter call.
 
 Stateful, reference, non-raw-pointer, nontrivial, overloaded, ref-qualified and
-throwing custom deleters remain rejected. Construction with an explicit
-deleter object is also outside this boundary; admitted custom deleters are
-implicitly materialized through their trivial default state.
+throwing custom deleters remain rejected.
 
 The exact pinned single-object `std::make_unique<T>(args...)` overload and
 unbounded-array `std::make_unique<T[]>(count)` overload are also admitted;

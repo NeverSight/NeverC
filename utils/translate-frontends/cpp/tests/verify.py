@@ -1643,6 +1643,7 @@ Size array_released;
 int array_released_count;
 int destroyed;
 int custom_released;
+int custom_deleter_arguments;
 struct Owned {
   int value;
   Owned(int value = 0) noexcept : value(value) {}
@@ -1698,7 +1699,8 @@ extern "C" int memory_default_delete() {
              : 1;
 }
 extern "C" int memory_unique_ptr(int *pointer) {
-  std::unique_ptr<int> empty;
+  std::default_delete<int> explicit_deleter;
+  std::unique_ptr<int> empty(nullptr, explicit_deleter);
   std::unique_ptr<int> value(pointer);
   if (empty || !value || value.get() != pointer || *value != *pointer)
     return 1;
@@ -1796,8 +1798,13 @@ extern "C" int memory_multidimensional(int (*pointer)[2]) {
   return owner || factory[0][0] != 0 || factory[1][2] != 9 ? 1 : 0;
 }
 extern "C" int memory_custom_unique_ptr(int *pointer) {
-  std::unique_ptr<int, CustomDispose> owner(pointer);
-  if (!owner || owner.get() != pointer)
+  CustomDispose deleter;
+  std::unique_ptr<int, CustomDispose> owner(
+      pointer, (++custom_deleter_arguments, deleter));
+  std::unique_ptr<int, CustomDispose> empty(
+      nullptr, (++custom_deleter_arguments, CustomDispose{}));
+  if (!owner || empty || owner.get() != pointer ||
+      custom_deleter_arguments != 2)
     return 1;
   owner.reset();
   return owner || custom_released != *pointer ? 2 : 0;

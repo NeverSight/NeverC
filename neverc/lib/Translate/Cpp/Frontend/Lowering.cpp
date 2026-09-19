@@ -8375,6 +8375,31 @@ class FunctionLowering {
                L);
         return;
       }
+      case UtilityUniquePtrConstruction::NullDeleter:
+        if (C->getNumArgs() != 2)
+          reject(L, "unique pointer construction",
+                 "A null std::unique_ptr deleter construction needs two "
+                 "arguments.");
+        discard(C->getArg(0));
+        discard(C->getArg(1));
+        assign(std::move(Place), A.zero(T, L), L);
+        return;
+      case UtilityUniquePtrConstruction::PointerDeleter: {
+        if (C->getNumArgs() != 2)
+          reject(L, "unique pointer construction",
+                 "An owning std::unique_ptr deleter construction needs a "
+                 "pointer and deleter.");
+        auto Pointer = snapshot(
+            cast(expression(C->getArg(0)), type(Unique->PointerType, L), L), L);
+        discard(C->getArg(1));
+        Expression Member{{"kind", "member"},
+                          {"type", type(Unique->PointerType, L)},
+                          {"name", "nct_unique_ptr_pointer"},
+                          {"args", json::Array{json::Object(Place)}},
+                          {"loc", A.loc(L)}};
+        assign(std::move(Member), std::move(Pointer), L);
+        return;
+      }
       case UtilityUniquePtrConstruction::FactoryArray:
         reject(L, "unique pointer construction",
                "The private array owner construction is lowered only through "

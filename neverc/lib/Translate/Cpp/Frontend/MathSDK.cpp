@@ -3160,6 +3160,45 @@ approvedUtilityUniquePtrConstruction(const State &S, const SourceManager &SM,
       return std::nullopt;
     return UtilityUniquePtrConstruction::FactoryArray;
   }
+  if (Construction->getNumArgs() == 2) {
+    const auto *Primary = Constructor->getPrimaryTemplate();
+    const auto PointerParameter = Constructor->getParamDecl(0)->getType();
+    const auto PointerArgument = Construction->getArg(0)->getType();
+    const auto DeleterParameter = Constructor->getParamDecl(1)->getType();
+    const auto DeleterArgument = Construction->getArg(1)->getType();
+    const auto DeleterType = Context.getRecordType(Owner->Deleter.Record);
+    const auto ReferencedDeleter = DeleterParameter->isReferenceType()
+                                       ? DeleterParameter->getPointeeType()
+                                       : QualType();
+    const bool LValueDeleter =
+        DeleterParameter->isLValueReferenceType() &&
+        ReferencedDeleter.isConstQualified() &&
+        Context.hasSameUnqualifiedType(ReferencedDeleter, DeleterType) &&
+        Context.hasSameUnqualifiedType(DeleterArgument, DeleterType) &&
+        Construction->getArg(1)->isLValue();
+    const bool RValueDeleter =
+        DeleterParameter->isRValueReferenceType() &&
+        Context.hasSameUnqualifiedType(ReferencedDeleter, DeleterType) &&
+        Context.hasSameUnqualifiedType(DeleterArgument, DeleterType) &&
+        (Construction->getArg(1)->isXValue() ||
+         Construction->getArg(1)->isPRValue());
+    if (!Primary || (!LValueDeleter && !RValueDeleter) ||
+        !approvedStandardSDKDeclaration(S, SM, Primary) ||
+        !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
+                       "__memory/unique_ptr.h"))
+      return std::nullopt;
+    if (PointerParameter->isNullPtrType() && PointerArgument->isNullPtrType())
+      return UtilityUniquePtrConstruction::NullDeleter;
+    if ((!Owner->Deleter.Array &&
+         Context.hasSameType(PointerParameter, Owner->PointerType) &&
+         Context.hasSameType(PointerArgument, Owner->PointerType)) ||
+        (Owner->Deleter.Array &&
+         Context.hasSameType(PointerParameter, PointerArgument) &&
+         utilityPointerConversion(Context, PointerParameter,
+                                  Owner->PointerType)))
+      return UtilityUniquePtrConstruction::PointerDeleter;
+    return std::nullopt;
+  }
   if (Construction->getNumArgs() != 1)
     return std::nullopt;
   const auto Parameter = Constructor->getParamDecl(0)->getType();
