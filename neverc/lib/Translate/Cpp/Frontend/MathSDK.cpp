@@ -6382,8 +6382,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       NumericPointerParameter(2, true) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
-                           Function->getParamDecl(2)->getType()) &&
+      AlgorithmTransferParameters(0, 2) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType()) &&
       (Call->getNumArgs() == 3 ||
@@ -6446,8 +6445,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       NumericPointerParameter(2, true) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
-                           Function->getParamDecl(2)->getType()) &&
+      AlgorithmTransferParameters(0, 2) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
     auto Element = Function->getParamDecl(0)->getType()->getPointeeType();
@@ -6472,8 +6470,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       NumericPointerParameter(2, true) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
-                           Function->getParamDecl(2)->getType()) &&
+      AlgorithmTransferParameters(0, 2) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
     auto Element = Function->getParamDecl(0)->getType()->getPointeeType();

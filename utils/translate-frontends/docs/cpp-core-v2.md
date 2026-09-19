@@ -415,11 +415,13 @@ upstream public header and all C++17 numeric components byte for byte.
 The default `iota`, `accumulate`, `inner_product`, `partial_sum`,
 `adjacent_difference`, `reduce`, two-range `transform_reduce`, `inclusive_scan`
 and `exclusive_scan` overloads lower to direct pointer loops. Input and output
-ranges use the same unqualified element type, and each initial or generated
-value has that exact type. Admitted elements are non-promoted built-in integers
-through 64 bits, `float` or `double`; output pointers are writable. Two-argument
-`reduce` starts from the element type's zero value. The sequential scan
-operations preserve empty-range and in-place behavior. Every argument is
+ranges use admitted non-promoted built-in integers through 64 bits, `float` or
+`double`. `partial_sum`, `adjacent_difference`, `inclusive_scan` and
+`exclusive_scan` accept a writable scalar output whose element accepts a
+checked direct conversion from the input element; accumulation retains the
+input element type. Initial or generated values retain that input type.
+Two-argument `reduce` starts from the element type's zero value. The sequential
+scan operations preserve empty-range and in-place behavior. Every argument is
 captured once before the loop.
 
 The operation-taking overloads of `accumulate`, `inner_product`, `partial_sum`,
@@ -433,6 +435,7 @@ element type, while each parameter accepts the checked direct scalar conversion
 from an element; unary transforms take one element and every combining
 operation takes two. Callback values are captured once, empty ranges make no
 callback calls, and the sequential scan forms retain their in-place behavior.
+Scan results use the same directly convertible writable output boundary.
 
 `gcd` and `lcm` accept any non-boolean built-in integer argument combination
 through 64 bits and return libc++'s exact `common_type_t` result. Signed inputs
@@ -441,8 +444,9 @@ negative, narrow and mixed-signedness calls retain the standard result and
 representability preconditions. Each argument is evaluated once.
 
 Callable objects, reference callback parameters or results, record callback
-results, heterogeneous range values, promotable range integers, enums, records,
-custom iterators and the other range-based numeric algorithms remain outside the
+results, heterogeneous input ranges or initial values, promotable range
+integers, enums, records, custom iterators and the other range-based numeric
+algorithms remain outside the
 runtime boundary.
 Integer arguments wider than 64 bits, quoted includes, shadows, function
 addresses for the numeric algorithms themselves and forged declarations remain

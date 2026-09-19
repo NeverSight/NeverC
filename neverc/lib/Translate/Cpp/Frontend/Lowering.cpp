@@ -2256,6 +2256,8 @@ class FunctionLowering {
       const auto FirstType = type(Call->getArg(0)->getType(), L);
       const auto OutputType = type(Call->getArg(2)->getType(), L);
       const auto ElementType =
+          type(Call->getArg(0)->getType()->getPointeeType(), L);
+      const auto OutputElementType =
           type(Call->getArg(2)->getType()->getPointeeType(), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       auto Previous = temporary(ElementType, L);
@@ -2278,7 +2280,8 @@ class FunctionLowering {
                                        std::move(Arguments), L),
                  ElementType, L),
             L);
-        assign(dereference(Output, L), Value, L);
+        assign(dereference(Output, L),
+               cast(json::Object(Value), OutputElementType, L), L);
         assign(First,
                binary("+", First, quantity(1, DifferenceType, L), FirstType, L),
                L);
@@ -2298,7 +2301,8 @@ class FunctionLowering {
       branch(binary("!=", First, Last, "bool", L), StoreFirst, End, L);
       label(StoreFirst, L);
       assign(Previous, dereference(First, L), L);
-      assign(dereference(Output, L), Previous, L);
+      assign(dereference(Output, L),
+             cast(json::Object(Previous), OutputElementType, L), L);
       assign(First,
              binary("+", First, quantity(1, DifferenceType, L), FirstType, L),
              L);
@@ -2324,11 +2328,14 @@ class FunctionLowering {
                     ElementType, L);
       };
       if (Adjacent) {
-        assign(dereference(Output, L), Combine(CurrentValue, Previous, "-"), L);
+        assign(dereference(Output, L),
+               cast(Combine(CurrentValue, Previous, "-"), OutputElementType, L),
+               L);
         assign(Previous, CurrentValue, L);
       } else {
         assign(Previous, Combine(Previous, CurrentValue, "+"), L);
-        assign(dereference(Output, L), Previous, L);
+        assign(dereference(Output, L),
+               cast(json::Object(Previous), OutputElementType, L), L);
       }
       assign(First,
              binary("+", First, quantity(1, DifferenceType, L), FirstType, L),
@@ -2354,6 +2361,8 @@ class FunctionLowering {
       const auto FirstType = type(Call->getArg(0)->getType(), L);
       const auto OutputType = type(Call->getArg(2)->getType(), L);
       const auto ValueType = type(Call->getArg(3)->getType(), L);
+      const auto OutputElementType =
+          type(Call->getArg(2)->getType()->getPointeeType(), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       auto InputValue = temporary(ValueType, L);
       auto Next = temporary(ValueType, L);
@@ -2376,7 +2385,8 @@ class FunctionLowering {
       } else {
         assign(Next, binary("+", Value, InputValue, ValueType, L), L);
       }
-      assign(dereference(Output, L), Value, L);
+      assign(dereference(Output, L),
+             cast(json::Object(Value), OutputElementType, L), L);
       assign(Value, Next, L);
       assign(First,
              binary("+", First, quantity(1, DifferenceType, L), FirstType, L),
@@ -2415,6 +2425,8 @@ class FunctionLowering {
       const auto FirstType = type(Call->getArg(0)->getType(), L);
       const auto OutputType = type(Call->getArg(2)->getType(), L);
       const auto ElementType =
+          type(Call->getArg(0)->getType()->getPointeeType(), L);
+      const auto OutputElementType =
           type(Call->getArg(2)->getType()->getPointeeType(), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       if (!Accumulator)
@@ -2458,7 +2470,8 @@ class FunctionLowering {
         label(FirstBody, L);
         assign(InputValue, dereference(First, L), L);
         assign(*Accumulator, ApplyUnary(), L);
-        assign(dereference(Output, L), *Accumulator, L);
+        assign(dereference(Output, L),
+               cast(json::Object(*Accumulator), OutputElementType, L), L);
         Advance();
         jump(LoopCheck, L);
       } else {
@@ -2472,9 +2485,11 @@ class FunctionLowering {
       assign(Next, ApplyBinary(), L);
       if (Inclusive) {
         assign(*Accumulator, Next, L);
-        assign(dereference(Output, L), *Accumulator, L);
+        assign(dereference(Output, L),
+               cast(json::Object(*Accumulator), OutputElementType, L), L);
       } else {
-        assign(dereference(Output, L), *Accumulator, L);
+        assign(dereference(Output, L),
+               cast(json::Object(*Accumulator), OutputElementType, L), L);
         assign(*Accumulator, Next, L);
       }
       Advance();

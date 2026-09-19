@@ -27930,17 +27930,17 @@ int main() {
       std::inner_product(values, values, weights, 9) != 9)
     return 3;
 
-  int sums[4]{};
-  int *sum_end = std::partial_sum((++effects, values),
-                                  (++effects, values + 4),
-                                  (++effects, sums));
+  long sums[4]{};
+  long *sum_end = std::partial_sum((++effects, values),
+                                   (++effects, values + 4),
+                                   (++effects, sums));
   if (effects != 13 || sum_end != sums + 4 || sums[0] != 1 ||
       sums[1] != 4 || sums[2] != 10 || sums[3] != 20 ||
       std::partial_sum(values, values, sums) != sums)
     return 4;
 
-  int differences[4]{};
-  int *difference_end = std::adjacent_difference(
+  long differences[4]{};
+  long *difference_end = std::adjacent_difference(
       (++effects, values), (++effects, values + 4), (++effects, differences));
   if (effects != 16 || difference_end != differences + 4 ||
       differences[0] != 1 || differences[1] != 2 || differences[2] != 3 ||
@@ -28009,12 +28009,7 @@ TEST_F(TranslateTest, CoreV2NumericSequentialRequiresPinnedScalarForms) {
        "#include <numeric>\nstruct Add{int operator()(int a,int b)const{"
        "return a+b;}};int main(){int v[2]{1,2};"
        "return std::accumulate(v,v+2,0,Add{});}"},
-      {"heterogeneous-partial-sum",
-       "#include <numeric>\nint main(){int a[2]{1,2};long b[2]{};"
-       "return std::partial_sum(a,a+2,b)==b+2?0:1;}"},
-      {"heterogeneous-adjacent-difference",
-       "#include <numeric>\nint main(){int a[2]{1,2};long b[2]{};"
-       "return std::adjacent_difference(a,a+2,b)==b+2?0:1;}"}};
+  };
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
     const auto Source =
@@ -28053,8 +28048,8 @@ int main() {
       std::transform_reduce(values, values, weights, 9) != 9)
     return 2;
 
-  int inclusive[4]{};
-  int *inclusive_end = std::inclusive_scan(
+  long inclusive[4]{};
+  long *inclusive_end = std::inclusive_scan(
       (++effects, values), (++effects, values + 4), (++effects, inclusive));
   if (effects != 10 || inclusive_end != inclusive + 4 ||
       inclusive[0] != 1 || inclusive[1] != 3 || inclusive[2] != 6 ||
@@ -28062,8 +28057,8 @@ int main() {
       std::inclusive_scan(values, values, inclusive) != inclusive)
     return 3;
 
-  int exclusive[4]{};
-  int *exclusive_end = std::exclusive_scan(
+  long exclusive[4]{};
+  long *exclusive_end = std::exclusive_scan(
       (++effects, values), (++effects, values + 4), (++effects, exclusive),
       (++effects, 5));
   if (effects != 14 || exclusive_end != exclusive + 4 ||
@@ -28146,13 +28141,13 @@ int main() {
       calls != 8)
     return 2;
 
-  int partial[4]{};
+  long partial[4]{};
   calls = 0;
   if (std::partial_sum(values, values + 4, partial, add) != partial + 4 ||
       calls != 3 || partial[0] != 1 || partial[1] != 3 ||
       partial[2] != 6 || partial[3] != 10)
     return 3;
-  int adjacent[4]{};
+  long adjacent[4]{};
   calls = 0;
   if (std::adjacent_difference(values, values + 4, adjacent, subtract) !=
           adjacent + 4 ||
@@ -28173,7 +28168,7 @@ int main() {
       calls != 8)
     return 7;
 
-  int inclusive[4]{};
+  long inclusive[4]{};
   calls = 0;
   if (std::inclusive_scan(values, values + 4, inclusive, add) !=
           inclusive + 4 ||
@@ -28186,7 +28181,7 @@ int main() {
       calls != 4 || inclusive[0] != 6 || inclusive[1] != 8 ||
       inclusive[2] != 11 || inclusive[3] != 15)
     return 9;
-  int exclusive[4]{};
+  long exclusive[4]{};
   calls = 0;
   if (std::exclusive_scan(values, values + 4, exclusive, 5, add) !=
           exclusive + 4 ||
@@ -28243,11 +28238,11 @@ float half(float value) { return value / 2.0f; }
 float plus(float left, float right) { return left + right; }
 int main() {
   const int values[4]{1, 2, 3, 4};
-  int output[4]{};
+  long output[4]{};
   int effects = 0;
 
   unary_calls = binary_calls = 0;
-  int *end = std::transform_inclusive_scan(
+  long *end = std::transform_inclusive_scan(
       (++effects, values), (++effects, values + 4), (++effects, output),
       (++effects, add), (++effects, twice));
   if (effects != 5 || end != output + 4 || unary_calls != 4 ||
@@ -28338,10 +28333,6 @@ TEST_F(TranslateTest, CoreV2NumericTransformScansRequirePinnedScalarForms) {
       {"promoted-element",
        "#include <numeric>\nshort add(short a,short b){return a+b;}"
        "short twice(short a){return a*2;}int main(){short a[2]{1,2},b[2]{};"
-       "return std::transform_inclusive_scan(a,a+2,b,add,twice)==b+2?0:1;}"},
-      {"heterogeneous-output",
-       "#include <numeric>\nint add(int a,int b){return a+b;}"
-       "int twice(int a){return a*2;}int main(){int a[2]{1,2};long b[2]{};"
        "return std::transform_inclusive_scan(a,a+2,b,add,twice)==b+2?0:1;}"},
       {"heterogeneous-inclusive-init",
        "#include <numeric>\nint add(int a,int b){return a+b;}"
@@ -28455,12 +28446,6 @@ TEST_F(TranslateTest, CoreV2NumericCxx17DefaultsRequirePinnedScalarForms) {
       {"heterogeneous-transform-reduce",
        "#include <numeric>\nint main(){int a[2]{1,2};long b[2]{3,4};"
        "return std::transform_reduce(a,a+2,b,0);}"},
-      {"heterogeneous-inclusive-scan",
-       "#include <numeric>\nint main(){int a[2]{1,2};long b[2]{};"
-       "return std::inclusive_scan(a,a+2,b)==b+2?0:1;}"},
-      {"heterogeneous-exclusive-scan",
-       "#include <numeric>\nint main(){int a[2]{1,2};long b[2]{};"
-       "return std::exclusive_scan(a,a+2,b,0)==b+2?0:1;}"},
       {"heterogeneous-exclusive-init",
        "#include <numeric>\nint main(){int a[2]{1,2},b[2]{};"
        "return std::exclusive_scan(a,a+2,b,0L)==b+2?0:1;}"},

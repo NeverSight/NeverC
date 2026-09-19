@@ -2765,14 +2765,14 @@ extern "C" int numeric_header() { return 0; }
 #include <numeric>
 extern "C" int numeric_sequential() {
   int values[4]{};
-  int sums[4]{};
-  int differences[4]{};
+  long sums[4]{};
+  long differences[4]{};
   int weights[4]{4, 3, 2, 1};
   std::iota(values, values + 4, 1);
   int total = std::accumulate(values, values + 4, 0);
   int product = std::inner_product(values, values + 4, weights, 0);
-  int *sum_end = std::partial_sum(values, values + 4, sums);
-  int *difference_end = std::adjacent_difference(
+  long *sum_end = std::partial_sum(values, values + 4, sums);
+  long *difference_end = std::adjacent_difference(
       values, values + 4, differences);
   return total + product + (sum_end - sums) +
       (difference_end - differences) + sums[3] + differences[3];
@@ -2800,10 +2800,6 @@ extern "C" int numeric_sequential() {
          '#include <numeric>\nstruct R{int n;operator int()const{return n;}};R add(int a,int b){return {a+b};}int main(){int v[2]{1,2};return std::accumulate(v,v+2,0,add);}'),
         ("callable-object-accumulate",
          '#include <numeric>\nstruct Add{int operator()(int a,int b)const{return a+b;}};int main(){int v[2]{1,2};return std::accumulate(v,v+2,0,Add{});}'),
-        ("heterogeneous-partial-sum",
-         '#include <numeric>\nint main(){int a[2]{1,2};long b[2]{};return std::partial_sum(a,a+2,b)==b+2?0:1;}'),
-        ("heterogeneous-adjacent-difference",
-         '#include <numeric>\nint main(){int a[2]{1,2};long b[2]{};return std::adjacent_difference(a,a+2,b)==b+2?0:1;}'),
     ):
         check("v2-numeric-sequential-" + name, source, "TR0203",
               profile="cpp-core-v2", sdk=True)
@@ -2813,14 +2809,14 @@ extern "C" int numeric_sequential() {
 extern "C" int numeric_cxx17() {
   int values[4]{1, 2, 3, 4};
   int weights[4]{4, 3, 2, 1};
-  int inclusive[4]{};
-  int exclusive[4]{};
+  long inclusive[4]{};
+  long exclusive[4]{};
   int reduced = std::reduce(values, values + 4);
   int initialized = std::reduce(values, values + 4, 5);
   int transformed = std::transform_reduce(values, values + 4, weights, 1);
-  int *inclusive_end = std::inclusive_scan(
+  long *inclusive_end = std::inclusive_scan(
       values, values + 4, inclusive);
-  int *exclusive_end = std::exclusive_scan(
+  long *exclusive_end = std::exclusive_scan(
       values, values + 4, exclusive, 5);
   short narrow_left = -12;
   short narrow_right = 18;
@@ -2851,7 +2847,7 @@ short square(double value) { return short(int(value) * int(value)); }
 extern "C" int numeric_callbacks() {
   int values[4]{1, 2, 3, 4};
   int weights[4]{4, 3, 2, 1};
-  int output[4]{};
+  long output[4]{};
   int result = std::accumulate(values, values + 4, 1, add);
   result += std::inner_product(
       values, values + 4, weights, 1, add, multiply);
@@ -2890,10 +2886,6 @@ extern "C" int numeric_callbacks() {
          '#include <numeric>\nint main(){int a[2]{1,2};return std::reduce(a,a+2,0L)==3?0:1;}'),
         ("heterogeneous-transform-reduce",
          '#include <numeric>\nint main(){int a[2]{1,2};long b[2]{3,4};return std::transform_reduce(a,a+2,b,0); }'),
-        ("heterogeneous-inclusive-scan",
-         '#include <numeric>\nint main(){int a[2]{1,2};long b[2]{};return std::inclusive_scan(a,a+2,b)==b+2?0:1;}'),
-        ("heterogeneous-exclusive-scan",
-         '#include <numeric>\nint main(){int a[2]{1,2};long b[2]{};return std::exclusive_scan(a,a+2,b,0)==b+2?0:1;}'),
         ("heterogeneous-exclusive-init",
          '#include <numeric>\nint main(){int a[2]{1,2},b[2]{};return std::exclusive_scan(a,a+2,b,0L)==b+2?0:1;}'),
         ("heterogeneous-transform-exclusive-init",
