@@ -3019,6 +3019,25 @@ class FunctionLowering {
       std::optional<Expression> Comparator;
       if (Call->getNumArgs() == 4)
         Comparator = snapshot(expression(Call->getArg(3)), L);
+      std::optional<std::string> DefaultComparisonType;
+      if (!Comparator) {
+        auto Common = utilityScalarComparisonType(
+            A.Context, Call->getArg(0)->getType()->getPointeeType(),
+            Call->getArg(2)->getType(), true);
+        if (!Common)
+          reject(L, "ordered algorithm query",
+                 "The range element and value have no ordered common type.");
+        DefaultComparisonType = type(*Common, L);
+      }
+      auto Less = [&](Expression Left, Expression Right) {
+        if (Comparator)
+          return emitBinaryPredicate(json::Object(*Comparator),
+                                     Call->getArg(3)->getType(),
+                                     std::move(Left), std::move(Right), L);
+        return binary("<", cast(std::move(Left), *DefaultComparisonType, L),
+                      cast(std::move(Right), *DefaultComparisonType, L), "bool",
+                      L);
+      };
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto PointerType = type(Call->getArg(0)->getType(), L);
       auto Length = temporary(DifferenceType, L);
@@ -3038,18 +3057,10 @@ class FunctionLowering {
                     L),
              L);
       assign(Middle, binary("+", First, Half, PointerType, L), L);
-      branch(Comparator
-                 ? emitBinaryPredicate(
-                       json::Object(*Comparator), Call->getArg(3)->getType(),
-                       Upper ? dereference(json::Object(ValueAddress), L)
-                             : dereference(json::Object(Middle), L),
-                       Upper ? dereference(json::Object(Middle), L)
-                             : dereference(json::Object(ValueAddress), L),
-                       L)
-             : Upper ? binary("<", dereference(ValueAddress, L),
-                              dereference(Middle, L), "bool", L)
-                     : binary("<", dereference(Middle, L),
-                              dereference(ValueAddress, L), "bool", L),
+      branch(Less(Upper ? dereference(json::Object(ValueAddress), L)
+                        : dereference(json::Object(Middle), L),
+                  Upper ? dereference(json::Object(Middle), L)
+                        : dereference(json::Object(ValueAddress), L)),
              Upper ? Narrow : Advance, Upper ? Advance : Narrow, L);
       label(Advance, L);
       assign(
@@ -3072,13 +3083,8 @@ class FunctionLowering {
       const auto Absent = labelName(), End = labelName();
       branch(binary("!=", First, Last, "bool", L), Compare, Absent, L);
       label(Compare, L);
-      branch(Comparator
-                 ? emitBinaryPredicate(
-                       json::Object(*Comparator), Call->getArg(3)->getType(),
-                       dereference(json::Object(ValueAddress), L),
-                       dereference(json::Object(First), L), L)
-                 : binary("<", dereference(ValueAddress, L),
-                          dereference(First, L), "bool", L),
+      branch(Less(dereference(json::Object(ValueAddress), L),
+                  dereference(json::Object(First), L)),
              Absent, Present, L);
       label(Present, L);
       assign(Result, boolean(true, L), L);
@@ -3833,6 +3839,25 @@ class FunctionLowering {
       std::optional<Expression> Comparator;
       if (Call->getNumArgs() == 4)
         Comparator = snapshot(expression(Call->getArg(3)), L);
+      std::optional<std::string> DefaultComparisonType;
+      if (!Comparator) {
+        auto Common = utilityScalarComparisonType(
+            A.Context, Call->getArg(0)->getType()->getPointeeType(),
+            Call->getArg(2)->getType(), true);
+        if (!Common)
+          reject(L, "algorithm equal_range",
+                 "The range element and value have no ordered common type.");
+        DefaultComparisonType = type(*Common, L);
+      }
+      auto Less = [&](Expression Left, Expression Right) {
+        if (Comparator)
+          return emitBinaryPredicate(json::Object(*Comparator),
+                                     Call->getArg(3)->getType(),
+                                     std::move(Left), std::move(Right), L);
+        return binary("<", cast(std::move(Left), *DefaultComparisonType, L),
+                      cast(std::move(Right), *DefaultComparisonType, L), "bool",
+                      L);
+      };
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto PointerType = type(Call->getArg(0)->getType(), L);
       auto Bound = [&](const Expression &Start, const Expression &End,
@@ -3856,18 +3881,10 @@ class FunctionLowering {
                       DifferenceType, L),
                L);
         assign(Middle, binary("+", First, Half, PointerType, L), L);
-        branch(Comparator
-                   ? emitBinaryPredicate(
-                         json::Object(*Comparator), Call->getArg(3)->getType(),
-                         Upper ? dereference(json::Object(ValueAddress), L)
-                               : dereference(json::Object(Middle), L),
-                         Upper ? dereference(json::Object(Middle), L)
-                               : dereference(json::Object(ValueAddress), L),
-                         L)
-               : Upper ? binary("<", dereference(ValueAddress, L),
-                                dereference(Middle, L), "bool", L)
-                       : binary("<", dereference(Middle, L),
-                                dereference(ValueAddress, L), "bool", L),
+        branch(Less(Upper ? dereference(json::Object(ValueAddress), L)
+                          : dereference(json::Object(Middle), L),
+                    Upper ? dereference(json::Object(Middle), L)
+                          : dereference(json::Object(ValueAddress), L)),
                Upper ? Narrow : Advance, Upper ? Advance : Narrow, L);
         label(Advance, L);
         assign(

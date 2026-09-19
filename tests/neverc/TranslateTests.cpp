@@ -28817,7 +28817,7 @@ int main() {
     return 2;
 
   const int sorted[7]{1, 2, 2, 4, 6, 6, 9};
-  int needle = 2;
+  short needle = 2;
   effects = 0;
   if (std::lower_bound((++effects, sorted), (++effects, sorted + 7),
                        (++effects, needle)) != sorted + 1 ||
@@ -28886,9 +28886,7 @@ TEST_F(TranslateTest, CoreV2AlgorithmOrderRequiresPinnedArithmeticForms) {
       {"pointer-elements",
        "#include <algorithm>\nint main(){int a[2]{};int*p[2]{a,a+1};"
        "return std::min_element(p,p+2)==p?0:1;}"},
-      {"heterogeneous-value",
-       "#include <algorithm>\nint main(){int a[2]{1,2};short v=1;"
-       "return std::lower_bound(a,a+2,v)==a?0:1;}"}};
+  };
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
     const auto Source =
@@ -28942,7 +28940,7 @@ int main() {
     return 3;
 
   const int descending[5]{9, 7, 7, 4, 1};
-  int key = 7;
+  long key = 7;
   bool (*descending_comparator)(long, double) = greater_value;
   effects = 0;
   calls = 0;
@@ -29064,10 +29062,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmComparatorQueriesRequireValueCallbacks) {
        "struct P{bool operator()(int a,int b)const{return a<b;}};\n"
        "#include <algorithm>\nint main(){int a[2]{1,2};return "
        "std::lower_bound(a,a+2,1,P{})==a?0:1;}"},
-      {"heterogeneous-value",
-       "bool p(int a,long b){return a<b;}\n#include <algorithm>\n"
-       "int main(){int a[2]{1,2};long value=1;return "
-       "std::upper_bound(a,a+2,value,p)==a+1?0:1;}"},
       {"variadic-comparator",
        "bool p(int a,int b,...){return a<b;}\n#include <algorithm>\n"
        "int main(){int a[2]{1,2};return "

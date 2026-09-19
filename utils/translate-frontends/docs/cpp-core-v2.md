@@ -944,20 +944,21 @@ conversions to their callback parameter types instead.
 The exact two-argument `std::min_element`, `std::max_element`, `std::is_sorted`
 and `std::is_sorted_until` templates and exact three-argument
 `std::lower_bound`, `std::upper_bound`, `std::equal_range` and
-`std::binary_search` templates lower for raw pointers to the same built-in
-integer, `float` or `double` element type. The searched value must have that
-same unqualified type. Binary bounds use the target `ptrdiff_t` and preserve
-logarithmic bisection; `equal_range` returns an authenticated pair of the lower
-and upper pointers.
+`std::binary_search` templates lower for raw pointers to built-in integer,
+`float` or `double` elements. The searched value may use a different arithmetic
+type when both have a checked ordered common type. Binary bounds use the target
+`ptrdiff_t` and preserve logarithmic bisection; `equal_range` returns an
+authenticated pair of the lower and upper pointers.
 
 The corresponding three-argument `std::min_element`, `std::max_element`,
 `std::is_sorted` and `std::is_sorted_until` overloads and four-argument
 `std::lower_bound`, `std::upper_bound`, `std::equal_range` and
 `std::binary_search` overloads accept a checked ordinary function-pointer
 comparator. It takes two admitted by-value scalar parameters reachable through
-checked direct conversions from the range element and returns `bool` exactly.
-Bound values retain the same element type so the single callback supports both
-comparison directions where required. This admits enums, object pointers and
+checked direct conversions from the range element and bound value and returns
+`bool` exactly. Lower and upper bounds require their used comparison direction;
+`equal_range` and `binary_search` require both directions. This admits
+heterogeneous values, enums, object pointers and
 the other scalar carriers. The callback is evaluated and retained once.
 Extremum scans keep the first equivalent element; sortedness scans stop at the
 first inversion; empty and single-element ranges make no calls. Bounds retain

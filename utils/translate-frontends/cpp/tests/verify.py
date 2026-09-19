@@ -3002,7 +3002,7 @@ extern "C" int algorithm_mutation(int *first, int *second, long *output) {
           "TR0203", profile="cpp-core-v2", sdk=True)
     algorithm_order_source = """\
 #include <algorithm>
-extern "C" int algorithm_order(const int *first, const int *last, int value) {
+extern "C" int algorithm_order(const int *first, const int *last, short value) {
   const int *minimum = std::min_element(first, last);
   const int *maximum = std::max_element(first, last);
   const int *lower = std::lower_bound(first, last, value);
@@ -3027,14 +3027,10 @@ extern "C" int algorithm_order(const int *first, const int *last, int value) {
     check("v2-algorithm-order-pointer-elements",
           '#include <algorithm>\nint main(){int a[2]{};int*p[2]{a,a+1};return std::min_element(p,p+2)==p?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
-    check("v2-algorithm-order-heterogeneous-value",
-          '#include <algorithm>\nint main(){int a[2]{1,2};short v=1;return std::lower_bound(a,a+2,v)==a?0:1;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
-
     algorithm_comparator_queries_source = """\
 #include <algorithm>
 extern "C" long long algorithm_comparator_queries(
-    const int *first, const int *last, const int &value,
+    const int *first, const int *last, const long &value,
     bool (*comparator)(long, double)) {
   const int *minimum = std::min_element(first, last, comparator);
   const int *maximum = std::max_element(first, last, comparator);
@@ -3072,10 +3068,6 @@ extern "C" long long algorithm_comparator_queries(
     check("v2-algorithm-comparator-queries-reference",
           'bool p(const int&a,int b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{1,2};return std::min_element(a,a+2,p)==a?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
-    check("v2-algorithm-comparator-queries-value",
-          'bool p(int a,long b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{1,2};long v=1;return std::lower_bound(a,a+2,v,p)==a?0:1;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
-
     algorithm_equality_mutation_source = """\
 #include <algorithm>
 extern "C" int algorithm_equality_mutation(int *first, int *last,

@@ -5990,24 +5990,40 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Context.hasSameUnqualifiedType(Call->getArg(ValueIndex)->getType(),
                                           Value->getPointeeType());
   };
-  auto AlgorithmEqualityValueParameter = [&](unsigned ValueIndex,
-                                             unsigned IteratorIndex) {
+  auto AlgorithmScalarValueParameter = [&](unsigned ValueIndex,
+                                           unsigned IteratorIndex) {
     if (ValueIndex >= Function->getNumParams() ||
         ValueIndex >= Call->getNumArgs() ||
         IteratorIndex >= Function->getNumParams())
       return false;
     auto Iterator = Function->getParamDecl(IteratorIndex)->getType();
     auto Value = Function->getParamDecl(ValueIndex)->getType();
-    if (!utilityAlgorithmScalarPointer(Context, Iterator) ||
-        !Value->isLValueReferenceType() ||
-        !Value->getPointeeType().isConstQualified() ||
-        Value->getPointeeType().isVolatileQualified() ||
-        !utilityScalar(Context, Value->getPointeeType()) ||
-        !Context.hasSameUnqualifiedType(Call->getArg(ValueIndex)->getType(),
-                                        Value->getPointeeType()))
+    return utilityAlgorithmScalarPointer(Context, Iterator) &&
+           Value->isLValueReferenceType() &&
+           Value->getPointeeType().isConstQualified() &&
+           !Value->getPointeeType().isVolatileQualified() &&
+           utilityScalar(Context, Value->getPointeeType()) &&
+           Context.hasSameUnqualifiedType(Call->getArg(ValueIndex)->getType(),
+                                          Value->getPointeeType());
+  };
+  auto AlgorithmEqualityValueParameter = [&](unsigned ValueIndex,
+                                             unsigned IteratorIndex) {
+    if (!AlgorithmScalarValueParameter(ValueIndex, IteratorIndex))
       return false;
+    auto Iterator = Function->getParamDecl(IteratorIndex)->getType();
+    auto Value = Function->getParamDecl(ValueIndex)->getType();
     return utilityScalarComparisonType(Context, Iterator->getPointeeType(),
                                        Value->getPointeeType(), false)
+        .has_value();
+  };
+  auto AlgorithmOrderedValueParameter = [&](unsigned ValueIndex,
+                                            unsigned IteratorIndex) {
+    if (!AlgorithmEqualityValueParameter(ValueIndex, IteratorIndex))
+      return false;
+    auto Iterator = Function->getParamDecl(IteratorIndex)->getType();
+    auto Value = Function->getParamDecl(ValueIndex)->getType();
+    return utilityScalarComparisonType(Context, Iterator->getPointeeType(),
+                                       Value->getPointeeType(), true)
         .has_value();
   };
   auto AlgorithmTransferValueParameter = [&](unsigned ValueIndex,
@@ -6304,6 +6320,35 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            utilityScalarDirectConversion(Context, Value->getPointeeType(),
                                          RightParameter);
   };
+  auto AlgorithmBinaryPredicateReversedValueParameter =
+      [&](unsigned PredicateIndex, unsigned IteratorIndex,
+          unsigned ValueIndex) {
+        if (PredicateIndex >= Function->getNumParams() ||
+            PredicateIndex >= Call->getNumArgs() ||
+            IteratorIndex >= Function->getNumParams() ||
+            ValueIndex >= Function->getNumParams() ||
+            ValueIndex >= Call->getNumArgs())
+          return false;
+        auto Iterator = Function->getParamDecl(IteratorIndex)->getType();
+        auto Value = Function->getParamDecl(ValueIndex)->getType();
+        if (!utilityAlgorithmScalarPointer(Context, Iterator) ||
+            !Value->isLValueReferenceType() ||
+            !Value->getPointeeType().isConstQualified() ||
+            Value->getPointeeType().isVolatileQualified() ||
+            !utilityScalar(Context, Value->getPointeeType()) ||
+            !Context.hasSameUnqualifiedType(Call->getArg(ValueIndex)->getType(),
+                                            Value->getPointeeType()))
+          return false;
+        const auto *Prototype = AlgorithmCallbackPrototype(PredicateIndex);
+        if (!Prototype || Prototype->getNumParams() != 2 ||
+            !Prototype->getReturnType()->isBooleanType())
+          return false;
+        return utilityScalarDirectConversion(Context, Value->getPointeeType(),
+                                             Prototype->getParamType(0)) &&
+               utilityScalarDirectConversion(Context,
+                                             Iterator->getPointeeType(),
+                                             Prototype->getParamType(1));
+      };
   auto AlgorithmBinaryPredicateReferenceParameter =
       [&](unsigned PredicateIndex, unsigned ReferenceIndex) {
         if (!AlgorithmReferenceParameter(ReferenceIndex))
@@ -6730,11 +6775,20 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      AlgorithmValueParameter(2, 0) &&
+      AlgorithmScalarValueParameter(2, 0) &&
       Same(Call->getType(), Function->getReturnType())) {
-    if (!((Call->getNumArgs() == 3 && AlgorithmOrderedPointerParameter(0)) ||
-          (Call->getNumArgs() == 4 &&
-           AlgorithmBinaryPredicateParameter(3, 0, 0))))
+    const bool Default = Call->getNumArgs() == 3;
+    const bool ForwardComparator =
+        Call->getNumArgs() == 4 &&
+        AlgorithmBinaryPredicateValueParameter(3, 0, 2);
+    const bool ReverseComparator =
+        Call->getNumArgs() == 4 &&
+        AlgorithmBinaryPredicateReversedValueParameter(3, 0, 2);
+    if (!((Default && AlgorithmOrderedPointerParameter(0) &&
+           AlgorithmOrderedValueParameter(2, 0)) ||
+          (Name == "lower_bound" && ForwardComparator) ||
+          (Name == "upper_bound" && ReverseComparator) ||
+          (Name == "binary_search" && ForwardComparator && ReverseComparator)))
       return std::nullopt;
     if (Name == "binary_search") {
       if (Function->getReturnType()->isBooleanType())
@@ -6985,11 +7039,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      AlgorithmValueParameter(2, 0) &&
+      AlgorithmScalarValueParameter(2, 0) &&
       Same(Call->getType(), Function->getReturnType())) {
-    if (!((Call->getNumArgs() == 3 && AlgorithmOrderedPointerParameter(0)) ||
+    if (!((Call->getNumArgs() == 3 && AlgorithmOrderedPointerParameter(0) &&
+           AlgorithmOrderedValueParameter(2, 0)) ||
           (Call->getNumArgs() == 4 &&
-           AlgorithmBinaryPredicateParameter(3, 0, 0))))
+           AlgorithmBinaryPredicateValueParameter(3, 0, 2) &&
+           AlgorithmBinaryPredicateReversedValueParameter(3, 0, 2))))
       return std::nullopt;
     auto Pair = approvedUtilityPairRecord(
         S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);
