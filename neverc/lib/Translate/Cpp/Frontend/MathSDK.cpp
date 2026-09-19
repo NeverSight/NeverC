@@ -6304,7 +6304,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         !Same(Prototype->getReturnType(), Element))
       return false;
     for (QualType Parameter : Prototype->param_types())
-      if (Parameter->isReferenceType() || !Same(Parameter, Element))
+      if (Parameter->isReferenceType() ||
+          !utilityScalarDirectConversion(Context, Element, Parameter))
         return false;
     return true;
   };

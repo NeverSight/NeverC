@@ -27995,7 +27995,7 @@ TEST_F(TranslateTest, CoreV2NumericSequentialRequiresExactScalarForms) {
        "#include <numeric>\nint main(){int a[2]{1,2};"
        "return std::accumulate(a,a+2,0L)==3?0:1;}"},
       {"mismatched-callback-accumulate",
-       "#include <numeric>\nlong add(long a,long b){return a+b;}"
+       "#include <numeric>\nlong add(short a,double b){return a+long(b);}"
        "int main(){int a[2]{1,2};return std::accumulate(a,a+2,0,add);}"},
       {"reference-callback-accumulate",
        "#include <numeric>\nint add(const int&a,const int&b){return a+b;}"
@@ -28125,10 +28125,10 @@ TEST_F(TranslateTest,
   writeFile(Source, R"cpp(
 #include <numeric>
 int calls;
-int add(int left, int right) { ++calls; return left + right; }
-int subtract(int left, int right) { ++calls; return left - right; }
-int multiply(int left, int right) { ++calls; return left * right; }
-int square(int value) { ++calls; return value * value; }
+int add(short left, double right) { ++calls; return int(left) + int(right); }
+int subtract(double left, short right) { ++calls; return int(left) - int(right); }
+int multiply(float left, long right) { ++calls; return int(left) * int(right); }
+int square(double value) { ++calls; return int(value) * int(value); }
 int main() {
   const int values[4]{1, 2, 3, 4};
   const int weights[4]{4, 3, 2, 1};
@@ -28230,8 +28230,11 @@ TEST_F(TranslateTest, CoreV2NumericTransformScansRunAtBothOptimizations) {
 #include <numeric>
 int unary_calls;
 int binary_calls;
-int twice(int value) { ++unary_calls; return value * 2; }
-int add(int left, int right) { ++binary_calls; return left + right; }
+int twice(double value) { ++unary_calls; return int(value) * 2; }
+int add(short left, double right) {
+  ++binary_calls;
+  return int(left) + int(right);
+}
 double half(double value) { return value / 2.0; }
 double plus(double left, double right) { return left + right; }
 int main() {

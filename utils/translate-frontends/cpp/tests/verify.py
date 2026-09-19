@@ -2793,7 +2793,7 @@ extern "C" int numeric_sequential() {
         ("heterogeneous-accumulate",
          '#include <numeric>\nint main(){int a[2]{1,2};return std::accumulate(a,a+2,0L)==3?0:1;}'),
         ("mismatched-callback-accumulate",
-         '#include <numeric>\nlong add(long a,long b){return a+b;}int main(){int a[2]{1,2};return std::accumulate(a,a+2,0,add);}'),
+         '#include <numeric>\nlong add(short a,double b){return a+long(b);}int main(){int a[2]{1,2};return std::accumulate(a,a+2,0,add);}'),
         ("reference-callback-accumulate",
          '#include <numeric>\nint add(const int&a,const int&b){return a+b;}int main(){int v[2]{1,2};return std::accumulate(v,v+2,0,add);}'),
         ("callable-object-accumulate",
@@ -2848,10 +2848,10 @@ extern "C" int numeric_cxx17() {
 
     numeric_callbacks_source = """\
 #include <numeric>
-int add(int a, int b) { return a + b; }
-int subtract(int a, int b) { return a - b; }
-int multiply(int a, int b) { return a * b; }
-int square(int value) { return value * value; }
+int add(short a, double b) { return int(a) + int(b); }
+int subtract(double a, short b) { return int(a) - int(b); }
+int multiply(float a, long b) { return int(a) * int(b); }
+int square(double value) { return int(value) * int(value); }
 extern "C" int numeric_callbacks() {
   int values[4]{1, 2, 3, 4};
   int weights[4]{4, 3, 2, 1};
@@ -2882,8 +2882,8 @@ extern "C" int numeric_callbacks() {
 """
     numeric_callbacks = check("v2-numeric-callbacks", numeric_callbacks_source,
                               profile="cpp-core-v2", sdk=True)
-    assert [node for node in walk(numeric_callbacks["functions"])
-            if node.get("op") == "indirect_call"], numeric_callbacks
+    assert len([node for node in walk(numeric_callbacks["functions"])
+                if node.get("op") == "indirect_call"]) == 20, numeric_callbacks
     for target in sdk_targets:
         check("v2-numeric-callbacks-" + target, numeric_callbacks_source,
               profile="cpp-core-v2", target=target, sdk=True)

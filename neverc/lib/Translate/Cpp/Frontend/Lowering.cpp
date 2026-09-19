@@ -592,7 +592,16 @@ class FunctionLowering {
         Prototype->getNumParams() != Arguments.size())
       reject(L, "algorithm callback",
              "A checked fixed-arity function pointer is required.");
-    return emitIndirectCall(std::move(Callable), std::move(Arguments),
+    json::Array Converted;
+    for (unsigned I = 0; I < Arguments.size(); ++I) {
+      const auto *Argument = Arguments[I].getAsObject();
+      if (!Argument)
+        reject(L, "algorithm callback",
+               "A checked callback argument expression is required.");
+      Converted.push_back(cast(json::Object(*Argument),
+                               type(Prototype->getParamType(I), L), L));
+    }
+    return emitIndirectCall(std::move(Callable), std::move(Converted),
                             Prototype->getReturnType(), L);
   }
   Expression emitUnaryPredicate(Expression Callable, QualType PredicateType,
