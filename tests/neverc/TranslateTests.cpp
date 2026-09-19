@@ -28570,6 +28570,94 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2AlgorithmDefaultEnumsRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-default-enums.cpp");
+  const auto Output = tmpFile("algorithm-default-enums.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+enum Level : unsigned char { low, medium, high };
+enum class Shade : int { black, gray, white };
+int main() {
+  const Level levels[6]{low, medium, medium, high, medium, low};
+  if (std::find(levels, levels + 6, high) != levels + 3 ||
+      std::count(levels, levels + 6, medium) != 3)
+    return 1;
+  const Level same[6]{low, medium, medium, high, medium, low};
+  const Level changed[6]{low, medium, high, high, medium, low};
+  if (!std::equal(levels, levels + 6, same, same + 6) ||
+      std::mismatch(levels, levels + 6, changed, changed + 6).first !=
+          levels + 2)
+    return 2;
+  const Level pattern[2]{high, medium};
+  if (std::search(levels, levels + 6, pattern, pattern + 2) != levels + 3 ||
+      std::search_n(levels, levels + 6, 2, medium) != levels + 1 ||
+      !std::is_permutation(levels, levels + 6, same, same + 6))
+    return 3;
+
+  Level edited[6]{low, medium, medium, high, medium, low};
+  Level *end = std::remove(edited, edited + 6, medium);
+  if (end != edited + 3 || edited[0] != low || edited[1] != high ||
+      edited[2] != low)
+    return 4;
+  std::replace(edited, end, low, medium);
+  if (edited[0] != medium || edited[1] != high || edited[2] != medium)
+    return 5;
+
+  Shade ordered[5]{Shade::black, Shade::gray, Shade::gray, Shade::white,
+                   Shade::white};
+  if (!std::is_sorted(ordered, ordered + 5) ||
+      std::lower_bound(ordered, ordered + 5, Shade::gray) != ordered + 1 ||
+      std::upper_bound(ordered, ordered + 5, Shade::gray) != ordered + 3 ||
+      !std::binary_search(ordered, ordered + 5, Shade::white))
+    return 6;
+  auto range = std::equal_range(ordered, ordered + 5, Shade::gray);
+  if (range.first != ordered + 1 || range.second != ordered + 3)
+    return 7;
+  if (std::min(Shade::gray, Shade::white) != Shade::gray ||
+      std::max(Shade::black, Shade::gray) != Shade::gray ||
+      std::min_element(ordered, ordered + 5) != ordered ||
+      std::max_element(ordered, ordered + 5) != ordered + 3)
+    return 8;
+
+  Shade shuffled[6]{Shade::white, Shade::black, Shade::gray,
+                    Shade::white, Shade::black, Shade::gray};
+  std::sort(shuffled, shuffled + 6);
+  if (!std::is_sorted(shuffled, shuffled + 6) ||
+      shuffled[0] != Shade::black || shuffled[2] != Shade::gray ||
+      shuffled[5] != Shade::white)
+    return 9;
+  std::make_heap(shuffled, shuffled + 6);
+  if (!std::is_heap(shuffled, shuffled + 6))
+    return 10;
+  std::sort_heap(shuffled, shuffled + 6);
+  if (!std::is_sorted(shuffled, shuffled + 6))
+    return 11;
+
+  Level permutation[3]{low, medium, high};
+  if (!std::next_permutation(permutation, permutation + 3) ||
+      permutation[0] != low || permutation[1] != high ||
+      permutation[2] != medium ||
+      !std::prev_permutation(permutation, permutation + 3) ||
+      permutation[0] != low || permutation[1] != medium ||
+      permutation[2] != high)
+    return 12;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-default-enums" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmReadOnlyRequiresPinnedPointerForms) {
   struct Rejection {
     const char *Name;
@@ -29542,14 +29630,11 @@ TEST_F(TranslateTest, CoreV2AlgorithmSubrangeRequiresPinnedScalarForms) {
     const char *Name;
     const char *Source;
   };
-  const Rejection Cases[] = {
-      {"record-search", "#include <algorithm>\nstruct R{int n;};"
-                        "bool operator==(R a,R b){return a.n==b.n;}"
-                        "int main(){R a[2]{{1},{2}},b[1]{{2}};"
-                        "return std::search(a,a+2,b,b+1)==a+1?0:1;}"},
-      {"enum-mismatch", "#include <algorithm>\nenum E{one,two};"
-                        "int main(){E a[2]{one,two},b[2]{one,one};"
-                        "return std::mismatch(a,a+2,b).first==a+1?0:1;}"}};
+  const Rejection Cases[] = {{"record-search",
+                              "#include <algorithm>\nstruct R{int n;};"
+                              "bool operator==(R a,R b){return a.n==b.n;}"
+                              "int main(){R a[2]{{1},{2}},b[1]{{2}};"
+                              "return std::search(a,a+2,b,b+1)==a+1?0:1;}"}};
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
     const auto Source =
@@ -30092,8 +30177,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmExtremaRequirePinnedScalarForms) {
     const char *Code = "TR0203";
   };
   const Rejection Cases[] = {
-      {"enum-min", "#include <algorithm>\nenum E{low,high};"
-                   "int main(){E a=low,b=high;return std::min(a,b)==a?0:1;}"},
       {"pointer-max",
        "#include <algorithm>\nint main(){int a[2]{};int*p=a;int*q=a+1;"
        "return std::max(p,q)==q?0:1;}"},
@@ -30366,9 +30449,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmHeapRequirePinnedScalarForms) {
     const char *Source;
   };
   const Rejection Cases[] = {
-      {"enum-make",
-       "#include <algorithm>\nenum E{low,high};"
-       "int main(){E a[2]{low,high};std::make_heap(a,a+2);return 0;}"},
       {"pointer-query",
        "#include <algorithm>\nint main(){int a=1,b=2;int*p[2]{&a,&b};"
        "return std::is_heap(p,p+2)?0:1;}"},
@@ -30708,8 +30788,10 @@ TEST_F(TranslateTest, CoreV2AlgorithmOrderingRequirePinnedScalarForms) {
     const char *Source;
   };
   const Rejection Cases[] = {
-      {"enum-sort", "#include <algorithm>\nenum E{low,high};"
-                    "int main(){E a[2]{high,low};std::sort(a,a+2);return 0;}"},
+      {"overloaded-enum-sort",
+       "#include <algorithm>\nenum E{low,high};"
+       "bool operator<(E,E){return true;}"
+       "int main(){E a[2]{high,low};std::sort(a,a+2);return 0;}"},
       {"pointer-sort",
        "#include <algorithm>\nint main(){int a=1,b=2;int*p[2]{&a,&b};"
        "std::sort(p,p+2);return 0;}"},
@@ -31322,9 +31404,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmPermutationRequirePinnedScalarForms) {
     const char *Source;
   };
   const Rejection Cases[] = {
-      {"enum-next", "#include <algorithm>\nenum E{low,high};"
-                    "int main(){E a[2]{low,high};"
-                    "return std::next_permutation(a,a+2)?0:1;}"},
       {"pointer-prev",
        "#include <algorithm>\nint main(){int a=1,b=2;int*p[2]{&a,&b};"
        "return std::prev_permutation(p,p+2)?0:1;}"},

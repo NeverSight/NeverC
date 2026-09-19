@@ -2908,6 +2908,42 @@ extern "C" int algorithm_header() { return 0; }
           '#include "algorithm"\nint main(){return 0;}', "TR0201",
           profile="cpp-core-v2", sdk=True)
 
+    algorithm_default_enums_source = """\
+#include <algorithm>
+enum Level : unsigned char { low, medium, high };
+enum class Shade : int { black, gray, white };
+extern "C" int algorithm_default_enums() {
+  Level levels[5]{low, medium, medium, high, low};
+  Level pattern[2]{medium, high};
+  Level *found = std::find(levels, levels + 5, high);
+  Level *match = std::search(levels, levels + 5, pattern, pattern + 2);
+  auto mismatch = std::mismatch(levels, levels + 5, levels, levels + 5);
+  Shade values[5]{Shade::white, Shade::black, Shade::gray,
+                  Shade::white, Shade::black};
+  std::sort(values, values + 5);
+  Shade *lower = std::lower_bound(values, values + 5, Shade::gray);
+  std::make_heap(values, values + 5);
+  bool heap = std::is_heap(values, values + 5);
+  std::sort_heap(values, values + 5);
+  bool next = std::next_permutation(levels, levels + 5);
+  return static_cast<int>((found - levels) + (match - levels) +
+                          (mismatch.first - levels) + (lower - values)) +
+         std::count(levels, levels + 5, medium) +
+         (heap ? 1 : 0) + (next ? 1 : 0) +
+         static_cast<int>(std::min(Shade::gray, Shade::white));
+}
+"""
+    algorithm_default_enums = check(
+        "v2-algorithm-default-enums", algorithm_default_enums_source,
+        profile="cpp-core-v2", sdk=True)
+    assert len(algorithm_default_enums["sdk_dependencies"]) == 354, algorithm_default_enums
+    assert not [node for node in walk(algorithm_default_enums["functions"])
+                if node.get("op") in ("call", "mapped_call", "indirect_call")], algorithm_default_enums
+    for target in sdk_targets:
+        check("v2-algorithm-default-enums-" + target,
+              algorithm_default_enums_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+
     algorithm_read_only_source = """\
 #include <algorithm>
 extern "C" int algorithm_read_only(int *values, long *other, short value) {

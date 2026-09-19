@@ -3000,12 +3000,47 @@ static bool utilityAlgorithmEqualityPointer(const ASTContext &Context,
   if (!utilityAlgorithmScalarPointer(Context, Type))
     return false;
   auto Element = Type->getPointeeType().getUnqualifiedType();
-  return (!Element->isEnumeralType() && Element->isIntegerType() &&
+  return (Element->isIntegralOrEnumerationType() &&
           Context.getTypeSize(Element) <= 64) ||
          Element->isSpecificBuiltinType(BuiltinType::Float) ||
          Element->isSpecificBuiltinType(BuiltinType::Double) ||
          (Element->isPointerType() && !Element->isFunctionPointerType()) ||
          Element->isNullPtrType();
+}
+
+static bool utilityEnumHasSourceOperator(const State &S,
+                                         const SourceManager &SM,
+                                         const ASTContext &Context,
+                                         QualType Type,
+                                         OverloadedOperatorKind Operator) {
+  Type = Type.getUnqualifiedType();
+  if (!Type->isEnumeralType())
+    return false;
+  auto Contains = [&](auto &&Self, const DeclContext *Scope) -> bool {
+    if (!Scope)
+      return false;
+    for (const auto *Declaration : Scope->decls()) {
+      const bool SourceDeclaration = S.owns(SM, Declaration->getLocation());
+      if (const auto *Function = dyn_cast<FunctionDecl>(Declaration);
+          Function && Function->isOverloadedOperator() &&
+          Function->getOverloadedOperator() == Operator && SourceDeclaration) {
+        for (const auto *Parameter : Function->parameters()) {
+          auto ParameterType = Parameter->getType();
+          if (ParameterType->isReferenceType())
+            ParameterType = ParameterType->getPointeeType();
+          if (Context.hasSameUnqualifiedType(Type, ParameterType))
+            return true;
+        }
+      }
+      if (!SourceDeclaration)
+        continue;
+      if (const auto *Nested = dyn_cast<DeclContext>(Declaration);
+          Nested && Self(Self, Nested))
+        return true;
+    }
+    return false;
+  };
+  return Contains(Contains, Context.getTranslationUnitDecl());
 }
 
 static bool utilityAlgorithmWritableScalarPointer(const ASTContext &Context,
@@ -5922,6 +5957,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return false;
     auto Parameter = Function->getParamDecl(Index)->getType();
     return utilityAlgorithmEqualityPointer(Context, Parameter) &&
+           !utilityEnumHasSourceOperator(
+               S, SM, Context, Parameter->getPointeeType(), OO_EqualEqual) &&
            Same(Call->getArg(Index)->getType(), Parameter);
   };
   auto AlgorithmEqualityParameters = [&](unsigned LeftIndex,
@@ -5955,10 +5992,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                        ->getType()
                        ->getPointeeType()
                        .getUnqualifiedType();
-    return (!Element->isEnumeralType() && Element->isIntegerType() &&
-            Context.getTypeSize(Element) <= 64) ||
-           Element->isSpecificBuiltinType(BuiltinType::Float) ||
-           Element->isSpecificBuiltinType(BuiltinType::Double);
+    return ((Element->isIntegralOrEnumerationType() &&
+             Context.getTypeSize(Element) <= 64) ||
+            Element->isSpecificBuiltinType(BuiltinType::Float) ||
+            Element->isSpecificBuiltinType(BuiltinType::Double)) &&
+           !utilityEnumHasSourceOperator(S, SM, Context, Element, OO_Less);
   };
   auto AlgorithmOrderedParameters = [&](unsigned LeftIndex,
                                         unsigned RightIndex) {
@@ -6213,10 +6251,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return false;
     auto Parameter = Function->getParamDecl(Index)->getType();
     auto Element = Parameter->getPointeeType().getUnqualifiedType();
-    return (!Element->isEnumeralType() && Element->isIntegerType() &&
-            Context.getTypeSize(Element) <= 64) ||
-           Element->isSpecificBuiltinType(BuiltinType::Float) ||
-           Element->isSpecificBuiltinType(BuiltinType::Double);
+    return ((Element->isIntegralOrEnumerationType() &&
+             Context.getTypeSize(Element) <= 64) ||
+            Element->isSpecificBuiltinType(BuiltinType::Float) ||
+            Element->isSpecificBuiltinType(BuiltinType::Double)) &&
+           !utilityEnumHasSourceOperator(S, SM, Context, Element, OO_Less);
   };
   auto AlgorithmCallbackPrototype =
       [&](unsigned CallbackIndex) -> const FunctionProtoType * {
