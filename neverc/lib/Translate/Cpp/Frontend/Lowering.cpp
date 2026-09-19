@@ -1407,7 +1407,8 @@ class FunctionLowering {
     case UtilityOperation::MemoryUniquePtrRelease:
     case UtilityOperation::MemoryUniquePtrReset:
     case UtilityOperation::MemoryUniquePtrMoveAssign:
-    case UtilityOperation::MemoryUniquePtrNullAssign: {
+    case UtilityOperation::MemoryUniquePtrNullAssign:
+    case UtilityOperation::MemoryUniquePtrMemberSwap: {
       const auto Info =
           approvedUtilityUniquePtrCall(A.S, A.Sources, Call, A.Context);
       if (!Info)
@@ -1431,6 +1432,8 @@ class FunctionLowering {
           return UtilityUniquePtrOperation::MoveAssign;
         case UtilityOperation::MemoryUniquePtrNullAssign:
           return UtilityUniquePtrOperation::NullAssign;
+        case UtilityOperation::MemoryUniquePtrMemberSwap:
+          return UtilityUniquePtrOperation::Swap;
         default:
           llvm_unreachable("not a unique pointer operation");
         }
@@ -1474,6 +1477,26 @@ class FunctionLowering {
         return UniquePtrMember(dereference(json::Object(Receiver), L),
                                Info->Owner);
       };
+      if (Expected == UtilityUniquePtrOperation::Swap) {
+        if (Info->ArgumentIndex >= Call->getNumArgs())
+          reject(L, "unique pointer swap",
+                 "The checked second owner is missing.");
+        // A member call evaluates its postfix receiver before its argument.
+        // Capture both designators before reading either stored pointer so a
+        // self-swap and receivers with effects retain the source behavior.
+        auto RightAddress = snapshot(
+            address(lvalue(Call->getArg(Info->ArgumentIndex)), RecordType, L),
+            L);
+        auto RightMember = [&] {
+          return UniquePtrMember(dereference(json::Object(RightAddress), L),
+                                 Info->Owner);
+        };
+        auto OldLeft = snapshot(Member(), L);
+        auto OldRight = snapshot(RightMember(), L);
+        assign(Member(), std::move(OldRight), L);
+        assign(RightMember(), std::move(OldLeft), L);
+        return {};
+      }
       if (Expected == UtilityUniquePtrOperation::Release) {
         auto Pointer = snapshot(Member(), L);
         assign(Member(), A.zero(Info->Owner.PointerType, L), L);
@@ -1523,6 +1546,72 @@ class FunctionLowering {
       deallocateSingle(std::move(Pointer), Info->Owner.ElementType, Function,
                        L);
       return {};
+    }
+    case UtilityOperation::MemoryUniquePtrSwap: {
+      if (Call->getNumArgs() != 2)
+        reject(L, "unique pointer swap",
+               "Two checked std::unique_ptr owners are required.");
+      const auto Left = approvedUtilityUniquePtrRecord(
+          A.S, A.Sources, Call->getArg(0)->getType()->getAsCXXRecordDecl(),
+          A.Context);
+      const auto Right = approvedUtilityUniquePtrRecord(
+          A.S, A.Sources, Call->getArg(1)->getType()->getAsCXXRecordDecl(),
+          A.Context);
+      if (!Left || !Right ||
+          Left->Record->getCanonicalDecl() != Right->Record->getCanonicalDecl())
+        reject(L, "unique pointer swap",
+               "Matching checked std::unique_ptr owners are required.");
+      const auto RecordType = A.Context.getRecordType(Left->Record);
+      auto LeftAddress =
+          snapshot(address(lvalue(Call->getArg(0)), RecordType, L), L);
+      auto RightAddress =
+          snapshot(address(lvalue(Call->getArg(1)), RecordType, L), L);
+      auto LeftMember = [&] {
+        return UniquePtrMember(dereference(json::Object(LeftAddress), L),
+                               *Left);
+      };
+      auto RightMember = [&] {
+        return UniquePtrMember(dereference(json::Object(RightAddress), L),
+                               *Right);
+      };
+      auto OldLeft = snapshot(LeftMember(), L);
+      auto OldRight = snapshot(RightMember(), L);
+      assign(LeftMember(), std::move(OldRight), L);
+      assign(RightMember(), std::move(OldLeft), L);
+      return {};
+    }
+    case UtilityOperation::MemoryUniquePtrEqual:
+    case UtilityOperation::MemoryUniquePtrNotEqual: {
+      if (Call->getNumArgs() != 2)
+        reject(L, "unique pointer comparison",
+               "Two checked std::unique_ptr comparison operands are required.");
+      const auto Left = approvedUtilityUniquePtrRecord(
+          A.S, A.Sources, Call->getArg(0)->getType()->getAsCXXRecordDecl(),
+          A.Context);
+      const auto Right = approvedUtilityUniquePtrRecord(
+          A.S, A.Sources, Call->getArg(1)->getType()->getAsCXXRecordDecl(),
+          A.Context);
+      if ((!Left && !Right) || (Left && Right &&
+                                Left->Record->getCanonicalDecl() !=
+                                    Right->Record->getCanonicalDecl()))
+        reject(L, "unique pointer comparison",
+               "Matching checked std::unique_ptr or nullptr operands are "
+               "required.");
+      const auto &Owner = Left ? *Left : *Right;
+      auto Operand = [&](unsigned Index,
+                         const std::optional<UtilityUniquePtrRecord> &Unique) {
+        if (!Unique) {
+          discard(Call->getArg(Index));
+          return A.zero(Owner.PointerType, L);
+        }
+        return snapshot(UniquePtrMember(lvalue(Call->getArg(Index)), *Unique),
+                        L);
+      };
+      auto LeftValue = Operand(0, Left);
+      auto RightValue = Operand(1, Right);
+      return binary(Operation == UtilityOperation::MemoryUniquePtrEqual ? "=="
+                                                                        : "!=",
+                    std::move(LeftValue), std::move(RightValue), "bool", L);
     }
     case UtilityOperation::MemoryAllocatorAddress: {
       const auto *Object = MemberObject();

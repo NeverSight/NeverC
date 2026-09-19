@@ -1495,7 +1495,18 @@ single-object destruction path, and emits an ordinary `call` to a checked
 source-defined sized or unsized global delete. The selected function receives
 the saved pointer and, for sized delete, exact `sizeof(T)`. Calls set
 `memory_lifetimes: true` and add no opcode, SDK call, native-heap import or
-ownership field. Exact runtime allocator
+ownership field. Exact single-object
+`std::unique_ptr<T, std::default_delete<T>>` specializations preserve the
+authenticated pointer-sized libc++ representation as a record with one
+synthetic `{name:"nct_unique_ptr_pointer",type:"ptr:T"}` field at bit offset
+zero. Default, null, raw-pointer and same-type move construction; same-type move
+and `nullptr` assignment; pointer access, dereference, boolean conversion,
+release, reset, member/free swap, same-specialization equality/inequality,
+bidirectional `nullptr` comparison and destruction lower to existing record,
+pointer, comparison and checked lifetime instructions. Swaps capture both owners
+and exchange only their pointer fields; comparison operands are evaluated once.
+No operation adds a wire instruction, SDK call, native-heap import or hidden
+deleter storage. Exact runtime allocator
 specializations preserve the authenticated one-byte, one-byte-aligned empty
 libc++ representation as a record with one synthetic
 `{name:"nct_allocator_storage",type:"u8"}` field at bit offset zero. Their

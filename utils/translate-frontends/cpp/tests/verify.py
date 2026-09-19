@@ -1667,8 +1667,24 @@ extern "C" int memory_unique_ptr(int *pointer) {
   assigned = std::move(moved);
   if (moved || !assigned)
     return 4;
+  std::unique_ptr<int> other;
+  assigned.swap(other);
+  if (assigned || !other || other.get() != pointer)
+    return 5;
+  std::swap(assigned, other);
+  if (!assigned || other || assigned.get() != pointer)
+    return 6;
+  assigned.swap(assigned);
+  std::swap(other, other);
+  if (!(assigned == assigned) || assigned != assigned || assigned == other ||
+      !(assigned != other))
+    return 7;
+  if (assigned == nullptr || nullptr == assigned || !(assigned != nullptr) ||
+      !(nullptr != assigned) || !(other == nullptr) || !(nullptr == other) ||
+      other != nullptr || nullptr != other)
+    return 8;
   assigned = nullptr;
-  return assigned ? 5 : 0;
+  return assigned ? 9 : 0;
 }
 """
 

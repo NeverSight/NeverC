@@ -313,6 +313,7 @@ enum class UtilityUniquePtrOperation {
   Reset,
   MoveAssign,
   NullAssign,
+  Swap,
 };
 struct UtilityUniquePtrCall {
   UtilityUniquePtrRecord Owner;
@@ -392,6 +393,10 @@ enum class UtilityOperation {
   MemoryUniquePtrReset,
   MemoryUniquePtrMoveAssign,
   MemoryUniquePtrNullAssign,
+  MemoryUniquePtrMemberSwap,
+  MemoryUniquePtrSwap,
+  MemoryUniquePtrEqual,
+  MemoryUniquePtrNotEqual,
   MemoryAllocatorAddress,
   MemoryAllocatorAllocate,
   MemoryAllocatorDeallocate,

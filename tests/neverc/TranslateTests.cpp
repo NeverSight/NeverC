@@ -25220,7 +25220,7 @@ TEST_F(TranslateTest, CoreV2MemoryUniquePtrRunsAtBothOptimizations) {
 #include <memory>
 using Size = decltype(sizeof(0));
 struct Storage { unsigned long long alignment; unsigned char bytes[64]; };
-Storage storage[8]{};
+Storage storage[10]{};
 int allocations;
 int releases;
 int destroyed;
@@ -25291,10 +25291,45 @@ int main() {
   observe(target, 3) = (effects = effects * 10 + 4, nullptr);
   if (effects != 43 || target || releases != 6 || destroyed != 20) return 12;
 
-  return allocations == 7 && releases == 6 && destroyed == 20 &&
+  std::unique_ptr<Owned> left(new Owned{9});
+  std::unique_ptr<Owned> right(new Owned{10});
+  Owned *left_pointer = left.get();
+  Owned *right_pointer = right.get();
+  effects = 0;
+  observe(left, 1).swap(observe(right, 2));
+  if (effects != 12 || left.get() != right_pointer ||
+      right.get() != left_pointer) return 13;
+  effects = 0;
+  std::swap(observe(left, 1), observe(right, 2));
+  left.swap(left);
+  std::swap(right, right);
+  if ((effects != 12 && effects != 21) || left.get() != left_pointer ||
+      right.get() != right_pointer) return 14;
+  effects = 0;
+  bool different = observe(left, 1) != observe(right, 2);
+  if (!different || (effects != 12 && effects != 21)) return 15;
+  effects = 0;
+  if (observe(left, 3) == nullptr || effects != 3) return 15;
+  effects = 0;
+  if (nullptr == observe(left, 4) || effects != 4) return 15;
+  effects = 0;
+  if (left == (effects = 5, nullptr) || effects != 5) return 15;
+  effects = 0;
+  if ((effects = 6, nullptr) == left || effects != 6) return 15;
+  if (!(left == left) || left == right || left != left || !(left != right) ||
+      left == nullptr || nullptr == left || !(left != nullptr) ||
+      !(nullptr != left)) return 15;
+  std::unique_ptr<Owned> comparison_empty;
+  if (!(comparison_empty == nullptr) || !(nullptr == comparison_empty) ||
+      comparison_empty != nullptr || nullptr != comparison_empty ||
+      comparison_empty == left || !(comparison_empty != left)) return 16;
+  left.reset();
+  right.reset();
+
+  return allocations == 9 && releases == 8 && destroyed == 39 &&
                  released_size == sizeof(int)
              ? 0
-             : 13;
+             : 17;
 }
 )cpp");
   auto Result =
@@ -25363,6 +25398,16 @@ TEST_F(TranslateTest, CoreV2MemoryUniquePtrRequiresExactObjectForms) {
        "static_cast<std::unique_ptr<int>&&>(source));"
        "return destination ? 1 : 0;}",
        "TR0201"},
+      {"heterogeneous-comparison",
+       "#include <memory>\nvoid operator delete(void*)noexcept{}"
+       "int f(){std::unique_ptr<int> left;"
+       "std::unique_ptr<const int> right;return left==right;}",
+       "TR0203"},
+      {"ordered-comparison",
+       "#include <memory>\nvoid operator delete(void*)noexcept{}"
+       "int f(){std::unique_ptr<int> left;"
+       "std::unique_ptr<int> right;return left<right;}",
+       "TR0203"},
       {"function-address",
        "#include <memory>\nvoid operator delete(void*)noexcept{}"
        "using P=std::unique_ptr<int>;using F=int*(P::*)()const noexcept;"

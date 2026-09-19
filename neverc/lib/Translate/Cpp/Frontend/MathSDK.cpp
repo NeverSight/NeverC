@@ -3090,6 +3090,24 @@ approvedUtilityUniquePtrCall(const State &S, const SourceManager &SM,
              Method->getParamDecl(0)->getType()->isNullPtrType() &&
              Call->getArg(ArgumentIndex)->getType()->isNullPtrType()) {
     Operation = UtilityUniquePtrOperation::NullAssign;
+  } else if (Member && !Operator && Method->getIdentifier() &&
+             Method->getName() == "swap" && Method->getNumParams() == 1 &&
+             !Method->isConst() && !Object->getType().isConstQualified() &&
+             Method->getReturnType()->isVoidType() &&
+             Call->getType()->isVoidType() &&
+             Method->getParamDecl(0)->getType()->isLValueReferenceType() &&
+             !Method->getParamDecl(0)
+                  ->getType()
+                  ->getPointeeType()
+                  .isConstQualified() &&
+             Context.hasSameType(
+                 Method->getParamDecl(0)->getType()->getPointeeType(),
+                 OwnerType) &&
+             Call->getArg(ArgumentIndex)->isLValue() &&
+             !Call->getArg(ArgumentIndex)->getType().isConstQualified() &&
+             Context.hasSameUnqualifiedType(
+                 Call->getArg(ArgumentIndex)->getType(), OwnerType)) {
+    Operation = UtilityUniquePtrOperation::Swap;
   } else if (Method->getOverloadedOperator() == OO_Arrow &&
              !Method->getNumParams() && Method->isConst() &&
              ResultIs(Owner->PointerType) && Call->isPRValue()) {
@@ -4052,6 +4070,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return UtilityOperation::MemoryUniquePtrMoveAssign;
     case UtilityUniquePtrOperation::NullAssign:
       return UtilityOperation::MemoryUniquePtrNullAssign;
+    case UtilityUniquePtrOperation::Swap:
+      return UtilityOperation::MemoryUniquePtrMemberSwap;
     }
   }
   if (approvedUtilityDefaultDeleteCall(S, SM, Call, Context))
@@ -4661,6 +4681,74 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   const llvm::StringRef Name = Function->getIdentifier()
                                    ? Function->getIdentifier()->getName()
                                    : llvm::StringRef();
+  if (Origin->Path == "__memory/unique_ptr.h" && Name == "swap" &&
+      Function->isInlined() && Call->getNumArgs() == 2 &&
+      Function->getNumParams() == 2 &&
+      Function->getReturnType()->isVoidType() &&
+      Call->getType()->isVoidType()) {
+    const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
+    const auto Left = approvedUtilityUniquePtrRecord(
+        S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
+    const auto Right = approvedUtilityUniquePtrRecord(
+        S, SM, Call->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
+    const auto LeftParameter = Function->getParamDecl(0)->getType();
+    const auto RightParameter = Function->getParamDecl(1)->getType();
+    if (Prototype && Prototype->isNothrow() && Left && Right &&
+        Left->Record->getCanonicalDecl() == Right->Record->getCanonicalDecl() &&
+        LeftParameter->isLValueReferenceType() &&
+        RightParameter->isLValueReferenceType() &&
+        !LeftParameter->getPointeeType().isConstQualified() &&
+        !RightParameter->getPointeeType().isConstQualified() &&
+        Context.hasSameUnqualifiedType(LeftParameter->getPointeeType(),
+                                       Call->getArg(0)->getType()) &&
+        Context.hasSameUnqualifiedType(RightParameter->getPointeeType(),
+                                       Call->getArg(1)->getType()) &&
+        Call->getArg(0)->isLValue() && Call->getArg(1)->isLValue() &&
+        !Call->getArg(0)->getType().isConstQualified() &&
+        !Call->getArg(1)->getType().isConstQualified())
+      return UtilityOperation::MemoryUniquePtrSwap;
+  }
+  if (Origin->Path == "__memory/unique_ptr.h" && Call->getNumArgs() == 2 &&
+      Function->getNumParams() == 2 && Call->isPRValue() &&
+      Function->getReturnType()->isBooleanType() &&
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+    const auto Kind = Operator ? Operator->getOperator() : OO_None;
+    const auto Left = approvedUtilityUniquePtrRecord(
+        S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
+    const auto Right = approvedUtilityUniquePtrRecord(
+        S, SM, Call->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
+    const bool LeftNull = Call->getArg(0)->getType()->isNullPtrType();
+    const bool RightNull = Call->getArg(1)->getType()->isNullPtrType();
+    auto ParameterMatches =
+        [&](unsigned Index, const std::optional<UtilityUniquePtrRecord> &Unique,
+            bool Null) {
+          const auto Parameter = Function->getParamDecl(Index)->getType();
+          if (Null)
+            return Parameter->isNullPtrType() &&
+                   Call->getArg(Index)->getType()->isNullPtrType();
+          return Unique && Parameter->isLValueReferenceType() &&
+                 Parameter->getPointeeType().isConstQualified() &&
+                 !Parameter->getPointeeType().isVolatileQualified() &&
+                 Call->getArg(Index)->isLValue() &&
+                 Context.hasSameUnqualifiedType(
+                     Parameter->getPointeeType(),
+                     Call->getArg(Index)->getType()) &&
+                 Context.hasSameUnqualifiedType(
+                     Call->getArg(Index)->getType(),
+                     Context.getRecordType(Unique->Record));
+        };
+    if (Operator && (Kind == OO_EqualEqual || Kind == OO_ExclaimEqual) &&
+        (Left || LeftNull) && (Right || RightNull) &&
+        !(LeftNull && RightNull) &&
+        (!Left || !Right ||
+         Left->Record->getCanonicalDecl() ==
+             Right->Record->getCanonicalDecl()) &&
+        ParameterMatches(0, Left, LeftNull) &&
+        ParameterMatches(1, Right, RightNull))
+      return Kind == OO_EqualEqual ? UtilityOperation::MemoryUniquePtrEqual
+                                   : UtilityOperation::MemoryUniquePtrNotEqual;
+  }
   if (Origin->Path == "__memory/allocator.h" && Call->getNumArgs() == 2 &&
       Function->getNumParams() == 2 && Function->isInlined() &&
       Call->isPRValue() && Function->getReturnType()->isBooleanType() &&

@@ -503,17 +503,22 @@ destroying the old object, and use the same checked single-object destruction
 and global delete path as `default_delete`. Same-type move assignment evaluates
 the right owner before the left owner, releases the source and then resets the
 destination; self-move therefore retains ownership. `nullptr` assignment keeps
-the same right-before-left ordering and resets the destination. Automatic and
-static destruction first clear the owner and then destroy and deallocate its
-former object. Null pointers skip destruction and deallocation.
+the same right-before-left ordering and resets the destination. Member `swap`
+evaluates its receiver before its argument; free `std::swap` evaluates each
+owner once. Both exchange only the captured pointer fields, perform no
+destruction and retain ownership during self-swap. Same-specialization `==` and
+`!=` compare the captured raw pointers, including either operand order with
+`nullptr`. Automatic and static destruction first clear the owner and then
+destroy and deallocate its former object. Null pointers skip destruction and
+deallocation.
 
 The element must be complete and within the target's default new alignment,
 and the matching global sized or unsized delete definition must be
 source-owned. Class-specific delete, array specializations, custom deleters,
 volatile elements, `get_deleter`, member-function addresses, converting moves,
-`swap`, comparisons and ownership factories remain rejected at this boundary.
-Every admitted operation emits no libc++ runtime call and enables the checked
-`memory_lifetimes` policy.
+heterogeneous or ordered comparisons and ownership factories remain rejected at
+this boundary. Every admitted operation emits no libc++ runtime call and enables
+the checked `memory_lifetimes` policy.
 
 Exact `std::allocator<T>` metadata is admitted when `T` is non-cv `void` or a
 non-array object type, including an incomplete object. Its C++17 nested value,

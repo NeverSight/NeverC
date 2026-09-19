@@ -153,8 +153,14 @@ layout through a synthetic byte carrier. Default, copy/move and admitted
 cv-converting construction lower directly. Their authenticated call operator
 evaluates the receiver and pointer once, destroys the complete object and calls
 a checked source-defined global sized or unsized delete. Array specializations,
-volatile elements and function addresses remain rejected. Exact runtime
-allocator specializations use an authenticated one-byte stateless carrier. Default,
+volatile elements and function addresses remain rejected. Exact single-object
+`std::unique_ptr<T, std::default_delete<T>>` specializations use an
+authenticated pointer-sized carrier. Default, null, raw-pointer and same-type
+move construction; same-type move and `nullptr` assignment; pointer access,
+release, reset, member/free swap, same-specialization equality/inequality,
+bidirectional `nullptr` comparison and destruction lower directly through the
+checked global-delete path without a libc++ call. Exact runtime allocator
+specializations use an authenticated one-byte stateless carrier. Default,
 copy/move and non-void converting construction, same-type assignment,
 heterogeneous equality, deprecated C++17 `address` and complete-element
 `max_size` lower directly without a libc++ call. Exact allocator `destroy`
