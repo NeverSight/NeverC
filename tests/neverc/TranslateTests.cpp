@@ -27917,16 +27917,16 @@ int main() {
     return 1;
 
   const int values[4]{1, 3, 6, 10};
-  int total = std::accumulate((++effects, values),
-                              (++effects, values + 4), (++effects, 5));
+  long total = std::accumulate((++effects, values),
+                               (++effects, values + 4), (++effects, 5L));
   if (effects != 6 || total != 25 ||
       std::accumulate(values, values, 7) != 7)
     return 2;
 
   const long weights[4]{4, 3, 2, 1};
-  int product = std::inner_product((++effects, values),
-                                   (++effects, values + 4),
-                                   (++effects, weights), (++effects, 2));
+  double product = std::inner_product((++effects, values),
+                                      (++effects, values + 4),
+                                      (++effects, weights), (++effects, 2.0));
   if (effects != 10 || product != 37 ||
       std::inner_product(values, values, weights, 9) != 9)
     return 3;
@@ -27990,9 +27990,6 @@ TEST_F(TranslateTest, CoreV2NumericSequentialRequiresPinnedScalarForms) {
   const Rejection Cases[] = {
       {"promoted-iota", "#include <numeric>\nint main(){short a[2]{};"
                         "std::iota(a,a+2,(short)1);return 0;}"},
-      {"heterogeneous-accumulate",
-       "#include <numeric>\nint main(){int a[2]{1,2};"
-       "return std::accumulate(a,a+2,0L)==3?0:1;}"},
       {"reference-callback-accumulate",
        "#include <numeric>\nint add(const int&a,const int&b){return a+b;}"
        "int main(){int v[2]{1,2};return std::accumulate(v,v+2,0,add);}"},
@@ -28033,18 +28030,18 @@ int main() {
   const int values[4]{1, 2, 3, 4};
   const long weights[4]{4, 3, 2, 1};
   int effects = 0;
-  int reduced = std::reduce((++effects, values), (++effects, values + 4),
-                            (++effects, 5));
+  long reduced = std::reduce((++effects, values), (++effects, values + 4),
+                             (++effects, 5L));
   if (effects != 3 || reduced != 15 || std::reduce(values, values + 4) != 10 ||
       std::reduce(values, values) != 0 ||
-      std::reduce(values, values, 7) != 7)
+      std::reduce(values, values, 7L) != 7)
     return 1;
 
-  int product = std::transform_reduce(
+  double product = std::transform_reduce(
       (++effects, values), (++effects, values + 4), (++effects, weights),
-      (++effects, 1));
+      (++effects, 1.0));
   if (effects != 7 || product != 21 ||
-      std::transform_reduce(values, values, weights, 9) != 9)
+      std::transform_reduce(values, values, weights, 9.0) != 9)
     return 2;
 
   long inclusive[4]{};

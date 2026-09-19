@@ -6391,6 +6391,22 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Same(Call->getArg(ValueIndex)->getType(), Value) &&
            Context.hasSameUnqualifiedType(Value, Iterator->getPointeeType());
   };
+  auto NumericReductionValueParameter = [&](unsigned ValueIndex,
+                                            unsigned IteratorIndex) {
+    if (ValueIndex >= Function->getNumParams() ||
+        ValueIndex >= Call->getNumArgs() ||
+        IteratorIndex >= Function->getNumParams())
+      return false;
+    auto Iterator = Function->getParamDecl(IteratorIndex)->getType();
+    auto Value = Function->getParamDecl(ValueIndex)->getType();
+    return utilityAlgorithmScalarPointer(Context, Iterator) &&
+           NumericArithmetic(Iterator->getPointeeType()) &&
+           NumericArithmetic(Value) &&
+           Same(Call->getArg(ValueIndex)->getType(), Value) &&
+           utilityScalarComparisonType(Context, Value,
+                                       Iterator->getPointeeType(), false)
+               .has_value();
+  };
   auto NumericIotaValueParameter = [&](unsigned ValueIndex,
                                        unsigned IteratorIndex) {
     if (ValueIndex >= Function->getNumParams() ||
@@ -6470,7 +6486,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       NumericPointerParameter(0, false) && NumericPointerParameter(1, false) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      NumericValueParameter(2, 0) &&
+      (Call->getNumArgs() == 3 ? NumericReductionValueParameter(2, 0)
+                               : NumericValueParameter(2, 0)) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType()) &&
       (Call->getNumArgs() == 3 ||
@@ -6484,11 +6501,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       NumericPointerParameter(2, false) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      NumericValueParameter(3, 0) &&
       Same(Function->getReturnType(), Function->getParamDecl(3)->getType()) &&
       Same(Call->getType(), Function->getReturnType()) &&
-      ((Call->getNumArgs() == 4 && NumericCommonElements(0, 2)) ||
-       (Call->getNumArgs() == 6 &&
+      ((Call->getNumArgs() == 4 && NumericReductionValueParameter(3, 0) &&
+        NumericCommonElements(0, 2)) ||
+       (Call->getNumArgs() == 6 && NumericValueParameter(3, 0) &&
         NumericBinaryCallback(
             4, Function->getParamDecl(0)->getType()->getPointeeType()) &&
         NumericBinaryTransformCallback(
@@ -6527,7 +6544,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                             ->getPointeeType()
                                             .getUnqualifiedType()))
       return UtilityOperation::NumericReduce;
-    if (Call->getNumArgs() >= 3 && NumericValueParameter(2, 0) &&
+    if (Call->getNumArgs() >= 3 &&
+        (Call->getNumArgs() == 3 ? NumericReductionValueParameter(2, 0)
+                                 : NumericValueParameter(2, 0)) &&
         Same(Function->getReturnType(), Function->getParamDecl(2)->getType())) {
       if (Call->getNumArgs() == 3 ||
           NumericBinaryCallback(
@@ -6544,7 +6563,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Function->getParamDecl(1)->getType())) {
     auto Element = Function->getParamDecl(0)->getType()->getPointeeType();
     if ((Call->getNumArgs() == 4 || Call->getNumArgs() == 6) &&
-        NumericPointerParameter(2, false) && NumericValueParameter(3, 0) &&
+        NumericPointerParameter(2, false) &&
+        (Call->getNumArgs() == 4 ? NumericReductionValueParameter(3, 0)
+                                 : NumericValueParameter(3, 0)) &&
         Same(Function->getReturnType(), Function->getParamDecl(3)->getType()) &&
         ((Call->getNumArgs() == 4 && NumericCommonElements(0, 2)) ||
          (Call->getNumArgs() == 6 && NumericBinaryCallback(4, Element) &&

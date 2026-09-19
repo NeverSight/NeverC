@@ -2770,8 +2770,8 @@ extern "C" int numeric_sequential() {
   long weights[4]{4, 3, 2, 1};
   long initial = 1;
   std::iota(values, values + 4, initial);
-  int total = std::accumulate(values, values + 4, 0);
-  int product = std::inner_product(values, values + 4, weights, 0);
+  long total = std::accumulate(values, values + 4, 0L);
+  double product = std::inner_product(values, values + 4, weights, 0.0);
   long *sum_end = std::partial_sum(values, values + 4, sums);
   long *difference_end = std::adjacent_difference(
       values, values + 4, differences);
@@ -2789,8 +2789,6 @@ extern "C" int numeric_sequential() {
     for name, source in (
         ("promoted-iota",
          '#include <numeric>\nint main(){short a[2]{};std::iota(a,a+2,(short)1);return 0;}'),
-        ("heterogeneous-accumulate",
-         '#include <numeric>\nint main(){int a[2]{1,2};return std::accumulate(a,a+2,0L)==3?0:1;}'),
         ("reference-callback-accumulate",
          '#include <numeric>\nint add(const int&a,const int&b){return a+b;}int main(){int v[2]{1,2};return std::accumulate(v,v+2,0,add);}'),
         ("reference-callback-result",
@@ -2811,8 +2809,8 @@ extern "C" int numeric_cxx17() {
   long inclusive[4]{};
   long exclusive[4]{};
   int reduced = std::reduce(values, values + 4);
-  int initialized = std::reduce(values, values + 4, 5);
-  int transformed = std::transform_reduce(values, values + 4, weights, 1);
+  long initialized = std::reduce(values, values + 4, 5L);
+  double transformed = std::transform_reduce(values, values + 4, weights, 1.0);
   long *inclusive_end = std::inclusive_scan(
       values, values + 4, inclusive);
   long *exclusive_end = std::exclusive_scan(
@@ -2881,8 +2879,6 @@ extern "C" int numeric_callbacks() {
     for name, source in (
         ("promoted-reduce",
          '#include <numeric>\nint main(){short a[2]{1,2};return std::reduce(a,a+2); }'),
-        ("heterogeneous-reduce",
-         '#include <numeric>\nint main(){int a[2]{1,2};return std::reduce(a,a+2,0L)==3?0:1;}'),
         ("heterogeneous-exclusive-init",
          '#include <numeric>\nint main(){int a[2]{1,2},b[2]{};return std::exclusive_scan(a,a+2,b,0L)==b+2?0:1;}'),
         ("heterogeneous-transform-exclusive-init",
