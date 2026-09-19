@@ -1068,26 +1068,25 @@ comparison bound and duplicate multiplicities without allocating storage.
 The exact four-iterator `std::lexicographical_compare` and `std::includes`
 templates and exact five-iterator `std::merge`, `std::set_union`,
 `std::set_intersection`, `std::set_difference` and
-`std::set_symmetric_difference` templates lower for two ranges with that same
-unqualified arithmetic element type. Ordered output algorithms require a
+`std::set_symmetric_difference` templates lower for two ranges with the
+arithmetic ordering boundary. The ranges may have different scalar element
+types with a checked ordered common type. Ordered output algorithms require a
 writable scalar destination whose element accepts a checked direct conversion
-from the input and return its advanced pointer. Merge keeps equivalent elements
-from the first range first; set operations preserve their
-standard maximum, minimum and excess duplicate counts. Default-order enum
-elements, pointer elements and heterogeneous values or ranges remain outside
-this boundary because they can require overloaded or otherwise non-portable
-ordering semantics.
+from both inputs and return its advanced pointer. Merge keeps equivalent
+elements from the first range first; set operations preserve their
+standard maximum, minimum and excess duplicate counts. Default-order enum and
+pointer elements remain outside this boundary because they can require
+overloaded or otherwise non-portable ordering semantics.
 
-The corresponding comparator overloads admit same-element scalar ranges with
+The corresponding comparator overloads admit heterogeneous scalar ranges with
 a checked function pointer whose two by-value scalar parameters are reachable
-through direct conversions from the element type and whose result is exactly
-`bool`. This includes enum and pointer elements whose ordering is supplied
-entirely by the callback. Ordered output
-forms use the same directly convertible writable destination boundary. The
+through direct conversions from the respective element types and whose result
+is exactly `bool`. This includes enum and pointer elements whose ordering is supplied
+entirely by the callback. Ordered output forms require conversions from both
+inputs to the writable destination. The
 callback object is retained once, and the generated loops invoke it in both
 argument orientations when distinguishing equivalent elements. Function
-objects, reference parameters, converted result types,
-heterogeneous ranges remain rejected.
+objects, reference parameters and converted result types remain rejected.
 
 Each call evaluates and retains its arguments once before entering generated
 pointer loops. `find` preserves the bound value reference, `count` uses the

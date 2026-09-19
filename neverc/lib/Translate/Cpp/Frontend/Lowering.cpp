@@ -3881,12 +3881,24 @@ class FunctionLowering {
       std::optional<Expression> Comparator;
       if (Call->getNumArgs() == 5)
         Comparator = snapshot(expression(Call->getArg(4)), L);
+      std::optional<std::string> DefaultComparisonType;
+      if (!Comparator) {
+        auto Common = utilityScalarComparisonType(
+            A.Context, Call->getArg(0)->getType()->getPointeeType(),
+            Call->getArg(2)->getType()->getPointeeType(), true);
+        if (!Common)
+          reject(L, "algorithm lexicographical comparison",
+                 "The range elements have no ordered common type.");
+        DefaultComparisonType = type(*Common, L);
+      }
       auto Less = [&](Expression Left, Expression Right) {
         if (Comparator)
           return emitBinaryPredicate(json::Object(*Comparator),
                                      Call->getArg(4)->getType(),
                                      std::move(Left), std::move(Right), L);
-        return binary("<", std::move(Left), std::move(Right), "bool", L);
+        return binary("<", cast(std::move(Left), *DefaultComparisonType, L),
+                      cast(std::move(Right), *DefaultComparisonType, L), "bool",
+                      L);
       };
       auto Result = temporary("bool", L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
@@ -3937,12 +3949,24 @@ class FunctionLowering {
       std::optional<Expression> Comparator;
       if (Call->getNumArgs() == 5)
         Comparator = snapshot(expression(Call->getArg(4)), L);
+      std::optional<std::string> DefaultComparisonType;
+      if (!Comparator) {
+        auto Common = utilityScalarComparisonType(
+            A.Context, Call->getArg(0)->getType()->getPointeeType(),
+            Call->getArg(2)->getType()->getPointeeType(), true);
+        if (!Common)
+          reject(L, "algorithm includes",
+                 "The range elements have no ordered common type.");
+        DefaultComparisonType = type(*Common, L);
+      }
       auto Less = [&](Expression Left, Expression Right) {
         if (Comparator)
           return emitBinaryPredicate(json::Object(*Comparator),
                                      Call->getArg(4)->getType(),
                                      std::move(Left), std::move(Right), L);
-        return binary("<", std::move(Left), std::move(Right), "bool", L);
+        return binary("<", cast(std::move(Left), *DefaultComparisonType, L),
+                      cast(std::move(Right), *DefaultComparisonType, L), "bool",
+                      L);
       };
       auto Result = temporary("bool", L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
@@ -4008,12 +4032,24 @@ class FunctionLowering {
       std::optional<Expression> Comparator;
       if (Call->getNumArgs() == 6)
         Comparator = snapshot(expression(Call->getArg(5)), L);
+      std::optional<std::string> DefaultComparisonType;
+      if (!Comparator) {
+        auto Common = utilityScalarComparisonType(
+            A.Context, Call->getArg(0)->getType()->getPointeeType(),
+            Call->getArg(2)->getType()->getPointeeType(), true);
+        if (!Common)
+          reject(L, "ordered output algorithm",
+                 "The input elements have no ordered common type.");
+        DefaultComparisonType = type(*Common, L);
+      }
       auto Less = [&](Expression Left, Expression Right) {
         if (Comparator)
           return emitBinaryPredicate(json::Object(*Comparator),
                                      Call->getArg(5)->getType(),
                                      std::move(Left), std::move(Right), L);
-        return binary("<", std::move(Left), std::move(Right), "bool", L);
+        return binary("<", cast(std::move(Left), *DefaultComparisonType, L),
+                      cast(std::move(Right), *DefaultComparisonType, L), "bool",
+                      L);
       };
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto FirstType = type(Call->getArg(0)->getType(), L);

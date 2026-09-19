@@ -3230,8 +3230,8 @@ extern "C" int algorithm_rearrangement(int *first, int *middle, int *last,
     algorithm_ordered_ranges_source = """\
 #include <algorithm>
 extern "C" int algorithm_ordered_ranges(const int *first, const int *last,
-                                          const int *second,
-                                          const int *second_last, long *output,
+                                          const long *second,
+                                          const long *second_last, long *output,
                                           int value) {
   auto equal = std::equal_range(first, last, value);
   bool lexical = std::lexicographical_compare(first, last, second, second_last);
@@ -3258,15 +3258,11 @@ extern "C" int algorithm_ordered_ranges(const int *first, const int *last,
         check("v2-algorithm-ordered-ranges-" + target,
               algorithm_ordered_ranges_source, profile="cpp-core-v2",
               target=target, sdk=True)
-    check("v2-algorithm-ordered-ranges-heterogeneous",
-          '#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{1,3};return std::lexicographical_compare(a,a+2,b,b+2)?0:1;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
-
     algorithm_comparator_ordered_ranges_source = """\
 #include <algorithm>
 extern "C" int algorithm_comparator_ordered_ranges(
-    const int *first, const int *last, const int *second,
-    const int *second_last, long *output, bool (*comparator)(long, double)) {
+    const int *first, const int *last, const long *second,
+    const long *second_last, long *output, bool (*comparator)(long, double)) {
   bool lexical = std::lexicographical_compare(first, last, second, second_last,
                                                comparator);
   bool contained = std::includes(first, last, second, second_last, comparator);
@@ -3308,10 +3304,6 @@ extern "C" int algorithm_comparator_ordered_ranges(
     check("v2-algorithm-comparator-ordered-ranges-reference",
           'bool p(const int&a,int b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{1,2};return std::includes(a,a+2,a,a+1,p)?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
-    check("v2-algorithm-comparator-ordered-ranges-heterogeneous",
-          'bool p(int a,long b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{1,2};return std::includes(a,a+2,b,b+2,p)?0:1;}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
-
     algorithm_extrema_source = """\
 #include <algorithm>
 extern "C" int algorithm_extrema(const int *first, const int *last,

@@ -29733,8 +29733,8 @@ int main() {
     return 2;
 
   const int lexical_left[2]{1, 2};
-  const int lexical_right[3]{1, 3, 0};
-  const int lexical_prefix[3]{1, 2, 0};
+  const long lexical_right[3]{1, 3, 0};
+  const long lexical_prefix[3]{1, 2, 0};
   if (!std::lexicographical_compare(lexical_left, lexical_left + 2,
                                     lexical_right, lexical_right + 3) ||
       std::lexicographical_compare(lexical_right, lexical_right + 3,
@@ -29746,8 +29746,8 @@ int main() {
     return 3;
 
   const int left[5]{1, 1, 2, 4, 6};
-  const int right[5]{1, 2, 2, 3, 6};
-  const int subset[3]{1, 2, 6};
+  const long right[5]{1, 2, 2, 3, 6};
+  const long subset[3]{1, 2, 6};
   if (!std::includes(left, left + 5, subset, subset + 3) ||
       std::includes(left, left + 5, right, right + 5) ||
       !std::includes(left, left + 5, subset, subset))
@@ -29827,9 +29827,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmOrderedRangesRequirePinnedScalarForms) {
     const char *Source;
   };
   const Rejection Cases[] = {
-      {"heterogeneous-lexicographical",
-       "#include <algorithm>\nint main(){int a[2]{1,2};long b[2]{1,3};"
-       "return std::lexicographical_compare(a,a+2,b,b+2)?0:1;}"},
       {"record-equal-range",
        "#include <algorithm>\nstruct R{int n;};"
        "bool operator<(const R&a,const R&b){return a.n<b.n;}"
@@ -29867,9 +29864,9 @@ bool rank_greater(int left, unsigned right) {
 }
 int main() {
   const int left[5]{9, 7, 7, 4, 1};
-  const int right[4]{8, 7, 5, 1};
-  const int subset[2]{7, 1};
-  const int missing[1]{8};
+  const long right[4]{8, 7, 5, 1};
+  const long subset[2]{7, 1};
+  const long missing[1]{8};
   calls = 0;
   if (!std::lexicographical_compare(left, left + 5, right, right + 4,
                                     greater_value) ||
@@ -29990,10 +29987,6 @@ TEST_F(TranslateTest,
        "struct P{bool operator()(int a,int b)const{return a>b;}};\n"
        "#include <algorithm>\nint main(){int a[2]{2,1},out[2]{};return "
        "std::set_union(a,a+2,a,a+2,out,P{})==out+2?0:1;}"},
-      {"heterogeneous-ranges",
-       "bool p(int a,long b){return a>b;}\n#include <algorithm>\n"
-       "int main(){int a[2]{2,1};long b[2]{2,1};return "
-       "std::includes(a,a+2,b,b+2,p)?0:1;}"},
       {"variadic-comparator",
        "bool p(int a,int b,...){return a>b;}\n#include <algorithm>\n"
        "int main(){int a[2]{2,1},out[4]{};return "

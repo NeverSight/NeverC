@@ -5960,6 +5960,18 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Element->isSpecificBuiltinType(BuiltinType::Float) ||
            Element->isSpecificBuiltinType(BuiltinType::Double);
   };
+  auto AlgorithmOrderedParameters = [&](unsigned LeftIndex,
+                                        unsigned RightIndex) {
+    if (!AlgorithmOrderedPointerParameter(LeftIndex) ||
+        !AlgorithmOrderedPointerParameter(RightIndex))
+      return false;
+    return utilityScalarComparisonType(
+               Context,
+               Function->getParamDecl(LeftIndex)->getType()->getPointeeType(),
+               Function->getParamDecl(RightIndex)->getType()->getPointeeType(),
+               true)
+        .has_value();
+  };
   auto AlgorithmValueParameter = [&](unsigned ValueIndex,
                                      unsigned IteratorIndex) {
     if (ValueIndex >= Function->getNumParams() ||
@@ -6941,10 +6953,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getParamDecl(2)->getType(),
            Function->getParamDecl(3)->getType()) &&
-      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
-                           Function->getParamDecl(2)->getType()) &&
-      ((Call->getNumArgs() == 4 && AlgorithmOrderedPointerParameter(0) &&
-        AlgorithmOrderedPointerParameter(2)) ||
+      ((Call->getNumArgs() == 4 && AlgorithmOrderedParameters(0, 2)) ||
        (Call->getNumArgs() == 5 && AlgorithmBinaryPredicateParameter(4, 0, 2))))
     return Name == "includes"
                ? UtilityOperation::AlgorithmIncludes
@@ -6963,17 +6972,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
       AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
       AlgorithmPointerParameter(2) && AlgorithmPointerParameter(3) &&
-      AlgorithmTransferParameters(0, 4) &&
+      AlgorithmTransferParameters(0, 4) && AlgorithmTransferParameters(2, 4) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getParamDecl(2)->getType(),
            Function->getParamDecl(3)->getType()) &&
-      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
-                           Function->getParamDecl(2)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(4)->getType()) &&
       Same(Call->getType(), Function->getReturnType()) &&
-      ((Call->getNumArgs() == 5 && AlgorithmOrderedPointerParameter(0) &&
-        AlgorithmOrderedPointerParameter(2)) ||
+      ((Call->getNumArgs() == 5 && AlgorithmOrderedParameters(0, 2)) ||
        (Call->getNumArgs() == 6 &&
         AlgorithmBinaryPredicateParameter(5, 0, 2)))) {
     if (Name == "merge")
