@@ -25240,6 +25240,15 @@ std::unique_ptr<Owned> &observe(std::unique_ptr<Owned> &value, int digit) {
   effects = effects * 10 + digit;
   return value;
 }
+std::unique_ptr<Owned> *observe(std::unique_ptr<Owned> *value, int digit) {
+  effects = effects * 10 + digit;
+  return value;
+}
+const std::unique_ptr<Owned> *observe(const std::unique_ptr<Owned> *value,
+                                     int digit) {
+  effects = effects * 10 + digit;
+  return value;
+}
 Owned *observe(Owned *value, int digit) {
   effects = effects * 10 + digit;
   return value;
@@ -25260,18 +25269,37 @@ int main() {
 
   std::unique_ptr<Owned> owner(new Owned{1});
   const std::unique_ptr<Owned> &view = owner;
-  if (!owner || view.get() != owner.get() || owner->value != 1 ||
-      (*owner).value != 1) return 2;
-  Owned *raw = owner.release();
-  if (owner || raw->value != 1 || releases || destroyed) return 3;
-  owner.reset(raw);
+  std::unique_ptr<Owned> *owner_pointer = &owner;
+  const std::unique_ptr<Owned> *view_pointer = &view;
+  effects = 0;
+  if (!observe(owner_pointer, 1)->operator bool() || effects != 1 ||
+      view_pointer->get() != owner_pointer->get() ||
+      owner_pointer->operator->()->value != 1 ||
+      owner_pointer->operator*().value != 1)
+    return 2;
+  effects = 0;
+  Owned *raw = observe(owner_pointer, 1)->release();
+  if (effects != 1 || owner || raw->value != 1 || releases || destroyed)
+    return 3;
+  effects = 0;
+  observe(owner_pointer, 1)->reset(observe(raw, 2));
+  if (effects != 12) return 3;
+  std::default_delete<Owned> &owner_deleter =
+      owner_pointer->get_deleter();
+  const std::default_delete<Owned> &view_deleter =
+      observe(view_pointer, 3)->get_deleter();
+  if (static_cast<const void *>(&owner_deleter) !=
+          static_cast<const void *>(&view_deleter) ||
+      effects != 123)
+    return 3;
 
   effects = 0;
   observe(owner, 1).reset(observe(new Owned{2}, 2));
   if (effects != 12 || releases != 1 || destroyed != 1 ||
       owner->value != 2) return 4;
-  owner.reset();
-  if (owner || releases != 2 || destroyed != 3) return 5;
+  effects = 0;
+  observe(owner, 1).get_deleter()(owner_pointer->release());
+  if (effects != 1 || owner || releases != 2 || destroyed != 3) return 5;
 
   {
     std::unique_ptr<Owned> automatic(new Owned{4});
@@ -25306,8 +25334,8 @@ int main() {
   if (source || !moved || moved->value != 6 || effects != 1) return 9;
   std::unique_ptr<Owned> target(new Owned{7});
   effects = 0;
-  observe(target, 2) = std::move(observe(moved, 1));
-  if (effects != 12 || moved || !target || target->value != 6 ||
+  observe(&target, 2)->operator=(std::move(observe(moved, 1)));
+  if (effects != 21 || moved || !target || target->value != 6 ||
       releases != 7 || destroyed != 14) return 10;
   Owned *same = target.get();
   target = std::move(target);
@@ -25321,7 +25349,7 @@ int main() {
   Owned *left_pointer = left.get();
   Owned *right_pointer = right.get();
   effects = 0;
-  observe(left, 1).swap(observe(right, 2));
+  observe(&left, 1)->swap(observe(right, 2));
   if (effects != 12 || left.get() != right_pointer ||
       right.get() != left_pointer) return 13;
   effects = 0;
@@ -25411,11 +25439,12 @@ TEST_F(TranslateTest, CoreV2MemoryUniquePtrRequiresExactObjectForms) {
        "void operator delete(void*)noexcept{}"
        "std::unique_ptr<R> value;",
        "TR0203"},
-      {"get-deleter",
+      {"get-deleter-address",
        "#include <memory>\nvoid operator delete(void*)noexcept{}"
-       "int f(){std::unique_ptr<int> value;"
-       "return &value.get_deleter()!=nullptr;}",
-       "TR0203"},
+       "using U=std::unique_ptr<int>;using D=std::default_delete<int>;"
+       "using F=D&(U::*)()noexcept;F f(){return "
+       "static_cast<F>(&U::get_deleter);}",
+       "TR0201"},
       {"derived-converting-move",
        "#include <memory>\nvoid operator delete(void*)noexcept{}"
        "struct B{};struct D:B{};int f(){std::unique_ptr<D> source;"

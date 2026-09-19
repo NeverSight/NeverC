@@ -1506,8 +1506,15 @@ member/free swap, same-specialization and qualification-compatible same-element
 equality/inequality, bidirectional `nullptr` comparison and destruction lower
 to existing record, pointer, cast, comparison and checked lifetime instructions.
 Moves capture the source pointer, clear that source and cast only to the checked
-qualification-compatible destination type. Swaps capture both owners and
-exchange only their pointer fields; comparison operands are evaluated once.
+qualification-compatible destination type. Mutable and const `get_deleter`
+return a dereferenced pointer to the existing one-byte default-delete record;
+the owner address is cast through `ptr:void` or `cptr:void` before being retyped,
+which preserves the authenticated zero-offset subobject identity without a new
+field. Swaps capture both owners and exchange only their pointer fields;
+comparison operands are evaluated once. Each admitted nonstatic member also
+accepts an exact raw pointer to its owner. Its pointee `const` selects the
+corresponding access, and the receiver expression is retained once; explicit
+member-call assignment places that receiver before its argument.
 Exact single-object `std::make_unique<T>(args...)` authenticates its pinned
 template specialization, non-array `new` and raw-pointer owner construction,
 then emits an ordinary checked source-defined global-new `call`, scalar

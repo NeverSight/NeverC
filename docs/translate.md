@@ -55,12 +55,15 @@ global sized or unsized delete. Exact single-object
 `std::unique_ptr<T, std::default_delete<T>>` uses a pointer-sized authenticated
 carrier. Default, null, raw-pointer, same-type move and const-adding converting
 move construction, same-type and const-adding converting move assignment,
-`nullptr` assignment, `get`, `operator->`, dereference, explicit boolean
-conversion, `release`, `reset`, member and free `swap`, same-specialization and
+`nullptr` assignment, `get`, mutable/const `get_deleter`, `operator->`,
+dereference, explicit boolean conversion, `release`, `reset`, member and free
+`swap`, same-specialization and
 qualification-compatible same-element equality/inequality, bidirectional `nullptr`
 comparison and automatic destruction lower directly while preserving
 receiver/argument sequencing and calling the same checked source-defined global
-delete. Exact single-object
+delete. Each admitted nonstatic member accepts either an object receiver or an
+exact raw pointer to that owner; pointer receivers retain pointee `const` and
+execute once. Exact single-object
 `std::make_unique<T>(args...)` also lowers directly: it authenticates the pinned
 factory and selected allocation, value-initializes a scalar or calls the exact
 source-owned non-template `noexcept` record constructor, and installs the

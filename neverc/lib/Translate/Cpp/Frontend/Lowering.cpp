@@ -1458,6 +1458,7 @@ class FunctionLowering {
       return Place;
     }
     case UtilityOperation::MemoryUniquePtrGet:
+    case UtilityOperation::MemoryUniquePtrGetDeleter:
     case UtilityOperation::MemoryUniquePtrArrow:
     case UtilityOperation::MemoryUniquePtrDereference:
     case UtilityOperation::MemoryUniquePtrBoolean:
@@ -1476,6 +1477,8 @@ class FunctionLowering {
         switch (Operation) {
         case UtilityOperation::MemoryUniquePtrGet:
           return UtilityUniquePtrOperation::Get;
+        case UtilityOperation::MemoryUniquePtrGetDeleter:
+          return UtilityUniquePtrOperation::GetDeleter;
         case UtilityOperation::MemoryUniquePtrArrow:
           return UtilityUniquePtrOperation::Arrow;
         case UtilityOperation::MemoryUniquePtrDereference:
@@ -1503,22 +1506,49 @@ class FunctionLowering {
             L, "unique pointer operation",
             "The selected std::unique_ptr operation changed after checking.");
 
+      auto OwnerObject = [&] {
+        return Info->ObjectIsArrow ? dereference(expression(Info->Object), L)
+                                   : lvalue(Info->Object);
+      };
+      if (Expected == UtilityUniquePtrOperation::GetDeleter) {
+        auto OwnerAddress =
+            Info->ObjectIsArrow
+                ? expression(Info->Object)
+                : address(lvalue(Info->Object), Info->Object->getType(), L);
+        auto ResultPointer = A.Context.getPointerType(Call->getType());
+        auto ErasedAddress = cast(
+            std::move(OwnerAddress),
+            Call->getType().isConstQualified() ? "cptr:void" : "ptr:void", L);
+        return dereference(
+            cast(std::move(ErasedAddress), type(ResultPointer, L), L), L);
+      }
       if (Expected == UtilityUniquePtrOperation::Get ||
           Expected == UtilityUniquePtrOperation::Arrow) {
-        return snapshot(UniquePtrMember(lvalue(Info->Object), Info->Owner), L);
+        return snapshot(UniquePtrMember(OwnerObject(), Info->Owner), L);
       }
       if (Expected == UtilityUniquePtrOperation::Dereference) {
-        auto Pointer =
-            snapshot(UniquePtrMember(lvalue(Info->Object), Info->Owner), L);
+        auto Pointer = snapshot(UniquePtrMember(OwnerObject(), Info->Owner), L);
         return dereference(std::move(Pointer), L);
       }
       if (Expected == UtilityUniquePtrOperation::Boolean) {
-        auto Pointer =
-            snapshot(UniquePtrMember(lvalue(Info->Object), Info->Owner), L);
+        auto Pointer = snapshot(UniquePtrMember(OwnerObject(), Info->Owner), L);
         return cast(std::move(Pointer), "bool", L);
       }
 
       const auto RecordType = A.Context.getRecordType(Info->Owner.Record);
+      auto CaptureReceiver = [&] {
+        return snapshot(
+            Info->ObjectIsArrow
+                ? cast(expression(Info->Object),
+                       type(A.Context.getPointerType(RecordType), L), L)
+                : address(lvalue(Info->Object), RecordType, L),
+            L);
+      };
+      std::optional<Expression> Receiver;
+      // An explicit member call sequences its postfix receiver before every
+      // argument. Operator notation keeps the operator's own sequencing.
+      if (isa<CXXMemberCallExpr>(Call))
+        Receiver = CaptureReceiver();
       std::optional<Expression> MoveSourceAddress;
       std::optional<UtilityUniquePtrRecord> MoveSourceOwner;
       if (Expected == UtilityUniquePtrOperation::MoveAssign ||
@@ -1544,9 +1574,10 @@ class FunctionLowering {
                  "The checked null argument is missing.");
         discard(Call->getArg(Info->ArgumentIndex));
       }
-      auto Receiver = snapshot(address(lvalue(Info->Object), RecordType, L), L);
+      if (!Receiver)
+        Receiver = CaptureReceiver();
       auto Member = [&] {
-        return UniquePtrMember(dereference(json::Object(Receiver), L),
+        return UniquePtrMember(dereference(json::Object(*Receiver), L),
                                Info->Owner);
       };
       if (Expected == UtilityUniquePtrOperation::Swap) {
@@ -1594,7 +1625,7 @@ class FunctionLowering {
             A.allocatorHeapFunction(false, Info->Owner.ElementType, L);
         deallocateSingle(std::move(Previous), Info->Owner.ElementType, Function,
                          L);
-        return dereference(std::move(Receiver), L);
+        return dereference(std::move(*Receiver), L);
       }
       if (Expected == UtilityUniquePtrOperation::NullAssign) {
         auto Pointer = snapshot(Member(), L);
@@ -1603,7 +1634,7 @@ class FunctionLowering {
             A.allocatorHeapFunction(false, Info->Owner.ElementType, L);
         deallocateSingle(std::move(Pointer), Info->Owner.ElementType, Function,
                          L);
-        return dereference(std::move(Receiver), L);
+        return dereference(std::move(*Receiver), L);
       }
       if (Info->ArgumentIndex >= Call->getNumArgs())
         reject(L, "unique pointer reset",

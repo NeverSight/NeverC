@@ -3047,6 +3047,17 @@ approvedUtilityUniquePtrCall(const State &S, const SourceManager &SM,
     Object = Member->getImplicitObjectArgument();
   }
   const auto *Reference = directMethodReference(Call);
+  const auto *MemberReference = dyn_cast_or_null<MemberExpr>(Reference);
+  const bool ObjectIsArrow =
+      Member && MemberReference && MemberReference->isArrow();
+  auto ObjectType = Object ? Object->getType() : QualType();
+  if (ObjectIsArrow) {
+    if (ObjectType.isNull() || !ObjectType->isPointerType() ||
+        ObjectType.getAddressSpace() != LangAS::Default ||
+        ObjectType->getPointeeType().getAddressSpace() != LangAS::Default)
+      return std::nullopt;
+    ObjectType = ObjectType->getPointeeType();
+  }
   const auto Owner = approvedUtilityUniquePtrRecord(
       S, SM, Method ? Method->getParent() : nullptr, Context);
   const auto *Prototype =
@@ -3061,11 +3072,13 @@ approvedUtilityUniquePtrCall(const State &S, const SourceManager &SM,
       cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
                     "__memory/unique_ptr.h") &&
       S.owns(SM, Call->getExprLoc()) &&
-      Context.hasSameUnqualifiedType(Object->getType(),
+      Context.hasSameUnqualifiedType(ObjectType,
                                      Context.getRecordType(Owner->Record)) &&
       Context.hasSameType(Call->getType(), Context.BoolTy) && Call->isPRValue())
-    return UtilityUniquePtrCall{*Owner, UtilityUniquePtrOperation::Boolean,
-                                Object, 0};
+    return UtilityUniquePtrCall{
+        *Owner,       UtilityUniquePtrOperation::Boolean,
+        Object,       0,
+        std::nullopt, ObjectIsArrow};
   if (!Call || !Method || !Object || !Reference || !Owner || !Prototype ||
       !Prototype->isNothrow() || Method->isStatic() || Method->isVariadic() ||
       !Method->isInlined() || !Method->hasBody() ||
@@ -3073,7 +3086,7 @@ approvedUtilityUniquePtrCall(const State &S, const SourceManager &SM,
       !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
                      "__memory/unique_ptr.h") ||
       !S.owns(SM, Reference->getExprLoc()) ||
-      !Context.hasSameUnqualifiedType(Object->getType(),
+      !Context.hasSameUnqualifiedType(ObjectType,
                                       Context.getRecordType(Owner->Record)) ||
       Call->getNumArgs() != Method->getNumParams() + ArgumentIndex)
     return std::nullopt;
@@ -3088,7 +3101,7 @@ approvedUtilityUniquePtrCall(const State &S, const SourceManager &SM,
            Context.hasSameType(Method->getReturnType()->getPointeeType(),
                                OwnerType) &&
            Context.hasSameUnqualifiedType(Call->getType(), OwnerType) &&
-           Call->isLValue() && !Object->getType().isConstQualified();
+           Call->isLValue() && !ObjectType.isConstQualified();
   };
   UtilityUniquePtrOperation Operation;
   if (Method->getOverloadedOperator() == OO_Equal &&
@@ -3127,8 +3140,8 @@ approvedUtilityUniquePtrCall(const State &S, const SourceManager &SM,
                                   Owner->PointerType))
       return std::nullopt;
     Operation = UtilityUniquePtrOperation::ConvertingMoveAssign;
-    return UtilityUniquePtrCall{*Owner, Operation, Object, ArgumentIndex,
-                                *Source};
+    return UtilityUniquePtrCall{*Owner,        Operation, Object,
+                                ArgumentIndex, *Source,   ObjectIsArrow};
   } else if (Method->getOverloadedOperator() == OO_Equal &&
              !Method->getPrimaryTemplate() && Method->getNumParams() == 1 &&
              AssignmentResult() &&
@@ -3137,7 +3150,7 @@ approvedUtilityUniquePtrCall(const State &S, const SourceManager &SM,
     Operation = UtilityUniquePtrOperation::NullAssign;
   } else if (Member && !Operator && Method->getIdentifier() &&
              Method->getName() == "swap" && Method->getNumParams() == 1 &&
-             !Method->isConst() && !Object->getType().isConstQualified() &&
+             !Method->isConst() && !ObjectType.isConstQualified() &&
              Method->getReturnType()->isVoidType() &&
              Call->getType()->isVoidType() &&
              Method->getParamDecl(0)->getType()->isLValueReferenceType() &&
@@ -3169,14 +3182,28 @@ approvedUtilityUniquePtrCall(const State &S, const SourceManager &SM,
              !Method->getNumParams() && Method->isConst() &&
              ResultIs(Owner->PointerType) && Call->isPRValue()) {
     Operation = UtilityUniquePtrOperation::Get;
+  } else if (Member && !Operator && Method->getIdentifier() &&
+             Method->getName() == "get_deleter" && !Method->getNumParams() &&
+             Method->getReturnType()->isLValueReferenceType() &&
+             !Method->getReturnType()->getPointeeType().isVolatileQualified() &&
+             Method->isConst() ==
+                 Method->getReturnType()->getPointeeType().isConstQualified() &&
+             (Method->isConst() || !ObjectType.isConstQualified()) &&
+             Context.hasSameUnqualifiedType(
+                 Method->getReturnType()->getPointeeType(),
+                 Context.getRecordType(Owner->Deleter.Record)) &&
+             Context.hasSameType(Call->getType(),
+                                 Method->getReturnType()->getPointeeType()) &&
+             Call->isLValue()) {
+    Operation = UtilityUniquePtrOperation::GetDeleter;
   } else if (Method->getIdentifier() && Method->getName() == "release" &&
              !Method->getNumParams() && !Method->isConst() &&
-             !Object->getType().isConstQualified() &&
-             ResultIs(Owner->PointerType) && Call->isPRValue()) {
+             !ObjectType.isConstQualified() && ResultIs(Owner->PointerType) &&
+             Call->isPRValue()) {
     Operation = UtilityUniquePtrOperation::Release;
   } else if (Method->getIdentifier() && Method->getName() == "reset" &&
              Method->getNumParams() == 1 && !Method->isConst() &&
-             !Object->getType().isConstQualified() &&
+             !ObjectType.isConstQualified() &&
              Method->getReturnType()->isVoidType() &&
              Call->getType()->isVoidType() &&
              Context.hasSameType(Method->getParamDecl(0)->getType(),
@@ -3187,7 +3214,8 @@ approvedUtilityUniquePtrCall(const State &S, const SourceManager &SM,
   } else {
     return std::nullopt;
   }
-  return UtilityUniquePtrCall{*Owner, Operation, Object, ArgumentIndex};
+  return UtilityUniquePtrCall{*Owner,        Operation,    Object,
+                              ArgumentIndex, std::nullopt, ObjectIsArrow};
 }
 
 bool approvedUtilityUniquePtrDestructor(const State &S, const SourceManager &SM,
@@ -4270,6 +4298,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     switch (Unique->Operation) {
     case UtilityUniquePtrOperation::Get:
       return UtilityOperation::MemoryUniquePtrGet;
+    case UtilityUniquePtrOperation::GetDeleter:
+      return UtilityOperation::MemoryUniquePtrGetDeleter;
     case UtilityUniquePtrOperation::Arrow:
       return UtilityOperation::MemoryUniquePtrArrow;
     case UtilityUniquePtrOperation::Dereference:

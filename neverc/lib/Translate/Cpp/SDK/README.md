@@ -157,11 +157,14 @@ volatile elements and function addresses remain rejected. Exact single-object
 `std::unique_ptr<T, std::default_delete<T>>` specializations use an
 authenticated pointer-sized carrier. Default, null, raw-pointer, same-type move
 and const-adding converting move construction; same-type and const-adding
-converting move assignment; `nullptr` assignment; pointer access, release,
-reset, member/free swap, same-specialization and qualification-compatible same-element
+converting move assignment; `nullptr` assignment; pointer access,
+mutable/const `get_deleter`, release, reset, member/free swap,
+same-specialization and qualification-compatible same-element
 equality/inequality, bidirectional `nullptr` comparison and destruction lower
 directly through the checked global-delete path without a libc++ call. Exact
-single-object `std::make_unique<T>(args...)` authenticates the pinned factory
+raw pointers to the owner may also receive every admitted nonstatic member;
+their pointee qualification and one-time receiver evaluation are preserved.
+Exact single-object `std::make_unique<T>(args...)` authenticates the pinned factory
 body and lowers through checked source-defined global new/delete. It
 value-initializes scalars or calls an exact source-owned non-template `noexcept`
 record constructor with the call-site arguments, then returns the same

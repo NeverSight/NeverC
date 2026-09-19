@@ -1683,21 +1683,28 @@ extern "C" int memory_unique_ptr(int *pointer) {
       !(nullptr != assigned) || !(other == nullptr) || !(nullptr == other) ||
       other != nullptr || nullptr != other)
     return 8;
+  const std::unique_ptr<int> &assigned_view = assigned;
+  std::unique_ptr<int> *assigned_pointer = &assigned;
+  const std::unique_ptr<int> *assigned_view_pointer = &assigned_view;
+  if (assigned_pointer->get() != pointer ||
+      assigned_view_pointer->get() != pointer ||
+      &assigned.get_deleter() != &assigned_view.get_deleter())
+    return 9;
   std::unique_ptr<const int> converted(std::move(assigned));
   if (assigned || !converted || *converted != *pointer)
-    return 9;
+    return 10;
   std::unique_ptr<int> converting_source(new int(3));
   std::unique_ptr<const int> converting_target(new int(4));
   if (converted == converting_source || converting_source == converted ||
       !(converted != converting_source) ||
       !(converting_source != converted))
-    return 10;
+    return 11;
   converting_target = std::move(converting_source);
   if (converting_source || !converting_target || *converting_target != 3)
-    return 11;
+    return 12;
   converted = nullptr;
   converting_target = nullptr;
-  return converted || converting_target ? 12 : 0;
+  return converted || converting_target ? 13 : 0;
 }
 extern "C" int memory_make_unique(int value) {
   auto owner = std::make_unique<int>(value);
@@ -1763,6 +1770,29 @@ extern "C" int memory_make_unique(int value) {
         assert any(node.get("kind") == "cast" and
                    node.get("type") == "cptr:int"
                    for node in walk(unique_function["body"])), data
+        deleter_ids = {
+            record["id"] for record in data["records"]
+            if record["fields"] == [
+                {"name": "nct_default_delete_storage", "type": "u8"}
+            ]
+        }
+        owner_id = unique_records["ptr:int"]["id"]
+        def has_deleter_alias(prefix):
+            for node in walk(unique_function["body"]):
+                if (node.get("kind") != "cast" or
+                    node.get("type") not in {
+                        prefix + ":" + record_id for record_id in deleter_ids
+                    }):
+                    continue
+                erased = node.get("args", [{}])[0]
+                address = erased.get("args", [{}])[0]
+                if (erased.get("kind") == "cast" and
+                    erased.get("type") == prefix + ":void" and
+                    address.get("kind") == "address" and
+                    address.get("type") == prefix + ":" + owner_id):
+                    return True
+            return False
+        assert has_deleter_alias("ptr") and has_deleter_alias("cptr"), data
         calls = [node for node in walk(functions)
                  if node.get("op") == "call"]
         assert calls, data

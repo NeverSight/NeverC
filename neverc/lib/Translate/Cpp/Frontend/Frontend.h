@@ -307,6 +307,7 @@ approvedUtilityUniquePtrConstruction(
     const clang::ASTContext &Context);
 enum class UtilityUniquePtrOperation {
   Get,
+  GetDeleter,
   Arrow,
   Dereference,
   Boolean,
@@ -323,6 +324,7 @@ struct UtilityUniquePtrCall {
   const clang::Expr *Object;
   unsigned ArgumentIndex;
   std::optional<UtilityUniquePtrRecord> SourceOwner = std::nullopt;
+  bool ObjectIsArrow = false;
 };
 std::optional<UtilityUniquePtrCall>
 approvedUtilityUniquePtrCall(const State &S, const clang::SourceManager &SM,
@@ -398,6 +400,7 @@ enum class UtilityOperation {
   NewLaunder,
   MemoryDefaultDelete,
   MemoryUniquePtrGet,
+  MemoryUniquePtrGetDeleter,
   MemoryUniquePtrArrow,
   MemoryUniquePtrDereference,
   MemoryUniquePtrBoolean,
