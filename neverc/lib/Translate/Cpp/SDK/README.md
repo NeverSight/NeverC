@@ -298,8 +298,13 @@ representation, while `double` preserves its 64-bit representation on 64-bit
 targets and uses the same eight-byte Murmur2 path on 32-bit targets. The primary
 `std::hash<E>` form for complete enums delegates through its exact
 authenticated `__enum_hash<E, true>` base to the corresponding underlying
-integer hash, including the 32-bit wide-value path. Pointer and `long double`
-specializations remain outside this boundary.
+integer hash, including the 32-bit wide-value path. The exact pointer partial
+specialization is admitted for non-volatile object pointers after authenticating
+its pointer/`size_t` union, pointer store and exact internal hash call. It
+reproduces libc++'s four-byte Murmur2 algorithm on 32-bit targets and ABI-v1
+eight-byte CityHash algorithm on 64-bit targets. `long double`, `void *`,
+volatile-object and function-pointer hash specializations remain outside this
+boundary.
 Exact object `std::reference_wrapper<T>` and
 `std::reference_wrapper<const T>`, plus exact fixed-arity function wrappers with
 admitted scalar or object-pointer values and exact lvalue-reference parameters

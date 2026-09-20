@@ -432,6 +432,41 @@ static bool floatingHashType(QualType Type) {
          Type->isSpecificBuiltinType(BuiltinType::Double);
 }
 
+static bool utilityObjectPointer(const ASTContext &Context, QualType Type);
+
+static const ClassTemplatePartialSpecializationDecl *
+pointerHashPartial(const State &S, const SourceManager &SM,
+                   const ClassTemplateSpecializationDecl *Record,
+                   QualType ValueType, const ASTContext &Context) {
+  const auto *Definition = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      Record ? Record->getDefinition() : nullptr);
+  if (!Definition)
+    return nullptr;
+  const auto *Template = Definition->getSpecializedTemplate();
+  const auto Specialized = Definition->getSpecializedTemplateOrPartial();
+  const auto *Partial =
+      Specialized.dyn_cast<ClassTemplatePartialSpecializationDecl *>();
+  if (!utilityObjectPointer(Context, ValueType) || !Template ||
+      !Partial || Partial->getName() != "hash" || Partial->isUnion() ||
+      !Partial->isDependentContext() ||
+      Partial->getSpecializedTemplate()->getCanonicalDecl() !=
+          Template->getCanonicalDecl() ||
+      !approvedStandardSDKDeclaration(S, SM, Partial) ||
+      !cstddefOrigin(S, SM, Partial->getLocation(), "libcxx",
+                     "__functional/hash.h"))
+    return nullptr;
+  const auto &Arguments = Partial->getTemplateArgs();
+  const auto Pattern =
+      Arguments.size() == 1 &&
+              Arguments.get(0).getKind() == TemplateArgument::Type
+          ? Arguments.get(0).getAsType()
+          : QualType();
+  return !Pattern.isNull() && Pattern->isPointerType() &&
+                 Pattern->getPointeeType()->isDependentType()
+             ? Partial
+             : nullptr;
+}
+
 static QualType enumHashUnderlyingType(QualType Type,
                                        const ASTContext &Context) {
   if (Type.isNull() || Type.hasQualifiers())
@@ -605,12 +640,15 @@ approvedFunctionalObjectRecord(const State &S, const SourceManager &SM,
   const auto ValueType = Arguments.get(0).getAsType();
   if (Name == "hash") {
     const bool Enum = !enumHashUnderlyingType(ValueType, Context).isNull();
-    if ((Enum ? Definition->getSpecializationKind() != TSK_ImplicitInstantiation
-              : Definition->getSpecializationKind() !=
-                    TSK_ExplicitSpecialization) ||
+    const bool Pointer =
+        pointerHashPartial(S, SM, Definition, ValueType, Context) != nullptr;
+    if (((Enum || Pointer)
+             ? Definition->getSpecializationKind() != TSK_ImplicitInstantiation
+             : Definition->getSpecializationKind() !=
+                   TSK_ExplicitSpecialization) ||
         (!directIntegralHashType(ValueType) &&
          !wideIntegralHashType(ValueType) && !floatingHashType(ValueType) &&
-         !ValueType->isNullPtrType() && !Enum) ||
+         !ValueType->isNullPtrType() && !Enum && !Pointer) ||
         ((wideIntegralHashType(ValueType) || floatingHashType(ValueType)) &&
          !scalarHashBase(S, SM, Definition, ValueType, Context)) ||
         (Enum && !enumHashBase(S, SM, Definition, ValueType, Context)))
@@ -675,8 +713,6 @@ bool approvedFunctionalObjectBaseCast(const State &S, const SourceManager &SM,
          (!Cast->getSubExpr()->getType().isConstQualified() ||
           Cast->getType().isConstQualified());
 }
-
-static bool utilityObjectPointer(const ASTContext &Context, QualType Type);
 
 static bool supportedFunctionalReferenceValue(const ASTContext &Context,
                                               QualType Type) {
@@ -995,6 +1031,186 @@ static std::optional<FunctionalOperationInfo> approvedFunctionalOperationImpl(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context, bool RequireOwnedReference);
 
+static std::optional<FunctionalOperationInfo> approvedPointerHashOperation(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context, bool RequireOwnedReference) {
+  const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);
+  const auto *Hash = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      Method ? Method->getParent()->getDefinition() : nullptr);
+  const auto *Reference = directMethodReference(Call);
+  const auto Object = approvedFunctionalObjectRecord(S, SM, Hash, Context);
+  if (!Call || !Operator || !Method || !Hash || !Reference || !Object ||
+      Object->Record->getCanonicalDecl() != Hash->getCanonicalDecl() ||
+      Operator->getOperator() != OO_Call ||
+      Method->getOverloadedOperator() != OO_Call || Method->isStatic() ||
+      !Method->isConst() || Method->isVariadic() || !Method->isInlined() ||
+      !Method->hasBody() || !Call->isPRValue() ||
+      !approvedStandardSDKDeclaration(S, SM, Method) ||
+      !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
+                     "__functional/hash.h") ||
+      (RequireOwnedReference && !S.owns(SM, Reference->getExprLoc())))
+    return std::nullopt;
+
+  const auto &HashArguments = Hash->getTemplateArgs();
+  const auto ValueType =
+      HashArguments.size() == 1 &&
+              HashArguments.get(0).getKind() == TemplateArgument::Type
+          ? HashArguments.get(0).getAsType()
+          : QualType();
+  const auto *Partial = pointerHashPartial(S, SM, Hash, ValueType, Context);
+  const auto *Pattern = Method->getInstantiatedFromMemberFunction();
+  const auto *PatternParent =
+      Pattern ? dyn_cast<ClassTemplatePartialSpecializationDecl>(
+                    Pattern->getParent())
+              : nullptr;
+  const auto *Body = dyn_cast<CompoundStmt>(Method->getBody());
+  if (!Partial || !Pattern || !PatternParent ||
+      PatternParent->getCanonicalDecl() != Partial->getCanonicalDecl() ||
+      !approvedStandardSDKDeclaration(S, SM, Pattern) ||
+      !cstddefOrigin(S, SM, Pattern->getLocation(), "libcxx",
+                     "__functional/hash.h") ||
+      !Body || Body->size() != 3 || Method->getNumParams() != 1 ||
+      Call->getNumArgs() != 2 ||
+      !Context.hasSameType(Method->getParamDecl(0)->getType(), ValueType) ||
+      !Context.hasSameType(Call->getArg(1)->getType(), ValueType) ||
+      !Context.hasSameType(Method->getReturnType(), Context.getSizeType()) ||
+      !Context.hasSameType(Call->getType(), Context.getSizeType()) ||
+      !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
+                                      Context.getRecordType(Hash)))
+    return std::nullopt;
+
+  auto Statement = Body->body_begin();
+  const auto *Declaration = dyn_cast<DeclStmt>(*Statement++);
+  const auto *Assignment = dyn_cast<BinaryOperator>(*Statement++);
+  const auto *Return = dyn_cast<ReturnStmt>(*Statement);
+  const VarDecl *Storage = nullptr;
+  if (Declaration)
+    for (const auto *Declared : Declaration->decls())
+      if (const auto *Variable = dyn_cast<VarDecl>(Declared)) {
+        if (Storage)
+          return std::nullopt;
+        Storage = Variable;
+      }
+  const auto *Union = Storage ? Storage->getType()->getAsCXXRecordDecl()
+                              : nullptr;
+  Union = Union ? Union->getDefinition() : nullptr;
+  const FieldDecl *PointerField = nullptr;
+  const FieldDecl *SizeField = nullptr;
+  if (Union && std::distance(Union->field_begin(), Union->field_end()) == 2) {
+    auto Field = Union->field_begin();
+    PointerField = *Field++;
+    SizeField = *Field;
+  }
+  if (!Storage || !Union || !Union->isUnion() ||
+      !Union->isStandardLayout() || !Union->isTriviallyCopyable() ||
+      !Union->hasTrivialDestructor() || !PointerField || !SizeField ||
+      !PointerField->getIdentifier() || PointerField->getName() != "__t" ||
+      !SizeField->getIdentifier() || SizeField->getName() != "__a" ||
+      !Context.hasSameType(PointerField->getType(), ValueType) ||
+      !Context.hasSameType(SizeField->getType(), Context.getSizeType()) ||
+      Context.getASTRecordLayout(Union).getSize() !=
+          Context.getTypeSizeInChars(ValueType) ||
+      Context.getASTRecordLayout(Union).getAlignment() !=
+          Context.getTypeAlignInChars(ValueType) ||
+      !approvedStandardSDKDeclaration(S, SM, Storage) ||
+      !approvedStandardSDKDeclaration(S, SM, Union) ||
+      !approvedStandardSDKDeclaration(S, SM, PointerField) ||
+      !approvedStandardSDKDeclaration(S, SM, SizeField) ||
+      !cstddefOrigin(S, SM, Storage->getLocation(), "libcxx",
+                     "__functional/hash.h") ||
+      !cstddefOrigin(S, SM, Union->getLocation(), "libcxx",
+                     "__functional/hash.h"))
+    return std::nullopt;
+
+  const auto *StoredMember =
+      Assignment && Assignment->getOpcode() == BO_Assign
+          ? dyn_cast<MemberExpr>(Assignment->getLHS()->IgnoreParenImpCasts())
+          : nullptr;
+  const auto *StoredBase =
+      StoredMember ? dyn_cast<DeclRefExpr>(
+                         StoredMember->getBase()->IgnoreParenImpCasts())
+                   : nullptr;
+  const auto *StoredValue =
+      Assignment ? dyn_cast<DeclRefExpr>(
+                       Assignment->getRHS()->IgnoreParenImpCasts())
+                 : nullptr;
+  if (!StoredMember || StoredMember->getMemberDecl() != PointerField ||
+      !StoredBase || StoredBase->getDecl() != Storage || !StoredValue ||
+      StoredValue->getDecl() != Method->getParamDecl(0))
+    return std::nullopt;
+
+  const Expr *Returned = Return ? Return->getRetValue() : nullptr;
+  if (const auto *Cleanup = dyn_cast_or_null<ExprWithCleanups>(Returned))
+    Returned = Cleanup->getSubExpr();
+  const auto *HashCall = dyn_cast_or_null<CXXOperatorCallExpr>(
+      Returned ? Returned->IgnoreParenImpCasts() : nullptr);
+  const auto *HashMethod = dyn_cast_or_null<CXXMethodDecl>(
+      HashCall ? HashCall->getDirectCallee() : nullptr);
+  const auto *Hasher = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      HashMethod ? HashMethod->getParent()->getDefinition() : nullptr);
+  const auto *Address =
+      HashCall && HashCall->getNumArgs() == 3
+          ? dyn_cast<UnaryOperator>(
+                HashCall->getArg(1)->IgnoreParenImpCasts())
+          : nullptr;
+  const auto *Addressed =
+      Address && Address->getOpcode() == UO_AddrOf
+          ? dyn_cast<DeclRefExpr>(Address->getSubExpr()->IgnoreParenImpCasts())
+          : nullptr;
+  const auto *Size =
+      HashCall && HashCall->getNumArgs() == 3
+          ? dyn_cast<UnaryExprOrTypeTraitExpr>(
+                HashCall->getArg(2)->IgnoreParenImpCasts())
+          : nullptr;
+  const auto *Sized =
+      Size && Size->getKind() == UETT_SizeOf && !Size->isArgumentType()
+          ? dyn_cast<DeclRefExpr>(
+                Size->getArgumentExpr()->IgnoreParenImpCasts())
+          : nullptr;
+  if (!HashCall || !HashMethod || !Hasher || !Address || !Addressed ||
+      Addressed->getDecl() != Storage || !Size || !Sized ||
+      Sized->getDecl() != Storage ||
+      HashCall->getOperator() != OO_Call ||
+      HashMethod->getOverloadedOperator() != OO_Call ||
+      HashMethod->isStatic() || !HashMethod->isConst() ||
+      HashMethod->isVariadic() || HashMethod->getNumParams() != 2 ||
+      Hasher->getName() != "__murmur2_or_cityhash" || Hasher->isUnion() ||
+      !Context.hasSameUnqualifiedType(HashCall->getArg(0)->getType(),
+                                      Context.getRecordType(Hasher)) ||
+      !Context.hasSameType(HashMethod->getParamDecl(0)->getType(),
+                           HashCall->getArg(1)->getType()) ||
+      !Context.hasSameType(HashMethod->getParamDecl(1)->getType(),
+                           Context.getSizeType()) ||
+      !Context.hasSameType(HashCall->getArg(2)->getType(),
+                           Context.getSizeType()) ||
+      !Context.hasSameType(HashMethod->getReturnType(), Context.getSizeType()) ||
+      !Context.hasSameType(HashCall->getType(), Context.getSizeType()) ||
+      !Context.hasSameType(Size->getType(), Context.getSizeType()) ||
+      !approvedStandardSDKDeclaration(S, SM, Hasher) ||
+      !approvedStandardSDKDeclaration(S, SM, HashMethod) ||
+      !cstddefOrigin(S, SM, Hasher->getLocation(), "libcxx",
+                     "__functional/hash.h") ||
+      !cstddefOrigin(S, SM, HashMethod->getLocation(), "libcxx",
+                     "__functional/hash.h"))
+    return std::nullopt;
+  const auto &HasherArguments = Hasher->getTemplateArgs();
+  if (HasherArguments.size() != 2 ||
+      HasherArguments.get(0).getKind() != TemplateArgument::Type ||
+      HasherArguments.get(1).getKind() != TemplateArgument::Integral ||
+      !Context.hasSameType(HasherArguments.get(0).getAsType(),
+                           Context.getSizeType()) ||
+      HasherArguments.get(1).getAsIntegral() !=
+          Context.getTypeSize(Context.getSizeType()))
+    return std::nullopt;
+  return FunctionalOperationInfo{FunctionalOperation::Hash,
+                                 ValueType,
+                                 {},
+                                 Context.getSizeType(),
+                                 Context.getSizeType()};
+}
+
 static std::optional<FunctionalOperationInfo> approvedEnumHashOperation(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context, bool RequireOwnedReference) {
@@ -1294,6 +1510,9 @@ static std::optional<FunctionalOperationInfo> approvedWideIntegralHashOperation(
 static std::optional<FunctionalOperationInfo> approvedFunctionalOperationImpl(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context, bool RequireOwnedReference) {
+  if (auto Pointer = approvedPointerHashOperation(
+          S, SM, Call, Context, RequireOwnedReference))
+    return Pointer;
   if (auto Enum = approvedEnumHashOperation(
           S, SM, Call, Context, RequireOwnedReference))
     return Enum;

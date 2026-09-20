@@ -33823,6 +33823,50 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2PointerHashesRunAtBothOptimizations) {
+  const auto Source = tmpFile("functional-pointer-hash.cpp");
+  const auto Output = tmpFile("functional-pointer-hash.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <cstddef>
+std::size_t apply(std::hash<int *> hash, int *pointer) {
+  return hash(pointer);
+}
+int main() {
+  int value = 3;
+  int *pointer = &value;
+  std::hash<int *> stored;
+  auto copied = stored;
+  std::hash<int *> assigned;
+  assigned = copied;
+  const std::size_t expected = stored(pointer);
+  int score = 0;
+  score += expected != std::size_t(0);
+  score += std::invoke(copied, pointer) == expected;
+  score += apply(assigned, pointer) == expected;
+  score += std::hash<int *>{}(pointer) == expected;
+  score += stored(nullptr) == std::size_t(15546534240171485050ULL);
+  return score == 5 ? 0 : score;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  EXPECT_EQ(Generated.find("__murmur2_or_cityhash"), std::string::npos);
+  EXPECT_NE(Generated.find("11376068507788127593"), std::string::npos);
+  EXPECT_NE(Generated.find("15546534240171485050"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("functional-pointer-hash" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest,
        CoreV2FunctionalReferenceWrappersRunAtBothOptimizations) {
   const auto Source = tmpFile("functional-reference-wrappers.cpp");
@@ -34393,8 +34437,17 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "#include <functional>\nint main(){return "
        "std::plus<long double>{}(1,2)==3;}",
        "TR0201"},
-      {"hash-pointer",
-       "#include <functional>\nint main(){int n;return std::hash<int*>{}(&n);}",
+      {"hash-void-pointer",
+       "#include <functional>\nint main(){return "
+       "std::hash<void*>{}(nullptr);}",
+       "TR0203"},
+      {"hash-volatile-pointer",
+       "#include <functional>\nint main(){volatile int n=0;return "
+       "std::hash<volatile int*>{}(&n);}",
+       "TR0201"},
+      {"hash-function-pointer",
+       "#include <functional>\nint f(){return 0;}int main(){return "
+       "std::hash<int(*)()>{}(&f);}",
        "TR0203"},
       {"reference-wrapper-volatile",
        "#include <functional>\nint main(){volatile int v=0;"

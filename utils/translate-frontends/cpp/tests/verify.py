@@ -1622,6 +1622,56 @@ extern "C" std::size_t functional_hash(int value, unsigned long wide,
         else:
             assert "1540483477" not in murmur_literals, (
                 target, murmur_literals)
+    functional_pointer_hash_source = """\
+#include <functional>
+#include <cstddef>
+std::hash<int *> functional_pointer_hash_global;
+extern "C" std::size_t functional_pointer_hash(int *pointer) {
+  std::hash<int *> stored;
+  auto copied = stored;
+  std::hash<int *> assigned;
+  assigned = copied;
+  assigned = std::hash<int *>{};
+  return stored(pointer) + std::invoke(copied, pointer)
+      + assigned(pointer) + std::hash<int *>{}(nullptr)
+      + functional_pointer_hash_global(pointer);
+}
+"""
+    for target in sdk_targets:
+        pointer_hash = check("v2-functional-pointer-hash-" + target,
+                             functional_pointer_hash_source,
+                             profile="cpp-core-v2", target=target, sdk=True)
+        assert any(function["name"] == "functional_pointer_hash"
+                   for function in pointer_hash["functions"]), pointer_hash
+        pointer_hash_calls = [
+            node for node in walk(pointer_hash["functions"])
+            if node.get("op") in ("call", "mapped_call")
+        ]
+        assert not pointer_hash_calls, (target, pointer_hash_calls)
+        pointer_bit_casts = [
+            node for node in walk(pointer_hash["functions"])
+            if node.get("kind") == "bit_cast"
+        ]
+        result_type = "uint" if target.startswith("i686-") else "u64"
+        assert pointer_bit_casts, (target, pointer_hash)
+        assert {(node["args"][0]["type"], node["type"])
+                for node in pointer_bit_casts} == {
+                    ("ptr:int", result_type)
+                }, (target, pointer_bit_casts)
+        pointer_literals = {
+            node.get("value") for node in walk(pointer_hash["functions"])
+            if node.get("kind") == "literal"
+        }
+        if target.startswith("i686-"):
+            assert {"4", "13", "15", "24", "1540483477"} <= pointer_literals, (
+                target, pointer_literals)
+            assert "11376068507788127593" not in pointer_literals, (
+                target, pointer_literals)
+        else:
+            assert {"8", "32", "47", "11376068507788127593"} <= pointer_literals, (
+                target, pointer_literals)
+            assert "1540483477" not in pointer_literals, (
+                target, pointer_literals)
     functional_reference_source = """\
 #include <functional>
 int functional_reference_global_value;
@@ -1921,7 +1971,11 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
          "TR0203"),
         ("long-double", '#include <functional>\nint main(){return std::plus<long double>{}(1,2)==3;}',
          "TR0201"),
-        ("hash-pointer", '#include <functional>\nint main(){int n;return std::hash<int*>{}(&n);}',
+        ("hash-void-pointer", '#include <functional>\nint main(){return std::hash<void*>{}(nullptr);}',
+         "TR0203"),
+        ("hash-volatile-pointer", '#include <functional>\nint main(){volatile int n=0;return std::hash<volatile int*>{}(&n);}',
+         "TR0201"),
+        ("hash-function-pointer", '#include <functional>\nint f(){return 0;}int main(){return std::hash<int(*)()>{}(&f);}',
          "TR0203"),
         ("reference-wrapper-volatile", '#include <functional>\nint main(){volatile int v=0;std::reference_wrapper<volatile int> r(v);return r.get();}',
          "TR0201"),

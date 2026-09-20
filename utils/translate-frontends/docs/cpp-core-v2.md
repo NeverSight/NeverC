@@ -897,8 +897,15 @@ forms. The primary `std::hash<E>` specialization for a complete enum also uses
 the one-byte carrier and the same object forms. Its exact
 `__enum_hash<E, true>` base, underlying-type cast and nested integer hash call
 are authenticated; narrow underlying types use the direct size conversion and
-64-bit underlying types retain the target-specific path above. Pointer and
-`long double` hash specializations remain outside this boundary.
+64-bit underlying types retain the target-specific path above. Exact
+`std::hash<T *>` specializations for non-volatile object pointers authenticate
+the pinned partial specialization, its pointer/`size_t` union, the pointer
+store and the exact `__murmur2_or_cityhash<size_t>` call. The pointer bits use
+libc++'s four-byte Murmur2 algorithm on 32-bit targets and its ABI-v1 eight-byte
+CityHash algorithm on 64-bit targets. Pointer hashes support the same temporary,
+stored, copied, assigned, by-value and direct or `std::invoke` forms. `long double`,
+`void *`, volatile-object and function-pointer hash specializations
+remain outside this boundary.
 
 Exact `std::reference_wrapper<T>` and `std::reference_wrapper<const T>` for
 non-volatile object types, plus exact function wrappers whose fixed-arity
@@ -958,8 +965,8 @@ both `__invoke` layers and every forwarding edge are authenticated before the
 temporary wrapper is erased. Storing or copying a `mem_fn` object remains
 outside the runtime boundary.
 
-Cv-qualified typed template arguments, function-object addresses, pointers and
-user-defined operands, `long double`, `std::function`, binders and searchers do
+Cv-qualified typed template arguments, addresses or pointers to function
+objects, user-defined operands, `long double`, `std::function`, binders and searchers do
 not yet lower. Stored member pointers or `mem_fn` objects, base-adjusting receivers, volatile
 receivers, user-defined callable objects, function referents, rvalue-reference or
 other reference signatures and variadic targets remain

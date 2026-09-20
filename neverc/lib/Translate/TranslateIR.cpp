@@ -1143,11 +1143,14 @@ class Verifier {
       const Type &From = E.Args[0].ValueType, &To = E.ValueType;
       const auto FromLayout = storageLayout(From);
       const auto ToLayout = storageLayout(To);
-      return (M.Profile == "cpp-core-v2" && From.isFloating() &&
+      return (M.Profile == "cpp-core-v2" &&
+              (From.isFloating() ||
+               (From.Kind == TypeKind::Pointer && From.Elements.size() == 1 &&
+                From.Elements[0].Kind != TypeKind::Void)) &&
               To.Kind == TypeKind::UInt && FromLayout && ToLayout &&
               FromLayout->SizeBits == ToLayout->SizeBits) ||
-             error(E.Loc, "Bit casts require a core-v2 float or double and a "
-                          "same-width unsigned integer result.");
+             error(E.Loc, "Bit casts require a core-v2 float, double or object "
+                          "pointer and a same-width unsigned integer result.");
     }
     case ExprKind::Member: {
       if (!Arity(1))
