@@ -101,9 +101,11 @@ forms of `std::reference_wrapper<T>` and `std::reference_wrapper<const T>`, plus
 exact fixed-arity function forms with admitted by-value scalar signatures, use
 their authenticated target ABI layout: one pointer slot under the Itanium ABI
 and an empty-base storage slot plus the pointer under the Microsoft ABI. They
-lower direct matching-lvalue construction, direct `std::ref`/`std::cref`,
-trivial copies, same-type assignment and `get()`. Object forms also lower the
-implicit reference conversion. Wrappers around admitted standard function
+lower direct matching-lvalue construction, direct and wrapper-taking
+`std::ref`/`std::cref`, trivial copies, same-type assignment and `get()`.
+Wrapper-taking calls preserve the referenced target; `cref` adds `const` for
+object targets. Object forms also lower the implicit reference conversion.
+Wrappers around admitted standard function
 objects, stored fixed-arity function pointers and admitted function referents
 are callable directly and through `std::invoke`. The
 exact C++17 `std::invoke` also lowers fixed-arity ordinary functions and stored

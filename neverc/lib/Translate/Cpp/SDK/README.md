@@ -281,9 +281,11 @@ passing. Exact object `std::reference_wrapper<T>` and
 admitted by-value scalar signatures, use their authenticated target ABI layout:
 a single pointer slot under the Itanium ABI and an empty-base storage slot plus
 the pointer under the Microsoft ABI. Direct matching-lvalue construction,
-direct `std::ref`/`std::cref`, trivial copy/move construction, same-type
-assignment and `get()` lower directly while preserving qualification and single
-evaluation. Object forms also lower the implicit reference conversion. Wrappers
+direct and wrapper-taking `std::ref`/`std::cref`, trivial copy/move
+construction, same-type assignment and `get()` lower directly while preserving
+qualification and single evaluation. Wrapper-taking calls preserve the target;
+`cref` adds `const` for object targets. Object forms also lower the implicit
+reference conversion. Wrappers
 around admitted standard function objects, stored fixed-arity function pointers
 and admitted function referents call directly or through `std::invoke`,
 retaining the wrapper and referenced callable before evaluating the arguments. The

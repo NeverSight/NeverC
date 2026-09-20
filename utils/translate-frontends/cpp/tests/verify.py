@@ -1485,12 +1485,16 @@ extern "C" int functional_reference(int &value, const int &constant) {
   std::reference_wrapper<int> direct(value);
   auto reference = std::ref(value);
   auto constant_reference = std::cref(constant);
+  auto rewrapped = std::ref(reference);
+  auto constant_rewrapped = std::cref(reference);
+  auto temporary_rewrapped = std::ref(std::ref(value));
   std::reference_wrapper<int> copied = reference;
   copied = direct;
   copied.get() += 1;
   functional_reference_global.get() = copied.get();
   int &converted = copied;
-  return converted + constant_reference.get() +
+  return converted + constant_reference.get() + rewrapped.get() +
+         constant_rewrapped.get() + temporary_rewrapped.get() +
          functional_reference_global_value;
 }
 """
@@ -1578,11 +1582,14 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
   auto callback = std::ref(function);
   auto named = std::ref(add);
   auto named_const = std::cref(add);
+  auto named_rewrapped = std::ref(named);
+  auto named_const_rewrapped = std::cref(named);
   return plus(a, b) + std::invoke(functional_reference_global, a, b)
       + compare(short(a), double(b)) + callback(a, b)
       + std::invoke(callback, a, b) + std::invoke(std::ref(functional_reference_plus), a, b)
       + named(a, b) + named.get()(a, b) + std::invoke(named, a, b)
-      + named_const(a, b);
+      + named_const(a, b) + named_rewrapped(a, b)
+      + named_const_rewrapped(a, b);
 }
 """
     functional_reference_invoke = check(

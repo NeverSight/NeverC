@@ -1685,14 +1685,23 @@ class FunctionLowering {
       if (!Info || Call->getNumArgs() != 1)
         reject(L, "functional reference factory",
                "A checked std::ref or std::cref call is required.");
-      auto Pointer = snapshot(
-          Info->Result.ReferentType->isFunctionType()
-              ? cast(functionValue(Call->getArg(0)),
-                     type(Info->Result.PointerType, L), L)
-              : cast(address(lvalue(Call->getArg(0)),
-                             Call->getArg(0)->getType(), L),
-                     type(Info->Result.PointerType, L), L),
-          L);
+      Expression Pointer;
+      if (Info->Source) {
+        auto Source = expression(Call->getArg(0));
+        Pointer = snapshot(
+            cast(ReferenceMember(std::move(Source), *Info->Source),
+                 type(Info->Result.PointerType, L), L),
+            L);
+      } else {
+        Pointer = snapshot(
+            Info->Result.ReferentType->isFunctionType()
+                ? cast(functionValue(Call->getArg(0)),
+                       type(Info->Result.PointerType, L), L)
+                : cast(address(lvalue(Call->getArg(0)),
+                               Call->getArg(0)->getType(), L),
+                       type(Info->Result.PointerType, L), L),
+            L);
+      }
       const auto RecordType = A.Context.getRecordType(Info->Result.Record);
       auto Place = Destination ? std::move(*Destination)
                                : objectTemporary(RecordType, L);

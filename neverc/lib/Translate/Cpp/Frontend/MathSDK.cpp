@@ -4541,19 +4541,79 @@ approvedFunctionalReferenceFactoryCall(
                      "__functional/reference_wrapper.h"))
     return std::nullopt;
   const auto Parameter = Function->getParamDecl(0)->getType();
-  const auto Pointee = Parameter->isLValueReferenceType()
-                           ? Parameter->getPointeeType()
-                           : QualType();
   const auto Argument = Call->getArg(0)->getType();
-  const auto Expected = Cref && !Pointee.isNull() && Pointee->isObjectType()
-                            ? Pointee.withConst()
-                            : Pointee;
-  if (Pointee.isNull() || Pointee.isVolatileQualified() ||
-      !Call->getArg(0)->isLValue() ||
-      !Context.hasSameUnqualifiedType(Argument, Pointee) ||
-      !Context.hasSameType(Result->ReferentType, Expected))
+  if (Parameter->isLValueReferenceType()) {
+    const auto Pointee = Parameter->getPointeeType();
+    const auto Expected = Cref && Pointee->isObjectType()
+                              ? Pointee.withConst()
+                              : Pointee;
+    if (Pointee.isVolatileQualified() || !Call->getArg(0)->isLValue() ||
+        !Context.hasSameUnqualifiedType(Argument, Pointee) ||
+        !Context.hasSameType(Result->ReferentType, Expected))
+      return std::nullopt;
+    return FunctionalReferenceFactoryCall{*Result, std::nullopt, Cref};
+  }
+
+  const auto Source = approvedFunctionalReferenceRecord(
+      S, SM, Parameter->getAsCXXRecordDecl(), Context);
+  auto Expected = Source ? Source->ReferentType : QualType();
+  if (!Expected.isNull() && Cref && Expected->isObjectType())
+    Expected = Expected.withConst();
+  const auto *Body = dyn_cast<CompoundStmt>(Function->getBody());
+  const auto *Return = Body && Body->size() == 1
+                           ? dyn_cast<ReturnStmt>(*Body->body_begin())
+                           : nullptr;
+  const auto *Construction =
+      Return && Return->getRetValue()
+          ? dyn_cast<CXXConstructExpr>(
+                Return->getRetValue()->IgnoreParenImpCasts())
+          : nullptr;
+  const auto *Constructor = Construction ? Construction->getConstructor()
+                                         : nullptr;
+  const auto *ConstructorPrototype =
+      Constructor ? Constructor->getType()->getAs<FunctionProtoType>()
+                  : nullptr;
+  const auto *ReturnedArgument =
+      Construction && Construction->getNumArgs() == 1
+          ? dyn_cast<DeclRefExpr>(
+                Construction->getArg(0)->IgnoreParenImpCasts())
+          : nullptr;
+  if (!Source || Expected.isNull() || !Construction || !Constructor ||
+      !ConstructorPrototype || !ConstructorPrototype->isNothrow() ||
+      !ReturnedArgument || Constructor->isVariadic() ||
+      Constructor->getNumParams() != 1 ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete ||
+      !Context.hasSameType(Parameter, Context.getRecordType(Source->Record)) ||
+      !Context.hasSameType(Argument, Parameter) ||
+      !Context.hasSameType(Result->ReferentType, Expected) ||
+      !Context.hasSameType(Construction->getType(), Call->getType()) ||
+      Constructor->getParent()->getCanonicalDecl() !=
+          Result->Record->getCanonicalDecl() ||
+      ReturnedArgument->getDecl() != Function->getParamDecl(0))
     return std::nullopt;
-  return FunctionalReferenceFactoryCall{*Result, Cref};
+  if (Constructor->isCopyOrMoveConstructor()) {
+    if (!Constructor->isImplicit() || !Constructor->isTrivial())
+      return std::nullopt;
+  } else {
+    const auto *ConstructorPrimary = Constructor->getPrimaryTemplate();
+    const auto *ConstructorPattern =
+        ConstructorPrimary
+            ? dyn_cast<CXXConstructorDecl>(
+                  ConstructorPrimary->getTemplatedDecl())
+            : nullptr;
+    if (!ConstructorPrimary || !ConstructorPattern ||
+        !approvedStandardSDKDeclaration(S, SM, Constructor) ||
+        !approvedStandardSDKDeclaration(S, SM, ConstructorPrimary) ||
+        !approvedStandardSDKDeclaration(S, SM, ConstructorPattern) ||
+        !cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx",
+                       "__functional/reference_wrapper.h") ||
+        !cstddefOrigin(S, SM, ConstructorPrimary->getLocation(), "libcxx",
+                       "__functional/reference_wrapper.h") ||
+        !cstddefOrigin(S, SM, ConstructorPattern->getLocation(), "libcxx",
+                       "__functional/reference_wrapper.h"))
+      return std::nullopt;
+  }
+  return FunctionalReferenceFactoryCall{*Result, *Source, Cref};
 }
 
 static std::optional<FunctionalReferenceAccessCall>

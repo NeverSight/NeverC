@@ -319,6 +319,7 @@ bool approvedFunctionalReferenceAssignment(
     const clang::ASTContext &Context);
 struct FunctionalReferenceFactoryCall {
   FunctionalReferenceRecord Result;
+  std::optional<FunctionalReferenceRecord> Source;
   bool Constant;
 };
 std::optional<FunctionalReferenceFactoryCall>

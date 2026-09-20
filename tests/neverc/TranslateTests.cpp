@@ -33745,15 +33745,24 @@ int main() {
   assigned = direct;
   reference.get() = 7;
   int &converted = reference;
+  auto rewrapped = std::ref(reference);
+  auto constant_rewrapped = std::cref(reference);
+  auto temporary_rewrapped = std::ref(std::ref(value));
+  auto temporary_constant_rewrapped = std::cref(std::ref(value));
+  rewrapped.get() = 10;
   Box box{5};
   auto box_reference = std::ref(box);
   auto *pointer = &box_reference;
   pointer->get().n = 6;
   global_reference.get() = 8;
-  return calls == 1 && value == 7 && other == 9 && direct.get() == 7 &&
-                 reference.get() == 7 && constant.get() == 4 &&
-                 copied.get() == 7 && assigned.get() == 7 && converted == 7 &&
-                 box.n == 6 && global_value == 8
+  return calls == 1 && value == 10 && other == 9 && direct.get() == 10 &&
+                 reference.get() == 10 && constant.get() == 4 &&
+                 copied.get() == 10 && assigned.get() == 10 &&
+                 converted == 10 && rewrapped.get() == 10 &&
+                 constant_rewrapped.get() == 10 &&
+                 temporary_rewrapped.get() == 10 &&
+                 temporary_constant_rewrapped.get() == 10 && box.n == 6 &&
+                 global_value == 8
              ? 0
              : 1;
 }
@@ -33853,6 +33862,8 @@ int main() {
   std::reference_wrapper<int(int)> direct_function(increment);
   auto function_name_reference = std::ref(increment);
   auto function_name_const_reference = std::cref(increment);
+  auto rewrapped_function = std::ref(function_name_reference);
+  auto constant_rewrapped_function = std::cref(function_name_reference);
   Recorder recorder = record;
   auto recorder_reference = std::ref(recorder);
   Nullary nullary = answer;
@@ -33882,7 +33893,9 @@ int main() {
   score += function_name_reference.get()(12) == 13;
   score += std::invoke(function_name_reference, 13) == 14;
   score += function_name_const_reference(14) == 15;
-  return score == 15 ? 0 : score;
+  score += rewrapped_function(15) == 16;
+  score += constant_rewrapped_function(16) == 17;
+  return score == 17 ? 0 : score;
 }
 )cpp");
   auto Result =

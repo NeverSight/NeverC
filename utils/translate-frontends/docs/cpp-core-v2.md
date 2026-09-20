@@ -855,14 +855,16 @@ signature has admitted by-value scalar parameters and a scalar or `void`
 result, retain the authenticated target ABI layout: one pointer slot under the
 Itanium ABI and an empty-base storage slot followed by the pointer under the
 Microsoft ABI. Direct construction from a matching lvalue, the direct
-`std::ref` and `std::cref` overloads, trivial copy/move construction, and
-same-specialization assignment lower without a libc++ runtime call. Assignment
-reseats the wrapper by copying its stored pointer. `get()` returns the referenced
-object or function; object forms also lower the implicit `T&` conversion. These
-operations preserve object qualification, accept object or raw-pointer
-receivers, and evaluate the receiver or factory argument once. Volatile
-referents and wrapper-taking `ref`/`cref` overloads remain outside this
-boundary. Wrappers around an admitted typed or transparent standard function
+`std::ref` and `std::cref` overloads, their wrapper-taking overloads, trivial
+copy/move construction, and same-specialization assignment lower without a
+libc++ runtime call. Assignment reseats the wrapper by copying its stored
+pointer. Wrapper-taking `ref` copies that target pointer; wrapper-taking `cref`
+does the same and adds `const` for an object referent. Both accept stored or
+temporary admitted wrappers and evaluate the argument once. `get()` returns the
+referenced object or function; object forms also lower the implicit `T&`
+conversion. These operations preserve object qualification and accept object
+or raw-pointer receivers. Volatile referents remain outside this boundary.
+Wrappers around an admitted typed or transparent standard function
 object, a stored fixed-arity function pointer or an admitted function referent
 are callable directly and through `std::invoke`. The wrapper and stored referent
 are retained before the arguments are evaluated, and each expression is
