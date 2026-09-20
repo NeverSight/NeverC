@@ -146,11 +146,12 @@ be retained across statements and passed to `std::invoke`; their storage is
 authenticated and erased before the same direct method call or field projection
 is emitted. Exact same-type local copy/move-initializer chains, including chains
 through the admitted `<utility>` reference adapters, are also authenticated and
-erased. These stored data-member pointers may also be applied with native `.*`
-or `->*` on a non-const exact receiver, preserving the non-const field lvalue.
-Stored member-function pointers may be called with native `.*` or `->*` on an
-exact object or pointer through the same fixed-arity method boundary, including
-const methods and admitted lvalue-reference parameters or results. Exact
+erased. Direct addresses and stored data-member pointers may also be applied
+with native `.*` or `->*` on a non-const exact receiver, preserving the
+non-const field lvalue. Direct addresses and stored member-function pointers
+may be called with native `.*` or `->*` on an exact object or pointer through
+the same fixed-arity method boundary, including const methods and admitted
+lvalue-reference parameters or results. Exact
 `std::mem_fn` wrappers built from those direct named addresses may be called
 immediately, directly or as the callable of `std::invoke`, through the same
 boundary. A directly initialized local wrapper for a method or data field may also be

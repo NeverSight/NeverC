@@ -1903,6 +1903,8 @@ extern "C" int functional_stored_method_member(
   auto add_chain = std::as_const(add_conditional);
   auto set_copy = set;
   auto slot_copy = slot;
+  box.*(&Box::value) = 6;
+  (&box)->*(&Box::value) = 7;
   std::invoke(set_copy, &box, 7);
   std::invoke(slot_copy, std::ref(box)) = 9;
   int *pointer = box.link;
@@ -1911,9 +1913,12 @@ extern "C" int functional_stored_method_member(
   ((&box)->*slot_copy)() = 10;
   int *native_pointer = box.link;
   (constant.*redirect)(native_pointer);
+  (box.*(&Box::set))(11);
+  ((&box)->*(&Box::slot))() = 12;
   return std::invoke(add_chain, box, 2) + std::invoke(add, &constant, 1)
       + (std::invoke(pass, constant, box.link) == box.link)
       + (pointer == constant.link) + (constant.*add_chain)(2)
+      + (constant.*(&Box::add))(2)
       + (((&constant)->*pass)(box.link) == box.link)
       + (native_pointer == constant.link);
 }
@@ -2200,9 +2205,9 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
          "TR0201"),
         ("native-const-data-member-pointer", 'struct X{const int v;};int main(){const X x{3};auto p=&X::v;return x.*p;}',
          "TR0201"),
-        ("native-direct-data-member-pointer", 'struct X{int v;};int main(){X x{3};return x.*(&X::v);}',
+        ("native-null-data-member-pointer", 'struct X{int v;};int main(){X x{3};int X::*p=nullptr;return x.*p;}',
          "TR0201"),
-        ("native-direct-member-function-pointer", 'struct X{int f(){return 3;}};int main(){X x;return (x.*(&X::f))();}',
+        ("native-null-member-function-pointer", 'struct X{int f(){return 3;}};int main(){X x;int(X::*p)()=nullptr;return (x.*p)();}',
          "TR0201"),
         ("native-member-function-pointer-from-parameter", 'struct X{int f(){return 3;}};int call(int(X::*p)(),X&x){return (x.*p)();}int main(){X x;return call(&X::f,x);}',
          "TR0201"),

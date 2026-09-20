@@ -13325,6 +13325,9 @@ public:
                      (Operation->getOpcode() == BO_PtrMemD ||
                       Operation->getOpcode() == BO_PtrMemI))
               Expression = Operation->getRHS();
+            else if (const auto *Address = dyn_cast<UnaryOperator>(Expression);
+                     Address && Address->getOpcode() == UO_AddrOf)
+              Expression = Address->getSubExpr();
             else
               break;
           }

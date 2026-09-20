@@ -342,15 +342,16 @@ directly initialized local automatic variable and called through either form;
 exact same-type local copy/move-initializer chains are authenticated and erased
 with the wrapper carrier. Move initialization may use an authenticated
 `std::move`, `std::forward`, `std::move_if_noexcept` or `std::as_const` adapter.
-A local automatic member pointer with one exact direct address of an
-admitted method or data field may also be retained across statements and passed
-to `std::invoke`; the frontend authenticates and erases that variable before
+A direct member address may be passed to `std::invoke`. A local automatic member
+pointer with one exact direct address of an admitted method or data field may
+also be retained across statements and passed to `std::invoke`; the frontend
+authenticates and erases that variable before
 emitting the same direct method call or field projection. Exact same-type local
 copy/move-initializer chains, including the admitted `<utility>` reference
-adapters, are authenticated and erased as well. Stored data-member pointers in
-this form may also be applied with native `.*` or `->*` on a non-const exact
-receiver, preserving the non-const field lvalue. Stored member-function
-pointers in this form may be called with native `.*` or `->*` on an exact
+adapters, are authenticated and erased as well. Direct addresses and stored
+data-member pointers in this form may also be applied with native `.*` or `->*`
+on a non-const exact receiver, preserving the non-const field lvalue. Direct
+addresses and stored member-function pointers may be called with native `.*` or `->*` on an exact
 object or pointer through the same fixed-arity argument and result boundary;
 const methods accept exact const receivers. Reassigned or null
 member pointers, `mem_fn` copies or moves from parameters, reassigned `mem_fn`

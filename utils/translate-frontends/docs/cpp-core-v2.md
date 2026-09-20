@@ -961,15 +961,16 @@ local automatic variables, including through authenticated `std::move`,
 `std::forward`, `std::move_if_noexcept` and `std::as_const` adapters; every
 carrier in that initializer chain is authenticated and erased. Reassigning,
 returning or constructing a null member pointer remains rejected. An admitted
-stored data-member pointer may also be applied with native `.*` or `->*` to an
-exact-class non-const object or pointer when the selected field is non-const,
+direct address or stored data-member pointer may also be applied with native
+`.*` or `->*` to an exact-class non-const object or pointer when the selected field is non-const,
 preserving its lvalue. An admitted stored member-function pointer may be called
 with native `(object.*pointer)(arguments...)` or
 `(object_pointer->*pointer)(arguments...)` syntax through the same fixed-arity
-method boundary. The receiver is retained before the arguments, const methods
+method boundary; a direct source-written member-function address is accepted
+in the same syntax. The receiver is retained before the arguments, const methods
 accept exact const receivers, and admitted lvalue-reference parameters and
 results preserve storage identity. Const-qualified native data-member access
-remains rejected. Direct, parameter-sourced, reassigned or null native member
+remains rejected. Parameter-sourced, reassigned or null native member
 pointers remain rejected. The selected libc++
 member-function or member-object dispatcher body, wrapper `get()` body and
 parameter flow are authenticated before the direct method call or field
