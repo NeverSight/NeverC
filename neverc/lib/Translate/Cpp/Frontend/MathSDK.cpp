@@ -6703,16 +6703,27 @@ std::optional<FunctionalStoredMemFn> approvedFunctionalStoredMemFn(
         dyn_cast_or_null<CXXConstructExpr>(Initializer);
     const auto *Constructor =
         Construction ? Construction->getConstructor() : nullptr;
-    const auto *Argument =
+    const Expr *Argument =
         Construction && Construction->getNumArgs() == 1
             ? functionalInvokeStrippedExpression(Construction->getArg(0))
             : nullptr;
+    if (const auto *Adapter = dyn_cast_or_null<CallExpr>(Argument)) {
+      const auto Operation = approvedUtilityOperation(S, SM, Adapter, Context);
+      if (!Operation || Adapter->getNumArgs() != 1 ||
+          (*Operation != UtilityOperation::Move &&
+           *Operation != UtilityOperation::Forward &&
+           *Operation != UtilityOperation::MoveIfNoexcept &&
+           *Operation != UtilityOperation::AsConst))
+        return std::nullopt;
+      Argument = functionalInvokeStrippedExpression(Adapter->getArg(0));
+    }
     const auto *Reference = dyn_cast_or_null<DeclRefExpr>(Argument);
     const auto *Source =
         Reference ? dyn_cast<VarDecl>(Reference->getDecl()) : nullptr;
     if (!Construction || !Constructor || !Reference || !Source ||
         !Constructor->isImplicit() || !Constructor->isTrivial() ||
-        !Constructor->isCopyConstructor() || Constructor->getNumParams() != 1 ||
+        !Constructor->isCopyOrMoveConstructor() ||
+        Constructor->getNumParams() != 1 ||
         !approvedStandardSDKDeclaration(S, SM, Constructor) ||
         !S.owns(SM, Construction->getExprLoc()) ||
         !S.owns(SM, Reference->getExprLoc()) ||

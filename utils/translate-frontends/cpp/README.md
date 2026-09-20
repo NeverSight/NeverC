@@ -150,9 +150,10 @@ and erased. Exact
 immediately, directly or as the callable of `std::invoke`, through the same
 boundary. A directly initialized local wrapper for a method or data field may also be
 retained across statements and called directly or through `std::invoke`; exact
-same-type local copy-initializer chains are authenticated and erased with their
-carriers. Reassigned or null member pointers, `mem_fn` copies from parameters,
-reassigned `mem_fn` objects,
+same-type local copy/move-initializer chains are authenticated and erased with
+their carriers, including chains through the admitted `<utility>` reference
+adapters. Reassigned or null member pointers, `mem_fn` copies or moves from
+parameters, reassigned `mem_fn` objects,
 base adjustments, volatile receivers, user-defined callable objects,
 and rvalue-reference, other reference or variadic function signatures stay
 outside this boundary. Object-pointer values and exact scalar or object-pointer

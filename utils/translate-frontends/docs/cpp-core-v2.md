@@ -971,14 +971,15 @@ admitted method or data field may also be retained in a directly initialized
 local automatic variable, then called directly or through `std::invoke`. The pinned
 `__mem_fn` specialization, stored member field, factory, call operator, both
 `__invoke` layers and every forwarding edge are authenticated before the
-wrapper and every local carrier are erased. Exact same-type local
-copy-initializer chains are admitted; copies from parameters and reassignment
-remain outside the runtime boundary.
+wrapper and every local carrier are erased. Exact same-type local copy/move
+initializer chains are admitted, including authenticated `std::move`,
+`std::forward`, `std::move_if_noexcept` and `std::as_const` adapters; copies or
+moves from parameters and reassignment remain outside the runtime boundary.
 
 Cv-qualified typed template arguments, addresses or pointers to function
 objects, user-defined operands, `long double`, `std::function`, binders and searchers do
-not yet lower. Reassigned or null member pointers, `mem_fn` copies from
-parameters, reassigned `mem_fn` objects, base-adjusting
+not yet lower. Reassigned or null member pointers, `mem_fn` copies or moves
+from parameters, reassigned `mem_fn` objects, base-adjusting
 receivers, volatile
 receivers, user-defined callable objects, function referents, rvalue-reference or
 other reference signatures and variadic targets remain

@@ -34501,6 +34501,7 @@ TEST_F(TranslateTest, CoreV2FunctionalStoredMemFnRunsAtBothOptimizations) {
   const auto Output = tmpFile("functional-stored-mem-fn.nc");
   writeFile(Source, R"cpp(
 #include <functional>
+#include <utility>
 struct Box {
   int value;
   const int fixed;
@@ -34518,12 +34519,14 @@ int main() {
   const Box constant{5, 13, &second};
   auto value = std::mem_fn(&Box::value);
   const auto value_copy = value;
-  auto value_chain = value_copy;
+  auto value_chain = std::move(value_copy);
   auto fixed = std::mem_fn(&Box::fixed);
   auto link = std::mem_fn(&Box::link);
   auto add = std::mem_fn(&Box::add);
-  const auto add_copy = add;
-  auto add_chain = add_copy;
+  auto add_move = std::move(add);
+  auto add_forward = std::forward<decltype(add_move)>(add_move);
+  auto add_conditional = std::move_if_noexcept(add_forward);
+  auto add_chain = std::as_const(add_conditional);
   auto pass = std::mem_fn(&Box::pass);
   auto set = std::mem_fn(&Box::set);
   auto set_copy = set;
@@ -34692,10 +34695,10 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "void set(int(*&p)()){p=f;}};int main(){X x;int(*p)()=f;"
        "std::invoke(&X::set,x,p);return p();}",
        "TR0203"},
-      {"stored-mem-fn-copy-from-parameter",
-       "#include <functional>\nstruct X{int v;};"
+      {"stored-mem-fn-move-from-parameter",
+       "#include <functional>\n#include <utility>\nstruct X{int v;};"
        "using Get=decltype(std::mem_fn(&X::v));"
-       "int call(Get get,X&x){auto q=get;return q(x);}"
+       "int call(Get get,X&x){auto q=std::move(get);return q(x);}"
        "int main(){X x{3};return call(std::mem_fn(&X::v),x);}",
        "TR0203"},
       {"stored-mem-fn-reassignment",
