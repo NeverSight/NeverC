@@ -4233,8 +4233,8 @@ bool Adapter::requireFunctionalObject(const CXXRecordDecl *Record,
       approvedFunctionalObjectRecord(S, Sources, Record, Context);
   if (!Object) {
     reject(Location, "standard library record",
-           "Only pinned one-byte arithmetic, bitwise, comparison, logical and "
-           "integral hash function objects are admitted.",
+           "Only pinned one-byte arithmetic, bitwise, comparison, logical, "
+           "integral hash and null-pointer hash function objects are admitted.",
            "TR0203");
     return false;
   }

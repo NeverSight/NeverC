@@ -33749,7 +33749,13 @@ int main() {
   score += (trace = trace * 10 + 1, global_hash)(value()) ==
            static_cast<std::size_t>(-7);
   score += trace == 12;
-  return score == 9 ? 0 : score;
+  trace = 0;
+  score += std::hash<std::nullptr_t>{}((trace = 3, nullptr)) ==
+           std::size_t(662607004);
+  score += std::invoke(std::hash<std::nullptr_t>{}, nullptr) ==
+           std::size_t(662607004);
+  score += trace == 3;
+  return score == 12 ? 0 : score;
 }
 )cpp");
   auto Result =

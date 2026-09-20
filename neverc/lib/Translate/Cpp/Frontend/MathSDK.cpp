@@ -420,14 +420,27 @@ static bool directIntegralHashType(QualType Type) {
 
 static bool functionalObjectOrigin(const State &S, const SourceManager &SM,
                                    const NamedDecl *Declaration,
-                                   llvm::StringRef Name,
-                                   bool CanonicalTemplate = false) {
+                                   llvm::StringRef Name) {
   if (Name != "hash")
     return cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx",
                          "__functional/operations.h");
   return cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx",
-                       CanonicalTemplate ? "__fwd/functional.h"
-                                         : "__functional/hash.h");
+                       "__functional/hash.h");
+}
+
+static bool functionalObjectTemplateOrigin(const State &S,
+                                           const SourceManager &SM,
+                                           const NamedDecl *Declaration,
+                                           llvm::StringRef Name,
+                                           bool Canonical) {
+  if (Name != "hash")
+    return cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx",
+                         "__functional/operations.h");
+  if (cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx",
+                    "__fwd/functional.h"))
+    return true;
+  return !Canonical && cstddefOrigin(S, SM, Declaration->getLocation(),
+                                     "libcxx", "__functional/hash.h");
 }
 
 std::optional<FunctionalObjectRecord>
@@ -454,8 +467,8 @@ approvedFunctionalObjectRecord(const State &S, const SourceManager &SM,
       !approvedStandardSDKDeclaration(S, SM, Template) ||
       !approvedStandardSDKDeclaration(S, SM, CanonicalTemplate) ||
       !functionalObjectOrigin(S, SM, Definition, Name) ||
-      !functionalObjectOrigin(S, SM, Template, Name, true) ||
-      !functionalObjectOrigin(S, SM, CanonicalTemplate, Name, true))
+      !functionalObjectTemplateOrigin(S, SM, Template, Name, false) ||
+      !functionalObjectTemplateOrigin(S, SM, CanonicalTemplate, Name, true))
     return std::nullopt;
   const auto &Arguments = Definition->getTemplateArgs();
   if (Arguments.size() != 1 ||
@@ -464,7 +477,7 @@ approvedFunctionalObjectRecord(const State &S, const SourceManager &SM,
   const auto ValueType = Arguments.get(0).getAsType();
   if (Name == "hash") {
     if (Definition->getSpecializationKind() != TSK_ExplicitSpecialization ||
-        !directIntegralHashType(ValueType))
+        (!directIntegralHashType(ValueType) && !ValueType->isNullPtrType()))
       return std::nullopt;
     return FunctionalObjectRecord{Definition};
   }
@@ -835,8 +848,8 @@ static std::optional<FunctionalOperationInfo> approvedFunctionalOperationImpl(
       !approvedStandardSDKDeclaration(S, SM, CanonicalTemplate) ||
       !approvedStandardSDKDeclaration(S, SM, Method) ||
       !functionalObjectOrigin(S, SM, Record, Name) ||
-      !functionalObjectOrigin(S, SM, Template, Name, true) ||
-      !functionalObjectOrigin(S, SM, CanonicalTemplate, Name, true) ||
+      !functionalObjectTemplateOrigin(S, SM, Template, Name, false) ||
+      !functionalObjectTemplateOrigin(S, SM, CanonicalTemplate, Name, true) ||
       !functionalObjectOrigin(S, SM, Method, Name) ||
       (RequireOwnedReference && !S.owns(SM, Reference->getExprLoc())))
     return std::nullopt;
@@ -854,6 +867,31 @@ static std::optional<FunctionalOperationInfo> approvedFunctionalOperationImpl(
   const auto ValueType = Arguments.get(0).getAsType();
   if (Name == "hash") {
     const auto *Body = dyn_cast<CompoundStmt>(Method->getBody());
+    if (ValueType->isNullPtrType()) {
+      const auto *NullReturn = Body && Body->size() == 1
+                                   ? dyn_cast<ReturnStmt>(*Body->body_begin())
+                                   : nullptr;
+      const auto *Constant =
+          NullReturn && NullReturn->getRetValue()
+              ? dyn_cast<IntegerLiteral>(
+                    NullReturn->getRetValue()->IgnoreParenImpCasts())
+              : nullptr;
+      if (Method->getNumParams() != 1 || Call->getNumArgs() != 2 ||
+          !Context.hasSameType(Method->getParamDecl(0)->getType(), ValueType) ||
+          !Context.hasSameType(Call->getArg(1)->getType(), ValueType) ||
+          !Context.hasSameType(Method->getReturnType(),
+                               Context.getSizeType()) ||
+          !Context.hasSameType(Call->getType(), Context.getSizeType()) ||
+          !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
+                                          Context.getRecordType(Record)) ||
+          !Constant || Constant->getValue() != 662607004)
+        return std::nullopt;
+      return FunctionalOperationInfo{FunctionalOperation::Hash,
+                                     ValueType,
+                                     {},
+                                     Context.getSizeType(),
+                                     Context.getSizeType()};
+    }
     const ReturnStmt *Return = nullptr;
     const StaticAssertDecl *SizeAssertion = nullptr;
     if (Body && Body->size() == 1) {

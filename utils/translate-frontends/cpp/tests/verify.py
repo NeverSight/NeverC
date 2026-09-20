@@ -1542,6 +1542,7 @@ extern "C" std::size_t functional_hash(int value, unsigned long wide) {
   return std::hash<bool>{}(true) + std::hash<char16_t>{}(u'A')
       + std::hash<short>{}(short(value)) + stored(value)
       + std::invoke(copied, value) + std::hash<unsigned long>{}(wide)
+      + std::hash<std::nullptr_t>{}(nullptr)
       + functional_hash_global(value);
 }
 """

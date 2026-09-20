@@ -284,8 +284,10 @@ passing. Exact direct-cast integral `std::hash` specializations from `bool`
 through `unsigned long` use the same authenticated one-byte carrier and lower
 to target `size_t` for temporary, local, global, copied and by-value objects,
 directly or through `std::invoke`. Receiver expressions are evaluated once
-before their arguments. Hash assignment and the wide-integer, floating,
-pointer, enum and null-pointer specializations remain outside this boundary.
+before their arguments. The exact C++17 `nullptr_t` specialization returns its
+pinned libc++ constant through the same object and invocation boundary. Hash
+assignment and the wide-integer, floating, pointer and enum specializations
+remain outside this boundary.
 Exact object `std::reference_wrapper<T>` and
 `std::reference_wrapper<const T>`, plus exact fixed-arity function wrappers with
 admitted scalar or object-pointer values and exact lvalue-reference parameters

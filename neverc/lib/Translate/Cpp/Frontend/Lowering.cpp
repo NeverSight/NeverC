@@ -840,6 +840,13 @@ class FunctionLowering {
       return snapshot(
           UnaryExpression("!", cast(std::move(Left), "bool", L), "bool"), L);
     case FunctionalOperation::Hash:
+      if (Info.LeftType->isNullPtrType())
+        return snapshot(
+            A.literal(
+                llvm::APSInt(llvm::APInt(integerBits(ResultType), 662607004),
+                             unsignedInteger(ResultType)),
+                ResultType, L),
+            L);
       return snapshot(cast(std::move(Left), ResultType, L), L);
     }
     llvm_unreachable("unknown functional operation");
