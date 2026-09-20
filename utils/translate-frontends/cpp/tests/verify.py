@@ -1919,6 +1919,8 @@ extern "C" int functional_stored_method_member(
   (box.*(&Box::set))(11);
   ((&box)->*(&Box::slot))() = 12;
   return std::invoke(add_chain, box, 2) + std::invoke(add, &constant, 1)
+      + (Box{3, box.link}.*add)(2)
+      + std::invoke(add_chain, Box{4, box.link}, 2)
       + (std::invoke(pass, constant, box.link) == box.link)
       + (pointer == constant.link) + (constant.*add_chain)(2)
       + (constant.*(&Box::add))(2)
@@ -2215,6 +2217,8 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
         ("native-member-function-pointer-from-parameter", 'struct X{int f(){return 3;}};int call(int(X::*p)(),X&x){return (x.*p)();}int main(){X x;return call(&X::f,x);}',
          "TR0201"),
         ("native-member-function-pointer-rvalue-reference-parameter", 'struct X{int f(int&&v){return v;}};int main(){X x;auto p=&X::f;return (x.*p)(3);}',
+         "TR0201"),
+        ("native-member-function-pointer-rvalue-qualified-method", 'struct X{int f()&&{return 3;}};int main(){auto p=&X::f;return (X{}.*p)();}',
          "TR0201"),
         ("invoke-member-rvalue-reference-parameter", '#include <functional>\nstruct X{int f(int&&v){return v;}};int main(){X x;return std::invoke(&X::f,x,3);}',
          "TR0203"),

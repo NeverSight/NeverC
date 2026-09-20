@@ -354,7 +354,8 @@ on an exact receiver, preserving the field lvalue and the const qualification
 contributed by the field or receiver. Direct
 addresses and stored member-function pointers may be called with native `.*` or `->*` on an exact
 object or pointer through the same fixed-arity argument and result boundary;
-const methods accept exact const receivers. Reassigned or null
+exact full-expression temporary objects are materialized and destroyed after
+the call, and const methods accept exact const receivers. Reassigned or null
 member pointers, `mem_fn` copies or moves from parameters, reassigned `mem_fn`
 objects, base adjustments,
 rvalue-reference or other reference signatures and

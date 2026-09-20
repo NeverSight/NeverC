@@ -6991,7 +6991,7 @@ approvedNativeMemberPointerCall(
   const auto *ObjectRecord = ObjectType->getAsCXXRecordDecl();
   if (!ObjectRecord ||
       ObjectRecord->getCanonicalDecl() != MemberClass->getCanonicalDecl() ||
-      (!ObjectIsPointer && !Object->isLValue()) ||
+      (!ObjectIsPointer && !Object->isGLValue()) ||
       ObjectType.isVolatileQualified() || ObjectType.isRestrictQualified() ||
       ObjectType.getAddressSpace() != LangAS::Default ||
       (ObjectType.isConstQualified() && !Method->isConst()))
@@ -7363,7 +7363,7 @@ approvedFunctionalMemberInvokeCall(
   if (!ObjectRecord ||
       ObjectRecord->getCanonicalDecl() != MemberClass->getCanonicalDecl() ||
       ObjectPointee.isVolatileQualified() ||
-      (!ObjectIsPointer && !ObjectWrapper && !Object->isLValue()))
+      (!ObjectIsPointer && !ObjectWrapper && !Object->isGLValue()))
     return std::nullopt;
 
   const bool MethodReferenceResult =

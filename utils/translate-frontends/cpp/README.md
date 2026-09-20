@@ -138,8 +138,9 @@ exact admitted scalar or object-pointer lvalue references, and preserves the
 corresponding scalar, object-pointer, lvalue-reference or `void` result, plus
 the admitted typed and transparent standard function objects. Direct named
 addresses of owned nonstatic member functions
-and admitted non-volatile scalar or object-pointer fields also lower on exact-class lvalue,
-pointer or `std::reference_wrapper` receivers; fields retain their qualified
+also lower on exact-class lvalue, full-expression temporary, pointer or
+`std::reference_wrapper` receivers. Admitted non-volatile scalar or
+object-pointer fields lower on exact-class lvalue, pointer or wrapper receivers and retain their qualified
 lvalue result, including reads of declared-const fields. Exact directly
 initialized local member pointers for admitted methods or data fields may also
 be retained across statements and passed to `std::invoke`; their storage is
@@ -150,7 +151,8 @@ erased. Direct addresses and stored data-member pointers may also be applied
 with native `.*` or `->*` on an exact receiver, preserving the field lvalue and
 the const qualification contributed by the field or receiver. Direct addresses and stored member-function pointers
 may be called with native `.*` or `->*` on an exact object or pointer through
-the same fixed-arity method boundary, including const methods and admitted
+the same fixed-arity method boundary; exact full-expression temporary objects
+are materialized and destroyed after the call. This includes const methods and admitted
 lvalue-reference parameters or results. Exact
 `std::mem_fn` wrappers built from those direct named addresses may be called
 immediately, directly or as the callable of `std::invoke`, through the same

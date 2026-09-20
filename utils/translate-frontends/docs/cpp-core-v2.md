@@ -943,7 +943,7 @@ expression and arguments are each evaluated once.
 
 A direct source-written address of an owned nonstatic member function also
 lowers through `std::invoke` when the receiver is an exact-class lvalue,
-pointer or admitted `std::reference_wrapper` and the method has fixed-arity
+full-expression temporary, pointer or admitted `std::reference_wrapper` and the method has fixed-arity
 admitted scalar or object-pointer parameters, either by value with a checked direct conversion or
 by exact scalar or object-pointer lvalue reference, with a scalar, object-pointer,
 exact scalar or object-pointer lvalue-reference, or `void`
@@ -967,7 +967,8 @@ and the const qualification contributed by either the field or receiver. An admi
 with native `(object.*pointer)(arguments...)` or
 `(object_pointer->*pointer)(arguments...)` syntax through the same fixed-arity
 method boundary; a direct source-written member-function address is accepted
-in the same syntax. The receiver is retained before the arguments, const methods
+in the same syntax. Exact full-expression temporary receivers are also
+materialized through this method boundary and destroyed after the call. The receiver is retained before the arguments, const methods
 accept exact const receivers, and admitted lvalue-reference parameters and
 results preserve storage identity. Volatile native data-member access remains
 rejected. Parameter-sourced, reassigned or null native member

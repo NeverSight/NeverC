@@ -34391,6 +34391,48 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2FunctionalMemberTemporaryReceiversRunAtBothOptimizations) {
+  const auto Source = tmpFile("functional-member-temporary-receivers.cpp");
+  const auto Output = tmpFile("functional-member-temporary-receivers.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+int drops;
+struct Box {
+  int value;
+  ~Box() { ++drops; }
+  int add(short n) const { return value + n; }
+};
+int main() {
+  auto add = &Box::add;
+  auto wrapper = std::mem_fn(&Box::add);
+  int score = (Box{1}.*add)(2) == 3;
+  score += drops == 1;
+  score += std::invoke(add, Box{2}, 2) == 4;
+  score += drops == 2;
+  score += wrapper(Box{3}, 2) == 5;
+  score += drops == 3;
+  return score == 6 ? 0 : score;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  EXPECT_EQ(Generated.find("indirect_call"), std::string::npos);
+  EXPECT_EQ(Generated.find("member_pointer"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-member-temporary-receivers" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2FunctionalMemFnRunsAtBothOptimizations) {
   const auto Source = tmpFile("functional-mem-fn.cpp");
   const auto Output = tmpFile("functional-mem-fn.nc");
@@ -34731,6 +34773,10 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
       {"native-member-function-pointer-rvalue-reference-parameter",
        "struct X{int f(int&&v){return v;}};int main(){X x;auto p=&X::f;"
        "return (x.*p)(3);}",
+       "TR0201"},
+      {"native-member-function-pointer-rvalue-qualified-method",
+       "struct X{int f()&&{return 3;}};int main(){auto p=&X::f;"
+       "return (X{}.*p)();}",
        "TR0201"},
       {"invoke-member-rvalue-reference-parameter",
        "#include <functional>\nstruct X{int f(int&&v){return v;}};"
