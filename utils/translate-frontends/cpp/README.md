@@ -112,8 +112,9 @@ exact C++17 `std::invoke` also lowers fixed-arity ordinary functions and stored
 function pointers with directly convertible by-value scalar parameters and
 scalar or `void` results, plus the admitted typed and transparent standard
 function objects. Direct named addresses of owned nonstatic member functions
-and admitted scalar fields also lower on exact-class lvalue, pointer or
-`std::reference_wrapper` receivers; fields retain their lvalue result. Stored
+and admitted non-volatile scalar fields also lower on exact-class lvalue,
+pointer or `std::reference_wrapper` receivers; fields retain their qualified
+lvalue result, including reads of declared-const fields. Stored
 member pointers, base adjustments, volatile receivers, user-defined callable
 objects, and rvalue-reference, non-scalar reference or variadic function
 signatures stay outside this boundary. Exact scalar lvalue-reference parameters

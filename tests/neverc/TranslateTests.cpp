@@ -33924,6 +33924,7 @@ TEST_F(TranslateTest,
 #include <functional>
 struct Box {
   int value;
+  const int fixed;
   int add(short n) const { return value + n; }
   void set(int n) { value = n; }
   void add_to(int &n) const { n += value; }
@@ -33934,8 +33935,8 @@ int trace;
 Box *pick(Box *box) { trace = trace * 10 + 1; return box; }
 int argument() { trace = trace * 10 + 2; return 4; }
 int main() {
-  Box box{3};
-  const Box constant{5};
+  Box box{3, 8};
+  const Box constant{5, 13};
   const Box *constant_pointer = &constant;
   auto wrapped = std::ref(box);
   int score = 0;
@@ -33947,6 +33948,8 @@ int main() {
   score += std::invoke(&Box::value, constant_pointer) == 5;
   score += std::invoke(&Box::add, wrapped, 1) == 10;
   score += std::invoke(&Box::value, std::cref(constant)) == 5;
+  score += std::invoke(&Box::fixed, box) == 8;
+  score += std::invoke(&Box::fixed, std::cref(constant)) == 13;
   std::invoke(&Box::value, wrapped) = 11;
   int total = 1;
   std::invoke(&Box::add_to, wrapped, total);
@@ -33957,7 +33960,7 @@ int main() {
   trace = 0;
   score += std::invoke(&Box::add, std::ref(*pick(&box)), argument()) == 16;
   score += trace == 12;
-  return score == 11 && box.value == 12 ? 0 : score;
+  return score == 13 && box.value == 12 ? 0 : score;
 }
 )cpp");
   auto Result =

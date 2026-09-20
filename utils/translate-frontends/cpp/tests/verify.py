@@ -1573,6 +1573,7 @@ extern "C" int functional_invoke(Function function, int a, int b) {
 #include <functional>
 struct Box {
   int value;
+  const int fixed;
   int add(short n) const { return value + n; }
   void set(int n) { value = n; }
   void add_to(int &n) const { n += value; }
@@ -1589,6 +1590,8 @@ extern "C" int functional_member_invoke(Box &box, const Box &constant) {
   return total + std::invoke(&Box::view, std::cref(constant))
       + std::invoke(&Box::add, wrapped, 2)
       + std::invoke(&Box::value, &box)
+      + std::invoke(&Box::fixed, box)
+      + std::invoke(&Box::fixed, std::cref(constant))
       + std::invoke(&Box::add, std::cref(constant), 1)
       + std::invoke(&Box::value, std::cref(constant));
 }

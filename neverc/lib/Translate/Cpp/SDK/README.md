@@ -298,8 +298,9 @@ objects above. A direct source-written address of an owned nonstatic member
 function may also be invoked on an exact-class lvalue, pointer or admitted
 `std::reference_wrapper` when its fixed-arity signature has the same scalar
 boundary, including exact scalar lvalue-reference parameters and results. A
-direct source-written address of an admitted scalar field may be invoked on the
-same receivers and retains its lvalue result. Stored member pointers, base
+direct source-written address of an admitted non-volatile scalar field,
+including a declared-const field, may be invoked on the same receivers and
+retains its qualified lvalue result. Stored member pointers, base
 adjustments, rvalue-reference or non-scalar reference signatures and volatile
 receivers remain outside this boundary.
 Core v2 never admits the `platform` root.

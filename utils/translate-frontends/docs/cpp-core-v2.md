@@ -888,8 +888,9 @@ by exact lvalue reference, with a scalar, scalar lvalue-reference or `void`
 result. Reference parameters and results preserve the selected object's storage
 and qualification. The receiver is retained before the arguments are evaluated
 and each selected argument conversion is preserved. A direct source-written
-address of an admitted scalar field lowers on the same receiver forms and
-retains the field lvalue, including assignment and const reads. The selected libc++
+address of an admitted non-volatile scalar field lowers on the same receiver
+forms and retains the qualified field lvalue, including assignment and reads of
+const objects or declared-const fields. The selected libc++
 member-function or member-object dispatcher body, wrapper `get()` body and
 parameter flow are authenticated before the direct method call or field
 projection is emitted.

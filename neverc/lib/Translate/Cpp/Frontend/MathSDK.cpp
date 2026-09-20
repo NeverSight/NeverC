@@ -5879,11 +5879,20 @@ approvedFunctionalMemberInvokeCall(
         return std::nullopt;
     }
   } else {
+    const auto FieldType = Field->getType();
+    const auto CallType = Call->getType();
+    const bool ResultIsConst =
+        FieldType.isConstQualified() ||
+        (ObjectPointee.isConstQualified() && !Field->isMutable());
     if (Call->getNumArgs() != 2 || Field->isBitField() ||
-        Field->getType().hasQualifiers() ||
-        !supportedFunctionalScalar(Field->getType(), Context) ||
-        !Call->isLValue() ||
-        !Context.hasSameUnqualifiedType(Call->getType(), Field->getType()))
+        FieldType.isVolatileQualified() || FieldType.isRestrictQualified() ||
+        FieldType.getAddressSpace() != LangAS::Default ||
+        !supportedFunctionalScalar(FieldType.getUnqualifiedType(), Context) ||
+        !Call->isLValue() || CallType.isVolatileQualified() ||
+        CallType.isRestrictQualified() ||
+        CallType.getAddressSpace() != LangAS::Default ||
+        CallType.isConstQualified() != ResultIsConst ||
+        !Context.hasSameUnqualifiedType(CallType, FieldType))
       return std::nullopt;
   }
   return FunctionalMemberInvokeCall{Callable, Object, Method, Field,
