@@ -13282,6 +13282,28 @@ public:
     if (A.S.coreV2())
       if (const auto *List = emptyVoidInitializer(dyn_cast<Expr>(S)))
         EmptyVoidLists.insert(List);
+    if (A.S.coreV2())
+      if (const auto *Operation = dyn_cast<BinaryOperator>(S))
+        if (auto Access = approvedNativeDataMemberPointerAccess(
+                A.S, A.Sources, Operation, A.Context)) {
+          const Expr *Expression = Access->Callable;
+          while (Expression) {
+            ApprovedMemberPointerExpressions.insert(Expression);
+            if (const auto *Parentheses = dyn_cast<ParenExpr>(Expression))
+              Expression = Parentheses->getSubExpr();
+            else if (const auto *Cleanup =
+                         dyn_cast<ExprWithCleanups>(Expression))
+              Expression = Cleanup->getSubExpr();
+            else if (const auto *Cast =
+                         dyn_cast<ImplicitCastExpr>(Expression))
+              Expression = Cast->getSubExpr();
+            else if (const auto *Address = dyn_cast<UnaryOperator>(Expression);
+                     Address && Address->getOpcode() == UO_AddrOf)
+              Expression = Address->getSubExpr();
+            else
+              break;
+          }
+        }
     if (A.S.coreV2() && ImplicitInitializerOwner.isValid())
       if (const auto *Call = dyn_cast<CallExpr>(S))
         if (auto Copy = generatedArrayAssignment(Call, CurrentMethod, A.Context)) {
@@ -14262,6 +14284,8 @@ public:
       if (const auto *B = dyn_cast<BinaryOperator>(S);
           B && (B->getLHS()->getType()->isPointerType() ||
                 B->getRHS()->getType()->isPointerType()) &&
+          !approvedNativeDataMemberPointerAccess(A.S, A.Sources, B,
+                                                 A.Context) &&
           B->getOpcode() != BO_Assign && B->getOpcode() != BO_Comma &&
           B->getOpcode() != BO_EQ && B->getOpcode() != BO_NE) {
         bool Offset = B->getOpcode() == BO_Add || B->getOpcode() == BO_Sub ||

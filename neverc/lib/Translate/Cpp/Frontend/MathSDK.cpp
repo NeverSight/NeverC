@@ -6700,6 +6700,44 @@ approvedFunctionalStoredMemberPointer(
   return std::nullopt;
 }
 
+std::optional<NativeDataMemberPointerAccess>
+approvedNativeDataMemberPointerAccess(
+    const State &S, const SourceManager &SM, const BinaryOperator *Operation,
+    const ASTContext &Context) {
+  if (!Operation || (Operation->getOpcode() != BO_PtrMemD &&
+                     Operation->getOpcode() != BO_PtrMemI) ||
+      !Operation->isLValue())
+    return std::nullopt;
+  const auto *Callable = Operation->getRHS();
+  const auto *Reference = dyn_cast_or_null<DeclRefExpr>(
+      functionalInvokeStrippedExpression(Callable));
+  const auto *Variable =
+      Reference ? dyn_cast<VarDecl>(Reference->getDecl()) : nullptr;
+  const auto Stored =
+      approvedFunctionalStoredMemberPointer(S, SM, Variable, Context);
+  if (!Stored)
+    return std::nullopt;
+  const auto *Member = Stored->Member;
+  const auto *Field = dyn_cast_or_null<FieldDecl>(Member);
+  const auto *MemberPointer =
+      Variable ? Variable->getType()->getAs<MemberPointerType>() : nullptr;
+  const bool ObjectIsPointer = Operation->getOpcode() == BO_PtrMemI;
+  const auto ObjectType =
+      ObjectIsPointer && Operation->getLHS()->getType()->isPointerType()
+          ? Operation->getLHS()->getType()->getPointeeType()
+          : Operation->getLHS()->getType();
+  if (!Field || !MemberPointer ||
+      !Context.hasSameType(ObjectType.getUnqualifiedType().getTypePtr(),
+                           MemberPointer->getClass()) ||
+      !supportedFunctionalStoredMember(Context, Field) ||
+      Field->getType().isConstQualified() || ObjectType.isConstQualified() ||
+      ObjectType.isVolatileQualified() || ObjectType.isRestrictQualified() ||
+      ObjectType.getAddressSpace() != LangAS::Default)
+    return std::nullopt;
+  return NativeDataMemberPointerAccess{Operation->getLHS(), Callable, Field,
+                                       ObjectIsPointer};
+}
+
 std::optional<FunctionalStoredMemFn> approvedFunctionalStoredMemFn(
     const State &S, const SourceManager &SM, const VarDecl *Variable,
     const ASTContext &Context) {

@@ -374,6 +374,17 @@ std::optional<FunctionalStoredMemberPointer>
 approvedFunctionalStoredMemberPointer(
     const State &S, const clang::SourceManager &SM,
     const clang::VarDecl *Variable, const clang::ASTContext &Context);
+struct NativeDataMemberPointerAccess {
+  const clang::Expr *Object;
+  const clang::Expr *Callable;
+  const clang::FieldDecl *Field;
+  bool ObjectIsPointer;
+};
+std::optional<NativeDataMemberPointerAccess>
+approvedNativeDataMemberPointerAccess(
+    const State &S, const clang::SourceManager &SM,
+    const clang::BinaryOperator *Operation,
+    const clang::ASTContext &Context);
 struct FunctionalStoredMemFn {
   const clang::VarDecl *Variable;
   const clang::Expr *Initializer;

@@ -447,6 +447,13 @@ class FunctionLowering {
         return dereference(std::move(Result), L);
       }
       if (const auto *B = dyn_cast<BinaryOperator>(E)) {
+        if (auto Access = approvedNativeDataMemberPointerAccess(
+                A.S, A.Sources, B, A.Context)) {
+          auto Base = Access->ObjectIsPointer
+                          ? dereference(expression(Access->Object), L)
+                          : lvalue(Access->Object);
+          return fieldStorage(std::move(Base), Access->Field, L);
+        }
         if (B->getOpcode() == BO_Comma) {
           discard(B->getLHS());
           return lvalue(B->getRHS());

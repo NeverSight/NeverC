@@ -34282,8 +34282,10 @@ int main() {
   auto add_conditional = std::move_if_noexcept(add_forward);
   auto add_chain = std::as_const(add_conditional);
   auto slot_copy = slot;
+  box.*value_chain = 6;
+  int score = box.value == 6;
+  (&box)->*value = 7;
   std::invoke(value, box) = 7;
-  int score = 0;
   score += std::invoke(value, &box) == 7;
   score += std::invoke(value_chain, &box) == 7;
   score += std::invoke(fixed, constant) == 13;
@@ -34301,7 +34303,7 @@ int main() {
   score += std::invoke(add_chain, box, 2) == 13;
   score += std::invoke(add, &constant, 1) == 6;
   score += std::invoke(pass, constant, &first) == &first;
-  return score == 12 ? 0 : score;
+  return score == 13 ? 0 : score;
 }
 )cpp");
   auto Result =
@@ -34678,9 +34680,20 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "#include <functional>\nstruct X{int f(){return 3;}};int main(){X x;"
        "int (X::*p)()=nullptr;return std::invoke(p,x);}",
        "TR0201"},
-      {"native-stored-member-pointer",
-       "#include <functional>\nstruct X{int v;};int main(){X x{3};"
+      {"native-member-pointer-from-parameter",
+       "struct X{int v;};int call(int X::*p,X&x){return x.*p;}"
+       "int main(){X x{3};return call(&X::v,x);}",
+       "TR0201"},
+      {"native-const-data-member-pointer",
+       "struct X{const int v;};int main(){const X x{3};"
        "auto p=&X::v;return x.*p;}",
+       "TR0201"},
+      {"native-direct-data-member-pointer",
+       "struct X{int v;};int main(){X x{3};return x.*(&X::v);}",
+       "TR0201"},
+      {"native-stored-member-function-pointer",
+       "struct X{int f(){return 3;}};int main(){X x;auto p=&X::f;"
+       "return (x.*p)();}",
        "TR0201"},
       {"invoke-member-rvalue-reference-parameter",
        "#include <functional>\nstruct X{int f(int&&v){return v;}};"

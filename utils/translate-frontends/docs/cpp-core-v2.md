@@ -960,8 +960,11 @@ field projection. It may be copied or moved through further exact same-type
 local automatic variables, including through authenticated `std::move`,
 `std::forward`, `std::move_if_noexcept` and `std::as_const` adapters; every
 carrier in that initializer chain is authenticated and erased. Reassigning,
-returning, constructing a null member pointer or
-applying native `.*`/`->*` remains rejected. The selected libc++
+returning or constructing a null member pointer remains rejected. An admitted
+stored data-member pointer may also be applied with native `.*` or `->*` to an
+exact-class non-const object or pointer when the selected field is non-const,
+preserving its lvalue. Const-qualified native access and native
+member-function-pointer application remain rejected. The selected libc++
 member-function or member-object dispatcher body, wrapper `get()` body and
 parameter flow are authenticated before the direct method call or field
 projection is emitted.

@@ -1854,6 +1854,8 @@ extern "C" int functional_stored_data_member(
   const auto value_copy = value;
   auto value_chain = std::move(value_copy);
   auto link_copy = link;
+  box.*value_chain = 6;
+  (&box)->*value = 7;
   std::invoke(value_chain, box) = 7;
   std::invoke(link_copy, std::ref(box)) = constant.link;
   return std::invoke(value, &box)
@@ -2188,7 +2190,13 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
          "TR0201"),
         ("invoke-null-member-function-pointer", '#include <functional>\nstruct X{int f(){return 3;}};int main(){X x;int (X::*p)()=nullptr;return std::invoke(p,x);}',
          "TR0201"),
-        ("native-stored-member-pointer", '#include <functional>\nstruct X{int v;};int main(){X x{3};auto p=&X::v;return x.*p;}',
+        ("native-member-pointer-from-parameter", 'struct X{int v;};int call(int X::*p,X&x){return x.*p;}int main(){X x{3};return call(&X::v,x);}',
+         "TR0201"),
+        ("native-const-data-member-pointer", 'struct X{const int v;};int main(){const X x{3};auto p=&X::v;return x.*p;}',
+         "TR0201"),
+        ("native-direct-data-member-pointer", 'struct X{int v;};int main(){X x{3};return x.*(&X::v);}',
+         "TR0201"),
+        ("native-stored-member-function-pointer", 'struct X{int f(){return 3;}};int main(){X x;auto p=&X::f;return (x.*p)();}',
          "TR0201"),
         ("invoke-member-rvalue-reference-parameter", '#include <functional>\nstruct X{int f(int&&v){return v;}};int main(){X x;return std::invoke(&X::f,x,3);}',
          "TR0203"),
