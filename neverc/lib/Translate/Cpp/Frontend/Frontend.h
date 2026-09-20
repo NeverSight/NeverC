@@ -297,6 +297,43 @@ approvedFunctionalOperation(const State &S, const clang::SourceManager &SM,
 std::optional<FunctionalOperationInfo> approvedFunctionalInvokeObjectOperation(
     const State &S, const clang::SourceManager &SM,
     const clang::CallExpr *Call, const clang::ASTContext &Context);
+struct FunctionalReferenceRecord {
+  const clang::CXXRecordDecl *Record;
+  clang::QualType ReferentType;
+  clang::QualType PointerType;
+  const clang::FieldDecl *Pointer;
+  bool PaddedBase;
+};
+std::optional<FunctionalReferenceRecord> approvedFunctionalReferenceRecord(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+enum class FunctionalReferenceConstruction { Direct, CopyOrMove };
+std::optional<FunctionalReferenceConstruction>
+approvedFunctionalReferenceConstruction(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction,
+    const clang::ASTContext &Context);
+bool approvedFunctionalReferenceAssignment(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXOperatorCallExpr *Assignment,
+    const clang::ASTContext &Context);
+struct FunctionalReferenceFactoryCall {
+  FunctionalReferenceRecord Result;
+  bool Constant;
+};
+std::optional<FunctionalReferenceFactoryCall>
+approvedFunctionalReferenceFactoryCall(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *Call, const clang::ASTContext &Context);
+struct FunctionalReferenceAccessCall {
+  FunctionalReferenceRecord Wrapper;
+  const clang::Expr *Object;
+  bool ObjectIsArrow;
+};
+std::optional<FunctionalReferenceAccessCall>
+approvedFunctionalReferenceAccessCall(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *Call, const clang::ASTContext &Context);
 enum class MemoryTemplateMetadata {
   PointerTraits,
   DefaultDelete,
@@ -460,6 +497,8 @@ enum class UtilityOperation {
   AsConst,
   FunctionalInvoke,
   FunctionalInvokeObject,
+  FunctionalReferenceFactory,
+  FunctionalReferenceAccess,
   NewLaunder,
   MemoryDefaultDelete,
   MemoryUniquePtrGet,
@@ -1110,6 +1149,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredUtilityUniquePtrs;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityAllocators;
   std::set<const clang::CXXRecordDecl *> RequiredFunctionalObjects;
+  std::set<const clang::CXXRecordDecl *> RequiredFunctionalReferences;
   std::map<const clang::CXXRecordDecl *, CheckedEmptyBase> EmptyBases;
   std::map<const clang::VarDecl *, const clang::CXXForRangeStmt *> RangeDeclarations;
   std::size_t ExpandedNodes = 0;
@@ -1154,6 +1194,9 @@ public:
   bool requireFunctionalObject(const clang::CXXRecordDecl *Record,
                                clang::SourceLocation Location,
                                unsigned Depth = 0);
+  bool requireFunctionalReference(const clang::CXXRecordDecl *Record,
+                                  clang::SourceLocation Location,
+                                  unsigned Depth = 0);
   std::string functionPointerType(clang::QualType T, clang::SourceLocation L,
                                   unsigned Depth = 0);
   bool typeClassificationValue(const clang::TypeTraitExpr *Query);

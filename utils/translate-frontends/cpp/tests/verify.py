@@ -1476,6 +1476,74 @@ extern "C" unsigned functional_stored(int a, unsigned b) {
         check("v2-functional-stored-objects-" + target,
               functional_stored_source, profile="cpp-core-v2",
               target=target, sdk=True)
+    functional_reference_source = """\
+#include <functional>
+int functional_reference_global_value;
+std::reference_wrapper<int> functional_reference_global(
+    functional_reference_global_value);
+extern "C" int functional_reference(int &value, const int &constant) {
+  std::reference_wrapper<int> direct(value);
+  auto reference = std::ref(value);
+  auto constant_reference = std::cref(constant);
+  std::reference_wrapper<int> copied = reference;
+  copied = direct;
+  copied.get() += 1;
+  functional_reference_global.get() = copied.get();
+  int &converted = copied;
+  return converted + constant_reference.get() +
+         functional_reference_global_value;
+}
+"""
+
+    def check_functional_reference(data):
+        wrappers = [
+            record for record in data["records"]
+            if any(field["name"] == "nct_reference_wrapper_pointer"
+                   for field in record["fields"])
+        ]
+        assert len(wrappers) == 2, data
+        pointer_fields = [
+            next(field for field in record["fields"]
+                 if field["name"] == "nct_reference_wrapper_pointer")
+            for record in wrappers
+        ]
+        assert {field["type"] for field in pointer_fields} == {
+            "ptr:int", "cptr:int"
+        }, data
+        pointer_layout = data["target"]["carrier_layout"]["default-pointer"]
+        pointer_bits = data["target"]["pointer_bits"]
+        windows = data["target"]["triple"].endswith("windows-msvc")
+        for record in wrappers:
+            if windows:
+                assert record["fields"][0] == {
+                    "name": "nct_reference_wrapper_base_storage",
+                    "type": "usize",
+                }, record
+                expected_layout = {
+                    "size_bits": pointer_bits * 2,
+                    "abi_align_bits": pointer_layout["abi_align_bits"],
+                    "field_offsets_bits": [0, pointer_bits],
+                }
+            else:
+                assert len(record["fields"]) == 1, record
+                expected_layout = {
+                    "size_bits": pointer_bits,
+                    "abi_align_bits": pointer_layout["abi_align_bits"],
+                    "field_offsets_bits": [0],
+                }
+            assert record["layout"] == expected_layout, record
+        assert any(function["name"] == "functional_reference"
+                   for function in data["functions"]), data
+
+    functional_reference = check("v2-functional-reference-wrapper",
+                                 functional_reference_source,
+                                 profile="cpp-core-v2", sdk=True)
+    check_functional_reference(functional_reference)
+    for target in sdk_targets:
+        target_result = check("v2-functional-reference-wrapper-" + target,
+                              functional_reference_source,
+                              profile="cpp-core-v2", target=target, sdk=True)
+        check_functional_reference(target_result)
     functional_invoke_source = """\
 #include <functional>
 int add(int a, int b) { return a + b; }
@@ -1508,6 +1576,14 @@ extern "C" int functional_invoke(Function function, int a, int b) {
          "TR0203"),
         ("long-double", '#include <functional>\nint main(){return std::plus<long double>{}(1,2)==3;}',
          "TR0201"),
+        ("reference-wrapper-volatile", '#include <functional>\nint main(){volatile int v=0;std::reference_wrapper<volatile int> r(v);return r.get();}',
+         "TR0201"),
+        ("reference-wrapper-function", '#include <functional>\nint f(int n){return n;}int main(){std::reference_wrapper<int(int)> r(f);return r.get()(1);}',
+         "TR0201"),
+        ("reference-wrapper-call", '#include <functional>\nint main(){std::plus<int> p;auto r=std::ref(p);return r(1,2);}',
+         "TR0203"),
+        ("cref-temporary", '#include <functional>\nint main(){auto r=std::cref(3);return r.get();}',
+         "TR0202"),
         ("invoke-user-object", '#include <functional>\nstruct F{int operator()(int v)const{return v;}};int main(){return std::invoke(F{},1);}',
          "TR0203"),
         ("invoke-reference-parameter", '#include <functional>\nint load(int&v){return v;}int main(){int v=3;return std::invoke(load,v);}',

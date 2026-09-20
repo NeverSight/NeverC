@@ -450,6 +450,88 @@ approvedFunctionalObjectRecord(const State &S, const SourceManager &SM,
   return FunctionalObjectRecord{Definition};
 }
 
+std::optional<FunctionalReferenceRecord> approvedFunctionalReferenceRecord(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
+    const ASTContext &Context) {
+  const auto *Definition = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      Record ? Record->getDefinition() : nullptr);
+  const auto *Template = Definition ? Definition->getSpecializedTemplate()
+                                    : nullptr;
+  const auto *CanonicalTemplate =
+      Template ? Template->getCanonicalDecl() : nullptr;
+  const auto *Pointer =
+      Definition && std::distance(Definition->field_begin(),
+                                  Definition->field_end()) == 1
+          ? *Definition->field_begin()
+          : nullptr;
+  const auto *Base =
+      Definition && Definition->getNumBases() == 1
+          ? Definition->bases_begin()->getType()->getAsCXXRecordDecl()
+          : nullptr;
+  Base = Base ? Base->getDefinition() : nullptr;
+  if (!Definition || Definition->getName() != "reference_wrapper")
+    return std::nullopt;
+  if (!Template || !CanonicalTemplate || !Pointer || !Base)
+    return std::nullopt;
+  if (Definition->isUnion() ||
+      Definition->isDependentContext() || !Definition->isStandardLayout() ||
+      !Definition->isTriviallyCopyable() ||
+      !Definition->hasTrivialDestructor())
+    return std::nullopt;
+  if (!Pointer->getIdentifier() || Pointer->getName() != "__f_")
+    return std::nullopt;
+  if (
+      Base->getName() != "__weak_result_type" || !Base->isEmpty() ||
+      !Base->isStandardLayout() || !Base->field_empty() ||
+      !Base->hasTrivialDestructor())
+    return std::nullopt;
+  if (!approvedStandardSDKDeclaration(S, SM, Definition) ||
+      !approvedStandardSDKDeclaration(S, SM, Template) ||
+      !approvedStandardSDKDeclaration(S, SM, CanonicalTemplate) ||
+      !approvedStandardSDKDeclaration(S, SM, Pointer))
+    return std::nullopt;
+  if (!cstddefOrigin(S, SM, Definition->getLocation(), "libcxx",
+                     "__functional/reference_wrapper.h"))
+    return std::nullopt;
+  if (!cstddefOrigin(S, SM, Template->getLocation(), "libcxx",
+                     "__functional/reference_wrapper.h"))
+    return std::nullopt;
+  if (!cstddefOrigin(S, SM, CanonicalTemplate->getLocation(), "libcxx",
+                     "__fwd/functional.h"))
+    return std::nullopt;
+  if (!cstddefOrigin(S, SM, Pointer->getLocation(), "libcxx",
+                     "__functional/reference_wrapper.h"))
+    return std::nullopt;
+  const auto &Arguments = Definition->getTemplateArgs();
+  if (Arguments.size() != 1 ||
+      Arguments.get(0).getKind() != TemplateArgument::Type)
+    return std::nullopt;
+  const auto Referent = Arguments.get(0).getAsType();
+  if (Referent.isNull() || !Referent->isObjectType() ||
+      Referent.isVolatileQualified() ||
+      Referent.getAddressSpace() != LangAS::Default)
+    return std::nullopt;
+  const auto PointerType = Context.getPointerType(Referent);
+  if (!Context.hasSameType(Pointer->getType(), PointerType))
+    return std::nullopt;
+  const auto &Layout = Context.getASTRecordLayout(Definition);
+  const auto PointerSize = Context.getTypeSizeInChars(PointerType);
+  if (Layout.getAlignment() != Context.getTypeAlignInChars(PointerType))
+    return std::nullopt;
+  // Itanium applies empty-base optimization to __weak_result_type. The
+  // Microsoft ABI reserves one pointer-sized slot for that base, so retain it
+  // explicitly in the portable record before the stored pointer.
+  const bool Compact = Layout.getSize() == PointerSize &&
+                       Layout.getFieldOffset(0) == 0;
+  const bool Padded = Layout.getSize() == PointerSize * 2 &&
+                      Layout.getFieldOffset(0) ==
+                          uint64_t(PointerSize.getQuantity()) * 8;
+  if (!Compact && !Padded)
+    return std::nullopt;
+  return FunctionalReferenceRecord{Definition, Referent, PointerType, Pointer,
+                                   Padded};
+}
+
 std::optional<FunctionalObjectConstruction>
 approvedFunctionalObjectConstruction(const State &S, const SourceManager &SM,
                                      const CXXConstructExpr *Construction,
@@ -494,6 +576,70 @@ approvedFunctionalObjectConstruction(const State &S, const SourceManager &SM,
   return FunctionalObjectConstruction::CopyOrMove;
 }
 
+std::optional<FunctionalReferenceConstruction>
+approvedFunctionalReferenceConstruction(
+    const State &S, const SourceManager &SM,
+    const CXXConstructExpr *Construction, const ASTContext &Context) {
+  if (!Construction || Construction->isTypeDependent() ||
+      Construction->isValueDependent() ||
+      Construction->isInstantiationDependent() ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete)
+    return std::nullopt;
+  const auto *Constructor = Construction->getConstructor();
+  const auto Wrapper = approvedFunctionalReferenceRecord(
+      S, SM, Construction->getType()->getAsCXXRecordDecl(), Context);
+  const auto *Prototype =
+      Constructor ? Constructor->getType()->getAs<FunctionProtoType>()
+                  : nullptr;
+  if (!Constructor || !Wrapper || !Prototype || !Prototype->isNothrow() ||
+      Constructor->getParent()->getCanonicalDecl() !=
+          Wrapper->Record->getCanonicalDecl() ||
+      Constructor->isVariadic() || Construction->getNumArgs() != 1 ||
+      Constructor->getNumParams() != 1 ||
+      !approvedStandardSDKDeclaration(S, SM, Constructor))
+    return std::nullopt;
+  const auto Parameter = Constructor->getParamDecl(0)->getType();
+  const auto Argument = Construction->getArg(0)->getType();
+  if (Constructor->isCopyOrMoveConstructor()) {
+    const auto Source = approvedFunctionalReferenceRecord(
+        S, SM, Argument->getAsCXXRecordDecl(), Context);
+    if (!Source || !Constructor->isImplicit() || !Constructor->isTrivial() ||
+        Source->Record->getCanonicalDecl() !=
+            Wrapper->Record->getCanonicalDecl() ||
+        !Parameter->isReferenceType() ||
+        Parameter->getPointeeType().isVolatileQualified() ||
+        !Context.hasSameUnqualifiedType(
+            Parameter->getPointeeType(),
+            Context.getRecordType(Source->Record)))
+      return std::nullopt;
+    return FunctionalReferenceConstruction::CopyOrMove;
+  }
+  const auto *CanonicalPrimary = Constructor->getPrimaryTemplate();
+  const auto *PatternDeclaration = CanonicalPrimary
+                                       ? dyn_cast<CXXConstructorDecl>(
+                                             CanonicalPrimary->getTemplatedDecl())
+                                       : nullptr;
+  const auto Pointee = Parameter->isLValueReferenceType()
+                           ? Parameter->getPointeeType()
+                           : QualType();
+  if (!CanonicalPrimary || !PatternDeclaration ||
+      !Constructor->isInlined() || !Constructor->hasBody() ||
+      Pointee.isNull() || Pointee.isVolatileQualified() ||
+      !Construction->getArg(0)->isLValue() ||
+      !Context.hasSameUnqualifiedType(Pointee, Wrapper->ReferentType) ||
+      (!Wrapper->ReferentType.isConstQualified() &&
+       Pointee.isConstQualified()) ||
+      !Context.hasSameUnqualifiedType(Argument, Pointee) ||
+      !approvedStandardSDKDeclaration(S, SM, CanonicalPrimary) ||
+      !approvedStandardSDKDeclaration(S, SM, PatternDeclaration) ||
+      !cstddefOrigin(S, SM, CanonicalPrimary->getLocation(), "libcxx",
+                     "__functional/reference_wrapper.h") ||
+      !cstddefOrigin(S, SM, PatternDeclaration->getLocation(), "libcxx",
+                     "__functional/reference_wrapper.h"))
+    return std::nullopt;
+  return FunctionalReferenceConstruction::Direct;
+}
+
 bool approvedFunctionalObjectAssignment(const State &S,
                                         const SourceManager &SM,
                                         const CXXOperatorCallExpr *Assignment,
@@ -522,6 +668,51 @@ bool approvedFunctionalObjectAssignment(const State &S,
       !approvedStandardSDKDeclaration(S, SM, Method) ||
       !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
                      "__functional/operations.h") ||
+      !S.owns(SM, Reference->getExprLoc()) ||
+      !Context.hasSameUnqualifiedType(
+          Assignment->getArg(0)->getType(),
+          Context.getRecordType(Destination->Record)) ||
+      !Context.hasSameUnqualifiedType(Assignment->getArg(1)->getType(),
+                                      Context.getRecordType(Source->Record)) ||
+      !Method->getReturnType()->isLValueReferenceType() ||
+      !Context.hasSameUnqualifiedType(
+          Method->getReturnType()->getPointeeType(),
+          Context.getRecordType(Destination->Record)))
+    return false;
+  const auto Parameter = Method->getParamDecl(0)->getType();
+  return Parameter->isReferenceType() &&
+         !Parameter->getPointeeType().isVolatileQualified() &&
+         Context.hasSameUnqualifiedType(
+             Parameter->getPointeeType(), Context.getRecordType(Source->Record));
+}
+
+bool approvedFunctionalReferenceAssignment(
+    const State &S, const SourceManager &SM,
+    const CXXOperatorCallExpr *Assignment, const ASTContext &Context) {
+  if (!Assignment || Assignment->isTypeDependent() ||
+      Assignment->isValueDependent() ||
+      Assignment->isInstantiationDependent() ||
+      Assignment->getOperator() != OO_Equal || Assignment->getNumArgs() != 2 ||
+      !Assignment->isLValue())
+    return false;
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Assignment->getDirectCallee());
+  const auto Destination = approvedFunctionalReferenceRecord(
+      S, SM, Method ? Method->getParent() : nullptr, Context);
+  const auto Source = approvedFunctionalReferenceRecord(
+      S, SM, Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
+  const auto *Reference = directMethodReference(Assignment);
+  if (!Method || !Destination || !Source || !Reference || Method->isStatic() ||
+      Method->isVariadic() || Method->getNumParams() != 1 ||
+      Method->getOverloadedOperator() != OO_Equal || !Method->isImplicit() ||
+      !Method->isTrivial() ||
+      (!Method->isCopyAssignmentOperator() &&
+       !Method->isMoveAssignmentOperator()) ||
+      Destination->Record->getCanonicalDecl() !=
+          Source->Record->getCanonicalDecl() ||
+      !approvedStandardSDKDeclaration(S, SM, Method) ||
+      !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
+                     "__functional/reference_wrapper.h") ||
       !S.owns(SM, Reference->getExprLoc()) ||
       !Context.hasSameUnqualifiedType(
           Assignment->getArg(0)->getType(),
@@ -4299,6 +4490,121 @@ static const DeclRefExpr *approvedUtilityReference(
              : nullptr;
 }
 
+std::optional<FunctionalReferenceFactoryCall>
+approvedFunctionalReferenceFactoryCall(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+  const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+  const auto *Reference = approvedUtilityReference(S, SM, Call, Function);
+  const auto Result = approvedFunctionalReferenceRecord(
+      S, SM, Function ? Function->getReturnType()->getAsCXXRecordDecl()
+                      : nullptr,
+      Context);
+  const bool Ref = Function && Function->getIdentifier() &&
+                   Function->getName() == "ref";
+  const bool Cref = Function && Function->getIdentifier() &&
+                    Function->getName() == "cref";
+  if (!Call || Call->isTypeDependent() || Call->isValueDependent() ||
+      Call->isInstantiationDependent() || !Call->isPRValue() || !Function ||
+      !Primary || !Pattern || !Reference || !Result || (!Ref && !Cref) ||
+      Function->isVariadic() || !Function->isInlined() ||
+      !Function->hasBody() || !Pattern->hasBody() ||
+      Function->getNumParams() != 1 || Call->getNumArgs() != 1 ||
+      !Function->getType()->getAs<FunctionProtoType>() ||
+      !Function->getType()->getAs<FunctionProtoType>()->isNothrow() ||
+      !Context.hasSameType(Call->getType(), Function->getReturnType()) ||
+      !Context.hasSameUnqualifiedType(
+          Call->getType(), Context.getRecordType(Result->Record)) ||
+      !approvedStandardSDKDeclaration(S, SM, Function) ||
+      !approvedStandardSDKDeclaration(S, SM, Primary) ||
+      !approvedStandardSDKDeclaration(S, SM, Pattern) ||
+      !cstddefOrigin(S, SM, Function->getLocation(), "libcxx",
+                     "__functional/reference_wrapper.h") ||
+      !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
+                     "__functional/reference_wrapper.h") ||
+      !cstddefOrigin(S, SM, Pattern->getLocation(), "libcxx",
+                     "__functional/reference_wrapper.h"))
+    return std::nullopt;
+  const auto Parameter = Function->getParamDecl(0)->getType();
+  const auto Pointee = Parameter->isLValueReferenceType()
+                           ? Parameter->getPointeeType()
+                           : QualType();
+  const auto Argument = Call->getArg(0)->getType();
+  const auto Expected = Cref && !Pointee.isNull() ? Pointee.withConst()
+                                                  : Pointee;
+  if (Pointee.isNull() || Pointee.isVolatileQualified() ||
+      !Call->getArg(0)->isLValue() ||
+      !Context.hasSameUnqualifiedType(Argument, Pointee) ||
+      !Context.hasSameType(Result->ReferentType, Expected))
+    return std::nullopt;
+  return FunctionalReferenceFactoryCall{*Result, Cref};
+}
+
+std::optional<FunctionalReferenceAccessCall>
+approvedFunctionalReferenceAccessCall(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *MemberCall = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);
+  const auto *Reference =
+      dyn_cast_or_null<MemberExpr>(directMethodReference(Call));
+  const auto *Object =
+      MemberCall ? MemberCall->getImplicitObjectArgument() : nullptr;
+  const bool ObjectIsArrow = MemberCall && Reference && Reference->isArrow();
+  auto ObjectType = Object ? Object->getType() : QualType();
+  if (ObjectIsArrow) {
+    if (ObjectType.isNull() || !ObjectType->isPointerType() ||
+        ObjectType.getAddressSpace() != LangAS::Default ||
+        ObjectType->getPointeeType().getAddressSpace() != LangAS::Default)
+      return std::nullopt;
+    ObjectType = ObjectType->getPointeeType();
+  }
+  const auto Wrapper = approvedFunctionalReferenceRecord(
+      S, SM, Method ? Method->getParent() : nullptr, Context);
+  const auto *Prototype =
+      Method ? Method->getType()->getAs<FunctionProtoType>() : nullptr;
+  const bool Get = Method && Method->getIdentifier() &&
+                   Method->getName() == "get";
+  const bool Conversion = isa_and_nonnull<CXXConversionDecl>(Method);
+  if (!MemberCall || !Method || !Reference || !Object || !Wrapper ||
+      !Prototype || !Prototype->isNothrow() || (!Get && !Conversion) ||
+      Method->isStatic() || Method->isVariadic() || !Method->isConst() ||
+      !Method->isInlined() || !Method->hasBody() || Method->getNumParams() ||
+      Call->getNumArgs() || !Call->isLValue() ||
+      !Method->getReturnType()->isLValueReferenceType() ||
+      !Context.hasSameType(Method->getReturnType()->getPointeeType(),
+                           Wrapper->ReferentType) ||
+      !Context.hasSameType(Call->getType(), Wrapper->ReferentType) ||
+      !Context.hasSameUnqualifiedType(
+          ObjectType, Context.getRecordType(Wrapper->Record)) ||
+      !approvedStandardSDKDeclaration(S, SM, Method) ||
+      !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
+                     "__functional/reference_wrapper.h") ||
+      !(Conversion ? S.owns(SM, Call->getExprLoc())
+                   : S.owns(SM, Reference->getExprLoc())))
+    return std::nullopt;
+  const auto *Body = dyn_cast<CompoundStmt>(Method->getBody());
+  const auto *Return = Body && Body->size() == 1
+                           ? dyn_cast<ReturnStmt>(*Body->body_begin())
+                           : nullptr;
+  const auto *Dereference =
+      Return && Return->getRetValue()
+          ? dyn_cast<UnaryOperator>(
+                Return->getRetValue()->IgnoreParenImpCasts())
+          : nullptr;
+  const auto *Field =
+      Dereference && Dereference->getOpcode() == UO_Deref
+          ? dyn_cast<MemberExpr>(
+                Dereference->getSubExpr()->IgnoreParenImpCasts())
+          : nullptr;
+  if (!Field || Field->getMemberDecl() != Wrapper->Pointer)
+    return std::nullopt;
+  return FunctionalReferenceAccessCall{*Wrapper, Object, ObjectIsArrow};
+}
+
 static bool utilityConstructorTrailingDefaults(
     const State &S, const SourceManager &SM,
     const CXXConstructExpr *Construction, const CXXConstructorDecl *Constructor,
@@ -5320,6 +5626,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return std::nullopt;
   if (approvedUtilityTupleCatCall(S, SM, Call, Context))
     return UtilityOperation::TupleCat;
+  if (approvedFunctionalReferenceFactoryCall(S, SM, Call, Context))
+    return UtilityOperation::FunctionalReferenceFactory;
+  if (approvedFunctionalReferenceAccessCall(S, SM, Call, Context))
+    return UtilityOperation::FunctionalReferenceAccess;
   if (approvedFunctionalInvokeObjectOperation(S, SM, Call, Context))
     return UtilityOperation::FunctionalInvokeObject;
   const auto *Function = Call->getDirectCallee();

@@ -33723,6 +33723,60 @@ int main() {
 }
 
 TEST_F(TranslateTest,
+       CoreV2FunctionalReferenceWrappersRunAtBothOptimizations) {
+  const auto Source = tmpFile("functional-reference-wrappers.cpp");
+  const auto Output = tmpFile("functional-reference-wrappers.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+struct Box { int n; };
+int calls;
+int global_value = 2;
+std::reference_wrapper<int> global_reference(global_value);
+int &selected(int &value) { ++calls; return value; }
+int main() {
+  int value = 3;
+  int other = 9;
+  const int constant_value = 4;
+  std::reference_wrapper<int> direct(value);
+  auto reference = std::ref(selected(value));
+  auto constant = std::cref(constant_value);
+  std::reference_wrapper<int> copied = reference;
+  std::reference_wrapper<int> assigned(other);
+  assigned = direct;
+  reference.get() = 7;
+  int &converted = reference;
+  Box box{5};
+  auto box_reference = std::ref(box);
+  auto *pointer = &box_reference;
+  pointer->get().n = 6;
+  global_reference.get() = 8;
+  return calls == 1 && value == 7 && other == 9 && direct.get() == 7 &&
+                 reference.get() == 7 && constant.get() == 4 &&
+                 copied.get() == 7 && assigned.get() == 7 && converted == 7 &&
+                 box.n == 6 && global_value == 8
+             ? 0
+             : 1;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  EXPECT_NE(Generated.find("nct_reference_wrapper_pointer"),
+            std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-reference-wrappers" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
        CoreV2FunctionalInvokeFunctionPointersRunAtBothOptimizations) {
   const auto Source = tmpFile("functional-invoke.cpp");
   const auto Output = tmpFile("functional-invoke.nc");
@@ -33824,6 +33878,22 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "#include <functional>\nint main(){return "
        "std::plus<long double>{}(1,2)==3;}",
        "TR0201"},
+      {"reference-wrapper-volatile",
+       "#include <functional>\nint main(){volatile int v=0;"
+       "std::reference_wrapper<volatile int> r(v);return r.get();}",
+       "TR0201"},
+      {"reference-wrapper-function",
+       "#include <functional>\nint f(int n){return n;}int main(){"
+       "std::reference_wrapper<int(int)> r(f);return r.get()(1);}",
+       "TR0201"},
+      {"reference-wrapper-call",
+       "#include <functional>\nint main(){std::plus<int> p;auto r=std::ref(p);"
+       "return r(1,2);}",
+       "TR0203"},
+      {"cref-temporary",
+       "#include <functional>\nint main(){auto r=std::cref(3);return "
+       "r.get();}",
+       "TR0202"},
       {"invoke-user-object",
        "#include <functional>\nstruct F{int operator()(int v)const{return v;}};"
        "int main(){return std::invoke(F{},1);}",

@@ -849,6 +849,19 @@ assigned. Their authenticated C++ one-byte size and alignment map to a single
 `u8` carrier field at offset zero; calls still lower to the verified built-in
 operation without a libc++ runtime dependency.
 
+Exact `std::reference_wrapper<T>` and `std::reference_wrapper<const T>` for
+non-volatile object types retain the authenticated target ABI layout: one
+pointer slot under the Itanium ABI and an empty-base storage slot followed by
+the pointer under the Microsoft ABI. Direct construction from a matching
+lvalue, the direct object overloads of `std::ref`
+and `std::cref`, trivial copy/move construction, and same-specialization
+assignment lower without a libc++ runtime call. Assignment reseats the wrapper
+by copying its stored pointer. `get()` and the implicit `T&` conversion return
+the referenced object, preserve `const`, accept object or raw-pointer receivers,
+and evaluate the receiver or factory argument once. Function referents,
+volatile referents, wrapper-taking `ref`/`cref` overloads and wrapper invocation
+remain outside this boundary.
+
 Exact C++17 `std::invoke` calls on an ordinary function or stored function
 pointer also lower directly. The target must have fixed arity, by-value
 admitted scalar parameters and a scalar or `void` result. Each argument may use
@@ -862,8 +875,8 @@ expression and arguments are each evaluated once.
 Cv-qualified typed template arguments, function-object addresses, pointers and
 user-defined operands, `long double`, `std::function`, binders and searchers do
 not yet lower. Member pointers, user-defined callable objects,
-`reference_wrapper`, reference parameters or results and variadic targets
-remain outside the `std::invoke` boundary.
+`reference_wrapper` invocation, reference parameters or results and variadic
+targets remain outside the `std::invoke` boundary.
 Quoted includes, shadows, forged declarations and other runtime uses remain
 rejected by the normal source and semantic checks.
 

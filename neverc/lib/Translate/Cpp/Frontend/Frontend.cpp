@@ -3913,6 +3913,9 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
       if (approvedFunctionalObjectRecord(S, Sources, D, Context)) {
         if (!requireFunctionalObject(D, L, Depth + 1))
           return {};
+      } else if (approvedFunctionalReferenceRecord(S, Sources, D, Context)) {
+        if (!requireFunctionalReference(D, L, Depth + 1))
+          return {};
       } else if (approvedUtilityUniquePtrRecord(S, Sources, D, Context)) {
         if (!requireUtilityUniquePtr(D, L, Depth + 1))
           return {};
@@ -4222,6 +4225,32 @@ bool Adapter::requireFunctionalObject(const CXXRecordDecl *Record,
   return true;
 }
 
+bool Adapter::requireFunctionalReference(const CXXRecordDecl *Record,
+                                         SourceLocation Location,
+                                         unsigned Depth) {
+  if (Depth > 64) {
+    reject(Location, "functional reference type",
+           "Nested std::reference_wrapper types exceed the protocol limit.");
+    return false;
+  }
+  const auto Wrapper =
+      approvedFunctionalReferenceRecord(S, Sources, Record, Context);
+  if (!Wrapper) {
+    reject(Location, "standard library record",
+           "Only the pinned ABI layout of std::reference_wrapper for "
+           "non-volatile object types is admitted.",
+           "TR0203");
+    return false;
+  }
+  const auto *Canonical = Wrapper->Record->getCanonicalDecl();
+  if (!RequiredFunctionalReferences.insert(Canonical).second)
+    return true;
+  if (type(Wrapper->PointerType, Location, false, Depth + 1).empty())
+    return false;
+  Records.push_back(const_cast<CXXRecordDecl *>(Wrapper->Record));
+  return true;
+}
+
 json::Object Adapter::literal(const llvm::APSInt &V, llvm::StringRef T,
                               SourceLocation L) {
   json::Object O{{"kind", "literal"}, {"type", T.str()}, {"loc", loc(L)}};
@@ -4261,6 +4290,11 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
     json::Array Args;
     if (approvedFunctionalObjectRecord(S, Sources, R, Context)) {
       Args.push_back(zero(Context.UnsignedCharTy, L));
+    } else if (auto Wrapper =
+                   approvedFunctionalReferenceRecord(S, Sources, R, Context)) {
+      if (Wrapper->PaddedBase)
+        Args.push_back(zero(Context.getSizeType(), L));
+      Args.push_back(zero(Wrapper->PointerType, L));
     } else if (auto Unique = approvedUtilityUniquePtrRecord(S, Sources, R,
                                                            Context)) {
       Args.push_back(zero(Unique->PointerType, L));
@@ -7043,6 +7077,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     const auto *Constructor = C->getConstructor();
     if (A.S.coreV2() &&
         (approvedFunctionalObjectConstruction(A.S, A.Sources, C, A.Context) ||
+         approvedFunctionalReferenceConstruction(A.S, A.Sources, C,
+                                                 A.Context) ||
          approvedUtilityUniquePtrConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityDefaultDeleteConstruction(A.S, A.Sources, C,
                                                   A.Context) ||
@@ -9116,7 +9152,9 @@ public:
           approvedUtilityOptionalMetadata(A.S, A.Sources, ConstructionRecord);
       const bool UtilityConstruction =
           Construction &&
-          (approvedUtilityUniquePtrConstruction(A.S, A.Sources, Construction,
+          (approvedFunctionalReferenceConstruction(
+               A.S, A.Sources, Construction, A.Context) ||
+           approvedUtilityUniquePtrConstruction(A.S, A.Sources, Construction,
                                                 A.Context) ||
            approvedUtilityDefaultDeleteConstruction(A.S, A.Sources,
                                                     Construction, A.Context) ||
@@ -13152,6 +13190,9 @@ public:
                   .has_value() ||
               approvedUtilityOperation(A.S, A.Sources, Call, A.Context)
                   .has_value() ||
+              approvedFunctionalReferenceAssignment(
+                  A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call),
+                  A.Context) ||
               approvedUtilityPairAssignment(A.S, A.Sources,
                                             dyn_cast<CXXOperatorCallExpr>(Call),
                                             A.Context)
@@ -13562,6 +13603,9 @@ public:
       const bool FunctionalObjectAssignment =
           A.S.coreV2() && approvedFunctionalObjectAssignment(
                               A.S, A.Sources, Operator, A.Context);
+      const bool FunctionalReferenceAssignment =
+          A.S.coreV2() && approvedFunctionalReferenceAssignment(
+                              A.S, A.Sources, Operator, A.Context);
       const bool UtilityPairAssignment =
           A.S.coreV2() &&
           approvedUtilityPairAssignment(A.S, A.Sources, Operator, A.Context)
@@ -13610,6 +13654,7 @@ public:
         const bool Ordinary = ordinaryOperator(F) &&
             F->getOverloadedOperator() == Operator->getOperator();
         if (!TrivialAssignment && !FunctionalObjectAssignment &&
+            !FunctionalReferenceAssignment &&
             !UtilityPairAssignment &&
             !UtilityTupleAssignment && !UtilityArrayAssignment &&
             !UtilityInitializerListAssignment && !UtilityOptionalAssignment &&
@@ -13850,6 +13895,8 @@ public:
         }
       if (A.S.coreV2() && FunctionalObjectAssignment)
         return true;
+      if (A.S.coreV2() && FunctionalReferenceAssignment)
+        return true;
       if (A.S.coreV2() && UtilityPairAssignment)
         return true;
       if (A.S.coreV2() && UtilityTupleAssignment)
@@ -13917,6 +13964,8 @@ public:
           // by authenticated optional operations.
         } else if (approvedFunctionalObjectConstruction(A.S, A.Sources, C,
                                                         A.Context) ||
+                   approvedFunctionalReferenceConstruction(
+                       A.S, A.Sources, C, A.Context) ||
                    approvedUtilityUniquePtrConstruction(A.S, A.Sources, C,
                                                         A.Context) ||
                    approvedUtilityDefaultDeleteConstruction(A.S, A.Sources, C,
@@ -13940,7 +13989,8 @@ public:
           A.reject(L, "standard library runtime object",
                    "Approved standard headers provide only their documented "
                    "compile-time aliases, constants, folded queries and "
-                   "standard function objects, std::default_delete, "
+                   "standard function objects, std::reference_wrapper, "
+                   "std::default_delete, "
                    "single-object or array std::unique_ptr, "
                    "std::allocator, std::pair, "
                    "std::tuple, std::array, "
@@ -14121,7 +14171,10 @@ static void orderCoreV2Records(Adapter &A) {
         approvedUtilityAllocatorRecord(A.S, A.Sources, R, A.Context);
     const auto FunctionalObject =
         approvedFunctionalObjectRecord(A.S, A.Sources, R, A.Context);
-    if (const auto *Base = FunctionalObject || UtilityReverse || UtilityTuple ||
+    const auto FunctionalReference =
+        approvedFunctionalReferenceRecord(A.S, A.Sources, R, A.Context);
+    if (const auto *Base = FunctionalObject || FunctionalReference ||
+                                   UtilityReverse || UtilityTuple ||
                                    UtilityArray ||
                                    UtilityOptional || UtilityUniquePtr ||
                                    UtilityDefaultDelete || UtilityAllocator
@@ -14156,6 +14209,9 @@ static void orderCoreV2Records(Adapter &A) {
     } else if (UtilityUniquePtr) {
       DependencyTypes.emplace_back(UtilityUniquePtr->PointerType,
                                    UtilityUniquePtr->Record->getLocation());
+    } else if (FunctionalReference) {
+      DependencyTypes.emplace_back(FunctionalReference->PointerType,
+                                   FunctionalReference->Record->getLocation());
     } else {
       for (const auto *Field : R->fields())
         DependencyTypes.emplace_back(Field->getType(), Field->getLocation());
@@ -14288,7 +14344,11 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
     const auto FunctionalObject =
         S.coreV2() ? approvedFunctionalObjectRecord(S, Sources, R, Context)
                    : std::optional<FunctionalObjectRecord>();
-    const auto *Base = S.coreV2() && !FunctionalObject && !UtilityReverse &&
+    const auto FunctionalReference =
+        S.coreV2() ? approvedFunctionalReferenceRecord(S, Sources, R, Context)
+                   : std::optional<FunctionalReferenceRecord>();
+    const auto *Base = S.coreV2() && !FunctionalObject &&
+                               !FunctionalReference && !UtilityReverse &&
                                !UtilityTuple &&
                                !UtilityArray && !UtilityOptional &&
                                !UtilityUniquePtr && !UtilityDefaultDelete &&
@@ -14303,6 +14363,15 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
     if (FunctionalObject) {
       Fields.push_back(json::Object{{"name", "nct_functional_storage"},
                                     {"type", "u8"}});
+    } else if (FunctionalReference) {
+      if (FunctionalReference->PaddedBase)
+        Fields.push_back(json::Object{
+            {"name", "nct_reference_wrapper_base_storage"},
+            {"type", "usize"}});
+      Fields.push_back(json::Object{
+          {"name", "nct_reference_wrapper_pointer"},
+          {"type", type(FunctionalReference->PointerType,
+                         R->getLocation())}});
     } else if (UtilityUniquePtr) {
       Fields.push_back(json::Object{
           {"name", "nct_unique_ptr_pointer"},
@@ -14338,8 +14407,12 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
       json::Array Offsets;
       if (Base)
         Offsets.push_back(uint64_t(Layout.getBaseClassOffset(Base->Base).getQuantity()) * 8);
-      if (FunctionalObject || UtilityUniquePtr || UtilityDefaultDelete ||
-          UtilityAllocator) {
+      if (FunctionalReference) {
+        if (FunctionalReference->PaddedBase)
+          Offsets.push_back(uint64_t(0));
+        Offsets.push_back(Layout.getFieldOffset(0));
+      } else if (FunctionalObject || UtilityUniquePtr ||
+          UtilityDefaultDelete || UtilityAllocator) {
         Offsets.push_back(uint64_t(0));
       } else if (UtilityTuple) {
         for (uint64_t Offset : UtilityTuple->Offsets)

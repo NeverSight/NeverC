@@ -96,12 +96,19 @@ header directly lowers calls on typed and transparent specializations of all 19
 C++17 arithmetic, bitwise, comparison and logical standard function objects for
 admitted arithmetic types, including heterogeneous transparent operands. Exact
 empty objects use a one-byte carrier and support trivial construction,
-assignment, local and global storage, copying and by-value passing. The
+assignment, local and global storage, copying and by-value passing. Exact object
+forms of `std::reference_wrapper<T>` and `std::reference_wrapper<const T>` use
+their authenticated target ABI layout: one pointer slot under the Itanium ABI
+and an empty-base storage slot plus the pointer under the Microsoft ABI. They
+lower direct lvalue construction, direct object
+`std::ref`/`std::cref`, trivial copies, same-type assignment, `get()` and
+implicit reference conversion. The
 exact C++17 `std::invoke` also lowers fixed-arity ordinary functions and stored
 function pointers with directly convertible by-value scalar parameters and
 scalar or `void` results, plus the admitted typed and transparent standard
-function objects. Member pointers, user-defined callable objects and reference
-or variadic function signatures stay outside this boundary. The
+function objects. Member pointers, user-defined callable objects, invoking a
+reference wrapper, and reference or variadic function signatures stay outside
+this boundary. The
 frontend uses the pinned embedded libc++/resource VFS and exposes resolved type
 aliases plus integral/enum constant results. It records all consumed header
 hashes: 101 for the `<type_traits>` closure, nine for standalone `<cstdint>`,

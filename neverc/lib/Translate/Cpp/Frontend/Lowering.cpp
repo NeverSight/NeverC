@@ -1134,6 +1134,14 @@ class FunctionLowering {
                         {"args", json::Array{std::move(Base)}},
                         {"loc", A.loc(L)}};
     };
+    auto ReferenceMember = [&](Expression Base,
+                               const FunctionalReferenceRecord &Wrapper) {
+      return Expression{{"kind", "member"},
+                        {"type", type(Wrapper.PointerType, L)},
+                        {"name", "nct_reference_wrapper_pointer"},
+                        {"args", json::Array{std::move(Base)}},
+                        {"loc", A.loc(L)}};
+    };
     auto OptionalObject = [&]() -> const Expr * {
       const Expr *Object = MemberObject();
       while (const auto *Cast = dyn_cast_or_null<ImplicitCastExpr>(Object)) {
@@ -1608,6 +1616,48 @@ class FunctionLowering {
         reject(L, "functional invoke",
                "A checked standard function object is required.");
       return functionalInvokeObjectOperation(Call, *Approved);
+    }
+    case UtilityOperation::FunctionalReferenceFactory: {
+      const auto Info = approvedFunctionalReferenceFactoryCall(
+          A.S, A.Sources, Call, A.Context);
+      if (!Info || Call->getNumArgs() != 1)
+        reject(L, "functional reference factory",
+               "A checked std::ref or std::cref call is required.");
+      auto Pointer = snapshot(
+          cast(address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L),
+               type(Info->Result.PointerType, L), L),
+          L);
+      const auto RecordType = A.Context.getRecordType(Info->Result.Record);
+      auto Place = Destination ? std::move(*Destination)
+                               : objectTemporary(RecordType, L);
+      Destination.reset();
+      if (Place.getString("type") != type(RecordType, L))
+        reject(L, "functional reference result",
+               "The destination type differs from the reference wrapper.");
+      if (Info->Result.PaddedBase) {
+        Expression Base{{"kind", "member"},
+                        {"type", type(A.Context.getSizeType(), L)},
+                        {"name", "nct_reference_wrapper_base_storage"},
+                        {"args", json::Array{json::Object(Place)}},
+                        {"loc", A.loc(L)}};
+        assign(std::move(Base), A.zero(A.Context.getSizeType(), L), L);
+      }
+      assign(ReferenceMember(json::Object(Place), Info->Result),
+             std::move(Pointer), L);
+      return Place;
+    }
+    case UtilityOperation::FunctionalReferenceAccess: {
+      const auto Info = approvedFunctionalReferenceAccessCall(
+          A.S, A.Sources, Call, A.Context);
+      if (!Info)
+        reject(L, "functional reference access",
+               "A checked std::reference_wrapper access is required.");
+      auto Object = Info->ObjectIsArrow
+                        ? dereference(snapshot(expression(Info->Object), L), L)
+                        : lvalue(Info->Object);
+      auto Pointer = snapshot(
+          ReferenceMember(std::move(Object), Info->Wrapper), L);
+      return dereference(std::move(Pointer), L);
     }
     case UtilityOperation::NewLaunder:
       // The portable pointer model carries no stale C++ object provenance.
@@ -7337,6 +7387,19 @@ class FunctionLowering {
         assign(Left, A.zero(Call->getArg(0)->getType(), L), L);
         return Left;
       }
+      if (approvedFunctionalReferenceAssignment(
+              A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call), A.Context)) {
+        if (Destination)
+          reject(L, "functional reference assignment",
+                 "std::reference_wrapper assignment cannot initialize a "
+                 "record result.");
+        auto Right = snapshot(expression(Call->getArg(1)), L);
+        auto LeftAddress = snapshot(
+            address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
+        auto Left = dereference(std::move(LeftAddress), L);
+        assign(Left, std::move(Right), L);
+        return Left;
+      }
       if (approvedUtilityAllocatorAssignment(
               A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call), A.Context)) {
         if (Destination)
@@ -8997,6 +9060,37 @@ class FunctionLowering {
       }
       reject(L, "unique pointer construction",
              "Unknown approved std::unique_ptr construction.");
+    }
+    if (auto Kind = approvedFunctionalReferenceConstruction(
+            A.S, A.Sources, C, A.Context)) {
+      const auto Wrapper = approvedFunctionalReferenceRecord(
+          A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context);
+      if (!Wrapper || C->getNumArgs() != 1)
+        reject(L, "functional reference construction",
+               "A checked std::reference_wrapper construction is required.");
+      if (*Kind == FunctionalReferenceConstruction::CopyOrMove) {
+        assign(std::move(Place), snapshot(expression(C->getArg(0)), L), L);
+        return;
+      }
+      auto Pointer = snapshot(
+          cast(address(lvalue(C->getArg(0)), C->getArg(0)->getType(), L),
+               type(Wrapper->PointerType, L), L),
+          L);
+      if (Wrapper->PaddedBase) {
+        Expression Base{{"kind", "member"},
+                        {"type", type(A.Context.getSizeType(), L)},
+                        {"name", "nct_reference_wrapper_base_storage"},
+                        {"args", json::Array{json::Object(Place)}},
+                        {"loc", A.loc(L)}};
+        assign(std::move(Base), A.zero(A.Context.getSizeType(), L), L);
+      }
+      Expression Member{{"kind", "member"},
+                        {"type", type(Wrapper->PointerType, L)},
+                        {"name", "nct_reference_wrapper_pointer"},
+                        {"args", json::Array{json::Object(Place)}},
+                        {"loc", A.loc(L)}};
+      assign(std::move(Member), std::move(Pointer), L);
+      return;
     }
     if (auto Kind = approvedFunctionalObjectConstruction(A.S, A.Sources, C,
                                                          A.Context)) {
