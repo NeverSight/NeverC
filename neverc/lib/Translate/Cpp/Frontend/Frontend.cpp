@@ -12853,7 +12853,7 @@ public:
     if (A.S.coreV2())
       if (auto Stored = approvedFunctionalStoredMemberPointer(
               A.S, A.Sources, D, A.Context)) {
-        const Expr *Expression = Stored->Address;
+        const Expr *Expression = Stored->Initializer;
         while (Expression) {
           ApprovedMemberPointerExpressions.insert(Expression);
           if (const auto *Parentheses = dyn_cast<ParenExpr>(Expression))

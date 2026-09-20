@@ -34269,29 +34269,36 @@ int main() {
   auto value = &Box::value;
   auto fixed = &Box::fixed;
   auto link = &Box::link;
+  const auto value_copy = value;
+  auto value_chain = value_copy;
   auto add = &Box::add;
   auto pass = &Box::pass;
   auto set = &Box::set;
   auto redirect = &Box::redirect;
   auto slot = &Box::slot;
+  const auto add_copy = add;
+  auto add_chain = add_copy;
+  auto slot_copy = slot;
   std::invoke(value, box) = 7;
   int score = 0;
   score += std::invoke(value, &box) == 7;
+  score += std::invoke(value_chain, &box) == 7;
   score += std::invoke(fixed, constant) == 13;
   score += std::invoke(link, std::cref(constant)) == &second;
   std::invoke(link, std::ref(box)) = &second;
   score += box.link == &second;
   std::invoke(set, &box, 9);
   score += box.value == 9;
-  std::invoke(slot, std::ref(box)) = 11;
+  std::invoke(slot_copy, std::ref(box)) = 11;
   score += box.value == 11;
   int *cursor = &first;
   std::invoke(redirect, std::cref(constant), cursor);
   score += cursor == &second;
   score += std::invoke(add, box, 2) == 13;
+  score += std::invoke(add_chain, box, 2) == 13;
   score += std::invoke(add, &constant, 1) == 6;
   score += std::invoke(pass, constant, &first) == &first;
-  return score == 10 ? 0 : score;
+  return score == 12 ? 0 : score;
 }
 )cpp");
   auto Result =
@@ -34636,13 +34643,10 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "#include <functional>\nstruct X{int a,b;};int main(){X x{3,4};"
        "auto p=&X::a;p=&X::b;return std::invoke(p,x);}",
        "TR0201"},
-      {"invoke-stored-member-pointer-copy",
-       "#include <functional>\nstruct X{int v;};int main(){X x{3};"
-       "auto p=&X::v;auto q=p;return std::invoke(q,x);}",
-       "TR0201"},
-      {"invoke-stored-member-function-pointer-copy",
-       "#include <functional>\nstruct X{int f(){return 3;}};int main(){X x;"
-       "auto p=&X::f;auto q=p;return std::invoke(q,x);}",
+      {"invoke-stored-member-pointer-copy-from-parameter",
+       "#include <functional>\nstruct X{int v;};"
+       "int call(int X::*p,X&x){auto q=p;return std::invoke(q,x);}"
+       "int main(){X x{3};return call(&X::v,x);}",
        "TR0201"},
       {"invoke-stored-member-function-pointer-rvalue-reference-parameter",
        "#include <functional>\nstruct X{int f(int&&v){return v;}};"

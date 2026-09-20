@@ -6652,18 +6652,38 @@ std::optional<FunctionalStoredMemberPointer>
 approvedFunctionalStoredMemberPointer(
     const State &S, const SourceManager &SM, const VarDecl *Variable,
     const ASTContext &Context) {
-  if (!functionalErasedLocalVariable(S, SM, Variable))
-    return std::nullopt;
-  const auto *MemberPointer =
-      Variable->getType()->getAs<MemberPointerType>();
-  const auto [Address, Member] =
-      functionalMemberAddress(S, SM, Variable->getInit(), Context);
-  if (!MemberPointer || !Address || !Member ||
-      !supportedFunctionalStoredMember(Context, Member) ||
-      !Context.hasSameUnqualifiedType(Variable->getType(),
-                                      Address->getType()))
-    return std::nullopt;
-  return FunctionalStoredMemberPointer{Variable, Address, Member};
+  const auto *Requested = Variable;
+  const auto *RequestedInitializer = Variable ? Variable->getInit() : nullptr;
+  std::set<const VarDecl *> Seen;
+  while (functionalErasedLocalVariable(S, SM, Variable)) {
+    if (!Seen.insert(Variable->getCanonicalDecl()).second)
+      return std::nullopt;
+    const auto *MemberPointer =
+        Variable->getType()->getAs<MemberPointerType>();
+    const auto *Initializer = Variable->getInit();
+    const auto [Address, Member] =
+        functionalMemberAddress(S, SM, Initializer, Context);
+    if (Address) {
+      if (!MemberPointer || !Member ||
+          !supportedFunctionalStoredMember(Context, Member) ||
+          !Context.hasSameUnqualifiedType(Variable->getType(),
+                                          Address->getType()))
+        return std::nullopt;
+      return FunctionalStoredMemberPointer{Requested, RequestedInitializer,
+                                           Address, Member};
+    }
+    const auto *Reference = dyn_cast_or_null<DeclRefExpr>(
+        functionalInvokeStrippedExpression(Initializer));
+    const auto *Source =
+        Reference ? dyn_cast<VarDecl>(Reference->getDecl()) : nullptr;
+    if (!MemberPointer || !Reference || !Source ||
+        !S.owns(SM, Reference->getExprLoc()) ||
+        !Context.hasSameUnqualifiedType(Variable->getType(),
+                                        Source->getType()))
+      return std::nullopt;
+    Variable = Source;
+  }
+  return std::nullopt;
 }
 
 std::optional<FunctionalStoredMemFn> approvedFunctionalStoredMemFn(

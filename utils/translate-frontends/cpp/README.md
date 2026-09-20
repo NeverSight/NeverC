@@ -144,13 +144,14 @@ lvalue result, including reads of declared-const fields. Exact directly
 initialized local member pointers for admitted methods or data fields may also
 be retained across statements and passed to `std::invoke`; their storage is
 authenticated and erased before the same direct method call or field projection
-is emitted. Exact
+is emitted. Exact same-type local copy-initializer chains are also authenticated
+and erased. Exact
 `std::mem_fn` wrappers built from those direct named addresses may be called
 immediately, directly or as the callable of `std::invoke`, through the same
 boundary. A directly initialized local wrapper for a method or data field may also be
 retained across statements and called directly or through `std::invoke`; its
-authenticated carrier is erased. Copied, reassigned or null member pointers,
-copied or reassigned `mem_fn` objects,
+authenticated carrier is erased. Reassigned or null member pointers, copied or
+reassigned `mem_fn` objects,
 base adjustments, volatile receivers, user-defined callable objects,
 and rvalue-reference, other reference or variadic function signatures stay
 outside this boundary. Object-pointer values and exact scalar or object-pointer

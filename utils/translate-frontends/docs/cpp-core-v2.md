@@ -956,8 +956,10 @@ const objects or declared-const fields. A local automatic member pointer whose
 sole initializer is an exact direct address of an admitted method or data field
 may be retained across statements and passed to `std::invoke`; the frontend
 authenticates and erases the variable, then emits the same direct method call or
-field projection. Copying, assigning, returning, constructing a null member
-pointer or applying native `.*`/`->*` remains rejected. The selected libc++
+field projection. It may be copied through further exact same-type local
+automatic variables; every carrier in that initializer chain is authenticated
+and erased. Reassigning, returning, constructing a null member pointer or
+applying native `.*`/`->*` remains rejected. The selected libc++
 member-function or member-object dispatcher body, wrapper `get()` body and
 parameter flow are authenticated before the direct method call or field
 projection is emitted.
@@ -974,8 +976,8 @@ remains outside the runtime boundary.
 
 Cv-qualified typed template arguments, addresses or pointers to function
 objects, user-defined operands, `long double`, `std::function`, binders and searchers do
-not yet lower. Copied, reassigned or null member pointers, copied or reassigned
-`mem_fn` objects, base-adjusting
+not yet lower. Reassigned or null member pointers, copied or reassigned `mem_fn`
+objects, base-adjusting
 receivers, volatile
 receivers, user-defined callable objects, function referents, rvalue-reference or
 other reference signatures and variadic targets remain

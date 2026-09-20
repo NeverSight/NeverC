@@ -343,8 +343,9 @@ both authenticated dispatch layers, the wrapper and its local carrier are
 erased. A local automatic member pointer with one exact direct address of an
 admitted method or data field may also be retained across statements and passed
 to `std::invoke`; the frontend authenticates and erases that variable before
-emitting the same direct method call or field projection. Copied, reassigned or
-null member pointers, copied or reassigned `mem_fn`
+emitting the same direct method call or field projection. Exact same-type local
+copy-initializer chains are authenticated and erased as well. Reassigned or null
+member pointers, copied or reassigned `mem_fn`
 objects, base adjustments,
 rvalue-reference or other reference signatures and
 volatile receivers remain outside this boundary.
