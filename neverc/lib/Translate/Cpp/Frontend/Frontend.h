@@ -355,6 +355,7 @@ struct FunctionalMemberInvokeCall {
   const clang::Expr *Object;
   const clang::CXXMethodDecl *Method;
   const clang::FieldDecl *Field;
+  const clang::CallExpr *ErasedFactory;
   std::optional<FunctionalReferenceRecord> ObjectWrapper;
   bool ObjectIsPointer;
 };

@@ -114,12 +114,13 @@ scalar or `void` results, plus the admitted typed and transparent standard
 function objects. Direct named addresses of owned nonstatic member functions
 and admitted non-volatile scalar or object-pointer fields also lower on exact-class lvalue,
 pointer or `std::reference_wrapper` receivers; fields retain their qualified
-lvalue result, including reads of declared-const fields. Stored
-member pointers, base adjustments, volatile receivers, user-defined callable
-objects, and rvalue-reference, other reference or variadic function
-signatures stay outside this boundary. Object-pointer values and exact scalar or
-object-pointer lvalue-reference parameters
-and results are preserved. The
+lvalue result, including reads of declared-const fields. Exact temporary
+`std::mem_fn` wrappers built from those direct named addresses may be called
+immediately through the same boundary. Stored member pointers, stored `mem_fn`
+objects, base adjustments, volatile receivers, user-defined callable objects,
+and rvalue-reference, other reference or variadic function signatures stay
+outside this boundary. Object-pointer values and exact scalar or object-pointer
+lvalue-reference parameters and results are preserved. The
 frontend uses the pinned embedded libc++/resource VFS and exposes resolved type
 aliases plus integral/enum constant results. It records all consumed header
 hashes: 101 for the `<type_traits>` closure, nine for standalone `<cstdint>`,

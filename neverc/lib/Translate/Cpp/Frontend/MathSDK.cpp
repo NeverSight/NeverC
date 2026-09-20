@@ -5750,13 +5750,224 @@ static bool functionalMemberValueConversion(const ASTContext &Context,
   return utilityPointerConversion(Context, From, To);
 }
 
+struct FunctionalMemFnDispatch {
+  const Expr *Callable;
+  const CallExpr *Factory;
+  const CallExpr *Dispatch;
+};
+
+static std::optional<FunctionalMemFnDispatch>
+approvedFunctionalMemFnDispatch(const State &S, const SourceManager &SM,
+                                const CallExpr *Call,
+                                const ASTContext &Context) {
+  const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);
+  const auto *Reference = Call ? directMethodReference(Call) : nullptr;
+  const auto *Primary = Method ? Method->getPrimaryTemplate() : nullptr;
+  const auto *Pattern =
+      Primary ? dyn_cast<CXXMethodDecl>(Primary->getTemplatedDecl()) : nullptr;
+  const auto *TemplateParameters =
+      Primary ? Primary->getTemplateParameters() : nullptr;
+  const auto *Pack =
+      TemplateParameters && TemplateParameters->size() == 1
+          ? dyn_cast<TemplateTypeParmDecl>(TemplateParameters->getParam(0))
+          : nullptr;
+  const auto *Record = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      Method && Method->getParent() ? Method->getParent()->getDefinition()
+                                    : nullptr);
+  const auto *RecordTemplate =
+      Record ? Record->getSpecializedTemplate() : nullptr;
+  const auto *CanonicalRecordTemplate =
+      RecordTemplate ? RecordTemplate->getCanonicalDecl() : nullptr;
+  const auto *Stored =
+      Record && std::distance(Record->field_begin(), Record->field_end()) == 1
+          ? *Record->field_begin()
+          : nullptr;
+  const auto *Base =
+      Record && Record->getNumBases() == 1
+          ? Record->bases_begin()->getType()->getAsCXXRecordDecl()
+          : nullptr;
+  Base = Base ? Base->getDefinition() : nullptr;
+  const auto MethodResult = Method ? Method->getReturnType() : QualType();
+  const auto ExpressionResult =
+      !MethodResult.isNull() && MethodResult->isReferenceType()
+          ? MethodResult->getPointeeType()
+          : MethodResult;
+  if (!Operator || !Method || !Reference || !Primary || !Pattern || !Pack ||
+      !Pack->isParameterPack() || !Record || !RecordTemplate ||
+      !CanonicalRecordTemplate || !Stored || !Base ||
+      Operator->getOperator() != OO_Call ||
+      Method->getOverloadedOperator() != OO_Call || Method->isStatic() ||
+      !Method->isConst() || Method->isVariadic() || !Method->isInlined() ||
+      !Method->hasBody() || Call->getNumArgs() != Method->getNumParams() + 1 ||
+      !Context.hasSameType(Call->getType(), ExpressionResult) ||
+      !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
+                                      Context.getRecordType(Record)) ||
+      Record->getName() != "__mem_fn" || Record->isUnion() ||
+      Record->isDependentContext() || !Record->isStandardLayout() ||
+      !Record->isTriviallyCopyable() || !Record->hasTrivialDestructor() ||
+      !Stored->getIdentifier() || Stored->getName() != "__f_" ||
+      !Stored->getType()->isMemberPointerType() ||
+      Base->getName() != "__weak_result_type" || !Base->isEmpty() ||
+      !Base->isStandardLayout() || !Base->field_empty() ||
+      !Base->hasTrivialDestructor() ||
+      !approvedStandardSDKDeclaration(S, SM, Method) ||
+      !approvedStandardSDKDeclaration(S, SM, Primary) ||
+      !approvedStandardSDKDeclaration(S, SM, Pattern) ||
+      !approvedStandardSDKDeclaration(S, SM, Record) ||
+      !approvedStandardSDKDeclaration(S, SM, RecordTemplate) ||
+      !approvedStandardSDKDeclaration(S, SM, CanonicalRecordTemplate) ||
+      !approvedStandardSDKDeclaration(S, SM, Stored) ||
+      !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
+                     "__functional/mem_fn.h") ||
+      !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
+                     "__functional/mem_fn.h") ||
+      !cstddefOrigin(S, SM, Pattern->getLocation(), "libcxx",
+                     "__functional/mem_fn.h") ||
+      !cstddefOrigin(S, SM, Record->getLocation(), "libcxx",
+                     "__functional/mem_fn.h") ||
+      !cstddefOrigin(S, SM, RecordTemplate->getLocation(), "libcxx",
+                     "__functional/mem_fn.h") ||
+      !cstddefOrigin(S, SM, CanonicalRecordTemplate->getLocation(), "libcxx",
+                     "__functional/mem_fn.h") ||
+      !cstddefOrigin(S, SM, Stored->getLocation(), "libcxx",
+                     "__functional/mem_fn.h"))
+    return std::nullopt;
+  const auto &RecordArguments = Record->getTemplateArgs();
+  if (RecordArguments.size() != 1 ||
+      RecordArguments.get(0).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(RecordArguments.get(0).getAsType(),
+                           Stored->getType()))
+    return std::nullopt;
+  for (unsigned I = 0; I < Method->getNumParams(); ++I) {
+    const auto Parameter = Method->getParamDecl(I)->getType();
+    const auto *Actual = Call->getArg(I + 1);
+    if (!Parameter->isReferenceType() ||
+        Parameter->getPointeeType().isVolatileQualified() ||
+        !Context.hasSameType(Parameter->getPointeeType(), Actual->getType()) ||
+        (Parameter->isLValueReferenceType() ? !Actual->isLValue()
+                                            : Actual->isLValue()))
+      return std::nullopt;
+  }
+
+  const auto *Object = functionalInvokeStrippedExpression(Call->getArg(0));
+  const auto *Factory = dyn_cast_or_null<CallExpr>(Object);
+  const auto *FactoryFunction = Factory ? Factory->getDirectCallee() : nullptr;
+  const auto *FactoryPrimary =
+      FactoryFunction ? FactoryFunction->getPrimaryTemplate() : nullptr;
+  const auto *FactoryPattern =
+      FactoryPrimary ? FactoryPrimary->getTemplatedDecl() : nullptr;
+  const auto *FactoryReference =
+      dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Factory));
+  const auto *FactoryArguments =
+      FactoryFunction ? FactoryFunction->getTemplateSpecializationArgs()
+                      : nullptr;
+  if (!Factory || !FactoryFunction || !FactoryPrimary || !FactoryPattern ||
+      !FactoryReference || !FactoryArguments || Factory->getNumArgs() != 1 ||
+      FactoryFunction->getNumParams() != 1 || FactoryFunction->isVariadic() ||
+      !FactoryFunction->isInlined() || !FactoryFunction->hasBody() ||
+      !FactoryPattern->hasBody() || !FactoryFunction->getIdentifier() ||
+      FactoryFunction->getName() != "mem_fn" || !Factory->isPRValue() ||
+      !Context.hasSameUnqualifiedType(Factory->getType(),
+                                      Context.getRecordType(Record)) ||
+      !Context.hasSameType(FactoryFunction->getReturnType(),
+                           Factory->getType()) ||
+      !Context.hasSameType(FactoryFunction->getParamDecl(0)->getType(),
+                           Stored->getType()) ||
+      !Context.hasSameType(Factory->getArg(0)->getType(), Stored->getType()) ||
+      FactoryArguments->size() != 2 ||
+      FactoryArguments->get(0).getKind() != TemplateArgument::Type ||
+      FactoryArguments->get(1).getKind() != TemplateArgument::Type ||
+      !approvedStandardSDKDeclaration(S, SM, FactoryFunction) ||
+      !approvedStandardSDKDeclaration(S, SM, FactoryPrimary) ||
+      !approvedStandardSDKDeclaration(S, SM, FactoryPattern) ||
+      !approvedStandardSDKDeclaration(S, SM, FactoryReference->getDecl()) ||
+      !cstddefOrigin(S, SM, FactoryFunction->getLocation(), "libcxx",
+                     "__functional/mem_fn.h") ||
+      !cstddefOrigin(S, SM, FactoryPrimary->getLocation(), "libcxx",
+                     "__functional/mem_fn.h") ||
+      !cstddefOrigin(S, SM, FactoryPattern->getLocation(), "libcxx",
+                     "__functional/mem_fn.h"))
+    return std::nullopt;
+  const auto *MemberPointer = Stored->getType()->getAs<MemberPointerType>();
+  if (!MemberPointer ||
+      !Context.hasSameType(FactoryArguments->get(1).getAsType().getTypePtr(),
+                           MemberPointer->getClass()))
+    return std::nullopt;
+
+  const auto *Body = dyn_cast<CompoundStmt>(Method->getBody());
+  const auto *Return = Body && Body->size() == 1
+                           ? dyn_cast<ReturnStmt>(*Body->body_begin())
+                           : nullptr;
+  const auto *Dispatch =
+      Return && Return->getRetValue()
+          ? dyn_cast<CallExpr>(Return->getRetValue()->IgnoreParenImpCasts())
+          : nullptr;
+  const auto *DispatchFunction =
+      Dispatch ? Dispatch->getDirectCallee() : nullptr;
+  const auto *DispatchPrimary =
+      DispatchFunction ? DispatchFunction->getPrimaryTemplate() : nullptr;
+  const auto *DispatchPattern =
+      DispatchPrimary ? DispatchPrimary->getTemplatedDecl() : nullptr;
+  const auto *DispatchReference =
+      dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Dispatch));
+  if (!Dispatch || !DispatchFunction || !DispatchPrimary || !DispatchPattern ||
+      !DispatchReference || !DispatchFunction->getIdentifier() ||
+      DispatchFunction->getName() != "__invoke" ||
+      DispatchFunction->isVariadic() || !DispatchFunction->isInlined() ||
+      !DispatchFunction->isConstexpr() || !DispatchFunction->hasBody() ||
+      !DispatchPattern->hasBody() ||
+      Dispatch->getNumArgs() != DispatchFunction->getNumParams() ||
+      Dispatch->getNumArgs() != Call->getNumArgs() ||
+      !Context.hasSameType(Dispatch->getType(), Call->getType()) ||
+      !approvedStandardSDKDeclaration(S, SM, DispatchFunction) ||
+      !approvedStandardSDKDeclaration(S, SM, DispatchPrimary) ||
+      !approvedStandardSDKDeclaration(S, SM, DispatchPattern) ||
+      !approvedStandardSDKDeclaration(S, SM, DispatchReference->getDecl()) ||
+      !cstddefOrigin(S, SM, DispatchPrimary->getLocation(), "libcxx",
+                     "__type_traits/invoke.h"))
+    return std::nullopt;
+  const auto *StoredAccess =
+      dyn_cast<MemberExpr>(Dispatch->getArg(0)->IgnoreParenImpCasts());
+  const auto *StoredBase =
+      StoredAccess ? StoredAccess->getBase()->IgnoreParenImpCasts() : nullptr;
+  if (!StoredAccess || StoredAccess->getMemberDecl() != Stored ||
+      !isa_and_nonnull<CXXThisExpr>(StoredBase))
+    return std::nullopt;
+  for (unsigned I = 0; I < Method->getNumParams(); ++I) {
+    const auto *Forward =
+        dyn_cast<CallExpr>(Dispatch->getArg(I + 1)->IgnoreParenImpCasts());
+    const auto *Function = Forward ? Forward->getDirectCallee() : nullptr;
+    const auto *ForwardPrimary =
+        Function ? Function->getPrimaryTemplate() : nullptr;
+    const auto *ForwardReference =
+        dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Forward));
+    const auto *Argument =
+        Forward && Forward->getNumArgs() == 1
+            ? dyn_cast<DeclRefExpr>(Forward->getArg(0)->IgnoreParenImpCasts())
+            : nullptr;
+    if (!Function || !ForwardPrimary || !ForwardReference || !Argument ||
+        !Function->getIdentifier() || Function->getName() != "forward" ||
+        Argument->getDecl() != Method->getParamDecl(I) ||
+        !approvedStandardSDKDeclaration(S, SM, Function) ||
+        !approvedStandardSDKDeclaration(S, SM, ForwardPrimary) ||
+        !approvedStandardSDKDeclaration(S, SM, ForwardReference->getDecl()) ||
+        !cstddefOrigin(S, SM, ForwardPrimary->getLocation(), "libcxx",
+                       "__utility/forward.h"))
+      return std::nullopt;
+  }
+  return FunctionalMemFnDispatch{Factory->getArg(0), Factory, Dispatch};
+}
+
 std::optional<FunctionalMemberInvokeCall>
 approvedFunctionalMemberInvokeCall(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
   if (!Call || Call->getNumArgs() < 2)
     return std::nullopt;
-  const auto *Callable = Call->getArg(0);
+  const auto MemFn = approvedFunctionalMemFnDispatch(S, SM, Call, Context);
+  const auto *Callable = MemFn ? MemFn->Callable : Call->getArg(0);
   const auto *Address = dyn_cast_or_null<UnaryOperator>(
       functionalInvokeStrippedExpression(Callable));
   const auto *Reference =
@@ -5803,8 +6014,9 @@ approvedFunctionalMemberInvokeCall(
   const bool MethodReferenceResult =
       Method && Method->getReturnType()->isLValueReferenceType();
   const bool ReferenceResult = Field || MethodReferenceResult;
-  const auto *Dispatch =
-      approvedFunctionalInvokeDispatch(S, SM, Call, Context, ReferenceResult);
+  const auto *Dispatch = MemFn ? MemFn->Dispatch
+                               : approvedFunctionalInvokeDispatch(
+                                     S, SM, Call, Context, ReferenceResult);
   const auto *DispatchFunction =
       Dispatch ? Dispatch->getDirectCallee() : nullptr;
   const auto *Body = DispatchFunction
@@ -5916,6 +6128,7 @@ approvedFunctionalMemberInvokeCall(
       return std::nullopt;
   }
   return FunctionalMemberInvokeCall{Callable, Object, Method, Field,
+                                    MemFn ? MemFn->Factory : nullptr,
                                     std::move(ObjectWrapper),
                                     ObjectIsPointer};
 }

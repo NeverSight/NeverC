@@ -896,9 +896,16 @@ member-function or member-object dispatcher body, wrapper `get()` body and
 parameter flow are authenticated before the direct method call or field
 projection is emitted.
 
+An exact temporary returned by `std::mem_fn` from either admitted direct named
+address may be called immediately through the same receiver, argument and result
+boundary. The pinned `__mem_fn` specialization, stored member field, factory,
+call operator, forwarding edges and internal `__invoke` are authenticated before
+the temporary wrapper is erased. Storing or copying a `mem_fn` object remains
+outside the runtime boundary.
+
 Cv-qualified typed template arguments, function-object addresses, pointers and
 user-defined operands, `long double`, `std::function`, binders and searchers do
-not yet lower. Stored member pointers, base-adjusting receivers, volatile
+not yet lower. Stored member pointers or `mem_fn` objects, base-adjusting receivers, volatile
 receivers, user-defined callable objects, function referents, rvalue-reference or
 other reference signatures and variadic targets remain
 outside the `std::invoke` boundary.

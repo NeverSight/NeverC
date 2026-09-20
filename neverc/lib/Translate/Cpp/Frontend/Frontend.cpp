@@ -4769,6 +4769,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       ApprovedUtilityCallees, ApprovedMemberPointerExpressions;
   std::map<const Expr *, SourceLocation> DirectTemplateCallLocations;
   std::set<const CallExpr *> GeneratedArrayAssignments;
+  std::set<const CallExpr *> ApprovedErasedUtilityCalls;
   std::map<const OpaqueValueExpr *, const Expr *> ArraySources;
   unsigned ArrayIndexDepth = 0;
   const CXXMethodDecl *CurrentMethod = nullptr;
@@ -13223,6 +13224,47 @@ public:
             else
               break;
           }
+          if (Member->ErasedFactory) {
+            ApprovedErasedUtilityCalls.insert(Member->ErasedFactory);
+            Expression = Call->getArg(0);
+            while (Expression) {
+              ApprovedMemberPointerExpressions.insert(Expression);
+              if (Expression == Member->ErasedFactory)
+                break;
+              if (const auto *Parentheses = dyn_cast<ParenExpr>(Expression))
+                Expression = Parentheses->getSubExpr();
+              else if (const auto *Cleanup =
+                           dyn_cast<ExprWithCleanups>(Expression))
+                Expression = Cleanup->getSubExpr();
+              else if (const auto *Temporary =
+                           dyn_cast<MaterializeTemporaryExpr>(Expression))
+                Expression = Temporary->getSubExpr();
+              else if (const auto *Bound =
+                           dyn_cast<CXXBindTemporaryExpr>(Expression))
+                Expression = Bound->getSubExpr();
+              else if (const auto *Cast =
+                           dyn_cast<ImplicitCastExpr>(Expression))
+                Expression = Cast->getSubExpr();
+              else
+                break;
+            }
+            if (const auto *Leaf =
+                    directFunctionReference(Member->ErasedFactory)) {
+              DirectTemplateCallLocations.emplace(
+                  Leaf, Member->ErasedFactory->getCallee()->getExprLoc());
+              const Expr *Callee = Member->ErasedFactory->getCallee();
+              while (true) {
+                DirectFunctionCallees.insert(Callee);
+                ApprovedUtilityCallees.insert(Callee);
+                if (Callee == Leaf)
+                  break;
+                if (const auto *Parentheses = dyn_cast<ParenExpr>(Callee))
+                  Callee = Parentheses->getSubExpr();
+                else
+                  Callee = cast<ImplicitCastExpr>(Callee)->getSubExpr();
+              }
+            }
+          }
         }
         const Expr *Leaf = directFunctionReference(Call);
         if (!Leaf)
@@ -13596,6 +13638,8 @@ public:
     if (const auto *C = dyn_cast<CallExpr>(S)) {
       if (GeneratedArrayAssignments.count(C))
         return true; // Its typed argument subtrees are still visited by RAV.
+      if (A.S.coreV2() && ApprovedErasedUtilityCalls.count(C))
+        return true; // The enclosing authenticated call erases this adapter.
       if (A.S.coreV2())
         if (const auto *D = scalarDestruction(C, A.Context)) {
           A.type(D->getDestroyedType(), L);
