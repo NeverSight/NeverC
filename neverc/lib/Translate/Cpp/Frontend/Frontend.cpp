@@ -13304,6 +13304,31 @@ public:
               break;
           }
         }
+    if (A.S.coreV2())
+      if (const auto *Call = dyn_cast<CallExpr>(S))
+        if (approvedNativeMemberPointerCall(A.S, A.Sources, Call,
+                                            A.Context)) {
+          const Expr *Expression = Call->getCallee();
+          while (Expression) {
+            ApprovedMemberPointerExpressions.insert(Expression);
+            if (const auto *Parentheses = dyn_cast<ParenExpr>(Expression))
+              Expression = Parentheses->getSubExpr();
+            else if (const auto *Cleanup =
+                         dyn_cast<ExprWithCleanups>(Expression))
+              Expression = Cleanup->getSubExpr();
+            else if (const auto *Cast =
+                         dyn_cast<ImplicitCastExpr>(Expression))
+              Expression = Cast->getSubExpr();
+            else if (const auto *Operation =
+                         dyn_cast<BinaryOperator>(Expression);
+                     Operation &&
+                     (Operation->getOpcode() == BO_PtrMemD ||
+                      Operation->getOpcode() == BO_PtrMemI))
+              Expression = Operation->getRHS();
+            else
+              break;
+          }
+        }
     if (A.S.coreV2() && ImplicitInitializerOwner.isValid())
       if (const auto *Call = dyn_cast<CallExpr>(S))
         if (auto Copy = generatedArrayAssignment(Call, CurrentMethod, A.Context)) {
@@ -13780,6 +13805,9 @@ public:
           A.S.Module["memory_lifetimes"] = true;
           return true; // RAV still checks the base, qualifier and written types.
         }
+      if (A.S.coreV2() &&
+          approvedNativeMemberPointerCall(A.S, A.Sources, C, A.Context))
+        return true; // The authenticated stored member pointer lowers directly.
       if (A.S.coreV2() && !directFunctionReference(C) &&
           C->getCallee()->getType()->isFunctionPointerType()) {
         if (A.functionPointerType(C->getCallee()->getType(), L).empty())
@@ -14286,6 +14314,7 @@ public:
                 B->getRHS()->getType()->isPointerType()) &&
           !approvedNativeDataMemberPointerAccess(A.S, A.Sources, B,
                                                  A.Context) &&
+          !ApprovedMemberPointerExpressions.count(B) &&
           B->getOpcode() != BO_Assign && B->getOpcode() != BO_Comma &&
           B->getOpcode() != BO_EQ && B->getOpcode() != BO_NE) {
         bool Offset = B->getOpcode() == BO_Add || B->getOpcode() == BO_Sub ||

@@ -349,7 +349,10 @@ emitting the same direct method call or field projection. Exact same-type local
 copy/move-initializer chains, including the admitted `<utility>` reference
 adapters, are authenticated and erased as well. Stored data-member pointers in
 this form may also be applied with native `.*` or `->*` on a non-const exact
-receiver, preserving the non-const field lvalue. Reassigned or null
+receiver, preserving the non-const field lvalue. Stored member-function
+pointers in this form may be called with native `.*` or `->*` on an exact
+object or pointer through the same fixed-arity argument and result boundary;
+const methods accept exact const receivers. Reassigned or null
 member pointers, `mem_fn` copies or moves from parameters, reassigned `mem_fn`
 objects, base adjustments,
 rvalue-reference or other reference signatures and

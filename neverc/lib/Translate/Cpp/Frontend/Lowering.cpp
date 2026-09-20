@@ -1342,6 +1342,56 @@ class FunctionLowering {
     label(Done, L);
   }
 
+  Expression memberPointerCall(const CallExpr *Call,
+                               const FunctionalMemberInvokeCall &Info,
+                               unsigned ArgumentOffset) {
+    auto L = Call->getExprLoc();
+    Expression Receiver;
+    if (Info.ObjectWrapper) {
+      auto Wrapper = lvalue(Info.Object);
+      Receiver = snapshot(
+          Expression{{"kind", "member"},
+                     {"type", type(Info.ObjectWrapper->PointerType, L)},
+                     {"name", "nct_reference_wrapper_pointer"},
+                     {"args", json::Array{std::move(Wrapper)}},
+                     {"loc", A.loc(L)}},
+          L);
+    } else if (Info.ObjectIsPointer) {
+      Receiver = expression(Info.Object);
+    } else {
+      Receiver = address(lvalue(Info.Object), Info.Object->getType(), L);
+    }
+    if (Info.Method) {
+      json::Array Arguments;
+      Arguments.push_back(snapshot(
+          cast(std::move(Receiver), type(Info.Method->getThisType(), L), L),
+          L));
+      for (unsigned I = 0; I < Info.Method->getNumParams(); ++I) {
+        const auto Parameter = Info.Method->getParamDecl(I)->getType();
+        Arguments.push_back(
+            cast(argument(Call->getArg(I + ArgumentOffset), Parameter),
+                 type(Parameter, L), L));
+      }
+      chargeCall(Arguments, L);
+      json::Object Instruction{{"op", "call"},
+                               {"callee", A.name(Info.Method)},
+                               {"args", std::move(Arguments)},
+                               {"loc", A.loc(L)}};
+      Expression Result;
+      auto ResultType = type(Info.Method->getReturnType(), L, true);
+      if (ResultType != "void") {
+        Result = temporary(ResultType, L);
+        Instruction["target"] = json::Object(Result);
+      }
+      Body.push_back(std::move(Instruction));
+      if (Info.Method->getReturnType()->isReferenceType())
+        return dereference(std::move(Result), L);
+      return Result;
+    }
+    auto Base = dereference(snapshot(std::move(Receiver), L), L);
+    return fieldStorage(std::move(Base), Info.Field, L);
+  }
+
   Expression utilityOperation(const CallExpr *Call, UtilityOperation Operation,
                               std::optional<Expression> Destination) {
     auto L = Call->getExprLoc();
@@ -1915,44 +1965,7 @@ class FunctionLowering {
       if (!Info)
         reject(L, "functional member invoke",
                "A checked direct member address and exact receiver are required.");
-      Expression Receiver;
-      if (Info->ObjectWrapper) {
-        auto Wrapper = lvalue(Info->Object);
-        Receiver = snapshot(
-            ReferenceMember(std::move(Wrapper), *Info->ObjectWrapper), L);
-      } else if (Info->ObjectIsPointer) {
-        Receiver = expression(Info->Object);
-      } else {
-        Receiver = address(lvalue(Info->Object), Info->Object->getType(), L);
-      }
-      if (Info->Method) {
-        json::Array Arguments;
-        Arguments.push_back(snapshot(
-            cast(std::move(Receiver), type(Info->Method->getThisType(), L), L),
-            L));
-        for (unsigned I = 0; I < Info->Method->getNumParams(); ++I) {
-          const auto Parameter = Info->Method->getParamDecl(I)->getType();
-          Arguments.push_back(cast(argument(Call->getArg(I + 2), Parameter),
-                                   type(Parameter, L), L));
-        }
-        chargeCall(Arguments, L);
-        json::Object Instruction{{"op", "call"},
-                                 {"callee", A.name(Info->Method)},
-                                 {"args", std::move(Arguments)},
-                                 {"loc", A.loc(L)}};
-        Expression Result;
-        auto ResultType = type(Info->Method->getReturnType(), L, true);
-        if (ResultType != "void") {
-          Result = temporary(ResultType, L);
-          Instruction["target"] = json::Object(Result);
-        }
-        Body.push_back(std::move(Instruction));
-        if (Info->Method->getReturnType()->isReferenceType())
-          return dereference(std::move(Result), L);
-        return Result;
-      }
-      auto Base = dereference(snapshot(std::move(Receiver), L), L);
-      return fieldStorage(std::move(Base), Info->Field, L);
+      return memberPointerCall(Call, *Info, 2);
     }
     case UtilityOperation::FunctionalReferenceFactory: {
       const auto Info = approvedFunctionalReferenceFactoryCall(
@@ -7679,6 +7692,9 @@ class FunctionLowering {
     auto *Callee = Call->getDirectCallee();
     const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Callee);
     if (A.S.coreV2()) {
+      if (auto Info = approvedNativeMemberPointerCall(
+              A.S, A.Sources, Call, A.Context))
+        return memberPointerCall(Call, *Info, 0);
       if (const auto *D = scalarDestruction(Call, A.Context)) {
         // Evaluate the base without reading an indeterminate destroyed scalar.
         // Arrow bases evaluate their pointer; dot bases designate storage only.

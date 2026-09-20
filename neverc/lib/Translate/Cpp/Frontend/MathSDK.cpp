@@ -6937,6 +6937,108 @@ static bool functionalMemberValueConversion(const ASTContext &Context,
   return utilityPointerConversion(Context, From, To);
 }
 
+std::optional<FunctionalMemberInvokeCall>
+approvedNativeMemberPointerCall(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *MemberCall = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Operation = dyn_cast_or_null<BinaryOperator>(
+      functionalInvokeStrippedExpression(Call ? Call->getCallee() : nullptr));
+  if (!MemberCall || !Operation ||
+      (Operation->getOpcode() != BO_PtrMemD &&
+       Operation->getOpcode() != BO_PtrMemI) ||
+      !S.owns(SM, Call->getExprLoc()) ||
+      !S.owns(SM, Operation->getOperatorLoc()))
+    return std::nullopt;
+
+  const auto *Callable = Operation->getRHS();
+  const auto *Reference = dyn_cast_or_null<DeclRefExpr>(
+      functionalInvokeStrippedExpression(Callable));
+  const auto *Variable =
+      Reference ? dyn_cast<VarDecl>(Reference->getDecl()) : nullptr;
+  const auto Stored =
+      approvedFunctionalStoredMemberPointer(S, SM, Variable, Context);
+  const auto *Method =
+      Stored ? dyn_cast_or_null<CXXMethodDecl>(Stored->Member) : nullptr;
+  const auto *MemberPointer =
+      Variable ? Variable->getType()->getAs<MemberPointerType>() : nullptr;
+  const auto *MemberClass =
+      MemberPointer ? MemberPointer->getClass()->getAsCXXRecordDecl() : nullptr;
+  if (!Reference || !S.owns(SM, Reference->getExprLoc()) || !Method ||
+      !MemberPointer || !MemberClass || Method->isStatic() ||
+      !callableMethod(Method) || !Method->hasBody() ||
+      Method->getRefQualifier() == RQ_RValue || Method->isVariadic() ||
+      !Context.hasSameType(MemberPointer->getPointeeType(),
+                           Method->getType()) ||
+      MemberClass->getCanonicalDecl() !=
+          Method->getParent()->getCanonicalDecl())
+    return std::nullopt;
+
+  const auto *Object = Operation->getLHS();
+  const bool ObjectIsPointer = Operation->getOpcode() == BO_PtrMemI;
+  const auto ObjectType =
+      ObjectIsPointer && Object->getType()->isPointerType()
+          ? Object->getType()->getPointeeType()
+          : Object->getType();
+  const auto *ObjectRecord = ObjectType->getAsCXXRecordDecl();
+  if (!ObjectRecord ||
+      ObjectRecord->getCanonicalDecl() != MemberClass->getCanonicalDecl() ||
+      (!ObjectIsPointer && !Object->isLValue()) ||
+      ObjectType.isVolatileQualified() || ObjectType.isRestrictQualified() ||
+      ObjectType.getAddressSpace() != LangAS::Default ||
+      (ObjectType.isConstQualified() && !Method->isConst()))
+    return std::nullopt;
+
+  const auto Result = Method->getReturnType();
+  const bool ReferenceResult = Result->isLValueReferenceType();
+  const auto Referent =
+      ReferenceResult ? Result->getPointeeType() : QualType();
+  if (Method->getNumParams() != Call->getNumArgs() ||
+      (ReferenceResult
+           ? (Referent.isVolatileQualified() ||
+              Referent.isRestrictQualified() ||
+              Referent.getAddressSpace() != LangAS::Default ||
+              !supportedFunctionalMemberValue(
+                  Context, Referent.getUnqualifiedType()) ||
+              !Call->isLValue() ||
+              !Context.hasSameType(Referent, Call->getType()))
+           : (!Context.hasSameType(Result, Call->getType()) ||
+              (!Result->isVoidType() &&
+               !supportedFunctionalMemberValue(Context, Result)))))
+    return std::nullopt;
+
+  for (unsigned I = 0; I < Method->getNumParams(); ++I) {
+    const auto Parameter = Method->getParamDecl(I)->getType();
+    const auto *ArgumentExpression = Call->getArg(I);
+    const auto Argument = ArgumentExpression->getType();
+    bool Supported = false;
+    if (Parameter->isLValueReferenceType()) {
+      const auto ParameterReferent = Parameter->getPointeeType();
+      Supported =
+          !ParameterReferent.isVolatileQualified() &&
+          !ParameterReferent.isRestrictQualified() &&
+          ParameterReferent.getAddressSpace() == LangAS::Default &&
+          supportedFunctionalMemberValue(
+              Context, ParameterReferent.getUnqualifiedType()) &&
+          ArgumentExpression->isLValue() && !Argument.isVolatileQualified() &&
+          Context.hasSameUnqualifiedType(ParameterReferent, Argument) &&
+          (ParameterReferent.isConstQualified() ||
+           !Argument.isConstQualified());
+    } else {
+      const auto *Source =
+          functionalInvokeStrippedExpression(ArgumentExpression);
+      Supported = !Parameter->isReferenceType() && Source &&
+                  supportedFunctionalMemberValue(Context, Parameter) &&
+                  functionalMemberValueConversion(Context, Source->getType(),
+                                                  Parameter);
+    }
+    if (!Supported)
+      return std::nullopt;
+  }
+  return FunctionalMemberInvokeCall{Call->getCallee(), Object, Method, nullptr,
+                                    nullptr, std::nullopt, ObjectIsPointer};
+}
+
 struct FunctionalMemFnDispatch {
   const Expr *Callable;
   const CallExpr *Factory;

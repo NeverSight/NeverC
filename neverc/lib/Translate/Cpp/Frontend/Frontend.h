@@ -399,6 +399,10 @@ std::optional<FunctionalMemberInvokeCall>
 approvedFunctionalMemberInvokeCall(
     const State &S, const clang::SourceManager &SM,
     const clang::CallExpr *Call, const clang::ASTContext &Context);
+std::optional<FunctionalMemberInvokeCall>
+approvedNativeMemberPointerCall(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *Call, const clang::ASTContext &Context);
 enum class MemoryTemplateMetadata {
   PointerTraits,
   DefaultDelete,

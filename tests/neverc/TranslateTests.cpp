@@ -34303,7 +34303,18 @@ int main() {
   score += std::invoke(add_chain, box, 2) == 13;
   score += std::invoke(add, &constant, 1) == 6;
   score += std::invoke(pass, constant, &first) == &first;
-  return score == 13 ? 0 : score;
+  (box.*set)(12);
+  score += box.value == 12;
+  ((&box)->*set)(11);
+  score += box.value == 11;
+  (box.*slot_copy)() = 10;
+  score += box.value == 10;
+  int *native_cursor = &first;
+  (constant.*redirect)(native_cursor);
+  score += native_cursor == &second;
+  score += (constant.*add_chain)(2) == 7;
+  score += ((&constant)->*pass)(&first) == &first;
+  return score == 19 ? 0 : score;
 }
 )cpp");
   auto Result =
@@ -34691,9 +34702,17 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
       {"native-direct-data-member-pointer",
        "struct X{int v;};int main(){X x{3};return x.*(&X::v);}",
        "TR0201"},
-      {"native-stored-member-function-pointer",
-       "struct X{int f(){return 3;}};int main(){X x;auto p=&X::f;"
-       "return (x.*p)();}",
+      {"native-direct-member-function-pointer",
+       "struct X{int f(){return 3;}};int main(){X x;"
+       "return (x.*(&X::f))();}",
+       "TR0201"},
+      {"native-member-function-pointer-from-parameter",
+       "struct X{int f(){return 3;}};int call(int(X::*p)(),X&x){"
+       "return (x.*p)();}int main(){X x;return call(&X::f,x);}",
+       "TR0201"},
+      {"native-member-function-pointer-rvalue-reference-parameter",
+       "struct X{int f(int&&v){return v;}};int main(){X x;auto p=&X::f;"
+       "return (x.*p)(3);}",
        "TR0201"},
       {"invoke-member-rvalue-reference-parameter",
        "#include <functional>\nstruct X{int f(int&&v){return v;}};"
