@@ -973,7 +973,8 @@ with native `(object.*pointer)(arguments...)` or
 method boundary; a direct source-written member-function address is accepted
 in the same syntax. Exact full-expression temporary receivers are also
 materialized through this method boundary and destroyed after the call. The receiver is retained before the arguments, const methods
-accept exact const receivers, and admitted lvalue-reference parameters and
+accept exact const receivers, `&&`-qualified methods require an exact temporary
+receiver, and admitted lvalue-reference parameters and
 results preserve storage identity. Volatile native data-member access remains
 rejected. Parameter-sourced, reassigned or null native member
 pointers remain rejected. The selected libc++

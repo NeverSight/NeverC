@@ -34402,10 +34402,13 @@ struct Box {
   int value;
   ~Box() { ++drops; }
   int add(short n) const { return value + n; }
+  int take(short n) && { return value + n; }
 };
 int main() {
   auto add = &Box::add;
   auto method_wrapper = std::mem_fn(add);
+  auto take = &Box::take;
+  auto rvalue_wrapper = std::mem_fn(take);
   auto value = &Box::value;
   auto field_wrapper = std::mem_fn(value);
   int score = (Box{1}.*add)(2) == 3;
@@ -34430,7 +34433,15 @@ int main() {
     score += view == 9;
   }
   score += drops == 9;
-  return score == 19 ? 0 : score;
+  score += (Box{10}.*take)(2) == 12;
+  score += drops == 10;
+  score += std::invoke(take, Box{11}, 2) == 13;
+  score += drops == 11;
+  score += rvalue_wrapper(Box{12}, 2) == 14;
+  score += drops == 12;
+  score += std::invoke(rvalue_wrapper, Box{13}, 2) == 15;
+  score += drops == 13;
+  return score == 27 ? 0 : score;
 }
 )cpp");
   auto Result =
@@ -34791,10 +34802,6 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
       {"native-member-function-pointer-rvalue-reference-parameter",
        "struct X{int f(int&&v){return v;}};int main(){X x;auto p=&X::f;"
        "return (x.*p)(3);}",
-       "TR0201"},
-      {"native-member-function-pointer-rvalue-qualified-method",
-       "struct X{int f()&&{return 3;}};int main(){auto p=&X::f;"
-       "return (X{}.*p)();}",
        "TR0201"},
       {"invoke-member-rvalue-reference-parameter",
        "#include <functional>\nstruct X{int f(int&&v){return v;}};"

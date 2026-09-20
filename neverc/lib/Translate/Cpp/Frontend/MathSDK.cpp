@@ -6627,7 +6627,6 @@ static bool supportedFunctionalStoredMember(const ASTContext &Context,
                             ? Result->getPointeeType()
                             : QualType();
   if (Method->isStatic() || !callableMethod(Method) || !Method->hasBody() ||
-      Method->getRefQualifier() == RQ_RValue ||
       (Result->isReferenceType()
            ? (!Result->isLValueReferenceType() ||
               Referent.isVolatileQualified() || Referent.isRestrictQualified() ||
@@ -6962,6 +6961,24 @@ static bool functionalMemberValueConversion(const ASTContext &Context,
   return utilityPointerConversion(Context, From, To);
 }
 
+static bool functionalMemberReceiverValueCategory(
+    const CXXMethodDecl *Method, const Expr *Object, bool ObjectIsPointer,
+    bool ObjectIsWrapper = false) {
+  if (!Method || !Object)
+    return false;
+  const bool LValueReceiver =
+      ObjectIsPointer || ObjectIsWrapper || Object->isLValue();
+  switch (Method->getRefQualifier()) {
+  case RQ_None:
+    return LValueReceiver || Object->isXValue();
+  case RQ_LValue:
+    return LValueReceiver;
+  case RQ_RValue:
+    return !ObjectIsPointer && !ObjectIsWrapper && Object->isXValue();
+  }
+  llvm_unreachable("unknown method ref qualifier");
+}
+
 std::optional<FunctionalMemberInvokeCall>
 approvedNativeMemberPointerCall(
     const State &S, const SourceManager &SM, const CallExpr *Call,
@@ -6997,7 +7014,7 @@ approvedNativeMemberPointerCall(
       MemberPointer ? MemberPointer->getClass()->getAsCXXRecordDecl() : nullptr;
   if (!Address || !Method || !MemberPointer || !MemberClass ||
       Method->isStatic() || !callableMethod(Method) || !Method->hasBody() ||
-      Method->getRefQualifier() == RQ_RValue || Method->isVariadic() ||
+      Method->isVariadic() ||
       !Context.hasSameType(MemberPointer->getPointeeType(),
                            Method->getType()) ||
       MemberClass->getCanonicalDecl() !=
@@ -7014,6 +7031,8 @@ approvedNativeMemberPointerCall(
   if (!ObjectRecord ||
       ObjectRecord->getCanonicalDecl() != MemberClass->getCanonicalDecl() ||
       (!ObjectIsPointer && !Object->isGLValue()) ||
+      !functionalMemberReceiverValueCategory(Method, Object,
+                                             ObjectIsPointer) ||
       ObjectType.isVolatileQualified() || ObjectType.isRestrictQualified() ||
       ObjectType.getAddressSpace() != LangAS::Default ||
       (ObjectType.isConstQualified() && !Method->isConst()))
@@ -7442,7 +7461,8 @@ approvedFunctionalMemberInvokeCall(
     const auto Referent =
         MethodReferenceResult ? Result->getPointeeType() : QualType();
     if (Method->isStatic() || !callableMethod(Method) || !Method->hasBody() ||
-        Method->getRefQualifier() == RQ_RValue ||
+        !functionalMemberReceiverValueCategory(
+            Method, Object, ObjectIsPointer, ObjectWrapper.has_value()) ||
         Method->getNumParams() + 2 != Call->getNumArgs() ||
         (MethodReferenceResult
              ? (Referent.isVolatileQualified() ||

@@ -358,7 +358,8 @@ boundary, including native `.*` lifetime extension by a local reference. Direct
 addresses and stored member-function pointers may be called with native `.*` or `->*` on an exact
 object or pointer through the same fixed-arity argument and result boundary;
 exact full-expression temporary objects are materialized and destroyed after
-the call, and const methods accept exact const receivers. Reassigned or null
+the call, const methods accept exact const receivers, and an `&&`-qualified
+method requires that temporary receiver. Reassigned or null
 member pointers, `mem_fn` copies or moves from parameters, reassigned `mem_fn`
 objects, base adjustments,
 rvalue-reference or other reference signatures and

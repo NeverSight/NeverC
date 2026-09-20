@@ -154,7 +154,8 @@ contributed by the field or receiver. Temporary lifetime and native `.*`
 reference extension follow the source boundary. Direct addresses and stored member-function pointers
 may be called with native `.*` or `->*` on an exact object or pointer through
 the same fixed-arity method boundary; exact full-expression temporary objects
-are materialized and destroyed after the call. This includes const methods and admitted
+are materialized and destroyed after the call, and `&&`-qualified methods
+require that temporary receiver. This includes const methods and admitted
 lvalue-reference parameters or results. Exact
 `std::mem_fn` wrappers built from those direct named addresses or authenticated
 local member-pointer chains may be called

@@ -1891,6 +1891,7 @@ struct Box {
   int value;
   int *link;
   int add(short n) const { return value + n; }
+  int take(short n) && { return value + n; }
   int *pass(int *pointer) const { return pointer; }
   void set(int n) { value = n; }
   void redirect(int *&pointer) const { pointer = link; }
@@ -1899,6 +1900,7 @@ struct Box {
 extern "C" int functional_stored_method_member(
     Box &box, const Box &constant) {
   auto add = &Box::add;
+  auto take = &Box::take;
   auto pass = &Box::pass;
   auto set = &Box::set;
   auto redirect = &Box::redirect;
@@ -1924,6 +1926,8 @@ extern "C" int functional_stored_method_member(
   return std::invoke(add_chain, box, 2) + std::invoke(add, &constant, 1)
       + (Box{3, box.link}.*add)(2)
       + std::invoke(add_chain, Box{4, box.link}, 2)
+      + (Box{5, box.link}.*take)(2)
+      + std::invoke(take, Box{6, box.link}, 2)
       + (std::invoke(pass, constant, box.link) == box.link)
       + (pointer == constant.link) + (constant.*add_chain)(2)
       + (constant.*(&Box::add))(2)
@@ -1997,6 +2001,7 @@ struct Box {
   int value;
   int *link;
   int add(short n) const { return value + n; }
+  int take(short n) && { return value + n; }
   int *pass(int *pointer) const { return pointer; }
   void set(int n) { value = n; }
   void redirect(int *&pointer) const { pointer = link; }
@@ -2006,6 +2011,8 @@ extern "C" int functional_stored_method_mem_fn(
     Box &box, const Box &constant) {
   auto add_pointer = &Box::add;
   auto add = std::mem_fn(add_pointer);
+  auto take_pointer = &Box::take;
+  auto take = std::mem_fn(take_pointer);
   auto add_move = std::move(add);
   auto add_forward = std::forward<decltype(add_move)>(add_move);
   auto add_conditional = std::move_if_noexcept(add_forward);
@@ -2021,6 +2028,8 @@ extern "C" int functional_stored_method_mem_fn(
   int *pointer = box.link;
   std::invoke(redirect, std::cref(constant), pointer);
   return add_chain(box, 2) + std::invoke(add, &constant, 1)
+      + take(Box{3, box.link}, 2)
+      + std::invoke(take, Box{4, box.link}, 2)
       + (pass(constant, box.link) == box.link) + (pointer == constant.link);
 }
 """
@@ -2225,8 +2234,6 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
         ("native-member-function-pointer-from-parameter", 'struct X{int f(){return 3;}};int call(int(X::*p)(),X&x){return (x.*p)();}int main(){X x;return call(&X::f,x);}',
          "TR0201"),
         ("native-member-function-pointer-rvalue-reference-parameter", 'struct X{int f(int&&v){return v;}};int main(){X x;auto p=&X::f;return (x.*p)(3);}',
-         "TR0201"),
-        ("native-member-function-pointer-rvalue-qualified-method", 'struct X{int f()&&{return 3;}};int main(){auto p=&X::f;return (X{}.*p)();}',
          "TR0201"),
         ("invoke-member-rvalue-reference-parameter", '#include <functional>\nstruct X{int f(int&&v){return v;}};int main(){X x;return std::invoke(&X::f,x,3);}',
          "TR0203"),
