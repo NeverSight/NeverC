@@ -884,7 +884,8 @@ A direct source-written address of an owned nonstatic member function also
 lowers through `std::invoke` when the receiver is an exact-class lvalue,
 pointer or admitted `std::reference_wrapper` and the method has fixed-arity
 admitted scalar or object-pointer parameters, either by value with a checked direct conversion or
-by exact scalar lvalue reference, with a scalar, object-pointer, scalar lvalue-reference or `void`
+by exact scalar or object-pointer lvalue reference, with a scalar, object-pointer,
+exact scalar or object-pointer lvalue-reference, or `void`
 result. Reference parameters and results preserve the selected object's storage
 and qualification. The receiver is retained before the arguments are evaluated
 and each selected argument conversion is preserved. A direct source-written
@@ -899,7 +900,7 @@ Cv-qualified typed template arguments, function-object addresses, pointers and
 user-defined operands, `long double`, `std::function`, binders and searchers do
 not yet lower. Stored member pointers, base-adjusting receivers, volatile
 receivers, user-defined callable objects, function referents, rvalue-reference or
-non-scalar reference signatures and variadic targets remain
+other reference signatures and variadic targets remain
 outside the `std::invoke` boundary.
 Quoted includes, shadows, forged declarations and other runtime uses remain
 rejected by the normal source and semantic checks.

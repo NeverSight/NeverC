@@ -33930,8 +33930,11 @@ struct Box {
   int *pass(int *pointer) const { return pointer; }
   void set(int n) { value = n; }
   void add_to(int &n) const { n += value; }
+  void redirect(int *&pointer) const { pointer = link; }
   int &slot() { return value; }
   const int &view() const { return value; }
+  int *&link_slot() { return link; }
+  int *const &link_view() const { return link; }
 };
 int trace;
 Box *pick(Box *box) { trace = trace * 10 + 1; return box; }
@@ -33958,6 +33961,12 @@ int main() {
   score += std::invoke(&Box::link, std::cref(constant)) == &second;
   std::invoke(&Box::link, wrapped) = &second;
   score += box.link == &second;
+  int *cursor = &first;
+  std::invoke(&Box::redirect, constant, cursor);
+  score += cursor == &second;
+  std::invoke(&Box::link_slot, box) = &first;
+  score += box.link == &first;
+  score += std::invoke(&Box::link_view, constant) == &second;
   std::invoke(&Box::value, wrapped) = 11;
   int total = 1;
   std::invoke(&Box::add_to, wrapped, total);
@@ -33968,7 +33977,7 @@ int main() {
   trace = 0;
   score += std::invoke(&Box::add, std::ref(*pick(&box)), argument()) == 16;
   score += trace == 12;
-  return score == 16 && box.value == 12 ? 0 : score;
+  return score == 19 && box.value == 12 ? 0 : score;
 }
 )cpp");
   auto Result =
@@ -34100,6 +34109,11 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
       {"invoke-member-function-pointer-field",
        "#include <functional>\nint f(){return 3;}struct X{int(*p)();};"
        "int main(){X x{f};return std::invoke(&X::p,x)();}",
+       "TR0203"},
+      {"invoke-member-function-pointer-reference",
+       "#include <functional>\nint f(){return 3;}struct X{"
+       "void set(int(*&p)()){p=f;}};int main(){X x;int(*p)()=f;"
+       "std::invoke(&X::set,x,p);return p();}",
        "TR0203"}};
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);

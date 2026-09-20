@@ -5861,8 +5861,8 @@ approvedFunctionalMemberInvokeCall(
              ? (Referent.isVolatileQualified() ||
                 Referent.isRestrictQualified() ||
                 Referent.getAddressSpace() != LangAS::Default ||
-                !supportedFunctionalScalar(Referent.getUnqualifiedType(),
-                                           Context) ||
+                !supportedFunctionalMemberValue(
+                    Context, Referent.getUnqualifiedType()) ||
                 !Call->isLValue() ||
                 !Context.hasSameType(Referent, Call->getType()))
              : (!Context.hasSameType(Result, Call->getType()) ||
@@ -5881,7 +5881,8 @@ approvedFunctionalMemberInvokeCall(
             !Referent.isVolatileQualified() &&
             !Referent.isRestrictQualified() &&
             Referent.getAddressSpace() == LangAS::Default &&
-            supportedFunctionalScalar(Referent.getUnqualifiedType(), Context) &&
+            supportedFunctionalMemberValue(Context,
+                                           Referent.getUnqualifiedType()) &&
             ArgumentExpression->isLValue() && !Argument.isVolatileQualified() &&
             Context.hasSameUnqualifiedType(Referent, Argument) &&
             (Referent.isConstQualified() || !Argument.isConstQualified());

@@ -1579,8 +1579,11 @@ struct Box {
   int *pass(int *pointer) const { return pointer; }
   void set(int n) { value = n; }
   void add_to(int &n) const { n += value; }
+  void redirect(int *&pointer) const { pointer = link; }
   int &slot() { return value; }
   const int &view() const { return value; }
+  int *&link_slot() { return link; }
+  int *const &link_view() const { return link; }
 };
 extern "C" int functional_member_invoke(Box &box, const Box &constant) {
   auto wrapped = std::ref(box);
@@ -1590,6 +1593,9 @@ extern "C" int functional_member_invoke(Box &box, const Box &constant) {
   std::invoke(&Box::add_to, wrapped, total);
   std::invoke(&Box::slot, box) = 10;
   std::invoke(&Box::link, wrapped) = box.link;
+  int *pointer = box.link;
+  std::invoke(&Box::redirect, std::cref(constant), pointer);
+  std::invoke(&Box::link_slot, box) = pointer;
   return total + std::invoke(&Box::view, std::cref(constant))
       + std::invoke(&Box::add, wrapped, 2)
       + (std::invoke(&Box::pass, box, box.link) == box.link)
@@ -1598,6 +1604,7 @@ extern "C" int functional_member_invoke(Box &box, const Box &constant) {
       + std::invoke(&Box::fixed, box)
       + std::invoke(&Box::fixed, std::cref(constant))
       + std::invoke(&Box::add, std::cref(constant), 1)
+      + (std::invoke(&Box::link_view, box) == pointer)
       + std::invoke(&Box::value, std::cref(constant));
 }
 """
@@ -1682,6 +1689,8 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
         ("invoke-member-volatile-receiver", '#include <functional>\nstruct X{int v;};int main(){volatile X x{3};return std::invoke(&X::v,x);}',
          "TR0203"),
         ("invoke-member-function-pointer-field", '#include <functional>\nint f(){return 3;}struct X{int(*p)();};int main(){X x{f};return std::invoke(&X::p,x)();}',
+         "TR0203"),
+        ("invoke-member-function-pointer-reference", '#include <functional>\nint f(){return 3;}struct X{void set(int(*&p)()){p=f;}};int main(){X x;int(*p)()=f;std::invoke(&X::set,x,p);return p();}',
          "TR0203"),
     ):
         check("v2-functional-typed-" + name, source, code,
