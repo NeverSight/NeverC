@@ -7667,6 +7667,15 @@ public:
   explicit Allowlist(Adapter &A) : A(A) {}
   bool TraverseVarDecl(VarDecl *D) {
     if (A.S.coreV2() && owned(D)) {
+      if (auto Stored = approvedFunctionalStoredMemberPointer(
+              A.S, A.Sources, D, A.Context);
+          Stored && Stored->Adapter) {
+        // The adapter call and its deduced template arguments are an
+        // authenticated, erased carrier for an exact local member-pointer
+        // value. Keep the declaration visible to VisitVarDecl, but do not
+        // expose library implementation types through normal traversal.
+        return WalkUpFromVarDecl(D);
+      }
       if (auto Stored =
               approvedFunctionalStoredMemFn(A.S, A.Sources, D, A.Context)) {
         // The deduced __mem_fn specialization is an authenticated, erased

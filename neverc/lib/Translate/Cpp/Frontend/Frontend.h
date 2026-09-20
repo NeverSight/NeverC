@@ -366,6 +366,7 @@ struct FunctionalMemberInvokeCall {
 struct FunctionalStoredMemberPointer {
   const clang::VarDecl *Variable;
   const clang::Expr *Initializer;
+  const clang::CallExpr *Adapter;
   const clang::Expr *Address;
   const clang::ValueDecl *Member;
 };

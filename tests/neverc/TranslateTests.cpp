@@ -34251,6 +34251,7 @@ TEST_F(TranslateTest,
   const auto Output = tmpFile("functional-invoke-stored-members.nc");
   writeFile(Source, R"cpp(
 #include <functional>
+#include <utility>
 struct Box {
   int value;
   const int fixed;
@@ -34270,14 +34271,16 @@ int main() {
   auto fixed = &Box::fixed;
   auto link = &Box::link;
   const auto value_copy = value;
-  auto value_chain = value_copy;
+  auto value_chain = std::move(value_copy);
   auto add = &Box::add;
   auto pass = &Box::pass;
   auto set = &Box::set;
   auto redirect = &Box::redirect;
   auto slot = &Box::slot;
-  const auto add_copy = add;
-  auto add_chain = add_copy;
+  auto add_move = std::move(add);
+  auto add_forward = std::forward<decltype(add_move)>(add_move);
+  auto add_conditional = std::move_if_noexcept(add_forward);
+  auto add_chain = std::as_const(add_conditional);
   auto slot_copy = slot;
   std::invoke(value, box) = 7;
   int score = 0;
@@ -34655,6 +34658,12 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
       {"invoke-stored-member-pointer-copy-from-parameter",
        "#include <functional>\nstruct X{int v;};"
        "int call(int X::*p,X&x){auto q=p;return std::invoke(q,x);}"
+       "int main(){X x{3};return call(&X::v,x);}",
+       "TR0201"},
+      {"invoke-stored-member-pointer-move-from-parameter",
+       "#include <functional>\n#include <utility>\nstruct X{int v;};"
+       "int call(int X::*p,X&x){auto q=std::move(p);"
+       "return std::invoke(q,x);}"
        "int main(){X x{3};return call(&X::v,x);}",
        "TR0201"},
       {"invoke-stored-member-function-pointer-rvalue-reference-parameter",

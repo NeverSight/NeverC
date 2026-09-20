@@ -6654,13 +6654,28 @@ approvedFunctionalStoredMemberPointer(
     const ASTContext &Context) {
   const auto *Requested = Variable;
   const auto *RequestedInitializer = Variable ? Variable->getInit() : nullptr;
+  const CallExpr *RequestedAdapter = nullptr;
   std::set<const VarDecl *> Seen;
   while (functionalErasedLocalVariable(S, SM, Variable)) {
     if (!Seen.insert(Variable->getCanonicalDecl()).second)
       return std::nullopt;
     const auto *MemberPointer =
         Variable->getType()->getAs<MemberPointerType>();
-    const auto *Initializer = Variable->getInit();
+    const Expr *Initializer =
+        functionalInvokeStrippedExpression(Variable->getInit());
+    if (const auto *Adapter = dyn_cast_or_null<CallExpr>(Initializer)) {
+      const auto Operation = approvedUtilityOperation(S, SM, Adapter, Context);
+      if (!Operation || Adapter->getNumArgs() != 1 ||
+          (*Operation != UtilityOperation::Move &&
+           *Operation != UtilityOperation::Forward &&
+           *Operation != UtilityOperation::MoveIfNoexcept &&
+           *Operation != UtilityOperation::AsConst))
+        return std::nullopt;
+      if (Variable == Requested)
+        RequestedAdapter = Adapter;
+      Initializer =
+          functionalInvokeStrippedExpression(Adapter->getArg(0));
+    }
     const auto [Address, Member] =
         functionalMemberAddress(S, SM, Initializer, Context);
     if (Address) {
@@ -6670,10 +6685,9 @@ approvedFunctionalStoredMemberPointer(
                                           Address->getType()))
         return std::nullopt;
       return FunctionalStoredMemberPointer{Requested, RequestedInitializer,
-                                           Address, Member};
+                                           RequestedAdapter, Address, Member};
     }
-    const auto *Reference = dyn_cast_or_null<DeclRefExpr>(
-        functionalInvokeStrippedExpression(Initializer));
+    const auto *Reference = dyn_cast_or_null<DeclRefExpr>(Initializer);
     const auto *Source =
         Reference ? dyn_cast<VarDecl>(Reference->getDecl()) : nullptr;
     if (!MemberPointer || !Reference || !Source ||

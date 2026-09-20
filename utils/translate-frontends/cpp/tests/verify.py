@@ -1840,6 +1840,7 @@ extern "C" int functional_member_invoke(Box &box, const Box &constant) {
               target=target, sdk=True)
     functional_stored_data_member_source = """\
 #include <functional>
+#include <utility>
 struct Box {
   int value;
   const int fixed;
@@ -1851,7 +1852,7 @@ extern "C" int functional_stored_data_member(
   auto fixed = &Box::fixed;
   auto link = &Box::link;
   const auto value_copy = value;
-  auto value_chain = value_copy;
+  auto value_chain = std::move(value_copy);
   auto link_copy = link;
   std::invoke(value_chain, box) = 7;
   std::invoke(link_copy, std::ref(box)) = constant.link;
@@ -1877,6 +1878,7 @@ extern "C" int functional_stored_data_member(
                     if node.get("op") in ("call", "mapped_call")], target_result
     functional_stored_method_member_source = """\
 #include <functional>
+#include <utility>
 struct Box {
   int value;
   int *link;
@@ -1893,8 +1895,10 @@ extern "C" int functional_stored_method_member(
   auto set = &Box::set;
   auto redirect = &Box::redirect;
   auto slot = &Box::slot;
-  const auto add_copy = add;
-  auto add_chain = add_copy;
+  auto add_move = std::move(add);
+  auto add_forward = std::forward<decltype(add_move)>(add_move);
+  auto add_conditional = std::move_if_noexcept(add_forward);
+  auto add_chain = std::as_const(add_conditional);
   auto set_copy = set;
   auto slot_copy = slot;
   std::invoke(set_copy, &box, 7);
@@ -2175,6 +2179,8 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
         ("invoke-stored-member-pointer-reassignment", '#include <functional>\nstruct X{int a,b;};int main(){X x{3,4};auto p=&X::a;p=&X::b;return std::invoke(p,x);}',
          "TR0201"),
         ("invoke-stored-member-pointer-copy-from-parameter", '#include <functional>\nstruct X{int v;};int call(int X::*p,X&x){auto q=p;return std::invoke(q,x);}int main(){X x{3};return call(&X::v,x);}',
+         "TR0201"),
+        ("invoke-stored-member-pointer-move-from-parameter", '#include <functional>\n#include <utility>\nstruct X{int v;};int call(int X::*p,X&x){auto q=std::move(p);return std::invoke(q,x);}int main(){X x{3};return call(&X::v,x);}',
          "TR0201"),
         ("invoke-stored-member-function-pointer-rvalue-reference-parameter", '#include <functional>\nstruct X{int f(int&&v){return v;}};int main(){X x;auto p=&X::f;return std::invoke(p,x,3);}',
          "TR0201"),

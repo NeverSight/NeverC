@@ -956,9 +956,11 @@ const objects or declared-const fields. A local automatic member pointer whose
 sole initializer is an exact direct address of an admitted method or data field
 may be retained across statements and passed to `std::invoke`; the frontend
 authenticates and erases the variable, then emits the same direct method call or
-field projection. It may be copied through further exact same-type local
-automatic variables; every carrier in that initializer chain is authenticated
-and erased. Reassigning, returning, constructing a null member pointer or
+field projection. It may be copied or moved through further exact same-type
+local automatic variables, including through authenticated `std::move`,
+`std::forward`, `std::move_if_noexcept` and `std::as_const` adapters; every
+carrier in that initializer chain is authenticated and erased. Reassigning,
+returning, constructing a null member pointer or
 applying native `.*`/`->*` remains rejected. The selected libc++
 member-function or member-object dispatcher body, wrapper `get()` body and
 parameter flow are authenticated before the direct method call or field

@@ -346,7 +346,8 @@ A local automatic member pointer with one exact direct address of an
 admitted method or data field may also be retained across statements and passed
 to `std::invoke`; the frontend authenticates and erases that variable before
 emitting the same direct method call or field projection. Exact same-type local
-copy-initializer chains are authenticated and erased as well. Reassigned or null
+copy/move-initializer chains, including the admitted `<utility>` reference
+adapters, are authenticated and erased as well. Reassigned or null
 member pointers, `mem_fn` copies or moves from parameters, reassigned `mem_fn`
 objects, base adjustments,
 rvalue-reference or other reference signatures and
