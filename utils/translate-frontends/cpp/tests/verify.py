@@ -1926,8 +1926,8 @@ extern "C" int functional_stored_method_member(
   return std::invoke(add_chain, box, 2) + std::invoke(add, &constant, 1)
       + (Box{3, box.link}.*add)(2)
       + std::invoke(add_chain, Box{4, box.link}, 2)
-      + (Box{5, box.link}.*take)(2)
-      + std::invoke(take, Box{6, box.link}, 2)
+      + (Box{5, box.link}.*std::move(take))(2)
+      + std::invoke(std::as_const(take), Box{6, box.link}, 2)
       + (std::invoke(pass, constant, box.link) == box.link)
       + (pointer == constant.link) + (constant.*add_chain)(2)
       + (constant.*(&Box::add))(2)
@@ -1965,11 +1965,11 @@ struct Box {
 extern "C" int functional_stored_data_mem_fn(
     Box &box, const Box &constant) {
   auto value_pointer = &Box::value;
-  auto value = std::mem_fn(value_pointer);
+  auto value = std::mem_fn(std::move(value_pointer));
   const auto value_copy = value;
   auto value_chain = std::move(value_copy);
   auto fixed_pointer = &Box::fixed;
-  auto fixed = std::mem_fn(fixed_pointer);
+  auto fixed = std::mem_fn(std::as_const(fixed_pointer));
   auto link = std::mem_fn(&Box::link);
   value_chain(box) = 7;
   std::invoke(link, std::ref(box)) = constant.link;
@@ -2010,9 +2010,9 @@ struct Box {
 extern "C" int functional_stored_method_mem_fn(
     Box &box, const Box &constant) {
   auto add_pointer = &Box::add;
-  auto add = std::mem_fn(add_pointer);
+  auto add = std::mem_fn(std::as_const(add_pointer));
   auto take_pointer = &Box::take;
-  auto take = std::mem_fn(take_pointer);
+  auto take = std::mem_fn(std::move(take_pointer));
   auto add_move = std::move(add);
   auto add_forward = std::forward<decltype(add_move)>(add_move);
   auto add_conditional = std::move_if_noexcept(add_forward);
@@ -2216,6 +2216,8 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
         ("invoke-stored-member-pointer-copy-from-parameter", '#include <functional>\nstruct X{int v;};int call(int X::*p,X&x){auto q=p;return std::invoke(q,x);}int main(){X x{3};return call(&X::v,x);}',
          "TR0201"),
         ("invoke-stored-member-pointer-move-from-parameter", '#include <functional>\n#include <utility>\nstruct X{int v;};int call(int X::*p,X&x){auto q=std::move(p);return std::invoke(q,x);}int main(){X x{3};return call(&X::v,x);}',
+         "TR0201"),
+        ("invoke-member-pointer-use-adapter-from-parameter", '#include <functional>\n#include <utility>\nstruct X{int v;};int call(int X::*p,X&x){return std::invoke(std::move(p),x);}int main(){X x{3};return call(&X::v,x);}',
          "TR0201"),
         ("invoke-stored-member-function-pointer-rvalue-reference-parameter", '#include <functional>\nstruct X{int f(int&&v){return v;}};int main(){X x;auto p=&X::f;return std::invoke(p,x,3);}',
          "TR0201"),

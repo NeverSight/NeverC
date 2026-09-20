@@ -960,7 +960,9 @@ authenticates and erases the variable, then emits the same direct method call or
 field projection. It may be copied or moved through further exact same-type
 local automatic variables, including through authenticated `std::move`,
 `std::forward`, `std::move_if_noexcept` and `std::as_const` adapters; every
-carrier in that initializer chain is authenticated and erased. Reassigning,
+carrier in that initializer chain is authenticated and erased. The same
+adapters may wrap that authenticated pointer at its final `std::invoke`, native
+member operation or `std::mem_fn` factory use. Reassigning,
 returning or constructing a null member pointer remains rejected. An admitted
 direct address or stored data-member pointer may also be applied with native
 `.*` or `->*` to an exact-class lvalue, pointer or full-expression temporary,

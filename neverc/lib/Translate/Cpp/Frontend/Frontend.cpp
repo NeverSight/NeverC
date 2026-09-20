@@ -12919,6 +12919,9 @@ public:
           else if (const auto *Cast =
                        dyn_cast<ImplicitCastExpr>(FactoryArgument))
             FactoryArgument = Cast->getSubExpr();
+          else if (const auto *Adapter = dyn_cast<CallExpr>(FactoryArgument);
+                   Adapter && Adapter->getNumArgs() == 1)
+            FactoryArgument = Adapter->getArg(0);
           else
             break;
         }
@@ -13312,6 +13315,9 @@ public:
             else if (const auto *Cast =
                          dyn_cast<ImplicitCastExpr>(Expression))
               Expression = Cast->getSubExpr();
+            else if (const auto *Adapter = dyn_cast<CallExpr>(Expression);
+                     Adapter && Adapter->getNumArgs() == 1)
+              Expression = Adapter->getArg(0);
             else if (const auto *Address = dyn_cast<UnaryOperator>(Expression);
                      Address && Address->getOpcode() == UO_AddrOf)
               Expression = Address->getSubExpr();
@@ -13334,6 +13340,9 @@ public:
             else if (const auto *Cast =
                          dyn_cast<ImplicitCastExpr>(Expression))
               Expression = Cast->getSubExpr();
+            else if (const auto *Adapter = dyn_cast<CallExpr>(Expression);
+                     Adapter && Adapter->getNumArgs() == 1)
+              Expression = Adapter->getArg(0);
             else if (const auto *Operation =
                          dyn_cast<BinaryOperator>(Expression);
                      Operation &&
@@ -13391,6 +13400,9 @@ public:
             else if (const auto *Cast =
                          dyn_cast<ImplicitCastExpr>(Expression))
               Expression = Cast->getSubExpr();
+            else if (const auto *Adapter = dyn_cast<CallExpr>(Expression);
+                     Adapter && Adapter->getNumArgs() == 1)
+              Expression = Adapter->getArg(0);
             else if (const auto *Address = dyn_cast<UnaryOperator>(Expression);
                      Address && Address->getOpcode() == UO_AddrOf)
               Expression = Address->getSubExpr();

@@ -349,7 +349,9 @@ also be retained across statements and passed to `std::invoke`; the frontend
 authenticates and erases that variable before
 emitting the same direct method call or field projection. Exact same-type local
 copy/move-initializer chains, including the admitted `<utility>` reference
-adapters, are authenticated and erased as well. Direct addresses and stored
+adapters, are authenticated and erased as well. The same adapters may wrap the
+authenticated pointer at its final `std::invoke`, native member operation or
+`std::mem_fn` factory use. Direct addresses and stored
 data-member pointers in this form may also be applied with native `.*` or `->*`
 on an exact lvalue, pointer or full-expression temporary receiver, preserving
 the field glvalue category and the const qualification contributed by the field

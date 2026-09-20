@@ -34397,6 +34397,7 @@ TEST_F(TranslateTest,
   const auto Output = tmpFile("functional-member-temporary-receivers.nc");
   writeFile(Source, R"cpp(
 #include <functional>
+#include <utility>
 int drops;
 struct Box {
   int value;
@@ -34406,11 +34407,11 @@ struct Box {
 };
 int main() {
   auto add = &Box::add;
-  auto method_wrapper = std::mem_fn(add);
+  auto method_wrapper = std::mem_fn(std::as_const(add));
   auto take = &Box::take;
-  auto rvalue_wrapper = std::mem_fn(take);
+  auto rvalue_wrapper = std::mem_fn(std::move(take));
   auto value = &Box::value;
-  auto field_wrapper = std::mem_fn(value);
+  auto field_wrapper = std::mem_fn(std::move(value));
   int score = (Box{1}.*add)(2) == 3;
   score += drops == 1;
   score += std::invoke(add, Box{2}, 2) == 4;
@@ -34433,9 +34434,9 @@ int main() {
     score += view == 9;
   }
   score += drops == 9;
-  score += (Box{10}.*take)(2) == 12;
+  score += (Box{10}.*std::move(take))(2) == 12;
   score += drops == 10;
-  score += std::invoke(take, Box{11}, 2) == 13;
+  score += std::invoke(std::as_const(take), Box{11}, 2) == 13;
   score += drops == 11;
   score += rvalue_wrapper(Box{12}, 2) == 14;
   score += drops == 12;
@@ -34765,6 +34766,11 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "#include <functional>\n#include <utility>\nstruct X{int v;};"
        "int call(int X::*p,X&x){auto q=std::move(p);"
        "return std::invoke(q,x);}"
+       "int main(){X x{3};return call(&X::v,x);}",
+       "TR0201"},
+      {"invoke-member-pointer-use-adapter-from-parameter",
+       "#include <functional>\n#include <utility>\nstruct X{int v;};"
+       "int call(int X::*p,X&x){return std::invoke(std::move(p),x);}"
        "int main(){X x{3};return call(&X::v,x);}",
        "TR0201"},
       {"invoke-stored-member-function-pointer-rvalue-reference-parameter",

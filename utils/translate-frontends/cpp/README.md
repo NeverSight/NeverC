@@ -147,7 +147,8 @@ be retained across statements and passed to `std::invoke`; their storage is
 authenticated and erased before the same direct method call or field projection
 is emitted. Exact same-type local copy/move-initializer chains, including chains
 through the admitted `<utility>` reference adapters, are also authenticated and
-erased. Direct addresses and stored data-member pointers may also be applied
+erased. Those adapters may also wrap the authenticated pointer at its final
+`std::invoke`, native member operation or `std::mem_fn` factory use. Direct addresses and stored data-member pointers may also be applied
 with native `.*` or `->*` on an exact lvalue, pointer or full-expression
 temporary receiver, preserving the field glvalue and the const qualification
 contributed by the field or receiver. Temporary lifetime and native `.*`

@@ -6706,6 +6706,37 @@ approvedFunctionalStoredMemberPointer(
   return std::nullopt;
 }
 
+static std::pair<const UnaryOperator *, const ValueDecl *>
+functionalStoredMemberExpression(const State &S, const SourceManager &SM,
+                                 const Expr *Expression,
+                                 const ASTContext &Context) {
+  if (auto Direct = functionalMemberAddress(S, SM, Expression, Context);
+      Direct.first)
+    return Direct;
+  Expression = functionalInvokeStrippedExpression(Expression);
+  if (const auto *Adapter = dyn_cast_or_null<CallExpr>(Expression)) {
+    const auto Operation = approvedUtilityOperation(S, SM, Adapter, Context);
+    if (!Operation || Adapter->getNumArgs() != 1 ||
+        (*Operation != UtilityOperation::Move &&
+         *Operation != UtilityOperation::Forward &&
+         *Operation != UtilityOperation::MoveIfNoexcept &&
+         *Operation != UtilityOperation::AsConst))
+      return {};
+    Expression = functionalInvokeStrippedExpression(Adapter->getArg(0));
+    if (auto Direct = functionalMemberAddress(S, SM, Expression, Context);
+        Direct.first)
+      return Direct;
+  }
+  const auto *Reference = dyn_cast_or_null<DeclRefExpr>(Expression);
+  const auto *Variable =
+      Reference ? dyn_cast<VarDecl>(Reference->getDecl()) : nullptr;
+  const auto Stored =
+      approvedFunctionalStoredMemberPointer(S, SM, Variable, Context);
+  if (!Stored || !Reference || !S.owns(SM, Reference->getExprLoc()))
+    return {};
+  return {dyn_cast<UnaryOperator>(Stored->Address), Stored->Member};
+}
+
 std::optional<NativeDataMemberPointerAccess>
 approvedNativeDataMemberPointerAccess(
     const State &S, const SourceManager &SM, const BinaryOperator *Operation,
@@ -6715,19 +6746,8 @@ approvedNativeDataMemberPointerAccess(
       !Operation->isGLValue())
     return std::nullopt;
   const auto *Callable = Operation->getRHS();
-  auto [Address, Member] = functionalMemberAddress(S, SM, Callable, Context);
-  if (!Address) {
-    const auto *Reference = dyn_cast_or_null<DeclRefExpr>(
-        functionalInvokeStrippedExpression(Callable));
-    const auto *Variable =
-        Reference ? dyn_cast<VarDecl>(Reference->getDecl()) : nullptr;
-    const auto Stored =
-        approvedFunctionalStoredMemberPointer(S, SM, Variable, Context);
-    if (!Stored || !Reference || !S.owns(SM, Reference->getExprLoc()))
-      return std::nullopt;
-    Address = dyn_cast<UnaryOperator>(Stored->Address);
-    Member = Stored->Member;
-  }
+  const auto [Address, Member] =
+      functionalStoredMemberExpression(S, SM, Callable, Context);
   const auto *Field = dyn_cast_or_null<FieldDecl>(Member);
   const auto *MemberPointer =
       Callable->getType()->getAs<MemberPointerType>();
@@ -6817,23 +6837,8 @@ std::optional<FunctionalStoredMemFn> approvedFunctionalStoredMemFn(
           : nullptr;
   const auto *FactoryArgument =
       Factory && Factory->getNumArgs() == 1 ? Factory->getArg(0) : nullptr;
-  auto [Address, Member] =
-      functionalMemberAddress(S, SM, FactoryArgument, Context);
-  if (!Address) {
-    const auto *ArgumentReference = dyn_cast_or_null<DeclRefExpr>(
-        functionalInvokeStrippedExpression(FactoryArgument));
-    const auto *ArgumentVariable =
-        ArgumentReference
-            ? dyn_cast<VarDecl>(ArgumentReference->getDecl())
-            : nullptr;
-    const auto StoredPointer = approvedFunctionalStoredMemberPointer(
-        S, SM, ArgumentVariable, Context);
-    if (!StoredPointer || !ArgumentReference ||
-        !S.owns(SM, ArgumentReference->getExprLoc()))
-      return std::nullopt;
-    Address = dyn_cast<UnaryOperator>(StoredPointer->Address);
-    Member = StoredPointer->Member;
-  }
+  const auto [Address, Member] =
+      functionalStoredMemberExpression(S, SM, FactoryArgument, Context);
   const auto *Field = dyn_cast_or_null<FieldDecl>(Member);
   const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Member);
   if (!Factory || !Function || !Primary || !Pattern || !Reference ||
@@ -6994,19 +6999,8 @@ approvedNativeMemberPointerCall(
     return std::nullopt;
 
   const auto *Callable = Operation->getRHS();
-  auto [Address, Member] = functionalMemberAddress(S, SM, Callable, Context);
-  if (!Address) {
-    const auto *Reference = dyn_cast_or_null<DeclRefExpr>(
-        functionalInvokeStrippedExpression(Callable));
-    const auto *Variable =
-        Reference ? dyn_cast<VarDecl>(Reference->getDecl()) : nullptr;
-    const auto Stored =
-        approvedFunctionalStoredMemberPointer(S, SM, Variable, Context);
-    if (!Stored || !Reference || !S.owns(SM, Reference->getExprLoc()))
-      return std::nullopt;
-    Address = dyn_cast<UnaryOperator>(Stored->Address);
-    Member = Stored->Member;
-  }
+  const auto [Address, Member] =
+      functionalStoredMemberExpression(S, SM, Callable, Context);
   const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Member);
   const auto *MemberPointer =
       Callable->getType()->getAs<MemberPointerType>();
@@ -7354,16 +7348,8 @@ approvedFunctionalMemberInvokeCall(
   if (!MemFn)
     MemFn = approvedFunctionalInvokeMemFnDispatch(S, SM, Call, Context);
   const auto *WrittenCallable = MemFn ? MemFn->Callable : Call->getArg(0);
-  const auto *Callable = WrittenCallable;
-  const auto *StoredReference = dyn_cast_or_null<DeclRefExpr>(
-      functionalInvokeStrippedExpression(Callable));
-  const auto *StoredVariable =
-      StoredReference ? dyn_cast<VarDecl>(StoredReference->getDecl()) : nullptr;
-  if (auto Stored = approvedFunctionalStoredMemberPointer(
-          S, SM, StoredVariable, Context))
-    Callable = Stored->Address;
-  const auto *Address = dyn_cast_or_null<UnaryOperator>(
-      functionalInvokeStrippedExpression(Callable));
+  const auto [Address, ResolvedMember] = functionalStoredMemberExpression(
+      S, SM, WrittenCallable, Context);
   const auto *Reference =
       Address && Address->getOpcode() == UO_AddrOf
           ? dyn_cast<DeclRefExpr>(
@@ -7374,12 +7360,13 @@ approvedFunctionalMemberInvokeCall(
   const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Member);
   const auto *Field = dyn_cast_or_null<FieldDecl>(Member);
   const auto *MemberPointer =
-      Callable->getType()->getAs<MemberPointerType>();
+      WrittenCallable->getType()->getAs<MemberPointerType>();
   const auto *MemberClass =
       MemberPointer ? MemberPointer->getClass()->getAsCXXRecordDecl() : nullptr;
   const auto *Parent = Member ? dyn_cast<CXXRecordDecl>(Member->getDeclContext())
                               : nullptr;
-  if (!Address || !Reference || (!Method && !Field) || !MemberPointer ||
+  if (!Address || !Reference || Member != ResolvedMember ||
+      (!Method && !Field) || !MemberPointer ||
       !MemberClass || !Parent ||
       MemberClass->getCanonicalDecl() != Parent->getCanonicalDecl() ||
       !Context.hasSameType(MemberPointer->getPointeeType(),
