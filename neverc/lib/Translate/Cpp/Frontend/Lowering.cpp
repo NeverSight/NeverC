@@ -8876,6 +8876,9 @@ class FunctionLowering {
           L);
     }
     if (const auto *B = dyn_cast<BinaryOperator>(E)) {
+      if (A.S.coreV2() && approvedNativeDataMemberPointerAccess(
+                              A.S, A.Sources, B, A.Context))
+        return snapshot(lvalue(B), L);
       if (B->isAssignmentOp()) {
         auto Right = expression(B->getRHS());
         auto Left = lvalue(B->getLHS());

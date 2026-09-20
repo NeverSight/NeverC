@@ -350,7 +350,8 @@ emitting the same direct method call or field projection. Exact same-type local
 copy/move-initializer chains, including the admitted `<utility>` reference
 adapters, are authenticated and erased as well. Direct addresses and stored
 data-member pointers in this form may also be applied with native `.*` or `->*`
-on a non-const exact receiver, preserving the non-const field lvalue. Direct
+on an exact receiver, preserving the field lvalue and the const qualification
+contributed by the field or receiver. Direct
 addresses and stored member-function pointers may be called with native `.*` or `->*` on an exact
 object or pointer through the same fixed-arity argument and result boundary;
 const methods accept exact const receivers. Reassigned or null

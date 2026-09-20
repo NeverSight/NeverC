@@ -1858,9 +1858,12 @@ extern "C" int functional_stored_data_member(
   (&box)->*value = 7;
   std::invoke(value_chain, box) = 7;
   std::invoke(link_copy, std::ref(box)) = constant.link;
+  const int &native_view = constant.*value_chain;
   return std::invoke(value, &box)
       + std::invoke(fixed, constant)
-      + (std::invoke(link, std::cref(constant)) == constant.link);
+      + (std::invoke(link, std::cref(constant)) == constant.link)
+      + (constant.*value) + (constant.*(&Box::fixed))
+      + ((&constant)->*fixed) + (&native_view == &constant.value);
 }
 """
     functional_stored_data_member = check(
@@ -2203,7 +2206,7 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
          "TR0201"),
         ("native-member-pointer-from-parameter", 'struct X{int v;};int call(int X::*p,X&x){return x.*p;}int main(){X x{3};return call(&X::v,x);}',
          "TR0201"),
-        ("native-const-data-member-pointer", 'struct X{const int v;};int main(){const X x{3};auto p=&X::v;return x.*p;}',
+        ("native-volatile-data-member-pointer", 'struct X{int v;};int main(){volatile X x{3};auto p=&X::v;return x.*p;}',
          "TR0201"),
         ("native-null-data-member-pointer", 'struct X{int v;};int main(){X x{3};int X::*p=nullptr;return x.*p;}',
          "TR0201"),

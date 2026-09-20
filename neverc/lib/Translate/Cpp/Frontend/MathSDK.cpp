@@ -6734,7 +6734,6 @@ approvedNativeDataMemberPointerAccess(
       !Context.hasSameType(ObjectType.getUnqualifiedType().getTypePtr(),
                            MemberPointer->getClass()) ||
       !supportedFunctionalStoredMember(Context, Field) ||
-      Field->getType().isConstQualified() || ObjectType.isConstQualified() ||
       ObjectType.isVolatileQualified() || ObjectType.isRestrictQualified() ||
       ObjectType.getAddressSpace() != LangAS::Default)
     return std::nullopt;

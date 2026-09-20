@@ -34293,6 +34293,14 @@ int main() {
   score += std::invoke(value, &box) == 7;
   score += std::invoke(value_chain, &box) == 7;
   score += std::invoke(fixed, constant) == 13;
+  score += constant.*value == 5;
+  score += constant.*fixed == 13;
+  score += (&constant)->*value == 5;
+  score += constant.*(&Box::value) == 5;
+  score += constant.*(&Box::fixed) == 13;
+  score += (&constant)->*(&Box::fixed) == 13;
+  const int &native_view = constant.*value_chain;
+  score += &native_view == &constant.value;
   score += std::invoke(link, std::cref(constant)) == &second;
   std::invoke(link, std::ref(box)) = &second;
   score += box.link == &second;
@@ -34323,7 +34331,7 @@ int main() {
   ((&box)->*(&Box::slot))() = 14;
   score += box.value == 14;
   score += (constant.*(&Box::add))(2) == 7;
-  return score == 24 ? 0 : score;
+  return score == 31 ? 0 : score;
 }
 )cpp");
   auto Result =
@@ -34704,8 +34712,8 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "struct X{int v;};int call(int X::*p,X&x){return x.*p;}"
        "int main(){X x{3};return call(&X::v,x);}",
        "TR0201"},
-      {"native-const-data-member-pointer",
-       "struct X{const int v;};int main(){const X x{3};"
+      {"native-volatile-data-member-pointer",
+       "struct X{int v;};int main(){volatile X x{3};"
        "auto p=&X::v;return x.*p;}",
        "TR0201"},
       {"native-null-data-member-pointer",

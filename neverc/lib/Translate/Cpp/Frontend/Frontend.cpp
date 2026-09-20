@@ -13284,9 +13284,10 @@ public:
         EmptyVoidLists.insert(List);
     if (A.S.coreV2())
       if (const auto *Operation = dyn_cast<BinaryOperator>(S))
-        if (auto Access = approvedNativeDataMemberPointerAccess(
-                A.S, A.Sources, Operation, A.Context)) {
-          const Expr *Expression = Access->Callable;
+        if (Operation->getOpcode() == BO_PtrMemD ||
+            Operation->getOpcode() == BO_PtrMemI) {
+          ApprovedMemberPointerExpressions.insert(Operation);
+          const Expr *Expression = Operation->getRHS();
           while (Expression) {
             ApprovedMemberPointerExpressions.insert(Expression);
             if (const auto *Parentheses = dyn_cast<ParenExpr>(Expression))
