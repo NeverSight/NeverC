@@ -34469,15 +34469,20 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2FunctionalStoredDataMemFnRunsAtBothOptimizations) {
-  const auto Source = tmpFile("functional-stored-data-mem-fn.cpp");
-  const auto Output = tmpFile("functional-stored-data-mem-fn.nc");
+TEST_F(TranslateTest, CoreV2FunctionalStoredMemFnRunsAtBothOptimizations) {
+  const auto Source = tmpFile("functional-stored-mem-fn.cpp");
+  const auto Output = tmpFile("functional-stored-mem-fn.nc");
   writeFile(Source, R"cpp(
 #include <functional>
 struct Box {
   int value;
   const int fixed;
   int *link;
+  int add(short n) const { return value + n; }
+  int *pass(int *pointer) const { return pointer; }
+  void set(int n) { value = n; }
+  void redirect(int *&pointer) const { pointer = link; }
+  int &slot() { return value; }
 };
 int main() {
   int first = 17;
@@ -34487,6 +34492,11 @@ int main() {
   auto value = std::mem_fn(&Box::value);
   auto fixed = std::mem_fn(&Box::fixed);
   auto link = std::mem_fn(&Box::link);
+  auto add = std::mem_fn(&Box::add);
+  auto pass = std::mem_fn(&Box::pass);
+  auto set = std::mem_fn(&Box::set);
+  auto redirect = std::mem_fn(&Box::redirect);
+  auto slot = std::mem_fn(&Box::slot);
   value(box) = 7;
   int score = 0;
   score += value(&box) == 7;
@@ -34494,7 +34504,17 @@ int main() {
   score += link(std::cref(constant)) == &second;
   std::invoke(link, std::ref(box)) = &second;
   score += box.link == &second;
-  return score == 4 ? 0 : score;
+  set(&box, 9);
+  score += box.value == 9;
+  slot(std::ref(box)) = 11;
+  score += box.value == 11;
+  int *cursor = &first;
+  std::invoke(redirect, std::cref(constant), cursor);
+  score += cursor == &second;
+  score += add(box, 2) == 13;
+  score += std::invoke(add, &constant, 1) == 6;
+  score += pass(constant, &first) == &first;
+  return score == 10 ? 0 : score;
 }
 )cpp");
   auto Result =
@@ -34507,7 +34527,7 @@ int main() {
   for (const std::string &Optimization : {"-O0", "-O2"}) {
     SCOPED_TRACE(Optimization);
     const auto Executable =
-        tmpFile("functional-stored-data-mem-fn" + Optimization);
+        tmpFile("functional-stored-mem-fn" + Optimization);
     auto Compile = compileGenerated(Output, Executable, Optimization);
     ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
     auto Run = exec(Executable.string(), {});
@@ -34642,9 +34662,9 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "#include <functional>\nstruct X{int v,w;};int main(){X x{3,4};"
        "auto get=std::mem_fn(&X::v);get=std::mem_fn(&X::w);return get(x);}",
        "TR0203"},
-      {"stored-method-mem-fn",
-       "#include <functional>\nstruct X{int f(){return 3;}};int main(){X x;"
-       "auto get=std::mem_fn(&X::f);return get(x);}",
+      {"stored-mem-fn-rvalue-reference-parameter",
+       "#include <functional>\nstruct X{int f(int&&v){return v;}};"
+       "int main(){X x;auto get=std::mem_fn(&X::f);return get(x,3);}",
        "TR0203"},
       {"mem-fn-function-pointer-field",
        "#include <functional>\nint f(){return 3;}struct X{int(*p)();};"

@@ -376,7 +376,7 @@ struct FunctionalStoredMemFn {
   const clang::VarDecl *Variable;
   const clang::CallExpr *Factory;
   const clang::Expr *Address;
-  const clang::FieldDecl *Field;
+  const clang::ValueDecl *Member;
 };
 std::optional<FunctionalStoredMemFn> approvedFunctionalStoredMemFn(
     const State &S, const clang::SourceManager &SM,

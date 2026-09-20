@@ -1905,6 +1905,47 @@ extern "C" int functional_stored_data_mem_fn(
             profile="cpp-core-v2", target=target, sdk=True)
         assert not [node for node in walk(target_result["functions"])
                     if node.get("op") in ("call", "mapped_call")], target_result
+    functional_stored_method_mem_fn_source = """\
+#include <functional>
+struct Box {
+  int value;
+  int *link;
+  int add(short n) const { return value + n; }
+  int *pass(int *pointer) const { return pointer; }
+  void set(int n) { value = n; }
+  void redirect(int *&pointer) const { pointer = link; }
+  int &slot() { return value; }
+};
+extern "C" int functional_stored_method_mem_fn(
+    Box &box, const Box &constant) {
+  auto add = std::mem_fn(&Box::add);
+  auto pass = std::mem_fn(&Box::pass);
+  auto set = std::mem_fn(&Box::set);
+  auto redirect = std::mem_fn(&Box::redirect);
+  auto slot = std::mem_fn(&Box::slot);
+  set(&box, 7);
+  slot(std::ref(box)) = 9;
+  int *pointer = box.link;
+  std::invoke(redirect, std::cref(constant), pointer);
+  return add(box, 2) + std::invoke(add, &constant, 1)
+      + (pass(constant, box.link) == box.link) + (pointer == constant.link);
+}
+"""
+    functional_stored_method_mem_fn = check(
+        "v2-functional-stored-method-mem-fn",
+        functional_stored_method_mem_fn_source,
+        profile="cpp-core-v2", sdk=True)
+    assert any(function["name"] == "functional_stored_method_mem_fn"
+               for function in functional_stored_method_mem_fn["functions"]), functional_stored_method_mem_fn
+    assert not [node for node in walk(functional_stored_method_mem_fn["functions"])
+                if node.get("op") in ("mapped_call", "indirect_call")], functional_stored_method_mem_fn
+    for target in sdk_targets:
+        target_result = check(
+            "v2-functional-stored-method-mem-fn-" + target,
+            functional_stored_method_mem_fn_source,
+            profile="cpp-core-v2", target=target, sdk=True)
+        assert not [node for node in walk(target_result["functions"])
+                    if node.get("op") in ("mapped_call", "indirect_call")], target_result
     functional_mem_fn_source = """\
 #include <functional>
 struct Box {
@@ -2092,7 +2133,7 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
          "TR0203"),
         ("stored-mem-fn-reassignment", '#include <functional>\nstruct X{int v,w;};int main(){X x{3,4};auto get=std::mem_fn(&X::v);get=std::mem_fn(&X::w);return get(x);}',
          "TR0203"),
-        ("stored-method-mem-fn", '#include <functional>\nstruct X{int f(){return 3;}};int main(){X x;auto get=std::mem_fn(&X::f);return get(x);}',
+        ("stored-mem-fn-rvalue-reference-parameter", '#include <functional>\nstruct X{int f(int&&v){return v;}};int main(){X x;auto get=std::mem_fn(&X::f);return get(x,3);}',
          "TR0203"),
         ("mem-fn-function-pointer-field", '#include <functional>\nint f(){return 3;}struct X{int(*p)();};int main(){X x{f};return std::mem_fn(&X::p)(x)();}',
          "TR0203"),
