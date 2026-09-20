@@ -1872,6 +1872,39 @@ extern "C" int functional_stored_data_member(
             profile="cpp-core-v2", target=target, sdk=True)
         assert not [node for node in walk(target_result["functions"])
                     if node.get("op") in ("call", "mapped_call")], target_result
+    functional_stored_data_mem_fn_source = """\
+#include <functional>
+struct Box {
+  int value;
+  const int fixed;
+  int *link;
+};
+extern "C" int functional_stored_data_mem_fn(
+    Box &box, const Box &constant) {
+  auto value = std::mem_fn(&Box::value);
+  auto fixed = std::mem_fn(&Box::fixed);
+  auto link = std::mem_fn(&Box::link);
+  value(box) = 7;
+  std::invoke(link, std::ref(box)) = constant.link;
+  return value(&box) + std::invoke(fixed, constant)
+      + (link(std::cref(constant)) == constant.link);
+}
+"""
+    functional_stored_data_mem_fn = check(
+        "v2-functional-stored-data-mem-fn",
+        functional_stored_data_mem_fn_source,
+        profile="cpp-core-v2", sdk=True)
+    assert any(function["name"] == "functional_stored_data_mem_fn"
+               for function in functional_stored_data_mem_fn["functions"]), functional_stored_data_mem_fn
+    assert not [node for node in walk(functional_stored_data_mem_fn["functions"])
+                if node.get("op") in ("call", "mapped_call")], functional_stored_data_mem_fn
+    for target in sdk_targets:
+        target_result = check(
+            "v2-functional-stored-data-mem-fn-" + target,
+            functional_stored_data_mem_fn_source,
+            profile="cpp-core-v2", target=target, sdk=True)
+        assert not [node for node in walk(target_result["functions"])
+                    if node.get("op") in ("call", "mapped_call")], target_result
     functional_mem_fn_source = """\
 #include <functional>
 struct Box {
@@ -2055,9 +2088,11 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
          "TR0203"),
         ("invoke-member-function-pointer-reference", '#include <functional>\nint f(){return 3;}struct X{void set(int(*&p)()){p=f;}};int main(){X x;int(*p)()=f;std::invoke(&X::set,x,p);return p();}',
          "TR0203"),
-        ("stored-mem-fn", '#include <functional>\nstruct X{int v;};int main(){X x{3};auto get=std::mem_fn(&X::v);return get(x);}',
+        ("stored-mem-fn-copy", '#include <functional>\nstruct X{int v;};int main(){X x{3};auto get=std::mem_fn(&X::v);auto q=get;return q(x);}',
          "TR0203"),
-        ("invoke-stored-mem-fn", '#include <functional>\nstruct X{int v;};int main(){X x{3};auto get=std::mem_fn(&X::v);return std::invoke(get,x);}',
+        ("stored-mem-fn-reassignment", '#include <functional>\nstruct X{int v,w;};int main(){X x{3,4};auto get=std::mem_fn(&X::v);get=std::mem_fn(&X::w);return get(x);}',
+         "TR0203"),
+        ("stored-method-mem-fn", '#include <functional>\nstruct X{int f(){return 3;}};int main(){X x;auto get=std::mem_fn(&X::f);return get(x);}',
          "TR0203"),
         ("mem-fn-function-pointer-field", '#include <functional>\nint f(){return 3;}struct X{int(*p)();};int main(){X x{f};return std::mem_fn(&X::p)(x)();}',
          "TR0203"),

@@ -961,18 +961,21 @@ member-function or member-object dispatcher body, wrapper `get()` body and
 parameter flow are authenticated before the direct method call or field
 projection is emitted.
 
-An exact temporary returned by `std::mem_fn` from either admitted direct named
-address may be called immediately, directly or as the callable of
-`std::invoke`, through the same receiver, argument and result boundary. The
-pinned `__mem_fn` specialization, stored member field, factory, call operator,
-both `__invoke` layers and every forwarding edge are authenticated before the
-temporary wrapper is erased. Storing or copying a `mem_fn` object remains
-outside the runtime boundary.
+An exact `std::mem_fn` wrapper built from either admitted direct named address
+may be called immediately, directly or as the callable of `std::invoke`,
+through the same receiver, argument and result boundary. A wrapper for an
+admitted data field may also be retained in a directly initialized local
+automatic variable, then called directly or through `std::invoke`. The pinned
+`__mem_fn` specialization, stored member field, factory, call operator, both
+`__invoke` layers and every forwarding edge are authenticated before the
+wrapper and any local carrier are erased. Copying or reassigning that carrier,
+and storing a method wrapper, remain outside the runtime boundary.
 
 Cv-qualified typed template arguments, addresses or pointers to function
 objects, user-defined operands, `long double`, `std::function`, binders and searchers do
 not yet lower. Stored member-function pointers, copied, reassigned or null
-data-member pointers, stored `mem_fn` objects, base-adjusting receivers, volatile
+data-member pointers, copied or reassigned data-field `mem_fn` objects, stored
+method `mem_fn` objects, base-adjusting receivers, volatile
 receivers, user-defined callable objects, function referents, rvalue-reference or
 other reference signatures and variadic targets remain
 outside the `std::invoke` boundary.

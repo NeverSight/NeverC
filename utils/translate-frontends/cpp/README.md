@@ -143,11 +143,14 @@ pointer or `std::reference_wrapper` receivers; fields retain their qualified
 lvalue result, including reads of declared-const fields. Exact directly
 initialized local data-member pointers may also be retained across statements
 and passed to `std::invoke`; their storage is authenticated and erased before
-the same direct field projection is emitted. Exact temporary
+the same direct field projection is emitted. Exact
 `std::mem_fn` wrappers built from those direct named addresses may be called
 immediately, directly or as the callable of `std::invoke`, through the same
-boundary. Stored member-function pointers, copied, reassigned or null
-data-member pointers, stored `mem_fn` objects, base adjustments, volatile receivers, user-defined callable objects,
+boundary. A directly initialized local wrapper for a data field may also be
+retained across statements and called directly or through `std::invoke`; its
+authenticated carrier is erased. Stored member-function pointers, copied,
+reassigned or null data-member pointers, copied or reassigned data-field
+`mem_fn` objects, stored method `mem_fn` objects, base adjustments, volatile receivers, user-defined callable objects,
 and rvalue-reference, other reference or variadic function signatures stay
 outside this boundary. Object-pointer values and exact scalar or object-pointer
 lvalue-reference parameters and results are preserved. The

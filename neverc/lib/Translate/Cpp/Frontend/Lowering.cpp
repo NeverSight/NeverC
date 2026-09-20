@@ -10242,6 +10242,9 @@ class FunctionLowering {
     if (A.S.coreV2() && approvedFunctionalStoredMemberPointer(
                             A.S, A.Sources, V, A.Context))
       return;
+    if (A.S.coreV2() && approvedFunctionalStoredMemFn(
+                            A.S, A.Sources, V, A.Context))
+      return;
     if (A.S.coreV2() && V->isStaticLocal()) {
       if (A.DynamicStaticObjects.count(V->getCanonicalDecl()) || needsDestruction(V->getType()))
         initializeStatic(V, V->getInit());
@@ -10289,6 +10292,8 @@ class FunctionLowering {
       for (const auto *Declaration : D->decls())
         if (const auto *V = dyn_cast<VarDecl>(Declaration)) {
           if (!(A.S.coreV2() && approvedFunctionalStoredMemberPointer(
+                                  A.S, A.Sources, V, A.Context)) &&
+              !(A.S.coreV2() && approvedFunctionalStoredMemFn(
                                   A.S, A.Sources, V, A.Context)))
             localStorage(V);
         }

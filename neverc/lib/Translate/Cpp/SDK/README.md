@@ -334,16 +334,19 @@ boundary, including object-pointer values and exact scalar or object-pointer
 lvalue-reference parameters and results. A
 direct source-written address of an admitted non-volatile scalar or object-pointer field,
 including a declared-const field, may be invoked on the same receivers and
-retains its qualified lvalue result. An exact temporary returned by
-`std::mem_fn` from either admitted direct named address may be called
-immediately, either directly or as the callable of `std::invoke`, through the
-same receiver, argument and result boundary; both authenticated dispatch
-layers and the wrapper are erased. A local automatic data-member pointer with
+retains its qualified lvalue result. An exact `std::mem_fn` wrapper built from
+either admitted direct named address may be called immediately, either directly
+or as the callable of `std::invoke`, through the same receiver, argument and
+result boundary. A wrapper for a data field may also be retained in one
+directly initialized local automatic variable and called through either form;
+both authenticated dispatch layers, the wrapper and its local carrier are
+erased. A local automatic data-member pointer with
 one direct named-field initializer may also be retained across statements and
 passed to `std::invoke`; the frontend authenticates and erases that variable
 before emitting the same field projection. Stored member-function pointers,
-copied, reassigned or null data-member pointers, stored `mem_fn`
-objects, base adjustments, rvalue-reference or other reference signatures and
+copied, reassigned or null data-member pointers, copied or reassigned data-field
+`mem_fn` objects, stored method `mem_fn` objects, base adjustments,
+rvalue-reference or other reference signatures and
 volatile receivers remain outside this boundary.
 Core v2 never admits the `platform` root.
 Math v1 continues to use its separately checked libc++, resource and Darwin

@@ -7665,6 +7665,17 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
 
 public:
   explicit Allowlist(Adapter &A) : A(A) {}
+  bool TraverseVarDecl(VarDecl *D) {
+    if (A.S.coreV2() && owned(D) &&
+        approvedFunctionalStoredMemFn(A.S, A.Sources, D, A.Context)) {
+      // The deduced __mem_fn specialization is an authenticated, erased
+      // carrier. Its `auto` declaration has no written template arguments to
+      // validate, so traverse the initializer without treating the carrier as
+      // source-level record storage.
+      return WalkUpFromVarDecl(D) && TraverseStmt(D->getInit());
+    }
+    return RecursiveASTVisitor<Allowlist>::TraverseVarDecl(D);
+  }
   bool TraverseType(QualType T) {
     if (A.S.coreV2() && !T.isNull()) {
       const Expr *Root = nullptr;
@@ -12842,6 +12853,43 @@ public:
     if (A.S.coreV2())
       if (auto Stored = approvedFunctionalStoredMemberPointer(
               A.S, A.Sources, D, A.Context)) {
+        const Expr *Expression = Stored->Address;
+        while (Expression) {
+          ApprovedMemberPointerExpressions.insert(Expression);
+          if (const auto *Parentheses = dyn_cast<ParenExpr>(Expression))
+            Expression = Parentheses->getSubExpr();
+          else if (const auto *Cleanup =
+                       dyn_cast<ExprWithCleanups>(Expression))
+            Expression = Cleanup->getSubExpr();
+          else if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Expression))
+            Expression = Cast->getSubExpr();
+          else if (const auto *Address = dyn_cast<UnaryOperator>(Expression);
+                   Address && Address->getOpcode() == UO_AddrOf)
+            Expression = Address->getSubExpr();
+          else
+            break;
+        }
+        return true;
+      }
+    if (A.S.coreV2())
+      if (auto Stored = approvedFunctionalStoredMemFn(
+              A.S, A.Sources, D, A.Context)) {
+        ApprovedErasedUtilityCalls.insert(Stored->Factory);
+        if (const auto *Leaf = directFunctionReference(Stored->Factory)) {
+          DirectTemplateCallLocations.emplace(
+              Leaf, Stored->Factory->getCallee()->getExprLoc());
+          const Expr *Callee = Stored->Factory->getCallee();
+          while (true) {
+            DirectFunctionCallees.insert(Callee);
+            ApprovedUtilityCallees.insert(Callee);
+            if (Callee == Leaf)
+              break;
+            if (const auto *Parentheses = dyn_cast<ParenExpr>(Callee))
+              Callee = Parentheses->getSubExpr();
+            else
+              Callee = cast<ImplicitCastExpr>(Callee)->getSubExpr();
+          }
+        }
         const Expr *Expression = Stored->Address;
         while (Expression) {
           ApprovedMemberPointerExpressions.insert(Expression);

@@ -34469,6 +34469,52 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2FunctionalStoredDataMemFnRunsAtBothOptimizations) {
+  const auto Source = tmpFile("functional-stored-data-mem-fn.cpp");
+  const auto Output = tmpFile("functional-stored-data-mem-fn.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+struct Box {
+  int value;
+  const int fixed;
+  int *link;
+};
+int main() {
+  int first = 17;
+  int second = 19;
+  Box box{3, 8, &first};
+  const Box constant{5, 13, &second};
+  auto value = std::mem_fn(&Box::value);
+  auto fixed = std::mem_fn(&Box::fixed);
+  auto link = std::mem_fn(&Box::link);
+  value(box) = 7;
+  int score = 0;
+  score += value(&box) == 7;
+  score += std::invoke(fixed, constant) == 13;
+  score += link(std::cref(constant)) == &second;
+  std::invoke(link, std::ref(box)) = &second;
+  score += box.link == &second;
+  return score == 4 ? 0 : score;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  EXPECT_EQ(Generated.find("indirect_call"), std::string::npos);
+  EXPECT_EQ(Generated.find("member_pointer"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-stored-data-mem-fn" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
   struct Rejection {
     const char *Name;
@@ -34588,13 +34634,17 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "void set(int(*&p)()){p=f;}};int main(){X x;int(*p)()=f;"
        "std::invoke(&X::set,x,p);return p();}",
        "TR0203"},
-      {"stored-mem-fn",
+      {"stored-mem-fn-copy",
        "#include <functional>\nstruct X{int v;};int main(){X x{3};"
-       "auto get=std::mem_fn(&X::v);return get(x);}",
+       "auto get=std::mem_fn(&X::v);auto q=get;return q(x);}",
        "TR0203"},
-      {"invoke-stored-mem-fn",
-       "#include <functional>\nstruct X{int v;};int main(){X x{3};"
-       "auto get=std::mem_fn(&X::v);return std::invoke(get,x);}",
+      {"stored-mem-fn-reassignment",
+       "#include <functional>\nstruct X{int v,w;};int main(){X x{3,4};"
+       "auto get=std::mem_fn(&X::v);get=std::mem_fn(&X::w);return get(x);}",
+       "TR0203"},
+      {"stored-method-mem-fn",
+       "#include <functional>\nstruct X{int f(){return 3;}};int main(){X x;"
+       "auto get=std::mem_fn(&X::f);return get(x);}",
        "TR0203"},
       {"mem-fn-function-pointer-field",
        "#include <functional>\nint f(){return 3;}struct X{int(*p)();};"

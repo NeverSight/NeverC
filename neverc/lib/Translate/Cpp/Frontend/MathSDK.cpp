@@ -6560,24 +6560,26 @@ static const Expr *functionalInvokeStrippedExpression(const Expr *Expression) {
 static bool supportedFunctionalMemberValue(const ASTContext &Context,
                                            QualType Type);
 
-std::optional<FunctionalStoredMemberPointer>
-approvedFunctionalStoredMemberPointer(
-    const State &S, const SourceManager &SM, const VarDecl *Variable,
-    const ASTContext &Context) {
-  if (!Variable || Variable->getKind() != Decl::Var ||
-      Variable->isImplicit() || Variable->hasAttrs() ||
-      Variable->getStorageClass() != SC_None || !Variable->isLocalVarDecl() ||
-      !Variable->hasLocalStorage() || Variable->isStaticLocal() ||
-      Variable->hasExternalStorage() ||
-      Variable->getTLSKind() != VarDecl::TLS_None ||
-      Variable->getType().isVolatileQualified() ||
-      Variable->getType().isRestrictQualified() ||
-      !S.owns(SM, Variable->getLocation()))
-    return std::nullopt;
-  const auto *MemberPointer =
-      Variable->getType()->getAs<MemberPointerType>();
+static bool functionalErasedLocalVariable(const State &S,
+                                          const SourceManager &SM,
+                                          const VarDecl *Variable) {
+  return Variable && Variable->getKind() == Decl::Var &&
+         !Variable->isImplicit() && !Variable->hasAttrs() &&
+         Variable->getStorageClass() == SC_None &&
+         Variable->isLocalVarDecl() && Variable->hasLocalStorage() &&
+         !Variable->isStaticLocal() && !Variable->hasExternalStorage() &&
+         Variable->getTLSKind() == VarDecl::TLS_None &&
+         !Variable->getType().isVolatileQualified() &&
+         !Variable->getType().isRestrictQualified() &&
+         S.owns(SM, Variable->getLocation());
+}
+
+static std::pair<const UnaryOperator *, const FieldDecl *>
+functionalDataMemberAddress(const State &S, const SourceManager &SM,
+                            const Expr *Expression,
+                            const ASTContext &Context) {
   const auto *Address = dyn_cast_or_null<UnaryOperator>(
-      functionalInvokeStrippedExpression(Variable->getInit()));
+      functionalInvokeStrippedExpression(Expression));
   const auto *Reference =
       Address && Address->getOpcode() == UO_AddrOf
           ? dyn_cast<DeclRefExpr>(functionalInvokeStrippedExpression(
@@ -6585,26 +6587,107 @@ approvedFunctionalStoredMemberPointer(
           : nullptr;
   const auto *Field =
       Reference ? dyn_cast<FieldDecl>(Reference->getDecl()) : nullptr;
+  const auto *MemberPointer =
+      Address ? Address->getType()->getAs<MemberPointerType>() : nullptr;
   const auto *MemberClass =
       MemberPointer ? MemberPointer->getClass()->getAsCXXRecordDecl() : nullptr;
   const auto *Parent =
       Field ? dyn_cast<CXXRecordDecl>(Field->getDeclContext()) : nullptr;
   const auto FieldType = Field ? Field->getType() : QualType();
-  if (!MemberPointer || !Address || !Reference || !Field || !MemberClass ||
+  if (!Address || !Reference || !Field || !MemberPointer || !MemberClass ||
       !Parent || Field->isBitField() || FieldType.isVolatileQualified() ||
       FieldType.isRestrictQualified() ||
       FieldType.getAddressSpace() != LangAS::Default ||
       !supportedFunctionalMemberValue(Context,
                                       FieldType.getUnqualifiedType()) ||
-      !Context.hasSameUnqualifiedType(Variable->getType(),
-                                      Address->getType()) ||
       MemberClass->getCanonicalDecl() != Parent->getCanonicalDecl() ||
       !Context.hasSameType(MemberPointer->getPointeeType(), FieldType) ||
       !S.owns(SM, Address->getOperatorLoc()) ||
       !S.owns(SM, Reference->getExprLoc()) ||
       !S.owns(SM, Field->getLocation()))
+    return {};
+  return {Address, Field};
+}
+
+std::optional<FunctionalStoredMemberPointer>
+approvedFunctionalStoredMemberPointer(
+    const State &S, const SourceManager &SM, const VarDecl *Variable,
+    const ASTContext &Context) {
+  if (!functionalErasedLocalVariable(S, SM, Variable))
+    return std::nullopt;
+  const auto *MemberPointer =
+      Variable->getType()->getAs<MemberPointerType>();
+  const auto [Address, Field] =
+      functionalDataMemberAddress(S, SM, Variable->getInit(), Context);
+  if (!MemberPointer || !Address || !Field ||
+      !Context.hasSameUnqualifiedType(Variable->getType(),
+                                      Address->getType()))
     return std::nullopt;
   return FunctionalStoredMemberPointer{Variable, Address, Field};
+}
+
+std::optional<FunctionalStoredMemFn> approvedFunctionalStoredMemFn(
+    const State &S, const SourceManager &SM, const VarDecl *Variable,
+    const ASTContext &Context) {
+  if (!functionalErasedLocalVariable(S, SM, Variable))
+    return std::nullopt;
+  const auto *Factory = dyn_cast_or_null<CallExpr>(
+      functionalInvokeStrippedExpression(Variable->getInit()));
+  const auto *Function = Factory ? Factory->getDirectCallee() : nullptr;
+  const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+  const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+  const auto *Reference =
+      dyn_cast_or_null<DeclRefExpr>(Factory ? directFunctionReference(Factory)
+                                           : nullptr);
+  const auto *Arguments =
+      Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  const auto *Record = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      Factory && Factory->getType()->getAsCXXRecordDecl()
+          ? Factory->getType()->getAsCXXRecordDecl()->getDefinition()
+          : nullptr);
+  const auto *Stored =
+      Record && std::distance(Record->field_begin(), Record->field_end()) == 1
+          ? *Record->field_begin()
+          : nullptr;
+  const auto [Address, Field] =
+      Factory && Factory->getNumArgs() == 1
+          ? functionalDataMemberAddress(S, SM, Factory->getArg(0), Context)
+          : std::pair<const UnaryOperator *, const FieldDecl *>{};
+  if (!Factory || !Function || !Primary || !Pattern || !Reference ||
+      !Arguments || !Record || !Stored || !Address || !Field ||
+      Function->getNumParams() != 1 || Function->isVariadic() ||
+      !Function->isInlined() || !Function->hasBody() || !Pattern->hasBody() ||
+      !Function->getIdentifier() || Function->getName() != "mem_fn" ||
+      !Factory->isPRValue() || Record->getName() != "__mem_fn" ||
+      Record->isUnion() || Record->isDependentContext() ||
+      !Stored->getIdentifier() || Stored->getName() != "__f_" ||
+      !Stored->getType()->isMemberPointerType() ||
+      !Context.hasSameUnqualifiedType(Variable->getType(), Factory->getType()) ||
+      !Context.hasSameType(Function->getReturnType(), Factory->getType()) ||
+      !Context.hasSameType(Function->getParamDecl(0)->getType(),
+                           Stored->getType()) ||
+      !Context.hasSameType(Factory->getArg(0)->getType(), Stored->getType()) ||
+      Arguments->size() != 2 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      Arguments->get(1).getKind() != TemplateArgument::Type ||
+      !approvedStandardSDKDeclaration(S, SM, Function) ||
+      !approvedStandardSDKDeclaration(S, SM, Primary) ||
+      !approvedStandardSDKDeclaration(S, SM, Pattern) ||
+      !approvedStandardSDKDeclaration(S, SM, Reference->getDecl()) ||
+      !approvedStandardSDKDeclaration(S, SM, Record) ||
+      !approvedStandardSDKDeclaration(S, SM, Stored) ||
+      !cstddefOrigin(S, SM, Function->getLocation(), "libcxx",
+                     "__functional/mem_fn.h") ||
+      !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
+                     "__functional/mem_fn.h") ||
+      !cstddefOrigin(S, SM, Pattern->getLocation(), "libcxx",
+                     "__functional/mem_fn.h") ||
+      !cstddefOrigin(S, SM, Record->getLocation(), "libcxx",
+                     "__functional/mem_fn.h") ||
+      !cstddefOrigin(S, SM, Stored->getLocation(), "libcxx",
+                     "__functional/mem_fn.h"))
+    return std::nullopt;
+  return FunctionalStoredMemFn{Variable, Factory, Address, Field};
 }
 
 static bool functionalInvokeParameterReference(
@@ -6795,16 +6878,24 @@ approvedFunctionalMemFnDispatch(const State &S, const SourceManager &SM,
   }
 
   const auto *Object = functionalInvokeStrippedExpression(Call->getArg(0));
+  const auto *StoredReference = dyn_cast_or_null<DeclRefExpr>(Object);
+  const auto *StoredVariable =
+      StoredReference ? dyn_cast<VarDecl>(StoredReference->getDecl()) : nullptr;
+  const auto StoredObject = approvedFunctionalStoredMemFn(
+      S, SM, StoredVariable, Context);
   const auto *Factory = SuppliedFactory
                             ? SuppliedFactory
-                            : dyn_cast_or_null<CallExpr>(Object);
+                            : StoredObject
+                                  ? StoredObject->Factory
+                                  : dyn_cast_or_null<CallExpr>(Object);
   const auto *FactoryFunction = Factory ? Factory->getDirectCallee() : nullptr;
   const auto *FactoryPrimary =
       FactoryFunction ? FactoryFunction->getPrimaryTemplate() : nullptr;
   const auto *FactoryPattern =
       FactoryPrimary ? FactoryPrimary->getTemplatedDecl() : nullptr;
   const auto *FactoryReference =
-      dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Factory));
+      dyn_cast_or_null<DeclRefExpr>(Factory ? directFunctionReference(Factory)
+                                           : nullptr);
   const auto *FactoryArguments =
       FactoryFunction ? FactoryFunction->getTemplateSpecializationArgs()
                       : nullptr;
@@ -6894,8 +6985,17 @@ approvedFunctionalInvokeMemFnDispatch(const State &S,
                                       const ASTContext &Context) {
   if (!Call || Call->getNumArgs() < 2)
     return std::nullopt;
-  const auto *Factory = dyn_cast_or_null<CallExpr>(
-      functionalInvokeStrippedExpression(Call->getArg(0)));
+  const auto *FactoryExpression =
+      functionalInvokeStrippedExpression(Call->getArg(0));
+  const auto *StoredReference =
+      dyn_cast_or_null<DeclRefExpr>(FactoryExpression);
+  const auto *StoredVariable =
+      StoredReference ? dyn_cast<VarDecl>(StoredReference->getDecl()) : nullptr;
+  const auto StoredObject = approvedFunctionalStoredMemFn(
+      S, SM, StoredVariable, Context);
+  const auto *Factory = StoredObject
+                            ? StoredObject->Factory
+                            : dyn_cast_or_null<CallExpr>(FactoryExpression);
   const auto *OuterDispatch = approvedFunctionalInvokeDispatch(
       S, SM, Call, Context, Call->isLValue());
   const auto *OuterFunction =

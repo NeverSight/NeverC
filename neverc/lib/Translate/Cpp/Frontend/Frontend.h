@@ -372,6 +372,15 @@ std::optional<FunctionalStoredMemberPointer>
 approvedFunctionalStoredMemberPointer(
     const State &S, const clang::SourceManager &SM,
     const clang::VarDecl *Variable, const clang::ASTContext &Context);
+struct FunctionalStoredMemFn {
+  const clang::VarDecl *Variable;
+  const clang::CallExpr *Factory;
+  const clang::Expr *Address;
+  const clang::FieldDecl *Field;
+};
+std::optional<FunctionalStoredMemFn> approvedFunctionalStoredMemFn(
+    const State &S, const clang::SourceManager &SM,
+    const clang::VarDecl *Variable, const clang::ASTContext &Context);
 std::optional<FunctionalMemberInvokeCall>
 approvedFunctionalMemberInvokeCall(
     const State &S, const clang::SourceManager &SM,
