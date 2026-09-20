@@ -455,6 +455,7 @@ enum class UtilityOperation {
   Forward,
   MoveIfNoexcept,
   AsConst,
+  FunctionalInvoke,
   NewLaunder,
   MemoryDefaultDelete,
   MemoryUniquePtrGet,

@@ -1506,6 +1506,29 @@ class FunctionLowering {
       // portable IR keeps the same storage designator; the selected outer
       // constructor/binding still observes Clang's checked result category.
       return lvalue(Call->getArg(0));
+    case UtilityOperation::FunctionalInvoke: {
+      auto CallableType = Call->getArg(0)->getType();
+      const auto *Prototype =
+          CallableType->isFunctionType()
+              ? CallableType->getAs<FunctionProtoType>()
+              : CallableType->getPointeeType()->getAs<FunctionProtoType>();
+      if (!Prototype || Prototype->isVariadic() ||
+          Prototype->getNumParams() + 1 != Call->getNumArgs())
+        reject(L, "functional invoke",
+               "A checked fixed-arity function or function pointer is required.");
+      auto Callable = snapshot(CallableType->isFunctionType()
+                                   ? functionValue(Call->getArg(0))
+                                   : expression(Call->getArg(0)),
+                               L);
+      json::Array Arguments;
+      for (unsigned I = 0; I < Prototype->getNumParams(); ++I) {
+        auto Parameter = Prototype->getParamType(I);
+        Arguments.push_back(cast(argument(Call->getArg(I + 1), Parameter),
+                                 type(Parameter, L), L));
+      }
+      return emitIndirectCall(std::move(Callable), std::move(Arguments),
+                              Prototype->getReturnType(), L);
+    }
     case UtilityOperation::NewLaunder:
       // The portable pointer model carries no stale C++ object provenance.
       // Retain the checked pointer value once; a later access observes the

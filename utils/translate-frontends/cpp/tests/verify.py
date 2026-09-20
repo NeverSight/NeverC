@@ -1476,6 +1476,25 @@ extern "C" unsigned functional_stored(int a, unsigned b) {
         check("v2-functional-stored-objects-" + target,
               functional_stored_source, profile="cpp-core-v2",
               target=target, sdk=True)
+    functional_invoke_source = """\
+#include <functional>
+int add(int a, int b) { return a + b; }
+double scale(short value, float factor) { return value * factor; }
+void store(int value) { (void)value; }
+using Function = int (*)(int, int);
+extern "C" int functional_invoke(Function function, int a, int b) {
+  std::invoke(store, a);
+  return std::invoke(add, a, b) + std::invoke(function, a, b)
+      + int(std::invoke(scale, a, 1.5));
+}
+"""
+    functional_invoke = check("v2-functional-invoke", functional_invoke_source,
+                              profile="cpp-core-v2", sdk=True)
+    assert any(function["name"] == "functional_invoke"
+               for function in functional_invoke["functions"]), functional_invoke
+    for target in sdk_targets:
+        check("v2-functional-invoke-" + target, functional_invoke_source,
+              profile="cpp-core-v2", target=target, sdk=True)
     for name, source, code in (
         ("transparent-record", '#include <functional>\nstruct X{}; X operator+(X,X){return{};} int main(){std::plus<>{}(X{},X{});}',
          "TR0203"),
@@ -1486,6 +1505,14 @@ extern "C" unsigned functional_stored(int a, unsigned b) {
         ("qualified", '#include <functional>\nint main(){return std::plus<const int>{}(1,2);}',
          "TR0203"),
         ("long-double", '#include <functional>\nint main(){return std::plus<long double>{}(1,2)==3;}',
+         "TR0201"),
+        ("invoke-object", '#include <functional>\nint main(){return std::invoke(std::plus<int>{},1,2);}',
+         "TR0203"),
+        ("invoke-reference-parameter", '#include <functional>\nint load(int&v){return v;}int main(){int v=3;return std::invoke(load,v);}',
+         "TR0203"),
+        ("invoke-reference-result", '#include <functional>\nint value;int&get(){return value;}int main(){return std::invoke(get);}',
+         "TR0203"),
+        ("invoke-variadic", '#include <functional>\nint first(int v,...){return v;}int main(){return std::invoke(first,3,4);}',
          "TR0201"),
     ):
         check("v2-functional-typed-" + name, source, code,

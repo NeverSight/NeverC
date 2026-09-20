@@ -6328,7 +6328,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
        Name == "inplace_merge") ||
       (Origin->Path == "__algorithm/set_union.h" && Name == "set_union") ||
       (Origin->Path == "__algorithm/set_symmetric_difference.h" &&
-       Name == "set_symmetric_difference");
+       Name == "set_symmetric_difference") ||
+      (Origin->Path == "__functional/invoke.h" && Name == "invoke");
   if (!Function->isInlined() && !ApprovedNonInlineOperation)
     return std::nullopt;
   auto ReverseFor = [&](QualType Type) {
@@ -8283,6 +8284,40 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Same(Call->getArg(1)->getType(), Distance))
       return Name == "next" ? UtilityOperation::IteratorNext
                             : UtilityOperation::IteratorPrev;
+  }
+  if (Origin->Path == "__functional/invoke.h" && Name == "invoke" &&
+      Call->getNumArgs() >= 1 &&
+      Call->getNumArgs() == Function->getNumParams() && Call->isPRValue() &&
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto Callable = Call->getArg(0)->getType();
+    const auto *Prototype =
+        Callable->isFunctionType()
+            ? Callable->getAs<FunctionProtoType>()
+            : Callable->isFunctionPointerType()
+                  ? Callable->getPointeeType()->getAs<FunctionProtoType>()
+                  : nullptr;
+    if (!Prototype || Prototype->isVariadic() ||
+        Prototype->getNumParams() + 1 != Call->getNumArgs() ||
+        !Same(Prototype->getReturnType(), Function->getReturnType()) ||
+        (!Function->getReturnType()->isVoidType() &&
+         !utilityScalar(Context, Function->getReturnType())))
+      return std::nullopt;
+    for (unsigned I = 0; I < Call->getNumArgs(); ++I) {
+      const auto Parameter = Function->getParamDecl(I)->getType();
+      if (!Parameter->isReferenceType() ||
+          Parameter->getPointeeType().isVolatileQualified() ||
+          !Same(Parameter->getPointeeType(), Call->getArg(I)->getType()))
+        return std::nullopt;
+    }
+    for (unsigned I = 0; I < Prototype->getNumParams(); ++I) {
+      const auto Parameter = Prototype->getParamType(I);
+      const auto Argument = Call->getArg(I + 1)->getType();
+      if (Parameter->isReferenceType() || !utilityScalar(Context, Parameter) ||
+          !utilityScalar(Context, Argument) ||
+          !utilityScalarDirectConversion(Context, Argument, Parameter))
+        return std::nullopt;
+    }
+    return UtilityOperation::FunctionalInvoke;
   }
   if (Origin->Path == "__iterator/prev.h" && Name == "prev" &&
       Call->getNumArgs() == 1 && Function->getNumParams() == 1 &&
