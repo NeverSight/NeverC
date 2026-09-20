@@ -34405,9 +34405,9 @@ struct Box {
 };
 int main() {
   auto add = &Box::add;
-  auto method_wrapper = std::mem_fn(&Box::add);
+  auto method_wrapper = std::mem_fn(add);
   auto value = &Box::value;
-  auto field_wrapper = std::mem_fn(&Box::value);
+  auto field_wrapper = std::mem_fn(value);
   int score = (Box{1}.*add)(2) == 3;
   score += drops == 1;
   score += std::invoke(add, Box{2}, 2) == 4;
@@ -34823,6 +34823,11 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "using Get=decltype(std::mem_fn(&X::v));"
        "int call(Get get,X&x){auto q=std::move(get);return q(x);}"
        "int main(){X x{3};return call(std::mem_fn(&X::v),x);}",
+       "TR0203"},
+      {"mem-fn-member-pointer-from-parameter",
+       "#include <functional>\nstruct X{int v;};"
+       "int call(int X::*p,X&x){auto get=std::mem_fn(p);return get(x);}"
+       "int main(){X x{3};return call(&X::v,x);}",
        "TR0203"},
       {"stored-mem-fn-reassignment",
        "#include <functional>\nstruct X{int v,w;};int main(){X x{3,4};"

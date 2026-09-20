@@ -982,7 +982,8 @@ parameter flow are authenticated before the direct method call or field
 projection is emitted.
 
 An exact `std::mem_fn` wrapper built from either admitted direct named address
-may be called immediately, directly or as the callable of `std::invoke`,
+or an authenticated local member-pointer initializer chain may be called
+immediately, directly or as the callable of `std::invoke`,
 through the same receiver, argument and result boundary. A wrapper for an
 admitted method or data field may also be retained in a directly initialized
 local automatic variable, then called directly or through `std::invoke`. The pinned

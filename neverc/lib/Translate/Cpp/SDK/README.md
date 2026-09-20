@@ -335,7 +335,8 @@ lvalue-reference parameters and results. A
 direct source-written address of an admitted non-volatile scalar or object-pointer field,
 including a declared-const field, may be invoked on the same receivers and
 retains its qualified lvalue result. An exact `std::mem_fn` wrapper built from
-either admitted direct named address may be called immediately, either directly
+either admitted direct named address or an authenticated local member-pointer
+chain may be called immediately, either directly
 or as the callable of `std::invoke`, through the same receiver, argument and
 result boundary. A wrapper for a method or data field may also be retained in a
 directly initialized local automatic variable and called through either form;

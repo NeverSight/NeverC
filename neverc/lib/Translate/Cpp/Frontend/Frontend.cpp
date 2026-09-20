@@ -12908,6 +12908,20 @@ public:
           }
         }
         ApprovedErasedUtilityCalls.insert(Stored->Factory);
+        const Expr *FactoryArgument = Stored->Factory->getArg(0);
+        while (FactoryArgument) {
+          ApprovedMemberPointerExpressions.insert(FactoryArgument);
+          if (const auto *Parentheses = dyn_cast<ParenExpr>(FactoryArgument))
+            FactoryArgument = Parentheses->getSubExpr();
+          else if (const auto *Cleanup =
+                       dyn_cast<ExprWithCleanups>(FactoryArgument))
+            FactoryArgument = Cleanup->getSubExpr();
+          else if (const auto *Cast =
+                       dyn_cast<ImplicitCastExpr>(FactoryArgument))
+            FactoryArgument = Cast->getSubExpr();
+          else
+            break;
+        }
         if (const auto *Leaf = directFunctionReference(Stored->Factory)) {
           DirectTemplateCallLocations.emplace(
               Leaf, Stored->Factory->getCallee()->getExprLoc());

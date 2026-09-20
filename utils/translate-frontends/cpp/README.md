@@ -156,7 +156,8 @@ may be called with native `.*` or `->*` on an exact object or pointer through
 the same fixed-arity method boundary; exact full-expression temporary objects
 are materialized and destroyed after the call. This includes const methods and admitted
 lvalue-reference parameters or results. Exact
-`std::mem_fn` wrappers built from those direct named addresses may be called
+`std::mem_fn` wrappers built from those direct named addresses or authenticated
+local member-pointer chains may be called
 immediately, directly or as the callable of `std::invoke`, through the same
 boundary. A directly initialized local wrapper for a method or data field may also be
 retained across statements and called directly or through `std::invoke`; exact
