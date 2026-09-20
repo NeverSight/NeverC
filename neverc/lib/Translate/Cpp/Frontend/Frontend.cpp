@@ -4233,8 +4233,8 @@ bool Adapter::requireFunctionalObject(const CXXRecordDecl *Record,
       approvedFunctionalObjectRecord(S, Sources, Record, Context);
   if (!Object) {
     reject(Location, "standard library record",
-           "Only pinned one-byte arithmetic, bitwise, comparison and logical "
-           "standard function objects are admitted.",
+           "Only pinned one-byte arithmetic, bitwise, comparison, logical and "
+           "integral hash function objects are admitted.",
            "TR0203");
     return false;
   }
@@ -7329,7 +7329,11 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
               Alias->getDecl()->getName() == "max_align_t" && Origin &&
               Origin->Root == "resource" &&
               Origin->Path == "include/__stddef_max_align_t.h";
-          if (Nullptr || MaxAlign)
+          const bool Size = Alias->getDecl()->getName() == "size_t" && Origin &&
+                            Origin->Root == "libcxx" &&
+                            Origin->Path == "__cstddef/size_t.h" &&
+                            A.Context.hasSameType(T, A.Context.getSizeType());
+          if (Nullptr || MaxAlign || Size)
             return;
         } else {
           operationTypeDependency(Alias->getDecl()->getTypeSourceInfo());

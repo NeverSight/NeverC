@@ -265,6 +265,7 @@ enum class FunctionalOperation {
   LogicalAnd,
   LogicalOr,
   LogicalNot,
+  Hash,
 };
 struct FunctionalObjectRecord {
   const clang::CXXRecordDecl *Record;

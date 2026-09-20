@@ -1529,6 +1529,33 @@ extern "C" unsigned functional_stored(int a, unsigned b) {
         check("v2-functional-stored-objects-" + target,
               functional_stored_source, profile="cpp-core-v2",
               target=target, sdk=True)
+    functional_hash_source = """\
+#include <functional>
+#include <cstddef>
+std::hash<int> functional_hash_global;
+std::size_t apply_hash(std::hash<int> hash, int value) {
+  return hash(value);
+}
+extern "C" std::size_t functional_hash(int value, unsigned long wide) {
+  std::hash<int> stored;
+  auto copied = stored;
+  return std::hash<bool>{}(true) + std::hash<char16_t>{}(u'A')
+      + std::hash<short>{}(short(value)) + stored(value)
+      + std::invoke(copied, value) + std::hash<unsigned long>{}(wide)
+      + functional_hash_global(value);
+}
+"""
+    functional_hash = check("v2-functional-integral-hash",
+                            functional_hash_source,
+                            profile="cpp-core-v2", sdk=True)
+    assert any(function["name"] == "functional_hash"
+               for function in functional_hash["functions"]), functional_hash
+    assert not [node for node in walk(functional_hash["functions"])
+                if node.get("op") in ("call", "mapped_call")], functional_hash
+    for target in sdk_targets:
+        check("v2-functional-integral-hash-" + target,
+              functional_hash_source, profile="cpp-core-v2",
+              target=target, sdk=True)
     functional_reference_source = """\
 #include <functional>
 int functional_reference_global_value;
@@ -1827,6 +1854,16 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
         ("qualified", '#include <functional>\nint main(){return std::plus<const int>{}(1,2);}',
          "TR0203"),
         ("long-double", '#include <functional>\nint main(){return std::plus<long double>{}(1,2)==3;}',
+         "TR0201"),
+        ("hash-long-long", '#include <functional>\nint main(){return std::hash<long long>{}(3);}',
+         "TR0203"),
+        ("hash-float", '#include <functional>\nint main(){return std::hash<float>{}(3);}',
+         "TR0203"),
+        ("hash-pointer", '#include <functional>\nint main(){int n;return std::hash<int*>{}(&n);}',
+         "TR0203"),
+        ("hash-enum", '#include <functional>\nenum E{A};int main(){return std::hash<E>{}(A);}',
+         "TR0203"),
+        ("hash-assignment", '#include <functional>\nint main(){std::hash<int> h;h=std::hash<int>{};return h(3);}',
          "TR0201"),
         ("reference-wrapper-volatile", '#include <functional>\nint main(){volatile int v=0;std::reference_wrapper<volatile int> r(v);return r.get();}',
          "TR0201"),

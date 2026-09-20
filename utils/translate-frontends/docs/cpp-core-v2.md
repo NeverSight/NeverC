@@ -139,7 +139,9 @@ rejected.
 
 Core v2 accepts an exact top-level `#include <cstddef>` from the pinned embedded
 VFS. `std::size_t`, `std::ptrdiff_t` and `std::nullptr_t` retain the selected
-target's concrete types. Type-form `sizeof` and `alignof` queries on
+target's concrete types. The exact pinned `std::size_t` alias may also appear
+in resolved function signatures; its authenticated SDK declaration supplies
+the source proof for its target-specific type. Type-form `sizeof` and `alignof` queries on
 `std::max_align_t` are folded by pinned Clang, including targets where its
 carrier is otherwise outside core v2. `NULL` is accepted only when it expands
 from the pinned header.
@@ -873,6 +875,15 @@ passed by value, and trivially default/copy/move constructed or copy/move
 assigned. Their authenticated C++ one-byte size and alignment map to a single
 `u8` carrier field at offset zero; calls still lower to the verified built-in
 operation without a libc++ runtime dependency.
+
+Exact direct-cast integral `std::hash` specializations from `bool` through
+`unsigned long` use the same authenticated one-byte carrier. Their calls lower
+to pinned `static_cast<size_t>` semantics for temporary, local, global, copied
+and by-value objects, directly or through `std::invoke`. The receiver is
+evaluated once before the argument. Hash assignment and the wide-integer,
+floating, pointer, enum and null-pointer specializations remain outside this
+boundary because their libc++ implementations use different storage or hashing
+algorithms.
 
 Exact `std::reference_wrapper<T>` and `std::reference_wrapper<const T>` for
 non-volatile object types, plus exact function wrappers whose fixed-arity

@@ -839,6 +839,8 @@ class FunctionLowering {
     case FunctionalOperation::LogicalNot:
       return snapshot(
           UnaryExpression("!", cast(std::move(Left), "bool", L), "bool"), L);
+    case FunctionalOperation::Hash:
+      return snapshot(cast(std::move(Left), ResultType, L), L);
     }
     llvm_unreachable("unknown functional operation");
   }
@@ -848,6 +850,14 @@ class FunctionLowering {
     auto L = Call->getExprLoc();
     const auto *Method = llvm::cast<CXXMethodDecl>(Call->getDirectCallee());
     const bool Unary = Method->getNumParams() == 1;
+    discardFunctionalObject(Call->getArg(0));
+    if (Info.Operation == FunctionalOperation::Hash) {
+      if (!Unary || Call->getNumArgs() != 2)
+        reject(L, "functional hash",
+               "The checked integer hash must have one argument.");
+      auto Left = snapshot(expression(Call->getArg(1)), L);
+      return functionalOperationValues(L, std::move(Left), std::nullopt, Info);
+    }
     auto Argument = [&](unsigned Index) {
       auto Address = snapshot(
           bind(Call->getArg(Index + 1), Method->getParamDecl(Index)->getType()),

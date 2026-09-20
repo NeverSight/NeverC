@@ -21,7 +21,8 @@ The `<ratio>` surface has a 15-file closure and exposes normalized rational
 types, arithmetic aliases, comparisons and standard SI aliases entirely at
 compile time without a runtime libc++ link.
 The `<cstddef>` surface has a 29-file closure and provides its target aliases,
-folded layout queries and directly lowered `std::byte` operations. The
+including authenticated `std::size_t` function metadata, folded layout queries
+and directly lowered `std::byte` operations. The
 `<utility>` surface has an 87-file closure and directly lowers scalar
 `move`, `forward`, `move_if_noexcept`, `as_const`, `exchange` and `swap`, plus
 scalar or recursively composite `pair` construction, assignment, swaps,
@@ -279,7 +280,13 @@ standard function objects lower directly for admitted arithmetic types,
 including heterogeneous transparent operands. Exact empty objects use an
 authenticated one-byte carrier and support trivial default, copy and move
 construction, copy or move assignment, local and global storage, and by-value
-passing. Exact object `std::reference_wrapper<T>` and
+passing. Exact direct-cast integral `std::hash` specializations from `bool`
+through `unsigned long` use the same authenticated one-byte carrier and lower
+to target `size_t` for temporary, local, global, copied and by-value objects,
+directly or through `std::invoke`. Receiver expressions are evaluated once
+before their arguments. Hash assignment and the wide-integer, floating,
+pointer, enum and null-pointer specializations remain outside this boundary.
+Exact object `std::reference_wrapper<T>` and
 `std::reference_wrapper<const T>`, plus exact fixed-arity function wrappers with
 admitted scalar or object-pointer values and exact lvalue-reference parameters
 or results, use their authenticated target ABI layout:

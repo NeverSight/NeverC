@@ -379,16 +379,55 @@ static bool functionalObjectName(llvm::StringRef Name) {
   return Name == "plus" || Name == "minus" || Name == "multiplies" ||
          Name == "divides" || Name == "modulus" || Name == "negate" ||
          Name == "bit_and" || Name == "bit_or" || Name == "bit_xor" ||
-         Name == "bit_not" || Name == "equal_to" ||
-         Name == "not_equal_to" || Name == "less" || Name == "greater" ||
-         Name == "less_equal" || Name == "greater_equal" ||
-         Name == "logical_and" || Name == "logical_or" ||
-         Name == "logical_not";
+         Name == "bit_not" || Name == "equal_to" || Name == "not_equal_to" ||
+         Name == "less" || Name == "greater" || Name == "less_equal" ||
+         Name == "greater_equal" || Name == "logical_and" ||
+         Name == "logical_or" || Name == "logical_not" || Name == "hash";
 }
 
 static bool integralFunctionalObject(llvm::StringRef Name) {
   return Name == "modulus" || Name == "bit_and" || Name == "bit_or" ||
          Name == "bit_xor" || Name == "bit_not";
+}
+
+static bool directIntegralHashType(QualType Type) {
+  if (Type.isNull() || Type.hasQualifiers())
+    return false;
+  const auto *Builtin = Type->getAs<BuiltinType>();
+  if (!Builtin)
+    return false;
+  switch (Builtin->getKind()) {
+  case BuiltinType::Bool:
+  case BuiltinType::Char_U:
+  case BuiltinType::UChar:
+  case BuiltinType::Char16:
+  case BuiltinType::Char32:
+  case BuiltinType::WChar_U:
+  case BuiltinType::UShort:
+  case BuiltinType::UInt:
+  case BuiltinType::ULong:
+  case BuiltinType::Char_S:
+  case BuiltinType::SChar:
+  case BuiltinType::WChar_S:
+  case BuiltinType::Short:
+  case BuiltinType::Int:
+  case BuiltinType::Long:
+    return true;
+  default:
+    return false;
+  }
+}
+
+static bool functionalObjectOrigin(const State &S, const SourceManager &SM,
+                                   const NamedDecl *Declaration,
+                                   llvm::StringRef Name,
+                                   bool CanonicalTemplate = false) {
+  if (Name != "hash")
+    return cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx",
+                         "__functional/operations.h");
+  return cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx",
+                       CanonicalTemplate ? "__fwd/functional.h"
+                                         : "__functional/hash.h");
 }
 
 std::optional<FunctionalObjectRecord>
@@ -401,8 +440,9 @@ approvedFunctionalObjectRecord(const State &S, const SourceManager &SM,
                                     : nullptr;
   const auto *CanonicalTemplate =
       Template ? Template->getCanonicalDecl() : nullptr;
+  const auto Name = Definition ? Definition->getName() : llvm::StringRef();
   if (!Definition || !Template || !CanonicalTemplate ||
-      !functionalObjectName(Definition->getName()) || Definition->isUnion() ||
+      !functionalObjectName(Name) || Definition->isUnion() ||
       Definition->isDependentContext() || !Definition->isEmpty() ||
       !Definition->isStandardLayout() || !Definition->isTriviallyCopyable() ||
       !Definition->hasTrivialDestructor() || !Definition->field_empty() ||
@@ -413,18 +453,21 @@ approvedFunctionalObjectRecord(const State &S, const SourceManager &SM,
       !approvedStandardSDKDeclaration(S, SM, Definition) ||
       !approvedStandardSDKDeclaration(S, SM, Template) ||
       !approvedStandardSDKDeclaration(S, SM, CanonicalTemplate) ||
-      !cstddefOrigin(S, SM, Definition->getLocation(), "libcxx",
-                     "__functional/operations.h") ||
-      !cstddefOrigin(S, SM, Template->getLocation(), "libcxx",
-                     "__functional/operations.h") ||
-      !cstddefOrigin(S, SM, CanonicalTemplate->getLocation(), "libcxx",
-                     "__functional/operations.h"))
+      !functionalObjectOrigin(S, SM, Definition, Name) ||
+      !functionalObjectOrigin(S, SM, Template, Name, true) ||
+      !functionalObjectOrigin(S, SM, CanonicalTemplate, Name, true))
     return std::nullopt;
   const auto &Arguments = Definition->getTemplateArgs();
   if (Arguments.size() != 1 ||
       Arguments.get(0).getKind() != TemplateArgument::Type)
     return std::nullopt;
   const auto ValueType = Arguments.get(0).getAsType();
+  if (Name == "hash") {
+    if (Definition->getSpecializationKind() != TSK_ExplicitSpecialization ||
+        !directIntegralHashType(ValueType))
+      return std::nullopt;
+    return FunctionalObjectRecord{Definition};
+  }
   if (!ValueType.isNull() && ValueType->isVoidType()) {
     const TypedefNameDecl *TransparentMarker = nullptr;
     for (const auto *Declaration : Definition->decls())
@@ -590,8 +633,7 @@ approvedFunctionalObjectConstruction(const State &S, const SourceManager &SM,
       !Constructor->isTrivial() ||
       Construction->getNumArgs() != Constructor->getNumParams() ||
       !approvedStandardSDKDeclaration(S, SM, Constructor) ||
-      !cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx",
-                     "__functional/operations.h"))
+      !functionalObjectOrigin(S, SM, Constructor, Object->Record->getName()))
     return std::nullopt;
   if (!Construction->getNumArgs() && Constructor->isDefaultConstructor() &&
       Constructor->isDefaulted())
@@ -702,8 +744,7 @@ bool approvedFunctionalObjectAssignment(const State &S,
       Destination->Record->getCanonicalDecl() !=
           Source->Record->getCanonicalDecl() ||
       !approvedStandardSDKDeclaration(S, SM, Method) ||
-      !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
-                     "__functional/operations.h") ||
+      !functionalObjectOrigin(S, SM, Method, Destination->Record->getName()) ||
       !S.owns(SM, Reference->getExprLoc()) ||
       !Context.hasSameUnqualifiedType(
           Assignment->getArg(0)->getType(),
@@ -779,26 +820,24 @@ static std::optional<FunctionalOperationInfo> approvedFunctionalOperationImpl(
   const auto *CanonicalTemplate =
       Template ? Template->getCanonicalDecl() : nullptr;
   const auto *Reference = directMethodReference(Call);
+  const auto Name = Record ? Record->getName() : llvm::StringRef();
   if (!Call || !Operator || !Method || !Record || !Template ||
       !CanonicalTemplate || !Reference || Operator->getOperator() != OO_Call ||
       Method->getOverloadedOperator() != OO_Call || Method->isStatic() ||
-      !Method->isConst() || Method->isVariadic() || !Method->isConstexpr() ||
-      !Method->isInlined() || !Method->hasBody() || !Call->isPRValue() ||
-      Record->isUnion() || Record->isDependentContext() || !Record->isEmpty() ||
+      !Method->isConst() || Method->isVariadic() ||
+      (!Method->isConstexpr() && Name != "hash") || !Method->isInlined() ||
+      !Method->hasBody() || !Call->isPRValue() || Record->isUnion() ||
+      Record->isDependentContext() || !Record->isEmpty() ||
       !Record->isStandardLayout() || !Record->isTriviallyCopyable() ||
       !Record->hasTrivialDestructor() ||
       !approvedStandardSDKDeclaration(S, SM, Record) ||
       !approvedStandardSDKDeclaration(S, SM, Template) ||
       !approvedStandardSDKDeclaration(S, SM, CanonicalTemplate) ||
       !approvedStandardSDKDeclaration(S, SM, Method) ||
-      !cstddefOrigin(S, SM, Record->getLocation(), "libcxx",
-                     "__functional/operations.h") ||
-      !cstddefOrigin(S, SM, Template->getLocation(), "libcxx",
-                     "__functional/operations.h") ||
-      !cstddefOrigin(S, SM, CanonicalTemplate->getLocation(), "libcxx",
-                     "__functional/operations.h") ||
-      !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
-                     "__functional/operations.h") ||
+      !functionalObjectOrigin(S, SM, Record, Name) ||
+      !functionalObjectOrigin(S, SM, Template, Name, true) ||
+      !functionalObjectOrigin(S, SM, CanonicalTemplate, Name, true) ||
+      !functionalObjectOrigin(S, SM, Method, Name) ||
       (RequireOwnedReference && !S.owns(SM, Reference->getExprLoc())))
     return std::nullopt;
 
@@ -813,6 +852,57 @@ static std::optional<FunctionalOperationInfo> approvedFunctionalOperationImpl(
       Arguments.get(0).getKind() != TemplateArgument::Type)
     return std::nullopt;
   const auto ValueType = Arguments.get(0).getAsType();
+  if (Name == "hash") {
+    const auto *Body = dyn_cast<CompoundStmt>(Method->getBody());
+    const ReturnStmt *Return = nullptr;
+    const StaticAssertDecl *SizeAssertion = nullptr;
+    if (Body && Body->size() == 1) {
+      Return = dyn_cast<ReturnStmt>(*Body->body_begin());
+    } else if (Body && Body->size() == 2 &&
+               ValueType->isSpecificBuiltinType(BuiltinType::ULong)) {
+      auto Statement = Body->body_begin();
+      const auto *Declaration = dyn_cast<DeclStmt>(*Statement++);
+      SizeAssertion =
+          Declaration && Declaration->isSingleDecl()
+              ? dyn_cast<StaticAssertDecl>(Declaration->getSingleDecl())
+              : nullptr;
+      Return = dyn_cast<ReturnStmt>(*Statement);
+    }
+    const auto *Conversion =
+        Return && Return->getRetValue()
+            ? dyn_cast<CXXStaticCastExpr>(
+                  Return->getRetValue()->IgnoreParenImpCasts())
+            : nullptr;
+    const auto *ParameterReference =
+        Conversion ? dyn_cast<DeclRefExpr>(
+                         Conversion->getSubExpr()->IgnoreParenImpCasts())
+                   : nullptr;
+    if (!directIntegralHashType(ValueType) || Method->getNumParams() != 1 ||
+        Call->getNumArgs() != 2 ||
+        !Context.hasSameType(Method->getParamDecl(0)->getType(), ValueType) ||
+        !Context.hasSameType(Call->getArg(1)->getType(), ValueType) ||
+        !Context.hasSameType(Method->getReturnType(), Context.getSizeType()) ||
+        !Context.hasSameType(Call->getType(), Context.getSizeType()) ||
+        !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
+                                        Context.getRecordType(Record)) ||
+        (Body && Body->size() == 2 &&
+         (!SizeAssertion ||
+          !approvedStandardSDKDeclaration(S, SM, SizeAssertion) ||
+          !cstddefOrigin(S, SM, SizeAssertion->getLocation(), "libcxx",
+                         "__functional/hash.h"))) ||
+        !Conversion ||
+        (Conversion->getCastKind() != CK_IntegralCast &&
+         Conversion->getCastKind() != CK_NoOp) ||
+        !Context.hasSameType(Conversion->getType(), Context.getSizeType()) ||
+        !ParameterReference ||
+        ParameterReference->getDecl() != Method->getParamDecl(0))
+      return std::nullopt;
+    return FunctionalOperationInfo{FunctionalOperation::Hash,
+                                   ValueType,
+                                   {},
+                                   Context.getSizeType(),
+                                   Context.getSizeType()};
+  }
   const bool Transparent = !ValueType.isNull() && ValueType->isVoidType();
   auto SupportedScalar = [&](QualType Type) {
     if (Type.isNull())

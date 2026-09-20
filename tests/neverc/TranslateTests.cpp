@@ -33722,6 +33722,52 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2IntegralHashesRunAtBothOptimizations) {
+  const auto Source = tmpFile("functional-integral-hash.cpp");
+  const auto Output = tmpFile("functional-integral-hash.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <cstddef>
+std::hash<int> global_hash;
+int trace;
+int value() { trace = trace * 10 + 2; return -7; }
+std::size_t apply(std::hash<int> hash, int value) { return hash(value); }
+int main() {
+  std::hash<int> stored;
+  std::hash<unsigned long> wide;
+  auto copy = stored;
+  int score = 0;
+  score += std::hash<bool>{}(true) == std::size_t(1);
+  score += std::hash<char16_t>{}(u'A') == std::size_t(65);
+  score += std::hash<short>{}(short(-2)) ==
+           static_cast<std::size_t>(short(-2));
+  score += stored(-3) == static_cast<std::size_t>(-3);
+  score += std::invoke(copy, 4) == std::size_t(4);
+  score += wide(9ul) == std::size_t(9);
+  score += apply(stored, 5) == std::size_t(5);
+  trace = 0;
+  score += (trace = trace * 10 + 1, global_hash)(value()) ==
+           static_cast<std::size_t>(-7);
+  score += trace == 12;
+  return score == 9 ? 0 : score;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  EXPECT_NE(Generated.find("nct_functional_storage"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("functional-integral-hash" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest,
        CoreV2FunctionalReferenceWrappersRunAtBothOptimizations) {
   const auto Source = tmpFile("functional-reference-wrappers.cpp");
@@ -34291,6 +34337,22 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
       {"long-double",
        "#include <functional>\nint main(){return "
        "std::plus<long double>{}(1,2)==3;}",
+       "TR0201"},
+      {"hash-long-long",
+       "#include <functional>\nint main(){return std::hash<long long>{}(3);}",
+       "TR0203"},
+      {"hash-float",
+       "#include <functional>\nint main(){return std::hash<float>{}(3);}",
+       "TR0203"},
+      {"hash-pointer",
+       "#include <functional>\nint main(){int n;return std::hash<int*>{}(&n);}",
+       "TR0203"},
+      {"hash-enum",
+       "#include <functional>\nenum E{A};int main(){return std::hash<E>{}(A);}",
+       "TR0203"},
+      {"hash-assignment",
+       "#include <functional>\nint main(){std::hash<int> h;"
+       "h=std::hash<int>{};return h(3);}",
        "TR0201"},
       {"reference-wrapper-volatile",
        "#include <functional>\nint main(){volatile int v=0;"
