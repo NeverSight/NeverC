@@ -140,11 +140,14 @@ the admitted typed and transparent standard function objects. Direct named
 addresses of owned nonstatic member functions
 and admitted non-volatile scalar or object-pointer fields also lower on exact-class lvalue,
 pointer or `std::reference_wrapper` receivers; fields retain their qualified
-lvalue result, including reads of declared-const fields. Exact temporary
+lvalue result, including reads of declared-const fields. Exact directly
+initialized local data-member pointers may also be retained across statements
+and passed to `std::invoke`; their storage is authenticated and erased before
+the same direct field projection is emitted. Exact temporary
 `std::mem_fn` wrappers built from those direct named addresses may be called
 immediately, directly or as the callable of `std::invoke`, through the same
-boundary. Stored member pointers, stored `mem_fn`
-objects, base adjustments, volatile receivers, user-defined callable objects,
+boundary. Stored member-function pointers, copied, reassigned or null
+data-member pointers, stored `mem_fn` objects, base adjustments, volatile receivers, user-defined callable objects,
 and rvalue-reference, other reference or variadic function signatures stay
 outside this boundary. Object-pointer values and exact scalar or object-pointer
 lvalue-reference parameters and results are preserved. The

@@ -10239,6 +10239,9 @@ class FunctionLowering {
   }
   void declaration(const VarDecl *V) {
     auto L = V->getLocation();
+    if (A.S.coreV2() && approvedFunctionalStoredMemberPointer(
+                            A.S, A.Sources, V, A.Context))
+      return;
     if (A.S.coreV2() && V->isStaticLocal()) {
       if (A.DynamicStaticObjects.count(V->getCanonicalDecl()) || needsDestruction(V->getType()))
         initializeStatic(V, V->getInit());
@@ -10284,8 +10287,11 @@ class FunctionLowering {
       return; // An outer case cannot enter it; selected lowering owns its locals.
     if (const auto *D = dyn_cast<DeclStmt>(S))
       for (const auto *Declaration : D->decls())
-        if (const auto *V = dyn_cast<VarDecl>(Declaration))
-          localStorage(V);
+        if (const auto *V = dyn_cast<VarDecl>(Declaration)) {
+          if (!(A.S.coreV2() && approvedFunctionalStoredMemberPointer(
+                                  A.S, A.Sources, V, A.Context)))
+            localStorage(V);
+        }
     for (const auto *Child : S->children())
       registerSwitchStorage(Child);
   }

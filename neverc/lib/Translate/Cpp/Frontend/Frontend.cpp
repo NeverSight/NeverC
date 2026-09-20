@@ -12839,6 +12839,27 @@ public:
   bool VisitVarDecl(VarDecl *D) {
     if (!owned(D))
       return true;
+    if (A.S.coreV2())
+      if (auto Stored = approvedFunctionalStoredMemberPointer(
+              A.S, A.Sources, D, A.Context)) {
+        const Expr *Expression = Stored->Address;
+        while (Expression) {
+          ApprovedMemberPointerExpressions.insert(Expression);
+          if (const auto *Parentheses = dyn_cast<ParenExpr>(Expression))
+            Expression = Parentheses->getSubExpr();
+          else if (const auto *Cleanup =
+                       dyn_cast<ExprWithCleanups>(Expression))
+            Expression = Cleanup->getSubExpr();
+          else if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Expression))
+            Expression = Cast->getSubExpr();
+          else if (const auto *Address = dyn_cast<UnaryOperator>(Expression);
+                   Address && Address->getOpcode() == UO_AddrOf)
+            Expression = Address->getSubExpr();
+          else
+            break;
+        }
+        return true;
+      }
     if (A.S.coreV2() &&
         approvedUtilityInPlaceType(A.S, A.Sources, D->getType(), A.Context)) {
       A.reject(D->getLocation(), "standalone in-place tag",

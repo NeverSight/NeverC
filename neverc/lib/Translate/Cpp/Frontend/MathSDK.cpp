@@ -6557,6 +6557,56 @@ static const Expr *functionalInvokeStrippedExpression(const Expr *Expression) {
   return Expression;
 }
 
+static bool supportedFunctionalMemberValue(const ASTContext &Context,
+                                           QualType Type);
+
+std::optional<FunctionalStoredMemberPointer>
+approvedFunctionalStoredMemberPointer(
+    const State &S, const SourceManager &SM, const VarDecl *Variable,
+    const ASTContext &Context) {
+  if (!Variable || Variable->getKind() != Decl::Var ||
+      Variable->isImplicit() || Variable->hasAttrs() ||
+      Variable->getStorageClass() != SC_None || !Variable->isLocalVarDecl() ||
+      !Variable->hasLocalStorage() || Variable->isStaticLocal() ||
+      Variable->hasExternalStorage() ||
+      Variable->getTLSKind() != VarDecl::TLS_None ||
+      Variable->getType().isVolatileQualified() ||
+      Variable->getType().isRestrictQualified() ||
+      !S.owns(SM, Variable->getLocation()))
+    return std::nullopt;
+  const auto *MemberPointer =
+      Variable->getType()->getAs<MemberPointerType>();
+  const auto *Address = dyn_cast_or_null<UnaryOperator>(
+      functionalInvokeStrippedExpression(Variable->getInit()));
+  const auto *Reference =
+      Address && Address->getOpcode() == UO_AddrOf
+          ? dyn_cast<DeclRefExpr>(functionalInvokeStrippedExpression(
+                Address->getSubExpr()))
+          : nullptr;
+  const auto *Field =
+      Reference ? dyn_cast<FieldDecl>(Reference->getDecl()) : nullptr;
+  const auto *MemberClass =
+      MemberPointer ? MemberPointer->getClass()->getAsCXXRecordDecl() : nullptr;
+  const auto *Parent =
+      Field ? dyn_cast<CXXRecordDecl>(Field->getDeclContext()) : nullptr;
+  const auto FieldType = Field ? Field->getType() : QualType();
+  if (!MemberPointer || !Address || !Reference || !Field || !MemberClass ||
+      !Parent || Field->isBitField() || FieldType.isVolatileQualified() ||
+      FieldType.isRestrictQualified() ||
+      FieldType.getAddressSpace() != LangAS::Default ||
+      !supportedFunctionalMemberValue(Context,
+                                      FieldType.getUnqualifiedType()) ||
+      !Context.hasSameUnqualifiedType(Variable->getType(),
+                                      Address->getType()) ||
+      MemberClass->getCanonicalDecl() != Parent->getCanonicalDecl() ||
+      !Context.hasSameType(MemberPointer->getPointeeType(), FieldType) ||
+      !S.owns(SM, Address->getOperatorLoc()) ||
+      !S.owns(SM, Reference->getExprLoc()) ||
+      !S.owns(SM, Field->getLocation()))
+    return std::nullopt;
+  return FunctionalStoredMemberPointer{Variable, Address, Field};
+}
+
 static bool functionalInvokeParameterReference(
     const Expr *Expression, const ParmVarDecl *Parameter,
     bool Dereference = false) {
@@ -6890,7 +6940,17 @@ approvedFunctionalMemberInvokeCall(
   auto MemFn = approvedFunctionalMemFnDispatch(S, SM, Call, Context);
   if (!MemFn)
     MemFn = approvedFunctionalInvokeMemFnDispatch(S, SM, Call, Context);
-  const auto *Callable = MemFn ? MemFn->Callable : Call->getArg(0);
+  const auto *WrittenCallable = MemFn ? MemFn->Callable : Call->getArg(0);
+  const auto *Callable = WrittenCallable;
+  if (!MemFn) {
+    const auto *StoredReference = dyn_cast_or_null<DeclRefExpr>(
+        functionalInvokeStrippedExpression(Callable));
+    const auto *StoredVariable =
+        StoredReference ? dyn_cast<VarDecl>(StoredReference->getDecl()) : nullptr;
+    if (auto Stored = approvedFunctionalStoredMemberPointer(
+            S, SM, StoredVariable, Context))
+      Callable = Stored->Address;
+  }
   const auto *Address = dyn_cast_or_null<UnaryOperator>(
       functionalInvokeStrippedExpression(Callable));
   const auto *Reference =
@@ -7050,7 +7110,7 @@ approvedFunctionalMemberInvokeCall(
         !Context.hasSameUnqualifiedType(CallType, FieldType))
       return std::nullopt;
   }
-  return FunctionalMemberInvokeCall{Callable, Object, Method, Field,
+  return FunctionalMemberInvokeCall{WrittenCallable, Object, Method, Field,
                                     MemFn ? MemFn->Factory : nullptr,
                                     std::move(ObjectWrapper),
                                     ObjectIsPointer};

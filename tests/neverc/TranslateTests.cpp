@@ -34246,6 +34246,53 @@ int main() {
 }
 
 TEST_F(TranslateTest,
+       CoreV2FunctionalInvokeStoredDataMembersRunAtBothOptimizations) {
+  const auto Source = tmpFile("functional-invoke-stored-data-members.cpp");
+  const auto Output = tmpFile("functional-invoke-stored-data-members.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+struct Box {
+  int value;
+  const int fixed;
+  int *link;
+};
+int main() {
+  int first = 17;
+  int second = 19;
+  Box box{3, 8, &first};
+  const Box constant{5, 13, &second};
+  auto value = &Box::value;
+  auto fixed = &Box::fixed;
+  auto link = &Box::link;
+  std::invoke(value, box) = 7;
+  int score = 0;
+  score += std::invoke(value, &box) == 7;
+  score += std::invoke(fixed, constant) == 13;
+  score += std::invoke(link, std::cref(constant)) == &second;
+  std::invoke(link, std::ref(box)) = &second;
+  score += box.link == &second;
+  return score == 4 ? 0 : score;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  EXPECT_EQ(Generated.find("indirect_call"), std::string::npos);
+  EXPECT_EQ(Generated.find("member_pointer"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-invoke-stored-data-members" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
        CoreV2FunctionalInvokeObjectsRunAtBothOptimizations) {
   const auto Source = tmpFile("functional-invoke-objects.cpp");
   const auto Output = tmpFile("functional-invoke-objects.nc");
@@ -34499,9 +34546,25 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "#include <functional>\nint first(int v,...){return v;}int main(){"
        "return std::invoke(first,3,4);}",
        "TR0201"},
-      {"invoke-stored-member-pointer",
+      {"invoke-stored-member-pointer-reassignment",
+       "#include <functional>\nstruct X{int a,b;};int main(){X x{3,4};"
+       "auto p=&X::a;p=&X::b;return std::invoke(p,x);}",
+       "TR0201"},
+      {"invoke-stored-member-pointer-copy",
        "#include <functional>\nstruct X{int v;};int main(){X x{3};"
-       "auto p=&X::v;return std::invoke(p,x);}",
+       "auto p=&X::v;auto q=p;return std::invoke(q,x);}",
+       "TR0201"},
+      {"invoke-stored-member-function-pointer",
+       "#include <functional>\nstruct X{int f(){return 3;}};int main(){X x;"
+       "auto p=&X::f;return std::invoke(p,x);}",
+       "TR0201"},
+      {"invoke-null-member-pointer",
+       "#include <functional>\nstruct X{int v;};int main(){X x{3};"
+       "int X::*p=nullptr;return std::invoke(p,x);}",
+       "TR0201"},
+      {"native-stored-member-pointer",
+       "#include <functional>\nstruct X{int v;};int main(){X x{3};"
+       "auto p=&X::v;return x.*p;}",
        "TR0201"},
       {"invoke-member-rvalue-reference-parameter",
        "#include <functional>\nstruct X{int f(int&&v){return v;}};"

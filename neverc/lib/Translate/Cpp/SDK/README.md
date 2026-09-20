@@ -338,7 +338,11 @@ retains its qualified lvalue result. An exact temporary returned by
 `std::mem_fn` from either admitted direct named address may be called
 immediately, either directly or as the callable of `std::invoke`, through the
 same receiver, argument and result boundary; both authenticated dispatch
-layers and the wrapper are erased. Stored member pointers, stored `mem_fn`
+layers and the wrapper are erased. A local automatic data-member pointer with
+one direct named-field initializer may also be retained across statements and
+passed to `std::invoke`; the frontend authenticates and erases that variable
+before emitting the same field projection. Stored member-function pointers,
+copied, reassigned or null data-member pointers, stored `mem_fn`
 objects, base adjustments, rvalue-reference or other reference signatures and
 volatile receivers remain outside this boundary.
 Core v2 never admits the `platform` root.

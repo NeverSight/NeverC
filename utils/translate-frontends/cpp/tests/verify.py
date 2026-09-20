@@ -1838,6 +1838,40 @@ extern "C" int functional_member_invoke(Box &box, const Box &constant) {
         check("v2-functional-member-invoke-" + target,
               functional_member_invoke_source, profile="cpp-core-v2",
               target=target, sdk=True)
+    functional_stored_data_member_source = """\
+#include <functional>
+struct Box {
+  int value;
+  const int fixed;
+  int *link;
+};
+extern "C" int functional_stored_data_member(
+    Box &box, const Box &constant) {
+  auto value = &Box::value;
+  auto fixed = &Box::fixed;
+  auto link = &Box::link;
+  std::invoke(value, box) = 7;
+  std::invoke(link, std::ref(box)) = constant.link;
+  return std::invoke(value, &box)
+      + std::invoke(fixed, constant)
+      + (std::invoke(link, std::cref(constant)) == constant.link);
+}
+"""
+    functional_stored_data_member = check(
+        "v2-functional-stored-data-member",
+        functional_stored_data_member_source,
+        profile="cpp-core-v2", sdk=True)
+    assert any(function["name"] == "functional_stored_data_member"
+               for function in functional_stored_data_member["functions"]), functional_stored_data_member
+    assert not [node for node in walk(functional_stored_data_member["functions"])
+                if node.get("op") in ("call", "mapped_call")], functional_stored_data_member
+    for target in sdk_targets:
+        target_result = check(
+            "v2-functional-stored-data-member-" + target,
+            functional_stored_data_member_source,
+            profile="cpp-core-v2", target=target, sdk=True)
+        assert not [node for node in walk(target_result["functions"])
+                    if node.get("op") in ("call", "mapped_call")], target_result
     functional_mem_fn_source = """\
 #include <functional>
 struct Box {
@@ -2001,7 +2035,15 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
          "TR0201"),
         ("invoke-variadic", '#include <functional>\nint first(int v,...){return v;}int main(){return std::invoke(first,3,4);}',
          "TR0201"),
-        ("invoke-stored-member-pointer", '#include <functional>\nstruct X{int v;};int main(){X x{3};auto p=&X::v;return std::invoke(p,x);}',
+        ("invoke-stored-member-pointer-reassignment", '#include <functional>\nstruct X{int a,b;};int main(){X x{3,4};auto p=&X::a;p=&X::b;return std::invoke(p,x);}',
+         "TR0201"),
+        ("invoke-stored-member-pointer-copy", '#include <functional>\nstruct X{int v;};int main(){X x{3};auto p=&X::v;auto q=p;return std::invoke(q,x);}',
+         "TR0201"),
+        ("invoke-stored-member-function-pointer", '#include <functional>\nstruct X{int f(){return 3;}};int main(){X x;auto p=&X::f;return std::invoke(p,x);}',
+         "TR0201"),
+        ("invoke-null-member-pointer", '#include <functional>\nstruct X{int v;};int main(){X x{3};int X::*p=nullptr;return std::invoke(p,x);}',
+         "TR0201"),
+        ("native-stored-member-pointer", '#include <functional>\nstruct X{int v;};int main(){X x{3};auto p=&X::v;return x.*p;}',
          "TR0201"),
         ("invoke-member-rvalue-reference-parameter", '#include <functional>\nstruct X{int f(int&&v){return v;}};int main(){X x;return std::invoke(&X::f,x,3);}',
          "TR0203"),

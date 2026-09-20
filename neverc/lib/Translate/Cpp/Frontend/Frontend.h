@@ -363,6 +363,15 @@ struct FunctionalMemberInvokeCall {
   std::optional<FunctionalReferenceRecord> ObjectWrapper;
   bool ObjectIsPointer;
 };
+struct FunctionalStoredMemberPointer {
+  const clang::VarDecl *Variable;
+  const clang::Expr *Address;
+  const clang::FieldDecl *Field;
+};
+std::optional<FunctionalStoredMemberPointer>
+approvedFunctionalStoredMemberPointer(
+    const State &S, const clang::SourceManager &SM,
+    const clang::VarDecl *Variable, const clang::ASTContext &Context);
 std::optional<FunctionalMemberInvokeCall>
 approvedFunctionalMemberInvokeCall(
     const State &S, const clang::SourceManager &SM,
