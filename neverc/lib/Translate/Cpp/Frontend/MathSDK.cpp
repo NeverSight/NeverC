@@ -432,6 +432,65 @@ static bool floatingHashType(QualType Type) {
          Type->isSpecificBuiltinType(BuiltinType::Double);
 }
 
+static QualType enumHashUnderlyingType(QualType Type,
+                                       const ASTContext &Context) {
+  if (Type.isNull() || Type.hasQualifiers())
+    return {};
+  const auto *Enum = Type->getAs<EnumType>();
+  const auto *Declaration = Enum ? Enum->getDecl() : nullptr;
+  const auto Underlying =
+      Declaration && Declaration->isCompleteDefinition()
+          ? Declaration->getIntegerType()
+          : QualType();
+  return !Underlying.isNull() && Context.getTypeSize(Underlying) <= 64 &&
+                 (directIntegralHashType(Underlying) ||
+                  wideIntegralHashType(Underlying))
+             ? Underlying
+             : QualType();
+}
+
+static const ClassTemplateSpecializationDecl *
+enumHashBase(const State &S, const SourceManager &SM,
+             const CXXRecordDecl *Record, QualType ValueType,
+             const ASTContext &Context) {
+  const auto Underlying = enumHashUnderlyingType(ValueType, Context);
+  const auto *Definition = Record ? Record->getDefinition() : nullptr;
+  const auto *Base =
+      Definition && Definition->getNumBases() == 1
+          ? dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+                Definition->bases_begin()->getType()->getAsCXXRecordDecl())
+          : nullptr;
+  Base = Base ? dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+                    Base->getDefinition())
+              : nullptr;
+  const auto *Template = Base ? Base->getSpecializedTemplate() : nullptr;
+  const auto *CanonicalTemplate =
+      Template ? Template->getCanonicalDecl() : nullptr;
+  if (Underlying.isNull() || !Base || !Template || !CanonicalTemplate ||
+      Base->getName() != "__enum_hash" || Base->isUnion() ||
+      Base->isDependentContext() || !Base->isEmpty() ||
+      !Base->isStandardLayout() || !Base->isTriviallyCopyable() ||
+      !Base->hasTrivialDestructor() || !Base->field_empty() ||
+      !approvedStandardSDKDeclaration(S, SM, Base) ||
+      !approvedStandardSDKDeclaration(S, SM, Template) ||
+      !approvedStandardSDKDeclaration(S, SM, CanonicalTemplate) ||
+      !cstddefOrigin(S, SM, Base->getLocation(), "libcxx",
+                     "__functional/hash.h") ||
+      !cstddefOrigin(S, SM, Template->getLocation(), "libcxx",
+                     "__functional/hash.h") ||
+      !cstddefOrigin(S, SM, CanonicalTemplate->getLocation(), "libcxx",
+                     "__functional/hash.h"))
+    return nullptr;
+  const auto &Arguments = Base->getTemplateArgs();
+  return Arguments.size() == 2 &&
+                 Arguments.get(0).getKind() == TemplateArgument::Type &&
+                 Arguments.get(1).getKind() == TemplateArgument::Integral &&
+                 Context.hasSameType(Arguments.get(0).getAsType(), ValueType) &&
+                 Arguments.get(1).getAsIntegral() == 1
+             ? Base
+             : nullptr;
+}
+
 static const ClassTemplateSpecializationDecl *
 scalarHashBase(const State &S, const SourceManager &SM,
                const CXXRecordDecl *Record, QualType ValueType,
@@ -499,8 +558,17 @@ static bool functionalObjectTemplateOrigin(const State &S,
   if (cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx",
                     "__fwd/functional.h"))
     return true;
-  return !Canonical && cstddefOrigin(S, SM, Declaration->getLocation(),
-                                     "libcxx", "__functional/hash.h");
+  if (Canonical)
+    return false;
+  if (cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx",
+                    "__functional/hash.h"))
+    return true;
+  const auto *Template = dyn_cast<ClassTemplateDecl>(Declaration);
+  const auto *Definition =
+      Template ? Template->getTemplatedDecl()->getDefinition() : nullptr;
+  return Definition && approvedStandardSDKDeclaration(S, SM, Definition) &&
+         cstddefOrigin(S, SM, Definition->getLocation(), "libcxx",
+                       "__functional/hash.h");
 }
 
 std::optional<FunctionalObjectRecord>
@@ -536,12 +604,16 @@ approvedFunctionalObjectRecord(const State &S, const SourceManager &SM,
     return std::nullopt;
   const auto ValueType = Arguments.get(0).getAsType();
   if (Name == "hash") {
-    if (Definition->getSpecializationKind() != TSK_ExplicitSpecialization ||
+    const bool Enum = !enumHashUnderlyingType(ValueType, Context).isNull();
+    if ((Enum ? Definition->getSpecializationKind() != TSK_ImplicitInstantiation
+              : Definition->getSpecializationKind() !=
+                    TSK_ExplicitSpecialization) ||
         (!directIntegralHashType(ValueType) &&
          !wideIntegralHashType(ValueType) && !floatingHashType(ValueType) &&
-         !ValueType->isNullPtrType()) ||
+         !ValueType->isNullPtrType() && !Enum) ||
         ((wideIntegralHashType(ValueType) || floatingHashType(ValueType)) &&
-         !scalarHashBase(S, SM, Definition, ValueType, Context)))
+         !scalarHashBase(S, SM, Definition, ValueType, Context)) ||
+        (Enum && !enumHashBase(S, SM, Definition, ValueType, Context)))
       return std::nullopt;
     return FunctionalObjectRecord{Definition};
   }
@@ -592,8 +664,9 @@ bool approvedFunctionalObjectBaseCast(const State &S, const SourceManager &SM,
               Arguments.get(0).getKind() == TemplateArgument::Type
           ? Arguments.get(0).getAsType()
           : QualType();
-  const auto *Base =
-      scalarHashBase(S, SM, Definition, ValueType, Context);
+  auto *Base = scalarHashBase(S, SM, Definition, ValueType, Context);
+  if (!Base)
+    Base = enumHashBase(S, SM, Definition, ValueType, Context);
   const auto *Target = Cast->getType()->getAsCXXRecordDecl();
   Target = Target ? Target->getDefinition() : nullptr;
   return Base && Target &&
@@ -918,6 +991,123 @@ bool approvedFunctionalReferenceAssignment(
              Parameter->getPointeeType(), Context.getRecordType(Source->Record));
 }
 
+static std::optional<FunctionalOperationInfo> approvedFunctionalOperationImpl(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context, bool RequireOwnedReference);
+
+static std::optional<FunctionalOperationInfo> approvedEnumHashOperation(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context, bool RequireOwnedReference) {
+  const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);
+  const auto *EnumBase = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      Method ? Method->getParent()->getDefinition() : nullptr);
+  const auto *Reference = directMethodReference(Call);
+  const auto *ReceiverCast =
+      Call && Call->getNumArgs()
+          ? dyn_cast<ImplicitCastExpr>(Call->getArg(0)->IgnoreParens())
+          : nullptr;
+  const auto *Derived = ReceiverCast ? ReceiverCast->getSubExpr() : nullptr;
+  const auto *Hash = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      Derived ? Derived->getType()->getAsCXXRecordDecl() : nullptr);
+  Hash = Hash ? dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+                    Hash->getDefinition())
+              : nullptr;
+  const auto Object = approvedFunctionalObjectRecord(S, SM, Hash, Context);
+  if (!Call || !Operator || !Method || !EnumBase || !Reference ||
+      !ReceiverCast || !Derived || !Hash || !Object ||
+      Operator->getOperator() != OO_Call ||
+      Method->getOverloadedOperator() != OO_Call || Method->isStatic() ||
+      !Method->isConst() || Method->isVariadic() || !Method->isInlined() ||
+      !Method->hasBody() || !Call->isPRValue() ||
+      EnumBase->getName() != "__enum_hash" || EnumBase->isUnion() ||
+      EnumBase->isDependentContext() || !EnumBase->isEmpty() ||
+      !EnumBase->isStandardLayout() || !EnumBase->isTriviallyCopyable() ||
+      !EnumBase->hasTrivialDestructor() ||
+      !approvedFunctionalObjectBaseCast(S, SM, ReceiverCast, Context) ||
+      !approvedStandardSDKDeclaration(S, SM, EnumBase) ||
+      !approvedStandardSDKDeclaration(S, SM, Method) ||
+      !cstddefOrigin(S, SM, EnumBase->getLocation(), "libcxx",
+                     "__functional/hash.h") ||
+      !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
+                     "__functional/hash.h") ||
+      (RequireOwnedReference && !S.owns(SM, Reference->getExprLoc())))
+    return std::nullopt;
+
+  const auto &HashArguments = Hash->getTemplateArgs();
+  const auto ValueType =
+      HashArguments.size() == 1 &&
+              HashArguments.get(0).getKind() == TemplateArgument::Type
+          ? HashArguments.get(0).getAsType()
+          : QualType();
+  const auto Underlying = enumHashUnderlyingType(ValueType, Context);
+  const auto *Base = enumHashBase(S, SM, Hash, ValueType, Context);
+  const auto *Pattern = Method->getInstantiatedFromMemberFunction();
+  const auto *Body = dyn_cast<CompoundStmt>(Method->getBody());
+  const DeclStmt *Declaration = nullptr;
+  const ReturnStmt *Return = nullptr;
+  if (Body && Body->size() == 2) {
+    auto Statement = Body->body_begin();
+    Declaration = dyn_cast<DeclStmt>(*Statement++);
+    Return = dyn_cast<ReturnStmt>(*Statement);
+  }
+  const auto *Alias =
+      Declaration && Declaration->isSingleDecl()
+          ? dyn_cast<TypedefNameDecl>(Declaration->getSingleDecl())
+          : nullptr;
+  const Expr *Returned = Return ? Return->getRetValue() : nullptr;
+  if (const auto *Cleanup = dyn_cast_or_null<ExprWithCleanups>(Returned))
+    Returned = Cleanup->getSubExpr();
+  const auto *NestedCall =
+      dyn_cast_or_null<CXXOperatorCallExpr>(
+          Returned ? Returned->IgnoreParenImpCasts() : nullptr);
+  const auto *Conversion =
+      NestedCall && NestedCall->getNumArgs() == 2
+          ? dyn_cast<CXXStaticCastExpr>(
+                NestedCall->getArg(1)->IgnoreParenImpCasts())
+          : nullptr;
+  const auto *ParameterReference =
+      Conversion ? dyn_cast<DeclRefExpr>(
+                       Conversion->getSubExpr()->IgnoreParenImpCasts())
+                 : nullptr;
+  const auto Nested = approvedFunctionalOperationImpl(
+      S, SM, NestedCall, Context, /*RequireOwnedReference=*/false);
+  if (Underlying.isNull() || !Base ||
+      Base->getCanonicalDecl() != EnumBase->getCanonicalDecl() || !Pattern ||
+      !approvedStandardSDKDeclaration(S, SM, Pattern) ||
+      !cstddefOrigin(S, SM, Pattern->getLocation(), "libcxx",
+                     "__functional/hash.h") ||
+      Method->getNumParams() != 1 || Call->getNumArgs() != 2 ||
+      !Context.hasSameType(Method->getParamDecl(0)->getType(), ValueType) ||
+      !Context.hasSameType(Call->getArg(1)->getType(), ValueType) ||
+      !Context.hasSameType(Method->getReturnType(), Context.getSizeType()) ||
+      !Context.hasSameType(Call->getType(), Context.getSizeType()) ||
+      !Context.hasSameUnqualifiedType(ReceiverCast->getType(),
+                                      Context.getRecordType(EnumBase)) ||
+      !Context.hasSameUnqualifiedType(Derived->getType(),
+                                      Context.getRecordType(Hash)) ||
+      !Alias || !approvedStandardSDKDeclaration(S, SM, Alias) ||
+      !cstddefOrigin(S, SM, Alias->getLocation(), "libcxx",
+                     "__functional/hash.h") ||
+      !Context.hasSameType(Alias->getUnderlyingType(), Underlying) ||
+      !NestedCall || !Conversion ||
+      (Conversion->getCastKind() != CK_IntegralCast &&
+       Conversion->getCastKind() != CK_NoOp) ||
+      !Context.hasSameType(Conversion->getType(), Underlying) ||
+      !ParameterReference ||
+      ParameterReference->getDecl() != Method->getParamDecl(0) || !Nested ||
+      Nested->Operation != FunctionalOperation::Hash ||
+      !Context.hasSameType(Nested->LeftType, Underlying) ||
+      !Context.hasSameType(Nested->ResultType, Context.getSizeType()))
+    return std::nullopt;
+  return FunctionalOperationInfo{FunctionalOperation::Hash,
+                                 Underlying,
+                                 {},
+                                 Context.getSizeType(),
+                                 Context.getSizeType()};
+}
+
 static std::optional<FunctionalOperationInfo> approvedFloatingHashOperation(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context, bool RequireOwnedReference) {
@@ -1104,6 +1294,9 @@ static std::optional<FunctionalOperationInfo> approvedWideIntegralHashOperation(
 static std::optional<FunctionalOperationInfo> approvedFunctionalOperationImpl(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context, bool RequireOwnedReference) {
+  if (auto Enum = approvedEnumHashOperation(
+          S, SM, Call, Context, RequireOwnedReference))
+    return Enum;
   if (auto Floating = approvedFloatingHashOperation(
           S, SM, Call, Context, RequireOwnedReference))
     return Floating;

@@ -33728,6 +33728,10 @@ TEST_F(TranslateTest, CoreV2IntegralHashesRunAtBothOptimizations) {
   writeFile(Source, R"cpp(
 #include <functional>
 #include <cstddef>
+enum HashEnum : short { hash_enum_value = -7 };
+enum class WideHashEnum : unsigned long long {
+  value = 0x123456789abcdef0ULL
+};
 std::hash<int> global_hash;
 int trace;
 int value() { trace = trace * 10 + 2; return -7; }
@@ -33741,6 +33745,9 @@ int main() {
   std::hash<float> float_hash;
   auto float_hash_copy = float_hash;
   std::hash<double> double_hash;
+  std::hash<HashEnum> enum_hash;
+  auto enum_hash_copy = enum_hash;
+  std::hash<WideHashEnum> wide_enum_hash;
   auto copy = stored;
   int score = 0;
   score += std::hash<bool>{}(true) == std::size_t(1);
@@ -33759,6 +33766,12 @@ int main() {
   score += std::invoke(float_hash_copy, -0.0f) == std::size_t(0);
   score += double_hash(1.5) == std::size_t(0x3ff8000000000000ull);
   score += std::hash<double>{}(-0.0) == std::size_t(0);
+  score += enum_hash(hash_enum_value) ==
+           static_cast<std::size_t>(short(-7));
+  score += std::invoke(enum_hash_copy, hash_enum_value) ==
+           static_cast<std::size_t>(short(-7));
+  score += std::hash<WideHashEnum>{}(WideHashEnum::value) ==
+           static_cast<std::size_t>(0x123456789abcdef0ull);
   score += apply(stored, 5) == std::size_t(5);
   trace = 0;
   score += (trace = trace * 10 + 1, global_hash)(value()) ==
@@ -33781,13 +33794,17 @@ int main() {
   std::hash<double> double_assigned;
   double_assigned = double_hash;
   score += double_assigned(-2.0) == std::size_t(0xc000000000000000ull);
+  std::hash<WideHashEnum> wide_enum_assigned;
+  wide_enum_assigned = wide_enum_hash;
+  score += wide_enum_assigned(WideHashEnum::value) ==
+           static_cast<std::size_t>(0x123456789abcdef0ull);
   trace = 0;
   score += std::hash<std::nullptr_t>{}((trace = 3, nullptr)) ==
            std::size_t(662607004);
   score += std::invoke(std::hash<std::nullptr_t>{}, nullptr) ==
            std::size_t(662607004);
   score += trace == 3;
-  return score == 26 ? 0 : score;
+  return score == 30 ? 0 : score;
 }
 )cpp");
   auto Result =
@@ -34378,9 +34395,6 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "TR0201"},
       {"hash-pointer",
        "#include <functional>\nint main(){int n;return std::hash<int*>{}(&n);}",
-       "TR0203"},
-      {"hash-enum",
-       "#include <functional>\nenum E{A};int main(){return std::hash<E>{}(A);}",
        "TR0203"},
       {"reference-wrapper-volatile",
        "#include <functional>\nint main(){volatile int v=0;"

@@ -1532,6 +1532,10 @@ extern "C" unsigned functional_stored(int a, unsigned b) {
     functional_hash_source = """\
 #include <functional>
 #include <cstddef>
+enum FunctionalHashEnum : short { functional_hash_enum_value = -7 };
+enum class FunctionalWideHashEnum : unsigned long long {
+  value = 0x123456789abcdef0ULL
+};
 std::hash<int> functional_hash_global;
 std::size_t apply_hash(std::hash<int> hash, int value) {
   return hash(value);
@@ -1557,6 +1561,10 @@ extern "C" std::size_t functional_hash(int value, unsigned long wide,
   auto float_copied = float_stored;
   std::hash<double> double_assigned;
   double_assigned = std::hash<double>{};
+  std::hash<FunctionalHashEnum> enum_stored;
+  auto enum_copied = enum_stored;
+  std::hash<FunctionalWideHashEnum> wide_enum_assigned;
+  wide_enum_assigned = std::hash<FunctionalWideHashEnum>{};
   return std::hash<bool>{}(true) + std::hash<char16_t>{}(u'A')
       + std::hash<short>{}(short(value)) + stored(value)
       + std::invoke(copied, value) + std::hash<unsigned long>{}(wide)
@@ -1565,6 +1573,10 @@ extern "C" std::size_t functional_hash(int value, unsigned long wide,
       + wide_assigned(unsigned_wide) + apply_wide_hash(wide_stored, signed_wide)
       + float_stored(narrow_float) + std::invoke(float_copied, narrow_float)
       + std::hash<double>{}(wide_float) + double_assigned(wide_float)
+      + enum_stored(functional_hash_enum_value)
+      + std::invoke(enum_copied, functional_hash_enum_value)
+      + std::hash<FunctionalWideHashEnum>{}(FunctionalWideHashEnum::value)
+      + wide_enum_assigned(FunctionalWideHashEnum::value)
       + std::hash<std::nullptr_t>{}(nullptr)
       + functional_hash_global(value);
 }
@@ -1910,8 +1922,6 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
         ("long-double", '#include <functional>\nint main(){return std::plus<long double>{}(1,2)==3;}',
          "TR0201"),
         ("hash-pointer", '#include <functional>\nint main(){int n;return std::hash<int*>{}(&n);}',
-         "TR0203"),
-        ("hash-enum", '#include <functional>\nenum E{A};int main(){return std::hash<E>{}(A);}',
          "TR0203"),
         ("reference-wrapper-volatile", '#include <functional>\nint main(){volatile int v=0;std::reference_wrapper<volatile int> r(v);return r.get();}',
          "TR0201"),

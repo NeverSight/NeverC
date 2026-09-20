@@ -295,8 +295,11 @@ through the same object, assignment and invocation boundary. Exact `float` and
 outer zero-normalizing call operator. Positive and negative zero hash to zero;
 other values hash their IEEE representation. `float` uses its 32-bit
 representation, while `double` preserves its 64-bit representation on 64-bit
-targets and uses the same eight-byte Murmur2 path on 32-bit targets. Pointer,
-enum and `long double` specializations remain outside this boundary.
+targets and uses the same eight-byte Murmur2 path on 32-bit targets. The primary
+`std::hash<E>` form for complete enums delegates through its exact
+authenticated `__enum_hash<E, true>` base to the corresponding underlying
+integer hash, including the 32-bit wide-value path. Pointer and `long double`
+specializations remain outside this boundary.
 Exact object `std::reference_wrapper<T>` and
 `std::reference_wrapper<const T>`, plus exact fixed-arity function wrappers with
 admitted scalar or object-pointer values and exact lvalue-reference parameters

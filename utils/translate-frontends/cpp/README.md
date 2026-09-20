@@ -110,8 +110,10 @@ invocation boundary. Exact `float` and `double` specializations authenticate
 the same scalar base and the outer zero-normalizing call operator. Both signed
 zeros hash to zero; other values hash their IEEE representation. `float` uses
 its 32-bit representation, while `double` preserves its bits on 64-bit targets
-and uses the eight-byte Murmur2 path on 32-bit targets. Pointer, enum and `long
-double` specializations remain outside this boundary. Exact object
+and uses the eight-byte Murmur2 path on 32-bit targets. Complete enum
+specializations authenticate the primary `hash` and `__enum_hash<E, true>`
+inheritance before delegating to the exact underlying integer hash. Pointer and
+`long double` specializations remain outside this boundary. Exact object
 forms of `std::reference_wrapper<T>` and `std::reference_wrapper<const T>`, plus
 exact fixed-arity function forms with admitted scalar or object-pointer values
 and exact lvalue-reference parameters or results, use

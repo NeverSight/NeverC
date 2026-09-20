@@ -893,8 +893,12 @@ zero; every other value hashes its IEEE representation. `float` uses its 32-bit
 representation. `double` preserves its 64-bit representation on 64-bit targets
 and reproduces the same eight-byte Murmur2 algorithm on 32-bit targets. These
 objects support the same storage, assignment and direct or `std::invoke` call
-forms. Pointer, enum and `long double` hash specializations remain outside this
-boundary.
+forms. The primary `std::hash<E>` specialization for a complete enum also uses
+the one-byte carrier and the same object forms. Its exact
+`__enum_hash<E, true>` base, underlying-type cast and nested integer hash call
+are authenticated; narrow underlying types use the direct size conversion and
+64-bit underlying types retain the target-specific path above. Pointer and
+`long double` hash specializations remain outside this boundary.
 
 Exact `std::reference_wrapper<T>` and `std::reference_wrapper<const T>` for
 non-volatile object types, plus exact function wrappers whose fixed-arity
