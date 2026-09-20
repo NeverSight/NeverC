@@ -909,8 +909,8 @@ remain outside this boundary.
 
 Exact `std::reference_wrapper<T>` and `std::reference_wrapper<const T>` for
 non-volatile object types, plus exact function wrappers whose fixed-arity
-signature has admitted scalar or object-pointer values and exact lvalue-reference
-parameters or results, retain the authenticated target ABI layout: one pointer slot under the
+signature has admitted scalar or object-pointer values, exact lvalue- or
+rvalue-reference parameters, and exact lvalue-reference results, retain the authenticated target ABI layout: one pointer slot under the
 Itanium ABI and an empty-base storage slot followed by the pointer under the
 Microsoft ABI. Direct construction from a matching lvalue, the direct
 `std::ref` and `std::cref` overloads, their wrapper-taking overloads, trivial
@@ -926,13 +926,14 @@ Wrappers around an admitted typed or transparent standard function
 object, a stored fixed-arity function pointer or an admitted function referent
 are callable directly and through `std::invoke`. The wrapper and stored referent
 are retained before the arguments are evaluated, and each expression is
-evaluated once. Exact scalar and object-pointer lvalue-reference parameters and
-results preserve their source storage and qualification.
+evaluated once. Exact scalar and object-pointer lvalue- or rvalue-reference
+parameters and exact lvalue-reference results preserve their source storage and
+qualification.
 
 Exact C++17 `std::invoke` calls on an ordinary function or stored function
 pointer also lower directly. The target must have fixed arity. Parameters may
 be admitted by-value scalars with checked direct argument conversions, or exact
-scalar or object-pointer lvalue references; results may be the corresponding
+scalar or object-pointer lvalue or rvalue references; results may be the corresponding
 scalar, object-pointer or exact lvalue reference, or `void`. References retain
 their source storage and qualification. The callable is retained before the
 arguments are evaluated, then the retained function pointer is called once.
@@ -945,7 +946,7 @@ A direct source-written address of an owned nonstatic member function also
 lowers through `std::invoke` when the receiver is an exact-class lvalue,
 full-expression temporary, pointer or admitted `std::reference_wrapper` and the method has fixed-arity
 admitted scalar or object-pointer parameters, either by value with a checked direct conversion or
-by exact scalar or object-pointer lvalue reference, with a scalar, object-pointer,
+by exact scalar or object-pointer lvalue or rvalue reference, with a scalar, object-pointer,
 exact scalar or object-pointer lvalue-reference, or `void`
 result. Reference parameters and results preserve the selected object's storage
 and qualification. The receiver is retained before the arguments are evaluated
@@ -976,8 +977,8 @@ method boundary; a direct source-written member-function address is accepted
 in the same syntax. Exact full-expression temporary receivers are also
 materialized through this method boundary and destroyed after the call. The receiver is retained before the arguments, const methods
 accept exact const receivers, `&&`-qualified methods require an exact temporary
-receiver, and admitted lvalue-reference parameters and
-results preserve storage identity. Volatile native data-member access remains
+receiver, admitted lvalue- or rvalue-reference parameters, and admitted
+lvalue-reference results preserve storage identity. Volatile native data-member access remains
 rejected. Parameter-sourced, reassigned or null native member
 pointers remain rejected. The selected libc++
 member-function or member-object dispatcher body, wrapper `get()` body and
@@ -1002,7 +1003,7 @@ objects, user-defined operands, `long double`, `std::function`, binders and sear
 not yet lower. Reassigned or null member pointers, `mem_fn` copies or moves
 from parameters, reassigned `mem_fn` objects, base-adjusting
 receivers, volatile
-receivers, user-defined callable objects, function referents, rvalue-reference or
+receivers, user-defined callable objects, function referents, rvalue-reference results or
 other reference signatures and variadic targets remain
 outside the `std::invoke` boundary.
 Quoted includes, shadows, forged declarations and other runtime uses remain

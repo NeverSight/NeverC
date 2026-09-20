@@ -307,8 +307,9 @@ volatile-object and function-pointer hash specializations remain outside this
 boundary.
 Exact object `std::reference_wrapper<T>` and
 `std::reference_wrapper<const T>`, plus exact fixed-arity function wrappers with
-admitted scalar or object-pointer values and exact lvalue-reference parameters
-or results, use their authenticated target ABI layout:
+admitted scalar or object-pointer values, exact lvalue- or rvalue-reference
+parameters, and exact lvalue-reference results, use their authenticated target
+ABI layout:
 a single pointer slot under the Itanium ABI and an empty-base storage slot plus
 the pointer under the Microsoft ABI. Direct matching-lvalue construction,
 direct and wrapper-taking `std::ref`/`std::cref`, trivial copy/move
@@ -318,20 +319,20 @@ qualification and single evaluation. Wrapper-taking calls preserve the target;
 reference conversion. Wrappers
 around admitted standard function objects, stored fixed-arity function pointers
 and admitted function referents call directly or through `std::invoke`,
-preserving exact scalar and object-pointer lvalue references and retaining the
+preserving exact scalar and object-pointer lvalue or rvalue references and retaining the
 wrapper and referenced callable before evaluating the arguments. The
 remaining callable facilities stay outside the documented
 direct lowering boundary, except exact C++17 `std::invoke` calls on fixed-arity
 ordinary functions or stored function pointers. Those calls accept directly
 convertible by-value scalar parameters or exact admitted scalar or
-object-pointer lvalue references, and preserve the corresponding scalar,
+object-pointer lvalue or rvalue references, and preserve the corresponding scalar,
 object-pointer, lvalue-reference or `void` result. The same entry point accepts
 the admitted typed and transparent standard function objects above. A direct
 source-written address of an owned nonstatic member
 function may also be invoked on an exact-class lvalue, pointer or admitted
 `std::reference_wrapper` when its fixed-arity signature has the same scalar
-boundary, including object-pointer values and exact scalar or object-pointer
-lvalue-reference parameters and results. A
+boundary, including object-pointer values, exact scalar or object-pointer
+lvalue- or rvalue-reference parameters, and exact lvalue-reference results. A
 direct source-written address of an admitted non-volatile scalar or object-pointer field,
 including a declared-const field, may be invoked on the same receivers and
 retains its qualified lvalue result. An exact `std::mem_fn` wrapper built from
@@ -364,7 +365,7 @@ the call, const methods accept exact const receivers, and an `&&`-qualified
 method requires that temporary receiver. Reassigned or null
 member pointers, `mem_fn` copies or moves from parameters, reassigned `mem_fn`
 objects, base adjustments,
-rvalue-reference or other reference signatures and
+rvalue-reference results or other reference signatures and
 volatile receivers remain outside this boundary.
 Core v2 never admits the `platform` root.
 Math v1 continues to use its separately checked libc++, resource and Darwin

@@ -120,8 +120,9 @@ ABI-v1 eight-byte CityHash path on 64-bit targets through the same object,
 assignment and invocation forms. `long double`, `void *`, volatile-object and
 function-pointer hashes remain outside this boundary. Exact object
 forms of `std::reference_wrapper<T>` and `std::reference_wrapper<const T>`, plus
-exact fixed-arity function forms with admitted scalar or object-pointer values
-and exact lvalue-reference parameters or results, use
+exact fixed-arity function forms with admitted scalar or object-pointer values,
+exact lvalue- or rvalue-reference parameters, and exact lvalue-reference
+results, use
 their authenticated target ABI layout: one pointer slot under the Itanium ABI
 and an empty-base storage slot plus the pointer under the Microsoft ABI. They
 lower direct matching-lvalue construction, direct and wrapper-taking
@@ -131,10 +132,10 @@ object targets. Object forms also lower the implicit reference conversion.
 Wrappers around admitted standard function
 objects, stored fixed-arity function pointers and admitted function referents
 are callable directly and through `std::invoke`, preserving exact scalar and
-object-pointer lvalue references. The
+object-pointer lvalue or rvalue references. The
 exact C++17 `std::invoke` also lowers fixed-arity ordinary functions and stored
 function pointers with directly convertible by-value scalar parameters or
-exact admitted scalar or object-pointer lvalue references, and preserves the
+exact admitted scalar or object-pointer lvalue or rvalue references, and preserves the
 corresponding scalar, object-pointer, lvalue-reference or `void` result, plus
 the admitted typed and transparent standard function objects. Direct named
 addresses of owned nonstatic member functions
@@ -156,8 +157,8 @@ reference extension follow the source boundary. Direct addresses and stored memb
 may be called with native `.*` or `->*` on an exact object or pointer through
 the same fixed-arity method boundary; exact full-expression temporary objects
 are materialized and destroyed after the call, and `&&`-qualified methods
-require that temporary receiver. This includes const methods and admitted
-lvalue-reference parameters or results. Exact
+require that temporary receiver. This includes const methods, admitted lvalue-
+or rvalue-reference parameters, and admitted lvalue-reference results. Exact
 `std::mem_fn` wrappers built from those direct named addresses or authenticated
 local member-pointer chains may be called
 immediately, directly or as the callable of `std::invoke`, through the same
@@ -168,9 +169,9 @@ their carriers, including chains through the admitted `<utility>` reference
 adapters. Reassigned or null member pointers, `mem_fn` copies or moves from
 parameters, reassigned `mem_fn` objects,
 base adjustments, volatile receivers, user-defined callable objects,
-and rvalue-reference, other reference or variadic function signatures stay
+and rvalue-reference results, other reference or variadic function signatures stay
 outside this boundary. Object-pointer values and exact scalar or object-pointer
-lvalue-reference parameters and results are preserved. The
+lvalue- or rvalue-reference parameters and lvalue-reference results are preserved. The
 frontend uses the pinned embedded libc++/resource VFS and exposes resolved type
 aliases plus integral/enum constant results. It records all consumed header
 hashes: 101 for the `<type_traits>` closure, nine for standalone `<cstdint>`,

@@ -802,11 +802,10 @@ std::optional<FunctionalReferenceRecord> approvedFunctionalReferenceRecord(
                 !supportedFunctionalScalar(Result, Context))))
       return std::nullopt;
     for (const auto Parameter : Function->param_types())
-      if (Parameter->isLValueReferenceType()
+      if (Parameter->isReferenceType()
               ? !supportedFunctionalReferenceValue(Context,
                                                    Parameter->getPointeeType())
-              : (Parameter->isReferenceType() ||
-                 !supportedFunctionalScalar(Parameter, Context)))
+              : !supportedFunctionalScalar(Parameter, Context))
         return std::nullopt;
   }
   const auto PointerType = Context.getPointerType(Referent);
@@ -6638,7 +6637,7 @@ static bool supportedFunctionalStoredMember(const ASTContext &Context,
     return false;
   for (const auto *Parameter : Method->parameters()) {
     const auto Type = Parameter->getType();
-    if (Type->isLValueReferenceType()) {
+    if (Type->isReferenceType()) {
       const auto ParameterReferent = Type->getPointeeType();
       if (ParameterReferent.isVolatileQualified() ||
           ParameterReferent.isRestrictQualified() ||
@@ -6646,8 +6645,7 @@ static bool supportedFunctionalStoredMember(const ASTContext &Context,
           !supportedFunctionalMemberValue(
               Context, ParameterReferent.getUnqualifiedType()))
         return false;
-    } else if (Type->isReferenceType() ||
-               !supportedFunctionalMemberValue(Context, Type)) {
+    } else if (!supportedFunctionalMemberValue(Context, Type)) {
       return false;
     }
   }
@@ -6944,12 +6942,15 @@ static bool
 supportedFunctionalInvokeReferenceArgument(const ASTContext &Context,
                                            QualType Parameter,
                                            const Expr *ArgumentExpression) {
-  if (!Parameter->isLValueReferenceType() || !ArgumentExpression)
+  if (!Parameter->isReferenceType() || !ArgumentExpression)
     return false;
   const auto Referent = Parameter->getPointeeType();
   const auto Argument = ArgumentExpression->getType();
   return supportedFunctionalInvokeReference(Context, Referent) &&
-         ArgumentExpression->isLValue() && !Argument.isVolatileQualified() &&
+         (Parameter->isLValueReferenceType()
+              ? ArgumentExpression->isLValue()
+              : ArgumentExpression->isXValue()) &&
+         !Argument.isVolatileQualified() &&
          Context.hasSameUnqualifiedType(Referent, Argument) &&
          (Referent.isConstQualified() || !Argument.isConstQualified());
 }
@@ -7055,18 +7056,9 @@ approvedNativeMemberPointerCall(
     const auto *ArgumentExpression = Call->getArg(I);
     const auto Argument = ArgumentExpression->getType();
     bool Supported = false;
-    if (Parameter->isLValueReferenceType()) {
-      const auto ParameterReferent = Parameter->getPointeeType();
-      Supported =
-          !ParameterReferent.isVolatileQualified() &&
-          !ParameterReferent.isRestrictQualified() &&
-          ParameterReferent.getAddressSpace() == LangAS::Default &&
-          supportedFunctionalMemberValue(
-              Context, ParameterReferent.getUnqualifiedType()) &&
-          ArgumentExpression->isLValue() && !Argument.isVolatileQualified() &&
-          Context.hasSameUnqualifiedType(ParameterReferent, Argument) &&
-          (ParameterReferent.isConstQualified() ||
-           !Argument.isConstQualified());
+    if (Parameter->isReferenceType()) {
+      Supported = supportedFunctionalInvokeReferenceArgument(
+          Context, Parameter, ArgumentExpression);
     } else {
       const auto *Source =
           functionalInvokeStrippedExpression(ArgumentExpression);
@@ -7469,17 +7461,9 @@ approvedFunctionalMemberInvokeCall(
       const auto *ArgumentExpression = Call->getArg(I + 2);
       const auto Argument = ArgumentExpression->getType();
       bool Supported = false;
-      if (Parameter->isLValueReferenceType()) {
-        const auto Referent = Parameter->getPointeeType();
-        Supported =
-            !Referent.isVolatileQualified() &&
-            !Referent.isRestrictQualified() &&
-            Referent.getAddressSpace() == LangAS::Default &&
-            supportedFunctionalMemberValue(Context,
-                                           Referent.getUnqualifiedType()) &&
-            ArgumentExpression->isLValue() && !Argument.isVolatileQualified() &&
-            Context.hasSameUnqualifiedType(Referent, Argument) &&
-            (Referent.isConstQualified() || !Argument.isConstQualified());
+      if (Parameter->isReferenceType()) {
+        Supported = supportedFunctionalInvokeReferenceArgument(
+            Context, Parameter, ArgumentExpression);
       } else {
         Supported = !Parameter->isReferenceType() &&
                     supportedFunctionalMemberValue(Context, Parameter) &&
@@ -7735,7 +7719,7 @@ approvedFunctionalReferenceDirectInvoke(
     const auto *ArgumentExpression = Call->getArg(I + 1);
     const auto Argument = ArgumentExpression->getType();
     const bool Supported =
-        Parameter->isLValueReferenceType()
+        Parameter->isReferenceType()
             ? supportedFunctionalInvokeReferenceArgument(Context, Parameter,
                                                          ArgumentExpression)
             : !Parameter->isReferenceType() &&
@@ -7807,7 +7791,7 @@ approvedFunctionalReferenceInvokeCall(
     return std::nullopt;
   for (unsigned I = 1; I < Call->getNumArgs(); ++I) {
     const auto Parameter = Prototype->getParamType(I - 1);
-    const bool Supported = Parameter->isLValueReferenceType()
+    const bool Supported = Parameter->isReferenceType()
                                ? supportedFunctionalInvokeReferenceArgument(
                                      Context, Parameter, Call->getArg(I))
                                : !Parameter->isReferenceType() &&
@@ -10941,7 +10925,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       const auto *ArgumentExpression = Call->getArg(I + 1);
       const auto Argument = ArgumentExpression->getType();
       bool Supported = false;
-      if (Parameter->isLValueReferenceType()) {
+      if (Parameter->isReferenceType()) {
         Supported = supportedFunctionalInvokeReferenceArgument(
             Context, Parameter, ArgumentExpression);
       } else {
