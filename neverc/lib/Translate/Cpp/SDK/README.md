@@ -297,8 +297,8 @@ entry point accepts the admitted typed and transparent standard function
 objects above. A direct source-written address of an owned nonstatic member
 function may also be invoked on an exact-class lvalue, pointer or admitted
 `std::reference_wrapper` when its fixed-arity signature has the same scalar
-boundary, including exact scalar lvalue-reference parameters and results. A
-direct source-written address of an admitted non-volatile scalar field,
+boundary, including object-pointer values and exact scalar lvalue-reference parameters and results. A
+direct source-written address of an admitted non-volatile scalar or object-pointer field,
 including a declared-const field, may be invoked on the same receivers and
 retains its qualified lvalue result. Stored member pointers, base
 adjustments, rvalue-reference or non-scalar reference signatures and volatile

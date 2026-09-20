@@ -1574,7 +1574,9 @@ extern "C" int functional_invoke(Function function, int a, int b) {
 struct Box {
   int value;
   const int fixed;
+  int *link;
   int add(short n) const { return value + n; }
+  int *pass(int *pointer) const { return pointer; }
   void set(int n) { value = n; }
   void add_to(int &n) const { n += value; }
   int &slot() { return value; }
@@ -1587,8 +1589,11 @@ extern "C" int functional_member_invoke(Box &box, const Box &constant) {
   int total = 1;
   std::invoke(&Box::add_to, wrapped, total);
   std::invoke(&Box::slot, box) = 10;
+  std::invoke(&Box::link, wrapped) = box.link;
   return total + std::invoke(&Box::view, std::cref(constant))
       + std::invoke(&Box::add, wrapped, 2)
+      + (std::invoke(&Box::pass, box, box.link) == box.link)
+      + (std::invoke(&Box::link, std::cref(constant)) == constant.link)
       + std::invoke(&Box::value, &box)
       + std::invoke(&Box::fixed, box)
       + std::invoke(&Box::fixed, std::cref(constant))
@@ -1675,6 +1680,8 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
         ("invoke-member-rvalue-reference-result", '#include <functional>\nstruct X{int v;int&&f(){return static_cast<int&&>(v);}};int main(){X x{3};return std::invoke(&X::f,x);}',
          "TR0203"),
         ("invoke-member-volatile-receiver", '#include <functional>\nstruct X{int v;};int main(){volatile X x{3};return std::invoke(&X::v,x);}',
+         "TR0203"),
+        ("invoke-member-function-pointer-field", '#include <functional>\nint f(){return 3;}struct X{int(*p)();};int main(){X x{f};return std::invoke(&X::p,x)();}',
          "TR0203"),
     ):
         check("v2-functional-typed-" + name, source, code,

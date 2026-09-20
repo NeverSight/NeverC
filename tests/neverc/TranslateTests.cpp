@@ -33925,7 +33925,9 @@ TEST_F(TranslateTest,
 struct Box {
   int value;
   const int fixed;
+  int *link;
   int add(short n) const { return value + n; }
+  int *pass(int *pointer) const { return pointer; }
   void set(int n) { value = n; }
   void add_to(int &n) const { n += value; }
   int &slot() { return value; }
@@ -33935,8 +33937,10 @@ int trace;
 Box *pick(Box *box) { trace = trace * 10 + 1; return box; }
 int argument() { trace = trace * 10 + 2; return 4; }
 int main() {
-  Box box{3, 8};
-  const Box constant{5, 13};
+  int first = 17;
+  int second = 19;
+  Box box{3, 8, &first};
+  const Box constant{5, 13, &second};
   const Box *constant_pointer = &constant;
   auto wrapped = std::ref(box);
   int score = 0;
@@ -33950,6 +33954,10 @@ int main() {
   score += std::invoke(&Box::value, std::cref(constant)) == 5;
   score += std::invoke(&Box::fixed, box) == 8;
   score += std::invoke(&Box::fixed, std::cref(constant)) == 13;
+  score += std::invoke(&Box::pass, box, &first) == &first;
+  score += std::invoke(&Box::link, std::cref(constant)) == &second;
+  std::invoke(&Box::link, wrapped) = &second;
+  score += box.link == &second;
   std::invoke(&Box::value, wrapped) = 11;
   int total = 1;
   std::invoke(&Box::add_to, wrapped, total);
@@ -33960,7 +33968,7 @@ int main() {
   trace = 0;
   score += std::invoke(&Box::add, std::ref(*pick(&box)), argument()) == 16;
   score += trace == 12;
-  return score == 13 && box.value == 12 ? 0 : score;
+  return score == 16 && box.value == 12 ? 0 : score;
 }
 )cpp");
   auto Result =
@@ -34088,6 +34096,10 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
       {"invoke-member-volatile-receiver",
        "#include <functional>\nstruct X{int v;};int main(){volatile X x{3};"
        "return std::invoke(&X::v,x);}",
+       "TR0203"},
+      {"invoke-member-function-pointer-field",
+       "#include <functional>\nint f(){return 3;}struct X{int(*p)();};"
+       "int main(){X x{f};return std::invoke(&X::p,x)();}",
        "TR0203"}};
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);

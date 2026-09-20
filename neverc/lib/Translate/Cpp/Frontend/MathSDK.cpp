@@ -5732,6 +5732,24 @@ static bool functionalInvokeParameterReference(
   return Reference && Reference->getDecl() == Parameter;
 }
 
+static bool supportedFunctionalMemberValue(const ASTContext &Context,
+                                           QualType Type) {
+  return supportedFunctionalScalar(Type, Context) ||
+         utilityObjectPointer(Context, Type);
+}
+
+static bool functionalMemberValueConversion(const ASTContext &Context,
+                                            QualType From, QualType To) {
+  if (supportedFunctionalScalar(From, Context) &&
+      supportedFunctionalScalar(To, Context))
+    return utilityScalarDirectConversion(Context, From, To);
+  if (!utilityObjectPointer(Context, To))
+    return false;
+  if (From->isNullPtrType())
+    return true;
+  return utilityPointerConversion(Context, From, To);
+}
+
 std::optional<FunctionalMemberInvokeCall>
 approvedFunctionalMemberInvokeCall(
     const State &S, const SourceManager &SM, const CallExpr *Call,
@@ -5849,7 +5867,7 @@ approvedFunctionalMemberInvokeCall(
                 !Context.hasSameType(Referent, Call->getType()))
              : (!Context.hasSameType(Result, Call->getType()) ||
                 (!Result->isVoidType() &&
-                 !supportedFunctionalScalar(Result, Context)))) ||
+                 !supportedFunctionalMemberValue(Context, Result)))) ||
         !MemberCall || MemberCall->getNumArgs() != Method->getNumParams())
       return std::nullopt;
     for (unsigned I = 0; I < Method->getNumParams(); ++I) {
@@ -5869,9 +5887,9 @@ approvedFunctionalMemberInvokeCall(
             (Referent.isConstQualified() || !Argument.isConstQualified());
       } else {
         Supported = !Parameter->isReferenceType() &&
-                    supportedFunctionalScalar(Parameter, Context) &&
-                    supportedFunctionalScalar(Argument, Context) &&
-                    utilityScalarDirectConversion(Context, Argument, Parameter);
+                    supportedFunctionalMemberValue(Context, Parameter) &&
+                    functionalMemberValueConversion(Context, Argument,
+                                                    Parameter);
       }
       if (!Supported ||
           !functionalInvokeParameterReference(
@@ -5887,7 +5905,8 @@ approvedFunctionalMemberInvokeCall(
     if (Call->getNumArgs() != 2 || Field->isBitField() ||
         FieldType.isVolatileQualified() || FieldType.isRestrictQualified() ||
         FieldType.getAddressSpace() != LangAS::Default ||
-        !supportedFunctionalScalar(FieldType.getUnqualifiedType(), Context) ||
+        !supportedFunctionalMemberValue(Context,
+                                        FieldType.getUnqualifiedType()) ||
         !Call->isLValue() || CallType.isVolatileQualified() ||
         CallType.isRestrictQualified() ||
         CallType.getAddressSpace() != LangAS::Default ||

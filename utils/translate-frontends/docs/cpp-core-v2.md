@@ -883,12 +883,12 @@ expression and arguments are each evaluated once.
 A direct source-written address of an owned nonstatic member function also
 lowers through `std::invoke` when the receiver is an exact-class lvalue,
 pointer or admitted `std::reference_wrapper` and the method has fixed-arity
-admitted scalar parameters, either by value with a checked direct conversion or
-by exact lvalue reference, with a scalar, scalar lvalue-reference or `void`
+admitted scalar or object-pointer parameters, either by value with a checked direct conversion or
+by exact scalar lvalue reference, with a scalar, object-pointer, scalar lvalue-reference or `void`
 result. Reference parameters and results preserve the selected object's storage
 and qualification. The receiver is retained before the arguments are evaluated
 and each selected argument conversion is preserved. A direct source-written
-address of an admitted non-volatile scalar field lowers on the same receiver
+address of an admitted non-volatile scalar or object-pointer field lowers on the same receiver
 forms and retains the qualified field lvalue, including assignment and reads of
 const objects or declared-const fields. The selected libc++
 member-function or member-object dispatcher body, wrapper `get()` body and
