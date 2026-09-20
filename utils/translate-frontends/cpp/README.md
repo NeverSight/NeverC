@@ -110,9 +110,11 @@ Wrappers around admitted standard function
 objects, stored fixed-arity function pointers and admitted function referents
 are callable directly and through `std::invoke`. The
 exact C++17 `std::invoke` also lowers fixed-arity ordinary functions and stored
-function pointers with directly convertible by-value scalar parameters and
-scalar or `void` results, plus the admitted typed and transparent standard
-function objects. Direct named addresses of owned nonstatic member functions
+function pointers with directly convertible by-value scalar parameters or
+exact admitted scalar or object-pointer lvalue references, and preserves the
+corresponding scalar, object-pointer, lvalue-reference or `void` result, plus
+the admitted typed and transparent standard function objects. Direct named
+addresses of owned nonstatic member functions
 and admitted non-volatile scalar or object-pointer fields also lower on exact-class lvalue,
 pointer or `std::reference_wrapper` receivers; fields retain their qualified
 lvalue result, including reads of declared-const fields. Exact temporary

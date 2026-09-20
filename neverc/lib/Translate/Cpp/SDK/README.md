@@ -295,9 +295,11 @@ retaining the wrapper and referenced callable before evaluating the arguments. T
 remaining callable facilities stay outside the documented
 direct lowering boundary, except exact C++17 `std::invoke` calls on fixed-arity
 ordinary functions or stored function pointers. Those calls accept directly
-convertible by-value scalar parameters and scalar or `void` results. The same
-entry point accepts the admitted typed and transparent standard function
-objects above. A direct source-written address of an owned nonstatic member
+convertible by-value scalar parameters or exact admitted scalar or
+object-pointer lvalue references, and preserve the corresponding scalar,
+object-pointer, lvalue-reference or `void` result. The same entry point accepts
+the admitted typed and transparent standard function objects above. A direct
+source-written address of an owned nonstatic member
 function may also be invoked on an exact-class lvalue, pointer or admitted
 `std::reference_wrapper` when its fixed-arity signature has the same scalar
 boundary, including object-pointer values and exact scalar or object-pointer

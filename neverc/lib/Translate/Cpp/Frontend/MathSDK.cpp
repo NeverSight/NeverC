@@ -9541,8 +9541,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   }
   if (Origin->Path == "__functional/invoke.h" && Name == "invoke" &&
       Call->getNumArgs() >= 1 &&
-      Call->getNumArgs() == Function->getNumParams() && Call->isPRValue() &&
-      Same(Call->getType(), Function->getReturnType())) {
+      Call->getNumArgs() == Function->getNumParams()) {
     const auto Callable = Call->getArg(0)->getType();
     const auto *Prototype =
         Callable->isFunctionType()
@@ -9550,11 +9549,33 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
             : Callable->isFunctionPointerType()
                   ? Callable->getPointeeType()->getAs<FunctionProtoType>()
                   : nullptr;
+    const auto Result = Prototype ? Prototype->getReturnType() : QualType();
+    const bool ReferenceResult =
+        !Result.isNull() && Result->isLValueReferenceType();
+    const auto Referent =
+        ReferenceResult ? Result->getPointeeType() : QualType();
+    const auto ReferenceValue = [&](QualType Type) {
+      if (Type.isNull() || Type.isVolatileQualified() ||
+          Type.isRestrictQualified() ||
+          Type.getAddressSpace() != LangAS::Default)
+        return false;
+      Type = Type.getUnqualifiedType();
+      return utilityScalar(Context, Type) &&
+             (!Type->isPointerType() ||
+              utilityObjectPointer(Context, Type));
+    };
     if (!Prototype || Prototype->isVariadic() ||
         Prototype->getNumParams() + 1 != Call->getNumArgs() ||
-        !Same(Prototype->getReturnType(), Function->getReturnType()) ||
-        (!Function->getReturnType()->isVoidType() &&
-         !utilityScalar(Context, Function->getReturnType())))
+        !Same(Result, Function->getReturnType()) ||
+        (ReferenceResult
+             ? (!ReferenceValue(Referent) || !Call->isLValue() ||
+                !Same(Call->getType(), Referent))
+             : (!Call->isPRValue() ||
+                !Same(Call->getType(), Function->getReturnType()) ||
+                (!Result->isVoidType() &&
+                 !utilityScalar(Context, Result)))) ||
+        !approvedFunctionalInvokeDispatch(S, SM, Call, Context,
+                                          ReferenceResult))
       return std::nullopt;
     for (unsigned I = 0; I < Call->getNumArgs(); ++I) {
       const auto Parameter = Function->getParamDecl(I)->getType();
@@ -9565,10 +9586,25 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     }
     for (unsigned I = 0; I < Prototype->getNumParams(); ++I) {
       const auto Parameter = Prototype->getParamType(I);
-      const auto Argument = Call->getArg(I + 1)->getType();
-      if (Parameter->isReferenceType() || !utilityScalar(Context, Parameter) ||
-          !utilityScalar(Context, Argument) ||
-          !utilityScalarDirectConversion(Context, Argument, Parameter))
+      const auto *ArgumentExpression = Call->getArg(I + 1);
+      const auto Argument = ArgumentExpression->getType();
+      bool Supported = false;
+      if (Parameter->isLValueReferenceType()) {
+        const auto ParameterReferent = Parameter->getPointeeType();
+        Supported =
+            ReferenceValue(ParameterReferent) && ArgumentExpression->isLValue() &&
+            !Argument.isVolatileQualified() &&
+            Context.hasSameUnqualifiedType(ParameterReferent, Argument) &&
+            (ParameterReferent.isConstQualified() ||
+             !Argument.isConstQualified());
+      } else {
+        Supported = !Parameter->isReferenceType() &&
+                    utilityScalar(Context, Parameter) &&
+                    utilityScalar(Context, Argument) &&
+                    utilityScalarDirectConversion(Context, Argument,
+                                                  Parameter);
+      }
+      if (!Supported)
         return std::nullopt;
     }
     return UtilityOperation::FunctionalInvoke;

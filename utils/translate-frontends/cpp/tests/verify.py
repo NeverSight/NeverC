@@ -1622,6 +1622,31 @@ extern "C" int functional_invoke(Function function, int a, int b) {
     for target in sdk_targets:
         check("v2-functional-invoke-" + target, functional_invoke_source,
               profile="cpp-core-v2", target=target, sdk=True)
+    functional_invoke_reference_source = """\
+#include <functional>
+int &same(int &value) { return value; }
+const int &view(const int &value) { return value; }
+void redirect(int *&slot, int *value) { slot = value; }
+int *&alias(int *&slot) { return slot; }
+using Same = int &(*)(int &);
+extern "C" int functional_invoke_reference(
+    Same function, int &value, const int &constant, int *&slot, int *pointer) {
+  std::invoke(same, value) = 3;
+  std::invoke(function, value) = 4;
+  std::invoke(redirect, slot, pointer);
+  std::invoke(alias, slot) = &value;
+  return std::invoke(view, constant) + value + (slot == &value);
+}
+"""
+    functional_invoke_reference = check(
+        "v2-functional-invoke-reference", functional_invoke_reference_source,
+        profile="cpp-core-v2", sdk=True)
+    assert any(function["name"] == "functional_invoke_reference"
+               for function in functional_invoke_reference["functions"]), functional_invoke_reference
+    for target in sdk_targets:
+        check("v2-functional-invoke-reference-" + target,
+              functional_invoke_reference_source, profile="cpp-core-v2",
+              target=target, sdk=True)
     functional_member_invoke_source = """\
 #include <functional>
 struct Box {
@@ -1795,10 +1820,12 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
          "TR0201"),
         ("invoke-user-object", '#include <functional>\nstruct F{int operator()(int v)const{return v;}};int main(){return std::invoke(F{},1);}',
          "TR0203"),
-        ("invoke-reference-parameter", '#include <functional>\nint load(int&v){return v;}int main(){int v=3;return std::invoke(load,v);}',
+        ("invoke-rvalue-reference-parameter", '#include <functional>\nint load(int&&v){return v;}int main(){return std::invoke(load,3);}',
          "TR0203"),
-        ("invoke-reference-result", '#include <functional>\nint value;int&get(){return value;}int main(){return std::invoke(get);}',
+        ("invoke-rvalue-reference-result", '#include <functional>\nint value;int&&get(){return static_cast<int&&>(value);}int main(){return std::invoke(get);}',
          "TR0203"),
+        ("invoke-volatile-reference-parameter", '#include <functional>\nint load(volatile int&v){return v;}int main(){volatile int v=3;return std::invoke(load,v);}',
+         "TR0201"),
         ("invoke-variadic", '#include <functional>\nint first(int v,...){return v;}int main(){return std::invoke(first,3,4);}',
          "TR0201"),
         ("invoke-stored-member-pointer", '#include <functional>\nstruct X{int v;};int main(){X x{3};auto p=&X::v;return std::invoke(p,x);}',

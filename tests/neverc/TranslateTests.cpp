@@ -33834,6 +33834,66 @@ int main() {
 }
 
 TEST_F(TranslateTest,
+       CoreV2FunctionalInvokeReferencesRunAtBothOptimizations) {
+  const auto Source = tmpFile("functional-invoke-references.cpp");
+  const auto Output = tmpFile("functional-invoke-references.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+int trace;
+int &first(int &value) { trace = trace * 10 + 3; return value; }
+int &second(int &value) { trace = trace * 10 + 4; return value; }
+const int &view(const int &value) { return value; }
+void redirect(int *&slot, int *value) { slot = value; }
+int *&alias(int *&slot) { return slot; }
+using Reference = int &(*)(int &);
+Reference selected = first;
+Reference choose() { trace = trace * 10 + 1; return selected; }
+int &argument(int &value) {
+  trace = trace * 10 + 2;
+  selected = second;
+  return value;
+}
+int main() {
+  int first_value = 3;
+  int second_value = 7;
+  int *slot = &first_value;
+  int score = 0;
+  std::invoke(first, first_value) = 4;
+  score += first_value == 4;
+  Reference pointer = first;
+  std::invoke(pointer, first_value) = 5;
+  score += first_value == 5;
+  score += std::invoke(view, second_value) == 7;
+  std::invoke(redirect, slot, &second_value);
+  score += slot == &second_value;
+  std::invoke(alias, slot) = &first_value;
+  score += slot == &first_value;
+  trace = 0;
+  selected = first;
+  std::invoke(choose(), argument(first_value)) = 11;
+  score += first_value == 11;
+  score += trace == 123;
+  score += selected == second;
+  return score == 8 ? 0 : score;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-invoke-references" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
        CoreV2FunctionalReferenceWrappersInvokeAtBothOptimizations) {
   const auto Source = tmpFile("functional-reference-invoke.cpp");
   const auto Output = tmpFile("functional-reference-invoke.nc");
@@ -34216,14 +34276,18 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "#include <functional>\nstruct F{int operator()(int v)const{return v;}};"
        "int main(){return std::invoke(F{},1);}",
        "TR0203"},
-      {"invoke-reference-parameter",
-       "#include <functional>\nint load(int&v){return v;}int main(){int v=3;"
-       "return std::invoke(load,v);}",
+      {"invoke-rvalue-reference-parameter",
+       "#include <functional>\nint load(int&&v){return v;}int main(){"
+       "return std::invoke(load,3);}",
        "TR0203"},
-      {"invoke-reference-result",
-       "#include <functional>\nint value;int&get(){return value;}int main(){"
+      {"invoke-rvalue-reference-result",
+       "#include <functional>\nint value;int&&get(){return static_cast<int&&>(value);}int main(){"
        "return std::invoke(get);}",
        "TR0203"},
+      {"invoke-volatile-reference-parameter",
+       "#include <functional>\nint load(volatile int&v){return v;}int main(){"
+       "volatile int v=3;return std::invoke(load,v);}",
+       "TR0201"},
       {"invoke-variadic",
        "#include <functional>\nint first(int v,...){return v;}int main(){"
        "return std::invoke(first,3,4);}",

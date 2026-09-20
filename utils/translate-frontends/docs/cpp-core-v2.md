@@ -896,9 +896,11 @@ are retained before the arguments are evaluated, and each expression is
 evaluated once.
 
 Exact C++17 `std::invoke` calls on an ordinary function or stored function
-pointer also lower directly. The target must have fixed arity, by-value
-admitted scalar parameters and a scalar or `void` result. Each argument may use
-a checked direct scalar conversion. The callable is retained before the
+pointer also lower directly. The target must have fixed arity. Parameters may
+be admitted by-value scalars with checked direct argument conversions, or exact
+scalar or object-pointer lvalue references; results may be the corresponding
+scalar, object-pointer or exact lvalue reference, or `void`. References retain
+their source storage and qualification. The callable is retained before the
 arguments are evaluated, then the retained function pointer is called once.
 The same entry point accepts every admitted typed or transparent standard
 function object, including temporary and stored objects, and reuses the exact
