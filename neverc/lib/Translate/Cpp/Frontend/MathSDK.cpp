@@ -540,9 +540,9 @@ bool approvedFunctionalObjectAssignment(const State &S,
              Parameter->getPointeeType(), Context.getRecordType(Source->Record));
 }
 
-std::optional<FunctionalOperationInfo>
-approvedFunctionalOperation(const State &S, const SourceManager &SM,
-                            const CallExpr *Call, const ASTContext &Context) {
+static std::optional<FunctionalOperationInfo> approvedFunctionalOperationImpl(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context, bool RequireOwnedReference) {
   const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
   const auto *Method =
       dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);
@@ -572,7 +572,7 @@ approvedFunctionalOperation(const State &S, const SourceManager &SM,
                      "__functional/operations.h") ||
       !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
                      "__functional/operations.h") ||
-      !S.owns(SM, Reference->getExprLoc()))
+      (RequireOwnedReference && !S.owns(SM, Reference->getExprLoc())))
     return std::nullopt;
 
   const auto FunctionalRecord =
@@ -796,6 +796,12 @@ approvedFunctionalOperation(const State &S, const SourceManager &SM,
     return std::nullopt;
   return FunctionalOperationInfo{Selected->Operation, LeftType, RightType,
                                  Operation->getType(), Method->getReturnType()};
+}
+
+std::optional<FunctionalOperationInfo>
+approvedFunctionalOperation(const State &S, const SourceManager &SM,
+                            const CallExpr *Call, const ASTContext &Context) {
+  return approvedFunctionalOperationImpl(S, SM, Call, Context, true);
 }
 
 std::optional<MemoryTemplateMetadata>
@@ -5213,6 +5219,99 @@ approvedUtilityTupleCatCall(const State &S, const SourceManager &SM,
   return Approved;
 }
 
+std::optional<FunctionalOperationInfo> approvedFunctionalInvokeObjectOperation(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+  const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+  const auto OuterOrigin =
+      Primary ? S.sdkFile(SM, Primary->getLocation()) : std::nullopt;
+  if (!Call || Call->isTypeDependent() || Call->isValueDependent() ||
+      Call->isInstantiationDependent() || !Function || !Primary || !Pattern ||
+      !Function->getIdentifier() || Function->getName() != "invoke" ||
+      !OuterOrigin || OuterOrigin->Root != "libcxx" ||
+      OuterOrigin->Path != "__functional/invoke.h" || Function->isVariadic() ||
+      !Function->hasBody() || !Pattern->hasBody() || !Call->isPRValue() ||
+      Call->getNumArgs() < 2 ||
+      Call->getNumArgs() != Function->getNumParams() ||
+      !Context.hasSameType(Call->getType(), Function->getReturnType()) ||
+      !approvedStandardSDKDeclaration(S, SM, Function) ||
+      !approvedStandardSDKDeclaration(S, SM, Primary) ||
+      !approvedStandardSDKDeclaration(S, SM, Pattern) ||
+      !approvedUtilityReference(S, SM, Call, Function) ||
+      !approvedFunctionalObjectRecord(
+          S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context))
+    return std::nullopt;
+  for (unsigned I = 0; I < Call->getNumArgs(); ++I) {
+    const auto Parameter = Function->getParamDecl(I)->getType();
+    if (!Parameter->isReferenceType() ||
+        Parameter->getPointeeType().isVolatileQualified() ||
+        !Context.hasSameType(Parameter->getPointeeType(),
+                             Call->getArg(I)->getType()))
+      return std::nullopt;
+  }
+
+  const auto *OuterBody = dyn_cast<CompoundStmt>(Function->getBody());
+  const auto *OuterReturn =
+      OuterBody && OuterBody->size() == 1
+          ? dyn_cast<ReturnStmt>(*OuterBody->body_begin())
+          : nullptr;
+  const auto *Dispatch =
+      OuterReturn && OuterReturn->getRetValue()
+          ? dyn_cast<CallExpr>(
+                OuterReturn->getRetValue()->IgnoreParenImpCasts())
+          : nullptr;
+  const auto *DispatchFunction = Dispatch ? Dispatch->getDirectCallee() : nullptr;
+  const auto *DispatchPrimary =
+      DispatchFunction ? DispatchFunction->getPrimaryTemplate() : nullptr;
+  const auto *DispatchPattern =
+      DispatchPrimary ? DispatchPrimary->getTemplatedDecl() : nullptr;
+  const auto DispatchOrigin = DispatchPrimary
+                                  ? S.sdkFile(SM, DispatchPrimary->getLocation())
+                                  : std::nullopt;
+  const auto *DispatchReference =
+      dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Dispatch));
+  if (!Dispatch || !DispatchFunction || !DispatchPrimary || !DispatchPattern ||
+      !DispatchReference || !DispatchFunction->getIdentifier() ||
+      DispatchFunction->getName() != "__invoke" || !DispatchOrigin ||
+      DispatchOrigin->Root != "libcxx" ||
+      DispatchOrigin->Path != "__type_traits/invoke.h" ||
+      DispatchFunction->isVariadic() || !DispatchFunction->isInlined() ||
+      !DispatchFunction->isConstexpr() || !DispatchFunction->hasBody() ||
+      !DispatchPattern->hasBody() ||
+      Dispatch->getNumArgs() != DispatchFunction->getNumParams() ||
+      Dispatch->getNumArgs() != Call->getNumArgs() ||
+      !Context.hasSameType(Dispatch->getType(), Call->getType()) ||
+      !approvedStandardSDKDeclaration(S, SM, DispatchFunction) ||
+      !approvedStandardSDKDeclaration(S, SM, DispatchPrimary) ||
+      !approvedStandardSDKDeclaration(S, SM, DispatchPattern) ||
+      !approvedStandardSDKDeclaration(S, SM, DispatchReference->getDecl()))
+    return std::nullopt;
+
+  const auto *DispatchBody = dyn_cast<CompoundStmt>(DispatchFunction->getBody());
+  const auto *DispatchReturn =
+      DispatchBody && DispatchBody->size() == 1
+          ? dyn_cast<ReturnStmt>(*DispatchBody->body_begin())
+          : nullptr;
+  const auto *OperationCall =
+      DispatchReturn && DispatchReturn->getRetValue()
+          ? dyn_cast<CXXOperatorCallExpr>(
+                DispatchReturn->getRetValue()->IgnoreParenImpCasts())
+          : nullptr;
+  auto Operation = approvedFunctionalOperationImpl(
+      S, SM, OperationCall, Context, false);
+  if (!Operation || !OperationCall ||
+      OperationCall->getNumArgs() != Call->getNumArgs() ||
+      !Context.hasSameType(Operation->ResultType, Call->getType()))
+    return std::nullopt;
+  for (unsigned I = 1; I < Call->getNumArgs(); ++I)
+    if (!utilityScalarDirectConversion(Context, Call->getArg(I)->getType(),
+                                       OperationCall->getArg(I)->getType()))
+      return std::nullopt;
+  return Operation;
+}
+
 std::optional<UtilityOperation>
 approvedUtilityOperation(const State &S, const SourceManager &SM,
                          const CallExpr *Call, const ASTContext &Context) {
@@ -5221,6 +5320,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return std::nullopt;
   if (approvedUtilityTupleCatCall(S, SM, Call, Context))
     return UtilityOperation::TupleCat;
+  if (approvedFunctionalInvokeObjectOperation(S, SM, Call, Context))
+    return UtilityOperation::FunctionalInvokeObject;
   const auto *Function = Call->getDirectCallee();
   const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
   const auto *OptionalObject = [&]() -> const Expr * {

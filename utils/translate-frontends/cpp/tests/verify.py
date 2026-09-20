@@ -1485,7 +1485,9 @@ using Function = int (*)(int, int);
 extern "C" int functional_invoke(Function function, int a, int b) {
   std::invoke(store, a);
   return std::invoke(add, a, b) + std::invoke(function, a, b)
-      + int(std::invoke(scale, a, 1.5));
+      + int(std::invoke(scale, a, 1.5))
+      + std::invoke(std::plus<int>{}, a, b)
+      + int(std::invoke(std::less<>{}, short(a), double(b)));
 }
 """
     functional_invoke = check("v2-functional-invoke", functional_invoke_source,
@@ -1506,7 +1508,7 @@ extern "C" int functional_invoke(Function function, int a, int b) {
          "TR0203"),
         ("long-double", '#include <functional>\nint main(){return std::plus<long double>{}(1,2)==3;}',
          "TR0201"),
-        ("invoke-object", '#include <functional>\nint main(){return std::invoke(std::plus<int>{},1,2);}',
+        ("invoke-user-object", '#include <functional>\nstruct F{int operator()(int v)const{return v;}};int main(){return std::invoke(F{},1);}',
          "TR0203"),
         ("invoke-reference-parameter", '#include <functional>\nint load(int&v){return v;}int main(){int v=3;return std::invoke(load,v);}',
          "TR0203"),

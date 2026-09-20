@@ -854,12 +854,16 @@ pointer also lower directly. The target must have fixed arity, by-value
 admitted scalar parameters and a scalar or `void` result. Each argument may use
 a checked direct scalar conversion. The callable is retained before the
 arguments are evaluated, then the retained function pointer is called once.
+The same entry point accepts every admitted typed or transparent standard
+function object, including temporary and stored objects, and reuses the exact
+authenticated operation body and scalar conversion rules above. Its callable
+expression and arguments are each evaluated once.
 
 Cv-qualified typed template arguments, function-object addresses, pointers and
 user-defined operands, `long double`, `std::function`, binders and searchers do
-not yet lower. Member pointers, callable objects, `reference_wrapper`, reference
-parameters or results and variadic targets remain outside the `std::invoke`
-boundary.
+not yet lower. Member pointers, user-defined callable objects,
+`reference_wrapper`, reference parameters or results and variadic targets
+remain outside the `std::invoke` boundary.
 Quoted includes, shadows, forged declarations and other runtime uses remain
 rejected by the normal source and semantic checks.
 

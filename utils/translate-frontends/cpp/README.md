@@ -99,8 +99,9 @@ empty objects use a one-byte carrier and support trivial construction,
 assignment, local and global storage, copying and by-value passing. The
 exact C++17 `std::invoke` also lowers fixed-arity ordinary functions and stored
 function pointers with directly convertible by-value scalar parameters and
-scalar or `void` results. Member pointers, callable objects and reference or
-variadic signatures stay outside this boundary. The
+scalar or `void` results, plus the admitted typed and transparent standard
+function objects. Member pointers, user-defined callable objects and reference
+or variadic function signatures stay outside this boundary. The
 frontend uses the pinned embedded libc++/resource VFS and exposes resolved type
 aliases plus integral/enum constant results. It records all consumed header
 hashes: 101 for the `<type_traits>` closure, nine for standalone `<cstdint>`,

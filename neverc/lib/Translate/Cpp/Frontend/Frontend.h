@@ -294,6 +294,9 @@ std::optional<FunctionalOperationInfo>
 approvedFunctionalOperation(const State &S, const clang::SourceManager &SM,
                             const clang::CallExpr *Call,
                             const clang::ASTContext &Context);
+std::optional<FunctionalOperationInfo> approvedFunctionalInvokeObjectOperation(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *Call, const clang::ASTContext &Context);
 enum class MemoryTemplateMetadata {
   PointerTraits,
   DefaultDelete,
@@ -456,6 +459,7 @@ enum class UtilityOperation {
   MoveIfNoexcept,
   AsConst,
   FunctionalInvoke,
+  FunctionalInvokeObject,
   NewLaunder,
   MemoryDefaultDelete,
   MemoryUniquePtrGet,

@@ -33770,6 +33770,45 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2FunctionalInvokeObjectsRunAtBothOptimizations) {
+  const auto Source = tmpFile("functional-invoke-objects.cpp");
+  const auto Output = tmpFile("functional-invoke-objects.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+int trace;
+int left() { trace = trace * 10 + 2; return 4; }
+int right() { trace = trace * 10 + 3; return 5; }
+int main() {
+  std::plus<int> plus;
+  std::negate<int> negate;
+  int score = 0;
+  score += std::invoke(std::plus<int>{}, 2, 3) == 5;
+  score += std::invoke(plus, 6, 7) == 13;
+  score += std::invoke(std::plus<>{}, -2, 5u) == 3u;
+  score += std::invoke(negate, 4) == -4;
+  score += std::invoke(std::less<>{}, short(2), 3.0);
+  trace = 0;
+  score += std::invoke((trace = trace * 10 + 1, plus), left(), right()) == 9;
+  score += trace == 123;
+  return score == 7 ? 0 : score;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("functional-invoke-objects" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
   struct Rejection {
     const char *Name;
@@ -33785,9 +33824,9 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "#include <functional>\nint main(){return "
        "std::plus<long double>{}(1,2)==3;}",
        "TR0201"},
-      {"invoke-object",
-       "#include <functional>\nint main(){return "
-       "std::invoke(std::plus<int>{},1,2);}",
+      {"invoke-user-object",
+       "#include <functional>\nstruct F{int operator()(int v)const{return v;}};"
+       "int main(){return std::invoke(F{},1);}",
        "TR0203"},
       {"invoke-reference-parameter",
        "#include <functional>\nint load(int&v){return v;}int main(){int v=3;"

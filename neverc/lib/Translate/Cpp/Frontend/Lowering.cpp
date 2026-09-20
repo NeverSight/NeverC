@@ -740,22 +740,14 @@ class FunctionLowering {
     return Left;
   }
 
-  Expression functionalOperation(const CallExpr *Call,
-                                 const FunctionalOperationInfo &Info) {
-    auto L = Call->getExprLoc();
+  Expression functionalOperationValues(
+      SourceLocation L, Expression Left, std::optional<Expression> Right,
+      const FunctionalOperationInfo &Info) {
     const auto Operation = Info.Operation;
-    const auto *Method = llvm::cast<CXXMethodDecl>(Call->getDirectCallee());
-    const bool Unary = Method->getNumParams() == 1;
-    auto Argument = [&](unsigned Index) {
-      auto Address = snapshot(
-          bind(Call->getArg(Index + 1), Method->getParamDecl(Index)->getType()),
-          L);
-      return dereference(std::move(Address), L);
-    };
-    auto Left = Argument(0);
-    std::optional<Expression> Right;
-    if (!Unary)
-      Right = Argument(1);
+    const bool Unary = Info.RightType.isNull();
+    if (Unary != !Right)
+      reject(L, "functional operation",
+             "The checked operation arity must match its operands.");
     const auto LeftType = type(Info.LeftType, L);
     const auto RightType = Unary ? std::string() : type(Info.RightType, L);
     const auto OperationType = type(Info.OperationType, L);
@@ -833,6 +825,86 @@ class FunctionLowering {
           UnaryExpression("!", cast(std::move(Left), "bool", L), "bool"), L);
     }
     llvm_unreachable("unknown functional operation");
+  }
+
+  Expression functionalOperation(const CallExpr *Call,
+                                 const FunctionalOperationInfo &Info) {
+    auto L = Call->getExprLoc();
+    const auto *Method = llvm::cast<CXXMethodDecl>(Call->getDirectCallee());
+    const bool Unary = Method->getNumParams() == 1;
+    auto Argument = [&](unsigned Index) {
+      auto Address = snapshot(
+          bind(Call->getArg(Index + 1), Method->getParamDecl(Index)->getType()),
+          L);
+      return dereference(std::move(Address), L);
+    };
+    auto Left = Argument(0);
+    std::optional<Expression> Right;
+    if (!Unary)
+      Right = Argument(1);
+    return functionalOperationValues(L, std::move(Left), std::move(Right),
+                                     Info);
+  }
+
+  void discardFunctionalObject(const Expr *Expression) {
+    if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(Expression)) {
+      discardFunctionalObject(Cleanup->getSubExpr());
+      return;
+    }
+    if (const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(Expression)) {
+      discardFunctionalObject(Temporary->getSubExpr());
+      return;
+    }
+    if (const auto *Bound = dyn_cast<CXXBindTemporaryExpr>(Expression)) {
+      discardFunctionalObject(Bound->getSubExpr());
+      return;
+    }
+    if (const auto *Cast = dyn_cast<CXXFunctionalCastExpr>(Expression)) {
+      discardFunctionalObject(Cast->getSubExpr());
+      return;
+    }
+    if (const auto *List = dyn_cast<InitListExpr>(Expression)) {
+      for (const auto *Initializer : List->inits())
+        discardFunctionalObject(Initializer);
+      return;
+    }
+    if (const auto *Construction = dyn_cast<CXXConstructExpr>(Expression)) {
+      for (const auto *Argument : Construction->arguments())
+        discardFunctionalObject(Argument);
+      return;
+    }
+    if (const auto *Parentheses = dyn_cast<ParenExpr>(Expression)) {
+      discardFunctionalObject(Parentheses->getSubExpr());
+      return;
+    }
+    if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Expression);
+        Cast && Cast->getCastKind() == CK_NoOp) {
+      discardFunctionalObject(Cast->getSubExpr());
+      return;
+    }
+    if (const auto *Comma = dyn_cast<BinaryOperator>(Expression);
+        Comma && Comma->getOpcode() == BO_Comma) {
+      discard(Comma->getLHS());
+      discardFunctionalObject(Comma->getRHS());
+      return;
+    }
+    discard(Expression);
+  }
+
+  Expression functionalInvokeObjectOperation(
+      const CallExpr *Call, const FunctionalOperationInfo &Info) {
+    auto L = Call->getExprLoc();
+    const bool Unary = Info.RightType.isNull();
+    if (Call->getNumArgs() != (Unary ? 2u : 3u))
+      reject(L, "functional invoke",
+             "The checked function object arity must match its arguments.");
+    discardFunctionalObject(Call->getArg(0));
+    auto Left = snapshot(expression(Call->getArg(1)), L);
+    std::optional<Expression> Right;
+    if (!Unary)
+      Right = snapshot(expression(Call->getArg(2)), L);
+    return functionalOperationValues(L, std::move(Left), std::move(Right),
+                                     Info);
   }
 
   void heapSiftDown(Expression First, Expression Size, Expression InitialRoot,
@@ -1528,6 +1600,14 @@ class FunctionLowering {
       }
       return emitIndirectCall(std::move(Callable), std::move(Arguments),
                               Prototype->getReturnType(), L);
+    }
+    case UtilityOperation::FunctionalInvokeObject: {
+      auto Approved = approvedFunctionalInvokeObjectOperation(
+          A.S, A.Sources, Call, A.Context);
+      if (!Approved)
+        reject(L, "functional invoke",
+               "A checked standard function object is required.");
+      return functionalInvokeObjectOperation(Call, *Approved);
     }
     case UtilityOperation::NewLaunder:
       // The portable pointer model carries no stale C++ object provenance.

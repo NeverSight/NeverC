@@ -279,7 +279,9 @@ construction, copy or move assignment, local and global storage, and by-value
 passing. The remaining callable facilities stay outside the documented direct
 lowering boundary, except exact C++17 `std::invoke` calls on fixed-arity
 ordinary functions or stored function pointers. Those calls accept directly
-convertible by-value scalar parameters and scalar or `void` results.
+convertible by-value scalar parameters and scalar or `void` results. The same
+entry point accepts the admitted typed and transparent standard function
+objects above.
 Core v2 never admits the `platform` root.
 Math v1 continues to use its separately checked libc++, resource and Darwin
 platform closure for `<cmath>`.
