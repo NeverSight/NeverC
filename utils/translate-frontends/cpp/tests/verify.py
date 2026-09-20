@@ -1539,6 +1539,9 @@ std::size_t apply_hash(std::hash<int> hash, int value) {
 extern "C" std::size_t functional_hash(int value, unsigned long wide) {
   std::hash<int> stored;
   auto copied = stored;
+  std::hash<int> assigned;
+  assigned = stored;
+  assigned = std::hash<int>{};
   return std::hash<bool>{}(true) + std::hash<char16_t>{}(u'A')
       + std::hash<short>{}(short(value)) + stored(value)
       + std::invoke(copied, value) + std::hash<unsigned long>{}(wide)
@@ -1864,8 +1867,6 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
          "TR0203"),
         ("hash-enum", '#include <functional>\nenum E{A};int main(){return std::hash<E>{}(A);}',
          "TR0203"),
-        ("hash-assignment", '#include <functional>\nint main(){std::hash<int> h;h=std::hash<int>{};return h(3);}',
-         "TR0201"),
         ("reference-wrapper-volatile", '#include <functional>\nint main(){volatile int v=0;std::reference_wrapper<volatile int> r(v);return r.get();}',
          "TR0201"),
         ("reference-wrapper-function-rvalue-reference-parameter", '#include <functional>\nint f(int&&n){return n;}int main(){std::reference_wrapper<int(int&&)> r(f);return r(1);}',

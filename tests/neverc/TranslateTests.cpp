@@ -33749,13 +33749,19 @@ int main() {
   score += (trace = trace * 10 + 1, global_hash)(value()) ==
            static_cast<std::size_t>(-7);
   score += trace == 12;
+  std::hash<int> assigned;
+  assigned = stored;
+  score += assigned(6) == std::size_t(6);
+  assigned = (trace = trace * 10 + 3, std::hash<int>{});
+  score += assigned(7) == std::size_t(7);
+  score += trace == 123;
   trace = 0;
   score += std::hash<std::nullptr_t>{}((trace = 3, nullptr)) ==
            std::size_t(662607004);
   score += std::invoke(std::hash<std::nullptr_t>{}, nullptr) ==
            std::size_t(662607004);
   score += trace == 3;
-  return score == 12 ? 0 : score;
+  return score == 15 ? 0 : score;
 }
 )cpp");
   auto Result =
@@ -34356,10 +34362,6 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
       {"hash-enum",
        "#include <functional>\nenum E{A};int main(){return std::hash<E>{}(A);}",
        "TR0203"},
-      {"hash-assignment",
-       "#include <functional>\nint main(){std::hash<int> h;"
-       "h=std::hash<int>{};return h(3);}",
-       "TR0201"},
       {"reference-wrapper-volatile",
        "#include <functional>\nint main(){volatile int v=0;"
        "std::reference_wrapper<volatile int> r(v);return r.get();}",

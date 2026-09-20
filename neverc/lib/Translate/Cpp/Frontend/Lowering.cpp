@@ -7517,7 +7517,7 @@ class FunctionLowering {
           reject(L, "functional object assignment",
                  "Standard function-object assignment cannot initialize a "
                  "record result.");
-        expression(Call->getArg(1));
+        discardFunctionalObject(Call->getArg(1));
         auto LeftAddress = snapshot(
             address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
         auto Left = dereference(std::move(LeftAddress), L);

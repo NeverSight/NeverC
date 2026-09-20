@@ -100,11 +100,12 @@ empty objects use a one-byte carrier and support trivial construction,
 assignment, local and global storage, copying and by-value passing. Exact
 direct-cast integral `std::hash` specializations from `bool` through `unsigned
 long` use that carrier and lower to target `size_t` for temporary, stored,
-copied and by-value objects, directly or through `std::invoke`; the receiver is
-evaluated once before its argument. The exact C++17 `nullptr_t` specialization
-returns its pinned libc++ constant through the same object and invocation
-boundary. Hash assignment and the wide-integer, floating, pointer and enum
-specializations remain outside this boundary. Exact object
+copied and by-value objects. They support same-type copy and move assignment
+and call directly or through `std::invoke`; the receiver is evaluated once
+before its argument. The exact C++17 `nullptr_t` specialization returns its
+pinned libc++ constant through the same object, assignment and invocation
+boundary. Wide-integer, floating, pointer and enum specializations remain
+outside this boundary. Exact object
 forms of `std::reference_wrapper<T>` and `std::reference_wrapper<const T>`, plus
 exact fixed-arity function forms with admitted scalar or object-pointer values
 and exact lvalue-reference parameters or results, use
