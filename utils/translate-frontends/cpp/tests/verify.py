@@ -1863,7 +1863,10 @@ extern "C" int functional_stored_data_member(
       + std::invoke(fixed, constant)
       + (std::invoke(link, std::cref(constant)) == constant.link)
       + (constant.*value) + (constant.*(&Box::fixed))
-      + ((&constant)->*fixed) + (&native_view == &constant.value);
+      + ((&constant)->*fixed) + (&native_view == &constant.value)
+      + (Box{8, 9, box.link}.*value)
+      + (Box{10, 11, box.link}.*(&Box::fixed))
+      + std::invoke(fixed, Box{12, 13, box.link});
 }
 """
     functional_stored_data_member = check(
@@ -1965,7 +1968,9 @@ extern "C" int functional_stored_data_mem_fn(
   value_chain(box) = 7;
   std::invoke(link, std::ref(box)) = constant.link;
   return value(&box) + std::invoke(fixed, constant)
-      + (link(std::cref(constant)) == constant.link);
+      + (link(std::cref(constant)) == constant.link)
+      + value_chain(Box{8, 9, box.link})
+      + std::invoke(fixed, Box{10, 11, box.link});
 }
 """
     functional_stored_data_mem_fn = check(

@@ -350,8 +350,10 @@ emitting the same direct method call or field projection. Exact same-type local
 copy/move-initializer chains, including the admitted `<utility>` reference
 adapters, are authenticated and erased as well. Direct addresses and stored
 data-member pointers in this form may also be applied with native `.*` or `->*`
-on an exact receiver, preserving the field lvalue and the const qualification
-contributed by the field or receiver. Direct
+on an exact lvalue, pointer or full-expression temporary receiver, preserving
+the field glvalue category and the const qualification contributed by the field
+or receiver. A temporary is materialized and destroyed at its C++ lifetime
+boundary, including native `.*` lifetime extension by a local reference. Direct
 addresses and stored member-function pointers may be called with native `.*` or `->*` on an exact
 object or pointer through the same fixed-arity argument and result boundary;
 exact full-expression temporary objects are materialized and destroyed after

@@ -951,8 +951,9 @@ result. Reference parameters and results preserve the selected object's storage
 and qualification. The receiver is retained before the arguments are evaluated
 and each selected argument conversion is preserved. A direct source-written
 address of an admitted non-volatile scalar or object-pointer field lowers on the same receiver
-forms and retains the qualified field lvalue, including assignment and reads of
-const objects or declared-const fields. A local automatic member pointer whose
+forms and retains the qualified field lvalue or xvalue, including assignment to
+lvalues and reads of const objects, declared-const fields or temporary
+receivers. A local automatic member pointer whose
 sole initializer is an exact direct address of an admitted method or data field
 may be retained across statements and passed to `std::invoke`; the frontend
 authenticates and erases the variable, then emits the same direct method call or
@@ -962,8 +963,11 @@ local automatic variables, including through authenticated `std::move`,
 carrier in that initializer chain is authenticated and erased. Reassigning,
 returning or constructing a null member pointer remains rejected. An admitted
 direct address or stored data-member pointer may also be applied with native
-`.*` or `->*` to an exact-class object or pointer, preserving the field lvalue
-and the const qualification contributed by either the field or receiver. An admitted stored member-function pointer may be called
+`.*` or `->*` to an exact-class lvalue, pointer or full-expression temporary,
+preserving the field glvalue and the const qualification contributed by either
+the field or receiver. A temporary is destroyed at its C++ lifetime boundary;
+native `.*` binding to a local reference retains the standard lifetime
+extension. An admitted stored member-function pointer may be called
 with native `(object.*pointer)(arguments...)` or
 `(object_pointer->*pointer)(arguments...)` syntax through the same fixed-arity
 method boundary; a direct source-written member-function address is accepted

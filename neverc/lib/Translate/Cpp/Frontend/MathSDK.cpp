@@ -6462,6 +6462,14 @@ static const CallExpr *approvedFunctionalInvokeDispatch(
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
   const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
   const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+  const auto Result = Function ? Function->getReturnType() : QualType();
+  const bool MatchingValueCategory =
+      ReferenceResult
+          ? (!Result.isNull() && Result->isLValueReferenceType()
+                 ? Call && Call->isLValue()
+                 : !Result.isNull() && Result->isRValueReferenceType() &&
+                       Call && Call->isXValue())
+          : Call && Call->isPRValue();
   const auto OuterOrigin =
       Primary ? S.sdkFile(SM, Primary->getLocation()) : std::nullopt;
   if (!Call || Call->isTypeDependent() || Call->isValueDependent() ||
@@ -6470,16 +6478,15 @@ static const CallExpr *approvedFunctionalInvokeDispatch(
       !OuterOrigin || OuterOrigin->Root != "libcxx" ||
       OuterOrigin->Path != "__functional/invoke.h" || Function->isVariadic() ||
       !Function->hasBody() || !Pattern->hasBody() ||
-      (ReferenceResult ? !Call->isLValue() : !Call->isPRValue()) ||
+      !MatchingValueCategory ||
       Call->getNumArgs() < 1 ||
       Call->getNumArgs() != Function->getNumParams() ||
       (ReferenceResult
-           ? (!Function->getReturnType()->isLValueReferenceType() ||
+           ? (!Result->isReferenceType() ||
               !Context.hasSameType(
-                  Call->getType(),
-                  Function->getReturnType()->getPointeeType()))
+                  Call->getType(), Result->getPointeeType()))
            : !Context.hasSameType(Call->getType(),
-                                  Function->getReturnType())) ||
+                                  Result)) ||
       !approvedStandardSDKDeclaration(S, SM, Function) ||
       !approvedStandardSDKDeclaration(S, SM, Primary) ||
       !approvedStandardSDKDeclaration(S, SM, Pattern) ||
@@ -6706,7 +6713,7 @@ approvedNativeDataMemberPointerAccess(
     const ASTContext &Context) {
   if (!Operation || (Operation->getOpcode() != BO_PtrMemD &&
                      Operation->getOpcode() != BO_PtrMemI) ||
-      !Operation->isLValue())
+      !Operation->isGLValue())
     return std::nullopt;
   const auto *Callable = Operation->getRHS();
   auto [Address, Member] = functionalMemberAddress(S, SM, Callable, Context);
@@ -7269,7 +7276,7 @@ approvedFunctionalInvokeMemFnDispatch(const State &S,
                             ? StoredObject->Factory
                             : dyn_cast_or_null<CallExpr>(FactoryExpression);
   const auto *OuterDispatch = approvedFunctionalInvokeDispatch(
-      S, SM, Call, Context, Call->isLValue());
+      S, SM, Call, Context, Call->isGLValue());
   const auto *OuterFunction =
       OuterDispatch ? OuterDispatch->getDirectCallee() : nullptr;
   const auto *InvokeFunction = Call->getDirectCallee();
@@ -7475,7 +7482,7 @@ approvedFunctionalMemberInvokeCall(
         FieldType.getAddressSpace() != LangAS::Default ||
         !supportedFunctionalMemberValue(Context,
                                         FieldType.getUnqualifiedType()) ||
-        !Call->isLValue() || CallType.isVolatileQualified() ||
+        !Call->isGLValue() || CallType.isVolatileQualified() ||
         CallType.isRestrictQualified() ||
         CallType.getAddressSpace() != LangAS::Default ||
         CallType.isConstQualified() != ResultIsConst ||

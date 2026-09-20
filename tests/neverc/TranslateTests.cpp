@@ -34405,14 +34405,32 @@ struct Box {
 };
 int main() {
   auto add = &Box::add;
-  auto wrapper = std::mem_fn(&Box::add);
+  auto method_wrapper = std::mem_fn(&Box::add);
+  auto value = &Box::value;
+  auto field_wrapper = std::mem_fn(&Box::value);
   int score = (Box{1}.*add)(2) == 3;
   score += drops == 1;
   score += std::invoke(add, Box{2}, 2) == 4;
   score += drops == 2;
-  score += wrapper(Box{3}, 2) == 5;
+  score += method_wrapper(Box{3}, 2) == 5;
   score += drops == 3;
-  return score == 6 ? 0 : score;
+  score += (Box{4}.*value) == 4;
+  score += drops == 4;
+  score += (Box{5}.*(&Box::value)) == 5;
+  score += drops == 5;
+  score += std::invoke(value, Box{6}) == 6;
+  score += drops == 6;
+  score += field_wrapper(Box{7}) == 7;
+  score += drops == 7;
+  score += std::invoke(field_wrapper, Box{8}) == 8;
+  score += drops == 8;
+  {
+    const int &view = Box{9}.*value;
+    score += drops == 8;
+    score += view == 9;
+  }
+  score += drops == 9;
+  return score == 19 ? 0 : score;
 }
 )cpp");
   auto Result =
