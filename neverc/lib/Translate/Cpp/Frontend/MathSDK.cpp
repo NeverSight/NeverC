@@ -425,10 +425,17 @@ static bool wideIntegralHashType(QualType Type) {
          Type->isSpecificBuiltinType(BuiltinType::ULongLong);
 }
 
+static bool floatingHashType(QualType Type) {
+  if (Type.isNull() || Type.hasQualifiers())
+    return false;
+  return Type->isSpecificBuiltinType(BuiltinType::Float) ||
+         Type->isSpecificBuiltinType(BuiltinType::Double);
+}
+
 static const ClassTemplateSpecializationDecl *
-wideIntegralHashBase(const State &S, const SourceManager &SM,
-                     const CXXRecordDecl *Record, QualType ValueType,
-                     const ASTContext &Context) {
+scalarHashBase(const State &S, const SourceManager &SM,
+               const CXXRecordDecl *Record, QualType ValueType,
+               const ASTContext &Context) {
   const auto *Definition = Record ? Record->getDefinition() : nullptr;
   const auto *Base =
       Definition && Definition->getNumBases() == 1
@@ -441,7 +448,8 @@ wideIntegralHashBase(const State &S, const SourceManager &SM,
   const auto *Template = Base ? Base->getSpecializedTemplate() : nullptr;
   const auto *CanonicalTemplate =
       Template ? Template->getCanonicalDecl() : nullptr;
-  if (!wideIntegralHashType(ValueType) || !Base || !Template ||
+  if ((!wideIntegralHashType(ValueType) && !floatingHashType(ValueType)) ||
+      !Base || !Template ||
       !CanonicalTemplate || Base->getName() != "__scalar_hash" ||
       Base->isUnion() || Base->isDependentContext() || !Base->isEmpty() ||
       !Base->isStandardLayout() || !Base->isTriviallyCopyable() ||
@@ -464,7 +472,7 @@ wideIntegralHashBase(const State &S, const SourceManager &SM,
     return nullptr;
   const auto Ratio = Context.getTypeSize(ValueType) /
                      Context.getTypeSize(Context.getSizeType());
-  if ((Ratio != 1 && Ratio != 2) ||
+  if (Ratio > 2 ||
       Arguments.get(1).getAsIntegral() != Ratio)
     return nullptr;
   return Base;
@@ -530,9 +538,10 @@ approvedFunctionalObjectRecord(const State &S, const SourceManager &SM,
   if (Name == "hash") {
     if (Definition->getSpecializationKind() != TSK_ExplicitSpecialization ||
         (!directIntegralHashType(ValueType) &&
-         !wideIntegralHashType(ValueType) && !ValueType->isNullPtrType()) ||
-        (wideIntegralHashType(ValueType) &&
-         !wideIntegralHashBase(S, SM, Definition, ValueType, Context)))
+         !wideIntegralHashType(ValueType) && !floatingHashType(ValueType) &&
+         !ValueType->isNullPtrType()) ||
+        ((wideIntegralHashType(ValueType) || floatingHashType(ValueType)) &&
+         !scalarHashBase(S, SM, Definition, ValueType, Context)))
       return std::nullopt;
     return FunctionalObjectRecord{Definition};
   }
@@ -584,7 +593,7 @@ bool approvedFunctionalObjectBaseCast(const State &S, const SourceManager &SM,
           ? Arguments.get(0).getAsType()
           : QualType();
   const auto *Base =
-      wideIntegralHashBase(S, SM, Definition, ValueType, Context);
+      scalarHashBase(S, SM, Definition, ValueType, Context);
   const auto *Target = Cast->getType()->getAsCXXRecordDecl();
   Target = Target ? Target->getDefinition() : nullptr;
   return Base && Target &&
@@ -909,6 +918,110 @@ bool approvedFunctionalReferenceAssignment(
              Parameter->getPointeeType(), Context.getRecordType(Source->Record));
 }
 
+static std::optional<FunctionalOperationInfo> approvedFloatingHashOperation(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context, bool RequireOwnedReference) {
+  const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);
+  const auto *Hash = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      Method ? Method->getParent()->getDefinition() : nullptr);
+  const auto *Reference = directMethodReference(Call);
+  const auto Object = approvedFunctionalObjectRecord(S, SM, Hash, Context);
+  if (!Call || !Operator || !Method || !Hash || !Reference || !Object ||
+      Operator->getOperator() != OO_Call ||
+      Method->getOverloadedOperator() != OO_Call || Method->isStatic() ||
+      !Method->isConst() || Method->isVariadic() || !Method->isInlined() ||
+      !Method->hasBody() || !Call->isPRValue() ||
+      !approvedStandardSDKDeclaration(S, SM, Method) ||
+      !functionalObjectOrigin(S, SM, Method, "hash") ||
+      (RequireOwnedReference && !S.owns(SM, Reference->getExprLoc())))
+    return std::nullopt;
+
+  const auto &HashArguments = Hash->getTemplateArgs();
+  const auto ValueType =
+      HashArguments.size() == 1 &&
+              HashArguments.get(0).getKind() == TemplateArgument::Type
+          ? HashArguments.get(0).getAsType()
+          : QualType();
+  const auto *Base = scalarHashBase(S, SM, Hash, ValueType, Context);
+  const auto *Body = dyn_cast<CompoundStmt>(Method->getBody());
+  if (!floatingHashType(ValueType) || !Base || !Body || Body->size() != 2 ||
+      Method->getNumParams() != 1 || Call->getNumArgs() != 2 ||
+      !Context.hasSameType(Method->getParamDecl(0)->getType(), ValueType) ||
+      !Context.hasSameType(Call->getArg(1)->getType(), ValueType) ||
+      !Context.hasSameType(Method->getReturnType(), Context.getSizeType()) ||
+      !Context.hasSameType(Call->getType(), Context.getSizeType()) ||
+      !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
+                                      Context.getRecordType(Hash)))
+    return std::nullopt;
+
+  auto Statement = Body->body_begin();
+  const auto *ZeroIf = dyn_cast<IfStmt>(*Statement++);
+  const auto *ScalarReturn = dyn_cast<ReturnStmt>(*Statement);
+  const auto *Condition =
+      ZeroIf ? dyn_cast<BinaryOperator>(ZeroIf->getCond()->IgnoreParenImpCasts())
+             : nullptr;
+  const auto *ConditionParameter =
+      Condition ? dyn_cast<DeclRefExpr>(
+                      Condition->getLHS()->IgnoreParenImpCasts())
+                : nullptr;
+  const auto *FloatingZero =
+      Condition ? dyn_cast<FloatingLiteral>(
+                      Condition->getRHS()->IgnoreParenImpCasts())
+                : nullptr;
+  const auto *ZeroReturn =
+      ZeroIf ? dyn_cast<ReturnStmt>(ZeroIf->getThen()) : nullptr;
+  const auto *IntegerZero =
+      ZeroReturn && ZeroReturn->getRetValue()
+          ? dyn_cast<IntegerLiteral>(
+                ZeroReturn->getRetValue()->IgnoreParenImpCasts())
+          : nullptr;
+  const auto *ScalarCall =
+      ScalarReturn && ScalarReturn->getRetValue()
+          ? dyn_cast<CXXMemberCallExpr>(
+                ScalarReturn->getRetValue()->IgnoreParenImpCasts())
+          : nullptr;
+  const auto *ScalarMethod = ScalarCall ? ScalarCall->getMethodDecl() : nullptr;
+  const auto *Scalar = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      ScalarMethod ? ScalarMethod->getParent()->getDefinition() : nullptr);
+  const auto *ScalarArgument =
+      ScalarCall && ScalarCall->getNumArgs() == 1
+          ? dyn_cast<DeclRefExpr>(
+                ScalarCall->getArg(0)->IgnoreParenImpCasts())
+          : nullptr;
+  const auto *Pattern =
+      ScalarMethod ? ScalarMethod->getInstantiatedFromMemberFunction()
+                   : nullptr;
+  if (!ZeroIf || ZeroIf->getInit() || ZeroIf->getConditionVariable() ||
+      ZeroIf->getElse() || !Condition || Condition->getOpcode() != BO_EQ ||
+      !ConditionParameter ||
+      ConditionParameter->getDecl() != Method->getParamDecl(0) ||
+      !FloatingZero || !FloatingZero->getValue().isZero() ||
+      !Context.hasSameType(FloatingZero->getType(), ValueType) || !ZeroReturn ||
+      !IntegerZero || !IntegerZero->getValue().isZero() || !ScalarCall ||
+      !ScalarMethod || !Scalar ||
+      Base->getCanonicalDecl() != Scalar->getCanonicalDecl() ||
+      ScalarMethod->getOverloadedOperator() != OO_Call ||
+      ScalarMethod->isStatic() || !ScalarMethod->isConst() ||
+      ScalarMethod->isVariadic() || ScalarMethod->getNumParams() != 1 ||
+      !Context.hasSameType(ScalarMethod->getParamDecl(0)->getType(), ValueType) ||
+      !Context.hasSameType(ScalarMethod->getReturnType(), Context.getSizeType()) ||
+      !ScalarArgument || ScalarArgument->getDecl() != Method->getParamDecl(0) ||
+      !Pattern || !approvedStandardSDKDeclaration(S, SM, ScalarMethod) ||
+      !approvedStandardSDKDeclaration(S, SM, Pattern) ||
+      !cstddefOrigin(S, SM, ScalarMethod->getLocation(), "libcxx",
+                     "__functional/hash.h") ||
+      !cstddefOrigin(S, SM, Pattern->getLocation(), "libcxx",
+                     "__functional/hash.h"))
+    return std::nullopt;
+  return FunctionalOperationInfo{FunctionalOperation::Hash,
+                                 ValueType,
+                                 {},
+                                 Context.getSizeType(),
+                                 Context.getSizeType()};
+}
+
 static std::optional<FunctionalOperationInfo> approvedWideIntegralHashOperation(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context, bool RequireOwnedReference) {
@@ -954,7 +1067,7 @@ static std::optional<FunctionalOperationInfo> approvedWideIntegralHashOperation(
               HashArguments.get(0).getKind() == TemplateArgument::Type
           ? HashArguments.get(0).getAsType()
           : QualType();
-  const auto *Base = wideIntegralHashBase(S, SM, Hash, ValueType, Context);
+  const auto *Base = scalarHashBase(S, SM, Hash, ValueType, Context);
   const auto &ScalarArguments = Scalar->getTemplateArgs();
   if (ScalarArguments.size() != 2 ||
       ScalarArguments.get(0).getKind() != TemplateArgument::Type ||
@@ -991,6 +1104,9 @@ static std::optional<FunctionalOperationInfo> approvedWideIntegralHashOperation(
 static std::optional<FunctionalOperationInfo> approvedFunctionalOperationImpl(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context, bool RequireOwnedReference) {
+  if (auto Floating = approvedFloatingHashOperation(
+          S, SM, Call, Context, RequireOwnedReference))
+    return Floating;
   if (auto Wide = approvedWideIntegralHashOperation(
           S, SM, Call, Context, RequireOwnedReference))
     return Wide;

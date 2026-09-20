@@ -2488,6 +2488,41 @@ TEST(TranslateIR, CoreV2FloatingArithmeticRequiresSourceConversions) {
   invalid(M, "invalid payload or width");
 }
 
+TEST(TranslateIR, CoreV2FloatingBitCastsRequireExactUnsignedCarriers) {
+  for (const auto &Pair :
+       std::vector<std::pair<Type, Type>>{{{TypeKind::Float, {}}, uintType()},
+                                          {{TypeKind::Double, {}},
+                                           integerType(64, true)}}) {
+    auto M = module(true);
+    M.Functions[0].Result = Pair.second;
+    M.Functions[0].Params = {{"nct_value", Pair.first, InputLoc}};
+    M.Functions[0].Body.back() = ret(pointerExpr(
+        ExprKind::BitCast, Pair.second, {variable("nct_value", Pair.first)}));
+    Diagnostics D;
+    EmittedSource Output;
+    ASSERT_TRUE(emitNC(M, context(M), Output, D));
+    EXPECT_NE(Output.Text.find("nct_bit_cast_source"), std::string::npos);
+    EXPECT_NE(Output.Text.find("nct_bit_cast_result"), std::string::npos);
+
+    auto Bad = M;
+    const auto WrongWidth = Pair.first.Kind == TypeKind::Float
+                                ? integerType(64, true)
+                                : uintType();
+    Bad.Functions[0].Result = WrongWidth;
+    Bad.Functions[0].Body.back().Value->ValueType = WrongWidth;
+    invalid(Bad, "same-width unsigned integer");
+    Bad = M;
+    Bad.Functions[0].Params[0].ValueType = uintType();
+    Bad.Functions[0].Body.back().Value->Args[0].ValueType = uintType();
+    invalid(Bad, "float or double");
+    Bad = M;
+    Bad.Functions[0].Result = integerType(Pair.second.integerBits(), false);
+    Bad.Functions[0].Body.back().Value->ValueType =
+        integerType(Pair.second.integerBits(), false);
+    invalid(Bad, "unsigned integer");
+  }
+}
+
 TEST(TranslateIR, CoreV2FloatingLayoutAndMutableStorageAreIndependent) {
   auto M = module(true);
   const Type F32{TypeKind::Float, {}}, F64{TypeKind::Double, {}};

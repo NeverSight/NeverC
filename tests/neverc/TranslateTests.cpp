@@ -33738,6 +33738,9 @@ int main() {
   std::hash<long long> signed_wide;
   std::hash<unsigned long long> unsigned_wide;
   auto signed_wide_copy = signed_wide;
+  std::hash<float> float_hash;
+  auto float_hash_copy = float_hash;
+  std::hash<double> double_hash;
   auto copy = stored;
   int score = 0;
   score += std::hash<bool>{}(true) == std::size_t(1);
@@ -33752,6 +33755,10 @@ int main() {
            static_cast<std::size_t>(0x123456789abcdefll);
   score += std::hash<unsigned long long>{}(0x8000000000000000ull) ==
            static_cast<std::size_t>(0x8000000000000000ull);
+  score += float_hash(1.5f) == std::size_t(0x3fc00000u);
+  score += std::invoke(float_hash_copy, -0.0f) == std::size_t(0);
+  score += double_hash(1.5) == std::size_t(0x3ff8000000000000ull);
+  score += std::hash<double>{}(-0.0) == std::size_t(0);
   score += apply(stored, 5) == std::size_t(5);
   trace = 0;
   score += (trace = trace * 10 + 1, global_hash)(value()) ==
@@ -33771,13 +33778,16 @@ int main() {
   score += (trace = trace * 10 + 4, unsigned_wide)(
                (trace = trace * 10 + 5, 3ull)) == std::size_t(3);
   score += trace == 45;
+  std::hash<double> double_assigned;
+  double_assigned = double_hash;
+  score += double_assigned(-2.0) == std::size_t(0xc000000000000000ull);
   trace = 0;
   score += std::hash<std::nullptr_t>{}((trace = 3, nullptr)) ==
            std::size_t(662607004);
   score += std::invoke(std::hash<std::nullptr_t>{}, nullptr) ==
            std::size_t(662607004);
   score += trace == 3;
-  return score == 21 ? 0 : score;
+  return score == 26 ? 0 : score;
 }
 )cpp");
   auto Result =
@@ -34366,9 +34376,6 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "#include <functional>\nint main(){return "
        "std::plus<long double>{}(1,2)==3;}",
        "TR0201"},
-      {"hash-float",
-       "#include <functional>\nint main(){return std::hash<float>{}(3);}",
-       "TR0203"},
       {"hash-pointer",
        "#include <functional>\nint main(){int n;return std::hash<int*>{}(&n);}",
        "TR0203"},

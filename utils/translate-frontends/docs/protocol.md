@@ -96,6 +96,10 @@ Every expression carries `kind`, `type`, and `loc`:
 - `unary`: `operator` is `+`, `-`, `~`, or `!`; `args` has one expression.
 - `binary`: `operator` is `+`, `-`, `*`, `/`, `%`, `<<`, `>>`, `&`, `|`, `^`, `==`, `!=`, `<`, `<=`, `>`, or `>=`; `args` has two expressions. Arithmetic operands already include source promotions/conversions. Comparisons produce bool. Shift operands can have distinct integer types; the result has the left operand's promoted type.
 - `cast`: one argument in `args`; the destination `type` is an explicitly checked scalar conversion.
+- `bit_cast`: one argument in `args`; core v2 accepts only `float` or `double`
+  to a same-width unsigned integer carrier. Emission uses a same-size scalar
+  union expression and preserves the complete object representation without a
+  runtime dependency.
 - `member`: `name` is the resolved field name; `args` contains the record base.
 - `aggregate`: `args` has one explicitly initialized value per field in declaration order, including zero initialization required by C++ aggregate initialization.
 

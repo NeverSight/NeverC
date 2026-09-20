@@ -50,8 +50,8 @@ struct Type {
 std::string typeName(const Type &T);
 
 enum class ExprKind {
-  Literal, Var, Unary, Binary, Cast, Member, Aggregate, Null, Address, Dereference,
-  ArrayDecay, Index, FunctionAddress
+  Literal, Var, Unary, Binary, Cast, BitCast, Member, Aggregate, Null, Address,
+  Dereference, ArrayDecay, Index, FunctionAddress
 };
 enum class UnaryOperator { Plus, Minus, BitNot, LogicalNot };
 enum class BinaryOperator {

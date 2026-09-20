@@ -1541,7 +1541,9 @@ std::size_t apply_wide_hash(std::hash<long long> hash, long long value) {
 }
 extern "C" std::size_t functional_hash(int value, unsigned long wide,
                                         long long signed_wide,
-                                        unsigned long long unsigned_wide) {
+                                        unsigned long long unsigned_wide,
+                                        float narrow_float,
+                                        double wide_float) {
   std::hash<int> stored;
   auto copied = stored;
   std::hash<int> assigned;
@@ -1551,12 +1553,18 @@ extern "C" std::size_t functional_hash(int value, unsigned long wide,
   auto wide_copied = wide_stored;
   std::hash<unsigned long long> wide_assigned;
   wide_assigned = std::hash<unsigned long long>{};
+  std::hash<float> float_stored;
+  auto float_copied = float_stored;
+  std::hash<double> double_assigned;
+  double_assigned = std::hash<double>{};
   return std::hash<bool>{}(true) + std::hash<char16_t>{}(u'A')
       + std::hash<short>{}(short(value)) + stored(value)
       + std::invoke(copied, value) + std::hash<unsigned long>{}(wide)
       + wide_stored(signed_wide) + std::invoke(wide_copied, signed_wide)
       + std::hash<unsigned long long>{}(unsigned_wide)
       + wide_assigned(unsigned_wide) + apply_wide_hash(wide_stored, signed_wide)
+      + float_stored(narrow_float) + std::invoke(float_copied, narrow_float)
+      + std::hash<double>{}(wide_float) + double_assigned(wide_float)
       + std::hash<std::nullptr_t>{}(nullptr)
       + functional_hash_global(value);
 }
@@ -1584,6 +1592,14 @@ extern "C" std::size_t functional_hash(int value, unsigned long wide,
         assert len(target_hash_calls) == 1, target_hash
         assert target_hash_calls[0]["op"] == "call", target_hash_calls
         assert len(target_hash_calls[0]["args"]) == 2, target_hash_calls
+        bit_casts = [
+            node for node in walk(target_hash["functions"])
+            if node.get("kind") == "bit_cast"
+        ]
+        assert {(node["args"][0]["type"], node["type"])
+                for node in bit_casts} == {
+                    ("float", "uint"), ("double", "u64")
+                }, (target, bit_casts)
         murmur_literals = {
             node.get("value") for node in walk(target_hash["functions"])
             if node.get("kind") == "literal" and node.get("type") == "uint"
@@ -1893,8 +1909,6 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
          "TR0203"),
         ("long-double", '#include <functional>\nint main(){return std::plus<long double>{}(1,2)==3;}',
          "TR0201"),
-        ("hash-float", '#include <functional>\nint main(){return std::hash<float>{}(3);}',
-         "TR0203"),
         ("hash-pointer", '#include <functional>\nint main(){int n;return std::hash<int*>{}(&n);}',
          "TR0203"),
         ("hash-enum", '#include <functional>\nenum E{A};int main(){return std::hash<E>{}(A);}',

@@ -290,8 +290,13 @@ hash of the eight little-endian value bytes on 32-bit targets. They support
 same-type copy and move assignment and call directly or through `std::invoke`.
 Receiver expressions are evaluated once before their arguments.
 The exact C++17 `nullptr_t` specialization returns its pinned libc++ constant
-through the same object, assignment and invocation boundary. Floating, pointer
-and enum specializations remain outside this boundary.
+through the same object, assignment and invocation boundary. Exact `float` and
+`double` specializations authenticate the same `__scalar_hash` base plus the
+outer zero-normalizing call operator. Positive and negative zero hash to zero;
+other values hash their IEEE representation. `float` uses its 32-bit
+representation, while `double` preserves its 64-bit representation on 64-bit
+targets and uses the same eight-byte Murmur2 path on 32-bit targets. Pointer,
+enum and `long double` specializations remain outside this boundary.
 Exact object `std::reference_wrapper<T>` and
 `std::reference_wrapper<const T>`, plus exact fixed-arity function wrappers with
 admitted scalar or object-pointer values and exact lvalue-reference parameters

@@ -886,8 +886,15 @@ targets. Temporary, local, global, copied and by-value objects are admitted.
 They support same-type copy and move assignment and call directly or through
 `std::invoke`. The receiver is evaluated once before the argument. The exact
 C++17 `nullptr_t` specialization returns the pinned libc++ constant `662607004`
-through the same object, assignment and invocation boundary. Floating, pointer
-and enum specializations remain outside this boundary.
+through the same object, assignment and invocation boundary. Exact `float` and
+`double` specializations authenticate the same `__scalar_hash` base and the
+outer call operator's zero special case. Positive and negative zero hash to
+zero; every other value hashes its IEEE representation. `float` uses its 32-bit
+representation. `double` preserves its 64-bit representation on 64-bit targets
+and reproduces the same eight-byte Murmur2 algorithm on 32-bit targets. These
+objects support the same storage, assignment and direct or `std::invoke` call
+forms. Pointer, enum and `long double` hash specializations remain outside this
+boundary.
 
 Exact `std::reference_wrapper<T>` and `std::reference_wrapper<const T>` for
 non-volatile object types, plus exact function wrappers whose fixed-arity

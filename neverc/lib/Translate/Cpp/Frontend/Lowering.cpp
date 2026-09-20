@@ -108,6 +108,12 @@ class FunctionLowering {
                       {"args", json::Array{std::move(E)}},
                       {"loc", A.loc(L)}};
   }
+  Expression bitCast(Expression E, llvm::StringRef T, SourceLocation L) {
+    return Expression{{"kind", "bit_cast"},
+                      {"type", T.str()},
+                      {"args", json::Array{std::move(E)}},
+                      {"loc", A.loc(L)}};
+  }
   Expression address(Expression Place, QualType T, SourceLocation L) {
     return Expression{{"kind", "address"},
                       {"type", type(A.Context.getPointerType(T), L)},
@@ -847,16 +853,13 @@ class FunctionLowering {
                              unsignedInteger(ResultType)),
                 ResultType, L),
             L);
-      if ((Info.LeftType->isSpecificBuiltinType(BuiltinType::LongLong) ||
-           Info.LeftType->isSpecificBuiltinType(BuiltinType::ULongLong)) &&
-          A.Context.getTypeSize(Info.ResultType) == 32) {
+      auto Murmur64To32 = [&](Expression Wide) {
         auto Unsigned = type(A.Context.UnsignedLongLongTy, L);
         auto U32 = [&](uint64_t Value) {
           return A.literal(
               llvm::APSInt(llvm::APInt(32, Value), /*isUnsigned=*/true),
               "uint", L);
         };
-        auto Wide = snapshot(cast(std::move(Left), Unsigned, L), L);
         auto Low = snapshot(cast(json::Object(Wide), "uint", L), L);
         auto High = snapshot(
             cast(binary(">>", json::Object(Wide),
@@ -909,6 +912,38 @@ class FunctionLowering {
                       "uint", L),
                L);
         return snapshot(cast(std::move(Hash), ResultType, L), L);
+      };
+      if ((Info.LeftType->isSpecificBuiltinType(BuiltinType::LongLong) ||
+           Info.LeftType->isSpecificBuiltinType(BuiltinType::ULongLong)) &&
+          A.Context.getTypeSize(Info.ResultType) == 32) {
+        auto Unsigned = type(A.Context.UnsignedLongLongTy, L);
+        return Murmur64To32(
+            snapshot(cast(std::move(Left), Unsigned, L), L));
+      }
+      if (Info.LeftType->isSpecificBuiltinType(BuiltinType::Float) ||
+          Info.LeftType->isSpecificBuiltinType(BuiltinType::Double)) {
+        const bool Double =
+            Info.LeftType->isSpecificBuiltinType(BuiltinType::Double);
+        auto Value = snapshot(cast(std::move(Left), LeftType, L), L);
+        auto Result = temporary(ResultType, L);
+        auto Zero = labelName(), Bits = labelName(), End = labelName();
+        branch(binary("==", json::Object(Value), A.zero(Info.LeftType, L),
+                      "bool", L),
+               Zero, Bits, L);
+        label(Zero, L);
+        assign(Result, A.zero(Info.ResultType, L), L);
+        jump(End, L);
+        label(Bits, L);
+        const auto BitType = Double ? "u64" : "uint";
+        auto Representation =
+            snapshot(bitCast(json::Object(Value), BitType, L), L);
+        if (Double && A.Context.getTypeSize(Info.ResultType) == 32)
+          assign(Result, Murmur64To32(std::move(Representation)), L);
+        else
+          assign(Result, cast(std::move(Representation), ResultType, L), L);
+        jump(End, L);
+        label(End, L);
+        return Result;
       }
       return snapshot(cast(std::move(Left), ResultType, L), L);
     }

@@ -372,6 +372,11 @@ class Emitter {
         return conversionHelper(E.ValueType.integerBits()) + "(" +
                expression(E.Args[0]) + ")";
       return "((" + cType(E.ValueType) + ")(" + expression(E.Args[0], Initializer) + "))";
+    case ExprKind::BitCast:
+      return "(((union { " + cType(E.Args[0].ValueType) +
+             " nct_bit_cast_source; " + cType(E.ValueType) +
+             " nct_bit_cast_result; }){ .nct_bit_cast_source = " +
+             expression(E.Args[0], Initializer) + " }).nct_bit_cast_result)";
     case ExprKind::Member:
       return "((" + expression(E.Args[0], Initializer) + ")." + E.Name + ")";
     case ExprKind::Aggregate: {
