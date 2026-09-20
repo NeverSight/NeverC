@@ -1703,6 +1703,41 @@ extern "C" int functional_mem_fn(Box &box, const Box &constant) {
         check("v2-functional-mem-fn-" + target,
               functional_mem_fn_source, profile="cpp-core-v2",
               target=target, sdk=True)
+    functional_invoke_mem_fn_source = """\
+#include <functional>
+struct Box {
+  int value;
+  const int fixed;
+  int *link;
+  int add(short n) const { return value + n; }
+  int *pass(int *pointer) const { return pointer; }
+  void set(int n) { value = n; }
+  void redirect(int *&pointer) const { pointer = link; }
+  int &slot() { return value; }
+  int *&link_slot() { return link; }
+};
+extern "C" int functional_invoke_mem_fn(Box &box, const Box &constant) {
+  int *pointer = box.link;
+  std::invoke(std::mem_fn(&Box::set), &box, 7);
+  std::invoke(std::mem_fn(&Box::redirect), std::cref(constant), pointer);
+  std::invoke(std::mem_fn(&Box::link_slot), box) = pointer;
+  std::invoke(std::mem_fn(&Box::slot), box) = 9;
+  return std::invoke(std::mem_fn(&Box::add), std::ref(box), 2)
+      + (std::invoke(std::mem_fn(&Box::pass), box, box.link) == box.link)
+      + (std::invoke(std::mem_fn(&Box::link), std::cref(constant)) == constant.link)
+      + std::invoke(std::mem_fn(&Box::value), &box)
+      + std::invoke(std::mem_fn(&Box::fixed), box);
+}
+"""
+    functional_invoke_mem_fn = check(
+        "v2-functional-invoke-mem-fn", functional_invoke_mem_fn_source,
+        profile="cpp-core-v2", sdk=True)
+    assert any(function["name"] == "functional_invoke_mem_fn"
+               for function in functional_invoke_mem_fn["functions"]), functional_invoke_mem_fn
+    for target in sdk_targets:
+        check("v2-functional-invoke-mem-fn-" + target,
+              functional_invoke_mem_fn_source, profile="cpp-core-v2",
+              target=target, sdk=True)
     functional_reference_invoke_source = """\
 #include <functional>
 int add(int a, int b) { return a + b; }
@@ -1780,7 +1815,11 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
          "TR0203"),
         ("stored-mem-fn", '#include <functional>\nstruct X{int v;};int main(){X x{3};auto get=std::mem_fn(&X::v);return get(x);}',
          "TR0203"),
+        ("invoke-stored-mem-fn", '#include <functional>\nstruct X{int v;};int main(){X x{3};auto get=std::mem_fn(&X::v);return std::invoke(get,x);}',
+         "TR0203"),
         ("mem-fn-function-pointer-field", '#include <functional>\nint f(){return 3;}struct X{int(*p)();};int main(){X x{f};return std::mem_fn(&X::p)(x)();}',
+         "TR0203"),
+        ("invoke-mem-fn-function-pointer-field", '#include <functional>\nint f(){return 3;}struct X{int(*p)();};int main(){X x{f};return std::invoke(std::mem_fn(&X::p),x)();}',
          "TR0203"),
     ):
         check("v2-functional-typed-" + name, source, code,

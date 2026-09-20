@@ -922,10 +922,11 @@ parameter flow are authenticated before the direct method call or field
 projection is emitted.
 
 An exact temporary returned by `std::mem_fn` from either admitted direct named
-address may be called immediately through the same receiver, argument and result
-boundary. The pinned `__mem_fn` specialization, stored member field, factory,
-call operator, forwarding edges and internal `__invoke` are authenticated before
-the temporary wrapper is erased. Storing or copying a `mem_fn` object remains
+address may be called immediately, directly or as the callable of
+`std::invoke`, through the same receiver, argument and result boundary. The
+pinned `__mem_fn` specialization, stored member field, factory, call operator,
+both `__invoke` layers and every forwarding edge are authenticated before the
+temporary wrapper is erased. Storing or copying a `mem_fn` object remains
 outside the runtime boundary.
 
 Cv-qualified typed template arguments, function-object addresses, pointers and

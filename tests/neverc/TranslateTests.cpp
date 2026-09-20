@@ -34103,6 +34103,76 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2FunctionalInvokeMemFnRunsAtBothOptimizations) {
+  const auto Source = tmpFile("functional-invoke-mem-fn.cpp");
+  const auto Output = tmpFile("functional-invoke-mem-fn.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+struct Box {
+  int value;
+  const int fixed;
+  int *link;
+  int add(short n) const { return value + n; }
+  int *pass(int *pointer) const { return pointer; }
+  void set(int n) { value = n; }
+  void redirect(int *&pointer) const { pointer = link; }
+  int &slot() { return value; }
+  int *&link_slot() { return link; }
+  int *const &link_view() const { return link; }
+};
+int trace;
+Box *pick(Box *box) { trace = trace * 10 + 1; return box; }
+int argument() { trace = trace * 10 + 2; return 4; }
+int main() {
+  int first = 17;
+  int second = 19;
+  Box box{3, 8, &first};
+  const Box constant{5, 13, &second};
+  auto wrapped = std::ref(box);
+  int score = 0;
+  score += std::invoke(std::mem_fn(&Box::add), box, 2) == 5;
+  std::invoke(std::mem_fn(&Box::set), &box, 7);
+  score += box.value == 7;
+  std::invoke(std::mem_fn(&Box::value), wrapped) = 9;
+  score += box.value == 9;
+  score += std::invoke(std::mem_fn(&Box::add), constant, 1) == 6;
+  score += std::invoke(std::mem_fn(&Box::fixed), box) == 8;
+  score += std::invoke(std::mem_fn(&Box::pass), box, &first) == &first;
+  score += std::invoke(std::mem_fn(&Box::link), std::cref(constant)) == &second;
+  std::invoke(std::mem_fn(&Box::link), wrapped) = &first;
+  score += box.link == &first;
+  int *cursor = &first;
+  std::invoke(std::mem_fn(&Box::redirect), constant, cursor);
+  score += cursor == &second;
+  std::invoke(std::mem_fn(&Box::link_slot), box) = &second;
+  score += box.link == &second;
+  score += std::invoke(std::mem_fn(&Box::link_view), constant) == &second;
+  std::invoke(std::mem_fn(&Box::slot), box) = 11;
+  score += box.value == 11;
+  trace = 0;
+  score += std::invoke(std::mem_fn(&Box::add),
+                       std::ref(*pick(&box)), argument()) == 15;
+  score += trace == 12;
+  return score == 14 && box.value == 11 ? 0 : score;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  EXPECT_EQ(Generated.find("indirect_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-invoke-mem-fn" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
   struct Rejection {
     const char *Name;
@@ -34187,9 +34257,17 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "#include <functional>\nstruct X{int v;};int main(){X x{3};"
        "auto get=std::mem_fn(&X::v);return get(x);}",
        "TR0203"},
+      {"invoke-stored-mem-fn",
+       "#include <functional>\nstruct X{int v;};int main(){X x{3};"
+       "auto get=std::mem_fn(&X::v);return std::invoke(get,x);}",
+       "TR0203"},
       {"mem-fn-function-pointer-field",
        "#include <functional>\nint f(){return 3;}struct X{int(*p)();};"
        "int main(){X x{f};return std::mem_fn(&X::p)(x)();}",
+       "TR0203"},
+      {"invoke-mem-fn-function-pointer-field",
+       "#include <functional>\nint f(){return 3;}struct X{int(*p)();};"
+       "int main(){X x{f};return std::invoke(std::mem_fn(&X::p),x)();}",
        "TR0203"}};
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);

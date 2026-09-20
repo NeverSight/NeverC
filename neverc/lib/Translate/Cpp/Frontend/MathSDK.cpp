@@ -5732,6 +5732,30 @@ static bool functionalInvokeParameterReference(
   return Reference && Reference->getDecl() == Parameter;
 }
 
+static bool approvedFunctionalForwardingCall(
+    const State &S, const SourceManager &SM, const Expr *Expression,
+    const ParmVarDecl *Parameter) {
+  const auto *Forward = dyn_cast_or_null<CallExpr>(
+      Expression ? Expression->IgnoreParenImpCasts() : nullptr);
+  const auto *Function = Forward ? Forward->getDirectCallee() : nullptr;
+  const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+  const auto *Reference =
+      dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Forward));
+  const auto *Argument =
+      Forward && Forward->getNumArgs() == 1
+          ? dyn_cast<DeclRefExpr>(
+                Forward->getArg(0)->IgnoreParenImpCasts())
+          : nullptr;
+  return Function && Primary && Reference && Argument && Parameter &&
+         Function->getIdentifier() && Function->getName() == "forward" &&
+         Argument->getDecl() == Parameter &&
+         approvedStandardSDKDeclaration(S, SM, Function) &&
+         approvedStandardSDKDeclaration(S, SM, Primary) &&
+         approvedStandardSDKDeclaration(S, SM, Reference->getDecl()) &&
+         cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
+                       "__utility/forward.h");
+}
+
 static bool supportedFunctionalMemberValue(const ASTContext &Context,
                                            QualType Type) {
   return supportedFunctionalScalar(Type, Context) ||
@@ -5759,7 +5783,8 @@ struct FunctionalMemFnDispatch {
 static std::optional<FunctionalMemFnDispatch>
 approvedFunctionalMemFnDispatch(const State &S, const SourceManager &SM,
                                 const CallExpr *Call,
-                                const ASTContext &Context) {
+                                const ASTContext &Context,
+                                const CallExpr *SuppliedFactory = nullptr) {
   const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
   const auto *Method =
       dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);
@@ -5852,7 +5877,9 @@ approvedFunctionalMemFnDispatch(const State &S, const SourceManager &SM,
   }
 
   const auto *Object = functionalInvokeStrippedExpression(Call->getArg(0));
-  const auto *Factory = dyn_cast_or_null<CallExpr>(Object);
+  const auto *Factory = SuppliedFactory
+                            ? SuppliedFactory
+                            : dyn_cast_or_null<CallExpr>(Object);
   const auto *FactoryFunction = Factory ? Factory->getDirectCallee() : nullptr;
   const auto *FactoryPrimary =
       FactoryFunction ? FactoryFunction->getPrimaryTemplate() : nullptr;
@@ -5935,29 +5962,55 @@ approvedFunctionalMemFnDispatch(const State &S, const SourceManager &SM,
   if (!StoredAccess || StoredAccess->getMemberDecl() != Stored ||
       !isa_and_nonnull<CXXThisExpr>(StoredBase))
     return std::nullopt;
-  for (unsigned I = 0; I < Method->getNumParams(); ++I) {
-    const auto *Forward =
-        dyn_cast<CallExpr>(Dispatch->getArg(I + 1)->IgnoreParenImpCasts());
-    const auto *Function = Forward ? Forward->getDirectCallee() : nullptr;
-    const auto *ForwardPrimary =
-        Function ? Function->getPrimaryTemplate() : nullptr;
-    const auto *ForwardReference =
-        dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Forward));
-    const auto *Argument =
-        Forward && Forward->getNumArgs() == 1
-            ? dyn_cast<DeclRefExpr>(Forward->getArg(0)->IgnoreParenImpCasts())
-            : nullptr;
-    if (!Function || !ForwardPrimary || !ForwardReference || !Argument ||
-        !Function->getIdentifier() || Function->getName() != "forward" ||
-        Argument->getDecl() != Method->getParamDecl(I) ||
-        !approvedStandardSDKDeclaration(S, SM, Function) ||
-        !approvedStandardSDKDeclaration(S, SM, ForwardPrimary) ||
-        !approvedStandardSDKDeclaration(S, SM, ForwardReference->getDecl()) ||
-        !cstddefOrigin(S, SM, ForwardPrimary->getLocation(), "libcxx",
-                       "__utility/forward.h"))
+  for (unsigned I = 0; I < Method->getNumParams(); ++I)
+    if (!approvedFunctionalForwardingCall(
+            S, SM, Dispatch->getArg(I + 1), Method->getParamDecl(I)))
+      return std::nullopt;
+  return FunctionalMemFnDispatch{Factory->getArg(0), Factory, Dispatch};
+}
+
+static std::optional<FunctionalMemFnDispatch>
+approvedFunctionalInvokeMemFnDispatch(const State &S,
+                                      const SourceManager &SM,
+                                      const CallExpr *Call,
+                                      const ASTContext &Context) {
+  if (!Call || Call->getNumArgs() < 2)
+    return std::nullopt;
+  const auto *Factory = dyn_cast_or_null<CallExpr>(
+      functionalInvokeStrippedExpression(Call->getArg(0)));
+  const auto *OuterDispatch = approvedFunctionalInvokeDispatch(
+      S, SM, Call, Context, Call->isLValue());
+  const auto *OuterFunction =
+      OuterDispatch ? OuterDispatch->getDirectCallee() : nullptr;
+  const auto *InvokeFunction = Call->getDirectCallee();
+  const auto *Body = OuterFunction
+                         ? dyn_cast<CompoundStmt>(OuterFunction->getBody())
+                         : nullptr;
+  const auto *Return = Body && Body->size() == 1
+                           ? dyn_cast<ReturnStmt>(*Body->body_begin())
+                           : nullptr;
+  const auto *Operator =
+      Return && Return->getRetValue()
+          ? dyn_cast<CXXOperatorCallExpr>(
+                Return->getRetValue()->IgnoreParenImpCasts())
+          : nullptr;
+  if (!Factory || !OuterDispatch || !OuterFunction || !InvokeFunction ||
+      !Body || !Return || !Operator ||
+      Operator->getNumArgs() != Call->getNumArgs() ||
+      OuterFunction->getNumParams() != Call->getNumArgs() ||
+      InvokeFunction->getNumParams() != Call->getNumArgs() ||
+      !Context.hasSameType(Operator->getType(), Call->getType()))
+    return std::nullopt;
+  for (unsigned I = 0; I < Operator->getNumArgs(); ++I) {
+    if (!approvedFunctionalForwardingCall(
+            S, SM, OuterDispatch->getArg(I),
+            InvokeFunction->getParamDecl(I)))
+      return std::nullopt;
+    if (!functionalInvokeParameterReference(
+            Operator->getArg(I), OuterFunction->getParamDecl(I)))
       return std::nullopt;
   }
-  return FunctionalMemFnDispatch{Factory->getArg(0), Factory, Dispatch};
+  return approvedFunctionalMemFnDispatch(S, SM, Operator, Context, Factory);
 }
 
 std::optional<FunctionalMemberInvokeCall>
@@ -5966,7 +6019,9 @@ approvedFunctionalMemberInvokeCall(
     const ASTContext &Context) {
   if (!Call || Call->getNumArgs() < 2)
     return std::nullopt;
-  const auto MemFn = approvedFunctionalMemFnDispatch(S, SM, Call, Context);
+  auto MemFn = approvedFunctionalMemFnDispatch(S, SM, Call, Context);
+  if (!MemFn)
+    MemFn = approvedFunctionalInvokeMemFnDispatch(S, SM, Call, Context);
   const auto *Callable = MemFn ? MemFn->Callable : Call->getArg(0);
   const auto *Address = dyn_cast_or_null<UnaryOperator>(
       functionalInvokeStrippedExpression(Callable));

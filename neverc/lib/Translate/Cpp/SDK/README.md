@@ -306,8 +306,9 @@ direct source-written address of an admitted non-volatile scalar or object-point
 including a declared-const field, may be invoked on the same receivers and
 retains its qualified lvalue result. An exact temporary returned by
 `std::mem_fn` from either admitted direct named address may be called
-immediately through the same receiver, argument and result boundary; the
-authenticated wrapper is erased. Stored member pointers, stored `mem_fn`
+immediately, either directly or as the callable of `std::invoke`, through the
+same receiver, argument and result boundary; both authenticated dispatch
+layers and the wrapper are erased. Stored member pointers, stored `mem_fn`
 objects, base adjustments, rvalue-reference or other reference signatures and
 volatile receivers remain outside this boundary.
 Core v2 never admits the `platform` root.

@@ -117,7 +117,8 @@ and admitted non-volatile scalar or object-pointer fields also lower on exact-cl
 pointer or `std::reference_wrapper` receivers; fields retain their qualified
 lvalue result, including reads of declared-const fields. Exact temporary
 `std::mem_fn` wrappers built from those direct named addresses may be called
-immediately through the same boundary. Stored member pointers, stored `mem_fn`
+immediately, directly or as the callable of `std::invoke`, through the same
+boundary. Stored member pointers, stored `mem_fn`
 objects, base adjustments, volatile receivers, user-defined callable objects,
 and rvalue-reference, other reference or variadic function signatures stay
 outside this boundary. Object-pointer values and exact scalar or object-pointer
