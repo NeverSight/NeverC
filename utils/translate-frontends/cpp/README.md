@@ -115,8 +115,9 @@ function objects. Direct named addresses of owned nonstatic member functions
 and admitted scalar fields also lower on exact-class lvalue, pointer or
 `std::reference_wrapper` receivers; fields retain their lvalue result. Stored
 member pointers, base adjustments, volatile receivers, user-defined callable
-objects, and reference or variadic function signatures stay outside this
-boundary. The
+objects, and rvalue-reference, non-scalar reference or variadic function
+signatures stay outside this boundary. Exact scalar lvalue-reference parameters
+and results are preserved. The
 frontend uses the pinned embedded libc++/resource VFS and exposes resolved type
 aliases plus integral/enum constant results. It records all consumed header
 hashes: 101 for the `<type_traits>` closure, nine for standalone `<cstdint>`,

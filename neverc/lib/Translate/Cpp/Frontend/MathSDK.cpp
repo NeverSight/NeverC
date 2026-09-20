@@ -5782,17 +5782,19 @@ approvedFunctionalMemberInvokeCall(
       (!ObjectIsPointer && !ObjectWrapper && !Object->isLValue()))
     return std::nullopt;
 
-  const bool ReferenceResult = Field != nullptr;
-  const auto *Dispatch = approvedFunctionalInvokeDispatch(
-      S, SM, Call, Context, ReferenceResult);
-  const auto *DispatchFunction = Dispatch ? Dispatch->getDirectCallee() : nullptr;
+  const bool MethodReferenceResult =
+      Method && Method->getReturnType()->isLValueReferenceType();
+  const bool ReferenceResult = Field || MethodReferenceResult;
+  const auto *Dispatch =
+      approvedFunctionalInvokeDispatch(S, SM, Call, Context, ReferenceResult);
+  const auto *DispatchFunction =
+      Dispatch ? Dispatch->getDirectCallee() : nullptr;
   const auto *Body = DispatchFunction
                          ? dyn_cast<CompoundStmt>(DispatchFunction->getBody())
                          : nullptr;
-  const auto *Return =
-      Body && Body->size() == 1
-          ? dyn_cast<ReturnStmt>(*Body->body_begin())
-          : nullptr;
+  const auto *Return = Body && Body->size() == 1
+                           ? dyn_cast<ReturnStmt>(*Body->body_begin())
+                           : nullptr;
   const Expr *Operation = Return && Return->getRetValue()
                               ? Return->getRetValue()->IgnoreParens()
                               : nullptr;
@@ -5802,17 +5804,16 @@ approvedFunctionalMemberInvokeCall(
     MemberCall = dyn_cast_or_null<CXXMemberCallExpr>(Operation);
     MemberOperation =
         MemberCall
-            ? dyn_cast<BinaryOperator>(
-                  MemberCall->getCallee()->IgnoreParens())
+            ? dyn_cast<BinaryOperator>(MemberCall->getCallee()->IgnoreParens())
             : nullptr;
   } else {
     MemberOperation = dyn_cast_or_null<BinaryOperator>(Operation);
   }
-  if (!Dispatch || !DispatchFunction || !Body || !Return ||
-      !MemberOperation || MemberOperation->getOpcode() != BO_PtrMemD ||
+  if (!Dispatch || !DispatchFunction || !Body || !Return || !MemberOperation ||
+      MemberOperation->getOpcode() != BO_PtrMemD ||
       DispatchFunction->getNumParams() != Call->getNumArgs() ||
-      !functionalInvokeParameterReference(
-          MemberOperation->getRHS(), DispatchFunction->getParamDecl(0)))
+      !functionalInvokeParameterReference(MemberOperation->getRHS(),
+                                          DispatchFunction->getParamDecl(0)))
     return std::nullopt;
   if (ObjectWrapper) {
     const auto *AccessCall = dyn_cast_or_null<CallExpr>(
@@ -5822,35 +5823,59 @@ approvedFunctionalMemberInvokeCall(
     if (!Access ||
         Access->Wrapper.Record->getCanonicalDecl() !=
             ObjectWrapper->Record->getCanonicalDecl() ||
-        !functionalInvokeParameterReference(
-            Access->Object, DispatchFunction->getParamDecl(1)))
+        !functionalInvokeParameterReference(Access->Object,
+                                            DispatchFunction->getParamDecl(1)))
       return std::nullopt;
   } else if (!functionalInvokeParameterReference(
-                 MemberOperation->getLHS(),
-                 DispatchFunction->getParamDecl(1), ObjectIsPointer)) {
+                 MemberOperation->getLHS(), DispatchFunction->getParamDecl(1),
+                 ObjectIsPointer)) {
     return std::nullopt;
   }
 
   if (Method) {
+    const auto Result = Method->getReturnType();
+    const auto Referent =
+        MethodReferenceResult ? Result->getPointeeType() : QualType();
     if (Method->isStatic() || !callableMethod(Method) || !Method->hasBody() ||
         Method->getRefQualifier() == RQ_RValue ||
         Method->getNumParams() + 2 != Call->getNumArgs() ||
-        !Context.hasSameType(Method->getReturnType(), Call->getType()) ||
-        (!Method->getReturnType()->isVoidType() &&
-         !supportedFunctionalScalar(Method->getReturnType(), Context)) ||
-        !MemberCall ||
-        MemberCall->getNumArgs() != Method->getNumParams())
+        (MethodReferenceResult
+             ? (Referent.isVolatileQualified() ||
+                Referent.isRestrictQualified() ||
+                Referent.getAddressSpace() != LangAS::Default ||
+                !supportedFunctionalScalar(Referent.getUnqualifiedType(),
+                                           Context) ||
+                !Call->isLValue() ||
+                !Context.hasSameType(Referent, Call->getType()))
+             : (!Context.hasSameType(Result, Call->getType()) ||
+                (!Result->isVoidType() &&
+                 !supportedFunctionalScalar(Result, Context)))) ||
+        !MemberCall || MemberCall->getNumArgs() != Method->getNumParams())
       return std::nullopt;
     for (unsigned I = 0; I < Method->getNumParams(); ++I) {
       const auto Parameter = Method->getParamDecl(I)->getType();
-      const auto Argument = Call->getArg(I + 2)->getType();
-      if (Parameter->isReferenceType() ||
-          !supportedFunctionalScalar(Parameter, Context) ||
-          !supportedFunctionalScalar(Argument, Context) ||
-          !utilityScalarDirectConversion(Context, Argument, Parameter) ||
+      const auto *ArgumentExpression = Call->getArg(I + 2);
+      const auto Argument = ArgumentExpression->getType();
+      bool Supported = false;
+      if (Parameter->isLValueReferenceType()) {
+        const auto Referent = Parameter->getPointeeType();
+        Supported =
+            !Referent.isVolatileQualified() &&
+            !Referent.isRestrictQualified() &&
+            Referent.getAddressSpace() == LangAS::Default &&
+            supportedFunctionalScalar(Referent.getUnqualifiedType(), Context) &&
+            ArgumentExpression->isLValue() && !Argument.isVolatileQualified() &&
+            Context.hasSameUnqualifiedType(Referent, Argument) &&
+            (Referent.isConstQualified() || !Argument.isConstQualified());
+      } else {
+        Supported = !Parameter->isReferenceType() &&
+                    supportedFunctionalScalar(Parameter, Context) &&
+                    supportedFunctionalScalar(Argument, Context) &&
+                    utilityScalarDirectConversion(Context, Argument, Parameter);
+      }
+      if (!Supported ||
           !functionalInvokeParameterReference(
-              MemberCall->getArg(I),
-              DispatchFunction->getParamDecl(I + 2)))
+              MemberCall->getArg(I), DispatchFunction->getParamDecl(I + 2)))
         return std::nullopt;
     }
   } else {

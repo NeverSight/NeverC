@@ -33926,6 +33926,9 @@ struct Box {
   int value;
   int add(short n) const { return value + n; }
   void set(int n) { value = n; }
+  void add_to(int &n) const { n += value; }
+  int &slot() { return value; }
+  const int &view() const { return value; }
 };
 int trace;
 Box *pick(Box *box) { trace = trace * 10 + 1; return box; }
@@ -33945,10 +33948,16 @@ int main() {
   score += std::invoke(&Box::add, wrapped, 1) == 10;
   score += std::invoke(&Box::value, std::cref(constant)) == 5;
   std::invoke(&Box::value, wrapped) = 11;
+  int total = 1;
+  std::invoke(&Box::add_to, wrapped, total);
+  score += total == 12;
+  std::invoke(&Box::slot, box) = 12;
+  score += box.value == 12;
+  score += std::invoke(&Box::view, std::cref(constant)) == 5;
   trace = 0;
-  score += std::invoke(&Box::add, std::ref(*pick(&box)), argument()) == 15;
+  score += std::invoke(&Box::add, std::ref(*pick(&box)), argument()) == 16;
   score += trace == 12;
-  return score == 8 && box.value == 11 ? 0 : score;
+  return score == 11 && box.value == 12 ? 0 : score;
 }
 )cpp");
   auto Result =
@@ -34065,12 +34074,12 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "#include <functional>\nstruct X{int v;};int main(){X x{3};"
        "auto p=&X::v;return std::invoke(p,x);}",
        "TR0201"},
-      {"invoke-member-reference-parameter",
-       "#include <functional>\nstruct X{int f(int&v){return v;}};"
-       "int main(){X x;int v=3;return std::invoke(&X::f,x,v);}",
+      {"invoke-member-rvalue-reference-parameter",
+       "#include <functional>\nstruct X{int f(int&&v){return v;}};"
+       "int main(){X x;return std::invoke(&X::f,x,3);}",
        "TR0203"},
-      {"invoke-member-reference-result",
-       "#include <functional>\nstruct X{int v;int&f(){return v;}};"
+      {"invoke-member-rvalue-reference-result",
+       "#include <functional>\nstruct X{int v;int&&f(){return static_cast<int&&>(v);}};"
        "int main(){X x{3};return std::invoke(&X::f,x);}",
        "TR0203"},
       {"invoke-member-volatile-receiver",

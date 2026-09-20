@@ -1717,6 +1717,8 @@ class FunctionLowering {
           Instruction["target"] = json::Object(Result);
         }
         Body.push_back(std::move(Instruction));
+        if (Info->Method->getReturnType()->isReferenceType())
+          return dereference(std::move(Result), L);
         return Result;
       }
       auto Base = dereference(snapshot(std::move(Receiver), L), L);
