@@ -507,10 +507,23 @@ std::optional<FunctionalReferenceRecord> approvedFunctionalReferenceRecord(
       Arguments.get(0).getKind() != TemplateArgument::Type)
     return std::nullopt;
   const auto Referent = Arguments.get(0).getAsType();
-  if (Referent.isNull() || !Referent->isObjectType() ||
+  const auto *Function = !Referent.isNull() && Referent->isFunctionType()
+                             ? Referent->getAs<FunctionProtoType>()
+                             : nullptr;
+  if (Referent.isNull() ||
+      (!Referent->isObjectType() && !Function) ||
       Referent.isVolatileQualified() ||
       Referent.getAddressSpace() != LangAS::Default)
     return std::nullopt;
+  if (Function) {
+    if (Function->isVariadic() ||
+        (!Function->getReturnType()->isVoidType() &&
+         !supportedFunctionalScalar(Function->getReturnType(), Context)))
+      return std::nullopt;
+    for (const auto Parameter : Function->param_types())
+      if (!supportedFunctionalScalar(Parameter, Context))
+        return std::nullopt;
+  }
   const auto PointerType = Context.getPointerType(Referent);
   if (!Context.hasSameType(Pointer->getType(), PointerType))
     return std::nullopt;
@@ -4532,8 +4545,9 @@ approvedFunctionalReferenceFactoryCall(
                            ? Parameter->getPointeeType()
                            : QualType();
   const auto Argument = Call->getArg(0)->getType();
-  const auto Expected = Cref && !Pointee.isNull() ? Pointee.withConst()
-                                                  : Pointee;
+  const auto Expected = Cref && !Pointee.isNull() && Pointee->isObjectType()
+                            ? Pointee.withConst()
+                            : Pointee;
   if (Pointee.isNull() || Pointee.isVolatileQualified() ||
       !Call->getArg(0)->isLValue() ||
       !Context.hasSameUnqualifiedType(Argument, Pointee) ||
@@ -5794,11 +5808,15 @@ approvedFunctionalReferenceDirectInvoke(
         std::move(Operation)};
   }
 
-  const auto PointerType = Wrapper->ReferentType;
-  const auto *Prototype = PointerType->isFunctionPointerType()
-                              ? PointerType->getPointeeType()
-                                    ->getAs<FunctionProtoType>()
-                              : nullptr;
+  const bool FunctionReferent = Wrapper->ReferentType->isFunctionType();
+  const auto PointerType = FunctionReferent ? Wrapper->PointerType
+                                            : Wrapper->ReferentType;
+  const auto *Prototype =
+      FunctionReferent
+          ? Wrapper->ReferentType->getAs<FunctionProtoType>()
+          : PointerType->isFunctionPointerType()
+                ? PointerType->getPointeeType()->getAs<FunctionProtoType>()
+                : nullptr;
   const auto *Indirect = dyn_cast<CallExpr>(Invoked);
   if (!Prototype || Prototype->isVariadic() || !Indirect ||
       Indirect->getDirectCallee() ||
@@ -5818,7 +5836,10 @@ approvedFunctionalReferenceDirectInvoke(
       return std::nullopt;
   }
   return FunctionalReferenceInvokeCall{
-      *Wrapper, FunctionalReferenceInvokeKind::FunctionPointer, PointerType,
+      *Wrapper,
+      FunctionReferent ? FunctionalReferenceInvokeKind::Function
+                       : FunctionalReferenceInvokeKind::FunctionPointer,
+      PointerType,
       std::nullopt};
 }
 

@@ -334,7 +334,11 @@ std::optional<FunctionalReferenceAccessCall>
 approvedFunctionalReferenceAccessCall(
     const State &S, const clang::SourceManager &SM,
     const clang::CallExpr *Call, const clang::ASTContext &Context);
-enum class FunctionalReferenceInvokeKind { FunctionPointer, FunctionObject };
+enum class FunctionalReferenceInvokeKind {
+  Function,
+  FunctionPointer,
+  FunctionObject,
+};
 struct FunctionalReferenceInvokeCall {
   FunctionalReferenceRecord Wrapper;
   FunctionalReferenceInvokeKind Kind;

@@ -531,6 +531,22 @@ class FunctionLowering {
       return functionValue(C->getSubExpr());
     if (const auto *W = dyn_cast<ExprWithCleanups>(E))
       return functionValue(W->getSubExpr());
+    if (const auto *Call = dyn_cast<CallExpr>(E)) {
+      const auto Info = approvedFunctionalReferenceAccessCall(
+          A.S, A.Sources, Call, A.Context);
+      if (Info && Info->Wrapper.ReferentType->isFunctionType()) {
+        auto Object = Info->ObjectIsArrow
+                          ? dereference(
+                                snapshot(expression(Info->Object), L), L)
+                          : lvalue(Info->Object);
+        Expression Pointer{{"kind", "member"},
+                           {"type", type(Info->Wrapper.PointerType, L)},
+                           {"name", "nct_reference_wrapper_pointer"},
+                           {"args", json::Array{std::move(Object)}},
+                           {"loc", A.loc(L)}};
+        return snapshot(std::move(Pointer), L);
+      }
+    }
     if (const auto *R = dyn_cast<DeclRefExpr>(E))
       return A.functionAddress(dyn_cast<FunctionDecl>(R->getDecl()), L);
     if (const auto *M = dyn_cast<MemberExpr>(E)) {
@@ -1650,7 +1666,10 @@ class FunctionLowering {
           Prototype->getNumParams() + 1 != Call->getNumArgs())
         reject(L, "functional reference invoke",
                "A checked fixed-arity function pointer is required.");
-      auto Callable = snapshot(dereference(std::move(Referent), L), L);
+      auto Callable =
+          Info->Kind == FunctionalReferenceInvokeKind::Function
+              ? std::move(Referent)
+              : snapshot(dereference(std::move(Referent), L), L);
       json::Array Arguments;
       for (unsigned I = 0; I < Prototype->getNumParams(); ++I) {
         const auto Parameter = Prototype->getParamType(I);
@@ -1667,8 +1686,12 @@ class FunctionLowering {
         reject(L, "functional reference factory",
                "A checked std::ref or std::cref call is required.");
       auto Pointer = snapshot(
-          cast(address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L),
-               type(Info->Result.PointerType, L), L),
+          Info->Result.ReferentType->isFunctionType()
+              ? cast(functionValue(Call->getArg(0)),
+                     type(Info->Result.PointerType, L), L)
+              : cast(address(lvalue(Call->getArg(0)),
+                             Call->getArg(0)->getType(), L),
+                     type(Info->Result.PointerType, L), L),
           L);
       const auto RecordType = A.Context.getRecordType(Info->Result.Record);
       auto Place = Destination ? std::move(*Destination)
@@ -9116,8 +9139,12 @@ class FunctionLowering {
         return;
       }
       auto Pointer = snapshot(
-          cast(address(lvalue(C->getArg(0)), C->getArg(0)->getType(), L),
-               type(Wrapper->PointerType, L), L),
+          Wrapper->ReferentType->isFunctionType()
+              ? cast(functionValue(C->getArg(0)),
+                     type(Wrapper->PointerType, L), L)
+              : cast(address(lvalue(C->getArg(0)),
+                             C->getArg(0)->getType(), L),
+                     type(Wrapper->PointerType, L), L),
           L);
       if (Wrapper->PaddedBase) {
         Expression Base{{"kind", "member"},

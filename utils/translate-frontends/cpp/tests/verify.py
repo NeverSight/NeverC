@@ -1576,9 +1576,13 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
   auto plus = std::ref(functional_reference_plus);
   auto compare = std::cref(less);
   auto callback = std::ref(function);
+  auto named = std::ref(add);
+  auto named_const = std::cref(add);
   return plus(a, b) + std::invoke(functional_reference_global, a, b)
       + compare(short(a), double(b)) + callback(a, b)
-      + std::invoke(callback, a, b) + std::invoke(std::ref(functional_reference_plus), a, b);
+      + std::invoke(callback, a, b) + std::invoke(std::ref(functional_reference_plus), a, b)
+      + named(a, b) + named.get()(a, b) + std::invoke(named, a, b)
+      + named_const(a, b);
 }
 """
     functional_reference_invoke = check(
@@ -1603,7 +1607,7 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
          "TR0201"),
         ("reference-wrapper-volatile", '#include <functional>\nint main(){volatile int v=0;std::reference_wrapper<volatile int> r(v);return r.get();}',
          "TR0201"),
-        ("reference-wrapper-function", '#include <functional>\nint f(int n){return n;}int main(){std::reference_wrapper<int(int)> r(f);return r.get()(1);}',
+        ("reference-wrapper-function-reference-parameter", '#include <functional>\nint f(int&n){return n;}int main(){std::reference_wrapper<int(int&)> r(f);int n=1;return r(n);}',
          "TR0201"),
         ("cref-temporary", '#include <functional>\nint main(){auto r=std::cref(3);return r.get();}',
          "TR0202"),

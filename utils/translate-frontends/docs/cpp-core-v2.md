@@ -850,20 +850,23 @@ assigned. Their authenticated C++ one-byte size and alignment map to a single
 operation without a libc++ runtime dependency.
 
 Exact `std::reference_wrapper<T>` and `std::reference_wrapper<const T>` for
-non-volatile object types retain the authenticated target ABI layout: one
-pointer slot under the Itanium ABI and an empty-base storage slot followed by
-the pointer under the Microsoft ABI. Direct construction from a matching
-lvalue, the direct object overloads of `std::ref`
-and `std::cref`, trivial copy/move construction, and same-specialization
-assignment lower without a libc++ runtime call. Assignment reseats the wrapper
-by copying its stored pointer. `get()` and the implicit `T&` conversion return
-the referenced object, preserve `const`, accept object or raw-pointer receivers,
-and evaluate the receiver or factory argument once. Function referents,
-volatile referents and wrapper-taking `ref`/`cref` overloads remain outside
-this boundary. Wrappers around an admitted typed or transparent standard
-function object or a stored fixed-arity function pointer are callable directly
-and through `std::invoke`. The wrapper and stored referent are retained before
-the arguments are evaluated, and each expression is evaluated once.
+non-volatile object types, plus exact function wrappers whose fixed-arity
+signature has admitted by-value scalar parameters and a scalar or `void`
+result, retain the authenticated target ABI layout: one pointer slot under the
+Itanium ABI and an empty-base storage slot followed by the pointer under the
+Microsoft ABI. Direct construction from a matching lvalue, the direct
+`std::ref` and `std::cref` overloads, trivial copy/move construction, and
+same-specialization assignment lower without a libc++ runtime call. Assignment
+reseats the wrapper by copying its stored pointer. `get()` returns the referenced
+object or function; object forms also lower the implicit `T&` conversion. These
+operations preserve object qualification, accept object or raw-pointer
+receivers, and evaluate the receiver or factory argument once. Volatile
+referents and wrapper-taking `ref`/`cref` overloads remain outside this
+boundary. Wrappers around an admitted typed or transparent standard function
+object, a stored fixed-arity function pointer or an admitted function referent
+are callable directly and through `std::invoke`. The wrapper and stored referent
+are retained before the arguments are evaluated, and each expression is
+evaluated once.
 
 Exact C++17 `std::invoke` calls on an ordinary function or stored function
 pointer also lower directly. The target must have fixed arity, by-value

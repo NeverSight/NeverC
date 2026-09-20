@@ -33833,6 +33833,7 @@ TEST_F(TranslateTest,
 int trace;
 int first(int n) { trace = trace * 10 + 4; return n + 10; }
 int second(int n) { trace = trace * 10 + 5; return n + 20; }
+int increment(int n) { return n + 1; }
 void record(int n) { trace = trace * 10 + n; }
 int answer() { return 42; }
 using Function = int (*)(int);
@@ -33849,6 +33850,9 @@ int main() {
   auto less_reference = std::cref(less);
   auto *pointer = &plus_reference;
   auto function_reference = std::ref(selected);
+  std::reference_wrapper<int(int)> direct_function(increment);
+  auto function_name_reference = std::ref(increment);
+  auto function_name_const_reference = std::cref(increment);
   Recorder recorder = record;
   auto recorder_reference = std::ref(recorder);
   Nullary nullary = answer;
@@ -33874,7 +33878,11 @@ int main() {
   score += trace == 78;
   score += nullary_reference() == 42;
   score += std::invoke(nullary_reference) == 42;
-  return score == 11 ? 0 : score;
+  score += direct_function(11) == 12;
+  score += function_name_reference.get()(12) == 13;
+  score += std::invoke(function_name_reference, 13) == 14;
+  score += function_name_const_reference(14) == 15;
+  return score == 15 ? 0 : score;
 }
 )cpp");
   auto Result =
@@ -33953,9 +33961,9 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "#include <functional>\nint main(){volatile int v=0;"
        "std::reference_wrapper<volatile int> r(v);return r.get();}",
        "TR0201"},
-      {"reference-wrapper-function",
-       "#include <functional>\nint f(int n){return n;}int main(){"
-       "std::reference_wrapper<int(int)> r(f);return r.get()(1);}",
+      {"reference-wrapper-function-reference-parameter",
+       "#include <functional>\nint f(int&n){return n;}int main(){"
+       "std::reference_wrapper<int(int&)> r(f);int n=1;return r(n);}",
        "TR0201"},
       {"cref-temporary",
        "#include <functional>\nint main(){auto r=std::cref(3);return "
