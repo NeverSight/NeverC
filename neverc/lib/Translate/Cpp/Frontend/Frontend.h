@@ -366,7 +366,7 @@ struct FunctionalMemberInvokeCall {
 struct FunctionalStoredMemberPointer {
   const clang::VarDecl *Variable;
   const clang::Expr *Address;
-  const clang::FieldDecl *Field;
+  const clang::ValueDecl *Member;
 };
 std::optional<FunctionalStoredMemberPointer>
 approvedFunctionalStoredMemberPointer(

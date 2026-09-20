@@ -952,11 +952,12 @@ and qualification. The receiver is retained before the arguments are evaluated
 and each selected argument conversion is preserved. A direct source-written
 address of an admitted non-volatile scalar or object-pointer field lowers on the same receiver
 forms and retains the qualified field lvalue, including assignment and reads of
-const objects or declared-const fields. A local automatic data-member pointer
-whose sole initializer is that exact direct address may be retained across
-statements and passed to `std::invoke`; the frontend authenticates and erases
-the variable, then emits the same direct field projection. Copying, assigning,
-returning or applying native `.*`/`->*` to that variable remains rejected. The selected libc++
+const objects or declared-const fields. A local automatic member pointer whose
+sole initializer is an exact direct address of an admitted method or data field
+may be retained across statements and passed to `std::invoke`; the frontend
+authenticates and erases the variable, then emits the same direct method call or
+field projection. Copying, assigning, returning, constructing a null member
+pointer or applying native `.*`/`->*` remains rejected. The selected libc++
 member-function or member-object dispatcher body, wrapper `get()` body and
 parameter flow are authenticated before the direct method call or field
 projection is emitted.
@@ -973,8 +974,8 @@ remains outside the runtime boundary.
 
 Cv-qualified typed template arguments, addresses or pointers to function
 objects, user-defined operands, `long double`, `std::function`, binders and searchers do
-not yet lower. Stored member-function pointers, copied, reassigned or null
-data-member pointers, copied or reassigned `mem_fn` objects, base-adjusting
+not yet lower. Copied, reassigned or null member pointers, copied or reassigned
+`mem_fn` objects, base-adjusting
 receivers, volatile
 receivers, user-defined callable objects, function referents, rvalue-reference or
 other reference signatures and variadic targets remain

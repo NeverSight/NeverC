@@ -34246,15 +34246,20 @@ int main() {
 }
 
 TEST_F(TranslateTest,
-       CoreV2FunctionalInvokeStoredDataMembersRunAtBothOptimizations) {
-  const auto Source = tmpFile("functional-invoke-stored-data-members.cpp");
-  const auto Output = tmpFile("functional-invoke-stored-data-members.nc");
+       CoreV2FunctionalInvokeStoredMembersRunAtBothOptimizations) {
+  const auto Source = tmpFile("functional-invoke-stored-members.cpp");
+  const auto Output = tmpFile("functional-invoke-stored-members.nc");
   writeFile(Source, R"cpp(
 #include <functional>
 struct Box {
   int value;
   const int fixed;
   int *link;
+  int add(short n) const { return value + n; }
+  int *pass(int *pointer) const { return pointer; }
+  void set(int n) { value = n; }
+  void redirect(int *&pointer) const { pointer = link; }
+  int &slot() { return value; }
 };
 int main() {
   int first = 17;
@@ -34264,6 +34269,11 @@ int main() {
   auto value = &Box::value;
   auto fixed = &Box::fixed;
   auto link = &Box::link;
+  auto add = &Box::add;
+  auto pass = &Box::pass;
+  auto set = &Box::set;
+  auto redirect = &Box::redirect;
+  auto slot = &Box::slot;
   std::invoke(value, box) = 7;
   int score = 0;
   score += std::invoke(value, &box) == 7;
@@ -34271,7 +34281,17 @@ int main() {
   score += std::invoke(link, std::cref(constant)) == &second;
   std::invoke(link, std::ref(box)) = &second;
   score += box.link == &second;
-  return score == 4 ? 0 : score;
+  std::invoke(set, &box, 9);
+  score += box.value == 9;
+  std::invoke(slot, std::ref(box)) = 11;
+  score += box.value == 11;
+  int *cursor = &first;
+  std::invoke(redirect, std::cref(constant), cursor);
+  score += cursor == &second;
+  score += std::invoke(add, box, 2) == 13;
+  score += std::invoke(add, &constant, 1) == 6;
+  score += std::invoke(pass, constant, &first) == &first;
+  return score == 10 ? 0 : score;
 }
 )cpp");
   auto Result =
@@ -34284,7 +34304,7 @@ int main() {
   for (const std::string &Optimization : {"-O0", "-O2"}) {
     SCOPED_TRACE(Optimization);
     const auto Executable =
-        tmpFile("functional-invoke-stored-data-members" + Optimization);
+        tmpFile("functional-invoke-stored-members" + Optimization);
     auto Compile = compileGenerated(Output, Executable, Optimization);
     ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
     auto Run = exec(Executable.string(), {});
@@ -34620,13 +34640,21 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "#include <functional>\nstruct X{int v;};int main(){X x{3};"
        "auto p=&X::v;auto q=p;return std::invoke(q,x);}",
        "TR0201"},
-      {"invoke-stored-member-function-pointer",
+      {"invoke-stored-member-function-pointer-copy",
        "#include <functional>\nstruct X{int f(){return 3;}};int main(){X x;"
-       "auto p=&X::f;return std::invoke(p,x);}",
+       "auto p=&X::f;auto q=p;return std::invoke(q,x);}",
+       "TR0201"},
+      {"invoke-stored-member-function-pointer-rvalue-reference-parameter",
+       "#include <functional>\nstruct X{int f(int&&v){return v;}};"
+       "int main(){X x;auto p=&X::f;return std::invoke(p,x,3);}",
        "TR0201"},
       {"invoke-null-member-pointer",
        "#include <functional>\nstruct X{int v;};int main(){X x{3};"
        "int X::*p=nullptr;return std::invoke(p,x);}",
+       "TR0201"},
+      {"invoke-null-member-function-pointer",
+       "#include <functional>\nstruct X{int f(){return 3;}};int main(){X x;"
+       "int (X::*p)()=nullptr;return std::invoke(p,x);}",
        "TR0201"},
       {"native-stored-member-pointer",
        "#include <functional>\nstruct X{int v;};int main(){X x{3};"

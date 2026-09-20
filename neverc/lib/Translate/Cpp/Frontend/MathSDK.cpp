@@ -6603,22 +6603,49 @@ functionalMemberAddress(const State &S, const SourceManager &SM,
   return {Address, Member};
 }
 
-static std::pair<const UnaryOperator *, const FieldDecl *>
-functionalDataMemberAddress(const State &S, const SourceManager &SM,
-                            const Expr *Expression,
-                            const ASTContext &Context) {
-  const auto [Address, Member] =
-      functionalMemberAddress(S, SM, Expression, Context);
-  const auto *Field = dyn_cast_or_null<FieldDecl>(Member);
-  const auto FieldType = Field ? Field->getType() : QualType();
-  if (!Address || !Field || Field->isBitField() ||
-      FieldType.isVolatileQualified() ||
-      FieldType.isRestrictQualified() ||
-      FieldType.getAddressSpace() != LangAS::Default ||
-      !supportedFunctionalMemberValue(Context,
-                                      FieldType.getUnqualifiedType()))
-    return {};
-  return {Address, Field};
+static bool supportedFunctionalStoredMember(const ASTContext &Context,
+                                            const ValueDecl *Member) {
+  if (const auto *Field = dyn_cast_or_null<FieldDecl>(Member)) {
+    const auto Type = Field->getType();
+    return !Field->isBitField() && !Type.isVolatileQualified() &&
+           !Type.isRestrictQualified() &&
+           Type.getAddressSpace() == LangAS::Default &&
+           supportedFunctionalMemberValue(Context, Type.getUnqualifiedType());
+  }
+  const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Member);
+  if (!Method)
+    return false;
+  const auto Result = Method->getReturnType();
+  const auto Referent = Result->isLValueReferenceType()
+                            ? Result->getPointeeType()
+                            : QualType();
+  if (Method->isStatic() || !callableMethod(Method) || !Method->hasBody() ||
+      Method->getRefQualifier() == RQ_RValue ||
+      (Result->isReferenceType()
+           ? (!Result->isLValueReferenceType() ||
+              Referent.isVolatileQualified() || Referent.isRestrictQualified() ||
+              Referent.getAddressSpace() != LangAS::Default ||
+              !supportedFunctionalMemberValue(Context,
+                                              Referent.getUnqualifiedType()))
+           : (!Result->isVoidType() &&
+              !supportedFunctionalMemberValue(Context, Result))))
+    return false;
+  for (const auto *Parameter : Method->parameters()) {
+    const auto Type = Parameter->getType();
+    if (Type->isLValueReferenceType()) {
+      const auto ParameterReferent = Type->getPointeeType();
+      if (ParameterReferent.isVolatileQualified() ||
+          ParameterReferent.isRestrictQualified() ||
+          ParameterReferent.getAddressSpace() != LangAS::Default ||
+          !supportedFunctionalMemberValue(
+              Context, ParameterReferent.getUnqualifiedType()))
+        return false;
+    } else if (Type->isReferenceType() ||
+               !supportedFunctionalMemberValue(Context, Type)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 std::optional<FunctionalStoredMemberPointer>
@@ -6629,13 +6656,14 @@ approvedFunctionalStoredMemberPointer(
     return std::nullopt;
   const auto *MemberPointer =
       Variable->getType()->getAs<MemberPointerType>();
-  const auto [Address, Field] =
-      functionalDataMemberAddress(S, SM, Variable->getInit(), Context);
-  if (!MemberPointer || !Address || !Field ||
+  const auto [Address, Member] =
+      functionalMemberAddress(S, SM, Variable->getInit(), Context);
+  if (!MemberPointer || !Address || !Member ||
+      !supportedFunctionalStoredMember(Context, Member) ||
       !Context.hasSameUnqualifiedType(Variable->getType(),
                                       Address->getType()))
     return std::nullopt;
-  return FunctionalStoredMemberPointer{Variable, Address, Field};
+  return FunctionalStoredMemberPointer{Variable, Address, Member};
 }
 
 std::optional<FunctionalStoredMemFn> approvedFunctionalStoredMemFn(
@@ -6701,47 +6729,8 @@ std::optional<FunctionalStoredMemFn> approvedFunctionalStoredMemFn(
       !cstddefOrigin(S, SM, Stored->getLocation(), "libcxx",
                      "__functional/mem_fn.h"))
     return std::nullopt;
-  if (Field) {
-    const auto FieldType = Field->getType();
-    if (Field->isBitField() || FieldType.isVolatileQualified() ||
-        FieldType.isRestrictQualified() ||
-        FieldType.getAddressSpace() != LangAS::Default ||
-        !supportedFunctionalMemberValue(Context,
-                                        FieldType.getUnqualifiedType()))
-      return std::nullopt;
-  } else {
-    const auto Result = Method->getReturnType();
-    const auto Referent = Result->isLValueReferenceType()
-                              ? Result->getPointeeType()
-                              : QualType();
-    if (Method->isStatic() || !callableMethod(Method) || !Method->hasBody() ||
-        Method->getRefQualifier() == RQ_RValue ||
-        (Result->isReferenceType()
-             ? (!Result->isLValueReferenceType() ||
-                Referent.isVolatileQualified() ||
-                Referent.isRestrictQualified() ||
-                Referent.getAddressSpace() != LangAS::Default ||
-                !supportedFunctionalMemberValue(
-                    Context, Referent.getUnqualifiedType()))
-             : (!Result->isVoidType() &&
-                !supportedFunctionalMemberValue(Context, Result))))
-      return std::nullopt;
-    for (const auto *Parameter : Method->parameters()) {
-      const auto Type = Parameter->getType();
-      if (Type->isLValueReferenceType()) {
-        const auto ParameterReferent = Type->getPointeeType();
-        if (ParameterReferent.isVolatileQualified() ||
-            ParameterReferent.isRestrictQualified() ||
-            ParameterReferent.getAddressSpace() != LangAS::Default ||
-            !supportedFunctionalMemberValue(
-                Context, ParameterReferent.getUnqualifiedType()))
-          return std::nullopt;
-      } else if (Type->isReferenceType() ||
-                 !supportedFunctionalMemberValue(Context, Type)) {
-        return std::nullopt;
-      }
-    }
-  }
+  if (!supportedFunctionalStoredMember(Context, Member))
+    return std::nullopt;
   return FunctionalStoredMemFn{Variable, Factory, Address, Member};
 }
 

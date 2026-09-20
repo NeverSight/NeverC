@@ -1872,6 +1872,52 @@ extern "C" int functional_stored_data_member(
             profile="cpp-core-v2", target=target, sdk=True)
         assert not [node for node in walk(target_result["functions"])
                     if node.get("op") in ("call", "mapped_call")], target_result
+    functional_stored_method_member_source = """\
+#include <functional>
+struct Box {
+  int value;
+  int *link;
+  int add(short n) const { return value + n; }
+  int *pass(int *pointer) const { return pointer; }
+  void set(int n) { value = n; }
+  void redirect(int *&pointer) const { pointer = link; }
+  int &slot() { return value; }
+};
+extern "C" int functional_stored_method_member(
+    Box &box, const Box &constant) {
+  auto add = &Box::add;
+  auto pass = &Box::pass;
+  auto set = &Box::set;
+  auto redirect = &Box::redirect;
+  auto slot = &Box::slot;
+  std::invoke(set, &box, 7);
+  std::invoke(slot, std::ref(box)) = 9;
+  int *pointer = box.link;
+  std::invoke(redirect, std::cref(constant), pointer);
+  return std::invoke(add, box, 2) + std::invoke(add, &constant, 1)
+      + (std::invoke(pass, constant, box.link) == box.link)
+      + (pointer == constant.link);
+}
+"""
+    functional_stored_method_member = check(
+        "v2-functional-stored-method-member",
+        functional_stored_method_member_source,
+        profile="cpp-core-v2", sdk=True)
+    assert any(function["name"] == "functional_stored_method_member"
+               for function in functional_stored_method_member["functions"]), functional_stored_method_member
+    assert any(node.get("op") == "call"
+               for node in walk(functional_stored_method_member["functions"])), functional_stored_method_member
+    assert not [node for node in walk(functional_stored_method_member["functions"])
+                if node.get("op") in ("mapped_call", "indirect_call")], functional_stored_method_member
+    for target in sdk_targets:
+        target_result = check(
+            "v2-functional-stored-method-member-" + target,
+            functional_stored_method_member_source,
+            profile="cpp-core-v2", target=target, sdk=True)
+        assert any(node.get("op") == "call"
+                   for node in walk(target_result["functions"])), target_result
+        assert not [node for node in walk(target_result["functions"])
+                    if node.get("op") in ("mapped_call", "indirect_call")], target_result
     functional_stored_data_mem_fn_source = """\
 #include <functional>
 struct Box {
@@ -2113,9 +2159,13 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
          "TR0201"),
         ("invoke-stored-member-pointer-copy", '#include <functional>\nstruct X{int v;};int main(){X x{3};auto p=&X::v;auto q=p;return std::invoke(q,x);}',
          "TR0201"),
-        ("invoke-stored-member-function-pointer", '#include <functional>\nstruct X{int f(){return 3;}};int main(){X x;auto p=&X::f;return std::invoke(p,x);}',
+        ("invoke-stored-member-function-pointer-copy", '#include <functional>\nstruct X{int f(){return 3;}};int main(){X x;auto p=&X::f;auto q=p;return std::invoke(q,x);}',
+         "TR0201"),
+        ("invoke-stored-member-function-pointer-rvalue-reference-parameter", '#include <functional>\nstruct X{int f(int&&v){return v;}};int main(){X x;auto p=&X::f;return std::invoke(p,x,3);}',
          "TR0201"),
         ("invoke-null-member-pointer", '#include <functional>\nstruct X{int v;};int main(){X x{3};int X::*p=nullptr;return std::invoke(p,x);}',
+         "TR0201"),
+        ("invoke-null-member-function-pointer", '#include <functional>\nstruct X{int f(){return 3;}};int main(){X x;int (X::*p)()=nullptr;return std::invoke(p,x);}',
          "TR0201"),
         ("native-stored-member-pointer", '#include <functional>\nstruct X{int v;};int main(){X x{3};auto p=&X::v;return x.*p;}',
          "TR0201"),
