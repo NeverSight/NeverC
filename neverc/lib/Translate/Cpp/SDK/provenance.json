@@ -2,7 +2,7 @@
   "schema": "neverc.cpp.sdk.provenance",
   "version": 1,
   "source_distribution_id": "clang20.1.8-libcxx200100-macos15.5",
-  "scope": "608 approved header files; upstream references document source and license provenance, not a claim that every SDK export is byte-identical to that upstream revision.",
+  "scope": "609 approved header files; upstream references document source and license provenance, not a claim that every SDK export is byte-identical to that upstream revision.",
   "headers": [
     {
       "root": "libcxx",
@@ -6030,6 +6030,18 @@
     },
     {
       "root": "libcxx",
+      "path": "ratio",
+      "sha256": "ac7a6f9408051c060fd22c795adf3822098fb597284978e22bac91d4e20f3fc4",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/ratio",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/ratio",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
       "path": "stddef.h",
       "sha256": "31d900d6916b90696290f7191b6135d397e1a0fc6f3218b408b9f2abd87ffa48",
       "license": "Apache-2.0 WITH LLVM-exception",
@@ -7317,7 +7329,7 @@
       "sha256": "58a133735f0a55a624a1703067059f6e78925e51725ec6e1f966072e142c9c42"
     }
   ],
-  "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r10",
+  "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r11",
   "metadata": [
     {
       "root": "platform",

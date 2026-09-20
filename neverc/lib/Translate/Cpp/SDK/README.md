@@ -2,9 +2,9 @@
 
 This directory supplies the immutable header inputs for NeverC's built-in C++
 frontend. The distribution is
-`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r10`. It contains the 608 header
+`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r11`. It contains the 609 header
 files admitted by the current
-`clang20.1.8-libcxx200100-macos15.5` catalog: 512 libc++ headers, 14 Clang
+`clang20.1.8-libcxx200100-macos15.5` catalog: 513 libc++ headers, 14 Clang
 resource headers, one NeverC resource header, and 81 Darwin platform headers.
 The upstream-source bytes, including copyright and license notices, are
 preserved; the NeverC-authored C string declaration shim is identified
@@ -17,6 +17,9 @@ standalone closures contain 101 and nine files respectively; their deduplicated
 union is recorded when both headers are included. Every consumed path and hash
 is verified against this catalog. The `<limits>` surface has a 16-file closure
 and folds its supported `numeric_limits` members without a runtime libc++ link.
+The `<ratio>` surface has a 15-file closure and exposes normalized rational
+types, arithmetic aliases, comparisons and standard SI aliases entirely at
+compile time without a runtime libc++ link.
 The `<cstddef>` surface has a 29-file closure and provides its target aliases,
 folded layout queries and directly lowered `std::byte` operations. The
 `<utility>` surface has an 87-file closure and directly lowers scalar
@@ -324,7 +327,7 @@ the exact header bytes supplied here.
 
 | Header group | Files | Applicable notices |
 | --- | ---: | --- |
-| libc++ and Clang resource headers | 464 | Apache-2.0 with LLVM exceptions |
+| libc++ and Clang resource headers | 465 | Apache-2.0 with LLVM exceptions |
 | NeverC C string declaration shim | 1 | AGPL-3.0-only |
 | Darwin headers with an APSL notice | 63 | APSL-2.0 |
 | Darwin headers with APSL and Berkeley notices | 12 | APSL-2.0 and BSD-4-Clause |

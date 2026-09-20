@@ -14798,7 +14798,7 @@ public:
             Name != "tuple" && Name != "iterator" && Name != "algorithm" &&
             Name != "numeric" && Name != "initializer_list" &&
             Name != "optional" && Name != "memory" && Name != "new" &&
-            Name != "functional"))) {
+            Name != "functional" && Name != "ratio"))) {
         reject(L, "include",
                "Only exact #include <type_traits>, #include <cstdint> and "
                "#include <limits>, #include <cstddef>, #include <utility> and "
@@ -14806,7 +14806,7 @@ public:
                "#include <algorithm>, #include <numeric>, "
                "#include <initializer_list>, #include <optional> and "
                "#include <memory>, #include <new> and #include <functional> "
-               "entries are admitted in cpp-core-v2.");
+               "and #include <ratio> entries are admitted in cpp-core-v2.");
         return;
       }
       if (!S.owns(SM, L) && !S.sdkFile(SM, L))

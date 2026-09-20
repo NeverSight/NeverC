@@ -29,8 +29,8 @@ def main():
     repository = Path(__file__).resolve().parents[4]
     count = 0
     sdk_identity = {
-        "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r10",
-        "catalog_sha256": "d5e0089c8b6da5df225a758113b6ce4498ee7f5a0eeb6aea1065690108ea20d1",
+        "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r11",
+        "catalog_sha256": "5ff65ee45ea2a15c5e0ebfd18726d21d7a60f3b43bbf5f44e18d14b632cc80c6",
     }
 
     def check(name, source, code=None, options=(), root=None, profile="cpp-core-v1",
@@ -266,6 +266,59 @@ int main() {
          "TR0203"),
     ):
         check("v2-limits-" + name, source, code,
+              profile="cpp-core-v2", sdk=True)
+
+    ratio_source = """\
+#include <ratio>
+using A = std::ratio<6, -8>;
+using B = std::ratio<5, 6>;
+using Normalized = typename A::type;
+using Sum = std::ratio_add<A, B>;
+using Difference = std::ratio_subtract<B, A>;
+using Product = std::ratio_multiply<A, B>;
+using Quotient = std::ratio_divide<A, B>;
+static_assert(A::num == -3 && A::den == 4);
+static_assert(Normalized::num == -3 && Normalized::den == 4);
+static_assert(Sum::num == 1 && Sum::den == 12);
+static_assert(Difference::num == 19 && Difference::den == 12);
+static_assert(Product::num == -5 && Product::den == 8);
+static_assert(Quotient::num == -9 && Quotient::den == 10);
+static_assert(std::ratio_equal_v<A, std::ratio<-9, 12>>);
+static_assert(std::ratio_not_equal_v<A, B>);
+static_assert(std::ratio_less_v<A, B>);
+static_assert(std::ratio_less_equal_v<A, A>);
+static_assert(std::ratio_greater_v<B, A>);
+static_assert(std::ratio_greater_equal_v<B, B>);
+static_assert(std::milli::num == 1 && std::milli::den == 1000);
+int main() {
+  return A::num + A::den + Sum::num + Sum::den + Difference::num +
+                 Difference::den + Product::num + Product::den +
+                 Quotient::num + Quotient::den + std::kilo::num == 1049
+             ? 0
+             : 1;
+}
+"""
+    ratio = check("v2-ratio", ratio_source,
+                  profile="cpp-core-v2", sdk=True)
+    assert len(ratio["sdk_dependencies"]) == 15, ratio
+    assert any(dependency["root"] == "libcxx" and
+               dependency["path"] == "ratio"
+               for dependency in ratio["sdk_dependencies"]), ratio
+    assert not any(dependency["root"] == "platform"
+                   for dependency in ratio["sdk_dependencies"]), ratio
+    for target in sdk_targets:
+        check("v2-ratio-" + target, ratio_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    for name, source, code in (
+        ("quoted", '#include "ratio"\nint main(){return 0;}', "TR0201"),
+        ("runtime-object",
+         "#include <ratio>\nint main(){std::ratio<1,2> r;return r.num;}",
+         "TR0203"),
+        ("constant-address",
+         "#include <ratio>\nusing R=std::ratio<1,2>;int main(){auto p=&R::num;return *p;}",
+         "TR0201"),
+    ):
+        check("v2-ratio-" + name, source, code,
               profile="cpp-core-v2", sdk=True)
 
     cstddef_source = """\

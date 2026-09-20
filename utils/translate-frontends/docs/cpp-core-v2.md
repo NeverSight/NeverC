@@ -110,6 +110,31 @@ object-qualified method calls, `long double` results, quoted `"limits"` and user
 shadow headers remain rejected. The generated program contains only the folded
 values; it does not call or link libc++ at runtime.
 
+## Compile-time rational arithmetic from `<ratio>`
+
+Core v2 accepts an exact top-level `#include <ratio>` from the pinned embedded
+VFS. `std::ratio<N, D>` exposes its normalized signed numerator, positive
+denominator and normalized `type`. The C++17 `ratio_add`, `ratio_subtract`,
+`ratio_multiply` and `ratio_divide` aliases and all six comparison traits and
+`*_v` variable templates are evaluated by pinned Clang. The standard SI aliases
+from `atto` through `exa` are available when their values fit `intmax_t`.
+
+```cpp
+#include <ratio>
+using A = std::ratio<6, -8>;
+using B = std::ratio<5, 6>;
+using Sum = std::ratio_add<A, B>;
+static_assert(A::num == -3 && A::den == 4);
+static_assert(Sum::num == 1 && Sum::den == 12);
+static_assert(std::ratio_less_v<A, B>);
+```
+
+The authenticated 15-file libc++/resource closure is identical and
+platform-free on all eight supported targets. All results are compile-time
+types or integral constants and add no runtime libc++ dependency. Runtime ratio
+objects, static-member addresses, quoted `"ratio"` and user shadow headers are
+rejected.
+
 ## Fundamental types and bytes from `<cstddef>`
 
 Core v2 accepts an exact top-level `#include <cstddef>` from the pinned embedded

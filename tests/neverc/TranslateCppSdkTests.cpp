@@ -24,7 +24,7 @@ protected:
     MappingEvidence M;
     M.ID = ID;
     M.DeclarationID =
-        "eaaade56a310f3f8fffb6c40830c7f615bd798a906972dbb8cbc9962536c16ce";
+        "defd739799dd15fda78dcf81977bba1290f9263e96749b29ded964e8d260d8bf";
     M.Result = {TypeKind::Double, {}};
     M.Parameters = {{TypeKind::Double, {}}};
     M.Origin = {
@@ -41,10 +41,10 @@ TEST_F(TranslateCppSdkTest, BuiltinSdkLoadsBothTargetsWithoutExternalInputs) {
     SCOPED_TRACE(Triple);
     ASSERT_TRUE(load(Triple)) << (Errors.empty() ? "" : Errors.front().Reason);
     EXPECT_EQ(Context.DistributionID,
-              "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r10");
+              "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r11");
     EXPECT_EQ(Context.TargetTriple, Triple);
     EXPECT_EQ(Context.CatalogSHA256, approvedCppSdkCatalogSHA256());
-    EXPECT_EQ(Context.ApprovedFiles.size(), 608u);
+    EXPECT_EQ(Context.ApprovedFiles.size(), 609u);
     EXPECT_TRUE(
         verifyCppSdkDependencies(Context, Context.ApprovedFiles, Errors));
     EXPECT_TRUE(Errors.empty());
@@ -134,9 +134,9 @@ TEST_F(TranslateCppSdkTest,
   ASSERT_NE(Object, nullptr);
   EXPECT_EQ(Object->getString("distribution_id"), CppMathSDKID);
   ASSERT_NE(Object->getArray("headers"), nullptr);
-  EXPECT_EQ(Object->getArray("headers")->size(), 608u);
+  EXPECT_EQ(Object->getArray("headers")->size(), 609u);
   EXPECT_EQ(approvedCppSdkCatalogSHA256(),
-            "d5e0089c8b6da5df225a758113b6ce4498ee7f5a0eeb6aea1065690108ea20d1");
+            "5ff65ee45ea2a15c5e0ebfd18726d21d7a60f3b43bbf5f44e18d14b632cc80c6");
   EXPECT_EQ(approvedCppSdkCatalog().find("/Users/"), llvm::StringRef::npos);
   EXPECT_EQ(approvedCppSdkCatalog().find("/Library/"), llvm::StringRef::npos);
   EXPECT_EQ(approvedCppSdkCatalog().find("/opt/"), llvm::StringRef::npos);
@@ -152,7 +152,7 @@ TEST_F(TranslateCppSdkTest, CompiledCatalogPreservesSourceBytesAndTrailingNul) {
   EXPECT_EQ(Compiled, llvm::StringRef(Source));
   EXPECT_EQ(Compiled.data()[Compiled.size()], '\0');
   EXPECT_EQ(approvedCppSdkCatalogSHA256(),
-            "d5e0089c8b6da5df225a758113b6ce4498ee7f5a0eeb6aea1065690108ea20d1");
+            "5ff65ee45ea2a15c5e0ebfd18726d21d7a60f3b43bbf5f44e18d14b632cc80c6");
 }
 
 TEST_F(TranslateCppSdkTest,
@@ -208,7 +208,7 @@ TEST_F(TranslateCppSdkTest, BuiltinSdkApprovesOnlyCanonicalMathMappings) {
   ASSERT_TRUE(load());
   auto Floor = mapping("cpp.math.floor.f64.v1");
   Floor.DeclarationID =
-      "37f89d33f9578b460f78bb7e0d1de5a6a14190965bd94771eb482f74df10453d";
+      "0dcc6aef591efda5acb078611f82912ce3e53a4ec091a255d29b2027118ca79b";
   Floor.Origin.Line = 466;
   EXPECT_TRUE(verifyCppSdkMappings(Context, {mapping(), Floor}, Errors));
   EXPECT_TRUE(Errors.empty());

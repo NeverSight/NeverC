@@ -56,6 +56,7 @@ Core v2 also admits exact angle includes of
 [`<type_traits>`](../docs/cpp-core-v2.md#compile-time-type_traits) and
 [`<cstdint>`](../docs/cpp-core-v2.md#fixed-width-integers-from-cstdint), plus
 [`<limits>`](../docs/cpp-core-v2.md#numeric-bounds-from-limits) and
+[`<ratio>`](../docs/cpp-core-v2.md#compile-time-rational-arithmetic-from-ratio),
 [`<cstddef>`](../docs/cpp-core-v2.md#fundamental-types-and-bytes-from-cstddef), and
 the bounded [`<utility>`](../docs/cpp-core-v2.md#scalar-utilities-and-pairs-from-utility)
 and [`<tuple>`](../docs/cpp-core-v2.md#value-tuples-from-tuple) and
@@ -124,7 +125,8 @@ lvalue-reference parameters and results are preserved. The
 frontend uses the pinned embedded libc++/resource VFS and exposes resolved type
 aliases plus integral/enum constant results. It records all consumed header
 hashes: 101 for the `<type_traits>` closure, nine for standalone `<cstdint>`,
-16 for `<limits>`, 29 for `<cstddef>`, 87 for `<utility>`, 98 for `<tuple>`,
+16 for `<limits>`, 15 for `<ratio>`, 29 for `<cstddef>`, 87 for `<utility>`,
+98 for `<tuple>`,
 217 for `<array>`, 10 for `<initializer_list>`, 136 for `<optional>`, 171 for
 `<iterator>`, 354 for `<algorithm>`, 126 for `<numeric>`, 37 for `<new>`,
 267 for `<memory>` and 346 for `<functional>`.
@@ -417,9 +419,9 @@ signaling-NaN builtin argument is not silently mapped to a dynamic runtime call.
 Dynamic binary64 parameters can still carry NaNs and infinities.
 
 The immutable translation headers are embedded in NeverC as distribution
-`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r10`. The
+`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r11`. The
 [SDK catalog](../../../neverc/lib/Translate/Cpp/SDK/catalog.json) records all
-608 approved header files and separate SDK metadata. The original header bytes
+609 approved header files and separate SDK metadata. The original header bytes
 are preserved, including observable macros such as `M_PI` and `_LIBCPP_VERSION`.
 The [SDK notices](../../../neverc/lib/Translate/Cpp/SDK/README.md) document
 origins, redistribution terms and the minimal owned SDK configuration.
