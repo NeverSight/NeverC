@@ -149,8 +149,9 @@ and erased. Exact
 `std::mem_fn` wrappers built from those direct named addresses may be called
 immediately, directly or as the callable of `std::invoke`, through the same
 boundary. A directly initialized local wrapper for a method or data field may also be
-retained across statements and called directly or through `std::invoke`; its
-authenticated carrier is erased. Reassigned or null member pointers, copied or
+retained across statements and called directly or through `std::invoke`; exact
+same-type local copy-initializer chains are authenticated and erased with their
+carriers. Reassigned or null member pointers, `mem_fn` copies from parameters,
 reassigned `mem_fn` objects,
 base adjustments, volatile receivers, user-defined callable objects,
 and rvalue-reference, other reference or variadic function signatures stay

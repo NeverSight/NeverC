@@ -337,16 +337,16 @@ including a declared-const field, may be invoked on the same receivers and
 retains its qualified lvalue result. An exact `std::mem_fn` wrapper built from
 either admitted direct named address may be called immediately, either directly
 or as the callable of `std::invoke`, through the same receiver, argument and
-result boundary. A wrapper for a method or data field may also be retained in one
+result boundary. A wrapper for a method or data field may also be retained in a
 directly initialized local automatic variable and called through either form;
-both authenticated dispatch layers, the wrapper and its local carrier are
-erased. A local automatic member pointer with one exact direct address of an
+exact same-type local copy-initializer chains are authenticated and erased with
+the wrapper carrier. A local automatic member pointer with one exact direct address of an
 admitted method or data field may also be retained across statements and passed
 to `std::invoke`; the frontend authenticates and erases that variable before
 emitting the same direct method call or field projection. Exact same-type local
 copy-initializer chains are authenticated and erased as well. Reassigned or null
-member pointers, copied or reassigned `mem_fn`
-objects, base adjustments,
+member pointers, `mem_fn` copies from parameters, reassigned `mem_fn` objects,
+base adjustments,
 rvalue-reference or other reference signatures and
 volatile receivers remain outside this boundary.
 Core v2 never admits the `platform` root.

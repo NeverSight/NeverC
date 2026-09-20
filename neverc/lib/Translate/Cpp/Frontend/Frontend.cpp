@@ -7666,13 +7666,17 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
 public:
   explicit Allowlist(Adapter &A) : A(A) {}
   bool TraverseVarDecl(VarDecl *D) {
-    if (A.S.coreV2() && owned(D) &&
-        approvedFunctionalStoredMemFn(A.S, A.Sources, D, A.Context)) {
-      // The deduced __mem_fn specialization is an authenticated, erased
-      // carrier. Its `auto` declaration has no written template arguments to
-      // validate, so traverse the initializer without treating the carrier as
-      // source-level record storage.
-      return WalkUpFromVarDecl(D) && TraverseStmt(D->getInit());
+    if (A.S.coreV2() && owned(D)) {
+      if (auto Stored =
+              approvedFunctionalStoredMemFn(A.S, A.Sources, D, A.Context)) {
+        // The deduced __mem_fn specialization is an authenticated, erased
+        // carrier. Its `auto` declaration has no written template arguments to
+        // validate, so traverse only a direct factory initializer. An
+        // authenticated copy initializer is erased with its declaration.
+        return WalkUpFromVarDecl(D) &&
+               (Stored->Initializer != Stored->Factory ||
+                TraverseStmt(D->getInit()));
+      }
     }
     return RecursiveASTVisitor<Allowlist>::TraverseVarDecl(D);
   }
@@ -12874,6 +12878,26 @@ public:
     if (A.S.coreV2())
       if (auto Stored = approvedFunctionalStoredMemFn(
               A.S, A.Sources, D, A.Context)) {
+        if (Stored->Initializer != Stored->Factory) {
+          const Expr *Expression = Stored->Initializer;
+          while (Expression) {
+            ApprovedMemberPointerExpressions.insert(Expression);
+            if (const auto *Parentheses = dyn_cast<ParenExpr>(Expression))
+              Expression = Parentheses->getSubExpr();
+            else if (const auto *Cleanup =
+                         dyn_cast<ExprWithCleanups>(Expression))
+              Expression = Cleanup->getSubExpr();
+            else if (const auto *Cast =
+                         dyn_cast<ImplicitCastExpr>(Expression))
+              Expression = Cast->getSubExpr();
+            else if (const auto *Construction =
+                         dyn_cast<CXXConstructExpr>(Expression);
+                     Construction && Construction->getNumArgs() == 1)
+              Expression = Construction->getArg(0);
+            else
+              break;
+          }
+        }
         ApprovedErasedUtilityCalls.insert(Stored->Factory);
         if (const auto *Leaf = directFunctionReference(Stored->Factory)) {
           DirectTemplateCallLocations.emplace(

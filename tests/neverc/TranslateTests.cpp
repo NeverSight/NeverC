@@ -34517,28 +34517,34 @@ int main() {
   Box box{3, 8, &first};
   const Box constant{5, 13, &second};
   auto value = std::mem_fn(&Box::value);
+  const auto value_copy = value;
+  auto value_chain = value_copy;
   auto fixed = std::mem_fn(&Box::fixed);
   auto link = std::mem_fn(&Box::link);
   auto add = std::mem_fn(&Box::add);
+  const auto add_copy = add;
+  auto add_chain = add_copy;
   auto pass = std::mem_fn(&Box::pass);
   auto set = std::mem_fn(&Box::set);
+  auto set_copy = set;
   auto redirect = std::mem_fn(&Box::redirect);
   auto slot = std::mem_fn(&Box::slot);
-  value(box) = 7;
+  auto slot_copy = slot;
+  value_chain(box) = 7;
   int score = 0;
   score += value(&box) == 7;
   score += std::invoke(fixed, constant) == 13;
   score += link(std::cref(constant)) == &second;
   std::invoke(link, std::ref(box)) = &second;
   score += box.link == &second;
-  set(&box, 9);
+  set_copy(&box, 9);
   score += box.value == 9;
-  slot(std::ref(box)) = 11;
+  slot_copy(std::ref(box)) = 11;
   score += box.value == 11;
   int *cursor = &first;
   std::invoke(redirect, std::cref(constant), cursor);
   score += cursor == &second;
-  score += add(box, 2) == 13;
+  score += add_chain(box, 2) == 13;
   score += std::invoke(add, &constant, 1) == 6;
   score += pass(constant, &first) == &first;
   return score == 10 ? 0 : score;
@@ -34686,9 +34692,11 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "void set(int(*&p)()){p=f;}};int main(){X x;int(*p)()=f;"
        "std::invoke(&X::set,x,p);return p();}",
        "TR0203"},
-      {"stored-mem-fn-copy",
-       "#include <functional>\nstruct X{int v;};int main(){X x{3};"
-       "auto get=std::mem_fn(&X::v);auto q=get;return q(x);}",
+      {"stored-mem-fn-copy-from-parameter",
+       "#include <functional>\nstruct X{int v;};"
+       "using Get=decltype(std::mem_fn(&X::v));"
+       "int call(Get get,X&x){auto q=get;return q(x);}"
+       "int main(){X x{3};return call(std::mem_fn(&X::v),x);}",
        "TR0203"},
       {"stored-mem-fn-reassignment",
        "#include <functional>\nstruct X{int v,w;};int main(){X x{3,4};"

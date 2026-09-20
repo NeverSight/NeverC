@@ -6689,6 +6689,40 @@ approvedFunctionalStoredMemberPointer(
 std::optional<FunctionalStoredMemFn> approvedFunctionalStoredMemFn(
     const State &S, const SourceManager &SM, const VarDecl *Variable,
     const ASTContext &Context) {
+  const auto *Requested = Variable;
+  const auto *RequestedInitializer = Variable ? Variable->getInit() : nullptr;
+  std::set<const VarDecl *> Seen;
+  while (functionalErasedLocalVariable(S, SM, Variable)) {
+    if (!Seen.insert(Variable->getCanonicalDecl()).second)
+      return std::nullopt;
+    const auto *Initializer = functionalInvokeStrippedExpression(
+        Variable->getInit());
+    if (isa_and_nonnull<CallExpr>(Initializer))
+      break;
+    const auto *Construction =
+        dyn_cast_or_null<CXXConstructExpr>(Initializer);
+    const auto *Constructor =
+        Construction ? Construction->getConstructor() : nullptr;
+    const auto *Argument =
+        Construction && Construction->getNumArgs() == 1
+            ? functionalInvokeStrippedExpression(Construction->getArg(0))
+            : nullptr;
+    const auto *Reference = dyn_cast_or_null<DeclRefExpr>(Argument);
+    const auto *Source =
+        Reference ? dyn_cast<VarDecl>(Reference->getDecl()) : nullptr;
+    if (!Construction || !Constructor || !Reference || !Source ||
+        !Constructor->isImplicit() || !Constructor->isTrivial() ||
+        !Constructor->isCopyConstructor() || Constructor->getNumParams() != 1 ||
+        !approvedStandardSDKDeclaration(S, SM, Constructor) ||
+        !S.owns(SM, Construction->getExprLoc()) ||
+        !S.owns(SM, Reference->getExprLoc()) ||
+        !Context.hasSameUnqualifiedType(Variable->getType(),
+                                        Construction->getType()) ||
+        !Context.hasSameUnqualifiedType(Variable->getType(),
+                                        Source->getType()))
+      return std::nullopt;
+    Variable = Source;
+  }
   if (!functionalErasedLocalVariable(S, SM, Variable))
     return std::nullopt;
   const auto *Factory = dyn_cast_or_null<CallExpr>(
@@ -6751,7 +6785,8 @@ std::optional<FunctionalStoredMemFn> approvedFunctionalStoredMemFn(
     return std::nullopt;
   if (!supportedFunctionalStoredMember(Context, Member))
     return std::nullopt;
-  return FunctionalStoredMemFn{Variable, Factory, Address, Member};
+  return FunctionalStoredMemFn{Requested, RequestedInitializer, Factory,
+                               Address, Member};
 }
 
 static bool functionalInvokeParameterReference(

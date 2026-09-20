@@ -375,6 +375,7 @@ approvedFunctionalStoredMemberPointer(
     const clang::VarDecl *Variable, const clang::ASTContext &Context);
 struct FunctionalStoredMemFn {
   const clang::VarDecl *Variable;
+  const clang::Expr *Initializer;
   const clang::CallExpr *Factory;
   const clang::Expr *Address;
   const clang::ValueDecl *Member;

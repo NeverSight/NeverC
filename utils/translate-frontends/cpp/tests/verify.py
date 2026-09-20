@@ -1935,9 +1935,11 @@ struct Box {
 extern "C" int functional_stored_data_mem_fn(
     Box &box, const Box &constant) {
   auto value = std::mem_fn(&Box::value);
+  const auto value_copy = value;
+  auto value_chain = value_copy;
   auto fixed = std::mem_fn(&Box::fixed);
   auto link = std::mem_fn(&Box::link);
-  value(box) = 7;
+  value_chain(box) = 7;
   std::invoke(link, std::ref(box)) = constant.link;
   return value(&box) + std::invoke(fixed, constant)
       + (link(std::cref(constant)) == constant.link);
@@ -1972,15 +1974,19 @@ struct Box {
 extern "C" int functional_stored_method_mem_fn(
     Box &box, const Box &constant) {
   auto add = std::mem_fn(&Box::add);
+  const auto add_copy = add;
+  auto add_chain = add_copy;
   auto pass = std::mem_fn(&Box::pass);
   auto set = std::mem_fn(&Box::set);
+  auto set_copy = set;
   auto redirect = std::mem_fn(&Box::redirect);
   auto slot = std::mem_fn(&Box::slot);
-  set(&box, 7);
-  slot(std::ref(box)) = 9;
+  auto slot_copy = slot;
+  set_copy(&box, 7);
+  slot_copy(std::ref(box)) = 9;
   int *pointer = box.link;
   std::invoke(redirect, std::cref(constant), pointer);
-  return add(box, 2) + std::invoke(add, &constant, 1)
+  return add_chain(box, 2) + std::invoke(add, &constant, 1)
       + (pass(constant, box.link) == box.link) + (pointer == constant.link);
 }
 """
@@ -2184,7 +2190,7 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
          "TR0203"),
         ("invoke-member-function-pointer-reference", '#include <functional>\nint f(){return 3;}struct X{void set(int(*&p)()){p=f;}};int main(){X x;int(*p)()=f;std::invoke(&X::set,x,p);return p();}',
          "TR0203"),
-        ("stored-mem-fn-copy", '#include <functional>\nstruct X{int v;};int main(){X x{3};auto get=std::mem_fn(&X::v);auto q=get;return q(x);}',
+        ("stored-mem-fn-copy-from-parameter", '#include <functional>\nstruct X{int v;};using Get=decltype(std::mem_fn(&X::v));int call(Get get,X&x){auto q=get;return q(x);}int main(){X x{3};return call(std::mem_fn(&X::v),x);}',
          "TR0203"),
         ("stored-mem-fn-reassignment", '#include <functional>\nstruct X{int v,w;};int main(){X x{3,4};auto get=std::mem_fn(&X::v);get=std::mem_fn(&X::w);return get(x);}',
          "TR0203"),
