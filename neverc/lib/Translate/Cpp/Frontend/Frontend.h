@@ -350,6 +350,17 @@ std::optional<FunctionalReferenceInvokeCall>
 approvedFunctionalReferenceInvokeCall(
     const State &S, const clang::SourceManager &SM,
     const clang::CallExpr *Call, const clang::ASTContext &Context);
+struct FunctionalMemberInvokeCall {
+  const clang::Expr *Callable;
+  const clang::Expr *Object;
+  const clang::CXXMethodDecl *Method;
+  const clang::FieldDecl *Field;
+  bool ObjectIsPointer;
+};
+std::optional<FunctionalMemberInvokeCall>
+approvedFunctionalMemberInvokeCall(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *Call, const clang::ASTContext &Context);
 enum class MemoryTemplateMetadata {
   PointerTraits,
   DefaultDelete,
@@ -514,6 +525,7 @@ enum class UtilityOperation {
   FunctionalInvoke,
   FunctionalInvokeObject,
   FunctionalInvokeReference,
+  FunctionalInvokeMember,
   FunctionalReferenceFactory,
   FunctionalReferenceAccess,
   NewLaunder,

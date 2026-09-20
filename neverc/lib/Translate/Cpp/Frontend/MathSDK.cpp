@@ -5609,7 +5609,7 @@ approvedUtilityTupleCatCall(const State &S, const SourceManager &SM,
 
 static const CallExpr *approvedFunctionalInvokeDispatch(
     const State &S, const SourceManager &SM, const CallExpr *Call,
-    const ASTContext &Context) {
+    const ASTContext &Context, bool ReferenceResult = false) {
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
   const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
   const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
@@ -5620,10 +5620,17 @@ static const CallExpr *approvedFunctionalInvokeDispatch(
       !Function->getIdentifier() || Function->getName() != "invoke" ||
       !OuterOrigin || OuterOrigin->Root != "libcxx" ||
       OuterOrigin->Path != "__functional/invoke.h" || Function->isVariadic() ||
-      !Function->hasBody() || !Pattern->hasBody() || !Call->isPRValue() ||
+      !Function->hasBody() || !Pattern->hasBody() ||
+      (ReferenceResult ? !Call->isLValue() : !Call->isPRValue()) ||
       Call->getNumArgs() < 1 ||
       Call->getNumArgs() != Function->getNumParams() ||
-      !Context.hasSameType(Call->getType(), Function->getReturnType()) ||
+      (ReferenceResult
+           ? (!Function->getReturnType()->isLValueReferenceType() ||
+              !Context.hasSameType(
+                  Call->getType(),
+                  Function->getReturnType()->getPointeeType()))
+           : !Context.hasSameType(Call->getType(),
+                                  Function->getReturnType())) ||
       !approvedStandardSDKDeclaration(S, SM, Function) ||
       !approvedStandardSDKDeclaration(S, SM, Primary) ||
       !approvedStandardSDKDeclaration(S, SM, Pattern) ||
@@ -5676,6 +5683,169 @@ static const CallExpr *approvedFunctionalInvokeDispatch(
       !approvedStandardSDKDeclaration(S, SM, DispatchReference->getDecl()))
     return nullptr;
   return Dispatch;
+}
+
+static const Expr *functionalInvokeStrippedExpression(const Expr *Expression) {
+  while (Expression) {
+    if (const auto *Parentheses = dyn_cast<ParenExpr>(Expression)) {
+      Expression = Parentheses->getSubExpr();
+      continue;
+    }
+    if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(Expression)) {
+      Expression = Cleanup->getSubExpr();
+      continue;
+    }
+    if (const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(Expression)) {
+      Expression = Temporary->getSubExpr();
+      continue;
+    }
+    if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Expression)) {
+      Expression = Cast->getSubExpr();
+      continue;
+    }
+    break;
+  }
+  return Expression;
+}
+
+static bool functionalInvokeParameterReference(
+    const Expr *Expression, const ParmVarDecl *Parameter,
+    bool Dereference = false) {
+  Expression = functionalInvokeStrippedExpression(Expression);
+  if (const auto *Cast = dyn_cast_or_null<CXXStaticCastExpr>(Expression)) {
+    if (Cast->getCastKind() != CK_NoOp)
+      return false;
+    Expression = functionalInvokeStrippedExpression(Cast->getSubExpr());
+  }
+  if (Dereference) {
+    const auto *Pointer = dyn_cast_or_null<UnaryOperator>(Expression);
+    if (!Pointer || Pointer->getOpcode() != UO_Deref)
+      return false;
+    Expression = functionalInvokeStrippedExpression(Pointer->getSubExpr());
+    if (const auto *Cast = dyn_cast_or_null<CXXStaticCastExpr>(Expression)) {
+      if (Cast->getCastKind() != CK_NoOp)
+        return false;
+      Expression = functionalInvokeStrippedExpression(Cast->getSubExpr());
+    }
+  }
+  const auto *Reference = dyn_cast_or_null<DeclRefExpr>(Expression);
+  return Reference && Reference->getDecl() == Parameter;
+}
+
+std::optional<FunctionalMemberInvokeCall>
+approvedFunctionalMemberInvokeCall(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  if (!Call || Call->getNumArgs() < 2)
+    return std::nullopt;
+  const auto *Callable = Call->getArg(0);
+  const auto *Address = dyn_cast_or_null<UnaryOperator>(
+      functionalInvokeStrippedExpression(Callable));
+  const auto *Reference =
+      Address && Address->getOpcode() == UO_AddrOf
+          ? dyn_cast<DeclRefExpr>(
+                functionalInvokeStrippedExpression(Address->getSubExpr()))
+          : nullptr;
+  const auto *Member =
+      Reference ? dyn_cast<ValueDecl>(Reference->getDecl()) : nullptr;
+  const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Member);
+  const auto *Field = dyn_cast_or_null<FieldDecl>(Member);
+  const auto *MemberPointer =
+      Callable->getType()->getAs<MemberPointerType>();
+  const auto *MemberClass =
+      MemberPointer ? MemberPointer->getClass()->getAsCXXRecordDecl() : nullptr;
+  const auto *Parent = Member ? dyn_cast<CXXRecordDecl>(Member->getDeclContext())
+                              : nullptr;
+  if (!Address || !Reference || (!Method && !Field) || !MemberPointer ||
+      !MemberClass || !Parent ||
+      MemberClass->getCanonicalDecl() != Parent->getCanonicalDecl() ||
+      !Context.hasSameType(MemberPointer->getPointeeType(),
+                           Member->getType()) ||
+      !S.owns(SM, Address->getOperatorLoc()) ||
+      !S.owns(SM, Reference->getExprLoc()) ||
+      !S.owns(SM, Member->getLocation()))
+    return std::nullopt;
+
+  const auto *Object = Call->getArg(1);
+  const auto ObjectType = Object->getType();
+  const bool ObjectIsPointer = ObjectType->isPointerType();
+  const auto ObjectPointee =
+      ObjectIsPointer ? ObjectType->getPointeeType() : ObjectType;
+  const auto *ObjectRecord = ObjectPointee->getAsCXXRecordDecl();
+  if (!ObjectRecord ||
+      ObjectRecord->getCanonicalDecl() != MemberClass->getCanonicalDecl() ||
+      ObjectPointee.isVolatileQualified() ||
+      (!ObjectIsPointer && !Object->isLValue()))
+    return std::nullopt;
+
+  const bool ReferenceResult = Field != nullptr;
+  const auto *Dispatch = approvedFunctionalInvokeDispatch(
+      S, SM, Call, Context, ReferenceResult);
+  const auto *DispatchFunction = Dispatch ? Dispatch->getDirectCallee() : nullptr;
+  const auto *Body = DispatchFunction
+                         ? dyn_cast<CompoundStmt>(DispatchFunction->getBody())
+                         : nullptr;
+  const auto *Return =
+      Body && Body->size() == 1
+          ? dyn_cast<ReturnStmt>(*Body->body_begin())
+          : nullptr;
+  const Expr *Operation = Return && Return->getRetValue()
+                              ? Return->getRetValue()->IgnoreParens()
+                              : nullptr;
+  const BinaryOperator *MemberOperation = nullptr;
+  const CXXMemberCallExpr *MemberCall = nullptr;
+  if (Method) {
+    MemberCall = dyn_cast_or_null<CXXMemberCallExpr>(Operation);
+    MemberOperation =
+        MemberCall
+            ? dyn_cast<BinaryOperator>(
+                  MemberCall->getCallee()->IgnoreParens())
+            : nullptr;
+  } else {
+    MemberOperation = dyn_cast_or_null<BinaryOperator>(Operation);
+  }
+  if (!Dispatch || !DispatchFunction || !Body || !Return ||
+      !MemberOperation || MemberOperation->getOpcode() != BO_PtrMemD ||
+      DispatchFunction->getNumParams() != Call->getNumArgs() ||
+      !functionalInvokeParameterReference(
+          MemberOperation->getLHS(), DispatchFunction->getParamDecl(1),
+          ObjectIsPointer) ||
+      !functionalInvokeParameterReference(
+          MemberOperation->getRHS(), DispatchFunction->getParamDecl(0)))
+    return std::nullopt;
+
+  if (Method) {
+    if (Method->isStatic() || !callableMethod(Method) || !Method->hasBody() ||
+        Method->getRefQualifier() == RQ_RValue ||
+        Method->getNumParams() + 2 != Call->getNumArgs() ||
+        !Context.hasSameType(Method->getReturnType(), Call->getType()) ||
+        (!Method->getReturnType()->isVoidType() &&
+         !supportedFunctionalScalar(Method->getReturnType(), Context)) ||
+        !MemberCall ||
+        MemberCall->getNumArgs() != Method->getNumParams())
+      return std::nullopt;
+    for (unsigned I = 0; I < Method->getNumParams(); ++I) {
+      const auto Parameter = Method->getParamDecl(I)->getType();
+      const auto Argument = Call->getArg(I + 2)->getType();
+      if (Parameter->isReferenceType() ||
+          !supportedFunctionalScalar(Parameter, Context) ||
+          !supportedFunctionalScalar(Argument, Context) ||
+          !utilityScalarDirectConversion(Context, Argument, Parameter) ||
+          !functionalInvokeParameterReference(
+              MemberCall->getArg(I),
+              DispatchFunction->getParamDecl(I + 2)))
+        return std::nullopt;
+    }
+  } else {
+    if (Call->getNumArgs() != 2 || Field->isBitField() ||
+        Field->getType().hasQualifiers() ||
+        !supportedFunctionalScalar(Field->getType(), Context) ||
+        !Call->isLValue() ||
+        !Context.hasSameUnqualifiedType(Call->getType(), Field->getType()))
+      return std::nullopt;
+  }
+  return FunctionalMemberInvokeCall{Callable, Object, Method, Field,
+                                    ObjectIsPointer};
 }
 
 std::optional<FunctionalOperationInfo> approvedFunctionalInvokeObjectOperation(
@@ -5961,6 +6131,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return UtilityOperation::FunctionalReferenceAccess;
   if (approvedFunctionalReferenceInvokeCall(S, SM, Call, Context))
     return UtilityOperation::FunctionalInvokeReference;
+  if (approvedFunctionalMemberInvokeCall(S, SM, Call, Context))
+    return UtilityOperation::FunctionalInvokeMember;
   if (approvedFunctionalInvokeObjectOperation(S, SM, Call, Context))
     return UtilityOperation::FunctionalInvokeObject;
   const auto *Function = Call->getDirectCallee();

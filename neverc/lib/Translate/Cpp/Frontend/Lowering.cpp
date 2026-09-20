@@ -1679,6 +1679,43 @@ class FunctionLowering {
       return emitIndirectCall(std::move(Callable), std::move(Arguments),
                               Prototype->getReturnType(), L);
     }
+    case UtilityOperation::FunctionalInvokeMember: {
+      const auto Info = approvedFunctionalMemberInvokeCall(
+          A.S, A.Sources, Call, A.Context);
+      if (!Info)
+        reject(L, "functional member invoke",
+               "A checked direct member address and exact receiver are required.");
+      auto Receiver =
+          Info->ObjectIsPointer
+              ? expression(Info->Object)
+              : address(lvalue(Info->Object), Info->Object->getType(), L);
+      if (Info->Method) {
+        json::Array Arguments;
+        Arguments.push_back(snapshot(
+            cast(std::move(Receiver), type(Info->Method->getThisType(), L), L),
+            L));
+        for (unsigned I = 0; I < Info->Method->getNumParams(); ++I) {
+          const auto Parameter = Info->Method->getParamDecl(I)->getType();
+          Arguments.push_back(cast(argument(Call->getArg(I + 2), Parameter),
+                                   type(Parameter, L), L));
+        }
+        chargeCall(Arguments, L);
+        json::Object Instruction{{"op", "call"},
+                                 {"callee", A.name(Info->Method)},
+                                 {"args", std::move(Arguments)},
+                                 {"loc", A.loc(L)}};
+        Expression Result;
+        auto ResultType = type(Info->Method->getReturnType(), L, true);
+        if (ResultType != "void") {
+          Result = temporary(ResultType, L);
+          Instruction["target"] = json::Object(Result);
+        }
+        Body.push_back(std::move(Instruction));
+        return Result;
+      }
+      auto Base = dereference(snapshot(std::move(Receiver), L), L);
+      return fieldStorage(std::move(Base), Info->Field, L);
+    }
     case UtilityOperation::FunctionalReferenceFactory: {
       const auto Info = approvedFunctionalReferenceFactoryCall(
           A.S, A.Sources, Call, A.Context);

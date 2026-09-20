@@ -33917,6 +33917,53 @@ int main() {
 }
 
 TEST_F(TranslateTest,
+       CoreV2FunctionalInvokeNamedMembersRunAtBothOptimizations) {
+  const auto Source = tmpFile("functional-invoke-members.cpp");
+  const auto Output = tmpFile("functional-invoke-members.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+struct Box {
+  int value;
+  int add(short n) const { return value + n; }
+  void set(int n) { value = n; }
+};
+int trace;
+Box *pick(Box *box) { trace = trace * 10 + 1; return box; }
+int argument() { trace = trace * 10 + 2; return 4; }
+int main() {
+  Box box{3};
+  const Box constant{5};
+  const Box *constant_pointer = &constant;
+  int score = 0;
+  score += std::invoke(&Box::add, box, 2) == 5;
+  std::invoke(&Box::set, &box, 7);
+  score += std::invoke(&Box::value, box) == 7;
+  std::invoke(&Box::value, box) = 9;
+  score += std::invoke(&Box::add, constant, 1) == 6;
+  score += std::invoke(&Box::value, constant_pointer) == 5;
+  trace = 0;
+  score += std::invoke(&Box::add, pick(&box), argument()) == 13;
+  score += trace == 12;
+  return score == 6 && box.value == 9 ? 0 : score;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  EXPECT_EQ(Generated.find("indirect_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("functional-invoke-members" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
        CoreV2FunctionalInvokeObjectsRunAtBothOptimizations) {
   const auto Source = tmpFile("functional-invoke-objects.cpp");
   const auto Output = tmpFile("functional-invoke-objects.nc");
@@ -34009,7 +34056,23 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
       {"invoke-variadic",
        "#include <functional>\nint first(int v,...){return v;}int main(){"
        "return std::invoke(first,3,4);}",
-       "TR0201"}};
+       "TR0201"},
+      {"invoke-stored-member-pointer",
+       "#include <functional>\nstruct X{int v;};int main(){X x{3};"
+       "auto p=&X::v;return std::invoke(p,x);}",
+       "TR0201"},
+      {"invoke-member-reference-parameter",
+       "#include <functional>\nstruct X{int f(int&v){return v;}};"
+       "int main(){X x;int v=3;return std::invoke(&X::f,x,v);}",
+       "TR0203"},
+      {"invoke-member-reference-result",
+       "#include <functional>\nstruct X{int v;int&f(){return v;}};"
+       "int main(){X x{3};return std::invoke(&X::f,x);}",
+       "TR0203"},
+      {"invoke-member-volatile-receiver",
+       "#include <functional>\nstruct X{int v;};int main(){volatile X x{3};"
+       "return std::invoke(&X::v,x);}",
+       "TR0203"}};
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
     const auto Source =

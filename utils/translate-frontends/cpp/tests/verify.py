@@ -1569,6 +1569,31 @@ extern "C" int functional_invoke(Function function, int a, int b) {
     for target in sdk_targets:
         check("v2-functional-invoke-" + target, functional_invoke_source,
               profile="cpp-core-v2", target=target, sdk=True)
+    functional_member_invoke_source = """\
+#include <functional>
+struct Box {
+  int value;
+  int add(short n) const { return value + n; }
+  void set(int n) { value = n; }
+};
+extern "C" int functional_member_invoke(Box &box, const Box &constant) {
+  std::invoke(&Box::set, &box, 7);
+  std::invoke(&Box::value, box) = 9;
+  return std::invoke(&Box::add, box, 2)
+      + std::invoke(&Box::value, &box)
+      + std::invoke(&Box::add, constant, 1)
+      + std::invoke(&Box::value, constant);
+}
+"""
+    functional_member_invoke = check(
+        "v2-functional-member-invoke", functional_member_invoke_source,
+        profile="cpp-core-v2", sdk=True)
+    assert any(function["name"] == "functional_member_invoke"
+               for function in functional_member_invoke["functions"]), functional_member_invoke
+    for target in sdk_targets:
+        check("v2-functional-member-invoke-" + target,
+              functional_member_invoke_source, profile="cpp-core-v2",
+              target=target, sdk=True)
     functional_reference_invoke_source = """\
 #include <functional>
 int add(int a, int b) { return a + b; }
@@ -1632,6 +1657,14 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
          "TR0203"),
         ("invoke-variadic", '#include <functional>\nint first(int v,...){return v;}int main(){return std::invoke(first,3,4);}',
          "TR0201"),
+        ("invoke-stored-member-pointer", '#include <functional>\nstruct X{int v;};int main(){X x{3};auto p=&X::v;return std::invoke(p,x);}',
+         "TR0201"),
+        ("invoke-member-reference-parameter", '#include <functional>\nstruct X{int f(int&v){return v;}};int main(){X x;int v=3;return std::invoke(&X::f,x,v);}',
+         "TR0203"),
+        ("invoke-member-reference-result", '#include <functional>\nstruct X{int v;int&f(){return v;}};int main(){X x{3};return std::invoke(&X::f,x);}',
+         "TR0203"),
+        ("invoke-member-volatile-receiver", '#include <functional>\nstruct X{int v;};int main(){volatile X x{3};return std::invoke(&X::v,x);}',
+         "TR0203"),
     ):
         check("v2-functional-typed-" + name, source, code,
               profile="cpp-core-v2", sdk=True)

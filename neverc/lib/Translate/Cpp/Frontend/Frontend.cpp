@@ -118,17 +118,37 @@ static unsigned nativeHeapDeclaration(const FunctionDecl *F) {
   return Count == 1 ? Builtin::BImalloc : Builtin::BIcalloc;
 }
 
+// Forming a member pointer under the Microsoft ABI makes Clang attach an
+// implicit __single_inheritance fact to the owning record. It is an ABI fact,
+// not source syntax, and is only valid for the same flat record shape that the
+// frontend already admits. Written inheritance attributes and every broader
+// Microsoft inheritance model remain unsupported.
+static bool pinnedFlatMSInheritanceFact(const Attr *Attribute,
+                                       const CXXRecordDecl *Record) {
+  const auto *Inheritance = dyn_cast<MSInheritanceAttr>(Attribute);
+  const auto *Definition = Record ? Record->getDefinition() : nullptr;
+  return Inheritance && Inheritance->isImplicit() && Definition &&
+         Inheritance->getInheritanceModel() == MSInheritanceModel::Single &&
+         !Definition->isUnion() && !Definition->getNumBases() &&
+         !Definition->isDynamicClass();
+}
+
 // Structural source checks stay attribute-free except for the standard final
-// class keyword. Non-record declarations retain their original strict policy.
+// class keyword and the exact pinned ABI fact above. Non-record declarations
+// retain their original strict policy.
 static bool hasNonFinalAttributes(const Decl *D) {
   if (!D->hasAttrs())
     return false;
-  if (!isa<CXXRecordDecl>(D))
+  const auto *Record = dyn_cast<CXXRecordDecl>(D);
+  if (!Record)
     return true;
-  for (const auto *Attribute : D->attrs())
-    if (!isa<FinalAttr>(Attribute) ||
-        llvm::StringRef(Attribute->getSpelling()) != "final")
+  for (const auto *Attribute : D->attrs()) {
+    if (isa<FinalAttr>(Attribute) &&
+        llvm::StringRef(Attribute->getSpelling()) == "final")
+      continue;
+    if (!pinnedFlatMSInheritanceFact(Attribute, Record))
       return true;
+  }
   return false;
 }
 
@@ -4746,7 +4766,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::map<const CXXRecordDecl *, bool> FlatReferenceLayouts;
   std::set<const Expr *> DirectFunctionCallees, GeneratedBuiltinCallees,
       FunctionValueDesignators, ApprovedCstddefCallees,
-      ApprovedUtilityCallees;
+      ApprovedUtilityCallees, ApprovedMemberPointerExpressions;
   std::map<const Expr *, SourceLocation> DirectTemplateCallLocations;
   std::set<const CallExpr *> GeneratedArrayAssignments;
   std::map<const OpaqueValueExpr *, const Expr *> ArraySources;
@@ -13181,6 +13201,29 @@ public:
     // children are inspected, including Clang's BoundMemberTy expressions.
     if (A.S.coreV2())
       if (const auto *Call = dyn_cast<CallExpr>(S)) {
+        if (auto Member = approvedFunctionalMemberInvokeCall(
+                A.S, A.Sources, Call, A.Context)) {
+          const Expr *Expression = Member->Callable;
+          while (Expression) {
+            ApprovedMemberPointerExpressions.insert(Expression);
+            if (const auto *Parentheses = dyn_cast<ParenExpr>(Expression))
+              Expression = Parentheses->getSubExpr();
+            else if (const auto *Cleanup =
+                         dyn_cast<ExprWithCleanups>(Expression))
+              Expression = Cleanup->getSubExpr();
+            else if (const auto *Temporary =
+                         dyn_cast<MaterializeTemporaryExpr>(Expression))
+              Expression = Temporary->getSubExpr();
+            else if (const auto *Cast =
+                         dyn_cast<ImplicitCastExpr>(Expression))
+              Expression = Cast->getSubExpr();
+            else if (const auto *Address = dyn_cast<UnaryOperator>(Expression);
+                     Address && Address->getOpcode() == UO_AddrOf)
+              Expression = Address->getSubExpr();
+            else
+              break;
+          }
+        }
         const Expr *Leaf = directFunctionReference(Call);
         if (!Leaf)
           Leaf = scalarDestruction(Call, A.Context);
@@ -13321,7 +13364,8 @@ public:
                      "This cast operation is outside the core v2 profile.");
           }
         }
-      if (A.S.coreV2() && !DirectFunctionCallees.count(E)) {
+      if (A.S.coreV2() && !DirectFunctionCallees.count(E) &&
+          !ApprovedMemberPointerExpressions.count(E)) {
         if (const auto *C = dyn_cast<CastExpr>(E);
             C && C->getCastKind() == CK_FunctionToPointerDecay)
           FunctionValueDesignators.insert(C->getSubExpr());
@@ -13359,7 +13403,8 @@ public:
             Target = Member->getMemberDecl();
           if (const auto *Function = dyn_cast_or_null<FunctionDecl>(Target))
             A.functionAddressTarget(Function, E->getExprLoc());
-        } else if (!NewArrayInitializers.count(E) &&
+        } else if (!ApprovedMemberPointerExpressions.count(E) &&
+                   !NewArrayInitializers.count(E) &&
                    !(A.S.coreV2() &&
                      isa<CXXNullPtrLiteralExpr>(E->IgnoreParens())) &&
                    !(A.S.coreV2() && approvedUtilityNulloptExpression(
@@ -14041,6 +14086,7 @@ public:
     if (const auto *Reference = dyn_cast<DeclRefExpr>(S))
       if (const auto *Method = dyn_cast<CXXMethodDecl>(Reference->getDecl());
           Method && !Method->isImplicit() && !DirectFunctionCallees.count(Reference) &&
+          !ApprovedMemberPointerExpressions.count(Reference) &&
           !(A.S.coreV2() && Method->isStatic()))
         A.reject(Reference->getExprLoc(), "method value",
                  "A method name is supported only as a direct call target.");

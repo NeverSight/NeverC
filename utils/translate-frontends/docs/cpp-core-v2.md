@@ -880,11 +880,23 @@ function object, including temporary and stored objects, and reuses the exact
 authenticated operation body and scalar conversion rules above. Its callable
 expression and arguments are each evaluated once.
 
+A direct source-written address of an owned nonstatic member function also
+lowers through `std::invoke` when the receiver is an exact-class lvalue or
+pointer and the method has fixed-arity by-value admitted scalar parameters with
+a scalar or `void` result. The receiver is retained before the arguments are
+evaluated and each selected argument conversion is preserved. A direct
+source-written address of an admitted scalar field lowers on the same receiver
+forms and retains the field lvalue, including assignment and const reads. The
+selected libc++ member-function or member-object dispatcher body and parameter
+flow are authenticated before the direct method call or field projection is
+emitted.
+
 Cv-qualified typed template arguments, function-object addresses, pointers and
 user-defined operands, `long double`, `std::function`, binders and searchers do
-not yet lower. Member pointers, user-defined callable objects, function
-referents, reference parameters or results and variadic targets remain outside
-the `std::invoke` boundary.
+not yet lower. Stored member pointers, base-adjusting receivers, volatile
+receivers, user-defined callable objects, function referents, reference
+parameters or results and variadic targets remain outside the `std::invoke`
+boundary.
 Quoted includes, shadows, forged declarations and other runtime uses remain
 rejected by the normal source and semantic checks.
 

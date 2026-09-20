@@ -294,7 +294,12 @@ direct lowering boundary, except exact C++17 `std::invoke` calls on fixed-arity
 ordinary functions or stored function pointers. Those calls accept directly
 convertible by-value scalar parameters and scalar or `void` results. The same
 entry point accepts the admitted typed and transparent standard function
-objects above.
+objects above. A direct source-written address of an owned nonstatic member
+function may also be invoked on an exact-class lvalue or pointer when its
+fixed-arity signature has the same scalar boundary. A direct source-written
+address of an admitted scalar field may be invoked on the same receivers and
+retains its lvalue result. Stored member pointers, base adjustments, reference
+signatures and volatile receivers remain outside this boundary.
 Core v2 never admits the `platform` root.
 Math v1 continues to use its separately checked libc++, resource and Darwin
 platform closure for `<cmath>`.
