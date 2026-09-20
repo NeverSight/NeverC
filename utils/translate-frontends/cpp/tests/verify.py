@@ -1577,12 +1577,13 @@ struct Box {
   void set(int n) { value = n; }
 };
 extern "C" int functional_member_invoke(Box &box, const Box &constant) {
+  auto wrapped = std::ref(box);
   std::invoke(&Box::set, &box, 7);
-  std::invoke(&Box::value, box) = 9;
-  return std::invoke(&Box::add, box, 2)
+  std::invoke(&Box::value, wrapped) = 9;
+  return std::invoke(&Box::add, wrapped, 2)
       + std::invoke(&Box::value, &box)
-      + std::invoke(&Box::add, constant, 1)
-      + std::invoke(&Box::value, constant);
+      + std::invoke(&Box::add, std::cref(constant), 1)
+      + std::invoke(&Box::value, std::cref(constant));
 }
 """
     functional_member_invoke = check(

@@ -1685,10 +1685,16 @@ class FunctionLowering {
       if (!Info)
         reject(L, "functional member invoke",
                "A checked direct member address and exact receiver are required.");
-      auto Receiver =
-          Info->ObjectIsPointer
-              ? expression(Info->Object)
-              : address(lvalue(Info->Object), Info->Object->getType(), L);
+      Expression Receiver;
+      if (Info->ObjectWrapper) {
+        auto Wrapper = lvalue(Info->Object);
+        Receiver = snapshot(
+            ReferenceMember(std::move(Wrapper), *Info->ObjectWrapper), L);
+      } else if (Info->ObjectIsPointer) {
+        Receiver = expression(Info->Object);
+      } else {
+        Receiver = address(lvalue(Info->Object), Info->Object->getType(), L);
+      }
       if (Info->Method) {
         json::Array Arguments;
         Arguments.push_back(snapshot(

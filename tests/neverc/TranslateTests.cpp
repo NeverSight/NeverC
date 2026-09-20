@@ -33934,6 +33934,7 @@ int main() {
   Box box{3};
   const Box constant{5};
   const Box *constant_pointer = &constant;
+  auto wrapped = std::ref(box);
   int score = 0;
   score += std::invoke(&Box::add, box, 2) == 5;
   std::invoke(&Box::set, &box, 7);
@@ -33941,10 +33942,13 @@ int main() {
   std::invoke(&Box::value, box) = 9;
   score += std::invoke(&Box::add, constant, 1) == 6;
   score += std::invoke(&Box::value, constant_pointer) == 5;
+  score += std::invoke(&Box::add, wrapped, 1) == 10;
+  score += std::invoke(&Box::value, std::cref(constant)) == 5;
+  std::invoke(&Box::value, wrapped) = 11;
   trace = 0;
-  score += std::invoke(&Box::add, pick(&box), argument()) == 13;
+  score += std::invoke(&Box::add, std::ref(*pick(&box)), argument()) == 15;
   score += trace == 12;
-  return score == 6 && box.value == 9 ? 0 : score;
+  return score == 8 && box.value == 11 ? 0 : score;
 }
 )cpp");
   auto Result =

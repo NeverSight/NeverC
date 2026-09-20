@@ -5769,13 +5769,17 @@ approvedFunctionalMemberInvokeCall(
   const auto *Object = Call->getArg(1);
   const auto ObjectType = Object->getType();
   const bool ObjectIsPointer = ObjectType->isPointerType();
-  const auto ObjectPointee =
+  auto ObjectPointee =
       ObjectIsPointer ? ObjectType->getPointeeType() : ObjectType;
+  auto ObjectWrapper = approvedFunctionalReferenceRecord(
+      S, SM, ObjectPointee->getAsCXXRecordDecl(), Context);
+  if (ObjectWrapper)
+    ObjectPointee = ObjectWrapper->ReferentType;
   const auto *ObjectRecord = ObjectPointee->getAsCXXRecordDecl();
   if (!ObjectRecord ||
       ObjectRecord->getCanonicalDecl() != MemberClass->getCanonicalDecl() ||
       ObjectPointee.isVolatileQualified() ||
-      (!ObjectIsPointer && !Object->isLValue()))
+      (!ObjectIsPointer && !ObjectWrapper && !Object->isLValue()))
     return std::nullopt;
 
   const bool ReferenceResult = Field != nullptr;
@@ -5808,11 +5812,24 @@ approvedFunctionalMemberInvokeCall(
       !MemberOperation || MemberOperation->getOpcode() != BO_PtrMemD ||
       DispatchFunction->getNumParams() != Call->getNumArgs() ||
       !functionalInvokeParameterReference(
-          MemberOperation->getLHS(), DispatchFunction->getParamDecl(1),
-          ObjectIsPointer) ||
-      !functionalInvokeParameterReference(
           MemberOperation->getRHS(), DispatchFunction->getParamDecl(0)))
     return std::nullopt;
+  if (ObjectWrapper) {
+    const auto *AccessCall = dyn_cast_or_null<CallExpr>(
+        functionalInvokeStrippedExpression(MemberOperation->getLHS()));
+    const auto Access = approvedFunctionalReferenceAccessCallImpl(
+        S, SM, AccessCall, Context, false);
+    if (!Access ||
+        Access->Wrapper.Record->getCanonicalDecl() !=
+            ObjectWrapper->Record->getCanonicalDecl() ||
+        !functionalInvokeParameterReference(
+            Access->Object, DispatchFunction->getParamDecl(1)))
+      return std::nullopt;
+  } else if (!functionalInvokeParameterReference(
+                 MemberOperation->getLHS(),
+                 DispatchFunction->getParamDecl(1), ObjectIsPointer)) {
+    return std::nullopt;
+  }
 
   if (Method) {
     if (Method->isStatic() || !callableMethod(Method) || !Method->hasBody() ||
@@ -5845,6 +5862,7 @@ approvedFunctionalMemberInvokeCall(
       return std::nullopt;
   }
   return FunctionalMemberInvokeCall{Callable, Object, Method, Field,
+                                    std::move(ObjectWrapper),
                                     ObjectIsPointer};
 }
 
