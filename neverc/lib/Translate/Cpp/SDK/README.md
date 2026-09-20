@@ -283,7 +283,10 @@ the pointer under the Microsoft ABI. Direct lvalue construction, direct object
 `std::ref`/`std::cref`, trivial
 copy/move construction, same-type assignment, `get()` and implicit reference
 conversion lower directly while preserving qualification and single
-evaluation. The remaining callable facilities stay outside the documented
+evaluation. Wrappers around admitted standard function objects and stored
+fixed-arity function pointers call directly or through `std::invoke`, retaining
+the wrapper and referenced callable before evaluating the arguments. The
+remaining callable facilities stay outside the documented
 direct lowering boundary, except exact C++17 `std::invoke` calls on fixed-arity
 ordinary functions or stored function pointers. Those calls accept directly
 convertible by-value scalar parameters and scalar or `void` results. The same

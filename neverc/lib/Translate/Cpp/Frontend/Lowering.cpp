@@ -1617,6 +1617,49 @@ class FunctionLowering {
                "A checked standard function object is required.");
       return functionalInvokeObjectOperation(Call, *Approved);
     }
+    case UtilityOperation::FunctionalInvokeReference: {
+      const auto Info = approvedFunctionalReferenceInvokeCall(
+          A.S, A.Sources, Call, A.Context);
+      if (!Info || !Call->getNumArgs())
+        reject(L, "functional reference invoke",
+               "A checked callable std::reference_wrapper is required.");
+      auto Wrapper = lvalue(Call->getArg(0));
+      auto Referent = snapshot(
+          ReferenceMember(std::move(Wrapper), Info->Wrapper), L);
+      if (Info->Kind == FunctionalReferenceInvokeKind::FunctionObject) {
+        if (!Info->Operation)
+          reject(L, "functional reference invoke",
+                 "A checked standard function object is required.");
+        const bool Unary = Info->Operation->RightType.isNull();
+        if (Call->getNumArgs() != (Unary ? 2u : 3u))
+          reject(L, "functional reference invoke",
+                 "The checked function object arity must match its arguments.");
+        auto Left = snapshot(expression(Call->getArg(1)), L);
+        std::optional<Expression> Right;
+        if (!Unary)
+          Right = snapshot(expression(Call->getArg(2)), L);
+        return functionalOperationValues(L, std::move(Left),
+                                         std::move(Right), *Info->Operation);
+      }
+      const auto *Prototype =
+          Info->FunctionPointerType->isFunctionPointerType()
+              ? Info->FunctionPointerType->getPointeeType()
+                    ->getAs<FunctionProtoType>()
+              : nullptr;
+      if (!Prototype || Prototype->isVariadic() ||
+          Prototype->getNumParams() + 1 != Call->getNumArgs())
+        reject(L, "functional reference invoke",
+               "A checked fixed-arity function pointer is required.");
+      auto Callable = snapshot(dereference(std::move(Referent), L), L);
+      json::Array Arguments;
+      for (unsigned I = 0; I < Prototype->getNumParams(); ++I) {
+        const auto Parameter = Prototype->getParamType(I);
+        Arguments.push_back(cast(argument(Call->getArg(I + 1), Parameter),
+                                 type(Parameter, L), L));
+      }
+      return emitIndirectCall(std::move(Callable), std::move(Arguments),
+                              Prototype->getReturnType(), L);
+    }
     case UtilityOperation::FunctionalReferenceFactory: {
       const auto Info = approvedFunctionalReferenceFactoryCall(
           A.S, A.Sources, Call, A.Context);

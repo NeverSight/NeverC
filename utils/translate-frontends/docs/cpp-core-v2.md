@@ -859,8 +859,11 @@ assignment lower without a libc++ runtime call. Assignment reseats the wrapper
 by copying its stored pointer. `get()` and the implicit `T&` conversion return
 the referenced object, preserve `const`, accept object or raw-pointer receivers,
 and evaluate the receiver or factory argument once. Function referents,
-volatile referents, wrapper-taking `ref`/`cref` overloads and wrapper invocation
-remain outside this boundary.
+volatile referents and wrapper-taking `ref`/`cref` overloads remain outside
+this boundary. Wrappers around an admitted typed or transparent standard
+function object or a stored fixed-arity function pointer are callable directly
+and through `std::invoke`. The wrapper and stored referent are retained before
+the arguments are evaluated, and each expression is evaluated once.
 
 Exact C++17 `std::invoke` calls on an ordinary function or stored function
 pointer also lower directly. The target must have fixed arity, by-value
@@ -874,9 +877,9 @@ expression and arguments are each evaluated once.
 
 Cv-qualified typed template arguments, function-object addresses, pointers and
 user-defined operands, `long double`, `std::function`, binders and searchers do
-not yet lower. Member pointers, user-defined callable objects,
-`reference_wrapper` invocation, reference parameters or results and variadic
-targets remain outside the `std::invoke` boundary.
+not yet lower. Member pointers, user-defined callable objects, function
+referents, reference parameters or results and variadic targets remain outside
+the `std::invoke` boundary.
 Quoted includes, shadows, forged declarations and other runtime uses remain
 rejected by the normal source and semantic checks.
 

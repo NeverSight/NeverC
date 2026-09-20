@@ -33825,6 +33825,77 @@ int main() {
 }
 
 TEST_F(TranslateTest,
+       CoreV2FunctionalReferenceWrappersInvokeAtBothOptimizations) {
+  const auto Source = tmpFile("functional-reference-invoke.cpp");
+  const auto Output = tmpFile("functional-reference-invoke.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+int trace;
+int first(int n) { trace = trace * 10 + 4; return n + 10; }
+int second(int n) { trace = trace * 10 + 5; return n + 20; }
+void record(int n) { trace = trace * 10 + n; }
+int answer() { return 42; }
+using Function = int (*)(int);
+using Recorder = void (*)(int);
+using Nullary = int (*)();
+Function selected = first;
+int argument() { trace = trace * 10 + 6; selected = second; return 3; }
+std::plus<int> global_plus;
+auto global_reference = std::ref(global_plus);
+int main() {
+  std::plus<int> plus;
+  std::less<> less;
+  auto plus_reference = std::ref(plus);
+  auto less_reference = std::cref(less);
+  auto *pointer = &plus_reference;
+  auto function_reference = std::ref(selected);
+  Recorder recorder = record;
+  auto recorder_reference = std::ref(recorder);
+  Nullary nullary = answer;
+  auto nullary_reference = std::ref(nullary);
+  int score = 0;
+  score += plus_reference(1, 2) == 3;
+  score += std::invoke(plus_reference, 3, 4) == 7;
+  score += (*pointer)(5, 6) == 11;
+  score += less_reference(short(2), 3.0);
+  score += global_reference(7, 8) == 15;
+  score += std::invoke(std::ref(plus), 9, 10) == 19;
+  trace = 0;
+  selected = first;
+  int direct = function_reference(argument());
+  score += direct == 13 && trace == 64 && selected == second;
+  trace = 0;
+  selected = first;
+  int invoked = std::invoke(function_reference, argument());
+  score += invoked == 13 && trace == 64 && selected == second;
+  trace = 0;
+  recorder_reference(7);
+  std::invoke(recorder_reference, 8);
+  score += trace == 78;
+  score += nullary_reference() == 42;
+  score += std::invoke(nullary_reference) == 42;
+  return score == 11 ? 0 : score;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  EXPECT_NE(Generated.find("nct_reference_wrapper_pointer"),
+            std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-reference-invoke" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
        CoreV2FunctionalInvokeObjectsRunAtBothOptimizations) {
   const auto Source = tmpFile("functional-invoke-objects.cpp");
   const auto Output = tmpFile("functional-invoke-objects.nc");
@@ -33886,14 +33957,22 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "#include <functional>\nint f(int n){return n;}int main(){"
        "std::reference_wrapper<int(int)> r(f);return r.get()(1);}",
        "TR0201"},
-      {"reference-wrapper-call",
-       "#include <functional>\nint main(){std::plus<int> p;auto r=std::ref(p);"
-       "return r(1,2);}",
-       "TR0203"},
       {"cref-temporary",
        "#include <functional>\nint main(){auto r=std::cref(3);return "
        "r.get();}",
        "TR0202"},
+      {"reference-wrapper-user-callable",
+       "#include <functional>\nstruct F{int operator()(int v)const{return v;}};"
+       "int main(){F f;auto r=std::ref(f);return r(1);}",
+       "TR0203"},
+      {"reference-wrapper-reference-parameter",
+       "#include <functional>\nint load(int&v){return v;}int main(){"
+       "auto p=&load;auto r=std::ref(p);int v=3;return r(v);}",
+       "TR0203"},
+      {"reference-wrapper-variadic",
+       "#include <functional>\nint first(int v,...){return v;}int main(){"
+       "auto p=&first;auto r=std::ref(p);return r(3,4);}",
+       "TR0201"},
       {"invoke-user-object",
        "#include <functional>\nstruct F{int operator()(int v)const{return v;}};"
        "int main(){return std::invoke(F{},1);}",

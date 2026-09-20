@@ -334,6 +334,17 @@ std::optional<FunctionalReferenceAccessCall>
 approvedFunctionalReferenceAccessCall(
     const State &S, const clang::SourceManager &SM,
     const clang::CallExpr *Call, const clang::ASTContext &Context);
+enum class FunctionalReferenceInvokeKind { FunctionPointer, FunctionObject };
+struct FunctionalReferenceInvokeCall {
+  FunctionalReferenceRecord Wrapper;
+  FunctionalReferenceInvokeKind Kind;
+  clang::QualType FunctionPointerType;
+  std::optional<FunctionalOperationInfo> Operation;
+};
+std::optional<FunctionalReferenceInvokeCall>
+approvedFunctionalReferenceInvokeCall(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *Call, const clang::ASTContext &Context);
 enum class MemoryTemplateMetadata {
   PointerTraits,
   DefaultDelete,
@@ -497,6 +508,7 @@ enum class UtilityOperation {
   AsConst,
   FunctionalInvoke,
   FunctionalInvokeObject,
+  FunctionalInvokeReference,
   FunctionalReferenceFactory,
   FunctionalReferenceAccess,
   NewLaunder,

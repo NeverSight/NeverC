@@ -1565,6 +1565,31 @@ extern "C" int functional_invoke(Function function, int a, int b) {
     for target in sdk_targets:
         check("v2-functional-invoke-" + target, functional_invoke_source,
               profile="cpp-core-v2", target=target, sdk=True)
+    functional_reference_invoke_source = """\
+#include <functional>
+int add(int a, int b) { return a + b; }
+using Function = int (*)(int, int);
+std::plus<int> functional_reference_plus;
+auto functional_reference_global = std::ref(functional_reference_plus);
+extern "C" int functional_reference_invoke(Function function, int a, int b) {
+  std::less<> less;
+  auto plus = std::ref(functional_reference_plus);
+  auto compare = std::cref(less);
+  auto callback = std::ref(function);
+  return plus(a, b) + std::invoke(functional_reference_global, a, b)
+      + compare(short(a), double(b)) + callback(a, b)
+      + std::invoke(callback, a, b) + std::invoke(std::ref(functional_reference_plus), a, b);
+}
+"""
+    functional_reference_invoke = check(
+        "v2-functional-reference-invoke", functional_reference_invoke_source,
+        profile="cpp-core-v2", sdk=True)
+    assert any(function["name"] == "functional_reference_invoke"
+               for function in functional_reference_invoke["functions"]), functional_reference_invoke
+    for target in sdk_targets:
+        check("v2-functional-reference-invoke-" + target,
+              functional_reference_invoke_source, profile="cpp-core-v2",
+              target=target, sdk=True)
     for name, source, code in (
         ("transparent-record", '#include <functional>\nstruct X{}; X operator+(X,X){return{};} int main(){std::plus<>{}(X{},X{});}',
          "TR0203"),
@@ -1580,10 +1605,14 @@ extern "C" int functional_invoke(Function function, int a, int b) {
          "TR0201"),
         ("reference-wrapper-function", '#include <functional>\nint f(int n){return n;}int main(){std::reference_wrapper<int(int)> r(f);return r.get()(1);}',
          "TR0201"),
-        ("reference-wrapper-call", '#include <functional>\nint main(){std::plus<int> p;auto r=std::ref(p);return r(1,2);}',
-         "TR0203"),
         ("cref-temporary", '#include <functional>\nint main(){auto r=std::cref(3);return r.get();}',
          "TR0202"),
+        ("reference-wrapper-user-callable", '#include <functional>\nstruct F{int operator()(int v)const{return v;}};int main(){F f;auto r=std::ref(f);return r(1);}',
+         "TR0203"),
+        ("reference-wrapper-reference-parameter", '#include <functional>\nint load(int&v){return v;}int main(){auto p=&load;auto r=std::ref(p);int v=3;return r(v);}',
+         "TR0203"),
+        ("reference-wrapper-variadic", '#include <functional>\nint first(int v,...){return v;}int main(){auto p=&first;auto r=std::ref(p);return r(3,4);}',
+         "TR0201"),
         ("invoke-user-object", '#include <functional>\nstruct F{int operator()(int v)const{return v;}};int main(){return std::invoke(F{},1);}',
          "TR0203"),
         ("invoke-reference-parameter", '#include <functional>\nint load(int&v){return v;}int main(){int v=3;return std::invoke(load,v);}',
