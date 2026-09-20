@@ -99,7 +99,8 @@ admitted arithmetic types, including heterogeneous transparent operands. Exact
 empty objects use a one-byte carrier and support trivial construction,
 assignment, local and global storage, copying and by-value passing. Exact object
 forms of `std::reference_wrapper<T>` and `std::reference_wrapper<const T>`, plus
-exact fixed-arity function forms with admitted by-value scalar signatures, use
+exact fixed-arity function forms with admitted scalar or object-pointer values
+and exact lvalue-reference parameters or results, use
 their authenticated target ABI layout: one pointer slot under the Itanium ABI
 and an empty-base storage slot plus the pointer under the Microsoft ABI. They
 lower direct matching-lvalue construction, direct and wrapper-taking
@@ -108,7 +109,8 @@ Wrapper-taking calls preserve the referenced target; `cref` adds `const` for
 object targets. Object forms also lower the implicit reference conversion.
 Wrappers around admitted standard function
 objects, stored fixed-arity function pointers and admitted function referents
-are callable directly and through `std::invoke`. The
+are callable directly and through `std::invoke`, preserving exact scalar and
+object-pointer lvalue references. The
 exact C++17 `std::invoke` also lowers fixed-arity ordinary functions and stored
 function pointers with directly convertible by-value scalar parameters or
 exact admitted scalar or object-pointer lvalue references, and preserves the

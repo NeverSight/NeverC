@@ -281,7 +281,8 @@ authenticated one-byte carrier and support trivial default, copy and move
 construction, copy or move assignment, local and global storage, and by-value
 passing. Exact object `std::reference_wrapper<T>` and
 `std::reference_wrapper<const T>`, plus exact fixed-arity function wrappers with
-admitted by-value scalar signatures, use their authenticated target ABI layout:
+admitted scalar or object-pointer values and exact lvalue-reference parameters
+or results, use their authenticated target ABI layout:
 a single pointer slot under the Itanium ABI and an empty-base storage slot plus
 the pointer under the Microsoft ABI. Direct matching-lvalue construction,
 direct and wrapper-taking `std::ref`/`std::cref`, trivial copy/move
@@ -291,7 +292,8 @@ qualification and single evaluation. Wrapper-taking calls preserve the target;
 reference conversion. Wrappers
 around admitted standard function objects, stored fixed-arity function pointers
 and admitted function referents call directly or through `std::invoke`,
-retaining the wrapper and referenced callable before evaluating the arguments. The
+preserving exact scalar and object-pointer lvalue references and retaining the
+wrapper and referenced callable before evaluating the arguments. The
 remaining callable facilities stay outside the documented
 direct lowering boundary, except exact C++17 `std::invoke` calls on fixed-arity
 ordinary functions or stored function pointers. Those calls accept directly

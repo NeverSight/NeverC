@@ -33903,13 +33903,29 @@ int trace;
 int first(int n) { trace = trace * 10 + 4; return n + 10; }
 int second(int n) { trace = trace * 10 + 5; return n + 20; }
 int increment(int n) { return n + 1; }
+int &same(int &n) { trace = trace * 10 + 3; return n; }
+int &alternate(int &n) { trace = trace * 10 + 4; return n; }
+const int &view(const int &n) { return n; }
+void redirect(int *&slot, int *&value) { slot = value; }
+int *&alias(int *&slot) { return slot; }
 void record(int n) { trace = trace * 10 + n; }
 int answer() { return 42; }
 using Function = int (*)(int);
+using Reference = int &(*)(int &);
 using Recorder = void (*)(int);
 using Nullary = int (*)();
 Function selected = first;
+Reference selected_reference = same;
 int argument() { trace = trace * 10 + 6; selected = second; return 3; }
+Reference &choose_reference() {
+  trace = trace * 10 + 1;
+  return selected_reference;
+}
+int &reference_argument(int &value) {
+  trace = trace * 10 + 2;
+  selected_reference = alternate;
+  return value;
+}
 std::plus<int> global_plus;
 auto global_reference = std::ref(global_plus);
 int main() {
@@ -33924,6 +33940,13 @@ int main() {
   auto function_name_const_reference = std::cref(increment);
   auto rewrapped_function = std::ref(function_name_reference);
   auto constant_rewrapped_function = std::cref(function_name_reference);
+  auto direct_reference = std::ref(same);
+  std::reference_wrapper<int &(int &)> explicit_reference(same);
+  Reference reference_pointer = same;
+  auto pointer_reference = std::ref(reference_pointer);
+  auto const_reference = std::cref(view);
+  auto redirect_reference = std::ref(redirect);
+  auto alias_reference = std::ref(alias);
   Recorder recorder = record;
   auto recorder_reference = std::ref(recorder);
   Nullary nullary = answer;
@@ -33955,7 +33978,28 @@ int main() {
   score += function_name_const_reference(14) == 15;
   score += rewrapped_function(15) == 16;
   score += constant_rewrapped_function(16) == 17;
-  return score == 17 ? 0 : score;
+  int first_value = 3;
+  int second_value = 7;
+  int *slot = &first_value;
+  int *next = &second_value;
+  direct_reference(first_value) = 4;
+  score += first_value == 4;
+  std::invoke(explicit_reference, first_value) = 5;
+  score += first_value == 5;
+  pointer_reference(first_value) = 6;
+  score += first_value == 6;
+  score += std::invoke(const_reference, second_value) == 7;
+  redirect_reference(slot, next);
+  score += slot == &second_value;
+  std::invoke(alias_reference, slot) = &first_value;
+  score += slot == &first_value;
+  trace = 0;
+  selected_reference = same;
+  std::invoke(std::ref(choose_reference()),
+              reference_argument(first_value)) = 11;
+  score += first_value == 11;
+  score += trace == 123;
+  return score == 25 ? 0 : score;
 }
 )cpp");
   auto Result =
@@ -34252,9 +34296,9 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "#include <functional>\nint main(){volatile int v=0;"
        "std::reference_wrapper<volatile int> r(v);return r.get();}",
        "TR0201"},
-      {"reference-wrapper-function-reference-parameter",
-       "#include <functional>\nint f(int&n){return n;}int main(){"
-       "std::reference_wrapper<int(int&)> r(f);int n=1;return r(n);}",
+      {"reference-wrapper-function-rvalue-reference-parameter",
+       "#include <functional>\nint f(int&&n){return n;}int main(){"
+       "std::reference_wrapper<int(int&&)> r(f);return r(1);}",
        "TR0201"},
       {"cref-temporary",
        "#include <functional>\nint main(){auto r=std::cref(3);return "
@@ -34264,10 +34308,15 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "#include <functional>\nstruct F{int operator()(int v)const{return v;}};"
        "int main(){F f;auto r=std::ref(f);return r(1);}",
        "TR0203"},
-      {"reference-wrapper-reference-parameter",
-       "#include <functional>\nint load(int&v){return v;}int main(){"
-       "auto p=&load;auto r=std::ref(p);int v=3;return r(v);}",
-       "TR0203"},
+      {"reference-wrapper-function-rvalue-reference-result",
+       "#include <functional>\nint value;int&& get(){return "
+       "static_cast<int&&>(value);}"
+       "int main(){auto r=std::ref(get);return r();}",
+       "TR0201"},
+      {"reference-wrapper-function-volatile-reference-parameter",
+       "#include <functional>\nint load(volatile int&v){return v;}int main(){"
+       "auto p=&load;auto r=std::ref(p);volatile int v=3;return r(v);}",
+       "TR0201"},
       {"reference-wrapper-variadic",
        "#include <functional>\nint first(int v,...){return v;}int main(){"
        "auto p=&first;auto r=std::ref(p);return r(3,4);}",
@@ -34281,7 +34330,8 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "return std::invoke(load,3);}",
        "TR0203"},
       {"invoke-rvalue-reference-result",
-       "#include <functional>\nint value;int&&get(){return static_cast<int&&>(value);}int main(){"
+       "#include <functional>\nint value;int&&get(){return "
+       "static_cast<int&&>(value);}int main(){"
        "return std::invoke(get);}",
        "TR0203"},
       {"invoke-volatile-reference-parameter",
@@ -34301,7 +34351,8 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "int main(){X x;return std::invoke(&X::f,x,3);}",
        "TR0203"},
       {"invoke-member-rvalue-reference-result",
-       "#include <functional>\nstruct X{int v;int&&f(){return static_cast<int&&>(v);}};"
+       "#include <functional>\nstruct X{int v;int&&f(){return "
+       "static_cast<int&&>(v);}};"
        "int main(){X x{3};return std::invoke(&X::f,x);}",
        "TR0203"},
       {"invoke-member-volatile-receiver",

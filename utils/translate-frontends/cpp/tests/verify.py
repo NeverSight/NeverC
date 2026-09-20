@@ -1766,7 +1766,12 @@ extern "C" int functional_invoke_mem_fn(Box &box, const Box &constant) {
     functional_reference_invoke_source = """\
 #include <functional>
 int add(int a, int b) { return a + b; }
+int &same(int &value) { return value; }
+const int &view(const int &value) { return value; }
+void redirect(int *&slot, int *&value) { slot = value; }
+int *&alias(int *&slot) { return slot; }
 using Function = int (*)(int, int);
+using Reference = int &(*)(int &);
 std::plus<int> functional_reference_plus;
 auto functional_reference_global = std::ref(functional_reference_plus);
 extern "C" int functional_reference_invoke(Function function, int a, int b) {
@@ -1778,12 +1783,29 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
   auto named_const = std::cref(add);
   auto named_rewrapped = std::ref(named);
   auto named_const_rewrapped = std::cref(named);
+  auto direct_reference = std::ref(same);
+  std::reference_wrapper<int &(int &)> explicit_reference(same);
+  Reference reference_pointer = same;
+  auto pointer_reference = std::ref(reference_pointer);
+  auto const_reference = std::cref(view);
+  auto redirect_reference = std::ref(redirect);
+  auto alias_reference = std::ref(alias);
+  int value = a;
+  int other = b;
+  int *slot = &value;
+  int *next = &other;
+  direct_reference(value) = 3;
+  std::invoke(explicit_reference, value) = 4;
+  pointer_reference(value) = 5;
+  redirect_reference(slot, next);
+  std::invoke(alias_reference, slot) = &value;
   return plus(a, b) + std::invoke(functional_reference_global, a, b)
       + compare(short(a), double(b)) + callback(a, b)
       + std::invoke(callback, a, b) + std::invoke(std::ref(functional_reference_plus), a, b)
       + named(a, b) + named.get()(a, b) + std::invoke(named, a, b)
       + named_const(a, b) + named_rewrapped(a, b)
-      + named_const_rewrapped(a, b);
+      + named_const_rewrapped(a, b) + value + const_reference(other)
+      + (slot == &value);
 }
 """
     functional_reference_invoke = check(
@@ -1808,14 +1830,16 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
          "TR0201"),
         ("reference-wrapper-volatile", '#include <functional>\nint main(){volatile int v=0;std::reference_wrapper<volatile int> r(v);return r.get();}',
          "TR0201"),
-        ("reference-wrapper-function-reference-parameter", '#include <functional>\nint f(int&n){return n;}int main(){std::reference_wrapper<int(int&)> r(f);int n=1;return r(n);}',
+        ("reference-wrapper-function-rvalue-reference-parameter", '#include <functional>\nint f(int&&n){return n;}int main(){std::reference_wrapper<int(int&&)> r(f);return r(1);}',
          "TR0201"),
         ("cref-temporary", '#include <functional>\nint main(){auto r=std::cref(3);return r.get();}',
          "TR0202"),
         ("reference-wrapper-user-callable", '#include <functional>\nstruct F{int operator()(int v)const{return v;}};int main(){F f;auto r=std::ref(f);return r(1);}',
          "TR0203"),
-        ("reference-wrapper-reference-parameter", '#include <functional>\nint load(int&v){return v;}int main(){auto p=&load;auto r=std::ref(p);int v=3;return r(v);}',
-         "TR0203"),
+        ("reference-wrapper-function-rvalue-reference-result", '#include <functional>\nint value;int&& get(){return static_cast<int&&>(value);}int main(){auto r=std::ref(get);return r();}',
+         "TR0201"),
+        ("reference-wrapper-function-volatile-reference-parameter", '#include <functional>\nint load(volatile int&v){return v;}int main(){auto p=&load;auto r=std::ref(p);volatile int v=3;return r(v);}',
+         "TR0201"),
         ("reference-wrapper-variadic", '#include <functional>\nint first(int v,...){return v;}int main(){auto p=&first;auto r=std::ref(p);return r(3,4);}',
          "TR0201"),
         ("invoke-user-object", '#include <functional>\nstruct F{int operator()(int v)const{return v;}};int main(){return std::invoke(F{},1);}',

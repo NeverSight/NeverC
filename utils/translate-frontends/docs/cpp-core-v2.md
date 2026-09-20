@@ -876,8 +876,8 @@ operation without a libc++ runtime dependency.
 
 Exact `std::reference_wrapper<T>` and `std::reference_wrapper<const T>` for
 non-volatile object types, plus exact function wrappers whose fixed-arity
-signature has admitted by-value scalar parameters and a scalar or `void`
-result, retain the authenticated target ABI layout: one pointer slot under the
+signature has admitted scalar or object-pointer values and exact lvalue-reference
+parameters or results, retain the authenticated target ABI layout: one pointer slot under the
 Itanium ABI and an empty-base storage slot followed by the pointer under the
 Microsoft ABI. Direct construction from a matching lvalue, the direct
 `std::ref` and `std::cref` overloads, their wrapper-taking overloads, trivial
@@ -893,7 +893,8 @@ Wrappers around an admitted typed or transparent standard function
 object, a stored fixed-arity function pointer or an admitted function referent
 are callable directly and through `std::invoke`. The wrapper and stored referent
 are retained before the arguments are evaluated, and each expression is
-evaluated once.
+evaluated once. Exact scalar and object-pointer lvalue-reference parameters and
+results preserve their source storage and qualification.
 
 Exact C++17 `std::invoke` calls on an ordinary function or stored function
 pointer also lower directly. The target must have fixed arity. Parameters may
