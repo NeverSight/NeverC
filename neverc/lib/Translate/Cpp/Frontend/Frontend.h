@@ -274,6 +274,9 @@ std::optional<FunctionalObjectRecord>
 approvedFunctionalObjectRecord(const State &S, const clang::SourceManager &SM,
                                const clang::CXXRecordDecl *Record,
                                const clang::ASTContext &Context);
+bool approvedFunctionalObjectBaseCast(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CastExpr *Cast, const clang::ASTContext &Context);
 enum class FunctionalObjectConstruction { Default, CopyOrMove };
 std::optional<FunctionalObjectConstruction>
 approvedFunctionalObjectConstruction(

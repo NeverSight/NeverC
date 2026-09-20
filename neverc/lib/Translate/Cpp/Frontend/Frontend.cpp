@@ -13393,7 +13393,9 @@ public:
           case CK_DerivedToBase:
           case CK_UncheckedDerivedToBase:
           case CK_BaseToDerived:
-            if (!approvedUtilityOptionalBaseCast(A.S, A.Sources, C, A.Context))
+            if (!approvedUtilityOptionalBaseCast(A.S, A.Sources, C, A.Context) &&
+                !approvedFunctionalObjectBaseCast(A.S, A.Sources, C,
+                                                  A.Context))
               A.emptyBaseCast(C);
             break;
           case CK_BitCast:

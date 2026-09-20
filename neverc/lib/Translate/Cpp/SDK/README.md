@@ -280,14 +280,18 @@ standard function objects lower directly for admitted arithmetic types,
 including heterogeneous transparent operands. Exact empty objects use an
 authenticated one-byte carrier and support trivial default, copy and move
 construction, copy or move assignment, local and global storage, and by-value
-passing. Exact direct-cast integral `std::hash` specializations from `bool`
-through `unsigned long` use the same authenticated one-byte carrier and lower
-to target `size_t` for temporary, local, global, copied and by-value objects.
-They support same-type copy and move assignment and call directly or through
-`std::invoke`. Receiver expressions are evaluated once before their arguments.
+passing. Exact integral `std::hash` specializations from `bool` through
+`unsigned long`, plus `long long` and `unsigned long long`, use the same
+authenticated one-byte carrier and lower to target `size_t` for temporary,
+local, global, copied and by-value objects. The wide specializations
+authenticate libc++'s exact `__scalar_hash` base and inherited call operator.
+They preserve the value bits on 64-bit targets and reproduce libc++'s Murmur2
+hash of the eight little-endian value bytes on 32-bit targets. They support
+same-type copy and move assignment and call directly or through `std::invoke`.
+Receiver expressions are evaluated once before their arguments.
 The exact C++17 `nullptr_t` specialization returns its pinned libc++ constant
-through the same object, assignment and invocation boundary. Wide-integer,
-floating, pointer and enum specializations remain outside this boundary.
+through the same object, assignment and invocation boundary. Floating, pointer
+and enum specializations remain outside this boundary.
 Exact object `std::reference_wrapper<T>` and
 `std::reference_wrapper<const T>`, plus exact fixed-arity function wrappers with
 admitted scalar or object-pointer values and exact lvalue-reference parameters

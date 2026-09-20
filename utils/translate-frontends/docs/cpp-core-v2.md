@@ -876,16 +876,18 @@ assigned. Their authenticated C++ one-byte size and alignment map to a single
 `u8` carrier field at offset zero; calls still lower to the verified built-in
 operation without a libc++ runtime dependency.
 
-Exact direct-cast integral `std::hash` specializations from `bool` through
-`unsigned long` use the same authenticated one-byte carrier. Their calls lower
-to pinned `static_cast<size_t>` semantics for temporary, local, global, copied
-and by-value objects. They support same-type copy and move assignment and call
-directly or through `std::invoke`. The receiver is evaluated once before the
-argument. The exact C++17 `nullptr_t` specialization returns the pinned libc++
-constant `662607004` through the same object, assignment and invocation
-boundary. Wide-integer, floating, pointer and enum specializations remain
-outside this boundary because their libc++ implementations use different
-storage or hashing algorithms.
+Exact integral `std::hash` specializations from `bool` through `unsigned long`,
+plus `long long` and `unsigned long long`, use the same authenticated one-byte
+carrier. The direct specializations use pinned `static_cast<size_t>` semantics.
+The wide specializations authenticate libc++'s exact `__scalar_hash` base and
+inherited call operator; they preserve the value bits on 64-bit targets and
+reproduce libc++'s Murmur2 hash of the eight little-endian value bytes on 32-bit
+targets. Temporary, local, global, copied and by-value objects are admitted.
+They support same-type copy and move assignment and call directly or through
+`std::invoke`. The receiver is evaluated once before the argument. The exact
+C++17 `nullptr_t` specialization returns the pinned libc++ constant `662607004`
+through the same object, assignment and invocation boundary. Floating, pointer
+and enum specializations remain outside this boundary.
 
 Exact `std::reference_wrapper<T>` and `std::reference_wrapper<const T>` for
 non-volatile object types, plus exact function wrappers whose fixed-arity

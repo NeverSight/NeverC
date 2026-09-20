@@ -33735,6 +33735,9 @@ std::size_t apply(std::hash<int> hash, int value) { return hash(value); }
 int main() {
   std::hash<int> stored;
   std::hash<unsigned long> wide;
+  std::hash<long long> signed_wide;
+  std::hash<unsigned long long> unsigned_wide;
+  auto signed_wide_copy = signed_wide;
   auto copy = stored;
   int score = 0;
   score += std::hash<bool>{}(true) == std::size_t(1);
@@ -33744,6 +33747,11 @@ int main() {
   score += stored(-3) == static_cast<std::size_t>(-3);
   score += std::invoke(copy, 4) == std::size_t(4);
   score += wide(9ul) == std::size_t(9);
+  score += signed_wide(-7ll) == static_cast<std::size_t>(-7ll);
+  score += std::invoke(signed_wide_copy, 0x123456789abcdefll) ==
+           static_cast<std::size_t>(0x123456789abcdefll);
+  score += std::hash<unsigned long long>{}(0x8000000000000000ull) ==
+           static_cast<std::size_t>(0x8000000000000000ull);
   score += apply(stored, 5) == std::size_t(5);
   trace = 0;
   score += (trace = trace * 10 + 1, global_hash)(value()) ==
@@ -33755,13 +33763,21 @@ int main() {
   assigned = (trace = trace * 10 + 3, std::hash<int>{});
   score += assigned(7) == std::size_t(7);
   score += trace == 123;
+  std::hash<unsigned long long> wide_assigned;
+  wide_assigned = unsigned_wide;
+  score += wide_assigned(0xfedcba9876543210ull) ==
+           static_cast<std::size_t>(0xfedcba9876543210ull);
+  trace = 0;
+  score += (trace = trace * 10 + 4, unsigned_wide)(
+               (trace = trace * 10 + 5, 3ull)) == std::size_t(3);
+  score += trace == 45;
   trace = 0;
   score += std::hash<std::nullptr_t>{}((trace = 3, nullptr)) ==
            std::size_t(662607004);
   score += std::invoke(std::hash<std::nullptr_t>{}, nullptr) ==
            std::size_t(662607004);
   score += trace == 3;
-  return score == 15 ? 0 : score;
+  return score == 21 ? 0 : score;
 }
 )cpp");
   auto Result =
@@ -34350,9 +34366,6 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "#include <functional>\nint main(){return "
        "std::plus<long double>{}(1,2)==3;}",
        "TR0201"},
-      {"hash-long-long",
-       "#include <functional>\nint main(){return std::hash<long long>{}(3);}",
-       "TR0203"},
       {"hash-float",
        "#include <functional>\nint main(){return std::hash<float>{}(3);}",
        "TR0203"},

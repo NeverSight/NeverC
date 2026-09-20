@@ -418,6 +418,58 @@ static bool directIntegralHashType(QualType Type) {
   }
 }
 
+static bool wideIntegralHashType(QualType Type) {
+  if (Type.isNull() || Type.hasQualifiers())
+    return false;
+  return Type->isSpecificBuiltinType(BuiltinType::LongLong) ||
+         Type->isSpecificBuiltinType(BuiltinType::ULongLong);
+}
+
+static const ClassTemplateSpecializationDecl *
+wideIntegralHashBase(const State &S, const SourceManager &SM,
+                     const CXXRecordDecl *Record, QualType ValueType,
+                     const ASTContext &Context) {
+  const auto *Definition = Record ? Record->getDefinition() : nullptr;
+  const auto *Base =
+      Definition && Definition->getNumBases() == 1
+          ? dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+                Definition->bases_begin()->getType()->getAsCXXRecordDecl())
+          : nullptr;
+  Base = Base ? dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+                    Base->getDefinition())
+              : nullptr;
+  const auto *Template = Base ? Base->getSpecializedTemplate() : nullptr;
+  const auto *CanonicalTemplate =
+      Template ? Template->getCanonicalDecl() : nullptr;
+  if (!wideIntegralHashType(ValueType) || !Base || !Template ||
+      !CanonicalTemplate || Base->getName() != "__scalar_hash" ||
+      Base->isUnion() || Base->isDependentContext() || !Base->isEmpty() ||
+      !Base->isStandardLayout() || !Base->isTriviallyCopyable() ||
+      !Base->hasTrivialDestructor() || !Base->field_empty() ||
+      !approvedStandardSDKDeclaration(S, SM, Base) ||
+      !approvedStandardSDKDeclaration(S, SM, Template) ||
+      !approvedStandardSDKDeclaration(S, SM, CanonicalTemplate) ||
+      !cstddefOrigin(S, SM, Base->getLocation(), "libcxx",
+                     "__functional/hash.h") ||
+      !cstddefOrigin(S, SM, Template->getLocation(), "libcxx",
+                     "__functional/hash.h") ||
+      !cstddefOrigin(S, SM, CanonicalTemplate->getLocation(), "libcxx",
+                     "__functional/hash.h"))
+    return nullptr;
+  const auto &Arguments = Base->getTemplateArgs();
+  if (Arguments.size() != 2 ||
+      Arguments.get(0).getKind() != TemplateArgument::Type ||
+      Arguments.get(1).getKind() != TemplateArgument::Integral ||
+      !Context.hasSameType(Arguments.get(0).getAsType(), ValueType))
+    return nullptr;
+  const auto Ratio = Context.getTypeSize(ValueType) /
+                     Context.getTypeSize(Context.getSizeType());
+  if ((Ratio != 1 && Ratio != 2) ||
+      Arguments.get(1).getAsIntegral() != Ratio)
+    return nullptr;
+  return Base;
+}
+
 static bool functionalObjectOrigin(const State &S, const SourceManager &SM,
                                    const NamedDecl *Declaration,
                                    llvm::StringRef Name) {
@@ -477,7 +529,10 @@ approvedFunctionalObjectRecord(const State &S, const SourceManager &SM,
   const auto ValueType = Arguments.get(0).getAsType();
   if (Name == "hash") {
     if (Definition->getSpecializationKind() != TSK_ExplicitSpecialization ||
-        (!directIntegralHashType(ValueType) && !ValueType->isNullPtrType()))
+        (!directIntegralHashType(ValueType) &&
+         !wideIntegralHashType(ValueType) && !ValueType->isNullPtrType()) ||
+        (wideIntegralHashType(ValueType) &&
+         !wideIntegralHashBase(S, SM, Definition, ValueType, Context)))
       return std::nullopt;
     return FunctionalObjectRecord{Definition};
   }
@@ -504,6 +559,39 @@ approvedFunctionalObjectRecord(const State &S, const SourceManager &SM,
     return std::nullopt;
   }
   return FunctionalObjectRecord{Definition};
+}
+
+bool approvedFunctionalObjectBaseCast(const State &S, const SourceManager &SM,
+                                      const CastExpr *Cast,
+                                      const ASTContext &Context) {
+  if (!Cast ||
+      (Cast->getCastKind() != CK_DerivedToBase &&
+       Cast->getCastKind() != CK_UncheckedDerivedToBase) ||
+      !Cast->getSubExpr() || !Cast->isGLValue() ||
+      !Cast->getSubExpr()->isGLValue() || Cast->path_size() != 1)
+    return false;
+  const auto *Hash = Cast->getSubExpr()->getType()->getAsCXXRecordDecl();
+  const auto Object = approvedFunctionalObjectRecord(S, SM, Hash, Context);
+  const auto *Definition =
+      Object ? dyn_cast<ClassTemplateSpecializationDecl>(Object->Record)
+             : nullptr;
+  if (!Definition)
+    return false;
+  const auto &Arguments = Definition->getTemplateArgs();
+  const auto ValueType =
+      Arguments.size() == 1 &&
+              Arguments.get(0).getKind() == TemplateArgument::Type
+          ? Arguments.get(0).getAsType()
+          : QualType();
+  const auto *Base =
+      wideIntegralHashBase(S, SM, Definition, ValueType, Context);
+  const auto *Target = Cast->getType()->getAsCXXRecordDecl();
+  Target = Target ? Target->getDefinition() : nullptr;
+  return Base && Target &&
+         Base->getCanonicalDecl() == Target->getCanonicalDecl() &&
+         *Cast->path_begin() == &*Definition->bases_begin() &&
+         (!Cast->getSubExpr()->getType().isConstQualified() ||
+          Cast->getType().isConstQualified());
 }
 
 static bool utilityObjectPointer(const ASTContext &Context, QualType Type);
@@ -821,9 +909,91 @@ bool approvedFunctionalReferenceAssignment(
              Parameter->getPointeeType(), Context.getRecordType(Source->Record));
 }
 
+static std::optional<FunctionalOperationInfo> approvedWideIntegralHashOperation(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context, bool RequireOwnedReference) {
+  const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);
+  const auto *Scalar = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      Method ? Method->getParent()->getDefinition() : nullptr);
+  const auto *Reference = directMethodReference(Call);
+  const auto *ReceiverCast =
+      Call && Call->getNumArgs()
+          ? dyn_cast<ImplicitCastExpr>(Call->getArg(0)->IgnoreParens())
+          : nullptr;
+  const auto *Derived = ReceiverCast ? ReceiverCast->getSubExpr() : nullptr;
+  const auto *Hash = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      Derived ? Derived->getType()->getAsCXXRecordDecl() : nullptr);
+  Hash = Hash ? dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+                    Hash->getDefinition())
+              : nullptr;
+  const auto Object = approvedFunctionalObjectRecord(S, SM, Hash, Context);
+  if (!Call || !Operator || !Method || !Scalar || !Reference || !ReceiverCast ||
+      !Derived || !Hash || !Object || Operator->getOperator() != OO_Call ||
+      Method->getOverloadedOperator() != OO_Call || Method->isStatic() ||
+      !Method->isConst() || Method->isVariadic() || !Method->isInlined() ||
+      !Method->hasBody() || !Call->isPRValue() ||
+      Scalar->getName() != "__scalar_hash" || Scalar->isUnion() ||
+      Scalar->isDependentContext() || !Scalar->isEmpty() ||
+      !Scalar->isStandardLayout() || !Scalar->isTriviallyCopyable() ||
+      !Scalar->hasTrivialDestructor() ||
+      !approvedFunctionalObjectBaseCast(S, SM, ReceiverCast, Context) ||
+      !approvedStandardSDKDeclaration(S, SM, Scalar) ||
+      !approvedStandardSDKDeclaration(S, SM, Method) ||
+      !cstddefOrigin(S, SM, Scalar->getLocation(), "libcxx",
+                     "__functional/hash.h") ||
+      !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
+                     "__functional/hash.h") ||
+      (RequireOwnedReference && !S.owns(SM, Reference->getExprLoc())))
+    return std::nullopt;
+
+  const auto &HashArguments = Hash->getTemplateArgs();
+  const auto ValueType =
+      HashArguments.size() == 1 &&
+              HashArguments.get(0).getKind() == TemplateArgument::Type
+          ? HashArguments.get(0).getAsType()
+          : QualType();
+  const auto *Base = wideIntegralHashBase(S, SM, Hash, ValueType, Context);
+  const auto &ScalarArguments = Scalar->getTemplateArgs();
+  if (ScalarArguments.size() != 2 ||
+      ScalarArguments.get(0).getKind() != TemplateArgument::Type ||
+      ScalarArguments.get(1).getKind() != TemplateArgument::Integral)
+    return std::nullopt;
+  const auto Ratio =
+      ScalarArguments.get(1).getAsIntegral().getZExtValue();
+  const auto *Pattern = Method->getInstantiatedFromMemberFunction();
+  if (!Base || Base->getCanonicalDecl() != Scalar->getCanonicalDecl() ||
+      !Pattern || !approvedStandardSDKDeclaration(S, SM, Pattern) ||
+      !cstddefOrigin(S, SM, Pattern->getLocation(), "libcxx",
+                     "__functional/hash.h") ||
+      !Context.hasSameType(ScalarArguments.get(0).getAsType(), ValueType) ||
+      Ratio != Context.getTypeSize(ValueType) /
+                   Context.getTypeSize(Context.getSizeType()) ||
+      (Ratio != 1 && Ratio != 2) || Method->getNumParams() != 1 ||
+      Call->getNumArgs() != 2 ||
+      !Context.hasSameType(Method->getParamDecl(0)->getType(), ValueType) ||
+      !Context.hasSameType(Call->getArg(1)->getType(), ValueType) ||
+      !Context.hasSameType(Method->getReturnType(), Context.getSizeType()) ||
+      !Context.hasSameType(Call->getType(), Context.getSizeType()) ||
+      !Context.hasSameUnqualifiedType(ReceiverCast->getType(),
+                                      Context.getRecordType(Scalar)) ||
+      !Context.hasSameUnqualifiedType(Derived->getType(),
+                                      Context.getRecordType(Hash)))
+    return std::nullopt;
+  return FunctionalOperationInfo{FunctionalOperation::Hash,
+                                 ValueType,
+                                 {},
+                                 Context.getSizeType(),
+                                 Context.getSizeType()};
+}
+
 static std::optional<FunctionalOperationInfo> approvedFunctionalOperationImpl(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context, bool RequireOwnedReference) {
+  if (auto Wide = approvedWideIntegralHashOperation(
+          S, SM, Call, Context, RequireOwnedReference))
+    return Wide;
   const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
   const auto *Method =
       dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);

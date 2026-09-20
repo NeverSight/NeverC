@@ -1536,15 +1536,27 @@ std::hash<int> functional_hash_global;
 std::size_t apply_hash(std::hash<int> hash, int value) {
   return hash(value);
 }
-extern "C" std::size_t functional_hash(int value, unsigned long wide) {
+std::size_t apply_wide_hash(std::hash<long long> hash, long long value) {
+  return hash(value);
+}
+extern "C" std::size_t functional_hash(int value, unsigned long wide,
+                                        long long signed_wide,
+                                        unsigned long long unsigned_wide) {
   std::hash<int> stored;
   auto copied = stored;
   std::hash<int> assigned;
   assigned = stored;
   assigned = std::hash<int>{};
+  std::hash<long long> wide_stored;
+  auto wide_copied = wide_stored;
+  std::hash<unsigned long long> wide_assigned;
+  wide_assigned = std::hash<unsigned long long>{};
   return std::hash<bool>{}(true) + std::hash<char16_t>{}(u'A')
       + std::hash<short>{}(short(value)) + stored(value)
       + std::invoke(copied, value) + std::hash<unsigned long>{}(wide)
+      + wide_stored(signed_wide) + std::invoke(wide_copied, signed_wide)
+      + std::hash<unsigned long long>{}(unsigned_wide)
+      + wide_assigned(unsigned_wide) + apply_wide_hash(wide_stored, signed_wide)
       + std::hash<std::nullptr_t>{}(nullptr)
       + functional_hash_global(value);
 }
@@ -1554,12 +1566,34 @@ extern "C" std::size_t functional_hash(int value, unsigned long wide) {
                             profile="cpp-core-v2", sdk=True)
     assert any(function["name"] == "functional_hash"
                for function in functional_hash["functions"]), functional_hash
-    assert not [node for node in walk(functional_hash["functions"])
-                if node.get("op") in ("call", "mapped_call")], functional_hash
+    functional_hash_calls = [
+        node for node in walk(functional_hash["functions"])
+        if node.get("op") in ("call", "mapped_call")
+    ]
+    assert len(functional_hash_calls) == 1, functional_hash
+    assert functional_hash_calls[0]["op"] == "call", functional_hash_calls
+    assert len(functional_hash_calls[0]["args"]) == 2, functional_hash_calls
     for target in sdk_targets:
-        check("v2-functional-integral-hash-" + target,
-              functional_hash_source, profile="cpp-core-v2",
-              target=target, sdk=True)
+        target_hash = check("v2-functional-integral-hash-" + target,
+                            functional_hash_source, profile="cpp-core-v2",
+                            target=target, sdk=True)
+        target_hash_calls = [
+            node for node in walk(target_hash["functions"])
+            if node.get("op") in ("call", "mapped_call")
+        ]
+        assert len(target_hash_calls) == 1, target_hash
+        assert target_hash_calls[0]["op"] == "call", target_hash_calls
+        assert len(target_hash_calls[0]["args"]) == 2, target_hash_calls
+        murmur_literals = {
+            node.get("value") for node in walk(target_hash["functions"])
+            if node.get("kind") == "literal" and node.get("type") == "uint"
+        }
+        if target.startswith("i686-"):
+            assert {"8", "13", "15", "24", "1540483477"} <= murmur_literals, (
+                target, murmur_literals)
+        else:
+            assert "1540483477" not in murmur_literals, (
+                target, murmur_literals)
     functional_reference_source = """\
 #include <functional>
 int functional_reference_global_value;
@@ -1859,8 +1893,6 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
          "TR0203"),
         ("long-double", '#include <functional>\nint main(){return std::plus<long double>{}(1,2)==3;}',
          "TR0201"),
-        ("hash-long-long", '#include <functional>\nint main(){return std::hash<long long>{}(3);}',
-         "TR0203"),
         ("hash-float", '#include <functional>\nint main(){return std::hash<float>{}(3);}',
          "TR0203"),
         ("hash-pointer", '#include <functional>\nint main(){int n;return std::hash<int*>{}(&n);}',

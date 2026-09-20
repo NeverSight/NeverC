@@ -847,6 +847,69 @@ class FunctionLowering {
                              unsignedInteger(ResultType)),
                 ResultType, L),
             L);
+      if ((Info.LeftType->isSpecificBuiltinType(BuiltinType::LongLong) ||
+           Info.LeftType->isSpecificBuiltinType(BuiltinType::ULongLong)) &&
+          A.Context.getTypeSize(Info.ResultType) == 32) {
+        auto Unsigned = type(A.Context.UnsignedLongLongTy, L);
+        auto U32 = [&](uint64_t Value) {
+          return A.literal(
+              llvm::APSInt(llvm::APInt(32, Value), /*isUnsigned=*/true),
+              "uint", L);
+        };
+        auto Wide = snapshot(cast(std::move(Left), Unsigned, L), L);
+        auto Low = snapshot(cast(json::Object(Wide), "uint", L), L);
+        auto High = snapshot(
+            cast(binary(">>", json::Object(Wide),
+                        A.literal(llvm::APSInt(llvm::APInt(64, 32), true),
+                                  Unsigned, L),
+                        Unsigned, L),
+                 "uint", L),
+            L);
+        auto Mix = [&](Expression Word) {
+          auto Value = snapshot(std::move(Word), L);
+          assign(Value,
+                 binary("*", json::Object(Value), U32(0x5bd1e995),
+                        "uint", L),
+                 L);
+          assign(Value,
+                 binary("^", json::Object(Value),
+                        binary(">>", json::Object(Value), U32(24), "uint",
+                               L),
+                        "uint", L),
+                 L);
+          assign(Value,
+                 binary("*", json::Object(Value), U32(0x5bd1e995),
+                        "uint", L),
+                 L);
+          return Value;
+        };
+        auto Hash = snapshot(U32(8), L);
+        for (auto Word : {std::move(Low), std::move(High)}) {
+          auto Mixed = Mix(std::move(Word));
+          assign(Hash,
+                 binary("*", json::Object(Hash), U32(0x5bd1e995),
+                        "uint", L),
+                 L);
+          assign(Hash,
+                 binary("^", json::Object(Hash), std::move(Mixed), "uint",
+                        L),
+                 L);
+        }
+        assign(Hash,
+               binary("^", json::Object(Hash),
+                      binary(">>", json::Object(Hash), U32(13), "uint", L),
+                      "uint", L),
+               L);
+        assign(Hash,
+               binary("*", json::Object(Hash), U32(0x5bd1e995), "uint", L),
+               L);
+        assign(Hash,
+               binary("^", json::Object(Hash),
+                      binary(">>", json::Object(Hash), U32(15), "uint", L),
+                      "uint", L),
+               L);
+        return snapshot(cast(std::move(Hash), ResultType, L), L);
+      }
       return snapshot(cast(std::move(Left), ResultType, L), L);
     }
     llvm_unreachable("unknown functional operation");
@@ -911,7 +974,10 @@ class FunctionLowering {
       return;
     }
     if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Expression);
-        Cast && Cast->getCastKind() == CK_NoOp) {
+        Cast &&
+        (Cast->getCastKind() == CK_NoOp ||
+         Cast->getCastKind() == CK_DerivedToBase ||
+         Cast->getCastKind() == CK_UncheckedDerivedToBase)) {
       discardFunctionalObject(Cast->getSubExpr());
       return;
     }
