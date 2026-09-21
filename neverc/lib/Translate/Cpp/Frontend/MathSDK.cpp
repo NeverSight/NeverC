@@ -3588,12 +3588,9 @@ approvedUtilityTupleAssignment(const State &S, const SourceManager &SM,
         S, SM, Method ? Method->getParent() : nullptr, Context);
     ReferenceTuple = Tuple.has_value();
   }
-  bool MixedReferenceTuple = false;
-  if (!Tuple) {
+  if (!Tuple)
     Tuple = approvedUtilityMixedReferenceTupleRecord(
         S, SM, Method ? Method->getParent() : nullptr, Context);
-    MixedReferenceTuple = Tuple.has_value();
-  }
   const bool EmptyDefaultedAssignment = !ReferenceTuple && Tuple &&
                                         Tuple->Elements.empty() &&
                                         Method && Method->isTrivial() &&
@@ -3626,10 +3623,10 @@ approvedUtilityTupleAssignment(const State &S, const SourceManager &SM,
     return std::nullopt;
   auto SourceTuple = approvedUtilityTupleRecord(
       S, SM, Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
-  if ((ReferenceTuple || MixedReferenceTuple) && !SourceTuple)
+  if (!SourceTuple)
     SourceTuple = approvedUtilityReferenceTupleRecord(
         S, SM, Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
-  if ((ReferenceTuple || MixedReferenceTuple) && !SourceTuple)
+  if (!SourceTuple)
     SourceTuple = approvedUtilityMixedReferenceTupleRecord(
         S, SM, Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
   const auto *Primary = Method->getPrimaryTemplate();
@@ -3662,10 +3659,10 @@ approvedUtilityTupleAssignment(const State &S, const SourceManager &SM,
   }
   auto SourcePair = approvedUtilityPairRecord(
       S, SM, Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
-  if ((ReferenceTuple || MixedReferenceTuple) && !SourcePair)
+  if (!SourcePair)
     SourcePair = approvedUtilityReferencePairRecord(
         S, SM, Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
-  if ((ReferenceTuple || MixedReferenceTuple) && !SourcePair)
+  if (!SourcePair)
     SourcePair = approvedUtilityMixedReferencePairRecord(
         S, SM, Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
   if (!SourcePair || Tuple->Elements.size() != 2 || !Primary ||

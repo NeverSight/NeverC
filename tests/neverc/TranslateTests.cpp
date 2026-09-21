@@ -24035,6 +24035,155 @@ int main() {
 }
 
 TEST_F(TranslateTest,
+       CoreV2ReferenceSourcesAssignValueTuplesAtBothOptimizations) {
+  const auto Source = tmpFile("tuple-reference-to-value-assignment.cpp");
+  const auto Output = tmpFile("tuple-reference-to-value-assignment.nc");
+  writeFile(Source, R"cpp(
+#include <tuple>
+#include <utility>
+int order;
+using Values = std::tuple<long, double>;
+using Refs = std::tuple<short &, float &>;
+Values &select_destination(Values &value) {
+  order = order * 10 + 1;
+  return value;
+}
+Refs &select_source(Refs &value) {
+  order = order * 10 + 2;
+  return value;
+}
+int main() {
+  short first = 3;
+  float second = 4.5f;
+  Refs references(first, second);
+  Values destination(0L, 0.0);
+  auto &result = (select_destination(destination) = select_source(references));
+  if (order != 21 || &result != &destination ||
+      std::get<0>(destination) != 3 || std::get<1>(destination) != 4.5)
+    return 1;
+  first = 5;
+  second = 6.5f;
+  if (std::get<0>(destination) != 3 || std::get<1>(destination) != 4.5 ||
+      &std::get<0>(references) != &first)
+    return 2;
+  const Refs &constant = references;
+  destination = constant;
+  if (std::get<0>(destination) != 5 || std::get<1>(destination) != 6.5)
+    return 3;
+  first = 7;
+  destination = static_cast<Refs &&>(references);
+  if (std::get<0>(destination) != 7)
+    return 4;
+  std::tuple<short &, float> mixed(first, 8.5f);
+  destination = mixed;
+  if (std::get<0>(destination) != 7 || std::get<1>(destination) != 8.5)
+    return 5;
+  destination = std::tuple<short, float &>(short(9), second);
+  if (std::get<0>(destination) != 9 || std::get<1>(destination) != 6.5)
+    return 6;
+  std::pair<short &, float &> pair(first, second);
+  destination = pair;
+  if (std::get<0>(destination) != 7 || std::get<1>(destination) != 6.5)
+    return 7;
+  second = 9.5f;
+  destination = static_cast<std::pair<short &, float &> &&>(pair);
+  if (std::get<0>(destination) != 7 || std::get<1>(destination) != 9.5)
+    return 14;
+  destination = std::pair<short &, float>(first, 10.5f);
+  if (std::get<0>(destination) != 7 || std::get<1>(destination) != 10.5)
+    return 8;
+  const std::pair<short, float &> reverse_pair(short(11), second);
+  destination = reverse_pair;
+  if (std::get<0>(destination) != 11 || std::get<1>(destination) != 9.5)
+    return 9;
+  const int number = 12;
+  std::tuple<const int &> constant_referent(number);
+  std::tuple<long> copied_number(0L);
+  copied_number = constant_referent;
+  if (std::get<0>(copied_number) != 12)
+    return 10;
+  int object = 13;
+  int *pointer = &object;
+  std::tuple<int *&> pointer_reference(pointer);
+  std::tuple<const int *> pointer_value(nullptr);
+  pointer_value = pointer_reference;
+  pointer = nullptr;
+  if (std::get<0>(pointer_value) != &object)
+    return 11;
+  std::tuple<int, int> ordered(14, 15);
+  std::tuple<int &, int &> overlap(std::get<1>(ordered), std::get<0>(ordered));
+  ordered = overlap;
+  if (std::get<0>(ordered) != 15 || std::get<1>(ordered) != 15)
+    return 12;
+  std::get<0>(ordered) = 16;
+  std::pair<int, int &> mixed_overlap(17, std::get<0>(ordered));
+  ordered = mixed_overlap;
+  return std::get<0>(ordered) == 17 && std::get<1>(ordered) == 17 ? 0 : 13;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("tuple-reference-to-value-assignment" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ReferenceSourcesAssignCompositeValueTuplesAtBothOptimizations) {
+  const auto Source = tmpFile("tuple-reference-to-composite-assignment.cpp");
+  const auto Output = tmpFile("tuple-reference-to-composite-assignment.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <tuple>
+#include <utility>
+struct Box { int value; };
+int main() {
+  Box box{3};
+  std::array<int, 2> array{4, 5};
+  std::tuple<Box, std::array<int, 2>> destination;
+  std::tuple<Box &, std::array<int, 2>> references(box, array);
+  destination = references;
+  box.value = 6;
+  array[0] = 7;
+  std::get<1>(references)[1] = 10;
+  if (std::get<0>(destination).value != 3 ||
+      std::get<1>(destination)[0] != 4 ||
+      std::get<1>(destination)[1] != 5)
+    return 1;
+  std::pair<Box &, std::array<int, 2>> mixed(box, array);
+  destination = mixed;
+  box.value = 8;
+  mixed.second[1] = 9;
+  return std::get<0>(destination).value == 6 &&
+                 std::get<1>(destination)[0] == 7 &&
+                 std::get<1>(destination)[1] == 5
+             ? 0
+             : 2;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("tuple-reference-to-composite-assignment" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
        CoreV2MixedReferenceTupleComparisonRunsAtBothOptimizations) {
   const auto Source = tmpFile("tuple-mixed-reference-comparison.cpp");
   const auto Output = tmpFile("tuple-mixed-reference-comparison.nc");
@@ -25910,6 +26059,16 @@ TEST_F(TranslateTest, CoreV2TupleRequiresPinnedOperations) {
       {"apply-incompatible-parameter",
        "#include <tuple>\nint take(int*p){return p!=nullptr;}int main(){"
        "return std::apply(take,std::make_tuple(1));}",
+       "TR0202"},
+      {"reference-assignment-user-conversion",
+       "#include <tuple>\nstruct R{int n;operator int()const{return n;}};"
+       "int main(){R r{1};std::tuple<R&>s(r);std::tuple<int>d(0);"
+       "d=s;return std::get<0>(d);}",
+       "TR0203"},
+      {"reference-assignment-discards-const",
+       "#include <tuple>\nint main(){const int n=1;const int*p=&n;"
+       "std::tuple<const int*&>s(p);std::tuple<int*>d(nullptr);d=s;"
+       "return std::get<0>(d)!=nullptr;}",
        "TR0202"},
   };
   for (const auto &Case : Cases) {

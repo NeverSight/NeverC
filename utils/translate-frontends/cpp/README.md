@@ -249,7 +249,8 @@ bindings. Compatible converting construction from tuples or pairs binds
 reference elements and initializes value elements. `apply` recovers reference
 elements and passes value elements through the existing checked callable rules.
 Ordinary value tuples may copy or convert referent values from all-reference or
-mixed tuple/pair sources.
+mixed tuple/pair sources during construction and assignment. Assignment stores
+independent values in element order and returns the destination by reference.
 Exact direct element construction and
 same-type copy/move construction preserve those bindings; same-type assignment
 writes values through the destination bindings without rebinding them.

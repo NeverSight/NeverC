@@ -1035,6 +1035,53 @@ extern "C" int tuple_reference_construction(int value) {
               tuple_reference_construction_source, profile="cpp-core-v2",
               target=target, sdk=True)
 
+    tuple_reference_to_value_assignment_source = """\
+#include <array>
+#include <tuple>
+#include <utility>
+struct AssignmentBox { int value; };
+extern "C" int tuple_reference_to_value_assignment(int number, int *pointer) {
+  short first = short(number);
+  float second = 4.5f;
+  std::tuple<short &, float &> references(first, second);
+  std::tuple<long, double> values(0L, 0.0);
+  auto &result = (values = references);
+  values = static_cast<std::tuple<short &, float &> &&>(references);
+  std::tuple<short &, float> mixed(first, 5.5f);
+  values = mixed;
+  values = std::tuple<short, float &>(short(6), second);
+  std::pair<short &, float &> pair(first, second);
+  values = pair;
+  values = static_cast<std::pair<short &, float &> &&>(pair);
+  values = std::pair<short &, float>(first, 7.5f);
+  const std::pair<short, float &> reverse_pair(short(8), second);
+  values = reverse_pair;
+  std::tuple<int *&> pointer_reference(pointer);
+  std::tuple<const int *> pointer_value(nullptr);
+  pointer_value = pointer_reference;
+  std::tuple<int, int> ordered(9, 10);
+  std::tuple<int &, int &> overlap(std::get<1>(ordered), std::get<0>(ordered));
+  ordered = overlap;
+  AssignmentBox box{number};
+  std::array<int, 2> array{1, 2};
+  std::tuple<AssignmentBox, std::array<int, 2>> composite;
+  std::tuple<AssignmentBox &, std::array<int, 2>> composite_source(box, array);
+  composite = composite_source;
+  std::pair<AssignmentBox &, std::array<int, 2>> composite_pair(box, array);
+  composite = composite_pair;
+  return int(std::get<0>(values) + std::get<1>(values)) +
+         std::get<1>(ordered) + (&result == &values) +
+         (std::get<0>(pointer_value) == pointer) +
+         std::get<0>(composite).value + std::get<1>(composite)[1];
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-tuple-reference-to-value-assignment-" + target,
+                     tuple_reference_to_value_assignment_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        assert not [node for node in walk(data["functions"])
+                    if node.get("op") == "mapped_call"], data
+
     tuple_pair_source = """\
 #include <tuple>
 #include <utility>

@@ -290,9 +290,12 @@ each reference element using the checked cv and value category rules, while
 independently copying or converting each value element. Exact `std::apply`
 recovers reference elements as referents and passes value elements through the
 same checked callable parameter and result rules documented below. Conversely,
-ordinary value tuples may use converting construction from authenticated
-all-reference or mixed tuple/pair sources, copying each referent value into
-independent destination storage.
+ordinary value tuples may use converting construction and heterogeneous
+assignment from authenticated all-reference or mixed tuple/pair sources,
+copying each referent value into independent destination storage. Assignment
+evaluates the source once before the destination, writes elements in order,
+and returns a reference to the destination tuple. When source references alias
+destination elements, later reads observe earlier element writes.
 
 Exact `std::tie` calls construct an authenticated tuple whose elements are
 lvalue references to supported scalar, array or source-owned record objects.
@@ -393,10 +396,10 @@ leaf. Generated programs contain no tuple helper calls and do not link libc++.
 
 The standalone empty tuple remains supported, but empty-base-optimized record
 or tuple elements do not have the authenticated one-field leaf representation
-and remain rejected. References, nontrivial records, `long double`, function
-pointers and source-record comparisons also remain outside this surface. `tie`
-and `forward_as_tuple` are rejected. Apply calls with unsupported callable
-objects, nontrivial record parameters, volatile references, or variadic callbacks
+and remain rejected. Nontrivial records, `long double`, function pointers and
+source-record comparisons also remain outside this surface. Apply calls with
+unsupported callable objects, nontrivial record parameters, volatile references,
+or variadic callbacks
 remain rejected. Quoted includes, user shadows,
 standard-function addresses and forged declarations remain rejected.
 

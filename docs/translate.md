@@ -159,7 +159,9 @@ construction from tuples or pairs binds reference elements and independently
 initializes value elements. `std::apply` passes reference elements as their
 referents and value elements through the existing checked callable boundary.
 Ordinary value tuples may likewise copy or convert referent values from
-all-reference or mixed tuple/pair sources.
+all-reference or mixed tuple/pair sources during construction and assignment.
+Assignment stores independent values in element order and returns the
+destination tuple by reference.
 Reference tuples may also be constructed directly from exact
 compatible references and copy-constructed while preserving their bindings.
 Same-type assignment writes through those bindings element by element. Exact

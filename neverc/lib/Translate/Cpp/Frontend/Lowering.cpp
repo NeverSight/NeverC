@@ -8547,11 +8547,11 @@ class FunctionLowering {
           auto SourceTuple = approvedUtilityTupleRecord(
               A.S, A.Sources, Call->getArg(1)->getType()->getAsCXXRecordDecl(),
               A.Context);
-          if (DestinationHasReference && !SourceTuple)
+          if (!SourceTuple)
             SourceTuple = approvedUtilityReferenceTupleRecord(
                 A.S, A.Sources,
                 Call->getArg(1)->getType()->getAsCXXRecordDecl(), A.Context);
-          if (DestinationHasReference && !SourceTuple)
+          if (!SourceTuple)
             SourceTuple = approvedUtilityMixedReferenceTupleRecord(
                 A.S, A.Sources,
                 Call->getArg(1)->getType()->getAsCXXRecordDecl(), A.Context);
@@ -8584,11 +8584,11 @@ class FunctionLowering {
           auto SourcePair = approvedUtilityPairRecord(
               A.S, A.Sources, Call->getArg(1)->getType()->getAsCXXRecordDecl(),
               A.Context);
-          if (DestinationHasReference && !SourcePair)
+          if (!SourcePair)
             SourcePair = approvedUtilityReferencePairRecord(
                 A.S, A.Sources,
                 Call->getArg(1)->getType()->getAsCXXRecordDecl(), A.Context);
-          if (DestinationHasReference && !SourcePair)
+          if (!SourcePair)
             SourcePair = approvedUtilityMixedReferencePairRecord(
                 A.S, A.Sources,
                 Call->getArg(1)->getType()->getAsCXXRecordDecl(), A.Context);
