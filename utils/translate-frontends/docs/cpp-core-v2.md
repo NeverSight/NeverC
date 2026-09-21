@@ -220,8 +220,10 @@ unique-type `get`; reference fields retain their bindings while value fields
 retain ordinary pair value semantics. Same-type and compatible heterogeneous
 assignment preserve that split, writing through reference fields and assigning
 value fields in field order. All six comparisons read reference and value fields
-through the existing recursive heterogeneous comparison rules. Swap and
-converting construction for mixed pairs remain outside this increment.
+through the existing recursive heterogeneous comparison rules. Member and free
+swap exchange the corresponding referent or stored value in field order without
+changing reference bindings. Converting construction for mixed pairs remains
+outside this increment.
 
 All six C++17 comparisons recurse through authenticated arrays and nested pairs
 and compare their scalar leaves in lexicographic order. Corresponding scalar

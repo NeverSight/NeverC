@@ -486,6 +486,10 @@ extern "C" int pair_reference(int value) {
       (mixed_direct == mixed_values) + (mixed_direct != mixed_values) +
       (mixed_direct < mixed_values) + (mixed_direct > mixed_values) +
       (mixed_direct <= mixed_values) + (mixed_direct >= mixed_values);
+  std::pair<int &, long> mixed_swap_left(value, 3L);
+  std::pair<int &, long> mixed_swap_right(source_value, 4L);
+  mixed_swap_left.swap(mixed_swap_right);
+  std::swap(mixed_swap_left, mixed_swap_right);
   std::pair<int &&, Box &&> rvalues(static_cast<int &&>(value),
                                     static_cast<Box &&>(box));
   std::get<0>(rvalues) += 4;
@@ -497,6 +501,7 @@ extern "C" int pair_reference(int value) {
   return value + box.value + owned_view.first + source_view.first +
          int(converted_first + converted_second + mixed_copy.second +
              mixed_reverse.first) + mixed_comparison +
+         int(mixed_swap_left.second + mixed_swap_right.second) +
          (reference_left == reference_right) +
          (reference_left != reference_right) +
          (reference_left < comparison_value) +

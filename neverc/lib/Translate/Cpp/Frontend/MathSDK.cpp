@@ -9535,12 +9535,18 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           S, SM, Method ? Method->getParent() : nullptr, Context);
       ReferencePair = Pair.has_value();
     }
-    const auto FirstType =
-        ReferencePair ? Pair->First->getType()->getPointeeType()
-                      : Pair ? Pair->First->getType() : QualType();
-    const auto SecondType =
-        ReferencePair ? Pair->Second->getType()->getPointeeType()
-                      : Pair ? Pair->Second->getType() : QualType();
+    bool MixedReferencePair = false;
+    if (!Pair) {
+      Pair = approvedUtilityMixedReferencePairRecord(
+          S, SM, Method ? Method->getParent() : nullptr, Context);
+      MixedReferencePair = Pair.has_value();
+    }
+    auto FirstType = Pair ? Pair->First->getType() : QualType();
+    auto SecondType = Pair ? Pair->Second->getType() : QualType();
+    if (!FirstType.isNull() && FirstType->isReferenceType())
+      FirstType = FirstType->getPointeeType();
+    if (!SecondType.isNull() && SecondType->isReferenceType())
+      SecondType = SecondType->getPointeeType();
     if (Method && Reference && Pair && Method->getIdentifier() &&
         Method->getName() == "swap" && !Method->isStatic() &&
         !Method->isVariadic() && Method->getNumParams() == 1 &&
@@ -9549,7 +9555,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
                       "__utility/pair.h") &&
         S.owns(SM, Reference->getExprLoc()) &&
-        (ReferencePair ||
+        (ReferencePair || MixedReferencePair ||
          (utilityPairValue(S, SM, Context, FirstType) &&
           utilityPairValue(S, SM, Context, SecondType))) &&
         utilityPairAssignableValue(S, SM, Context, FirstType) &&
@@ -12506,16 +12512,31 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                      ? RightType->getPointeeType()->getAsCXXRecordDecl()
                      : nullptr,
           Context);
-    const auto FirstType =
-        ReferencePair ? Left->First->getType()->getPointeeType()
-                      : Left ? Left->First->getType() : QualType();
-    const auto SecondType =
-        ReferencePair ? Left->Second->getType()->getPointeeType()
-                      : Left ? Left->Second->getType() : QualType();
+    bool MixedReferencePair = false;
+    if (!Left) {
+      Left = approvedUtilityMixedReferencePairRecord(
+          S, SM, LeftType->isReferenceType()
+                     ? LeftType->getPointeeType()->getAsCXXRecordDecl()
+                     : nullptr,
+          Context);
+      MixedReferencePair = Left.has_value();
+    }
+    if (!Right)
+      Right = approvedUtilityMixedReferencePairRecord(
+          S, SM, RightType->isReferenceType()
+                     ? RightType->getPointeeType()->getAsCXXRecordDecl()
+                     : nullptr,
+          Context);
+    auto FirstType = Left ? Left->First->getType() : QualType();
+    auto SecondType = Left ? Left->Second->getType() : QualType();
+    if (!FirstType.isNull() && FirstType->isReferenceType())
+      FirstType = FirstType->getPointeeType();
+    if (!SecondType.isNull() && SecondType->isReferenceType())
+      SecondType = SecondType->getPointeeType();
     if (LeftType->isLValueReferenceType() &&
         RightType->isLValueReferenceType() && Left && Right &&
         Left->Record->getCanonicalDecl() == Right->Record->getCanonicalDecl() &&
-        (ReferencePair ||
+        (ReferencePair || MixedReferencePair ||
          (utilityPairValue(S, SM, Context, FirstType) &&
           utilityPairValue(S, SM, Context, SecondType))) &&
         utilityPairAssignableValue(S, SM, Context, FirstType) &&

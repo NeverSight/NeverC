@@ -7224,25 +7224,35 @@ class FunctionLowering {
                     A.S, A.Sources,
                     Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context)
               : std::optional<UtilityTupleRecord>();
-      const auto ReferencePair =
+      auto ReferencePair =
           Operation == UtilityOperation::PairSwap
               ? approvedUtilityReferencePairRecord(
                     A.S, A.Sources,
                     Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context)
               : std::optional<UtilityPairRecord>();
-      if (ReferenceTuple || ReferencePair) {
+      auto MixedReferencePair =
+          Operation == UtilityOperation::PairSwap && !ReferencePair
+              ? approvedUtilityMixedReferencePairRecord(
+                    A.S, A.Sources,
+                    Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context)
+              : std::optional<UtilityPairRecord>();
+      if (ReferenceTuple || ReferencePair || MixedReferencePair) {
         auto Left = dereference(std::move(LeftAddress), L);
         auto Right = dereference(std::move(RightAddress), L);
         std::vector<const FieldDecl *> Elements;
         if (ReferenceTuple)
           Elements = ReferenceTuple->Elements;
-        else
+        else if (ReferencePair)
           Elements = {ReferencePair->First, ReferencePair->Second};
+        else
+          Elements = {MixedReferencePair->First, MixedReferencePair->Second};
         for (const auto *Element : Elements) {
-          auto LeftValue = dereference(
-              fieldStorage(json::Object(Left), Element, L), L);
-          auto RightValue = dereference(
-              fieldStorage(json::Object(Right), Element, L), L);
+          auto LeftValue = fieldStorage(json::Object(Left), Element, L);
+          auto RightValue = fieldStorage(json::Object(Right), Element, L);
+          if (Element->getType()->isReferenceType()) {
+            LeftValue = dereference(std::move(LeftValue), L);
+            RightValue = dereference(std::move(RightValue), L);
+          }
           auto OldLeft = snapshot(json::Object(LeftValue), L);
           auto OldRight = snapshot(json::Object(RightValue), L);
           assign(std::move(LeftValue), std::move(OldRight), L);
@@ -7270,25 +7280,35 @@ class FunctionLowering {
                     A.S, A.Sources, Object->getType()->getAsCXXRecordDecl(),
                     A.Context)
               : std::optional<UtilityTupleRecord>();
-      const auto ReferencePair =
+      auto ReferencePair =
           Operation == UtilityOperation::PairMemberSwap
               ? approvedUtilityReferencePairRecord(
                     A.S, A.Sources,
                     Object->getType()->getAsCXXRecordDecl(), A.Context)
               : std::optional<UtilityPairRecord>();
-      if (ReferenceTuple || ReferencePair) {
+      auto MixedReferencePair =
+          Operation == UtilityOperation::PairMemberSwap && !ReferencePair
+              ? approvedUtilityMixedReferencePairRecord(
+                    A.S, A.Sources, Object->getType()->getAsCXXRecordDecl(),
+                    A.Context)
+              : std::optional<UtilityPairRecord>();
+      if (ReferenceTuple || ReferencePair || MixedReferencePair) {
         auto Left = dereference(std::move(LeftAddress), L);
         auto Right = dereference(std::move(RightAddress), L);
         std::vector<const FieldDecl *> Elements;
         if (ReferenceTuple)
           Elements = ReferenceTuple->Elements;
-        else
+        else if (ReferencePair)
           Elements = {ReferencePair->First, ReferencePair->Second};
+        else
+          Elements = {MixedReferencePair->First, MixedReferencePair->Second};
         for (const auto *Element : Elements) {
-          auto LeftValue = dereference(
-              fieldStorage(json::Object(Left), Element, L), L);
-          auto RightValue = dereference(
-              fieldStorage(json::Object(Right), Element, L), L);
+          auto LeftValue = fieldStorage(json::Object(Left), Element, L);
+          auto RightValue = fieldStorage(json::Object(Right), Element, L);
+          if (Element->getType()->isReferenceType()) {
+            LeftValue = dereference(std::move(LeftValue), L);
+            RightValue = dereference(std::move(RightValue), L);
+          }
           auto OldLeft = snapshot(json::Object(LeftValue), L);
           auto OldRight = snapshot(json::Object(RightValue), L);
           assign(std::move(LeftValue), std::move(OldRight), L);

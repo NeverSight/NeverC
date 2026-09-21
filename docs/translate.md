@@ -140,7 +140,8 @@ including one-reference/one-value results. Mixed reference/value pairs also
 support exact compatible direct construction, same-type copy/move construction,
 public field access, index- or unique-type `get`, and same-type or compatible
 heterogeneous assignment with per-field reference/value behavior. All six
-comparisons use the same recursive heterogeneous value rules.
+comparisons use the same recursive heterogeneous value rules. Member and free
+swap exchange per-field values without changing reference bindings.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#scalar-utilities-and-pairs-from-utility).
 
 Core v2 accepts authenticated empty and nonempty `<tuple>` values, including

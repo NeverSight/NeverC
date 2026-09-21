@@ -227,8 +227,9 @@ arguments into reference fields, including mixed reference/value results with
 public field access. Mixed pairs also admit exact compatible direct and
 same-type copy/move construction, index- or unique-type `get`, and same-type or
 compatible heterogeneous assignment. All six comparisons recurse through
-reference and value fields. Swap and converting construction for mixed pairs
-remain outside this increment.
+reference and value fields. Member and free swap exchange values without
+changing reference bindings. Converting construction for mixed pairs remains
+outside this increment.
 Tuple
 directly lowers authenticated empty and nonempty tuples of scalars, reference
 wrappers
