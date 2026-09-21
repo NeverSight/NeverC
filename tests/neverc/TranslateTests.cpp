@@ -24024,6 +24024,84 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2TupleApplyMemberPointersRunAtBothOptimizations) {
+  const auto Source = tmpFile("tuple-apply-member-pointers.cpp");
+  const auto Output = tmpFile("tuple-apply-member-pointers.nc");
+  writeFile(Source, R"cpp(
+#include <tuple>
+#include <utility>
+int effects;
+int constructed;
+int copied;
+int dropped;
+struct Result {
+  int value;
+  Result(int source) : value(source) { ++constructed; }
+  Result(const Result &source) : value(source.value) { ++copied; }
+  ~Result() { ++dropped; }
+};
+struct Box {
+  int value;
+  int add(int amount) & { return value + amount; }
+  int add_const(int amount) const { return value + amount; }
+  int &slot() & { return value; }
+  Result make(int amount) const { return Result{value + amount}; }
+};
+std::tuple<Box *, int> &select(std::tuple<Box *, int> &value) {
+  ++effects;
+  return value;
+}
+int main() {
+  Box box{3};
+  std::tuple<Box *, int> args(&box, 2);
+  if (std::apply(&Box::add, args) != 5)
+    return 1;
+  auto member = &Box::add;
+  if (std::apply(std::move(member), args) != 5)
+    return 2;
+  effects = 0;
+  if (std::apply(&Box::add, select(args)) != 5 || effects != 1)
+    return 3;
+  auto field = &Box::value;
+  std::apply(std::move(field), std::make_tuple(&box)) = 7;
+  if (box.value != 7)
+    return 4;
+  const Box constant{8};
+  if (std::apply(&Box::add_const, std::make_tuple(&constant, 2)) != 10)
+    return 5;
+  int &alias = std::apply(&Box::slot, std::make_tuple(&box));
+  alias = 9;
+  if (box.value != 9)
+    return 6;
+  {
+    Result result = std::apply(&Box::make, std::make_tuple(&box, 4));
+    if (result.value != 13 || constructed != 1 || copied != 0 || dropped != 0)
+      return 7;
+  }
+  if (dropped != 1)
+    return 8;
+  auto owned = std::make_tuple(Box{10}, 3);
+  return std::apply(&Box::add, owned) == 13 ? 0 : 9;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("__apply_tuple_impl"), std::string::npos);
+  EXPECT_EQ(Text.find("member_pointer"), std::string::npos);
+  EXPECT_EQ(Text.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("tuple-apply-member-pointers" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2TupleCatRunsAtBothOptimizations) {
   const auto Source = tmpFile("tuple-cat.cpp");
   const auto Output = tmpFile("tuple-cat.nc");

@@ -252,9 +252,9 @@ function objects, plus admitted scalar hashes, are also accepted with their
 documented operand restrictions. Exact `std::reference_wrapper` forms around
 these named functions, stored function pointers, source function objects and
 standard function objects use the same admitted parameter and result boundary.
-Exact temporary or stored `std::mem_fn` wrappers around admitted source member
-pointers accept the receiver as the first tuple element and preserve method or
-field reference and record results.
+Exact direct or stored source member pointers, and temporary or stored
+`std::mem_fn` wrappers around them, accept the receiver as the first tuple
+element and preserve method or field reference and record results.
 Function-object cv/ref qualification and mutable object storage are preserved.
 Every tuple element and corresponding callback parameter must be admitted scalars
 connected by a checked direct scalar conversion, or the same complete source-owned

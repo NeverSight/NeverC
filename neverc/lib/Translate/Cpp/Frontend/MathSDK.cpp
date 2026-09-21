@@ -7182,7 +7182,7 @@ approvedNativeMemberPointerCall(
                                     ObjectIsPointer};
 }
 
-struct FunctionalMemFnDispatch {
+struct FunctionalMemberDispatch {
   const Expr *Callable;
   const CallExpr *Factory;
   const CallExpr *Dispatch;
@@ -7205,7 +7205,7 @@ static const Expr *functionalMemFnAdaptedUse(
   return functionalInvokeStrippedExpression(Candidate->getArg(0));
 }
 
-static std::optional<FunctionalMemFnDispatch>
+static std::optional<FunctionalMemberDispatch>
 approvedFunctionalMemFnDispatch(const State &S, const SourceManager &SM,
                                 const CallExpr *Call,
                                 const ASTContext &Context,
@@ -7403,11 +7403,11 @@ approvedFunctionalMemFnDispatch(const State &S, const SourceManager &SM,
     if (!approvedFunctionalForwardingCall(
             S, SM, Dispatch->getArg(I + 1), Method->getParamDecl(I)))
       return std::nullopt;
-  return FunctionalMemFnDispatch{Factory->getArg(0), Factory, Dispatch,
-                                 UseAdapter};
+  return FunctionalMemberDispatch{Factory->getArg(0), Factory, Dispatch,
+                                  UseAdapter};
 }
 
-static std::optional<FunctionalMemFnDispatch>
+static std::optional<FunctionalMemberDispatch>
 approvedFunctionalInvokeMemFnDispatch(const State &S,
                                       const SourceManager &SM,
                                       const CallExpr *Call,
@@ -7469,17 +7469,19 @@ static std::optional<FunctionalMemberInvokeCall>
 approvedFunctionalMemberInvokeCallImpl(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context,
-    std::optional<FunctionalMemFnDispatch> PreparedMemFn = std::nullopt) {
+    std::optional<FunctionalMemberDispatch> PreparedDispatch = std::nullopt) {
   if (!Call || Call->getNumArgs() < 2)
     return std::nullopt;
-  const bool HasPreparedMemFn = PreparedMemFn.has_value();
-  auto MemFn = std::move(PreparedMemFn);
-  if (!MemFn) {
-    MemFn = approvedFunctionalMemFnDispatch(S, SM, Call, Context);
+  const bool HasPreparedDispatch = PreparedDispatch.has_value();
+  auto MemberDispatch = std::move(PreparedDispatch);
+  if (!MemberDispatch) {
+    MemberDispatch = approvedFunctionalMemFnDispatch(S, SM, Call, Context);
   }
-  if (!MemFn && !HasPreparedMemFn)
-    MemFn = approvedFunctionalInvokeMemFnDispatch(S, SM, Call, Context);
-  const auto *WrittenCallable = MemFn ? MemFn->Callable : Call->getArg(0);
+  if (!MemberDispatch && !HasPreparedDispatch)
+    MemberDispatch =
+        approvedFunctionalInvokeMemFnDispatch(S, SM, Call, Context);
+  const auto *WrittenCallable =
+      MemberDispatch ? MemberDispatch->Callable : Call->getArg(0);
   const auto [Address, ResolvedMember] = functionalStoredMemberExpression(
       S, SM, WrittenCallable, Context);
   const auto *Reference =
@@ -7527,9 +7529,11 @@ approvedFunctionalMemberInvokeCallImpl(
   const bool MethodReferenceResult =
       Method && Method->getReturnType()->isReferenceType();
   const bool ReferenceResult = Field || MethodReferenceResult;
-  const auto *Dispatch = MemFn ? MemFn->Dispatch
-                               : approvedFunctionalInvokeDispatch(
-                                     S, SM, Call, Context, ReferenceResult);
+  const auto *Dispatch =
+      MemberDispatch
+          ? MemberDispatch->Dispatch
+          : approvedFunctionalInvokeDispatch(S, SM, Call, Context,
+                                             ReferenceResult);
   const auto *DispatchFunction =
       Dispatch ? Dispatch->getDirectCallee() : nullptr;
   const auto *Body = DispatchFunction
@@ -7637,8 +7641,10 @@ approvedFunctionalMemberInvokeCallImpl(
       return std::nullopt;
   }
   return FunctionalMemberInvokeCall{WrittenCallable, Object, Method, Field,
-                                    MemFn ? MemFn->Factory : nullptr,
-                                    MemFn ? MemFn->Adapter : nullptr,
+                                    MemberDispatch ? MemberDispatch->Factory
+                                                   : nullptr,
+                                    MemberDispatch ? MemberDispatch->Adapter
+                                                   : nullptr,
                                     std::move(ObjectWrapper),
                                     ObjectIsPointer};
 }
@@ -7777,8 +7783,9 @@ approvedFunctionalUserInvokeCall(const State &S, const SourceManager &SM,
 struct UtilityTupleApplyDispatch {
   UtilityTupleRecord Tuple;
   const FunctionDecl *Function;
+  const CallExpr *Dispatch;
   const FunctionDecl *DispatchFunction;
-  const CXXOperatorCallExpr *Operation;
+  const Expr *Operation;
 };
 
 static std::optional<UtilityTupleApplyDispatch>
@@ -7913,14 +7920,14 @@ approvedUtilityTupleApplyDispatch(const State &S, const SourceManager &SM,
       DispatchBody && DispatchBody->size() == 1
           ? dyn_cast<ReturnStmt>(*DispatchBody->body_begin())
           : nullptr;
-  const auto *Operation = DispatchReturn && DispatchReturn->getRetValue()
-                              ? dyn_cast_or_null<CXXOperatorCallExpr>(
-                                    functionalInvokeStrippedExpression(
-                                        DispatchReturn->getRetValue()))
-                              : nullptr;
+  const auto *Operation =
+      DispatchReturn && DispatchReturn->getRetValue()
+          ? functionalInvokeStrippedExpression(DispatchReturn->getRetValue())
+          : nullptr;
   if (!Operation)
     return std::nullopt;
-  return UtilityTupleApplyDispatch{*Tuple, Function, DispatchFunction, Operation};
+  return UtilityTupleApplyDispatch{*Tuple, Function, Dispatch,
+                                   DispatchFunction, Operation};
 }
 
 std::optional<FunctionalMemberInvokeCall>
@@ -7933,7 +7940,8 @@ approvedUtilityTupleApplyUserCall(const State &S, const SourceManager &SM,
   const auto *Tuple = &Apply->Tuple;
   const auto *Function = Apply->Function;
   const auto *DispatchFunction = Apply->DispatchFunction;
-  const auto *Operation = Apply->Operation;
+  const auto *Operation =
+      dyn_cast_or_null<CXXOperatorCallExpr>(Apply->Operation);
   const auto ObjectType = Call->getArg(0)->getType();
   const auto *ObjectRecord = ObjectType->getAsCXXRecordDecl();
   const auto *Definition =
@@ -8015,12 +8023,16 @@ approvedUtilityTupleApplyObjectOperation(const State &S,
   const auto Apply = approvedUtilityTupleApplyDispatch(S, SM, Call, Context);
   if (!Apply)
     return std::nullopt;
+  const auto *OperationCall =
+      dyn_cast_or_null<CXXOperatorCallExpr>(Apply->Operation);
+  if (!OperationCall)
+    return std::nullopt;
   auto Operation = approvedFunctionalOperationImpl(
-      S, SM, Apply->Operation, Context, false);
+      S, SM, OperationCall, Context, false);
   const bool Unary = Operation && Operation->RightType.isNull();
   const unsigned Arity = Unary ? 1u : 2u;
   if (!Operation || Apply->Tuple.Elements.size() != Arity ||
-      Apply->Operation->getNumArgs() != Arity + 1 ||
+      OperationCall->getNumArgs() != Arity + 1 ||
       !Context.hasSameType(Operation->ResultType,
                            Apply->Function->getReturnType()) ||
       !Context.hasSameType(Operation->ResultType, Call->getType()))
@@ -8028,7 +8040,7 @@ approvedUtilityTupleApplyObjectOperation(const State &S,
   for (unsigned I = 0; I < Arity; ++I)
     if (!utilityScalarDirectConversion(
             Context, Apply->Tuple.Elements[I]->getType(),
-            Apply->Operation->getArg(I + 1)->getType()))
+            OperationCall->getArg(I + 1)->getType()))
       return std::nullopt;
   return Operation;
 }
@@ -8052,28 +8064,45 @@ approvedUtilityTupleApplyMemberCall(const State &S, const SourceManager &SM,
   const auto *Factory =
       StoredObject ? StoredObject->Factory
                    : dyn_cast_or_null<CallExpr>(FactoryExpression);
-  if (!Factory ||
-      (!functionalInvokeParameterReference(
-           Apply->Operation->getArg(0),
-           Apply->DispatchFunction->getParamDecl(0)) &&
-       !approvedFunctionalForwardingCall(
-           S, SM, Apply->Operation->getArg(0),
-           Apply->DispatchFunction->getParamDecl(0))))
-    return std::nullopt;
-  auto Dispatch = approvedFunctionalMemFnDispatch(
-      S, SM, Apply->Operation, Context, Factory);
+  const CallExpr *Invoked = nullptr;
+  std::optional<FunctionalMemberDispatch> Dispatch;
+  if (Factory) {
+    const auto *Operation =
+        dyn_cast_or_null<CXXOperatorCallExpr>(Apply->Operation);
+    if (!Operation ||
+        (!functionalInvokeParameterReference(
+             Operation->getArg(0),
+             Apply->DispatchFunction->getParamDecl(0)) &&
+         !approvedFunctionalForwardingCall(
+             S, SM, Operation->getArg(0),
+             Apply->DispatchFunction->getParamDecl(0))))
+      return std::nullopt;
+    Dispatch = approvedFunctionalMemFnDispatch(
+        S, SM, Operation, Context, Factory);
+    Invoked = Operation;
+  } else {
+    const auto [Address, Member] = functionalStoredMemberExpression(
+        S, SM, FactoryExpression, Context);
+    if (!Address || !Member ||
+        !Context.hasSameUnqualifiedType(
+            FactoryExpression->getType(), Apply->Dispatch->getArg(0)->getType()))
+      return std::nullopt;
+    Dispatch = FunctionalMemberDispatch{Call->getArg(0), nullptr,
+                                        Apply->Dispatch, UseAdapter};
+    Invoked = Apply->Dispatch;
+  }
   if (!Dispatch)
     return std::nullopt;
   Dispatch->Adapter = UseAdapter;
   auto Member = approvedFunctionalMemberInvokeCallImpl(
-      S, SM, Apply->Operation, Context, std::move(Dispatch));
-  if (!Member || Apply->Operation->getNumArgs() !=
+      S, SM, Invoked, Context, std::move(Dispatch));
+  if (!Member || Invoked->getNumArgs() !=
                      Apply->Tuple.Elements.size() + 1)
     return std::nullopt;
   for (unsigned I = 0; I < Apply->Tuple.Elements.size(); ++I)
     if (!Context.hasSameUnqualifiedType(
             Apply->Tuple.Elements[I]->getType(),
-            Apply->Operation->getArg(I + 1)->getType()))
+            Invoked->getArg(I + 1)->getType()))
       return std::nullopt;
   return Member;
 }
@@ -8445,14 +8474,15 @@ approvedUtilityTupleApplyReferenceCall(const State &S,
   const auto Apply = approvedUtilityTupleApplyDispatch(S, SM, Call, Context);
   if (!Apply)
     return std::nullopt;
+  const auto *Operation = dyn_cast_or_null<CallExpr>(Apply->Operation);
   auto Reference = approvedFunctionalReferenceDirectInvoke(
-      S, SM, Apply->Operation, Context, false);
+      S, SM, Operation, Context, false);
   const auto *WrapperRecord =
       Call->getArg(0)->getType()->getAsCXXRecordDecl();
-  if (!Reference || !WrapperRecord ||
+  if (!Operation || !Reference || !WrapperRecord ||
       Reference->Wrapper.Record->getCanonicalDecl() !=
           WrapperRecord->getCanonicalDecl() ||
-      !Context.hasSameType(Call->getType(), Apply->Operation->getType()))
+      !Context.hasSameType(Call->getType(), Operation->getType()))
     return std::nullopt;
 
   const bool StandardObject =

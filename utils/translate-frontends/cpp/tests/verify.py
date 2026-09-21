@@ -787,6 +787,37 @@ extern "C" int tuple_apply_mem_fn(int value) {
               tuple_apply_mem_fn_source, profile="cpp-core-v2",
               target=target, sdk=True)
 
+    tuple_apply_member_pointer_source = """\
+#include <tuple>
+#include <utility>
+struct Box {
+  int value;
+  int add(int amount) & { return value + amount; }
+  int &slot() & { return value; }
+};
+extern "C" int tuple_apply_member_pointer(int value) {
+  Box box{value};
+  auto add = &Box::add;
+  int result = std::apply(std::move(add), std::make_tuple(&box, 3));
+  auto field = &Box::value;
+  std::apply(std::move(field), std::make_tuple(&box)) = value + 1;
+  int &slot = std::apply(&Box::slot, std::make_tuple(&box));
+  slot += 1;
+  auto owned = std::make_tuple(Box{value}, 4);
+  return result + std::apply(&Box::add, owned) + box.value;
+}
+"""
+    tuple_apply_member_pointer = check(
+        "v2-tuple-apply-member-pointer", tuple_apply_member_pointer_source,
+        profile="cpp-core-v2", sdk=True)
+    assert not [node for node in walk(tuple_apply_member_pointer["functions"])
+                if node.get("op") in ("mapped_call", "member_pointer")], \
+        tuple_apply_member_pointer
+    for target in sdk_targets:
+        check("v2-tuple-apply-member-pointer-" + target,
+              tuple_apply_member_pointer_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+
     tuple_pair_source = """\
 #include <tuple>
 #include <utility>
