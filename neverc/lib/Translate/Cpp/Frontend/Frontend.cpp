@@ -2202,6 +2202,36 @@ static bool inlineTemplateDefaultingSource(Adapter &A, const FunctionDecl *Funct
          Method->getTemplateInstantiationPattern() == Origin;
 }
 
+// The pinned array owns only an implicit trivial destructor. Its original
+// element source, rather than SDK implementation TypeLocs, proves destruction.
+static std::optional<UtilityArrayRecord>
+utilityArrayDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
+  const auto Array = approvedUtilityArrayRecord(
+      A.S, A.Sources, Record, A.Context);
+  if (!Array || !Array->Record->hasTrivialDestructor() ||
+      Array->Record->hasUserDeclaredDestructor())
+    return std::nullopt;
+  const auto *Destructor = Array->Record->getDestructor();
+  // A nested zero-array element can have a complete layout without Sema ever
+  // declaring its destructor. Preserve that laziness; do not manufacture one.
+  if (!Destructor)
+    return Array;
+  for (const auto *Declaration : Destructor->redecls()) {
+    A.chargeExpansion(1, Declaration->getLocation());
+    const auto *Method = cast<CXXDestructorDecl>(Declaration);
+    if (!Method->isImplicit() || !Method->isDefaulted() ||
+        !Method->isTrivial() || Method->isInvalidDecl() || Method->isDeleted() ||
+        Method->isVirtual() || Method->isVariadic() || Method->getNumParams() ||
+        Method->getAccess() != AS_public || Method->getTypeSourceInfo() ||
+        Method->getLexicalDeclContext() != Method->getParent() ||
+        Method->getParent()->getCanonicalDecl() !=
+            Array->Record->getCanonicalDecl() ||
+        !approvedStandardSDKDeclaration(A.S, A.Sources, Method))
+      return std::nullopt;
+  }
+  return Array;
+}
+
 static const CXXMethodDecl *inferredOperationExceptionSource(Adapter &A,
     const FunctionProtoType *Prototype, const FunctionDecl *Function) {
   const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
@@ -2218,6 +2248,16 @@ static const CXXMethodDecl *inferredOperationExceptionSource(Adapter &A,
     return nullptr;
   const auto *Constructor = dyn_cast<CXXConstructorDecl>(Method);
   const auto *Destructor = dyn_cast<CXXDestructorDecl>(Method);
+  // This exact generated false literal can also belong to an authenticated
+  // array with a potentially-throwing but trivial element destructor. The
+  // destruction dependency below must still close that element's own source.
+  if (Destructor)
+    if (const auto Array =
+            utilityArrayDestructionSource(A, Destructor->getParent());
+        Array && Array->Record->getDestructor() &&
+        Array->Record->getDestructor()->getCanonicalDecl() ==
+            Destructor->getCanonicalDecl())
+      return Method;
   if (!defaultedLifecycle(Method) && !defaultedCopyOrMoveConstructor(Constructor) &&
       !defaultedAssignment(Method) && !ordinaryDestructor(Destructor))
     return nullptr;
@@ -2429,9 +2469,21 @@ public:
   }
   bool destruction(const CXXRecordDecl *Record, unsigned Depth = 0) {
     Record = Record ? Record->getDefinition() : nullptr;
-    if (!Record || Depth > 64 || !A.S.owns(A.Sources, Record->getLocation()))
+    if (!Record || Depth > 64)
       return false;
     A.chargeExpansion(1, Record->getLocation());
+    if (const auto Array =
+            utilityArrayDestructionSource(A, Record)) {
+      // Even a zero-length array must retain the admitted element's source;
+      // its SDK dummy storage cannot erase a written destructor/noexcept input.
+      if (const auto *Element =
+              A.Context.getBaseElementType(Array->ElementType)
+                  ->getAsCXXRecordDecl())
+        return destruction(Element, Depth + 1);
+      return true;
+    }
+    if (!A.S.owns(A.Sources, Record->getLocation()))
+      return false;
     if (Record->hasUserDeclaredDestructor()) {
       const auto *Destructor = Record->getDestructor();
       // An out-of-line defaulted destructor's first declaration can still look
@@ -4881,6 +4933,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::vector<const TemplateUseSource *> ActiveTemplateUses;
   OperationExpressionSources CheckedOperationExpressions;
   OperationTypeSources CheckedOperationTypes;
+  std::map<const DeclRefExpr *, const CallExpr *> AuthenticatedArrayGetReferences;
+  std::map<const InitListExpr *, const InitListExpr *> ZeroArrayStorageSources;
   std::set<const Expr *> TypeSourceQueries;
   std::map<OperationTypeSourceKey, SourceLocation> TypeSourceRoots;
   std::set<const Stmt *> OperationValueRoots;
@@ -7465,12 +7519,48 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     collectOperationTypeSource(Function->getType(), Function->getLocation(), false);
   }
   void collectOperationSource(const Stmt *S) {
+    if (const auto *List = dyn_cast_or_null<InitListExpr>(S))
+      if (auto Found = ZeroArrayStorageSources.find(List);
+          Found != ZeroArrayStorageSources.end())
+        // This exact empty storage node belongs to a checked zero array.
+        // Its owner proves SDK layout/destruction while retaining the actual
+        // element source; do not consume __empty or SDK sizeof metadata.
+        S = Found->second;
     // Collect from the actual source traversal, including unevaluated operands
     // and expressions reached through TypeLoc or retained template source edges.
     // Capture before ownership/cache skips; only a query selecting this exact
     // completed default consumes the evidence. MaybeBindToTemporary can resolve
     // even a trivial destructor and then omit the binding expression entirely.
     if (!ActiveOperationSources.empty()) {
+      const FunctionDecl *AuthenticatedArrayGet = nullptr;
+      if (const auto *Call = dyn_cast<CallExpr>(S)) {
+        const auto *Function = Call->getDirectCallee();
+        const auto *Prototype =
+            Function ? Function->getType()->getAs<FunctionProtoType>() : nullptr;
+        // This proof belongs to an exact checked call, not every use of its
+        // declaration. The pinned get overloads have no written noexcept input.
+        if (Prototype && Prototype->getExceptionSpecType() == EST_BasicNoexcept &&
+            !Prototype->getNoexceptExpr()) {
+          if (auto Operation = approvedUtilityOperation(A.S, A.Sources, Call,
+                                                       A.Context);
+              Operation && *Operation == UtilityOperation::ArrayGet) {
+            if (const auto *Reference =
+                    dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Call));
+                Reference && Reference->getDecl() == Function) {
+              auto [Entry, Inserted] =
+                  AuthenticatedArrayGetReferences.emplace(Reference, Call);
+              if (Inserted)
+                A.chargeExpansion(1, Call->getExprLoc());
+              if (Entry->second == Call)
+                AuthenticatedArrayGet = Function;
+            }
+          }
+        }
+      } else if (const auto *Reference = dyn_cast<DeclRefExpr>(S)) {
+        if (auto Found = AuthenticatedArrayGetReferences.find(Reference);
+            Found != AuthenticatedArrayGetReferences.end())
+          AuthenticatedArrayGet = Found->second->getDirectCallee();
+      }
       auto Dependency = [&](const Stmt *Source) {
         operationExpressionDependency(Source);
       };
@@ -7491,6 +7581,11 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       };
       auto FunctionSource = [&](const FunctionDecl *Function) {
         if (!Function)
+          return;
+        // Exact array-get admission supplies its immutable SDK definition.
+        // Result/argument types, caller expressions and written template
+        // arguments still complete through their ordinary source traversal.
+        if (Function == AuthenticatedArrayGet)
           return;
         collectOperationFunctionTypeSource(Function);
         Exception(Function->getType()->getAs<FunctionProtoType>(), Function);
@@ -7642,6 +7737,46 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       Source.Complete = true;
     return Result;
   }
+  void retainZeroArrayStorageSource(const InitListExpr *List) {
+    if (!List || List->getType().isNull() || !List->isSemanticForm() ||
+        !List->isPRValue() || List->getNumInits() != 1 || List->getArrayFiller())
+      return;
+    const auto Array = approvedUtilityArrayRecord(
+        A.S, A.Sources, List->getType()->getAsCXXRecordDecl(), A.Context);
+    if (!Array || Array->Size)
+      return;
+    const auto *Storage = dyn_cast_or_null<InitListExpr>(List->getInit(0));
+    const auto *StorageType =
+        A.Context.getAsConstantArrayType(Array->Elements->getType());
+    const auto *Filler = Storage
+        ? dyn_cast_or_null<InitListExpr>(Storage->getArrayFiller()) : nullptr;
+    auto EmptyWritten = [](const InitListExpr *Value) {
+      const auto *Written = Value ? Value->getSyntacticForm() : nullptr;
+      return !Written || (!Written->getNumInits() && !Written->getArrayFiller());
+    };
+    if (!Storage || !StorageType || !Storage->isSemanticForm() ||
+        !Storage->isPRValue() || Storage->getNumInits() || !Filler ||
+        !Filler->isSemanticForm() || !Filler->isPRValue() ||
+        Filler->getNumInits() || Filler->getArrayFiller() ||
+        !EmptyWritten(Storage) || !EmptyWritten(Filler) ||
+        !A.Context.hasSameType(Storage->getType(), Array->Elements->getType()) ||
+        !A.Context.hasSameType(Filler->getType(), StorageType->getElementType()))
+      return;
+    // Bind only the actual field/filler expressions, including the original
+    // empty braces RAV will still visit. No arbitrary __empty use gains proof.
+    for (const auto *Value : {Storage, Filler}) {
+      const InitListExpr *Written = Value->getSyntacticForm();
+      for (const auto *Node : {Value, Written})
+        if (Node) {
+          auto [Entry, Inserted] = ZeroArrayStorageSources.emplace(Node, List);
+          if (Inserted)
+            A.chargeExpansion(1, List->getExprLoc());
+          else if (Entry->second != List)
+            A.reject(List->getExprLoc(), "empty array initializer source",
+                     "Synthetic empty storage requires one exact owning array.");
+        }
+    }
+  }
   bool checkSemanticInitializers(const InitListExpr *List, SourceLocation Owner) {
     // RAV visits only the written form of a braced initializer by default.
     // Follow its semantic elements and shared array filler once for admission;
@@ -7652,6 +7787,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       if (const auto *I = dyn_cast<InitListExpr>(E);
           I && I->isSyntacticForm() && I->getSemanticForm())
         E = I->getSemanticForm();
+      if (const auto *I = dyn_cast<InitListExpr>(E))
+        retainZeroArrayStorageSource(I);
       // Record cached edges too: a nested default can reuse semantic source
       // first checked outside this parameter, or while another frame is active.
       for (auto *Dependencies : ActiveOperationSources)

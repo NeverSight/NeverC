@@ -205,9 +205,12 @@ remain excluded.
 
 Array layout also supplies authenticated evidence for type queries, including
 direct classifications, reference binding and `decltype` of source-owned calls
-returning array references. Element types and original expressions remain
-checked even for zero extents; SDK callee, construction, exception and enum
-proofs retain their separate boundaries.
+returning array references and exact admitted `std::get` calls. Aggregate local
+initializers and array temporaries retain recursive element destruction checks,
+including zero extents and potentially throwing trivial destructors. Constant
+`get` results can supply dimensions without executing query operands. Written
+arguments and expressions remain checked; other SDK callees, construction,
+nothrow-destruction roots and enum-source proofs remain separate.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#fixed-value-arrays-from-array).
 
 Core v2 type metadata now accepts owned incomplete non-union classes, including forward declarations and uninstantiated template types. Classification and array dimensions retain exact source identity without generating record storage; runtime carriers and callbacks still require complete admitted types. Reference/pointer operation queries can use these identities with exact retained source proof; selected lazy method return signatures keep their complete-carrier checks. Native verification requires the implementing revision’s CI. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#incomplete-record-type-metadata).

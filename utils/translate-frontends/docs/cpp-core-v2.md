@@ -480,11 +480,22 @@ query operands remain unevaluated. Source-record element fields, written
 extents, aliases, call arguments and defaults still require their original
 source checks, including for zero-length arrays.
 
-This supplies layout evidence only. SDK callee, selected constructor,
-exception-specification and enum-source checks remain separate. Queries over
-`std::get` calls, SDK construction or nothrow destruction, and array elements
-such as `std::byte` that still require SDK enum-source evidence are not enabled
-by the layout proof.
+Exact admitted `std::get` calls also supply their pinned SDK signature and
+body source for queries. Mutable, const and rvalue results preserve reference
+identity, including nested arrays and source-record elements; written indices,
+types and argument expressions retain their own checks. Constant `get` results
+can supply array dimensions. This proof belongs to the selected call and its
+callee reference; it does not authorize an independent SDK function address,
+other SDK callees or out-of-range element access.
+
+Aggregate-initialized local arrays and array temporaries preserve initializer
+and destruction dependencies. Their authenticated implicit trivial destructor
+recursively consumes the original element destruction source, even for zero
+extents, while ordinary temporary lifetimes remain unchanged. Trivial source
+element destructors may have a checked `noexcept(false)` specification; the
+array's inferred specification retains that source dependency. SDK construction
+and nothrow-destruction query roots still require their separate operation
+proofs, and elements such as `std::byte` still need SDK enum-source evidence.
 
 The standalone authenticated closure contains 217 libc++/resource files on all
 eight supported targets and contains no platform headers. Generated programs do

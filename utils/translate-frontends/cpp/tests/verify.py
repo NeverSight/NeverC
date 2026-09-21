@@ -1594,6 +1594,308 @@ int main() {
               profile="cpp-core-v2", sdk=True)
 
 
+    array_owned_queries_source = """\
+#include <array>
+namespace parent_queries {
+using Row = std::array<int, 2>;
+struct Element { int value; ~Element() noexcept(false) = default; };
+using Elements = std::array<Element, 2>;
+struct Parent {
+  Row row;
+  Elements elements;
+  ~Parent() = default;
+};
+struct ImplicitParent { Row row; };
+int effects;
+Parent& source_parent(Parent& value) { ++effects; return value; }
+ImplicitParent& source_implicit(ImplicitParent& value) { ++effects; return value; }
+const Row& source_view(const Row& value) { ++effects; return value; }
+int run() {
+  Parent parent{Row{{1, 2}}, Elements{{Element{3}, Element{4}}}};
+  ImplicitParent plain{Row{{5, 6}}};
+  const Row& extended = Row{{7, 8}};
+  static_assert(__is_same(decltype(source_parent(parent)), Parent&));
+  static_assert(__is_same(decltype(source_implicit(plain)), ImplicitParent&));
+  static_assert(__is_same(decltype(std::get<0>(source_parent(parent).row)), int&));
+  static_assert(__is_same(decltype(std::get<0>(source_parent(parent).elements)), Element&));
+  static_assert(__is_same(decltype(std::get<0>(source_view(extended))), const int&));
+  if (effects) return 1;
+  Element& element = std::get<0>(source_parent(parent).elements);
+  element.value = 9;
+  int& number = std::get<1>(source_implicit(plain).row);
+  number = 10;
+  const int& view = std::get<1>(source_view(extended));
+  if (effects != 3 || &element != &parent.elements[0] ||
+      parent.elements[0].value != 9 || &number != &plain.row[1] ||
+      plain.row[1] != 10 || &view != &extended[1] || view != 8) return 2;
+  return 0;
+}
+}
+namespace template_queries {
+template<class T> struct Element {
+  T value;
+  ~Element() noexcept(false) = default;
+};
+using Row = std::array<Element<int>, 2>;
+using Empty = std::array<Element<int>, 0>;
+int effects;
+Row& source(Row& value) { ++effects; return value; }
+Empty& source_empty(Empty& value) { ++effects; return value; }
+int run() {
+  Row row{{Element<int>{1}, Element<int>{2}}};
+  Empty empty{};
+  static_assert(__is_same(decltype(source(row)), Row&));
+  static_assert(__is_same(decltype(std::get<0>(source(row))), Element<int>&));
+  static_assert(__is_same(decltype(source_empty(empty)), Empty&));
+  if (effects) return 1;
+  Element<int>& element = std::get<1>(source(row));
+  element.value = 3;
+  if (effects != 1 || &element != &row[1] || row[1].value != 3) return 2;
+  return 0;
+}
+}
+namespace empty_brace_queries {
+using Empty = std::array<int, 0>;
+struct Element { int value; ~Element() noexcept(false) = default; };
+using Records = std::array<Element, 0>;
+using Nested = std::array<Records, 0>;
+using Rows = std::array<Empty, 2>;
+int effects;
+Empty& scalar(Empty& value) { ++effects; return value; }
+const Empty& constant_scalar(const Empty& value) { ++effects; return value; }
+Records& records(Records& value) { ++effects; return value; }
+Nested& nested(Nested& value) { ++effects; return value; }
+Rows& rows(Rows& value) { ++effects; return value; }
+int run() {
+  Empty empty{{}};
+  const Empty constant{{}};
+  Records record_array{{}};
+  Nested nested_array{{}};
+  Rows row_array{{{}, {}}};
+  static_assert(__is_same(decltype(scalar(empty)), Empty&));
+  static_assert(__is_same(decltype(constant_scalar(constant)), const Empty&));
+  static_assert(__is_same(decltype(records(record_array)), Records&));
+  static_assert(__is_same(decltype(nested(nested_array)), Nested&));
+  static_assert(__is_same(decltype(rows(row_array)), Rows&));
+  if (effects) return 1;
+  if (&scalar(empty) != &empty || &constant_scalar(constant) != &constant ||
+      &records(record_array) != &record_array ||
+      &nested(nested_array) != &nested_array || &rows(row_array) != &row_array)
+    return 2;
+  return effects == 5 ? 0 : 3;
+}
+}
+int main() {
+  return parent_queries::run() || template_queries::run() || empty_brace_queries::run();
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-array-owned-queries-" + target, array_owned_queries_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        assert not [node for node in walk(data["functions"])
+                    if node.get("op") == "mapped_call"], data
+    check("v2-array-parent-query-reject-hidden-noexcept",
+          '#include <array>\nstruct Element { int value; ~Element() noexcept(false) = default; };\nstruct Parent {\n  std::array<Element, 0> values;\n  ~Parent() noexcept((sizeof(long double), false)) = default;\n};\nParent& source(Parent& value) { return value; }\nint main() {\n  Parent parent{};\n  static_assert(__is_same(decltype(source(parent)), Parent&));\n  return 0;\n}\n',
+          "TR0201", profile="cpp-core-v2", sdk=True)
+
+    check('v2-array-initializer-query-reject-zero-hidden-written-extent',
+          '#include <array>\nusing Row=std::array<int,(sizeof(long double),0)>;Row& identity(Row& r){return r;}int main(){Row r{{}};static_assert(__is_same(decltype(identity(r)),Row&));return 0;}\n',
+          "TR0201", profile="cpp-core-v2", sdk=True)
+    check('v2-array-initializer-query-reject-zero-written-comma-effect',
+          '#include <array>\nint effects;using Row=std::array<int,0>;Row& identity(Row& r){return r;}int main(){Row r{{(++effects,std::__empty{})}};static_assert(__is_same(decltype(identity(r)),Row&));return effects==1?0:1;}\n',
+          "TR0201", profile="cpp-core-v2", sdk=True)
+    check('v2-array-initializer-query-reject-zero-written-comma-hidden-type',
+          '#include <array>\nusing Row=std::array<int,0>;Row& identity(Row& r){return r;}int main(){Row r{{(sizeof(long double),std::__empty{})}};static_assert(__is_same(decltype(identity(r)),Row&));return 0;}\n',
+          "TR0201", profile="cpp-core-v2", sdk=True)
+    check('v2-array-initializer-query-reject-zero-source-specialization',
+          '#include <array>\nnamespace std {template<>struct array<int,0>{int value;};}\nusing Row=std::array<int,0>;Row& identity(Row& r){return r;}int main(){Row r{};static_assert(__is_same(decltype(identity(r)),Row&));return 0;}\n',
+          "TR0201", profile="cpp-core-v2", sdk=True)
+
+    array_initializer_queries_source = """\
+#include <array>
+using Row = std::array<int, 2>;
+using Empty = std::array<int, 0>;
+using Grid = std::array<Row, 2>;
+struct Element {
+  int value;
+  ~Element() noexcept(false) = default;
+};
+constexpr bool source_noexcept() { return false; }
+struct ExpressionElement {
+  int value;
+  ~ExpressionElement() noexcept(source_noexcept()) = default;
+};
+using Records = std::array<Element, 2>;
+using EmptyRecords = std::array<Element, 0>;
+using ExpressionRecords = std::array<ExpressionElement, 1>;
+using NestedEmptyRecords = std::array<EmptyRecords, 0>;
+using NestedRecords = std::array<Records, 1>;
+int effects;
+int alive;
+int destroyed;
+Row& row_identity(Row& value) { ++effects; return value; }
+const Row& const_identity(const Row& value) { ++effects; return value; }
+Empty& empty_identity(Empty& value) { ++effects; return value; }
+Grid& grid_identity(Grid& value) { ++effects; return value; }
+Records& records_identity(Records& value) { ++effects; return value; }
+EmptyRecords& empty_records_identity(EmptyRecords& value) { ++effects; return value; }
+ExpressionRecords& expression_identity(ExpressionRecords& value) { ++effects; return value; }
+NestedEmptyRecords& nested_empty_identity(NestedEmptyRecords& value) { ++effects; return value; }
+NestedRecords& nested_identity(NestedRecords& value) { ++effects; return value; }
+struct Guard {
+  int *live;
+  Guard(int *value) : live(value) { ++*live; }
+  ~Guard() { --*live; ++destroyed; }
+};
+const Row& keep(const Row& value, const Guard&) { ++effects; return value; }
+int read_live(const Row& value) {
+  return alive == 1 ? value[0] + value[1] : -1;
+}
+int main() {
+  Row row{{1, 2}};
+  const Row constant{{3, 4}};
+  Empty empty{};
+  Grid grid{{Row{{5, 6}}, Row{{7, 8}}}};
+  Records records{{Element{9}, Element{10}}};
+  EmptyRecords empty_records{};
+  ExpressionRecords expressions{{ExpressionElement{11}}};
+  NestedEmptyRecords nested_empty{};
+  NestedRecords nested{{Records{{Element{12}, Element{13}}}}};
+  static_assert(__is_same(decltype(row_identity(row)), Row&));
+  static_assert(__is_same(decltype(const_identity(constant)), const Row&));
+  static_assert(__is_same(decltype(empty_identity(empty)), Empty&));
+  static_assert(__is_same(decltype(grid_identity(grid)), Grid&));
+  static_assert(__is_same(decltype(records_identity(records)), Records&));
+  static_assert(__is_same(decltype(empty_records_identity(empty_records)), EmptyRecords&));
+  static_assert(__is_same(decltype(expression_identity(expressions)), ExpressionRecords&));
+  static_assert(__is_same(decltype(nested_empty_identity(nested_empty)), NestedEmptyRecords&));
+  static_assert(__is_same(decltype(nested_identity(nested)), NestedRecords&));
+  static_assert(__is_same(decltype(keep(Row{{14, 15}}, Guard(&alive))), const Row&));
+  static_assert(!__is_same(decltype(keep(Row{{16, 17}}, Guard(&alive))), int&));
+  if (effects || alive || destroyed) return 1;
+  if (&row_identity(row) != &row || &const_identity(constant) != &constant ||
+      &empty_identity(empty) != &empty || &grid_identity(grid) != &grid ||
+      effects != 4) return 2;
+  if (&records_identity(records) != &records ||
+      &empty_records_identity(empty_records) != &empty_records ||
+      &expression_identity(expressions) != &expressions ||
+      &nested_empty_identity(nested_empty) != &nested_empty ||
+      &nested_identity(nested) != &nested || effects != 9) return 3;
+  records[0].value = 18;
+  if (records[0].value != 18 || expressions[0].value != 11 ||
+      nested[0][1].value != 13) return 4;
+  int sum = read_live(keep(Row{{19, 20}}, Guard(&alive)));
+  if (sum != 39 || effects != 10 || alive || destroyed != 1) return 5;
+  return 0;
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-array-initializer-queries-" + target,
+                     array_initializer_queries_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        assert not [node for node in walk(data["functions"])
+                    if node.get("op") == "mapped_call"], data
+    for name, source, code in (
+        ('hidden-noexcept',
+         '#include <array>\nstruct Element { int value; ~Element() noexcept((sizeof(long double), false)) = default; };\nusing Row=std::array<Element,2>;\nRow& identity(Row& row){return row;} int main(){Row row{};static_assert(__is_same(decltype(identity(row)),Row&));return 0;}\n', 'TR0201'),
+        ('hidden-noexcept-zero',
+         '#include <array>\nstruct Element { int value; ~Element() noexcept((sizeof(long double), false)) = default; };\nusing Row=std::array<Element,0>;\nRow& identity(Row& row){return row;} int main(){Row row{};static_assert(__is_same(decltype(identity(row)),Row&));return 0;}\n', 'TR0201'),
+        ('hidden-noexcept-nested-zero',
+         '#include <array>\nstruct Element { int value; ~Element() noexcept((sizeof(long double), false)) = default; };\nusing Inner=std::array<Element,0>; using Row=std::array<Inner,0>;\nRow& identity(Row& row){return row;} int main(){Row row{};static_assert(__is_same(decltype(identity(row)),Row&));return 0;}\n', 'TR0201'),
+        ('hidden-noexcept-function-body',
+         '#include <array>\nconstexpr bool setting(){return sizeof(long double)==0;}\nstruct Element { int value; ~Element() noexcept(setting()) = default; };\nusing Row=std::array<Element,0>;\nRow& identity(Row& row){return row;} int main(){Row row{};static_assert(__is_same(decltype(identity(row)),Row&));return 0;}\n', 'TR0201'),
+        ('temporary-source-destructor-hidden-type',
+         '#include <array>\nusing Row=std::array<int,2>;\nstruct Guard { ~Guard(){(void)sizeof(long double);} };\nconst Row& keep(const Row& row,const Guard&){return row;}\nint main(){static_assert(__is_same(decltype(keep(Row{{1,2}},Guard{})),const Row&));return 0;}\n', 'TR0201'),
+        ('nontrivial-array-element',
+         '#include <array>\nstruct Element { int value; ~Element(){} };\nusing Row=std::array<Element,1>;\nRow& identity(Row& row){return row;} int main(){Row row{};static_assert(__is_same(decltype(identity(row)),Row&));return 0;}\n', 'TR0203'),
+        ('local-copy-construction-stays-separate',
+         '#include <array>\nusing Row=std::array<int,2>; Row& identity(Row& row){return row;}\nint main(){Row row{{1,2}};Row copy(row);static_assert(__is_same(decltype(identity(copy)),Row&));return 0;}\n', 'TR0201'),
+        ('sdk-nothrow-destruction-query-stays-separate',
+         '#include <array>\nusing Row=std::array<int,2>;\nint main(){Row row{{1,2}};static_assert(__is_nothrow_destructible(Row));return 0;}\n', 'TR0201'),
+    ):
+        check("v2-array-initializer-query-reject-" + name, source, code,
+              profile="cpp-core-v2", sdk=True)
+
+    array_get_queries_source = """\
+#include <array>
+using Row = std::array<int, 2>;
+using Grid = std::array<Row, 2>;
+struct Element { int value; int source_extent[2]; };
+using Records = std::array<Element, 2>;
+int effects;
+Row& source(Row& row) { ++effects; return row; }
+int queries(Row& row, const Row& constant, Grid& grid, Records& records) {
+  static_assert(__is_same(decltype(std::get<0>(row)), int&));
+  static_assert(__is_same(decltype(std::get<0>(constant)), const int&));
+  static_assert(__is_same(decltype(std::get<0>(static_cast<Row&&>(row))), int&&));
+  static_assert(__is_same(decltype(std::get<0>(static_cast<const Row&&>(constant))), const int&&));
+  static_assert(__is_same(decltype((std::get<0>)(row)), int&));
+  static_assert(__is_same(decltype(std::get<(sizeof(int), 0), int, 2>(row)), int&));
+  static_assert(__is_same(decltype(std::get<0>(source(row))), int&));
+  static_assert(!__is_same(decltype(std::get<0>(source(row))), long&));
+  static_assert(__is_same(decltype(std::get<0>(grid)), Row&));
+  static_assert(__is_same(decltype(std::get<0>(records)), Element&));
+  return effects;
+}
+int main() {
+  Row row{{1, 2}};
+  const Row constant{{3, 4}};
+  Grid grid{{Row{{5, 6}}, Row{{7, 8}}}};
+  Records records{{Element{9, {10, 11}}, Element{12, {13, 14}}}};
+  static_assert(__is_same(decltype(source(row)), Row&));
+  static_assert(__is_same(decltype(std::get<0>(row)), int&));
+  static_assert(__is_same(decltype(std::get<1>(constant)), const int&));
+  static_assert(__is_same(decltype(std::get<0>(grid)), Row&));
+  static_assert(__is_same(decltype(std::get<0>(records)), Element&));
+  static_assert(__is_same(decltype(std::get<0>(Row{{++effects, 2}})), int&&));
+  constexpr Row dimensions{{2, 3}};
+  using Fixed = int[std::get<0>(dimensions)];
+  static_assert(__is_same(Fixed, int[2]));
+  if (queries(row, constant, grid, records) || effects) return 1;
+  int& first = std::get<0>(source(row));
+  first = 15;
+  if (&first != &row[0] || row[0] != 15 || effects != 1) return 2;
+  const int& view = std::get<1>(constant);
+  if (&view != &constant[1] || view != 4) return 3;
+  return 0;
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-array-get-queries-" + target, array_get_queries_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        assert not [node for node in walk(data["functions"])
+                    if node.get("op") == "mapped_call"], data
+    for name, source, code in (
+        ('written-index-long-double',
+         '#include <array>\nint probe(std::array<int,2>& a){static_assert(__is_same(decltype(std::get<(sizeof(long double),0)>(a)),int&));return 0;}\n', 'TR0201'),
+        ('written-type-erased-declaration',
+         '#include <array>\nint object=0;template<auto V>using Erased=int;\nint probe(std::array<int,2>& a){static_assert(__is_same(decltype(std::get<0,Erased<&object>,2>(a)),int&));return 0;}\n', 'TR0201'),
+        ('argument-long-double',
+         '#include <array>\nint probe(std::array<int,2>& a){static_assert(__is_same(decltype(std::get<0>((sizeof(long double),a))),int&));return 0;}\n', 'TR0201'),
+        ('element-source-extent',
+         '#include <array>\nstruct Element{int value[(sizeof(long double),2)];};int probe(std::array<Element,2>& a){static_assert(__is_same(decltype(std::get<0>(a)),Element&));return 0;}\n', 'TR0201'),
+        ('sdk-byte-source',
+         '#include <array>\n#include <cstddef>\nint probe(std::array<std::byte,2>& a){static_assert(__is_same(decltype(std::get<0>(a)),std::byte&));return 0;}\n', 'TR0201'),
+        ('tuple-get-stays-independent',
+         '#include <tuple>\nint probe(std::tuple<int&>& a){static_assert(__is_same(decltype(std::get<0>(a)),int&));return 0;}\n', 'TR0201'),
+        ('pair-get-stays-independent',
+         '#include <utility>\nint probe(std::pair<int,long>& a){static_assert(__is_same(decltype(std::get<0>(a)),int&));return 0;}\n', 'TR0201'),
+        ('move-call-stays-independent',
+         '#include <array>\n#include <utility>\nint probe(std::array<int,2>& a){static_assert(__is_same(decltype(std::get<0>(std::move(a))),int&&));return 0;}\n', 'TR0201'),
+        ('temporary-original-initializer',
+         '#include <array>\nint probe(){static_assert(__is_same(decltype(std::get<0>(std::array<int,2>{{(sizeof(long double),1),2}})),int&&));return 0;}\n', 'TR0201'),
+        ('sdk-address-after-checked-call',
+         '#include <array>\nusing Row=std::array<int,2>;int probe(Row& a){int& runtime=std::get<0>(a);using Pointer=int&(*)(Row&) noexcept;Pointer pointer=&std::get<0,int,2>;return pointer(a);}\n', 'TR0201'),
+        ('out-of-range-index',
+         '#include <array>\nint probe(std::array<int,2>& a){static_assert(__is_same(decltype(std::get<2>(a)),int&));return 0;}\n', 'TR0203'),
+        ('zero-array-index',
+         '#include <array>\nint probe(std::array<int,0>& a){static_assert(__is_same(decltype(std::get<0>(a)),int&));return 0;}\n', 'TR0203'),
+        ('user-get-specialization',
+         '#include <array>\nnamespace std {\ntemplate<> constexpr int& get<0,int,2>(array<int,2>& row) noexcept { return row[1]; }\n}\nint probe(std::array<int,2>& row) {\n  static_assert(__is_same(decltype(std::get<0>(row)),int&));\n  return 0;\n}\n', 'TR0201'),
+    ):
+        check("v2-array-get-query-reject-" + name, source, code,
+              profile="cpp-core-v2", sdk=True)
+
     # Array layout provenance preserves source elements and callable proofs.
     array_query_layout_source = """\
 #include <array>
@@ -1723,9 +2025,6 @@ int main() {
          'TR0201'),
         ('sdk-nothrow-destruction-operation',
          '#include <array>\nusing Row = std::array<int, 2>;\nint main(){Row row{{1,2}};static_assert(__is_nothrow_destructible(Row));return 0;}\n',
-         'TR0201'),
-        ('sdk-array-get-query',
-         '#include <array>\nusing Row=std::array<int,2>;\nint probe(Row& row){static_assert(__is_same(decltype(std::get<0>(row)),int&));return 0;}\n',
          'TR0201'),
         ('sdk-byte-array-query',
          '#include <array>\n#include <cstddef>\nusing Row=std::array<std::byte,2>;\nRow& identity(Row& row){return row;}\nint probe(Row& row){static_assert(__is_same(decltype(identity(row)),Row&));return 0;}\n',

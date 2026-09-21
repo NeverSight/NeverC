@@ -300,9 +300,13 @@ and results, volatile or nontrivial array elements and user array specialization
 remain rejected.
 Array layout also supports type-query source proof, including classifications,
 reference binding and `decltype` of source-owned calls returning array
-references. Element and written-expression dependencies remain checked for
-nonempty, nested and zero-length arrays; SDK callee, construction, exception
-and enum-source proofs remain separate.
+references and exact admitted `std::get` calls. Local aggregate initializers
+and temporaries use authenticated implicit trivial array destruction with
+recursive element-source checks, including zero extents and checked potentially
+throwing trivial element destructors. Constant `get` results can supply array
+dimensions; query operands remain unevaluated. Written template arguments and
+caller expressions remain checked, while other SDK callees, selected
+construction, nothrow-destruction roots and enum-source proofs remain separate.
 Initializer-list objects retain libc++'s authenticated pointer-and-size view.
 Braced backing arrays use the existing automatic, full-expression and static
 lifetime machinery; default, copy/move and assignment operations, member and
