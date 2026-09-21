@@ -7250,6 +7250,12 @@ class FunctionLowering {
                     A.S, A.Sources,
                     Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context)
               : std::optional<UtilityTupleRecord>();
+      const auto MixedReferenceTuple =
+          Operation == UtilityOperation::TupleSwap && !ReferenceTuple
+              ? approvedUtilityMixedReferenceTupleRecord(
+                    A.S, A.Sources,
+                    Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context)
+              : std::optional<UtilityTupleRecord>();
       auto ReferencePair =
           Operation == UtilityOperation::PairSwap
               ? approvedUtilityReferencePairRecord(
@@ -7262,12 +7268,15 @@ class FunctionLowering {
                     A.S, A.Sources,
                     Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context)
               : std::optional<UtilityPairRecord>();
-      if (ReferenceTuple || ReferencePair || MixedReferencePair) {
+      if (ReferenceTuple || MixedReferenceTuple || ReferencePair ||
+          MixedReferencePair) {
         auto Left = dereference(std::move(LeftAddress), L);
         auto Right = dereference(std::move(RightAddress), L);
         std::vector<const FieldDecl *> Elements;
         if (ReferenceTuple)
           Elements = ReferenceTuple->Elements;
+        else if (MixedReferenceTuple)
+          Elements = MixedReferenceTuple->Elements;
         else if (ReferencePair)
           Elements = {ReferencePair->First, ReferencePair->Second};
         else
@@ -7306,6 +7315,12 @@ class FunctionLowering {
                     A.S, A.Sources, Object->getType()->getAsCXXRecordDecl(),
                     A.Context)
               : std::optional<UtilityTupleRecord>();
+      const auto MixedReferenceTuple =
+          Operation == UtilityOperation::TupleMemberSwap && !ReferenceTuple
+              ? approvedUtilityMixedReferenceTupleRecord(
+                    A.S, A.Sources, Object->getType()->getAsCXXRecordDecl(),
+                    A.Context)
+              : std::optional<UtilityTupleRecord>();
       auto ReferencePair =
           Operation == UtilityOperation::PairMemberSwap
               ? approvedUtilityReferencePairRecord(
@@ -7318,12 +7333,15 @@ class FunctionLowering {
                     A.S, A.Sources, Object->getType()->getAsCXXRecordDecl(),
                     A.Context)
               : std::optional<UtilityPairRecord>();
-      if (ReferenceTuple || ReferencePair || MixedReferencePair) {
+      if (ReferenceTuple || MixedReferenceTuple || ReferencePair ||
+          MixedReferencePair) {
         auto Left = dereference(std::move(LeftAddress), L);
         auto Right = dereference(std::move(RightAddress), L);
         std::vector<const FieldDecl *> Elements;
         if (ReferenceTuple)
           Elements = ReferenceTuple->Elements;
+        else if (MixedReferenceTuple)
+          Elements = MixedReferenceTuple->Elements;
         else if (ReferencePair)
           Elements = {ReferencePair->First, ReferencePair->Second};
         else

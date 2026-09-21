@@ -244,7 +244,8 @@ and retain writes to the bound objects. `make_tuple` unwraps authenticated
 unique-type `get`. Mixed tuples also admit exact compatible direct and same-type
 copy/move construction plus same-type or compatible heterogeneous assignment
 from tuples and pairs. All six comparisons recurse through reference and value
-elements. Converting construction, swap and `apply` remain excluded. Exact direct element construction and
+elements. Member and free swap exchange values without changing reference
+bindings. Converting construction and `apply` remain excluded. Exact direct element construction and
 same-type copy/move construction preserve those bindings; same-type assignment
 writes values through the destination bindings without rebinding them.
 Compatible converting construction binds source tuple elements, while

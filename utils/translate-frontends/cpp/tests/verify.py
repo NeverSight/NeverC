@@ -996,9 +996,14 @@ extern "C" int tuple_reference_construction(int value) {
       (mixed_direct == mixed_values) + (mixed_direct != mixed_values) +
       (mixed_direct < mixed_values) + (mixed_direct > mixed_values) +
       (mixed_direct <= mixed_values) + (mixed_direct >= mixed_values);
+  std::tuple<int &, long> mixed_swap_left(value, 9L);
+  std::tuple<int &, long> mixed_swap_right(source_first, 10L);
+  mixed_swap_left.swap(mixed_swap_right);
+  std::swap(mixed_swap_left, mixed_swap_right);
   return value + other + std::get<0>(view) + int(converted) +
          std::get<0>(pair_view) + int(std::get<1>(mixed_factory)) +
-         int(std::get<1>(mixed_copy)) + mixed_comparison;
+         int(std::get<1>(mixed_copy)) + mixed_comparison +
+         int(std::get<1>(mixed_swap_left) + std::get<1>(mixed_swap_right));
 }
 """
     tuple_reference_construction = check(

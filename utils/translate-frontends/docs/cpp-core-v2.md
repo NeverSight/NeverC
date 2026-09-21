@@ -282,9 +282,11 @@ construction preserve that split, and index- or unique-type `get` recover either
 kind of element. Same-type and compatible heterogeneous assignment from tuples
 or pairs writes through reference fields and assigns value fields in element
 order. All six comparisons read reference and value elements through the
-existing recursive heterogeneous comparison rules. Converting construction,
-swap and `apply` operations for these mixed tuples remain outside this
-increment.
+existing recursive heterogeneous comparison rules. Member and free swap
+exchange each referent or stored value in
+element order without changing reference bindings.
+Converting construction and `apply` operations for these mixed tuples remain
+outside this increment.
 
 Exact `std::tie` calls construct an authenticated tuple whose elements are
 lvalue references to supported scalar, array or source-owned record objects.

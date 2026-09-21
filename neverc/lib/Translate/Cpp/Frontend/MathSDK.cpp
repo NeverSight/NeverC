@@ -9627,17 +9627,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto *Reference = directMethodReference(Call);
     auto Tuple = approvedUtilityTupleRecord(
         S, SM, Method ? Method->getParent() : nullptr, Context);
-    bool ReferenceTuple = false;
-    if (!Tuple) {
+    if (!Tuple)
       Tuple = approvedUtilityReferenceTupleRecord(
           S, SM, Method ? Method->getParent() : nullptr, Context);
-      ReferenceTuple = Tuple.has_value();
-    }
+    if (!Tuple)
+      Tuple = approvedUtilityMixedReferenceTupleRecord(
+          S, SM, Method ? Method->getParent() : nullptr, Context);
     bool Mutable = Tuple.has_value();
     if (Tuple)
       for (const auto *Element : Tuple->Elements) {
         auto ElementType = Element->getType();
-        if (ReferenceTuple)
+        if (ElementType->isReferenceType())
           ElementType = ElementType->getPointeeType();
         Mutable &= utilityTupleAssignableValue(S, SM, Context, ElementType);
       }
@@ -12622,20 +12622,22 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Function->getReturnType()->isVoidType()) {
     auto LeftType = Function->getParamDecl(0)->getType();
     auto RightType = Function->getParamDecl(1)->getType();
-    const auto Left = TupleFor(
+    auto Left = TupleFor(
         LeftType->isReferenceType() ? LeftType->getPointeeType() : QualType());
-    const auto Right =
+    auto Right =
         TupleFor(RightType->isReferenceType() ? RightType->getPointeeType()
                                               : QualType());
+    if (!Left && LeftType->isReferenceType())
+      Left = approvedUtilityMixedReferenceTupleRecord(
+          S, SM, LeftType->getPointeeType()->getAsCXXRecordDecl(), Context);
+    if (!Right && RightType->isReferenceType())
+      Right = approvedUtilityMixedReferenceTupleRecord(
+          S, SM, RightType->getPointeeType()->getAsCXXRecordDecl(), Context);
     bool Mutable = Left.has_value();
-    const bool ReferenceTuple =
-        Left && approvedUtilityReferenceTupleRecord(
-                    S, SM, Left->Record, Context)
-                    .has_value();
     if (Left)
       for (const auto *Element : Left->Elements) {
         auto ElementType = Element->getType();
-        if (ReferenceTuple)
+        if (ElementType->isReferenceType())
           ElementType = ElementType->getPointeeType();
         Mutable &= utilityTupleAssignableValue(S, SM, Context, ElementType);
       }
