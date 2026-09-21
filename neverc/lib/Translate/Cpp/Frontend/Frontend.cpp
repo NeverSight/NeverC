@@ -1180,7 +1180,27 @@ std::optional<RangeForComponents> rangeForComponents(const CXXForRangeStmt *Loop
       return std::nullopt;
   return Parts;
 }
-bool Adapter::registerRecordDecomposition(const DecompositionDecl *D) {
+// Both array bindings and generated copies use builtin projections, but only
+// copy projections preserve their source array's lvalue/xvalue category.
+static const ArraySubscriptExpr *decompositionArrayProjection(
+    const Expr *E, const Expr *Base, const Expr *Index, ASTContext &Context) {
+  const auto *Subscript = dyn_cast_or_null<ArraySubscriptExpr>(E);
+  const auto *Decay = Subscript
+      ? dyn_cast<ImplicitCastExpr>(Subscript->getBase()) : nullptr;
+  const auto *Array = Base ? Context.getAsConstantArrayType(Base->getType()) : nullptr;
+  return Subscript && Decay && Array && Base->isGLValue() &&
+                 Base->getObjectKind() == OK_Ordinary &&
+                 Subscript->getObjectKind() == OK_Ordinary &&
+                 Decay->getCastKind() == CK_ArrayToPointerDecay &&
+                 Decay->getSubExpr() == Base && Decay->isPRValue() &&
+                 Context.hasSameType(Decay->getType(),
+                                     Context.getPointerType(Array->getElementType())) &&
+                 Subscript->getIdx() == Index &&
+                 Subscript->getValueKind() == Base->getValueKind() &&
+                 Context.hasSameType(Subscript->getType(), Array->getElementType())
+             ? Subscript : nullptr;
+}
+bool Adapter::registerDecomposition(const DecompositionDecl *D) {
   if (!S.coreV2() || !D || D->isInvalidDecl() || D->isImplicit() ||
       !S.owns(Sources, D->getLocation()) || !D->isLocalVarDecl() ||
       !D->hasLocalStorage() || D->isCXXForRangeDecl() ||
@@ -1190,74 +1210,218 @@ bool Adapter::registerRecordDecomposition(const DecompositionDecl *D) {
       D->getInit()->isTypeDependent() || D->getInit()->isValueDependent() ||
       D->getInit()->isInstantiationDependent())
     return false;
-  if (RecordDecompositions.count(D->getCanonicalDecl()))
+  if (Decompositions.count(D->getCanonicalDecl()))
     return true;
   const auto Object = D->getType().getNonReferenceType();
-  const auto *Record = Object->getAsCXXRecordDecl();
-  Record = Record ? Record->getDefinition() : nullptr;
   if (Object.isVolatileQualified() || Object.isRestrictQualified() ||
-      Object.getAddressSpace() != LangAS::Default || !Record ||
-      !S.owns(Sources, Record->getLocation()) || Record->isInvalidDecl() ||
-      Record->isDependentContext() || Record->isUnion() || Record->getNumBases() ||
-      !Record->isAggregate() || !Record->isTrivial() ||
-      !Record->isStandardLayout() || Record->field_empty() || D->bindings().empty())
+      Object.getAddressSpace() != LangAS::Default || D->bindings().empty())
     return false;
-  RecordDecomposition Checked;
-  unsigned Index = 0;
-  for (const auto *Field : Record->fields()) {
-    chargeExpansion(1, D->getLocation());
-    if (Index >= D->bindings().size())
+  LocalDecomposition Checked;
+  auto BindingShape = [&](const BindingDecl *Binding) {
+    return Binding && !Binding->isInvalidDecl() && !Binding->isImplicit() &&
+           !Binding->hasAttrs() && Binding->getIdentifier() &&
+           S.owns(Sources, Binding->getLocation()) &&
+           Binding->getDecomposedDecl() == D && !Binding->getHoldingVar() &&
+           !DecompositionBindings.count(Binding);
+  };
+  std::vector<DecompositionArrayCopy> Copies;
+  if (const auto *Array = Context.getAsConstantArrayType(Object)) {
+    const auto *ElementRecord = Context.getBaseElementType(Object)->getAsCXXRecordDecl();
+    if (Array->getSize().getLimitedValue(65537) != D->bindings().size() ||
+        (ElementRecord && !S.owns(Sources, ElementRecord->getLocation())) ||
+        type(Object, D->getLocation()).empty())
       return false;
-    const auto *Binding = D->bindings()[Index++];
-    const auto FieldType = Field->getType();
-    const bool Scalar = FieldType->isIntegralOrEnumerationType() ||
-        FieldType->isRealFloatingType() || FieldType->isNullPtrType();
-    const bool ObjectPointer = FieldType->isPointerType() &&
-        !FieldType->getPointeeType()->isFunctionType();
-    if (!S.owns(Sources, Field->getLocation()) || Field->isInvalidDecl() ||
-        Field->getAccess() != AS_public || Field->isBitField() ||
-        Field->isMutable() || Field->hasAttrs() ||
-        FieldType.isVolatileQualified() || FieldType.isRestrictQualified() ||
-        FieldType.getAddressSpace() != LangAS::Default ||
-        (!Scalar && !ObjectPointer) || !Binding || Binding->isInvalidDecl() ||
-        Binding->isImplicit() || Binding->hasAttrs() || !Binding->getIdentifier() ||
-        !S.owns(Sources, Binding->getLocation()) ||
-        Binding->getDecomposedDecl() != D || Binding->getHoldingVar())
+    unsigned Ordinal = 0;
+    for (const auto *Binding : D->bindings()) {
+      chargeExpansion(1, D->getLocation());
+      if (!BindingShape(Binding))
+        return false;
+      const auto *Projection = dyn_cast_or_null<ArraySubscriptExpr>(Binding->getBinding());
+      const auto *Decay = Projection
+          ? dyn_cast<ImplicitCastExpr>(Projection->getBase()) : nullptr;
+      const auto *Base = Decay ? dyn_cast<DeclRefExpr>(Decay->getSubExpr()) : nullptr;
+      const auto *Index = Projection ? dyn_cast<IntegerLiteral>(Projection->getIdx()) : nullptr;
+      if (!Base || !Base->isLValue() || Base->getDecl() != D ||
+          !Context.hasSameType(Base->getType(), Object) || !Index ||
+          !Index->isPRValue() || !Index->getType()->isIntegerType() ||
+          Index->getValue().getLimitedValue(65537) != Ordinal++ ||
+          !decompositionArrayProjection(Projection, Base, Index, Context) ||
+          !Context.hasSameType(Binding->getType(), Array->getElementType()))
+        return false;
+      Checked.Bindings.emplace_back(Binding, nullptr);
+    }
+    if (!D->getType()->isReferenceType()) {
+      // Array prvalues initialize the actual owner directly. Only the exact
+      // lvalue/xvalue-copy initializer grants synthetic loop/index identities.
+      const Expr *Init = D->getInit();
+      if (!Init->isPRValue() || !Context.hasSameUnqualifiedType(Init->getType(), Object))
+        return false;
+      while (true) {
+        chargeExpansion(1, D->getLocation());
+        const Expr *Sub = nullptr;
+        if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(Init))
+          Sub = Cleanup->getSubExpr();
+        else if (const auto *Paren = dyn_cast<ParenExpr>(Init))
+          Sub = Paren->getSubExpr();
+        if (!Sub)
+          break;
+        if (!Sub->isPRValue() || !Context.hasSameType(Sub->getType(), Init->getType()))
+          return false;
+        Init = Sub;
+      }
+      const ArrayInitLoopExpr *Parent = nullptr;
+      std::set<const Expr *> Operands;
+      for (const auto *Loop = dyn_cast<ArrayInitLoopExpr>(Init); Loop;) {
+        chargeExpansion(1, D->getLocation());
+        if (Copies.size() >= 64 || DecompositionArrayCopies.count(Loop))
+          return false;
+        const auto *Target = Context.getAsConstantArrayType(Loop->getType());
+        const auto Expected = Parent
+            ? Context.getAsConstantArrayType(Parent->getType())->getElementType() : Object;
+        const auto *Common = Loop->getCommonExpr();
+        const auto *Source = Common ? Common->getSourceExpr() : nullptr;
+        const auto *SourceArray = Source ? Context.getAsConstantArrayType(Source->getType()) : nullptr;
+        if (!Loop->isPRValue() || !Target || !SourceArray || !Source->isGLValue() ||
+            !Context.hasSameType(Loop->getType(), Expected) ||
+            Common->getValueKind() != Source->getValueKind() ||
+            Source->getObjectKind() != OK_Ordinary ||
+            Common->getObjectKind() != Source->getObjectKind() ||
+            !Context.hasSameType(Common->getType(), Source->getType()) ||
+            !Context.hasSameUnqualifiedType(Loop->getType(), Source->getType()) ||
+            !Loop->getSubExpr() ||
+            !Context.hasSameUnqualifiedType(Target->getElementType(), Loop->getSubExpr()->getType()) ||
+            Target->getSize() != Loop->getArraySize() ||
+            !Target->getSize().getLimitedValue(65537) ||
+            Target->getSize().getLimitedValue(65537) > 65536 ||
+            storageUnits(Loop->getType()) > 200000 ||
+            DecompositionArrayNodes.count(Common) || !Operands.insert(Common).second)
+          return false;
+        const auto *Nested = dyn_cast<ArrayInitLoopExpr>(Loop->getSubExpr());
+        const Expr *Input = Nested ? Nested->getCommonExpr()->getSourceExpr() : Loop->getSubExpr();
+        if (Target->getElementType()->isArrayType() != bool(Nested))
+          return false;
+        const auto *Construction = dyn_cast_or_null<CXXConstructExpr>(Input);
+        if (!Nested && Target->getElementType()->isRecordType() != bool(Construction))
+          return false;
+        if (Construction) {
+          if (!Target->getElementType()->isRecordType() || !Construction->getNumArgs() ||
+              !Context.hasSameUnqualifiedType(Construction->getType(), Target->getElementType()))
+            return false;
+          for (unsigned I = 1; I < Construction->getNumArgs(); ++I) {
+            chargeExpansion(1, D->getLocation());
+            if (!isa<CXXDefaultArgExpr>(Construction->getArg(I)))
+              return false;
+          }
+          Input = Construction->getArg(0);
+        }
+        // These are semantic conversions of the selected element operand.
+        // Their ordinary traversal still checks the constructor and defaults.
+        for (unsigned Depth = 0; const auto *Cast = dyn_cast_or_null<ImplicitCastExpr>(Input); ++Depth) {
+          chargeExpansion(1, D->getLocation());
+          if (Depth > 64 ||
+              !Context.hasSameUnqualifiedType(Cast->getType(), Cast->getSubExpr()->getType()) ||
+              !((Cast->getCastKind() == CK_NoOp &&
+                 Cast->getValueKind() == Cast->getSubExpr()->getValueKind()) ||
+                (Cast->getCastKind() == CK_LValueToRValue && Cast->isPRValue() &&
+                 Cast->getSubExpr()->isGLValue() && !Cast->getType()->isAggregateType())))
+            return false;
+          Input = Cast->getSubExpr();
+        }
+        const auto *Projection = dyn_cast_or_null<ArraySubscriptExpr>(Input);
+        const auto *Index = Projection ? dyn_cast<ArrayInitIndexExpr>(Projection->getIdx()) : nullptr;
+        if (!Index || !Index->isPRValue() || Index->getExprLoc().isValid() ||
+            !Context.hasSameType(Index->getType(), Context.getSizeType()) ||
+            !decompositionArrayProjection(Projection, Common, Index, Context) ||
+            DecompositionArrayNodes.count(Index) || !Operands.insert(Index).second)
+          return false;
+        Copies.push_back({D, Loop, Parent, Index});
+        Parent = Loop;
+        Loop = Nested;
+      }
+    }
+  } else {
+    const auto *Record = Object->getAsCXXRecordDecl();
+    Record = Record ? Record->getDefinition() : nullptr;
+    if (!Record || !S.owns(Sources, Record->getLocation()) || Record->isInvalidDecl() ||
+        Record->isDependentContext() || Record->isUnion() || Record->getNumBases() ||
+        !Record->isAggregate() || !Record->isTrivial() ||
+        !Record->isStandardLayout() || Record->field_empty())
       return false;
-    const auto *Member = dyn_cast_or_null<MemberExpr>(Binding->getBinding());
-    const auto *Base = Member ? dyn_cast<DeclRefExpr>(Member->getBase()) : nullptr;
-    auto Expected = Object.isConstQualified() ? FieldType.withConst() : FieldType;
-    if (!Member || Member->isArrow() || !Member->isLValue() ||
-        Member->getMemberDecl() != Field || !Base || !Base->isLValue() ||
-        Base->getDecl() != D || !Context.hasSameType(Base->getType(), Object) ||
-        !Context.hasSameType(Member->getType(), Expected) ||
-        !Context.hasSameType(Binding->getType(), Expected) ||
-        RecordBindingFields.count(Binding) ||
-        type(FieldType, Field->getLocation()).empty())
+    unsigned Index = 0;
+    for (const auto *Field : Record->fields()) {
+      chargeExpansion(1, D->getLocation());
+      if (Index >= D->bindings().size())
+        return false;
+      const auto *Binding = D->bindings()[Index++];
+      const auto FieldType = Field->getType();
+      const bool Scalar = FieldType->isIntegralOrEnumerationType() ||
+          FieldType->isRealFloatingType() || FieldType->isNullPtrType();
+      const bool ObjectPointer = FieldType->isPointerType() &&
+          !FieldType->getPointeeType()->isFunctionType();
+      if (!S.owns(Sources, Field->getLocation()) || Field->isInvalidDecl() ||
+          Field->getAccess() != AS_public || Field->isBitField() ||
+          Field->isMutable() || Field->hasAttrs() ||
+          FieldType.isVolatileQualified() || FieldType.isRestrictQualified() ||
+          FieldType.getAddressSpace() != LangAS::Default ||
+          (!Scalar && !ObjectPointer) || !BindingShape(Binding))
+        return false;
+      const auto *Member = dyn_cast_or_null<MemberExpr>(Binding->getBinding());
+      const auto *Base = Member ? dyn_cast<DeclRefExpr>(Member->getBase()) : nullptr;
+      auto Expected = Object.isConstQualified() ? FieldType.withConst() : FieldType;
+      if (!Member || Member->isArrow() || !Member->isLValue() ||
+          Member->getMemberDecl() != Field || !Base || !Base->isLValue() ||
+          Base->getDecl() != D || !Context.hasSameType(Base->getType(), Object) ||
+          !Context.hasSameType(Member->getType(), Expected) ||
+          !Context.hasSameType(Binding->getType(), Expected) ||
+          type(FieldType, Field->getLocation()).empty())
+        return false;
+      Checked.Bindings.emplace_back(Binding, Field);
+    }
+    if (Index != D->bindings().size())
       return false;
-    Checked.Bindings.emplace_back(Binding, Field);
   }
-  if (Index != D->bindings().size())
-    return false;
   // Shape publication precedes initializer traversal only so that an exact MTE
   // can identify its extending declaration. Lowering requires source completion.
   for (const auto &[Binding, Field] : Checked.Bindings)
-    RecordBindingFields.emplace(Binding, Field);
-  RecordDecompositions.emplace(D->getCanonicalDecl(), std::move(Checked));
+    DecompositionBindings.emplace(Binding, Field);
+  for (const auto &Copy : Copies) {
+    DecompositionArrayCopies.emplace(Copy.Loop, Copy);
+    DecompositionArrayNodes.emplace(Copy.Loop->getCommonExpr(), Copy.Loop);
+    DecompositionArrayNodes.emplace(Copy.Index, Copy.Loop);
+  }
+  Decompositions.emplace(D->getCanonicalDecl(), std::move(Checked));
   return true;
 }
-const RecordDecomposition *Adapter::recordDecomposition(const VarDecl *D) const {
+const LocalDecomposition *Adapter::decomposition(const VarDecl *D) const {
   if (!S.coreV2() || !D)
     return nullptr;
-  auto Found = RecordDecompositions.find(D->getCanonicalDecl());
-  return Found == RecordDecompositions.end() ? nullptr : &Found->second;
+  auto Found = Decompositions.find(D->getCanonicalDecl());
+  return Found == Decompositions.end() ? nullptr : &Found->second;
+}
+const Expr *Adapter::decompositionBinding(const BindingDecl *Binding) const {
+  return S.coreV2() && Binding &&
+                 decomposition(dyn_cast<VarDecl>(Binding->getDecomposedDecl())) &&
+                 DecompositionBindings.count(Binding)
+             ? Binding->getBinding() : nullptr;
 }
 const FieldDecl *Adapter::recordBindingField(const BindingDecl *Binding) const {
-  if (!S.coreV2() || !Binding ||
-      !recordDecomposition(dyn_cast<VarDecl>(Binding->getDecomposedDecl())))
+  auto Found = DecompositionBindings.find(Binding);
+  return decompositionBinding(Binding) && Found != DecompositionBindings.end()
+             ? Found->second : nullptr;
+}
+const DecompositionArrayCopy *Adapter::decompositionArrayCopy(const Stmt *Node) const {
+  if (!S.coreV2() || !Node)
     return nullptr;
-  auto Found = RecordBindingFields.find(Binding);
-  return Found == RecordBindingFields.end() ? nullptr : Found->second;
+  const auto *Loop = dyn_cast<ArrayInitLoopExpr>(Node);
+  if (!Loop) {
+    const auto *E = dyn_cast<Expr>(Node);
+    auto Found = DecompositionArrayNodes.find(E);
+    if (Found == DecompositionArrayNodes.end())
+      return nullptr;
+    Loop = Found->second;
+  }
+  auto Found = DecompositionArrayCopies.find(Loop);
+  return Found == DecompositionArrayCopies.end() ? nullptr : &Found->second;
 }
 bool Adapter::registerRangeFor(const CXXForRangeStmt *Loop) {
   const auto Parts = rangeForComponents(Loop);
@@ -1292,7 +1456,7 @@ const VarDecl *Adapter::temporaryOwner(const MaterializeTemporaryExpr *Temporary
   if (!temporaryShape(Temporary, Context) || Temporary->getStorageDuration() != SD_Automatic)
     return nullptr;
   const auto *Owner = dyn_cast_or_null<VarDecl>(Temporary->getExtendingDecl());
-  if (recordDecomposition(Owner)) {
+  if (decomposition(Owner)) {
     const auto *Descriptor = Temporary->getLifetimeExtendedTemporaryDecl();
     if (Descriptor && Descriptor->getTemporaryExpr() == Temporary->getSubExpr() &&
         Descriptor->getExtendingDecl() == Owner &&
@@ -4943,6 +5107,22 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::set<const CallExpr *> ApprovedErasedUtilityCalls;
   std::map<const OpaqueValueExpr *, const Expr *> ArraySources;
   unsigned ArrayIndexDepth = 0;
+  const DecompositionDecl *CurrentDecomposition = nullptr;
+  std::vector<const ArrayInitLoopExpr *> DecompositionArrayLoops;
+  bool decompositionArrayNode(const Stmt *Node) const {
+    const auto *Copy = A.decompositionArrayCopy(Node);
+    if (!Copy || Copy->Owner != CurrentDecomposition)
+      return false;
+    if (Node == Copy->Loop)
+      return Copy->Parent ? !DecompositionArrayLoops.empty() &&
+                                DecompositionArrayLoops.back() == Copy->Parent
+                          : DecompositionArrayLoops.empty();
+    return !DecompositionArrayLoops.empty() &&
+           DecompositionArrayLoops.back() == Copy->Loop &&
+           (Node == Copy->Index ||
+            (Node == Copy->Loop->getCommonExpr() &&
+             ArraySources.count(Copy->Loop->getCommonExpr())));
+  }
   const CXXMethodDecl *CurrentMethod = nullptr;
   const FunctionDecl *CurrentFunction = nullptr;
   const DeclaratorDecl *CurrentDeclarator = nullptr;
@@ -7395,7 +7575,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     };
     if (const auto *Variable = dyn_cast<VarDecl>(D); Variable && !isa<ParmVarDecl>(D))
       Register(Variable->getInit());
-    if (const auto *Binding = dyn_cast<BindingDecl>(D); A.recordBindingField(Binding))
+    if (const auto *Binding = dyn_cast<BindingDecl>(D); A.decompositionBinding(Binding))
       Register(Binding->getBinding());
     if (const auto *Constant = dyn_cast<EnumConstantDecl>(D))
       Register(Constant->getInitExpr());
@@ -7690,10 +7870,13 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       };
       auto ValueSource = [&](const ValueDecl *Declaration) {
         if (const auto *Binding = dyn_cast<BindingDecl>(Declaration))
-          if (const auto *Field = A.recordBindingField(Binding)) {
+          if (A.decompositionBinding(Binding)) {
             const auto *Owner = cast<DecompositionDecl>(Binding->getDecomposedDecl());
             operationTypeDependency(Owner->getTypeSourceInfo());
-            operationTypeDependency(Field->getTypeSourceInfo());
+            if (const auto *Field = A.recordBindingField(Binding))
+              operationTypeDependency(Field->getTypeSourceInfo());
+            else
+              collectOperationTypeSource(Owner->getType(), Owner->getLocation(), true);
             Dependency(Owner->getInit());
             Dependency(Binding->getBinding());
           }
@@ -7941,22 +8124,25 @@ public:
   bool TraverseDecompositionDecl(DecompositionDecl *D) {
     if (!A.S.coreV2() || !owned(D))
       return RecursiveASTVisitor<Allowlist>::TraverseDecompositionDecl(D);
-    if (!A.registerRecordDecomposition(D)) {
+    if (!A.registerDecomposition(D)) {
       A.reject(D->getLocation(), "structured binding",
-               "Only automatic direct-member bindings of source-owned trivial "
-               "flat aggregates with supported scalar or object-pointer fields are admitted.");
+               "Expected automatic direct-member bindings of source-owned trivial flat "
+               "aggregates or bounded native arrays with admitted element operations.");
       return true;
     }
+    auto *Previous = CurrentDecomposition;
+    CurrentDecomposition = D;
+    auto Restore = llvm::make_scope_exit([&] { CurrentDecomposition = Previous; });
     const bool Result = RecursiveASTVisitor<Allowlist>::TraverseDecompositionDecl(D);
     if (Result && A.S.Diagnostics.empty())
-      A.RecordDecompositions.at(D->getCanonicalDecl()).Complete = true;
+      A.Decompositions.at(D->getCanonicalDecl()).Complete = true;
     return Result;
   }
   bool TraverseBindingDecl(BindingDecl *D) {
-    if (!A.S.coreV2() || !A.recordBindingField(D))
+    if (!A.S.coreV2() || !A.decompositionBinding(D))
       return RecursiveASTVisitor<Allowlist>::TraverseBindingDecl(D);
     // RAV skips these semantic expressions unless every implicit node is enabled.
-    // Inspect only the exact member projections authenticated with their owner.
+    // Inspect only the exact projections authenticated with their owner.
     A.type(D->getType(), D->getLocation());
     return WalkUpFromBindingDecl(D) && TraverseStmt(D->getBinding());
   }
@@ -10815,9 +11001,9 @@ public:
     if (!A.S.coreV2() || !A.S.owns(A.Sources, Reference->getLocation()))
       return true;
     if (const auto *Binding = dyn_cast<BindingDecl>(Reference->getDecl());
-        Binding && !A.recordBindingField(Binding)) {
+        Binding && !A.decompositionBinding(Binding)) {
       A.reject(Reference->getLocation(), "structured binding reference",
-               "A binding reference requires its checked direct-member owner.");
+               "A binding reference requires its checked local decomposition owner.");
       return true;
     }
     if (auto *Variable = dyn_cast<VarDecl>(Reference->getDecl());
@@ -12413,19 +12599,26 @@ public:
     return TraverseStmt(Default->getExpr());
   }
   bool TraverseArrayInitLoopExpr(ArrayInitLoopExpr *Loop) {
+    const auto *Copy = A.decompositionArrayCopy(Loop);
+    const bool DecompositionCopy = Copy && decompositionArrayNode(Loop);
+    const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(CurrentMethod);
+    const bool MemberCopy = !Copy && defaultedCopyOrMoveConstructor(Constructor);
+    auto SavedOwner = ImplicitInitializerOwner;
+    if (DecompositionCopy)
+      ImplicitInitializerOwner = Copy->Owner->getLocation();
+    auto RestoreOwner = llvm::make_scope_exit([&] { ImplicitInitializerOwner = SavedOwner; });
     // Use synchronous traversal: RAV's queued traversal would inspect children
-    // after the binding scope had ended. Still run generic expression checks.
+    // after the binding scope had ended. Exact loop permission precedes WalkUp.
     if (!WalkUpFromArrayInitLoopExpr(Loop))
       return false;
     auto L = ImplicitInitializerOwner;
     const auto *Array = A.Context.getAsConstantArrayType(Loop->getType());
     const auto *Common = Loop->getCommonExpr();
     const auto *Source = Common ? Common->getSourceExpr() : nullptr;
-    if (!A.S.coreV2() || !L.isValid() ||
-        !defaultedCopyOrMoveConstructor(dyn_cast_or_null<CXXConstructorDecl>(CurrentMethod)) ||
+    if (!A.S.coreV2() || !L.isValid() || (!DecompositionCopy && !MemberCopy) ||
         !Array || !Source || !Source->isGLValue() ||
         Source->getValueKind() != Common->getValueKind() ||
-        (cast<CXXConstructorDecl>(CurrentMethod)->isCopyConstructor() && !Source->isLValue()) ||
+        (MemberCopy && Constructor->isCopyConstructor() && !Source->isLValue()) ||
         !A.Context.hasSameUnqualifiedType(Source->getType(), Loop->getType()) ||
         !A.Context.hasSameType(Source->getType(), Common->getType()) ||
         !Loop->getSubExpr() ||
@@ -12434,7 +12627,8 @@ public:
         !Array->getSize().getLimitedValue(65537) ||
         Array->getSize().getLimitedValue(65537) > 65536 ||
         A.storageUnits(Loop->getType()) > 200000 || ArraySources.count(Common)) {
-      A.reject(L, "generated array initialization", "Expected bounded semantic member-array copying or moving.");
+      A.reject(L, "generated array initialization",
+               "Expected bounded semantic member-array or local decomposition copying or moving.");
       return true;
     }
     A.chargeExpansion(1, L);
@@ -12444,6 +12638,12 @@ public:
       return false;
     ArraySources.emplace(Common, Source);
     auto RestoreSource = llvm::make_scope_exit([&] { ArraySources.erase(Common); });
+    if (DecompositionCopy)
+      DecompositionArrayLoops.push_back(Loop);
+    auto RestoreLoop = llvm::make_scope_exit([&] {
+      if (DecompositionCopy)
+        DecompositionArrayLoops.pop_back();
+    });
     if (!TraverseStmt(const_cast<OpaqueValueExpr *>(Common)))
       return false;
     ++ArrayIndexDepth;
@@ -12469,7 +12669,7 @@ public:
              NamespaceAliasDecl, UsingDirectiveDecl, UsingDecl,
              FunctionTemplateDecl, ClassTemplateDecl, TypeAliasTemplateDecl, VarTemplateDecl>(D) ||
          D->getKind() == Decl::UsingShadow ||
-         A.recordBindingField(dyn_cast<BindingDecl>(D)) ||
+         A.decompositionBinding(dyn_cast<BindingDecl>(D)) ||
          (isa<AccessSpecDecl>(D) && D->getDeclContext()->isRecord()));
     if (!ExtendedDeclaration &&
         !isa<NamespaceDecl, LinkageSpecDecl, FunctionDecl, VarDecl,
@@ -13397,7 +13597,7 @@ public:
     }
     if (A.S.coreV2() && D->getType()->isReferenceType() && D->getInit())
       checkBinding(D->getInit(), HasDefault,
-                   (D->getKind() == Decl::Var || A.recordDecomposition(D)) &&
+                   (D->getKind() == Decl::Var || A.decomposition(D)) &&
                            D->isLocalVarDecl() && D->hasLocalStorage()
                        ? D->getCanonicalDecl() : nullptr);
     if (A.S.coreV2() && !D->isLocalVarDeclOrParm() &&
@@ -13987,9 +14187,11 @@ public:
     const auto *Opaque = dyn_cast<OpaqueValueExpr>(S);
     const bool GeneratedArrayNode = A.S.coreV2() &&
         ImplicitInitializerOwner.isValid() &&
-        defaultedCopyOrMoveConstructor(dyn_cast_or_null<CXXConstructorDecl>(CurrentMethod)) &&
-        (isa<ArrayInitLoopExpr>(S) || (Opaque && ArraySources.count(Opaque)) ||
-         (isa<ArrayInitIndexExpr>(S) && ArrayIndexDepth));
+        (decompositionArrayNode(S) ||
+         (!A.decompositionArrayCopy(S) &&
+          defaultedCopyOrMoveConstructor(dyn_cast_or_null<CXXConstructorDecl>(CurrentMethod)) &&
+          (isa<ArrayInitLoopExpr>(S) || (Opaque && ArraySources.count(Opaque)) ||
+           (isa<ArrayInitIndexExpr>(S) && ArrayIndexDepth))));
     if (!GeneratedArrayNode &&
         !((A.S.math() || A.S.coreV2()) && isa<FloatingLiteral>(S)) &&
         !(A.S.coreV2() &&

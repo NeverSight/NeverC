@@ -2618,12 +2618,484 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2NativeArrayStructuredBindingsPreserveCopiesAliasesAndCV) {
+  const auto Source = tmpFile("array-structured-binding-scalar-aliases.cpp");
+  const auto Output = tmpFile("array-structured-binding-scalar-aliases.nc");
+  writeFile(Source, R"cpp(using Pair = int[2];
+using Grid = int[2][3];
+using Pointers = int *[2];
+int selections;
+Pair &select_pair(Pair &value) { ++selections; return value; }
+const Pair &select_constant(const Pair &value) { ++selections; return value; }
+Grid &select_grid(Grid &value) { ++selections; return value; }
+Pointers &select_pointers(Pointers &value) { ++selections; return value; }
+int next(int &value) { return ++value; }
+int main() {
+  Pair original{3, 5};
+  auto [first, second] = select_pair(original); // owner-once
+  static_assert(__is_same(decltype(first), int));
+  static_assert(__is_same(decltype((first)), int &));
+  if (selections != 1 || first != 3 || second != 5 ||
+      &first == &original[0] || &second == &original[1]) return 1;
+  first = 7;
+  original[1] = 11;
+  if (first != 7 || second != 5 || original[0] != 3) return 2;
+  auto [parenthesized_first, parenthesized_second](select_pair(original)); // owner-once
+  auto [braced_first, braced_second]{select_pair(original)}; // owner-once
+  if (selections != 3 || parenthesized_first != 3 || parenthesized_second != 11 ||
+      braced_first != 3 || braced_second != 11) return 3;
+  auto &[alias, other_alias] = select_pair(original); // owner-once
+  const auto &[read, other_read] = select_pair(original); // owner-once
+  auto &&[lvalue, other_lvalue] = select_pair(original); // owner-once
+  auto &&[xvalue, other_xvalue] = static_cast<Pair &&>(select_pair(original)); // owner-once
+  static_assert(__is_same(decltype(read), const int));
+  static_assert(__is_same(decltype((xvalue)), int &));
+  if (selections != 7 || &alias != &original[0] || &other_alias != &original[1] ||
+      &read != &alias || &other_read != &other_alias || &lvalue != &alias ||
+      &other_lvalue != &other_alias || &xvalue != &alias || &other_xvalue != &other_alias) return 4;
+  alias = 13;
+  other_xvalue = 17;
+  if (read != 13 || other_lvalue != 17 || first != 7 || braced_first != 3) return 5;
+  const Pair constant{19, 23};
+  auto [constant_copy, constant_other] = select_constant(constant); // owner-once
+  static_assert(__is_same(decltype(constant_copy), const int));
+  if (constant[0] != 19 || constant_copy != 19 || constant_other != 23 ||
+      &constant_copy == &constant[0] || &constant_other == &constant[1] || selections != 8) return 6;
+  int counter = 0;
+  auto [direct_first, direct_second] = Pair{next(counter), next(counter)};
+  if (counter != 2 || direct_first != 1 || direct_second != 2) return 7;
+  const auto [constant_direct, constant_direct_other] = Pair{59, 61};
+  static_assert(__is_same(decltype(constant_direct), const int));
+  static_assert(__is_same(decltype((constant_direct_other)), const int &));
+  if (constant_direct != 59 || constant_direct_other != 61) return 13;
+  int a = 31, b = 37;
+  Pointers pointers{&a, &b};
+  auto [pointer_copy, pointer_other] = select_pointers(pointers); // owner-once
+  const auto &[constant_pointer, constant_other_pointer] = select_pointers(pointers); // owner-once
+  static_assert(__is_same(decltype(constant_pointer), int *const));
+  static_assert(__is_same(decltype((constant_pointer)), int *const &));
+  *constant_pointer = 41;
+  pointer_copy = &b;
+  if (selections != 10 || pointers[0] != &a || pointer_copy != &b || a != 41 ||
+      pointer_other != &b || &constant_other_pointer != &pointers[1]) return 8;
+  Grid grid{{1, 2, 3}, {4, 5, 6}};
+  auto [row_copy, other_row_copy] = select_grid(grid); // owner-once
+  auto &[row, other_row] = select_grid(grid); // owner-once
+  const auto &[constant_row, constant_other_row] = grid;
+  auto &&[xrow, xother_row] = static_cast<Grid &&>(grid);
+  static_assert(__is_same(decltype(row), int[3]));
+  static_assert(__is_same(decltype((row)), int (&)[3]));
+  static_assert(__is_same(decltype(constant_row), const int[3]));
+  static_assert(__is_same(decltype((constant_row)), const int (&)[3]));
+  static_assert(sizeof(row) == sizeof(int) * 3);
+  static_assert(sizeof(++row[1]) == sizeof(int)); // unevaluated-owner
+  if (selections != 12 || &row != &grid[0] || &other_row != &grid[1] ||
+      &row_copy == &grid[0] || &other_row_copy == &grid[1] ||
+      &xrow != &grid[0] || &xother_row != &grid[1]) return 9;
+  row_copy[0] = 43;
+  other_row[1] = 47;
+  auto &[x, y, z] = row;
+  y = 53;
+  if (grid[0][0] != 1 || grid[0][1] != 53 || constant_row[1] != 53 ||
+      constant_other_row[1] != 47 || other_row_copy[1] != 5 || row_copy[1] != 2 ||
+      &x != &grid[0][0] || &z != &grid[0][2]) return 10;
+  const Grid constant_grid{{7, 8, 9}, {10, 11, 12}};
+  auto [constant_row_copy, other_constant_row_copy] = constant_grid;
+  static_assert(__is_same(decltype(constant_row_copy), const int[3]));
+  if (&constant_row_copy == &constant_grid[0] || &other_constant_row_copy == &constant_grid[1] ||
+      constant_row_copy[2] != 9 || other_constant_row_copy[0] != 10) return 12;
+  static_assert(sizeof(select_grid(grid)) == sizeof(Grid)); // unevaluated-owner
+  return selections == 12 && row_copy[0] == 43 && direct_first == 1 ? 0 : 11;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("array-structured-binding-scalar-aliases" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NativeArrayStructuredBindingsPreserveSelectedRecordOperations) {
+  const auto Source = tmpFile("array-structured-binding-selected-record-operations.cpp");
+  const auto Output = tmpFile("array-structured-binding-selected-record-operations.nc");
+  writeFile(Source, R"cpp(int events[128];
+int used;
+int live;
+int dead;
+int copies;
+int moves;
+int tokens;
+int source_tokens;
+int selections;
+int bad;
+void mark(int value) { events[used++] = value; }
+bool matches(const int *expected, int count) {
+  if (used != count) return false;
+  for (int i = 0; i < count; ++i) if (events[i] != expected[i]) return false;
+  return true;
+}
+void reset() { used = live = dead = copies = moves = tokens = source_tokens = selections = bad = 0; }
+struct Token {
+  int value;
+  Token() : value(9) { ++tokens; mark(90); }
+  ~Token() { --tokens; mark(91); }
+};
+struct SourceToken {
+  SourceToken() { ++source_tokens; mark(80); }
+  ~SourceToken() { --source_tokens; mark(81); }
+};
+struct Element {
+  int value;
+  Element *self;
+  Element(int number) : value(number), self(this) { ++live; mark(100 + value); }
+  Element(Element &other, const Token &token = Token{}) : value(other.value + 10), self(this) {
+    if (token.value != 9 || tokens != 1) ++bad;
+    ++live; ++copies; mark(200 + other.value); ++other.value;
+  }
+  Element(const Element &other, const Token &token = Token{}) : value(other.value + 20), self(this) {
+    if (token.value != 9 || tokens != 1) ++bad;
+    ++live; ++copies; mark(300 + other.value);
+  }
+  Element(Element &&other, const Token &token = Token{}) : value(other.value + 30), self(this) {
+    if (token.value != 9 || tokens != 1) ++bad;
+    ++live; ++moves; mark(400 + other.value); other.value = -other.value;
+  }
+  ~Element() { if (self != this) ++bad; --live; ++dead; mark(500 + value); }
+};
+using Elements = Element[2];
+using Grid = Element[2][2];
+Elements &select_elements(Elements &value, const SourceToken & = SourceToken{}) { // selector: select_elements
+  ++selections; mark(82); return value;
+}
+Grid &select_grid(Grid &value, const SourceToken & = SourceToken{}) { // selector: select_grid
+  ++selections; mark(82); return value;
+}
+int main() {
+  reset();
+  {
+    Elements source{Element(1), Element(2)};
+    used = 0;
+    {
+      auto [first, second]{select_elements(source)}; // selected-source-once: select_elements
+      const int expected[]{80, 82, 90, 201, 91, 90, 202, 91, 81};
+      if (!matches(expected, 9) || selections != 1 || source_tokens || tokens ||
+          copies != 2 || moves || live != 4 || dead || bad) return 1;
+      if (first.value != 11 || second.value != 12 || source[0].value != 2 || source[1].value != 3 ||
+          first.self != &first || second.self != &second || &first == &source[0]) return 2;
+      used = 0;
+    }
+    const int destroyed_copy[]{512, 511};
+    if (!matches(destroyed_copy, 2) || dead != 2 || live != 2 || bad) return 3;
+    used = 0;
+    {
+      auto [first, second](static_cast<Elements &&>(source));
+      const int expected[]{90, 402, 91, 90, 403, 91};
+      if (!matches(expected, 6) || moves != 2 || copies != 2 || live != 4 || tokens ||
+          first.value != 32 || second.value != 33 || source[0].value != -2 || source[1].value != -3 ||
+          first.self != &first || second.self != &second) return 4;
+      used = 0;
+    }
+    const int destroyed_move[]{533, 532};
+    if (!matches(destroyed_move, 2) || live != 2 || dead != 4 || bad) return 5;
+    used = 0;
+    {
+      auto [first, second] = static_cast<const Elements &&>(source);
+      const int expected[]{90, 298, 91, 90, 297, 91};
+      if (!matches(expected, 6) || copies != 4 || moves != 2 || live != 4 || tokens ||
+          first.value != 18 || second.value != 17 || first.self != &first || second.self != &second ||
+          source[0].value != -2 || source[1].value != -3) return 6;
+      used = 0;
+    }
+    const int destroyed_constant[]{517, 518};
+    if (!matches(destroyed_constant, 2) || live != 2 || dead != 6 || bad) return 7;
+    used = 0;
+  }
+  const int destroyed_source[]{497, 498};
+  if (!matches(destroyed_source, 2) || live || dead != 8 || bad || tokens || source_tokens) return 8;
+  reset();
+  {
+    Grid source{{Element(4), Element(5)}, {Element(6), Element(7)}};
+    used = 0;
+    {
+      auto [row, other_row] = select_grid(source); // selected-source-once: select_grid
+      static_assert(__is_same(decltype(row), Element[2]));
+      static_assert(__is_same(decltype((row)), Element (&)[2]));
+      const int expected[]{80, 82, 90, 204, 91, 90, 205, 91, 90, 206, 91, 90, 207, 91, 81};
+      if (!matches(expected, 15) || selections != 1 || copies != 4 || moves || live != 8 ||
+          tokens || source_tokens || row[0].value != 14 || row[1].value != 15 ||
+          other_row[0].value != 16 || other_row[1].value != 17) return 9;
+      for (int i = 0; i < 2; ++i) {
+        if (row[i].self != &row[i] || other_row[i].self != &other_row[i] ||
+            source[0][i].self != &source[0][i] || source[1][i].self != &source[1][i]) return 10;
+      }
+      if (source[0][0].value != 5 || source[0][1].value != 6 ||
+          source[1][0].value != 7 || source[1][1].value != 8) return 11;
+      used = 0;
+    }
+    const int destroyed_rows[]{517, 516, 515, 514};
+    if (!matches(destroyed_rows, 4) || live != 4 || dead != 4 || bad) return 12;
+    used = 0;
+  }
+  const int destroyed_grid[]{508, 507, 506, 505};
+  return matches(destroyed_grid, 4) && !live && dead == 8 && !bad &&
+         !tokens && !source_tokens && copies == 4 && !moves ? 0 : 13;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("array-structured-binding-selected-record-operations" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NativeArrayStructuredBindingsPreservePrvaluesAndLifetimes) {
+  const auto Source = tmpFile("array-structured-binding-prvalues-lifetimes.cpp");
+  const auto Output = tmpFile("array-structured-binding-prvalues-lifetimes.nc");
+  writeFile(Source, R"cpp(int events[128];
+int used;
+int live;
+int made;
+int dead;
+int owners;
+int bad;
+void mark(int value) { events[used++] = value; }
+bool matches(const int *expected, int count) {
+  if (used != count) return false;
+  for (int i = 0; i < count; ++i) if (events[i] != expected[i]) return false;
+  return true;
+}
+void reset() { used = live = made = dead = owners = bad = 0; }
+struct Item {
+  int value;
+  Item *self;
+  Item(int number = 0) : value(number), self(this) { ++live; ++made; mark(100 + value); }
+  Item(const Item &) = delete;
+  Item(Item &&) = delete;
+  ~Item() { if (self != this) ++bad; --live; ++dead; mark(200 + value); }
+};
+using Items = Item[2];
+using Grid = Item[2][2];
+struct Envelope {
+  Items items;
+  int marker;
+  Envelope(int first, int second, int token) : items{Item(first), Item(second)}, marker(token) {
+    ++owners; mark(300 + marker);
+  }
+  ~Envelope() { --owners; mark(400 + marker); }
+};
+int read(const Envelope &value) { return value.items[0].value; }
+const Items &identity(const Items &value) { return value; }
+int early_return() {
+  const auto &[first, second] = Items{Item(1), Item(2)};
+  return first.value + second.value;
+}
+int main() {
+  reset();
+  {
+    auto [first, second] = Items{Item(1), Item(2)};
+    if (live != 2 || made != 2 || dead || first.self != &first || second.self != &second) return 1;
+    used = 0;
+  }
+  const int reversed_pair[]{202, 201};
+  if (!matches(reversed_pair, 2) || live || dead != 2 || bad) return 2;
+  reset();
+  {
+    auto [first, second] = Items{Item(12)};
+    if (first.value != 12 || second.value != 0 || first.self != &first || second.self != &second ||
+        made != 2 || live != 2 || dead) return 24;
+    used = 0;
+  }
+  const int reversed_omitted[]{200, 212};
+  if (!matches(reversed_omitted, 2) || live || dead != 2 || bad) return 25;
+  reset();
+  {
+    auto [row, other_row](Grid{{Item(3), Item(4)}, {Item(5), Item(6)}});
+    static_assert(__is_same(decltype(row), Item[2]));
+    if (made != 4 || live != 4 || dead || row[0].self != &row[0] || row[1].self != &row[1] ||
+        other_row[0].self != &other_row[0] || other_row[1].self != &other_row[1]) return 3;
+    used = 0;
+  }
+  const int reversed_grid[]{206, 205, 204, 203};
+  if (!matches(reversed_grid, 4) || live || dead != 4 || bad) return 4;
+  reset();
+  {
+    const auto &[first, second] = Items{Item(7), Item(8)};
+    auto &&[mutable_first, mutable_second] = Items{Item(9), Item(10)};
+    static_assert(__is_same(decltype(first), const Item));
+    static_assert(__is_same(decltype((mutable_first)), Item &));
+    if (live != 4 || made != 4 || dead || first.self != &first || second.self != &second ||
+        mutable_first.self != &mutable_first || mutable_second.self != &mutable_second) return 5;
+    mutable_first.value = 11;
+    used = 0;
+  }
+  const int reversed_references[]{210, 211, 208, 207};
+  if (!matches(reversed_references, 4) || live || dead != 4 || bad) return 6;
+  reset();
+  {
+    const auto &[first, second] = Envelope{read(Envelope{3, 4, 2}), 5, 1}.items;
+    const int initialized[]{103, 104, 302, 103, 105, 301, 402, 204, 203};
+    if (!matches(initialized, 9) || live != 2 || made != 4 || dead != 2 || owners != 1 ||
+        first.value != 3 || second.value != 5 || first.self != &first || second.self != &second) return 7;
+    used = 0;
+  }
+  const int reversed_envelope[]{401, 205, 203};
+  if (!matches(reversed_envelope, 3) || live || owners || dead != 4 || bad) return 8;
+  reset();
+  {
+    auto &&[first, second] = Grid{{Item(1), Item(2)}, {Item(3), Item(4)}}[1];
+    if (live != 4 || made != 4 || dead || first.self != &first || second.self != &second) return 9;
+    first.value = 5; second.value = 6;
+    used = 0;
+  }
+  const int reversed_complete_array[]{206, 205, 202, 201};
+  if (!matches(reversed_complete_array, 4) || live || dead != 4 || bad) return 10;
+  reset();
+  {
+    const auto &[unused_first, unused_second] = identity(Items{Item(1), Item(2)});
+    // The returned alias does not extend the argument temporary. Do not read it.
+    const int ended_argument[]{101, 102, 202, 201};
+    if (!matches(ended_argument, 4) || live || made != 2 || dead != 2 || bad) return 11;
+  }
+  if (dead != 2 || live || bad) return 12;
+  reset();
+  if (early_return() != 3 || live || made != 2 || dead != 2 || bad) return 13;
+  reset();
+  for (int i = 0; i < 3; ++i) {
+    const auto &[first, second] = Items{Item(1), Item(2)};
+    if (live != 2 || dead != 2 * i || first.value != 1 || second.self != &second) return 14;
+    if (i == 0) continue;
+    if (i == 1) break;
+  }
+  const int loop_events[]{101, 102, 202, 201, 101, 102, 202, 201};
+  if (!matches(loop_events, 8) || live || made != 4 || dead != 4 || bad) return 15;
+  reset();
+  if (const auto &[first, second] = Items{Item(1), Item(2)}; first.value == 1) {
+    if (live != 2 || dead || second.self != &second) return 16;
+  } else return 17;
+  if (live || dead != 2 || made != 2 || bad) return 18;
+  reset();
+  switch (auto &&[selector, payload] = Items{Item(1), Item(2)}; selector.value) {
+  case 1:
+    if (live != 2 || dead || payload.self != &payload) return 19;
+    payload.value = 3;
+    break;
+  default: return 20;
+  }
+  const int switch_events[]{101, 102, 203, 201};
+  if (!matches(switch_events, 4) || live || dead != 2 || bad) return 21;
+  reset();
+  int iteration = 0;
+  for (const auto &[limit, other] = Items{Item(2), Item(3)}; iteration < limit.value; ++iteration) {
+    if (live != 2 || dead || made != 2 || other.self != &other) return 22;
+    continue;
+  }
+  const int for_events[]{102, 103, 203, 202};
+  return matches(for_events, 4) && iteration == 2 && !live && made == 2 &&
+         dead == 2 && !owners && !bad ? 0 : 23;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("array-structured-binding-prvalues-lifetimes" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2NativeArrayStructuredBindingsRetainSourceAndTypeBoundaries) {
+  const struct { const char *Name; const char *Source; const char *Code; const char *Profile; } Cases[] = {
+    {"volatile-reference", R"cpp(void rejected(volatile int(&values)[2]){auto &[first,second]=values;(void)first;(void)second;}
+)cpp", "TR0201", "cpp-core-v2"},
+    {"volatile-value-copy", R"cpp(void rejected(volatile int(&values)[2]){auto [first,second]=values;(void)first;(void)second;}
+)cpp", "TR0201", "cpp-core-v2"},
+    {"variable-length-owner", R"cpp(void rejected(int n){int values[n];auto &[first,second]=values;(void)first;(void)second;}
+)cpp", "TR0202", "cpp-core-v2"},
+    {"unknown-bound-owner", R"cpp(extern int values[];void rejected(){auto &[first,second]=values;(void)first;(void)second;}
+)cpp", "TR0202", "cpp-core-v2"},
+    {"zero-inner-extent", R"cpp(using A=int[2][0];void rejected(A&values){auto &[first,second]=values;(void)first;(void)second;}
+)cpp", "TR0201", "cpp-core-v2"},
+    {"nested-storage-limit", R"cpp(using A=int[2][512][512];void rejected(A&values){auto &[first,second]=values;(void)first;(void)second;}
+)cpp", "TR0201", "cpp-core-v2"},
+    {"long-double-element", R"cpp(void rejected(long double(&values)[2]){auto [first,second]=values;(void)first;(void)second;}
+)cpp", "TR0201", "cpp-core-v2"},
+    {"loop-common-comma-source", R"cpp(int main(){int a[2]{};auto[x,y]=(sizeof(long double),a);return x+y;}
+)cpp", "TR0201", "cpp-core-v2"},
+    {"direct-prvalue-comma-source", R"cpp(using A=int[2];int main(){auto[x,y]=(sizeof(long double),A{1,2});return x+y;}
+)cpp", "TR0201", "cpp-core-v2"},
+    {"array-bound-source", R"cpp(using A=int[(sizeof(long double),2)];int main(){A a{};auto[x,y]=a;return x+y;}
+)cpp", "TR0201", "cpp-core-v2"},
+    {"array-erased-type-argument", R"cpp(template<class T>using A=int[2];int main(){A<long double>a{};auto[x,y]=a;return x+y;}
+)cpp", "TR0201", "cpp-core-v2"},
+    {"copy-default-source", R"cpp(struct R{int n;R(int v):n(v){}R(const R&r,int=(sizeof(long double),0)):n(r.n){}};int main(){R a[2]{{1},{2}};auto[x,y]=a;return x.n+y.n;}
+)cpp", "TR0201", "cpp-core-v2"},
+    {"prvalue-omitted-default-source", R"cpp(struct R{int n;R(int v=(sizeof(long double),0)):n(v){}};using A=R[2];int main(){auto[x,y]=A{};return x.n+y.n;}
+)cpp", "TR0201", "cpp-core-v2"},
+    {"nested-excess-extent", R"cpp(using A=int[2][65537];int main(){A a{};auto&[x,y]=a;return sizeof(x)==sizeof(y);}
+)cpp", "TR0201", "cpp-core-v2"},
+    {"copy-body-source", R"cpp(struct R{int value;R(const R&other):value(other.value){long double hidden=0;}};void rejected(R(&values)[2]){auto [first,second]=values;(void)first;(void)second;}
+)cpp", "TR0201", "cpp-core-v2"},
+    {"destructor-body-source", R"cpp(struct R{int value;~R(){long double hidden=0;}};void rejected(R(&values)[2]){auto [first,second]=values;(void)first;(void)second;}
+)cpp", "TR0201", "cpp-core-v2"},
+    {"source-getter-body", R"cpp(int(&select(int(&values)[2]))[2]{long double hidden=0;return values;}void rejected(int(&values)[2]){auto [first,second]=select(values);(void)first;(void)second;}
+)cpp", "TR0201", "cpp-core-v2"},
+    {"unused-conditional-source", R"cpp(void rejected(int(&values)[2]){auto [first,second]=(false?(sizeof(long double),values):values);(void)first;(void)second;}
+)cpp", "TR0201", "cpp-core-v2"},
+    {"missing-copy-definition", R"cpp(struct R{int value;R(const R&);};void rejected(R(&values)[2]){auto [first,second]=values;(void)first;(void)second;}
+)cpp", "TR0203", "cpp-core-v2"},
+    {"missing-move-definition", R"cpp(struct R{int value;R(const R&)=delete;R(R&&);};void rejected(R(&values)[2]){auto [first,second]=static_cast<R(&&)[2]>(values);(void)first;(void)second;}
+)cpp", "TR0203", "cpp-core-v2"},
+    {"missing-destructor-definition", R"cpp(struct R{int value;~R();};void rejected(R(&values)[2]){auto [first,second]=values;(void)first;(void)second;}
+)cpp", "TR0203", "cpp-core-v2"},
+    {"deleted-copy", R"cpp(struct R{int value;R(const R&)=delete;};void rejected(R(&values)[2]){auto [first,second]=values;(void)first;(void)second;}
+)cpp", "TR0202", "cpp-core-v2"},
+    {"deleted-move", R"cpp(struct R{int value;R(const R&)=default;R(R&&)=delete;};void rejected(R(&values)[2]){auto [first,second]=static_cast<R(&&)[2]>(values);(void)first;(void)second;}
+)cpp", "TR0202", "cpp-core-v2"},
+    {"deleted-destructor", R"cpp(struct R{int value;~R()=delete;};void rejected(R(&values)[2]){auto [first,second]=values;(void)first;(void)second;}
+)cpp", "TR0202", "cpp-core-v2"},
+    {"sdk-array", R"cpp(#include <array>
+void rejected(std::array<int,2>&values){auto &[first,second]=values;(void)first;(void)second;}
+)cpp", "TR0201", "cpp-core-v2"},
+    {"global-owner", R"cpp(int values[2]={1,2};auto [first,second]=values;
+)cpp", "TR0201", "cpp-core-v2"},
+    {"static-owner", R"cpp(void rejected(){int values[2]={1,2};static auto [first,second]=values;(void)first;(void)second;}
+)cpp", "TR0201", "cpp-core-v2"},
+    {"range-for", R"cpp(void rejected(){int values[1][2]={{1,2}};for(auto &[first,second]:values){(void)first;(void)second;}}
+)cpp", "TR0201", "cpp-core-v2"},
+    {"condition-owner", R"cpp(void rejected(int(&values)[2]){if(auto [first,second]=values){(void)first;(void)second;}}
+)cpp", "TR0202", "cpp-core-v2"},
+    {"lambda-array-copy", R"cpp(int rejected(){int values[2]={1,2};auto copied=[values](){return values[0];};return copied();}
+)cpp", "TR0201", "cpp-core-v2"},
+    {"const-copy-write", R"cpp(void rejected(const int(&values)[2]){auto [first,second]=values;first=3;(void)second;}
+)cpp", "TR0202", "cpp-core-v2"},
+    {"core-v1", R"cpp(void rejected(int(&values)[2]){auto [first,second]=values;(void)first;(void)second;}
+)cpp", "TR0201", "cpp-core-v1"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("array-structured-binding-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("array-structured-binding-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(translate(Source, {"--profile", Case.Profile, "-o", Output.string()}), Case.Code);
+    EXPECT_FALSE(fs::exists(Output));
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StructuredBindingRecordRetainsSourceAndTypeBoundaries) {
   const struct { const char *Name; const char *Source; const char *Code; const char *Profile; } Cases[] = {
-    {"native-array-value", R"cpp(void rejected(){int values[2]={1,2};auto [x,y]=values;(void)x;(void)y;}
-)cpp", "TR0201", "cpp-core-v2"},
-    {"native-array-reference", R"cpp(void rejected(int (&values)[2]){auto &[x,y]=values;(void)x;(void)y;}
-)cpp", "TR0201", "cpp-core-v2"},
     {"source-tuple-like", R"cpp(#include <tuple>
 struct R{int first,second;};
 namespace std {template<> struct tuple_size<R>{static constexpr size_t value=2;};template<size_t I> struct tuple_element<I,R>{using type=int;};}
@@ -21983,7 +22455,6 @@ TEST_F(TranslateTest, CoreV2GeneratedCopyKeepsAssignmentAndLifetimeBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
       {"base-copy", "struct B{int n;};struct R:B{int m;R(const R&)=default;};"},
       {"lambda-array-copy", "int f(){int values[2]={1,2};auto capture=[values](){return values[0];};return capture();}"},
-      {"decomposed-array-copy", "int f(){int values[2]={1,2};auto [a,b]=values;return a+b;}"},
       {"copy-expansion", "struct I{int n;I(const I&s):n(s.n){}};struct R{I items[65536];~R()=default;};R f(const R&s){return s;}"},
   };
   for (const auto &[Name, Code] : Cases) {

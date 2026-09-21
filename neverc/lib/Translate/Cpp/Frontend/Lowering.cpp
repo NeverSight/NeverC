@@ -46,6 +46,8 @@ class FunctionLowering {
   struct ArrayIndex {
     uint64_t Value;
     SourceLocation Location;
+    const ArrayInitLoopExpr *Loop;
+    const ArrayInitIndexExpr *Identity;
   };
   std::vector<ArrayIndex> ArrayIndices;
   std::map<std::string, std::vector<std::string>> Edges;
@@ -9356,8 +9358,9 @@ class FunctionLowering {
       return A.literal(llvm::APSInt(llvm::APInt(integerBits(T), *Size),
                                    unsignedInteger(T)), T, L);
     }
-    if (isa<ArrayInitIndexExpr>(E)) {
-      if (!A.S.coreV2() || ArrayIndices.empty())
+    if (const auto *ImplicitIndex = dyn_cast<ArrayInitIndexExpr>(E)) {
+      if (!A.S.coreV2() || ArrayIndices.empty() ||
+          (ArrayIndices.back().Identity && ArrayIndices.back().Identity != ImplicitIndex))
         reject(L, "array copy index", "No semantic element-copy index is active.");
       const auto &Index = ArrayIndices.back();
       return A.literal(llvm::APSInt(llvm::APInt(integerBits(T), Index.Value),
@@ -10967,13 +10970,21 @@ class FunctionLowering {
       const auto *Array = A.Context.getAsConstantArrayType(Loop->getType());
       const auto *Common = Loop->getCommonExpr();
       const auto *Source = Common ? Common->getSourceExpr() : nullptr;
-      if (!defaultedCopyOrMoveConstructor(dyn_cast_or_null<CXXConstructorDecl>(Function)) ||
+      const auto *Copy = A.decompositionArrayCopy(Loop);
+      const auto *Constructor = dyn_cast_or_null<CXXConstructorDecl>(Function);
+      const bool DecompositionCopy = Copy && ActiveAutomaticInitializer &&
+          ActiveAutomaticInitializer->Variable == Copy->Owner->getCanonicalDecl() &&
+          A.decomposition(Copy->Owner) && A.decomposition(Copy->Owner)->Complete &&
+          (Copy->Parent ? !ArrayIndices.empty() && ArrayIndices.back().Loop == Copy->Parent
+                        : ArrayIndices.empty());
+      const bool MemberCopy = !Copy && defaultedCopyOrMoveConstructor(Constructor);
+      if ((!DecompositionCopy && !MemberCopy) ||
           !Array || !Source || !Source->isGLValue() ||
           Source->getValueKind() != Common->getValueKind() ||
-          (llvm::cast<CXXConstructorDecl>(Function)->isCopyConstructor() && !Source->isLValue()) ||
+          (MemberCopy && Constructor->isCopyConstructor() && !Source->isLValue()) ||
           ArraySources.count(Common) ||
           Place.getString("type") != type(Loop->getType(), L))
-        reject(L, "array initialization", "Expected admitted semantic member-array copying or moving.");
+        reject(L, "array initialization", "Expected checked member-array or local decomposition copying or moving.");
       auto Count = Array->getSize().getLimitedValue(65537);
       if (!Count || Count > 65536 || A.storageUnits(Loop->getType()) > 200000)
         reject(L, "array initialization", "Array initialization exceeds the storage limit.");
@@ -10984,7 +10995,7 @@ class FunctionLowering {
       auto RestoreSource = llvm::make_scope_exit([&] { ArraySources.erase(Common); });
       for (uint64_t N = 0; N < Count; ++N) {
         A.chargeExpansion(1, L);
-        ArrayIndices.push_back({N, L});
+        ArrayIndices.push_back({N, L, Loop, Copy ? Copy->Index : nullptr});
         auto RestoreIndex = llvm::make_scope_exit([&] { ArrayIndices.pop_back(); });
         // Copying an entire array gives each element's constructor defaults
         // their own temporary cleanup boundary, while the array owns elements.
@@ -11175,7 +11186,7 @@ class FunctionLowering {
   }
   void declaration(const VarDecl *V) {
     auto L = V->getLocation();
-    const auto *Decomposition = A.recordDecomposition(V);
+    const auto *Decomposition = A.decomposition(V);
     if (isa<DecompositionDecl>(V) && (!Decomposition || !Decomposition->Complete))
       reject(L, "structured binding", "The complete owner and binding source must be checked.");
     if (A.S.coreV2() && approvedFunctionalStoredMemberPointer(
@@ -11199,7 +11210,7 @@ class FunctionLowering {
       const bool RangeReference = Range &&
           Range->Range->getCanonicalDecl() == V->getCanonicalDecl();
       if (A.S.coreV2() &&
-          (V->getKind() == Decl::Var || A.recordDecomposition(V)) &&
+          (V->getKind() == Decl::Var || A.decomposition(V)) &&
           (!V->isImplicit() || RangeReference) &&
           V->isLocalVarDecl() && V->hasLocalStorage() &&
           (V->getType()->isReferenceType() || aggregateValue(V->getType()))) {
@@ -11224,9 +11235,9 @@ class FunctionLowering {
         for (const auto &Entry : Decomposition->Bindings) {
           const auto *Binding = Entry.first;
           const auto Location = Binding->getLocation();
-          // Each name aliases its initialized owner's field. The declared cv
-          // type determines the pointer carrier, even though field storage is
-          // unqualified; no second field value or lifetime is introduced.
+          // Each name aliases its initialized owner's subobject. The declared cv
+          // type determines the pointer carrier, even though object storage is
+          // unqualified; no second subobject value or lifetime is introduced.
           auto Pointer = snapshot(address(lvalue(Binding->getBinding()),
                                           Binding->getType(), Location), Location);
           Storage.insert_or_assign(Binding->getCanonicalDecl(),

@@ -4277,13 +4277,55 @@ variable of `if`, `while`, `for` or `switch` is rejected as outside C++17, even
 when embedded Clang would accept it with an extension warning. This restriction
 does not reject a valid init-statement followed by a separate condition.
 
-Array and tuple-like decomposition, including `std::pair`, `std::tuple`,
-`std::array` and user `tuple_size`/`get` protocols, remain unsupported. So do
+Native fixed arrays follow the separate [array contract](#local-array-structured-bindings).
+Tuple-like decomposition, including `std::pair`, `std::tuple`, `std::array` and
+user `tuple_size`/`get` protocols, remains unsupported. So do
 unions, bases, private/protected fields, reference/mutable/bit-field members,
 volatile or nontrivial records, static/thread-local/global decomposition and
 structured bindings in a range-for declaration. Ordinary supported bindings
 inside a loop body keep their block scope. Other profiles retain their existing
 restrictions; this increment adds no protocol operation or C23 source feature.
+
+## Local array structured bindings
+
+Core v2 admits automatic local C++17 structured bindings of native fixed arrays,
+including multidimensional arrays. The binding count equals the outer extent;
+for `T[2][3]`, each of the two bindings denotes a whole `T[3]` row. The existing
+complete-array type, qualification, extent and expansion limits apply to every
+dimension and element, including unused bindings.
+
+`auto [a, b] = source` initializes one hidden array. Lvalue and xvalue sources
+use the selected element copy or move operations in increasing index order.
+These operations retain their existing source and lifetime checks, including
+supported nontrivial source-record constructors, default arguments and
+destructors. A prvalue array initializes the destination directly without an
+extra copy or move. Equal, parenthesized and braced declaration initializers
+retain their checked written source and selected initialization semantics.
+The source expression runs once, including for multidimensional copies.
+
+`auto&`, `const auto&` and `auto&&` bind to the original elements or rows, with
+ordinary reference collapsing and preserved cv qualification. Binding names
+remain lvalues. Value bindings refer to the independent hidden copy; pointer
+elements keep ordinary shallow-copy behavior. Each projection uses the exact
+hidden owner and corresponding constant index, retaining array extent and
+element type sources in queries and runtime operations.
+
+Default-argument temporaries for an element's copy or move constructor are
+cleaned up at the end of that element's initialization. Temporaries belonging
+to the source expression retain its outer full-expression lifetime. The whole
+hidden array owns cleanup once, in reverse element order across dimensions;
+individual binding names add no cleanup. A reference decomposition extends an
+array temporary or the complete object containing an array subobject only when
+Clang identifies that exact declaration as the extending owner. Ordinary aliases
+and references returned through calls do not create an additional extension.
+
+Blocks, C++17 `if`/`switch` init-statements and ordinary `for` initialization
+follow the same scope rules as [record bindings](#local-record-structured-bindings).
+Static/thread-local/namespace declarations, range-for declarations and
+structured condition variables remain excluded, as do tuple-like decomposition,
+variable or unknown extents, zero-length arrays, unsupported qualifiers or
+element operations, and exception unwinding. This feature uses existing array,
+reference and cleanup operations without changing the protocol or C23 frontend.
 
 ## Range-based for
 

@@ -46,11 +46,21 @@ for automatic source-owned trivial standard-layout aggregates with supported
 non-volatile scalar or object-pointer direct public fields. Value bindings copy
 or directly construct one hidden object; `&`, `const&` and `&&` forms alias the
 selected storage with its original qualification. Initialization occurs once,
-and exact temporary owners retain their C++17 scope lifetime. Array/tuple-like
+and exact temporary owners retain their C++17 scope lifetime. Tuple-like
 bindings, reference/mutable/bit-field members, bases, nontrivial or volatile
 records, static/global storage and range declarations remain excluded. Legal
 C++17 `if`/`switch` init-statements and ordinary `for` initialization remain
 available; decomposition condition variables do not.
+
+[Native fixed-array structured bindings](../docs/cpp-core-v2.md#local-array-structured-bindings)
+use the same automatic local owners and aliases, including multidimensional
+row bindings. Value forms copy or move elements through their selected supported
+operations, including existing nontrivial source-record operations; prvalue
+arrays directly initialize the hidden destination. Sources execute once,
+copy/move default-argument temporaries are cleaned up per element, and an owned
+array is destroyed once in reverse element order. Reference forms preserve
+array qualification and exact temporary extension. Existing extent, type,
+source and expansion limits remain in force.
 
 [Function type metadata](../docs/cpp-core-v2.md#bare-function-type-metadata),
 including direct lvalue/rvalue references, can pass through core v2 templates,

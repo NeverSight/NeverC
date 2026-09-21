@@ -295,12 +295,23 @@ trivial standard-layout aggregates whose direct public fields are supported non-
 scalars or object pointers. `auto` creates a hidden value object; `auto&`,
 `const auto&` and `auto&&` preserve aliases and field qualification. The
 initializer runs once, and a reference decomposition extends a temporary only
-when its exact hidden owner qualifies for C++17 lifetime extension. Array and
-tuple-like decomposition, reference/mutable/bit-field members, bases, nontrivial
+when its exact hidden owner qualifies for C++17 lifetime extension. Tuple-like
+decomposition, reference/mutable/bit-field members, bases, nontrivial
 records, static/global storage and range declarations remain excluded. C++17
 `if`/`switch` init-statements and ordinary `for` initialization are allowed;
 structured bindings used as condition variables remain rejected.
-[Contract](../utils/translate-frontends/docs/cpp-core-v2.md#local-record-structured-bindings).
+[Record contract](../utils/translate-frontends/docs/cpp-core-v2.md#local-record-structured-bindings).
+
+Native fixed arrays also support automatic local structured bindings, including
+multidimensional arrays. Value forms initialize one independent hidden array;
+reference forms alias the original elements or rows. The selected element
+copy/move operations, per-element argument cleanup and reverse destruction
+retain their existing semantics. A prvalue array initializes its destination
+directly, and exact temporary owners retain their scope lifetime. The source
+expression executes once. Tuple-like, variable/unknown/zero-length arrays,
+unsupported element operations and the excluded declaration positions remain
+outside this contract.
+[Array contract](../utils/translate-frontends/docs/cpp-core-v2.md#local-array-structured-bindings).
 
 Core v2 supports C++17 range-based `for` over supported fixed arrays and source-defined ranges with resolved member or ADL `begin/end` calls. Value/reference loop variables, record iterators and different sentinel types preserve ordinary call and lifetime rules. Range initialization and `begin/end` run once; iteration objects are destroyed before increment or exit, including `continue`, `break` and `return`. Other class-template forms, standard headers, STL containers, structured bindings in the range declaration and C++20 range initializers remain outside this increment. Native validation requires CI from the implementing revision.
 

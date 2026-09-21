@@ -21,6 +21,8 @@ namespace clang {
 class APValue;
 class CallExpr;
 class ArrayTypeTraitExpr;
+class ArrayInitLoopExpr;
+class ArrayInitIndexExpr;
 class CastExpr;
 class CXXConstructExpr;
 class CXXStdInitializerListExpr;
@@ -1222,10 +1224,16 @@ struct ArrayNewInfo {
 };
 bool omittedDefaultConstruction(const clang::Expr *Init, clang::QualType Element,
                                 clang::ASTContext &Context);
-struct RecordDecomposition {
+struct LocalDecomposition {
+  // Native-array bindings have no FieldDecl; their exact projection is checked.
   std::vector<std::pair<const clang::BindingDecl *, const clang::FieldDecl *>>
       Bindings;
   bool Complete = false;
+};
+struct DecompositionArrayCopy {
+  const clang::DecompositionDecl *Owner;
+  const clang::ArrayInitLoopExpr *Loop, *Parent;
+  const clang::ArrayInitIndexExpr *Index;
 };
 class Adapter {
 public:
@@ -1279,8 +1287,10 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredFunctionalReferences;
   std::map<const clang::CXXRecordDecl *, CheckedEmptyBase> EmptyBases;
   std::map<const clang::VarDecl *, const clang::CXXForRangeStmt *> RangeDeclarations;
-  std::map<const clang::VarDecl *, RecordDecomposition> RecordDecompositions;
-  std::map<const clang::BindingDecl *, const clang::FieldDecl *> RecordBindingFields;
+  std::map<const clang::VarDecl *, LocalDecomposition> Decompositions;
+  std::map<const clang::BindingDecl *, const clang::FieldDecl *> DecompositionBindings;
+  std::map<const clang::ArrayInitLoopExpr *, DecompositionArrayCopy> DecompositionArrayCopies;
+  std::map<const clang::Expr *, const clang::ArrayInitLoopExpr *> DecompositionArrayNodes;
   std::size_t ExpandedNodes = 0;
   Adapter(State &S, clang::ASTContext &C)
       : S(S), Context(C), Sources(C.getSourceManager()) {}
@@ -1381,9 +1391,11 @@ public:
   json::Object zero(clang::QualType T, clang::SourceLocation L);
   json::Object constant(const clang::APValue &V, clang::QualType T,
                         clang::SourceLocation L);
-  bool registerRecordDecomposition(const clang::DecompositionDecl *Declaration);
-  const RecordDecomposition *
-  recordDecomposition(const clang::VarDecl *Declaration) const;
+  bool registerDecomposition(const clang::DecompositionDecl *Declaration);
+  const LocalDecomposition *
+  decomposition(const clang::VarDecl *Declaration) const;
+  const clang::Expr *decompositionBinding(const clang::BindingDecl *Binding) const;
+  const DecompositionArrayCopy *decompositionArrayCopy(const clang::Stmt *Node) const;
   const clang::FieldDecl *
   recordBindingField(const clang::BindingDecl *Binding) const;
   bool registerRangeFor(const clang::CXXForRangeStmt *Loop);
