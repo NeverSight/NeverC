@@ -8441,7 +8441,9 @@ class FunctionLowering {
         auto Left = dereference(std::move(LeftAddress), L);
         auto Right = dereference(std::move(RightAddress), L);
         if (Pair->First->getType()->isReferenceType() ||
-            Pair->Second->getType()->isReferenceType()) {
+            Pair->Second->getType()->isReferenceType() ||
+            !A.Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
+                                             Call->getArg(1)->getType())) {
           auto SourcePair = approvedUtilityPairRecord(
               A.S, A.Sources,
               Call->getArg(1)->getType()->getAsCXXRecordDecl(), A.Context);
@@ -10281,8 +10283,12 @@ class FunctionLowering {
           const auto *Field = I ? Pair->Second : Pair->First;
           if (Field->getType()->isReferenceType())
             assign(Member(Field), bind(C->getArg(I), Field->getType()), L);
-          else
+          else if (recordValue(Field->getType()))
             initialize(Member(Field), C->getArg(I), L);
+          else
+            assign(Member(Field),
+                   cast(expression(C->getArg(I)), type(Field->getType(), L), L),
+                   L);
         }
         return;
       case UtilityPairConstruction::CopyOrMove: {
@@ -10302,11 +10308,9 @@ class FunctionLowering {
           SourcePair = approvedUtilityMixedReferencePairRecord(
               A.S, A.Sources,
               C->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
-        if (!SourcePair ||
-            (!Pair->First->getType()->isReferenceType() &&
-             !Pair->Second->getType()->isReferenceType()))
+        if (!SourcePair)
           reject(L, "utility pair construction",
-                 "The source reference std::pair layout is unavailable.");
+                 "The source std::pair layout is unavailable.");
         auto SourceAddress = snapshot(
             address(lvalue(C->getArg(0)), C->getArg(0)->getType(), L), L);
         auto Source = dereference(std::move(SourceAddress), L);

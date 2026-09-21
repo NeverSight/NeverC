@@ -23406,10 +23406,45 @@ TEST_F(TranslateTest, CoreV2UtilityRequiresPinnedScalarOperations) {
        "const R&b){return a.n==b.n;}int f(){std::pair<R,int> a{{1},2},"
        "b=a;return a==b;}",
        "TR0203"},
-      {"reference-pair",
-       "#include <utility>\nint f(){int a=1,b=2;std::pair<int&,int&> "
+      {"volatile-reference-pair",
+       "#include <utility>\nint f(){volatile int a=1;int b=2;"
+       "std::pair<volatile int&,int&> "
        "p{a,b};return p.first;}",
        "TR0201"},
+      {"pair-construction-user-conversion",
+       "#include <utility>\nstruct R{int n;operator int()const{return n;}};"
+       "int f(){R r{1};std::pair<R&,int>s(r,2);"
+       "std::pair<int,long>d(s);return d.first;}",
+       "TR0201"},
+      {"pair-element-user-conversion",
+       "#include <utility>\nstruct R{int n;operator int()const{return n;}};"
+       "int f(){R r{1};std::pair<int,long>d(r,2L);return d.first;}",
+       "TR0201"},
+      {"pair-assignment-user-conversion",
+       "#include <utility>\nstruct R{int n;operator int()const{return n;}};"
+       "int f(){R r{1};std::pair<R&,int>s(r,2);"
+       "std::pair<int,long>d(0,0L);d=s;return d.first;}",
+       "TR0203"},
+      {"pair-construction-composite-conversion",
+       "#include <utility>\nint f(){std::pair<short,short>inner(1,2);"
+       "std::pair<std::pair<short,short>,int>s(inner,3);"
+       "std::pair<std::pair<int,int>,long>d(s);return d.second;}",
+       "TR0201"},
+      {"pair-assignment-composite-conversion",
+       "#include <utility>\nint f(){std::pair<short,short>inner(1,2);"
+       "std::pair<std::pair<short,short>,int>s(inner,3);"
+       "std::pair<std::pair<int,int>,long>d;d=s;return d.second;}",
+       "TR0203"},
+      {"pair-construction-discards-const",
+       "#include <utility>\nint f(){const int n=1;"
+       "std::pair<const int*,int>s(&n,2);"
+       "std::pair<int*,long>d(s);return d.second;}",
+       "TR0202"},
+      {"pair-assignment-discards-const",
+       "#include <utility>\nint f(){const int n=1;"
+       "std::pair<const int*,int>s(&n,2);"
+       "std::pair<int*,long>d(nullptr,0L);d=s;return d.second;}",
+       "TR0202"},
       {"array-swap",
        "#include <utility>\nint f(){int a[2]{1,2},b[2]{3,4};"
        "std::swap(a,b);return a[0];}",
@@ -25265,6 +25300,334 @@ int main() {
     SCOPED_TRACE(Optimization);
     const auto Executable =
         tmpFile("pair-mixed-reference-conversion" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ValuePairConvertingConstructionWorksAtBothOptimizations) {
+  const auto Source = tmpFile("value-pair-construction.cpp");
+  const auto Output = tmpFile("value-pair-construction.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <utility>
+
+int effects;
+using ScalarSource = std::pair<short, float>;
+using ReferenceSource = std::pair<short &, float &>;
+ScalarSource &select_value(ScalarSource &source) {
+  ++effects;
+  return source;
+}
+ReferenceSource &select_references(ReferenceSource &source) {
+  ++effects;
+  return source;
+}
+ScalarSource produce_value() {
+  ++effects;
+  return ScalarSource(short(13), 14.5f);
+}
+struct Point { int x; int y; };
+
+int main() {
+  std::pair<long, double> direct(short(40), 41.5f);
+  if (direct.first != 40 || direct.second != 41.5)
+    return 18;
+  ScalarSource source(short(1), 2.5f);
+  std::pair<long, double> values(select_value(source));
+  if (effects != 1 || values.first != 1 || values.second != 2.5)
+    return 1;
+  source.first = 3;
+  source.second = 4.5f;
+  if (values.first != 1 || values.second != 2.5)
+    return 2;
+  const ScalarSource &constant_source = source;
+  std::pair<const long, double> constants(constant_source);
+  if (constants.first != 3 || constants.second != 4.5)
+    return 3;
+  std::pair<long, double> moved(static_cast<ScalarSource &&>(source));
+  if (moved.first != 3 || moved.second != 4.5)
+    return 4;
+
+  short first = 5;
+  float second = 6.5f;
+  ReferenceSource references(first, second);
+  std::pair<long, double> referent_values(select_references(references));
+  if (effects != 2 || referent_values.first != 5 ||
+      referent_values.second != 6.5 || &references.first != &first)
+    return 5;
+  first = 7;
+  second = 8.5f;
+  if (referent_values.first != 5 || referent_values.second != 6.5)
+    return 6;
+  const ReferenceSource &constant_references = references;
+  std::pair<long, double> const_referents(constant_references);
+  std::pair<long, double> moved_referents(
+      static_cast<ReferenceSource &&>(references));
+  if (const_referents.first != 7 || const_referents.second != 8.5 ||
+      moved_referents.first != 7 || moved_referents.second != 8.5)
+    return 7;
+
+  std::pair<short &, float> mixed(first, 9.5f);
+  std::pair<long, double> mixed_values(mixed);
+  std::pair<short, float &> reverse(short(10), second);
+  const auto &constant_reverse = reverse;
+  std::pair<long, double> reverse_values(constant_reverse);
+  if (mixed_values.first != 7 || mixed_values.second != 9.5 ||
+      reverse_values.first != 10 || reverse_values.second != 8.5)
+    return 8;
+  first = 11;
+  second = 12.5f;
+  mixed.second = 15.5f;
+  reverse.first = 16;
+  if (mixed_values.first != 7 || mixed_values.second != 9.5 ||
+      reverse_values.first != 10 || reverse_values.second != 8.5)
+    return 9;
+  std::pair<long, double> mixed_temporary(
+      std::pair<short &, float>(first, 17.5f));
+  std::pair<long, double> produced(produce_value());
+  if (mixed_temporary.first != 11 || mixed_temporary.second != 17.5 ||
+      effects != 3 || produced.first != 13 || produced.second != 14.5)
+    return 10;
+
+  std::pair<short &&, float &&> rvalue_references(
+      static_cast<short &&>(first), static_cast<float &&>(second));
+  std::pair<long, double> from_rvalue_references(
+      static_cast<std::pair<short &&, float &&> &&>(rvalue_references));
+  if (from_rvalue_references.first != 11 ||
+      from_rvalue_references.second != 12.5)
+    return 11;
+
+  int object = 18;
+  int *pointer = &object;
+  std::pair<int *, decltype(nullptr)> pointers(pointer, nullptr);
+  std::pair<const int *, const void *> pointer_values(pointers);
+  std::pair<int *&, int &> pointer_references(pointer, object);
+  std::pair<const void *, long> pointer_referent_values(pointer_references);
+  pointer = nullptr;
+  object = 19;
+  if (pointer_values.first != &object || pointer_values.second != nullptr ||
+      pointer_referent_values.first != &object ||
+      pointer_referent_values.second != 18)
+    return 12;
+
+  int left = 20;
+  int right = 21;
+  std::pair<int &, int &> identical_referents(left, right);
+  std::pair<int, int> independent(identical_referents);
+  if (&independent.first == &left || &independent.second == &right)
+    return 13;
+  independent.first = 22;
+  right = 23;
+  if (left != 20 || independent.second != 21 ||
+      &identical_referents.first != &left ||
+      &identical_referents.second != &right)
+    return 14;
+
+  Point point{24, 25};
+  std::pair<Point &, short> record_reference(point, short(26));
+  std::pair<Point, long> copied_record(record_reference);
+  std::pair<Point, short> record_value(Point{27, 28}, short(29));
+  std::pair<Point, long> converted_record(record_value);
+  point.x = 30;
+  record_value.first.y = 31;
+  if (copied_record.first.x != 24 || copied_record.first.y != 25 ||
+      copied_record.second != 26 || converted_record.first.x != 27 ||
+      converted_record.first.y != 28 || converted_record.second != 29 ||
+      &copied_record.first == &point)
+    return 15;
+
+  using Array = std::array<int, 2>;
+  std::pair<Array, short> array_source(Array{{32, 33}}, short(34));
+  const auto &constant_array_source = array_source;
+  std::pair<Array, long> array_values(constant_array_source);
+  array_source.first[0] = 35;
+  if (array_values.first[0] != 32 || array_values.first[1] != 33 ||
+      array_values.second != 34 ||
+      &array_values.first[0] == &array_source.first[0])
+    return 16;
+
+  using Inner = std::pair<int, int>;
+  std::pair<Inner, short> nested_source(Inner(36, 37), short(38));
+  std::pair<Inner, long> nested_values(
+      static_cast<std::pair<Inner, short> &&>(nested_source));
+  nested_source.first.first = 39;
+  if (nested_values.first.first != 36 || nested_values.first.second != 37 ||
+      nested_values.second != 38)
+    return 17;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("value-pair-construction" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2ValuePairConvertingAssignmentWorksAtBothOptimizations) {
+  const auto Source = tmpFile("value-pair-assignment.cpp");
+  const auto Output = tmpFile("value-pair-assignment.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <utility>
+
+struct Box { int value; };
+using Values = std::pair<long, double>;
+using SourceValues = std::pair<short, float>;
+using Refs = std::pair<short &, float &>;
+int order;
+Values &select_destination(Values &value) {
+  order = order * 10 + 1;
+  return value;
+}
+SourceValues &select_source(SourceValues &value) {
+  order = order * 10 + 2;
+  return value;
+}
+
+int main() {
+  Values destination(0L, 0.0);
+  SourceValues values(short(3), 4.5f);
+  auto &result = (select_destination(destination) = select_source(values));
+  if (order != 21 || &result != &destination || destination.first != 3 ||
+      destination.second != 4.5)
+    return 1;
+  values.first = 5;
+  values.second = 6.5f;
+  if (destination.first != 3 || destination.second != 4.5)
+    return 2;
+  const SourceValues &constant_values = values;
+  destination = constant_values;
+  if (destination.first != 5 || destination.second != 6.5)
+    return 3;
+  destination = SourceValues(short(7), 8.5f);
+  if (destination.first != 7 || destination.second != 8.5)
+    return 4;
+  values.first = 9;
+  destination = static_cast<SourceValues &&>(values);
+  if (destination.first != 9 || destination.second != 6.5)
+    return 5;
+
+  short first = 10;
+  float second = 11.5f;
+  Refs references(first, second);
+  destination = references;
+  first = 12;
+  second = 13.5f;
+  if (destination.first != 10 || destination.second != 11.5 ||
+      &references.first != &first || &references.second != &second)
+    return 6;
+  const Refs &constant_references = references;
+  destination = constant_references;
+  if (destination.first != 12 || destination.second != 13.5)
+    return 7;
+  first = 14;
+  second = 15.5f;
+  destination = static_cast<Refs &&>(references);
+  if (destination.first != 14 || destination.second != 15.5)
+    return 8;
+
+  std::pair<short &, float> mixed(first, 16.5f);
+  destination = mixed;
+  first = 17;
+  mixed.second = 18.5f;
+  if (destination.first != 14 || destination.second != 16.5)
+    return 9;
+  const std::pair<short &, float> &constant_mixed = mixed;
+  destination = constant_mixed;
+  if (destination.first != 17 || destination.second != 18.5)
+    return 10;
+  destination = std::pair<short, float &>(short(19), second);
+  if (destination.first != 19 || destination.second != 15.5)
+    return 11;
+
+  const int number = 20;
+  int object = 21;
+  int *pointer = &object;
+  std::pair<const int &, int *&> pointer_references(number, pointer);
+  std::pair<long, const int *> pointer_value(0L, nullptr);
+  pointer_value = pointer_references;
+  pointer = nullptr;
+  if (pointer_value.first != 20 || pointer_value.second != &object)
+    return 12;
+  std::pair<short, int *> pointer_source(short(22), &object);
+  pointer_value = pointer_source;
+  if (pointer_value.first != 22 || pointer_value.second != &object)
+    return 13;
+
+  std::pair<int, int> ordered(23, 24);
+  std::pair<int &, int &> overlap(ordered.second, ordered.first);
+  ordered = overlap;
+  if (ordered.first != 24 || ordered.second != 24)
+    return 14;
+  ordered.first = 25;
+  std::pair<int, int &> mixed_overlap(26, ordered.first);
+  ordered = mixed_overlap;
+  if (ordered.first != 26 || ordered.second != 26)
+    return 15;
+
+  Box box{27};
+  short record_number = 28;
+  std::pair<Box, long> records(Box{0}, 0L);
+  std::pair<Box &, short &> record_references(box, record_number);
+  records = record_references;
+  box.value = 29;
+  record_number = 30;
+  if (records.first.value != 27 || records.second != 28)
+    return 16;
+  std::pair<Box, short> record_values(box, record_number);
+  records = record_values;
+  record_values.first.value = 31;
+  record_values.second = 32;
+  if (records.first.value != 29 || records.second != 30)
+    return 17;
+  records = std::pair<Box &, short>(box, short(33));
+  box.value = 34;
+  if (records.first.value != 29 || records.second != 33)
+    return 18;
+
+  std::array<int, 2> array{35, 36};
+  std::pair<std::array<int, 2>, short> array_source(array, short(37));
+  std::pair<std::array<int, 2>, long> array_destination(array, 0L);
+  array_destination = array_source;
+  array_source.first[0] = 38;
+  if (array_destination.first[0] != 35 || array_destination.first[1] != 36 ||
+      array_destination.second != 37)
+    return 19;
+  std::pair<Box, std::array<int, 2>> composite(Box{0}, array);
+  std::pair<Box &, std::array<int, 2>> mixed_composite(box, array);
+  composite = mixed_composite;
+  box.value = 39;
+  mixed_composite.second[1] = 40;
+  if (composite.first.value != 34 || composite.second[0] != 35 ||
+      composite.second[1] != 36)
+    return 20;
+
+  Values same(0L, 0.0);
+  same = destination;
+  same = same;
+  return same.first == 19 && same.second == 15.5 ? 0 : 21;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("value-pair-assignment" + Optimization);
     auto Compile = compileGenerated(Output, Executable, Optimization);
     ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
     auto Run = exec(Executable.string(), {});

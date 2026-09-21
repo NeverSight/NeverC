@@ -522,6 +522,64 @@ extern "C" int pair_reference(int value) {
         check("v2-utility-reference-pair-" + target,
               pair_reference_source, profile="cpp-core-v2",
               target=target, sdk=True)
+    pair_value_conversion_source = """\
+#include <array>
+#include <utility>
+struct PairBox { int value; };
+extern "C" int pair_value_conversion(int number, int *pointer) {
+  short first = short(number);
+  float second = 2.5f;
+  std::pair<long, double> direct(first, second);
+  std::pair<short, float> source(first, second);
+  const auto &constant_source = source;
+  std::pair<long, double> values(constant_source);
+  values = source;
+  std::pair<short &, float &> references(first, second);
+  std::pair<long, double> copied_references(references);
+  auto &result = (values = references);
+  values = static_cast<std::pair<short &, float &> &&>(references);
+  std::pair<short &, float> mixed(first, 3.5f);
+  std::pair<long, double> copied_mixed(mixed);
+  values = mixed;
+  std::pair<short, float &> reverse(first, second);
+  std::pair<long, double> copied_reverse(reverse);
+  values = reverse;
+  std::pair<long, double> temporary(std::pair<short &, float>(first, 4.5f));
+  values = std::pair<short, float>(first, 5.5f);
+  std::pair<int *&, int &> pointers(pointer, number);
+  std::pair<const int *, long> converted_pointers(pointers);
+  converted_pointers = pointers;
+  std::pair<long, const int *> null_pointer(0L, nullptr);
+  std::pair<int &, int *&> pointer_references(number, pointer);
+  null_pointer = pointer_references;
+  std::pair<int, int> ordered(6, 7);
+  std::pair<int &, int &> overlap(ordered.second, ordered.first);
+  ordered = overlap;
+  PairBox box{number};
+  std::pair<PairBox &, short> record_source(box, first);
+  std::pair<PairBox, long> record_value(record_source);
+  record_value = record_source;
+  using Array = std::array<int, 2>;
+  std::pair<Array, short> array_source(Array{8, 9}, first);
+  std::pair<Array, long> array_value(array_source);
+  array_value = array_source;
+  return int(values.first + values.second + copied_references.first +
+             copied_mixed.second + copied_reverse.first + temporary.second) +
+         (converted_pointers.first == pointer) + ordered.second +
+         record_value.first.value + array_value.first[1] + (&result == &values) +
+         int(direct.first) + (null_pointer.second == pointer);
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-utility-value-pair-conversion-" + target,
+                     pair_value_conversion_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        assert not [node for node in walk(data["functions"])
+                    if node.get("op") == "mapped_call"], data
+        for node in walk(data["functions"]):
+            if node.get("op") == "assign":
+                assert node["target"]["type"] == node["value"]["type"], node
+
     pair_composite_source = """\
 #include <array>
 #include <utility>
@@ -584,6 +642,21 @@ extern "C" int pair_composite() {
          "TR0201"),
         ("record-pair-comparison",
          '#include <utility>\nstruct R{int n;};bool operator==(const R&a,const R&b){return a.n==b.n;}int f(){std::pair<R,int>a{{1},2},b=a;return a==b;}',
+         "TR0203"),
+        ("pair-construction-user-conversion",
+         '#include <utility>\nstruct R{int n;operator int()const{return n;}};int f(){R r{1};std::pair<R&,int>s(r,2);std::pair<int,long>d(s);return d.first;}',
+         "TR0201"),
+        ("pair-element-user-conversion",
+         '#include <utility>\nstruct R{int n;operator int()const{return n;}};int f(){R r{1};std::pair<int,long>d(r,2L);return d.first;}',
+         "TR0201"),
+        ("pair-assignment-user-conversion",
+         '#include <utility>\nstruct R{int n;operator int()const{return n;}};int f(){R r{1};std::pair<R&,int>s(r,2);std::pair<int,long>d(0,0L);d=s;return d.first;}',
+         "TR0203"),
+        ("pair-construction-composite-conversion",
+         '#include <utility>\nint f(){std::pair<short,short>inner(1,2);std::pair<std::pair<short,short>,int>s(inner,3);std::pair<std::pair<int,int>,long>d(s);return d.second;}',
+         "TR0201"),
+        ("pair-assignment-composite-conversion",
+         '#include <utility>\nint f(){std::pair<short,short>inner(1,2);std::pair<std::pair<short,short>,int>s(inner,3);std::pair<std::pair<int,int>,long>d;d=s;return d.second;}',
          "TR0203"),
         ("array-swap",
          '#include <utility>\nint f(){int a[2]{1,2},b[2]{3,4};std::swap(a,b);return a[0];}',

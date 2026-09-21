@@ -143,6 +143,10 @@ heterogeneous assignment with per-field reference/value behavior. All six
 comparisons use the same recursive heterogeneous value rules. Member and free
 swap exchange per-field values without changing reference bindings. Compatible
 converting construction binds reference fields and initializes value fields.
+Ordinary value pairs also support heterogeneous construction and assignment
+from value, reference or mixed pairs, copying or converting each field into
+independent storage. Assignment writes `first` before `second` and returns the
+destination by reference.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#scalar-utilities-and-pairs-from-utility).
 
 Core v2 accepts authenticated empty and nonempty `<tuple>` values, including

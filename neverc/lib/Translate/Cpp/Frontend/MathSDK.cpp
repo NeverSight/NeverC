@@ -2876,24 +2876,21 @@ approvedUtilityPairConstruction(const State &S, const SourceManager &SM,
     return UtilityPairConstruction::CopyOrMove;
   const auto *Primary = Constructor->getPrimaryTemplate();
   auto SourcePair =
-      (ReferencePair || MixedReferencePair) && Construction->getNumArgs() == 1
+      Construction->getNumArgs() == 1
           ? approvedUtilityPairRecord(
                 S, SM, Construction->getArg(0)->getType()->getAsCXXRecordDecl(),
                 Context)
           : std::optional<UtilityPairRecord>();
-  if ((ReferencePair || MixedReferencePair) &&
-      Construction->getNumArgs() == 1 && !SourcePair) {
+  if (Construction->getNumArgs() == 1 && !SourcePair) {
     SourcePair = approvedUtilityReferencePairRecord(
         S, SM, Construction->getArg(0)->getType()->getAsCXXRecordDecl(),
         Context);
   }
-  if ((ReferencePair || MixedReferencePair) &&
-      Construction->getNumArgs() == 1 && !SourcePair)
+  if (Construction->getNumArgs() == 1 && !SourcePair)
     SourcePair = approvedUtilityMixedReferencePairRecord(
         S, SM, Construction->getArg(0)->getType()->getAsCXXRecordDecl(),
         Context);
-  if ((ReferencePair || MixedReferencePair) && SourcePair && Primary &&
-      Constructor->hasBody() &&
+  if (SourcePair && Primary && Constructor->hasBody() &&
       SourcePair->Record->getCanonicalDecl() !=
           Pair->Record->getCanonicalDecl() &&
       approvedStandardSDKDeclaration(S, SM, Primary) &&
@@ -2946,28 +2943,34 @@ approvedUtilityPairConstruction(const State &S, const SourceManager &SM,
       approvedStandardSDKDeclaration(S, SM, Primary) &&
       cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
                      "__utility/pair.h")) {
-    if (ReferencePair || MixedReferencePair) {
-      for (unsigned I = 0; I != 2; ++I) {
-        const auto Parameter = Constructor->getParamDecl(I)->getType();
-        const auto Element =
-            I ? Pair->Second->getType() : Pair->First->getType();
-        const auto Argument = Construction->getArg(I)->getType();
-        if (!Parameter->isReferenceType() ||
-            !Context.hasSameUnqualifiedType(Argument,
-                                            Parameter->getPointeeType()))
+    for (unsigned I = 0; I != 2; ++I) {
+      const auto Parameter = Constructor->getParamDecl(I)->getType();
+      const auto Element =
+          I ? Pair->Second->getType() : Pair->First->getType();
+      const auto Argument = Construction->getArg(I)->getType();
+      if (!Parameter->isReferenceType() ||
+          !Context.hasSameUnqualifiedType(Argument,
+                                          Parameter->getPointeeType()))
+        return std::nullopt;
+      if (Element->isReferenceType()) {
+        if (!Context.hasSameUnqualifiedType(Argument,
+                                            Element->getPointeeType()) ||
+            !Element->getPointeeType().isAtLeastAsQualifiedAs(Argument,
+                                                              Context) ||
+            (Element->isRValueReferenceType() &&
+             Construction->getArg(I)->isLValue()) ||
+            (Element->isLValueReferenceType() &&
+             !Element->getPointeeType().isConstQualified() &&
+             !Construction->getArg(I)->isLValue()))
           return std::nullopt;
-        if (Element->isReferenceType() &&
-            (!Context.hasSameUnqualifiedType(Argument,
-                                             Element->getPointeeType()) ||
-             !Element->getPointeeType().isAtLeastAsQualifiedAs(Argument,
-                                                               Context) ||
-             (Element->isRValueReferenceType() &&
-              Construction->getArg(I)->isLValue()) ||
-             (Element->isLValueReferenceType() &&
-              !Element->getPointeeType().isConstQualified() &&
-              !Construction->getArg(I)->isLValue())))
-          return std::nullopt;
+        continue;
       }
+      const bool Convertible =
+          (utilityScalar(Context, Argument) || utilityScalar(Context, Element))
+              ? utilityScalarDirectConversion(Context, Argument, Element)
+              : Context.hasSameUnqualifiedType(Argument, Element);
+      if (!Convertible)
+        return std::nullopt;
     }
     return UtilityPairConstruction::Elements;
   }
@@ -3031,8 +3034,7 @@ approvedUtilityPairAssignment(const State &S, const SourceManager &SM,
       Context.hasSameUnqualifiedType(Assignment->getArg(1)->getType(),
                                      PairType))
     return Pair;
-  if ((!ReferencePair && !MixedReferencePair) ||
-      Parameter->getPointeeType().isVolatileQualified())
+  if (Parameter->getPointeeType().isVolatileQualified())
     return std::nullopt;
   auto SourcePair = approvedUtilityPairRecord(
       S, SM, Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context);

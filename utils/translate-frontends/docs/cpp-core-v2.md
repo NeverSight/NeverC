@@ -227,6 +227,17 @@ reference or mixed pairs binds destination reference fields with checked cv and
 value categories and initializes destination value fields with admitted copies
 or scalar conversions.
 
+Ordinary value pairs likewise accept heterogeneous converting construction and
+assignment from authenticated value, reference or mixed pairs. Scalar fields
+use the existing arithmetic and object-pointer conversions; composite fields
+require the same unqualified type. Reference sources are read as referents and
+copied into independent destination storage. Construction evaluates the source
+once. Assignment evaluates the source once before the destination, writes
+`first` before `second`, and returns a reference to the destination pair.
+References into destination fields observe preceding field writes. User-defined
+element conversions and heterogeneous nested composite conversions remain
+outside this boundary.
+
 All six C++17 comparisons recurse through authenticated arrays and nested pairs
 and compare their scalar leaves in lexicographic order. Corresponding scalar
 leaves may use the documented heterogeneous arithmetic or compatible

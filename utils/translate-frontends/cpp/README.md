@@ -230,6 +230,10 @@ compatible heterogeneous assignment. All six comparisons recurse through
 reference and value fields. Member and free swap exchange values without
 changing reference bindings. Compatible converting construction binds reference
 fields and initializes value fields from value, reference or mixed pairs.
+Ordinary value pairs accept those sources for heterogeneous construction and
+assignment, copying or converting each field into independent storage.
+Assignment writes `first` before `second` and returns the destination by
+reference; recursive composite fields still require the exact unqualified type.
 Tuple
 directly lowers authenticated empty and nonempty tuples of scalars, reference
 wrappers
