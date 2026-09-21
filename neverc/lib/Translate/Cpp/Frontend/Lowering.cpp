@@ -6758,12 +6758,12 @@ class FunctionLowering {
     case UtilityOperation::MakePair: {
       auto Pair = approvedUtilityPairRecord(
           A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
-      bool ReferencePair = false;
-      if (!Pair) {
+      if (!Pair)
         Pair = approvedUtilityReferencePairRecord(
             A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
-        ReferencePair = Pair.has_value();
-      }
+      if (!Pair)
+        Pair = approvedUtilityMixedReferencePairRecord(
+            A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
       if (!Pair)
         reject(L, "utility make_pair",
                "The selected std::pair layout is unavailable.");
@@ -6774,7 +6774,7 @@ class FunctionLowering {
                "The std::make_pair destination type differs from its result.");
       for (unsigned I = 0; I != 2; ++I) {
         const auto *Field = I ? Pair->Second : Pair->First;
-        if (!ReferencePair) {
+        if (!Field->getType()->isReferenceType()) {
           initialize(fieldStorage(json::Object(Place), Field, L),
                      Call->getArg(I), L);
           continue;

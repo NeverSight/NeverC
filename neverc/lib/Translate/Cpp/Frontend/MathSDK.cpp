@@ -2673,6 +2673,10 @@ static bool utilityArrayTriviallyAssignable(const ASTContext &Context,
          Record->hasTrivialDestructor();
 }
 
+static bool utilityPairValue(const State &S, const SourceManager &SM,
+                             const ASTContext &Context, QualType Type,
+                             unsigned Depth = 0);
+
 bool approvedUtilityPairMetadata(const State &S, const SourceManager &SM,
                                  const CXXRecordDecl *Record) {
   const auto *Specialization =
@@ -2699,7 +2703,8 @@ bool approvedUtilityPairMetadata(const State &S, const SourceManager &SM,
 
 static std::optional<UtilityPairRecord> approvedUtilityPairRecordImpl(
     const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
-    const ASTContext &Context, bool RequireReferenceElements) {
+    const ASTContext &Context, bool RequireReferenceElements,
+    bool RequireMixedReferenceElements = false) {
   const auto *Specialization =
       dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
   Specialization = Specialization
@@ -2731,7 +2736,19 @@ static std::optional<UtilityPairRecord> approvedUtilityPairRecordImpl(
     return std::nullopt;
   const auto FirstType = Arguments.get(0).getAsType();
   const auto SecondType = Arguments.get(1).getAsType();
-  if (RequireReferenceElements) {
+  if (RequireMixedReferenceElements) {
+    if (FirstType->isReferenceType() == SecondType->isReferenceType())
+      return std::nullopt;
+    for (const auto Type : {FirstType, SecondType}) {
+      if (Type->isReferenceType()) {
+        if (!supportedFunctionalReferenceValue(S, SM, Context,
+                                               Type->getPointeeType()))
+          return std::nullopt;
+      } else if (!utilityPairValue(S, SM, Context, Type)) {
+        return std::nullopt;
+      }
+    }
+  } else if (RequireReferenceElements) {
     if (!FirstType->isReferenceType() || !SecondType->isReferenceType() ||
         !supportedFunctionalReferenceValue(S, SM, Context,
                                            FirstType->getPointeeType()) ||
@@ -2776,9 +2793,15 @@ approvedUtilityReferencePairRecord(const State &S, const SourceManager &SM,
   return approvedUtilityPairRecordImpl(S, SM, Record, Context, true);
 }
 
+std::optional<UtilityPairRecord> approvedUtilityMixedReferencePairRecord(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
+    const ASTContext &Context) {
+  return approvedUtilityPairRecordImpl(S, SM, Record, Context, false, true);
+}
+
 static bool utilityPairValue(const State &S, const SourceManager &SM,
                              const ASTContext &Context, QualType Type,
-                             unsigned Depth = 0) {
+                             unsigned Depth) {
   if (Depth > 64 || Type.isNull())
     return false;
   if (utilityArrayValue(S, SM, Context, Type))
@@ -12000,8 +12023,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
       ReferencePair = Pair.has_value();
     }
+    bool MixedReferencePair = false;
+    if (!Pair) {
+      Pair = approvedUtilityMixedReferencePairRecord(
+          S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
+      MixedReferencePair = Pair.has_value();
+    }
     if (!Pair ||
-        (!ReferencePair &&
+        (!ReferencePair && !MixedReferencePair &&
          (!utilityPairValue(S, SM, Context, Pair->First->getType()) ||
           !utilityPairValue(S, SM, Context, Pair->Second->getType()))))
       return std::nullopt;
@@ -12011,15 +12040,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           !Context.hasSameUnqualifiedType(Call->getArg(I)->getType(),
                                           Parameter->getPointeeType()))
         return std::nullopt;
-      if (ReferencePair) {
+      const auto Element =
+          I ? Pair->Second->getType() : Pair->First->getType();
+      if (Element->isReferenceType()) {
         const auto Wrapper = approvedFunctionalReferenceRecord(
             S, SM, Call->getArg(I)->getType()->getAsCXXRecordDecl(), Context);
-        const auto Element =
-            I ? Pair->Second->getType() : Pair->First->getType();
         if (!Wrapper || !Element->isLValueReferenceType() ||
             !Context.hasSameType(Wrapper->ReferentType,
                                  Element->getPointeeType()))
           return std::nullopt;
+      } else if (!utilityPairValue(S, SM, Context, Element)) {
+        return std::nullopt;
       }
     }
     return UtilityOperation::MakePair;

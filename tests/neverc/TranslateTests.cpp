@@ -24434,7 +24434,16 @@ int main() {
   auto stored = std::make_pair(number_wrapper, box_wrapper);
   std::get<0>(stored) = 6;
   std::get<1>(stored).value = 7;
-  return number == 6 && box.value == 7 ? 0 : 3;
+  auto reference_first = std::make_pair(std::ref(number), 8);
+  reference_first.first = 9;
+  reference_first.second = 10;
+  auto reference_second = std::make_pair(11, std::ref(box));
+  reference_second.first = 12;
+  reference_second.second.value = 13;
+  return number == 9 && box.value == 13 && reference_first.second == 10 &&
+                 reference_second.first == 12
+             ? 0
+             : 3;
 }
 )cpp");
   auto Result =

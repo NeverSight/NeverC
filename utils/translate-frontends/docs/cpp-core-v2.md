@@ -212,7 +212,10 @@ categories. Heterogeneous assignment converts admitted scalar field values or
 copies exact admitted composite values before writing through destination
 bindings. Exact `make_pair` calls unwrap authenticated `ref`/`cref` arguments,
 copy their stored pointers into the resulting lvalue-reference fields and
-preserve const qualification.
+preserve const qualification. A result with exactly one such argument retains
+its other admitted value field and supports ordinary public `first`/`second`
+access. Construction outside the factory, assignment, comparison, swap and
+`get` for these mixed reference/value pairs remain outside this increment.
 
 All six C++17 comparisons recurse through authenticated arrays and nested pairs
 and compare their scalar leaves in lexicographic order. Corresponding scalar

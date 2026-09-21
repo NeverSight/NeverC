@@ -470,6 +470,9 @@ extern "C" int pair_reference(int value) {
   auto factory = std::make_pair(std::ref(value), std::ref(box));
   std::get<0>(factory) += 1;
   std::get<1>(factory).value += 1;
+  auto mixed_factory = std::make_pair(std::ref(value), source_value);
+  mixed_factory.first += 1;
+  mixed_factory.second += 1;
   std::pair<int &&, Box &&> rvalues(static_cast<int &&>(value),
                                     static_cast<Box &&>(box));
   std::get<0>(rvalues) += 4;

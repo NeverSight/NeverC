@@ -868,6 +868,9 @@ approvedUtilityPairRecord(const State &S, const clang::SourceManager &SM,
 std::optional<UtilityPairRecord> approvedUtilityReferencePairRecord(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+std::optional<UtilityPairRecord> approvedUtilityMixedReferencePairRecord(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
 std::optional<UtilityPairConstruction>
 approvedUtilityPairConstruction(const State &S,
                                 const clang::SourceManager &SM,

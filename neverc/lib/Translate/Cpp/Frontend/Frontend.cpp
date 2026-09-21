@@ -4014,6 +4014,8 @@ bool Adapter::requireUtilityPair(const CXXRecordDecl *Record,
   auto Pair = approvedUtilityPairRecord(S, Sources, Record, Context);
   if (!Pair)
     Pair = approvedUtilityReferencePairRecord(S, Sources, Record, Context);
+  if (!Pair)
+    Pair = approvedUtilityMixedReferencePairRecord(S, Sources, Record, Context);
   if (!Pair) {
     reject(Location, "standard library record",
            "Only the pinned std::pair<T, U> record layout is admitted.",
