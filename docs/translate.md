@@ -110,9 +110,11 @@ multi-argument, copy and move selection and authenticated source-owned trailing
 defaults. Supplied arguments and defaults are each evaluated once. Exact
 allocator and allocator-traits `allocate`/`deallocate` forwarders also lower
 for complete default-new-aligned
-elements when allocation uses a constant count proven within `max_size` and the
-matching global new/delete definitions are source-owned. Hints, receivers,
-pointers and deallocation counts retain their evaluation. Exact C++17
+elements when allocation uses a count proven within `max_size` and the
+matching global new/delete definitions are source-owned. One-byte elements
+accept runtime counts after conversion to target `size_t`; larger elements
+still require a nonoverflowing integer constant expression. Counts, hints,
+receivers and pointers retain one-time evaluation. Exact C++17
 allocator `destroy` plus `allocator_traits` destruction, `max_size` and
 copy-selection forwarding reuse the checked lifetime and stateless-allocator
 paths without a libc++ call.

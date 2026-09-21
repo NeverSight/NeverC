@@ -90,8 +90,10 @@ and uninitialized construction algorithms lower directly. Exact runtime
 allocator objects, C++17 `destroy`, and allocator-traits destruction,
 `max_size` and copy selection also lower directly. Exact allocator and traits
 allocation/deallocation forwarders call checked source-defined global new/delete
-for complete default-new-aligned elements and constant nonoverflowing allocation
-counts; ownership objects remain separate. The
+for complete default-new-aligned elements and nonoverflowing allocation
+counts. One-byte elements accept runtime counts after target `size_t`
+conversion; larger elements require integer constant expressions. Ownership
+objects remain separate. The
 exact [`<functional>`](../docs/cpp-core-v2.md#functional-header-from-functional)
 header directly lowers calls on typed and transparent specializations of all 19
 C++17 arithmetic, bitwise, comparison and logical standard function objects for
@@ -430,8 +432,11 @@ is supported, source-owned and `noexcept`, including authenticated source-owned
 trailing defaults evaluated once after supplied arguments. Allocation and
 deallocation accept exact member and traits forwarding, including hints and
 runtime deallocation counts, when a source-defined global new/delete path
-exists and the allocation count is a constant proven within `max_size`. Default
-heap allocation, dynamic allocation counts, over-aligned elements,
+exists and the allocation count is proven within `max_size`. One-byte elements
+accept runtime counts, preserving the complete expression's conversions,
+side effects and temporary cleanup; larger elements still require an integer
+constant expression. Default heap allocation, unproven allocation counts,
+over-aligned elements,
 runtime-count array factories, stateful,
 reference, non-raw-pointer, nontrivial, overloaded, ref-qualified or throwing
 custom deleters, other smart pointers and ownership factories are not yet

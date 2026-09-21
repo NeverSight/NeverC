@@ -3941,6 +3941,435 @@ extern "C" int memory_allocator_heap() {
         assert target_result["sdk_dependencies"] == memory_allocator_objects["sdk_dependencies"], target_result
         check_memory_allocator_heap(target_result)
 
+    byte_allocator_source = """\
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+
+Size allocated_size;
+Size released_size;
+int allocations;
+int releases;
+unsigned long long effects;
+int receiver_calls;
+int count_calls;
+int hint_calls;
+int pointer_calls;
+int conversion_calls;
+int cleanup_calls;
+
+// Only tiny allocations are executed by main. The source-owned allocator
+// retries allocation failure and supplies a distinct byte for zero-size calls;
+// neither choice is synthesized by the translator.
+void *operator new(Size size) {
+  ++allocations;
+  allocated_size = size;
+  effects = effects * 10 + 4;
+  void *pointer = malloc(size ? size : Size(1));
+  while (!pointer)
+    pointer = malloc(size ? size : Size(1));
+  return pointer;
+}
+void operator delete(void *pointer) noexcept {
+  ++releases;
+  effects = effects * 10 + 5;
+  free(pointer);
+}
+#if defined(NEVERC_BYTE_ALLOCATOR_SIZED_DELETE)
+void operator delete(void *pointer, Size size) noexcept {
+  ++releases;
+  released_size = size;
+  effects = effects * 10 + 5;
+  free(pointer);
+}
+#endif
+
+#include <cstddef>
+#include <memory>
+
+std::allocator<char> &receiver(std::allocator<char> &allocator) {
+  ++receiver_calls;
+  effects = effects * 10 + 1;
+  return allocator;
+}
+Size count(Size value) {
+  ++count_calls;
+  effects = effects * 10 + 2;
+  return value;
+}
+int signed_count(int value) {
+  ++count_calls;
+  effects = effects * 10 + 2;
+  return value;
+}
+struct RuntimeCount {
+  Size value;
+  operator Size() const {
+    ++conversion_calls;
+    effects = effects * 10 + 2;
+    return value;
+  }
+  ~RuntimeCount() {
+    ++cleanup_calls;
+    effects = effects * 10 + 6;
+  }
+};
+const void *hint() {
+  ++hint_calls;
+  effects = effects * 10 + 3;
+  return nullptr;
+}
+char *pointer(char *value) {
+  ++pointer_calls;
+  effects = effects * 10 + 3;
+  return value;
+}
+void reset_effects() {
+  effects = receiver_calls = count_calls = hint_calls = pointer_calls = 0;
+  conversion_calls = cleanup_calls = 0;
+}
+
+int member_checks(Size requested) {
+  std::allocator<char> allocator;
+  reset_effects();
+  char *first = receiver(allocator).allocate(count(requested));
+  if (!first || allocated_size != requested || effects != 124 ||
+      receiver_calls != 1 || count_calls != 1)
+    return 1;
+  for (Size i = 0; i != requested; ++i)
+    allocator.construct(first + i, static_cast<char>(i + 1));
+  for (Size i = 0; i != requested; ++i)
+    if (first[i] != static_cast<char>(i + 1))
+      return 2;
+  for (Size i = 0; i != requested; ++i)
+    allocator.destroy(first + i);
+  reset_effects();
+  receiver(allocator).deallocate(pointer(first), count(requested));
+  if ((effects != 1325 && effects != 1235) || receiver_calls != 1 ||
+      pointer_calls != 1 || count_calls != 1)
+    return 3;
+#if defined(NEVERC_BYTE_ALLOCATOR_SIZED_DELETE)
+  if (released_size != requested)
+    return 4;
+#endif
+
+  reset_effects();
+  char *second = receiver(allocator).allocate(count(requested + 1), hint());
+  if (!second || allocated_size != requested + 1 ||
+      (effects != 1234 && effects != 1324) ||
+      receiver_calls != 1 || count_calls != 1 || hint_calls != 1)
+    return 5;
+  allocator.construct(second, 'x');
+  if (*second != 'x')
+    return 6;
+  allocator.destroy(second);
+  allocator.deallocate(second, requested + 1);
+
+  Size zero = requested - requested;
+  int before = allocations;
+  reset_effects();
+  char *empty = receiver(allocator).allocate(count(zero), hint());
+  if (!empty || allocated_size != 0 || allocations != before + 1 ||
+      receiver_calls != 1 || count_calls != 1 || hint_calls != 1)
+    return 7;
+  allocator.deallocate(empty, zero);
+#if defined(NEVERC_BYTE_ALLOCATOR_SIZED_DELETE)
+  if (released_size != 0)
+    return 8;
+#endif
+  return 0;
+}
+
+int traits_checks(Size requested) {
+  std::allocator<char> allocator;
+  using Traits = std::allocator_traits<std::allocator<char>>;
+  reset_effects();
+  char *first = Traits::allocate(receiver(allocator), count(requested));
+  if (!first || allocated_size != requested || receiver_calls != 1 ||
+      count_calls != 1 || effects % 10 != 4)
+    return 11;
+  Traits::construct(allocator, first, 'y');
+  if (*first != 'y')
+    return 12;
+  Traits::destroy(allocator, first);
+  reset_effects();
+  Traits::deallocate(receiver(allocator), pointer(first), count(requested));
+  if (receiver_calls != 1 || pointer_calls != 1 || count_calls != 1 ||
+      effects % 10 != 5)
+    return 13;
+#if defined(NEVERC_BYTE_ALLOCATOR_SIZED_DELETE)
+  if (released_size != requested)
+    return 14;
+#endif
+
+  reset_effects();
+  char *second = Traits::allocate(receiver(allocator), count(requested + 2),
+                                  hint());
+  if (!second || allocated_size != requested + 2 || receiver_calls != 1 ||
+      count_calls != 1 || hint_calls != 1 || effects % 10 != 4)
+    return 15;
+  Traits::deallocate(allocator, second, requested + 2);
+  return 0;
+}
+
+struct ByteRecord { unsigned char value; };
+static_assert(sizeof(ByteRecord) == 1);
+static_assert(sizeof(bool) == 1);
+static_assert(sizeof(std::byte) == 1);
+
+int element_checks(Size requested) {
+  std::allocator<unsigned char> bytes;
+  unsigned char *byte_values = bytes.allocate(requested);
+  if (allocated_size != requested)
+    return 21;
+  for (Size i = 0; i != requested; ++i)
+    bytes.construct(byte_values + i, static_cast<unsigned char>(i + 2));
+  if (byte_values[requested - 1] != static_cast<unsigned char>(requested + 1))
+    return 22;
+  for (Size i = 0; i != requested; ++i)
+    bytes.destroy(byte_values + i);
+  bytes.deallocate(byte_values, requested);
+
+  std::allocator<bool> flags;
+  bool *flag_values = flags.allocate(requested);
+  if (allocated_size != requested)
+    return 23;
+  for (Size i = 0; i != requested; ++i)
+    flags.construct(flag_values + i, i != 0);
+  if (flag_values[0] || !flag_values[requested - 1])
+    return 24;
+  for (Size i = 0; i != requested; ++i)
+    flags.destroy(flag_values + i);
+  flags.deallocate(flag_values, requested);
+
+  std::allocator<ByteRecord> records;
+  ByteRecord *record_values = records.allocate(requested);
+  if (allocated_size != requested)
+    return 25;
+  for (Size i = 0; i != requested; ++i) {
+    records.construct(record_values + i);
+    record_values[i].value = static_cast<unsigned char>(i + 3);
+  }
+  if (record_values[requested - 1].value !=
+      static_cast<unsigned char>(requested + 2))
+    return 26;
+  for (Size i = 0; i != requested; ++i)
+    records.destroy(record_values + i);
+  records.deallocate(record_values, requested);
+
+  std::allocator<std::byte> standard_bytes;
+  using ByteTraits = std::allocator_traits<std::allocator<std::byte>>;
+  std::byte *standard_values = ByteTraits::allocate(standard_bytes, requested,
+                                                  nullptr);
+  if (allocated_size != requested)
+    return 27;
+  ByteTraits::construct(standard_bytes, standard_values,
+                        static_cast<std::byte>(42));
+  if (std::to_integer<int>(*standard_values) != 42)
+    return 28;
+  ByteTraits::destroy(standard_bytes, standard_values);
+  ByteTraits::deallocate(standard_bytes, standard_values, requested);
+  return 0;
+}
+
+int conversion_checks(int requested) {
+  std::allocator<char> allocator;
+  const Size expected = static_cast<Size>(requested);
+  reset_effects();
+  char *signed_values = receiver(allocator).allocate(signed_count(requested));
+  if (!signed_values || allocated_size != expected || effects != 124 ||
+      receiver_calls != 1 || count_calls != 1)
+    return 41;
+  allocator.construct(signed_values, 's');
+  if (*signed_values != 's')
+    return 42;
+  allocator.destroy(signed_values);
+  allocator.deallocate(signed_values, requested);
+#if defined(NEVERC_BYTE_ALLOCATOR_SIZED_DELETE)
+  if (released_size != expected)
+    return 43;
+#endif
+
+  reset_effects();
+  char *converted_values =
+      receiver(allocator).allocate(RuntimeCount{expected + 1});
+  // The conversion precedes allocation, and the temporary's destructor runs
+  // at the end of the full expression, after allocation but before this check.
+  if (!converted_values || allocated_size != expected + 1 || effects != 1246 ||
+      receiver_calls != 1 || conversion_calls != 1 || cleanup_calls != 1)
+    return 44;
+  allocator.construct(converted_values, 'c');
+  if (*converted_values != 'c')
+    return 45;
+  allocator.destroy(converted_values);
+  allocator.deallocate(converted_values, expected + 1);
+  if (conversion_calls != 1 || cleanup_calls != 1)
+    return 46;
+#if defined(NEVERC_BYTE_ALLOCATOR_SIZED_DELETE)
+  if (released_size != expected + 1)
+    return 47;
+#endif
+  return 0;
+}
+
+// These exported bodies are translation/protocol controls, never invoked by
+// main. The original conversion to target size_t must remain present; there is
+// no pre-conversion negative-length rejection for std::allocator<char>.
+extern "C" char *signed_byte_count(int requested) {
+  std::allocator<char> allocator;
+  return allocator.allocate(requested);
+}
+extern "C" char *maximum_byte_count() {
+  std::allocator<char> allocator;
+  return allocator.allocate(Size(-1));
+}
+extern "C" char *maximum_traits_byte_count() {
+  std::allocator<char> allocator;
+  using Traits = std::allocator_traits<std::allocator<char>>;
+  return Traits::allocate(allocator, ~Size(0), nullptr);
+}
+
+int main() {
+  int result = member_checks(5);
+  if (result)
+    return result;
+  result = traits_checks(7);
+  if (result)
+    return result;
+  result = element_checks(3);
+  if (result)
+    return result;
+  result = conversion_checks(4);
+  if (result)
+    return result;
+  return allocations == 11 && releases == 11 ? 0 : 31;
+}
+"""
+
+    def check_byte_allocator(data, sized):
+        functions = {function["name"]: function for function in data["functions"]}
+        size_type = "u64" if data["target"]["pointer_bits"] == 64 else "uint"
+        signed = functions["signed_byte_count"]
+        assert signed["c_export"] and signed["params"][0]["type"] == "int", signed
+        signed_calls = [node for node in walk(signed["body"])
+                        if node.get("op") == "call"]
+        assert len(signed_calls) == 1, signed
+        allocation_name = signed_calls[0]["callee"]
+        allocation = functions[allocation_name]
+        assert allocation["result"] == "ptr:void", allocation
+        assert [param["type"] for param in allocation["params"]] == [size_type], allocation
+        assert any(node.get("kind") == "cast" and node["type"] == size_type
+                   and node["args"][0]["type"] == "int"
+                   for node in walk(signed["body"])), signed
+        # Negative signed values convert to size_t before the allocator sees
+        # them. For one-byte elements there is no additional length guard.
+        for name in ("signed_byte_count", "maximum_byte_count",
+                     "maximum_traits_byte_count"):
+            function = functions[name]
+            calls = [node for node in walk(function["body"])
+                     if node.get("op") == "call"]
+            assert len(calls) == 1 and calls[0]["callee"] == allocation_name, function
+            assert [arg["type"] for arg in calls[0]["args"]] == [size_type], function
+            assert not [node for node in walk(function["body"])
+                        if node.get("op") in ("if", "while", "for", "switch")], function
+
+        native_owners = {}
+        for function in data["functions"]:
+            operations = [node for node in walk(function["body"])
+                          if node.get("op") == "native_heap_call"]
+            if operations:
+                native_owners[function["name"]] = operations
+        malloc_owners = {name for name, calls in native_owners.items()
+                         if any(call["operation"] == "malloc" for call in calls)}
+        assert malloc_owners == {allocation_name}, data
+        deletion_names = {name for name, calls in native_owners.items()
+                          if any(call["operation"] == "free" for call in calls)}
+        assert len(deletion_names) == (2 if sized else 1), data
+        for name in deletion_names:
+            function = functions[name]
+            assert function["result"] == "void", function
+            assert function["params"][0]["type"] == "ptr:void", function
+        # malloc/free appear only in the source-owned new/delete bodies. All
+        # allocator calls still dispatch to those ordinary source functions.
+        assert set(native_owners) == {allocation_name} | deletion_names, data
+        assert all(node["operation"] in ("malloc", "free")
+                   for calls in native_owners.values() for node in calls), data
+        direct_calls = [node for node in walk(data["functions"])
+                        if node.get("op") == "call"]
+        assert all(node["callee"] in functions for node in direct_calls), data
+        allocation_calls = [node for node in direct_calls
+                            if node["callee"] == allocation_name]
+        assert allocation_calls, data
+        assert all([arg["type"] for arg in node["args"]] == [size_type]
+                   for node in allocation_calls), data
+        deletion_calls = [node for node in direct_calls
+                          if node["callee"] in deletion_names]
+        expected_delete_args = ["ptr:void", size_type] if sized else ["ptr:void"]
+        assert deletion_calls, data
+        assert all([arg["type"] for arg in node["args"]] == expected_delete_args
+                   for node in deletion_calls), data
+        assert not [node for node in walk(data["functions"])
+                    if node.get("op") == "mapped_call"], data
+        for node in walk(data["functions"]):
+            if node.get("op") == "assign":
+                assert node["target"]["type"] == node["value"]["type"], node
+        assert data.get("memory_lifetimes") is True, data
+        assert data.get("native_heap") is True, data
+        sdk_paths = {dependency["path"] for dependency in data["sdk_dependencies"]
+                     if dependency["root"] == "libcxx"}
+        assert {"memory", "__memory/allocator.h", "__memory/allocator_traits.h"} <= sdk_paths, data
+
+    for variant, sized in (("unsized", False), ("sized", True)):
+        source = ("#define NEVERC_BYTE_ALLOCATOR_SIZED_DELETE 1\n" if sized else "") + byte_allocator_source
+        byte_allocator = check(
+            "v2-memory-byte-allocator-" + variant, source,
+            profile="cpp-core-v2", sdk=True)
+        check_byte_allocator(byte_allocator, sized)
+        for target in sdk_targets:
+            target_result = check(
+                "v2-memory-byte-allocator-" + variant + "-" + target,
+                source, profile="cpp-core-v2", target=target, sdk=True)
+            assert target_result["sdk_dependencies"] == byte_allocator["sdk_dependencies"], target_result
+            check_byte_allocator(target_result, sized)
+
+    byte_allocator_negative = (
+        ('multibyte-member-runtime',
+         'using Size = decltype(sizeof(0));\nunsigned char storage[64];\nvoid *operator new(Size) { return storage; }\nvoid operator delete(void *) noexcept {}\n#include <memory>\nint *probe(std::allocator<int> &allocator, Size requested) {\n  return allocator.allocate(requested);\n}\n',
+         'TR0203', ''),
+        ('multibyte-traits-runtime',
+         'using Size = decltype(sizeof(0));\nunsigned char storage[64];\nvoid *operator new(Size) { return storage; }\nvoid operator delete(void *) noexcept {}\n#include <memory>\nint *probe(std::allocator<int> &allocator, Size requested) {\n  using Traits = std::allocator_traits<std::allocator<int>>;\n  return Traits::allocate(allocator, requested, nullptr);\n}\n',
+         'TR0203', ''),
+        ('multibyte-overflow',
+         'using Size = decltype(sizeof(0));\nunsigned char storage[64];\nvoid *operator new(Size) { return storage; }\nvoid operator delete(void *) noexcept {}\n#include <memory>\nint *probe(std::allocator<int> &allocator) {\n  return allocator.allocate(Size(-1));\n}\n',
+         'TR0203', ''),
+        ('volatile-count',
+         'using Size = decltype(sizeof(0));\nunsigned char storage[64];\nvoid *operator new(Size) { return storage; }\nvoid operator delete(void *) noexcept {}\n#include <memory>\nchar *probe(std::allocator<char> &allocator) {\n  volatile Size requested = 3;\n  return allocator.allocate(requested);\n}\n',
+         'TR0201', ''),
+        ('hidden-unsupported-count',
+         'using Size = decltype(sizeof(0));\nunsigned char storage[64];\nvoid *operator new(Size) { return storage; }\nvoid operator delete(void *) noexcept {}\n#include <memory>\nchar *probe(std::allocator<char> &allocator) {\n  return allocator.allocate(sizeof(long double));\n}\n',
+         'TR0201', ''),
+        ('member-missing-new',
+         '#include <memory>\nint main() {\n  std::allocator<char> allocator;\n  decltype(sizeof(0)) requested = 3;\n  return allocator.allocate(requested) ? 0 : 1;\n}\n',
+         'TR0203', 'allocation definition'),
+        ('traits-missing-new',
+         '#include <memory>\nint main() {\n  std::allocator<char> allocator;\n  using Traits = std::allocator_traits<std::allocator<char>>;\n  decltype(sizeof(0)) requested = 3;\n  return Traits::allocate(allocator, requested, nullptr) ? 0 : 1;\n}\n',
+         'TR0203', 'allocation definition'),
+        ('member-missing-delete',
+         'using Size = decltype(sizeof(0));\nextern "C" void *malloc(Size);\nvoid *operator new(Size size) {\n  void *storage = malloc(size ? size : Size(1));\n  while (!storage)\n    storage = malloc(size ? size : Size(1));\n  return storage;\n}\n#include <memory>\nint main() {\n  std::allocator<char> allocator;\n  Size requested = 3;\n  char *storage = allocator.allocate(requested);\n  allocator.deallocate(storage, requested);\n  return 0;\n}\n',
+         'TR0203', 'deallocation definition'),
+        ('traits-missing-delete',
+         'using Size = decltype(sizeof(0));\nextern "C" void *malloc(Size);\nvoid *operator new(Size size) {\n  void *storage = malloc(size ? size : Size(1));\n  while (!storage)\n    storage = malloc(size ? size : Size(1));\n  return storage;\n}\n#include <memory>\nint main() {\n  std::allocator<char> allocator;\n  using Traits = std::allocator_traits<std::allocator<char>>;\n  Size requested = 3;\n  char *storage = Traits::allocate(allocator, requested, nullptr);\n  Traits::deallocate(allocator, storage, requested);\n  return 0;\n}\n',
+         'TR0203', 'deallocation definition'),
+    )
+    assert len(byte_allocator_negative) == 9
+    for name, source, code, construct in byte_allocator_negative:
+        result = check("v2-memory-byte-allocator-reject-" + name, source, code,
+                       profile="cpp-core-v2", sdk=True)
+        if construct:
+            assert any(diagnostic["code"] == code and
+                       diagnostic["construct"] == construct
+                       for diagnostic in result["diagnostics"]), result
+
     memory_default_delete_source = """\
 #include <memory>
 using Size = decltype(sizeof(0));

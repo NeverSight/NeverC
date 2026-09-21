@@ -6333,18 +6333,25 @@ utilityAllocatorMemberConstruct(const State &S, const SourceManager &SM,
   return UtilityAllocatorConstructCall{Element, Construction, Constructor};
 }
 
-static bool utilityAllocatorConstantCount(const Expr *Count, QualType Element,
-                                          const ASTContext &Context) {
-  if (!Count || Element.isNull() || Element->isVoidType() ||
+static bool utilityAllocatorSafeCount(const Expr *Count, QualType Element,
+                                      const ASTContext &Context) {
+  if (!Count || Count->isTypeDependent() || Count->isValueDependent() ||
+      Count->isInstantiationDependent() || Element.isNull() ||
+      Element->isVoidType() ||
       Element->isIncompleteType() ||
       !Context.hasSameType(Count->getType(), Context.getSizeType()))
-    return false;
-  auto Value = Count->getIntegerConstantExpr(Context);
-  if (!Value || Value->isNegative())
     return false;
   const auto Bits = Context.getTypeSize(Context.getSizeType());
   const auto Bytes = Context.getTypeSizeInChars(Element).getQuantity();
   if (!Bits || !Bytes)
+    return false;
+  // For one-byte elements every already-converted size_t count is within
+  // max_size, so the pinned allocator's length-error branch is unreachable.
+  // Runtime lowering still evaluates the complete count expression once.
+  if (Bytes == 1)
+    return true;
+  auto Value = Count->getIntegerConstantExpr(Context);
+  if (!Value || Value->isNegative())
     return false;
   const auto Maximum = llvm::APInt::getMaxValue(Bits).udiv(
       llvm::APInt(Bits, static_cast<uint64_t>(Bytes)));
@@ -6425,8 +6432,8 @@ approvedUtilityAllocatorHeapCall(const State &S, const SourceManager &SM,
                                Method->getParamDecl(I)->getType()))
         return std::nullopt;
     if (Info->Allocate &&
-        !utilityAllocatorConstantCount(Call->getArg(0),
-                                       Info->Allocator.ElementType, Context))
+        !utilityAllocatorSafeCount(Call->getArg(0),
+                                   Info->Allocator.ElementType, Context))
       return std::nullopt;
     return Info;
   }
@@ -6473,7 +6480,7 @@ approvedUtilityAllocatorHeapCall(const State &S, const SourceManager &SM,
                              Method->getParamDecl(I)->getType()))
       return std::nullopt;
   if (Allocate &&
-      !utilityAllocatorConstantCount(
+      !utilityAllocatorSafeCount(
           Call->getArg(1), TraitsRecord->Allocator.ElementType, Context))
     return std::nullopt;
 

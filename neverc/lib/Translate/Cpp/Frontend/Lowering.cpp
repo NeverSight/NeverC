@@ -1918,7 +1918,7 @@ class FunctionLowering {
       if (Info.Allocate) {
         if (First >= Call->getNumArgs())
           reject(L, "allocator allocation",
-                 "A checked constant element count is required.");
+                 "A checked element count within max_size is required.");
         auto Count = snapshot(expression(Call->getArg(First)), L);
         if (Info.Hint) {
           if (First + 1 >= Call->getNumArgs())

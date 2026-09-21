@@ -901,10 +901,17 @@ Exact `allocator<T>::allocate` and `deallocate` members and their exact
 `allocator_traits<allocator<T>>` forwarding operations lower through the
 existing source-defined global allocation-function contract. `T` must be a
 complete non-void object whose alignment does not exceed the target's default
-new alignment. An allocation count must be an integer constant expression no
-greater than `max_size`; this proves the byte multiplication cannot overflow
-without adding the unsupported `bad_array_new_length` exception path. Zero is
-valid and still calls the selected allocator. The deprecated allocation-hint
+new alignment. An allocation count must be proven no greater than `max_size`;
+this proves the byte multiplication cannot overflow without adding the
+unsupported `bad_array_new_length` exception path. When `sizeof(T)` is one,
+every count already converted to target `size_t` satisfies that bound, so
+runtime counts are admitted. This includes admitted character types, `bool`,
+`std::byte` and one-byte source records. Signed inputs retain their ordinary
+conversion to `size_t`, including wrapping negative inputs; no pre-conversion
+sign check is introduced. Count expressions, user-defined conversions and
+temporary cleanup retain their existing source checks and one-time evaluation.
+Larger elements still require a nonoverflowing integer constant expression.
+Zero is valid and still calls the selected allocator. The deprecated allocation-hint
 member and the traits hint overload evaluate the hint once after the allocator
 and count, then use the same global allocation function.
 
@@ -917,9 +924,9 @@ the existing standard forward to a checked source-defined unsized delete; any
 source-written undefined sized redeclaration blocks that inference. The allocator
 receiver or traits allocator reference is evaluated first. Both paths emit
 ordinary checked source calls, enable `memory_lifetimes`, and introduce no
-libc++ runtime call or allocation opcode. Default heap allocation, dynamic or
-overflowing allocation counts, extended alignment, exceptions and ownership
-types remain rejected.
+libc++ runtime call or allocation opcode. Default heap allocation, unproven or
+overflowing allocation counts, extended alignment and exceptions remain rejected.
+Ownership objects retain their separate contracts.
 
 The exact `std::addressof(T&)` and raw-pointer
 `std::pointer_traits<T *>::pointer_to(T&)` operations directly produce the
