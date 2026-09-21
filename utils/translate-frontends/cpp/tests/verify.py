@@ -1944,6 +1944,57 @@ extern "C" int functional_member_function_pointer(
         check("v2-functional-member-function-pointer-" + target,
               functional_member_function_pointer_source,
               profile="cpp-core-v2", target=target, sdk=True)
+    functional_function_pointer_signature_source = """\
+#include <functional>
+int first(int value) { return value + 10; }
+int second(int value) { return value + 20; }
+using Function = int (*)(int);
+Function choose(Function function) { return function; }
+Function &alias(Function &function) { return function; }
+Function &&forward(Function &&function) {
+  return static_cast<Function &&>(function);
+}
+struct Box {
+  Function choose(Function function) { return function; }
+  Function &alias(Function &function) { return function; }
+  Function &&forward(Function &&function) {
+    return static_cast<Function &&>(function);
+  }
+};
+extern "C" int functional_function_pointer_signature(Function slot) {
+  int score = std::invoke(choose, first)(1);
+  std::invoke(alias, slot) = second;
+  score += slot(2);
+  Function &&moved = std::invoke(forward, static_cast<Function &&>(slot));
+  moved = first;
+  score += slot(3);
+  auto alias_ref = std::ref(alias);
+  std::invoke(alias_ref, slot) = second;
+  score += slot(4);
+  Box box;
+  auto choose_member = &Box::choose;
+  score += (box.*choose_member)(first)(5);
+  score += std::invoke(choose_member, box, second)(6);
+  auto alias_member = &Box::alias;
+  std::mem_fn(alias_member)(box, slot) = first;
+  score += slot(7);
+  auto forward_member = std::mem_fn(&Box::forward);
+  Function &&again = std::invoke(
+      forward_member, box, static_cast<Function &&>(slot));
+  again = second;
+  return score + slot(8);
+}
+"""
+    functional_function_pointer_signature = check(
+        "v2-functional-function-pointer-signature",
+        functional_function_pointer_signature_source,
+        profile="cpp-core-v2", sdk=True)
+    assert any(function["name"] == "functional_function_pointer_signature"
+               for function in functional_function_pointer_signature["functions"]), functional_function_pointer_signature
+    for target in sdk_targets:
+        check("v2-functional-function-pointer-signature-" + target,
+              functional_function_pointer_signature_source,
+              profile="cpp-core-v2", target=target, sdk=True)
     functional_stored_data_member_source = """\
 #include <functional>
 #include <utility>
@@ -2342,8 +2393,6 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
          "TR0203"),
         ("invoke-member-variadic-function-pointer-field", '#include <functional>\nint f(int n,...){return n;}struct X{int(*p)(int,...);};int main(){X x{f};return std::invoke(&X::p,x)(1,2);}',
          "TR0201"),
-        ("invoke-member-function-pointer-reference", '#include <functional>\nint f(){return 3;}struct X{void set(int(*&p)()){p=f;}};int main(){X x;int(*p)()=f;std::invoke(&X::set,x,p);return p();}',
-         "TR0203"),
         ("stored-mem-fn-move-from-parameter", '#include <functional>\n#include <utility>\nstruct X{int v;};using Get=decltype(std::mem_fn(&X::v));int call(Get get,X&x){auto q=std::move(get);return q(x);}int main(){X x{3};return call(std::mem_fn(&X::v),x);}',
          "TR0203"),
         ("stored-mem-fn-use-adapter-from-parameter", '#include <functional>\n#include <utility>\nstruct X{int v;};using Get=decltype(std::mem_fn(&X::v));int call(Get get,X&x){return std::move(get)(x);}int main(){X x{3};return call(std::mem_fn(&X::v),x);}',

@@ -120,9 +120,9 @@ ABI-v1 eight-byte CityHash path on 64-bit targets through the same object,
 assignment and invocation forms. `long double`, `void *`, volatile-object and
 function-pointer hashes remain outside this boundary. Exact object
 forms of `std::reference_wrapper<T>` and `std::reference_wrapper<const T>`, plus
-exact fixed-arity function forms with admitted scalar or object-pointer values,
-exact lvalue- or rvalue-reference parameters, and exact lvalue-reference
-results, use
+exact fixed-arity function forms with admitted scalar, object-pointer or
+fixed-arity ordinary function-pointer values, exact lvalue- or rvalue-reference
+parameters, and exact lvalue- or rvalue-reference results, use
 their authenticated target ABI layout: one pointer slot under the Itanium ABI
 and an empty-base storage slot plus the pointer under the Microsoft ABI. They
 lower direct matching-lvalue construction, direct and wrapper-taking
@@ -132,11 +132,13 @@ object targets. Object forms also lower the implicit reference conversion.
 Wrappers around admitted standard function
 objects, stored fixed-arity function pointers and admitted function referents
 are callable directly and through `std::invoke`, preserving exact scalar and
-object-pointer lvalue or rvalue references. The
+object-pointer or function-pointer lvalue or rvalue references. The
 exact C++17 `std::invoke` also lowers fixed-arity ordinary functions and stored
-function pointers with directly convertible by-value scalar parameters or
-exact admitted scalar or object-pointer lvalue or rvalue references, and preserves the
-corresponding scalar, object-pointer, lvalue- or rvalue-reference or `void` result, plus
+function pointers with directly convertible by-value scalar parameters, exact
+fixed-arity ordinary function pointers including function-name decay, or exact
+admitted lvalue or rvalue references to those values, and preserves the
+corresponding scalar, object-pointer, function-pointer, lvalue- or
+rvalue-reference or `void` result, plus
 the admitted typed and transparent standard function objects. Direct named
 addresses of owned nonstatic member functions
 also lower on exact-class lvalue, full-expression temporary, pointer or

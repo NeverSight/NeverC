@@ -34418,6 +34418,70 @@ int main() {
 }
 
 TEST_F(TranslateTest,
+       CoreV2FunctionalFunctionPointerSignaturesRunAtBothOptimizations) {
+  const auto Source = tmpFile("functional-function-pointer-signatures.cpp");
+  const auto Output = tmpFile("functional-function-pointer-signatures.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+int first(int value) { return value + 10; }
+int second(int value) { return value + 20; }
+using Function = int (*)(int);
+Function choose(Function function) { return function; }
+Function &alias(Function &function) { return function; }
+Function &&forward(Function &&function) {
+  return static_cast<Function &&>(function);
+}
+struct Box {
+  Function choose(Function function) { return function; }
+  Function &alias(Function &function) { return function; }
+  Function &&forward(Function &&function) {
+    return static_cast<Function &&>(function);
+  }
+};
+int main() {
+  Function slot = first;
+  int score = std::invoke(choose, first)(1) == 11;
+  std::invoke(alias, slot) = second;
+  score += slot(2) == 22;
+  Function &&moved = std::invoke(forward, static_cast<Function &&>(slot));
+  moved = first;
+  score += slot(3) == 13;
+  auto alias_ref = std::ref(alias);
+  std::invoke(alias_ref, slot) = second;
+  score += slot(4) == 24;
+  Box box;
+  auto choose_member = &Box::choose;
+  score += (box.*choose_member)(first)(5) == 15;
+  score += std::invoke(choose_member, box, second)(6) == 26;
+  auto alias_member = &Box::alias;
+  std::mem_fn(alias_member)(box, slot) = first;
+  score += slot(7) == 17;
+  auto forward_member = std::mem_fn(&Box::forward);
+  Function &&again = std::invoke(
+      forward_member, box, static_cast<Function &&>(slot));
+  again = second;
+  score += slot(8) == 28;
+  return score == 8 ? 0 : score;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  EXPECT_EQ(Generated.find("member_pointer"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-function-pointer-signatures" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
        CoreV2FunctionalInvokeStoredMembersRunAtBothOptimizations) {
   const auto Source = tmpFile("functional-invoke-stored-members.cpp");
   const auto Output = tmpFile("functional-invoke-stored-members.nc");
@@ -34972,11 +35036,6 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "int(*p)(int,...);};int main(){X x{f};return "
        "std::invoke(&X::p,x)(1,2);}",
        "TR0201"},
-      {"invoke-member-function-pointer-reference",
-       "#include <functional>\nint f(){return 3;}struct X{"
-       "void set(int(*&p)()){p=f;}};int main(){X x;int(*p)()=f;"
-       "std::invoke(&X::set,x,p);return p();}",
-       "TR0203"},
       {"stored-mem-fn-move-from-parameter",
        "#include <functional>\n#include <utility>\nstruct X{int v;};"
        "using Get=decltype(std::mem_fn(&X::v));"

@@ -307,8 +307,9 @@ volatile-object and function-pointer hash specializations remain outside this
 boundary.
 Exact object `std::reference_wrapper<T>` and
 `std::reference_wrapper<const T>`, plus exact fixed-arity function wrappers with
-admitted scalar or object-pointer values, exact lvalue- or rvalue-reference
-parameters, and exact lvalue- or rvalue-reference results, use their authenticated target
+admitted scalar, object-pointer or fixed-arity ordinary function-pointer values,
+exact lvalue- or rvalue-reference parameters, and exact lvalue- or
+rvalue-reference results, use their authenticated target
 ABI layout:
 a single pointer slot under the Itanium ABI and an empty-base storage slot plus
 the pointer under the Microsoft ABI. Direct matching-lvalue construction,
@@ -319,20 +320,22 @@ qualification and single evaluation. Wrapper-taking calls preserve the target;
 reference conversion. Wrappers
 around admitted standard function objects, stored fixed-arity function pointers
 and admitted function referents call directly or through `std::invoke`,
-preserving exact scalar and object-pointer lvalue or rvalue references and retaining the
+preserving exact scalar, object-pointer and function-pointer lvalue or rvalue references and retaining the
 wrapper and referenced callable before evaluating the arguments. The
 remaining callable facilities stay outside the documented
 direct lowering boundary, except exact C++17 `std::invoke` calls on fixed-arity
 ordinary functions or stored function pointers. Those calls accept directly
-convertible by-value scalar parameters or exact admitted scalar or
-object-pointer lvalue or rvalue references, and preserve the corresponding scalar,
-object-pointer, lvalue- or rvalue-reference or `void` result. The same entry point accepts
+convertible by-value scalar parameters, exact fixed-arity ordinary function
+pointers including function-name decay, or exact admitted lvalue or rvalue
+references to those values, and preserve the corresponding scalar,
+object-pointer, function-pointer, lvalue- or rvalue-reference or `void` result. The same entry point accepts
 the admitted typed and transparent standard function objects above. A direct
 source-written address of an owned nonstatic member
 function may also be invoked on an exact-class lvalue, pointer or admitted
 `std::reference_wrapper` when its fixed-arity signature has the same scalar
-boundary, including object-pointer values, exact scalar or object-pointer
-lvalue- or rvalue-reference parameters, and exact lvalue- or rvalue-reference results. A
+boundary, including object-pointer and fixed-arity ordinary function-pointer
+values, exact lvalue- or rvalue-reference parameters, and exact lvalue- or
+rvalue-reference results. A
 direct source-written address of an admitted non-volatile scalar, object-pointer
 or fixed-arity ordinary function-pointer field,
 including a declared-const field, may be invoked on the same receivers and

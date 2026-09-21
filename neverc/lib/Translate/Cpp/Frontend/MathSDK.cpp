@@ -375,6 +375,13 @@ static bool supportedFunctionalScalar(QualType Type,
          Type->isSpecificBuiltinType(BuiltinType::Double);
 }
 
+static bool supportedFunctionalCallableValue(QualType Type,
+                                             const ASTContext &Context) {
+  return supportedFunctionalScalar(Type, Context) ||
+         (!Type.isNull() && !Type.hasQualifiers() &&
+          Type->isFunctionPointerType());
+}
+
 static bool functionalObjectName(llvm::StringRef Name) {
   return Name == "plus" || Name == "minus" || Name == "multiplies" ||
          Name == "divides" || Name == "modulus" || Name == "negate" ||
@@ -724,7 +731,8 @@ static bool supportedFunctionalReferenceValue(const ASTContext &Context,
           Context.getTypeSize(Type) <= 64) ||
          Type->isSpecificBuiltinType(BuiltinType::Float) ||
          Type->isSpecificBuiltinType(BuiltinType::Double) ||
-         Type->isNullPtrType() || utilityObjectPointer(Context, Type);
+         Type->isNullPtrType() || Type->isFunctionPointerType() ||
+         utilityObjectPointer(Context, Type);
 }
 
 std::optional<FunctionalReferenceRecord> approvedFunctionalReferenceRecord(
@@ -799,13 +807,13 @@ std::optional<FunctionalReferenceRecord> approvedFunctionalReferenceRecord(
              ? !supportedFunctionalReferenceValue(Context,
                                                   Result->getPointeeType())
              : (!Result->isVoidType() &&
-                !supportedFunctionalScalar(Result, Context))))
+                !supportedFunctionalCallableValue(Result, Context))))
       return std::nullopt;
     for (const auto Parameter : Function->param_types())
       if (Parameter->isReferenceType()
               ? !supportedFunctionalReferenceValue(Context,
                                                    Parameter->getPointeeType())
-              : !supportedFunctionalScalar(Parameter, Context))
+              : !supportedFunctionalCallableValue(Parameter, Context))
         return std::nullopt;
   }
   const auto PointerType = Context.getPointerType(Referent);
@@ -6930,7 +6938,7 @@ static bool approvedFunctionalForwardingCall(
 
 static bool supportedFunctionalMemberValue(const ASTContext &Context,
                                            QualType Type) {
-  return supportedFunctionalScalar(Type, Context) ||
+  return supportedFunctionalCallableValue(Type, Context) ||
          utilityObjectPointer(Context, Type);
 }
 
@@ -6958,9 +6966,17 @@ supportedFunctionalInvokeReferenceArgument(const ASTContext &Context,
 
 static bool functionalMemberValueConversion(const ASTContext &Context,
                                             QualType From, QualType To) {
-  if (supportedFunctionalScalar(From, Context) &&
-      supportedFunctionalScalar(To, Context))
+  if (To->isFunctionPointerType()) {
+    if (From->isFunctionType())
+      return Context.hasSameType(Context.getPointerType(From), To);
+    return From->isFunctionPointerType() && Context.hasSameType(From, To);
+  }
+  if (From->isFunctionType() || From->isFunctionPointerType())
+    return false;
+  if (supportedFunctionalCallableValue(From, Context) &&
+      supportedFunctionalCallableValue(To, Context)) {
     return utilityScalarDirectConversion(Context, From, To);
+  }
   if (!utilityObjectPointer(Context, To))
     return false;
   if (From->isNullPtrType())
@@ -7750,7 +7766,7 @@ approvedFunctionalReferenceDirectInvoke(
       (ReferenceResult
            ? !supportedFunctionalInvokeReference(Context, ExpressionResult)
            : (!Call->getType()->isVoidType() &&
-              !supportedFunctionalScalar(Call->getType(), Context))))
+              !supportedFunctionalCallableValue(Call->getType(), Context))))
     return std::nullopt;
   for (unsigned I = 0; I < Prototype->getNumParams(); ++I) {
     const auto Parameter = Prototype->getParamType(I);
@@ -7761,9 +7777,9 @@ approvedFunctionalReferenceDirectInvoke(
             ? supportedFunctionalInvokeReferenceArgument(Context, Parameter,
                                                          ArgumentExpression)
             : !Parameter->isReferenceType() &&
-                  supportedFunctionalScalar(Parameter, Context) &&
-                  supportedFunctionalScalar(Argument, Context) &&
-                  utilityScalarDirectConversion(Context, Argument, Parameter);
+                  supportedFunctionalCallableValue(Parameter, Context) &&
+                  functionalMemberValueConversion(Context, Argument,
+                                                  Parameter);
     if (!Supported)
       return std::nullopt;
   }
@@ -7833,7 +7849,7 @@ approvedFunctionalReferenceInvokeCall(
                                ? supportedFunctionalInvokeReferenceArgument(
                                      Context, Parameter, Call->getArg(I))
                                : !Parameter->isReferenceType() &&
-                                     utilityScalarDirectConversion(
+                                     functionalMemberValueConversion(
                                          Context, Call->getArg(I)->getType(),
                                          InnerCall->getArg(I)->getType());
     if (!Supported)
@@ -10949,7 +10965,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                 !Same(Call->getType(), Referent))
              : (!Call->isPRValue() ||
                 !Same(Call->getType(), Function->getReturnType()) ||
-                (!Result->isVoidType() && !utilityScalar(Context, Result)))) ||
+                (!Result->isVoidType() &&
+                 !supportedFunctionalCallableValue(Result, Context)))) ||
         !approvedFunctionalInvokeDispatch(S, SM, Call, Context,
                                           ReferenceResult))
       return std::nullopt;
@@ -10970,10 +10987,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
             Context, Parameter, ArgumentExpression);
       } else {
         Supported = !Parameter->isReferenceType() &&
-                    utilityScalar(Context, Parameter) &&
-                    utilityScalar(Context, Argument) &&
-                    utilityScalarDirectConversion(Context, Argument,
-                                                  Parameter);
+                    supportedFunctionalCallableValue(Parameter, Context) &&
+                    functionalMemberValueConversion(Context, Argument,
+                                                    Parameter);
       }
       if (!Supported)
         return std::nullopt;
