@@ -203,6 +203,13 @@ volatile or nontrivial array elements and user `std::array` specializations
 remain excluded.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#fixed-value-arrays-from-array).
 
+Array layout also supplies authenticated evidence for type queries, including
+direct classifications, reference binding and `decltype` of source-owned calls
+returning array references. Element types and original expressions remain
+checked even for zero extents; SDK callee, construction, exception and enum
+proofs retain their separate boundaries.
+[C++17](../utils/translate-frontends/docs/cpp-core-v2.md#fixed-value-arrays-from-array).
+
 Core v2 type metadata now accepts owned incomplete non-union classes, including forward declarations and uninstantiated template types. Classification and array dimensions retain exact source identity without generating record storage; runtime carriers and callbacks still require complete admitted types. Reference/pointer operation queries can use these identities with exact retained source proof; selected lazy method return signatures keep their complete-carrier checks. Native verification requires the implementing revision’s CI. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#incomplete-record-type-metadata).
 
 Core v2 operation queries now inspect unknown-bound arrays through checked type metadata. Construction/destruction short circuits, exact reference bindings and array-to-pointer conversions preserve their retained source evidence; runtime storage remains restricted. Native verification requires the implementing revision’s CI. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#unknown-bound-array-operation-types).

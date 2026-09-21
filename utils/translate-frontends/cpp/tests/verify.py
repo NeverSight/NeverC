@@ -1594,6 +1594,147 @@ int main() {
               profile="cpp-core-v2", sdk=True)
 
 
+    # Array layout provenance preserves source elements and callable proofs.
+    array_query_layout_source = """\
+#include <array>
+using Row = std::array<int, 2>;
+using Empty = std::array<int, 0>;
+using Grid = std::array<Row, 2>;
+struct Element { int value; int source_extent[2]; };
+using Records = std::array<Element, 2>;
+using EmptyRecords = std::array<Element, 0>;
+int effects;
+Row& mutable_row(Row& row) { ++effects; return row; }
+const Row& constant_row(const Row& row) { ++effects; return row; }
+Row&& rvalue_row(Row&& row) { ++effects; return static_cast<Row&&>(row); }
+Empty& empty_row(Empty& row) { ++effects; return row; }
+Grid& nested_rows(Grid& rows) { ++effects; return rows; }
+Records& record_rows(Records& rows) { ++effects; return rows; }
+EmptyRecords& empty_record_rows(EmptyRecords& rows) { ++effects; return rows; }
+struct Owner {
+  Row row;
+  Row& get() { ++effects; return row; }
+  const Row& read() const { ++effects; return row; }
+  Row&& take() { ++effects; return static_cast<Row&&>(row); }
+};
+int source_function_queries(Row& row, const Row& constant, Empty& empty,
+                            Grid& grid, Records& records,
+                            EmptyRecords& empty_records) {
+#ifndef NEVERC_ARRAY_LAYOUT_SKIP_QUERIES
+  static_assert(__is_same(decltype(mutable_row(row)), Row&));
+  static_assert(__is_same(decltype(constant_row(constant)), const Row&));
+  static_assert(__is_same(decltype(rvalue_row(static_cast<Row&&>(row))), Row&&));
+  static_assert(__is_lvalue_reference(decltype(mutable_row(row))));
+  static_assert(__is_rvalue_reference(decltype(rvalue_row(static_cast<Row&&>(row)))));
+  static_assert(!__is_same(decltype(mutable_row(row)), int&));
+  static_assert(!__is_class(decltype(mutable_row(row))));
+  static_assert(__is_same(decltype(empty_row(empty)), Empty&));
+  static_assert(__is_same(decltype(nested_rows(grid)), Grid&));
+  static_assert(__is_same(decltype(record_rows(records)), Records&));
+  static_assert(__is_same(decltype(empty_record_rows(empty_records)), EmptyRecords&));
+#endif
+  return effects;
+}
+int source_method_queries(Owner& owner, const Owner& constant) {
+#ifndef NEVERC_ARRAY_LAYOUT_SKIP_QUERIES
+  static_assert(__is_same(decltype(owner.get()), Row&));
+  static_assert(__is_same(decltype(constant.read()), const Row&));
+  static_assert(__is_same(decltype(owner.take()), Row&&));
+  static_assert(!__is_same(decltype(constant.read()), Row&));
+#endif
+  return effects;
+}
+int main() {
+  Row row{{1, 2}};
+#ifndef NEVERC_ARRAY_LAYOUT_SKIP_QUERIES
+  // These consume the same layout proof without a source-call decltype.
+  static_assert(__is_same(Row, Row));
+  static_assert(__is_class(Row));
+  static_assert(__is_trivially_destructible(Row));
+  static_assert(__is_constructible(Row&, Row&));
+  static_assert(__is_same(int[sizeof(Row)], int[sizeof(Row)]));
+#endif
+  const Row constant{{3, 4}};
+  Empty empty{};
+  Grid grid{{Row{{5, 6}}, Row{{7, 8}}}};
+  Records records{{Element{9, {10, 11}}, Element{12, {13, 14}}}};
+  EmptyRecords empty_records{};
+  Owner owner{{{15, 16}}};
+  const Owner constant_owner{{{17, 18}}};
+  if (source_function_queries(row, constant, empty, grid, records, empty_records) ||
+      source_method_queries(owner, constant_owner) || effects)
+    return 1;
+  if (&mutable_row(row) != &row || &constant_row(constant) != &constant || effects != 2)
+    return 2;
+  Row&& moved = rvalue_row(static_cast<Row&&>(row));
+  if (&moved != &row || effects != 3) return 3;
+  if (&empty_row(empty) != &empty || &nested_rows(grid) != &grid || effects != 5)
+    return 4;
+  if (&record_rows(records) != &records || &empty_record_rows(empty_records) != &empty_records || effects != 7)
+    return 5;
+  if (&owner.get() != &owner.row || &constant_owner.read() != &constant_owner.row || effects != 9)
+    return 6;
+  Row&& taken = owner.take();
+  taken[1] = 19;
+  if (&taken != &owner.row || owner.row[1] != 19 || effects != 10)
+    return 7;
+  return 0;
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-array-query-layout-" + target,
+                     array_query_layout_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        assert not [node for node in walk(data["functions"])
+                    if node.get("op") == "mapped_call"], data
+    for name, source, code in (
+        ('extent-long-double',
+         '#include <array>\n\nusing Row = std::array<int,(sizeof(long double),2)>;\nRow& identity(Row& row){return row;}\nint probe(Row& row){static_assert(__is_same(decltype(identity(row)),Row&));return 0;}\nint main(){return 0;}\n',
+         'TR0201'),
+        ('element-long-double-expression',
+         '#include <array>\n\nusing Row = std::array<decltype((sizeof(long double),int())),2>;\nRow& identity(Row& row){return row;}\nint probe(Row& row){static_assert(__is_same(decltype(identity(row)),Row&));return 0;}\nint main(){return 0;}\n',
+         'TR0201'),
+        ('element-erased-object-pointer',
+         '#include <array>\nint object=0;template<auto V>using Erased=int;\nusing Row = std::array<Erased<&object>,2>;\nRow& identity(Row& row){return row;}\nint probe(Row& row){static_assert(__is_same(decltype(identity(row)),Row&));return 0;}\nint main(){return 0;}\n',
+         'TR0201'),
+        ('record-element-hidden-extent',
+         '#include <array>\nstruct Element{int values[(sizeof(long double),2)];};\nusing Row = std::array<Element,2>;\nRow& identity(Row& row){return row;}\nint probe(Row& row){static_assert(__is_same(decltype(identity(row)),Row&));return 0;}\nint main(){return 0;}\n',
+         'TR0201'),
+        ('record-element-erased-pointer',
+         '#include <array>\nint object=0;template<auto V>using Erased=int;struct Element{Erased<&object> value;};\nusing Row = std::array<Element,2>;\nRow& identity(Row& row){return row;}\nint probe(Row& row){static_assert(__is_same(decltype(identity(row)),Row&));return 0;}\nint main(){return 0;}\n',
+         'TR0201'),
+        ('nontrivial-element-zero',
+         '#include <array>\nstruct Element{int value;~Element(){}};\nusing Row = std::array<Element,0>;\nRow& identity(Row& row){return row;}\nint probe(Row& row){static_assert(__is_same(decltype(identity(row)),Row&));return 0;}\nint main(){return 0;}\n',
+         'TR0203'),
+        ('volatile-element-zero',
+         '#include <array>\n\nusing Row = std::array<volatile int,0>;\nRow& identity(Row& row){return row;}\nint probe(Row& row){static_assert(__is_same(decltype(identity(row)),Row&));return 0;}\nint main(){return 0;}\n',
+         'TR0201'),
+        ('exact-layout-user-specialization',
+         '#include <array>\nnamespace std { template<> struct array<int, 2> { int __elems_[2]; }; }\nusing Row = std::array<int, 2>;\nRow& identity(Row& row) { return row; }\nint probe(Row& row) {\n  static_assert(__is_same(decltype(identity(row)), Row&));\n  return 0;\n}\n',
+         'TR0201'),
+        ('zero-extent-selected-alias-default',
+         '#include <array>\ntemplate<decltype(sizeof(0)) N = (sizeof(long double), 0)>\nusing Rows = std::array<int, N>;\nusing Row = Rows<>;\nRow& identity(Row& row) { return row; }\nint probe(Row& row) {\n  static_assert(__is_same(decltype(identity(row)), Row&));\n  return 0;\n}\n',
+         'TR0201'),
+        ('source-call-hidden-comma-argument',
+         '#include <array>\nusing Row = std::array<int, 2>;\nRow& identity(Row& row) { return row; }\nint probe(Row& row) {\n  static_assert(!__is_same(decltype(identity((sizeof(long double), row))), int&));\n  return 0;\n}\n',
+         'TR0201'),
+        ('sdk-value-construction-operation',
+         '#include <array>\nusing Row = std::array<int, 2>;\nint main(){Row row{{1,2}};static_assert(__is_constructible(Row));return 0;}\n',
+         'TR0201'),
+        ('sdk-nothrow-destruction-operation',
+         '#include <array>\nusing Row = std::array<int, 2>;\nint main(){Row row{{1,2}};static_assert(__is_nothrow_destructible(Row));return 0;}\n',
+         'TR0201'),
+        ('sdk-array-get-query',
+         '#include <array>\nusing Row=std::array<int,2>;\nint probe(Row& row){static_assert(__is_same(decltype(std::get<0>(row)),int&));return 0;}\n',
+         'TR0201'),
+        ('sdk-byte-array-query',
+         '#include <array>\n#include <cstddef>\nusing Row=std::array<std::byte,2>;\nRow& identity(Row& row){return row;}\nint probe(Row& row){static_assert(__is_same(decltype(identity(row)),Row&));return 0;}\n',
+         'TR0201'),
+    ):
+        check("v2-array-query-layout-reject-" + name, source, code,
+              profile="cpp-core-v2", sdk=True)
+
+
     array_reference_combinations_source = """\
 #include <array>
 #include <functional>

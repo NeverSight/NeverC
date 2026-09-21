@@ -7413,6 +7413,15 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             Self(Self, Argument.getAsType(), true, Depth + 1);
           return;
         }
+        if (const auto Array =
+                approvedUtilityArrayRecord(A.S, A.Sources, Declaration,
+                                           A.Context)) {
+          // The exact pinned array shape supplies its library layout source.
+          // Element source remains ordinary input, including zero extents;
+          // never complete the SDK's implementation TypeLocs by proxy.
+          Self(Self, Array->ElementType, true, Depth + 1);
+          return;
+        }
         const auto *Record = dyn_cast_or_null<CXXRecordDecl>(
             RecordType->getDecl()->getDefinition());
         if (!Record)

@@ -470,6 +470,22 @@ remains inaccessible. By-value SDK callback parameters and results, including
 or elements, nontrivial element records, and user-defined `std::array`
 specializations are rejected even when reached through a reference.
 
+Type queries that need array layout use the authenticated specialization's
+shape while retaining the original element and source-expression dependencies.
+This allows layout-consuming classifications and reference-binding queries
+over already instantiated admitted arrays, and `decltype` queries over
+source-owned functions or methods returning array references. Mutable, const
+and rvalue references, nested arrays and zero extents retain their identities;
+query operands remain unevaluated. Source-record element fields, written
+extents, aliases, call arguments and defaults still require their original
+source checks, including for zero-length arrays.
+
+This supplies layout evidence only. SDK callee, selected constructor,
+exception-specification and enum-source checks remain separate. Queries over
+`std::get` calls, SDK construction or nothrow destruction, and array elements
+such as `std::byte` that still require SDK enum-source evidence are not enabled
+by the layout proof.
+
 The standalone authenticated closure contains 217 libc++/resource files on all
 eight supported targets and contains no platform headers. Generated programs do
 not call or link libc++ for these operations. Comparisons recursively preserve

@@ -298,6 +298,11 @@ reference-wrapper calls, native member-pointer calls and `mem_fn`; callable
 definitions retain their source-owned checks. By-value SDK callback parameters
 and results, volatile or nontrivial array elements and user array specializations
 remain rejected.
+Array layout also supports type-query source proof, including classifications,
+reference binding and `decltype` of source-owned calls returning array
+references. Element and written-expression dependencies remain checked for
+nonempty, nested and zero-length arrays; SDK callee, construction, exception
+and enum-source proofs remain separate.
 Initializer-list objects retain libc++'s authenticated pointer-and-size view.
 Braced backing arrays use the existing automatic, full-expression and static
 lifetime machinery; default, copy/move and assignment operations, member and

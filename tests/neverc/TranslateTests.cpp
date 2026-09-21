@@ -27737,6 +27737,226 @@ int main() { return 0; }
   expectNoArtifacts(QuotedOutput);
 }
 
+TEST_F(TranslateTest, CoreV2ArrayQueryLayoutRunsAtBothOptimizations) {
+  const auto Source = tmpFile("array-query-layout.cpp");
+  const auto Output = tmpFile("array-query-layout.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+using Row = std::array<int, 2>;
+using Empty = std::array<int, 0>;
+using Grid = std::array<Row, 2>;
+struct Element { int value; int source_extent[2]; };
+using Records = std::array<Element, 2>;
+using EmptyRecords = std::array<Element, 0>;
+int effects;
+Row& mutable_row(Row& row) { ++effects; return row; }
+const Row& constant_row(const Row& row) { ++effects; return row; }
+Row&& rvalue_row(Row&& row) { ++effects; return static_cast<Row&&>(row); }
+Empty& empty_row(Empty& row) { ++effects; return row; }
+Grid& nested_rows(Grid& rows) { ++effects; return rows; }
+Records& record_rows(Records& rows) { ++effects; return rows; }
+EmptyRecords& empty_record_rows(EmptyRecords& rows) { ++effects; return rows; }
+struct Owner {
+  Row row;
+  Row& get() { ++effects; return row; }
+  const Row& read() const { ++effects; return row; }
+  Row&& take() { ++effects; return static_cast<Row&&>(row); }
+};
+int source_function_queries(Row& row, const Row& constant, Empty& empty,
+                            Grid& grid, Records& records,
+                            EmptyRecords& empty_records) {
+#ifndef NEVERC_ARRAY_LAYOUT_SKIP_QUERIES
+  static_assert(__is_same(decltype(mutable_row(row)), Row&));
+  static_assert(__is_same(decltype(constant_row(constant)), const Row&));
+  static_assert(__is_same(decltype(rvalue_row(static_cast<Row&&>(row))), Row&&));
+  static_assert(__is_lvalue_reference(decltype(mutable_row(row))));
+  static_assert(__is_rvalue_reference(decltype(rvalue_row(static_cast<Row&&>(row)))));
+  static_assert(!__is_same(decltype(mutable_row(row)), int&));
+  static_assert(!__is_class(decltype(mutable_row(row))));
+  static_assert(__is_same(decltype(empty_row(empty)), Empty&));
+  static_assert(__is_same(decltype(nested_rows(grid)), Grid&));
+  static_assert(__is_same(decltype(record_rows(records)), Records&));
+  static_assert(__is_same(decltype(empty_record_rows(empty_records)), EmptyRecords&));
+#endif
+  return effects;
+}
+int source_method_queries(Owner& owner, const Owner& constant) {
+#ifndef NEVERC_ARRAY_LAYOUT_SKIP_QUERIES
+  static_assert(__is_same(decltype(owner.get()), Row&));
+  static_assert(__is_same(decltype(constant.read()), const Row&));
+  static_assert(__is_same(decltype(owner.take()), Row&&));
+  static_assert(!__is_same(decltype(constant.read()), Row&));
+#endif
+  return effects;
+}
+int main() {
+  Row row{{1, 2}};
+#ifndef NEVERC_ARRAY_LAYOUT_SKIP_QUERIES
+  // These consume the same layout proof without a source-call decltype.
+  static_assert(__is_same(Row, Row));
+  static_assert(__is_class(Row));
+  static_assert(__is_trivially_destructible(Row));
+  static_assert(__is_constructible(Row&, Row&));
+  static_assert(__is_same(int[sizeof(Row)], int[sizeof(Row)]));
+#endif
+  const Row constant{{3, 4}};
+  Empty empty{};
+  Grid grid{{Row{{5, 6}}, Row{{7, 8}}}};
+  Records records{{Element{9, {10, 11}}, Element{12, {13, 14}}}};
+  EmptyRecords empty_records{};
+  Owner owner{{{15, 16}}};
+  const Owner constant_owner{{{17, 18}}};
+  if (source_function_queries(row, constant, empty, grid, records, empty_records) ||
+      source_method_queries(owner, constant_owner) || effects)
+    return 1;
+  if (&mutable_row(row) != &row || &constant_row(constant) != &constant || effects != 2)
+    return 2;
+  Row&& moved = rvalue_row(static_cast<Row&&>(row));
+  if (&moved != &row || effects != 3) return 3;
+  if (&empty_row(empty) != &empty || &nested_rows(grid) != &grid || effects != 5)
+    return 4;
+  if (&record_rows(records) != &records || &empty_record_rows(empty_records) != &empty_records || effects != 7)
+    return 5;
+  if (&owner.get() != &owner.row || &constant_owner.read() != &constant_owner.row || effects != 9)
+    return 6;
+  Row&& taken = owner.take();
+  taken[1] = 19;
+  if (&taken != &owner.row || owner.row[1] != 19 || effects != 10)
+    return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("array-query-layout" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ArrayQueryLayoutRequiresSource) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Rejection Cases[] = {
+      {"extent-long-double", R"cpp(#include <array>
+
+using Row = std::array<int,(sizeof(long double),2)>;
+Row& identity(Row& row){return row;}
+int probe(Row& row){static_assert(__is_same(decltype(identity(row)),Row&));return 0;}
+int main(){return 0;}
+)cpp", "TR0201"},
+      {"element-long-double-expression", R"cpp(#include <array>
+
+using Row = std::array<decltype((sizeof(long double),int())),2>;
+Row& identity(Row& row){return row;}
+int probe(Row& row){static_assert(__is_same(decltype(identity(row)),Row&));return 0;}
+int main(){return 0;}
+)cpp", "TR0201"},
+      {"element-erased-object-pointer", R"cpp(#include <array>
+int object=0;template<auto V>using Erased=int;
+using Row = std::array<Erased<&object>,2>;
+Row& identity(Row& row){return row;}
+int probe(Row& row){static_assert(__is_same(decltype(identity(row)),Row&));return 0;}
+int main(){return 0;}
+)cpp", "TR0201"},
+      {"record-element-hidden-extent", R"cpp(#include <array>
+struct Element{int values[(sizeof(long double),2)];};
+using Row = std::array<Element,2>;
+Row& identity(Row& row){return row;}
+int probe(Row& row){static_assert(__is_same(decltype(identity(row)),Row&));return 0;}
+int main(){return 0;}
+)cpp", "TR0201"},
+      {"record-element-erased-pointer", R"cpp(#include <array>
+int object=0;template<auto V>using Erased=int;struct Element{Erased<&object> value;};
+using Row = std::array<Element,2>;
+Row& identity(Row& row){return row;}
+int probe(Row& row){static_assert(__is_same(decltype(identity(row)),Row&));return 0;}
+int main(){return 0;}
+)cpp", "TR0201"},
+      {"nontrivial-element-zero", R"cpp(#include <array>
+struct Element{int value;~Element(){}};
+using Row = std::array<Element,0>;
+Row& identity(Row& row){return row;}
+int probe(Row& row){static_assert(__is_same(decltype(identity(row)),Row&));return 0;}
+int main(){return 0;}
+)cpp", "TR0203"},
+      {"volatile-element-zero", R"cpp(#include <array>
+
+using Row = std::array<volatile int,0>;
+Row& identity(Row& row){return row;}
+int probe(Row& row){static_assert(__is_same(decltype(identity(row)),Row&));return 0;}
+int main(){return 0;}
+)cpp", "TR0201"},
+      {"exact-layout-user-specialization", R"cpp(#include <array>
+namespace std { template<> struct array<int, 2> { int __elems_[2]; }; }
+using Row = std::array<int, 2>;
+Row& identity(Row& row) { return row; }
+int probe(Row& row) {
+  static_assert(__is_same(decltype(identity(row)), Row&));
+  return 0;
+}
+)cpp", "TR0201"},
+      {"zero-extent-selected-alias-default", R"cpp(#include <array>
+template<decltype(sizeof(0)) N = (sizeof(long double), 0)>
+using Rows = std::array<int, N>;
+using Row = Rows<>;
+Row& identity(Row& row) { return row; }
+int probe(Row& row) {
+  static_assert(__is_same(decltype(identity(row)), Row&));
+  return 0;
+}
+)cpp", "TR0201"},
+      {"source-call-hidden-comma-argument", R"cpp(#include <array>
+using Row = std::array<int, 2>;
+Row& identity(Row& row) { return row; }
+int probe(Row& row) {
+  static_assert(!__is_same(decltype(identity((sizeof(long double), row))), int&));
+  return 0;
+}
+)cpp", "TR0201"},
+      {"sdk-value-construction-operation", R"cpp(#include <array>
+using Row = std::array<int, 2>;
+int main(){Row row{{1,2}};static_assert(__is_constructible(Row));return 0;}
+)cpp", "TR0201"},
+      {"sdk-nothrow-destruction-operation", R"cpp(#include <array>
+using Row = std::array<int, 2>;
+int main(){Row row{{1,2}};static_assert(__is_nothrow_destructible(Row));return 0;}
+)cpp", "TR0201"},
+      {"sdk-array-get-query", R"cpp(#include <array>
+using Row=std::array<int,2>;
+int probe(Row& row){static_assert(__is_same(decltype(std::get<0>(row)),int&));return 0;}
+)cpp", "TR0201"},
+      {"sdk-byte-array-query", R"cpp(#include <array>
+#include <cstddef>
+using Row=std::array<std::byte,2>;
+Row& identity(Row& row){return row;}
+int probe(Row& row){static_assert(__is_same(decltype(identity(row)),Row&));return 0;}
+)cpp", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("array-query-layout-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("array-query-layout-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(translate(Source,
+                         {"--profile", "cpp-core-v2", "-o", Output.string()}),
+               Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+
 TEST_F(TranslateTest, CoreV2MemoryAllocatorMetadataRunsAtBothOptimizations) {
   const auto Source = tmpFile("memory-allocator-metadata.cpp");
   const auto Output = tmpFile("memory-allocator-metadata.nc");
