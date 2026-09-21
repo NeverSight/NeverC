@@ -384,6 +384,10 @@ std::optional<FunctionalReferenceInvokeCall>
 approvedUtilityTupleApplyReferenceCall(
     const State &S, const clang::SourceManager &SM,
     const clang::CallExpr *Call, const clang::ASTContext &Context);
+std::optional<FunctionalMemberInvokeCall>
+approvedUtilityTupleApplyMemberCall(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *Call, const clang::ASTContext &Context);
 struct FunctionalStoredMemberPointer {
   const clang::VarDecl *Variable;
   const clang::Expr *Initializer;

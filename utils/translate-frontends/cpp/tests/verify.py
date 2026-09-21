@@ -757,6 +757,36 @@ extern "C" int tuple_apply_reference(int value) {
               tuple_apply_reference_source, profile="cpp-core-v2",
               target=target, sdk=True)
 
+    tuple_apply_mem_fn_source = """\
+#include <functional>
+#include <tuple>
+struct Box {
+  int value;
+  int add(int amount) & { return value + amount; }
+  int &slot() & { return value; }
+};
+extern "C" int tuple_apply_mem_fn(int value) {
+  Box box{value};
+  auto add = std::mem_fn(&Box::add);
+  int result = std::apply(add, std::make_tuple(&box, 3));
+  std::apply(std::mem_fn(&Box::value), std::make_tuple(&box)) = value + 1;
+  int &slot = std::apply(std::mem_fn(&Box::slot), std::make_tuple(&box));
+  slot += 1;
+  auto owned = std::make_tuple(Box{value}, 4);
+  return result + std::apply(std::mem_fn(&Box::add), owned) + box.value;
+}
+"""
+    tuple_apply_mem_fn = check(
+        "v2-tuple-apply-mem-fn", tuple_apply_mem_fn_source,
+        profile="cpp-core-v2", sdk=True)
+    assert not [node for node in walk(tuple_apply_mem_fn["functions"])
+                if node.get("op") in ("mapped_call", "member_pointer")], \
+        tuple_apply_mem_fn
+    for target in sdk_targets:
+        check("v2-tuple-apply-mem-fn-" + target,
+              tuple_apply_mem_fn_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+
     tuple_pair_source = """\
 #include <tuple>
 #include <utility>

@@ -7465,14 +7465,19 @@ approvedFunctionalInvokeMemFnDispatch(const State &S,
   return Approved;
 }
 
-std::optional<FunctionalMemberInvokeCall>
-approvedFunctionalMemberInvokeCall(
+static std::optional<FunctionalMemberInvokeCall>
+approvedFunctionalMemberInvokeCallImpl(
     const State &S, const SourceManager &SM, const CallExpr *Call,
-    const ASTContext &Context) {
+    const ASTContext &Context,
+    std::optional<FunctionalMemFnDispatch> PreparedMemFn = std::nullopt) {
   if (!Call || Call->getNumArgs() < 2)
     return std::nullopt;
-  auto MemFn = approvedFunctionalMemFnDispatch(S, SM, Call, Context);
-  if (!MemFn)
+  const bool HasPreparedMemFn = PreparedMemFn.has_value();
+  auto MemFn = std::move(PreparedMemFn);
+  if (!MemFn) {
+    MemFn = approvedFunctionalMemFnDispatch(S, SM, Call, Context);
+  }
+  if (!MemFn && !HasPreparedMemFn)
     MemFn = approvedFunctionalInvokeMemFnDispatch(S, SM, Call, Context);
   const auto *WrittenCallable = MemFn ? MemFn->Callable : Call->getArg(0);
   const auto [Address, ResolvedMember] = functionalStoredMemberExpression(
@@ -7636,6 +7641,13 @@ approvedFunctionalMemberInvokeCall(
                                     MemFn ? MemFn->Adapter : nullptr,
                                     std::move(ObjectWrapper),
                                     ObjectIsPointer};
+}
+
+std::optional<FunctionalMemberInvokeCall>
+approvedFunctionalMemberInvokeCall(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  return approvedFunctionalMemberInvokeCallImpl(S, SM, Call, Context);
 }
 
 std::optional<FunctionalOperationInfo> approvedFunctionalInvokeObjectOperation(
@@ -8019,6 +8031,51 @@ approvedUtilityTupleApplyObjectOperation(const State &S,
             Apply->Operation->getArg(I + 1)->getType()))
       return std::nullopt;
   return Operation;
+}
+
+std::optional<FunctionalMemberInvokeCall>
+approvedUtilityTupleApplyMemberCall(const State &S, const SourceManager &SM,
+                                    const CallExpr *Call,
+                                    const ASTContext &Context) {
+  const auto Apply = approvedUtilityTupleApplyDispatch(S, SM, Call, Context);
+  if (!Apply)
+    return std::nullopt;
+  const CallExpr *UseAdapter = nullptr;
+  const auto *FactoryExpression = functionalMemFnAdaptedUse(
+      S, SM, Call->getArg(0), Context, UseAdapter);
+  const auto *StoredReference =
+      dyn_cast_or_null<DeclRefExpr>(FactoryExpression);
+  const auto *StoredVariable =
+      StoredReference ? dyn_cast<VarDecl>(StoredReference->getDecl()) : nullptr;
+  const auto StoredObject = approvedFunctionalStoredMemFn(
+      S, SM, StoredVariable, Context);
+  const auto *Factory =
+      StoredObject ? StoredObject->Factory
+                   : dyn_cast_or_null<CallExpr>(FactoryExpression);
+  if (!Factory ||
+      (!functionalInvokeParameterReference(
+           Apply->Operation->getArg(0),
+           Apply->DispatchFunction->getParamDecl(0)) &&
+       !approvedFunctionalForwardingCall(
+           S, SM, Apply->Operation->getArg(0),
+           Apply->DispatchFunction->getParamDecl(0))))
+    return std::nullopt;
+  auto Dispatch = approvedFunctionalMemFnDispatch(
+      S, SM, Apply->Operation, Context, Factory);
+  if (!Dispatch)
+    return std::nullopt;
+  Dispatch->Adapter = UseAdapter;
+  auto Member = approvedFunctionalMemberInvokeCallImpl(
+      S, SM, Apply->Operation, Context, std::move(Dispatch));
+  if (!Member || Apply->Operation->getNumArgs() !=
+                     Apply->Tuple.Elements.size() + 1)
+    return std::nullopt;
+  for (unsigned I = 0; I < Apply->Tuple.Elements.size(); ++I)
+    if (!Context.hasSameUnqualifiedType(
+            Apply->Tuple.Elements[I]->getType(),
+            Apply->Operation->getArg(I + 1)->getType()))
+      return std::nullopt;
+  return Member;
 }
 
 static std::optional<FunctionalReferenceInvokeCall>
@@ -11650,6 +11707,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         approvedUtilityTupleApplyObjectOperation(S, SM, Call, Context);
     const auto ReferenceCallable =
         approvedUtilityTupleApplyReferenceCall(S, SM, Call, Context);
+    const auto MemberCallable =
+        approvedUtilityTupleApplyMemberCall(S, SM, Call, Context);
     const auto ReferenceCallableResult = [&]() -> QualType {
       if (!ReferenceCallable)
         return {};
@@ -11678,19 +11737,21 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                   : UserCallable ? UserCallable->Method->getReturnType()
                   : ObjectOperation ? ObjectOperation->ResultType
                   : ReferenceCallable ? ReferenceCallableResult
+                  : MemberCallable ? Function->getReturnType()
                                     : QualType();
     const unsigned Arity =
         Prototype ? Prototype->getNumParams()
         : UserCallable ? UserCallable->Method->getNumParams()
         : ObjectOperation ? (ObjectOperation->RightType.isNull() ? 1u : 2u)
         : ReferenceCallable ? Tuple->Elements.size()
+        : MemberCallable ? Tuple->Elements.size()
                           : 0u;
     const bool ReferenceResult =
         !Result.isNull() && Result->isReferenceType();
     const auto Referent =
         ReferenceResult ? Result->getPointeeType() : QualType();
     if ((!Prototype && !UserCallable && !ObjectOperation &&
-         !ReferenceCallable) ||
+         !ReferenceCallable && !MemberCallable) ||
         (Prototype && Prototype->isVariadic()) ||
         !CallableParameter->isReferenceType() ||
         !Same(CallableParameter->getPointeeType(), Callable) ||
@@ -11711,7 +11772,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                             Function->getReturnType())))))
       return std::nullopt;
     for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
-      if (ObjectOperation || ReferenceCallable)
+      if (ObjectOperation || ReferenceCallable || MemberCallable)
         continue;
       const auto Element = Tuple->Elements[I]->getType();
       const auto Parameter =

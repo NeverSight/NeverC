@@ -23943,6 +23943,87 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2TupleApplyMemFnRunsAtBothOptimizations) {
+  const auto Source = tmpFile("tuple-apply-mem-fn.cpp");
+  const auto Output = tmpFile("tuple-apply-mem-fn.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <tuple>
+#include <utility>
+int effects;
+int constructed;
+int copied;
+int dropped;
+struct Result {
+  int value;
+  Result(int source) : value(source) { ++constructed; }
+  Result(const Result &source) : value(source.value) { ++copied; }
+  ~Result() { ++dropped; }
+};
+struct Box {
+  int value;
+  int add(int amount) & { return value + amount; }
+  int add_const(int amount) const { return value + amount; }
+  int &slot() & { return value; }
+  Result make(int amount) const { return Result{value + amount}; }
+};
+std::tuple<Box *, int> &select(std::tuple<Box *, int> &value) {
+  ++effects;
+  return value;
+}
+int main() {
+  Box box{3};
+  std::tuple<Box *, int> args(&box, 2);
+  auto add = std::mem_fn(&Box::add);
+  if (std::apply(add, args) != 5)
+    return 1;
+  effects = 0;
+  if (std::apply(std::mem_fn(&Box::add), select(args)) != 5 || effects != 1)
+    return 2;
+  std::apply(std::mem_fn(&Box::value), std::make_tuple(&box)) = 7;
+  if (box.value != 7)
+    return 3;
+  const Box constant{8};
+  if (std::apply(std::mem_fn(&Box::add_const),
+                 std::make_tuple(&constant, 2)) != 10)
+    return 4;
+  int &alias = std::apply(std::mem_fn(&Box::slot), std::make_tuple(&box));
+  alias = 9;
+  if (box.value != 9)
+    return 5;
+  {
+    Result result =
+        std::apply(std::mem_fn(&Box::make), std::make_tuple(&box, 4));
+    if (result.value != 13 || constructed != 1 || copied != 0 || dropped != 0)
+      return 6;
+  }
+  if (dropped != 1)
+    return 7;
+  auto owned = std::make_tuple(Box{10}, 3);
+  if (std::apply(std::mem_fn(&Box::add), owned) != 13)
+    return 8;
+  auto field = std::mem_fn(&Box::value);
+  std::apply(std::move(field), std::make_tuple(&box)) = 11;
+  return box.value == 11 ? 0 : 9;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("__apply_tuple_impl"), std::string::npos);
+  EXPECT_EQ(Text.find("member_pointer"), std::string::npos);
+  EXPECT_EQ(Text.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("tuple-apply-mem-fn" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2TupleCatRunsAtBothOptimizations) {
   const auto Source = tmpFile("tuple-cat.cpp");
   const auto Output = tmpFile("tuple-cat.nc");

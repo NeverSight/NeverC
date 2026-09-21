@@ -13407,8 +13407,12 @@ public:
     // children are inspected, including Clang's BoundMemberTy expressions.
     if (A.S.coreV2())
       if (const auto *Call = dyn_cast<CallExpr>(S)) {
-        if (auto Member = approvedFunctionalMemberInvokeCall(
-                A.S, A.Sources, Call, A.Context)) {
+        auto Member = approvedFunctionalMemberInvokeCall(
+            A.S, A.Sources, Call, A.Context);
+        if (!Member)
+          Member = approvedUtilityTupleApplyMemberCall(
+              A.S, A.Sources, Call, A.Context);
+        if (Member) {
           const Expr *Expression = Member->Callable;
           while (Expression) {
             ApprovedMemberPointerExpressions.insert(Expression);
