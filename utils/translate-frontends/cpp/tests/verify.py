@@ -667,6 +667,39 @@ extern "C" int tuple_apply_reference(int value) {
               tuple_apply_reference_source, profile="cpp-core-v2",
               target=target, sdk=True)
 
+    tuple_apply_callable_source = """\
+#include <tuple>
+struct Record { int value; };
+struct Mutator {
+  int factor;
+  int operator()(int &value, const Record &record) & {
+    value += record.value;
+    return factor * value;
+  }
+};
+struct Consumer {
+  int operator()(Record &&record) && { return record.value + 1; }
+};
+extern "C" int tuple_apply_callable(int value) {
+  std::tuple<int, Record> values(value, Record{3});
+  Mutator mutator{2};
+  int result = std::apply(mutator, values);
+  return result + std::apply(Consumer{}, std::make_tuple(Record{value}));
+}
+"""
+    tuple_apply_callable = check(
+        "v2-tuple-apply-callable", tuple_apply_callable_source,
+        profile="cpp-core-v2", sdk=True)
+    assert not [node for node in walk(tuple_apply_callable["functions"])
+                if node.get("op") in ("indirect_call", "mapped_call")], \
+        tuple_apply_callable
+    assert len([node for node in walk(tuple_apply_callable["functions"])
+                if node.get("op") == "call"]) == 2, tuple_apply_callable
+    for target in sdk_targets:
+        check("v2-tuple-apply-callable-" + target,
+              tuple_apply_callable_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+
     tuple_pair_source = """\
 #include <tuple>
 #include <utility>
@@ -810,8 +843,8 @@ extern "C" int tuple_composite() {
         ("apply-incompatible-parameter",
          '#include <tuple>\nint take(int*p){return p!=nullptr;}int main(){return std::apply(take,std::make_tuple(1));}',
          "TR0202"),
-        ("apply-callable-object",
-         '#include <tuple>\nstruct F{int operator()(int value)const{return value;}};int main(){return std::apply(F{},std::make_tuple(1));}',
+        ("apply-sdk-callable-object",
+         '#include <functional>\n#include <tuple>\nint main(){return std::apply(std::plus<int>{},std::make_tuple(1,2));}',
          "TR0203"),
     ):
         check("v2-tuple-" + name, source, code,

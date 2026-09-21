@@ -244,10 +244,12 @@ const and lvalue/rvalue reference categories; type selection requires exactly
 one matching element, as in C++17.
 
 Exact `std::apply` calls over an authenticated empty or nonempty tuple lower to
-one ordinary indirect callback call. The callable may be a named function or a
-stored function pointer with a fixed nonvariadic signature. Every tuple element
-and corresponding callback parameter must be admitted scalars connected by a
-checked direct scalar conversion, or the same complete source-owned
+one ordinary callback call. The callable may be a named function, a stored
+function pointer with a fixed nonvariadic signature, or an exact source-owned
+function object whose selected `operator()` has a checked body. Function-object
+cv/ref qualification and mutable object storage are preserved. Every tuple
+element and corresponding callback parameter must be admitted scalars connected
+by a checked direct scalar conversion, or the same complete source-owned
 standard-layout record type that is trivially copyable and destructible, and
 passed by value; the result may be `void`, an admitted scalar, or a complete
 source-owned record value. Exact lvalue- or rvalue-reference parameters and
@@ -260,7 +262,8 @@ expressions are each evaluated once, fields are converted and passed in tuple
 order, and no libc++ apply helper is emitted. A record parameter receives its
 own copied object, while a record result constructs directly in the caller's
 destination and keeps its ordinary full-expression cleanup. References preserve
-the selected tuple element or callback result storage, constness and value category.
+the selected tuple element or callback result storage, constness and value
+category.
 
 Exact `std::tuple_cat` calls lower directly when every source is an
 authenticated `std::tuple`, `std::pair` or `std::array` containing admitted
@@ -291,9 +294,9 @@ The standalone empty tuple remains supported, but empty-base-optimized record
 or tuple elements do not have the authenticated one-field leaf representation
 and remain rejected. References, nontrivial records, `long double`, function
 pointers and source-record comparisons also remain outside this surface. `tie`
-and `forward_as_tuple` are rejected. Apply calls with callable objects,
-nontrivial record parameters, volatile references, or variadic callbacks remain
-rejected. Quoted includes, user shadows,
+and `forward_as_tuple` are rejected. Apply calls with SDK-owned or otherwise
+unsupported callable objects, nontrivial record parameters, volatile references,
+or variadic callbacks remain rejected. Quoted includes, user shadows,
 standard-function addresses and forged declarations remain rejected.
 
 ## Fixed value arrays from `<array>`

@@ -7762,6 +7762,217 @@ approvedFunctionalUserInvokeCall(const State &S, const SourceManager &SM,
                                     false};
 }
 
+std::optional<FunctionalMemberInvokeCall>
+approvedUtilityTupleApplyUserCall(const State &S, const SourceManager &SM,
+                                  const CallExpr *Call,
+                                  const ASTContext &Context) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+  const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+  const auto Origin =
+      Primary ? S.sdkFile(SM, Primary->getLocation()) : std::nullopt;
+  const auto *Reference =
+      Call ? dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Call))
+           : nullptr;
+  const auto Tuple = approvedUtilityTupleRecord(
+      S, SM,
+      Call && Call->getNumArgs() == 2
+          ? Call->getArg(1)->getType()->getAsCXXRecordDecl()
+          : nullptr,
+      Context);
+  const auto ObjectType =
+      Call && Call->getNumArgs() == 2 ? Call->getArg(0)->getType() : QualType();
+  const auto *ObjectRecord =
+      ObjectType.isNull() ? nullptr : ObjectType->getAsCXXRecordDecl();
+  const auto *Definition =
+      ObjectRecord ? ObjectRecord->getDefinition() : nullptr;
+  if (!Call || Call->getNumArgs() != 2 || !Function || !Primary || !Pattern ||
+      !Origin || Origin->Root != "libcxx" || Origin->Path != "tuple" ||
+      !Function->getIdentifier() || Function->getName() != "apply" ||
+      Function->isVariadic() || Function->getNumParams() != 2 ||
+      !Function->hasBody() || !Pattern->hasBody() || !Reference || !Tuple ||
+      !Definition || !S.owns(SM, Definition->getLocation()) ||
+      ObjectType.isVolatileQualified() ||
+      !approvedStandardSDKDeclaration(S, SM, Function) ||
+      !approvedStandardSDKDeclaration(S, SM, Primary) ||
+      !approvedStandardSDKDeclaration(S, SM, Pattern) ||
+      !approvedStandardSDKDeclaration(S, SM, Reference->getDecl()) ||
+      !approvedUtilityReference(S, SM, Call, Function))
+    return std::nullopt;
+
+  const auto *Body = dyn_cast<CompoundStmt>(Function->getBody());
+  const auto *Return = Body && Body->size() == 1
+                           ? dyn_cast<ReturnStmt>(*Body->body_begin())
+                           : nullptr;
+  const auto *Helper =
+      Return && Return->getRetValue()
+          ? dyn_cast_or_null<CallExpr>(
+                functionalInvokeStrippedExpression(Return->getRetValue()))
+          : nullptr;
+  const auto *HelperFunction = Helper ? Helper->getDirectCallee() : nullptr;
+  const auto *HelperPrimary =
+      HelperFunction ? HelperFunction->getPrimaryTemplate() : nullptr;
+  const auto *HelperPattern =
+      HelperPrimary ? HelperPrimary->getTemplatedDecl() : nullptr;
+  const auto HelperOrigin = HelperPrimary
+                                ? S.sdkFile(SM, HelperPrimary->getLocation())
+                                : std::nullopt;
+  const auto *HelperReference =
+      Helper ? dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Helper))
+             : nullptr;
+  const auto *HelperArguments =
+      HelperFunction ? HelperFunction->getTemplateSpecializationArgs()
+                     : nullptr;
+  if (!Helper || !HelperFunction || !HelperPrimary || !HelperPattern ||
+      !HelperOrigin || HelperOrigin->Root != "libcxx" ||
+      HelperOrigin->Path != "tuple" || !HelperReference ||
+      !HelperFunction->getIdentifier() ||
+      HelperFunction->getName() != "__apply_tuple_impl" ||
+      HelperFunction->isVariadic() || HelperFunction->getNumParams() != 3 ||
+      Helper->getNumArgs() != 3 || !HelperFunction->hasBody() ||
+      !HelperPattern->hasBody() || !HelperArguments ||
+      HelperArguments->size() != 3 ||
+      HelperArguments->get(2).getKind() != TemplateArgument::Pack ||
+      HelperArguments->get(2).pack_size() != Tuple->Elements.size() ||
+      !Context.hasSameType(Helper->getType(), Call->getType()) ||
+      !Context.hasSameType(HelperFunction->getReturnType(),
+                           Function->getReturnType()) ||
+      !approvedStandardSDKDeclaration(S, SM, HelperFunction) ||
+      !approvedStandardSDKDeclaration(S, SM, HelperPrimary) ||
+      !approvedStandardSDKDeclaration(S, SM, HelperPattern) ||
+      !approvedStandardSDKDeclaration(S, SM, HelperReference->getDecl()) ||
+      !approvedFunctionalForwardingCall(S, SM, Helper->getArg(0),
+                                        Function->getParamDecl(0)) ||
+      !approvedFunctionalForwardingCall(S, SM, Helper->getArg(1),
+                                        Function->getParamDecl(1)))
+    return std::nullopt;
+  unsigned ExpectedIndex = 0;
+  for (const auto &Argument : HelperArguments->get(2).pack_elements()) {
+    if (Argument.getKind() != TemplateArgument::Integral ||
+        Argument.getAsIntegral().isNegative() ||
+        Argument.getAsIntegral().getLimitedValue(Tuple->Elements.size() + 1) !=
+            ExpectedIndex++)
+      return std::nullopt;
+  }
+
+  const auto *HelperBody = dyn_cast<CompoundStmt>(HelperFunction->getBody());
+  const auto *HelperReturn =
+      HelperBody && HelperBody->size() == 1
+          ? dyn_cast<ReturnStmt>(*HelperBody->body_begin())
+          : nullptr;
+  const auto *Dispatch =
+      HelperReturn && HelperReturn->getRetValue()
+          ? dyn_cast_or_null<CallExpr>(
+                functionalInvokeStrippedExpression(HelperReturn->getRetValue()))
+          : nullptr;
+  const auto *DispatchFunction =
+      Dispatch ? Dispatch->getDirectCallee() : nullptr;
+  const auto *DispatchPrimary =
+      DispatchFunction ? DispatchFunction->getPrimaryTemplate() : nullptr;
+  const auto *DispatchPattern =
+      DispatchPrimary ? DispatchPrimary->getTemplatedDecl() : nullptr;
+  const auto DispatchOrigin =
+      DispatchPrimary ? S.sdkFile(SM, DispatchPrimary->getLocation())
+                      : std::nullopt;
+  const auto *DispatchReference =
+      Dispatch
+          ? dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Dispatch))
+          : nullptr;
+  if (!Dispatch || !DispatchFunction || !DispatchPrimary || !DispatchPattern ||
+      !DispatchOrigin || DispatchOrigin->Root != "libcxx" ||
+      DispatchOrigin->Path != "__type_traits/invoke.h" || !DispatchReference ||
+      !DispatchFunction->getIdentifier() ||
+      DispatchFunction->getName() != "__invoke" ||
+      DispatchFunction->isVariadic() || !DispatchFunction->hasBody() ||
+      !DispatchPattern->hasBody() ||
+      Dispatch->getNumArgs() != Tuple->Elements.size() + 1 ||
+      Dispatch->getNumArgs() != DispatchFunction->getNumParams() ||
+      !Context.hasSameType(Dispatch->getType(), Call->getType()) ||
+      !approvedStandardSDKDeclaration(S, SM, DispatchFunction) ||
+      !approvedStandardSDKDeclaration(S, SM, DispatchPrimary) ||
+      !approvedStandardSDKDeclaration(S, SM, DispatchPattern) ||
+      !approvedStandardSDKDeclaration(S, SM, DispatchReference->getDecl()) ||
+      !approvedFunctionalForwardingCall(S, SM, Dispatch->getArg(0),
+                                        HelperFunction->getParamDecl(0)))
+    return std::nullopt;
+
+  const auto *DispatchBody =
+      dyn_cast<CompoundStmt>(DispatchFunction->getBody());
+  const auto *DispatchReturn =
+      DispatchBody && DispatchBody->size() == 1
+          ? dyn_cast<ReturnStmt>(*DispatchBody->body_begin())
+          : nullptr;
+  const auto *Operation = DispatchReturn && DispatchReturn->getRetValue()
+                              ? dyn_cast_or_null<CXXOperatorCallExpr>(
+                                    functionalInvokeStrippedExpression(
+                                        DispatchReturn->getRetValue()))
+                              : nullptr;
+  const auto *Method = dyn_cast_or_null<CXXMethodDecl>(
+      Operation ? Operation->getDirectCallee() : nullptr);
+  if (!Operation || !Method || Method->getOverloadedOperator() != OO_Call ||
+      Method->isStatic() || !ordinaryOperator(Method) ||
+      !callableMethod(Method) || !Method->hasBody() ||
+      !S.owns(SM, Method->getLocation()) ||
+      Method->getParent()->getCanonicalDecl() !=
+          Definition->getCanonicalDecl() ||
+      Method->getNumParams() != Tuple->Elements.size() ||
+      Operation->getNumArgs() != Tuple->Elements.size() + 1 ||
+      !Context.hasSameType(Method->getReturnType(),
+                           Function->getReturnType()) ||
+      !Context.hasSameType(Operation->getType(), Call->getType()) ||
+      !functionalMemberReceiverValueCategory(Method, Call->getArg(0), false) ||
+      !approvedFunctionalInvokeArgumentFlow(S, SM, Operation->getArg(0),
+                                            DispatchFunction->getParamDecl(0),
+                                            ObjectType, Context))
+    return std::nullopt;
+
+  const auto Result = Method->getReturnType();
+  const auto Referent =
+      Result->isReferenceType() ? Result->getPointeeType() : QualType();
+  if (Result->isReferenceType()
+          ? (Referent.isVolatileQualified() || Referent.isRestrictQualified() ||
+             Referent.getAddressSpace() != LangAS::Default ||
+             !supportedFunctionalInvokeReference(S, SM, Context, Referent) ||
+             (Result->isLValueReferenceType() ? !Call->isLValue()
+                                              : !Call->isXValue()) ||
+             !Context.hasSameType(Referent, Call->getType()))
+          : (!Call->isPRValue() ||
+             !Context.hasSameType(Result, Call->getType()) ||
+             !supportedFunctionalResult(S, SM, Context, Result)))
+    return std::nullopt;
+
+  const auto TupleArgument = Call->getArg(1)->getType();
+  for (unsigned I = 0; I < Method->getNumParams(); ++I) {
+    const auto Parameter = Method->getParamDecl(I)->getType();
+    const auto Element = Tuple->Elements[I]->getType();
+    bool Supported = false;
+    if (Parameter->isReferenceType()) {
+      const auto ParameterReferent = Parameter->getPointeeType();
+      const bool Category = Parameter->isLValueReferenceType()
+                                ? Call->getArg(1)->isLValue()
+                                : !Call->getArg(1)->isLValue();
+      Supported = Category &&
+                  supportedFunctionalInvokeReference(S, SM, Context,
+                                                     ParameterReferent) &&
+                  Context.hasSameUnqualifiedType(ParameterReferent, Element) &&
+                  !ParameterReferent.isVolatileQualified() &&
+                  (ParameterReferent.isConstQualified() ||
+                   !TupleArgument.isConstQualified());
+    } else {
+      Supported = supportedFunctionalByValue(S, SM, Context, Parameter) &&
+                  functionalMemberValueConversion(Context, Element, Parameter);
+    }
+    if (!Supported ||
+        !approvedFunctionalInvokeArgumentFlow(
+            S, SM, Operation->getArg(I + 1),
+            DispatchFunction->getParamDecl(I + 1), Parameter, Context))
+      return std::nullopt;
+  }
+  return FunctionalMemberInvokeCall{
+      Call->getArg(0), Call->getArg(0), Method,       nullptr,
+      nullptr,         nullptr,         std::nullopt, false};
+}
+
 static std::optional<FunctionalReferenceInvokeCall>
 approvedFunctionalReferenceDirectInvoke(
     const State &S, const SourceManager &SM, const CallExpr *Call,
@@ -11309,6 +11520,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (Origin->Path == "tuple" && Name == "apply" && Call->getNumArgs() == 2 &&
       Function->getNumParams() == 2) {
     const auto Callable = Call->getArg(0)->getType();
+    const auto UserCallable =
+        approvedUtilityTupleApplyUserCall(S, SM, Call, Context);
     const auto *Prototype =
         Callable->isFunctionType() ? Callable->getAs<FunctionProtoType>()
         : Callable->isFunctionPointerType()
@@ -11317,17 +11530,24 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto CallableParameter = Function->getParamDecl(0)->getType();
     const auto TupleParameter = Function->getParamDecl(1)->getType();
     const auto Tuple = TupleFor(Call->getArg(1)->getType());
-    const auto Result = Prototype ? Prototype->getReturnType() : QualType();
+    const auto Result =
+        Prototype ? Prototype->getReturnType()
+                  : UserCallable ? UserCallable->Method->getReturnType()
+                                 : QualType();
     const bool ReferenceResult =
         !Result.isNull() && Result->isReferenceType();
     const auto Referent =
         ReferenceResult ? Result->getPointeeType() : QualType();
-    if (!Prototype || Prototype->isVariadic() ||
+    if ((!Prototype && !UserCallable) ||
+        (Prototype && Prototype->isVariadic()) ||
         !CallableParameter->isReferenceType() ||
         !Same(CallableParameter->getPointeeType(), Callable) ||
         !TupleParameter->isReferenceType() ||
         !Same(TupleParameter->getPointeeType(), Call->getArg(1)->getType()) ||
-        !Tuple || Prototype->getNumParams() != Tuple->Elements.size() ||
+        !Tuple ||
+        (Prototype ? Prototype->getNumParams()
+                   : UserCallable->Method->getNumParams()) !=
+            Tuple->Elements.size() ||
         !Same(Result, Function->getReturnType()) ||
         (ReferenceResult
              ? (!supportedFunctionalInvokeReference(S, SM, Context, Referent) ||
@@ -11343,7 +11563,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return std::nullopt;
     for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
       const auto Element = Tuple->Elements[I]->getType();
-      const auto Parameter = Prototype->getParamType(I);
+      const auto Parameter =
+          Prototype ? Prototype->getParamType(I)
+                    : UserCallable->Method->getParamDecl(I)->getType();
       if (Parameter->isReferenceType()) {
         const auto ParameterReferent = Parameter->getPointeeType();
         const auto TupleArgument = Call->getArg(1)->getType();

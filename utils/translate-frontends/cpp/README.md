@@ -219,13 +219,15 @@ lowers authenticated empty and nonempty scalar or recursively composite tuple
 construction, compatible scalar or exact composite per-element construction
 and assignment from tuples or pairs, factories, swaps, recursive same-length
 heterogeneous lexicographic comparisons and index or unique-type access. Exact
-`apply` lowers named functions or stored function pointers over scalar tuple
-elements with directly convertible by-value parameters, or exact trivial
-source-record elements with independent by-value parameter objects, to one
-indirect call. Empty tuples, scalar or void results, and complete source-record
-results constructed directly in the caller destination are included. Exact
+`apply` lowers named functions, stored function pointers or exact source-owned
+function objects over scalar tuple elements with directly convertible by-value
+parameters, or exact trivial source-record elements with independent by-value
+parameter objects, to one callback call. Empty tuples, scalar or void results,
+and complete source-record results constructed directly in the caller destination
+are included. Exact
 lvalue or rvalue reference parameters bind the corresponding tuple elements,
-and reference results preserve their source storage and qualification. Exact
+reference results preserve their source storage and qualification, and function
+objects preserve their selected cv/ref-qualified `operator()` overload. Exact
 `tuple_cat` handles zero arguments and authenticated scalar or recursively
 composite tuple, pair or array sources,
 evaluating every source once before copying elements into the exact

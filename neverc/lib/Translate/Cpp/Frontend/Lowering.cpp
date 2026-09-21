@@ -6813,33 +6813,46 @@ class FunctionLowering {
     case UtilityOperation::TupleApply: {
       auto Tuple = TupleFor(Call->getArg(1)->getType());
       auto CallableType = Call->getArg(0)->getType();
+      const auto UserCallable =
+          approvedUtilityTupleApplyUserCall(A.S, A.Sources, Call, A.Context);
       const auto *Prototype =
           CallableType->isFunctionType()
               ? CallableType->getAs<FunctionProtoType>()
           : CallableType->isFunctionPointerType()
               ? CallableType->getPointeeType()->getAs<FunctionProtoType>()
               : nullptr;
-      if (!Tuple || !Prototype || Prototype->isVariadic() ||
-          Prototype->getNumParams() != Tuple->Elements.size())
+      const auto *Method = UserCallable ? UserCallable->Method : nullptr;
+      if (!Tuple || (!Prototype && !Method) ||
+          (Prototype && Prototype->isVariadic()) ||
+          (Prototype ? Prototype->getNumParams() : Method->getNumParams()) !=
+              Tuple->Elements.size())
         reject(L, "utility tuple apply",
                "The selected std::tuple callback is unavailable.");
-      auto Callable = snapshot(CallableType->isFunctionType()
-                                   ? functionValue(Call->getArg(0))
-                                   : expression(Call->getArg(0)),
-                               L);
+      Expression Callable;
+      Expression Receiver;
+      if (Method) {
+        Receiver = snapshot(
+            address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
+      } else {
+        Callable = snapshot(CallableType->isFunctionType()
+                                ? functionValue(Call->getArg(0))
+                                : expression(Call->getArg(0)),
+                            L);
+      }
       auto TupleAddress = snapshot(
           address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
       auto TupleValue = dereference(std::move(TupleAddress), L);
       json::Array Arguments;
       for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
-        const auto Parameter = Prototype->getParamType(I);
+        const auto Parameter = Prototype ? Prototype->getParamType(I)
+                                         : Method->getParamDecl(I)->getType();
         auto Element =
             fieldStorage(json::Object(TupleValue), Tuple->Elements[I], L);
         if (Parameter->isReferenceType()) {
-          auto Pointer = address(std::move(Element),
-                                 Parameter->getPointeeType(), L);
-          Arguments.push_back(snapshot(
-              cast(std::move(Pointer), type(Parameter, L), L), L));
+          auto Pointer =
+              address(std::move(Element), Parameter->getPointeeType(), L);
+          Arguments.push_back(
+              snapshot(cast(std::move(Pointer), type(Parameter, L), L), L));
         } else if (recordValue(Parameter)) {
           // Tuple records are admitted here only when their copy is trivial.
           // Still create the independent by-value parameter object required by
@@ -6849,9 +6862,44 @@ class FunctionLowering {
           Arguments.push_back(snapshot(
               address(std::move(Place), Parameter.getUnqualifiedType(), L), L));
         } else {
-          Arguments.push_back(
-              cast(std::move(Element), type(Parameter, L), L));
+          Arguments.push_back(cast(std::move(Element), type(Parameter, L), L));
         }
+      }
+      if (Method) {
+        json::Array CallArguments;
+        Expression Result;
+        const bool HasRecordResult = recordValue(Method->getReturnType());
+        if (HasRecordResult) {
+          Result = Destination ? std::move(*Destination)
+                               : objectTemporary(Method->getReturnType(), L);
+          if (Result.getString("type") != type(Method->getReturnType(), L))
+            reject(L, "utility tuple apply result",
+                   "Call and result destination types differ.");
+          CallArguments.push_back(snapshot(
+              address(Result, Method->getReturnType().getUnqualifiedType(), L),
+              L));
+        } else if (Destination) {
+          reject(L, "utility tuple apply result",
+                 "Only record results accept a destination.");
+        }
+        CallArguments.push_back(snapshot(
+            cast(std::move(Receiver), type(Method->getThisType(), L), L), L));
+        for (auto &Argument : Arguments)
+          CallArguments.push_back(std::move(Argument));
+        chargeCall(CallArguments, L);
+        json::Object Instruction{{"op", "call"},
+                                 {"callee", A.name(Method)},
+                                 {"args", std::move(CallArguments)},
+                                 {"loc", A.loc(L)}};
+        const auto ResultType = type(Method->getReturnType(), L, true);
+        if (!HasRecordResult && ResultType != "void") {
+          Result = temporary(ResultType, L);
+          Instruction["target"] = json::Object(Result);
+        }
+        Body.push_back(std::move(Instruction));
+        if (Method->getReturnType()->isReferenceType())
+          return dereference(std::move(Result), L);
+        return Result;
       }
       return emitIndirectCall(std::move(Callable), std::move(Arguments),
                               Prototype->getReturnType(), L,

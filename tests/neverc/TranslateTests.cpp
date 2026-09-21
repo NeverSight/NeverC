@@ -23736,6 +23736,74 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2TupleApplyCallableObjectsRunAtBothOptimizations) {
+  const auto Source = tmpFile("tuple-apply-callable-objects.cpp");
+  const auto Output = tmpFile("tuple-apply-callable-objects.nc");
+  writeFile(Source, R"cpp(
+#include <tuple>
+struct Record { int value; };
+struct Result {
+  int value;
+  Result(int input) : value(input) {}
+  Result(const Result &) = delete;
+  ~Result() { value = -1; }
+};
+struct Mutator {
+  int calls;
+  int operator()(int &value, const Record &record) & {
+    ++calls;
+    value += record.value;
+    return value + calls;
+  }
+};
+struct Viewer {
+  const Record &operator()(const Record &record) const & { return record; }
+};
+struct Consumer {
+  int operator()(Record &&record) && { return record.value + 1; }
+};
+struct Maker {
+  Result operator()(int value) && { return Result(value + 2); }
+};
+struct Empty {
+  int operator()() && { return 13; }
+};
+int main() {
+  std::tuple<int, Record> values(3, Record{4});
+  Mutator mutator{0};
+  if (std::apply(mutator, values) != 8 || mutator.calls != 1 ||
+      std::get<0>(values) != 7)
+    return 1;
+  const std::tuple<Record> viewed(Record{9});
+  const Viewer viewer{};
+  const Record &alias = std::apply(viewer, viewed);
+  if (&alias != &std::get<0>(viewed) || alias.value != 9)
+    return 2;
+  if (std::apply(Consumer{}, std::make_tuple(Record{10})) != 11)
+    return 3;
+  Result made = std::apply(Maker{}, std::make_tuple(5));
+  if (made.value != 7)
+    return 4;
+  return std::apply(Empty{}, std::tuple<>()) == 13 ? 0 : 5;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("__apply_tuple_impl"), std::string::npos);
+  EXPECT_EQ(Text.find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("tuple-apply-callable-objects" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2TupleCatRunsAtBothOptimizations) {
   const auto Source = tmpFile("tuple-cat.cpp");
   const auto Output = tmpFile("tuple-cat.nc");
@@ -24097,9 +24165,9 @@ TEST_F(TranslateTest, CoreV2TupleRequiresPinnedOperations) {
        "#include <tuple>\nint take(int*p){return p!=nullptr;}int main(){"
        "return std::apply(take,std::make_tuple(1));}",
        "TR0202"},
-      {"apply-callable-object",
-       "#include <tuple>\nstruct F{int operator()(int value)const{return "
-       "value;}};int main(){return std::apply(F{},std::make_tuple(1));}",
+      {"apply-sdk-callable-object",
+       "#include <functional>\n#include <tuple>\nint main(){return "
+       "std::apply(std::plus<int>{},std::make_tuple(1,2));}",
        "TR0203"},
   };
   for (const auto &Case : Cases) {
