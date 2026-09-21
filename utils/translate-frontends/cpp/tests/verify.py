@@ -896,6 +896,12 @@ extern "C" int tuple_reference_construction(int value) {
   std::tuple<long &, double &> pair_destination(converted, pair_converted);
   pair_destination = pair_source;
   std::tuple<const short &, const float &> pair_view(pair_source);
+  int swap_first = source_first + 1;
+  int swap_second = source_second + 1;
+  auto swap_left = std::tie(source_first, source_second);
+  auto swap_right = std::tie(swap_first, swap_second);
+  swap_left.swap(swap_right);
+  std::swap(swap_left, swap_right);
   std::tuple<int &&> rvalue(static_cast<int &&>(other));
   std::get<0>(rvalue) += 3;
   return value + other + std::get<0>(view) + int(converted) +

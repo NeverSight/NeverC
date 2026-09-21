@@ -141,7 +141,9 @@ elements, and heterogeneous scalar assignment converts source referent values
 before writing through destination bindings. Recursive comparisons read the
 referents and use the same heterogeneous scalar leaves as value tuples. Pair
 conversion binds compatible pair fields during construction or writes their
-converted values through destination references during assignment. Exact
+converted values through destination references during assignment. Member and
+free swap exchange referent values element by element without changing tuple
+bindings. Exact
 `std::apply` calls over scalar tuples accept named functions or stored function
 pointers with directly convertible by-value scalar parameters and a scalar or
 void result. The callable and tuple are evaluated once and lower to an ordinary

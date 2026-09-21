@@ -278,7 +278,9 @@ applying the existing recursive equality or lexicographic comparison, including
 heterogeneous scalar leaves and mixed reference/value tuple operands. Pair
 conversion follows the same split: construction binds compatible value-pair
 fields with checked cv and value categories, while assignment converts field
-values and writes through the existing destination bindings.
+values and writes through the existing destination bindings. Member and free
+swap evaluate both tuple objects once and exchange corresponding referent
+values in element order; their stored bindings remain unchanged.
 
 Exact `std::apply` calls over an authenticated empty or nonempty tuple lower to
 one ordinary callback call. The callable may be a named function, a stored

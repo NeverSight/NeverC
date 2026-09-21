@@ -9374,13 +9374,22 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (const auto *MemberCall = dyn_cast<CXXMemberCallExpr>(Call)) {
     const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
     const auto *Reference = directMethodReference(Call);
-    const auto Tuple = approvedUtilityTupleRecord(
+    auto Tuple = approvedUtilityTupleRecord(
         S, SM, Method ? Method->getParent() : nullptr, Context);
+    bool ReferenceTuple = false;
+    if (!Tuple) {
+      Tuple = approvedUtilityReferenceTupleRecord(
+          S, SM, Method ? Method->getParent() : nullptr, Context);
+      ReferenceTuple = Tuple.has_value();
+    }
     bool Mutable = Tuple.has_value();
     if (Tuple)
-      for (const auto *Element : Tuple->Elements)
-        Mutable &=
-            utilityTupleAssignableValue(S, SM, Context, Element->getType());
+      for (const auto *Element : Tuple->Elements) {
+        auto ElementType = Element->getType();
+        if (ReferenceTuple)
+          ElementType = ElementType->getPointeeType();
+        Mutable &= utilityTupleAssignableValue(S, SM, Context, ElementType);
+      }
     if (Method && Reference && Tuple && Mutable && Method->getIdentifier() &&
         Method->getName() == "swap" && !Method->isStatic() &&
         !Method->isVariadic() && Method->getNumParams() == 1 &&
@@ -12278,10 +12287,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         TupleFor(RightType->isReferenceType() ? RightType->getPointeeType()
                                               : QualType());
     bool Mutable = Left.has_value();
+    const bool ReferenceTuple =
+        Left && approvedUtilityReferenceTupleRecord(
+                    S, SM, Left->Record, Context)
+                    .has_value();
     if (Left)
-      for (const auto *Element : Left->Elements)
-        Mutable &=
-            utilityTupleAssignableValue(S, SM, Context, Element->getType());
+      for (const auto *Element : Left->Elements) {
+        auto ElementType = Element->getType();
+        if (ReferenceTuple)
+          ElementType = ElementType->getPointeeType();
+        Mutable &= utilityTupleAssignableValue(S, SM, Context, ElementType);
+      }
     if (LeftType->isLValueReferenceType() &&
         RightType->isLValueReferenceType() && Left && Right && Mutable &&
         Left->Record->getCanonicalDecl() == Right->Record->getCanonicalDecl() &&

@@ -24121,6 +24121,54 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ReferenceTupleSwapRunsAtBothOptimizations) {
+  const auto Source = tmpFile("tuple-reference-swap.cpp");
+  const auto Output = tmpFile("tuple-reference-swap.nc");
+  writeFile(Source, R"cpp(
+#include <tuple>
+#include <utility>
+int main() {
+  int left_first = 1;
+  int left_second = 2;
+  int right_first = 3;
+  int right_second = 4;
+  auto left = std::tie(left_first, left_second);
+  auto right = std::tie(right_first, right_second);
+  left.swap(right);
+  if (left_first != 3 || left_second != 4 || right_first != 1 ||
+      right_second != 2 || &std::get<0>(left) != &left_first ||
+      &std::get<0>(right) != &right_first)
+    return 1;
+  std::swap(left, right);
+  if (left_first != 1 || left_second != 2 || right_first != 3 ||
+      right_second != 4 || &std::get<1>(left) != &left_second ||
+      &std::get<1>(right) != &right_second)
+    return 2;
+  auto crossed_left = std::tie(left_first, right_first);
+  auto crossed_right = std::tie(right_first, left_first);
+  crossed_left.swap(crossed_right);
+  if (left_first != 1 || right_first != 3 ||
+      &std::get<0>(crossed_left) != &left_first ||
+      &std::get<0>(crossed_right) != &right_first)
+    return 3;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("tuple-reference-swap" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2TupleApplyCallableObjectsRunAtBothOptimizations) {
   const auto Source = tmpFile("tuple-apply-callable-objects.cpp");
   const auto Output = tmpFile("tuple-apply-callable-objects.nc");

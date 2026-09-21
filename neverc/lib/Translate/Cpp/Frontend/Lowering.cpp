@@ -7182,6 +7182,27 @@ class FunctionLowering {
           address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
       auto RightAddress = snapshot(
           address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
+      const auto ReferenceTuple =
+          Operation == UtilityOperation::TupleSwap
+              ? approvedUtilityReferenceTupleRecord(
+                    A.S, A.Sources,
+                    Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context)
+              : std::optional<UtilityTupleRecord>();
+      if (ReferenceTuple) {
+        auto Left = dereference(std::move(LeftAddress), L);
+        auto Right = dereference(std::move(RightAddress), L);
+        for (const auto *Element : ReferenceTuple->Elements) {
+          auto LeftValue = dereference(
+              fieldStorage(json::Object(Left), Element, L), L);
+          auto RightValue = dereference(
+              fieldStorage(json::Object(Right), Element, L), L);
+          auto OldLeft = snapshot(json::Object(LeftValue), L);
+          auto OldRight = snapshot(json::Object(RightValue), L);
+          assign(std::move(LeftValue), std::move(OldRight), L);
+          assign(std::move(RightValue), std::move(OldLeft), L);
+        }
+        return {};
+      }
       auto OldLeft = snapshot(dereference(json::Object(LeftAddress), L), L);
       auto OldRight = snapshot(dereference(json::Object(RightAddress), L), L);
       assign(dereference(std::move(LeftAddress), L), std::move(OldRight), L);
@@ -7196,6 +7217,27 @@ class FunctionLowering {
           snapshot(address(lvalue(Object), Object->getType(), L), L);
       auto RightAddress = snapshot(
           address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
+      const auto ReferenceTuple =
+          Operation == UtilityOperation::TupleMemberSwap
+              ? approvedUtilityReferenceTupleRecord(
+                    A.S, A.Sources, Object->getType()->getAsCXXRecordDecl(),
+                    A.Context)
+              : std::optional<UtilityTupleRecord>();
+      if (ReferenceTuple) {
+        auto Left = dereference(std::move(LeftAddress), L);
+        auto Right = dereference(std::move(RightAddress), L);
+        for (const auto *Element : ReferenceTuple->Elements) {
+          auto LeftValue = dereference(
+              fieldStorage(json::Object(Left), Element, L), L);
+          auto RightValue = dereference(
+              fieldStorage(json::Object(Right), Element, L), L);
+          auto OldLeft = snapshot(json::Object(LeftValue), L);
+          auto OldRight = snapshot(json::Object(RightValue), L);
+          assign(std::move(LeftValue), std::move(OldRight), L);
+          assign(std::move(RightValue), std::move(OldLeft), L);
+        }
+        return {};
+      }
       auto OldLeft = snapshot(dereference(json::Object(LeftAddress), L), L);
       auto OldRight = snapshot(dereference(json::Object(RightAddress), L), L);
       assign(dereference(std::move(LeftAddress), L), std::move(OldRight), L);
