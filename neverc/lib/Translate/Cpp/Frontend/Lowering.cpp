@@ -1913,6 +1913,14 @@ class FunctionLowering {
                "A checked standard function object is required.");
       return functionalInvokeObjectOperation(Call, *Approved);
     }
+    case UtilityOperation::FunctionalInvokeUserObject: {
+      auto Approved = approvedFunctionalUserInvokeCall(
+          A.S, A.Sources, Call, A.Context);
+      if (!Approved)
+        reject(L, "functional invoke",
+               "A checked source callable object is required.");
+      return memberPointerCall(Call, *Approved, 1);
+    }
     case UtilityOperation::FunctionalInvokeReference: {
       const auto Info = approvedFunctionalReferenceInvokeCall(
           A.S, A.Sources, Call, A.Context);

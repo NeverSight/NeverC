@@ -364,6 +364,11 @@ struct FunctionalMemberInvokeCall {
   std::optional<FunctionalReferenceRecord> ObjectWrapper;
   bool ObjectIsPointer;
 };
+std::optional<FunctionalMemberInvokeCall>
+approvedFunctionalUserInvokeCall(const State &S,
+                                 const clang::SourceManager &SM,
+                                 const clang::CallExpr *Call,
+                                 const clang::ASTContext &Context);
 struct FunctionalStoredMemberPointer {
   const clang::VarDecl *Variable;
   const clang::Expr *Initializer;
@@ -567,6 +572,7 @@ enum class UtilityOperation {
   AsConst,
   FunctionalInvoke,
   FunctionalInvokeObject,
+  FunctionalInvokeUserObject,
   FunctionalInvokeReference,
   FunctionalInvokeMember,
   FunctionalReferenceFactory,

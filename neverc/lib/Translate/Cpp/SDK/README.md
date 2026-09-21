@@ -329,7 +329,11 @@ convertible by-value scalar parameters, exact fixed-arity ordinary function
 pointers including function-name decay, or exact admitted lvalue or rvalue
 references to those values, and preserve the corresponding scalar,
 object-pointer, function-pointer, lvalue- or rvalue-reference or `void` result. The same entry point accepts
-the admitted typed and transparent standard function objects above. A direct
+the admitted typed and transparent standard function objects above. It also
+accepts exact source-owned record callables when Clang selects an admitted
+defined nonstatic `operator()` with the same argument and result boundary.
+Lvalue, const-lvalue and rvalue-qualified overloads, reference results,
+receiver-first evaluation and temporary lifetime are preserved. A direct
 source-written address of an owned nonstatic member
 function may also be invoked on an exact-class lvalue, pointer or admitted
 `std::reference_wrapper` when its fixed-arity signature has the same scalar

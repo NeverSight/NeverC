@@ -943,6 +943,13 @@ The same entry point accepts every admitted typed or transparent standard
 function object, including temporary and stored objects, and reuses the exact
 authenticated operation body and scalar conversion rules above. Its callable
 expression and arguments are each evaluated once.
+It also accepts an exact source-owned record callable whose selected
+nonstatic `operator()` is an admitted defined method. Lvalue, const-lvalue and
+rvalue-qualified overload selection follows Clang's checked dispatch. The
+method may use the same admitted by-value and exact lvalue- or rvalue-reference
+parameter and result boundary as member invocation. The callable is retained
+before its arguments, reference results preserve storage identity, and a
+temporary callable is destroyed at its full-expression boundary.
 
 A direct source-written address of an owned nonstatic member function also
 lowers through `std::invoke` when the receiver is an exact-class lvalue,
@@ -1009,7 +1016,7 @@ objects, user-defined operands, `long double`, `std::function`, binders and sear
 not yet lower. Reassigned or null member pointers, `mem_fn` copies or moves
 from parameters, reassigned `mem_fn` objects, base-adjusting
 receivers, volatile
-receivers, user-defined callable objects, function referents, other reference
+receivers, function referents, other reference
 signatures and variadic targets remain
 outside the `std::invoke` boundary.
 Quoted includes, shadows, forged declarations and other runtime uses remain

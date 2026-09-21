@@ -34628,6 +34628,68 @@ int main() {
 }
 
 TEST_F(TranslateTest,
+       CoreV2FunctionalInvokeUserObjectsRunAtBothOptimizations) {
+  const auto Source = tmpFile("functional-invoke-user-objects.cpp");
+  const auto Output = tmpFile("functional-invoke-user-objects.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+int trace;
+int drops;
+int argument() { trace = trace * 10 + 2; return 3; }
+struct Function {
+  int value;
+  int operator()(short extra) & { return value + extra; }
+  int operator()(short extra) const & { return value + extra + 10; }
+  int operator()(short extra) && { return value + extra + 20; }
+};
+Function &callable(Function &function) {
+  trace = trace * 10 + 1;
+  return function;
+}
+struct Temporary {
+  int value;
+  ~Temporary() { ++drops; }
+  int operator()(short extra) && { return value + extra; }
+};
+struct Reference {
+  int *value;
+  int &operator()() const { return *value; }
+};
+int main() {
+  Function function{2};
+  const Function constant{3};
+  int score = std::invoke(function, 1) == 3;
+  score += std::invoke(constant, 1) == 14;
+  score += std::invoke(Function{4}, 1) == 25;
+  trace = 0;
+  score += std::invoke(callable(function), argument()) == 5;
+  score += trace == 12;
+  score += std::invoke(Temporary{5}, 2) == 7;
+  score += drops == 1;
+  int value = 6;
+  std::invoke(Reference{&value}) = 9;
+  score += value == 9;
+  return score == 8 ? 0 : score;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  EXPECT_EQ(Generated.find("indirect_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-invoke-user-objects" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
        CoreV2FunctionalMemberTemporaryReceiversRunAtBothOptimizations) {
   const auto Source = tmpFile("functional-member-temporary-receivers.cpp");
   const auto Output = tmpFile("functional-member-temporary-receivers.nc");
@@ -34959,10 +35021,6 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "#include <functional>\nint first(int v,...){return v;}int main(){"
        "auto p=&first;auto r=std::ref(p);return r(3,4);}",
        "TR0201"},
-      {"invoke-user-object",
-       "#include <functional>\nstruct F{int operator()(int v)const{return v;}};"
-       "int main(){return std::invoke(F{},1);}",
-       "TR0203"},
       {"invoke-record-rvalue-reference-parameter",
        "#include <functional>\nstruct R{int n;};int load(R&&v){return v.n;}"
        "int main(){return std::invoke(load,R{3});}",

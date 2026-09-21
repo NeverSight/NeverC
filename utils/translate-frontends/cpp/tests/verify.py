@@ -1765,6 +1765,37 @@ extern "C" int functional_invoke(Function function, int a, int b) {
     for target in sdk_targets:
         check("v2-functional-invoke-" + target, functional_invoke_source,
               profile="cpp-core-v2", target=target, sdk=True)
+    functional_user_invoke_source = """\
+#include <functional>
+struct Function {
+  int value;
+  int operator()(short extra) & { return value + extra; }
+  int operator()(short extra) const & { return value + extra + 10; }
+  int operator()(short extra) && { return value + extra + 20; }
+};
+struct Reference {
+  int *value;
+  int &operator()() const { return *value; }
+};
+extern "C" int functional_user_invoke(int value) {
+  Function function{value};
+  const Function constant{value};
+  int result = std::invoke(function, 1);
+  result += std::invoke(constant, 2);
+  result += std::invoke(Function{value}, 3);
+  std::invoke(Reference{&result}) = result + 4;
+  return result;
+}
+"""
+    functional_user_invoke = check(
+        "v2-functional-user-invoke", functional_user_invoke_source,
+        profile="cpp-core-v2", sdk=True)
+    assert any(function["name"] == "functional_user_invoke"
+               for function in functional_user_invoke["functions"]), functional_user_invoke
+    for target in sdk_targets:
+        check("v2-functional-user-invoke-" + target,
+              functional_user_invoke_source,
+              profile="cpp-core-v2", target=target, sdk=True)
     functional_invoke_reference_source = """\
 #include <functional>
 int &same(int &value) { return value; }
@@ -2357,8 +2388,6 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
          "TR0201"),
         ("reference-wrapper-variadic", '#include <functional>\nint first(int v,...){return v;}int main(){auto p=&first;auto r=std::ref(p);return r(3,4);}',
          "TR0201"),
-        ("invoke-user-object", '#include <functional>\nstruct F{int operator()(int v)const{return v;}};int main(){return std::invoke(F{},1);}',
-         "TR0203"),
         ("invoke-record-rvalue-reference-parameter", '#include <functional>\nstruct R{int n;};int load(R&&v){return v.n;}int main(){return std::invoke(load,R{3});}',
          "TR0203"),
         ("invoke-record-rvalue-reference-result", '#include <functional>\nstruct R{int n;};R value{3};R&&get(){return static_cast<R&&>(value);}int main(){return std::invoke(get).n;}',

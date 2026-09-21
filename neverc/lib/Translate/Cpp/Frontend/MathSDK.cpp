@@ -6917,6 +6917,8 @@ static bool approvedFunctionalForwardingCall(
     const ParmVarDecl *Parameter) {
   const auto *Forward = dyn_cast_or_null<CallExpr>(
       Expression ? Expression->IgnoreParenImpCasts() : nullptr);
+  if (!Forward)
+    return false;
   const auto *Function = Forward ? Forward->getDirectCallee() : nullptr;
   const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
   const auto *Reference =
@@ -7583,6 +7585,97 @@ std::optional<FunctionalOperationInfo> approvedFunctionalInvokeObjectOperation(
   return Operation;
 }
 
+std::optional<FunctionalMemberInvokeCall>
+approvedFunctionalUserInvokeCall(const State &S, const SourceManager &SM,
+                                 const CallExpr *Call,
+                                 const ASTContext &Context) {
+  if (!Call || Call->getNumArgs() < 1)
+    return std::nullopt;
+  const auto ObjectType = Call->getArg(0)->getType();
+  const auto *ObjectRecord = ObjectType->getAsCXXRecordDecl();
+  const auto *Definition = ObjectRecord ? ObjectRecord->getDefinition() : nullptr;
+  if (!Definition || !S.owns(SM, Definition->getLocation()) ||
+      ObjectType.isVolatileQualified())
+    return std::nullopt;
+
+  const bool ReferenceResult = Call->isGLValue();
+  const auto *Dispatch =
+      approvedFunctionalInvokeDispatch(S, SM, Call, Context, ReferenceResult);
+  const auto *DispatchFunction =
+      Dispatch ? Dispatch->getDirectCallee() : nullptr;
+  const auto *Body = DispatchFunction
+                         ? dyn_cast<CompoundStmt>(DispatchFunction->getBody())
+                         : nullptr;
+  const auto *Return = Body && Body->size() == 1
+                           ? dyn_cast<ReturnStmt>(*Body->body_begin())
+                           : nullptr;
+  const auto *Operation =
+      Return && Return->getRetValue()
+          ? dyn_cast<CXXOperatorCallExpr>(
+                Return->getRetValue()->IgnoreParenImpCasts())
+          : nullptr;
+  const auto *Method = dyn_cast_or_null<CXXMethodDecl>(
+      Operation ? Operation->getDirectCallee() : nullptr);
+  if (!Dispatch || !DispatchFunction || !Operation || !Method ||
+      Method->getOverloadedOperator() != OO_Call || Method->isStatic() ||
+      !ordinaryOperator(Method) || !callableMethod(Method) ||
+      !Method->hasBody() || !S.owns(SM, Method->getLocation()) ||
+      Method->getParent()->getCanonicalDecl() !=
+          Definition->getCanonicalDecl() ||
+      Method->getNumParams() + 1 != Call->getNumArgs() ||
+      Operation->getNumArgs() != Call->getNumArgs() ||
+      !Context.hasSameType(Method->getReturnType(),
+                           DispatchFunction->getReturnType()) ||
+      !Context.hasSameType(Call->getType(), Operation->getType()) ||
+      !functionalMemberReceiverValueCategory(Method, Call->getArg(0), false) ||
+      (!functionalInvokeParameterReference(
+           Operation->getArg(0), DispatchFunction->getParamDecl(0)) &&
+       !approvedFunctionalForwardingCall(
+           S, SM, Operation->getArg(0), DispatchFunction->getParamDecl(0))))
+    return std::nullopt;
+
+  const auto Result = Method->getReturnType();
+  const auto Referent =
+      Result->isReferenceType() ? Result->getPointeeType() : QualType();
+  if (Result->isReferenceType()
+          ? (Referent.isVolatileQualified() ||
+             Referent.isRestrictQualified() ||
+             Referent.getAddressSpace() != LangAS::Default ||
+             !supportedFunctionalMemberValue(
+                 Context, Referent.getUnqualifiedType()) ||
+             (Result->isLValueReferenceType() ? !Call->isLValue()
+                                              : !Call->isXValue()) ||
+             !Context.hasSameType(Referent, Call->getType()))
+          : (!Call->isPRValue() ||
+             !Context.hasSameType(Result, Call->getType()) ||
+             (!Result->isVoidType() &&
+              !supportedFunctionalMemberValue(Context, Result))))
+    return std::nullopt;
+
+  for (unsigned I = 0; I < Method->getNumParams(); ++I) {
+    const auto Parameter = Method->getParamDecl(I)->getType();
+    const auto *ArgumentExpression = Call->getArg(I + 1);
+    const bool Supported =
+        Parameter->isReferenceType()
+            ? supportedFunctionalInvokeReferenceArgument(
+                  Context, Parameter, ArgumentExpression)
+            : supportedFunctionalMemberValue(Context, Parameter) &&
+                  functionalMemberValueConversion(
+                      Context, ArgumentExpression->getType(), Parameter);
+    if (!Supported ||
+        (!functionalInvokeParameterReference(
+             Operation->getArg(I + 1),
+             DispatchFunction->getParamDecl(I + 1)) &&
+         !approvedFunctionalForwardingCall(
+             S, SM, Operation->getArg(I + 1),
+             DispatchFunction->getParamDecl(I + 1))))
+      return std::nullopt;
+  }
+  return FunctionalMemberInvokeCall{Call->getArg(0), Call->getArg(0), Method,
+                                    nullptr, nullptr, nullptr, std::nullopt,
+                                    false};
+}
+
 static std::optional<FunctionalReferenceInvokeCall>
 approvedFunctionalReferenceDirectInvoke(
     const State &S, const SourceManager &SM, const CallExpr *Call,
@@ -7876,6 +7969,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return UtilityOperation::FunctionalInvokeMember;
   if (approvedFunctionalInvokeObjectOperation(S, SM, Call, Context))
     return UtilityOperation::FunctionalInvokeObject;
+  if (approvedFunctionalUserInvokeCall(S, SM, Call, Context))
+    return UtilityOperation::FunctionalInvokeUserObject;
   const auto *Function = Call->getDirectCallee();
   const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
   const auto *OptionalObject = [&]() -> const Expr * {
