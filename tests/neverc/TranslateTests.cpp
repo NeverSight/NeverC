@@ -24264,6 +24264,55 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ReferencePairComparisonRunsAtBothOptimizations) {
+  const auto Source = tmpFile("pair-reference-comparison.cpp");
+  const auto Output = tmpFile("pair-reference-comparison.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+int score(bool equal, bool not_equal, bool less, bool greater,
+          bool less_equal, bool greater_equal) {
+  return equal + 2 * not_equal + 4 * less + 8 * greater +
+         16 * less_equal + 32 * greater_equal;
+}
+int main() {
+  int left_first = 1;
+  long left_second = 9;
+  short right_first = 2;
+  double right_second = 3.0;
+  std::pair<int &, long &> left(left_first, left_second);
+  std::pair<short &, double &> right(right_first, right_second);
+  const auto reference_score =
+      score(left == right, left != right, left < right, left > right,
+            left <= right, left >= right);
+  std::pair<short, double> value(right_first, right_second);
+  const auto mixed_score =
+      score(left == value, left != value, left < value, left > value,
+            left <= value, left >= value);
+  right_first = 1;
+  right_second = 9.0;
+  const auto equal_score =
+      score(left == right, left != right, left < right, left > right,
+            left <= right, left >= right);
+  return reference_score == 22 && mixed_score == 22 && equal_score == 49
+             ? 0
+             : 1;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("pair-reference-comparison" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2TupleApplyCallableObjectsRunAtBothOptimizations) {
   const auto Source = tmpFile("tuple-apply-callable-objects.cpp");
   const auto Output = tmpFile("tuple-apply-callable-objects.nc");

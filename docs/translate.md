@@ -130,7 +130,8 @@ remain rejected.
 Reference-valued pairs additionally support exact compatible direct
 construction, same-type copy/move construction and index- or unique-type
 `get`; same-type assignment writes through their stored bindings without
-rebinding either pair.
+rebinding either pair. All six comparisons read referent values and retain the
+ordinary heterogeneous scalar comparison rules.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#scalar-utilities-and-pairs-from-utility).
 
 Core v2 accepts authenticated empty and nonempty `<tuple>` values, including

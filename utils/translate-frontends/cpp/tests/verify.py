@@ -459,7 +459,17 @@ extern "C" int pair_reference(int value) {
   std::pair<int &&, Box &&> rvalues(static_cast<int &&>(value),
                                     static_cast<Box &&>(box));
   std::get<0>(rvalues) += 4;
-  return value + box.value;
+  int compare_left = 1;
+  int compare_right = 2;
+  std::pair<int &, int &> reference_left(value, compare_left);
+  std::pair<int &, int &> reference_right(compare_right, source_value);
+  std::pair<short, long> comparison_value(short(compare_right), source_value);
+  return value + box.value + (reference_left == reference_right) +
+         (reference_left != reference_right) +
+         (reference_left < comparison_value) +
+         (reference_left > comparison_value) +
+         (reference_left <= reference_right) +
+         (reference_left >= reference_right);
 }
 """
     pair_reference = check("v2-utility-reference-pair",

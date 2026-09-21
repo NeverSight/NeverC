@@ -1565,12 +1565,20 @@ class FunctionLowering {
         return true;
       }
 
-      const auto LeftPair = approvedUtilityPairRecord(
+      auto LeftPair = approvedUtilityPairRecord(
           A.S, A.Sources, LeftType.getUnqualifiedType()->getAsCXXRecordDecl(),
           A.Context);
-      const auto RightPair = approvedUtilityPairRecord(
+      auto RightPair = approvedUtilityPairRecord(
           A.S, A.Sources, RightType.getUnqualifiedType()->getAsCXXRecordDecl(),
           A.Context);
+      if (!LeftPair)
+        LeftPair = approvedUtilityReferencePairRecord(
+            A.S, A.Sources,
+            LeftType.getUnqualifiedType()->getAsCXXRecordDecl(), A.Context);
+      if (!RightPair)
+        RightPair = approvedUtilityReferencePairRecord(
+            A.S, A.Sources,
+            RightType.getUnqualifiedType()->getAsCXXRecordDecl(), A.Context);
       if (LeftPair || RightPair) {
         if (!LeftPair || !RightPair)
           return false;
@@ -7307,12 +7315,20 @@ class FunctionLowering {
     case UtilityOperation::PairGreater:
     case UtilityOperation::PairLessEqual:
     case UtilityOperation::PairGreaterEqual: {
-      const auto LeftPair = approvedUtilityPairRecord(
+      auto LeftPair = approvedUtilityPairRecord(
           A.S, A.Sources, Call->getArg(0)->getType()->getAsCXXRecordDecl(),
           A.Context);
-      const auto RightPair = approvedUtilityPairRecord(
+      auto RightPair = approvedUtilityPairRecord(
           A.S, A.Sources, Call->getArg(1)->getType()->getAsCXXRecordDecl(),
           A.Context);
+      if (!LeftPair)
+        LeftPair = approvedUtilityReferencePairRecord(
+            A.S, A.Sources,
+            Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
+      if (!RightPair)
+        RightPair = approvedUtilityReferencePairRecord(
+            A.S, A.Sources,
+            Call->getArg(1)->getType()->getAsCXXRecordDecl(), A.Context);
       if (!LeftPair || !RightPair)
         reject(L, "utility pair comparison",
                "A selected std::pair layout is unavailable.");

@@ -6443,10 +6443,16 @@ static bool utilityComparableValue(const State &S, const SourceManager &SM,
            utilityComparableValue(S, SM, Context, LeftArray->ElementType,
                                   RightArray->ElementType, Ordered, Depth + 1);
 
-  const auto LeftPair = approvedUtilityPairRecord(
+  auto LeftPair = approvedUtilityPairRecord(
       S, SM, Left.getUnqualifiedType()->getAsCXXRecordDecl(), Context);
-  const auto RightPair = approvedUtilityPairRecord(
+  auto RightPair = approvedUtilityPairRecord(
       S, SM, Right.getUnqualifiedType()->getAsCXXRecordDecl(), Context);
+  if (!LeftPair)
+    LeftPair = approvedUtilityReferencePairRecord(
+        S, SM, Left.getUnqualifiedType()->getAsCXXRecordDecl(), Context);
+  if (!RightPair)
+    RightPair = approvedUtilityReferencePairRecord(
+        S, SM, Right.getUnqualifiedType()->getAsCXXRecordDecl(), Context);
   if (LeftPair || RightPair)
     return LeftPair && RightPair &&
            utilityComparableValue(S, SM, Context, LeftPair->First->getType(),
@@ -12081,8 +12087,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Call->getArg(0)->getType()->getAsCXXRecordDecl();
     const auto *RightRecord =
         Call->getArg(1)->getType()->getAsCXXRecordDecl();
-    const auto Left = approvedUtilityPairRecord(S, SM, LeftRecord, Context);
-    const auto Right = approvedUtilityPairRecord(S, SM, RightRecord, Context);
+    auto Left = approvedUtilityPairRecord(S, SM, LeftRecord, Context);
+    auto Right = approvedUtilityPairRecord(S, SM, RightRecord, Context);
+    if (!Left)
+      Left = approvedUtilityReferencePairRecord(S, SM, LeftRecord, Context);
+    if (!Right)
+      Right = approvedUtilityReferencePairRecord(S, SM, RightRecord, Context);
     const auto LeftParameter = Function->getParamDecl(0)->getType();
     const auto RightParameter = Function->getParamDecl(1)->getType();
     if (Operator && Left && Right && LeftParameter->isLValueReferenceType() &&

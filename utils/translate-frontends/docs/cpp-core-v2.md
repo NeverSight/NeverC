@@ -202,8 +202,10 @@ access and index- or unique-type `get` recover the referents, so mutations write
 through to the original objects. Same-type copy/move assignment evaluates the
 source and destination once, assigns each source referent to the corresponding
 destination referent in field order and returns the destination pair without
-changing either pair's bindings. Comparison, swap and `make_pair` remain outside
-this reference-pair surface.
+changing either pair's bindings. All six comparisons dereference pair fields
+before applying the existing recursive equality or lexicographic rules,
+including heterogeneous scalar leaves and mixed reference/value operands. Swap
+and `make_pair` remain outside this reference-pair surface.
 
 All six C++17 comparisons recurse through authenticated arrays and nested pairs
 and compare their scalar leaves in lexicographic order. Corresponding scalar
