@@ -222,8 +222,10 @@ assignment preserve that split, writing through reference fields and assigning
 value fields in field order. All six comparisons read reference and value fields
 through the existing recursive heterogeneous comparison rules. Member and free
 swap exchange the corresponding referent or stored value in field order without
-changing reference bindings. Converting construction for mixed pairs remains
-outside this increment.
+changing reference bindings. Compatible converting construction from value,
+reference or mixed pairs binds destination reference fields with checked cv and
+value categories and initializes destination value fields with admitted copies
+or scalar conversions.
 
 All six C++17 comparisons recurse through authenticated arrays and nested pairs
 and compare their scalar leaves in lexicographic order. Corresponding scalar

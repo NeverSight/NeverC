@@ -10173,12 +10173,9 @@ class FunctionLowering {
             A.S, A.Sources, C, A.Context)) {
       auto Pair = approvedUtilityPairRecord(
           A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context);
-      bool ReferencePair = false;
-      if (!Pair) {
+      if (!Pair)
         Pair = approvedUtilityReferencePairRecord(
             A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context);
-        ReferencePair = Pair.has_value();
-      }
       if (!Pair)
         Pair = approvedUtilityMixedReferencePairRecord(
             A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context);
@@ -10211,14 +10208,17 @@ class FunctionLowering {
         auto SourcePair = approvedUtilityPairRecord(
             A.S, A.Sources, C->getArg(0)->getType()->getAsCXXRecordDecl(),
             A.Context);
-        bool SourceReferencePair = false;
-        if (!SourcePair) {
+        if (!SourcePair)
           SourcePair = approvedUtilityReferencePairRecord(
               A.S, A.Sources,
               C->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
-          SourceReferencePair = SourcePair.has_value();
-        }
-        if (!ReferencePair || !SourcePair)
+        if (!SourcePair)
+          SourcePair = approvedUtilityMixedReferencePairRecord(
+              A.S, A.Sources,
+              C->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
+        if (!SourcePair ||
+            (!Pair->First->getType()->isReferenceType() &&
+             !Pair->Second->getType()->isReferenceType()))
           reject(L, "utility pair construction",
                  "The source reference std::pair layout is unavailable.");
         auto SourceAddress = snapshot(
@@ -10229,17 +10229,29 @@ class FunctionLowering {
           const auto *DestinationField = I ? Pair->Second : Pair->First;
           const auto *SourceField = I ? SourcePair->Second : SourcePair->First;
           auto Value = fieldStorage(json::Object(Source), SourceField, L);
-          if (!SourceReferencePair) {
+          if (DestinationField->getType()->isReferenceType()) {
             auto SourceType = SourceField->getType();
-            if (Parameter->isReferenceType() &&
-                Parameter->getPointeeType().isConstQualified())
-              SourceType = SourceType.withConst();
-            Value = address(std::move(Value), SourceType, L);
+            if (!SourceType->isReferenceType()) {
+              if (Parameter->isReferenceType() &&
+                  Parameter->getPointeeType().isConstQualified())
+                SourceType = SourceType.withConst();
+              Value = address(std::move(Value), SourceType, L);
+            }
+            assign(Member(DestinationField),
+                   cast(std::move(Value), type(DestinationField->getType(), L),
+                        L),
+                   L);
+            continue;
           }
-          assign(Member(DestinationField),
-                 cast(std::move(Value), type(DestinationField->getType(), L),
-                      L),
-                 L);
+          if (SourceField->getType()->isReferenceType())
+            Value = dereference(std::move(Value), L);
+          if (recordValue(DestinationField->getType()))
+            assign(Member(DestinationField), std::move(Value), L);
+          else
+            assign(Member(DestinationField),
+                   cast(std::move(Value),
+                        type(DestinationField->getType(), L), L),
+                   L);
         }
         return;
       }

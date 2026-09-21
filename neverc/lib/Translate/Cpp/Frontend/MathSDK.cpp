@@ -2876,19 +2876,24 @@ approvedUtilityPairConstruction(const State &S, const SourceManager &SM,
     return UtilityPairConstruction::CopyOrMove;
   const auto *Primary = Constructor->getPrimaryTemplate();
   auto SourcePair =
-      ReferencePair && Construction->getNumArgs() == 1
+      (ReferencePair || MixedReferencePair) && Construction->getNumArgs() == 1
           ? approvedUtilityPairRecord(
                 S, SM, Construction->getArg(0)->getType()->getAsCXXRecordDecl(),
                 Context)
           : std::optional<UtilityPairRecord>();
-  bool SourceReferencePair = false;
-  if (ReferencePair && Construction->getNumArgs() == 1 && !SourcePair) {
+  if ((ReferencePair || MixedReferencePair) &&
+      Construction->getNumArgs() == 1 && !SourcePair) {
     SourcePair = approvedUtilityReferencePairRecord(
         S, SM, Construction->getArg(0)->getType()->getAsCXXRecordDecl(),
         Context);
-    SourceReferencePair = SourcePair.has_value();
   }
-  if (ReferencePair && SourcePair && Primary && Constructor->hasBody() &&
+  if ((ReferencePair || MixedReferencePair) &&
+      Construction->getNumArgs() == 1 && !SourcePair)
+    SourcePair = approvedUtilityMixedReferencePairRecord(
+        S, SM, Construction->getArg(0)->getType()->getAsCXXRecordDecl(),
+        Context);
+  if ((ReferencePair || MixedReferencePair) && SourcePair && Primary &&
+      Constructor->hasBody() &&
       SourcePair->Record->getCanonicalDecl() !=
           Pair->Record->getCanonicalDecl() &&
       approvedStandardSDKDeclaration(S, SM, Primary) &&
@@ -2906,23 +2911,33 @@ approvedUtilityPairConstruction(const State &S, const SourceManager &SM,
           I ? Pair->Second->getType() : Pair->First->getType();
       const auto SourceElement =
           I ? SourcePair->Second->getType() : SourcePair->First->getType();
-      auto SourceValue = SourceReferencePair
-                             ? SourceElement->getPointeeType()
-                             : SourceElement;
-      if (!SourceReferencePair &&
+      const bool SourceReference = SourceElement->isReferenceType();
+      auto SourceValue = SourceReference ? SourceElement->getPointeeType()
+                                         : SourceElement;
+      if (!SourceReference &&
           Parameter->getPointeeType().isConstQualified())
         SourceValue = SourceValue.withConst();
       const bool SourceRValue =
           Parameter->isRValueReferenceType() &&
-          (!SourceReferencePair || SourceElement->isRValueReferenceType());
-      if (!Destination->isReferenceType() ||
-          !Context.hasSameUnqualifiedType(Destination->getPointeeType(),
-                                          SourceValue) ||
-          !Destination->getPointeeType().isAtLeastAsQualifiedAs(SourceValue,
-                                                                Context) ||
-          (Destination->isRValueReferenceType() && !SourceRValue) ||
-          (Destination->isLValueReferenceType() &&
-           !Destination->getPointeeType().isConstQualified() && SourceRValue))
+          (!SourceReference || SourceElement->isRValueReferenceType());
+      if (Destination->isReferenceType()) {
+        if (!Context.hasSameUnqualifiedType(Destination->getPointeeType(),
+                                            SourceValue) ||
+            !Destination->getPointeeType().isAtLeastAsQualifiedAs(SourceValue,
+                                                                  Context) ||
+            (Destination->isRValueReferenceType() && !SourceRValue) ||
+            (Destination->isLValueReferenceType() &&
+             !Destination->getPointeeType().isConstQualified() && SourceRValue))
+          return std::nullopt;
+        continue;
+      }
+      const bool Convertible =
+          (utilityScalar(Context, SourceValue) ||
+           utilityScalar(Context, Destination))
+              ? utilityScalarDirectConversion(Context, SourceValue,
+                                              Destination)
+              : Context.hasSameUnqualifiedType(SourceValue, Destination);
+      if (!Convertible)
         return std::nullopt;
     }
     return UtilityPairConstruction::Converting;
