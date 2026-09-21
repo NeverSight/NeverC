@@ -2289,7 +2289,12 @@ integer `0`, boolean `false` and `nullptr` have distinct deduced template types.
 
 Every retained written or converted argument, default and parameter type keeps
 its source checks, including ignored alias arguments, repeated canonical uses,
-copied members and partial patterns. Null arguments explicitly traverse their
+copied members and partial patterns. Authenticated SDK calls, including
+`get`, allocator member templates and `to_integer`, also inspect their written
+template arguments before using the selected library operation. Unsupported
+expressions and declaration-valued alias arguments cannot disappear through
+constant folding or type deduction, including in unevaluated calls.
+Null arguments explicitly traverse their
 original expression because pinned Clang's default visitor skips that argument
 kind. A missing retained expression is rejected; the producer does not invent
 source evidence from the canonical value. Folded `sizeof(long double)` syntax

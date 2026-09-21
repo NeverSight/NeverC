@@ -23208,6 +23208,166 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2UtilityWrittenTemplateArgumentsRunAtBothOptimizations) {
+  const auto Source = tmpFile("utility-written-template-arguments.cpp");
+  const auto Output = tmpFile("utility-written-template-arguments.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <cstddef>
+#include <memory>
+#include <tuple>
+#include <utility>
+template<auto Value> using Erased = int;
+template<int I> int& select(std::tuple<int&>& values) {
+  return std::get<I>(values);
+}
+template<class T> T& select_type(std::tuple<T&>& values) {
+  return std::get<T&>(values);
+}
+int main() {
+  int value = 5;
+  std::tuple<int&> values(value);
+  if (&std::get<0>(values) != &value || &std::get<int&>(values) != &value ||
+      &select<0>(values) != &value || &select_type<int>(values) != &value)
+    return 1;
+  (std::get<(sizeof(int), 0)>)(values) = 7;
+  if (value != 7) return 2;
+  const std::tuple<int&>& constant_references = values;
+  int& mutable_element = std::get<int&>(constant_references);
+  mutable_element = 9;
+  if (&mutable_element != &value || value != 9) return 7;
+  const int immutable = 31;
+  std::tuple<const int&> constant_values(immutable);
+  const int& constant_index = std::get<0>(constant_values);
+  const int& constant_type = std::get<const int&>(constant_values);
+  if (&constant_index != &immutable || &constant_type != &immutable) return 8;
+  std::pair<int, long> pair(11, 13L);
+  if (std::get<0>(pair) != 11 || std::get<long>(pair) != 13L ||
+      std::get<Erased<7>>(pair) != 11 ||
+      std::get<std::tuple_element_t<1, std::pair<int, long>>>(pair) != 13L ||
+      std::get<decltype((sizeof(int),int()))>(pair) != 11) return 3;
+  std::array<int, 2> array{{17, 19}};
+  if (std::get<(1-1)>(array) != 17 || std::get<1>(array) != 19) return 4;
+  const std::pair<int, long>& constant_pair = pair;
+  const int& first = std::get<int>(constant_pair);
+  const std::array<int, 2>& constant_array = array;
+  const int& last = std::get<1>(constant_array);
+  if (&first != &pair.first || &last != &array[1] || last != 19) return 9;
+  std::byte byte{37};
+  if (std::to_integer<int>(byte) != 37 ||
+      std::to_integer<decltype((sizeof(int),int()))>(byte) != 37 ||
+      std::to_integer<int, 0>(byte) != 37)
+    return 10;
+  static_assert(std::to_integer<int, 0>(std::byte{41}) == 41);
+  std::allocator<int> allocator;
+  int slot = 0;
+  allocator.construct<int>(&slot, 23);
+  if (slot != 23) return 5;
+  std::allocator_traits<std::allocator<int>>::construct<int, int>(allocator, &slot, 29);
+  return slot == 29 ? 0 : 6;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_EQ(readFile(Output).find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("utility-written-template-arguments" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UtilityWrittenTemplateArgumentsRequireSource) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+  };
+  const Rejection Cases[] = {
+      {"runtime-long-double-index", R"cpp(#include <tuple>
+int object=0; struct Owner {int value;}; template<auto Value>using Erased=int;
+int probe(std::tuple<int&>& values){return std::get<(sizeof(long double),0)>(values);}
+int main(){return 0;}
+)cpp"},
+      {"runtime-long-double-type", R"cpp(#include <utility>
+int owned(){return 7;} int object=0; template<auto Value>using Erased=int;
+int probe(std::pair<int,long>& values){return std::get<decltype((sizeof(long double),int()))>(values);}
+int main(){return 0;}
+)cpp"},
+      {"runtime-member-pointer-index", R"cpp(#include <tuple>
+int object=0; struct Owner {int value;}; template<auto Value>using Erased=int;
+int probe(std::tuple<int&>& values){return std::get<(sizeof(int Owner::*),0)>(values);}
+int main(){return 0;}
+)cpp"},
+      {"runtime-object-declaration-index", R"cpp(#include <tuple>
+int object=0; struct Owner {int value;}; template<auto Value>using Erased=int;
+int probe(std::tuple<int&>& values){return std::get<(sizeof(Erased<&object>),0)>(values);}
+int main(){return 0;}
+)cpp"},
+      {"runtime-function-declaration-type", R"cpp(#include <utility>
+int owned(){return 7;} int object=0; template<auto Value>using Erased=int;
+int probe(std::pair<int,long>& values){return std::get<Erased<&owned>>(values);}
+int main(){return 0;}
+)cpp"},
+      {"decltype-long-double-type", R"cpp(#include <utility>
+int owned(){return 7;} int object=0; template<auto Value>using Erased=int;
+int probe(std::pair<int,long>& values){using Result=decltype(std::get<decltype((sizeof(long double),int()))>(values));return 0;}
+int main(){return 0;}
+)cpp"},
+      {"decltype-object-declaration-type", R"cpp(#include <utility>
+int owned(){return 7;} int object=0; template<auto Value>using Erased=int;
+int probe(std::pair<int,long>& values){using Result=decltype(std::get<Erased<&object>>(values));return 0;}
+int main(){return 0;}
+)cpp"},
+      {"query-long-double-index", R"cpp(#include <tuple>
+int object=0; struct Owner {int value;}; template<auto Value>using Erased=int;
+int probe(std::tuple<int&>& values){static_assert(__is_same(decltype(std::get<(sizeof(long double),0)>(values)),int&));return 0;}
+int main(){return 0;}
+)cpp"},
+      {"query-function-declaration-type", R"cpp(#include <utility>
+int owned(){return 7;} int object=0; template<auto Value>using Erased=int;
+int probe(std::pair<int,long>& values){static_assert(__is_same(decltype(std::get<Erased<&owned>>(values)),int&));return 0;}
+int main(){return 0;}
+)cpp"},
+      {"member-construct-hidden-long-double", R"cpp(#include <memory>
+int object=0;template<auto Value>using Erased=int;
+int main(){std::allocator<int> a;int value=0;a.construct<decltype((sizeof(long double),int()))>(&value,3);return value-3;}
+)cpp"},
+      {"member-construct-hidden-object-declaration", R"cpp(#include <memory>
+int object=0;template<auto Value>using Erased=int;
+int main(){std::allocator<int> a;int value=0;a.construct<Erased<&object>>(&value,3);return value-3;}
+)cpp"},
+      {"cstddef-erased-type-runtime", R"cpp(#include <cstddef>
+extern "C" int probe(std::byte value) { return std::to_integer<decltype((sizeof(long double), int()))>(value); }
+)cpp"},
+      {"cstddef-erased-type-constant", R"cpp(#include <cstddef>
+static_assert(std::to_integer<decltype((sizeof(long double), int()))>(std::byte{7}) == 7);
+int main() { return 0; }
+)cpp"},
+      {"cstddef-erased-nontype", R"cpp(#include <cstddef>
+extern "C" int probe(std::byte value) { return std::to_integer<int, (sizeof(long double), 0)>(value); }
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("utility-template-source-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("utility-template-source-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(translate(Source,
+                         {"--profile", "cpp-core-v2", "-o", Output.string()}),
+               "TR0201");
+    expectNoArtifacts(Output);
+  }
+}
+
+
 TEST_F(TranslateTest, CoreV2CstddefRequiresPinnedSyntaxAndDirectOperations) {
   struct Rejection {
     const char *Name;

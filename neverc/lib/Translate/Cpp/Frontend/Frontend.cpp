@@ -10530,6 +10530,14 @@ public:
                                         : SourceLocation(),
               directTemplateCallLocation(Reference)))
         return false;
+    // SDK operation admission authenticates the selected SDK callable, not the
+    // written arguments that Sema can erase while selecting it. These calls
+    // bypass checkFunctionTemplateUse, so retain their ordinary source checks.
+    if (ApprovedUtilityCallees.count(Reference) ||
+        ApprovedCstddefCallees.count(Reference))
+      for (const auto &Argument : Reference->template_arguments())
+        if (!TraverseTemplateArgumentLoc(Argument))
+          return false;
     // Each source event owns argument traversal before the callee's frame.
     // RAV's normal argument traversal would visit nested template uses again
     // at every level, making a linear source chain expand exponentially.
@@ -10582,6 +10590,12 @@ public:
       checkFunctionTemplateUse(Function, Reference->getMemberLoc(),
                                Reference->template_arguments(), {},
                                directTemplateCallLocation(Reference));
+    // As for direct SDK references, keep the caller's written template
+    // source while preserving the separate authenticated SDK-call contract.
+    if (ApprovedUtilityCallees.count(Reference))
+      for (const auto &Argument : Reference->template_arguments())
+        if (!TraverseTemplateArgumentLoc(Argument))
+          return false;
     return WalkUpFromMemberExpr(Reference) &&
            TraverseNestedNameSpecifierLoc(Reference->getQualifierLoc()) &&
            TraverseDeclarationNameInfo(Reference->getMemberNameInfo()) &&

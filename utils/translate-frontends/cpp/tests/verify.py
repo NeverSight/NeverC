@@ -1497,6 +1497,103 @@ extern "C" int array_zero() {
               profile="cpp-core-v2", sdk=True)
 
     # Array referents compose with each checked tuple, pair and callable family.
+    # Authenticated SDK callables still inspect their written arguments.
+    utility_template_arguments_source = """\
+#include <array>
+#include <cstddef>
+#include <memory>
+#include <tuple>
+#include <utility>
+template<auto Value> using Erased = int;
+template<int I> int& select(std::tuple<int&>& values) {
+  return std::get<I>(values);
+}
+template<class T> T& select_type(std::tuple<T&>& values) {
+  return std::get<T&>(values);
+}
+int main() {
+  int value = 5;
+  std::tuple<int&> values(value);
+  if (&std::get<0>(values) != &value || &std::get<int&>(values) != &value ||
+      &select<0>(values) != &value || &select_type<int>(values) != &value)
+    return 1;
+  (std::get<(sizeof(int), 0)>)(values) = 7;
+  if (value != 7) return 2;
+  const std::tuple<int&>& constant_references = values;
+  int& mutable_element = std::get<int&>(constant_references);
+  mutable_element = 9;
+  if (&mutable_element != &value || value != 9) return 7;
+  const int immutable = 31;
+  std::tuple<const int&> constant_values(immutable);
+  const int& constant_index = std::get<0>(constant_values);
+  const int& constant_type = std::get<const int&>(constant_values);
+  if (&constant_index != &immutable || &constant_type != &immutable) return 8;
+  std::pair<int, long> pair(11, 13L);
+  if (std::get<0>(pair) != 11 || std::get<long>(pair) != 13L ||
+      std::get<Erased<7>>(pair) != 11 ||
+      std::get<std::tuple_element_t<1, std::pair<int, long>>>(pair) != 13L ||
+      std::get<decltype((sizeof(int),int()))>(pair) != 11) return 3;
+  std::array<int, 2> array{{17, 19}};
+  if (std::get<(1-1)>(array) != 17 || std::get<1>(array) != 19) return 4;
+  const std::pair<int, long>& constant_pair = pair;
+  const int& first = std::get<int>(constant_pair);
+  const std::array<int, 2>& constant_array = array;
+  const int& last = std::get<1>(constant_array);
+  if (&first != &pair.first || &last != &array[1] || last != 19) return 9;
+  std::byte byte{37};
+  if (std::to_integer<int>(byte) != 37 ||
+      std::to_integer<decltype((sizeof(int),int()))>(byte) != 37 ||
+      std::to_integer<int, 0>(byte) != 37)
+    return 10;
+  static_assert(std::to_integer<int, 0>(std::byte{41}) == 41);
+  std::allocator<int> allocator;
+  int slot = 0;
+  allocator.construct<int>(&slot, 23);
+  if (slot != 23) return 5;
+  std::allocator_traits<std::allocator<int>>::construct<int, int>(allocator, &slot, 29);
+  return slot == 29 ? 0 : 6;
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-utility-template-arguments-" + target,
+                     utility_template_arguments_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        assert not [node for node in walk(data["functions"])
+                    if node.get("op") == "mapped_call"], data
+    for name, source in (
+        ('runtime-long-double-index',
+         '#include <tuple>\nint object=0; struct Owner {int value;}; template<auto Value>using Erased=int;\nint probe(std::tuple<int&>& values){return std::get<(sizeof(long double),0)>(values);}\nint main(){return 0;}\n'),
+        ('runtime-long-double-type',
+         '#include <utility>\nint owned(){return 7;} int object=0; template<auto Value>using Erased=int;\nint probe(std::pair<int,long>& values){return std::get<decltype((sizeof(long double),int()))>(values);}\nint main(){return 0;}\n'),
+        ('runtime-member-pointer-index',
+         '#include <tuple>\nint object=0; struct Owner {int value;}; template<auto Value>using Erased=int;\nint probe(std::tuple<int&>& values){return std::get<(sizeof(int Owner::*),0)>(values);}\nint main(){return 0;}\n'),
+        ('runtime-object-declaration-index',
+         '#include <tuple>\nint object=0; struct Owner {int value;}; template<auto Value>using Erased=int;\nint probe(std::tuple<int&>& values){return std::get<(sizeof(Erased<&object>),0)>(values);}\nint main(){return 0;}\n'),
+        ('runtime-function-declaration-type',
+         '#include <utility>\nint owned(){return 7;} int object=0; template<auto Value>using Erased=int;\nint probe(std::pair<int,long>& values){return std::get<Erased<&owned>>(values);}\nint main(){return 0;}\n'),
+        ('decltype-long-double-type',
+         '#include <utility>\nint owned(){return 7;} int object=0; template<auto Value>using Erased=int;\nint probe(std::pair<int,long>& values){using Result=decltype(std::get<decltype((sizeof(long double),int()))>(values));return 0;}\nint main(){return 0;}\n'),
+        ('decltype-object-declaration-type',
+         '#include <utility>\nint owned(){return 7;} int object=0; template<auto Value>using Erased=int;\nint probe(std::pair<int,long>& values){using Result=decltype(std::get<Erased<&object>>(values));return 0;}\nint main(){return 0;}\n'),
+        ('query-long-double-index',
+         '#include <tuple>\nint object=0; struct Owner {int value;}; template<auto Value>using Erased=int;\nint probe(std::tuple<int&>& values){static_assert(__is_same(decltype(std::get<(sizeof(long double),0)>(values)),int&));return 0;}\nint main(){return 0;}\n'),
+        ('query-function-declaration-type',
+         '#include <utility>\nint owned(){return 7;} int object=0; template<auto Value>using Erased=int;\nint probe(std::pair<int,long>& values){static_assert(__is_same(decltype(std::get<Erased<&owned>>(values)),int&));return 0;}\nint main(){return 0;}\n'),
+        ('member-construct-hidden-long-double',
+         '#include <memory>\nint object=0;template<auto Value>using Erased=int;\nint main(){std::allocator<int> a;int value=0;a.construct<decltype((sizeof(long double),int()))>(&value,3);return value-3;}\n'),
+        ('member-construct-hidden-object-declaration',
+         '#include <memory>\nint object=0;template<auto Value>using Erased=int;\nint main(){std::allocator<int> a;int value=0;a.construct<Erased<&object>>(&value,3);return value-3;}\n'),
+        ('cstddef-erased-type-runtime',
+         '#include <cstddef>\nextern "C" int probe(std::byte value) { return std::to_integer<decltype((sizeof(long double), int()))>(value); }\n'),
+        ('cstddef-erased-type-constant',
+         '#include <cstddef>\nstatic_assert(std::to_integer<decltype((sizeof(long double), int()))>(std::byte{7}) == 7);\nint main() { return 0; }\n'),
+        ('cstddef-erased-nontype',
+         '#include <cstddef>\nextern "C" int probe(std::byte value) { return std::to_integer<int, (sizeof(long double), 0)>(value); }\n'),
+    ):
+        check("v2-utility-template-source-" + name, source, "TR0201",
+              profile="cpp-core-v2", sdk=True)
+
+
     array_reference_combinations_source = """\
 #include <array>
 #include <functional>
