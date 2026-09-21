@@ -6624,7 +6624,9 @@ functionalMemberAddress(const State &S, const SourceManager &SM,
   return {Address, Member};
 }
 
-static bool supportedFunctionalStoredMember(const ASTContext &Context,
+static bool supportedFunctionalStoredMember(const State &S,
+                                            const SourceManager &SM,
+                                            const ASTContext &Context,
                                             const ValueDecl *Member) {
   if (const auto *Field = dyn_cast_or_null<FieldDecl>(Member)) {
     const auto Type = Field->getType();
@@ -6646,8 +6648,7 @@ static bool supportedFunctionalStoredMember(const ASTContext &Context,
       (Result->isReferenceType()
            ? (Referent.isVolatileQualified() || Referent.isRestrictQualified() ||
               Referent.getAddressSpace() != LangAS::Default ||
-              !supportedFunctionalMemberValue(Context,
-                                              Referent.getUnqualifiedType()))
+              !supportedFunctionalReferenceValue(S, SM, Context, Referent))
            : (!Result->isVoidType() &&
               !supportedFunctionalMemberValue(Context, Result))))
     return false;
@@ -6658,8 +6659,8 @@ static bool supportedFunctionalStoredMember(const ASTContext &Context,
       if (ParameterReferent.isVolatileQualified() ||
           ParameterReferent.isRestrictQualified() ||
           ParameterReferent.getAddressSpace() != LangAS::Default ||
-          !supportedFunctionalMemberValue(
-              Context, ParameterReferent.getUnqualifiedType()))
+          !supportedFunctionalReferenceValue(S, SM, Context,
+                                             ParameterReferent))
         return false;
     } else if (!supportedFunctionalMemberValue(Context, Type)) {
       return false;
@@ -6700,7 +6701,7 @@ approvedFunctionalStoredMemberPointer(
         functionalMemberAddress(S, SM, Initializer, Context);
     if (Address) {
       if (!MemberPointer || !Member ||
-          !supportedFunctionalStoredMember(Context, Member) ||
+          !supportedFunctionalStoredMember(S, SM, Context, Member) ||
           !Context.hasSameUnqualifiedType(Variable->getType(),
                                           Address->getType()))
         return std::nullopt;
@@ -6773,7 +6774,7 @@ approvedNativeDataMemberPointerAccess(
   if (!Field || !MemberPointer ||
       !Context.hasSameType(ObjectType.getUnqualifiedType().getTypePtr(),
                            MemberPointer->getClass()) ||
-      !supportedFunctionalStoredMember(Context, Field) ||
+      !supportedFunctionalStoredMember(S, SM, Context, Field) ||
       ObjectType.isVolatileQualified() || ObjectType.isRestrictQualified() ||
       ObjectType.getAddressSpace() != LangAS::Default)
     return std::nullopt;
@@ -6889,7 +6890,7 @@ std::optional<FunctionalStoredMemFn> approvedFunctionalStoredMemFn(
       !cstddefOrigin(S, SM, Stored->getLocation(), "libcxx",
                      "__functional/mem_fn.h"))
     return std::nullopt;
-  if (!supportedFunctionalStoredMember(Context, Member))
+  if (!supportedFunctionalStoredMember(S, SM, Context, Member))
     return std::nullopt;
   return FunctionalStoredMemFn{Requested, RequestedInitializer, Factory,
                                Address, Member};
@@ -7072,8 +7073,7 @@ approvedNativeMemberPointerCall(
            ? (Referent.isVolatileQualified() ||
               Referent.isRestrictQualified() ||
               Referent.getAddressSpace() != LangAS::Default ||
-              !supportedFunctionalMemberValue(
-                  Context, Referent.getUnqualifiedType()) ||
+              !supportedFunctionalInvokeReference(S, SM, Context, Referent) ||
               (Result->isLValueReferenceType() ? !Call->isLValue()
                                                : !Call->isXValue()) ||
               !Context.hasSameType(Referent, Call->getType()))
@@ -7504,8 +7504,8 @@ approvedFunctionalMemberInvokeCall(
              ? (Referent.isVolatileQualified() ||
                 Referent.isRestrictQualified() ||
                 Referent.getAddressSpace() != LangAS::Default ||
-                !supportedFunctionalMemberValue(
-                    Context, Referent.getUnqualifiedType()) ||
+                !supportedFunctionalInvokeReference(S, SM, Context,
+                                                    Referent) ||
                 (Result->isLValueReferenceType() ? !Call->isLValue()
                                                  : !Call->isXValue()) ||
                 !Context.hasSameType(Referent, Call->getType()))
@@ -7652,8 +7652,7 @@ approvedFunctionalUserInvokeCall(const State &S, const SourceManager &SM,
           ? (Referent.isVolatileQualified() ||
              Referent.isRestrictQualified() ||
              Referent.getAddressSpace() != LangAS::Default ||
-             !supportedFunctionalMemberValue(
-                 Context, Referent.getUnqualifiedType()) ||
+             !supportedFunctionalInvokeReference(S, SM, Context, Referent) ||
              (Result->isLValueReferenceType() ? !Call->isLValue()
                                               : !Call->isXValue()) ||
              !Context.hasSameType(Referent, Call->getType()))
@@ -7884,8 +7883,8 @@ approvedFunctionalReferenceDirectInvoke(
             ? !Referent.isVolatileQualified() &&
                   !Referent.isRestrictQualified() &&
                   Referent.getAddressSpace() == LangAS::Default &&
-                  supportedFunctionalMemberValue(
-                      Context, Referent.getUnqualifiedType()) &&
+                  supportedFunctionalInvokeReference(S, SM, Context,
+                                                     Referent) &&
                   (Result->isLValueReferenceType() ? Call->isLValue()
                                                    : Call->isXValue()) &&
                   Context.hasSameType(Referent, Call->getType())

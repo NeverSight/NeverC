@@ -2092,6 +2092,45 @@ extern "C" int functional_record_reference(Record &record) {
         check("v2-functional-record-reference-" + target,
               functional_record_reference_source,
               profile="cpp-core-v2", target=target, sdk=True)
+    functional_record_reference_result_source = """\
+#include <functional>
+struct Record { int value; };
+struct Callable {
+  Record *record;
+  Record &operator()() & { return *record; }
+  Record &&operator()() && { return static_cast<Record &&>(*record); }
+};
+struct Box {
+  Record *record;
+  Record &alias() const { return *record; }
+  Record &&move() && { return static_cast<Record &&>(*record); }
+};
+extern "C" int functional_record_reference_result(Record &record) {
+  Callable callable{&record};
+  std::invoke(callable).value += 1;
+  Record &&from_callable = std::invoke(Callable{&record});
+  from_callable.value += 2;
+  Box box{&record};
+  auto alias = &Box::alias;
+  std::invoke(alias, box).value += 3;
+  auto wrapper = std::mem_fn(alias);
+  std::invoke(wrapper, box).value += 4;
+  auto move = &Box::move;
+  Record &&from_member = std::mem_fn(move)(Box{&record});
+  from_member.value += 5;
+  return record.value;
+}
+"""
+    functional_record_reference_result = check(
+        "v2-functional-record-reference-result",
+        functional_record_reference_result_source,
+        profile="cpp-core-v2", sdk=True)
+    assert any(function["name"] == "functional_record_reference_result"
+               for function in functional_record_reference_result["functions"]), functional_record_reference_result
+    for target in sdk_targets:
+        check("v2-functional-record-reference-result-" + target,
+              functional_record_reference_result_source,
+              profile="cpp-core-v2", target=target, sdk=True)
     functional_stored_data_member_source = """\
 #include <functional>
 #include <utility>

@@ -956,7 +956,7 @@ nonstatic `operator()` is an admitted defined method. Lvalue, const-lvalue and
 rvalue-qualified overload selection follows Clang's checked dispatch. The
 method may use the same admitted by-value and exact lvalue- or rvalue-reference
 parameter and result boundary as member invocation, including source-owned
-record reference parameters. The callable is retained
+record reference parameters and results. The callable is retained
 before its arguments, reference results preserve storage identity, and a
 temporary callable is destroyed at its full-expression boundary.
 
@@ -967,7 +967,7 @@ admitted scalar, object-pointer or fixed-arity ordinary function-pointer
 parameters, either by value with a checked direct conversion or by exact lvalue
 or rvalue reference, including references to complete source-owned records,
 with a scalar, object-pointer, function-pointer, exact
-lvalue- or rvalue-reference, or `void`
+lvalue- or rvalue-reference including a complete source-owned record, or `void`
 result. Reference parameters and results preserve the selected object's storage
 and qualification. The receiver is retained before the arguments are evaluated
 and each selected argument conversion is preserved. A direct source-written

@@ -149,7 +149,7 @@ source-owned record callables also lower when Clang selects an admitted defined
 nonstatic `operator()` with the same argument and result boundary; lvalue,
 const-lvalue and rvalue-qualified overloads, reference results, receiver-first
 evaluation and temporary lifetime are preserved, including source-owned record
-reference parameters. Direct named
+reference parameters and results. Direct named
 addresses of owned nonstatic member functions
 also lower on exact-class lvalue, full-expression temporary, pointer or
 `std::reference_wrapper` receivers. Admitted non-volatile scalar,
@@ -172,7 +172,8 @@ may be called with native `.*` or `->*` on an exact object or pointer through
 the same fixed-arity method boundary; exact full-expression temporary objects
 are materialized and destroyed after the call, and `&&`-qualified methods
 require that temporary receiver. This includes const methods, admitted lvalue-
-or rvalue-reference parameters, and admitted lvalue- or rvalue-reference results. Exact
+or rvalue-reference parameters, and admitted lvalue- or rvalue-reference
+results, including complete source-owned records. Exact
 `std::mem_fn` wrappers built from those direct named addresses or authenticated
 local member-pointer chains may be called
 immediately, directly or as the callable of `std::invoke`, through the same

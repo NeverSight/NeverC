@@ -34548,6 +34548,63 @@ int main() {
 }
 
 TEST_F(TranslateTest,
+       CoreV2FunctionalRecordReferenceResultsRunAtBothOptimizations) {
+  const auto Source = tmpFile("functional-record-reference-results.cpp");
+  const auto Output = tmpFile("functional-record-reference-results.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+struct Record { int value; };
+struct Callable {
+  Record *record;
+  Record &operator()() & { return *record; }
+  Record &&operator()() && { return static_cast<Record &&>(*record); }
+};
+struct Box {
+  Record *record;
+  Record &alias() const { return *record; }
+  Record &&move() && { return static_cast<Record &&>(*record); }
+};
+int main() {
+  Record record{1};
+  Callable callable{&record};
+  std::invoke(callable).value = 2;
+  Record &&from_callable = std::invoke(Callable{&record});
+  from_callable.value = 3;
+  Box box{&record};
+  Box *box_pointer = &box;
+  auto alias = &Box::alias;
+  (box.*alias)().value = 4;
+  (box_pointer->*alias)().value = 5;
+  std::invoke(alias, box).value = 6;
+  std::mem_fn(alias)(box).value = 7;
+  auto wrapper = std::mem_fn(alias);
+  std::invoke(wrapper, box).value = 8;
+  auto move = &Box::move;
+  Record &&from_member = std::invoke(move, Box{&record});
+  from_member.value = 9;
+  Record &&from_wrapper = std::mem_fn(move)(Box{&record});
+  from_wrapper.value = 10;
+  return record.value == 10 ? 0 : record.value;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  EXPECT_EQ(Generated.find("member_pointer"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-record-reference-results" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
        CoreV2FunctionalInvokeStoredMembersRunAtBothOptimizations) {
   const auto Source = tmpFile("functional-invoke-stored-members.cpp");
   const auto Output = tmpFile("functional-invoke-stored-members.nc");

@@ -338,13 +338,13 @@ accepts exact source-owned record callables when Clang selects an admitted
 defined nonstatic `operator()` with the same argument and result boundary.
 Lvalue, const-lvalue and rvalue-qualified overloads, reference results,
 receiver-first evaluation and temporary lifetime are preserved, including
-source-owned record reference parameters. A direct
+source-owned record reference parameters and results. A direct
 source-written address of an owned nonstatic member
 function may also be invoked on an exact-class lvalue, pointer or admitted
 `std::reference_wrapper` when its fixed-arity signature has the same scalar
 boundary, including object-pointer and fixed-arity ordinary function-pointer
 values, exact lvalue- or rvalue-reference parameters, and exact lvalue- or
-rvalue-reference results. A
+rvalue-reference results, including complete source-owned records. A
 direct source-written address of an admitted non-volatile scalar, object-pointer
 or fixed-arity ordinary function-pointer field,
 including a declared-const field, may be invoked on the same receivers and
