@@ -8380,6 +8380,82 @@ approvedFunctionalReferenceInvokeCall(
   return Inner;
 }
 
+std::optional<FunctionalReferenceInvokeCall>
+approvedUtilityTupleApplyReferenceCall(const State &S,
+                                       const SourceManager &SM,
+                                       const CallExpr *Call,
+                                       const ASTContext &Context) {
+  const auto Apply = approvedUtilityTupleApplyDispatch(S, SM, Call, Context);
+  if (!Apply)
+    return std::nullopt;
+  auto Reference = approvedFunctionalReferenceDirectInvoke(
+      S, SM, Apply->Operation, Context, false);
+  const auto *WrapperRecord =
+      Call->getArg(0)->getType()->getAsCXXRecordDecl();
+  if (!Reference || !WrapperRecord ||
+      Reference->Wrapper.Record->getCanonicalDecl() !=
+          WrapperRecord->getCanonicalDecl() ||
+      !Context.hasSameType(Call->getType(), Apply->Operation->getType()))
+    return std::nullopt;
+
+  const bool StandardObject =
+      Reference->Kind == FunctionalReferenceInvokeKind::FunctionObject;
+  const bool UserObject =
+      Reference->Kind == FunctionalReferenceInvokeKind::UserFunctionObject;
+  const auto *Prototype =
+      !StandardObject && !UserObject &&
+              !Reference->FunctionPointerType.isNull() &&
+              Reference->FunctionPointerType->isFunctionPointerType()
+          ? Reference->FunctionPointerType->getPointeeType()
+                ->getAs<FunctionProtoType>()
+          : nullptr;
+  if ((StandardObject && !Reference->Operation) ||
+      (UserObject && !Reference->Method) ||
+      (!StandardObject && !UserObject && !Prototype))
+    return std::nullopt;
+
+  auto Parameter = [&](unsigned I) -> QualType {
+    if (StandardObject)
+      return I == 0 ? Reference->Operation->LeftType
+                    : Reference->Operation->RightType;
+    if (UserObject)
+      return Reference->Method->getParamDecl(I)->getType();
+    return Prototype->getParamType(I);
+  };
+  const unsigned Arity =
+      StandardObject
+          ? (Reference->Operation->RightType.isNull() ? 1u : 2u)
+          : UserObject ? Reference->Method->getNumParams()
+                       : Prototype->getNumParams();
+  if (Apply->Tuple.Elements.size() != Arity)
+    return std::nullopt;
+  const auto TupleArgument = Call->getArg(1)->getType();
+  for (unsigned I = 0; I < Arity; ++I) {
+    const auto Target = Parameter(I);
+    const auto Element = Apply->Tuple.Elements[I]->getType();
+    bool Supported = false;
+    if (Target->isReferenceType()) {
+      const auto Referent = Target->getPointeeType();
+      const bool Category = Target->isLValueReferenceType()
+                                ? Call->getArg(1)->isLValue()
+                                : !Call->getArg(1)->isLValue();
+      Supported = Category &&
+                  supportedFunctionalInvokeReference(S, SM, Context,
+                                                     Referent) &&
+                  Context.hasSameUnqualifiedType(Referent, Element) &&
+                  !Referent.isVolatileQualified() &&
+                  (Referent.isConstQualified() ||
+                   !TupleArgument.isConstQualified());
+    } else {
+      Supported = supportedFunctionalByValue(S, SM, Context, Target) &&
+                  functionalMemberValueConversion(Context, Element, Target);
+    }
+    if (!Supported)
+      return std::nullopt;
+  }
+  return Reference;
+}
+
 std::optional<UtilityOperation>
 approvedUtilityOperation(const State &S, const SourceManager &SM,
                          const CallExpr *Call, const ASTContext &Context) {
@@ -11572,6 +11648,23 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         approvedUtilityTupleApplyUserCall(S, SM, Call, Context);
     const auto ObjectOperation =
         approvedUtilityTupleApplyObjectOperation(S, SM, Call, Context);
+    const auto ReferenceCallable =
+        approvedUtilityTupleApplyReferenceCall(S, SM, Call, Context);
+    const auto ReferenceCallableResult = [&]() -> QualType {
+      if (!ReferenceCallable)
+        return {};
+      if (ReferenceCallable->Kind ==
+          FunctionalReferenceInvokeKind::FunctionObject)
+        return ReferenceCallable->Operation->ResultType;
+      if (ReferenceCallable->Kind ==
+          FunctionalReferenceInvokeKind::UserFunctionObject)
+        return ReferenceCallable->Method->getReturnType();
+      const auto *ReferencePrototype =
+          ReferenceCallable->FunctionPointerType->getPointeeType()
+              ->getAs<FunctionProtoType>();
+      return ReferencePrototype ? ReferencePrototype->getReturnType()
+                                : QualType();
+    }();
     const auto *Prototype =
         Callable->isFunctionType() ? Callable->getAs<FunctionProtoType>()
         : Callable->isFunctionPointerType()
@@ -11584,17 +11677,20 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Prototype ? Prototype->getReturnType()
                   : UserCallable ? UserCallable->Method->getReturnType()
                   : ObjectOperation ? ObjectOperation->ResultType
+                  : ReferenceCallable ? ReferenceCallableResult
                                     : QualType();
     const unsigned Arity =
         Prototype ? Prototype->getNumParams()
         : UserCallable ? UserCallable->Method->getNumParams()
         : ObjectOperation ? (ObjectOperation->RightType.isNull() ? 1u : 2u)
+        : ReferenceCallable ? Tuple->Elements.size()
                           : 0u;
     const bool ReferenceResult =
         !Result.isNull() && Result->isReferenceType();
     const auto Referent =
         ReferenceResult ? Result->getPointeeType() : QualType();
-    if ((!Prototype && !UserCallable && !ObjectOperation) ||
+    if ((!Prototype && !UserCallable && !ObjectOperation &&
+         !ReferenceCallable) ||
         (Prototype && Prototype->isVariadic()) ||
         !CallableParameter->isReferenceType() ||
         !Same(CallableParameter->getPointeeType(), Callable) ||
@@ -11615,7 +11711,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                             Function->getReturnType())))))
       return std::nullopt;
     for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
-      if (ObjectOperation)
+      if (ObjectOperation || ReferenceCallable)
         continue;
       const auto Element = Tuple->Elements[I]->getType();
       const auto Parameter =

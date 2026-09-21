@@ -220,12 +220,13 @@ construction, compatible scalar or exact composite per-element construction
 and assignment from tuples or pairs, factories, swaps, recursive same-length
 heterogeneous lexicographic comparisons and index or unique-type access. Exact
 `apply` lowers named functions, stored function pointers, exact source-owned
-function objects, or authenticated standard scalar function objects over tuple
-elements with directly convertible by-value parameters, or exact trivial
-source-record elements with independent by-value parameter objects, to one
-callback call or direct scalar operation. Empty tuples, scalar or void results,
-and complete source-record results constructed directly in the caller
-destination are included. Exact
+function objects, authenticated standard scalar function objects, or exact
+`reference_wrapper` forms around those callables over tuple elements with
+directly convertible by-value parameters, or exact trivial source-record
+elements with independent by-value parameter objects, to one callback call or
+direct scalar operation. Empty tuples, scalar or void results, and complete
+source-record results constructed directly in the caller destination are
+included. Exact
 lvalue or rvalue reference parameters bind the corresponding tuple elements,
 reference results preserve their source storage and qualification, and function
 objects preserve their selected cv/ref-qualified `operator()` overload. Exact

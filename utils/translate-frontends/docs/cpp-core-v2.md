@@ -249,7 +249,9 @@ function pointer with a fixed nonvariadic signature, or an exact source-owned
 function object whose selected `operator()` has a checked body. Authenticated
 typed or transparent standard scalar arithmetic, bitwise, comparison and logical
 function objects, plus admitted scalar hashes, are also accepted with their
-documented operand restrictions.
+documented operand restrictions. Exact `std::reference_wrapper` forms around
+these named functions, stored function pointers, source function objects and
+standard function objects use the same admitted parameter and result boundary.
 Function-object cv/ref qualification and mutable object storage are preserved.
 Every tuple element and corresponding callback parameter must be admitted scalars
 connected by a checked direct scalar conversion, or the same complete source-owned

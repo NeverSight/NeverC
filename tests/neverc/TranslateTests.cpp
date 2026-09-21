@@ -23858,6 +23858,91 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2TupleApplyReferenceWrappersRunAtBothOptimizations) {
+  const auto Source = tmpFile("tuple-apply-reference-wrappers.cpp");
+  const auto Output = tmpFile("tuple-apply-reference-wrappers.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <tuple>
+int effects;
+int constructed;
+int copied;
+int dropped;
+int add(int left, int right) { return left + right; }
+int &bump(int &value) { return ++value; }
+struct Result {
+  int value;
+  Result(int source) : value(source) { ++constructed; }
+  Result(const Result &source) : value(source.value) { ++copied; }
+  ~Result() { ++dropped; }
+};
+Result make_result(int value) { return Result{value}; }
+struct Callable {
+  int calls;
+  int operator()(int left, int right) & {
+    ++calls;
+    return left + right;
+  }
+};
+Callable &select_callable(Callable &value) {
+  ++effects;
+  return value;
+}
+std::tuple<int, int> &select_tuple(std::tuple<int, int> &value) {
+  ++effects;
+  return value;
+}
+int main() {
+  Callable callable{0};
+  std::tuple<int, int> pair(3, 4);
+  auto callable_wrapper = std::ref(callable);
+  if (std::apply(callable_wrapper, pair) != 7 || callable.calls != 1)
+    return 1;
+  if (std::apply(std::ref(add), std::make_tuple(4, 5)) != 9)
+    return 2;
+  auto pointer = &add;
+  auto pointer_wrapper = std::ref(pointer);
+  if (std::apply(pointer_wrapper, std::make_tuple(5, 6)) != 11)
+    return 3;
+  effects = 0;
+  if (std::apply(std::ref(select_callable(callable)), select_tuple(pair)) != 7 ||
+      effects != 2 || callable.calls != 2)
+    return 4;
+  std::plus<int> plus;
+  if (std::apply(std::cref(plus), std::make_tuple(6, 7)) != 13)
+    return 5;
+  std::tuple<int> scalar(8);
+  int &alias = std::apply(std::ref(bump), scalar);
+  alias = 10;
+  if (std::get<0>(scalar) != 10)
+    return 6;
+  {
+    Result result =
+        std::apply(std::ref(make_result), std::make_tuple(10));
+    if (result.value != 10 || constructed != 1 || copied != 0 || dropped != 0)
+      return 7;
+  }
+  return dropped == 1 ? 0 : 8;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("__apply_tuple_impl"), std::string::npos);
+  EXPECT_EQ(Text.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("tuple-apply-reference-wrappers" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2TupleCatRunsAtBothOptimizations) {
   const auto Source = tmpFile("tuple-cat.cpp");
   const auto Output = tmpFile("tuple-cat.nc");

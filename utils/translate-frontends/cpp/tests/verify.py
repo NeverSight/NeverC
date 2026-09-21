@@ -722,6 +722,41 @@ extern "C" int tuple_apply_standard(int value) {
               tuple_apply_standard_source, profile="cpp-core-v2",
               target=target, sdk=True)
 
+    tuple_apply_reference_source = """\
+#include <functional>
+#include <tuple>
+int add(int left, int right) { return left + right; }
+int &bump(int &value) { return ++value; }
+struct Callable {
+  int offset;
+  int operator()(int left, int right) & { return left + right + offset; }
+};
+extern "C" int tuple_apply_reference(int value) {
+  auto pointer = &add;
+  auto pointer_reference = std::ref(pointer);
+  Callable callable{2};
+  auto callable_reference = std::ref(callable);
+  std::plus<int> plus;
+  std::tuple<int, int> pair(value, 3);
+  int result = std::apply(pointer_reference, pair);
+  result += std::apply(callable_reference, pair);
+  result += std::apply(std::cref(plus), pair);
+  std::tuple<int> scalar(value);
+  int &alias = std::apply(std::ref(bump), scalar);
+  alias += 1;
+  return result + std::get<0>(scalar);
+}
+"""
+    tuple_apply_reference = check(
+        "v2-tuple-apply-reference-wrapper", tuple_apply_reference_source,
+        profile="cpp-core-v2", sdk=True)
+    assert not [node for node in walk(tuple_apply_reference["functions"])
+                if node.get("op") == "mapped_call"], tuple_apply_reference
+    for target in sdk_targets:
+        check("v2-tuple-apply-reference-wrapper-" + target,
+              tuple_apply_reference_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+
     tuple_pair_source = """\
 #include <tuple>
 #include <utility>
