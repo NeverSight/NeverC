@@ -613,6 +613,32 @@ extern "C" int tuple_all(int *pointer) {
         check("v2-tuple-" + target, tuple_source,
               profile="cpp-core-v2", target=target, sdk=True)
 
+    tuple_apply_record_source = """\
+#include <tuple>
+struct Input { int value; };
+struct Result { int value; };
+Result transform(Input input, int add) {
+  input.value += add;
+  return Result{input.value};
+}
+extern "C" int tuple_apply_record(int value) {
+  auto values = std::make_tuple(Input{value}, 4);
+  Result result = std::apply(transform, values);
+  return result.value + std::get<0>(values).value;
+}
+"""
+    tuple_apply_record = check(
+        "v2-tuple-apply-record", tuple_apply_record_source,
+        profile="cpp-core-v2", sdk=True)
+    assert any(function["name"] == "tuple_apply_record"
+               for function in tuple_apply_record["functions"]), tuple_apply_record
+    assert len([node for node in walk(tuple_apply_record["functions"])
+                if node.get("op") == "indirect_call"]) == 1, tuple_apply_record
+    for target in sdk_targets:
+        check("v2-tuple-apply-record-" + target,
+              tuple_apply_record_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+
     tuple_pair_source = """\
 #include <tuple>
 #include <utility>
@@ -761,9 +787,6 @@ extern "C" int tuple_composite() {
          "TR0203"),
         ("apply-callable-object",
          '#include <tuple>\nstruct F{int operator()(int value)const{return value;}};int main(){return std::apply(F{},std::make_tuple(1));}',
-         "TR0203"),
-        ("apply-record-parameter",
-         '#include <tuple>\nstruct R{int value;};int take(R value){return value.value;}int main(){return std::apply(take,std::make_tuple(R{1}));}',
          "TR0203"),
     ):
         check("v2-tuple-" + name, source, code,

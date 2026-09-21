@@ -23638,6 +23638,58 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2TupleApplyRecordValuesRunAtBothOptimizations) {
+  const auto Source = tmpFile("tuple-apply-record-values.cpp");
+  const auto Output = tmpFile("tuple-apply-record-values.nc");
+  writeFile(Source, R"cpp(
+#include <tuple>
+int constructed;
+int copied;
+int dropped;
+struct Input { int value; };
+struct Result {
+  int value;
+  Result(int source) : value(source) { ++constructed; }
+  Result(const Result &source) : value(source.value) { ++copied; }
+  ~Result() { ++dropped; }
+};
+Result transform(Input input, int add) {
+  int value = input.value;
+  input.value = 99;
+  return Result{value + add};
+}
+int main() {
+  auto values = std::make_tuple(Input{3}, 4);
+  int score = 0;
+  {
+    Result result = std::apply(transform, values);
+    score += result.value == 7;
+    score += std::get<0>(values).value == 3;
+    score += constructed == 1;
+    score += copied == 0;
+    score += dropped == 0;
+  }
+  score += dropped == 1;
+  return score == 6 ? 0 : score;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("__apply_tuple_impl"), std::string::npos);
+  EXPECT_EQ(Text.find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("tuple-apply-record-values" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2TupleCatRunsAtBothOptimizations) {
   const auto Source = tmpFile("tuple-cat.cpp");
   const auto Output = tmpFile("tuple-cat.nc");
@@ -24007,11 +24059,7 @@ TEST_F(TranslateTest, CoreV2TupleRequiresPinnedOperations) {
        "#include <tuple>\nstruct F{int operator()(int value)const{return "
        "value;}};int main(){return std::apply(F{},std::make_tuple(1));}",
        "TR0203"},
-      {"apply-record-parameter",
-       "#include <tuple>\nstruct R{int value;};int take(R value){return "
-       "value.value;}int main(){return "
-       "std::apply(take,std::make_tuple(R{1}));}",
-       "TR0203"}};
+  };
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
     const auto Source = tmpFile(std::string("tuple-") + Case.Name + ".cpp");

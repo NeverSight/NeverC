@@ -11327,14 +11327,26 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         !Tuple || Prototype->getNumParams() != Tuple->Elements.size() ||
         !Same(Prototype->getReturnType(), Function->getReturnType()) ||
         (!Function->getReturnType()->isVoidType() &&
-         !utilityScalar(Context, Function->getReturnType())))
+         !utilityScalar(Context, Function->getReturnType()) &&
+         !supportedFunctionalResult(S, SM, Context,
+                                    Function->getReturnType())))
       return std::nullopt;
     for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
       const auto Element = Tuple->Elements[I]->getType();
       const auto Parameter = Prototype->getParamType(I);
-      if (!utilityScalar(Context, Element) || Parameter->isReferenceType() ||
-          !utilityScalar(Context, Parameter) ||
-          !utilityScalarDirectConversion(Context, Element, Parameter))
+      if (Parameter->isReferenceType())
+        return std::nullopt;
+      const bool Scalar = utilityScalar(Context, Element) &&
+                          utilityScalar(Context, Parameter) &&
+                          utilityScalarDirectConversion(Context, Element,
+                                                        Parameter);
+      const bool Record = Element->isRecordType() &&
+                          Parameter->isRecordType() &&
+                          supportedFunctionalByValue(
+                              S, SM, Context, Parameter) &&
+                          utilityTupleDirectConversion(S, SM, Context, Element,
+                                                       Parameter);
+      if (!Scalar && !Record)
         return std::nullopt;
     }
     return UtilityOperation::TupleApply;

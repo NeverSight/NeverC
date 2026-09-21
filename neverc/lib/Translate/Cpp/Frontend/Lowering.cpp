@@ -6831,12 +6831,26 @@ class FunctionLowering {
           address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
       auto TupleValue = dereference(std::move(TupleAddress), L);
       json::Array Arguments;
-      for (unsigned I = 0; I < Tuple->Elements.size(); ++I)
-        Arguments.push_back(
-            cast(fieldStorage(json::Object(TupleValue), Tuple->Elements[I], L),
-                 type(Prototype->getParamType(I), L), L));
+      for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
+        const auto Parameter = Prototype->getParamType(I);
+        auto Element =
+            fieldStorage(json::Object(TupleValue), Tuple->Elements[I], L);
+        if (recordValue(Parameter)) {
+          // Tuple records are admitted here only when their copy is trivial.
+          // Still create the independent by-value parameter object required by
+          // the ordinary callback ABI instead of aliasing tuple storage.
+          auto Place = objectTemporary(Parameter, L);
+          assign(Place, std::move(Element), L);
+          Arguments.push_back(snapshot(
+              address(std::move(Place), Parameter.getUnqualifiedType(), L), L));
+        } else {
+          Arguments.push_back(
+              cast(std::move(Element), type(Parameter, L), L));
+        }
+      }
       return emitIndirectCall(std::move(Callable), std::move(Arguments),
-                              Prototype->getReturnType(), L);
+                              Prototype->getReturnType(), L,
+                              std::move(Destination));
     }
     case UtilityOperation::TupleSwap:
     case UtilityOperation::PairSwap: {
