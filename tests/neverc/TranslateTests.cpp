@@ -14450,7 +14450,6 @@ TEST_F(TranslateTest, CoreV2FunctionPointersAcceptTypedCallbacks) {
 
 TEST_F(TranslateTest, CoreV2FunctionPointersRetainSourceAndSignatureBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"record-by-value-result", "struct R{int n;};R get(){return R{3};}int main(){auto p=&get;return p().n;}"},
       {"function-reference", "int get(){return 3;}int main(){int(&r)()=get;return r();}"},
       {"variadic", "int get(int,...){return 3;}int main(){auto p=&get;return p(1,2);}"},
       {"lambda-conversion", "int main(){int(*p)(int)=[](int n){return n;};return p(3);}"},
@@ -34518,6 +34517,49 @@ int main() {
 }
 
 TEST_F(TranslateTest,
+       CoreV2FunctionPointerRecordResultsRunAtBothOptimizations) {
+  const auto Source = tmpFile("function-pointer-record-results.cpp");
+  const auto Output = tmpFile("function-pointer-record-results.nc");
+  writeFile(Source, R"cpp(
+int constructed;
+int copied;
+int dropped;
+struct Record {
+  int value;
+  Record(int source) : value(source) { ++constructed; }
+  Record(const Record &source) : value(source.value) { ++copied; }
+  ~Record() { ++dropped; }
+};
+Record make_record(int value) { return Record{value}; }
+int main() {
+  auto pointer = &make_record;
+  int score = 0;
+  {
+    Record result = pointer(7);
+    score += result.value == 7;
+    score += constructed == 1;
+    score += copied == 0;
+    score += dropped == 0;
+  }
+  score += dropped == 1;
+  return score == 5 ? 0 : score;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-pointer-record-results" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
        CoreV2FunctionalRecordValuesRunAtBothOptimizations) {
   const auto Source = tmpFile("functional-record-values.cpp");
   const auto Output = tmpFile("functional-record-values.nc");
@@ -34569,6 +34611,72 @@ int main() {
   for (const std::string &Optimization : {"-O0", "-O2"}) {
     SCOPED_TRACE(Optimization);
     const auto Executable = tmpFile("functional-record-values" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2FunctionalRecordResultsRunAtBothOptimizations) {
+  const auto Source = tmpFile("functional-record-results.cpp");
+  const auto Output = tmpFile("functional-record-results.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+int constructed;
+int copied;
+int dropped;
+struct Record {
+  int value;
+  Record(int source) : value(source) { ++constructed; }
+  Record(const Record &source) : value(source.value) { ++copied; }
+  ~Record() { ++dropped; }
+};
+Record make_record(int value) { return Record{value}; }
+struct Callable {
+  Record operator()(int value) const { return Record{value + 10}; }
+};
+struct Box {
+  Record make(int value) const { return Record{value + 20}; }
+};
+int main() {
+  auto pointer = &make_record;
+  int score = 0;
+  { Record r = pointer(1); score += r.value == 1; }
+  { Record r = std::invoke(make_record, 2); score += r.value == 2; }
+  { Record r = std::invoke(pointer, 3); score += r.value == 3; }
+  auto function_reference = std::ref(make_record);
+  { Record r = std::invoke(function_reference, 4); score += r.value == 4; }
+  auto pointer_reference = std::ref(pointer);
+  { Record r = std::invoke(pointer_reference, 5); score += r.value == 5; }
+  Callable callable;
+  { Record r = std::invoke(callable, 6); score += r.value == 16; }
+  auto callable_reference = std::ref(callable);
+  { Record r = std::invoke(callable_reference, 7); score += r.value == 17; }
+  Box box;
+  auto member = &Box::make;
+  { Record r = (box.*member)(8); score += r.value == 28; }
+  { Record r = std::invoke(member, box, 9); score += r.value == 29; }
+  { Record r = std::mem_fn(member)(box, 10); score += r.value == 30; }
+  auto wrapper = std::mem_fn(member);
+  { Record r = wrapper(box, 11); score += r.value == 31; }
+  { Record r = std::invoke(wrapper, box, 12); score += r.value == 32; }
+  score += constructed == 12;
+  score += copied == 0;
+  score += dropped == 12;
+  return score == 15 ? 0 : score;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  EXPECT_EQ(Generated.find("member_pointer"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("functional-record-results" + Optimization);
     auto Compile = compileGenerated(Output, Executable, Optimization);
     ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
     auto Run = exec(Executable.string(), {});

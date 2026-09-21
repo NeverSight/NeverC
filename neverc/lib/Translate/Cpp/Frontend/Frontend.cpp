@@ -1755,11 +1755,16 @@ std::string Adapter::functionPointerType(QualType T, SourceLocation L,
     reject(L, "function pointer layout", "Source code-pointer and default carrier layouts differ.", "TR0204");
     return {};
   }
-  chargeExpansion(P->getNumParams() + 1, L);
-  std::string Result = "fnptr:" + std::to_string(P->getNumParams()) + ":";
+  const bool RecordResult = P->getReturnType()->isRecordType();
+  chargeExpansion(P->getNumParams() + 1 + unsigned(RecordResult), L);
+  std::string Result = "fnptr:" +
+                       std::to_string(P->getNumParams() +
+                                      unsigned(RecordResult)) +
+                       ":";
   auto Component = [&](QualType C, bool Void, bool Parameter) {
-    if (C->isArrayType() || (C->isRecordType() && !Parameter)) {
-      reject(L, "callback signature", "Array values and record results need a separate callback ownership contract.");
+    if (C->isArrayType()) {
+      reject(L, "callback signature",
+             "Array values need a separate callback ownership contract.");
       return false;
     }
     // Function lowering already gives every by-value record parameter its own
@@ -1778,8 +1783,20 @@ std::string Adapter::functionPointerType(QualType T, SourceLocation L,
     }
     return true;
   };
-  if (!Component(P->getReturnType(), true, false))
+  if (RecordResult) {
+    // A source function returning a record already lowers to void with a
+    // caller-owned destination pointer as its first emitted parameter. Encode
+    // that exact ABI so taking its address and calling it indirectly agree
+    // with the direct definition, including construction into the final
+    // destination.
+    if (!Component(Context.VoidTy, true, false) ||
+        !Component(Context.getPointerType(
+                       P->getReturnType().getUnqualifiedType()),
+                   false, true))
+      return {};
+  } else if (!Component(P->getReturnType(), true, false)) {
     return {};
+  }
   for (auto Parameter : P->param_types())
     if (!Component(Parameter, false, true))
       return {};

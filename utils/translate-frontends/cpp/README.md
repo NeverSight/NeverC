@@ -145,14 +145,15 @@ complete source-owned records, or exact by-value complete source-owned
 standard-layout records that are trivially copyable and trivially destructible,
 and preserves the
 corresponding scalar, object-pointer, function-pointer, lvalue- or
-rvalue-reference or `void` result, plus
+rvalue-reference, complete source-owned record value or `void` result, plus
 the admitted typed and transparent standard function objects. Exact
 source-owned record callables also lower when Clang selects an admitted defined
 nonstatic `operator()` with the same argument and result boundary; lvalue,
 const-lvalue and rvalue-qualified overloads, reference results, receiver-first
 evaluation and temporary lifetime are preserved, including source-owned record
 callables with fixed-array and source-owned-record reference parameters and
-results and trivial source-record value parameters. Direct named
+results, trivial source-record value parameters and complete source-record
+value results. Direct named
 addresses of owned nonstatic member functions
 also lower on exact-class lvalue, full-expression temporary, pointer or
 `std::reference_wrapper` receivers. Admitted non-volatile scalar,
@@ -176,7 +177,9 @@ the same fixed-arity method boundary; exact full-expression temporary objects
 are materialized and destroyed after the call, and `&&`-qualified methods
 require that temporary receiver. This includes const methods, admitted lvalue-
 or rvalue-reference parameters, and admitted lvalue- or rvalue-reference
-results, including complete fixed arrays and source-owned records. Exact
+results, including complete fixed arrays and source-owned records.
+Complete source-owned record value results construct directly in the caller's
+destination and retain their normal full-expression destruction. Exact
 `std::mem_fn` wrappers built from those direct named addresses or authenticated
 local member-pointer chains may be called
 immediately, directly or as the callable of `std::invoke`, through the same
@@ -189,7 +192,7 @@ final direct call or `std::invoke` use. Reassigned or null member pointers,
 `mem_fn` copies or moves from
 parameters, reassigned `mem_fn` objects,
 base adjustments, volatile receivers, references to incomplete or runtime-bound
-arrays, nontrivial source-record value parameters, source-record value results,
+arrays, nontrivial source-record value parameters,
 and other unsupported reference or variadic function signatures stay
 outside this boundary. Object-pointer values and exact scalar or object-pointer
 lvalue- or rvalue-reference parameters and lvalue- or rvalue-reference results are preserved. The

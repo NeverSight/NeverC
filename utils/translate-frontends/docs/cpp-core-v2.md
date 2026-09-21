@@ -911,7 +911,8 @@ Exact `std::reference_wrapper<T>` and `std::reference_wrapper<const T>` for
 non-volatile object types, plus exact function wrappers whose fixed-arity
 signature has admitted scalar, object-pointer or fixed-arity ordinary
 function-pointer values, exact lvalue- or
-rvalue-reference parameters, and exact lvalue- or rvalue-reference results, retain the authenticated target ABI layout: one pointer slot under the
+rvalue-reference parameters, exact lvalue- or rvalue-reference results, and
+complete source-owned record value results, retain the authenticated target ABI layout: one pointer slot under the
 Itanium ABI and an empty-base storage slot followed by the pointer under the
 Microsoft ABI. Direct construction from a matching lvalue, the direct
 `std::ref` and `std::cref` overloads, their wrapper-taking overloads, trivial
@@ -947,7 +948,8 @@ lvalue or rvalue references to those values, complete fixed arrays or complete
 source-owned records, plus exact by-value complete source-owned standard-layout
 records that are trivially copyable and trivially destructible;
 results may be the corresponding
-scalar, object-pointer, function-pointer or exact lvalue or rvalue reference, or `void`. References retain
+scalar, object-pointer, function-pointer, complete source-owned record value,
+exact lvalue or rvalue reference, or `void`. References retain
 their source storage and qualification. The callable is retained before the
 arguments are evaluated, then the retained function pointer is called once.
 The same entry point accepts every admitted typed or transparent standard
@@ -960,7 +962,7 @@ rvalue-qualified overload selection follows Clang's checked dispatch. The
 method may use the same admitted by-value and exact lvalue- or rvalue-reference
 parameter and result boundary as member invocation, including fixed-array and
 source-owned-record reference parameters and results and trivial source-record
-value parameters. The callable is retained
+value parameters, plus complete source-record value results. The callable is retained
 before its arguments, reference results preserve storage identity, and a
 temporary callable is destroyed at its full-expression boundary.
 
@@ -973,7 +975,7 @@ or rvalue reference, including trivial source-record value parameters and
 references to complete fixed arrays or source-owned records,
 with a scalar, object-pointer, function-pointer, exact
 lvalue- or rvalue-reference including a complete fixed array or source-owned
-record, or `void`
+record, complete source-owned record value, or `void`
 result. Reference parameters and results preserve the selected object's storage
 and qualification. The receiver is retained before the arguments are evaluated
 and each selected argument conversion is preserved. A direct source-written
@@ -1005,7 +1007,9 @@ in the same syntax. Exact full-expression temporary receivers are also
 materialized through this method boundary and destroyed after the call. The receiver is retained before the arguments, const methods
 accept exact const receivers, `&&`-qualified methods require an exact temporary
 receiver, admitted lvalue- or rvalue-reference parameters, and admitted
-lvalue- or rvalue-reference results preserve storage identity. Volatile native data-member access remains
+lvalue- or rvalue-reference results preserve storage identity. Complete
+source-owned record results construct through the caller's final destination
+and retain their normal full-expression cleanup. Volatile native data-member access remains
 rejected. Parameter-sourced, reassigned or null native member
 pointers remain rejected. The selected libc++
 member-function or member-object dispatcher body, wrapper `get()` body and
@@ -1033,7 +1037,7 @@ not yet lower. Reassigned or null member pointers, `mem_fn` copies or moves
 from parameters, reassigned `mem_fn` objects, base-adjusting
 receivers, volatile
 receivers, function referents, references to incomplete or runtime-bound
-arrays, nontrivial source-record value parameters, source-record value results,
+arrays, nontrivial source-record value parameters,
 other unsupported reference signatures and variadic targets remain
 outside the `std::invoke` boundary.
 Quoted includes, shadows, forged declarations and other runtime uses remain
@@ -3023,8 +3027,9 @@ as a direct function query. A direct function reference is unwrapped only for
 this check; lvalue/rvalue identity remains available to classification and
 transform builtins. Noexcept type identity is preserved. Variadic,
 cv/ref-qualified, unsupported calling-convention and wide signatures remain
-excluded, as do record/array values in callback parameters or results. Supported
-complete-record pointers/references keep their existing carrier contract;
+excluded, as do array values in callback parameters or results. Complete
+source-owned record values use the callback parameter/result destination
+contract above. Supported complete-record pointers/references keep their existing carrier contract;
 incomplete record signatures do not gain a carrier. Runtime function-reference
 variables, fields, parameters and results remain outside the carrier contract.
 
@@ -4947,12 +4952,14 @@ int main() { return apply(plus_one, 2) - 3; }
 Signatures have a result and at most 64 parameters, within the existing recursive
 source and protocol budgets. Results and parameters use admitted integer/boolean
 scalars, object pointers, nested function pointers or existing reference carriers;
-only results may be void. Parameters additionally admit complete source-owned
-records by value. The caller constructs an independent parameter object, passes
-its hidden pointer through the callable signature and retains the selected
-copy/move construction and callee-owned destruction. References to records or
-fixed arrays retain binding, constness and alias behavior. By-value record results
-and function references require separate lowering and remain unsupported. Function-type aliases
+only results may be void. Parameters and results additionally admit complete
+source-owned records by value. The caller constructs an independent parameter
+object, passes its hidden pointer through the callable signature and retains the
+selected copy/move construction and callee-owned destruction. A record result
+uses the direct-function ABI's leading caller-owned destination pointer, so a
+prvalue constructs in its final destination without an extra copy. References
+to records or fixed arrays retain binding, constness and alias behavior. Function references
+require separate lowering and remain unsupported. Function-type aliases
 are accepted as source spellings for these pointer signatures, without adding a
 bare function-value IR type. Nested factory callbacks may return callbacks. Record declarations are ordered
 before any callback signature that needs their complete array element types;
@@ -5052,8 +5059,8 @@ the function body, signature and complete template source before the written
 overload pseudo-type is skipped. Unsupported syntax in a second clause remains
 diagnosed even when it selects the same canonical specialization.
 
-The ordinary callback contract still excludes record-by-value results, function
-references, nonstatic member pointers, constructor/conversion-template addresses,
+The ordinary callback contract still excludes function references, nonstatic
+member pointers, constructor/conversion-template addresses,
 variadics, lambda conversions and nondefault ABI metadata. Function-pointer
 non-type template arguments and cross-unit callbacks remain unsupported.
 Variable-template callback storage follows its own contract below. Existing direct calls and discarded function

@@ -594,15 +594,34 @@ class FunctionLowering {
     reject(L, "function designator", "Function values require a checked named target or stored callback.");
   }
   Expression emitIndirectCall(Expression Callable, json::Array Args,
-                              QualType Result, SourceLocation L) {
+                              QualType Result, SourceLocation L,
+                              std::optional<Expression> Destination =
+                                  std::nullopt) {
+    Expression Value;
+    const bool HasRecordResult = recordValue(Result);
+    if (HasRecordResult) {
+      Value = Destination ? std::move(*Destination)
+                          : objectTemporary(Result, L);
+      if (Value.getString("type") != type(Result, L))
+        reject(L, "indirect call result",
+               "Call and result destination types differ.");
+      json::Array ABIArgs;
+      ABIArgs.push_back(snapshot(
+          address(Value, Result.getUnqualifiedType(), L), L));
+      for (auto &Arg : Args)
+        ABIArgs.push_back(std::move(Arg));
+      Args = std::move(ABIArgs);
+    } else if (Destination) {
+      reject(L, "indirect call result",
+             "Only record results accept a destination.");
+    }
     chargeCall(Args, L);
     json::Object Instruction{{"op", "indirect_call"},
                              {"callable", std::move(Callable)},
                              {"args", std::move(Args)},
                              {"loc", A.loc(L)}};
     auto ResultType = type(Result, L, true);
-    Expression Value;
-    if (ResultType != "void") {
+    if (!HasRecordResult && ResultType != "void") {
       Value = temporary(ResultType, L);
       Instruction["target"] = json::Object(Value);
     }
@@ -661,7 +680,9 @@ class FunctionLowering {
     return emitAlgorithmCallback(std::move(Callable), PredicateType,
                                  std::move(Arguments), L);
   }
-  Expression indirectCall(const CallExpr *Call) {
+  Expression indirectCall(
+      const CallExpr *Call,
+      std::optional<Expression> Destination = std::nullopt) {
     auto L = Call->getExprLoc();
     auto Pointer = Call->getCallee()->getType();
     if (A.functionPointerType(Pointer, L).empty())
@@ -676,7 +697,8 @@ class FunctionLowering {
     for (unsigned I = 0; I < Call->getNumArgs(); ++I)
       Args.push_back(argument(Call->getArg(I), Prototype->getParamType(I)));
     return emitIndirectCall(std::move(Callable), std::move(Args),
-                            Prototype->getReturnType(), L);
+                            Prototype->getReturnType(), L,
+                            std::move(Destination));
   }
 
   Expression cstddefOperation(const CallExpr *Call, CstddefOperation Operation) {
@@ -1344,7 +1366,9 @@ class FunctionLowering {
 
   Expression memberPointerCall(const CallExpr *Call,
                                const FunctionalMemberInvokeCall &Info,
-                               unsigned ArgumentOffset) {
+                               unsigned ArgumentOffset,
+                               std::optional<Expression> Destination =
+                                   std::nullopt) {
     auto L = Call->getExprLoc();
     Expression Receiver;
     if (Info.ObjectWrapper) {
@@ -1363,6 +1387,23 @@ class FunctionLowering {
     }
     if (Info.Method) {
       json::Array Arguments;
+      Expression Result;
+      const bool HasRecordResult = recordValue(Info.Method->getReturnType());
+      if (HasRecordResult) {
+        Result = Destination ? std::move(*Destination)
+                             : objectTemporary(Info.Method->getReturnType(), L);
+        if (Result.getString("type") !=
+            type(Info.Method->getReturnType(), L))
+          reject(L, "member call result",
+                 "Call and result destination types differ.");
+        Arguments.push_back(snapshot(
+            address(Result,
+                    Info.Method->getReturnType().getUnqualifiedType(), L),
+            L));
+      } else if (Destination) {
+        reject(L, "member call result",
+               "Only record results accept a destination.");
+      }
       Arguments.push_back(snapshot(
           cast(std::move(Receiver), type(Info.Method->getThisType(), L), L),
           L));
@@ -1377,9 +1418,8 @@ class FunctionLowering {
                                {"callee", A.name(Info.Method)},
                                {"args", std::move(Arguments)},
                                {"loc", A.loc(L)}};
-      Expression Result;
       auto ResultType = type(Info.Method->getReturnType(), L, true);
-      if (ResultType != "void") {
+      if (!HasRecordResult && ResultType != "void") {
         Result = temporary(ResultType, L);
         Instruction["target"] = json::Object(Result);
       }
@@ -1388,6 +1428,9 @@ class FunctionLowering {
         return dereference(std::move(Result), L);
       return Result;
     }
+    if (Destination)
+      reject(L, "member access result",
+             "A data-member access cannot initialize a record result.");
     auto Base = dereference(snapshot(std::move(Receiver), L), L);
     return fieldStorage(std::move(Base), Info.Field, L);
   }
@@ -1903,7 +1946,8 @@ class FunctionLowering {
                                  type(parameterType(Parameter), L), L));
       }
       return emitIndirectCall(std::move(Callable), std::move(Arguments),
-                              Prototype->getReturnType(), L);
+                              Prototype->getReturnType(), L,
+                              std::move(Destination));
     }
     case UtilityOperation::FunctionalInvokeObject: {
       auto Approved = approvedFunctionalInvokeObjectOperation(
@@ -1919,7 +1963,7 @@ class FunctionLowering {
       if (!Approved)
         reject(L, "functional invoke",
                "A checked source callable object is required.");
-      return memberPointerCall(Call, *Approved, 1);
+      return memberPointerCall(Call, *Approved, 1, std::move(Destination));
     }
     case UtilityOperation::FunctionalInvokeReference: {
       const auto Info = approvedFunctionalReferenceInvokeCall(
@@ -1951,6 +1995,25 @@ class FunctionLowering {
           reject(L, "functional reference invoke",
                  "A checked source callable object is required.");
         json::Array Arguments;
+        Expression Result;
+        const bool HasRecordResult =
+            recordValue(Info->Method->getReturnType());
+        if (HasRecordResult) {
+          Result = Destination
+                       ? std::move(*Destination)
+                       : objectTemporary(Info->Method->getReturnType(), L);
+          if (Result.getString("type") !=
+              type(Info->Method->getReturnType(), L))
+            reject(L, "functional reference result",
+                   "Call and result destination types differ.");
+          Arguments.push_back(snapshot(
+              address(Result,
+                      Info->Method->getReturnType().getUnqualifiedType(), L),
+              L));
+        } else if (Destination) {
+          reject(L, "functional reference result",
+                 "Only record results accept a destination.");
+        }
         Arguments.push_back(snapshot(
             cast(std::move(Referent), type(Info->Method->getThisType(), L), L),
             L));
@@ -1965,9 +2028,8 @@ class FunctionLowering {
                                  {"callee", A.name(Info->Method)},
                                  {"args", std::move(Arguments)},
                                  {"loc", A.loc(L)}};
-        Expression Result;
         const auto ResultType = type(Info->Method->getReturnType(), L, true);
-        if (ResultType != "void") {
+        if (!HasRecordResult && ResultType != "void") {
           Result = temporary(ResultType, L);
           Instruction["target"] = json::Object(Result);
         }
@@ -1996,7 +2058,8 @@ class FunctionLowering {
                                  type(parameterType(Parameter), L), L));
       }
       return emitIndirectCall(std::move(Callable), std::move(Arguments),
-                              Prototype->getReturnType(), L);
+                              Prototype->getReturnType(), L,
+                              std::move(Destination));
     }
     case UtilityOperation::FunctionalInvokeMember: {
       const auto Info = approvedFunctionalMemberInvokeCall(
@@ -2004,7 +2067,7 @@ class FunctionLowering {
       if (!Info)
         reject(L, "functional member invoke",
                "A checked direct member address and exact receiver are required.");
-      return memberPointerCall(Call, *Info, 2);
+      return memberPointerCall(Call, *Info, 2, std::move(Destination));
     }
     case UtilityOperation::FunctionalReferenceFactory: {
       const auto Info = approvedFunctionalReferenceFactoryCall(
@@ -7733,7 +7796,7 @@ class FunctionLowering {
     if (A.S.coreV2()) {
       if (auto Info = approvedNativeMemberPointerCall(
               A.S, A.Sources, Call, A.Context))
-        return memberPointerCall(Call, *Info, 0);
+        return memberPointerCall(Call, *Info, 0, std::move(Destination));
       if (const auto *D = scalarDestruction(Call, A.Context)) {
         // Evaluate the base without reading an indeterminate destroyed scalar.
         // Arrow bases evaluate their pointer; dot bases designate storage only.
@@ -8088,9 +8151,7 @@ class FunctionLowering {
       }
     if (A.S.coreV2() && !directFunctionReference(Call) &&
         Call->getCallee()->getType()->isFunctionPointerType()) {
-      if (Destination)
-        reject(L, "indirect record result", "By-value record callbacks require separate ownership lowering.");
-      return indirectCall(Call);
+      return indirectCall(Call, std::move(Destination));
     }
     const bool TrivialAssignment = A.S.coreV2() && defaultedAssignment(Method) &&
                                    Method->isTrivial();

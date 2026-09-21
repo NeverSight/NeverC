@@ -766,6 +766,23 @@ static bool supportedFunctionalByValue(const State &S,
          S.owns(SM, Definition->getLocation());
 }
 
+static bool supportedFunctionalResult(const State &S, const SourceManager &SM,
+                                      const ASTContext &Context,
+                                      QualType Type) {
+  if (Type.isNull() || Type->isReferenceType() || Type->isArrayType() ||
+      Type.isVolatileQualified() || Type.isRestrictQualified() ||
+      Type.getAddressSpace() != LangAS::Default)
+    return false;
+  if (Type->isVoidType() || supportedFunctionalCallableValue(Type, Context) ||
+      utilityObjectPointer(Context, Type))
+    return true;
+  const auto *Record = Type->getAsCXXRecordDecl();
+  const auto *Definition = Record ? Record->getDefinition() : nullptr;
+  return Definition && !Definition->isUnion() &&
+         !Definition->isInvalidDecl() &&
+         S.owns(SM, Definition->getLocation());
+}
+
 std::optional<FunctionalReferenceRecord> approvedFunctionalReferenceRecord(
     const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
     const ASTContext &Context) {
@@ -837,8 +854,7 @@ std::optional<FunctionalReferenceRecord> approvedFunctionalReferenceRecord(
         (Result->isReferenceType()
              ? !supportedFunctionalReferenceValue(S, SM, Context,
                                                   Result->getPointeeType())
-             : (!Result->isVoidType() &&
-                !supportedFunctionalCallableValue(Result, Context))))
+             : !supportedFunctionalResult(S, SM, Context, Result)))
       return std::nullopt;
     for (const auto Parameter : Function->param_types())
       if (Parameter->isReferenceType()
@@ -6494,6 +6510,9 @@ approvedUtilityTupleCatCall(const State &S, const SourceManager &SM,
   return Approved;
 }
 
+static const Expr *functionalInvokeStrippedExpression(
+    const Expr *Expression);
+
 static const CallExpr *approvedFunctionalInvokeDispatch(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context, bool ReferenceResult = false) {
@@ -6546,8 +6565,8 @@ static const CallExpr *approvedFunctionalInvokeDispatch(
           : nullptr;
   const auto *Dispatch =
       OuterReturn && OuterReturn->getRetValue()
-          ? dyn_cast<CallExpr>(
-                OuterReturn->getRetValue()->IgnoreParenImpCasts())
+          ? dyn_cast_or_null<CallExpr>(functionalInvokeStrippedExpression(
+                OuterReturn->getRetValue()))
           : nullptr;
   const auto *DispatchFunction =
       Dispatch ? Dispatch->getDirectCallee() : nullptr;
@@ -6559,7 +6578,8 @@ static const CallExpr *approvedFunctionalInvokeDispatch(
                                   ? S.sdkFile(SM, DispatchPrimary->getLocation())
                                   : std::nullopt;
   const auto *DispatchReference =
-      dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Dispatch));
+      Dispatch ? dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Dispatch))
+               : nullptr;
   if (!Dispatch || !DispatchFunction || !DispatchPrimary || !DispatchPattern ||
       !DispatchReference || !DispatchFunction->getIdentifier() ||
       DispatchFunction->getName() != "__invoke" || !DispatchOrigin ||
@@ -6591,6 +6611,10 @@ static const Expr *functionalInvokeStrippedExpression(const Expr *Expression) {
     }
     if (const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(Expression)) {
       Expression = Temporary->getSubExpr();
+      continue;
+    }
+    if (const auto *Bound = dyn_cast<CXXBindTemporaryExpr>(Expression)) {
+      Expression = Bound->getSubExpr();
       continue;
     }
     if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Expression)) {
@@ -6673,8 +6697,7 @@ static bool supportedFunctionalStoredMember(const State &S,
            ? (Referent.isVolatileQualified() || Referent.isRestrictQualified() ||
               Referent.getAddressSpace() != LangAS::Default ||
               !supportedFunctionalReferenceValue(S, SM, Context, Referent))
-           : (!Result->isVoidType() &&
-              !supportedFunctionalMemberValue(Context, Result))))
+           : !supportedFunctionalResult(S, SM, Context, Result)))
     return false;
   for (const auto *Parameter : Method->parameters()) {
     const auto Type = Parameter->getType();
@@ -7133,14 +7156,12 @@ approvedNativeMemberPointerCall(
                                                : !Call->isXValue()) ||
               !Context.hasSameType(Referent, Call->getType()))
            : (!Context.hasSameType(Result, Call->getType()) ||
-              (!Result->isVoidType() &&
-               !supportedFunctionalMemberValue(Context, Result)))))
+              !supportedFunctionalResult(S, SM, Context, Result))))
     return std::nullopt;
 
   for (unsigned I = 0; I < Method->getNumParams(); ++I) {
     const auto Parameter = Method->getParamDecl(I)->getType();
     const auto *ArgumentExpression = Call->getArg(I);
-    const auto Argument = ArgumentExpression->getType();
     bool Supported = false;
     if (Parameter->isReferenceType()) {
       Supported = supportedFunctionalInvokeReferenceArgument(
@@ -7343,7 +7364,8 @@ approvedFunctionalMemFnDispatch(const State &S, const SourceManager &SM,
                            : nullptr;
   const auto *Dispatch =
       Return && Return->getRetValue()
-          ? dyn_cast<CallExpr>(Return->getRetValue()->IgnoreParenImpCasts())
+          ? dyn_cast_or_null<CallExpr>(functionalInvokeStrippedExpression(
+                Return->getRetValue()))
           : nullptr;
   const auto *DispatchFunction =
       Dispatch ? Dispatch->getDirectCallee() : nullptr;
@@ -7352,7 +7374,8 @@ approvedFunctionalMemFnDispatch(const State &S, const SourceManager &SM,
   const auto *DispatchPattern =
       DispatchPrimary ? DispatchPrimary->getTemplatedDecl() : nullptr;
   const auto *DispatchReference =
-      dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Dispatch));
+      Dispatch ? dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Dispatch))
+               : nullptr;
   if (!Dispatch || !DispatchFunction || !DispatchPrimary || !DispatchPattern ||
       !DispatchReference || !DispatchFunction->getIdentifier() ||
       DispatchFunction->getName() != "__invoke" ||
@@ -7416,8 +7439,8 @@ approvedFunctionalInvokeMemFnDispatch(const State &S,
                            : nullptr;
   const auto *Operator =
       Return && Return->getRetValue()
-          ? dyn_cast<CXXOperatorCallExpr>(
-                Return->getRetValue()->IgnoreParenImpCasts())
+          ? dyn_cast_or_null<CXXOperatorCallExpr>(
+                functionalInvokeStrippedExpression(Return->getRetValue()))
           : nullptr;
   if (!Factory || !OuterDispatch || !OuterFunction || !InvokeFunction ||
       !Body || !Return || !Operator ||
@@ -7566,8 +7589,7 @@ approvedFunctionalMemberInvokeCall(
                                                  : !Call->isXValue()) ||
                 !Context.hasSameType(Referent, Call->getType()))
              : (!Context.hasSameType(Result, Call->getType()) ||
-                (!Result->isVoidType() &&
-                 !supportedFunctionalMemberValue(Context, Result)))) ||
+                !supportedFunctionalResult(S, SM, Context, Result))) ||
         !MemberCall || MemberCall->getNumArgs() != Method->getNumParams())
       return std::nullopt;
     for (unsigned I = 0; I < Method->getNumParams(); ++I) {
@@ -7637,8 +7659,9 @@ std::optional<FunctionalOperationInfo> approvedFunctionalInvokeObjectOperation(
           : nullptr;
   const auto *OperationCall =
       DispatchReturn && DispatchReturn->getRetValue()
-          ? dyn_cast<CXXOperatorCallExpr>(
-                DispatchReturn->getRetValue()->IgnoreParenImpCasts())
+          ? dyn_cast_or_null<CXXOperatorCallExpr>(
+                functionalInvokeStrippedExpression(
+                    DispatchReturn->getRetValue()))
           : nullptr;
   auto Operation = approvedFunctionalOperationImpl(
       S, SM, OperationCall, Context, false);
@@ -7679,8 +7702,8 @@ approvedFunctionalUserInvokeCall(const State &S, const SourceManager &SM,
                            : nullptr;
   const auto *Operation =
       Return && Return->getRetValue()
-          ? dyn_cast<CXXOperatorCallExpr>(
-                Return->getRetValue()->IgnoreParenImpCasts())
+          ? dyn_cast_or_null<CXXOperatorCallExpr>(
+                functionalInvokeStrippedExpression(Return->getRetValue()))
           : nullptr;
   const auto *Method = dyn_cast_or_null<CXXMethodDecl>(
       Operation ? Operation->getDirectCallee() : nullptr);
@@ -7715,8 +7738,7 @@ approvedFunctionalUserInvokeCall(const State &S, const SourceManager &SM,
              !Context.hasSameType(Referent, Call->getType()))
           : (!Call->isPRValue() ||
              !Context.hasSameType(Result, Call->getType()) ||
-             (!Result->isVoidType() &&
-              !supportedFunctionalMemberValue(Context, Result))))
+             !supportedFunctionalResult(S, SM, Context, Result)))
     return std::nullopt;
 
   for (unsigned I = 0; I < Method->getNumParams(); ++I) {
@@ -7808,7 +7830,8 @@ approvedFunctionalReferenceDirectInvoke(
           : nullptr;
   const auto *Dispatch =
       Return && Return->getRetValue()
-          ? dyn_cast<CallExpr>(Return->getRetValue()->IgnoreParenImpCasts())
+          ? dyn_cast_or_null<CallExpr>(functionalInvokeStrippedExpression(
+                Return->getRetValue()))
           : nullptr;
   const auto *DispatchFunction = Dispatch ? Dispatch->getDirectCallee() : nullptr;
   const auto *DispatchPrimary =
@@ -7819,7 +7842,8 @@ approvedFunctionalReferenceDirectInvoke(
                                   ? S.sdkFile(SM, DispatchPrimary->getLocation())
                                   : std::nullopt;
   const auto *DispatchReference =
-      dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Dispatch));
+      Dispatch ? dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Dispatch))
+               : nullptr;
   if (!Dispatch || !DispatchFunction || !DispatchPrimary || !DispatchPattern ||
       !DispatchReference || !DispatchFunction->getIdentifier() ||
       DispatchFunction->getName() != "__invoke" || !DispatchOrigin ||
@@ -7876,9 +7900,11 @@ approvedFunctionalReferenceDirectInvoke(
       DispatchBody && DispatchBody->size() == 1
           ? dyn_cast<ReturnStmt>(*DispatchBody->body_begin())
           : nullptr;
-  const auto *Invoked = DispatchReturn && DispatchReturn->getRetValue()
-                            ? DispatchReturn->getRetValue()->IgnoreParenImpCasts()
-                            : nullptr;
+  const auto *Invoked =
+      DispatchReturn && DispatchReturn->getRetValue()
+          ? functionalInvokeStrippedExpression(
+                DispatchReturn->getRetValue())
+          : nullptr;
   if (!Invoked || !Context.hasSameType(Invoked->getType(), Call->getType()) ||
       (ReferenceResult
            ? (MethodResult->isLValueReferenceType() ? !Invoked->isLValue()
@@ -7944,8 +7970,7 @@ approvedFunctionalReferenceDirectInvoke(
                   Context.hasSameType(Referent, Call->getType())
             : Call->isPRValue() &&
                   Context.hasSameType(Result, Call->getType()) &&
-                  (Result->isVoidType() ||
-                   supportedFunctionalMemberValue(Context, Result));
+                  supportedFunctionalResult(S, SM, Context, Result);
     for (unsigned I = 0; Supported && I < OperationMethod->getNumParams(); ++I) {
       const auto Parameter = OperationMethod->getParamDecl(I)->getType();
       const auto *ArgumentExpression = Call->getArg(I + 1);
@@ -7983,8 +8008,8 @@ approvedFunctionalReferenceDirectInvoke(
       !Context.hasSameType(Prototype->getReturnType(), MethodResult) ||
       (ReferenceResult
            ? !supportedFunctionalInvokeReference(S, SM, Context, ExpressionResult)
-           : (!Call->getType()->isVoidType() &&
-              !supportedFunctionalCallableValue(Call->getType(), Context))))
+           : !supportedFunctionalResult(S, SM, Context,
+                                        Call->getType())))
     return std::nullopt;
   for (unsigned I = 0; I < Prototype->getNumParams(); ++I) {
     const auto Parameter = Prototype->getParamType(I);
@@ -8036,8 +8061,8 @@ approvedFunctionalReferenceInvokeCall(
           : nullptr;
   const auto *InnerCall =
       Return && Return->getRetValue()
-          ? dyn_cast<CXXOperatorCallExpr>(
-                Return->getRetValue()->IgnoreParenImpCasts())
+          ? dyn_cast_or_null<CXXOperatorCallExpr>(
+                functionalInvokeStrippedExpression(Return->getRetValue()))
           : nullptr;
   auto Inner = approvedFunctionalReferenceDirectInvoke(
       S, SM, InnerCall, Context, false);
@@ -11205,8 +11230,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                 !Same(Call->getType(), Referent))
              : (!Call->isPRValue() ||
                 !Same(Call->getType(), Function->getReturnType()) ||
-                (!Result->isVoidType() &&
-                 !supportedFunctionalCallableValue(Result, Context)))) ||
+                !supportedFunctionalResult(S, SM, Context, Result))) ||
         !approvedFunctionalInvokeDispatch(S, SM, Call, Context,
                                           ReferenceResult))
       return std::nullopt;
