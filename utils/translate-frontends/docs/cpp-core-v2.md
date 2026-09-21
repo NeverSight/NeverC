@@ -273,7 +273,9 @@ from another authenticated tuple admits exact unqualified referent types with
 compatible cv and value categories, including a `const T&` view over a value
 tuple field. Heterogeneous assignment admits the documented scalar conversion
 boundary and writes converted source element values through destination
-references.
+references. All six tuple comparisons dereference reference fields before
+applying the existing recursive equality or lexicographic comparison, including
+heterogeneous scalar leaves and mixed reference/value tuple operands.
 
 Exact `std::apply` calls over an authenticated empty or nonempty tuple lower to
 one ordinary callback call. The callable may be a named function, a stored

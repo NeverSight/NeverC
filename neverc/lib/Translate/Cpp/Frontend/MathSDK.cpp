@@ -6363,9 +6363,16 @@ static bool utilityComparableValue(const State &S, const SourceManager &SM,
                                    QualType Right, bool Ordered,
                                    unsigned Depth = 0) {
   if (Depth > 64 || Left.isNull() || Right.isNull() ||
-      Left->isReferenceType() || Right->isReferenceType() ||
       Left.isVolatileQualified() || Right.isVolatileQualified())
     return false;
+  if (Left->isReferenceType() || Right->isReferenceType()) {
+    if (Left->isReferenceType())
+      Left = Left->getPointeeType();
+    if (Right->isReferenceType())
+      Right = Right->getPointeeType();
+    return utilityComparableValue(S, SM, Context, Left, Right, Ordered,
+                                  Depth + 1);
+  }
   if (utilityScalarComparisonType(Context, Left, Right, Ordered))
     return true;
 
@@ -6393,10 +6400,16 @@ static bool utilityComparableValue(const State &S, const SourceManager &SM,
                                   RightPair->Second->getType(), Ordered,
                                   Depth + 1);
 
-  const auto LeftTuple = approvedUtilityTupleRecord(
+  auto LeftTuple = approvedUtilityTupleRecord(
       S, SM, Left.getUnqualifiedType()->getAsCXXRecordDecl(), Context);
-  const auto RightTuple = approvedUtilityTupleRecord(
+  auto RightTuple = approvedUtilityTupleRecord(
       S, SM, Right.getUnqualifiedType()->getAsCXXRecordDecl(), Context);
+  if (!LeftTuple)
+    LeftTuple = approvedUtilityReferenceTupleRecord(
+        S, SM, Left.getUnqualifiedType()->getAsCXXRecordDecl(), Context);
+  if (!RightTuple)
+    RightTuple = approvedUtilityReferenceTupleRecord(
+        S, SM, Right.getUnqualifiedType()->getAsCXXRecordDecl(), Context);
   if (!LeftTuple && !RightTuple)
     return false;
   if (!LeftTuple || !RightTuple ||

@@ -882,6 +882,9 @@ extern "C" int tuple_reference_construction(int value) {
   std::tuple<int &, int &> source(source_first, source_second);
   direct = source;
   std::tuple<const int &, const int &> view(source);
+  if (direct != view ||
+      !(direct == std::make_tuple(source_first, source_second)))
+    return -1;
   long converted = 0;
   std::tuple<long &> destination(converted);
   std::tuple<int &> conversion_source(source_first);

@@ -1519,6 +1519,20 @@ class FunctionLowering {
             UtilityComparisonLeaves &Leaves, unsigned Depth) -> bool {
       if (Depth > 64 || LeftType.isNull() || RightType.isNull())
         return false;
+      if (LeftType->isReferenceType() || RightType->isReferenceType()) {
+        auto LeftReferent = json::Object(LeftValue);
+        auto RightReferent = json::Object(RightValue);
+        if (LeftType->isReferenceType()) {
+          LeftReferent = dereference(std::move(LeftReferent), L);
+          LeftType = LeftType->getPointeeType();
+        }
+        if (RightType->isReferenceType()) {
+          RightReferent = dereference(std::move(RightReferent), L);
+          RightType = RightType->getPointeeType();
+        }
+        return Collect(Collect, LeftReferent, LeftType, RightReferent,
+                       RightType, Ordered, Leaves, Depth + 1);
+      }
       if (const auto Common = utilityScalarComparisonType(A.Context, LeftType,
                                                           RightType, Ordered)) {
         const auto CommonType = type(*Common, L);

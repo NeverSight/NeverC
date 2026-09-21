@@ -24020,6 +24020,53 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2ReferenceTupleComparisonsRunAtBothOptimizations) {
+  const auto Source = tmpFile("tuple-reference-comparisons.cpp");
+  const auto Output = tmpFile("tuple-reference-comparisons.nc");
+  writeFile(Source, R"cpp(
+#include <tuple>
+int main() {
+  int left_first = 1;
+  short left_second = 9;
+  long right_first = 2;
+  int right_second = 0;
+  auto left = std::tie(left_first, left_second);
+  auto right = std::tie(right_first, right_second);
+  if (!(left != right) || left == right || !(left < right) || left > right ||
+      !(left <= right) || left >= right || !(right > left) ||
+      !(right >= left))
+    return 1;
+  right_first = 1;
+  right_second = 9;
+  if (!(left == right) || left != right || left < right || left > right ||
+      !(left <= right) || !(left >= right))
+    return 2;
+  std::tuple<int, int> values(1, 9);
+  if (!(left == values) || values != left || left < values || values > left)
+    return 3;
+  const int constant = 1;
+  auto constant_reference = std::tie(constant, right_second);
+  return constant_reference == values ? 0 : 4;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("__tuple_compare"), std::string::npos);
+  EXPECT_EQ(Text.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("tuple-reference-comparisons" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2TupleApplyCallableObjectsRunAtBothOptimizations) {
   const auto Source = tmpFile("tuple-apply-callable-objects.cpp");
   const auto Output = tmpFile("tuple-apply-callable-objects.nc");
