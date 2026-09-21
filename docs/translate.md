@@ -127,6 +127,10 @@ swapping, comparison, `make_pair` and `get`. Tuple metadata and
 `integer_sequence::size()` remain compile-time values. The authenticated
 87-file closure adds no libc++ runtime dependency; standard-function addresses
 remain rejected.
+Reference-valued pairs additionally support exact compatible direct
+construction, same-type copy/move construction and index- or unique-type
+`get`; their stored bindings and writes through recovered referents are
+preserved.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#scalar-utilities-and-pairs-from-utility).
 
 Core v2 accepts authenticated empty and nonempty `<tuple>` values, including

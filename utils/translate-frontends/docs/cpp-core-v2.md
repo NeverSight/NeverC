@@ -195,16 +195,21 @@ requires every recursive leaf to be assignable. Pair objects retain their two
 fields and ordinary value behavior. Type-based `get` is accepted only when
 libc++ resolves it unambiguously.
 
+Reference-valued pairs admit exact compatible direct construction for supported
+referent types and checked lvalue/rvalue categories. Same-type trivial
+copy/move construction copies the stored bindings. Public `first`/`second`
+access and index- or unique-type `get` recover the referents, so mutations write
+through to the original objects. Assignment, comparison, swap and `make_pair`
+remain outside this reference-pair surface.
+
 All six C++17 comparisons recurse through authenticated arrays and nested pairs
 and compare their scalar leaves in lexicographic order. Corresponding scalar
 leaves may use the documented heterogeneous arithmetic or compatible
 object-pointer comparison type. Empty recursive leaves retain the standard
 equality and ordering results. Source-owned record comparisons stay rejected
 because their user-defined element operations are outside this direct-lowering
-boundary. Reference-valued pairs also remain outside the ordinary pair surface.
-The sole reference-pair exception is the exact `std::minmax` result documented
-under the algorithm surface; ordinary construction, assignment, comparison,
-swap, `make_pair` and `get` remain unavailable for that pair type.
+boundary. The exact `std::minmax` reference-pair result remains separately
+constrained as documented under the algorithm surface.
 
 `std::integer_sequence`, `index_sequence`, their generator aliases and
 `integer_sequence::size()` remain compile-time types and values. The standalone

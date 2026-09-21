@@ -2732,20 +2732,11 @@ static std::optional<UtilityPairRecord> approvedUtilityPairRecordImpl(
   const auto FirstType = Arguments.get(0).getAsType();
   const auto SecondType = Arguments.get(1).getAsType();
   if (RequireReferenceElements) {
-    if (!FirstType->isLValueReferenceType() ||
-        !SecondType->isLValueReferenceType() ||
-        !FirstType->getPointeeType().isConstQualified() ||
-        FirstType->getPointeeType().isVolatileQualified() ||
-        !SecondType->getPointeeType().isConstQualified() ||
-        SecondType->getPointeeType().isVolatileQualified() ||
-        !Context.hasSameUnqualifiedType(FirstType->getPointeeType(),
-                                        SecondType->getPointeeType()))
-      return std::nullopt;
-    auto Element = FirstType->getPointeeType().getUnqualifiedType();
-    if ((Element->isEnumeralType() || !Element->isIntegerType() ||
-         Context.getTypeSize(Element) > 64) &&
-        !Element->isSpecificBuiltinType(BuiltinType::Float) &&
-        !Element->isSpecificBuiltinType(BuiltinType::Double))
+    if (!FirstType->isReferenceType() || !SecondType->isReferenceType() ||
+        !supportedFunctionalReferenceValue(S, SM, Context,
+                                           FirstType->getPointeeType()) ||
+        !supportedFunctionalReferenceValue(S, SM, Context,
+                                           SecondType->getPointeeType()))
       return std::nullopt;
   } else if (!Specialization->isStandardLayout()) {
     return std::nullopt;
@@ -2828,8 +2819,14 @@ approvedUtilityPairConstruction(const State &S, const SourceManager &SM,
           CXXConstructionKind::Complete)
     return std::nullopt;
   const auto *Constructor = Construction->getConstructor();
-  const auto Pair = approvedUtilityPairRecord(
+  auto Pair = approvedUtilityPairRecord(
       S, SM, Construction->getType()->getAsCXXRecordDecl(), Context);
+  bool ReferencePair = false;
+  if (!Pair) {
+    Pair = approvedUtilityReferencePairRecord(
+        S, SM, Construction->getType()->getAsCXXRecordDecl(), Context);
+    ReferencePair = Pair.has_value();
+  }
   if (!Constructor || !Pair || Constructor->isVariadic() ||
       Constructor->getParent()->getCanonicalDecl() !=
           Pair->Record->getCanonicalDecl() ||
@@ -2837,10 +2834,12 @@ approvedUtilityPairConstruction(const State &S, const SourceManager &SM,
       !approvedStandardSDKDeclaration(S, SM, Constructor) ||
       !cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx",
                      "__utility/pair.h") ||
-      !utilityPairValue(S, SM, Context, Pair->First->getType()) ||
-      !utilityPairValue(S, SM, Context, Pair->Second->getType()))
+      (!ReferencePair &&
+       (!utilityPairValue(S, SM, Context, Pair->First->getType()) ||
+        !utilityPairValue(S, SM, Context, Pair->Second->getType()))))
     return std::nullopt;
-  if (!Construction->getNumArgs() && Constructor->isDefaultConstructor())
+  if (!Construction->getNumArgs() && Constructor->isDefaultConstructor() &&
+      !ReferencePair)
     return UtilityPairConstruction::Default;
   if (Construction->getNumArgs() == 1 &&
       Constructor->isCopyOrMoveConstructor() && Constructor->isDefaulted() &&
@@ -2850,8 +2849,30 @@ approvedUtilityPairConstruction(const State &S, const SourceManager &SM,
   if (Construction->getNumArgs() == 2 && Primary &&
       approvedStandardSDKDeclaration(S, SM, Primary) &&
       cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
-                     "__utility/pair.h"))
+                     "__utility/pair.h")) {
+    if (ReferencePair) {
+      for (unsigned I = 0; I != 2; ++I) {
+        const auto Parameter = Constructor->getParamDecl(I)->getType();
+        const auto Element =
+            I ? Pair->Second->getType() : Pair->First->getType();
+        const auto Argument = Construction->getArg(I)->getType();
+        if (!Parameter->isReferenceType() || !Element->isReferenceType() ||
+            !Context.hasSameUnqualifiedType(Argument,
+                                            Parameter->getPointeeType()) ||
+            !Context.hasSameUnqualifiedType(Argument,
+                                            Element->getPointeeType()) ||
+            !Element->getPointeeType().isAtLeastAsQualifiedAs(Argument,
+                                                              Context) ||
+            (Element->isRValueReferenceType() &&
+             Construction->getArg(I)->isLValue()) ||
+            (Element->isLValueReferenceType() &&
+             !Element->getPointeeType().isConstQualified() &&
+             !Construction->getArg(I)->isLValue()))
+          return std::nullopt;
+      }
+    }
     return UtilityPairConstruction::Elements;
+  }
   return std::nullopt;
 }
 
@@ -12310,11 +12331,20 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto *Arguments = Function->getTemplateSpecializationArgs();
     auto Parameter = Function->getParamDecl(0)->getType();
     auto Result = Function->getReturnType();
-    const auto Pair = approvedUtilityPairRecord(
+    auto Pair = approvedUtilityPairRecord(
         S, SM, Parameter->isReferenceType()
                    ? Parameter->getPointeeType()->getAsCXXRecordDecl()
                    : nullptr,
         Context);
+    bool ReferencePair = false;
+    if (!Pair) {
+      Pair = approvedUtilityReferencePairRecord(
+          S, SM, Parameter->isReferenceType()
+                     ? Parameter->getPointeeType()->getAsCXXRecordDecl()
+                     : nullptr,
+          Context);
+      ReferencePair = Pair.has_value();
+    }
     if (Arguments && (Arguments->size() == 2 || Arguments->size() == 3) &&
         Parameter->isReferenceType() &&
         Result->isReferenceType() && Pair &&
@@ -12325,23 +12355,31 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       if (Arguments->size() == 3 &&
           Arguments->get(0).getKind() == TemplateArgument::Integral) {
         const auto Index = Arguments->get(0).getAsIntegral();
-        if (Index == 0 &&
-            Context.hasSameUnqualifiedType(Result->getPointeeType(),
-                                           Pair->First->getType()))
+        auto FirstType = Pair->First->getType();
+        auto SecondType = Pair->Second->getType();
+        if (ReferencePair) {
+          FirstType = FirstType->getPointeeType();
+          SecondType = SecondType->getPointeeType();
+        }
+        if (Index == 0 && Context.hasSameUnqualifiedType(
+                              Result->getPointeeType(), FirstType))
           return UtilityOperation::PairGetFirst;
-        if (Index == 1 &&
-            Context.hasSameUnqualifiedType(Result->getPointeeType(),
-                                           Pair->Second->getType()))
+        if (Index == 1 && Context.hasSameUnqualifiedType(
+                              Result->getPointeeType(), SecondType))
           return UtilityOperation::PairGetSecond;
       }
       if (Arguments->size() == 2 &&
           Arguments->get(0).getKind() == TemplateArgument::Type &&
           Arguments->get(1).getKind() == TemplateArgument::Type) {
         auto Selected = Result->getPointeeType().getUnqualifiedType();
-        const bool First =
-            Context.hasSameType(Selected, Pair->First->getType());
-        const bool Second =
-            Context.hasSameType(Selected, Pair->Second->getType());
+        auto FirstType = Pair->First->getType();
+        auto SecondType = Pair->Second->getType();
+        if (ReferencePair) {
+          FirstType = FirstType->getPointeeType();
+          SecondType = SecondType->getPointeeType();
+        }
+        const bool First = Context.hasSameType(Selected, FirstType);
+        const bool Second = Context.hasSameType(Selected, SecondType);
         if (First != Second &&
             Context.hasSameUnqualifiedType(Result->getPointeeType(),
                                            Selected))

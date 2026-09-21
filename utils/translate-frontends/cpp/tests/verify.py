@@ -443,6 +443,30 @@ extern "C" int utility_get() {
     for target in sdk_targets:
         check("v2-utility-" + target, utility_source,
               profile="cpp-core-v2", target=target, sdk=True)
+    pair_reference_source = """\
+#include <utility>
+struct Box { int value; };
+extern "C" int pair_reference(int value) {
+  Box box{value + 1};
+  std::pair<int &, Box &> direct(value, box);
+  const auto copied(direct);
+  std::get<0>(copied) += 2;
+  std::get<Box &>(direct).value += 3;
+  std::pair<int &&, Box &&> rvalues(static_cast<int &&>(value),
+                                    static_cast<Box &&>(box));
+  std::get<0>(rvalues) += 4;
+  return value + box.value;
+}
+"""
+    pair_reference = check("v2-utility-reference-pair",
+                           pair_reference_source,
+                           profile="cpp-core-v2", sdk=True)
+    assert not [node for node in walk(pair_reference["functions"])
+                if node.get("op") in ("call", "mapped_call")], pair_reference
+    for target in sdk_targets:
+        check("v2-utility-reference-pair-" + target,
+              pair_reference_source, profile="cpp-core-v2",
+              target=target, sdk=True)
     pair_composite_source = """\
 #include <array>
 #include <utility>
@@ -506,9 +530,9 @@ extern "C" int pair_composite() {
         ("record-pair-comparison",
          '#include <utility>\nstruct R{int n;};bool operator==(const R&a,const R&b){return a.n==b.n;}int f(){std::pair<R,int>a{{1},2},b=a;return a==b;}',
          "TR0203"),
-        ("reference-pair",
-         '#include <utility>\nint f(){int a=1,b=2;std::pair<int&,int&>p{a,b};return p.first;}',
-         "TR0201"),
+        ("reference-pair-assignment",
+         '#include <utility>\nint f(){int a=1,b=2,c=3,d=4;std::pair<int&,int&>p{a,b},q{c,d};p=q;return a;}',
+         "TR0203"),
         ("array-swap",
          '#include <utility>\nint f(){int a[2]{1,2},b[2]{3,4};std::swap(a,b);return a[0];}',
          "TR0203"),

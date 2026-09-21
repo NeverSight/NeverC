@@ -7282,15 +7282,24 @@ class FunctionLowering {
       auto Pair = approvedUtilityPairRecord(
           A.S, A.Sources,
           Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
+      bool ReferencePair = false;
+      if (!Pair) {
+        Pair = approvedUtilityReferencePairRecord(
+            A.S, A.Sources,
+            Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
+        ReferencePair = Pair.has_value();
+      }
       if (!Pair)
         reject(L, "utility pair get",
                "The selected std::pair layout is unavailable.");
       auto Base = lvalue(Call->getArg(0));
-      return fieldStorage(
+      auto Element = fieldStorage(
           std::move(Base),
           Operation == UtilityOperation::PairGetFirst ? Pair->First
                                                       : Pair->Second,
           L);
+      return ReferencePair ? dereference(std::move(Element), L)
+                           : std::move(Element);
     }
     case UtilityOperation::PairEqual:
     case UtilityOperation::PairNotEqual:
@@ -10026,6 +10035,12 @@ class FunctionLowering {
             A.S, A.Sources, C, A.Context)) {
       auto Pair = approvedUtilityPairRecord(
           A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context);
+      bool ReferencePair = false;
+      if (!Pair) {
+        Pair = approvedUtilityReferencePairRecord(
+            A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context);
+        ReferencePair = Pair.has_value();
+      }
       if (!Pair)
         reject(L, "utility pair construction",
                "The selected std::pair layout is unavailable.");
@@ -10038,8 +10053,15 @@ class FunctionLowering {
         initializeZero(Member(Pair->Second), Pair->Second->getType(), L);
         return;
       case UtilityPairConstruction::Elements:
-        initialize(Member(Pair->First), C->getArg(0), L);
-        initialize(Member(Pair->Second), C->getArg(1), L);
+        if (ReferencePair) {
+          assign(Member(Pair->First),
+                 bind(C->getArg(0), Pair->First->getType()), L);
+          assign(Member(Pair->Second),
+                 bind(C->getArg(1), Pair->Second->getType()), L);
+        } else {
+          initialize(Member(Pair->First), C->getArg(0), L);
+          initialize(Member(Pair->Second), C->getArg(1), L);
+        }
         return;
       case UtilityPairConstruction::CopyOrMove: {
         auto Source = expression(C->getArg(0));

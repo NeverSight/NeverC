@@ -24169,6 +24169,54 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ReferencePairConstructionRunsAtBothOptimizations) {
+  const auto Source = tmpFile("pair-reference-construction.cpp");
+  const auto Output = tmpFile("pair-reference-construction.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+struct Box { int value; };
+int effects;
+int &select(int &value) {
+  ++effects;
+  return value;
+}
+int main() {
+  int number = 2;
+  Box box{3};
+  effects = 0;
+  std::pair<int &, Box &> direct(select(number), box);
+  if (effects != 1 || &direct.first != &number || &direct.second != &box ||
+      &std::get<0>(direct) != &number || &std::get<Box &>(direct) != &box)
+    return 1;
+  const auto copied(direct);
+  std::get<0>(copied) = 7;
+  std::get<1>(copied).value = 8;
+  if (number != 7 || box.value != 8 || &copied.first != &number ||
+      &copied.second != &box)
+    return 2;
+  std::pair<int &&, Box &&> rvalues(static_cast<int &&>(number),
+                                    static_cast<Box &&>(box));
+  std::get<0>(rvalues) = 9;
+  std::get<1>(rvalues).value = 10;
+  return number == 9 && box.value == 10 ? 0 : 3;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("pair-reference-construction" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2TupleApplyCallableObjectsRunAtBothOptimizations) {
   const auto Source = tmpFile("tuple-apply-callable-objects.cpp");
   const auto Output = tmpFile("tuple-apply-callable-objects.nc");
