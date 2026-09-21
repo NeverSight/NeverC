@@ -201,9 +201,13 @@ callback rules. Named functions, stored function pointers, source and standard
 function objects, reference wrappers, source member pointers and `mem_fn`
 wrappers use the same checked parameter and result boundary. Mutable and const
 lvalues, rvalues and materialized temporaries preserve element qualification
-and reference categories. Empty arrays call a nullary callback after evaluating
-the array expression; nested array elements may bind admitted array-reference
-parameters. By-value SDK callback parameters and results remain excluded.
+and reference categories. Const lvalue-reference parameters also bind xvalues
+of the same unqualified type through `apply`, `invoke`, reference-wrapper calls
+and member adapters. These bindings retain the original storage and temporary
+lifetime; returning a reference does not extend it. Empty arrays call a nullary
+callback after evaluating the array expression; nested array elements may bind
+admitted array-reference parameters. By-value SDK callback parameters and
+results remain excluded.
 The callable and source object are each evaluated once, and the selected
 `get` operations require exact SDK declaration, index and forwarding proof
 before lowering to a scalar operation, member projection or ordinary call.

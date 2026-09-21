@@ -2789,6 +2789,258 @@ int main() {
         check("v2-tuple-swap-reject-" + name, source, code,
               profile="cpp-core-v2", sdk=True)
 
+    const_reference_xvalue_apply_source = """\
+#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+using Pair = std::pair<int, int>;
+using Row = std::array<int, 2>;
+int one(const int& n) { return n; }
+int add(const int& a, const int& b) { return a + b; }
+const int& first(const int& a, const int&) { return a; }
+int* const& pointer_alias(int* const& p) { return p; }
+int array_read(const int (&a)[2]) { return a[0] + a[1]; }
+int row_read(const Row& row) { return row[0] + row[1]; }
+struct F { int operator()(const int& a, const int& b) const { return a + b; } };
+struct Box {
+  int value;
+  int read(const int& n) const { return value + n; }
+  int combine(const Box& other) const { return value + other.value; }
+};
+int main() {
+  if (std::apply(one, std::tuple<int>(1)) != 1 ||
+      std::apply(add, Pair(2,3)) != 5 ||
+      std::apply(add, Row{{4,5}}) != 9) return 1;
+  auto pointer = &add;
+  if (std::apply(pointer, Pair(6,7)) != 13 ||
+      std::apply(pointer, Row{{8,9}}) != 17) return 2;
+  F f;
+  if (std::apply(f, Pair(10,11)) != 21 ||
+      std::apply(F{}, Row{{12,13}}) != 25) return 3;
+  if (std::apply(std::ref(add), Pair(14,15)) != 29 ||
+      std::apply(std::ref(pointer), Row{{16,17}}) != 33 ||
+      std::apply(std::cref(f), Pair(18,19)) != 37 ||
+      std::apply(std::ref(f), Row{{20,21}}) != 41) return 4;
+  Pair pair(22,23);
+  Row row{{24,25}};
+  const Pair constant_pair(26,27);
+  const Row constant_row{{28,29}};
+  if (&std::apply(first, std::move(pair)) != &pair.first ||
+      &std::apply(first, std::move(row)) != &row[0] ||
+      &std::apply(first, std::move(constant_pair)) != &constant_pair.first ||
+      &std::apply(first, std::move(constant_row)) != &constant_row[0]) return 5;
+  int a = 30, b = 31;
+  std::pair<int&, int> mixed(a,b);
+  if (&std::apply(first, std::move(mixed)) != &a) return 6;
+  std::tuple<int&&, int&&> references(std::move(a), std::move(b));
+  if (&std::apply(first, std::move(references)) != &a) return 7;
+  int* address = &a;
+  std::tuple<int*> pointer_tuple(address);
+  if (&std::apply(pointer_alias, std::move(pointer_tuple)) != &std::get<0>(pointer_tuple)) return 8;
+  int native[2] = {2,3};
+  if (std::apply(array_read, std::forward_as_tuple(static_cast<int(&&)[2]>(native))) != 5) return 9;
+  std::array<Row,1> grid{{Row{{6,7}}}};
+  if (std::apply(row_read, std::move(grid)) != 13) return 10;
+  if (std::apply(row_read, std::forward_as_tuple(Row{{8,9}})) != 17) return 11;
+  Box box{10};
+  if (std::apply(&Box::read, std::pair<Box&,int>(box,11)) != 21 ||
+      std::apply(std::mem_fn(&Box::read), std::tuple<Box&,int>(box,12)) != 22) return 12;
+  if (std::apply(&Box::combine, std::array<Box,2>{{Box{13},Box{14}}}) != 27 ||
+      std::apply(std::mem_fn(&Box::combine), std::array<Box,2>{{Box{15},Box{16}}}) != 31) return 13;
+  return std::apply(first, Row{{32,33}}) == 32 ? 0 : 14;
+}
+"""
+
+    const_reference_xvalue_invoke_source = """\
+#include <array>
+#include <functional>
+#include <utility>
+using Row = std::array<int,2>;
+int read(const int& n) { return n; }
+const int& alias(const int& n) { return n; }
+int array_read(const int (&a)[2]) { return a[0] + a[1]; }
+int row_read(const Row& row) { return row[0] + row[1]; }
+struct F { int operator()(const int& n) const { return n; } };
+struct Box {
+  int value;
+  int read(const int& n) const { return value + n; }
+  int combine(const Box& other) const { return value + other.value; }
+};
+int main() {
+  auto pointer = &read;
+  F f;
+  if (std::invoke(read,1) != 1 || std::invoke(pointer,2) != 2 ||
+      std::invoke(F{},3) != 3 || std::invoke(f,4) != 4) return 1;
+  if (std::invoke(std::ref(read),5) != 5 ||
+      std::invoke(std::ref(pointer),6) != 6 ||
+      std::invoke(std::cref(f),7) != 7) return 2;
+  if (std::ref(read)(8) != 8 || std::ref(pointer)(9) != 9 || std::cref(f)(10) != 10) return 3;
+  int value = 11;
+  const int constant = 12;
+  if (&std::invoke(alias, std::move(value)) != &value ||
+      &std::invoke(alias, std::move(constant)) != &constant ||
+      std::invoke(alias, 13) != 13) return 4;
+  Box box{14};
+  if (std::invoke(&Box::read, box, 15) != 29 ||
+      std::invoke(std::mem_fn(&Box::read), &box, 16) != 30 ||
+      std::mem_fn(&Box::read)(box, 17) != 31) return 5;
+  if (std::invoke(&Box::combine, box, Box{18}) != 32 ||
+      std::invoke(std::mem_fn(&Box::combine), box, Box{19}) != 33) return 6;
+  int native[2] = {20,21};
+  if (std::invoke(array_read,static_cast<int(&&)[2]>(native)) != 41 ||
+      std::invoke(row_read,Row{{22,23}}) != 45) return 7;
+  return (box.*(&Box::read))(24) == 38 ? 0 : 8;
+}
+"""
+
+    const_reference_xvalue_lifetimes_source = """\
+#include <functional>
+#include <tuple>
+#include <utility>
+int live;
+int built;
+int copied;
+int dropped;
+int calls;
+struct Tracker {
+  int value;
+  Tracker(int n) : value(n) { ++live; ++built; }
+  Tracker(const Tracker& source) : value(source.value) { ++live; ++copied; }
+  ~Tracker() { --live; ++dropped; }
+};
+int read(const Tracker& item) { ++calls; return live == 1 ? item.value : -1; }
+const Tracker& identity(const Tracker& item) { ++calls; return item; }
+struct F { int operator()(const Tracker& item) const { return read(item); } };
+struct Box { int marker; int inspect(const Tracker& item) const { return read(item) + marker; } };
+int main() {
+  int result;
+  result = std::apply(read, std::forward_as_tuple(Tracker(1)));
+  if (result != 1 || live || dropped != 1) return 1;
+  result = std::apply(identity, std::forward_as_tuple(Tracker(2))).value;
+  if (result != 2 || live || dropped != 2) return 2;
+  F f;
+  result = std::apply(f, std::forward_as_tuple(Tracker(3)));
+  if (result != 3 || live || dropped != 3) return 3;
+  result = std::apply(std::cref(f), std::forward_as_tuple(Tracker(4)));
+  if (result != 4 || live || dropped != 4) return 4;
+  Box box{10};
+  result = std::apply(&Box::inspect, std::forward_as_tuple(box, Tracker(5)));
+  if (result != 15 || live || dropped != 5) return 5;
+  result = std::apply(std::mem_fn(&Box::inspect), std::forward_as_tuple(box, Tracker(6)));
+  if (result != 16 || live || dropped != 6) return 6;
+  result = std::invoke(read,Tracker(7));
+  if (result != 7 || live || dropped != 7) return 7;
+  result = std::invoke(f,Tracker(8));
+  if (result != 8 || live || dropped != 8) return 8;
+  result = std::invoke(std::cref(f),Tracker(9));
+  if (result != 9 || live || dropped != 9) return 9;
+  result = std::invoke(&Box::inspect,box,Tracker(10));
+  if (result != 20 || live || dropped != 10) return 10;
+  result = std::invoke(std::mem_fn(&Box::inspect),box,Tracker(11));
+  if (result != 21 || live || dropped != 11) return 11;
+  result = std::ref(read)(Tracker(12));
+  if (result != 12 || live || dropped != 12) return 12;
+  // Returning a reference through a call does not extend argument lifetime.
+  // These references are deliberately never dereferenced after this statement.
+  const Tracker& expired_apply = std::apply(identity, std::forward_as_tuple(Tracker(13)));
+  if (live || dropped != 13) return 13;
+  const Tracker& expired_invoke = std::invoke(identity, Tracker(14));
+  if (live || dropped != 14) return 14;
+  {
+    const Tracker& extended = Tracker(15);
+    if (live != 1 || dropped != 14 || std::invoke(read,extended) != 15) return 15;
+  }
+  return live == 0 && built == 15 && copied == 0 && dropped == 15 && calls == 15 ? 0 : 16;
+}
+"""
+
+    def check_const_reference_xvalues(data):
+        assert any(function["name"] == "main"
+                   for function in data["functions"]), data
+        for node in walk(data["functions"]):
+            assert node.get("op") not in ("mapped_call", "member_pointer"), node
+            if node.get("op") == "assign":
+                assert node["target"]["type"] == node["value"]["type"], node
+
+    for name, source in (
+        ("apply", const_reference_xvalue_apply_source),
+        ("invoke", const_reference_xvalue_invoke_source),
+        ("lifetimes", const_reference_xvalue_lifetimes_source),
+    ):
+        result = check("v2-const-reference-xvalue-" + name, source,
+                       profile="cpp-core-v2", sdk=True)
+        check_const_reference_xvalues(result)
+        for target in sdk_targets:
+            target_result = check("v2-const-reference-xvalue-" + name + "-" + target,
+                                  source, profile="cpp-core-v2",
+                                  target=target, sdk=True)
+            check_const_reference_xvalues(target_result)
+
+
+    const_reference_xvalue_rejections = (
+        ('invoke-different-scalar',
+         '#include <array>\n#include <functional>\n#include <tuple>\n#include <utility>\nint read(const int& n){return n;} int main(){return std::invoke(read, short(3));}\n',
+         'TR0203'),
+        ('apply-different-scalar',
+         '#include <array>\n#include <functional>\n#include <tuple>\n#include <utility>\nint read(const int& n){return n;} int main(){return std::apply(read,std::tuple<short>(short(3)));}\n',
+         'TR0203'),
+        ('invoke-deep-pointer-cv',
+         '#include <array>\n#include <functional>\n#include <tuple>\n#include <utility>\nint read(const int* const& p){return *p;} int main(){int n=3;int*p=&n;return std::invoke(read,std::move(p));}\n',
+         'TR0203'),
+        ('apply-deep-pointer-cv',
+         '#include <array>\n#include <functional>\n#include <tuple>\n#include <utility>\nint read(const int* const& p){return *p;} int main(){int n=3;return std::apply(read,std::tuple<int*>(&n));}\n',
+         'TR0203'),
+        ('invoke-multilevel-pointer-cv',
+         '#include <array>\n#include <functional>\n#include <tuple>\n#include <utility>\nint read(const int* const* const& p){return **p;} int main(){int n=3;int*p=&n;int**q=&p;return std::invoke(read,std::move(q));}\n',
+         'TR0203'),
+        ('invoke-nullptr-conversion',
+         '#include <array>\n#include <functional>\n#include <tuple>\n#include <utility>\nint read(int* const& p){return p==nullptr;} int main(){return std::invoke(read,nullptr);}\n',
+         'TR0203'),
+        ('invoke-derived-to-base',
+         '#include <array>\n#include <functional>\n#include <tuple>\n#include <utility>\nstruct Base{int n;};struct Derived:Base{int other;};int read(const Base& b){return b.n;}int main(){return std::invoke(read,Derived{{3},4});}\n',
+         'TR0201'),
+        ('apply-derived-to-base',
+         '#include <array>\n#include <functional>\n#include <tuple>\n#include <utility>\nstruct Base{int n;};struct Derived:Base{int other;};int read(const Base& b){return b.n;}int main(){return std::apply(read,std::forward_as_tuple(Derived{{3},4}));}\n',
+         'TR0201'),
+        ('invoke-user-conversion',
+         '#include <array>\n#include <functional>\n#include <tuple>\n#include <utility>\nstruct Source{int n;operator int()const{return n;}};int read(const int&n){return n;}int main(){return std::invoke(read,Source{3});}\n',
+         'TR0203'),
+        ('invoke-volatile-referent',
+         '#include <array>\n#include <functional>\n#include <tuple>\n#include <utility>\nint read(const volatile int&n){return n;}int main(){volatile int n=3;return std::invoke(read,n);}\n',
+         'TR0201'),
+        ('apply-volatile-referent',
+         '#include <array>\n#include <functional>\n#include <tuple>\n#include <utility>\nint read(const volatile int&n){return n;}int main(){volatile int n=3;return std::apply(read,std::tie(n));}\n',
+         'TR0201'),
+        ('invoke-mutable-lref-rvalue',
+         '#include <array>\n#include <functional>\n#include <tuple>\n#include <utility>\nint change(int&n){return ++n;}int main(){return std::invoke(change,3);}\n',
+         'TR0202'),
+        ('apply-mutable-lref-rvalue',
+         '#include <array>\n#include <functional>\n#include <tuple>\n#include <utility>\nint change(int&n){return ++n;}int main(){return std::apply(change,std::tuple<int>(3));}\n',
+         'TR0202'),
+        ('invoke-mutable-lref-const',
+         '#include <array>\n#include <functional>\n#include <tuple>\n#include <utility>\nint change(int&n){return ++n;}int main(){const int n=3;return std::invoke(change,n);}\n',
+         'TR0202'),
+        ('apply-rref-lvalue',
+         '#include <array>\n#include <functional>\n#include <tuple>\n#include <utility>\nint read(int&&n){return n;}int main(){std::tuple<int> t(3);return std::apply(read,t);}\n',
+         'TR0202'),
+        ('invoke-mutable-rref-const',
+         '#include <array>\n#include <functional>\n#include <tuple>\n#include <utility>\nint read(int&&n){return n;}int main(){const int n=3;return std::invoke(read,std::move(n));}\n',
+         'TR0202'),
+        ('reference-wrapper-temporary',
+         '#include <array>\n#include <functional>\n#include <tuple>\n#include <utility>\nstruct Item{int n;};int main(){auto r=std::ref(Item{3});return r.get().n;}\n',
+         'TR0202'),
+        ('reference-wrapper-const-temporary',
+         '#include <array>\n#include <functional>\n#include <tuple>\n#include <utility>\nstruct Item{int n;};int main(){auto r=std::cref(Item{3});return r.get().n;}\n',
+         'TR0202'),
+        ('sdk-array-value-callback',
+         '#include <array>\n#include <functional>\n#include <tuple>\n#include <utility>\nusing Row=std::array<int,2>;int read(Row row){return row[0];}int main(){return std::invoke(read,Row{{3,4}});}\n',
+         'TR0203'),
+    )
+    for name, source, code in const_reference_xvalue_rejections:
+        check("v2-const-reference-xvalue-reject-" + name, source, code,
+              profile="cpp-core-v2", sdk=True)
+
     tuple_tie_source = """\
 #include <tuple>
 struct Box { int value; };

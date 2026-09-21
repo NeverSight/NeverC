@@ -157,7 +157,12 @@ const-lvalue and rvalue-qualified overloads, reference results, receiver-first
 evaluation and temporary lifetime are preserved, including source-owned record
 callables with fixed-array and source-owned-record reference parameters and
 results, trivial source-record value parameters and complete source-record
-value results. Direct named
+value results. Across these checked invocation paths, const lvalue-reference
+parameters also bind xvalues of the same unqualified type, including materialized
+arguments. Their storage and original full-expression lifetime are preserved;
+reference results do not extend that lifetime. These exact bindings still
+exclude scalar conversions, base adjustments, nested pointer qualification
+changes and volatile referents. Direct named
 addresses of owned nonstatic member functions
 also lower on exact-class lvalue, full-expression temporary, pointer or
 `std::reference_wrapper` receivers. Admitted non-volatile scalar,
@@ -296,8 +301,11 @@ independent parameter objects; results may be scalar, void, references, or
 complete source records constructed directly in the caller destination.
 By-value SDK callback parameters and results remain excluded. Mutable and
 const lvalues, rvalues and materialized source temporaries preserve element
-cv/ref categories; pair reference fields keep their declared bindings. Empty
-arrays invoke a nullary callback after evaluating their source expression,
+cv/ref categories; pair reference fields keep their declared bindings. Const
+lvalue-reference callback parameters also bind exact-type xvalue elements
+without adding a copy or extending temporary lifetimes. Mutable lvalue-reference
+parameters retain their lvalue requirement. Empty arrays invoke a nullary
+callback after evaluating their source expression,
 and nested array elements may bind admitted array-reference parameters.
 Each callable and source expression is evaluated once. Exact SDK declaration,
 index, type and forwarding checks authenticate every selected `get` before the

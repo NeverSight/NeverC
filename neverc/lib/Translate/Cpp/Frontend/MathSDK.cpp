@@ -7498,7 +7498,9 @@ supportedFunctionalInvokeReferenceArgument(const State &S,
   const auto Argument = ArgumentExpression->getType();
   return supportedFunctionalInvokeReference(S, SM, Context, Referent) &&
          (Parameter->isLValueReferenceType()
-              ? ArgumentExpression->isLValue()
+              ? (ArgumentExpression->isLValue() ||
+                 (Referent.isConstQualified() &&
+                  ArgumentExpression->isXValue()))
               : ArgumentExpression->isXValue()) &&
          !Argument.isVolatileQualified() &&
          Context.hasSameUnqualifiedType(Referent, Argument) &&
@@ -8575,7 +8577,8 @@ approvedUtilityTupleApplyUserCall(const State &S, const SourceManager &SM,
           StoredElement->isLValueReferenceType() ||
           Call->getArg(1)->isLValue();
       const bool Category = Parameter->isLValueReferenceType()
-                                ? ElementIsLValue
+                                ? (ElementIsLValue ||
+                                   ParameterReferent.isConstQualified())
                                 : !ElementIsLValue;
       Supported = Category &&
                   supportedFunctionalInvokeReference(S, SM, Context,
@@ -9122,7 +9125,8 @@ approvedUtilityTupleApplyReferenceCall(const State &S,
           StoredElement->isLValueReferenceType() ||
           Call->getArg(1)->isLValue();
       const bool Category = Target->isLValueReferenceType()
-                                ? ElementIsLValue
+                                ? (ElementIsLValue ||
+                                   Referent.isConstQualified())
                                 : !ElementIsLValue;
       Supported = Category &&
                   supportedFunctionalInvokeReference(S, SM, Context,
@@ -13899,7 +13903,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
             StoredElement->isLValueReferenceType() ||
             Call->getArg(1)->isLValue();
         const bool Category = Parameter->isLValueReferenceType()
-                                  ? ElementIsLValue
+                                  ? (ElementIsLValue ||
+                                     ParameterReferent.isConstQualified())
                                   : !ElementIsLValue;
         if (!Category ||
             !supportedFunctionalInvokeReference(S, SM, Context,

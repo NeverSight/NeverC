@@ -416,10 +416,14 @@ destructible, passed by value; the result may be `void`, an admitted scalar,
 or a complete source-owned record value. Exact lvalue- or rvalue-reference
 parameters and results are also admitted for supported scalar, object-pointer,
 function-pointer, complete fixed-array, authenticated `std::array` and
-source-owned record referents. Named-function, function-object and
-reference-wrapper callbacks retain the existing exact value-category rule:
-an lvalue-reference parameter requires an lvalue element, even for `const T&`.
-The scalar boundary includes arithmetic conversions,
+source-owned record referents. A `const T&` callback parameter also binds an
+xvalue with the same unqualified type, including an element of a materialized
+tuple, pair or array. Mutable lvalue-reference parameters still require lvalues;
+rvalue-reference parameters still require xvalues. These bindings retain the
+original element storage and do not extend its lifetime. Volatile referents,
+scalar conversions, base adjustments and changes to nested pointer qualifiers
+remain excluded for these exact reference bindings.
+The by-value scalar boundary includes arithmetic conversions,
 `nullptr_t` to object pointers or `bool`, and compatible object-pointer,
 pointer-to-void and pointer-to-`bool` conversions. Array elements must satisfy
 both the admitted array layout and the composite value/callback rules; admitting
@@ -1249,7 +1253,12 @@ records that are trivially copyable and trivially destructible;
 results may be the corresponding
 scalar, object-pointer, function-pointer, complete source-owned record value,
 exact lvalue or rvalue reference, or `void`. References retain
-their source storage and qualification. The callable is retained before the
+their source storage and qualification. Const lvalue-reference parameters also
+bind xvalues of the same unqualified type, including arguments already
+materialized for the SDK forwarding call. The original full-expression cleanup
+still applies when a callback returns a reference. This rule is shared by source
+function objects, direct reference-wrapper calls and member adapters; it adds no
+converted temporary or base adjustment. The callable is retained before the
 arguments are evaluated, then the retained function pointer is called once.
 The same entry point accepts every admitted typed or transparent standard
 function object, including temporary and stored objects, and reuses the exact
