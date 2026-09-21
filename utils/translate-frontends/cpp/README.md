@@ -220,7 +220,9 @@ copy/move construction, public field access and index- or unique-type `get`.
 Same-type assignment writes through the destination bindings without changing
 either pair's bindings. All six comparisons read referent values, including
 mixed reference/value pairs. Member and free swap exchange referent values
-without rebinding. Tuple
+without rebinding. Compatible converting construction binds value or reference
+pair fields, while heterogeneous assignment converts values before writing
+through destination bindings. Tuple
 directly lowers authenticated empty and nonempty tuples of scalars, reference
 wrappers
 or recursively composite values, compatible scalar or exact composite

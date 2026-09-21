@@ -24356,6 +24356,59 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ReferencePairConversionRunsAtBothOptimizations) {
+  const auto Source = tmpFile("pair-reference-conversion.cpp");
+  const auto Output = tmpFile("pair-reference-conversion.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+struct Box { int value; };
+int main() {
+  std::pair<int, Box> owned(1, Box{2});
+  std::pair<const int &, const Box &> view(owned);
+  if (&view.first != &owned.first || &view.second != &owned.second)
+    return 1;
+  std::pair<int &, Box &> references(owned.first, owned.second);
+  std::pair<const int &, const Box &> reference_view(references);
+  if (&reference_view.first != &owned.first ||
+      &reference_view.second != &owned.second)
+    return 2;
+  std::pair<int &&, Box &&> rvalue_view(
+      static_cast<std::pair<int, Box> &&>(owned));
+  std::get<0>(rvalue_view) = 3;
+  std::get<1>(rvalue_view).value = 4;
+  long converted_first = 0;
+  double converted_second = 0.0;
+  std::pair<long &, double &> destination(converted_first, converted_second);
+  std::pair<short, float> values(short(5), 6.0f);
+  auto &result = (destination = values);
+  if (&result != &destination || converted_first != 5 ||
+      converted_second != 6.0)
+    return 3;
+  short reference_first = 7;
+  float reference_second = 8.0f;
+  std::pair<short &, float &> sources(reference_first, reference_second);
+  destination = sources;
+  return converted_first == 7 && converted_second == 8.0 &&
+                 owned.first == 3 && owned.second.value == 4
+             ? 0
+             : 4;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("pair-reference-conversion" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2TupleApplyCallableObjectsRunAtBothOptimizations) {
   const auto Source = tmpFile("tuple-apply-callable-objects.cpp");
   const auto Output = tmpFile("tuple-apply-callable-objects.nc");

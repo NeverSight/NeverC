@@ -206,8 +206,11 @@ changing either pair's bindings. All six comparisons dereference pair fields
 before applying the existing recursive equality or lexicographic rules,
 including heterogeneous scalar leaves and mixed reference/value operands.
 Member and free swap evaluate both pair objects once and exchange corresponding
-referent values in field order without changing bindings. `make_pair` remains
-outside this reference-pair surface.
+referent values in field order without changing bindings. Compatible converting
+construction from value or reference pairs preserves checked cv and value
+categories. Heterogeneous assignment converts admitted scalar field values or
+copies exact admitted composite values before writing through destination
+bindings. `make_pair` remains outside this reference-pair surface.
 
 All six C++17 comparisons recurse through authenticated arrays and nested pairs
 and compare their scalar leaves in lexicographic order. Corresponding scalar

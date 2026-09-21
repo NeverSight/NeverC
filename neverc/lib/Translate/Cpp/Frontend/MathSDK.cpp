@@ -2846,6 +2846,58 @@ approvedUtilityPairConstruction(const State &S, const SourceManager &SM,
       Constructor->isTrivial())
     return UtilityPairConstruction::CopyOrMove;
   const auto *Primary = Constructor->getPrimaryTemplate();
+  auto SourcePair =
+      ReferencePair && Construction->getNumArgs() == 1
+          ? approvedUtilityPairRecord(
+                S, SM, Construction->getArg(0)->getType()->getAsCXXRecordDecl(),
+                Context)
+          : std::optional<UtilityPairRecord>();
+  bool SourceReferencePair = false;
+  if (ReferencePair && Construction->getNumArgs() == 1 && !SourcePair) {
+    SourcePair = approvedUtilityReferencePairRecord(
+        S, SM, Construction->getArg(0)->getType()->getAsCXXRecordDecl(),
+        Context);
+    SourceReferencePair = SourcePair.has_value();
+  }
+  if (ReferencePair && SourcePair && Primary && Constructor->hasBody() &&
+      SourcePair->Record->getCanonicalDecl() !=
+          Pair->Record->getCanonicalDecl() &&
+      approvedStandardSDKDeclaration(S, SM, Primary) &&
+      cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
+                     "__utility/pair.h")) {
+    const auto Parameter = Constructor->getParamDecl(0)->getType();
+    if (!Parameter->isReferenceType() ||
+        Parameter->getPointeeType().isVolatileQualified() ||
+        !Context.hasSameUnqualifiedType(
+            Parameter->getPointeeType(),
+            Context.getRecordType(SourcePair->Record)))
+      return std::nullopt;
+    for (unsigned I = 0; I != 2; ++I) {
+      const auto Destination =
+          I ? Pair->Second->getType() : Pair->First->getType();
+      const auto SourceElement =
+          I ? SourcePair->Second->getType() : SourcePair->First->getType();
+      auto SourceValue = SourceReferencePair
+                             ? SourceElement->getPointeeType()
+                             : SourceElement;
+      if (!SourceReferencePair &&
+          Parameter->getPointeeType().isConstQualified())
+        SourceValue = SourceValue.withConst();
+      const bool SourceRValue =
+          Parameter->isRValueReferenceType() &&
+          (!SourceReferencePair || SourceElement->isRValueReferenceType());
+      if (!Destination->isReferenceType() ||
+          !Context.hasSameUnqualifiedType(Destination->getPointeeType(),
+                                          SourceValue) ||
+          !Destination->getPointeeType().isAtLeastAsQualifiedAs(SourceValue,
+                                                                Context) ||
+          (Destination->isRValueReferenceType() && !SourceRValue) ||
+          (Destination->isLValueReferenceType() &&
+           !Destination->getPointeeType().isConstQualified() && SourceRValue))
+        return std::nullopt;
+    }
+    return UtilityPairConstruction::Converting;
+  }
   if (Construction->getNumArgs() == 2 && Primary &&
       approvedStandardSDKDeclaration(S, SM, Primary) &&
       cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
@@ -2918,14 +2970,52 @@ approvedUtilityPairAssignment(const State &S, const SourceManager &SM,
   const auto Result = Method->getReturnType();
   const auto PairType = Context.getRecordType(Pair->Record);
   if (!Parameter->isReferenceType() || !Result->isLValueReferenceType() ||
-      !Context.hasSameUnqualifiedType(Parameter->getPointeeType(), PairType) ||
       !Context.hasSameUnqualifiedType(Result->getPointeeType(), PairType) ||
       !Context.hasSameUnqualifiedType(Assignment->getArg(0)->getType(),
                                       PairType) ||
-      !Context.hasSameUnqualifiedType(Assignment->getArg(1)->getType(),
-                                      PairType) ||
       !Context.hasSameUnqualifiedType(Assignment->getType(), PairType))
     return std::nullopt;
+  if (Context.hasSameUnqualifiedType(Parameter->getPointeeType(), PairType) &&
+      Context.hasSameUnqualifiedType(Assignment->getArg(1)->getType(),
+                                     PairType))
+    return Pair;
+  if (!ReferencePair || Parameter->getPointeeType().isVolatileQualified())
+    return std::nullopt;
+  auto SourcePair = approvedUtilityPairRecord(
+      S, SM, Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
+  bool SourceReferencePair = false;
+  if (!SourcePair) {
+    SourcePair = approvedUtilityReferencePairRecord(
+        S, SM, Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
+    SourceReferencePair = SourcePair.has_value();
+  }
+  const auto *Primary = Method->getPrimaryTemplate();
+  if (!SourcePair || !Primary ||
+      !Context.hasSameUnqualifiedType(
+          Parameter->getPointeeType(),
+          Context.getRecordType(SourcePair->Record)) ||
+      !approvedStandardSDKDeclaration(S, SM, Primary) ||
+      !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
+                     "__utility/pair.h"))
+    return std::nullopt;
+  for (unsigned I = 0; I != 2; ++I) {
+    const auto SourceElement =
+        I ? SourcePair->Second->getType() : SourcePair->First->getType();
+    const auto SourceValue = SourceReferencePair
+                                 ? SourceElement->getPointeeType()
+                                 : SourceElement;
+    const auto DestinationValue =
+        (I ? Pair->Second->getType() : Pair->First->getType())
+            ->getPointeeType();
+    const bool Convertible =
+        (utilityScalar(Context, SourceValue) ||
+         utilityScalar(Context, DestinationValue))
+            ? utilityScalarDirectConversion(Context, SourceValue,
+                                            DestinationValue)
+            : Context.hasSameUnqualifiedType(SourceValue, DestinationValue);
+    if (!Convertible)
+      return std::nullopt;
+  }
   return Pair;
 }
 

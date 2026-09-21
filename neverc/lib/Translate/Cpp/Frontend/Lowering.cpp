@@ -8322,12 +8322,35 @@ class FunctionLowering {
         if (approvedUtilityReferencePairRecord(
                 A.S, A.Sources,
                 Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context)) {
-          for (const auto *Field : {Pair->First, Pair->Second}) {
+          auto SourcePair = approvedUtilityPairRecord(
+              A.S, A.Sources,
+              Call->getArg(1)->getType()->getAsCXXRecordDecl(), A.Context);
+          bool SourceReferencePair = false;
+          if (!SourcePair) {
+            SourcePair = approvedUtilityReferencePairRecord(
+                A.S, A.Sources,
+                Call->getArg(1)->getType()->getAsCXXRecordDecl(), A.Context);
+            SourceReferencePair = SourcePair.has_value();
+          }
+          if (!SourcePair)
+            reject(L, "utility pair assignment",
+                   "The source std::pair layout is unavailable.");
+          for (unsigned I = 0; I != 2; ++I) {
+            const auto *DestinationField = I ? Pair->Second : Pair->First;
+            const auto *SourceField =
+                I ? SourcePair->Second : SourcePair->First;
             auto Destination = dereference(
-                fieldStorage(json::Object(Left), Field, L), L);
-            auto Value = dereference(
-                fieldStorage(json::Object(Right), Field, L), L);
-            assign(std::move(Destination), std::move(Value), L);
+                fieldStorage(json::Object(Left), DestinationField, L), L);
+            auto Value = fieldStorage(json::Object(Right), SourceField, L);
+            if (SourceReferencePair)
+              Value = dereference(std::move(Value), L);
+            const auto DestinationType =
+                DestinationField->getType()->getPointeeType();
+            if (recordValue(DestinationType))
+              assign(std::move(Destination), std::move(Value), L);
+            else
+              assign(std::move(Destination),
+                     cast(std::move(Value), type(DestinationType, L), L), L);
           }
           return Left;
         }
@@ -10116,6 +10139,42 @@ class FunctionLowering {
       case UtilityPairConstruction::CopyOrMove: {
         auto Source = expression(C->getArg(0));
         assign(std::move(Place), std::move(Source), L);
+        return;
+      }
+      case UtilityPairConstruction::Converting: {
+        auto SourcePair = approvedUtilityPairRecord(
+            A.S, A.Sources, C->getArg(0)->getType()->getAsCXXRecordDecl(),
+            A.Context);
+        bool SourceReferencePair = false;
+        if (!SourcePair) {
+          SourcePair = approvedUtilityReferencePairRecord(
+              A.S, A.Sources,
+              C->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
+          SourceReferencePair = SourcePair.has_value();
+        }
+        if (!ReferencePair || !SourcePair)
+          reject(L, "utility pair construction",
+                 "The source reference std::pair layout is unavailable.");
+        auto SourceAddress = snapshot(
+            address(lvalue(C->getArg(0)), C->getArg(0)->getType(), L), L);
+        auto Source = dereference(std::move(SourceAddress), L);
+        const auto Parameter = C->getConstructor()->getParamDecl(0)->getType();
+        for (unsigned I = 0; I != 2; ++I) {
+          const auto *DestinationField = I ? Pair->Second : Pair->First;
+          const auto *SourceField = I ? SourcePair->Second : SourcePair->First;
+          auto Value = fieldStorage(json::Object(Source), SourceField, L);
+          if (!SourceReferencePair) {
+            auto SourceType = SourceField->getType();
+            if (Parameter->isReferenceType() &&
+                Parameter->getPointeeType().isConstQualified())
+              SourceType = SourceType.withConst();
+            Value = address(std::move(Value), SourceType, L);
+          }
+          assign(Member(DestinationField),
+                 cast(std::move(Value), type(DestinationField->getType(), L),
+                      L),
+                 L);
+        }
         return;
       }
       }

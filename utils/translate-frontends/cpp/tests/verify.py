@@ -458,6 +458,14 @@ extern "C" int pair_reference(int value) {
   direct = source;
   direct.swap(source);
   std::swap(direct, source);
+  std::pair<int, Box> owned(value, Box{box.value});
+  std::pair<const int &, const Box &> owned_view(owned);
+  std::pair<const int &, const Box &> source_view(direct);
+  long converted_first = 0;
+  double converted_second = 0.0;
+  std::pair<long &, double &> conversion(converted_first, converted_second);
+  std::pair<short, float> conversion_source(short(source_value), 6.0f);
+  conversion = conversion_source;
   std::pair<int &&, Box &&> rvalues(static_cast<int &&>(value),
                                     static_cast<Box &&>(box));
   std::get<0>(rvalues) += 4;
@@ -466,7 +474,9 @@ extern "C" int pair_reference(int value) {
   std::pair<int &, int &> reference_left(value, compare_left);
   std::pair<int &, int &> reference_right(compare_right, source_value);
   std::pair<short, long> comparison_value(short(compare_right), source_value);
-  return value + box.value + (reference_left == reference_right) +
+  return value + box.value + owned_view.first + source_view.first +
+         int(converted_first + converted_second) +
+         (reference_left == reference_right) +
          (reference_left != reference_right) +
          (reference_left < comparison_value) +
          (reference_left > comparison_value) +

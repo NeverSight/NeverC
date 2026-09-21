@@ -859,6 +859,7 @@ enum class UtilityPairConstruction {
   Default,
   Elements,
   CopyOrMove,
+  Converting,
 };
 std::optional<UtilityPairRecord>
 approvedUtilityPairRecord(const State &S, const clang::SourceManager &SM,
