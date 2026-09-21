@@ -6768,17 +6768,20 @@ class FunctionLowering {
                    Call->getArg(I), L);
       return Place;
     }
-    case UtilityOperation::Tie: {
+    case UtilityOperation::Tie:
+    case UtilityOperation::ForwardAsTuple: {
       auto Tuple = approvedUtilityReferenceTupleRecord(
           A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
       if (!Tuple || Call->getNumArgs() != Tuple->Elements.size())
-        reject(L, "utility tie",
+        reject(L, Operation == UtilityOperation::Tie ? "utility tie"
+                                                     : "utility forward_as_tuple",
                "The selected reference std::tuple layout is unavailable.");
       auto Place = Destination ? std::move(*Destination)
                                : objectTemporary(Call->getType(), L);
       if (Place.getString("type") != type(Call->getType(), L))
-        reject(L, "utility tie",
-               "The std::tie destination type differs from its result.");
+        reject(L, Operation == UtilityOperation::Tie ? "utility tie"
+                                                     : "utility forward_as_tuple",
+               "The reference tuple destination type differs from its result.");
       for (unsigned I = 0; I < Tuple->Elements.size(); ++I)
         assign(fieldStorage(json::Object(Place), Tuple->Elements[I], L),
                bind(Call->getArg(I), Tuple->Elements[I]->getType()), L);

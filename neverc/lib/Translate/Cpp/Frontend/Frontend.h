@@ -662,6 +662,7 @@ enum class UtilityOperation {
   PairGetSecond,
   MakeTuple,
   Tie,
+  ForwardAsTuple,
   TupleApply,
   TupleCat,
   TupleSwap,

@@ -11773,6 +11773,24 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     }
     return UtilityOperation::Tie;
   }
+  if (Origin->Path == "tuple" && Name == "forward_as_tuple" &&
+      Call->isPRValue() && !Function->getReturnType()->isReferenceType() &&
+      Same(Call->getType(), Function->getReturnType()) &&
+      Function->getNumParams() == Call->getNumArgs()) {
+    const auto Tuple = approvedUtilityReferenceTupleRecord(
+        S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
+    if (!Tuple || Call->getNumArgs() != Tuple->Elements.size())
+      return std::nullopt;
+    for (unsigned I = 0; I < Call->getNumArgs(); ++I) {
+      const auto Parameter = Function->getParamDecl(I)->getType();
+      if (!Parameter->isReferenceType() ||
+          Parameter->isLValueReferenceType() != Call->getArg(I)->isLValue() ||
+          !Same(Parameter, Tuple->Elements[I]->getType()) ||
+          !Same(Call->getArg(I)->getType(), Parameter->getPointeeType()))
+        return std::nullopt;
+    }
+    return UtilityOperation::ForwardAsTuple;
+  }
   if (Origin->Path == "tuple" && Name == "apply" && Call->getNumArgs() == 2 &&
       Function->getNumParams() == 2) {
     const auto Callable = Call->getArg(0)->getType();

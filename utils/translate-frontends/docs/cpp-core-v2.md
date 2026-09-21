@@ -252,6 +252,15 @@ const tuple object, and `std::apply` passes those referents to admitted named
 functions or stored function pointers. Mutations therefore write through to
 the original objects without a libc++ runtime helper.
 
+Exact `std::forward_as_tuple` calls use the same authenticated reference-tuple
+layout. Lvalue arguments bind `T&` fields and xvalue or materialized temporary
+arguments bind `T&&` fields after an exact value-category check. `get` and
+`apply` preserve reference collapsing from the tuple's own lvalue/rvalue
+category. A temporary referent remains alive through its enclosing full
+expression, including a direct `apply`, and is destroyed afterward; storing a
+tuple that refers to an expired temporary retains ordinary C++ dangling-reference
+semantics.
+
 Exact `std::apply` calls over an authenticated empty or nonempty tuple lower to
 one ordinary callback call. The callable may be a named function, a stored
 function pointer with a fixed nonvariadic signature, or an exact source-owned

@@ -849,6 +849,27 @@ extern "C" int tuple_tie(int value) {
         check("v2-tuple-tie-" + target, tuple_tie_source,
               profile="cpp-core-v2", target=target, sdk=True)
 
+    tuple_forward_source = """\
+#include <tuple>
+struct Box { int value; };
+int consume(Box &&box, int &number) {
+  number += box.value;
+  return number;
+}
+extern "C" int tuple_forward(int value) {
+  auto refs = std::forward_as_tuple(value);
+  std::get<0>(refs) += 1;
+  return std::apply(consume, std::forward_as_tuple(Box{3}, value));
+}
+"""
+    tuple_forward = check("v2-tuple-forward", tuple_forward_source,
+                          profile="cpp-core-v2", sdk=True)
+    assert not [node for node in walk(tuple_forward["functions"])
+                if node.get("op") == "mapped_call"], tuple_forward
+    for target in sdk_targets:
+        check("v2-tuple-forward-" + target, tuple_forward_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+
     tuple_pair_source = """\
 #include <tuple>
 #include <utility>

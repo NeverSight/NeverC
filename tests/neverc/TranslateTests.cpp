@@ -23796,6 +23796,53 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ForwardAsTupleRunsAtBothOptimizations) {
+  const auto Source = tmpFile("tuple-forward-as-tuple.cpp");
+  const auto Output = tmpFile("tuple-forward-as-tuple.nc");
+  writeFile(Source, R"cpp(
+#include <tuple>
+struct Record {
+  int value;
+  ~Record();
+};
+int dropped;
+Record::~Record() { ++dropped; }
+int consume(Record &&record, int &value) {
+  value += record.value;
+  return value;
+}
+int main() {
+  int value = 2;
+  auto lvalues = std::forward_as_tuple(value);
+  std::get<0>(lvalues) = 3;
+  if (value != 3)
+    return 1;
+  dropped = 0;
+  int result = std::apply(consume,
+                          std::forward_as_tuple(Record{4}, value));
+  if (result != 7 || value != 7 || dropped != 1)
+    return 2;
+  if (std::get<0>(std::forward_as_tuple(5)) != 5)
+    return 3;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("__apply_tuple_impl"), std::string::npos);
+  EXPECT_EQ(Text.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("tuple-forward-as-tuple" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2TupleApplyCallableObjectsRunAtBothOptimizations) {
   const auto Source = tmpFile("tuple-apply-callable-objects.cpp");
   const auto Output = tmpFile("tuple-apply-callable-objects.nc");

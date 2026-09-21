@@ -220,8 +220,9 @@ or recursively composite values, compatible scalar or exact composite
 per-element construction and assignment from tuples or pairs, factories,
 swaps, recursive same-length
 heterogeneous lexicographic comparisons and index or unique-type access. Exact
-`tie` constructs authenticated reference tuples; their `get` and `apply`
-operations recover the referents and preserve writes to the bound objects. Exact
+`tie` and `forward_as_tuple` construct authenticated reference tuples; their
+`get` and `apply` operations recover the referents, preserve value categories
+and retain writes to the bound objects. Exact
 `apply` lowers named functions, stored function pointers, exact source-owned
 function objects, authenticated standard scalar function objects, or exact
 `reference_wrapper` forms around those callables, exact direct or stored source
