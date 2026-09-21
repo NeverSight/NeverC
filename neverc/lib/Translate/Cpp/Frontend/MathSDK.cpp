@@ -7,6 +7,8 @@
 #include "clang/Basic/SourceManager.h"
 #include "clang/Basic/TargetInfo.h"
 #include "clang/Index/USRGeneration.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/FileSystem.h"
@@ -9291,15 +9293,134 @@ static bool utilitySwapTrivialBody(const State &S, const SourceManager &SM,
   return true;
 }
 
+// Authenticate a concrete SDK member and every declaration used to obtain its
+// template pattern. Signature, receiver and body semantics are checked by the
+// owning operation below, including static members and member templates.
+static bool utilityCompositeSwapMethod(const State &S, const SourceManager &SM,
+                                       const CXXMethodDecl *Method,
+                                       llvm::StringRef Name,
+                                       llvm::StringRef Path) {
+  auto Declaration = [&](const Decl *D) {
+    return D && approvedStandardSDKDeclaration(S, SM, D) &&
+           cstddefOrigin(S, SM, D->getLocation(), "libcxx", Path);
+  };
+  if (!Method ||
+      (Name.empty()
+           ? !isa<CXXConstructorDecl>(Method)
+           : (!Method->getIdentifier() || Method->getName() != Name)) ||
+      Method->isVariadic() || !Method->hasBody() ||
+      Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      !Declaration(Method->getDefinition()))
+    return false;
+  for (const auto *Redeclaration : Method->redecls())
+    if (!Declaration(Redeclaration))
+      return false;
+
+  if (const auto *Primary = Method->getPrimaryTemplate()) {
+    unsigned Depth = 0;
+    for (const auto *Template = Primary; Template;
+         Template = Template->getInstantiatedFromMemberTemplate()) {
+      if (++Depth > 64)
+        return false;
+      for (const auto *Redeclaration : Template->redecls())
+        if (!Declaration(Redeclaration) ||
+            !Declaration(Redeclaration->getTemplatedDecl()))
+          return false;
+      const auto *Pattern = Template->getTemplatedDecl();
+      for (const auto *Redeclaration : Pattern->redecls())
+        if (!Declaration(Redeclaration))
+          return false;
+      if (!Template->getInstantiatedFromMemberTemplate())
+        return Declaration(Pattern->getDefinition()) && Pattern->hasBody();
+    }
+    return false;
+  }
+  const auto *Pattern = Method->getInstantiatedFromMemberFunction();
+  for (unsigned Depth = 0; Pattern && Depth <= 64; ++Depth) {
+    for (const auto *Redeclaration : Pattern->redecls())
+      if (!Declaration(Redeclaration))
+        return false;
+    const auto *Next = Pattern->getInstantiatedFromMemberFunction();
+    if (!Next)
+      return Declaration(Pattern->getDefinition()) && Pattern->hasBody();
+    Pattern = Next;
+  }
+  return false;
+}
+
+// This context belongs to one root swap proof, never to State or an AST-wide
+// cache. Repeated type DAG edges may share completed proofs, but an active edge
+// is a cycle and cannot authorize itself. Keep the exact selected declaration;
+// canonicalize only its reference-stripped type, preserving all qualifiers.
+// Depth counts nested values. SDK free/member, implementation and leaf
+// adapters retain it; only calls to an element swap increase it.
+struct UtilitySwapProofContext {
+  using Key = std::pair<const FunctionDecl *, void *>;
+  llvm::DenseSet<Key> Active;
+  // The greatest entry depth at which the complete proof succeeded. A cached
+  // proof may be reused only at an equal or shallower depth; reusing it deeper
+  // could skip a descendant that must fail the existing depth-64 boundary.
+  llvm::DenseMap<Key, unsigned> Completed;
+};
+
+static bool approvedUtilityTupleSwapBody(
+    const State &S, const SourceManager &SM, const CXXMethodDecl *Method,
+    const ASTContext &Context, unsigned Depth, UtilitySwapProofContext *Proof);
+
+static bool approvedUtilityArraySwapBody(
+    const State &S, const SourceManager &SM, const CXXMethodDecl *Method,
+    const ASTContext &Context, unsigned Depth, UtilitySwapProofContext *Proof);
+
 static bool approvedUtilityPairSwapBody(const State &S, const SourceManager &SM,
                                         const CXXMethodDecl *Method,
                                         const ASTContext &Context,
-                                        unsigned Depth);
+                                        unsigned Depth,
+                                        UtilitySwapProofContext *Proof);
+
+static bool
+approvedUtilityPairElementSwapImpl(const State &S, const SourceManager &SM,
+                                   const FunctionDecl *Function, QualType Type,
+                                   const ASTContext &Context, unsigned Depth,
+                                   UtilitySwapProofContext *Proof);
 
 static bool
 approvedUtilityPairElementSwap(const State &S, const SourceManager &SM,
                                const FunctionDecl *Function, QualType Type,
-                               const ASTContext &Context, unsigned Depth = 0) {
+                               const ASTContext &Context, unsigned Depth = 0,
+                               UtilitySwapProofContext *Proof = nullptr) {
+  if (Depth > 64 || !Function || Type.isNull())
+    return false;
+  if (Type->isReferenceType())
+    Type = Type->getPointeeType();
+  if (Type.hasQualifiers())
+    return false;
+  UtilitySwapProofContext LocalProof;
+  if (!Proof)
+    Proof = &LocalProof;
+  const UtilitySwapProofContext::Key Key{
+      Function, Type.getCanonicalType().getAsOpaquePtr()};
+  if (Proof->Active.contains(Key))
+    return false;
+  const auto Found = Proof->Completed.find(Key);
+  if (Found != Proof->Completed.end() && Depth <= Found->second)
+    return true;
+  Proof->Active.insert(Key);
+  const bool Approved = approvedUtilityPairElementSwapImpl(
+      S, SM, Function, Type, Context, Depth, Proof);
+  Proof->Active.erase(Key);
+  if (Approved) {
+    auto [Entry, Inserted] = Proof->Completed.try_emplace(Key, Depth);
+    if (!Inserted && Entry->second < Depth)
+      Entry->second = Depth;
+  }
+  return Approved;
+}
+
+static bool
+approvedUtilityPairElementSwapImpl(const State &S, const SourceManager &SM,
+                                   const FunctionDecl *Function, QualType Type,
+                                   const ASTContext &Context, unsigned Depth,
+                                   UtilitySwapProofContext *Proof) {
   if (Depth > 64 || !Function || !Function->hasBody() ||
       Function->getNumParams() != 2 || !Function->getReturnType()->isVoidType())
     return false;
@@ -9319,10 +9440,13 @@ approvedUtilityPairElementSwap(const State &S, const SourceManager &SM,
            utilityPairAssignableValue(S, SM, Context, Type) &&
            utilitySwapTrivialBody(S, SM, Function->getBody(), Type, Context);
 
-  // Nested pairs use their specialized free swap, which delegates to the
-  // matching member. Array siblings require a separate swap_ranges proof and
-  // are deliberately not admitted by this new wrapper-specific path.
-  if (!utilitySwapSDKFunction(S, SM, Function, "swap", "__utility/pair.h"))
+  // Container overloads must delegate the original operands to the matching
+  // member. Its proof follows the selected element swaps, including ADL.
+  const bool Pair =
+      utilitySwapSDKFunction(S, SM, Function, "swap", "__utility/pair.h");
+  const bool Array = utilitySwapSDKFunction(S, SM, Function, "swap", "array");
+  const bool Tuple = utilitySwapSDKFunction(S, SM, Function, "swap", "tuple");
+  if (!Pair && !Array && !Tuple)
     return false;
   const auto *Body = dyn_cast<CompoundStmt>(Function->getBody());
   const auto *Call = Body && Body->size() == 1
@@ -9336,27 +9460,27 @@ approvedUtilityPairElementSwap(const State &S, const SourceManager &SM,
                                             Function->getParamDecl(0)) &&
          functionalInvokeParameterReference(Call->getArg(0),
                                             Function->getParamDecl(1)) &&
-         approvedUtilityPairSwapBody(S, SM, Method, Context, Depth + 1);
+         (Pair    ? approvedUtilityPairSwapBody(S, SM, Method, Context, Depth,
+                                                Proof)
+          : Array ? approvedUtilityArraySwapBody(S, SM, Method, Context, Depth,
+                                                 Proof)
+                  : approvedUtilityTupleSwapBody(S, SM, Method, Context, Depth,
+                                                 Proof));
 }
 
-static bool approvedUtilityPairSwapBody(const State &S, const SourceManager &SM,
-                                        const CXXMethodDecl *Method,
-                                        const ASTContext &Context,
-                                        unsigned Depth = 0) {
+static bool
+approvedUtilityPairSwapBody(const State &S, const SourceManager &SM,
+                            const CXXMethodDecl *Method,
+                            const ASTContext &Context, unsigned Depth = 0,
+                            UtilitySwapProofContext *Proof = nullptr) {
+  UtilitySwapProofContext LocalProof;
+  if (!Proof)
+    Proof = &LocalProof;
   if (Depth > 64 || !Method || !Method->getIdentifier() ||
       Method->getName() != "swap" || Method->isStatic() || Method->isConst() ||
       Method->isVolatile() || Method->isVariadic() ||
       Method->getNumParams() != 1 || !Method->getReturnType()->isVoidType() ||
-      Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
-      !Method->hasBody() || !approvedStandardSDKDeclaration(S, SM, Method) ||
-      !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
-                     "__utility/pair.h"))
-    return false;
-  const auto *Pattern = Method->getInstantiatedFromMemberFunction();
-  if (!Pattern || !Pattern->hasBody() ||
-      !approvedStandardSDKDeclaration(S, SM, Pattern) ||
-      !cstddefOrigin(S, SM, Pattern->getLocation(), "libcxx",
-                     "__utility/pair.h"))
+      !utilityCompositeSwapMethod(S, SM, Method, "swap", "__utility/pair.h"))
     return false;
   auto Pair = approvedUtilityPairRecord(S, SM, Method->getParent(), Context);
   if (!Pair)
@@ -9378,7 +9502,8 @@ static bool approvedUtilityPairSwapBody(const State &S, const SourceManager &SM,
     const auto *Call = dyn_cast<CallExpr>(*Statement++);
     if (!Call || Call->getNumArgs() != 2 ||
         !approvedUtilityPairElementSwap(S, SM, Call->getDirectCallee(),
-                                        Field->getType(), Context, Depth + 1))
+                                        Field->getType(), Context, Depth + 1,
+                                        Proof))
       return false;
     const auto *Left = dyn_cast_or_null<MemberExpr>(
         functionalInvokeStrippedExpression(Call->getArg(0)));
@@ -9394,6 +9519,659 @@ static bool approvedUtilityPairSwapBody(const State &S, const SourceManager &SM,
       return false;
   }
   return true;
+}
+
+// Every range-adapter edge must preserve the same native pointer. The SDK
+// provenance check includes source redeclarations and explicit specializations.
+static bool utilitySwapPointerAdapter(const State &S, const SourceManager &SM,
+                                      const Expr *Expression,
+                                      const ParmVarDecl *Parameter,
+                                      QualType Pointer, QualType Argument,
+                                      bool Forward, const ASTContext &Context) {
+  const auto *Call = dyn_cast_or_null<CallExpr>(
+      functionalInvokeStrippedExpression(Expression));
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Arguments =
+      Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  const auto Reference = Context.getLValueReferenceType(Pointer);
+  const auto Result = Forward && Argument->isLValueReferenceType()
+                          ? Reference
+                          : Context.getRValueReferenceType(Pointer);
+  return utilitySwapSDKFunction(S, SM, Function, Forward ? "forward" : "move",
+                                Forward ? "__utility/forward.h"
+                                        : "__utility/move.h") &&
+         Call->getNumArgs() == 1 && Function->getNumParams() == 1 &&
+         Arguments && Arguments->size() == 1 &&
+         Arguments->get(0).getKind() == TemplateArgument::Type &&
+         Context.hasSameType(Arguments->get(0).getAsType(), Argument) &&
+         Context.hasSameType(Function->getParamDecl(0)->getType(), Reference) &&
+         Context.hasSameType(Function->getReturnType(), Result) &&
+         Context.hasSameType(Call->getType(), Pointer) &&
+         (Result->isLValueReferenceType() ? Call->isLValue()
+                                          : Call->isXValue()) &&
+         functionalInvokeParameterReference(Call->getArg(0), Parameter);
+}
+
+static bool utilitySwapPointerTemplate(const FunctionDecl *Function,
+                                       QualType Pointer, unsigned Parameters,
+                                       unsigned Arguments,
+                                       const ASTContext &Context) {
+  const auto *TemplateArguments =
+      Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  if (!Function || Function->getNumParams() != Parameters ||
+      !TemplateArguments || TemplateArguments->size() != Arguments)
+    return false;
+  for (const auto *Parameter : Function->parameters())
+    if (!Context.hasSameType(Parameter->getType(), Pointer))
+      return false;
+  for (unsigned I = 0; I != Arguments; ++I)
+    if (TemplateArguments->get(I).getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(TemplateArguments->get(I).getAsType(), Pointer))
+      return false;
+  return true;
+}
+
+static bool utilitySwapClassicPolicy(const State &S, const SourceManager &SM,
+                                     QualType Type) {
+  const auto *Record = Type->getAsCXXRecordDecl();
+  if (Type.hasQualifiers() || !Record || !Record->getIdentifier() ||
+      Record->getName() != "_ClassicAlgPolicy" ||
+      !Record->isCompleteDefinition() || !Record->isEmpty() ||
+      Record->getNumBases() || isa<ClassTemplateSpecializationDecl>(Record))
+    return false;
+  for (const auto *Declaration : Record->redecls())
+    if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
+        !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx",
+                       "__algorithm/iterator_operations.h"))
+      return false;
+  return true;
+}
+
+static bool utilitySwapIteratorBody(const State &S, const SourceManager &SM,
+                                    const FunctionDecl *Function,
+                                    QualType Element, const ASTContext &Context,
+                                    unsigned Depth,
+                                    UtilitySwapProofContext *Proof) {
+  const auto Pointer = Context.getPointerType(Element);
+  if (!utilitySwapSDKFunction(S, SM, Function, "iter_swap",
+                              "__algorithm/iter_swap.h") ||
+      !utilitySwapPointerTemplate(Function, Pointer, 2, 2, Context) ||
+      !Function->getReturnType()->isVoidType())
+    return false;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Function->getBody());
+  const auto *Call = Body && Body->size() == 1
+                         ? dyn_cast<CallExpr>(*Body->body_begin())
+                         : nullptr;
+  if (!Call || Call->getNumArgs() != 2 ||
+      !approvedUtilityPairElementSwap(S, SM, Call->getDirectCallee(), Element,
+                                      Context, Depth + 1, Proof))
+    return false;
+  for (unsigned I = 0; I != 2; ++I) {
+    const auto *Dereference = dyn_cast_or_null<UnaryOperator>(
+        functionalInvokeStrippedExpression(Call->getArg(I)));
+    if (!Dereference || Dereference->getOpcode() != UO_Deref ||
+        !Context.hasSameType(Dereference->getType(), Element) ||
+        !Dereference->isLValue() ||
+        !functionalInvokeParameterReference(Dereference->getSubExpr(),
+                                            Function->getParamDecl(I)))
+      return false;
+  }
+  return true;
+}
+
+static bool utilitySwapIteratorAdapter(const State &S, const SourceManager &SM,
+                                       const CXXMethodDecl *Method,
+                                       QualType Element, QualType Policy,
+                                       const ASTContext &Context,
+                                       unsigned Depth,
+                                       UtilitySwapProofContext *Proof) {
+  const auto Pointer = Context.getPointerType(Element);
+  const auto Reference = Context.getLValueReferenceType(Pointer);
+  if (!utilityCompositeSwapMethod(S, SM, Method, "iter_swap",
+                                  "__algorithm/iterator_operations.h") ||
+      !Method->isStatic() || !Method->getReturnType()->isVoidType() ||
+      !utilitySwapPointerTemplate(Method, Reference, 2, 2, Context))
+    return false;
+  const auto *Record =
+      dyn_cast<ClassTemplateSpecializationDecl>(Method->getParent());
+  const auto *Primary = Record ? Record->getSpecializedTemplate() : nullptr;
+  auto Declaration = [&](const Decl *D) {
+    return D && approvedStandardSDKDeclaration(S, SM, D) &&
+           cstddefOrigin(S, SM, D->getLocation(), "libcxx",
+                         "__algorithm/iterator_operations.h");
+  };
+  if (!Record || !Primary || !Record->getIdentifier() ||
+      Record->getName() != "_IterOps" ||
+      Record->getSpecializationKind() != TSK_ExplicitSpecialization ||
+      !Record->isCompleteDefinition() || !Record->isEmpty() ||
+      Record->getNumBases() || !Declaration(Record->getDefinition()) ||
+      Record->getTemplateArgs().size() != 1 ||
+      Record->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Record->getTemplateArgs().get(0).getAsType(),
+                           Policy))
+    return false;
+  for (const auto *D : Record->redecls())
+    if (!Declaration(D))
+      return false;
+  for (const auto *D : Primary->redecls())
+    if (!Declaration(D) || !Declaration(D->getTemplatedDecl()))
+      return false;
+  const auto *Body = dyn_cast<CompoundStmt>(Method->getBody());
+  const auto *Call = Body && Body->size() == 1
+                         ? dyn_cast<CallExpr>(*Body->body_begin())
+                         : nullptr;
+  if (!Call || Call->getNumArgs() != 2 ||
+      !utilitySwapIteratorBody(S, SM, Call->getDirectCallee(), Element, Context,
+                               Depth, Proof))
+    return false;
+  for (unsigned I = 0; I != 2; ++I)
+    if (!utilitySwapPointerAdapter(S, SM, Call->getArg(I),
+                                   Method->getParamDecl(I), Pointer, Reference,
+                                   true, Context))
+      return false;
+  return true;
+}
+
+// __swap_ranges returns a pair of native pointers. Even though array::swap
+// discards that result, its selected constructor and forwarding calls must not
+// hide source side effects.
+static bool utilitySwapPointerPair(const State &S, const SourceManager &SM,
+                                   const Expr *Expression,
+                                   const FunctionDecl *Function,
+                                   const UtilityPairRecord &Pair,
+                                   QualType Pointer,
+                                   const ASTContext &Context) {
+  const auto *Construction = dyn_cast_or_null<CXXConstructExpr>(
+      functionalInvokeStrippedExpression(Expression));
+  const auto *Constructor =
+      Construction ? Construction->getConstructor() : nullptr;
+  if (!Constructor || Construction->getNumArgs() != 2 ||
+      Constructor->getNumParams() != 2 ||
+      Constructor->getNumCtorInitializers() != 2 ||
+      !Context.hasSameType(Construction->getType(),
+                           Context.getRecordType(Pair.Record)) ||
+      !utilityCompositeSwapMethod(S, SM, Constructor, "", "__utility/pair.h"))
+    return false;
+  const auto *Body = dyn_cast<CompoundStmt>(Constructor->getBody());
+  const auto *Arguments = Constructor->getTemplateSpecializationArgs();
+  if (!Body || !Body->body_empty() || !Arguments || Arguments->size() != 3 ||
+      Arguments->get(2).getKind() != TemplateArgument::Integral ||
+      !Arguments->get(2).getAsIntegral().isZero())
+    return false;
+  auto Initializer = Constructor->init_begin();
+  for (unsigned I = 0; I != 2; ++I, ++Initializer) {
+    const auto *Field = I ? Pair.Second : Pair.First;
+    if (Arguments->get(I).getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Arguments->get(I).getAsType(), Pointer) ||
+        !Context.hasSameType(Constructor->getParamDecl(I)->getType(),
+                             Context.getRValueReferenceType(Pointer)) ||
+        !(*Initializer)->isMemberInitializer() ||
+        (*Initializer)->getMember() != Field ||
+        !utilitySwapPointerAdapter(S, SM, (*Initializer)->getInit(),
+                                   Constructor->getParamDecl(I), Pointer,
+                                   Pointer, true, Context) ||
+        !utilitySwapPointerAdapter(
+            S, SM, Construction->getArg(I), Function->getParamDecl(I ? 2 : 0),
+            Pointer, Context.getLValueReferenceType(Pointer), false, Context))
+      return false;
+  }
+  return true;
+}
+
+static bool utilitySwapRangeBody(const State &S, const SourceManager &SM,
+                                 const FunctionDecl *Function, QualType Element,
+                                 const UtilityPairRecord &Pair,
+                                 const ASTContext &Context, unsigned Depth,
+                                 UtilitySwapProofContext *Proof) {
+  const auto Pointer = Context.getPointerType(Element);
+  const auto *Arguments =
+      Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  if (!utilitySwapSDKFunction(S, SM, Function, "__swap_ranges",
+                              "__algorithm/swap_ranges.h") ||
+      Function->getNumParams() != 3 || !Arguments || Arguments->size() != 4 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      !utilitySwapClassicPolicy(S, SM, Arguments->get(0).getAsType()) ||
+      !Context.hasSameType(Function->getReturnType(),
+                           Context.getRecordType(Pair.Record)))
+    return false;
+  for (unsigned I = 0; I != 3; ++I)
+    if (!Context.hasSameType(Function->getParamDecl(I)->getType(), Pointer) ||
+        Arguments->get(I + 1).getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Arguments->get(I + 1).getAsType(), Pointer))
+      return false;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Function->getBody());
+  if (!Body || Body->size() != 2)
+    return false;
+  auto Statement = Body->body_begin();
+  const auto *Loop = dyn_cast<WhileStmt>(*Statement++);
+  const auto *Result = dyn_cast<ReturnStmt>(*Statement);
+  const auto *Condition =
+      Loop ? dyn_cast<BinaryOperator>(Loop->getCond()) : nullptr;
+  const auto *Iteration =
+      Loop ? dyn_cast<CompoundStmt>(Loop->getBody()) : nullptr;
+  if (!Loop || Loop->getConditionVariable() || !Condition ||
+      Condition->getOpcode() != BO_NE || !Iteration || Iteration->size() != 3 ||
+      !functionalInvokeParameterReference(Condition->getLHS(),
+                                          Function->getParamDecl(0)) ||
+      !functionalInvokeParameterReference(Condition->getRHS(),
+                                          Function->getParamDecl(1)) ||
+      !Result ||
+      !utilitySwapPointerPair(S, SM, Result->getRetValue(), Function, Pair,
+                              Pointer, Context))
+    return false;
+  auto Step = Iteration->body_begin();
+  const auto *Call = dyn_cast<CallExpr>(*Step++);
+  if (!Call || Call->getNumArgs() != 2 ||
+      !functionalInvokeParameterReference(Call->getArg(0),
+                                          Function->getParamDecl(0)) ||
+      !functionalInvokeParameterReference(Call->getArg(1),
+                                          Function->getParamDecl(2)) ||
+      !utilitySwapIteratorAdapter(
+          S, SM, dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee()),
+          Element, Arguments->get(0).getAsType(), Context, Depth, Proof))
+    return false;
+  for (unsigned I : {0u, 2u}) {
+    const auto *Increment = dyn_cast<UnaryOperator>(*Step++);
+    if (!Increment || Increment->getOpcode() != UO_PreInc ||
+        !functionalInvokeParameterReference(Increment->getSubExpr(),
+                                            Function->getParamDecl(I)))
+      return false;
+  }
+  return true;
+}
+
+static bool utilitySwapRanges(const State &S, const SourceManager &SM,
+                              const FunctionDecl *Function, QualType Element,
+                              const ASTContext &Context, unsigned Depth,
+                              UtilitySwapProofContext *Proof) {
+  const auto Pointer = Context.getPointerType(Element);
+  if (!utilitySwapSDKFunction(S, SM, Function, "swap_ranges",
+                              "__algorithm/swap_ranges.h") ||
+      !utilitySwapPointerTemplate(Function, Pointer, 3, 2, Context) ||
+      !Context.hasSameType(Function->getReturnType(), Pointer))
+    return false;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Function->getBody());
+  const auto *Result = Body && Body->size() == 1
+                           ? dyn_cast<ReturnStmt>(*Body->body_begin())
+                           : nullptr;
+  const auto *Projection =
+      Result ? dyn_cast_or_null<MemberExpr>(
+                   functionalInvokeStrippedExpression(Result->getRetValue()))
+             : nullptr;
+  const auto *Call =
+      Projection
+          ? dyn_cast_or_null<CallExpr>(
+                functionalInvokeStrippedExpression(Projection->getBase()))
+          : nullptr;
+  const auto Pair = approvedUtilityPairRecord(
+      S, SM, Call ? Call->getType()->getAsCXXRecordDecl() : nullptr, Context);
+  if (!Call || Call->getNumArgs() != 3 || !Pair || Projection->isArrow() ||
+      Projection->getMemberDecl() != Pair->Second ||
+      !Context.hasSameType(Pair->First->getType(), Pointer) ||
+      !Context.hasSameType(Pair->Second->getType(), Pointer) ||
+      !utilitySwapRangeBody(S, SM, Call->getDirectCallee(), Element, *Pair,
+                            Context, Depth, Proof))
+    return false;
+  for (unsigned I = 0; I != 3; ++I)
+    if (!utilitySwapPointerAdapter(
+            S, SM, Call->getArg(I), Function->getParamDecl(I), Pointer,
+            Context.getLValueReferenceType(Pointer), false, Context))
+      return false;
+  return true;
+}
+
+static bool utilitySwapArrayData(const State &S, const SourceManager &SM,
+                                 const Expr *Expression,
+                                 const UtilityArrayRecord &Array,
+                                 const ParmVarDecl *Peer,
+                                 const ASTContext &Context) {
+  const auto *Call = dyn_cast_or_null<CXXMemberCallExpr>(
+      functionalInvokeStrippedExpression(Expression));
+  const auto *Method = Call ? Call->getMethodDecl() : nullptr;
+  const auto Pointer = Context.getPointerType(Array.ElementType);
+  if (!utilityCompositeSwapMethod(S, SM, Method, "data", "array") ||
+      Method->isStatic() || Method->isConst() || Method->isVolatile() ||
+      Method->getNumParams() || Call->getNumArgs() ||
+      Method->getParent()->getCanonicalDecl() !=
+          Array.Record->getCanonicalDecl() ||
+      !Context.hasSameType(Method->getReturnType(), Pointer) ||
+      !Context.hasSameType(Call->getType(), Pointer))
+    return false;
+  const auto *Object =
+      functionalInvokeStrippedExpression(Call->getImplicitObjectArgument());
+  if (Peer ? !functionalInvokeParameterReference(Object, Peer)
+           : !isa_and_nonnull<CXXThisExpr>(Object))
+    return false;
+  const auto *Body = dyn_cast<CompoundStmt>(Method->getBody());
+  const auto *Result = Body && Body->size() == 1
+                           ? dyn_cast<ReturnStmt>(*Body->body_begin())
+                           : nullptr;
+  const auto *Decay =
+      Result ? dyn_cast_or_null<ImplicitCastExpr>(Result->getRetValue())
+             : nullptr;
+  const auto *Storage =
+      Decay ? dyn_cast<MemberExpr>(Decay->getSubExpr()) : nullptr;
+  return Decay && Decay->getCastKind() == CK_ArrayToPointerDecay && Storage &&
+         Storage->getMemberDecl() == Array.Elements && Storage->isArrow() &&
+         isa<CXXThisExpr>(
+             functionalInvokeStrippedExpression(Storage->getBase()));
+}
+
+static bool
+approvedUtilityArraySwapBody(const State &S, const SourceManager &SM,
+                             const CXXMethodDecl *Method,
+                             const ASTContext &Context, unsigned Depth = 0,
+                             UtilitySwapProofContext *Proof = nullptr) {
+  UtilitySwapProofContext LocalProof;
+  if (!Proof)
+    Proof = &LocalProof;
+  if (Depth > 64 ||
+      !utilityCompositeSwapMethod(S, SM, Method, "swap", "array") ||
+      Method->isStatic() || Method->isConst() || Method->isVolatile() ||
+      Method->getNumParams() != 1 || !Method->getReturnType()->isVoidType())
+    return false;
+  const auto Array =
+      approvedUtilityArrayRecord(S, SM, Method->getParent(), Context);
+  const auto *Body = dyn_cast<CompoundStmt>(Method->getBody());
+  if (!Array || !Body || Body->size() != 1 ||
+      !Context.hasSameType(Method->getParamDecl(0)->getType(),
+                           Context.getLValueReferenceType(
+                               Context.getRecordType(Array->Record))) ||
+      (Array->Size
+           ? !utilityArrayTriviallyAssignable(Context, Array->ElementType)
+           : Array->ElementType.isConstQualified()))
+    return false;
+  if (!Array->Size) {
+    // The pinned zero-size specialization has only a compile-time assertion.
+    // In particular, it does not instantiate any element swap operation.
+    const auto *Declaration = dyn_cast<DeclStmt>(*Body->body_begin());
+    const auto *Assertion =
+        Declaration && Declaration->isSingleDecl()
+            ? dyn_cast<StaticAssertDecl>(Declaration->getSingleDecl())
+            : nullptr;
+    return Assertion && !Assertion->isFailed();
+  }
+  const auto *Call = dyn_cast<CallExpr>(*Body->body_begin());
+  const auto *End = Call && Call->getNumArgs() == 3
+                        ? dyn_cast<BinaryOperator>(Call->getArg(1))
+                        : nullptr;
+  const auto *Extent =
+      End ? dyn_cast<SubstNonTypeTemplateParmExpr>(End->getRHS()) : nullptr;
+  const auto *Size =
+      Extent ? dyn_cast<IntegerLiteral>(Extent->getReplacement()) : nullptr;
+  return Call && Call->getNumArgs() == 3 && End && End->getOpcode() == BO_Add &&
+         Size && Size->getValue() == Array->Size &&
+         utilitySwapArrayData(S, SM, Call->getArg(0), *Array, nullptr,
+                              Context) &&
+         utilitySwapArrayData(S, SM, End->getLHS(), *Array, nullptr, Context) &&
+         utilitySwapArrayData(S, SM, Call->getArg(2), *Array,
+                              Method->getParamDecl(0), Context) &&
+         utilitySwapRanges(S, SM, Call->getDirectCallee(), Array->ElementType,
+                           Context, Depth, Proof);
+}
+
+static const Stmt *utilityCompositeSwapOnlyStatement(const Stmt *Statement) {
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Statement);
+  if (!Body || Body->size() != 1)
+    return nullptr;
+  Statement = *Body->body_begin();
+  if (const auto *Expression = dyn_cast<Expr>(Statement))
+    return functionalInvokeStrippedExpression(Expression);
+  return Statement;
+}
+
+static bool utilityCompositeSwapThis(const Expr *Expression,
+                                     const CXXRecordDecl *Record) {
+  Expression = functionalInvokeStrippedExpression(Expression);
+  if (const auto *Dereference = dyn_cast_or_null<UnaryOperator>(Expression)) {
+    if (Dereference->getOpcode() != UO_Deref)
+      return false;
+    Expression = functionalInvokeStrippedExpression(Dereference->getSubExpr());
+  }
+  const auto *This = dyn_cast_or_null<CXXThisExpr>(Expression);
+  const auto *ThisRecord =
+      This ? This->getType()->getPointeeType()->getAsCXXRecordDecl() : nullptr;
+  return ThisRecord && Record &&
+         ThisRecord->getCanonicalDecl() == Record->getCanonicalDecl();
+}
+
+static bool utilityTupleSwapGet(const State &S, const SourceManager &SM,
+                                const Expr *Expression,
+                                const ParmVarDecl *Parameter,
+                                const FieldDecl *Element,
+                                const ASTContext &Context) {
+  const auto *Call = dyn_cast_or_null<CXXMemberCallExpr>(
+      functionalInvokeStrippedExpression(Expression));
+  const auto *Method = Call ? Call->getMethodDecl() : nullptr;
+  const auto *Leaf = cast<CXXRecordDecl>(Element->getParent());
+  QualType Type = Element->getType();
+  if (Type->isReferenceType())
+    Type = Type->getPointeeType();
+  if (!Call || Call->getNumArgs() || !Method || Method->isStatic() ||
+      Method->isConst() || Method->isVolatile() || Method->getNumParams() ||
+      Method->getParent()->getCanonicalDecl() != Leaf->getCanonicalDecl() ||
+      !utilityCompositeSwapMethod(S, SM, Method, "get", "tuple") ||
+      !Context.hasSameType(Method->getReturnType(),
+                           Context.getLValueReferenceType(Type)) ||
+      !Context.hasSameType(Call->getType(), Type) || !Call->isLValue() ||
+      !functionalInvokeParameterReference(Call->getImplicitObjectArgument(),
+                                          Parameter))
+    return false;
+  const auto *Return = dyn_cast_or_null<ReturnStmt>(
+      utilityCompositeSwapOnlyStatement(Method->getBody()));
+  const auto *Access =
+      Return ? dyn_cast_or_null<MemberExpr>(
+                   functionalInvokeStrippedExpression(Return->getRetValue()))
+             : nullptr;
+  return Access && Access->getMemberDecl() == Element && Access->isArrow() &&
+         utilityCompositeSwapThis(Access->getBase(), Leaf);
+}
+
+static bool utilityTupleLeafSwap(const State &S, const SourceManager &SM,
+                                 const CXXMethodDecl *Method,
+                                 const FieldDecl *Element,
+                                 const ASTContext &Context, unsigned Depth,
+                                 UtilitySwapProofContext *Proof) {
+  const auto *Leaf = cast<CXXRecordDecl>(Element->getParent());
+  const auto LeafType = Context.getRecordType(Leaf);
+  if (Depth > 64 ||
+      !utilityCompositeSwapMethod(S, SM, Method, "swap", "tuple") ||
+      Method->isStatic() || Method->isConst() || Method->isVolatile() ||
+      Method->getParent()->getCanonicalDecl() != Leaf->getCanonicalDecl() ||
+      Method->getNumParams() != 1 ||
+      !Context.hasSameType(Method->getReturnType(), Context.IntTy) ||
+      !Context.hasSameType(Method->getParamDecl(0)->getType(),
+                           Context.getLValueReferenceType(LeafType)))
+    return false;
+  const auto *Body = dyn_cast<CompoundStmt>(Method->getBody());
+  if (!Body || Body->size() != 2)
+    return false;
+  auto Statement = Body->body_begin();
+  const auto *Call = dyn_cast<CallExpr>(*Statement++);
+  const auto *Return = dyn_cast<ReturnStmt>(*Statement);
+  const auto *Zero =
+      Return ? dyn_cast_or_null<IntegerLiteral>(
+                   functionalInvokeStrippedExpression(Return->getRetValue()))
+             : nullptr;
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  if (!Call || Call->getNumArgs() != 2 || !Zero || !Zero->getValue().isZero() ||
+      !utilitySwapSDKFunction(S, SM, Function, "swap", "tuple") ||
+      Function->getNumParams() != 2 ||
+      !Function->getReturnType()->isVoidType() ||
+      !utilityCompositeSwapThis(Call->getArg(0), Leaf) ||
+      !functionalInvokeParameterReference(Call->getArg(1),
+                                          Method->getParamDecl(0)))
+    return false;
+  for (const auto *Parameter : Function->parameters())
+    if (!Context.hasSameType(Parameter->getType(),
+                             Context.getLValueReferenceType(LeafType)))
+      return false;
+  const auto *Selected = dyn_cast_or_null<CallExpr>(
+      utilityCompositeSwapOnlyStatement(Function->getBody()));
+  return Selected && Selected->getNumArgs() == 2 &&
+         utilityTupleSwapGet(S, SM, Selected->getArg(0),
+                             Function->getParamDecl(0), Element, Context) &&
+         utilityTupleSwapGet(S, SM, Selected->getArg(1),
+                             Function->getParamDecl(1), Element, Context) &&
+         approvedUtilityPairElementSwap(S, SM, Selected->getDirectCallee(),
+                                        Element->getType(), Context, Depth + 1,
+                                        Proof);
+}
+
+// Clang may represent the explicit leaf projection either directly as a
+// derived-to-base cast, or as a no-op explicit cast around an implicit one.
+// Both forms must select the single authenticated nonvirtual leaf base.
+static bool utilityTupleSwapLeafBase(const CastExpr *Cast,
+                                     const CXXRecordDecl *Leaf,
+                                     const ASTContext &Context) {
+  if (!Cast ||
+      (Cast->getCastKind() != CK_DerivedToBase &&
+       Cast->getCastKind() != CK_UncheckedDerivedToBase) ||
+      Cast->path_size() != 1)
+    return false;
+  const auto *Base = *Cast->path_begin();
+  return !Base->isVirtual() && Base->getAccessSpecifier() == AS_public &&
+         Context.hasSameType(Base->getType(), Context.getRecordType(Leaf));
+}
+
+static bool utilityTupleSwapPeerLeaf(const Expr *Expression,
+                                     const ParmVarDecl *Parameter,
+                                     const CXXRecordDecl *Leaf,
+                                     const ASTContext &Context) {
+  const auto *Explicit = dyn_cast_or_null<CXXStaticCastExpr>(
+      functionalInvokeStrippedExpression(Expression));
+  if (!Explicit || !Explicit->isLValue() ||
+      !Context.hasSameType(Explicit->getType(), Context.getRecordType(Leaf)) ||
+      !Context.hasSameType(
+          Explicit->getTypeAsWritten(),
+          Context.getLValueReferenceType(Context.getRecordType(Leaf))))
+    return false;
+  const CastExpr *BaseCast = Explicit;
+  if (Explicit->getCastKind() == CK_NoOp)
+    BaseCast =
+        dyn_cast<ImplicitCastExpr>(Explicit->getSubExpr()->IgnoreParens());
+  return utilityTupleSwapLeafBase(BaseCast, Leaf, Context) &&
+         functionalInvokeParameterReference(BaseCast->getSubExpr(), Parameter);
+}
+
+static bool utilityTupleSwapThisLeaf(const Expr *Expression,
+                                     const CXXRecordDecl *Impl,
+                                     const CXXRecordDecl *Leaf,
+                                     const ASTContext &Context) {
+  const auto *BaseCast = dyn_cast_or_null<ImplicitCastExpr>(
+      Expression ? Expression->IgnoreParens() : nullptr);
+  return utilityTupleSwapLeafBase(BaseCast, Leaf, Context) &&
+         Context.hasSameType(
+             BaseCast->getType(),
+             Context.getPointerType(Context.getRecordType(Leaf))) &&
+         utilityCompositeSwapThis(BaseCast->getSubExpr(), Impl);
+}
+
+static bool utilityTupleImplSwap(const State &S, const SourceManager &SM,
+                                 const CXXMethodDecl *Method,
+                                 const CXXRecordDecl *Impl,
+                                 const UtilityTupleRecord &Tuple,
+                                 const ASTContext &Context, unsigned Depth,
+                                 UtilitySwapProofContext *Proof) {
+  if (Depth > 64 ||
+      !utilityCompositeSwapMethod(S, SM, Method, "swap", "tuple") ||
+      Method->isStatic() || Method->isConst() || Method->isVolatile() ||
+      Method->getParent()->getCanonicalDecl() != Impl->getCanonicalDecl() ||
+      Method->getNumParams() != 1 || !Method->getReturnType()->isVoidType() ||
+      !Context.hasSameType(
+          Method->getParamDecl(0)->getType(),
+          Context.getLValueReferenceType(Context.getRecordType(Impl))))
+    return false;
+  const auto *Call = dyn_cast_or_null<CallExpr>(
+      utilityCompositeSwapOnlyStatement(Method->getBody()));
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Body =
+      Function ? dyn_cast_or_null<CompoundStmt>(Function->getBody()) : nullptr;
+  if (!Call || Call->getNumArgs() != Tuple.Elements.size() ||
+      !utilitySwapSDKFunction(S, SM, Function, "__swallow", "tuple") ||
+      Function->getNumParams() != Tuple.Elements.size() ||
+      !Function->getReturnType()->isVoidType() || !Body || Body->size())
+    return false;
+  for (unsigned I = 0; I < Tuple.Elements.size(); ++I) {
+    const auto *Element = Tuple.Elements[I];
+    const auto *Leaf = cast<CXXRecordDecl>(Element->getParent());
+    const auto *Selected = dyn_cast_or_null<CXXMemberCallExpr>(
+        functionalInvokeStrippedExpression(Call->getArg(I)));
+    if (!Context.hasSameType(Function->getParamDecl(I)->getType(),
+                             Context.getRValueReferenceType(Context.IntTy)) ||
+        !Selected || Selected->getNumArgs() != 1 ||
+        !utilityTupleSwapThisLeaf(Selected->getImplicitObjectArgument(), Impl,
+                                  Leaf, Context) ||
+        !utilityTupleSwapPeerLeaf(Selected->getArg(0), Method->getParamDecl(0),
+                                  Leaf, Context) ||
+        !utilityTupleLeafSwap(S, SM, Selected->getMethodDecl(), Element,
+                              Context, Depth, Proof))
+      return false;
+  }
+  return true;
+}
+
+static bool
+approvedUtilityTupleSwapBody(const State &S, const SourceManager &SM,
+                             const CXXMethodDecl *Method,
+                             const ASTContext &Context, unsigned Depth = 0,
+                             UtilitySwapProofContext *Proof = nullptr) {
+  UtilitySwapProofContext LocalProof;
+  if (!Proof)
+    Proof = &LocalProof;
+  if (Depth > 64 || !Method || Method->isStatic() || Method->isConst() ||
+      Method->isVolatile() || Method->isVariadic() ||
+      !Method->getIdentifier() || Method->getName() != "swap" ||
+      Method->getNumParams() != 1 || !Method->getReturnType()->isVoidType())
+    return false;
+  auto Tuple = approvedUtilityTupleRecord(S, SM, Method->getParent(), Context);
+  if (!Tuple)
+    Tuple = approvedUtilityReferenceTupleRecord(S, SM, Method->getParent(),
+                                                Context);
+  if (!Tuple)
+    Tuple = approvedUtilityMixedReferenceTupleRecord(S, SM, Method->getParent(),
+                                                     Context);
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Method->getBody());
+  if (!Tuple || !Body ||
+      !Context.hasSameType(
+          Method->getParamDecl(0)->getType(),
+          Context.getLValueReferenceType(Context.getRecordType(Tuple->Record))))
+    return false;
+  // tuple<> is an authenticated explicit SDK class specialization. It has no
+  // instantiated member pattern and performs no element operation.
+  if (Tuple->Elements.empty()) {
+    if (Body->size())
+      return false;
+    for (const auto *Redeclaration : Method->redecls())
+      if (!approvedStandardSDKDeclaration(S, SM, Redeclaration) ||
+          !cstddefOrigin(S, SM, Redeclaration->getLocation(), "libcxx",
+                         "tuple"))
+        return false;
+    return true;
+  }
+  if (!utilityCompositeSwapMethod(S, SM, Method, "swap", "tuple"))
+    return false;
+  const auto *BaseField = *Tuple->Record->field_begin();
+  const auto *Impl = BaseField->getType()->getAsCXXRecordDecl();
+  const auto *Call = dyn_cast_or_null<CXXMemberCallExpr>(
+      utilityCompositeSwapOnlyStatement(Method->getBody()));
+  const auto *Left =
+      Call ? dyn_cast_or_null<MemberExpr>(functionalInvokeStrippedExpression(
+                 Call->getImplicitObjectArgument()))
+           : nullptr;
+  const auto *Right =
+      Call && Call->getNumArgs() == 1
+          ? dyn_cast_or_null<MemberExpr>(
+                functionalInvokeStrippedExpression(Call->getArg(0)))
+          : nullptr;
+  return Left && Right && Left->getMemberDecl() == BaseField &&
+         Right->getMemberDecl() == BaseField && Left->isArrow() &&
+         !Right->isArrow() &&
+         utilityCompositeSwapThis(Left->getBase(), Tuple->Record) &&
+         functionalInvokeParameterReference(Right->getBase(),
+                                            Method->getParamDecl(0)) &&
+         utilityTupleImplSwap(S, SM, Call->getMethodDecl(), Impl, *Tuple,
+                              Context, Depth, Proof);
 }
 
 std::optional<UtilityOperation>
@@ -9950,7 +10728,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       auto Parameter = Method->getParamDecl(0)->getType();
       if (Parameter->isLValueReferenceType() &&
           SameArray(Parameter->getPointeeType()) &&
-          SameArray(Call->getArg(0)->getType()))
+          SameArray(Call->getArg(0)->getType()) &&
+          approvedUtilityArraySwapBody(S, SM, Method, Context))
         return UtilityOperation::ArrayMemberSwap;
     }
   }
@@ -10101,9 +10880,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
             Context.getRecordType(Pair->Record)) &&
         Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
                                        Context.getRecordType(Pair->Record)))
-      if ((!utilityPairSwapNeedsProof(S, SM, FirstType, Context) &&
-           !utilityPairSwapNeedsProof(S, SM, SecondType, Context)) ||
-          approvedUtilityPairSwapBody(S, SM, Method, Context))
+      if (approvedUtilityPairSwapBody(S, SM, Method, Context))
         return UtilityOperation::PairMemberSwap;
   }
   if (const auto *MemberCall = dyn_cast<CXXMemberCallExpr>(Call)) {
@@ -10124,7 +10901,6 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         if (ElementType->isReferenceType())
           ElementType = ElementType->getPointeeType();
         Mutable &= utilityTupleAssignableValue(S, SM, Context, ElementType);
-        Mutable &= !utilityContainsNewPairSwapCarrier(S, SM, ElementType, Context);
       }
     if (Method && Reference && Tuple && Mutable && Method->getIdentifier() &&
         Method->getName() == "swap" && !Method->isStatic() &&
@@ -10137,7 +10913,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
             MemberCall->getImplicitObjectArgument()->getType(),
             Context.getRecordType(Tuple->Record)) &&
         Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
-                                       Context.getRecordType(Tuple->Record)))
+                                       Context.getRecordType(Tuple->Record)) &&
+        approvedUtilityTupleSwapBody(S, SM, Method, Context))
       return UtilityOperation::TupleMemberSwap;
   }
   const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
@@ -12963,7 +13740,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
              ? utilityArrayTriviallyAssignable(Context, Left->ElementType)
              : !Left->ElementType.isConstQualified()) &&
         Same(Call->getArg(0)->getType(), LeftType->getPointeeType()) &&
-        Same(Call->getArg(1)->getType(), RightType->getPointeeType()))
+        Same(Call->getArg(1)->getType(), RightType->getPointeeType()) &&
+        approvedUtilityPairElementSwap(
+            S, SM, Function, Context.getRecordType(Left->Record), Context))
       return UtilityOperation::ArraySwap;
   }
   if (Origin->Path == "array" && Name == "get" &&
@@ -13110,11 +13889,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         utilityPairAssignableValue(S, SM, Context, SecondType) &&
         Same(Call->getArg(0)->getType(), LeftType->getPointeeType()) &&
         Same(Call->getArg(1)->getType(), RightType->getPointeeType()))
-      if ((!utilityPairSwapNeedsProof(S, SM, FirstType, Context) &&
-           !utilityPairSwapNeedsProof(S, SM, SecondType, Context)) ||
-          approvedUtilityPairElementSwap(S, SM, Function,
-                                          Context.getRecordType(Left->Record),
-                                          Context))
+      if (approvedUtilityPairElementSwap(
+              S, SM, Function, Context.getRecordType(Left->Record), Context))
         return UtilityOperation::PairSwap;
   }
   if (Origin->Path == "tuple" && Name == "swap" && Call->getNumArgs() == 2 &&
@@ -13139,13 +13915,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         if (ElementType->isReferenceType())
           ElementType = ElementType->getPointeeType();
         Mutable &= utilityTupleAssignableValue(S, SM, Context, ElementType);
-        Mutable &= !utilityContainsNewPairSwapCarrier(S, SM, ElementType, Context);
       }
     if (LeftType->isLValueReferenceType() &&
         RightType->isLValueReferenceType() && Left && Right && Mutable &&
         Left->Record->getCanonicalDecl() == Right->Record->getCanonicalDecl() &&
         Same(Call->getArg(0)->getType(), LeftType->getPointeeType()) &&
-        Same(Call->getArg(1)->getType(), RightType->getPointeeType()))
+        Same(Call->getArg(1)->getType(), RightType->getPointeeType()) &&
+        approvedUtilityPairElementSwap(
+            S, SM, Function, Context.getRecordType(Left->Record), Context))
       return UtilityOperation::TupleSwap;
   }
   if (Origin->Path == "__utility/pair.h" && Name == "get" &&

@@ -1063,6 +1063,418 @@ int main() {
         check("v2-tuple-like-apply-header-order-reject-" + name, source, code,
               profile="cpp-core-v2", sdk=True)
 
+    def check_pair_array_swap_proof(data):
+        assert any(function["name"] == "main"
+                   for function in data["functions"]), data
+        for node in walk(data["functions"]):
+            assert node.get("op") not in ("mapped_call", "member_pointer"), node
+            if node.get("op") == "assign":
+                assert node["target"]["type"] == node["value"]["type"], node
+
+    pair_array_swap_proof_source = """\
+#include <array>
+#include <functional>
+#include <utility>
+struct Item {
+  int value;
+};
+using Pair = std::pair<Item, int>;
+using Row = std::array<Item, 2>;
+using Grid = std::array<Row, 2>;
+using Zero = std::array<Item, 0>;
+using Wrapped = std::pair<std::reference_wrapper<Item>, Row>;
+int pair_reads;
+int row_reads;
+int wrapper_reads;
+int zero_reads;
+Pair &read_pair(Pair &value) {
+  ++pair_reads;
+  return value;
+}
+Row &read_row(Row &value) {
+  ++row_reads;
+  return value;
+}
+Wrapped &read_wrapper(Wrapped &value) {
+  ++wrapper_reads;
+  return value;
+}
+Zero &read_zero(Zero &value) {
+  ++zero_reads;
+  return value;
+}
+namespace zero_custom {
+struct Record {
+  int value;
+};
+struct Immutable {
+  const int value;
+};
+int calls;
+void swap(Record &, Record &) { ++calls; }
+int run() {
+  std::array<Record, 0> left{}, right{};
+  left.swap(right);
+  std::swap(left, right);
+  std::array<Immutable, 0> first{}, second{};
+  first.swap(second);
+  std::swap(first, second);
+  return calls;
+}
+} // namespace zero_custom
+int reference_order() {
+  int first = 1, second = 2;
+  std::pair<int &, int &> left(first, second), right(second, first);
+  left.swap(right);
+  if (first != 1 || second != 2 || &left.first != &first ||
+      &right.first != &second)
+    return 1;
+  std::swap(left, right);
+  return first != 1 || second != 2;
+}
+int main() {
+  if (zero_custom::run() || reference_order())
+    return 24;
+  Pair a(Item{1}, 2), b(Item{3}, 4);
+  a.swap(b);
+  if (a.first.value != 3 || a.second != 4 || b.first.value != 1 ||
+      b.second != 2)
+    return 1;
+  std::swap(read_pair(a), read_pair(b));
+  if (pair_reads != 2 || a.first.value != 1 || b.first.value != 3)
+    return 2;
+  a.swap(a);
+  if (a.first.value != 1 || a.second != 2)
+    return 3;
+
+  Row x{{Item{5}, Item{6}}}, y{{Item{7}, Item{8}}};
+  x.swap(y);
+  if (x[0].value != 7 || x[1].value != 8 || y[0].value != 5 || y[1].value != 6)
+    return 4;
+  std::swap(read_row(x), read_row(y));
+  if (row_reads != 2 || x[0].value != 5 || y[1].value != 8)
+    return 5;
+  std::swap(x, x);
+  if (x[0].value != 5 || x[1].value != 6)
+    return 6;
+
+  Grid left{{Row{{Item{1}, Item{2}}}, Row{{Item{3}, Item{4}}}}};
+  Grid right{{Row{{Item{5}, Item{6}}}, Row{{Item{7}, Item{8}}}}};
+  left.swap(right);
+  if (left[0][0].value != 5 || left[1][1].value != 8 || right[1][0].value != 3)
+    return 7;
+  std::swap(left, right);
+  if (left[0][1].value != 2 || right[1][1].value != 8)
+    return 8;
+  const Grid &view = left;
+  if (view[1][0].value != 3)
+    return 9;
+
+  std::pair<Pair, Grid> nested_left(a, left), nested_right(b, right);
+  nested_left.swap(nested_right);
+  if (nested_left.first.first.value != 3 ||
+      nested_left.second[1][1].value != 8 ||
+      nested_right.first.first.value != 1 ||
+      nested_right.second[0][0].value != 1)
+    return 10;
+  std::swap(nested_left, nested_right);
+  if (nested_left.first.first.value != 1 || nested_left.second[1][1].value != 4)
+    return 11;
+
+  Item first{11}, second{22};
+  Wrapped wrapped_first(std::ref(first), x),
+      wrapped_second(std::ref(second), y);
+  wrapped_first.swap(wrapped_second);
+  if (&wrapped_first.first.get() != &second ||
+      &wrapped_second.first.get() != &first ||
+      wrapped_first.second[0].value != 7 ||
+      wrapped_second.second[1].value != 6 || first.value != 11 ||
+      second.value != 22)
+    return 12;
+  std::swap(read_wrapper(wrapped_first), read_wrapper(wrapped_second));
+  if (wrapper_reads != 2 || &wrapped_first.first.get() != &first ||
+      &wrapped_second.first.get() != &second ||
+      wrapped_first.second[0].value != 5)
+    return 13;
+  std::swap(wrapped_first, wrapped_first);
+  if (&wrapped_first.first.get() != &first ||
+      wrapped_first.second[1].value != 6)
+    return 14;
+
+  Row rx{{Item{31}, Item{32}}}, ry{{Item{41}, Item{42}}};
+  std::pair<Item &, Row &> references_first(first, rx),
+      references_second(second, ry);
+  references_first.swap(references_second);
+  if (&references_first.first != &first || &references_second.second != &ry ||
+      first.value != 22 || second.value != 11 || rx[1].value != 42 ||
+      ry[0].value != 31)
+    return 15;
+  std::swap(references_first, references_second);
+  if (first.value != 11 || second.value != 22 || rx[0].value != 31 ||
+      ry[1].value != 42)
+    return 16;
+  references_first.swap(references_first);
+  if (&references_first.second != &rx || first.value != 11 || rx[0].value != 31)
+    return 17;
+
+  std::pair<Item &, Row> mixed_first(first, rx), mixed_second(second, ry);
+  mixed_first.swap(mixed_second);
+  if (&mixed_first.first != &first || &mixed_second.first != &second ||
+      first.value != 22 || second.value != 11 ||
+      mixed_first.second[1].value != 42 || mixed_second.second[0].value != 31)
+    return 18;
+  std::swap(mixed_first, mixed_second);
+  if (first.value != 11 || second.value != 22 ||
+      mixed_first.second[0].value != 31)
+    return 19;
+
+  Zero empty_first{}, empty_second{};
+  std::swap(read_zero(empty_first), read_zero(empty_second));
+  if (zero_reads != 2 || empty_first.size() || empty_second.size())
+    return 20;
+  read_zero(empty_first).swap(empty_first);
+  if (zero_reads != 3)
+    return 21;
+  std::array<Zero, 2> empty_rows_first{}, empty_rows_second{};
+  empty_rows_first.swap(empty_rows_second);
+  std::swap(empty_rows_first, empty_rows_second);
+  std::pair<std::reference_wrapper<Item>, Zero> empty_wrapped_first(
+      std::ref(first), empty_first);
+  std::pair<std::reference_wrapper<Item>, Zero> empty_wrapped_second(
+      std::ref(second), empty_second);
+  empty_wrapped_first.swap(empty_wrapped_second);
+  if (&empty_wrapped_first.first.get() != &second ||
+      &empty_wrapped_second.first.get() != &first)
+    return 22;
+  std::swap(empty_wrapped_first, empty_wrapped_second);
+  return &empty_wrapped_first.first.get() == &first && first.value == 11 &&
+                 second.value == 22
+             ? 0
+             : 23;
+}
+"""
+    pair_array_swap_data = check("v2-pair-array-swap-proof", pair_array_swap_proof_source,
+                                profile="cpp-core-v2", sdk=True)
+    check_pair_array_swap_proof(pair_array_swap_data)
+    for target in sdk_targets:
+        data = check("v2-pair-array-swap-proof-" + target, pair_array_swap_proof_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        check_pair_array_swap_proof(data)
+    pair_array_swap_rejections = [
+        ('pair-record-adl-member', """\
+#include <array>
+#include <functional>
+#include <utility>
+namespace custom { struct Row { int value; }; int effects; void swap(Row&, Row&) noexcept { ++effects; } }
+using Value = std::pair<custom::Row, int>;
+void rejected_swap(Value& left, Value& right) { left.swap(right); }
+""", 'TR0203'),
+        ('pair-record-adl-free', """\
+#include <array>
+#include <functional>
+#include <utility>
+namespace custom { struct Row { int value; }; int effects; void swap(Row&, Row&) noexcept { ++effects; } }
+using Value = std::pair<custom::Row, int>;
+void rejected_swap(Value& left, Value& right) { std::swap(left, right); }
+""", 'TR0203'),
+        ('pair-record-reference-adl', """\
+#include <array>
+#include <functional>
+#include <utility>
+namespace custom { struct Row { int value; }; int effects; void swap(Row&, Row&) noexcept { ++effects; } }
+using Value = std::pair<custom::Row&, int&>;
+void rejected_swap(Value& left, Value& right) { left.swap(right); }
+""", 'TR0203'),
+        ('pair-record-mixed-adl', """\
+#include <array>
+#include <functional>
+#include <utility>
+namespace custom { struct Row { int value; }; int effects; void swap(Row&, Row&) noexcept { ++effects; } }
+using Value = std::pair<custom::Row&, int>;
+void rejected_swap(Value& left, Value& right) { left.swap(right); }
+""", 'TR0203'),
+        ('array-record-adl-member', """\
+#include <array>
+#include <functional>
+#include <utility>
+namespace custom { struct Row { int value; }; int effects; void swap(Row&, Row&) noexcept { ++effects; } }
+using Value = std::array<custom::Row, 2>;
+void rejected_swap(Value& left, Value& right) { left.swap(right); }
+""", 'TR0203'),
+        ('array-record-adl-free', """\
+#include <array>
+#include <functional>
+#include <utility>
+namespace custom { struct Row { int value; }; int effects; void swap(Row&, Row&) noexcept { ++effects; } }
+using Value = std::array<custom::Row, 2>;
+void rejected_swap(Value& left, Value& right) { std::swap(left, right); }
+""", 'TR0203'),
+        ('array-nested-record-adl', """\
+#include <array>
+#include <functional>
+#include <utility>
+namespace custom { struct Row { int value; }; int effects; void swap(Row&, Row&) noexcept { ++effects; } }
+using Value = std::array<std::array<custom::Row, 2>, 2>;
+void rejected_swap(Value& left, Value& right) { left.swap(right); }
+""", 'TR0203'),
+        ('pair-wrapper-array-adl', """\
+#include <array>
+#include <functional>
+#include <utility>
+namespace custom { struct Row { int value; }; int effects; void swap(Row&, Row&) noexcept { ++effects; } }
+using Value = std::pair<std::reference_wrapper<int>, std::array<custom::Row, 2>>;
+void rejected_swap(Value& left, Value& right) { left.swap(right); }
+""", 'TR0203'),
+        ('array-pointer-adl', """\
+#include <array>
+#include <functional>
+#include <utility>
+namespace custom { struct Row { int value; }; int effects; void swap(Row*&, Row*&) noexcept { ++effects; } }
+using Value = std::array<custom::Row*, 2>;
+void rejected_swap(Value& left, Value& right) { left.swap(right); }
+""", 'TR0203'),
+        ('array-element-swap-specialization', """\
+#include <array>
+#include <functional>
+#include <utility>
+struct Row { int value; };
+int effects;
+namespace std { inline namespace __1 { template<> void swap<Row>(Row&, Row&) noexcept { ++::effects; } } }
+using Value = std::array<Row, 2>;
+void rejected_swap(Value& left, Value& right) { left.swap(right); }
+""", 'TR0201'),
+        ('array-pointer-move-specialization', """\
+#include <array>
+#include <functional>
+#include <utility>
+struct Row { int value; };
+int effects;
+namespace std { inline namespace __1 { template<> Row*&& move<Row*&>(Row*& value) noexcept { ++::effects; return static_cast<Row*&&>(value); } } }
+using Value = std::array<Row, 2>;
+void rejected_swap(Value& left, Value& right) { left.swap(right); }
+""", 'TR0201'),
+        ('array-pointer-forward-specialization', """\
+#include <array>
+#include <functional>
+#include <utility>
+struct Row { int value; };
+int effects;
+namespace std { inline namespace __1 { template<> Row*&& forward<Row*>(Row*& value) noexcept { ++::effects; return static_cast<Row*&&>(value); } } }
+using Value = std::array<Row, 2>;
+void rejected_swap(Value& left, Value& right) { left.swap(right); }
+""", 'TR0201'),
+        ('array-iterator-forward-specialization', """\
+#include <array>
+#include <functional>
+#include <utility>
+struct Row { int value; };
+int effects;
+namespace std { inline namespace __1 { template<> Row*& forward<Row*&>(Row*& value) noexcept { ++::effects; return value; } } }
+using Value = std::array<Row, 2>;
+void rejected_swap(Value& left, Value& right) { left.swap(right); }
+""", 'TR0201'),
+        ('array-swap-ranges-specialization', """\
+#include <array>
+#include <functional>
+#include <utility>
+struct Row { int value; };
+int effects;
+namespace std { inline namespace __1 { template<> Row* swap_ranges<Row*, Row*>(Row* first, Row*, Row*) { ++::effects; return first; } } }
+using Value = std::array<Row, 2>;
+void rejected_swap(Value& left, Value& right) { left.swap(right); }
+""", 'TR0201'),
+        ('array-iter-swap-specialization', """\
+#include <array>
+#include <functional>
+#include <utility>
+struct Row { int value; };
+int effects;
+namespace std { inline namespace __1 { template<> void iter_swap<Row*, Row*>(Row*, Row*) noexcept { ++::effects; } } }
+using Value = std::array<Row, 2>;
+void rejected_swap(Value& left, Value& right) { left.swap(right); }
+""", 'TR0201'),
+        ('array-data-specialization', """\
+#include <array>
+#include <functional>
+#include <utility>
+struct Row { int value; };
+int effects;
+namespace std { inline namespace __1 { template<> constexpr Row* array<Row, 2>::data() noexcept { return nullptr; } } }
+using Value = std::array<Row, 2>;
+void rejected_swap(Value& left, Value& right) { left.swap(right); }
+""", 'TR0201'),
+        ('array-member-specialization', """\
+#include <array>
+#include <functional>
+#include <utility>
+struct Row { int value; };
+int effects;
+namespace std { inline namespace __1 { template<> void array<Row, 2>::swap(array<Row, 2>&) noexcept { ++::effects; } } }
+using Value = std::array<Row, 2>;
+void rejected_swap(Value& left, Value& right) { left.swap(right); }
+""", 'TR0201'),
+        ('array-policy-iter-swap-specialization', """\
+#include <array>
+#include <functional>
+#include <utility>
+struct Row { int value; };
+int effects;
+namespace std { inline namespace __1 { template<> void _IterOps<_ClassicAlgPolicy>::iter_swap<Row*&, Row*&>(Row*&, Row*&) { ++::effects; } } }
+using Value = std::array<Row, 2>;
+void rejected_swap(Value& left, Value& right) { left.swap(right); }
+""", 'TR0201'),
+        ('array-swap-ranges-redeclaration', """\
+#include <array>
+#include <functional>
+#include <utility>
+struct Row { int value; };
+int effects;
+namespace std { inline namespace __1 { template<class First, class Second> Second swap_ranges(First, First, Second); } }
+using Value = std::array<Row, 2>;
+void rejected_swap(Value& left, Value& right) { left.swap(right); }
+""", 'TR0201'),
+        ('zero-array-volatile-element', """\
+#include <array>
+#include <functional>
+#include <utility>
+using Value = std::array<volatile int, 0>;
+void rejected_swap(Value& left, Value& right) { left.swap(right); }
+""", 'TR0201'),
+        ('zero-array-nontrivial-element', """\
+#include <array>
+#include <functional>
+#include <utility>
+struct Row { Row() {} int value; };
+using Value = std::array<Row, 0>;
+void rejected_swap(Value& left, Value& right) { left.swap(right); }
+""", 'TR0203'),
+        ('array-internal-range-specialization', """\
+#include <array>
+#include <utility>
+struct Row { int value; };
+int effects;
+namespace std { inline namespace __1 {
+template<> pair<Row*,Row*> __swap_ranges<_ClassicAlgPolicy,Row*,Row*,Row*>(Row* a,Row*,Row* b) { ++::effects; return pair<Row*,Row*>(a,b); }
+} }
+using Value=std::array<Row,2>;
+void rejected_swap(Value& left,Value& right){left.swap(right);}
+""", 'TR0201'),
+        ('array-result-constructor-specialization', """\
+#include <array>
+#include <utility>
+struct Row { int value; };
+int effects;
+namespace std { inline namespace __1 {
+template<> template<> constexpr pair<Row*,Row*>::pair(Row*&& a,Row*&& b) noexcept : first(a),second(b) { if (a) ++::effects; }
+} }
+using Value=std::array<Row,2>;
+void rejected_swap(Value& left,Value& right){left.swap(right);}
+""", 'TR0201'),
+    ]
+    for name, source, code in pair_array_swap_rejections:
+        check("v2-pair-array-swap-reject-" + name, source, code,
+              profile="cpp-core-v2", sdk=True)
+
     pair_wrapper_swap_proof_source = """\
 #include <array>
 #include <functional>
@@ -1232,16 +1644,6 @@ void rejected_swap(Value &left, Value &right) {
 namespace custom { struct Box { int value; }; int effects; void swap(std::reference_wrapper<Box>&,std::reference_wrapper<Box>&){++effects;} }
 using Inner=std::pair<std::reference_wrapper<custom::Box>,int>;
 using Value = std::pair<Inner, long>;
-void rejected_swap(Value &left, Value &right) {
-  left.swap(right);
-}
-""", 'TR0203'),
-        ('wrapper-array-sibling', """\
-#include <array>
-#include <functional>
-#include <utility>
-struct Box { int value; };
-using Value = std::pair<std::reference_wrapper<Box>, std::array<int, 2>>;
 void rejected_swap(Value &left, Value &right) {
   left.swap(right);
 }
@@ -2112,6 +2514,279 @@ int main() {
          'TR0201'),
     ):
         check("v2-tuple-like-apply-const-rejected-" + name, source, code,
+              profile="cpp-core-v2", sdk=True)
+
+    # Keep repeated type-DAG and deep-tuple support regressions on the host
+    # protocol; these checks are independent of the eight SDK target layouts.
+    def check_composite_swap_proof_budget(data):
+        assert data["functions"], data
+        for node in walk(data["functions"]):
+            assert node.get("op") not in ("mapped_call", "member_pointer"), node
+            if node.get("op") == "assign":
+                assert node["target"]["type"] == node["value"]["type"], node
+
+    composite_swap_repeated_pair_source = """\
+#include <array>
+#include <tuple>
+#include <utility>
+using P0 = int;
+using P1 = std::pair<P0, P0>;
+using P2 = std::pair<P1, P1>;
+using P3 = std::pair<P2, P2>;
+using P4 = std::pair<P3, P3>;
+using P5 = std::pair<P4, P4>;
+using P6 = std::pair<P5, P5>;
+using P7 = std::pair<P6, P6>;
+int main() {
+  P7 left{}, right{};
+  left.first.first.first.first.first.first.first = 11;
+  left.second.second.second.second.second.second.second = 12;
+  right.first.first.first.first.first.first.first = 21;
+  right.second.second.second.second.second.second.second = 22;
+  left.swap(right);
+  if (left.first.first.first.first.first.first.first != 21 || left.second.second.second.second.second.second.second != 22 ||
+      right.first.first.first.first.first.first.first != 11 || right.second.second.second.second.second.second.second != 12) return 1;
+  std::swap(left, right);
+  if (left.first.first.first.first.first.first.first != 11 || left.second.second.second.second.second.second.second != 12 ||
+      right.first.first.first.first.first.first.first != 21 || right.second.second.second.second.second.second.second != 22) return 2;
+  left.swap(left);
+  return left.first.first.first.first.first.first.first == 11 && left.second.second.second.second.second.second.second == 12 ? 0 : 3;
+}
+"""
+
+    composite_swap_repeated_tuple_source = """\
+#include <array>
+#include <tuple>
+#include <utility>
+using P0 = std::pair<int, int>;
+using P1 = std::pair<P0, P0>;
+using P2 = std::pair<P1, P1>;
+using Row = std::array<int, 2>;
+using Values = std::tuple<P2, P2, Row, Row>;
+int main() {
+  Values left{}, right{};
+  std::get<0>(left).first.first.first = 1;
+  std::get<1>(left).second.second.second = 2;
+  std::get<2>(left)[0] = 3;
+  std::get<3>(left)[1] = 4;
+  std::get<0>(right).first.first.first = 5;
+  std::get<1>(right).second.second.second = 6;
+  std::get<2>(right)[0] = 7;
+  std::get<3>(right)[1] = 8;
+  left.swap(right);
+  if (std::get<0>(left).first.first.first != 5 ||
+      std::get<1>(left).second.second.second != 6 ||
+      std::get<2>(left)[0] != 7 || std::get<3>(left)[1] != 8 ||
+      std::get<0>(right).first.first.first != 1 ||
+      std::get<1>(right).second.second.second != 2 ||
+      std::get<2>(right)[0] != 3 || std::get<3>(right)[1] != 4) return 1;
+  std::swap(left, right);
+  return std::get<0>(left).first.first.first == 1 &&
+         std::get<1>(left).second.second.second == 2 &&
+         std::get<2>(left)[0] == 3 && std::get<3>(left)[1] == 4 ? 0 : 2;
+}
+"""
+
+    composite_swap_deep_tuple_15_source = """\
+#include <array>
+#include <tuple>
+#include <utility>
+using T0 = int;
+using T1 = std::tuple<T0>;
+using T2 = std::tuple<T1>;
+using T3 = std::tuple<T2>;
+using T4 = std::tuple<T3>;
+using T5 = std::tuple<T4>;
+using T6 = std::tuple<T5>;
+using T7 = std::tuple<T6>;
+using T8 = std::tuple<T7>;
+using T9 = std::tuple<T8>;
+using T10 = std::tuple<T9>;
+using T11 = std::tuple<T10>;
+using T12 = std::tuple<T11>;
+using T13 = std::tuple<T12>;
+using T14 = std::tuple<T13>;
+using T15 = std::tuple<T14>;
+using Carrier = std::tuple<T1, T15>;
+void swap_carrier(Carrier& left, Carrier& right) { left.swap(right); }
+"""
+
+    composite_swap_deep_tuple_16_source = """\
+#include <array>
+#include <tuple>
+#include <utility>
+using T0 = int;
+using T1 = std::tuple<T0>;
+using T2 = std::tuple<T1>;
+using T3 = std::tuple<T2>;
+using T4 = std::tuple<T3>;
+using T5 = std::tuple<T4>;
+using T6 = std::tuple<T5>;
+using T7 = std::tuple<T6>;
+using T8 = std::tuple<T7>;
+using T9 = std::tuple<T8>;
+using T10 = std::tuple<T9>;
+using T11 = std::tuple<T10>;
+using T12 = std::tuple<T11>;
+using T13 = std::tuple<T12>;
+using T14 = std::tuple<T13>;
+using T15 = std::tuple<T14>;
+using T16 = std::tuple<T15>;
+using Carrier = std::tuple<T1, T16>;
+void swap_carrier(Carrier& left, Carrier& right) { left.swap(right); }
+"""
+
+    for name, source in (
+        ("repeated-pair-dag", composite_swap_repeated_pair_source),
+        ("repeated-tuple-pair-array-dag", composite_swap_repeated_tuple_source),
+        ("deep-tuple-15", composite_swap_deep_tuple_15_source),
+        ("deep-tuple-16", composite_swap_deep_tuple_16_source),
+    ):
+        data = check("v2-composite-swap-proof-" + name, source,
+                     profile="cpp-core-v2", sdk=True)
+        check_composite_swap_proof_budget(data)
+
+
+    tuple_swap_existing_source = """\
+#include <functional>
+#include <tuple>
+#include <utility>
+struct Box { int value; };
+using W = std::reference_wrapper<Box>;
+using Values = std::tuple<W, int>;
+int receiver_calls;
+int argument_calls;
+Values &receiver(Values &value) { ++receiver_calls; return value; }
+Values &argument(Values &value) { ++argument_calls; return value; }
+int main() {
+  Box first{3}, second{5};
+  Values left(std::ref(first), 7), right(std::ref(second), 11);
+  receiver(left).swap(argument(right));
+  if (receiver_calls != 1 || argument_calls != 1 ||
+      &std::get<0>(left).get() != &second || &std::get<0>(right).get() != &first ||
+      std::get<1>(left) != 11 || std::get<1>(right) != 7 ||
+      first.value != 3 || second.value != 5) return 1;
+  std::swap(receiver(left), argument(right));
+  if (receiver_calls != 2 || argument_calls != 2 ||
+      &std::get<0>(left).get() != &first || std::get<1>(left) != 7) return 2;
+  left.swap(left);
+  if (&std::get<0>(left).get() != &first || std::get<1>(left) != 7) return 3;
+  int a = 1, b = 2, c = 3;
+  std::tuple<int &, int &> refs(a, b), other(b, c);
+  refs.swap(other);
+  if (a != 2 || b != 3 || c != 1 || &std::get<0>(refs) != &a ||
+      &std::get<1>(refs) != &b || &std::get<0>(other) != &b ||
+      &std::get<1>(other) != &c) return 4;
+  refs.swap(refs);
+  if (a != 2 || b != 3 || c != 1) return 5;
+  std::swap(refs, other);
+  if (a != 3 || b != 1 || c != 2) return 6;
+  std::tuple<int &, W, int> mixed(a, std::ref(first), 13),
+      mixed_other(b, std::ref(second), 17);
+  mixed.swap(mixed_other);
+  if (a != 1 || b != 3 || &std::get<0>(mixed) != &a ||
+      &std::get<1>(mixed).get() != &second || std::get<2>(mixed) != 17) return 7;
+  std::swap(mixed, mixed_other);
+  if (a != 3 || b != 1 || &std::get<1>(mixed).get() != &first ||
+      std::get<2>(mixed) != 13) return 8;
+  std::tuple<> empty, other_empty;
+  empty.swap(other_empty);
+  std::swap(empty, other_empty);
+  return first.value == 3 && second.value == 5 ? 0 : 9;
+}
+"""
+
+    tuple_swap_nested_pair_source = """\
+#include <functional>
+#include <tuple>
+#include <utility>
+struct Box { int value; };
+using W = std::reference_wrapper<Box>;
+using P = std::pair<W, int>;
+using T = std::tuple<P, int>;
+int left_calls;
+int right_calls;
+T &left_operand(T &value) { ++left_calls; return value; }
+T &right_operand(T &value) { ++right_calls; return value; }
+int main() {
+  Box first{2}, second{3};
+  P p(std::ref(first), 5), q(std::ref(second), 7);
+  T left(p, 11), right(q, 13);
+  left_operand(left).swap(right_operand(right));
+  if (left_calls != 1 || right_calls != 1 ||
+      &std::get<0>(left).first.get() != &second ||
+      std::get<0>(left).second != 7 || std::get<1>(left) != 13 ||
+      &std::get<0>(right).first.get() != &first || first.value != 2 ||
+      second.value != 3) return 1;
+  std::swap(left_operand(left), right_operand(right));
+  if (left_calls != 2 || right_calls != 2 ||
+      &std::get<0>(left).first.get() != &first ||
+      std::get<0>(left).second != 5 || std::get<1>(left) != 11) return 2;
+  std::tuple<T, P> nested(left, p), nested_other(right, q);
+  nested.swap(nested_other);
+  if (&std::get<0>(std::get<0>(nested)).first.get() != &second ||
+      &std::get<1>(nested).first.get() != &second) return 3;
+  std::swap(nested, nested_other);
+  nested.swap(nested);
+  if (&std::get<0>(std::get<0>(nested)).first.get() != &first ||
+      &std::get<1>(nested).first.get() != &first) return 4;
+  int a = 17, b = 19;
+  std::tuple<P, int &> mixed(p, a), mixed_other(q, b);
+  mixed.swap(mixed_other);
+  if (&std::get<0>(mixed).first.get() != &second ||
+      &std::get<1>(mixed) != &a || a != 19 || b != 17) return 5;
+  std::swap(mixed, mixed_other);
+  return &std::get<0>(mixed).first.get() == &first &&
+         &std::get<1>(mixed) == &a && a == 17 && b == 19 &&
+         first.value == 2 && second.value == 3 ? 0 : 6;
+}
+"""
+
+    def check_tuple_swap(data):
+        assert any(function["name"] == "main"
+                   for function in data["functions"]), data
+        for node in walk(data["functions"]):
+            assert node.get("op") not in ("mapped_call", "member_pointer"), node
+            if node.get("op") == "assign":
+                assert node["target"]["type"] == node["value"]["type"], node
+
+    for target in sdk_targets:
+        data = check("v2-tuple-swap-existing-" + target, tuple_swap_existing_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        check_tuple_swap(data)
+
+    for target in sdk_targets:
+        data = check("v2-tuple-swap-nested-pair-" + target, tuple_swap_nested_pair_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        check_tuple_swap(data)
+
+    tuple_swap_rejections = [
+
+        ('wrapper-adl-member', '#include <functional>\n#include <tuple>\n#include <utility>\nnamespace custom { struct Box { int value; }; void swap(std::reference_wrapper<Box>&, std::reference_wrapper<Box>&) noexcept {} }\nusing T = std::tuple<std::reference_wrapper<custom::Box>, int>;\nvoid rejected(T& left, T& right) { left.swap(right); }\n', 'TR0203'),
+
+        ('wrapper-adl-free', '#include <functional>\n#include <tuple>\n#include <utility>\nnamespace custom { struct Box { int value; }; void swap(std::reference_wrapper<Box>&, std::reference_wrapper<Box>&) noexcept {} }\nusing T = std::tuple<std::reference_wrapper<custom::Box>, int>;\nvoid rejected(T& left, T& right) { std::swap(left, right); }\n', 'TR0203'),
+
+        ('record-reference-adl', '#include <functional>\n#include <tuple>\n#include <utility>\nnamespace custom { struct Box { int value; }; void swap(Box&, Box&) noexcept; }\nusing T = std::tuple<custom::Box&, int>;\nvoid rejected(T& left, T& right) { left.swap(right); }\n', 'TR0203'),
+
+        ('member-specialization', '#include <functional>\n#include <tuple>\n#include <utility>\nstruct Box { int value; };\nusing W = std::reference_wrapper<Box>;\nnamespace std { inline namespace __1 { template<> void tuple<W, int>::swap(tuple<W, int>&) noexcept {} }}\nusing T = std::tuple<W, int>;\nvoid rejected(T& left, T& right) { left.swap(right); }\n', 'TR0201'),
+
+        ('leaf-member-specialization', '#include <functional>\n#include <tuple>\n#include <utility>\nstruct Box { int value; };\nusing W = std::reference_wrapper<Box>;\nnamespace std { inline namespace __1 { template<> constexpr int __tuple_leaf<0, W, false>::swap(__tuple_leaf<0, W, false>&) noexcept { return 0; } }}\nusing T = std::tuple<W, int>;\nvoid rejected(T& left, T& right) { left.swap(right); }\n', 'TR0201'),
+
+        ('leaf-get-specialization', '#include <functional>\n#include <tuple>\n#include <utility>\nstruct Box { int value; };\nusing W = std::reference_wrapper<Box>;\nnamespace std { inline namespace __1 { template<> constexpr W& __tuple_leaf<0, W, false>::get() noexcept { return __value_; } }}\nusing T = std::tuple<W, int>;\nvoid rejected(T& left, T& right) { left.swap(right); }\n', 'TR0201'),
+
+        ('swallow-specialization', '#include <functional>\n#include <tuple>\n#include <utility>\nstruct Box { int value; };\nusing W = std::reference_wrapper<Box>;\nnamespace std { inline namespace __1 { template<> constexpr void __swallow<int, int>(int&&, int&&) noexcept {} }}\nusing T = std::tuple<W, int>;\nvoid rejected(T& left, T& right) { left.swap(right); }\n', 'TR0201'),
+
+        ('swallow-redeclaration', '#include <functional>\n#include <tuple>\n#include <utility>\nstruct Box { int value; };\nusing W = std::reference_wrapper<Box>;\nnamespace std { inline namespace __1 { template<class... T> constexpr void __swallow(T&&...) noexcept; }}\nusing T = std::tuple<W, int>;\nvoid rejected(T& left, T& right) { left.swap(right); }\n', 'TR0201'),
+
+        ('element-swap-specialization', '#include <functional>\n#include <tuple>\n#include <utility>\nstruct Box { int value; };\nusing W = std::reference_wrapper<Box>;\nnamespace std { inline namespace __1 { template<> void swap<W>(W&, W&) noexcept {} }}\nusing T = std::tuple<W, int>;\nvoid rejected(T& left, T& right) { left.swap(right); }\n', 'TR0201'),
+
+        ('element-move-specialization', '#include <functional>\n#include <tuple>\n#include <utility>\nstruct Box { int value; };\nusing W = std::reference_wrapper<Box>;\nnamespace std { inline namespace __1 { template<> W&& move<W&>(W& value) noexcept { return static_cast<W&&>(value); } }}\nusing T = std::tuple<W, int>;\nvoid rejected(T& left, T& right) { left.swap(right); }\n', 'TR0201'),
+
+        ('nested-reference-pair', '#include <functional>\n#include <tuple>\n#include <utility>\nusing P = std::pair<int&, int&>;\nusing T = std::tuple<P, int>;\nvoid rejected(T& left, T& right) { left.swap(right); }\n', 'TR0203'),
+
+    ]
+    for name, source, code in tuple_swap_rejections:
+        check("v2-tuple-swap-reject-" + name, source, code,
               profile="cpp-core-v2", sdk=True)
 
     tuple_tie_source = """\

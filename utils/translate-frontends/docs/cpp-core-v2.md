@@ -202,13 +202,19 @@ copy/move and compatible heterogeneous construction copy the stored
 binding. Assignment copies that binding into the destination wrapper,
 and member/free swap exchanges bindings only when the selected element
 operations are exact implicit instantiations of the pinned SDK swap. Nested
-pair dispatch is authenticated recursively; selected move functions must also
-come from the pinned SDK and copy/move construction and assignment must be
-trivial. These operations do not assign the referred-to objects. User ADL swaps
-and source specializations remain rejected. Wrapper pairs with array siblings
-and tuple/optional swaps containing wrapper-bearing pairs require additional
-internal operation proofs and remain rejected; their storage, construction,
-assignment and checked apply admission are unchanged.
+pair and array dispatch is authenticated recursively; selected move functions
+must also come from the pinned SDK and copy/move construction and assignment
+must be trivial. These operations do not assign the referred-to objects.
+Every supported pair and array swap requires the selected-operation proof,
+including source-record leaves, reference and mixed pairs, and nested arrays.
+Array swap authenticates its data projections, range loop, iterator adapters,
+result-pair construction and the element swap selected after ADL. Wrapper pairs
+with array siblings are supported. Zero-length arrays instantiate no element
+swap and still evaluate both caller operands once; element and source checks
+remain in force. User ADL swaps and source specializations remain rejected.
+Optional swaps containing wrapper-bearing pairs require additional internal
+operation proofs and remain rejected; their storage, construction, assignment
+and checked apply admission are unchanged.
 The wrapper element must retain the exact
 unqualified type for composite construction or assignment. Const wrapper
 fields remain copyable but not assignable, and volatile wrapper fields
@@ -306,6 +312,16 @@ member and free `swap`, `tuple_size`, `tuple_element`, and index-based or
 unique-type `std::get` use the same authenticated records. `get` preserves
 const and lvalue/rvalue reference categories; type selection requires exactly
 one matching element, as in C++17.
+
+Member and free tuple swap authenticate the concrete SDK delegation through
+`__tuple_impl`, each indexed `__tuple_leaf`, its exact value projection and the
+selected element swap. Source ADL functions, source redeclarations and explicit
+specializations of these operations are rejected. This includes wrapper-valued
+elements and nested ordinary pairs containing wrappers: their bindings exchange
+without assigning their referents. Reference elements exchange referent values
+in element order without rebinding, including aliasing and self-swap; both outer
+operands are evaluated once. Nested reference-valued containers remain outside
+the ordinary value carrier boundary. The empty tuple performs no element work.
 
 Exact `std::make_tuple` also unwraps authenticated `ref`/`cref` arguments. A
 result containing both reference and admitted value elements retains reference

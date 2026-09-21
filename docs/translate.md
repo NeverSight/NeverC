@@ -154,9 +154,11 @@ are also admitted as pair fields, including nested pairs. Construction
 and copying retain the wrapped binding; assignment copies bindings without
 assigning the referred-to objects. Member/free swap exchanges wrapper bindings
 only after authenticating both selected element swaps and their nested pair
-operations. User ADL swaps and source specializations remain rejected. Wrapper
-pairs with array siblings, and tuple/optional swaps containing wrapper-bearing
-pairs, require further operation proofs and are rejected.
+or array operations. All supported pair and array swaps, including source-record
+leaves, require this recursive proof. Array siblings are supported; zero-length
+arrays skip element swaps while evaluating both operands once. User ADL swaps
+and source specializations remain rejected. Optional swaps containing
+wrapper-bearing pairs require further operation proofs and are rejected.
 Comparisons with wrapper-valued leaves remain rejected.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#scalar-utilities-and-pairs-from-utility).
 
@@ -187,7 +189,10 @@ referents and use the same heterogeneous scalar leaves as value tuples. Pair
 conversion binds compatible pair fields during construction or writes their
 converted values through destination references during assignment. Member and
 free swap exchange referent values element by element without changing tuple
-bindings. Exact `std::apply` accepts authenticated tuples, value/reference/mixed
+bindings. Every tuple swap authenticates the selected SDK implementation,
+indexed leaf projections and element swaps; ordinary nested pairs containing
+reference wrappers are supported. Wrapper values exchange their bindings, while
+user ADL swaps and source specializations remain rejected. Exact `std::apply` accepts authenticated tuples, value/reference/mixed
 pairs, and arrays whose elements satisfy the existing composite value and
 callback rules. Named functions, stored function pointers, source and standard
 function objects, reference wrappers, source member pointers and `mem_fn`

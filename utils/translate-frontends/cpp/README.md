@@ -241,12 +241,16 @@ reference; recursive composite fields still require the exact unqualified type.
 Authenticated `std::reference_wrapper` values are admitted as ordinary or
 mixed pair value fields, including nested pairs. Construction and copying
 preserve the wrapped binding; assignment copies that binding without
-changing the referred-to object. Member/free swap requires exact SDK element
-swaps, trivial selected copy/move operations and authenticated nested pair
-dispatch. User ADL swaps and source specializations remain rejected. Wrapper
-pairs with array siblings and tuple/optional swaps containing wrapper-bearing
-pairs remain rejected until their internal swap chains are authenticated.
-Const
+changing the referred-to object. Tuple member/free swap authenticates each
+indexed SDK leaf projection and its selected element swap, including nested
+ordinary pairs with wrapper values. Reference tuple elements exchange referent
+values without rebinding; user ADL swaps and source specializations are rejected.
+Pair and array member/free swap require exact SDK element swaps, trivial
+selected copy/move operations and authenticated nested dispatch. Array proofs
+include the range loop and iterator adapters; empty arrays perform no element
+swap. Wrapper pairs with array siblings are supported. User ADL swaps and source
+specializations remain rejected. Optional swaps containing wrapper-bearing pairs
+remain rejected until their internal swap chains are authenticated. Const
 wrapper fields can be copied but not assigned, volatile wrapper fields
 remain excluded, and comparisons involving wrapper-valued leaves remain
 rejected.
