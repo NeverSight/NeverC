@@ -25571,6 +25571,57 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2ReferenceTupleCatRunsAtBothOptimizations) {
+  const auto Source = tmpFile("tuple-cat-references.cpp");
+  const auto Output = tmpFile("tuple-cat-references.nc");
+  writeFile(Source, R"cpp(
+#include <tuple>
+#include <utility>
+int main() {
+  int first = 1;
+  int second = 2;
+  std::tuple<int &, long> mixed(first, 3L);
+  std::pair<int &, short> mixed_pair(second, short(4));
+  std::tuple<int &, int &> references(first, second);
+  auto combined = std::tuple_cat(mixed, mixed_pair, references);
+  if (&std::get<0>(combined) != &first || std::get<1>(combined) != 3 ||
+      &std::get<2>(combined) != &second || std::get<3>(combined) != 4 ||
+      &std::get<4>(combined) != &first ||
+      &std::get<5>(combined) != &second)
+    return 1;
+  std::get<0>(combined) = 5;
+  std::get<2>(combined) = 6;
+  if (first != 5 || second != 6)
+    return 2;
+  mixed_pair.second = 7;
+  if (std::get<3>(combined) != 4)
+    return 3;
+  auto all_references = std::tuple_cat(references);
+  std::get<0>(all_references) = 8;
+  std::get<1>(all_references) = 9;
+  return first == 8 && second == 9 &&
+                 &std::get<0>(all_references) == &first &&
+                 &std::get<1>(all_references) == &second
+             ? 0
+             : 4;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("tuple-cat-references" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2EmptyTupleRunsAtBothOptimizations) {
   const auto Source = tmpFile("tuple-empty.cpp");
   const auto Output = tmpFile("tuple-empty.nc");
@@ -25815,10 +25866,6 @@ TEST_F(TranslateTest, CoreV2TupleRequiresPinnedOperations) {
   };
   const Rejection Cases[] = {
       {"quoted", "#include \"tuple\"\nint main(){return 0;}", "TR0201"},
-      {"reference",
-       "#include <tuple>\nint main(){int n=1;std::tuple<int&>v(n);"
-       "return std::get<0>(v);}",
-       "TR0201"},
       {"nontrivial-record",
        "#include <tuple>\nstruct R{int n;~R(){}};int main(){"
        "std::tuple<R,int>v{R{1},2};return std::get<0>(v).n;}",

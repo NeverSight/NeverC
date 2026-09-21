@@ -1010,12 +1010,15 @@ extern "C" int tuple_reference_construction(int value) {
   int mixed_apply_number = value;
   std::tuple<int &, long> mixed_apply_args(mixed_apply_number, 2L);
   int mixed_applied = std::apply(apply_mixed, mixed_apply_args);
+  auto mixed_concatenated = std::tuple_cat(mixed_direct, mixed_swap_left);
   return value + other + std::get<0>(view) + int(converted) +
          std::get<0>(pair_view) + int(std::get<1>(mixed_factory)) +
          int(std::get<1>(mixed_copy)) + mixed_comparison +
          int(std::get<1>(mixed_swap_left) + std::get<1>(mixed_swap_right)) +
          int(mixed_owned_first == &std::get<0>(mixed_converted)) +
-         int(std::get<1>(mixed_converted)) + mixed_applied;
+         int(std::get<1>(mixed_converted)) + mixed_applied +
+         std::get<0>(mixed_concatenated) +
+         int(std::get<3>(mixed_concatenated));
 }
 """
     tuple_reference_construction = check(

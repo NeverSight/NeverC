@@ -365,11 +365,14 @@ authenticated `std::tuple`, `std::pair` or `std::array` containing admitted
 scalar or recursively composite elements and the selected result is the exact
 concatenated tuple type. Composite elements include source-owned nonempty
 trivial standard-layout records, admitted arrays and pairs, and nonempty nested
-tuples. Zero arguments, empty tuple sources and zero-length array sources are
-included. Mutable or const lvalues and materialized temporaries are accepted.
-Each source expression is evaluated once, all source addresses are captured
-before any element is read, and fields are copied in concatenation order
-without a libc++ tuple-cat helper.
+tuples. Tuple and pair sources may instead contain all-reference or mixed
+reference/value elements; the result retains those declared reference types
+and copies their bindings while independently copying value elements. Zero
+arguments, empty tuple sources and zero-length array sources are included.
+Mutable or const lvalues and materialized temporaries are accepted. Each source
+expression is evaluated once, all source addresses are captured before any
+element is read, and fields are copied in concatenation order without a libc++
+tuple-cat helper.
 
 Two-element tuples also accept admitted scalar or composite `std::pair<U, V>`
 lvalues and rvalues for construction and assignment under the same per-element

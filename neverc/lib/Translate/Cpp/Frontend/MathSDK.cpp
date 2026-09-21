@@ -6801,15 +6801,39 @@ utilityTupleCatSource(const State &S, const SourceManager &SM, QualType Type,
                       const ASTContext &Context) {
   const auto *Record =
       Type.isNull() ? nullptr : Type.getUnqualifiedType()->getAsCXXRecordDecl();
-  if (const auto Tuple = approvedUtilityTupleRecord(S, SM, Record, Context)) {
+  auto Tuple = approvedUtilityTupleRecord(S, SM, Record, Context);
+  bool ReferenceTuple = false;
+  if (!Tuple) {
+    Tuple = approvedUtilityReferenceTupleRecord(S, SM, Record, Context);
+    ReferenceTuple = Tuple.has_value();
+  }
+  bool MixedReferenceTuple = false;
+  if (!Tuple) {
+    Tuple = approvedUtilityMixedReferenceTupleRecord(S, SM, Record, Context);
+    MixedReferenceTuple = Tuple.has_value();
+  }
+  if (Tuple) {
     for (const auto *Element : Tuple->Elements)
-      if (!utilityTupleValue(S, SM, Context, Element->getType()))
+      if (!ReferenceTuple && !MixedReferenceTuple &&
+          !utilityTupleValue(S, SM, Context, Element->getType()))
         return std::nullopt;
     return UtilityTupleCatSource{Tuple->Elements, nullptr, {}, 0};
   }
-  if (const auto Pair = approvedUtilityPairRecord(S, SM, Record, Context)) {
-    if (!utilityTupleValue(S, SM, Context, Pair->First->getType()) ||
-        !utilityTupleValue(S, SM, Context, Pair->Second->getType()))
+  auto Pair = approvedUtilityPairRecord(S, SM, Record, Context);
+  bool ReferencePair = false;
+  if (!Pair) {
+    Pair = approvedUtilityReferencePairRecord(S, SM, Record, Context);
+    ReferencePair = Pair.has_value();
+  }
+  bool MixedReferencePair = false;
+  if (!Pair) {
+    Pair = approvedUtilityMixedReferencePairRecord(S, SM, Record, Context);
+    MixedReferencePair = Pair.has_value();
+  }
+  if (Pair) {
+    if (!ReferencePair && !MixedReferencePair &&
+        (!utilityTupleValue(S, SM, Context, Pair->First->getType()) ||
+         !utilityTupleValue(S, SM, Context, Pair->Second->getType())))
       return std::nullopt;
     return UtilityTupleCatSource{{Pair->First, Pair->Second}, nullptr, {}, 0};
   }
@@ -6845,8 +6869,14 @@ approvedUtilityTupleCatCall(const State &S, const SourceManager &SM,
       !approvedUtilityReference(S, SM, Call, Function))
     return std::nullopt;
 
-  const auto Result = approvedUtilityTupleRecord(
+  auto Result = approvedUtilityTupleRecord(
       S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
+  if (!Result)
+    Result = approvedUtilityReferenceTupleRecord(
+        S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
+  if (!Result)
+    Result = approvedUtilityMixedReferenceTupleRecord(
+        S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
   if (!Result)
     return std::nullopt;
   if (!Call->getNumArgs()) {

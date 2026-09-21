@@ -173,9 +173,10 @@ bindings. Exact
 pointers with directly convertible by-value scalar parameters and a scalar or
 void result. The callable and tuple are evaluated once and lower to an ordinary
 indirect call, without a libc++ runtime dependency. Exact `tuple_cat` accepts
-zero arguments or scalar and recursively composite tuple, pair and array
-sources, evaluates all sources once before reading their elements, and
-constructs the exact concatenated tuple directly. Source and standard function
+zero arguments or value, reference and mixed-reference tuple/pair sources plus
+scalar and recursively composite arrays, evaluates all sources once before
+reading their elements, and constructs the exact concatenated tuple directly
+while preserving reference bindings. Source and standard function
 objects, reference wrappers, member pointers and `mem_fn` wrappers use the same
 authenticated tuple lowering with the documented value/reference boundary.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#value-tuples-from-tuple).

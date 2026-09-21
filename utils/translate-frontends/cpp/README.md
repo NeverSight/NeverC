@@ -271,9 +271,11 @@ lvalue or rvalue reference parameters bind the corresponding tuple elements,
 reference results preserve their source storage and qualification, and function
 objects preserve their selected cv/ref-qualified `operator()` overload. Exact
 `tuple_cat` handles zero arguments and authenticated scalar or recursively
-composite tuple, pair or array sources,
+composite tuple, pair or array sources, including all-reference and mixed
+reference/value tuple or pair elements,
 evaluating every source once before copying elements into the exact
-concatenated tuple. Array directly lowers nonempty fixed scalar, trivial-record
+concatenated tuple while preserving reference bindings. Array directly lowers
+nonempty fixed scalar, trivial-record
 and nested-array storage, iterators, element access, fill, swap, scalar and
 recursive nested-array comparisons and tuple access.
 Initializer-list objects retain libc++'s authenticated pointer-and-size view.
