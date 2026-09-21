@@ -136,7 +136,9 @@ referent values without changing pair bindings. Compatible converting
 construction binds source pair fields, while heterogeneous assignment converts
 field values before writing through destination references. `make_pair` unwraps
 authenticated `ref`/`cref` arguments into the corresponding reference fields,
-including one-reference/one-value results with public field access.
+including one-reference/one-value results. Mixed reference/value pairs also
+support exact compatible direct construction, same-type copy/move construction,
+public field access and index- or unique-type `get`.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#scalar-utilities-and-pairs-from-utility).
 
 Core v2 accepts authenticated empty and nonempty `<tuple>` values, including

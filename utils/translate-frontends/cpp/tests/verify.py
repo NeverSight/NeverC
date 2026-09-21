@@ -473,6 +473,10 @@ extern "C" int pair_reference(int value) {
   auto mixed_factory = std::make_pair(std::ref(value), source_value);
   mixed_factory.first += 1;
   mixed_factory.second += 1;
+  std::pair<int &, long> mixed_direct(value, long(source_value));
+  std::get<0>(mixed_direct) += 1;
+  std::get<long>(mixed_direct) += 1;
+  const auto mixed_copy(mixed_direct);
   std::pair<int &&, Box &&> rvalues(static_cast<int &&>(value),
                                     static_cast<Box &&>(box));
   std::get<0>(rvalues) += 4;
@@ -482,7 +486,7 @@ extern "C" int pair_reference(int value) {
   std::pair<int &, int &> reference_right(compare_right, source_value);
   std::pair<short, long> comparison_value(short(compare_right), source_value);
   return value + box.value + owned_view.first + source_view.first +
-         int(converted_first + converted_second) +
+         int(converted_first + converted_second + mixed_copy.second) +
          (reference_left == reference_right) +
          (reference_left != reference_right) +
          (reference_left < comparison_value) +

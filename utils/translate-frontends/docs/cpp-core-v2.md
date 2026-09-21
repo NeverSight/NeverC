@@ -214,8 +214,11 @@ bindings. Exact `make_pair` calls unwrap authenticated `ref`/`cref` arguments,
 copy their stored pointers into the resulting lvalue-reference fields and
 preserve const qualification. A result with exactly one such argument retains
 its other admitted value field and supports ordinary public `first`/`second`
-access. Construction outside the factory, assignment, comparison, swap and
-`get` for these mixed reference/value pairs remain outside this increment.
+access. These mixed reference/value pairs also admit exact compatible direct
+construction, same-type trivial copy/move construction and index- or
+unique-type `get`; reference fields retain their bindings while value fields
+retain ordinary pair value semantics. Assignment, comparison, swap and
+converting construction for mixed pairs remain outside this increment.
 
 All six C++17 comparisons recurse through authenticated arrays and nested pairs
 and compare their scalar leaves in lexicographic order. Corresponding scalar
