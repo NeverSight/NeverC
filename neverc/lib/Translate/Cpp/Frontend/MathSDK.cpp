@@ -7762,8 +7762,15 @@ approvedFunctionalUserInvokeCall(const State &S, const SourceManager &SM,
                                     false};
 }
 
-std::optional<FunctionalMemberInvokeCall>
-approvedUtilityTupleApplyUserCall(const State &S, const SourceManager &SM,
+struct UtilityTupleApplyDispatch {
+  UtilityTupleRecord Tuple;
+  const FunctionDecl *Function;
+  const FunctionDecl *DispatchFunction;
+  const CXXOperatorCallExpr *Operation;
+};
+
+static std::optional<UtilityTupleApplyDispatch>
+approvedUtilityTupleApplyDispatch(const State &S, const SourceManager &SM,
                                   const CallExpr *Call,
                                   const ASTContext &Context) {
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
@@ -7780,19 +7787,11 @@ approvedUtilityTupleApplyUserCall(const State &S, const SourceManager &SM,
           ? Call->getArg(1)->getType()->getAsCXXRecordDecl()
           : nullptr,
       Context);
-  const auto ObjectType =
-      Call && Call->getNumArgs() == 2 ? Call->getArg(0)->getType() : QualType();
-  const auto *ObjectRecord =
-      ObjectType.isNull() ? nullptr : ObjectType->getAsCXXRecordDecl();
-  const auto *Definition =
-      ObjectRecord ? ObjectRecord->getDefinition() : nullptr;
   if (!Call || Call->getNumArgs() != 2 || !Function || !Primary || !Pattern ||
       !Origin || Origin->Root != "libcxx" || Origin->Path != "tuple" ||
       !Function->getIdentifier() || Function->getName() != "apply" ||
       Function->isVariadic() || Function->getNumParams() != 2 ||
       !Function->hasBody() || !Pattern->hasBody() || !Reference || !Tuple ||
-      !Definition || !S.owns(SM, Definition->getLocation()) ||
-      ObjectType.isVolatileQualified() ||
       !approvedStandardSDKDeclaration(S, SM, Function) ||
       !approvedStandardSDKDeclaration(S, SM, Primary) ||
       !approvedStandardSDKDeclaration(S, SM, Pattern) ||
@@ -7907,6 +7906,29 @@ approvedUtilityTupleApplyUserCall(const State &S, const SourceManager &SM,
                                     functionalInvokeStrippedExpression(
                                         DispatchReturn->getRetValue()))
                               : nullptr;
+  if (!Operation)
+    return std::nullopt;
+  return UtilityTupleApplyDispatch{*Tuple, Function, DispatchFunction, Operation};
+}
+
+std::optional<FunctionalMemberInvokeCall>
+approvedUtilityTupleApplyUserCall(const State &S, const SourceManager &SM,
+                                  const CallExpr *Call,
+                                  const ASTContext &Context) {
+  const auto Apply = approvedUtilityTupleApplyDispatch(S, SM, Call, Context);
+  if (!Apply)
+    return std::nullopt;
+  const auto *Tuple = &Apply->Tuple;
+  const auto *Function = Apply->Function;
+  const auto *DispatchFunction = Apply->DispatchFunction;
+  const auto *Operation = Apply->Operation;
+  const auto ObjectType = Call->getArg(0)->getType();
+  const auto *ObjectRecord = ObjectType->getAsCXXRecordDecl();
+  const auto *Definition =
+      ObjectRecord ? ObjectRecord->getDefinition() : nullptr;
+  if (!Definition || !S.owns(SM, Definition->getLocation()) ||
+      ObjectType.isVolatileQualified())
+    return std::nullopt;
   const auto *Method = dyn_cast_or_null<CXXMethodDecl>(
       Operation ? Operation->getDirectCallee() : nullptr);
   if (!Operation || !Method || Method->getOverloadedOperator() != OO_Call ||
@@ -7971,6 +7993,32 @@ approvedUtilityTupleApplyUserCall(const State &S, const SourceManager &SM,
   return FunctionalMemberInvokeCall{
       Call->getArg(0), Call->getArg(0), Method,       nullptr,
       nullptr,         nullptr,         std::nullopt, false};
+}
+
+std::optional<FunctionalOperationInfo>
+approvedUtilityTupleApplyObjectOperation(const State &S,
+                                         const SourceManager &SM,
+                                         const CallExpr *Call,
+                                         const ASTContext &Context) {
+  const auto Apply = approvedUtilityTupleApplyDispatch(S, SM, Call, Context);
+  if (!Apply)
+    return std::nullopt;
+  auto Operation = approvedFunctionalOperationImpl(
+      S, SM, Apply->Operation, Context, false);
+  const bool Unary = Operation && Operation->RightType.isNull();
+  const unsigned Arity = Unary ? 1u : 2u;
+  if (!Operation || Apply->Tuple.Elements.size() != Arity ||
+      Apply->Operation->getNumArgs() != Arity + 1 ||
+      !Context.hasSameType(Operation->ResultType,
+                           Apply->Function->getReturnType()) ||
+      !Context.hasSameType(Operation->ResultType, Call->getType()))
+    return std::nullopt;
+  for (unsigned I = 0; I < Arity; ++I)
+    if (!utilityScalarDirectConversion(
+            Context, Apply->Tuple.Elements[I]->getType(),
+            Apply->Operation->getArg(I + 1)->getType()))
+      return std::nullopt;
+  return Operation;
 }
 
 static std::optional<FunctionalReferenceInvokeCall>
@@ -11522,6 +11570,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto Callable = Call->getArg(0)->getType();
     const auto UserCallable =
         approvedUtilityTupleApplyUserCall(S, SM, Call, Context);
+    const auto ObjectOperation =
+        approvedUtilityTupleApplyObjectOperation(S, SM, Call, Context);
     const auto *Prototype =
         Callable->isFunctionType() ? Callable->getAs<FunctionProtoType>()
         : Callable->isFunctionPointerType()
@@ -11533,21 +11583,24 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto Result =
         Prototype ? Prototype->getReturnType()
                   : UserCallable ? UserCallable->Method->getReturnType()
-                                 : QualType();
+                  : ObjectOperation ? ObjectOperation->ResultType
+                                    : QualType();
+    const unsigned Arity =
+        Prototype ? Prototype->getNumParams()
+        : UserCallable ? UserCallable->Method->getNumParams()
+        : ObjectOperation ? (ObjectOperation->RightType.isNull() ? 1u : 2u)
+                          : 0u;
     const bool ReferenceResult =
         !Result.isNull() && Result->isReferenceType();
     const auto Referent =
         ReferenceResult ? Result->getPointeeType() : QualType();
-    if ((!Prototype && !UserCallable) ||
+    if ((!Prototype && !UserCallable && !ObjectOperation) ||
         (Prototype && Prototype->isVariadic()) ||
         !CallableParameter->isReferenceType() ||
         !Same(CallableParameter->getPointeeType(), Callable) ||
         !TupleParameter->isReferenceType() ||
         !Same(TupleParameter->getPointeeType(), Call->getArg(1)->getType()) ||
-        !Tuple ||
-        (Prototype ? Prototype->getNumParams()
-                   : UserCallable->Method->getNumParams()) !=
-            Tuple->Elements.size() ||
+        !Tuple || Arity != Tuple->Elements.size() ||
         !Same(Result, Function->getReturnType()) ||
         (ReferenceResult
              ? (!supportedFunctionalInvokeReference(S, SM, Context, Referent) ||
@@ -11562,6 +11615,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                             Function->getReturnType())))))
       return std::nullopt;
     for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
+      if (ObjectOperation)
+        continue;
       const auto Element = Tuple->Elements[I]->getType();
       const auto Parameter =
           Prototype ? Prototype->getParamType(I)

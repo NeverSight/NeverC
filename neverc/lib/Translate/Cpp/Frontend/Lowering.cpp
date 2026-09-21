@@ -6813,6 +6813,27 @@ class FunctionLowering {
     case UtilityOperation::TupleApply: {
       auto Tuple = TupleFor(Call->getArg(1)->getType());
       auto CallableType = Call->getArg(0)->getType();
+      const auto ObjectOperation = approvedUtilityTupleApplyObjectOperation(
+          A.S, A.Sources, Call, A.Context);
+      if (ObjectOperation) {
+        const bool Unary = ObjectOperation->RightType.isNull();
+        if (!Tuple || Tuple->Elements.size() != (Unary ? 1u : 2u) ||
+            Destination)
+          reject(L, "utility tuple apply",
+                 "The selected standard function object is unavailable.");
+        discardFunctionalObject(Call->getArg(0));
+        auto TupleAddress = snapshot(
+            address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
+        auto TupleValue = dereference(std::move(TupleAddress), L);
+        auto Left = snapshot(
+            fieldStorage(json::Object(TupleValue), Tuple->Elements[0], L), L);
+        std::optional<Expression> Right;
+        if (!Unary)
+          Right = snapshot(
+              fieldStorage(std::move(TupleValue), Tuple->Elements[1], L), L);
+        return functionalOperationValues(L, std::move(Left), std::move(Right),
+                                         *ObjectOperation);
+      }
       const auto UserCallable =
           approvedUtilityTupleApplyUserCall(A.S, A.Sources, Call, A.Context);
       const auto *Prototype =

@@ -23804,6 +23804,60 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2TupleApplyStandardObjectsRunAtBothOptimizations) {
+  const auto Source = tmpFile("tuple-apply-standard-objects.cpp");
+  const auto Output = tmpFile("tuple-apply-standard-objects.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <tuple>
+int effects;
+std::plus<int> &plus_object(std::plus<int> &value) {
+  ++effects;
+  return value;
+}
+std::tuple<int, int> &values(std::tuple<int, int> &value) {
+  ++effects;
+  return value;
+}
+int main() {
+  std::plus<int> plus;
+  std::tuple<int, int> pair(3, 4);
+  effects = 0;
+  if (std::apply(plus_object(plus), values(pair)) != 7 || effects != 2)
+    return 1;
+  if (std::apply(std::multiplies<>{},
+                 std::make_tuple(short(3), 2.5)) != 7.5)
+    return 2;
+  if (!std::apply(std::less<>{}, std::make_tuple(2u, 3.0)))
+    return 3;
+  if (std::apply(std::negate<int>{}, std::make_tuple(5)) != -5)
+    return 4;
+  if (!std::apply(std::logical_not<>{}, std::make_tuple(0)))
+    return 5;
+  if (std::apply(std::hash<int>{}, std::make_tuple(7)) != 7)
+    return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("__apply_tuple_impl"), std::string::npos);
+  EXPECT_EQ(Text.find("mapped_call"), std::string::npos);
+  EXPECT_EQ(Text.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("tuple-apply-standard-objects" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2TupleCatRunsAtBothOptimizations) {
   const auto Source = tmpFile("tuple-cat.cpp");
   const auto Output = tmpFile("tuple-cat.nc");
@@ -24165,10 +24219,6 @@ TEST_F(TranslateTest, CoreV2TupleRequiresPinnedOperations) {
        "#include <tuple>\nint take(int*p){return p!=nullptr;}int main(){"
        "return std::apply(take,std::make_tuple(1));}",
        "TR0202"},
-      {"apply-sdk-callable-object",
-       "#include <functional>\n#include <tuple>\nint main(){return "
-       "std::apply(std::plus<int>{},std::make_tuple(1,2));}",
-       "TR0203"},
   };
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);

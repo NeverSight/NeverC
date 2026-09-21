@@ -700,6 +700,28 @@ extern "C" int tuple_apply_callable(int value) {
               tuple_apply_callable_source, profile="cpp-core-v2",
               target=target, sdk=True)
 
+    tuple_apply_standard_source = """\
+#include <functional>
+#include <tuple>
+extern "C" int tuple_apply_standard(int value) {
+  int result = std::apply(std::plus<int>{}, std::make_tuple(value, 3));
+  result += std::apply(std::negate<int>{}, std::make_tuple(value));
+  result += std::apply(std::less<>{}, std::make_tuple(value, 9.0));
+  result += int(std::apply(std::hash<int>{}, std::make_tuple(value)));
+  return result;
+}
+"""
+    tuple_apply_standard = check(
+        "v2-tuple-apply-standard", tuple_apply_standard_source,
+        profile="cpp-core-v2", sdk=True)
+    assert not [node for node in walk(tuple_apply_standard["functions"])
+                if node.get("op") in ("call", "indirect_call", "mapped_call")], \
+        tuple_apply_standard
+    for target in sdk_targets:
+        check("v2-tuple-apply-standard-" + target,
+              tuple_apply_standard_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+
     tuple_pair_source = """\
 #include <tuple>
 #include <utility>
@@ -843,9 +865,6 @@ extern "C" int tuple_composite() {
         ("apply-incompatible-parameter",
          '#include <tuple>\nint take(int*p){return p!=nullptr;}int main(){return std::apply(take,std::make_tuple(1));}',
          "TR0202"),
-        ("apply-sdk-callable-object",
-         '#include <functional>\n#include <tuple>\nint main(){return std::apply(std::plus<int>{},std::make_tuple(1,2));}',
-         "TR0203"),
     ):
         check("v2-tuple-" + name, source, code,
               profile="cpp-core-v2", sdk=True)
