@@ -661,6 +661,7 @@ enum class UtilityOperation {
   PairGetFirst,
   PairGetSecond,
   MakeTuple,
+  Tie,
   TupleApply,
   TupleCat,
   TupleSwap,
@@ -887,6 +888,9 @@ std::optional<UtilityTupleRecord>
 approvedUtilityTupleRecord(const State &S, const clang::SourceManager &SM,
                            const clang::CXXRecordDecl *Record,
                            const clang::ASTContext &Context);
+std::optional<UtilityTupleRecord> approvedUtilityReferenceTupleRecord(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
 enum class UtilityTupleConstruction {
   Default,
   Elements,

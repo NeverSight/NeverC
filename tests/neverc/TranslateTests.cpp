@@ -23736,6 +23736,66 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2TieGetAndApplyRunAtBothOptimizations) {
+  const auto Source = tmpFile("tuple-tie.cpp");
+  const auto Output = tmpFile("tuple-tie.nc");
+  writeFile(Source, R"cpp(
+#include <tuple>
+struct Record { int value; };
+int effects;
+int &select(int &value) {
+  ++effects;
+  return value;
+}
+int update(int &left, double &right) {
+  left += int(right);
+  right += 0.5;
+  return left;
+}
+int read(int left, const int &right) { return left + right; }
+int update_record(Record &record) { return ++record.value; }
+int main() {
+  int left = 2;
+  double right = 3.0;
+  effects = 0;
+  auto tied = std::tie(select(left), right);
+  if (effects != 1 || &std::get<0>(tied) != &left ||
+      &std::get<double &>(tied) != &right)
+    return 1;
+  std::get<0>(tied) = 4;
+  if (left != 4 || std::apply(update, tied) != 7 || left != 7 || right != 3.5)
+    return 2;
+  const auto constant_tuple = std::tie(left, right);
+  std::get<0>(constant_tuple) = 8;
+  if (left != 8)
+    return 3;
+  const int constant = 5;
+  if (std::apply(read, std::tie(left, constant)) != 13)
+    return 4;
+  Record record{9};
+  auto record_tuple = std::tie(record);
+  if (std::apply(update_record, record_tuple) != 10 || record.value != 10 ||
+      &std::get<0>(record_tuple) != &record)
+    return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("__apply_tuple_impl"), std::string::npos);
+  EXPECT_EQ(Text.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("tuple-tie" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2TupleApplyCallableObjectsRunAtBothOptimizations) {
   const auto Source = tmpFile("tuple-apply-callable-objects.cpp");
   const auto Output = tmpFile("tuple-apply-callable-objects.nc");

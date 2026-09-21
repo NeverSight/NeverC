@@ -130,15 +130,18 @@ remain rejected.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#scalar-utilities-and-pairs-from-utility).
 
 Core v2 accepts authenticated empty and nonempty `<tuple>` values, including
-construction, assignment, factories, swaps, comparisons and `get`. Exact
+construction, assignment, factories, swaps, comparisons and `get`. `std::tie`
+creates authenticated reference tuples whose `get` and `apply` operations
+preserve aliases and write through to the bound objects. Exact
 `std::apply` calls over scalar tuples accept named functions or stored function
 pointers with directly convertible by-value scalar parameters and a scalar or
 void result. The callable and tuple are evaluated once and lower to an ordinary
 indirect call, without a libc++ runtime dependency. Exact `tuple_cat` accepts
 zero arguments or scalar and recursively composite tuple, pair and array
 sources, evaluates all sources once before reading their elements, and
-constructs the exact concatenated tuple directly. Callable objects and
-reference or record callback parameters remain rejected.
+constructs the exact concatenated tuple directly. Source and standard function
+objects, reference wrappers, member pointers and `mem_fn` wrappers use the same
+authenticated tuple lowering with the documented value/reference boundary.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#value-tuples-from-tuple).
 
 Core v2 type metadata now accepts owned incomplete non-union classes, including forward declarations and uninstantiated template types. Classification and array dimensions retain exact source identity without generating record storage; runtime carriers and callbacks still require complete admitted types. Reference/pointer operation queries can use these identities with exact retained source proof; selected lazy method return signatures keep their complete-carrier checks. Native verification requires the implementing revision’s CI. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#incomplete-record-type-metadata).

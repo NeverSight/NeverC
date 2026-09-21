@@ -1454,9 +1454,19 @@ class FunctionLowering {
           A.Context);
     };
     auto TupleFor = [&](QualType Type) {
-      return approvedUtilityTupleRecord(
-          A.S, A.Sources, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(),
-          A.Context);
+      const auto *Record =
+          Type.isNull() ? nullptr : Type->getAsCXXRecordDecl();
+      auto Tuple = approvedUtilityTupleRecord(A.S, A.Sources, Record, A.Context);
+      if (!Tuple)
+        Tuple = approvedUtilityReferenceTupleRecord(A.S, A.Sources, Record,
+                                                    A.Context);
+      return Tuple;
+    };
+    auto TupleElement = [&](Expression Base, const FieldDecl *Field) {
+      auto Element = fieldStorage(std::move(Base), Field, L);
+      return Field->getType()->isReferenceType()
+                 ? dereference(std::move(Element), L)
+                 : std::move(Element);
     };
     auto MemberObject = [&]() -> const Expr * {
       if (const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call))
@@ -6758,6 +6768,22 @@ class FunctionLowering {
                    Call->getArg(I), L);
       return Place;
     }
+    case UtilityOperation::Tie: {
+      auto Tuple = approvedUtilityReferenceTupleRecord(
+          A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+      if (!Tuple || Call->getNumArgs() != Tuple->Elements.size())
+        reject(L, "utility tie",
+               "The selected reference std::tuple layout is unavailable.");
+      auto Place = Destination ? std::move(*Destination)
+                               : objectTemporary(Call->getType(), L);
+      if (Place.getString("type") != type(Call->getType(), L))
+        reject(L, "utility tie",
+               "The std::tie destination type differs from its result.");
+      for (unsigned I = 0; I < Tuple->Elements.size(); ++I)
+        assign(fieldStorage(json::Object(Place), Tuple->Elements[I], L),
+               bind(Call->getArg(I), Tuple->Elements[I]->getType()), L);
+      return Place;
+    }
     case UtilityOperation::TupleCat: {
       auto Cat = approvedUtilityTupleCatCall(A.S, A.Sources, Call, A.Context);
       if (!Cat)
@@ -6822,8 +6848,8 @@ class FunctionLowering {
         auto TupleAddress = snapshot(
             address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
         auto TupleValue = dereference(std::move(TupleAddress), L);
-        auto ReceiverStorage = fieldStorage(
-            json::Object(TupleValue), Tuple->Elements.front(), L);
+        auto ReceiverStorage = TupleElement(
+            json::Object(TupleValue), Tuple->Elements.front());
         Expression Receiver;
         if (MemberCallable->ObjectWrapper) {
           Receiver = snapshot(
@@ -6865,8 +6891,8 @@ class FunctionLowering {
               L));
           for (unsigned I = 0; I < Method->getNumParams(); ++I) {
             const auto Parameter = Method->getParamDecl(I)->getType();
-            auto Element = fieldStorage(json::Object(TupleValue),
-                                        Tuple->Elements[I + 1], L);
+            auto Element = TupleElement(json::Object(TupleValue),
+                                        Tuple->Elements[I + 1]);
             if (Parameter->isReferenceType()) {
               auto Pointer =
                   address(std::move(Element), Parameter->getPointeeType(), L);
@@ -6924,11 +6950,11 @@ class FunctionLowering {
             reject(L, "utility tuple apply",
                    "The referenced function object arity differs from the tuple.");
           auto Left = snapshot(
-              fieldStorage(json::Object(TupleValue), Tuple->Elements[0], L), L);
+              TupleElement(json::Object(TupleValue), Tuple->Elements[0]), L);
           std::optional<Expression> Right;
           if (!Unary)
             Right = snapshot(
-                fieldStorage(std::move(TupleValue), Tuple->Elements[1], L), L);
+                TupleElement(std::move(TupleValue), Tuple->Elements[1]), L);
           return functionalOperationValues(
               L, std::move(Left), std::move(Right),
               *ReferenceCallable->Operation);
@@ -6956,7 +6982,7 @@ class FunctionLowering {
           const auto Parameter = Method ? Method->getParamDecl(I)->getType()
                                         : Prototype->getParamType(I);
           auto Element =
-              fieldStorage(json::Object(TupleValue), Tuple->Elements[I], L);
+              TupleElement(json::Object(TupleValue), Tuple->Elements[I]);
           if (Parameter->isReferenceType()) {
             auto Pointer =
                 address(std::move(Element), Parameter->getPointeeType(), L);
@@ -7033,11 +7059,11 @@ class FunctionLowering {
             address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
         auto TupleValue = dereference(std::move(TupleAddress), L);
         auto Left = snapshot(
-            fieldStorage(json::Object(TupleValue), Tuple->Elements[0], L), L);
+            TupleElement(json::Object(TupleValue), Tuple->Elements[0]), L);
         std::optional<Expression> Right;
         if (!Unary)
           Right = snapshot(
-              fieldStorage(std::move(TupleValue), Tuple->Elements[1], L), L);
+              TupleElement(std::move(TupleValue), Tuple->Elements[1]), L);
         return functionalOperationValues(L, std::move(Left), std::move(Right),
                                          *ObjectOperation);
       }
@@ -7075,7 +7101,7 @@ class FunctionLowering {
         const auto Parameter = Prototype ? Prototype->getParamType(I)
                                          : Method->getParamDecl(I)->getType();
         auto Element =
-            fieldStorage(json::Object(TupleValue), Tuple->Elements[I], L);
+            TupleElement(json::Object(TupleValue), Tuple->Elements[I]);
         if (Parameter->isReferenceType()) {
           auto Pointer =
               address(std::move(Element), Parameter->getPointeeType(), L);
@@ -7190,7 +7216,7 @@ class FunctionLowering {
       if (!Index)
         reject(L, "utility tuple get",
                "The selected std::tuple element is unavailable.");
-      return fieldStorage(lvalue(Call->getArg(0)), Tuple->Elements[*Index], L);
+      return TupleElement(lvalue(Call->getArg(0)), Tuple->Elements[*Index]);
     }
     case UtilityOperation::PairGetFirst:
     case UtilityOperation::PairGetSecond: {

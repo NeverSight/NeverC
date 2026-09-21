@@ -4038,11 +4038,13 @@ bool Adapter::requireUtilityTuple(const CXXRecordDecl *Record,
     return false;
   }
   auto Tuple = approvedUtilityTupleRecord(S, Sources, Record, Context);
+  if (!Tuple)
+    Tuple = approvedUtilityReferenceTupleRecord(S, Sources, Record, Context);
   if (!Tuple) {
     reject(
         Location, "standard library record",
-        "Only the pinned empty or nonempty scalar std::tuple<T...> layout is "
-        "admitted.",
+        "Only the pinned empty, value, or reference std::tuple<T...> layout "
+        "is admitted.",
         "TR0203");
     return false;
   }
@@ -14469,8 +14471,11 @@ static void orderCoreV2Records(Adapter &A) {
     const bool UtilityReverse =
         approvedUtilityReverseIteratorRecord(A.S, A.Sources, R, A.Context)
             .has_value();
-    const auto UtilityTuple =
+    auto UtilityTuple =
         approvedUtilityTupleRecord(A.S, A.Sources, R, A.Context);
+    if (!UtilityTuple)
+      UtilityTuple =
+          approvedUtilityReferenceTupleRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityArray =
         approvedUtilityArrayRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityOptional =
@@ -14635,9 +14640,12 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
         S.coreV2() &&
         approvedUtilityReverseIteratorRecord(S, Sources, R, Context)
             .has_value();
-    const auto UtilityTuple =
+    auto UtilityTuple =
         S.coreV2() ? approvedUtilityTupleRecord(S, Sources, R, Context)
                    : std::optional<UtilityTupleRecord>();
+    if (S.coreV2() && !UtilityTuple)
+      UtilityTuple =
+          approvedUtilityReferenceTupleRecord(S, Sources, R, Context);
     const auto UtilityArray =
         S.coreV2() ? approvedUtilityArrayRecord(S, Sources, R, Context)
                    : std::optional<UtilityArrayRecord>();

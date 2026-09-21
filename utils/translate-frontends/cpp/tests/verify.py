@@ -823,6 +823,32 @@ extern "C" int tuple_apply_member_pointer(int value) {
               tuple_apply_member_pointer_source, profile="cpp-core-v2",
               target=target, sdk=True)
 
+    tuple_tie_source = """\
+#include <tuple>
+struct Box { int value; };
+int update(int &number, Box &box) {
+  number += box.value;
+  return number;
+}
+extern "C" int tuple_tie(int value) {
+  int number = value;
+  Box box{3};
+  auto refs = std::tie(number, box);
+  std::get<0>(refs) += 1;
+  std::get<Box &>(refs).value += 1;
+  const auto fixed = std::tie(number, box);
+  std::get<0>(fixed) += 1;
+  return std::apply(update, refs) + number + box.value;
+}
+"""
+    tuple_tie = check("v2-tuple-tie", tuple_tie_source,
+                      profile="cpp-core-v2", sdk=True)
+    assert not [node for node in walk(tuple_tie["functions"])
+                if node.get("op") == "mapped_call"], tuple_tie
+    for target in sdk_targets:
+        check("v2-tuple-tie-" + target, tuple_tie_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+
     tuple_pair_source = """\
 #include <tuple>
 #include <utility>

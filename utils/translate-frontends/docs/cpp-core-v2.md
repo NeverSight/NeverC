@@ -244,6 +244,14 @@ unique-type `std::get` use the same authenticated records. `get` preserves
 const and lvalue/rvalue reference categories; type selection requires exactly
 one matching element, as in C++17.
 
+Exact `std::tie` calls construct an authenticated tuple whose elements are
+lvalue references to supported scalar, array or source-owned record objects.
+Each argument is evaluated once, and each tuple field stores the bound address.
+Index- and type-based `std::get` recover the referent, including through a
+const tuple object, and `std::apply` passes those referents to admitted named
+functions or stored function pointers. Mutations therefore write through to
+the original objects without a libc++ runtime helper.
+
 Exact `std::apply` calls over an authenticated empty or nonempty tuple lower to
 one ordinary callback call. The callable may be a named function, a stored
 function pointer with a fixed nonvariadic signature, or an exact source-owned

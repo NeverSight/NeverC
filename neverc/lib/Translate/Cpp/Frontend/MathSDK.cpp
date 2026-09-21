@@ -2918,7 +2918,8 @@ utilityTupleTypes(const ClassTemplateSpecializationDecl *Specialization) {
 static std::optional<UtilityTupleRecord>
 approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
                                const CXXRecordDecl *Record,
-                               const ASTContext &Context, unsigned Depth);
+                               const ASTContext &Context, unsigned Depth,
+                               bool RequireReferenceElements = false);
 
 static bool utilityTupleValue(const State &S, const SourceManager &SM,
                               const ASTContext &Context, QualType Type,
@@ -2930,7 +2931,7 @@ static bool utilityTupleValue(const State &S, const SourceManager &SM,
   const auto *Record = Type.getUnqualifiedType()->getAsCXXRecordDecl();
   if (approvedFunctionalReferenceRecord(S, SM, Record, Context))
     return true;
-  return approvedUtilityTupleRecordImpl(S, SM, Record, Context, Depth)
+  return approvedUtilityTupleRecordImpl(S, SM, Record, Context, Depth, false)
       .has_value();
 }
 
@@ -2947,7 +2948,7 @@ static bool utilityTupleAssignableValue(const State &S, const SourceManager &SM,
     return Definition && Definition->hasTrivialCopyAssignment();
   }
   const auto Tuple =
-      approvedUtilityTupleRecordImpl(S, SM, Record, Context, Depth);
+      approvedUtilityTupleRecordImpl(S, SM, Record, Context, Depth, false);
   if (!Tuple)
     return false;
   for (const auto *Element : Tuple->Elements)
@@ -2992,7 +2993,8 @@ bool approvedUtilityTupleMetadata(const State &S, const SourceManager &SM,
 static std::optional<UtilityTupleRecord>
 approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
                                const CXXRecordDecl *Record,
-                               const ASTContext &Context, unsigned Depth) {
+                               const ASTContext &Context, unsigned Depth,
+                               bool RequireReferenceElements) {
   if (Depth > 64)
     return std::nullopt;
   const auto *Specialization =
@@ -3017,11 +3019,18 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
       !approvedStandardSDKDeclaration(S, SM, Specialization) ||
       !cstddefOrigin(S, SM, Specialization->getLocation(), "libcxx", "tuple"))
     return std::nullopt;
-  for (QualType Type : *Types)
-    if (!utilityTupleValue(S, SM, Context, Type, Depth + 1) ||
-        Type.isVolatileQualified() || Type.isRestrictQualified() ||
-        Type.getAddressSpace() != LangAS::Default)
+  for (QualType Type : *Types) {
+    if (RequireReferenceElements) {
+      if (!Type->isReferenceType() ||
+          !supportedFunctionalReferenceValue(S, SM, Context,
+                                             Type->getPointeeType()))
+        return std::nullopt;
+    } else if (!utilityTupleValue(S, SM, Context, Type, Depth + 1) ||
+               Type.isVolatileQualified() || Type.isRestrictQualified() ||
+               Type.getAddressSpace() != LangAS::Default) {
       return std::nullopt;
+    }
+  }
 
   if (Empty) {
     const auto &Layout = Context.getASTRecordLayout(Specialization);
@@ -3118,6 +3127,7 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
     // classification. The concrete field, size, alignment and offset checks
     // below still authenticate that leaf.
     if (!LeafSpecialization->isStandardLayout() &&
+        !RequireReferenceElements &&
         !approvedUtilityTupleMetadata(S, SM, ElementRecord))
       return std::nullopt;
     auto LeafFields = LeafSpecialization->fields();
@@ -3163,7 +3173,14 @@ std::optional<UtilityTupleRecord>
 approvedUtilityTupleRecord(const State &S, const SourceManager &SM,
                            const CXXRecordDecl *Record,
                            const ASTContext &Context) {
-  return approvedUtilityTupleRecordImpl(S, SM, Record, Context, 0);
+  return approvedUtilityTupleRecordImpl(S, SM, Record, Context, 0, false);
+}
+
+std::optional<UtilityTupleRecord>
+approvedUtilityReferenceTupleRecord(const State &S, const SourceManager &SM,
+                                    const CXXRecordDecl *Record,
+                                    const ASTContext &Context) {
+  return approvedUtilityTupleRecordImpl(S, SM, Record, Context, 0, true);
 }
 
 std::optional<UtilityTupleConstruction>
@@ -9441,8 +9458,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         S, SM, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(), Context);
   };
   auto TupleFor = [&](QualType Type) {
-    return approvedUtilityTupleRecord(
-        S, SM, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(), Context);
+    const auto *Record =
+        Type.isNull() ? nullptr : Type->getAsCXXRecordDecl();
+    auto Tuple = approvedUtilityTupleRecord(S, SM, Record, Context);
+    if (!Tuple)
+      Tuple = approvedUtilityReferenceTupleRecord(S, SM, Record, Context);
+    return Tuple;
   };
   auto OptionalParameter = [&](unsigned Index,
                                const UtilityOptionalRecord &Optional,
@@ -11734,6 +11755,24 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     }
     return UtilityOperation::MakeTuple;
   }
+  if (Origin->Path == "tuple" && Name == "tie" && Call->isPRValue() &&
+      !Function->getReturnType()->isReferenceType() &&
+      Same(Call->getType(), Function->getReturnType()) &&
+      Function->getNumParams() == Call->getNumArgs()) {
+    const auto Tuple = approvedUtilityReferenceTupleRecord(
+        S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
+    if (!Tuple || Call->getNumArgs() != Tuple->Elements.size())
+      return std::nullopt;
+    for (unsigned I = 0; I < Call->getNumArgs(); ++I) {
+      const auto Parameter = Function->getParamDecl(I)->getType();
+      if (!Parameter->isLValueReferenceType() ||
+          !Call->getArg(I)->isLValue() ||
+          !Same(Parameter, Tuple->Elements[I]->getType()) ||
+          !Same(Call->getArg(I)->getType(), Parameter->getPointeeType()))
+        return std::nullopt;
+    }
+    return UtilityOperation::Tie;
+  }
   if (Origin->Path == "tuple" && Name == "apply" && Call->getNumArgs() == 2 &&
       Function->getNumParams() == 2) {
     const auto Callable = Call->getArg(0)->getType();
@@ -11810,22 +11849,29 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
       if (ObjectOperation || ReferenceCallable || MemberCallable)
         continue;
-      const auto Element = Tuple->Elements[I]->getType();
+      const auto StoredElement = Tuple->Elements[I]->getType();
+      const auto Element = StoredElement->isReferenceType()
+                               ? StoredElement->getPointeeType()
+                               : StoredElement;
       const auto Parameter =
           Prototype ? Prototype->getParamType(I)
                     : UserCallable->Method->getParamDecl(I)->getType();
       if (Parameter->isReferenceType()) {
         const auto ParameterReferent = Parameter->getPointeeType();
         const auto TupleArgument = Call->getArg(1)->getType();
+        const bool ElementIsLValue =
+            StoredElement->isLValueReferenceType() ||
+            (!StoredElement->isReferenceType() && Call->getArg(1)->isLValue());
         const bool Category = Parameter->isLValueReferenceType()
-                                  ? Call->getArg(1)->isLValue()
-                                  : !Call->getArg(1)->isLValue();
+                                  ? ElementIsLValue
+                                  : !ElementIsLValue;
         if (!Category ||
             !supportedFunctionalInvokeReference(S, SM, Context,
                                                 ParameterReferent) ||
             !Context.hasSameUnqualifiedType(ParameterReferent, Element) ||
             ParameterReferent.isVolatileQualified() ||
-            (!ParameterReferent.isConstQualified() &&
+            (!StoredElement->isReferenceType() &&
+             !ParameterReferent.isConstQualified() &&
              TupleArgument.isConstQualified()))
           return std::nullopt;
         continue;
@@ -12191,10 +12237,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Index = I;
         }
     }
-    if (Index &&
-        Context.hasSameUnqualifiedType(Result->getPointeeType(),
-                                       Tuple->Elements[*Index]->getType()))
-      return UtilityOperation::TupleGet;
+    if (Index) {
+      const auto Stored = Tuple->Elements[*Index]->getType();
+      const auto Selected =
+          Stored->isReferenceType() ? Stored->getPointeeType() : Stored;
+      if (Context.hasSameUnqualifiedType(Result->getPointeeType(), Selected))
+        return UtilityOperation::TupleGet;
+    }
   }
   return std::nullopt;
 }
