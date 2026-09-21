@@ -7889,6 +7889,16 @@ class FunctionLowering {
       };
       auto CompareValues = [&](llvm::StringRef Operator, Expression Left,
                                Expression Right) {
+        // Optional compares its contained scalar values with the selected
+        // operator, including unordered floating-point comparisons. Composite
+        // values retain their own C++17 lexicographical comparison rules.
+        if (const auto Common = utilityScalarComparisonType(
+                A.Context, LeftValueType, RightValueType,
+                Operator != "==" && Operator != "!=")) {
+          const auto Converted = type(*Common, L);
+          return binary(Operator, cast(std::move(Left), Converted, L),
+                        cast(std::move(Right), Converted, L), "bool", L);
+        }
         return CompareUtilityValues(Operator, Left, LeftValueType, Right,
                                     RightValueType);
       };

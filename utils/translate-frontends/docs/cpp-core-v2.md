@@ -639,6 +639,13 @@ equality with `nullptr_t`. Comparisons with `nullopt` on either side inspect
 only engagement and therefore work for every admitted element. Generated
 programs do not call or link libc++.
 
+When both compared values are scalar, the selected scalar operator is applied
+directly after conversion. Ordered comparisons involving a floating-point NaN
+are false, and inequality is true; this also applies to optional-versus-value
+comparisons in either order. Pair, tuple and array values retain their C++17
+lexicographical definitions, including `<=` and `>=` expressed through `<`.
+Engagement and `nullopt` comparisons are unchanged.
+
 Reference, incomplete, volatile, restricted-address-space, nontrivially
 destructible, `long double` and function-pointer elements remain outside this
 boundary. Source-record value comparisons, throwing `value`, base-adjusting or

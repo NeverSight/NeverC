@@ -3763,6 +3763,72 @@ extern "C" int recursive_composite_comparisons() {
         assert not [node for node in walk(target_result["functions"])
                     if node.get("op") in ("call", "mapped_call")], target_result
 
+    optional_scalar_nan_source = """\
+#include <array>
+#include <optional>
+#include <tuple>
+#include <utility>
+int effects;
+double observed(double value) { ++effects; return value; }
+int main() {
+  double zero = 0.0;
+  double nan = zero / zero;
+  float fzero = 0.0f;
+  float fnan = fzero / fzero;
+  std::optional<double> n(nan), z(0.0), empty;
+  std::optional<float> fn(fnan);
+  if (n <= z || n >= z || z <= n || z >= n || n < z || n > z ||
+      z < n || z > n || n == n || !(n != n)) return 1;
+  if (fn <= z || fn >= z || z <= fn || z >= fn || fn == n || !(fn != n)) return 2;
+  if (n <= zero || n >= zero || zero <= n || zero >= n ||
+      z <= nan || z >= nan || nan <= z || nan >= z) return 3;
+  if (!(empty <= n) || empty >= n || n <= empty || !(n >= empty) ||
+      !(empty <= nan) || empty >= nan || nan <= empty || !(nan >= empty)) return 4;
+  if (n <= observed(zero) || effects != 1) return 5;
+  if (observed(zero) >= n || effects != 2) return 6;
+  if (!(empty <= observed(nan)) || effects != 3) return 7;
+  std::optional<int> signed_negative(-1);
+  std::optional<unsigned> unsigned_one(1u);
+  std::optional<long long> wide_negative(-1LL);
+  if (signed_negative <= unsigned_one || !(signed_negative >= unsigned_one) ||
+      !(wide_negative <= unsigned_one) || wide_negative >= unsigned_one) return 8;
+
+  // Composite C++17 comparisons are defined in terms of lexicographical <.
+  // Unordered scalar leaves therefore must not acquire the scalar <= rule.
+  std::pair<double, int> pair_nan(nan, 0), pair_zero(0.0, 0);
+  std::tuple<double> tuple_nan(nan), tuple_zero(0.0);
+  std::array<double, 1> array_nan{{nan}}, array_zero{{0.0}};
+  if (!(pair_nan <= pair_zero) || !(pair_nan >= pair_zero) ||
+      !(tuple_nan <= tuple_zero) || !(tuple_nan >= tuple_zero) ||
+      !(array_nan <= array_zero) || !(array_nan >= array_zero)) return 9;
+  std::optional<std::pair<double, int>> op_nan(pair_nan), op_zero(pair_zero);
+  std::optional<std::tuple<double>> ot_nan(tuple_nan), ot_zero(tuple_zero);
+  std::optional<std::array<double, 1>> oa_nan(array_nan), oa_zero(array_zero);
+  if (!(op_nan <= op_zero) || !(op_nan >= op_zero) ||
+      !(ot_nan <= ot_zero) || !(ot_nan >= ot_zero) ||
+      !(oa_nan <= oa_zero) || !(oa_nan >= oa_zero)) return 10;
+  return 0;
+}
+"""
+
+    def check_optional_scalar_nan(data):
+        assert any(function["name"] == "main"
+                   for function in data["functions"]), data
+        for node in walk(data["functions"]):
+            assert node.get("op") not in ("mapped_call", "member_pointer"), node
+            if node.get("op") == "assign":
+                assert node["target"]["type"] == node["value"]["type"], node
+
+    optional_scalar_nan = check("v2-optional-scalar-nan",
+                                optional_scalar_nan_source,
+                                profile="cpp-core-v2", sdk=True)
+    check_optional_scalar_nan(optional_scalar_nan)
+    for target in sdk_targets:
+        optional_scalar_nan_target = check(
+            "v2-optional-scalar-nan-" + target, optional_scalar_nan_source,
+            profile="cpp-core-v2", target=target, sdk=True)
+        check_optional_scalar_nan(optional_scalar_nan_target)
+
     optional_operations_source = """\
 #include <optional>
 extern "C" int optional_operations(int value) {
