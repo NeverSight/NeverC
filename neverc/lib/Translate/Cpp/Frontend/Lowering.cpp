@@ -7196,10 +7196,21 @@ class FunctionLowering {
                     A.S, A.Sources,
                     Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context)
               : std::optional<UtilityTupleRecord>();
-      if (ReferenceTuple) {
+      const auto ReferencePair =
+          Operation == UtilityOperation::PairSwap
+              ? approvedUtilityReferencePairRecord(
+                    A.S, A.Sources,
+                    Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context)
+              : std::optional<UtilityPairRecord>();
+      if (ReferenceTuple || ReferencePair) {
         auto Left = dereference(std::move(LeftAddress), L);
         auto Right = dereference(std::move(RightAddress), L);
-        for (const auto *Element : ReferenceTuple->Elements) {
+        std::vector<const FieldDecl *> Elements;
+        if (ReferenceTuple)
+          Elements = ReferenceTuple->Elements;
+        else
+          Elements = {ReferencePair->First, ReferencePair->Second};
+        for (const auto *Element : Elements) {
           auto LeftValue = dereference(
               fieldStorage(json::Object(Left), Element, L), L);
           auto RightValue = dereference(
@@ -7231,10 +7242,21 @@ class FunctionLowering {
                     A.S, A.Sources, Object->getType()->getAsCXXRecordDecl(),
                     A.Context)
               : std::optional<UtilityTupleRecord>();
-      if (ReferenceTuple) {
+      const auto ReferencePair =
+          Operation == UtilityOperation::PairMemberSwap
+              ? approvedUtilityReferencePairRecord(
+                    A.S, A.Sources,
+                    Object->getType()->getAsCXXRecordDecl(), A.Context)
+              : std::optional<UtilityPairRecord>();
+      if (ReferenceTuple || ReferencePair) {
         auto Left = dereference(std::move(LeftAddress), L);
         auto Right = dereference(std::move(RightAddress), L);
-        for (const auto *Element : ReferenceTuple->Elements) {
+        std::vector<const FieldDecl *> Elements;
+        if (ReferenceTuple)
+          Elements = ReferenceTuple->Elements;
+        else
+          Elements = {ReferencePair->First, ReferencePair->Second};
+        for (const auto *Element : Elements) {
           auto LeftValue = dereference(
               fieldStorage(json::Object(Left), Element, L), L);
           auto RightValue = dereference(

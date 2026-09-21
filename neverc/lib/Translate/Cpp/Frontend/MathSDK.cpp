@@ -9390,8 +9390,20 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (const auto *MemberCall = dyn_cast<CXXMemberCallExpr>(Call)) {
     const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
     const auto *Reference = directMethodReference(Call);
-    const auto Pair = approvedUtilityPairRecord(
+    auto Pair = approvedUtilityPairRecord(
         S, SM, Method ? Method->getParent() : nullptr, Context);
+    bool ReferencePair = false;
+    if (!Pair) {
+      Pair = approvedUtilityReferencePairRecord(
+          S, SM, Method ? Method->getParent() : nullptr, Context);
+      ReferencePair = Pair.has_value();
+    }
+    const auto FirstType =
+        ReferencePair ? Pair->First->getType()->getPointeeType()
+                      : Pair ? Pair->First->getType() : QualType();
+    const auto SecondType =
+        ReferencePair ? Pair->Second->getType()->getPointeeType()
+                      : Pair ? Pair->Second->getType() : QualType();
     if (Method && Reference && Pair && Method->getIdentifier() &&
         Method->getName() == "swap" && !Method->isStatic() &&
         !Method->isVariadic() && Method->getNumParams() == 1 &&
@@ -9400,10 +9412,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
                       "__utility/pair.h") &&
         S.owns(SM, Reference->getExprLoc()) &&
-        utilityPairValue(S, SM, Context, Pair->First->getType()) &&
-        utilityPairValue(S, SM, Context, Pair->Second->getType()) &&
-        utilityPairAssignableValue(S, SM, Context, Pair->First->getType()) &&
-        utilityPairAssignableValue(S, SM, Context, Pair->Second->getType()) &&
+        (ReferencePair ||
+         (utilityPairValue(S, SM, Context, FirstType) &&
+          utilityPairValue(S, SM, Context, SecondType))) &&
+        utilityPairAssignableValue(S, SM, Context, FirstType) &&
+        utilityPairAssignableValue(S, SM, Context, SecondType) &&
         Context.hasSameUnqualifiedType(
             MemberCall->getImplicitObjectArgument()->getType(),
             Context.getRecordType(Pair->Record)) &&
@@ -12300,23 +12313,45 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Call->getNumArgs() == 2 && Function->getReturnType()->isVoidType()) {
     auto LeftType = Function->getParamDecl(0)->getType();
     auto RightType = Function->getParamDecl(1)->getType();
-    const auto Left = approvedUtilityPairRecord(
+    auto Left = approvedUtilityPairRecord(
         S, SM, LeftType->isReferenceType()
                    ? LeftType->getPointeeType()->getAsCXXRecordDecl()
                    : nullptr,
         Context);
-    const auto Right = approvedUtilityPairRecord(
+    auto Right = approvedUtilityPairRecord(
         S, SM, RightType->isReferenceType()
                    ? RightType->getPointeeType()->getAsCXXRecordDecl()
                    : nullptr,
         Context);
+    bool ReferencePair = false;
+    if (!Left) {
+      Left = approvedUtilityReferencePairRecord(
+          S, SM, LeftType->isReferenceType()
+                     ? LeftType->getPointeeType()->getAsCXXRecordDecl()
+                     : nullptr,
+          Context);
+      ReferencePair = Left.has_value();
+    }
+    if (!Right)
+      Right = approvedUtilityReferencePairRecord(
+          S, SM, RightType->isReferenceType()
+                     ? RightType->getPointeeType()->getAsCXXRecordDecl()
+                     : nullptr,
+          Context);
+    const auto FirstType =
+        ReferencePair ? Left->First->getType()->getPointeeType()
+                      : Left ? Left->First->getType() : QualType();
+    const auto SecondType =
+        ReferencePair ? Left->Second->getType()->getPointeeType()
+                      : Left ? Left->Second->getType() : QualType();
     if (LeftType->isLValueReferenceType() &&
         RightType->isLValueReferenceType() && Left && Right &&
         Left->Record->getCanonicalDecl() == Right->Record->getCanonicalDecl() &&
-        utilityPairValue(S, SM, Context, Left->First->getType()) &&
-        utilityPairValue(S, SM, Context, Left->Second->getType()) &&
-        utilityPairAssignableValue(S, SM, Context, Left->First->getType()) &&
-        utilityPairAssignableValue(S, SM, Context, Left->Second->getType()) &&
+        (ReferencePair ||
+         (utilityPairValue(S, SM, Context, FirstType) &&
+          utilityPairValue(S, SM, Context, SecondType))) &&
+        utilityPairAssignableValue(S, SM, Context, FirstType) &&
+        utilityPairAssignableValue(S, SM, Context, SecondType) &&
         Same(Call->getArg(0)->getType(), LeftType->getPointeeType()) &&
         Same(Call->getArg(1)->getType(), RightType->getPointeeType()))
       return UtilityOperation::PairSwap;

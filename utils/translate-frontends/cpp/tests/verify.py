@@ -456,6 +456,8 @@ extern "C" int pair_reference(int value) {
   Box source_box{box.value + 5};
   std::pair<int &, Box &> source(source_value, source_box);
   direct = source;
+  direct.swap(source);
+  std::swap(direct, source);
   std::pair<int &&, Box &&> rvalues(static_cast<int &&>(value),
                                     static_cast<Box &&>(box));
   std::get<0>(rvalues) += 4;

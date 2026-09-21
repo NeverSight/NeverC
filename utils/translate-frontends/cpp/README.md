@@ -219,7 +219,8 @@ Reference-valued pairs admit exact compatible direct construction, same-type
 copy/move construction, public field access and index- or unique-type `get`.
 Same-type assignment writes through the destination bindings without changing
 either pair's bindings. All six comparisons read referent values, including
-mixed reference/value pairs. Tuple
+mixed reference/value pairs. Member and free swap exchange referent values
+without rebinding. Tuple
 directly lowers authenticated empty and nonempty tuples of scalars, reference
 wrappers
 or recursively composite values, compatible scalar or exact composite

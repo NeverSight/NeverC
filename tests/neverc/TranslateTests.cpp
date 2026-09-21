@@ -24313,6 +24313,49 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ReferencePairSwapRunsAtBothOptimizations) {
+  const auto Source = tmpFile("pair-reference-swap.cpp");
+  const auto Output = tmpFile("pair-reference-swap.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+int main() {
+  int left_first = 1;
+  int left_second = 2;
+  int right_first = 3;
+  int right_second = 4;
+  std::pair<int &, int &> left(left_first, left_second);
+  std::pair<int &, int &> right(right_first, right_second);
+  left.swap(right);
+  if (left_first != 3 || left_second != 4 || right_first != 1 ||
+      right_second != 2 || &left.first != &left_first ||
+      &left.second != &left_second || &right.first != &right_first ||
+      &right.second != &right_second)
+    return 1;
+  std::swap(left, right);
+  if (left_first != 1 || left_second != 2 || right_first != 3 ||
+      right_second != 4)
+    return 2;
+  std::pair<int &, int &> crossed_left(left_first, left_second);
+  std::pair<int &, int &> crossed_right(left_second, left_first);
+  crossed_left.swap(crossed_right);
+  return left_first == 1 && left_second == 2 ? 0 : 3;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("pair-reference-swap" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2TupleApplyCallableObjectsRunAtBothOptimizations) {
   const auto Source = tmpFile("tuple-apply-callable-objects.cpp");
   const auto Output = tmpFile("tuple-apply-callable-objects.nc");
