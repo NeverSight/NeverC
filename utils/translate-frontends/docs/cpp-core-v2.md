@@ -250,14 +250,17 @@ and corresponding callback parameter must be admitted scalars connected by a
 checked direct scalar conversion, or the same complete source-owned
 standard-layout record type that is trivially copyable and destructible, and
 passed by value; the result may be `void`, an admitted scalar, or a complete
-source-owned record value. This includes arithmetic conversions,
+source-owned record value. Exact lvalue- or rvalue-reference parameters and
+results are also admitted for supported scalar, object-pointer, function-pointer,
+complete fixed-array and source-owned record referents. This includes arithmetic conversions,
 `nullptr_t` to object pointers or `bool`, and compatible object-pointer,
 pointer-to-void and pointer-to-`bool` conversions. Mutable and const lvalues
 and materialized tuple temporaries are accepted. The callable and tuple
 expressions are each evaluated once, fields are converted and passed in tuple
 order, and no libc++ apply helper is emitted. A record parameter receives its
 own copied object, while a record result constructs directly in the caller's
-destination and keeps its ordinary full-expression cleanup.
+destination and keeps its ordinary full-expression cleanup. References preserve
+the selected tuple element or callback result storage, constness and value category.
 
 Exact `std::tuple_cat` calls lower directly when every source is an
 authenticated `std::tuple`, `std::pair` or `std::array` containing admitted
@@ -289,8 +292,8 @@ or tuple elements do not have the authenticated one-field leaf representation
 and remain rejected. References, nontrivial records, `long double`, function
 pointers and source-record comparisons also remain outside this surface. `tie`
 and `forward_as_tuple` are rejected. Apply calls with callable objects,
-reference parameters or results, nontrivial record parameters, or variadic
-callbacks remain rejected. Quoted includes, user shadows,
+nontrivial record parameters, volatile references, or variadic callbacks remain
+rejected. Quoted includes, user shadows,
 standard-function addresses and forged declarations remain rejected.
 
 ## Fixed value arrays from `<array>`

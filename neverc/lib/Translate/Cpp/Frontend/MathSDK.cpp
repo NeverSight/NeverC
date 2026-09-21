@@ -11307,9 +11307,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return UtilityOperation::MakeTuple;
   }
   if (Origin->Path == "tuple" && Name == "apply" && Call->getNumArgs() == 2 &&
-      Function->getNumParams() == 2 && Call->isPRValue() &&
-      !Function->getReturnType()->isReferenceType() &&
-      Same(Call->getType(), Function->getReturnType())) {
+      Function->getNumParams() == 2) {
     const auto Callable = Call->getArg(0)->getType();
     const auto *Prototype =
         Callable->isFunctionType() ? Callable->getAs<FunctionProtoType>()
@@ -11319,22 +11317,51 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto CallableParameter = Function->getParamDecl(0)->getType();
     const auto TupleParameter = Function->getParamDecl(1)->getType();
     const auto Tuple = TupleFor(Call->getArg(1)->getType());
+    const auto Result = Prototype ? Prototype->getReturnType() : QualType();
+    const bool ReferenceResult =
+        !Result.isNull() && Result->isReferenceType();
+    const auto Referent =
+        ReferenceResult ? Result->getPointeeType() : QualType();
     if (!Prototype || Prototype->isVariadic() ||
         !CallableParameter->isReferenceType() ||
         !Same(CallableParameter->getPointeeType(), Callable) ||
         !TupleParameter->isReferenceType() ||
         !Same(TupleParameter->getPointeeType(), Call->getArg(1)->getType()) ||
         !Tuple || Prototype->getNumParams() != Tuple->Elements.size() ||
-        !Same(Prototype->getReturnType(), Function->getReturnType()) ||
-        (!Function->getReturnType()->isVoidType() &&
-         !utilityScalar(Context, Function->getReturnType()) &&
-         !supportedFunctionalResult(S, SM, Context,
-                                    Function->getReturnType())))
+        !Same(Result, Function->getReturnType()) ||
+        (ReferenceResult
+             ? (!supportedFunctionalInvokeReference(S, SM, Context, Referent) ||
+                (Result->isLValueReferenceType() ? !Call->isLValue()
+                                                 : !Call->isXValue()) ||
+                !Same(Call->getType(), Referent))
+             : (!Call->isPRValue() ||
+                !Same(Call->getType(), Function->getReturnType()) ||
+                (!Function->getReturnType()->isVoidType() &&
+                 !utilityScalar(Context, Function->getReturnType()) &&
+                 !supportedFunctionalResult(S, SM, Context,
+                                            Function->getReturnType())))))
       return std::nullopt;
     for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
       const auto Element = Tuple->Elements[I]->getType();
       const auto Parameter = Prototype->getParamType(I);
-      if (Parameter->isReferenceType())
+      if (Parameter->isReferenceType()) {
+        const auto ParameterReferent = Parameter->getPointeeType();
+        const auto TupleArgument = Call->getArg(1)->getType();
+        const bool Category = Parameter->isLValueReferenceType()
+                                  ? Call->getArg(1)->isLValue()
+                                  : !Call->getArg(1)->isLValue();
+        if (!Category ||
+            !supportedFunctionalInvokeReference(S, SM, Context,
+                                                ParameterReferent) ||
+            !Context.hasSameUnqualifiedType(ParameterReferent, Element) ||
+            ParameterReferent.isVolatileQualified() ||
+            (!ParameterReferent.isConstQualified() &&
+             TupleArgument.isConstQualified()))
+          return std::nullopt;
+        continue;
+      }
+      if (Parameter.isVolatileQualified() || Parameter.isRestrictQualified() ||
+          Parameter.getAddressSpace() != LangAS::Default)
         return std::nullopt;
       const bool Scalar = utilityScalar(Context, Element) &&
                           utilityScalar(Context, Parameter) &&

@@ -639,6 +639,34 @@ extern "C" int tuple_apply_record(int value) {
               tuple_apply_record_source, profile="cpp-core-v2",
               target=target, sdk=True)
 
+    tuple_apply_reference_source = """\
+#include <tuple>
+struct Record { int value; };
+int values[2]{3, 4};
+int &bump(int &value) { return ++value; }
+const Record &view(const Record &value) { return value; }
+int consume(Record &&value) { return value.value + 1; }
+int (&array_from(int))[2] { return values; }
+extern "C" int tuple_apply_reference(int value) {
+  std::tuple<int> scalar(value);
+  int &alias = std::apply(bump, scalar);
+  const std::tuple<Record> record(Record{value});
+  const Record &observed = std::apply(view, record);
+  int result = std::apply(consume, std::make_tuple(Record{value}));
+  std::apply(array_from, std::make_tuple(0))[1] = value;
+  return alias + observed.value + result + values[1];
+}
+"""
+    tuple_apply_reference = check(
+        "v2-tuple-apply-reference", tuple_apply_reference_source,
+        profile="cpp-core-v2", sdk=True)
+    assert len([node for node in walk(tuple_apply_reference["functions"])
+                if node.get("op") == "indirect_call"]) == 4, tuple_apply_reference
+    for target in sdk_targets:
+        check("v2-tuple-apply-reference-" + target,
+              tuple_apply_reference_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+
     tuple_pair_source = """\
 #include <tuple>
 #include <utility>
@@ -782,9 +810,6 @@ extern "C" int tuple_composite() {
         ("apply-incompatible-parameter",
          '#include <tuple>\nint take(int*p){return p!=nullptr;}int main(){return std::apply(take,std::make_tuple(1));}',
          "TR0202"),
-        ("apply-reference-parameter",
-         '#include <tuple>\nint add(int&a,int&b){return a+b;}int main(){auto value=std::make_tuple(1,2);return std::apply(add,value);}',
-         "TR0203"),
         ("apply-callable-object",
          '#include <tuple>\nstruct F{int operator()(int value)const{return value;}};int main(){return std::apply(F{},std::make_tuple(1));}',
          "TR0203"),

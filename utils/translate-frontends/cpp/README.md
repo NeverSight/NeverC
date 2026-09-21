@@ -224,6 +224,8 @@ elements with directly convertible by-value parameters, or exact trivial
 source-record elements with independent by-value parameter objects, to one
 indirect call. Empty tuples, scalar or void results, and complete source-record
 results constructed directly in the caller destination are included. Exact
+lvalue or rvalue reference parameters bind the corresponding tuple elements,
+and reference results preserve their source storage and qualification. Exact
 `tuple_cat` handles zero arguments and authenticated scalar or recursively
 composite tuple, pair or array sources,
 evaluating every source once before copying elements into the exact

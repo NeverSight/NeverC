@@ -6835,7 +6835,12 @@ class FunctionLowering {
         const auto Parameter = Prototype->getParamType(I);
         auto Element =
             fieldStorage(json::Object(TupleValue), Tuple->Elements[I], L);
-        if (recordValue(Parameter)) {
+        if (Parameter->isReferenceType()) {
+          auto Pointer = address(std::move(Element),
+                                 Parameter->getPointeeType(), L);
+          Arguments.push_back(snapshot(
+              cast(std::move(Pointer), type(Parameter, L), L), L));
+        } else if (recordValue(Parameter)) {
           // Tuple records are admitted here only when their copy is trivial.
           // Still create the independent by-value parameter object required by
           // the ordinary callback ABI instead of aliasing tuple storage.

@@ -23690,6 +23690,52 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2TupleApplyReferencesRunAtBothOptimizations) {
+  const auto Source = tmpFile("tuple-apply-references.cpp");
+  const auto Output = tmpFile("tuple-apply-references.nc");
+  writeFile(Source, R"cpp(
+#include <tuple>
+struct Record { int value; };
+int global_array[2]{4, 5};
+int &bump(int &value) { return ++value; }
+const Record &view(const Record &value) { return value; }
+int consume(Record &&value) { return value.value + 1; }
+int (&array_from(int))[2] { return global_array; }
+int main() {
+  std::tuple<int> scalar(2);
+  int &alias = std::apply(bump, scalar);
+  if (&alias != &std::get<0>(scalar) || alias != 3)
+    return 1;
+  alias = 7;
+  if (std::get<0>(scalar) != 7)
+    return 2;
+  const std::tuple<Record> record(Record{8});
+  const Record &observed = std::apply(view, record);
+  if (&observed != &std::get<0>(record) || observed.value != 8)
+    return 3;
+  if (std::apply(consume, std::make_tuple(Record{9})) != 10)
+    return 4;
+  std::apply(array_from, std::make_tuple(0))[1] = 11;
+  return global_array[1] == 11 ? 0 : 5;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("__apply_tuple_impl"), std::string::npos);
+  EXPECT_EQ(Text.find("mapped_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("tuple-apply-references" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2TupleCatRunsAtBothOptimizations) {
   const auto Source = tmpFile("tuple-cat.cpp");
   const auto Output = tmpFile("tuple-cat.nc");
@@ -24051,10 +24097,6 @@ TEST_F(TranslateTest, CoreV2TupleRequiresPinnedOperations) {
        "#include <tuple>\nint take(int*p){return p!=nullptr;}int main(){"
        "return std::apply(take,std::make_tuple(1));}",
        "TR0202"},
-      {"apply-reference-parameter",
-       "#include <tuple>\nint add(int&a,int&b){return a+b;}int main(){"
-       "auto value=std::make_tuple(1,2);return std::apply(add,value);}",
-       "TR0203"},
       {"apply-callable-object",
        "#include <tuple>\nstruct F{int operator()(int value)const{return "
        "value;}};int main(){return std::apply(F{},std::make_tuple(1));}",
