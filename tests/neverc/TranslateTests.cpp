@@ -26175,6 +26175,1403 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2PairReferenceWrapperValuesRunAtBothOptimizations) {
+  const auto Source = tmpFile("pair-reference-wrapper-values.cpp");
+  const auto Output = tmpFile("pair-reference-wrapper-values.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <tuple>
+#include <utility>
+struct Box {
+  int value;
+  int add(int amount) { value += amount; return value; }
+};
+using Wrapper = std::reference_wrapper<Box>;
+using Pair = std::pair<Wrapper, int>;
+using Wide = std::pair<Wrapper, long>;
+using Nested = std::pair<Pair, int>;
+int sources;
+Wide& source(Wide& value) { ++sources; return value; }
+int main() {
+  Box first{3}, second{5}, third{7};
+  Pair pair(std::ref(first), 2);
+  Pair copy(pair);
+  const Pair& constant = pair;
+  Pair const_copy(constant);
+  Pair moved(static_cast<Pair&&>(copy));
+  if (&pair.first.get() != &first || &copy.first.get() != &first ||
+      &const_copy.first.get() != &first || &moved.first.get() != &first) return 1;
+  Pair target(std::ref(second), 4);
+  Pair& assigned = (target = constant);
+  if (&assigned != &target || &target.first.get() != &first || target.second != 2 ||
+      first.value != 3 || second.value != 5) return 2;
+  Wide wide(std::ref(second), 6L);
+  Pair converted(source(wide));
+  Pair& hetero = (target = source(wide));
+  if (sources != 2 || &hetero != &target || &converted.first.get() != &second ||
+      &target.first.get() != &second || target.second != 6) return 3;
+  Nested nested(pair, 8);
+  Nested nested_copy(nested);
+  Nested nested_target(Pair(std::ref(third), 9), 10);
+  nested_target = nested_copy;
+  if (&nested_target.first.first.get() != &first ||
+      nested_target.first.second != 2 || nested_target.second != 8 ||
+      third.value != 7) return 4;
+  std::pair<const Wrapper, int> const_wrapper(std::ref(first), 11);
+  std::pair<const Wrapper, int> const_wrapper_copy(const_wrapper);
+  if (&const_wrapper_copy.first.get() != &first || const_wrapper_copy.second != 11)
+    return 5;
+  pair.swap(target);
+  if (&pair.first.get() != &second || pair.second != 6 ||
+      &target.first.get() != &first || target.second != 2) return 6;
+  int amount = 4;
+  std::pair<Wrapper, int&> mixed(std::ref(third), amount);
+  if (std::apply(&Box::add, pair) != 11 || second.value != 11 ||
+      std::apply(std::mem_fn(&Box::add), mixed) != 11 || third.value != 11)
+    return 7;
+  std::swap(pair, target);
+  if (&pair.first.get() != &first || pair.second != 2 ||
+      &target.first.get() != &second || target.second != 6 ||
+      first.value != 3 || second.value != 11) return 8;
+  return &mixed.first.get() == &third && &mixed.second == &amount ? 0 : 9;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("__apply_tuple_impl"), std::string::npos);
+  EXPECT_EQ(Text.find("member_pointer"), std::string::npos);
+  EXPECT_EQ(Text.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("pair-reference-wrapper-values" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2TupleLikeApplyHeaderOrderRunAtBothOptimizations) {
+  struct Fixture {
+    const char *Name;
+    const char *Source;
+  };
+  const Fixture Cases[] = {
+      {"pair-late-utility", R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+int calls;
+struct Box {
+  int value;
+  int add(int amount) & { ++calls; value += amount; return value; }
+};
+int sum(int left, int right) { return left + right; }
+int main() {
+  Box box{3};
+  using Wrapper = std::reference_wrapper<Box>;
+  std::pair<Wrapper, int> pair(std::ref(box), 2);
+  const auto& constant = pair;
+  if (std::apply(&Box::add, pair) != 5 ||
+      std::apply(std::mem_fn(&Box::add), constant) != 7) return 1;
+  int amount = 3;
+  std::pair<Wrapper, int&> mixed(std::ref(box), amount);
+  if (std::apply(std::mem_fn(&Box::add), mixed) != 10 ||
+      &mixed.second != &amount || &mixed.first.get() != &box) return 2;
+  std::pair<int, int> values(4, 5);
+  return std::apply(sum, values) == 9 && box.value == 10 && calls == 3 ? 0 : 3;
+}
+)cpp"},
+      {"array-late", R"cpp(#include <tuple>
+#include <array>
+int sum(int left, int right) { return left + right; }
+int& first(int& left, int&) { return left; }
+int moved(int&& left, int&& right) { return left + right; }
+int main() {
+  using Row = std::array<int, 2>;
+  Row row{{2, 3}};
+  const Row constant{{4, 5}};
+  int& alias = std::apply(first, row);
+  if (&alias != &row[0]) return 1;
+  alias = 7;
+  return std::apply(sum, row) == 10 && std::apply(sum, constant) == 9 &&
+         std::apply(moved, Row{{6, 8}}) == 14 ? 0 : 2;
+}
+)cpp"},
+      {"array-first", R"cpp(#include <array>
+#include <tuple>
+int sum(int left, int right) { return left + right; }
+int& first(int& left, int&) { return left; }
+int moved(int&& left, int&& right) { return left + right; }
+int main() {
+  using Row = std::array<int, 2>;
+  Row row{{2, 3}};
+  const Row constant{{4, 5}};
+  int& alias = std::apply(first, row);
+  if (&alias != &row[0]) return 1;
+  alias = 7;
+  return std::apply(sum, row) == 10 && std::apply(sum, constant) == 9 &&
+         std::apply(moved, Row{{6, 8}}) == 14 ? 0 : 2;
+}
+)cpp"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("apply-header-order-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("apply-header-order-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    const auto Text = readFile(Output);
+    EXPECT_EQ(Text.find("__apply_tuple_impl"), std::string::npos);
+    EXPECT_EQ(Text.find("member_pointer"), std::string::npos);
+    EXPECT_EQ(Text.find("std::"), std::string::npos);
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable =
+          tmpFile(std::string("apply-header-order-") + Case.Name + Optimization);
+      auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2TupleLikeApplyGetRequiresPinnedRedeclarations) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Rejection Cases[] = {
+      {"pair-get-source-redeclaration", R"cpp(#include <tuple>
+#include <utility>
+namespace std { inline namespace __1 {
+template<size_t I, class T, class U>
+constexpr typename tuple_element<I, pair<T,U>>::type& get(pair<T,U>&) noexcept;
+}}
+int sum(int a,int b){return a+b;}
+int main(){std::pair<int,int> p(2,3);return std::apply(sum,p);}
+)cpp", "TR0201"},
+      {"array-get-source-redeclaration", R"cpp(#include <tuple>
+#include <array>
+namespace std { inline namespace __1 {
+template<size_t I, class T, size_t N>
+constexpr T& get(array<T,N>&) noexcept;
+}}
+int sum(int a,int b){return a+b;}
+int main(){std::array<int,2> a{{2,3}};return std::apply(sum,a);}
+)cpp", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("apply-get-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("apply-get-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(translate(Source,
+                         {"--profile", "cpp-core-v2", "-o", Output.string()}),
+               Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PairWrapperSwapUsesPinnedOperationsAtBothOptimizations) {
+  const auto Source = tmpFile("pair-wrapper-swap-proof.cpp");
+  const auto Output = tmpFile("pair-wrapper-swap-proof.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+namespace normal_member {
+struct Box {
+  int value;
+};
+int run() {
+  Box a{1}, b{2};
+  std::pair<std::reference_wrapper<Box>, int> p(std::ref(a), 3),
+      q(std::ref(b), 4);
+  p.swap(q);
+  return &p.first.get() != &b || &q.first.get() != &a || p.second != 4 ||
+         q.second != 3;
+}
+} // namespace normal_member
+namespace nested_member {
+struct Box {
+  int value;
+};
+using Inner = std::pair<std::reference_wrapper<Box>, int>;
+int run() {
+  Box a{1}, b{2};
+  Inner x(std::ref(a), 3), y(std::ref(b), 4);
+  std::pair<Inner, long> p(x, 5L), q(y, 6L);
+  p.swap(q);
+  return &p.first.first.get() != &b || &q.first.first.get() != &a ||
+         p.first.second != 4 || q.first.second != 3 || p.second != 6 ||
+         q.second != 5;
+}
+} // namespace nested_member
+namespace mixed_member {
+struct Box {
+  int value;
+};
+int run() {
+  Box a{1}, b{2};
+  int x = 3, y = 4;
+  std::pair<std::reference_wrapper<Box>, int &> p(std::ref(a), x),
+      q(std::ref(b), y);
+  p.swap(q);
+  return &p.first.get() != &b || &q.first.get() != &a || &p.second != &x ||
+         &q.second != &y || x != 4 || y != 3;
+}
+} // namespace mixed_member
+namespace normal_free {
+struct Box {
+  int value;
+};
+int run() {
+  Box a{1}, b{2};
+  std::pair<std::reference_wrapper<Box>, int> p(std::ref(a), 3),
+      q(std::ref(b), 4);
+  std::swap(p, q);
+  return &p.first.get() != &b || &q.first.get() != &a || p.second != 4 ||
+         q.second != 3;
+}
+} // namespace normal_free
+namespace nested_free {
+struct Box {
+  int value;
+};
+using Inner = std::pair<std::reference_wrapper<Box>, int>;
+int run() {
+  Box a{1}, b{2};
+  Inner x(std::ref(a), 3), y(std::ref(b), 4);
+  std::pair<Inner, long> p(x, 5L), q(y, 6L);
+  std::swap(p, q);
+  return &p.first.first.get() != &b || &q.first.first.get() != &a ||
+         p.first.second != 4 || q.first.second != 3 || p.second != 6 ||
+         q.second != 5;
+}
+} // namespace nested_free
+namespace mixed_free {
+struct Box {
+  int value;
+};
+int run() {
+  Box a{1}, b{2};
+  int x = 3, y = 4;
+  std::pair<std::reference_wrapper<Box>, int &> p(std::ref(a), x),
+      q(std::ref(b), y);
+  std::swap(p, q);
+  return &p.first.get() != &b || &q.first.get() != &a || &p.second != &x ||
+         &q.second != &y || x != 4 || y != 3;
+}
+} // namespace mixed_free
+namespace array_compat {
+int run() {
+  std::array<int, 2> a{{1, 2}}, b{{3, 4}};
+  std::pair<std::array<int, 2>, int> p(a, 5), q(b, 6);
+  p.swap(q);
+  return p.first[0] != 3 || p.first[1] != 4 || q.first[0] != 1 ||
+         q.first[1] != 2 || p.second != 6 || q.second != 5;
+}
+} // namespace array_compat
+namespace tuple_wrapper_compat {
+struct Box {
+  int value;
+};
+int run() {
+  Box a{1}, b{2};
+  std::tuple<std::reference_wrapper<Box>, int> p(std::ref(a), 3),
+      q(std::ref(b), 4);
+  p.swap(q);
+  return &std::get<0>(p).get() != &b || &std::get<0>(q).get() != &a ||
+         std::get<1>(p) != 4 || std::get<1>(q) != 3;
+}
+} // namespace tuple_wrapper_compat
+int main() {
+  if (normal_member::run())
+    return 1;
+  if (nested_member::run())
+    return 2;
+  if (mixed_member::run())
+    return 3;
+  if (normal_free::run())
+    return 4;
+  if (nested_free::run())
+    return 5;
+  if (mixed_free::run())
+    return 6;
+  if (array_compat::run())
+    return 7;
+  if (tuple_wrapper_compat::run())
+    return 8;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("pair-wrapper-swap-proof" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PairWrapperSwapRequiresPinnedElementOperations) {
+  struct Rejection { const char *Name; const char *Source; const char *Code; };
+  const Rejection Cases[] = {
+    {"wrapper-adl-member", R"cpp(#include <functional>
+#include <utility>
+namespace custom {
+struct Box { int value; };
+int effects;
+void swap(std::reference_wrapper<Box>&, std::reference_wrapper<Box>&) {
+  ++effects;
+}
+}
+using Value = std::pair<std::reference_wrapper<custom::Box>, int>;
+void rejected_swap(Value &left, Value &right) {
+  left.swap(right);
+}
+)cpp", "TR0203"},
+    {"wrapper-record-adl", R"cpp(#include <array>
+#include <functional>
+#include <utility>
+namespace custom { struct Box { int value; }; int effects; void swap(Box&,Box&){++effects;} }
+using Value = std::pair<std::reference_wrapper<custom::Box>, custom::Box>;
+void rejected_swap(Value &left, Value &right) {
+  left.swap(right);
+}
+)cpp", "TR0203"},
+    {"wrapper-nested-adl", R"cpp(#include <array>
+#include <functional>
+#include <utility>
+namespace custom { struct Box { int value; }; int effects; void swap(std::reference_wrapper<Box>&,std::reference_wrapper<Box>&){++effects;} }
+using Inner=std::pair<std::reference_wrapper<custom::Box>,int>;
+using Value = std::pair<Inner, long>;
+void rejected_swap(Value &left, Value &right) {
+  left.swap(right);
+}
+)cpp", "TR0203"},
+    {"wrapper-array-sibling", R"cpp(#include <array>
+#include <functional>
+#include <utility>
+struct Box { int value; };
+using Value = std::pair<std::reference_wrapper<Box>, std::array<int, 2>>;
+void rejected_swap(Value &left, Value &right) {
+  left.swap(right);
+}
+)cpp", "TR0203"},
+    {"wrapper-swap-specialization", R"cpp(#include <array>
+#include <functional>
+#include <utility>
+struct Box { int value; };
+int effects;
+namespace std { template<> void swap<reference_wrapper<Box>>(reference_wrapper<Box>&,reference_wrapper<Box>&) noexcept{ ++::effects; } }
+using Value = std::pair<std::reference_wrapper<Box>, int>;
+void rejected_swap(Value &left, Value &right) {
+  left.swap(right);
+}
+)cpp", "TR0201"},
+    {"wrapper-swap-specialization-declaration", R"cpp(#include <array>
+#include <functional>
+#include <utility>
+struct Box { int value; };
+int effects;
+namespace std { template<> void swap<reference_wrapper<Box>>(reference_wrapper<Box>&,reference_wrapper<Box>&) noexcept; }
+using Value = std::pair<std::reference_wrapper<Box>, int>;
+void rejected_swap(Value &left, Value &right) {
+  left.swap(right);
+}
+)cpp", "TR0201"},
+    {"wrapper-move-specialization", R"cpp(#include <array>
+#include <functional>
+#include <utility>
+struct Box { int value; };
+int effects;
+namespace std { template<> reference_wrapper<Box>&& move<reference_wrapper<Box>&>(reference_wrapper<Box>& value) noexcept{ ++::effects; return static_cast<reference_wrapper<Box>&&>(value); } }
+using Value = std::pair<std::reference_wrapper<Box>, int>;
+void rejected_swap(Value &left, Value &right) {
+  left.swap(right);
+}
+)cpp", "TR0201"},
+    {"wrapper-move-specialization-declaration", R"cpp(#include <array>
+#include <functional>
+#include <utility>
+struct Box { int value; };
+int effects;
+namespace std { template<> reference_wrapper<Box>&& move<reference_wrapper<Box>&>(reference_wrapper<Box>& value) noexcept; }
+using Value = std::pair<std::reference_wrapper<Box>, int>;
+void rejected_swap(Value &left, Value &right) {
+  left.swap(right);
+}
+)cpp", "TR0201"},
+    {"tuple-wrapper-pair-adl", R"cpp(#include <array>
+#include <functional>
+#include <utility>
+#include <tuple>
+namespace custom { struct Box { int value; }; int effects; void swap(std::reference_wrapper<Box>&,std::reference_wrapper<Box>&){++effects;} }
+using Inner=std::pair<std::reference_wrapper<custom::Box>,int>;
+using Value = std::tuple<Inner>;
+void rejected_swap(Value &left, Value &right) {
+  left.swap(right);
+}
+)cpp", "TR0203"},
+    {"tuple-wrapper-pair-adl-free", R"cpp(#include <array>
+#include <functional>
+#include <utility>
+#include <tuple>
+namespace custom { struct Box { int value; }; int effects; void swap(std::reference_wrapper<Box>&,std::reference_wrapper<Box>&){++effects;} }
+using Inner=std::pair<std::reference_wrapper<custom::Box>,int>;
+using Value = std::tuple<Inner>;
+void rejected_swap(Value &left, Value &right) {
+  std::swap(left, right);
+}
+)cpp", "TR0203"},
+    {"tuple-mixed-wrapper-pair-adl", R"cpp(#include <array>
+#include <functional>
+#include <utility>
+#include <tuple>
+#include <optional>
+namespace custom { struct Box { int value; }; int effects; void swap(std::reference_wrapper<Box>&,std::reference_wrapper<Box>&){++effects;} }
+using Inner=std::pair<std::reference_wrapper<custom::Box>,int>;
+using Value = std::tuple<int &, Inner>;
+void rejected_swap(Value &left, Value &right) {
+  left.swap(right);
+}
+)cpp", "TR0203"},
+    {"tuple-nested-wrapper-pair-adl", R"cpp(#include <array>
+#include <functional>
+#include <utility>
+#include <tuple>
+#include <optional>
+namespace custom { struct Box { int value; }; int effects; void swap(std::reference_wrapper<Box>&,std::reference_wrapper<Box>&){++effects;} }
+using Inner=std::pair<std::reference_wrapper<custom::Box>,int>;
+using Value = std::tuple<std::tuple<Inner>>;
+void rejected_swap(Value &left, Value &right) {
+  left.swap(right);
+}
+)cpp", "TR0203"},
+    {"optional-wrapper-pair-adl", R"cpp(#include <array>
+#include <functional>
+#include <utility>
+#include <tuple>
+#include <optional>
+namespace custom { struct Box { int value; }; int effects; void swap(std::reference_wrapper<Box>&,std::reference_wrapper<Box>&){++effects;} }
+using Inner=std::pair<std::reference_wrapper<custom::Box>,int>;
+using Value = std::optional<Inner>;
+void rejected_swap(Value &left, Value &right) {
+  left.swap(right);
+}
+)cpp", "TR0203"},
+    {"optional-wrapper-pair-adl-free", R"cpp(#include <array>
+#include <functional>
+#include <utility>
+#include <tuple>
+#include <optional>
+namespace custom { struct Box { int value; }; int effects; void swap(std::reference_wrapper<Box>&,std::reference_wrapper<Box>&){++effects;} }
+using Inner=std::pair<std::reference_wrapper<custom::Box>,int>;
+using Value = std::optional<Inner>;
+void rejected_swap(Value &left, Value &right) {
+  std::swap(left, right);
+}
+)cpp", "TR0203"},
+    {"optional-tuple-wrapper-pair-adl", R"cpp(#include <array>
+#include <functional>
+#include <utility>
+#include <tuple>
+#include <optional>
+namespace custom { struct Box { int value; }; int effects; void swap(std::reference_wrapper<Box>&,std::reference_wrapper<Box>&){++effects;} }
+using Inner=std::pair<std::reference_wrapper<custom::Box>,int>;
+using Value = std::optional<std::tuple<Inner>>;
+void rejected_swap(Value &left, Value &right) {
+  left.swap(right);
+}
+)cpp", "TR0203"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("pair-wrapper-swap-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("pair-wrapper-swap-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}), Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PairReferenceWrapperValuesKeepOperationBoundaries) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Rejection Cases[] = {
+      {"wrapper-equality", R"cpp(#include <array>
+#include <functional>
+#include <utility>
+struct Box { int value; };
+using W=std::reference_wrapper<int>;using P=std::pair<W,int>;bool equal(const P& left,const P& right){return left==right;}
+)cpp", "TR0203"},
+      {"wrapper-ordering", R"cpp(#include <array>
+#include <functional>
+#include <utility>
+struct Box { int value; };
+using W=std::reference_wrapper<int>;using P=std::pair<W,int>;bool less(const P& left,const P& right){return left<right;}
+)cpp", "TR0203"},
+      {"const-wrapper-assignment", R"cpp(#include <array>
+#include <functional>
+#include <utility>
+struct Box { int value; };
+using W=std::reference_wrapper<Box>;using P=std::pair<const W,int>;void assign(P& left,const P& right){left=right;}
+)cpp", "TR0202"},
+      {"volatile-wrapper-field", R"cpp(#include <array>
+#include <functional>
+#include <utility>
+struct Box { int value; };
+int main(){Box b{3};std::pair<volatile std::reference_wrapper<Box>,int> p(std::ref(b),2);return p.second;}
+)cpp", "TR0201"},
+      {"unsupported-wrapper-referent", R"cpp(#include <array>
+#include <functional>
+#include <utility>
+struct Box { int value; };
+int main(){long double b=3;std::pair<std::reference_wrapper<long double>,int> p(std::ref(b),2);return p.second;}
+)cpp", "TR0201"},
+      {"wrapper-array-field", R"cpp(#include <array>
+#include <functional>
+#include <utility>
+struct Box { int value; };
+int main(){Box b{3};std::array<std::reference_wrapper<Box>,1> a{{std::ref(b)}};std::pair<decltype(a),int> p(a,2);return p.second;}
+)cpp", "TR0201"},
+      {"wrapper-user-conversion", R"cpp(#include <array>
+#include <functional>
+#include <utility>
+struct Box { int value; };
+using W=std::reference_wrapper<Box>;struct Convert{Box* b;operator W()const{return std::ref(*b);}};int main(){Box b{3};std::pair<W,int> p(Convert{&b},2);return p.second;}
+)cpp", "TR0201"},
+      {"wrapper-user-specialization", R"cpp(#include <array>
+#include <functional>
+#include <utility>
+struct Box { int value; };
+namespace std { template<> class reference_wrapper<Box>{Box* pointer;public:reference_wrapper(Box& value):pointer(&value){} Box& get()const{return *pointer;}};}
+int main(){Box b{3};std::pair<std::reference_wrapper<Box>,int> p(std::ref(b),2);return p.second;}
+)cpp", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("pair-wrapper-values-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("pair-wrapper-values-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(translate(Source,
+                         {"--profile", "cpp-core-v2", "-o", Output.string()}),
+               Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PairArrayApplyFunctionsRunAtBothOptimizations) {
+  const auto Source = tmpFile("pair-array-apply-functions.cpp");
+  const auto Output = tmpFile("pair-array-apply-functions.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <tuple>
+#include <utility>
+using Pair = std::pair<int, int>;
+using Row = std::array<int, 2>;
+using Grid = std::array<Row, 2>;
+int trace;
+int callable_reads;
+int argument_reads;
+int callback_calls;
+int ordered_sum(int a, int b) { trace = trace * 10 + 3; ++callback_calls; return a + b; }
+using Callback = int (*)(int, int);
+Callback choose_callback() { trace = trace * 10 + 1; ++callable_reads; return ordered_sum; }
+Callback change_pair_callback(Pair& values) { values.first = 7; return choose_callback(); }
+Callback change_array_callback(Row& values) { values[0] = 7; return choose_callback(); }
+Pair& choose_pair(Pair& values) { trace = trace * 10 + 2; ++argument_reads; return values; }
+Row& choose_array(Row& values) { trace = trace * 10 + 2; ++argument_reads; return values; }
+int sum(int a, int b) { return a + b; }
+int converted(long a, double b) { return int(a + long(b)); }
+int& add(int& a, const int& b) { a += b; return a; }
+int read(const int& a, const int& b) { return a + b; }
+int consume(int&& a, int&& b) { a += b; return a; }
+int const_consume(const int&& a, const int&& b) { return a + b; }
+int& mixed(int& a, const long& b) { a += int(b); return a; }
+int& mixed_rvalue(int& a, long&& b) { a += int(b); b = 9; return a; }
+int&& relay(int&& a) { return static_cast<int&&>(a); }
+int empty() { ++callback_calls; return 17; }
+void capture(int a, int b) { trace = a * 10 + b; }
+int nested(Row& a, const Row& b) { a[0] += b[1]; return a[0]; }
+const Row& nested_view(const Row& a, const Row&) { return a; }
+Row&& nested_take(Row&& a, Row&&) { return static_cast<Row&&>(a); }
+struct Input { int value; };
+int record_values(Input a, Input b) { int result = a.value + b.value; a.value = 99; return result; }
+int record_pair(Input a, int b) { int result = a.value + b; a.value = 99; return result; }
+int constructed;
+int copied;
+int dropped;
+struct Result {
+  int value;
+  Result(int input) : value(input) { ++constructed; }
+  Result(const Result& input) : value(input.value) { ++copied; }
+  ~Result() { ++dropped; }
+};
+Result make_result(int a, int b) { return Result(a + b); }
+int sum_four(int a, long b, int c, int d) { return a + int(b) + c + d; }
+int main() {
+  Pair values(2, 3);
+  trace = callable_reads = argument_reads = callback_calls = 0;
+  if (std::apply(choose_callback(), choose_pair(values)) != 5 ||
+      callable_reads != 1 || argument_reads != 1 || callback_calls != 1 ||
+      (trace != 123 && trace != 213)) return 1;
+  trace = callable_reads = argument_reads = callback_calls = 0;
+  if (std::apply(change_pair_callback(values), choose_pair(values)) != 10 ||
+      callable_reads != 1 || argument_reads != 1 || callback_calls != 1 ||
+      (trace != 123 && trace != 213)) return 35;
+  values.first = 2;
+  Callback pointer = sum;
+  if (std::apply(pointer, values) != 5 || std::apply(converted, values) != 5) return 2;
+  int& pair_alias = std::apply(add, values);
+  if (&pair_alias != &values.first || values.first != 5) return 3;
+  const Pair constant(4, 5);
+  if (std::apply(read, constant) != 9) return 4;
+  Pair moving(6, 7);
+  if (std::apply(consume, static_cast<Pair&&>(moving)) != 13 || moving.first != 13) return 5;
+  int left = 10, right = 2;
+  std::pair<int&, int&> references(left, right);
+  const std::pair<int&, int&>& constant_references = references;
+  if (std::apply(add, constant_references) != 12 || left != 12) return 6;
+  if (std::apply(add, static_cast<std::pair<int&, int&>&&>(references)) != 14) return 7;
+  std::pair<int&&, int&&> rvalue_references(static_cast<int&&>(left), static_cast<int&&>(right));
+  if (std::apply(add, rvalue_references) != 16) return 8;
+  if (std::apply(consume, static_cast<std::pair<int&&, int&&>&&>(rvalue_references)) != 18) return 9;
+  const std::pair<int&&, int&&>& const_rvalue_references = rvalue_references;
+  if (&std::apply(add, const_rvalue_references) != &left || left != 20) return 33;
+  left = 18;
+  std::pair<int&, long> mixed_values(left, 4L);
+  int& mixed_alias = std::apply(mixed, mixed_values);
+  if (&mixed_alias != &left || left != 22) return 10;
+  const std::pair<int&, long>& mixed_constant = mixed_values;
+  if (&std::apply(mixed, mixed_constant) != &left || left != 26) return 11;
+  if (&std::apply(mixed_rvalue, static_cast<std::pair<int&, long>&&>(mixed_values)) != &left ||
+      left != 30 || mixed_values.second != 9) return 12;
+  Row row{{2, 3}};
+  trace = callable_reads = argument_reads = callback_calls = 0;
+  if (std::apply(choose_callback(), choose_array(row)) != 5 ||
+      callable_reads != 1 || argument_reads != 1 || callback_calls != 1 ||
+      (trace != 123 && trace != 213)) return 13;
+  trace = callable_reads = argument_reads = callback_calls = 0;
+  if (std::apply(change_array_callback(row), choose_array(row)) != 10 ||
+      callable_reads != 1 || argument_reads != 1 || callback_calls != 1 ||
+      (trace != 123 && trace != 213)) return 36;
+  row[0] = 2;
+  if (std::apply(pointer, row) != 5 || std::apply(converted, row) != 5) return 14;
+  int& row_alias = std::apply(add, row);
+  if (&row_alias != &row[0] || row[0] != 5) return 15;
+  const Row constant_row{{4, 5}};
+  if (std::apply(const_consume, static_cast<const Row&&>(constant_row)) != 9 ||
+      std::apply(const_consume, static_cast<const Pair&&>(constant)) != 9) return 34;
+  if (std::apply(read, constant_row) != 9) return 16;
+  Row moved_row{{6, 7}};
+  if (std::apply(consume, static_cast<Row&&>(moved_row)) != 13 || moved_row[0] != 13) return 17;
+  std::array<int, 1> single{{9}};
+  int&& rvalue_alias = std::apply(relay, static_cast<std::array<int, 1>&&>(single));
+  rvalue_alias = 10;
+  if (&rvalue_alias != &single[0] || single[0] != 10) return 18;
+  std::array<int, 0> nothing{};
+  callback_calls = 0;
+  if (std::apply(empty, nothing) != 17 || callback_calls != 1 ||
+      std::apply(empty, std::array<int, 0>{}) != 17 || callback_calls != 2) return 19;
+  std::apply(capture, Pair(6, 7));
+  if (trace != 67) return 20;
+  std::apply(capture, Row{{8, 9}});
+  if (trace != 89) return 21;
+  Grid grid{{Row{{1, 2}}, Row{{3, 4}}}};
+  if (std::apply(nested, grid) != 5 || grid[0][0] != 5) return 22;
+  const Grid& constant_grid = grid;
+  if (&std::apply(nested_view, constant_grid) != &grid[0]) return 23;
+  Row&& nested_alias = std::apply(nested_take, static_cast<Grid&&>(grid));
+  if (&nested_alias != &grid[0]) return 24;
+  std::array<Input, 2> inputs{{Input{2}, Input{3}}};
+  if (std::apply(record_values, inputs) != 5 || inputs[0].value != 2) return 25;
+  std::pair<Input, int> record_arguments(Input{4}, 5);
+  if (std::apply(record_pair, record_arguments) != 9 || record_arguments.first.value != 4) return 26;
+  constructed = copied = dropped = 0;
+  {
+    Result result = std::apply(make_result, Pair(11, 13));
+    if (result.value != 24 || constructed != 1 || copied || dropped) return 27;
+  }
+  if (dropped != 1) return 28;
+  {
+    Result result = std::apply(make_result, constant_row);
+    if (result.value != 9 || constructed != 2 || copied || dropped != 1) return 29;
+  }
+  if (dropped != 2) return 30;
+  if (std::apply(sum, std::tuple<int, int>(1, 2)) != 3) return 31;
+  auto joined = std::tuple_cat(std::pair<int, long>(1, 2L), Row{{3, 4}});
+  return std::apply(sum_four, joined) == 10 ? 0 : 32;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("__apply_tuple_impl"), std::string::npos);
+  EXPECT_EQ(Text.find("member_pointer"), std::string::npos);
+  EXPECT_EQ(Text.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("pair-array-apply-functions" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PairArrayApplyCallableObjectsRunAtBothOptimizations) {
+  const auto Source = tmpFile("pair-array-apply-objects.cpp");
+  const auto Output = tmpFile("pair-array-apply-objects.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+using Pair = std::pair<int, int>;
+using Row = std::array<int, 2>;
+using Grid = std::array<Row, 2>;
+int trace;
+int callable_reads;
+int argument_reads;
+struct Callable {
+  int calls;
+  int operator()(int a, int b) & { ++calls; trace = trace * 10 + 3; return a + b; }
+};
+Callable& choose_callable(Callable& value) { ++callable_reads; trace = trace * 10 + 1; return value; }
+Pair& choose_pair(Pair& value) { ++argument_reads; trace = trace * 10 + 2; return value; }
+Row& choose_array(Row& value) { ++argument_reads; trace = trace * 10 + 2; return value; }
+struct Mutator {
+  int calls;
+  int& operator()(int& value, long amount) & { ++calls; value += int(amount); return value; }
+};
+struct Viewer {
+  const int& operator()(const int& value, const int&) const & { return value; }
+};
+struct Consumer {
+  int operator()(int&& first, int&& second) && { return first + second + 1; }
+};
+struct Empty { int operator()() && { return 17; } };
+struct Nested {
+  Row& operator()(Row& first, const Row& second) const { first[0] += second[1]; return first; }
+};
+int add(int a, int b) { return a + b; }
+int empty() { return 19; }
+int built;
+int copied;
+int dropped;
+struct Result {
+  int value;
+  Result(int input) : value(input) { ++built; }
+  Result(const Result& input) : value(input.value) { ++copied; }
+  ~Result() { ++dropped; }
+};
+struct Maker { Result operator()(int a, int b) && { return Result(a + b); } };
+Result make(int a, int b) { return Result(a + b); }
+int main() {
+  Pair pair(2, 3);
+  Row row{{4, 5}};
+  Callable callable{0};
+  trace = callable_reads = argument_reads = 0;
+  if (std::apply(choose_callable(callable), choose_pair(pair)) != 5 ||
+      callable.calls != 1 || callable_reads != 1 || argument_reads != 1 ||
+      (trace != 123 && trace != 213)) return 1;
+  trace = callable_reads = argument_reads = 0;
+  if (std::apply(choose_callable(callable), choose_array(row)) != 9 ||
+      callable.calls != 2 || callable_reads != 1 || argument_reads != 1 ||
+      (trace != 123 && trace != 213)) return 2;
+  Mutator mutator{0};
+  int target = 5;
+  std::pair<int&, long> mixed(target, 2L);
+  int& pair_alias = std::apply(mutator, mixed);
+  if (&pair_alias != &target || target != 7 || mutator.calls != 1) return 3;
+  int& array_alias = std::apply(mutator, row);
+  if (&array_alias != &row[0] || row[0] != 9 || mutator.calls != 2) return 4;
+  const Pair constant_pair(6, 7);
+  const Row constant_array{{8, 9}};
+  const Viewer viewer{};
+  if (&std::apply(viewer, constant_pair) != &constant_pair.first ||
+      &std::apply(viewer, constant_array) != &constant_array[0]) return 5;
+  if (std::apply(Consumer{}, Pair(10, 11)) != 22 ||
+      std::apply(Consumer{}, Row{{12, 13}}) != 26) return 6;
+  std::array<int, 0> zero{};
+  if (std::apply(Empty{}, zero) != 17 || std::apply(Empty{}, std::array<int, 0>{}) != 17) return 7;
+  std::plus<int> plus;
+  if (std::apply(plus, pair) != 5 || std::apply(plus, constant_array) != 17) return 8;
+  if (std::apply(std::multiplies<>{}, Pair(3, 4)) != 12 ||
+      std::apply(std::less<>{}, Row{{3, 4}}) != true) return 9;
+  if (std::apply(std::negate<int>{}, std::array<int, 1>{{5}}) != -5 ||
+      std::apply(std::hash<int>{}, std::array<int, 1>{{7}}) != 7) return 10;
+  auto function_wrapper = std::ref(add);
+  if (std::apply(function_wrapper, pair) != 5 || std::apply(std::ref(add), row) != 14) return 11;
+  auto pointer = &add;
+  auto pointer_wrapper = std::ref(pointer);
+  if (std::apply(pointer_wrapper, pair) != 5 || std::apply(pointer_wrapper, constant_array) != 17) return 12;
+  auto callable_wrapper = std::ref(callable);
+  if (std::apply(callable_wrapper, pair) != 5 || std::apply(callable_wrapper, row) != 14 || callable.calls != 4) return 13;
+  trace = callable_reads = argument_reads = 0;
+  if (std::apply(std::ref(choose_callable(callable)), choose_pair(pair)) != 5 ||
+      callable.calls != 5 || callable_reads != 1 || argument_reads != 1 ||
+      (trace != 123 && trace != 213)) return 14;
+  trace = callable_reads = argument_reads = 0;
+  if (std::apply(std::ref(choose_callable(callable)), choose_array(row)) != 14 ||
+      callable.calls != 6 || callable_reads != 1 || argument_reads != 1 ||
+      (trace != 123 && trace != 213)) return 15;
+  if (std::apply(std::cref(plus), pair) != 5 || std::apply(std::ref(plus), constant_array) != 17) return 16;
+  if (&std::apply(std::ref(mutator), mixed) != &target || target != 9 ||
+      &std::apply(std::ref(mutator), row) != &row[0] || row[0] != 14 || mutator.calls != 4) return 17;
+  if (&std::apply(std::cref(viewer), constant_pair) != &constant_pair.first ||
+      &std::apply(std::cref(viewer), constant_array) != &constant_array[0]) return 18;
+  if (std::apply(std::ref(empty), zero) != 19) return 19;
+  auto empty_pointer = &empty;
+  if (std::apply(std::ref(empty_pointer), zero) != 19) return 20;
+  Row first{{1, 2}}, second{{3, 4}};
+  std::pair<Row&, Row&> nested_pair(first, second);
+  Nested nested;
+  if (&std::apply(nested, nested_pair) != &first || first[0] != 5) return 21;
+  Grid grid{{Row{{6, 7}}, Row{{8, 9}}}};
+  if (&std::apply(std::ref(nested), grid) != &grid[0] || grid[0][0] != 15) return 22;
+  built = copied = dropped = 0;
+  {
+    Result result = std::apply(Maker{}, Pair(7, 8));
+    if (result.value != 15 || built != 1 || copied || dropped) return 23;
+  }
+  {
+    Result result = std::apply(Maker{}, Row{{9, 10}});
+    if (result.value != 19 || built != 2 || copied || dropped != 1) return 24;
+  }
+  {
+    Result result = std::apply(std::ref(make), pair);
+    if (result.value != 5 || built != 3 || copied || dropped != 2) return 25;
+  }
+  {
+    Result result = std::apply(std::ref(make), constant_array);
+    if (result.value != 17 || built != 4 || copied || dropped != 3) return 26;
+  }
+  return dropped == 4 ? 0 : 27;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("__apply_tuple_impl"), std::string::npos);
+  EXPECT_EQ(Text.find("member_pointer"), std::string::npos);
+  EXPECT_EQ(Text.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("pair-array-apply-objects" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PairArrayApplyMemberPointersAndMemFnRunAtBothOptimizations) {
+  const auto Source = tmpFile("pair-array-apply-members.cpp");
+  const auto Output = tmpFile("pair-array-apply-members.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+int effects;
+int calls;
+int built;
+int copied;
+int dropped;
+struct Result {
+  int value;
+  Result(int input) : value(input) { ++built; }
+  Result(const Result& input) : value(input.value) { ++copied; }
+  ~Result() { ++dropped; }
+};
+struct Box {
+  int value;
+  int add(int amount) & { ++calls; return value + amount; }
+  int& mutate(int amount) & { ++calls; value += amount; return value; }
+  int add_const(int amount) const { ++calls; return value + amount; }
+  int consume(int amount) && { ++calls; value += amount; return value; }
+  int read() const { ++calls; return value; }
+  int& slot() & { ++calls; return value; }
+  int&& take() && { ++calls; return static_cast<int&&>(value); }
+  int merge(const Box& other) & { ++calls; value += other.value; return value; }
+  Result make(int amount) const { ++calls; return Result(value + amount); }
+  Result make_zero() const { ++calls; return Result(value); }
+};
+using PointerPair = std::pair<Box*, int>;
+using Boxes = std::array<Box, 1>;
+using Pointers = std::array<Box*, 1>;
+PointerPair& choose_pair(PointerPair& value) { ++effects; return value; }
+Boxes& choose_array(Boxes& value) { ++effects; return value; }
+Pointers& choose_pointers(Pointers& value) { ++effects; return value; }
+int main() {
+  Box box{3};
+  PointerPair pair(&box, 2);
+  auto member = &Box::add;
+  if (std::apply(&Box::add, pair) != 5 || std::apply(member, pair) != 5 ||
+      std::apply(std::move(member), pair) != 5) return 1;
+  effects = calls = 0;
+  if (std::apply(&Box::add, choose_pair(pair)) != 5 || effects != 1 || calls != 1) return 2;
+  auto adapter = std::mem_fn(&Box::add);
+  effects = calls = 0;
+  if (std::apply(std::move(adapter), choose_pair(pair)) != 5 || effects != 1 || calls != 1) return 3;
+  effects = calls = 0;
+  if (std::apply(std::mem_fn(&Box::add), choose_pair(pair)) != 5 || effects != 1 || calls != 1) return 4;
+  std::pair<Box&, int> references(box, 4);
+  const std::pair<Box&, int>& const_references = references;
+  if (std::apply(&Box::add, const_references) != 7 ||
+      std::apply(std::mem_fn(&Box::add), static_cast<std::pair<Box&, int>&&>(references)) != 7) return 5;
+  using WrappedPair = std::pair<std::reference_wrapper<Box>, int>;
+  WrappedPair wrapped(std::ref(box), 5);
+  if (std::apply(&Box::add, wrapped) != 8 ||
+      std::apply(std::mem_fn(&Box::add), wrapped) != 8) return 6;
+  int& alias = std::apply(&Box::mutate, pair);
+  if (&alias != &box.value || box.value != 5) return 7;
+  int& adapter_alias = std::apply(std::mem_fn(&Box::mutate), pair);
+  if (&adapter_alias != &box.value || box.value != 7) return 8;
+  const Box constant{8};
+  std::pair<const Box*, int> constant_pair(&constant, 2);
+  if (std::apply(&Box::add_const, constant_pair) != 10 ||
+      std::apply(std::mem_fn(&Box::add_const), constant_pair) != 10) return 9;
+  std::pair<Box, int> owned(Box{10}, 3);
+  if (std::apply(&Box::add, owned) != 13 || std::apply(std::mem_fn(&Box::add), owned) != 13) return 10;
+  if (std::apply(&Box::consume, static_cast<std::pair<Box, int>&&>(owned)) != 13 || owned.first.value != 13) return 11;
+  if (std::apply(std::mem_fn(&Box::consume), std::pair<Box, int>(Box{12}, 4)) != 16) return 12;
+  Boxes boxes{{Box{20}}};
+  Pointers pointers{{&box}};
+  effects = calls = 0;
+  int& array_alias = std::apply(&Box::slot, choose_array(boxes));
+  if (&array_alias != &boxes[0].value || effects != 1 || calls != 1) return 13;
+  array_alias = 21;
+  auto field = &Box::value;
+  std::apply(std::move(field), pointers) = 9;
+  if (box.value != 9) return 14;
+  effects = calls = 0;
+  auto slot = &Box::slot;
+  if (&std::apply(slot, choose_pointers(pointers)) != &box.value || effects != 1 || calls != 1) return 15;
+  auto field_adapter = std::mem_fn(&Box::value);
+  std::apply(std::move(field_adapter), boxes) = 22;
+  if (boxes[0].value != 22) return 16;
+  effects = calls = 0;
+  if (&std::apply(std::mem_fn(&Box::slot), choose_array(boxes)) != &boxes[0].value ||
+      effects != 1 || calls != 1) return 17;
+  auto slot_adapter = std::mem_fn(&Box::slot);
+  effects = calls = 0;
+  if (&std::apply(slot_adapter, choose_pointers(pointers)) != &box.value || effects != 1 || calls != 1) return 18;
+  const Boxes const_boxes{{Box{23}}};
+  const std::array<const Box*, 1> const_pointers{{&constant}};
+  if (std::apply(&Box::read, const_boxes) != 23 ||
+      std::apply(std::mem_fn(&Box::read), const_pointers) != 8) return 19;
+  const int& const_alias = std::apply(&Box::value, const_boxes);
+  if (&const_alias != &const_boxes[0].value) return 20;
+  int&& rvalue_alias = std::apply(&Box::take, static_cast<Boxes&&>(boxes));
+  rvalue_alias = 24;
+  if (&rvalue_alias != &boxes[0].value || boxes[0].value != 24) return 21;
+  int&& adapter_rvalue_alias = std::apply(std::mem_fn(&Box::take), static_cast<Boxes&&>(boxes));
+  adapter_rvalue_alias = 25;
+  if (&adapter_rvalue_alias != &boxes[0].value || boxes[0].value != 25) return 22;
+  std::array<Box, 2> two{{Box{2}, Box{3}}};
+  if (std::apply(&Box::merge, two) != 5 || two[0].value != 5 || two[1].value != 3) return 23;
+  if (std::apply(std::mem_fn(&Box::merge), two) != 8 || two[0].value != 8) return 24;
+  built = copied = dropped = 0;
+  {
+    Result result = std::apply(&Box::make, pair);
+    if (result.value != 11 || built != 1 || copied || dropped) return 25;
+  }
+  {
+    Result result = std::apply(std::mem_fn(&Box::make), pair);
+    if (result.value != 11 || built != 2 || copied || dropped != 1) return 26;
+  }
+  {
+    Result result = std::apply(&Box::make_zero, boxes);
+    if (result.value != 25 || built != 3 || copied || dropped != 2) return 27;
+  }
+  {
+    Result result = std::apply(std::mem_fn(&Box::make_zero), const_boxes);
+    if (result.value != 23 || built != 4 || copied || dropped != 3) return 28;
+  }
+  return dropped == 4 ? 0 : 29;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("__apply_tuple_impl"), std::string::npos);
+  EXPECT_EQ(Text.find("member_pointer"), std::string::npos);
+  EXPECT_EQ(Text.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("pair-array-apply-members" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PairArrayApplyRecordCopiesRunAtBothOptimizations) {
+  const auto Source = tmpFile("pair-array-apply-record-copies.cpp");
+  const auto Output = tmpFile("pair-array-apply-record-copies.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+int calls;
+struct Record {
+  int value;
+  int copied_argument(Record other) const {
+    ++calls;
+    int result = value * 10 + other.value;
+    other.value = 99;
+    return result;
+  }
+};
+struct Callable {
+  int operator()(Record first, Record second) const {
+    ++calls;
+    int result = first.value * 10 + second.value;
+    first.value = 88;
+    second.value = 99;
+    return result;
+  }
+};
+using Pair = std::pair<Record, Record>;
+using Row = std::array<Record, 2>;
+int main() {
+  Pair pair(Record{2}, Record{3});
+  Row row{{Record{4}, Record{5}}};
+  const Row constant{{Record{6}, Record{7}}};
+  Callable callable;
+  if (std::apply(callable, pair) != 23 ||
+      std::apply(callable, row) != 45 ||
+      std::apply(callable, constant) != 67 || calls != 3) return 1;
+  if (pair.first.value != 2 || pair.second.value != 3 ||
+      row[0].value != 4 || row[1].value != 5) return 2;
+  auto wrapper = std::cref(callable);
+  if (std::apply(wrapper, pair) != 23 ||
+      std::apply(wrapper, row) != 45 ||
+      std::apply(wrapper, constant) != 67 || calls != 6) return 3;
+  if (pair.first.value != 2 || pair.second.value != 3 ||
+      row[0].value != 4 || row[1].value != 5) return 4;
+  if (std::apply(&Record::copied_argument, pair) != 23 ||
+      std::apply(&Record::copied_argument, row) != 45 ||
+      std::apply(&Record::copied_argument, constant) != 67 || calls != 9) return 5;
+  auto member = std::mem_fn(&Record::copied_argument);
+  if (std::apply(member, pair) != 23 ||
+      std::apply(member, row) != 45 ||
+      std::apply(member, constant) != 67 || calls != 12) return 6;
+  return pair.first.value == 2 && pair.second.value == 3 &&
+         row[0].value == 4 && row[1].value == 5 &&
+         constant[0].value == 6 && constant[1].value == 7 ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("__apply_tuple_impl"), std::string::npos);
+  EXPECT_EQ(Text.find("member_pointer"), std::string::npos);
+  EXPECT_EQ(Text.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("pair-array-apply-record-copies" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2TupleLikeApplyConstValuesRunAtBothOptimizations) {
+  const auto Source = tmpFile("tuple-like-apply-const-values.cpp");
+  const auto Output = tmpFile("tuple-like-apply-const-values.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+int calls;
+int reads;
+int add(int a, int b) { ++calls; return a + b; }
+struct Add {
+  int operator()(int a, int b) const { ++calls; return a + b; }
+};
+using Immutable = const int;
+using Row = std::array<Immutable, 2>;
+const Row& read(const Row& values) { ++reads; return values; }
+using Fn = int (*)(int, int);
+int invoke_pointer(Fn callback, int a) { return callback(a, 3); }
+int dereference(const int* p, int n) { ++calls; return *p + n; }
+int main() {
+  const std::tuple<int, int> tuple{2, 3};
+  const std::pair<int, int> pair{2, 3};
+  const Row array{{2, 3}};
+  auto pointer = &add;
+  auto pointer_wrapper = std::ref(pointer);
+  auto function_wrapper = std::ref(add);
+  Add object;
+  auto object_wrapper = std::cref(object);
+  if (std::apply(pointer_wrapper, tuple) != 5 ||
+      std::apply(pointer_wrapper, pair) != 5 ||
+      std::apply(pointer_wrapper, array) != 5) return 1;
+  if (std::apply(function_wrapper, tuple) != 5 ||
+      std::apply(function_wrapper, pair) != 5 ||
+      std::apply(function_wrapper, array) != 5) return 2;
+  if (std::apply(object_wrapper, tuple) != 5 ||
+      std::apply(object_wrapper, pair) != 5 ||
+      std::apply(object_wrapper, array) != 5) return 3;
+  if (calls != 9) return 4;
+  if (std::apply(pointer_wrapper, read(array)) != 5 || reads != 1 || calls != 10) return 5;
+  const Fn callback = &add;
+  int argument = 2;
+  const auto pointer_values = std::tie(callback, argument);
+  auto invoke_wrapper = std::ref(invoke_pointer);
+  if (std::apply(invoke_wrapper, pointer_values) != 5 || calls != 11) return 6;
+  Immutable first = 2;
+  const std::pair<const int*, int> const_pointee{&first, 3};
+  auto dereference_wrapper = std::ref(dereference);
+  if (std::apply(dereference_wrapper, const_pointee) != 5 || calls != 12) return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("__apply_tuple_impl"), std::string::npos);
+  EXPECT_EQ(Text.find("member_pointer"), std::string::npos);
+  EXPECT_EQ(Text.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("tuple-like-apply-const-values" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2TupleLikeApplyConstValuesRetainSourceAndQualification) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Rejection Cases[] = {
+      {"const-volatile-scalar", R"cpp(#include <array>
+#include <tuple>
+#include <functional>
+#include <utility>
+int add(int a,int b){return a+b;}
+int main(){const volatile int a=2;int b=3;auto values=std::tie(a,b);return std::apply(std::ref(add),values);}
+)cpp", "TR0201"},
+      {"pointee-const-removal", R"cpp(#include <array>
+#include <tuple>
+#include <functional>
+#include <utility>
+int add(int a,int b){return a+b;}
+int alter(int* p,int n){*p+=n;return *p;}
+int main(){const int value=2;const std::pair<const int*,int> values{&value,3};return std::apply(std::ref(alter),values);}
+)cpp", "TR0202"},
+      {"hidden-long-double", R"cpp(#include <array>
+#include <tuple>
+#include <functional>
+#include <utility>
+int add(int a,int b){return a+b;}
+int main(){const std::array<int,2> values{{int(sizeof(long double)),3}};return std::apply(std::ref(add),values);}
+)cpp", "TR0201"},
+      {"get-source-specialization", R"cpp(#include <array>
+#include <tuple>
+#include <functional>
+#include <utility>
+int add(int a,int b){return a+b;}
+namespace std {template<> constexpr const int& get<0,int,2>(const array<int,2>& a) noexcept {return a[1];}}
+int main(){const std::array<int,2> values{{2,3}};return std::apply(std::ref(add),values);}
+)cpp", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("tuple-like-apply-const-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("tuple-like-apply-const-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(translate(Source,
+                         {"--profile", "cpp-core-v2", "-o", Output.string()}),
+               Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2PairArrayApplyRequiresPinnedOperations) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Rejection Cases[] = {
+
+      {"zero-volatile-element", R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+int empty() { return 1; }
+int main() { std::array<volatile int, 0> a{}; return std::apply(empty, a); }
+)cpp", "TR0201"},
+
+      {"zero-nontrivial-element", R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+struct Item { int value; ~Item() {} };
+int empty() { return 1; }
+int main() { std::array<Item, 0> a{}; return std::apply(empty, a); }
+)cpp", "TR0203"},
+
+      {"array-wrapper-receiver", R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+struct Box { int value; int read() const { return value; } };
+int main() { Box b{1}; std::array<std::reference_wrapper<Box>, 1> a{{std::ref(b)}}; return std::apply(&Box::read, a); }
+)cpp", "TR0203"},
+
+      {"nested-array-value-parameter", R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+using Row = std::array<int, 2>;
+int value(Row row) { return row[0]; }
+int main() { std::array<Row, 1> a{{Row{{1,2}}}}; return std::apply(value, a); }
+)cpp", "TR0203"},
+
+      {"pair-array-value-object-parameter", R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+using Row = std::array<int, 2>;
+struct F { int operator()(Row row, int value) const { return row[0] + value; } };
+int main() { std::pair<Row,int> a(Row{{1,2}},3); return std::apply(F{}, a); }
+)cpp", "TR0203"},
+
+      {"array-value-callback-result", R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+using Row = std::array<int, 2>;
+Row value() { return Row{{1,2}}; }
+int main() { std::array<int, 0> a{}; std::apply(value, a); return 0; }
+)cpp", "TR0203"},
+
+      {"array-value-member-result", R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+using Row = std::array<int, 2>;
+struct Box { int value; Row read() const { return Row{{value, value}}; } };
+int main() { std::array<Box, 1> a{{Box{1}}}; std::apply(std::mem_fn(&Box::read), a); return 0; }
+)cpp", "TR0203"},
+
+      {"pair-sdk-referent", R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+using Pair = std::pair<int, int>;
+int read(Pair& a, int value) { return a.first + value; }
+int main() { Pair p(1,2); std::pair<Pair&,int> a(p,3); return std::apply(read, a); }
+)cpp", "TR0201"},
+
+      {"array-specialization-zero", R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+namespace std { template<> struct array<int, 0> { char payload; }; }
+int empty() { return 1; }
+int main() { std::array<int, 0> a{}; return std::apply(empty, a); }
+)cpp", "TR0201"},
+
+      {"pair-specialization", R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+namespace std { template<> struct pair<int, int> { int first; int second; }; }
+int sum(int a, int b) { return a + b; }
+int main() { std::pair<int,int> a{1,2}; return std::apply(sum, a); }
+)cpp", "TR0201"},
+
+      {"hidden-explicit-callable-source", R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+int sum(int a, int b) { return a + b; }
+int main() {
+  std::pair<int,int> a(1,2);
+  return std::apply<decltype((sizeof(long double), &sum)), std::pair<int,int>&>(&sum, a);
+}
+)cpp", "TR0201"},
+
+      {"hidden-array-extent-source", R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+int empty() { return 1; }
+int main() { std::array<int, (sizeof(long double), 0)> a{}; return std::apply(empty, a); }
+)cpp", "TR0201"},
+
+      {"hidden-array-element-source", R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+template<class T> using Erased = int;
+int sum(int a, int b) { return a + b; }
+int main() { std::array<Erased<long double*>, 2> a{{1,2}}; return std::apply(sum, a); }
+)cpp", "TR0201"},
+
+      {"const-array-mutable-binding", R"cpp(#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+int change(int& a, int& b) { return a += b; }
+int main() { const std::array<int,2> a{{1,2}}; return std::apply(change, a); }
+)cpp", "TR0202"},
+
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("pair-array-apply-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("pair-array-apply-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(translate(Source,
+                         {"--profile", "cpp-core-v2", "-o", Output.string()}),
+               Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2TupleCatRunsAtBothOptimizations) {
   const auto Source = tmpFile("tuple-cat.cpp");
   const auto Output = tmpFile("tuple-cat.nc");

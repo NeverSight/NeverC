@@ -238,6 +238,18 @@ Ordinary value pairs accept those sources for heterogeneous construction and
 assignment, copying or converting each field into independent storage.
 Assignment writes `first` before `second` and returns the destination by
 reference; recursive composite fields still require the exact unqualified type.
+Authenticated `std::reference_wrapper` values are admitted as ordinary or
+mixed pair value fields, including nested pairs. Construction and copying
+preserve the wrapped binding; assignment copies that binding without
+changing the referred-to object. Member/free swap requires exact SDK element
+swaps, trivial selected copy/move operations and authenticated nested pair
+dispatch. User ADL swaps and source specializations remain rejected. Wrapper
+pairs with array siblings and tuple/optional swaps containing wrapper-bearing
+pairs remain rejected until their internal swap chains are authenticated.
+Const
+wrapper fields can be copied but not assigned, volatile wrapper fields
+remain excluded, and comparisons involving wrapper-valued leaves remain
+rejected.
 Tuple
 directly lowers authenticated empty and nonempty tuples of scalars, reference
 wrappers
@@ -268,19 +280,25 @@ Recursive comparisons operate on referent values and retain the value tuple
 short-circuit and lexicographic rules. Conversions from admitted value pairs
 either bind their fields during construction or assign through destination
 references. Member and free swap exchange referent values while retaining each
-tuple's bindings. Exact
-`apply` lowers named functions, stored function pointers, exact source-owned
-function objects, authenticated standard scalar function objects, or exact
-`reference_wrapper` forms around those callables, exact direct or stored source
-member pointers, plus exact temporary or stored `mem_fn` wrappers around them,
-over tuple elements with directly convertible by-value parameters, or exact
-trivial source-record elements with independent by-value parameter objects, to one
-callback call, member projection or direct scalar operation. Empty tuples,
-scalar or void results, and complete source-record results constructed directly
-in the caller destination are included. Exact
-lvalue or rvalue reference parameters bind the corresponding tuple elements,
-reference results preserve their source storage and qualification, and function
-objects preserve their selected cv/ref-qualified `operator()` overload. Exact
+tuple's bindings. Exact `apply` accepts authenticated tuples, value/reference/
+mixed pairs and arrays whose elements satisfy the existing composite value and
+callback rules. It lowers named functions, stored function pointers, exact
+source-owned function objects, authenticated standard scalar function objects,
+exact `reference_wrapper` forms, direct or stored source member pointers, and
+temporary or stored `mem_fn` wrappers through the same checked callable paths.
+By-value scalar conversions and exact trivial source-record copies retain
+independent parameter objects; results may be scalar, void, references, or
+complete source records constructed directly in the caller destination.
+By-value SDK callback parameters and results remain excluded. Mutable and
+const lvalues, rvalues and materialized source temporaries preserve element
+cv/ref categories; pair reference fields keep their declared bindings. Empty
+arrays invoke a nullary callback after evaluating their source expression,
+and nested array elements may bind admitted array-reference parameters.
+Each callable and source expression is evaluated once. Exact SDK declaration,
+index, type and forwarding checks authenticate every selected `get` before the
+operation lowers to one callback call, member projection or scalar operation.
+User-defined tuple-like protocols and SDK function or record specializations
+remain outside that proof. Exact
 `tuple_cat` handles zero arguments and authenticated scalar or recursively
 composite tuple, pair or array sources, including all-reference and mixed
 reference/value tuple or pair elements,

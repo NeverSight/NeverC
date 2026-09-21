@@ -149,7 +149,15 @@ converting construction binds reference fields and initializes value fields.
 Ordinary value pairs also support heterogeneous construction and assignment
 from value, reference or mixed pairs, copying or converting each field into
 independent storage. Assignment writes `first` before `second` and returns the
-destination by reference.
+destination by reference. Authenticated `std::reference_wrapper` values
+are also admitted as pair fields, including nested pairs. Construction
+and copying retain the wrapped binding; assignment copies bindings without
+assigning the referred-to objects. Member/free swap exchanges wrapper bindings
+only after authenticating both selected element swaps and their nested pair
+operations. User ADL swaps and source specializations remain rejected. Wrapper
+pairs with array siblings, and tuple/optional swaps containing wrapper-bearing
+pairs, require further operation proofs and are rejected.
+Comparisons with wrapper-valued leaves remain rejected.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#scalar-utilities-and-pairs-from-utility).
 
 Core v2 accepts authenticated empty and nonempty `<tuple>` values, including
@@ -179,17 +187,22 @@ referents and use the same heterogeneous scalar leaves as value tuples. Pair
 conversion binds compatible pair fields during construction or writes their
 converted values through destination references during assignment. Member and
 free swap exchange referent values element by element without changing tuple
-bindings. Exact
-`std::apply` calls over scalar tuples accept named functions or stored function
-pointers with directly convertible by-value scalar parameters and a scalar or
-void result. The callable and tuple are evaluated once and lower to an ordinary
-indirect call, without a libc++ runtime dependency. Exact `tuple_cat` accepts
-zero arguments or value, reference and mixed-reference tuple/pair sources plus
-scalar and recursively composite arrays, evaluates all sources once before
-reading their elements, and constructs the exact concatenated tuple directly
-while preserving reference bindings. Source and standard function
-objects, reference wrappers, member pointers and `mem_fn` wrappers use the same
-authenticated tuple lowering with the documented value/reference boundary.
+bindings. Exact `std::apply` accepts authenticated tuples, value/reference/mixed
+pairs, and arrays whose elements satisfy the existing composite value and
+callback rules. Named functions, stored function pointers, source and standard
+function objects, reference wrappers, source member pointers and `mem_fn`
+wrappers use the same checked parameter and result boundary. Mutable and const
+lvalues, rvalues and materialized temporaries preserve element qualification
+and reference categories. Empty arrays call a nullary callback after evaluating
+the array expression; nested array elements may bind admitted array-reference
+parameters. By-value SDK callback parameters and results remain excluded.
+The callable and source object are each evaluated once, and the selected
+`get` operations require exact SDK declaration, index and forwarding proof
+before lowering to a scalar operation, member projection or ordinary call.
+Exact `tuple_cat` accepts zero arguments or value, reference and mixed-reference
+tuple/pair sources plus scalar and recursively composite arrays, evaluates all
+sources once before reading their elements, and constructs the exact
+concatenated tuple directly while preserving reference bindings.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#value-tuples-from-tuple).
 
 Authenticated `std::array` objects, including zero-length and nested arrays,

@@ -2810,6 +2810,10 @@ static bool utilityPairValue(const State &S, const SourceManager &SM,
     return true;
   const auto *Record =
       Type.getUnqualifiedType()->getAsCXXRecordDecl();
+  if (const auto Wrapper = approvedFunctionalReferenceRecord(S, SM, Record, Context))
+    return !Type.isVolatileQualified() && !Type.isRestrictQualified() &&
+           Type.getAddressSpace() == LangAS::Default &&
+           Wrapper->Record->hasTrivialCopyConstructor();
   const auto Pair = approvedUtilityPairRecord(S, SM, Record, Context);
   return Pair &&
          utilityPairValue(S, SM, Context, Pair->First->getType(), Depth + 1) &&
@@ -2826,6 +2830,10 @@ static bool utilityPairAssignableValue(const State &S,
     return utilityArrayTriviallyAssignable(Context, Type);
   const auto *Record =
       Type.getUnqualifiedType()->getAsCXXRecordDecl();
+  if (const auto Wrapper = approvedFunctionalReferenceRecord(S, SM, Record, Context))
+    return !Type.isVolatileQualified() && !Type.isRestrictQualified() &&
+           Type.getAddressSpace() == LangAS::Default &&
+           Wrapper->Record->hasTrivialCopyAssignment();
   const auto Pair = approvedUtilityPairRecord(S, SM, Record, Context);
   return Pair && utilityPairAssignableValue(
                      S, SM, Context, Pair->First->getType(), Depth + 1) &&
@@ -6818,11 +6826,13 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
   return Literal && Literal->getValue() == 1;
 }
 
-static std::optional<UtilityTupleCatSource>
-utilityTupleCatSource(const State &S, const SourceManager &SM, QualType Type,
-                      const ASTContext &Context) {
-  const auto *Record =
-      Type.isNull() ? nullptr : Type.getUnqualifiedType()->getAsCXXRecordDecl();
+std::optional<UtilityTupleLikeSource>
+approvedUtilityTupleLikeSource(const State &S, const SourceManager &SM,
+                               QualType Type, const ASTContext &Context) {
+  if (Type.isNull() || Type.isVolatileQualified() || Type.isRestrictQualified() ||
+      Type.getAddressSpace() != LangAS::Default)
+    return std::nullopt;
+  const auto *Record = Type.getUnqualifiedType()->getAsCXXRecordDecl();
   auto Tuple = approvedUtilityTupleRecord(S, SM, Record, Context);
   bool ReferenceTuple = false;
   if (!Tuple) {
@@ -6839,7 +6849,7 @@ utilityTupleCatSource(const State &S, const SourceManager &SM, QualType Type,
       if (!ReferenceTuple && !MixedReferenceTuple &&
           !utilityTupleValue(S, SM, Context, Element->getType()))
         return std::nullopt;
-    return UtilityTupleCatSource{Tuple->Elements, nullptr, {}, 0};
+    return UtilityTupleLikeSource{Tuple->Elements, nullptr, {}, 0};
   }
   auto Pair = approvedUtilityPairRecord(S, SM, Record, Context);
   bool ReferencePair = false;
@@ -6857,12 +6867,12 @@ utilityTupleCatSource(const State &S, const SourceManager &SM, QualType Type,
         (!utilityTupleValue(S, SM, Context, Pair->First->getType()) ||
          !utilityTupleValue(S, SM, Context, Pair->Second->getType())))
       return std::nullopt;
-    return UtilityTupleCatSource{{Pair->First, Pair->Second}, nullptr, {}, 0};
+    return UtilityTupleLikeSource{{Pair->First, Pair->Second}, nullptr, {}, 0};
   }
   if (const auto Array = approvedUtilityArrayRecord(S, SM, Record, Context)) {
     if (!utilityTupleValue(S, SM, Context, Array->ElementType))
       return std::nullopt;
-    return UtilityTupleCatSource{
+    return UtilityTupleLikeSource{
         {}, Array->Elements, Array->ElementType, Array->Size};
   }
   return std::nullopt;
@@ -6924,12 +6934,11 @@ approvedUtilityTupleCatCall(const State &S, const SourceManager &SM,
         !Context.hasSameType(Parameter->getPointeeType(),
                              Call->getArg(I)->getType()))
       return std::nullopt;
-    auto Source =
-        utilityTupleCatSource(S, SM, Call->getArg(I)->getType(), Context);
+    auto Source = approvedUtilityTupleLikeSource(
+        S, SM, Call->getArg(I)->getType(), Context);
     if (!Source)
       return std::nullopt;
-    const uint64_t SourceSize =
-        Source->ArrayElements ? Source->ArraySize : Source->Elements.size();
+    const uint64_t SourceSize = Source->size();
     if (ResultIndex > Result->Elements.size() ||
         SourceSize > Result->Elements.size() - ResultIndex)
       return std::nullopt;
@@ -7496,6 +7505,10 @@ supportedFunctionalInvokeReferenceArgument(const State &S,
 
 static bool functionalMemberValueConversion(const ASTContext &Context,
                                             QualType From, QualType To) {
+  // Reading a value argument drops its top-level const, including const hidden
+  // by a typedef. Preserve all other qualifiers for the conversion checks below.
+  From = From.getCanonicalType();
+  From.removeLocalConst();
   if (To->isFunctionPointerType()) {
     if (From->isFunctionType())
       return Context.hasSameType(Context.getPointerType(From), To);
@@ -8222,12 +8235,130 @@ approvedFunctionalUserInvokeCall(const State &S, const SourceManager &SM,
 }
 
 struct UtilityTupleApplyDispatch {
-  UtilityTupleRecord Tuple;
+  UtilityTupleLikeSource Tuple;
   const FunctionDecl *Function;
   const CallExpr *Dispatch;
   const FunctionDecl *DispatchFunction;
   const Expr *Operation;
 };
+
+// apply is replaced by direct projections, so authenticate each selected get
+// and its forwarding path before erasing the SDK helper body.
+static bool approvedUtilityTupleApplyElement(
+    const State &S, const SourceManager &SM, const Expr *Expression,
+    const ParmVarDecl *TupleParameter, const UtilityTupleLikeSource &Tuple,
+    unsigned Index, const ASTContext &Context) {
+  const auto *Get = dyn_cast_or_null<CallExpr>(
+      functionalInvokeStrippedExpression(Expression));
+  const auto *Function = Get ? Get->getDirectCallee() : nullptr;
+  const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+  const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+  const auto *Definition = Function ? Function->getDefinition() : nullptr;
+  const auto *PatternDefinition = Pattern ? Pattern->getDefinition() : nullptr;
+  const auto *Reference = Get ? dyn_cast_or_null<DeclRefExpr>(
+                                    directFunctionReference(Get))
+                              : nullptr;
+  const auto *Arguments =
+      Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  const auto Parameter =
+      TupleParameter ? TupleParameter->getType() : QualType();
+  if (!Get || Get->getNumArgs() != 1 || !Function || !Primary || !Pattern ||
+      !Reference || !Arguments || Arguments->size() < 2 ||
+      !Function->getIdentifier() || Function->getName() != "get" ||
+      Function->isVariadic() || Function->getNumParams() != 1 ||
+      Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      !PatternDefinition || Parameter.isNull() ||
+      !Parameter->isReferenceType() || Index >= Tuple.size() ||
+      !approvedStandardSDKDeclaration(S, SM, Function) ||
+      !approvedStandardSDKDeclaration(S, SM, Primary) ||
+      !approvedStandardSDKDeclaration(S, SM, Pattern) ||
+      !approvedStandardSDKDeclaration(S, SM, Reference->getDecl()) ||
+      (Definition && !approvedStandardSDKDeclaration(S, SM, Definition)) ||
+      !Context.hasSameType(Function->getParamDecl(0)->getType(), Parameter) ||
+      !Context.hasSameType(Get->getArg(0)->getType(),
+                           Parameter->getPointeeType()) ||
+      !approvedFunctionalForwardingCall(S, SM, Get->getArg(0),
+                                        TupleParameter) ||
+      Arguments->get(0).getKind() != TemplateArgument::Integral ||
+      Arguments->get(0).getAsIntegral().isNegative() ||
+      Arguments->get(0).getAsIntegral().getLimitedValue(Tuple.size()) != Index)
+    return false;
+
+  const auto *Record = Parameter->getPointeeType()->getAsCXXRecordDecl();
+  const bool Pair = Record && Record->getName() == "pair";
+  const llvm::StringRef Path = Tuple.ArrayElements ? "array"
+                               : Pair ? "__utility/pair.h"
+                                      : "tuple";
+  const llvm::StringRef ForwardPath = Tuple.ArrayElements ? "__fwd/array.h"
+                                     : Pair ? "__fwd/pair.h"
+                                            : "__fwd/tuple.h";
+  auto ApprovedDeclaration = [&](const Decl *Declaration) {
+    return approvedStandardSDKDeclaration(S, SM, Declaration) &&
+           (cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", Path) ||
+            cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx",
+                           ForwardPath));
+  };
+  // Qualified lookup in apply can retain get's forward declaration when its
+  // defining header is included later. Authenticate that exact redeclaration
+  // chain and its real definition before replacing the call with a projection.
+  if (!approvedStandardSDKDeclaration(S, SM, PatternDefinition) ||
+      !cstddefOrigin(S, SM, PatternDefinition->getLocation(), "libcxx", Path) ||
+      (Definition &&
+       !cstddefOrigin(S, SM, Definition->getLocation(), "libcxx", Path)))
+    return false;
+  for (const auto *Redeclaration : Function->redecls())
+    if (!ApprovedDeclaration(Redeclaration))
+      return false;
+  for (const auto *Redeclaration : Primary->redecls())
+    if (!ApprovedDeclaration(Redeclaration) ||
+        !ApprovedDeclaration(Redeclaration->getTemplatedDecl()))
+      return false;
+  for (const auto *Redeclaration : Pattern->redecls())
+    if (!ApprovedDeclaration(Redeclaration))
+      return false;
+  if (Tuple.ArrayElements) {
+    if (Arguments->size() != 3 ||
+        Arguments->get(1).getKind() != TemplateArgument::Type ||
+        Arguments->get(2).getKind() != TemplateArgument::Integral ||
+        !Context.hasSameType(Arguments->get(1).getAsType(),
+                             Tuple.ArrayElementType) ||
+        Arguments->get(2).getAsIntegral().isNegative() ||
+        Arguments->get(2).getAsIntegral().getLimitedValue(Tuple.size() + 1) !=
+            Tuple.size())
+      return false;
+  } else if (Pair) {
+    if (Arguments->size() != 3 || Tuple.size() != 2)
+      return false;
+    for (unsigned I = 0; I != 2; ++I)
+      if (Arguments->get(I + 1).getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Arguments->get(I + 1).getAsType(),
+                               Tuple.elementType(I)))
+        return false;
+  } else {
+    if (Arguments->size() != 2 ||
+        Arguments->get(1).getKind() != TemplateArgument::Pack ||
+        Arguments->get(1).pack_size() != Tuple.size())
+      return false;
+    unsigned I = 0;
+    for (const auto &Argument : Arguments->get(1).pack_elements())
+      if (Argument.getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Argument.getAsType(), Tuple.elementType(I++)))
+        return false;
+  }
+
+  const auto Stored = Tuple.elementType(Index);
+  auto Element = Stored->isReferenceType() ? Stored->getPointeeType() : Stored;
+  if (!Stored->isReferenceType() &&
+      Parameter->getPointeeType().isConstQualified())
+    Element = Element.withConst();
+  const bool LValue = Stored->isLValueReferenceType() ||
+                      Parameter->isLValueReferenceType();
+  const auto Result = LValue ? Context.getLValueReferenceType(Element)
+                             : Context.getRValueReferenceType(Element);
+  return Context.hasSameType(Function->getReturnType(), Result) &&
+         Context.hasSameType(Get->getType(), Element) &&
+         (LValue ? Get->isLValue() : Get->isXValue());
+}
 
 static std::optional<UtilityTupleApplyDispatch>
 approvedUtilityTupleApplyDispatch(const State &S, const SourceManager &SM,
@@ -8241,26 +8372,10 @@ approvedUtilityTupleApplyDispatch(const State &S, const SourceManager &SM,
   const auto *Reference =
       Call ? dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Call))
            : nullptr;
-  auto Tuple = approvedUtilityTupleRecord(
-      S, SM,
-      Call && Call->getNumArgs() == 2
-          ? Call->getArg(1)->getType()->getAsCXXRecordDecl()
-          : nullptr,
-      Context);
-  if (!Tuple)
-    Tuple = approvedUtilityReferenceTupleRecord(
-        S, SM,
-        Call && Call->getNumArgs() == 2
-            ? Call->getArg(1)->getType()->getAsCXXRecordDecl()
-            : nullptr,
-        Context);
-  if (!Tuple)
-    Tuple = approvedUtilityMixedReferenceTupleRecord(
-        S, SM,
-        Call && Call->getNumArgs() == 2
-            ? Call->getArg(1)->getType()->getAsCXXRecordDecl()
-            : nullptr,
-        Context);
+  auto Tuple = Call && Call->getNumArgs() == 2
+                   ? approvedUtilityTupleLikeSource(
+                         S, SM, Call->getArg(1)->getType(), Context)
+                   : std::nullopt;
   if (!Call || Call->getNumArgs() != 2 || !Function || !Primary || !Pattern ||
       !Origin || Origin->Root != "libcxx" || Origin->Path != "tuple" ||
       !Function->getIdentifier() || Function->getName() != "apply" ||
@@ -8306,7 +8421,7 @@ approvedUtilityTupleApplyDispatch(const State &S, const SourceManager &SM,
       !HelperPattern->hasBody() || !HelperArguments ||
       HelperArguments->size() != 3 ||
       HelperArguments->get(2).getKind() != TemplateArgument::Pack ||
-      HelperArguments->get(2).pack_size() != Tuple->Elements.size() ||
+      HelperArguments->get(2).pack_size() != Tuple->size() ||
       !Context.hasSameType(Helper->getType(), Call->getType()) ||
       !Context.hasSameType(HelperFunction->getReturnType(),
                            Function->getReturnType()) ||
@@ -8323,7 +8438,7 @@ approvedUtilityTupleApplyDispatch(const State &S, const SourceManager &SM,
   for (const auto &Argument : HelperArguments->get(2).pack_elements()) {
     if (Argument.getKind() != TemplateArgument::Integral ||
         Argument.getAsIntegral().isNegative() ||
-        Argument.getAsIntegral().getLimitedValue(Tuple->Elements.size() + 1) !=
+        Argument.getAsIntegral().getLimitedValue(Tuple->size() + 1) !=
             ExpectedIndex++)
       return std::nullopt;
   }
@@ -8358,7 +8473,7 @@ approvedUtilityTupleApplyDispatch(const State &S, const SourceManager &SM,
       DispatchFunction->getName() != "__invoke" ||
       DispatchFunction->isVariadic() || !DispatchFunction->hasBody() ||
       !DispatchPattern->hasBody() ||
-      Dispatch->getNumArgs() != Tuple->Elements.size() + 1 ||
+      Dispatch->getNumArgs() != Tuple->size() + 1 ||
       Dispatch->getNumArgs() != DispatchFunction->getNumParams() ||
       !Context.hasSameType(Dispatch->getType(), Call->getType()) ||
       !approvedStandardSDKDeclaration(S, SM, DispatchFunction) ||
@@ -8368,6 +8483,12 @@ approvedUtilityTupleApplyDispatch(const State &S, const SourceManager &SM,
       !approvedFunctionalForwardingCall(S, SM, Dispatch->getArg(0),
                                         HelperFunction->getParamDecl(0)))
     return std::nullopt;
+
+  for (unsigned I = 0; I < Tuple->size(); ++I)
+    if (!approvedUtilityTupleApplyElement(
+            S, SM, Dispatch->getArg(I + 1), HelperFunction->getParamDecl(1),
+            *Tuple, I, Context))
+      return std::nullopt;
 
   const auto *DispatchBody =
       dyn_cast<CompoundStmt>(DispatchFunction->getBody());
@@ -8412,8 +8533,8 @@ approvedUtilityTupleApplyUserCall(const State &S, const SourceManager &SM,
       !S.owns(SM, Method->getLocation()) ||
       Method->getParent()->getCanonicalDecl() !=
           Definition->getCanonicalDecl() ||
-      Method->getNumParams() != Tuple->Elements.size() ||
-      Operation->getNumArgs() != Tuple->Elements.size() + 1 ||
+      Method->getNumParams() != Tuple->size() ||
+      Operation->getNumArgs() != Tuple->size() + 1 ||
       !Context.hasSameType(Method->getReturnType(),
                            Function->getReturnType()) ||
       !Context.hasSameType(Operation->getType(), Call->getType()) ||
@@ -8441,7 +8562,7 @@ approvedUtilityTupleApplyUserCall(const State &S, const SourceManager &SM,
   const auto TupleArgument = Call->getArg(1)->getType();
   for (unsigned I = 0; I < Method->getNumParams(); ++I) {
     const auto Parameter = Method->getParamDecl(I)->getType();
-    const auto StoredElement = Tuple->Elements[I]->getType();
+    const auto StoredElement = Tuple->elementType(I);
     const auto Element = StoredElement->isReferenceType()
                              ? StoredElement->getPointeeType()
                              : StoredElement;
@@ -8496,14 +8617,14 @@ approvedUtilityTupleApplyObjectOperation(const State &S,
       S, SM, OperationCall, Context, false);
   const bool Unary = Operation && Operation->RightType.isNull();
   const unsigned Arity = Unary ? 1u : 2u;
-  if (!Operation || Apply->Tuple.Elements.size() != Arity ||
+  if (!Operation || Apply->Tuple.size() != Arity ||
       OperationCall->getNumArgs() != Arity + 1 ||
       !Context.hasSameType(Operation->ResultType,
                            Apply->Function->getReturnType()) ||
       !Context.hasSameType(Operation->ResultType, Call->getType()))
     return std::nullopt;
   for (unsigned I = 0; I < Arity; ++I)
-    if (const auto Stored = Apply->Tuple.Elements[I]->getType();
+    if (const auto Stored = Apply->Tuple.elementType(I);
         !utilityScalarDirectConversion(
             Context,
             Stored->isReferenceType() ? Stored->getPointeeType() : Stored,
@@ -8563,11 +8684,10 @@ approvedUtilityTupleApplyMemberCall(const State &S, const SourceManager &SM,
   Dispatch->Adapter = UseAdapter;
   auto Member = approvedFunctionalMemberInvokeCallImpl(
       S, SM, Invoked, Context, std::move(Dispatch));
-  if (!Member || Invoked->getNumArgs() !=
-                     Apply->Tuple.Elements.size() + 1)
+  if (!Member || Invoked->getNumArgs() != Apply->Tuple.size() + 1)
     return std::nullopt;
-  for (unsigned I = 0; I < Apply->Tuple.Elements.size(); ++I) {
-    const auto Stored = Apply->Tuple.Elements[I]->getType();
+  for (unsigned I = 0; I < Apply->Tuple.size(); ++I) {
+    const auto Stored = Apply->Tuple.elementType(I);
     const auto Element =
         Stored->isReferenceType() ? Stored->getPointeeType() : Stored;
     if (!Context.hasSameUnqualifiedType(Element,
@@ -8984,12 +9104,12 @@ approvedUtilityTupleApplyReferenceCall(const State &S,
           ? (Reference->Operation->RightType.isNull() ? 1u : 2u)
           : UserObject ? Reference->Method->getNumParams()
                        : Prototype->getNumParams();
-  if (Apply->Tuple.Elements.size() != Arity)
+  if (Apply->Tuple.size() != Arity)
     return std::nullopt;
   const auto TupleArgument = Call->getArg(1)->getType();
   for (unsigned I = 0; I < Arity; ++I) {
     const auto Target = Parameter(I);
-    const auto StoredElement = Apply->Tuple.Elements[I]->getType();
+    const auto StoredElement = Apply->Tuple.elementType(I);
     const auto Element = StoredElement->isReferenceType()
                              ? StoredElement->getPointeeType()
                              : StoredElement;
@@ -9020,6 +9140,260 @@ approvedUtilityTupleApplyReferenceCall(const State &S,
       return std::nullopt;
   }
   return Reference;
+}
+
+// The new pair carrier domain includes reference_wrapper. Its referent adds
+// associated namespaces to ADL, so copying the carrier implements swap only
+// after the selected SDK element swaps have been authenticated.
+static bool utilityPairSwapNeedsProof(const State &S, const SourceManager &SM,
+                                      QualType Type, const ASTContext &Context,
+                                      unsigned Depth = 0) {
+  if (Depth > 64 || Type.isNull())
+    return true;
+  if (Type->isReferenceType())
+    Type = Type->getPointeeType();
+  const auto *Record = Type->getAsCXXRecordDecl();
+  if (approvedFunctionalReferenceRecord(S, SM, Record, Context))
+    return true;
+  auto Pair = approvedUtilityPairRecord(S, SM, Record, Context);
+  if (!Pair)
+    Pair = approvedUtilityReferencePairRecord(S, SM, Record, Context);
+  if (!Pair)
+    Pair = approvedUtilityMixedReferencePairRecord(S, SM, Record, Context);
+  return Pair && (utilityPairSwapNeedsProof(S, SM, Pair->First->getType(),
+                                            Context, Depth + 1) ||
+                  utilityPairSwapNeedsProof(S, SM, Pair->Second->getType(),
+                                            Context, Depth + 1));
+}
+
+// Pair wrapper carriers also become new tuple/optional element types. Their
+// carrier-swap lowerings do not yet authenticate the nested SDK swap chain.
+// Preserve existing tuple<reference_wrapper<T>> admission; reject only an
+// actual pair containing wrappers, possibly nested through tuple/optional.
+static bool utilityContainsNewPairSwapCarrier(const State &S,
+                                              const SourceManager &SM,
+                                              QualType Type,
+                                              const ASTContext &Context,
+                                              unsigned Depth = 0) {
+  if (Depth > 64 || Type.isNull())
+    return true;
+  if (Type->isReferenceType())
+    Type = Type->getPointeeType();
+  const auto *Record = Type->getAsCXXRecordDecl();
+  auto Pair = approvedUtilityPairRecord(S, SM, Record, Context);
+  if (!Pair)
+    Pair = approvedUtilityReferencePairRecord(S, SM, Record, Context);
+  if (!Pair)
+    Pair = approvedUtilityMixedReferencePairRecord(S, SM, Record, Context);
+  if (Pair)
+    return utilityPairSwapNeedsProof(S, SM, Type, Context);
+  auto Tuple = approvedUtilityTupleRecord(S, SM, Record, Context);
+  if (!Tuple)
+    Tuple = approvedUtilityReferenceTupleRecord(S, SM, Record, Context);
+  if (!Tuple)
+    Tuple = approvedUtilityMixedReferenceTupleRecord(S, SM, Record, Context);
+  if (Tuple)
+    for (const auto *Element : Tuple->Elements)
+      if (utilityContainsNewPairSwapCarrier(S, SM, Element->getType(), Context,
+                                            Depth + 1))
+        return true;
+  if (const auto Optional =
+          approvedUtilityOptionalRecord(S, SM, Record, Context))
+    return utilityContainsNewPairSwapCarrier(S, SM, Optional->ElementType,
+                                             Context, Depth + 1);
+  return false;
+}
+
+static bool utilitySwapSDKFunction(const State &S, const SourceManager &SM,
+                                   const FunctionDecl *Function,
+                                   llvm::StringRef Name, llvm::StringRef Path) {
+  const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+  const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+  const auto *Definition = Function ? Function->getDefinition() : nullptr;
+  const auto *PatternDefinition = Pattern ? Pattern->getDefinition() : nullptr;
+  if (!Function || !Primary || !Pattern || !PatternDefinition ||
+      !Function->getIdentifier() || Function->getName() != Name ||
+      Function->isVariadic() ||
+      Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      !approvedStandardSDKDeclaration(S, SM, PatternDefinition) ||
+      !cstddefOrigin(S, SM, PatternDefinition->getLocation(), "libcxx", Path))
+    return false;
+
+  // Generic swap is first declared for is_swappable before its definition.
+  // Only that pinned forward declaration may differ from the definition path.
+  auto ApprovedDeclaration = [&](const Decl *Declaration) {
+    return Declaration && approvedStandardSDKDeclaration(S, SM, Declaration) &&
+           (cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", Path) ||
+            (Name == "swap" && Path == "__utility/swap.h" &&
+             cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx",
+                           "__type_traits/is_swappable.h")));
+  };
+  if (!ApprovedDeclaration(Function) || !ApprovedDeclaration(Primary) ||
+      !ApprovedDeclaration(Pattern) ||
+      (Definition &&
+       (!ApprovedDeclaration(Definition) ||
+        !cstddefOrigin(S, SM, Definition->getLocation(), "libcxx", Path))))
+    return false;
+  for (const auto *Redeclaration : Function->redecls())
+    if (!ApprovedDeclaration(Redeclaration))
+      return false;
+  for (const auto *Redeclaration : Primary->redecls())
+    if (!ApprovedDeclaration(Redeclaration) ||
+        !ApprovedDeclaration(Redeclaration->getTemplatedDecl()))
+      return false;
+  return true;
+}
+
+// The generic pinned swap body only moves one temporary and assigns twice.
+// Check its concrete move/assignment operations as well: a source
+// specialization of std::move must not become an erased call merely because
+// swap is from SDK.
+static bool utilitySwapTrivialBody(const State &S, const SourceManager &SM,
+                                   const Stmt *Statement, QualType Type,
+                                   const ASTContext &Context) {
+  if (!Statement)
+    return true;
+  if (const auto *Construction = dyn_cast<CXXConstructExpr>(Statement)) {
+    const auto *Constructor = Construction->getConstructor();
+    if (!Constructor || !Constructor->isTrivial() ||
+        !Constructor->isCopyOrMoveConstructor() ||
+        !Context.hasSameType(Construction->getType(), Type))
+      return false;
+  }
+  if (const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Statement)) {
+    const auto *Method =
+        dyn_cast_or_null<CXXMethodDecl>(Operator->getDirectCallee());
+    if (!Method || Operator->getOperator() != OO_Equal ||
+        !Method->isTrivial() ||
+        (!Method->isCopyAssignmentOperator() &&
+         !Method->isMoveAssignmentOperator()) ||
+        !Context.hasSameType(Context.getRecordType(Method->getParent()), Type))
+      return false;
+  } else if (const auto *Call = dyn_cast<CallExpr>(Statement)) {
+    const auto *Function = Call->getDirectCallee();
+    const auto *Arguments =
+        Function ? Function->getTemplateSpecializationArgs() : nullptr;
+    const auto Reference = Context.getLValueReferenceType(Type);
+    if (!utilitySwapSDKFunction(S, SM, Function, "move", "__utility/move.h") ||
+        Call->getNumArgs() != 1 || Function->getNumParams() != 1 ||
+        !Arguments || Arguments->size() != 1 ||
+        Arguments->get(0).getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Arguments->get(0).getAsType(), Reference) ||
+        !Context.hasSameType(Function->getParamDecl(0)->getType(), Reference) ||
+        !Context.hasSameType(Function->getReturnType(),
+                             Context.getRValueReferenceType(Type)) ||
+        !Context.hasSameType(Call->getType(), Type) || !Call->isXValue())
+      return false;
+  }
+  for (const auto *Child : Statement->children())
+    if (!utilitySwapTrivialBody(S, SM, Child, Type, Context))
+      return false;
+  return true;
+}
+
+static bool approvedUtilityPairSwapBody(const State &S, const SourceManager &SM,
+                                        const CXXMethodDecl *Method,
+                                        const ASTContext &Context,
+                                        unsigned Depth);
+
+static bool
+approvedUtilityPairElementSwap(const State &S, const SourceManager &SM,
+                               const FunctionDecl *Function, QualType Type,
+                               const ASTContext &Context, unsigned Depth = 0) {
+  if (Depth > 64 || !Function || !Function->hasBody() ||
+      Function->getNumParams() != 2 || !Function->getReturnType()->isVoidType())
+    return false;
+  if (Type->isReferenceType())
+    Type = Type->getPointeeType();
+  if (Type.hasQualifiers())
+    return false;
+  const auto Reference = Context.getLValueReferenceType(Type);
+  for (const auto *Parameter : Function->parameters())
+    if (!Context.hasSameType(Parameter->getType(), Reference))
+      return false;
+  const auto *Arguments = Function->getTemplateSpecializationArgs();
+  if (utilitySwapSDKFunction(S, SM, Function, "swap", "__utility/swap.h"))
+    return Arguments && Arguments->size() == 1 &&
+           Arguments->get(0).getKind() == TemplateArgument::Type &&
+           Context.hasSameType(Arguments->get(0).getAsType(), Type) &&
+           utilityPairAssignableValue(S, SM, Context, Type) &&
+           utilitySwapTrivialBody(S, SM, Function->getBody(), Type, Context);
+
+  // Nested pairs use their specialized free swap, which delegates to the
+  // matching member. Array siblings require a separate swap_ranges proof and
+  // are deliberately not admitted by this new wrapper-specific path.
+  if (!utilitySwapSDKFunction(S, SM, Function, "swap", "__utility/pair.h"))
+    return false;
+  const auto *Body = dyn_cast<CompoundStmt>(Function->getBody());
+  const auto *Call = Body && Body->size() == 1
+                         ? dyn_cast<CXXMemberCallExpr>(*Body->body_begin())
+                         : nullptr;
+  const auto *Method = Call ? Call->getMethodDecl() : nullptr;
+  return Call && Call->getNumArgs() == 1 && Method &&
+         Context.hasSameType(Context.getRecordType(Method->getParent()),
+                             Type) &&
+         functionalInvokeParameterReference(Call->getImplicitObjectArgument(),
+                                            Function->getParamDecl(0)) &&
+         functionalInvokeParameterReference(Call->getArg(0),
+                                            Function->getParamDecl(1)) &&
+         approvedUtilityPairSwapBody(S, SM, Method, Context, Depth + 1);
+}
+
+static bool approvedUtilityPairSwapBody(const State &S, const SourceManager &SM,
+                                        const CXXMethodDecl *Method,
+                                        const ASTContext &Context,
+                                        unsigned Depth = 0) {
+  if (Depth > 64 || !Method || !Method->getIdentifier() ||
+      Method->getName() != "swap" || Method->isStatic() || Method->isConst() ||
+      Method->isVolatile() || Method->isVariadic() ||
+      Method->getNumParams() != 1 || !Method->getReturnType()->isVoidType() ||
+      Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      !Method->hasBody() || !approvedStandardSDKDeclaration(S, SM, Method) ||
+      !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
+                     "__utility/pair.h"))
+    return false;
+  const auto *Pattern = Method->getInstantiatedFromMemberFunction();
+  if (!Pattern || !Pattern->hasBody() ||
+      !approvedStandardSDKDeclaration(S, SM, Pattern) ||
+      !cstddefOrigin(S, SM, Pattern->getLocation(), "libcxx",
+                     "__utility/pair.h"))
+    return false;
+  auto Pair = approvedUtilityPairRecord(S, SM, Method->getParent(), Context);
+  if (!Pair)
+    Pair =
+        approvedUtilityReferencePairRecord(S, SM, Method->getParent(), Context);
+  if (!Pair)
+    Pair = approvedUtilityMixedReferencePairRecord(S, SM, Method->getParent(),
+                                                   Context);
+  const auto *Body = dyn_cast<CompoundStmt>(Method->getBody());
+  if (!Pair || !Body || Body->size() != 3 ||
+      !Context.hasSameType(
+          Method->getParamDecl(0)->getType(),
+          Context.getLValueReferenceType(Context.getRecordType(Pair->Record))))
+    return false;
+  auto Statement = Body->body_begin();
+  if (!isa<DeclStmt>(*Statement++))
+    return false;
+  for (const auto *Field : {Pair->First, Pair->Second}) {
+    const auto *Call = dyn_cast<CallExpr>(*Statement++);
+    if (!Call || Call->getNumArgs() != 2 ||
+        !approvedUtilityPairElementSwap(S, SM, Call->getDirectCallee(),
+                                        Field->getType(), Context, Depth + 1))
+      return false;
+    const auto *Left = dyn_cast_or_null<MemberExpr>(
+        functionalInvokeStrippedExpression(Call->getArg(0)));
+    const auto *Right = dyn_cast_or_null<MemberExpr>(
+        functionalInvokeStrippedExpression(Call->getArg(1)));
+    if (!Left || !Right || Left->getMemberDecl() != Field ||
+        Right->getMemberDecl() != Field || !Left->isArrow() ||
+        Right->isArrow() ||
+        !isa<CXXThisExpr>(
+            functionalInvokeStrippedExpression(Left->getBase())) ||
+        !functionalInvokeParameterReference(Right->getBase(),
+                                            Method->getParamDecl(0)))
+      return false;
+  }
+  return true;
 }
 
 std::optional<UtilityOperation>
@@ -9411,7 +9785,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         SameOptional(Method->getParamDecl(0)->getType()->getPointeeType()) &&
         SameOptional(Call->getArg(0)->getType()) &&
         utilityTupleAssignableValue(S, SM, Context, Optional->ElementType))
-      return UtilityOperation::OptionalMemberSwap;
+      if (!utilityContainsNewPairSwapCarrier(S, SM, Optional->ElementType, Context))
+        return UtilityOperation::OptionalMemberSwap;
   }
   const auto InitializerList = approvedUtilityInitializerListRecord(
       S, SM, Method ? Method->getParent() : nullptr, Context);
@@ -9726,7 +10101,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
             Context.getRecordType(Pair->Record)) &&
         Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
                                        Context.getRecordType(Pair->Record)))
-      return UtilityOperation::PairMemberSwap;
+      if ((!utilityPairSwapNeedsProof(S, SM, FirstType, Context) &&
+           !utilityPairSwapNeedsProof(S, SM, SecondType, Context)) ||
+          approvedUtilityPairSwapBody(S, SM, Method, Context))
+        return UtilityOperation::PairMemberSwap;
   }
   if (const auto *MemberCall = dyn_cast<CXXMemberCallExpr>(Call)) {
     const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
@@ -9746,6 +10124,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         if (ElementType->isReferenceType())
           ElementType = ElementType->getPointeeType();
         Mutable &= utilityTupleAssignableValue(S, SM, Context, ElementType);
+        Mutable &= !utilityContainsNewPairSwapCarrier(S, SM, ElementType, Context);
       }
     if (Method && Reference && Tuple && Mutable && Method->getIdentifier() &&
         Method->getName() == "swap" && !Method->isStatic() &&
@@ -10057,7 +10436,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         OptionalParameter(0, *Left, false) &&
         OptionalParameter(1, *Right, false) &&
         utilityTupleAssignableValue(S, SM, Context, Left->ElementType))
-      return UtilityOperation::OptionalSwap;
+      if (!utilityContainsNewPairSwapCarrier(S, SM, Left->ElementType, Context))
+        return UtilityOperation::OptionalSwap;
   }
   if (Origin->Path == "optional" && Name == "make_optional" &&
       Call->getNumArgs() == Function->getNumParams() &&
@@ -12314,6 +12694,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   }
   if (Origin->Path == "tuple" && Name == "apply" && Call->getNumArgs() == 2 &&
       Function->getNumParams() == 2) {
+    // Named functions and stored function pointers need the same selected-get
+    // proof as the other callback families.
+    const auto Apply = approvedUtilityTupleApplyDispatch(S, SM, Call, Context);
+    if (!Apply)
+      return std::nullopt;
     const auto Callable = Call->getArg(0)->getType();
     const auto UserCallable =
         approvedUtilityTupleApplyUserCall(S, SM, Call, Context);
@@ -12345,10 +12730,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
             : nullptr;
     const auto CallableParameter = Function->getParamDecl(0)->getType();
     const auto TupleParameter = Function->getParamDecl(1)->getType();
-    auto Tuple = TupleFor(Call->getArg(1)->getType());
-    if (!Tuple)
-      Tuple = approvedUtilityMixedReferenceTupleRecord(
-          S, SM, Call->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
+    const auto Tuple = approvedUtilityTupleLikeSource(
+        S, SM, Call->getArg(1)->getType(), Context);
     const auto Result =
         Prototype ? Prototype->getReturnType()
                   : UserCallable ? UserCallable->Method->getReturnType()
@@ -12360,8 +12743,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Prototype ? Prototype->getNumParams()
         : UserCallable ? UserCallable->Method->getNumParams()
         : ObjectOperation ? (ObjectOperation->RightType.isNull() ? 1u : 2u)
-        : ReferenceCallable ? Tuple->Elements.size()
-        : MemberCallable ? Tuple->Elements.size()
+        : ReferenceCallable ? Tuple->size()
+        : MemberCallable ? Tuple->size()
                           : 0u;
     const bool ReferenceResult =
         !Result.isNull() && Result->isReferenceType();
@@ -12374,7 +12757,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         !Same(CallableParameter->getPointeeType(), Callable) ||
         !TupleParameter->isReferenceType() ||
         !Same(TupleParameter->getPointeeType(), Call->getArg(1)->getType()) ||
-        !Tuple || Arity != Tuple->Elements.size() ||
+        !Tuple || Arity != Tuple->size() ||
         !Same(Result, Function->getReturnType()) ||
         (ReferenceResult
              ? (!supportedFunctionalInvokeReference(S, SM, Context, Referent) ||
@@ -12388,10 +12771,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                  !supportedFunctionalResult(S, SM, Context,
                                             Function->getReturnType())))))
       return std::nullopt;
-    for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
+    for (unsigned I = 0; I < Tuple->size(); ++I) {
       if (ObjectOperation || ReferenceCallable || MemberCallable)
         continue;
-      const auto StoredElement = Tuple->Elements[I]->getType();
+      const auto StoredElement = Tuple->elementType(I);
       const auto Element = StoredElement->isReferenceType()
                                ? StoredElement->getPointeeType()
                                : StoredElement;
@@ -12727,7 +13110,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         utilityPairAssignableValue(S, SM, Context, SecondType) &&
         Same(Call->getArg(0)->getType(), LeftType->getPointeeType()) &&
         Same(Call->getArg(1)->getType(), RightType->getPointeeType()))
-      return UtilityOperation::PairSwap;
+      if ((!utilityPairSwapNeedsProof(S, SM, FirstType, Context) &&
+           !utilityPairSwapNeedsProof(S, SM, SecondType, Context)) ||
+          approvedUtilityPairElementSwap(S, SM, Function,
+                                          Context.getRecordType(Left->Record),
+                                          Context))
+        return UtilityOperation::PairSwap;
   }
   if (Origin->Path == "tuple" && Name == "swap" && Call->getNumArgs() == 2 &&
       Function->getReturnType()->isVoidType()) {
@@ -12751,6 +13139,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         if (ElementType->isReferenceType())
           ElementType = ElementType->getPointeeType();
         Mutable &= utilityTupleAssignableValue(S, SM, Context, ElementType);
+        Mutable &= !utilityContainsNewPairSwapCarrier(S, SM, ElementType, Context);
       }
     if (LeftType->isLValueReferenceType() &&
         RightType->isLValueReferenceType() && Left && Right && Mutable &&

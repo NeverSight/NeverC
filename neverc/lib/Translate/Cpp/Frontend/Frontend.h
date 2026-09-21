@@ -941,15 +941,28 @@ approvedUtilityArrayAssignment(const State &S,
                                const clang::SourceManager &SM,
                                const clang::CXXOperatorCallExpr *Assignment,
                                const clang::ASTContext &Context);
-struct UtilityTupleCatSource {
+// Authenticated tuple-like storage shared by tuple_cat and apply. Pair and
+// tuple elements have individual fields; array elements share one fixed array.
+struct UtilityTupleLikeSource {
   std::vector<const clang::FieldDecl *> Elements;
   const clang::FieldDecl *ArrayElements;
   clang::QualType ArrayElementType;
   uint64_t ArraySize;
+
+  uint64_t size() const {
+    return ArrayElements ? ArraySize : Elements.size();
+  }
+  clang::QualType elementType(unsigned Index) const {
+    return ArrayElements ? ArrayElementType : Elements[Index]->getType();
+  }
 };
+std::optional<UtilityTupleLikeSource>
+approvedUtilityTupleLikeSource(const State &S, const clang::SourceManager &SM,
+                               clang::QualType Type,
+                               const clang::ASTContext &Context);
 struct UtilityTupleCatCall {
   UtilityTupleRecord Result;
-  std::vector<UtilityTupleCatSource> Sources;
+  std::vector<UtilityTupleLikeSource> Sources;
 };
 std::optional<UtilityTupleCatCall>
 approvedUtilityTupleCatCall(const State &S, const clang::SourceManager &SM,

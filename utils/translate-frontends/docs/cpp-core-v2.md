@@ -189,11 +189,32 @@ forged declarations and array overloads are rejected.
 copy/move assignment, member and free `swap`, `std::make_pair`, index-based
 `std::get`, `tuple_size` and `tuple_element`. Elements may be admitted integral
 or enum scalars up to 64 bits, `float`, `double`, `nullptr_t`, non-function
-object pointers, source-owned trivial standard-layout records, admitted
-`std::array` values, or recursively admitted `std::pair` values. Mutation
+object pointers, source-owned trivial standard-layout records, authenticated
+`std::reference_wrapper` values, admitted `std::array` values, or recursively
+admitted `std::pair` values. Mutation
 requires every recursive leaf to be assignable. Pair objects retain their two
 fields and ordinary value behavior. Type-based `get` is accepted only when
 libc++ resolves it unambiguously.
+
+Authenticated `std::reference_wrapper` values are admitted in ordinary
+and mixed pair value fields, including nested pairs. Direct, same-type
+copy/move and compatible heterogeneous construction copy the stored
+binding. Assignment copies that binding into the destination wrapper,
+and member/free swap exchanges bindings only when the selected element
+operations are exact implicit instantiations of the pinned SDK swap. Nested
+pair dispatch is authenticated recursively; selected move functions must also
+come from the pinned SDK and copy/move construction and assignment must be
+trivial. These operations do not assign the referred-to objects. User ADL swaps
+and source specializations remain rejected. Wrapper pairs with array siblings
+and tuple/optional swaps containing wrapper-bearing pairs require additional
+internal operation proofs and remain rejected; their storage, construction,
+assignment and checked apply admission are unchanged.
+The wrapper element must retain the exact
+unqualified type for composite construction or assignment. Const wrapper
+fields remain copyable but not assignable, and volatile wrapper fields
+remain rejected. Wrapper referents retain the existing type and source
+checks, and user-defined conversions or forged specializations do not
+satisfy the authenticated wrapper boundary.
 
 Reference-valued pairs admit exact compatible direct construction for supported
 referent types and checked lvalue/rvalue categories. Same-type trivial
@@ -242,8 +263,9 @@ All six C++17 comparisons recurse through authenticated arrays and nested pairs
 and compare their scalar leaves in lexicographic order. Corresponding scalar
 leaves may use the documented heterogeneous arithmetic or compatible
 object-pointer comparison type. Empty recursive leaves retain the standard
-equality and ordering results. Source-owned record comparisons stay rejected
-because their user-defined element operations are outside this direct-lowering
+equality and ordering results. Source-owned record comparisons and
+comparisons involving wrapper-valued leaves stay rejected because their
+element operations or conversions are outside this direct-lowering
 boundary. The exact `std::minmax` reference-pair result remains separately
 constrained as documented under the algorithm surface.
 
@@ -347,36 +369,68 @@ values and writes through the existing destination bindings. Member and free
 swap evaluate both tuple objects once and exchange corresponding referent
 values in element order; their stored bindings remain unchanged.
 
-Exact `std::apply` calls over an authenticated empty or nonempty tuple lower to
-one ordinary callback call. The callable may be a named function, a stored
-function pointer with a fixed nonvariadic signature, or an exact source-owned
-function object whose selected `operator()` has a checked body. Authenticated
-typed or transparent standard scalar arithmetic, bitwise, comparison and logical
-function objects, plus admitted scalar hashes, are also accepted with their
-documented operand restrictions. Exact `std::reference_wrapper` forms around
-these named functions, stored function pointers, source function objects and
-standard function objects use the same admitted parameter and result boundary.
-Exact direct or stored source member pointers, and temporary or stored
-`std::mem_fn` wrappers around them, accept the receiver as the first tuple
-element, including an authenticated `std::reference_wrapper`, and preserve
-method or field reference and record results.
-Function-object cv/ref qualification and mutable object storage are preserved.
-Every tuple element and corresponding callback parameter must be admitted scalars
-connected by a checked direct scalar conversion, or the same complete source-owned
-standard-layout record type that is trivially copyable and destructible, and
-passed by value; the result may be `void`, an admitted scalar, or a complete
-source-owned record value. Exact lvalue- or rvalue-reference parameters and
-results are also admitted for supported scalar, object-pointer, function-pointer,
-complete fixed-array and source-owned record referents. This includes arithmetic conversions,
+Exact `std::apply` calls accept an authenticated empty or nonempty tuple,
+value/reference/mixed pair, or fixed array whose elements satisfy the existing
+scalar or recursively composite value boundary. They lower to the selected
+scalar operation, member projection or ordinary callback call. The callable
+may be a named function, a stored function pointer with a fixed nonvariadic
+signature, or an exact source-owned function object whose selected `operator()`
+has a checked body. Authenticated typed or transparent standard scalar
+arithmetic, bitwise, comparison and logical function objects, plus admitted
+scalar hashes, retain their documented operand restrictions. Exact
+`std::reference_wrapper` forms around these named functions, stored function
+pointers, source function objects and standard function objects use the same
+admitted parameter and result boundary. Exact direct or stored source member
+pointers, and temporary or stored `std::mem_fn` wrappers around them, take their
+receiver from the first source element, including an authenticated
+`std::reference_wrapper` where the source element type is admitted, and preserve
+method or field reference and record results. The callable's source-owned
+checks, selected cv/ref-qualified method and mutable receiver storage remain
+unchanged.
+
+By-value argument reads discard only the source object's top-level `const`,
+including qualification hidden by a type alias. Const tuple-like elements can
+therefore feed value parameters through reference-wrapped callbacks while
+preserving pointee qualification and all existing reference-binding checks.
+Volatile, restrict and address-space restrictions remain in force.
+
+Each source element and corresponding callback parameter must be admitted
+scalars connected by a checked direct scalar conversion, or the same complete
+source-owned standard-layout record type that is trivially copyable and
+destructible, passed by value; the result may be `void`, an admitted scalar,
+or a complete source-owned record value. Exact lvalue- or rvalue-reference
+parameters and results are also admitted for supported scalar, object-pointer,
+function-pointer, complete fixed-array, authenticated `std::array` and
+source-owned record referents. Named-function, function-object and
+reference-wrapper callbacks retain the existing exact value-category rule:
+an lvalue-reference parameter requires an lvalue element, even for `const T&`.
+The scalar boundary includes arithmetic conversions,
 `nullptr_t` to object pointers or `bool`, and compatible object-pointer,
-pointer-to-void and pointer-to-`bool` conversions. Mutable and const lvalues
-and materialized tuple temporaries are accepted. The callable and tuple
-expressions are each evaluated once, fields are converted and passed in tuple
-order, and no libc++ apply helper is emitted. A record parameter receives its
-own copied object, while a record result constructs directly in the caller's
-destination and keeps its ordinary full-expression cleanup. References preserve
-the selected tuple element or callback result storage, constness and value
-category.
+pointer-to-void and pointer-to-`bool` conversions. Array elements must satisfy
+both the admitted array layout and the composite value/callback rules; admitting
+an array carrier alone does not admit every callback signature. Nested array
+elements may bind checked array-reference parameters. By-value SDK callback
+parameters and results, including nested `std::array` values, remain excluded.
+
+Mutable and const lvalues, xvalues and materialized tuple, pair or array
+temporaries are accepted. Reference pair fields preserve their stored bindings:
+a const pair does not add const to a mutable referent, and `T&&` fields retain
+reference collapsing from the pair's own value category. Value fields and array
+elements retain the source object's constness and lvalue/rvalue category. The
+callable and source expressions are each evaluated once, elements are converted
+and passed in index order, and no libc++ apply helper is emitted. A zero-length
+array still evaluates its source expression and calls a nullary callback without
+accessing its synthetic carrier. A record parameter receives its own copied
+object, while a record result constructs directly in the caller's destination
+and keeps its ordinary full-expression cleanup. References preserve the
+selected element or callback result storage, qualification and value category.
+
+The proof authenticates the pinned `apply`/invoke helper chain and every selected
+`std::get<I>` declaration, template index and element type, forwarding path,
+and exact cv/ref result before replacing them with direct projections.
+User-defined tuple-like protocols, user SDK specializations and substituted
+`get` implementations do not qualify. Existing callable arity, source traversal
+and lowering expansion limits still apply.
 
 Exact `std::tuple_cat` calls lower directly when every source is an
 authenticated `std::tuple`, `std::pair` or `std::array` containing admitted
@@ -437,6 +491,13 @@ index-based `get` lower directly to existing array, pointer, assignment and
 control-flow operations. Aggregate initialization, trivial copy/move
 construction and copy/move assignment retain ordinary value semantics.
 `tuple_size` and `tuple_element` remain checked compile-time metadata.
+
+An array can also supply the element pack to `std::apply` through the
+[checked tuple, pair and array callable boundary](#value-tuples-from-tuple).
+Mutable and const lvalues, rvalues, zero-length arrays and nested arrays retain
+the documented element and callback restrictions; nested SDK array values may
+be passed by admitted reference forms, while by-value SDK callback parameters
+and results remain excluded.
 
 For `std::array<T, 0>`, capacity is zero, `empty()` is true, and libc++'s
 `data()` plus every forward or reverse iterator base is null. `fill` and swap

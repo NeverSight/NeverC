@@ -6916,23 +6916,38 @@ class FunctionLowering {
       return Place;
     }
     case UtilityOperation::TupleApply: {
-      auto Tuple = TupleFor(Call->getArg(1)->getType());
+      const auto Tuple = approvedUtilityTupleLikeSource(
+          A.S, A.Sources, Call->getArg(1)->getType(), A.Context);
       if (!Tuple)
-        Tuple = approvedUtilityMixedReferenceTupleRecord(
-            A.S, A.Sources,
-            Call->getArg(1)->getType()->getAsCXXRecordDecl(), A.Context);
+        reject(L, "utility tuple apply",
+               "The selected tuple-like storage is unavailable.");
+      auto ApplyElement = [&](Expression Base, unsigned Index) {
+        if (!Tuple->ArrayElements)
+          return TupleElement(std::move(Base), Tuple->Elements[Index]);
+        const auto Element = Tuple->ArrayElementType;
+        const auto Pointee = Call->getArg(1)->getType().isConstQualified()
+                                 ? Element.withConst()
+                                 : Element;
+        auto Storage = fieldStorage(std::move(Base), Tuple->ArrayElements, L);
+        auto Pointer = decay(
+            std::move(Storage), type(A.Context.getPointerType(Pointee), L), L);
+        // The index carrier erases top-level cv; its pointer retains write
+        // permission, just as ArrayElement and ordinary std::get lowering do.
+        return index(std::move(Pointer),
+                     quantity(Index, type(A.Context.getSizeType(), L), L),
+                     type(Element, L), L);
+      };
       auto CallableType = Call->getArg(0)->getType();
       const auto MemberCallable = approvedUtilityTupleApplyMemberCall(
           A.S, A.Sources, Call, A.Context);
       if (MemberCallable) {
-        if (!Tuple || Tuple->Elements.empty())
+        if (!Tuple || !Tuple->size())
           reject(L, "utility tuple apply",
                  "The member callback requires a receiver tuple element.");
         auto TupleAddress = snapshot(
             address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
         auto TupleValue = dereference(std::move(TupleAddress), L);
-        auto ReceiverStorage = TupleElement(
-            json::Object(TupleValue), Tuple->Elements.front());
+        auto ReceiverStorage = ApplyElement(json::Object(TupleValue), 0);
         Expression Receiver;
         if (MemberCallable->ObjectWrapper) {
           Receiver = snapshot(
@@ -6949,7 +6964,7 @@ class FunctionLowering {
         }
         if (MemberCallable->Method) {
           const auto *Method = MemberCallable->Method;
-          if (Tuple->Elements.size() != Method->getNumParams() + 1)
+          if (Tuple->size() != Method->getNumParams() + 1)
             reject(L, "utility tuple apply",
                    "The member callback arity differs from the tuple.");
           json::Array Arguments;
@@ -6974,8 +6989,7 @@ class FunctionLowering {
               L));
           for (unsigned I = 0; I < Method->getNumParams(); ++I) {
             const auto Parameter = Method->getParamDecl(I)->getType();
-            auto Element = TupleElement(json::Object(TupleValue),
-                                        Tuple->Elements[I + 1]);
+            auto Element = ApplyElement(json::Object(TupleValue), I + 1);
             if (Parameter->isReferenceType()) {
               auto Pointer =
                   address(std::move(Element), Parameter->getPointeeType(), L);
@@ -7008,7 +7022,7 @@ class FunctionLowering {
           return Result;
         }
         if (Destination || !MemberCallable->Field ||
-            Tuple->Elements.size() != 1)
+            Tuple->size() != 1)
           reject(L, "utility tuple apply",
                  "The member field callback is unavailable.");
         return fieldStorage(dereference(std::move(Receiver), L),
@@ -7029,15 +7043,15 @@ class FunctionLowering {
             reject(L, "utility tuple apply",
                    "The referenced standard function object is unavailable.");
           const bool Unary = ReferenceCallable->Operation->RightType.isNull();
-          if (!Tuple || Tuple->Elements.size() != (Unary ? 1u : 2u))
+          if (!Tuple || Tuple->size() != (Unary ? 1u : 2u))
             reject(L, "utility tuple apply",
                    "The referenced function object arity differs from the tuple.");
           auto Left = snapshot(
-              TupleElement(json::Object(TupleValue), Tuple->Elements[0]), L);
+              ApplyElement(json::Object(TupleValue), 0), L);
           std::optional<Expression> Right;
           if (!Unary)
             Right = snapshot(
-                TupleElement(std::move(TupleValue), Tuple->Elements[1]), L);
+                ApplyElement(std::move(TupleValue), 1), L);
           return functionalOperationValues(
               L, std::move(Left), std::move(Right),
               *ReferenceCallable->Operation);
@@ -7057,15 +7071,15 @@ class FunctionLowering {
                 : nullptr;
         if (!Tuple || (!Method && !Prototype) ||
             (Method ? Method->getNumParams() : Prototype->getNumParams()) !=
-                Tuple->Elements.size())
+                Tuple->size())
           reject(L, "utility tuple apply",
                  "The referenced callback arity differs from the tuple.");
         json::Array Arguments;
-        for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
+        for (unsigned I = 0; I < Tuple->size(); ++I) {
           const auto Parameter = Method ? Method->getParamDecl(I)->getType()
                                         : Prototype->getParamType(I);
           auto Element =
-              TupleElement(json::Object(TupleValue), Tuple->Elements[I]);
+              ApplyElement(json::Object(TupleValue), I);
           if (Parameter->isReferenceType()) {
             auto Pointer =
                 address(std::move(Element), Parameter->getPointeeType(), L);
@@ -7133,7 +7147,7 @@ class FunctionLowering {
           A.S, A.Sources, Call, A.Context);
       if (ObjectOperation) {
         const bool Unary = ObjectOperation->RightType.isNull();
-        if (!Tuple || Tuple->Elements.size() != (Unary ? 1u : 2u) ||
+        if (!Tuple || Tuple->size() != (Unary ? 1u : 2u) ||
             Destination)
           reject(L, "utility tuple apply",
                  "The selected standard function object is unavailable.");
@@ -7142,11 +7156,11 @@ class FunctionLowering {
             address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
         auto TupleValue = dereference(std::move(TupleAddress), L);
         auto Left = snapshot(
-            TupleElement(json::Object(TupleValue), Tuple->Elements[0]), L);
+            ApplyElement(json::Object(TupleValue), 0), L);
         std::optional<Expression> Right;
         if (!Unary)
           Right = snapshot(
-              TupleElement(std::move(TupleValue), Tuple->Elements[1]), L);
+              ApplyElement(std::move(TupleValue), 1), L);
         return functionalOperationValues(L, std::move(Left), std::move(Right),
                                          *ObjectOperation);
       }
@@ -7162,9 +7176,9 @@ class FunctionLowering {
       if (!Tuple || (!Prototype && !Method) ||
           (Prototype && Prototype->isVariadic()) ||
           (Prototype ? Prototype->getNumParams() : Method->getNumParams()) !=
-              Tuple->Elements.size())
+              Tuple->size())
         reject(L, "utility tuple apply",
-               "The selected std::tuple callback is unavailable.");
+               "The selected tuple-like callback is unavailable.");
       Expression Callable;
       Expression Receiver;
       if (Method) {
@@ -7180,20 +7194,20 @@ class FunctionLowering {
           address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
       auto TupleValue = dereference(std::move(TupleAddress), L);
       json::Array Arguments;
-      for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
+      for (unsigned I = 0; I < Tuple->size(); ++I) {
         const auto Parameter = Prototype ? Prototype->getParamType(I)
                                          : Method->getParamDecl(I)->getType();
         auto Element =
-            TupleElement(json::Object(TupleValue), Tuple->Elements[I]);
+            ApplyElement(json::Object(TupleValue), I);
         if (Parameter->isReferenceType()) {
           auto Pointer =
               address(std::move(Element), Parameter->getPointeeType(), L);
           Arguments.push_back(
               snapshot(cast(std::move(Pointer), type(Parameter, L), L), L));
         } else if (recordValue(Parameter)) {
-          // Tuple records are admitted here only when their copy is trivial.
+          // Record elements are admitted here only when their copy is trivial.
           // Still create the independent by-value parameter object required by
-          // the ordinary callback ABI instead of aliasing tuple storage.
+          // the ordinary callback ABI instead of aliasing tuple-like storage.
           auto Place = objectTemporary(Parameter, L);
           assign(Place, std::move(Element), L);
           Arguments.push_back(snapshot(
