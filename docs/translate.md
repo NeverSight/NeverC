@@ -138,7 +138,8 @@ field values before writing through destination references. `make_pair` unwraps
 authenticated `ref`/`cref` arguments into the corresponding reference fields,
 including one-reference/one-value results. Mixed reference/value pairs also
 support exact compatible direct construction, same-type copy/move construction,
-public field access and index- or unique-type `get`.
+public field access, index- or unique-type `get`, and same-type or compatible
+heterogeneous assignment with per-field reference/value behavior.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#scalar-utilities-and-pairs-from-utility).
 
 Core v2 accepts authenticated empty and nonempty `<tuple>` values, including

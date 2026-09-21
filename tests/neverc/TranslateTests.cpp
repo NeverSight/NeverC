@@ -24503,6 +24503,60 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2MixedReferencePairAssignmentRunsAtBothOptimizations) {
+  const auto Source = tmpFile("pair-mixed-reference-assignment.cpp");
+  const auto Output = tmpFile("pair-mixed-reference-assignment.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+int main() {
+  int destination_number = 1;
+  int source_number = 2;
+  std::pair<int &, long> destination(destination_number, 3L);
+  std::pair<int &, long> source(source_number, 4L);
+  auto &result = (destination = source);
+  if (&result != &destination || destination_number != 2 ||
+      destination.second != 4 || &destination.first != &destination_number ||
+      &source.first != &source_number)
+    return 1;
+  source_number = 5;
+  source.second = 6;
+  destination = static_cast<std::pair<int &, long> &&>(source);
+  if (destination_number != 5 || destination.second != 6)
+    return 2;
+  std::pair<short, double> converted(short(7), 8.0);
+  destination = converted;
+  if (destination_number != 7 || destination.second != 8)
+    return 3;
+  int reversed_number = 9;
+  std::pair<long, int &> reversed(10L, reversed_number);
+  std::pair<short, int> reversed_source(short(11), 12);
+  reversed = reversed_source;
+  if (reversed.first != 11 || reversed_number != 12 ||
+      &reversed.second != &reversed_number)
+    return 4;
+  int ordered_number = 13;
+  std::pair<int, int &> ordered(14, ordered_number);
+  std::pair<int, int &> ordered_source(15, ordered.first);
+  ordered = ordered_source;
+  return ordered.first == 15 && ordered_number == 15 ? 0 : 5;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("pair-mixed-reference-assignment" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2TupleApplyCallableObjectsRunAtBothOptimizations) {
   const auto Source = tmpFile("tuple-apply-callable-objects.cpp");
   const auto Output = tmpFile("tuple-apply-callable-objects.nc");

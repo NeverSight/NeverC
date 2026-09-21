@@ -8344,19 +8344,19 @@ class FunctionLowering {
             address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
         auto Left = dereference(std::move(LeftAddress), L);
         auto Right = dereference(std::move(RightAddress), L);
-        if (approvedUtilityReferencePairRecord(
-                A.S, A.Sources,
-                Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context)) {
+        if (Pair->First->getType()->isReferenceType() ||
+            Pair->Second->getType()->isReferenceType()) {
           auto SourcePair = approvedUtilityPairRecord(
               A.S, A.Sources,
               Call->getArg(1)->getType()->getAsCXXRecordDecl(), A.Context);
-          bool SourceReferencePair = false;
-          if (!SourcePair) {
+          if (!SourcePair)
             SourcePair = approvedUtilityReferencePairRecord(
                 A.S, A.Sources,
                 Call->getArg(1)->getType()->getAsCXXRecordDecl(), A.Context);
-            SourceReferencePair = SourcePair.has_value();
-          }
+          if (!SourcePair)
+            SourcePair = approvedUtilityMixedReferencePairRecord(
+                A.S, A.Sources,
+                Call->getArg(1)->getType()->getAsCXXRecordDecl(), A.Context);
           if (!SourcePair)
             reject(L, "utility pair assignment",
                    "The source std::pair layout is unavailable.");
@@ -8364,13 +8364,17 @@ class FunctionLowering {
             const auto *DestinationField = I ? Pair->Second : Pair->First;
             const auto *SourceField =
                 I ? SourcePair->Second : SourcePair->First;
-            auto Destination = dereference(
-                fieldStorage(json::Object(Left), DestinationField, L), L);
+            auto Destination =
+                fieldStorage(json::Object(Left), DestinationField, L);
+            if (DestinationField->getType()->isReferenceType())
+              Destination = dereference(std::move(Destination), L);
             auto Value = fieldStorage(json::Object(Right), SourceField, L);
-            if (SourceReferencePair)
+            if (SourceField->getType()->isReferenceType())
               Value = dereference(std::move(Value), L);
             const auto DestinationType =
-                DestinationField->getType()->getPointeeType();
+                DestinationField->getType()->isReferenceType()
+                    ? DestinationField->getType()->getPointeeType()
+                    : DestinationField->getType();
             if (recordValue(DestinationType))
               assign(std::move(Destination), std::move(Value), L);
             else

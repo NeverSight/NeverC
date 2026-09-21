@@ -217,8 +217,10 @@ its other admitted value field and supports ordinary public `first`/`second`
 access. These mixed reference/value pairs also admit exact compatible direct
 construction, same-type trivial copy/move construction and index- or
 unique-type `get`; reference fields retain their bindings while value fields
-retain ordinary pair value semantics. Assignment, comparison, swap and
-converting construction for mixed pairs remain outside this increment.
+retain ordinary pair value semantics. Same-type and compatible heterogeneous
+assignment preserve that split, writing through reference fields and assigning
+value fields in field order. Comparison, swap and converting construction for
+mixed pairs remain outside this increment.
 
 All six C++17 comparisons recurse through authenticated arrays and nested pairs
 and compare their scalar leaves in lexicographic order. Corresponding scalar

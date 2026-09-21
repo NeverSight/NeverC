@@ -2979,19 +2979,25 @@ approvedUtilityPairAssignment(const State &S, const SourceManager &SM,
         S, SM, Method ? Method->getParent() : nullptr, Context);
     ReferencePair = Pair.has_value();
   }
-  const auto FirstType =
-      ReferencePair ? Pair->First->getType()->getPointeeType()
-                    : Pair ? Pair->First->getType() : QualType();
-  const auto SecondType =
-      ReferencePair ? Pair->Second->getType()->getPointeeType()
-                    : Pair ? Pair->Second->getType() : QualType();
+  bool MixedReferencePair = false;
+  if (!Pair) {
+    Pair = approvedUtilityMixedReferencePairRecord(
+        S, SM, Method ? Method->getParent() : nullptr, Context);
+    MixedReferencePair = Pair.has_value();
+  }
+  auto FirstType = Pair ? Pair->First->getType() : QualType();
+  auto SecondType = Pair ? Pair->Second->getType() : QualType();
+  if (!FirstType.isNull() && FirstType->isReferenceType())
+    FirstType = FirstType->getPointeeType();
+  if (!SecondType.isNull() && SecondType->isReferenceType())
+    SecondType = SecondType->getPointeeType();
   if (!Method || !Pair || Method->isStatic() || Method->isVariadic() ||
       Method->getNumParams() != 1 ||
       Method->getOverloadedOperator() != OO_Equal || !Method->hasBody() ||
       !approvedStandardSDKDeclaration(S, SM, Method) ||
       !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
                      "__utility/pair.h") ||
-      (!ReferencePair &&
+      (!ReferencePair && !MixedReferencePair &&
        (!utilityPairValue(S, SM, Context, FirstType) ||
         !utilityPairValue(S, SM, Context, SecondType))) ||
       !utilityPairAssignableValue(S, SM, Context, FirstType) ||
@@ -3010,16 +3016,18 @@ approvedUtilityPairAssignment(const State &S, const SourceManager &SM,
       Context.hasSameUnqualifiedType(Assignment->getArg(1)->getType(),
                                      PairType))
     return Pair;
-  if (!ReferencePair || Parameter->getPointeeType().isVolatileQualified())
+  if ((!ReferencePair && !MixedReferencePair) ||
+      Parameter->getPointeeType().isVolatileQualified())
     return std::nullopt;
   auto SourcePair = approvedUtilityPairRecord(
       S, SM, Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
-  bool SourceReferencePair = false;
   if (!SourcePair) {
     SourcePair = approvedUtilityReferencePairRecord(
         S, SM, Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
-    SourceReferencePair = SourcePair.has_value();
   }
+  if (!SourcePair)
+    SourcePair = approvedUtilityMixedReferencePairRecord(
+        S, SM, Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
   const auto *Primary = Method->getPrimaryTemplate();
   if (!SourcePair || !Primary ||
       !Context.hasSameUnqualifiedType(
@@ -3032,12 +3040,14 @@ approvedUtilityPairAssignment(const State &S, const SourceManager &SM,
   for (unsigned I = 0; I != 2; ++I) {
     const auto SourceElement =
         I ? SourcePair->Second->getType() : SourcePair->First->getType();
-    const auto SourceValue = SourceReferencePair
+    const auto SourceValue = SourceElement->isReferenceType()
                                  ? SourceElement->getPointeeType()
                                  : SourceElement;
-    const auto DestinationValue =
-        (I ? Pair->Second->getType() : Pair->First->getType())
-            ->getPointeeType();
+    const auto DestinationElement =
+        I ? Pair->Second->getType() : Pair->First->getType();
+    const auto DestinationValue = DestinationElement->isReferenceType()
+                                      ? DestinationElement->getPointeeType()
+                                      : DestinationElement;
     const bool Convertible =
         (utilityScalar(Context, SourceValue) ||
          utilityScalar(Context, DestinationValue))

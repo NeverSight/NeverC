@@ -225,8 +225,9 @@ pair fields, while heterogeneous assignment converts values before writing
 through destination bindings. `make_pair` unwraps authenticated `ref`/`cref`
 arguments into reference fields, including mixed reference/value results with
 public field access. Mixed pairs also admit exact compatible direct and
-same-type copy/move construction plus index- or unique-type `get`. Assignment,
-comparison and swap for mixed pairs remain outside this increment.
+same-type copy/move construction, index- or unique-type `get`, and same-type or
+compatible heterogeneous assignment. Comparison and swap for mixed pairs
+remain outside this increment.
 Tuple
 directly lowers authenticated empty and nonempty tuples of scalars, reference
 wrappers
