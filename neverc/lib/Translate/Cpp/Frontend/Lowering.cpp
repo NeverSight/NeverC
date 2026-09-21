@@ -1945,6 +1945,37 @@ class FunctionLowering {
         return functionalOperationValues(L, std::move(Left),
                                          std::move(Right), *Info->Operation);
       }
+      if (Info->Kind == FunctionalReferenceInvokeKind::UserFunctionObject) {
+        if (!Info->Method ||
+            Info->Method->getNumParams() + 1 != Call->getNumArgs())
+          reject(L, "functional reference invoke",
+                 "A checked source callable object is required.");
+        json::Array Arguments;
+        Arguments.push_back(snapshot(
+            cast(std::move(Referent), type(Info->Method->getThisType(), L), L),
+            L));
+        for (unsigned I = 0; I < Info->Method->getNumParams(); ++I) {
+          const auto Parameter = Info->Method->getParamDecl(I)->getType();
+          Arguments.push_back(
+              cast(argument(Call->getArg(I + 1), Parameter),
+                   type(Parameter, L), L));
+        }
+        chargeCall(Arguments, L);
+        json::Object Instruction{{"op", "call"},
+                                 {"callee", A.name(Info->Method)},
+                                 {"args", std::move(Arguments)},
+                                 {"loc", A.loc(L)}};
+        Expression Result;
+        const auto ResultType = type(Info->Method->getReturnType(), L, true);
+        if (ResultType != "void") {
+          Result = temporary(ResultType, L);
+          Instruction["target"] = json::Object(Result);
+        }
+        Body.push_back(std::move(Instruction));
+        if (Info->Method->getReturnType()->isReferenceType())
+          return dereference(std::move(Result), L);
+        return Result;
+      }
       const auto *Prototype =
           Info->FunctionPointerType->isFunctionPointerType()
               ? Info->FunctionPointerType->getPointeeType()

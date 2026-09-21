@@ -930,6 +930,11 @@ are retained before the arguments are evaluated, and each expression is
 evaluated once. Exact scalar, object-pointer and function-pointer lvalue- or rvalue-reference
 parameters and exact lvalue- or rvalue-reference results preserve their source storage and
 qualification.
+Wrappers around an exact source-owned record callable also call directly or
+through `std::invoke` when the selected lvalue or const-lvalue `operator()` is
+an admitted defined method with that same parameter and result boundary. The
+stored pointer remains the method receiver, so mutations and reference results
+retain the original object's identity.
 
 Exact C++17 `std::invoke` calls on an ordinary function or stored function
 pointer also lower directly. The target must have fixed arity. Parameters may

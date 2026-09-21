@@ -343,12 +343,14 @@ enum class FunctionalReferenceInvokeKind {
   Function,
   FunctionPointer,
   FunctionObject,
+  UserFunctionObject,
 };
 struct FunctionalReferenceInvokeCall {
   FunctionalReferenceRecord Wrapper;
   FunctionalReferenceInvokeKind Kind;
   clang::QualType FunctionPointerType;
   std::optional<FunctionalOperationInfo> Operation;
+  const clang::CXXMethodDecl *Method;
 };
 std::optional<FunctionalReferenceInvokeCall>
 approvedFunctionalReferenceInvokeCall(

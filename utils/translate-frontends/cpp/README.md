@@ -132,7 +132,10 @@ object targets. Object forms also lower the implicit reference conversion.
 Wrappers around admitted standard function
 objects, stored fixed-arity function pointers and admitted function referents
 are callable directly and through `std::invoke`, preserving exact scalar and
-object-pointer or function-pointer lvalue or rvalue references. The
+object-pointer or function-pointer lvalue or rvalue references. Wrappers around
+exact source-owned record callables use the same forms when Clang selects an
+admitted defined lvalue or const-lvalue `operator()`, retaining the referenced
+object's identity, mutations and reference results. The
 exact C++17 `std::invoke` also lowers fixed-arity ordinary functions and stored
 function pointers with directly convertible by-value scalar parameters, exact
 fixed-arity ordinary function pointers including function-name decay, or exact

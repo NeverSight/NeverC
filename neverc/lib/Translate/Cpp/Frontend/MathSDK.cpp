@@ -7838,7 +7838,71 @@ approvedFunctionalReferenceDirectInvoke(
         return std::nullopt;
     return FunctionalReferenceInvokeCall{
         *Wrapper, FunctionalReferenceInvokeKind::FunctionObject, {},
-        std::move(Operation)};
+        std::move(Operation), nullptr};
+  }
+
+  const auto *ReferentRecord =
+      Wrapper->ReferentType->getAsCXXRecordDecl();
+  const auto *ReferentDefinition =
+      ReferentRecord ? ReferentRecord->getDefinition() : nullptr;
+  const auto *OperationCall = dyn_cast<CXXOperatorCallExpr>(Invoked);
+  const auto *OperationMethod = dyn_cast_or_null<CXXMethodDecl>(
+      OperationCall ? OperationCall->getDirectCallee() : nullptr);
+  if (ReferentDefinition &&
+      S.owns(SM, ReferentDefinition->getLocation()) && OperationCall &&
+      OperationMethod && OperationMethod->getOverloadedOperator() == OO_Call &&
+      !OperationMethod->isStatic() && ordinaryOperator(OperationMethod) &&
+      callableMethod(OperationMethod) && OperationMethod->hasBody() &&
+      S.owns(SM, OperationMethod->getLocation()) &&
+      OperationMethod->getParent()->getCanonicalDecl() ==
+          ReferentDefinition->getCanonicalDecl() &&
+      OperationMethod->getRefQualifier() != RQ_RValue &&
+      OperationMethod->getNumParams() + 1 == Call->getNumArgs() &&
+      OperationCall->getNumArgs() == Call->getNumArgs() &&
+      Context.hasSameType(OperationMethod->getReturnType(), MethodResult) &&
+      (functionalInvokeParameterReference(
+           OperationCall->getArg(0), DispatchFunction->getParamDecl(0)) ||
+       approvedFunctionalForwardingCall(
+           S, SM, OperationCall->getArg(0),
+           DispatchFunction->getParamDecl(0)))) {
+    const auto Result = OperationMethod->getReturnType();
+    const auto Referent =
+        Result->isReferenceType() ? Result->getPointeeType() : QualType();
+    bool Supported =
+        Result->isReferenceType()
+            ? !Referent.isVolatileQualified() &&
+                  !Referent.isRestrictQualified() &&
+                  Referent.getAddressSpace() == LangAS::Default &&
+                  supportedFunctionalMemberValue(
+                      Context, Referent.getUnqualifiedType()) &&
+                  (Result->isLValueReferenceType() ? Call->isLValue()
+                                                   : Call->isXValue()) &&
+                  Context.hasSameType(Referent, Call->getType())
+            : Call->isPRValue() &&
+                  Context.hasSameType(Result, Call->getType()) &&
+                  (Result->isVoidType() ||
+                   supportedFunctionalMemberValue(Context, Result));
+    for (unsigned I = 0; Supported && I < OperationMethod->getNumParams(); ++I) {
+      const auto Parameter = OperationMethod->getParamDecl(I)->getType();
+      const auto *ArgumentExpression = Call->getArg(I + 1);
+      Supported =
+          (Parameter->isReferenceType()
+               ? supportedFunctionalInvokeReferenceArgument(
+                     Context, Parameter, ArgumentExpression)
+               : supportedFunctionalMemberValue(Context, Parameter) &&
+                     functionalMemberValueConversion(
+                         Context, ArgumentExpression->getType(), Parameter)) &&
+          (functionalInvokeParameterReference(
+               OperationCall->getArg(I + 1),
+               DispatchFunction->getParamDecl(I + 1)) ||
+           approvedFunctionalForwardingCall(
+               S, SM, OperationCall->getArg(I + 1),
+               DispatchFunction->getParamDecl(I + 1)));
+    }
+    if (Supported)
+      return FunctionalReferenceInvokeCall{
+          *Wrapper, FunctionalReferenceInvokeKind::UserFunctionObject, {},
+          std::nullopt, OperationMethod};
   }
 
   const bool FunctionReferent = Wrapper->ReferentType->isFunctionType();
@@ -7881,7 +7945,8 @@ approvedFunctionalReferenceDirectInvoke(
       FunctionReferent ? FunctionalReferenceInvokeKind::Function
                        : FunctionalReferenceInvokeKind::FunctionPointer,
       PointerType,
-      std::nullopt};
+      std::nullopt,
+      nullptr};
 }
 
 std::optional<FunctionalReferenceInvokeCall>
@@ -7926,6 +7991,25 @@ approvedFunctionalReferenceInvokeCall(
       if (!utilityScalarDirectConversion(Context, Call->getArg(I)->getType(),
                                          InnerCall->getArg(I)->getType()))
         return std::nullopt;
+    return Inner;
+  }
+  if (Inner->Kind == FunctionalReferenceInvokeKind::UserFunctionObject) {
+    if (!Inner->Method ||
+        Inner->Method->getNumParams() + 1 != Call->getNumArgs())
+      return std::nullopt;
+    for (unsigned I = 0; I < Inner->Method->getNumParams(); ++I) {
+      const auto Parameter = Inner->Method->getParamDecl(I)->getType();
+      const auto *ArgumentExpression = Call->getArg(I + 1);
+      const bool Supported =
+          Parameter->isReferenceType()
+              ? supportedFunctionalInvokeReferenceArgument(
+                    Context, Parameter, ArgumentExpression)
+              : supportedFunctionalMemberValue(Context, Parameter) &&
+                    functionalMemberValueConversion(
+                        Context, ArgumentExpression->getType(), Parameter);
+      if (!Supported)
+        return std::nullopt;
+    }
     return Inner;
   }
   const auto *Prototype =

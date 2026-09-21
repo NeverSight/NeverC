@@ -321,7 +321,10 @@ reference conversion. Wrappers
 around admitted standard function objects, stored fixed-arity function pointers
 and admitted function referents call directly or through `std::invoke`,
 preserving exact scalar, object-pointer and function-pointer lvalue or rvalue references and retaining the
-wrapper and referenced callable before evaluating the arguments. The
+wrapper and referenced callable before evaluating the arguments. Wrappers
+around exact source-owned record callables use the same forms when Clang
+selects an admitted defined lvalue or const-lvalue `operator()`, retaining the
+referenced object's identity, mutations and reference results. The
 remaining callable facilities stay outside the documented
 direct lowering boundary, except exact C++17 `std::invoke` calls on fixed-arity
 ordinary functions or stored function pointers. Those calls accept directly

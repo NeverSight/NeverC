@@ -34690,6 +34690,58 @@ int main() {
 }
 
 TEST_F(TranslateTest,
+       CoreV2FunctionalReferenceUserObjectsRunAtBothOptimizations) {
+  const auto Source = tmpFile("functional-reference-user-objects.cpp");
+  const auto Output = tmpFile("functional-reference-user-objects.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+struct Function {
+  int value;
+  int operator()(short extra) & { return value += extra; }
+  int operator()(short extra) const & { return value + extra + 10; }
+};
+struct Reference {
+  int *value;
+  int &operator()() const { return *value; }
+};
+int main() {
+  Function function{2};
+  const Function constant{3};
+  auto reference = std::ref(function);
+  auto constant_reference = std::cref(constant);
+  int score = reference(1) == 3;
+  score += std::invoke(reference, 2) == 5;
+  score += constant_reference(1) == 14;
+  score += std::invoke(constant_reference, 2) == 15;
+  score += std::ref(function)(3) == 8;
+  score += std::invoke(std::ref(function), 4) == 12;
+  int value = 6;
+  Reference callable{&value};
+  auto alias = std::ref(callable);
+  alias() = 8;
+  std::invoke(alias) = 9;
+  score += value == 9;
+  return score == 7 ? 0 : score;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  EXPECT_EQ(Generated.find("indirect_call"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-reference-user-objects" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
        CoreV2FunctionalMemberTemporaryReceiversRunAtBothOptimizations) {
   const auto Source = tmpFile("functional-member-temporary-receivers.cpp");
   const auto Output = tmpFile("functional-member-temporary-receivers.nc");
@@ -35009,10 +35061,6 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "#include <functional>\nint main(){auto r=std::cref(3);return "
        "r.get();}",
        "TR0202"},
-      {"reference-wrapper-user-callable",
-       "#include <functional>\nstruct F{int operator()(int v)const{return v;}};"
-       "int main(){F f;auto r=std::ref(f);return r(1);}",
-       "TR0203"},
       {"reference-wrapper-function-volatile-reference-parameter",
        "#include <functional>\nint load(volatile int&v){return v;}int main(){"
        "auto p=&load;auto r=std::ref(p);volatile int v=3;return r(v);}",

@@ -1796,6 +1796,41 @@ extern "C" int functional_user_invoke(int value) {
         check("v2-functional-user-invoke-" + target,
               functional_user_invoke_source,
               profile="cpp-core-v2", target=target, sdk=True)
+    functional_reference_user_invoke_source = """\
+#include <functional>
+struct Function {
+  int value;
+  int operator()(short extra) & { return value += extra; }
+  int operator()(short extra) const & { return value + extra + 10; }
+};
+struct Reference {
+  int *value;
+  int &operator()() const { return *value; }
+};
+extern "C" int functional_reference_user_invoke(int value) {
+  Function function{value};
+  const Function constant{value};
+  auto reference = std::ref(function);
+  auto constant_reference = std::cref(constant);
+  int result = reference(1) + std::invoke(reference, 2);
+  result += constant_reference(3) + std::invoke(constant_reference, 4);
+  Reference callable{&result};
+  auto alias = std::ref(callable);
+  alias() = result + 5;
+  std::invoke(alias) = result + 6;
+  return result;
+}
+"""
+    functional_reference_user_invoke = check(
+        "v2-functional-reference-user-invoke",
+        functional_reference_user_invoke_source,
+        profile="cpp-core-v2", sdk=True)
+    assert any(function["name"] == "functional_reference_user_invoke"
+               for function in functional_reference_user_invoke["functions"]), functional_reference_user_invoke
+    for target in sdk_targets:
+        check("v2-functional-reference-user-invoke-" + target,
+              functional_reference_user_invoke_source,
+              profile="cpp-core-v2", target=target, sdk=True)
     functional_invoke_reference_source = """\
 #include <functional>
 int &same(int &value) { return value; }
@@ -2382,8 +2417,6 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
          "TR0201"),
         ("cref-temporary", '#include <functional>\nint main(){auto r=std::cref(3);return r.get();}',
          "TR0202"),
-        ("reference-wrapper-user-callable", '#include <functional>\nstruct F{int operator()(int v)const{return v;}};int main(){F f;auto r=std::ref(f);return r(1);}',
-         "TR0203"),
         ("reference-wrapper-function-volatile-reference-parameter", '#include <functional>\nint load(volatile int&v){return v;}int main(){auto p=&load;auto r=std::ref(p);volatile int v=3;return r(v);}',
          "TR0201"),
         ("reference-wrapper-variadic", '#include <functional>\nint first(int v,...){return v;}int main(){auto p=&first;auto r=std::ref(p);return r(3,4);}',
