@@ -265,9 +265,10 @@ Authenticated reference tuples also support direct element construction when
 each selected binding has the same unqualified referent type, compatible cv
 qualification and an admissible lvalue/rvalue category. Same-type trivial
 copy/move construction copies the stored bindings, so both tuple objects keep
-referring to the original objects. Reference-tuple assignment remains outside
-this boundary because it assigns through the existing bindings rather than
-rebinding them.
+referring to the original objects. Same-type copy/move assignment evaluates
+the source and destination once, then assigns each source referent into the
+corresponding destination referent without changing either tuple's bindings.
+The assignment result aliases the destination tuple.
 
 Exact `std::apply` calls over an authenticated empty or nonempty tuple lower to
 one ordinary callback call. The callable may be a named function, a stored

@@ -877,6 +877,10 @@ extern "C" int tuple_reference_construction(int value) {
   std::tuple<int &, int &> direct(value, other);
   const auto copied(direct);
   std::get<0>(copied) += 2;
+  int source_first = value + 3;
+  int source_second = other + 4;
+  std::tuple<int &, int &> source(source_first, source_second);
+  direct = source;
   std::tuple<int &&> rvalue(static_cast<int &&>(other));
   std::get<0>(rvalue) += 3;
   return value + other;

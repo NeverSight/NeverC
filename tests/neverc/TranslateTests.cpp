@@ -23889,6 +23889,75 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ReferenceTupleAssignmentRunsAtBothOptimizations) {
+  const auto Source = tmpFile("tuple-reference-assignment.cpp");
+  const auto Output = tmpFile("tuple-reference-assignment.nc");
+  writeFile(Source, R"cpp(
+#include <tuple>
+struct Box { int value; };
+int order;
+using Refs = std::tuple<int &, int &>;
+Refs &select(Refs &value, int digit) {
+  order = order * 10 + digit;
+  return value;
+}
+int main() {
+  int first = 1;
+  int second = 2;
+  int source_first = 10;
+  int source_second = 20;
+  Refs destination(first, second);
+  Refs source(source_first, source_second);
+  order = 0;
+  Refs &result = (select(destination, 1) = select(source, 2));
+  if (order != 21 || &result != &destination || first != 10 || second != 20)
+    return 1;
+  source_first = 30;
+  source_second = 40;
+  if (std::get<0>(destination) != 10 || std::get<1>(destination) != 20 ||
+      &std::get<0>(destination) != &first ||
+      &std::get<1>(destination) != &second)
+    return 2;
+  std::tie(first, second) = std::tie(source_first, source_second);
+  if (first != 30 || second != 40)
+    return 3;
+  Box destination_box{3};
+  Box source_box{9};
+  std::tuple<Box &> destination_record(destination_box);
+  std::tuple<Box &> source_record(source_box);
+  destination_record = source_record;
+  if (destination_box.value != 9 ||
+      &std::get<0>(destination_record) != &destination_box)
+    return 4;
+  int rvalue_destination = 5;
+  int rvalue_source = 8;
+  std::tuple<int &&> destination_rvalue(
+      static_cast<int &&>(rvalue_destination));
+  std::tuple<int &&> source_rvalue(static_cast<int &&>(rvalue_source));
+  destination_rvalue = static_cast<std::tuple<int &&> &&>(source_rvalue);
+  return rvalue_destination == 8 &&
+                 &std::get<0>(destination_rvalue) == &rvalue_destination
+             ? 0
+             : 5;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("__memberwise_copy_assign"), std::string::npos);
+  EXPECT_EQ(Text.find("__memberwise_forward_assign"), std::string::npos);
+  EXPECT_EQ(Text.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("tuple-reference-assignment" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2TupleApplyCallableObjectsRunAtBothOptimizations) {
   const auto Source = tmpFile("tuple-apply-callable-objects.cpp");
   const auto Output = tmpFile("tuple-apply-callable-objects.nc");

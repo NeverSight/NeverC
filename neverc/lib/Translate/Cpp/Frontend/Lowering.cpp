@@ -8230,14 +8230,42 @@ class FunctionLowering {
             address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
         auto Left = dereference(std::move(LeftAddress), L);
         auto Right = dereference(std::move(RightAddress), L);
+        auto DestinationTuple = approvedUtilityTupleRecord(
+            A.S, A.Sources, Call->getArg(0)->getType()->getAsCXXRecordDecl(),
+            A.Context);
+        bool ReferenceTuple = false;
+        if (!DestinationTuple) {
+          DestinationTuple = approvedUtilityReferenceTupleRecord(
+              A.S, A.Sources,
+              Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
+          ReferenceTuple = DestinationTuple.has_value();
+        }
         switch (*Assignment) {
-        case UtilityTupleAssignment::CopyOrMove:
-          assign(Left, std::move(Right), L);
+        case UtilityTupleAssignment::CopyOrMove: {
+          if (!ReferenceTuple) {
+            assign(Left, std::move(Right), L);
+            return Left;
+          }
+          auto SourceTuple = approvedUtilityReferenceTupleRecord(
+              A.S, A.Sources,
+              Call->getArg(1)->getType()->getAsCXXRecordDecl(), A.Context);
+          if (!DestinationTuple || !SourceTuple ||
+              DestinationTuple->Elements.size() != SourceTuple->Elements.size())
+            reject(L, "utility tuple assignment",
+                   "A selected reference std::tuple layout is unavailable.");
+          for (unsigned I = 0; I < DestinationTuple->Elements.size(); ++I) {
+            auto Destination = dereference(
+                fieldStorage(json::Object(Left),
+                             DestinationTuple->Elements[I], L),
+                L);
+            auto Value = dereference(
+                fieldStorage(json::Object(Right), SourceTuple->Elements[I], L),
+                L);
+            assign(std::move(Destination), std::move(Value), L);
+          }
           return Left;
+        }
         case UtilityTupleAssignment::Converting: {
-          auto DestinationTuple = approvedUtilityTupleRecord(
-              A.S, A.Sources, Call->getArg(0)->getType()->getAsCXXRecordDecl(),
-              A.Context);
           auto SourceTuple = approvedUtilityTupleRecord(
               A.S, A.Sources, Call->getArg(1)->getType()->getAsCXXRecordDecl(),
               A.Context);

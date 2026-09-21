@@ -3317,9 +3317,16 @@ approvedUtilityTupleAssignment(const State &S, const SourceManager &SM,
     return std::nullopt;
   const auto *Method =
       dyn_cast_or_null<CXXMethodDecl>(Assignment->getDirectCallee());
-  const auto Tuple = approvedUtilityTupleRecord(
+  auto Tuple = approvedUtilityTupleRecord(
       S, SM, Method ? Method->getParent() : nullptr, Context);
-  const bool EmptyDefaultedAssignment = Tuple && Tuple->Elements.empty() &&
+  bool ReferenceTuple = false;
+  if (!Tuple) {
+    Tuple = approvedUtilityReferenceTupleRecord(
+        S, SM, Method ? Method->getParent() : nullptr, Context);
+    ReferenceTuple = Tuple.has_value();
+  }
+  const bool EmptyDefaultedAssignment = !ReferenceTuple && Tuple &&
+                                        Tuple->Elements.empty() &&
                                         Method && Method->isTrivial() &&
                                         defaultedAssignment(Method);
   if (!Method || !Tuple || Method->isStatic() || Method->isVariadic() ||
@@ -3329,9 +3336,14 @@ approvedUtilityTupleAssignment(const State &S, const SourceManager &SM,
       !approvedStandardSDKDeclaration(S, SM, Method) ||
       !cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "tuple"))
     return std::nullopt;
-  for (const auto *Element : Tuple->Elements)
-    if (!utilityTupleAssignableValue(S, SM, Context, Element->getType()))
+  for (const auto *Element : Tuple->Elements) {
+    const auto ElementType = Element->getType();
+    const auto AssignedType = ReferenceTuple && ElementType->isReferenceType()
+                                  ? ElementType->getPointeeType()
+                                  : ElementType;
+    if (!utilityTupleAssignableValue(S, SM, Context, AssignedType))
       return std::nullopt;
+  }
   const auto Parameter = Method->getParamDecl(0)->getType();
   const auto Result = Method->getReturnType();
   const auto TupleType = Context.getRecordType(Tuple->Record);
@@ -3343,8 +3355,11 @@ approvedUtilityTupleAssignment(const State &S, const SourceManager &SM,
       !Parameter->isReferenceType() ||
       Parameter->getPointeeType().isVolatileQualified())
     return std::nullopt;
-  const auto SourceTuple = approvedUtilityTupleRecord(
+  auto SourceTuple = approvedUtilityTupleRecord(
       S, SM, Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
+  if (ReferenceTuple && !SourceTuple)
+    SourceTuple = approvedUtilityReferenceTupleRecord(
+        S, SM, Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
   const auto *Primary = Method->getPrimaryTemplate();
   if (SourceTuple) {
     if (!Context.hasSameUnqualifiedType(
@@ -3354,6 +3369,8 @@ approvedUtilityTupleAssignment(const State &S, const SourceManager &SM,
     if (SourceTuple->Record->getCanonicalDecl() ==
         Tuple->Record->getCanonicalDecl())
       return UtilityTupleAssignment::CopyOrMove;
+    if (ReferenceTuple)
+      return std::nullopt;
     if (!Primary || SourceTuple->Elements.size() != Tuple->Elements.size() ||
         !approvedStandardSDKDeclaration(S, SM, Primary) ||
         !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "tuple"))
