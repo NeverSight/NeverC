@@ -8189,12 +8189,26 @@ approvedUtilityTupleApplyDispatch(const State &S, const SourceManager &SM,
   const auto *Reference =
       Call ? dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Call))
            : nullptr;
-  const auto Tuple = approvedUtilityTupleRecord(
+  auto Tuple = approvedUtilityTupleRecord(
       S, SM,
       Call && Call->getNumArgs() == 2
           ? Call->getArg(1)->getType()->getAsCXXRecordDecl()
           : nullptr,
       Context);
+  if (!Tuple)
+    Tuple = approvedUtilityReferenceTupleRecord(
+        S, SM,
+        Call && Call->getNumArgs() == 2
+            ? Call->getArg(1)->getType()->getAsCXXRecordDecl()
+            : nullptr,
+        Context);
+  if (!Tuple)
+    Tuple = approvedUtilityMixedReferenceTupleRecord(
+        S, SM,
+        Call && Call->getNumArgs() == 2
+            ? Call->getArg(1)->getType()->getAsCXXRecordDecl()
+            : nullptr,
+        Context);
   if (!Call || Call->getNumArgs() != 2 || !Function || !Primary || !Pattern ||
       !Origin || Origin->Root != "libcxx" || Origin->Path != "tuple" ||
       !Function->getIdentifier() || Function->getName() != "apply" ||
@@ -8375,19 +8389,29 @@ approvedUtilityTupleApplyUserCall(const State &S, const SourceManager &SM,
   const auto TupleArgument = Call->getArg(1)->getType();
   for (unsigned I = 0; I < Method->getNumParams(); ++I) {
     const auto Parameter = Method->getParamDecl(I)->getType();
-    const auto Element = Tuple->Elements[I]->getType();
+    const auto StoredElement = Tuple->Elements[I]->getType();
+    const auto Element = StoredElement->isReferenceType()
+                             ? StoredElement->getPointeeType()
+                             : StoredElement;
     bool Supported = false;
     if (Parameter->isReferenceType()) {
       const auto ParameterReferent = Parameter->getPointeeType();
+      const bool ElementIsLValue =
+          StoredElement->isLValueReferenceType() ||
+          Call->getArg(1)->isLValue();
       const bool Category = Parameter->isLValueReferenceType()
-                                ? Call->getArg(1)->isLValue()
-                                : !Call->getArg(1)->isLValue();
+                                ? ElementIsLValue
+                                : !ElementIsLValue;
       Supported = Category &&
                   supportedFunctionalInvokeReference(S, SM, Context,
                                                      ParameterReferent) &&
                   Context.hasSameUnqualifiedType(ParameterReferent, Element) &&
+                  (!StoredElement->isReferenceType() ||
+                   ParameterReferent.isAtLeastAsQualifiedAs(Element,
+                                                            Context)) &&
                   !ParameterReferent.isVolatileQualified() &&
-                  (ParameterReferent.isConstQualified() ||
+                  (StoredElement->isReferenceType() ||
+                   ParameterReferent.isConstQualified() ||
                    !TupleArgument.isConstQualified());
     } else {
       Supported = supportedFunctionalByValue(S, SM, Context, Parameter) &&
@@ -8427,8 +8451,10 @@ approvedUtilityTupleApplyObjectOperation(const State &S,
       !Context.hasSameType(Operation->ResultType, Call->getType()))
     return std::nullopt;
   for (unsigned I = 0; I < Arity; ++I)
-    if (!utilityScalarDirectConversion(
-            Context, Apply->Tuple.Elements[I]->getType(),
+    if (const auto Stored = Apply->Tuple.Elements[I]->getType();
+        !utilityScalarDirectConversion(
+            Context,
+            Stored->isReferenceType() ? Stored->getPointeeType() : Stored,
             OperationCall->getArg(I + 1)->getType()))
       return std::nullopt;
   return Operation;
@@ -8488,11 +8514,14 @@ approvedUtilityTupleApplyMemberCall(const State &S, const SourceManager &SM,
   if (!Member || Invoked->getNumArgs() !=
                      Apply->Tuple.Elements.size() + 1)
     return std::nullopt;
-  for (unsigned I = 0; I < Apply->Tuple.Elements.size(); ++I)
-    if (!Context.hasSameUnqualifiedType(
-            Apply->Tuple.Elements[I]->getType(),
-            Invoked->getArg(I + 1)->getType()))
+  for (unsigned I = 0; I < Apply->Tuple.Elements.size(); ++I) {
+    const auto Stored = Apply->Tuple.Elements[I]->getType();
+    const auto Element =
+        Stored->isReferenceType() ? Stored->getPointeeType() : Stored;
+    if (!Context.hasSameUnqualifiedType(Element,
+                                        Invoked->getArg(I + 1)->getType()))
       return std::nullopt;
+  }
   return Member;
 }
 
@@ -8908,19 +8937,28 @@ approvedUtilityTupleApplyReferenceCall(const State &S,
   const auto TupleArgument = Call->getArg(1)->getType();
   for (unsigned I = 0; I < Arity; ++I) {
     const auto Target = Parameter(I);
-    const auto Element = Apply->Tuple.Elements[I]->getType();
+    const auto StoredElement = Apply->Tuple.Elements[I]->getType();
+    const auto Element = StoredElement->isReferenceType()
+                             ? StoredElement->getPointeeType()
+                             : StoredElement;
     bool Supported = false;
     if (Target->isReferenceType()) {
       const auto Referent = Target->getPointeeType();
+      const bool ElementIsLValue =
+          StoredElement->isLValueReferenceType() ||
+          Call->getArg(1)->isLValue();
       const bool Category = Target->isLValueReferenceType()
-                                ? Call->getArg(1)->isLValue()
-                                : !Call->getArg(1)->isLValue();
+                                ? ElementIsLValue
+                                : !ElementIsLValue;
       Supported = Category &&
                   supportedFunctionalInvokeReference(S, SM, Context,
                                                      Referent) &&
                   Context.hasSameUnqualifiedType(Referent, Element) &&
+                  (!StoredElement->isReferenceType() ||
+                   Referent.isAtLeastAsQualifiedAs(Element, Context)) &&
                   !Referent.isVolatileQualified() &&
-                  (Referent.isConstQualified() ||
+                  (StoredElement->isReferenceType() ||
+                   Referent.isConstQualified() ||
                    !TupleArgument.isConstQualified());
     } else {
       Supported = supportedFunctionalByValue(S, SM, Context, Target) &&
@@ -12255,7 +12293,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
             : nullptr;
     const auto CallableParameter = Function->getParamDecl(0)->getType();
     const auto TupleParameter = Function->getParamDecl(1)->getType();
-    const auto Tuple = TupleFor(Call->getArg(1)->getType());
+    auto Tuple = TupleFor(Call->getArg(1)->getType());
+    if (!Tuple)
+      Tuple = approvedUtilityMixedReferenceTupleRecord(
+          S, SM, Call->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
     const auto Result =
         Prototype ? Prototype->getReturnType()
                   : UserCallable ? UserCallable->Method->getReturnType()
@@ -12310,7 +12351,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         const auto TupleArgument = Call->getArg(1)->getType();
         const bool ElementIsLValue =
             StoredElement->isLValueReferenceType() ||
-            (!StoredElement->isReferenceType() && Call->getArg(1)->isLValue());
+            Call->getArg(1)->isLValue();
         const bool Category = Parameter->isLValueReferenceType()
                                   ? ElementIsLValue
                                   : !ElementIsLValue;
@@ -12318,6 +12359,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
             !supportedFunctionalInvokeReference(S, SM, Context,
                                                 ParameterReferent) ||
             !Context.hasSameUnqualifiedType(ParameterReferent, Element) ||
+            (StoredElement->isReferenceType() &&
+             !ParameterReferent.isAtLeastAsQualifiedAs(Element, Context)) ||
             ParameterReferent.isVolatileQualified() ||
             (!StoredElement->isReferenceType() &&
              !ParameterReferent.isConstQualified() &&

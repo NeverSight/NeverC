@@ -287,8 +287,9 @@ exchange each referent or stored value in
 element order without changing reference bindings.
 Compatible converting construction from authenticated tuples or pairs binds
 each reference element using the checked cv and value category rules, while
-independently copying or converting each value element. `apply` operations for
-these mixed tuples remain outside this increment.
+independently copying or converting each value element. Exact `std::apply`
+recovers reference elements as referents and passes value elements through the
+same checked callable parameter and result rules documented below.
 
 Exact `std::tie` calls construct an authenticated tuple whose elements are
 lvalue references to supported scalar, array or source-owned record objects.

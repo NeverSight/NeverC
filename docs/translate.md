@@ -156,7 +156,8 @@ compatible heterogeneous assignment from tuples or pairs. All six comparisons
 use the same recursive heterogeneous value rules. Member and free swap exchange
 per-element values without changing reference bindings. Compatible converting
 construction from tuples or pairs binds reference elements and independently
-initializes value elements.
+initializes value elements. `std::apply` passes reference elements as their
+referents and value elements through the existing checked callable boundary.
 Reference tuples may also be constructed directly from exact
 compatible references and copy-constructed while preserving their bindings.
 Same-type assignment writes through those bindings element by element. Exact

@@ -24210,6 +24210,78 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2MixedReferenceTupleApplyRunsAtBothOptimizations) {
+  const auto Source = tmpFile("tuple-mixed-reference-apply.cpp");
+  const auto Output = tmpFile("tuple-mixed-reference-apply.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <tuple>
+int update(int &number, long value) {
+  number += int(value);
+  return number;
+}
+int reverse(long value, int &number) {
+  number += int(value);
+  return number;
+}
+int inspect(const int &number, long value) { return number + int(value); }
+struct Mutator {
+  int operator()(int &number, long value) const {
+    number += int(value);
+    return number;
+  }
+};
+int main() {
+  int number = 2;
+  std::tuple<int &, long> direct(number, 3L);
+  if (std::apply(update, direct) != 5 || number != 5)
+    return 1;
+
+  auto factory = std::make_tuple(std::ref(number), 4L);
+  int (*callback)(int &, long) = update;
+  if (std::apply(callback, factory) != 9 || number != 9)
+    return 2;
+
+  int rvalue_number = 10;
+  std::tuple<int &&, long> rvalue_args(
+      static_cast<int &&>(rvalue_number), 2L);
+  if (std::apply(update, rvalue_args) != 12 || rvalue_number != 12)
+    return 3;
+
+  std::tuple<long, int &> reversed(5L, number);
+  if (std::apply(reverse, reversed) != 14 || number != 14)
+    return 4;
+
+  Mutator mutator;
+  if (std::apply(mutator, direct) != 17 || number != 17)
+    return 5;
+  std::plus<> plus;
+  if (std::apply(plus, direct) != 20)
+    return 6;
+  auto wrapped = std::ref(plus);
+  if (std::apply(wrapped, direct) != 20)
+    return 7;
+
+  const auto constant = std::make_tuple(std::cref(number), 6L);
+  return std::apply(inspect, constant) == 23 && number == 17 ? 0 : 8;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("tuple-mixed-reference-apply" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ReferenceTupleAssignmentRunsAtBothOptimizations) {
   const auto Source = tmpFile("tuple-reference-assignment.cpp");
   const auto Output = tmpFile("tuple-reference-assignment.nc");

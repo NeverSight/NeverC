@@ -246,7 +246,8 @@ copy/move construction plus same-type or compatible heterogeneous assignment
 from tuples and pairs. All six comparisons recurse through reference and value
 elements. Member and free swap exchange values without changing reference
 bindings. Compatible converting construction from tuples or pairs binds
-reference elements and initializes value elements. `apply` remains excluded.
+reference elements and initializes value elements. `apply` recovers reference
+elements and passes value elements through the existing checked callable rules.
 Exact direct element construction and
 same-type copy/move construction preserve those bindings; same-type assignment
 writes values through the destination bindings without rebinding them.

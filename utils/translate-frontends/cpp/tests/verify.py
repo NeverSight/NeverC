@@ -950,6 +950,10 @@ extern "C" int tuple_forward(int value) {
 #include <tuple>
 #include <utility>
 #include <functional>
+int apply_mixed(int &number, long value) {
+  number += int(value);
+  return number;
+}
 extern "C" int tuple_reference_construction(int value) {
   int other = value + 1;
   std::tuple<int &, int &> direct(value, other);
@@ -1003,12 +1007,15 @@ extern "C" int tuple_reference_construction(int value) {
   std::tuple<int, long> mixed_owned(value, long(other));
   int *mixed_owned_first = &std::get<0>(mixed_owned);
   std::tuple<const int &, double> mixed_converted(mixed_owned);
+  int mixed_apply_number = value;
+  std::tuple<int &, long> mixed_apply_args(mixed_apply_number, 2L);
+  int mixed_applied = std::apply(apply_mixed, mixed_apply_args);
   return value + other + std::get<0>(view) + int(converted) +
          std::get<0>(pair_view) + int(std::get<1>(mixed_factory)) +
          int(std::get<1>(mixed_copy)) + mixed_comparison +
          int(std::get<1>(mixed_swap_left) + std::get<1>(mixed_swap_right)) +
          int(mixed_owned_first == &std::get<0>(mixed_converted)) +
-         int(std::get<1>(mixed_converted));
+         int(std::get<1>(mixed_converted)) + mixed_applied;
 }
 """
     tuple_reference_construction = check(

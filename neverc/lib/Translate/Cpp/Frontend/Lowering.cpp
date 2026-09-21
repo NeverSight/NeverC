@@ -6917,6 +6917,10 @@ class FunctionLowering {
     }
     case UtilityOperation::TupleApply: {
       auto Tuple = TupleFor(Call->getArg(1)->getType());
+      if (!Tuple)
+        Tuple = approvedUtilityMixedReferenceTupleRecord(
+            A.S, A.Sources,
+            Call->getArg(1)->getType()->getAsCXXRecordDecl(), A.Context);
       auto CallableType = Call->getArg(0)->getType();
       const auto MemberCallable = approvedUtilityTupleApplyMemberCall(
           A.S, A.Sources, Call, A.Context);
