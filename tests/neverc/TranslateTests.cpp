@@ -24028,6 +24028,7 @@ TEST_F(TranslateTest, CoreV2TupleApplyMemberPointersRunAtBothOptimizations) {
   const auto Source = tmpFile("tuple-apply-member-pointers.cpp");
   const auto Output = tmpFile("tuple-apply-member-pointers.nc");
   writeFile(Source, R"cpp(
+#include <functional>
 #include <tuple>
 #include <utility>
 int effects;
@@ -24081,7 +24082,20 @@ int main() {
   if (dropped != 1)
     return 8;
   auto owned = std::make_tuple(Box{10}, 3);
-  return std::apply(&Box::add, owned) == 13 ? 0 : 9;
+  if (std::apply(&Box::add, owned) != 13)
+    return 9;
+  using Wrapped = std::tuple<std::reference_wrapper<Box>, int>;
+  Wrapped wrapped(std::ref(box), 1);
+  Wrapped copied(wrapped);
+  Wrapped assigned(std::ref(box), 0);
+  assigned = copied;
+  if (std::apply(&Box::add, assigned) != 10)
+    return 10;
+  std::tuple<std::reference_wrapper<Box>> receiver(std::ref(box));
+  std::apply(&Box::value, receiver) = 12;
+  int &wrapped_alias = std::apply(&Box::slot, receiver);
+  wrapped_alias = 13;
+  return box.value == 13 ? 0 : 11;
 }
 )cpp");
   auto Result =

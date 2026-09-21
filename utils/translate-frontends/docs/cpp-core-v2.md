@@ -221,11 +221,12 @@ embedded VFS. Its authenticated 98-file libc++/resource closure is identical on
 all eight supported targets and contains no platform headers. A retained
 `std::tuple<T...>` may be empty or contain up to 64 admitted values. Elements
 may be admitted scalars, source-owned nonempty trivial standard-layout records,
-admitted `std::array` values, recursively admitted `std::pair` values, or
-nonempty nested tuples. For nonempty tuples, the frontend authenticates
-libc++'s private `__base_` field, indexed leaf base classes and template
-arguments, private leaf values, native size and alignment, and every ABI field
-offset before exposing a flat protocol record. A nested tuple makes its
+authenticated `std::reference_wrapper` values, admitted `std::array` values,
+recursively admitted `std::pair` values, or nonempty nested tuples. For
+nonempty tuples, the frontend authenticates libc++'s private `__base_` field,
+indexed leaf base classes and template arguments, private leaf values, native
+size and alignment, and every ABI field offset before exposing a flat protocol
+record. A nested tuple makes its
 containing leaf non-standard-layout, so that case is admitted only after the
 same concrete field and layout checks. For the dedicated empty specialization,
 the frontend authenticates the explicit specialization kind, zero bases and
@@ -254,7 +255,8 @@ these named functions, stored function pointers, source function objects and
 standard function objects use the same admitted parameter and result boundary.
 Exact direct or stored source member pointers, and temporary or stored
 `std::mem_fn` wrappers around them, accept the receiver as the first tuple
-element and preserve method or field reference and record results.
+element, including an authenticated `std::reference_wrapper`, and preserve
+method or field reference and record results.
 Function-object cv/ref qualification and mutable object storage are preserved.
 Every tuple element and corresponding callback parameter must be admitted scalars
 connected by a checked direct scalar conversion, or the same complete source-owned

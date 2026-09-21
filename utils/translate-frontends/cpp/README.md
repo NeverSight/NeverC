@@ -215,9 +215,10 @@ Utility directly lowers scalar `move`, `forward`, `move_if_noexcept`, `as_const`
 assignment, swaps, `make_pair` and `get`; recursive standard-composite pair
 comparisons; and
 `tuple_size`, `tuple_element` and integer-sequence size queries. Tuple directly
-lowers authenticated empty and nonempty scalar or recursively composite tuple
-construction, compatible scalar or exact composite per-element construction
-and assignment from tuples or pairs, factories, swaps, recursive same-length
+lowers authenticated empty and nonempty tuples of scalars, reference wrappers
+or recursively composite values, compatible scalar or exact composite
+per-element construction and assignment from tuples or pairs, factories,
+swaps, recursive same-length
 heterogeneous lexicographic comparisons and index or unique-type access. Exact
 `apply` lowers named functions, stored function pointers, exact source-owned
 function objects, authenticated standard scalar function objects, or exact

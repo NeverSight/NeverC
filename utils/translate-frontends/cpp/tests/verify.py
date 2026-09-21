@@ -789,6 +789,7 @@ extern "C" int tuple_apply_mem_fn(int value) {
 
     tuple_apply_member_pointer_source = """\
 #include <tuple>
+#include <functional>
 #include <utility>
 struct Box {
   int value;
@@ -804,7 +805,11 @@ extern "C" int tuple_apply_member_pointer(int value) {
   int &slot = std::apply(&Box::slot, std::make_tuple(&box));
   slot += 1;
   auto owned = std::make_tuple(Box{value}, 4);
-  return result + std::apply(&Box::add, owned) + box.value;
+  std::tuple<std::reference_wrapper<Box>, int> wrapped(std::ref(box), 5);
+  auto copied = wrapped;
+  wrapped = copied;
+  return result + std::apply(&Box::add, owned)
+      + std::apply(&Box::add, wrapped) + box.value;
 }
 """
     tuple_apply_member_pointer = check(

@@ -2928,6 +2928,8 @@ static bool utilityTupleValue(const State &S, const SourceManager &SM,
   if (utilityPairValue(S, SM, Context, Type, Depth))
     return true;
   const auto *Record = Type.getUnqualifiedType()->getAsCXXRecordDecl();
+  if (approvedFunctionalReferenceRecord(S, SM, Record, Context))
+    return true;
   return approvedUtilityTupleRecordImpl(S, SM, Record, Context, Depth)
       .has_value();
 }
@@ -2940,6 +2942,10 @@ static bool utilityTupleAssignableValue(const State &S, const SourceManager &SM,
   if (utilityPairAssignableValue(S, SM, Context, Type, Depth))
     return true;
   const auto *Record = Type.getUnqualifiedType()->getAsCXXRecordDecl();
+  if (approvedFunctionalReferenceRecord(S, SM, Record, Context)) {
+    const auto *Definition = Record ? Record->getDefinition() : nullptr;
+    return Definition && Definition->hasTrivialCopyAssignment();
+  }
   const auto Tuple =
       approvedUtilityTupleRecordImpl(S, SM, Record, Context, Depth);
   if (!Tuple)
