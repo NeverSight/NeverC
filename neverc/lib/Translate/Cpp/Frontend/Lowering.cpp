@@ -10345,12 +10345,9 @@ class FunctionLowering {
             approvedUtilityTupleConstruction(A.S, A.Sources, C, A.Context)) {
       auto Tuple = approvedUtilityTupleRecord(
           A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context);
-      bool ReferenceTuple = false;
-      if (!Tuple) {
+      if (!Tuple)
         Tuple = approvedUtilityReferenceTupleRecord(
             A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context);
-        ReferenceTuple = Tuple.has_value();
-      }
       if (!Tuple)
         Tuple = approvedUtilityMixedReferenceTupleRecord(
             A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context);
@@ -10389,51 +10386,48 @@ class FunctionLowering {
         auto SourceTuple = approvedUtilityTupleRecord(
             A.S, A.Sources, C->getArg(0)->getType()->getAsCXXRecordDecl(),
             A.Context);
-        bool SourceReferenceTuple = false;
-        if (ReferenceTuple && !SourceTuple) {
+        if (!SourceTuple)
           SourceTuple = approvedUtilityReferenceTupleRecord(
               A.S, A.Sources,
               C->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
-          SourceReferenceTuple = SourceTuple.has_value();
-        }
+        if (!SourceTuple)
+          SourceTuple = approvedUtilityMixedReferenceTupleRecord(
+              A.S, A.Sources,
+              C->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
         if (!SourceTuple ||
             SourceTuple->Elements.size() != Tuple->Elements.size())
           reject(L, "utility tuple construction",
                  "The source std::tuple layout is unavailable.");
-        if (ReferenceTuple) {
-          auto SourceAddress = snapshot(
-              address(lvalue(C->getArg(0)), C->getArg(0)->getType(), L), L);
-          auto Source = dereference(std::move(SourceAddress), L);
-          for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
-            auto Value = fieldStorage(json::Object(Source),
-                                      SourceTuple->Elements[I], L);
-            if (!SourceReferenceTuple) {
-              auto SourceElementType = SourceTuple->Elements[I]->getType();
-              const auto SourceParameter =
-                  C->getConstructor()->getParamDecl(0)->getType();
-              if (SourceParameter->isReferenceType() &&
-                  SourceParameter->getPointeeType().isConstQualified())
-                SourceElementType = SourceElementType.withConst();
-              Value = address(std::move(Value),
-                              SourceElementType, L);
-            }
-            assign(Member(Tuple->Elements[I]),
-                   cast(std::move(Value),
-                        type(Tuple->Elements[I]->getType(), L), L),
-                   L);
-          }
-          return;
-        }
-        auto Source = snapshot(expression(C->getArg(0)), L);
+        auto SourceAddress = snapshot(
+            address(lvalue(C->getArg(0)), C->getArg(0)->getType(), L), L);
+        auto Source = dereference(std::move(SourceAddress), L);
+        const auto Parameter = C->getConstructor()->getParamDecl(0)->getType();
         for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
-          auto Value =
-              fieldStorage(json::Object(Source), SourceTuple->Elements[I], L);
-          if (recordValue(Tuple->Elements[I]->getType()))
-            assign(Member(Tuple->Elements[I]), std::move(Value), L);
+          const auto *DestinationField = Tuple->Elements[I];
+          const auto *SourceField = SourceTuple->Elements[I];
+          auto Value = fieldStorage(json::Object(Source), SourceField, L);
+          if (DestinationField->getType()->isReferenceType()) {
+            auto SourceType = SourceField->getType();
+            if (!SourceType->isReferenceType()) {
+              if (Parameter->isReferenceType() &&
+                  Parameter->getPointeeType().isConstQualified())
+                SourceType = SourceType.withConst();
+              Value = address(std::move(Value), SourceType, L);
+            }
+            assign(Member(DestinationField),
+                   cast(std::move(Value), type(DestinationField->getType(), L),
+                        L),
+                   L);
+            continue;
+          }
+          if (SourceField->getType()->isReferenceType())
+            Value = dereference(std::move(Value), L);
+          if (recordValue(DestinationField->getType()))
+            assign(Member(DestinationField), std::move(Value), L);
           else
-            assign(Member(Tuple->Elements[I]),
-                   cast(std::move(Value),
-                        type(Tuple->Elements[I]->getType(), L), L),
+            assign(Member(DestinationField),
+                   cast(std::move(Value), type(DestinationField->getType(), L),
+                        L),
                    L);
         }
         return;
@@ -10442,42 +10436,47 @@ class FunctionLowering {
         auto SourcePair = approvedUtilityPairRecord(
             A.S, A.Sources, C->getArg(0)->getType()->getAsCXXRecordDecl(),
             A.Context);
+        if (!SourcePair)
+          SourcePair = approvedUtilityReferencePairRecord(
+              A.S, A.Sources,
+              C->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
+        if (!SourcePair)
+          SourcePair = approvedUtilityMixedReferencePairRecord(
+              A.S, A.Sources,
+              C->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
         if (!SourcePair || Tuple->Elements.size() != 2)
           reject(L, "utility tuple construction",
                  "The source std::pair layout is unavailable.");
-        if (ReferenceTuple) {
-          auto SourceAddress = snapshot(
-              address(lvalue(C->getArg(0)), C->getArg(0)->getType(), L), L);
-          auto Source = dereference(std::move(SourceAddress), L);
-          const auto SourceParameter =
-              C->getConstructor()->getParamDecl(0)->getType();
-          for (unsigned I = 0; I != 2; ++I) {
-            const auto *SourceField =
-                I ? SourcePair->Second : SourcePair->First;
-            auto SourceType = SourceField->getType();
-            if (SourceParameter->isReferenceType() &&
-                SourceParameter->getPointeeType().isConstQualified())
-              SourceType = SourceType.withConst();
-            auto Value = address(
-                fieldStorage(json::Object(Source), SourceField, L), SourceType,
-                L);
-            assign(Member(Tuple->Elements[I]),
-                   cast(std::move(Value),
-                        type(Tuple->Elements[I]->getType(), L), L),
-                   L);
-          }
-          return;
-        }
-        auto Source = snapshot(expression(C->getArg(0)), L);
+        auto SourceAddress = snapshot(
+            address(lvalue(C->getArg(0)), C->getArg(0)->getType(), L), L);
+        auto Source = dereference(std::move(SourceAddress), L);
+        const auto Parameter = C->getConstructor()->getParamDecl(0)->getType();
         for (unsigned I = 0; I != 2; ++I) {
+          const auto *DestinationField = Tuple->Elements[I];
           const auto *SourceField = I ? SourcePair->Second : SourcePair->First;
           auto Value = fieldStorage(json::Object(Source), SourceField, L);
-          if (recordValue(Tuple->Elements[I]->getType()))
-            assign(Member(Tuple->Elements[I]), std::move(Value), L);
+          if (DestinationField->getType()->isReferenceType()) {
+            auto SourceType = SourceField->getType();
+            if (!SourceType->isReferenceType()) {
+              if (Parameter->isReferenceType() &&
+                  Parameter->getPointeeType().isConstQualified())
+                SourceType = SourceType.withConst();
+              Value = address(std::move(Value), SourceType, L);
+            }
+            assign(Member(DestinationField),
+                   cast(std::move(Value), type(DestinationField->getType(), L),
+                        L),
+                   L);
+            continue;
+          }
+          if (SourceField->getType()->isReferenceType())
+            Value = dereference(std::move(Value), L);
+          if (recordValue(DestinationField->getType()))
+            assign(Member(DestinationField), std::move(Value), L);
           else
-            assign(Member(Tuple->Elements[I]),
-                   cast(std::move(Value),
-                        type(Tuple->Elements[I]->getType(), L), L),
+            assign(Member(DestinationField),
+                   cast(std::move(Value), type(DestinationField->getType(), L),
+                        L),
                    L);
         }
         return;

@@ -24144,6 +24144,72 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2MixedReferenceTupleConversionRunsAtBothOptimizations) {
+  const auto Source = tmpFile("tuple-mixed-reference-conversion.cpp");
+  const auto Output = tmpFile("tuple-mixed-reference-conversion.nc");
+  writeFile(Source, R"cpp(
+#include <tuple>
+#include <utility>
+int main() {
+  std::tuple<int, long> owned(1, 2L);
+  int *owned_first = &std::get<0>(owned);
+  long *owned_second = &std::get<1>(owned);
+  std::tuple<const int &, double> view(owned);
+  if (&std::get<0>(view) != owned_first || std::get<1>(view) != 2.0)
+    return 1;
+  *owned_first = 3;
+  *owned_second = 4;
+  if (std::get<0>(view) != 3 || std::get<1>(view) != 2.0)
+    return 2;
+
+  std::tuple<int &, short> mixed_source(std::get<0>(owned), short(5));
+  std::tuple<const int &, long> from_mixed(mixed_source);
+  if (&std::get<0>(from_mixed) != owned_first ||
+      std::get<1>(from_mixed) != 5)
+    return 3;
+
+  int reverse_number = 6;
+  std::pair<short, int &> reverse_source(short(7), reverse_number);
+  std::tuple<long, const int &> reverse(reverse_source);
+  if (std::get<0>(reverse) != 7 ||
+      &std::get<1>(reverse) != &reverse_number)
+    return 4;
+
+  int reference_first = 8;
+  short reference_second = 9;
+  std::tuple<int &, short &> references(reference_first, reference_second);
+  std::tuple<const int &, long> from_references(references);
+  if (&std::get<0>(from_references) != &reference_first ||
+      std::get<1>(from_references) != 9)
+    return 5;
+
+  std::tuple<int, long> moving_source(10, 11L);
+  int *moving_first = &std::get<0>(moving_source);
+  std::tuple<int &&, double> moved(
+      static_cast<std::tuple<int, long> &&>(moving_source));
+  std::get<0>(moved) = 12;
+  return *moving_first == 12 && std::get<1>(moved) == 11.0
+             ? 0
+             : 6;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("tuple-mixed-reference-conversion" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ReferenceTupleAssignmentRunsAtBothOptimizations) {
   const auto Source = tmpFile("tuple-reference-assignment.cpp");
   const auto Output = tmpFile("tuple-reference-assignment.nc");

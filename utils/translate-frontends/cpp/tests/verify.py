@@ -1000,10 +1000,15 @@ extern "C" int tuple_reference_construction(int value) {
   std::tuple<int &, long> mixed_swap_right(source_first, 10L);
   mixed_swap_left.swap(mixed_swap_right);
   std::swap(mixed_swap_left, mixed_swap_right);
+  std::tuple<int, long> mixed_owned(value, long(other));
+  int *mixed_owned_first = &std::get<0>(mixed_owned);
+  std::tuple<const int &, double> mixed_converted(mixed_owned);
   return value + other + std::get<0>(view) + int(converted) +
          std::get<0>(pair_view) + int(std::get<1>(mixed_factory)) +
          int(std::get<1>(mixed_copy)) + mixed_comparison +
-         int(std::get<1>(mixed_swap_left) + std::get<1>(mixed_swap_right));
+         int(std::get<1>(mixed_swap_left) + std::get<1>(mixed_swap_right)) +
+         int(mixed_owned_first == &std::get<0>(mixed_converted)) +
+         int(std::get<1>(mixed_converted));
 }
 """
     tuple_reference_construction = check(

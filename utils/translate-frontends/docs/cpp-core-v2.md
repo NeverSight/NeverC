@@ -285,8 +285,10 @@ order. All six comparisons read reference and value elements through the
 existing recursive heterogeneous comparison rules. Member and free swap
 exchange each referent or stored value in
 element order without changing reference bindings.
-Converting construction and `apply` operations for these mixed tuples remain
-outside this increment.
+Compatible converting construction from authenticated tuples or pairs binds
+each reference element using the checked cv and value category rules, while
+independently copying or converting each value element. `apply` operations for
+these mixed tuples remain outside this increment.
 
 Exact `std::tie` calls construct an authenticated tuple whose elements are
 lvalue references to supported scalar, array or source-owned record objects.
