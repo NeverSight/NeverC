@@ -166,7 +166,9 @@ boundary. A directly initialized local wrapper for a method or data field may al
 retained across statements and called directly or through `std::invoke`; exact
 same-type local copy/move-initializer chains are authenticated and erased with
 their carriers, including chains through the admitted `<utility>` reference
-adapters. Reassigned or null member pointers, `mem_fn` copies or moves from
+adapters. Those adapters may also wrap an authenticated local wrapper at its
+final direct call or `std::invoke` use. Reassigned or null member pointers,
+`mem_fn` copies or moves from
 parameters, reassigned `mem_fn` objects,
 base adjustments, volatile receivers, user-defined callable objects,
 and other reference or variadic function signatures stay

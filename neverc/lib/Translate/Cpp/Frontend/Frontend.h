@@ -360,6 +360,7 @@ struct FunctionalMemberInvokeCall {
   const clang::CXXMethodDecl *Method;
   const clang::FieldDecl *Field;
   const clang::CallExpr *ErasedFactory;
+  const clang::CallExpr *ErasedAdapter;
   std::optional<FunctionalReferenceRecord> ObjectWrapper;
   bool ObjectIsPointer;
 };

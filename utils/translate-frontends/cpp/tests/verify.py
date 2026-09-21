@@ -2046,12 +2046,13 @@ extern "C" int functional_stored_data_mem_fn(
   auto fixed_pointer = &Box::fixed;
   auto fixed = std::mem_fn(std::as_const(fixed_pointer));
   auto link = std::mem_fn(&Box::link);
-  value_chain(box) = 7;
-  std::invoke(link, std::ref(box)) = constant.link;
-  return value(&box) + std::invoke(fixed, constant)
-      + (link(std::cref(constant)) == constant.link)
-      + value_chain(Box{8, 9, box.link})
-      + std::invoke(fixed, Box{10, 11, box.link});
+  std::move(value_chain)(box) = 7;
+  std::invoke(std::as_const(link), std::ref(box)) = constant.link;
+  return std::as_const(value)(&box)
+      + std::invoke(std::move_if_noexcept(fixed), constant)
+      + (std::forward<decltype(link)>(link)(std::cref(constant)) == constant.link)
+      + std::move(value_chain)(Box{8, 9, box.link})
+      + std::invoke(std::as_const(fixed), Box{10, 11, box.link});
 }
 """
     functional_stored_data_mem_fn = check(
@@ -2102,10 +2103,12 @@ extern "C" int functional_stored_method_mem_fn(
   slot_copy(std::ref(box)) = 9;
   int *pointer = box.link;
   std::invoke(redirect, std::cref(constant), pointer);
-  return add_chain(box, 2) + std::invoke(add, &constant, 1)
-      + take(Box{3, box.link}, 2)
-      + std::invoke(take, Box{4, box.link}, 2)
-      + (pass(constant, box.link) == box.link) + (pointer == constant.link);
+  return std::move(add_chain)(box, 2)
+      + std::invoke(std::as_const(add), &constant, 1)
+      + std::move_if_noexcept(take)(Box{3, box.link}, 2)
+      + std::invoke(std::forward<decltype(take)>(take), Box{4, box.link}, 2)
+      + (std::as_const(pass)(constant, box.link) == box.link)
+      + (pointer == constant.link);
 }
 """
     functional_stored_method_mem_fn = check(
@@ -2311,6 +2314,8 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
         ("invoke-member-function-pointer-reference", '#include <functional>\nint f(){return 3;}struct X{void set(int(*&p)()){p=f;}};int main(){X x;int(*p)()=f;std::invoke(&X::set,x,p);return p();}',
          "TR0203"),
         ("stored-mem-fn-move-from-parameter", '#include <functional>\n#include <utility>\nstruct X{int v;};using Get=decltype(std::mem_fn(&X::v));int call(Get get,X&x){auto q=std::move(get);return q(x);}int main(){X x{3};return call(std::mem_fn(&X::v),x);}',
+         "TR0203"),
+        ("stored-mem-fn-use-adapter-from-parameter", '#include <functional>\n#include <utility>\nstruct X{int v;};using Get=decltype(std::mem_fn(&X::v));int call(Get get,X&x){return std::move(get)(x);}int main(){X x{3};return call(std::mem_fn(&X::v),x);}',
          "TR0203"),
         ("mem-fn-member-pointer-from-parameter", '#include <functional>\nstruct X{int v;};int call(int X::*p,X&x){auto get=std::mem_fn(p);return get(x);}int main(){X x{3};return call(&X::v,x);}',
          "TR0203"),

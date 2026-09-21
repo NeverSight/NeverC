@@ -997,6 +997,8 @@ wrapper and every local carrier are erased. Exact same-type local copy/move
 initializer chains are admitted, including authenticated `std::move`,
 `std::forward`, `std::move_if_noexcept` and `std::as_const` adapters; copies or
 moves from parameters and reassignment remain outside the runtime boundary.
+The same adapters may wrap an authenticated local wrapper at its final direct
+call or `std::invoke` use.
 
 Cv-qualified typed template arguments, addresses or pointers to function
 objects, user-defined operands, `long double`, `std::function`, binders and searchers do

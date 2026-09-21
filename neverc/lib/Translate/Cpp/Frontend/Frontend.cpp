@@ -13450,6 +13450,8 @@ public:
               }
             }
           }
+          if (Member->ErasedAdapter)
+            ApprovedErasedUtilityCalls.insert(Member->ErasedAdapter);
         }
         const Expr *Leaf = directFunctionReference(Call);
         if (!Leaf)

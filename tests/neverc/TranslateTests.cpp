@@ -34766,12 +34766,12 @@ int main() {
   auto redirect = std::mem_fn(&Box::redirect);
   auto slot = std::mem_fn(&Box::slot);
   auto slot_copy = slot;
-  value_chain(box) = 7;
+  std::move(value_chain)(box) = 7;
   int score = 0;
-  score += value(&box) == 7;
-  score += std::invoke(fixed, constant) == 13;
-  score += link(std::cref(constant)) == &second;
-  std::invoke(link, std::ref(box)) = &second;
+  score += std::as_const(value)(&box) == 7;
+  score += std::invoke(std::move_if_noexcept(fixed), constant) == 13;
+  score += std::forward<decltype(link)>(link)(std::cref(constant)) == &second;
+  std::invoke(std::as_const(link), std::ref(box)) = &second;
   score += box.link == &second;
   set_copy(&box, 9);
   score += box.value == 9;
@@ -34780,9 +34780,9 @@ int main() {
   int *cursor = &first;
   std::invoke(redirect, std::cref(constant), cursor);
   score += cursor == &second;
-  score += add_chain(box, 2) == 13;
-  score += std::invoke(add, &constant, 1) == 6;
-  score += pass(constant, &first) == &first;
+  score += std::move(add_chain)(box, 2) == 13;
+  score += std::invoke(std::as_const(add), &constant, 1) == 6;
+  score += std::move_if_noexcept(pass)(constant, &first) == &first;
   return score == 10 ? 0 : score;
 }
 )cpp");
@@ -34936,6 +34936,12 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "#include <functional>\n#include <utility>\nstruct X{int v;};"
        "using Get=decltype(std::mem_fn(&X::v));"
        "int call(Get get,X&x){auto q=std::move(get);return q(x);}"
+       "int main(){X x{3};return call(std::mem_fn(&X::v),x);}",
+       "TR0203"},
+      {"stored-mem-fn-use-adapter-from-parameter",
+       "#include <functional>\n#include <utility>\nstruct X{int v;};"
+       "using Get=decltype(std::mem_fn(&X::v));"
+       "int call(Get get,X&x){return std::move(get)(x);}"
        "int main(){X x{3};return call(std::mem_fn(&X::v),x);}",
        "TR0203"},
       {"mem-fn-member-pointer-from-parameter",

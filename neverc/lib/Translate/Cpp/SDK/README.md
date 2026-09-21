@@ -344,6 +344,8 @@ directly initialized local automatic variable and called through either form;
 exact same-type local copy/move-initializer chains are authenticated and erased
 with the wrapper carrier. Move initialization may use an authenticated
 `std::move`, `std::forward`, `std::move_if_noexcept` or `std::as_const` adapter.
+The same adapters may wrap an authenticated local wrapper at its final direct
+call or `std::invoke` use.
 A direct member address may be passed to `std::invoke`. A local automatic member
 pointer with one exact direct address of an admitted method or data field may
 also be retained across statements and passed to `std::invoke`; the frontend
