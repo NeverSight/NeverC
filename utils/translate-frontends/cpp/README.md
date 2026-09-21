@@ -140,9 +140,11 @@ corresponding scalar, object-pointer, lvalue- or rvalue-reference or `void` resu
 the admitted typed and transparent standard function objects. Direct named
 addresses of owned nonstatic member functions
 also lower on exact-class lvalue, full-expression temporary, pointer or
-`std::reference_wrapper` receivers. Admitted non-volatile scalar or
-object-pointer fields lower on those receiver forms and retain their qualified
-lvalue or xvalue result, including reads of declared-const fields. Exact directly
+`std::reference_wrapper` receivers. Admitted non-volatile scalar,
+object-pointer or fixed-arity ordinary function-pointer fields lower on those
+receiver forms and retain their qualified lvalue or xvalue result, including
+reads of declared-const fields. Projected function pointers may be called or
+reseated through that result. Exact directly
 initialized local member pointers for admitted methods or data fields may also
 be retained across statements and passed to `std::invoke`; their storage is
 authenticated and erased before the same direct method call or field projection

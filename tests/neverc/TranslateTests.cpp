@@ -34374,6 +34374,50 @@ int main() {
 }
 
 TEST_F(TranslateTest,
+       CoreV2FunctionalMemberFunctionPointerFieldsRunAtBothOptimizations) {
+  const auto Source = tmpFile("functional-member-function-pointer-fields.cpp");
+  const auto Output = tmpFile("functional-member-function-pointer-fields.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+int first(int value) { return value + 10; }
+int second(int value) { return value + 20; }
+using Function = int (*)(int);
+struct Box { Function function; };
+int main() {
+  Box box{first};
+  const Box constant{second};
+  auto field = &Box::function;
+  int score = (box.*field)(1) == 11;
+  score += std::invoke(field, box)(2) == 12;
+  score += std::invoke(&Box::function, &box)(3) == 13;
+  score += std::invoke(field, constant)(4) == 24;
+  score += std::mem_fn(field)(box)(5) == 15;
+  auto wrapper = std::mem_fn(&Box::function);
+  score += std::invoke(wrapper, constant)(6) == 26;
+  score += std::invoke(field, Box{first})(7) == 17;
+  std::invoke(field, box) = second;
+  score += box.function(8) == 28;
+  return score == 8 ? 0 : score;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  EXPECT_EQ(Generated.find("member_pointer"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-member-function-pointer-fields" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
        CoreV2FunctionalInvokeStoredMembersRunAtBothOptimizations) {
   const auto Source = tmpFile("functional-invoke-stored-members.cpp");
   const auto Output = tmpFile("functional-invoke-stored-members.nc");
@@ -34923,10 +34967,11 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "#include <functional>\nstruct X{int v;};int main(){volatile X x{3};"
        "return std::invoke(&X::v,x);}",
        "TR0203"},
-      {"invoke-member-function-pointer-field",
-       "#include <functional>\nint f(){return 3;}struct X{int(*p)();};"
-       "int main(){X x{f};return std::invoke(&X::p,x)();}",
-       "TR0203"},
+      {"invoke-member-variadic-function-pointer-field",
+       "#include <functional>\nint f(int n,...){return n;}struct X{"
+       "int(*p)(int,...);};int main(){X x{f};return "
+       "std::invoke(&X::p,x)(1,2);}",
+       "TR0201"},
       {"invoke-member-function-pointer-reference",
        "#include <functional>\nint f(){return 3;}struct X{"
        "void set(int(*&p)()){p=f;}};int main(){X x;int(*p)()=f;"
@@ -34953,14 +34998,7 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "#include <functional>\nstruct X{int v,w;};int main(){X x{3,4};"
        "auto get=std::mem_fn(&X::v);get=std::mem_fn(&X::w);return get(x);}",
        "TR0203"},
-      {"mem-fn-function-pointer-field",
-       "#include <functional>\nint f(){return 3;}struct X{int(*p)();};"
-       "int main(){X x{f};return std::mem_fn(&X::p)(x)();}",
-       "TR0203"},
-      {"invoke-mem-fn-function-pointer-field",
-       "#include <functional>\nint f(){return 3;}struct X{int(*p)();};"
-       "int main(){X x{f};return std::invoke(std::mem_fn(&X::p),x)();}",
-       "TR0203"}};
+  };
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
     const auto Source =

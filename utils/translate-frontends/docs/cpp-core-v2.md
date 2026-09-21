@@ -951,10 +951,11 @@ exact scalar or object-pointer lvalue- or rvalue-reference, or `void`
 result. Reference parameters and results preserve the selected object's storage
 and qualification. The receiver is retained before the arguments are evaluated
 and each selected argument conversion is preserved. A direct source-written
-address of an admitted non-volatile scalar or object-pointer field lowers on the same receiver
-forms and retains the qualified field lvalue or xvalue, including assignment to
-lvalues and reads of const objects, declared-const fields or temporary
-receivers. A local automatic member pointer whose
+address of an admitted non-volatile scalar, object-pointer or fixed-arity
+ordinary function-pointer field lowers on the same receiver forms and retains
+the qualified field lvalue or xvalue, including assignment to lvalues and reads
+of const objects, declared-const fields or temporary receivers. A projected
+function pointer may be called or reseated through that result. A local automatic member pointer whose
 sole initializer is an exact direct address of an admitted method or data field
 may be retained across statements and passed to `std::invoke`; the frontend
 authenticates and erases the variable, then emits the same direct method call or

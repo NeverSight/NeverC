@@ -333,9 +333,11 @@ function may also be invoked on an exact-class lvalue, pointer or admitted
 `std::reference_wrapper` when its fixed-arity signature has the same scalar
 boundary, including object-pointer values, exact scalar or object-pointer
 lvalue- or rvalue-reference parameters, and exact lvalue- or rvalue-reference results. A
-direct source-written address of an admitted non-volatile scalar or object-pointer field,
+direct source-written address of an admitted non-volatile scalar, object-pointer
+or fixed-arity ordinary function-pointer field,
 including a declared-const field, may be invoked on the same receivers and
-retains its qualified lvalue result. An exact `std::mem_fn` wrapper built from
+retains its qualified lvalue result. A projected function-pointer field may be
+called or reseated through that result. An exact `std::mem_fn` wrapper built from
 either admitted direct named address or an authenticated local member-pointer
 chain may be called immediately, either directly
 or as the callable of `std::invoke`, through the same receiver, argument and

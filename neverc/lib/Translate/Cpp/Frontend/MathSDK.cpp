@@ -6616,7 +6616,9 @@ static bool supportedFunctionalStoredMember(const ASTContext &Context,
     return !Field->isBitField() && !Type.isVolatileQualified() &&
            !Type.isRestrictQualified() &&
            Type.getAddressSpace() == LangAS::Default &&
-           supportedFunctionalMemberValue(Context, Type.getUnqualifiedType());
+           (supportedFunctionalMemberValue(Context,
+                                           Type.getUnqualifiedType()) ||
+            Type->isFunctionPointerType());
   }
   const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Member);
   if (!Method)
@@ -7511,8 +7513,9 @@ approvedFunctionalMemberInvokeCall(
     if (Call->getNumArgs() != 2 || Field->isBitField() ||
         FieldType.isVolatileQualified() || FieldType.isRestrictQualified() ||
         FieldType.getAddressSpace() != LangAS::Default ||
-        !supportedFunctionalMemberValue(Context,
-                                        FieldType.getUnqualifiedType()) ||
+        (!supportedFunctionalMemberValue(Context,
+                                         FieldType.getUnqualifiedType()) &&
+         !FieldType->isFunctionPointerType()) ||
         !Call->isGLValue() || CallType.isVolatileQualified() ||
         CallType.isRestrictQualified() ||
         CallType.getAddressSpace() != LangAS::Default ||

@@ -1913,6 +1913,37 @@ extern "C" int functional_member_invoke(Box &box, const Box &constant) {
         check("v2-functional-member-invoke-" + target,
               functional_member_invoke_source, profile="cpp-core-v2",
               target=target, sdk=True)
+    functional_member_function_pointer_source = """\
+#include <functional>
+int first(int value) { return value + 10; }
+int second(int value) { return value + 20; }
+using Function = int (*)(int);
+struct Box { Function function; };
+extern "C" int functional_member_function_pointer(
+    Box &box, const Box &constant) {
+  auto field = &Box::function;
+  int score = (box.*field)(1);
+  score += std::invoke(field, box)(2);
+  score += std::invoke(&Box::function, &box)(3);
+  score += std::invoke(field, constant)(4);
+  score += std::mem_fn(field)(box)(5);
+  auto wrapper = std::mem_fn(&Box::function);
+  score += std::invoke(wrapper, constant)(6);
+  score += std::invoke(field, Box{first})(7);
+  std::invoke(field, box) = second;
+  return score + box.function(8);
+}
+"""
+    functional_member_function_pointer = check(
+        "v2-functional-member-function-pointer",
+        functional_member_function_pointer_source,
+        profile="cpp-core-v2", sdk=True)
+    assert any(function["name"] == "functional_member_function_pointer"
+               for function in functional_member_function_pointer["functions"]), functional_member_function_pointer
+    for target in sdk_targets:
+        check("v2-functional-member-function-pointer-" + target,
+              functional_member_function_pointer_source,
+              profile="cpp-core-v2", target=target, sdk=True)
     functional_stored_data_member_source = """\
 #include <functional>
 #include <utility>
@@ -2309,8 +2340,8 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
          "TR0201"),
         ("invoke-member-volatile-receiver", '#include <functional>\nstruct X{int v;};int main(){volatile X x{3};return std::invoke(&X::v,x);}',
          "TR0203"),
-        ("invoke-member-function-pointer-field", '#include <functional>\nint f(){return 3;}struct X{int(*p)();};int main(){X x{f};return std::invoke(&X::p,x)();}',
-         "TR0203"),
+        ("invoke-member-variadic-function-pointer-field", '#include <functional>\nint f(int n,...){return n;}struct X{int(*p)(int,...);};int main(){X x{f};return std::invoke(&X::p,x)(1,2);}',
+         "TR0201"),
         ("invoke-member-function-pointer-reference", '#include <functional>\nint f(){return 3;}struct X{void set(int(*&p)()){p=f;}};int main(){X x;int(*p)()=f;std::invoke(&X::set,x,p);return p();}',
          "TR0203"),
         ("stored-mem-fn-move-from-parameter", '#include <functional>\n#include <utility>\nstruct X{int v;};using Get=decltype(std::mem_fn(&X::v));int call(Get get,X&x){auto q=std::move(get);return q(x);}int main(){X x{3};return call(std::mem_fn(&X::v),x);}',
@@ -2320,10 +2351,6 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
         ("mem-fn-member-pointer-from-parameter", '#include <functional>\nstruct X{int v;};int call(int X::*p,X&x){auto get=std::mem_fn(p);return get(x);}int main(){X x{3};return call(&X::v,x);}',
          "TR0203"),
         ("stored-mem-fn-reassignment", '#include <functional>\nstruct X{int v,w;};int main(){X x{3,4};auto get=std::mem_fn(&X::v);get=std::mem_fn(&X::w);return get(x);}',
-         "TR0203"),
-        ("mem-fn-function-pointer-field", '#include <functional>\nint f(){return 3;}struct X{int(*p)();};int main(){X x{f};return std::mem_fn(&X::p)(x)();}',
-         "TR0203"),
-        ("invoke-mem-fn-function-pointer-field", '#include <functional>\nint f(){return 3;}struct X{int(*p)();};int main(){X x{f};return std::invoke(std::mem_fn(&X::p),x)();}',
          "TR0203"),
     ):
         check("v2-functional-typed-" + name, source, code,
