@@ -1496,6 +1496,359 @@ extern "C" int array_zero() {
         check("v2-array-" + name, source, code,
               profile="cpp-core-v2", sdk=True)
 
+    # Array referents compose with each checked tuple, pair and callable family.
+    array_reference_combinations_source = """\
+#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+
+using Row = std::array<int, 2>;
+using Empty = std::array<int, 0>;
+using Grid = std::array<Row, 2>;
+int effects;
+
+Row &select(Row &row) { ++effects; return row; }
+Row &alias(Row &row) { return row; }
+const Row &view(const Row &row) { return row; }
+Row &&forward_row(Row &&row) { return static_cast<Row &&>(row); }
+Row &add(Row &row, int amount) { row[0] += amount; return row; }
+int sum(const Row &row) { return row[0] + row[1]; }
+int consume(Row &&row) { return row[0] + row[1]; }
+Empty &empty_alias(Empty &value) { return value; }
+Grid &grid_alias(Grid &value) { return value; }
+
+struct Function {
+  int amount;
+  Row &operator()(Row &row) const { row[1] += amount; return row; }
+};
+struct Box {
+  Row *row;
+  Row &get() const { return *row; }
+  Row &adjust(Row &value, int amount) const {
+    value[0] += amount;
+    return value;
+  }
+  int read(const Row &value) const { return value[0] + value[1]; }
+};
+Box &select_box(Box &box) { ++effects; return box; }
+Box *select_box_pointer(Box *box) { ++effects; return box; }
+
+int binding_checks() {
+  Row first{{1, 2}}, second{{3, 4}};
+  effects = 0;
+  auto references = std::tie(select(first));
+  if (effects != 1 || &std::get<0>(references) != &first)
+    return 1;
+  std::get<Row &>(references)[0] = 5;
+  const auto constant_tuple(references);
+  Row &constant_element = std::get<0>(constant_tuple);
+  constant_element[1] = 6;
+  if (&constant_element != &first || first[0] != 5 || first[1] != 6)
+    return 2;
+
+  const Row immutable{{7, 8}};
+  auto const_references = std::tie(immutable);
+  const Row &immutable_element = std::get<0>(const_references);
+  if (&immutable_element != &immutable || immutable_element[1] != 8)
+    return 3;
+  auto wrapped = std::ref(first);
+  auto const_wrapped = std::cref(immutable);
+  if (&wrapped.get() != &first || &const_wrapped.get() != &immutable)
+    return 4;
+  auto factory_tuple = std::make_tuple(wrapped, const_wrapped);
+  auto factory_pair = std::make_pair(wrapped, const_wrapped);
+  std::get<0>(factory_tuple)[0] = 9;
+  factory_pair.first[1] = 10;
+  if (&std::get<0>(factory_tuple) != &first ||
+      &std::get<1>(factory_tuple) != &immutable ||
+      &factory_pair.first != &first || &factory_pair.second != &immutable ||
+      first[0] != 9 || first[1] != 10)
+    return 5;
+
+  std::tuple<Row &> direct(first), source(second);
+  auto &assigned = (direct = source);
+  if (&assigned != &direct || &std::get<0>(direct) != &first ||
+      first[0] != 3 || first[1] != 4)
+    return 6;
+  second[0] = 11;
+  direct.swap(source);
+  if (&std::get<0>(direct) != &first || &std::get<0>(source) != &second ||
+      first[0] != 11 || second[0] != 3)
+    return 7;
+
+  Row third{{12, 13}}, fourth{{14, 15}};
+  std::pair<Row &, Row &> pair(first, second), pair_source(third, fourth);
+  auto &pair_assigned = (pair = pair_source);
+  if (&pair_assigned != &pair || &pair.first != &first ||
+      &pair.second != &second || first[0] != 12 || second[1] != 15)
+    return 8;
+  third[0] = 16;
+  std::swap(pair, pair_source);
+  if (&pair.first != &first || &pair_source.first != &third ||
+      first[0] != 16 || third[0] != 12)
+    return 9;
+
+  std::pair<Row &, int> mixed(first, 17);
+  std::pair<Row &, int> mixed_source(second, 18);
+  mixed = mixed_source;
+  if (&mixed.first != &first || first[0] != second[0] || mixed.second != 18)
+    return 10;
+  std::tuple<Row &, int> mixed_tuple(first, 19);
+  std::get<0>(mixed_tuple)[1] = 20;
+  if (first[1] != 20 || std::get<1>(mixed_tuple) != 19)
+    return 11;
+
+  std::tuple<Row> owned(direct), independent_tuple;
+  independent_tuple = direct;
+  std::pair<Row, long> pair_owned(mixed), independent_pair;
+  independent_pair = mixed;
+  auto concatenated = std::tuple_cat(direct, const_references);
+  std::get<0>(concatenated)[0] = 21;
+  if (&std::get<0>(concatenated) != &first ||
+      &std::get<1>(concatenated) != &immutable ||
+      std::get<0>(owned)[0] != 14 || std::get<0>(independent_tuple)[0] != 14 ||
+      pair_owned.first[0] != 14 || independent_pair.first[0] != 14 ||
+      pair_owned.second != 18 || independent_pair.second != 18 || first[0] != 21)
+    return 12;
+  return 0;
+}
+
+int callable_checks() {
+  Row row{{1, 2}};
+  auto arguments = std::make_tuple(std::ref(row), 3);
+  Row &named = std::apply(add, arguments);
+  if (&named != &row || row[0] != 4)
+    return 21;
+  auto pointer = &alias;
+  Row &pointed = std::apply(pointer, std::tie(row));
+  if (&pointed != &row)
+    return 22;
+  Function function{4};
+  Row &called = std::apply(function, std::tie(row));
+  if (&called != &row || row[1] != 6)
+    return 23;
+  Row &wrapped = std::apply(std::ref(function), std::tie(row));
+  if (&wrapped != &row || row[1] != 10)
+    return 24;
+  const Row &observed = std::apply(view, std::tie(row));
+  if (&observed != &row || std::apply(sum, std::tie(row)) != 14)
+    return 25;
+
+  Row &&moved = std::apply(forward_row,
+                          std::forward_as_tuple(static_cast<Row &&>(row)));
+  moved[0] = 5;
+  if (&moved != &row || row[0] != 5 ||
+      std::apply(consume, std::forward_as_tuple(Row{{6, 7}})) != 13)
+    return 26;
+
+  if (&std::invoke(alias, row) != &row ||
+      &std::invoke(pointer, row) != &row ||
+      &std::invoke(std::ref(alias), row) != &row ||
+      &std::invoke(view, row) != &row)
+    return 27;
+  std::invoke(function, row)[0] = 8;
+  Row &&invoked_move = std::invoke(forward_row, static_cast<Row &&>(row));
+  if (&invoked_move != &row || row[0] != 8 || row[1] != 14)
+    return 28;
+
+  Box box{&row};
+  auto member = &Box::get;
+  if (&std::invoke(member, box) != &row ||
+      &std::mem_fn(member)(box) != &row ||
+      &std::apply(member, std::tie(box)) != &row ||
+      std::invoke(&Box::read, box, row) != 22 ||
+      std::apply(&Box::read, std::tie(box, row)) != 22)
+    return 29;
+  return 0;
+}
+
+int additional_callable_checks() {
+  Row row{{1, 2}};
+  auto function = std::ref(alias);
+  effects = 0;
+  Row &function_result = (++effects, function)(select(row));
+  if (effects != 2 || &function_result != &row)
+    return 41;
+  function_result[0] = 3;
+
+  auto pointer = &alias;
+  auto pointer_wrapper = std::ref(pointer);
+  effects = 0;
+  Row &pointer_result = (++effects, pointer_wrapper)(select(row));
+  if (effects != 2 || &pointer_result != &row || row[0] != 3)
+    return 42;
+  pointer_result[1] = 5;
+
+  auto view_wrapper = std::ref(view);
+  effects = 0;
+  const Row &view_result = (++effects, view_wrapper)(select(row));
+  if (effects != 2 || &view_result != &row || view_result[1] != 5)
+    return 43;
+
+  Function object{4};
+  auto object_wrapper = std::ref(object);
+  effects = 0;
+  Row &object_result = (++effects, object_wrapper)(select(row));
+  if (effects != 2 || &object_result != &row || row[1] != 9)
+    return 44;
+  object_result[0] = 6;
+  if (&std::apply(function, std::tie(row)) != &row ||
+      &std::apply(pointer_wrapper, std::tie(row)) != &row ||
+      &std::invoke(pointer_wrapper, row) != &row ||
+      &std::invoke(object_wrapper, row) != &row ||
+      row[0] != 6 || row[1] != 13)
+    return 45;
+
+  Box box{&row};
+  auto getter = &Box::get;
+  effects = 0;
+  Row &native = (select_box(box).*getter)();
+  if (effects != 1 || &native != &row)
+    return 46;
+  native[0] = 7;
+  effects = 0;
+  Row &native_pointer = (select_box_pointer(&box)->*getter)();
+  if (effects != 1 || &native_pointer != &row || row[0] != 7)
+    return 47;
+  native_pointer[1] = 14;
+
+  auto adjuster = &Box::adjust;
+  effects = 0;
+  Row &adjusted = (select_box(box).*adjuster)(select(row), 2);
+  if (effects != 2 || &adjusted != &row || row[0] != 9)
+    return 48;
+  effects = 0;
+  Row &adjusted_pointer =
+      (select_box_pointer(&box)->*adjuster)(select(row), 3);
+  if (effects != 2 || &adjusted_pointer != &row || row[0] != 12)
+    return 49;
+  auto reader = &Box::read;
+  effects = 0;
+  const int native_sum = (select_box(box).*reader)(select(row));
+  if (effects != 2 || native_sum != 26)
+    return 50;
+
+  auto stored = std::mem_fn(getter);
+  effects = 0;
+  Row &adapted = stored(select_box(box));
+  if (effects != 1 || &adapted != &row)
+    return 51;
+  effects = 0;
+  if (&std::invoke(stored, select_box(box)) != &row || effects != 1)
+    return 52;
+  effects = 0;
+  if (&std::apply(stored, std::tie(select_box(box))) != &row || effects != 1)
+    return 53;
+  effects = 0;
+  Row &adapted_argument =
+      std::mem_fn(adjuster)(select_box(box), select(row), 3);
+  if (effects != 2 || &adapted_argument != &row || row[0] != 15)
+    return 54;
+  auto stored_adjuster = std::mem_fn(adjuster);
+  effects = 0;
+  Row &stored_argument = stored_adjuster(select_box(box), select(row), 4);
+  if (effects != 2 || &stored_argument != &row || row[0] != 19 || row[1] != 14)
+    return 55;
+  return 0;
+}
+
+int nested_and_empty_checks() {
+  Grid grid{{Row{{1, 2}}, Row{{3, 4}}}};
+  auto references = std::tie(grid);
+  std::get<0>(references)[1][0] = 5;
+  if (&std::get<0>(references) != &grid || grid[1][0] != 5 ||
+      &std::apply(grid_alias, references) != &grid ||
+      &std::invoke(grid_alias, grid) != &grid)
+    return 31;
+  Grid other{{Row{{6, 7}}, Row{{8, 9}}}};
+  auto source = std::tie(other);
+  references = source;
+  other[0][0] = 10;
+  if (grid[0][0] != 6 || grid[1][1] != 9 ||
+      &std::get<0>(references) != &grid)
+    return 32;
+
+  Empty empty{}, another{};
+  auto empty_references = std::tie(empty);
+  std::tuple<Empty &> empty_source(another);
+  empty_references = empty_source;
+  std::swap(empty_references, empty_source);
+  if (&std::get<0>(empty_references) != &empty ||
+      &std::get<0>(empty_source) != &another ||
+      std::get<0>(empty_references).size() != 0 ||
+      &std::apply(empty_alias, empty_references) != &empty ||
+      &std::invoke(empty_alias, empty) != &empty)
+    return 33;
+  return 0;
+}
+
+int main() {
+  int result = binding_checks();
+  if (result)
+    return result;
+  result = callable_checks();
+  if (result)
+    return result;
+  result = additional_callable_checks();
+  if (result)
+    return result;
+  return nested_and_empty_checks();
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-array-reference-combinations-" + target,
+                     array_reference_combinations_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        assert not [node for node in walk(data["functions"])
+                    if node.get("op") == "mapped_call"], data
+        for node in walk(data["functions"]):
+            if node.get("op") == "assign":
+                assert node["target"]["type"] == node["value"]["type"], node
+    for name, source, code in (
+        ('const-write',
+         '#include <array>\n#include <tuple>\nusing Row = std::array<int, 2>;\nextern "C" void probe() {\n  const Row row{{1, 2}};\n  std::get<0>(std::tie(row))[0] = 3;\n}\n',
+         'TR0202'),
+        ('const-binding',
+         '#include <array>\n#include <tuple>\nusing Row = std::array<int, 2>;\nextern "C" void probe() {\n  const Row row{{1, 2}};\n  std::tuple<Row&> refs(row);\n}\n',
+         'TR0202'),
+        ('volatile-row',
+         '#include <array>\n#include <tuple>\nusing Row = std::array<int, 2>;\nextern "C" void probe() {\n  volatile Row row{{1, 2}};\n  auto refs = std::tie(row);\n}\n',
+         'TR0201'),
+        ('volatile-element',
+         '#include <array>\n#include <tuple>\nextern "C" void probe() {\n  std::array<volatile int, 2> row{{1, 2}};\n  auto refs = std::tie(row);\n}\n',
+         'TR0201'),
+        ('volatile-element-zero',
+         '#include <array>\n#include <tuple>\nextern "C" void probe() {\n  std::array<volatile int, 0> row{};\n  auto refs = std::tie(row);\n}\n',
+         'TR0201'),
+        ('nontrivial-element',
+         '#include <array>\n#include <tuple>\nstruct Item { int value; ~Item() {} };\nextern "C" void probe() {\n  std::array<Item, 1> row{{{1}}};\n  auto refs = std::tie(row);\n}\n',
+         'TR0203'),
+        ('nontrivial-element-zero',
+         '#include <array>\n#include <tuple>\nstruct Item { int value; ~Item() {} };\nextern "C" void probe() {\n  std::array<Item, 0> row{};\n  auto refs = std::tie(row);\n}\n',
+         'TR0203'),
+        ('by-value-callback-parameter',
+         '#include <array>\n#include <tuple>\nusing Row = std::array<int, 2>;\nint by_value(Row row) { return row[0]; }\nextern "C" int probe() {\n  return std::apply(by_value, std::make_tuple(Row{{1, 2}}));\n}\n',
+         'TR0203'),
+        ('by-value-callback-result',
+         '#include <array>\n#include <tuple>\nusing Row = std::array<int, 2>;\nRow by_value(int value) { return Row{{value, value}}; }\nextern "C" int probe() {\n  return std::get<0>(std::apply(by_value, std::make_tuple(3)));\n}\n',
+         'TR0203'),
+        ('by-value-invoke-parameter',
+         '#include <array>\n#include <functional>\nusing Row = std::array<int, 2>;\nint by_value(Row row) { return row[0]; }\nextern "C" int probe() {\n  return std::invoke(by_value, Row{{1, 2}});\n}\n',
+         'TR0203'),
+        ('by-value-invoke-result',
+         '#include <array>\n#include <functional>\nusing Row = std::array<int, 2>;\nRow by_value(int value) { return Row{{value, value}}; }\nextern "C" int probe() {\n  return std::get<0>(std::invoke(by_value, 3));\n}\n',
+         'TR0203'),
+        ('explicit-array-specialization',
+         '#include <array>\n#include <tuple>\nnamespace std {\n  template <> struct array<int, 2> { int values[2]; };\n}\nextern "C" void probe() {\n  std::array<int, 2> row{{1, 2}};\n  auto refs = std::tie(row);\n}\n',
+         'TR0201'),
+        ('pair-sdk-referent',
+         '#include <tuple>\n#include <utility>\nextern "C" void probe() {\n  std::pair<int, int> value(1, 2);\n  auto refs = std::tie(value);\n}\n',
+         'TR0203'),
+    ):
+        check("v2-array-reference-reject-" + name, source, code,
+              profile="cpp-core-v2", sdk=True)
+
     initializer_list_operations_source = """\
 #include <initializer_list>
 extern "C" int initializer_list_operations() {

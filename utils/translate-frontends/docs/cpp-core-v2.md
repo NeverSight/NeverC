@@ -309,7 +309,8 @@ and returns a reference to the destination tuple. When source references alias
 destination elements, later reads observe earlier element writes.
 
 Exact `std::tie` calls construct an authenticated tuple whose elements are
-lvalue references to supported scalar, array or source-owned record objects.
+lvalue references to supported scalar, native fixed-array, authenticated
+`std::array` or source-owned record objects.
 Each argument is evaluated once, and each tuple field stores the bound address.
 Index- and type-based `std::get` recover the referent, including through a
 const tuple object, and `std::apply` passes those referents to admitted named
@@ -445,6 +446,29 @@ empty-range results: equality, `<=` and `>=` are true; inequality, `<` and `>`
 are false. This rule composes through nonempty arrays whose nested leaves all
 have zero extent. Element access remains rejected because no valid index,
 `front`, `back`, `at` or `get` operation exists.
+
+Authenticated array objects also qualify as referents in the checked utility
+and functional operations. Direct reference or mixed-reference tuple and pair
+construction, `tie`, `forward_as_tuple`, and `make_tuple`/`make_pair` unwrapping of
+`ref`/`cref` preserve exact compatible bindings. Index/type `get`, public pair
+fields and `tuple_cat` recover or copy those bindings. Assignment and swap write
+array values through the bound objects without reseating their references;
+copying an array referent into a value tuple or pair retains independent value
+storage. A const tuple does not add const to an existing mutable reference,
+while a const array referent retains its qualification.
+
+Exact lvalue and rvalue array-reference parameters and results also compose
+with the existing checked `apply`, `invoke`, direct `reference_wrapper` calls,
+native member-pointer calls and `mem_fn` wrappers. The admitted callable forms
+retain their source-owned definition and selected-method checks. Callable,
+receiver and argument expressions retain one-time evaluation and the existing
+sequencing rules, reference results preserve object identity, and temporary
+array referents retain their full-expression lifetime. These reference forms
+include authenticated nested arrays and zero-length arrays; zero-length storage
+remains inaccessible. By-value SDK callback parameters and results, including
+`std::array` values, remain outside the callable boundary. Volatile array objects
+or elements, nontrivial element records, and user-defined `std::array`
+specializations are rejected even when reached through a reference.
 
 The standalone authenticated closure contains 217 libc++/resource files on all
 eight supported targets and contains no platform headers. Generated programs do
@@ -1059,6 +1083,11 @@ evaluated once. Exact scalar, object-pointer and function-pointer lvalue- or rva
 parameters and exact lvalue- or rvalue-reference results preserve their source storage and
 qualification. These reference forms include complete fixed arrays with at
 most 65536 elements when their recursive element type is otherwise admitted.
+Authenticated `std::array` objects, including nested and zero-length arrays,
+use the same reference parameter and result boundary throughout the invocation,
+member-pointer and `mem_fn` forms below. Their exact array layout and recursive
+element types remain checked; by-value SDK callback parameters and results
+remain excluded. See the [array contract](#fixed-value-arrays-from-array).
 Wrappers around an exact source-owned record callable also call directly or
 through `std::invoke` when the selected lvalue or const-lvalue `operator()` is
 an admitted defined method with that same parameter and result boundary. The

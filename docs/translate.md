@@ -189,6 +189,17 @@ objects, reference wrappers, member pointers and `mem_fn` wrappers use the same
 authenticated tuple lowering with the documented value/reference boundary.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#value-tuples-from-tuple).
 
+Authenticated `std::array` objects, including zero-length and nested arrays,
+also compose with reference tuples and pairs, `ref`/`cref`, `tie`,
+`forward_as_tuple` and the checked `apply`, `invoke`, reference-wrapper,
+member-pointer and `mem_fn` call forms. Reference parameters and results retain
+object identity, qualification and temporary lifetime; assignment through tuple
+or pair bindings writes array values without rebinding. Callable definitions
+retain their source-owned checks. By-value SDK callback parameters/results,
+volatile or nontrivial array elements and user `std::array` specializations
+remain excluded.
+[C++17](../utils/translate-frontends/docs/cpp-core-v2.md#fixed-value-arrays-from-array).
+
 Core v2 type metadata now accepts owned incomplete non-union classes, including forward declarations and uninstantiated template types. Classification and array dimensions retain exact source identity without generating record storage; runtime carriers and callbacks still require complete admitted types. Reference/pointer operation queries can use these identities with exact retained source proof; selected lazy method return signatures keep their complete-carrier checks. Native verification requires the implementing revision’s CI. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#incomplete-record-type-metadata).
 
 Core v2 operation queries now inspect unknown-bound arrays through checked type metadata. Construction/destruction short circuits, exact reference bindings and array-to-pointer conversions preserve their retained source evidence; runtime storage remains restricted. Native verification requires the implementing revision’s CI. [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#unknown-bound-array-operation-types).

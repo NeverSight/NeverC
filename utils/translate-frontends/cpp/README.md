@@ -284,7 +284,16 @@ evaluating every source once before copying elements into the exact
 concatenated tuple while preserving reference bindings. Array directly lowers
 nonempty fixed scalar, trivial-record
 and nested-array storage, iterators, element access, fill, swap, scalar and
-recursive nested-array comparisons and tuple access.
+recursive nested-array comparisons and tuple access. Authenticated array
+objects, including zero-length and nested arrays, also bind reference tuple and
+pair elements through direct construction, `tie`, `forward_as_tuple` and
+`ref`/`cref` factory unwrapping. Access, assignment, swap and `tuple_cat` preserve
+bindings and the existing array value semantics. Exact lvalue/rvalue array
+reference parameters and results compose with checked `apply`, `invoke`, direct
+reference-wrapper calls, native member-pointer calls and `mem_fn`; callable
+definitions retain their source-owned checks. By-value SDK callback parameters
+and results, volatile or nontrivial array elements and user array specializations
+remain rejected.
 Initializer-list objects retain libc++'s authenticated pointer-and-size view.
 Braced backing arrays use the existing automatic, full-expression and static
 lifetime machinery; default, copy/move and assignment operations, member and
