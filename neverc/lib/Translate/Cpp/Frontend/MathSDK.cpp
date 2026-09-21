@@ -729,6 +729,10 @@ static bool supportedFunctionalReferenceValue(const State &S,
       Type.isRestrictQualified() || Type.getAddressSpace() != LangAS::Default)
     return false;
   Type = Type.getUnqualifiedType();
+  if (const auto *Array = Context.getAsConstantArrayType(Type))
+    return Array->getSize().getLimitedValue(65537) <= 65536 &&
+           supportedFunctionalReferenceValue(S, SM, Context,
+                                             Array->getElementType());
   const auto *Record = Type->getAsCXXRecordDecl();
   const auto *Definition = Record ? Record->getDefinition() : nullptr;
   return (Type->isIntegralOrEnumerationType() &&

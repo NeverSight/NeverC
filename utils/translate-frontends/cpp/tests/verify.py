@@ -2131,6 +2131,49 @@ extern "C" int functional_record_reference_result(Record &record) {
         check("v2-functional-record-reference-result-" + target,
               functional_record_reference_result_source,
               profile="cpp-core-v2", target=target, sdk=True)
+    functional_array_reference_source = """\
+#include <functional>
+using Row = int[3];
+Row &alias(Row &row) { return row; }
+const Row &view(const Row &row) { return row; }
+Row &&forward(Row &&row) { return static_cast<Row &&>(row); }
+struct Callable {
+  Row *row;
+  Row &operator()() const { return *row; }
+};
+struct Box {
+  Row *row;
+  Row &alias() const { return *row; }
+  Row &&move() && { return static_cast<Row &&>(*row); }
+};
+extern "C" int functional_array_reference(Row &row) {
+  std::invoke(alias, row)[0] += 1;
+  int result = std::invoke(view, row)[0];
+  auto wrapped = std::ref(alias);
+  std::invoke(wrapped, row)[1] += 2;
+  Row &&moved = std::invoke(forward, static_cast<Row &&>(row));
+  moved[2] += 3;
+  std::invoke(Callable{&row})[0] += 4;
+  Box box{&row};
+  auto member = &Box::alias;
+  std::invoke(member, box)[1] += 5;
+  auto wrapper = std::mem_fn(member);
+  std::invoke(wrapper, box)[2] += 6;
+  auto move = &Box::move;
+  Row &&again = std::mem_fn(move)(Box{&row});
+  again[0] += 7;
+  return result + row[0] + row[1] + row[2];
+}
+"""
+    functional_array_reference = check(
+        "v2-functional-array-reference", functional_array_reference_source,
+        profile="cpp-core-v2", sdk=True)
+    assert any(function["name"] == "functional_array_reference"
+               for function in functional_array_reference["functions"]), functional_array_reference
+    for target in sdk_targets:
+        check("v2-functional-array-reference-" + target,
+              functional_array_reference_source,
+              profile="cpp-core-v2", target=target, sdk=True)
     functional_stored_data_member_source = """\
 #include <functional>
 #include <utility>

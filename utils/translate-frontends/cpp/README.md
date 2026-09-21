@@ -132,16 +132,16 @@ object targets. Object forms also lower the implicit reference conversion.
 Wrappers around admitted standard function
 objects, stored fixed-arity function pointers and admitted function referents
 are callable directly and through `std::invoke`, preserving exact scalar and
-object-pointer, function-pointer or complete source-owned record lvalue or
-rvalue references. Wrappers around
+object-pointer, function-pointer, complete fixed-array or complete source-owned
+record lvalue or rvalue references. Wrappers around
 exact source-owned record callables use the same forms when Clang selects an
 admitted defined lvalue or const-lvalue `operator()`, retaining the referenced
 object's identity, mutations and reference results. The
 exact C++17 `std::invoke` also lowers fixed-arity ordinary functions and stored
 function pointers with directly convertible by-value scalar parameters, exact
 fixed-arity ordinary function pointers including function-name decay, or exact
-admitted lvalue or rvalue references to those values or complete source-owned
-records, and preserves the
+admitted lvalue or rvalue references to those values, complete fixed arrays or
+complete source-owned records, and preserves the
 corresponding scalar, object-pointer, function-pointer, lvalue- or
 rvalue-reference or `void` result, plus
 the admitted typed and transparent standard function objects. Exact
@@ -149,7 +149,7 @@ source-owned record callables also lower when Clang selects an admitted defined
 nonstatic `operator()` with the same argument and result boundary; lvalue,
 const-lvalue and rvalue-qualified overloads, reference results, receiver-first
 evaluation and temporary lifetime are preserved, including source-owned record
-reference parameters and results. Direct named
+fixed-array and record reference parameters and results. Direct named
 addresses of owned nonstatic member functions
 also lower on exact-class lvalue, full-expression temporary, pointer or
 `std::reference_wrapper` receivers. Admitted non-volatile scalar,
@@ -173,7 +173,7 @@ the same fixed-arity method boundary; exact full-expression temporary objects
 are materialized and destroyed after the call, and `&&`-qualified methods
 require that temporary receiver. This includes const methods, admitted lvalue-
 or rvalue-reference parameters, and admitted lvalue- or rvalue-reference
-results, including complete source-owned records. Exact
+results, including complete fixed arrays and source-owned records. Exact
 `std::mem_fn` wrappers built from those direct named addresses or authenticated
 local member-pointer chains may be called
 immediately, directly or as the callable of `std::invoke`, through the same
@@ -185,8 +185,8 @@ adapters. Those adapters may also wrap an authenticated local wrapper at its
 final direct call or `std::invoke` use. Reassigned or null member pointers,
 `mem_fn` copies or moves from
 parameters, reassigned `mem_fn` objects,
-base adjustments, volatile receivers,
-and other reference or variadic function signatures stay
+base adjustments, volatile receivers, references to incomplete or runtime-bound
+arrays, and other unsupported reference or variadic function signatures stay
 outside this boundary. Object-pointer values and exact scalar or object-pointer
 lvalue- or rvalue-reference parameters and lvalue- or rvalue-reference results are preserved. The
 frontend uses the pinned embedded libc++/resource VFS and exposes resolved type
