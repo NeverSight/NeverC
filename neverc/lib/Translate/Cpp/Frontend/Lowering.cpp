@@ -11175,6 +11175,9 @@ class FunctionLowering {
   }
   void declaration(const VarDecl *V) {
     auto L = V->getLocation();
+    const auto *Decomposition = A.recordDecomposition(V);
+    if (isa<DecompositionDecl>(V) && (!Decomposition || !Decomposition->Complete))
+      reject(L, "structured binding", "The complete owner and binding source must be checked.");
     if (A.S.coreV2() && approvedFunctionalStoredMemberPointer(
                             A.S, A.Sources, V, A.Context))
       return;
@@ -11195,7 +11198,8 @@ class FunctionLowering {
       const auto Range = rangeForComponents(A.rangeForOwner(V));
       const bool RangeReference = Range &&
           Range->Range->getCanonicalDecl() == V->getCanonicalDecl();
-      if (A.S.coreV2() && V->getKind() == Decl::Var &&
+      if (A.S.coreV2() &&
+          (V->getKind() == Decl::Var || A.recordDecomposition(V)) &&
           (!V->isImplicit() || RangeReference) &&
           V->isLocalVarDecl() && V->hasLocalStorage() &&
           (V->getType()->isReferenceType() || aggregateValue(V->getType()))) {
@@ -11215,6 +11219,19 @@ class FunctionLowering {
           initialize(Place, V->getInit(), L);
         if (A.S.coreV2() && needsDestruction(V->getType()))
           own(Place, V->getType(), L, Scopes.back());
+      }
+      if (Decomposition) {
+        for (const auto &Entry : Decomposition->Bindings) {
+          const auto *Binding = Entry.first;
+          const auto Location = Binding->getLocation();
+          // Each name aliases its initialized owner's field. The declared cv
+          // type determines the pointer carrier, even though field storage is
+          // unqualified; no second field value or lifetime is introduced.
+          auto Pointer = snapshot(address(lvalue(Binding->getBinding()),
+                                          Binding->getType(), Location), Location);
+          Storage.insert_or_assign(Binding->getCanonicalDecl(),
+                                   dereference(std::move(Pointer), Location));
+        }
       }
     }
     endFullExpression();

@@ -1180,6 +1180,85 @@ std::optional<RangeForComponents> rangeForComponents(const CXXForRangeStmt *Loop
       return std::nullopt;
   return Parts;
 }
+bool Adapter::registerRecordDecomposition(const DecompositionDecl *D) {
+  if (!S.coreV2() || !D || D->isInvalidDecl() || D->isImplicit() ||
+      !S.owns(Sources, D->getLocation()) || !D->isLocalVarDecl() ||
+      !D->hasLocalStorage() || D->isCXXForRangeDecl() ||
+      D->getStorageClass() != SC_None || D->getTLSKind() != VarDecl::TLS_None ||
+      D->hasAttrs() || !D->getTypeSourceInfo() || !D->getInit() ||
+      D->getType().isNull() || D->getType()->isDependentType() ||
+      D->getInit()->isTypeDependent() || D->getInit()->isValueDependent() ||
+      D->getInit()->isInstantiationDependent())
+    return false;
+  if (RecordDecompositions.count(D->getCanonicalDecl()))
+    return true;
+  const auto Object = D->getType().getNonReferenceType();
+  const auto *Record = Object->getAsCXXRecordDecl();
+  Record = Record ? Record->getDefinition() : nullptr;
+  if (Object.isVolatileQualified() || Object.isRestrictQualified() ||
+      Object.getAddressSpace() != LangAS::Default || !Record ||
+      !S.owns(Sources, Record->getLocation()) || Record->isInvalidDecl() ||
+      Record->isDependentContext() || Record->isUnion() || Record->getNumBases() ||
+      !Record->isAggregate() || !Record->isTrivial() ||
+      !Record->isStandardLayout() || Record->field_empty() || D->bindings().empty())
+    return false;
+  RecordDecomposition Checked;
+  unsigned Index = 0;
+  for (const auto *Field : Record->fields()) {
+    chargeExpansion(1, D->getLocation());
+    if (Index >= D->bindings().size())
+      return false;
+    const auto *Binding = D->bindings()[Index++];
+    const auto FieldType = Field->getType();
+    const bool Scalar = FieldType->isIntegralOrEnumerationType() ||
+        FieldType->isRealFloatingType() || FieldType->isNullPtrType();
+    const bool ObjectPointer = FieldType->isPointerType() &&
+        !FieldType->getPointeeType()->isFunctionType();
+    if (!S.owns(Sources, Field->getLocation()) || Field->isInvalidDecl() ||
+        Field->getAccess() != AS_public || Field->isBitField() ||
+        Field->isMutable() || Field->hasAttrs() ||
+        FieldType.isVolatileQualified() || FieldType.isRestrictQualified() ||
+        FieldType.getAddressSpace() != LangAS::Default ||
+        (!Scalar && !ObjectPointer) || !Binding || Binding->isInvalidDecl() ||
+        Binding->isImplicit() || Binding->hasAttrs() || !Binding->getIdentifier() ||
+        !S.owns(Sources, Binding->getLocation()) ||
+        Binding->getDecomposedDecl() != D || Binding->getHoldingVar())
+      return false;
+    const auto *Member = dyn_cast_or_null<MemberExpr>(Binding->getBinding());
+    const auto *Base = Member ? dyn_cast<DeclRefExpr>(Member->getBase()) : nullptr;
+    auto Expected = Object.isConstQualified() ? FieldType.withConst() : FieldType;
+    if (!Member || Member->isArrow() || !Member->isLValue() ||
+        Member->getMemberDecl() != Field || !Base || !Base->isLValue() ||
+        Base->getDecl() != D || !Context.hasSameType(Base->getType(), Object) ||
+        !Context.hasSameType(Member->getType(), Expected) ||
+        !Context.hasSameType(Binding->getType(), Expected) ||
+        RecordBindingFields.count(Binding) ||
+        type(FieldType, Field->getLocation()).empty())
+      return false;
+    Checked.Bindings.emplace_back(Binding, Field);
+  }
+  if (Index != D->bindings().size())
+    return false;
+  // Shape publication precedes initializer traversal only so that an exact MTE
+  // can identify its extending declaration. Lowering requires source completion.
+  for (const auto &[Binding, Field] : Checked.Bindings)
+    RecordBindingFields.emplace(Binding, Field);
+  RecordDecompositions.emplace(D->getCanonicalDecl(), std::move(Checked));
+  return true;
+}
+const RecordDecomposition *Adapter::recordDecomposition(const VarDecl *D) const {
+  if (!S.coreV2() || !D)
+    return nullptr;
+  auto Found = RecordDecompositions.find(D->getCanonicalDecl());
+  return Found == RecordDecompositions.end() ? nullptr : &Found->second;
+}
+const FieldDecl *Adapter::recordBindingField(const BindingDecl *Binding) const {
+  if (!S.coreV2() || !Binding ||
+      !recordDecomposition(dyn_cast<VarDecl>(Binding->getDecomposedDecl())))
+    return nullptr;
+  auto Found = RecordBindingFields.find(Binding);
+  return Found == RecordBindingFields.end() ? nullptr : Found->second;
+}
 bool Adapter::registerRangeFor(const CXXForRangeStmt *Loop) {
   const auto Parts = rangeForComponents(Loop);
   if (!S.coreV2() || !Parts || !S.owns(Sources, Loop->getForLoc()))
@@ -1213,6 +1292,14 @@ const VarDecl *Adapter::temporaryOwner(const MaterializeTemporaryExpr *Temporary
   if (!temporaryShape(Temporary, Context) || Temporary->getStorageDuration() != SD_Automatic)
     return nullptr;
   const auto *Owner = dyn_cast_or_null<VarDecl>(Temporary->getExtendingDecl());
+  if (recordDecomposition(Owner)) {
+    const auto *Descriptor = Temporary->getLifetimeExtendedTemporaryDecl();
+    if (Descriptor && Descriptor->getTemporaryExpr() == Temporary->getSubExpr() &&
+        Descriptor->getExtendingDecl() == Owner &&
+        Descriptor->getStorageDuration() == SD_Automatic)
+      return Owner->getCanonicalDecl();
+    return nullptr;
+  }
   const auto *Loop = rangeForOwner(Owner);
   const auto Parts = rangeForComponents(Loop);
   // Only __range's exact declaration can extend a temporary to loop scope.
@@ -7308,6 +7395,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     };
     if (const auto *Variable = dyn_cast<VarDecl>(D); Variable && !isa<ParmVarDecl>(D))
       Register(Variable->getInit());
+    if (const auto *Binding = dyn_cast<BindingDecl>(D); A.recordBindingField(Binding))
+      Register(Binding->getBinding());
     if (const auto *Constant = dyn_cast<EnumConstantDecl>(D))
       Register(Constant->getInitExpr());
     if (const auto *Function = dyn_cast<FunctionDecl>(D);
@@ -7600,6 +7689,14 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         }
       };
       auto ValueSource = [&](const ValueDecl *Declaration) {
+        if (const auto *Binding = dyn_cast<BindingDecl>(Declaration))
+          if (const auto *Field = A.recordBindingField(Binding)) {
+            const auto *Owner = cast<DecompositionDecl>(Binding->getDecomposedDecl());
+            operationTypeDependency(Owner->getTypeSourceInfo());
+            operationTypeDependency(Field->getTypeSourceInfo());
+            Dependency(Owner->getInit());
+            Dependency(Binding->getBinding());
+          }
         if (const auto *Declarator = dyn_cast<DeclaratorDecl>(Declaration);
             Declarator && !isa<FunctionDecl>(Declaration))
           operationTypeDependency(Declarator->getTypeSourceInfo());
@@ -7841,6 +7938,28 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
 
 public:
   explicit Allowlist(Adapter &A) : A(A) {}
+  bool TraverseDecompositionDecl(DecompositionDecl *D) {
+    if (!A.S.coreV2() || !owned(D))
+      return RecursiveASTVisitor<Allowlist>::TraverseDecompositionDecl(D);
+    if (!A.registerRecordDecomposition(D)) {
+      A.reject(D->getLocation(), "structured binding",
+               "Only automatic direct-member bindings of source-owned trivial "
+               "flat aggregates with supported scalar or object-pointer fields are admitted.");
+      return true;
+    }
+    const bool Result = RecursiveASTVisitor<Allowlist>::TraverseDecompositionDecl(D);
+    if (Result && A.S.Diagnostics.empty())
+      A.RecordDecompositions.at(D->getCanonicalDecl()).Complete = true;
+    return Result;
+  }
+  bool TraverseBindingDecl(BindingDecl *D) {
+    if (!A.S.coreV2() || !A.recordBindingField(D))
+      return RecursiveASTVisitor<Allowlist>::TraverseBindingDecl(D);
+    // RAV skips these semantic expressions unless every implicit node is enabled.
+    // Inspect only the exact member projections authenticated with their owner.
+    A.type(D->getType(), D->getLocation());
+    return WalkUpFromBindingDecl(D) && TraverseStmt(D->getBinding());
+  }
   bool TraverseVarDecl(VarDecl *D) {
     if (A.S.coreV2() && owned(D)) {
       if (auto Stored = approvedFunctionalStoredMemberPointer(
@@ -10695,6 +10814,12 @@ public:
   bool VisitDeclRefExpr(DeclRefExpr *Reference) {
     if (!A.S.coreV2() || !A.S.owns(A.Sources, Reference->getLocation()))
       return true;
+    if (const auto *Binding = dyn_cast<BindingDecl>(Reference->getDecl());
+        Binding && !A.recordBindingField(Binding)) {
+      A.reject(Reference->getLocation(), "structured binding reference",
+               "A binding reference requires its checked direct-member owner.");
+      return true;
+    }
     if (auto *Variable = dyn_cast<VarDecl>(Reference->getDecl());
         approvedSDKIntegerConstant(A.S, A.Sources, Variable, A.Context)) {
       if (Reference->isNonOdrUse() == NOUR_None)
@@ -12344,6 +12469,7 @@ public:
              NamespaceAliasDecl, UsingDirectiveDecl, UsingDecl,
              FunctionTemplateDecl, ClassTemplateDecl, TypeAliasTemplateDecl, VarTemplateDecl>(D) ||
          D->getKind() == Decl::UsingShadow ||
+         A.recordBindingField(dyn_cast<BindingDecl>(D)) ||
          (isa<AccessSpecDecl>(D) && D->getDeclContext()->isRecord()));
     if (!ExtendedDeclaration &&
         !isa<NamespaceDecl, LinkageSpecDecl, FunctionDecl, VarDecl,
@@ -13271,7 +13397,8 @@ public:
     }
     if (A.S.coreV2() && D->getType()->isReferenceType() && D->getInit())
       checkBinding(D->getInit(), HasDefault,
-                   D->getKind() == Decl::Var && D->isLocalVarDecl() && D->hasLocalStorage()
+                   (D->getKind() == Decl::Var || A.recordDecomposition(D)) &&
+                           D->isLocalVarDecl() && D->hasLocalStorage()
                        ? D->getCanonicalDecl() : nullptr);
     if (A.S.coreV2() && !D->isLocalVarDeclOrParm() &&
         (D->getType()->isArrayType() || D->getType()->isRecordType())) {
@@ -13471,6 +13598,18 @@ public:
     auto L = S->getBeginLoc().isValid() ? S->getBeginLoc()
                                         : ImplicitInitializerOwner;
     if (A.S.coreV2()) {
+      const VarDecl *ConditionVariable = nullptr;
+      if (const auto *If = dyn_cast<IfStmt>(S))
+        ConditionVariable = If->getConditionVariable();
+      else if (const auto *While = dyn_cast<WhileStmt>(S))
+        ConditionVariable = While->getConditionVariable();
+      else if (const auto *For = dyn_cast<ForStmt>(S))
+        ConditionVariable = For->getConditionVariable();
+      else if (const auto *Switch = dyn_cast<SwitchStmt>(S))
+        ConditionVariable = Switch->getConditionVariable();
+      if (isa_and_nonnull<DecompositionDecl>(ConditionVariable))
+        A.reject(ConditionVariable->getLocation(), "structured binding condition",
+                 "C++17 admits decomposition in an init-statement, not a condition variable.");
       checkStaticValueUse(S);
       if (const auto *Query = dyn_cast<SizeOfPackExpr>(S))
         checkPackSize(Query);

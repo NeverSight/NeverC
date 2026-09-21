@@ -41,6 +41,17 @@ Clang/LLVM or C++ standard-library dependency.
 
 ## Scope and semantic handling
 
+Core v2 admits [local record structured bindings](../docs/cpp-core-v2.md#local-record-structured-bindings)
+for automatic source-owned trivial standard-layout aggregates with supported
+non-volatile scalar or object-pointer direct public fields. Value bindings copy
+or directly construct one hidden object; `&`, `const&` and `&&` forms alias the
+selected storage with its original qualification. Initialization occurs once,
+and exact temporary owners retain their C++17 scope lifetime. Array/tuple-like
+bindings, reference/mutable/bit-field members, bases, nontrivial or volatile
+records, static/global storage and range declarations remain excluded. Legal
+C++17 `if`/`switch` init-statements and ordinary `for` initialization remain
+available; decomposition condition variables do not.
+
 [Function type metadata](../docs/cpp-core-v2.md#bare-function-type-metadata),
 including direct lvalue/rvalue references, can pass through core v2 templates,
 aliases, queries and transforms into existing callback pointers. Original

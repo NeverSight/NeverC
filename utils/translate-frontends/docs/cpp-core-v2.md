@@ -4245,6 +4245,46 @@ Native O0/O2 fixtures cover state, aliasing, defaulted array copying/moving and
 nontrivial member cleanup; protocol fixtures cover storage, signatures, layout
 and relocation. Native results require CI from the implementing revision.
 
+## Local record structured bindings
+
+Core v2 admits automatic local C++17 structured bindings of source-owned,
+non-volatile trivial standard-layout aggregates with no bases. Every direct
+field must be public, non-mutable, non-reference and non-bit-field, with an
+existing supported scalar or ordinary object-pointer type, including admitted
+`void*` carriers. Scalar widths, pointee types and qualifiers keep their existing restrictions; function
+and member pointers, nested record fields and array fields are not added.
+Const fields and const owners preserve the binding's actual qualification.
+
+`auto [a, b] = source` copies the record or directly constructs a prvalue in one
+hidden value object. Writing a binding changes that hidden object's field;
+pointer fields retain ordinary shallow-copy semantics. `auto&`, `const auto&`
+and `auto&&` forms alias the selected fields, including reference collapsing
+when `auto&&` receives an lvalue. A binding name denotes an lvalue even when its
+hidden owner is an rvalue reference. The initializer executes once, and later
+binding reads, writes and address-taking reuse that field storage.
+
+A reference decomposition extends a temporary only when Clang identifies its
+exact hidden declaration as the extending owner with automatic storage duration.
+That temporary survives the initializer's full-expression and belongs to the
+owner's lexical scope. Aliasing an existing object does not extend its lifetime;
+nested argument temporaries keep their own full-expression lifetimes. Written
+initializer and type sources, member projections and queries using a binding
+retain their ordinary source checks.
+
+These declarations may appear in blocks, C++17 `if`/`switch` init-statements and
+ordinary `for` initialization. A structured binding used as the condition
+variable of `if`, `while`, `for` or `switch` is rejected as outside C++17, even
+when embedded Clang would accept it with an extension warning. This restriction
+does not reject a valid init-statement followed by a separate condition.
+
+Array and tuple-like decomposition, including `std::pair`, `std::tuple`,
+`std::array` and user `tuple_size`/`get` protocols, remain unsupported. So do
+unions, bases, private/protected fields, reference/mutable/bit-field members,
+volatile or nontrivial records, static/thread-local/global decomposition and
+structured bindings in a range-for declaration. Ordinary supported bindings
+inside a loop body keep their block scope. Other profiles retain their existing
+restrictions; this increment adds no protocol operation or C23 source feature.
+
 ## Range-based for
 
 Core v2 admits resolved C++17 range-based `for` statements over supported fixed
@@ -4283,7 +4323,8 @@ one-time initialization, cleanup paths and relocation. Native results require
 CI from the implementing revision.
 
 Unsupported class-template forms, standard headers and STL containers, initializer-list ranges,
-structured bindings, C++20 range init-statements and coroutine range loops
+structured bindings in the range declaration, C++20 range init-statements
+and coroutine range loops
 remain outside this increment. Existing extent and expansion budgets still
 apply, and older profiles retain their previous range-loop rejection.
 
@@ -7563,7 +7604,9 @@ returned through a call has no general interprocedural dangling-use guarantee;
 storing it does not extend the temporary passed to that call.
 
 Static reference lifetimes and reference fields follow their separate contracts.
-Thread-local storage, structured bindings, unsupported types, exception unwinding,
+Checked local record decomposition follows its
+[structured-binding contract](#local-record-structured-bindings).
+Thread-local storage, unsupported types, exception unwinding,
 remaining template forms and complete STL remain outside this increment. V1 is unchanged. O0/O2
 no-inline fixtures cover storage identity, braces, subobjects, nested lifetimes,
 copy/move/return ordering, conditional owners and loop exits. Protocol fixtures

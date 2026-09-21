@@ -1222,6 +1222,11 @@ struct ArrayNewInfo {
 };
 bool omittedDefaultConstruction(const clang::Expr *Init, clang::QualType Element,
                                 clang::ASTContext &Context);
+struct RecordDecomposition {
+  std::vector<std::pair<const clang::BindingDecl *, const clang::FieldDecl *>>
+      Bindings;
+  bool Complete = false;
+};
 class Adapter {
 public:
   State &S;
@@ -1274,6 +1279,8 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredFunctionalReferences;
   std::map<const clang::CXXRecordDecl *, CheckedEmptyBase> EmptyBases;
   std::map<const clang::VarDecl *, const clang::CXXForRangeStmt *> RangeDeclarations;
+  std::map<const clang::VarDecl *, RecordDecomposition> RecordDecompositions;
+  std::map<const clang::BindingDecl *, const clang::FieldDecl *> RecordBindingFields;
   std::size_t ExpandedNodes = 0;
   Adapter(State &S, clang::ASTContext &C)
       : S(S), Context(C), Sources(C.getSourceManager()) {}
@@ -1374,6 +1381,11 @@ public:
   json::Object zero(clang::QualType T, clang::SourceLocation L);
   json::Object constant(const clang::APValue &V, clang::QualType T,
                         clang::SourceLocation L);
+  bool registerRecordDecomposition(const clang::DecompositionDecl *Declaration);
+  const RecordDecomposition *
+  recordDecomposition(const clang::VarDecl *Declaration) const;
+  const clang::FieldDecl *
+  recordBindingField(const clang::BindingDecl *Binding) const;
   bool registerRangeFor(const clang::CXXForRangeStmt *Loop);
   const clang::CXXForRangeStmt *rangeForOwner(const clang::VarDecl *Variable) const;
   const clang::VarDecl *temporaryOwner(const clang::MaterializeTemporaryExpr *Temporary);

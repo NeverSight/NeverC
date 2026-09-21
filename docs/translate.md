@@ -290,7 +290,19 @@ Core v2 uses standard C++17 template parsing on every supported target, includin
 
 Core v2 supports mutable namespace-scope integer, boolean and enum globals with zero initialization or a fully checked constant initializer. Their storage and addresses persist across calls; references, pointers and parameter defaults access the same variable. An `extern` declaration must resolve to a definition in this source unit. Const globals remain read-only. global records/arrays/pointers/references, thread-local storage and static locals retain their separate restrictions.
 
-Core v2 supports C++17 range-based `for` over supported fixed arrays and source-defined ranges with resolved member or ADL `begin/end` calls. Value/reference loop variables, record iterators and different sentinel types preserve ordinary call and lifetime rules. Range initialization and `begin/end` run once; iteration objects are destroyed before increment or exit, including `continue`, `break` and `return`. Other class-template forms, standard headers, STL containers, structured bindings and C++20 range initializers remain outside this increment. Native validation requires CI from the implementing revision.
+Core v2 supports automatic local structured bindings of source-owned non-volatile
+trivial standard-layout aggregates whose direct public fields are supported non-volatile
+scalars or object pointers. `auto` creates a hidden value object; `auto&`,
+`const auto&` and `auto&&` preserve aliases and field qualification. The
+initializer runs once, and a reference decomposition extends a temporary only
+when its exact hidden owner qualifies for C++17 lifetime extension. Array and
+tuple-like decomposition, reference/mutable/bit-field members, bases, nontrivial
+records, static/global storage and range declarations remain excluded. C++17
+`if`/`switch` init-statements and ordinary `for` initialization are allowed;
+structured bindings used as condition variables remain rejected.
+[Contract](../utils/translate-frontends/docs/cpp-core-v2.md#local-record-structured-bindings).
+
+Core v2 supports C++17 range-based `for` over supported fixed arrays and source-defined ranges with resolved member or ADL `begin/end` calls. Value/reference loop variables, record iterators and different sentinel types preserve ordinary call and lifetime rules. Range initialization and `begin/end` run once; iteration objects are destroyed before increment or exit, including `continue`, `break` and `return`. Other class-template forms, standard headers, STL containers, structured bindings in the range declaration and C++20 range initializers remain outside this increment. Native validation requires CI from the implementing revision.
 
 Core v2 supports private and protected data members in otherwise supported standard-layout classes. Embedded Clang checks access before translation; authorized methods, constructors, factories, default arguments and generated copy/move operations use the same typed member storage. Illegal outside access remains a C++ diagnostic. Access labels are source rules, not a runtime secrecy feature. Mixed-access non-standard-layout classes, unsupported dependent friend class-template forms, inheritance and unsupported field types retain their restrictions. Native results require the implementing revision’s CI.
 

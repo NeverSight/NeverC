@@ -4690,6 +4690,316 @@ extern "C" int recursive_composite_comparisons() {
         assert not [node for node in walk(target_result["functions"])
                     if node.get("op") in ("call", "mapped_call")], target_result
 
+    structured_binding_copy_alias_source = """\
+struct Record { int number; int *pointer; };
+struct ConstFields { const int number; int *const pointer; const int *read_only; };
+int selections;
+Record &select_record(Record &record) { ++selections; return record; }
+int main() {
+  int first = 3, second = 5;
+  Record original{7, &first};
+  auto [copy, copied_pointer] = select_record(original); // owner-once
+  static_assert(__is_same(decltype(copy), int));
+  static_assert(__is_same(decltype((copy)), int &));
+  static_assert(__is_same(decltype(copied_pointer), int *));
+  static_assert(sizeof(copy) == sizeof(int));
+  static_assert(noexcept(++copy));
+  if (selections != 1 || copy != 7 || &copy == &original.number ||
+      copied_pointer != &first || &copied_pointer == &original.pointer) return 1;
+  copy = 11;
+  *copied_pointer = 13;
+  original.number = 17;
+  if (copy != 11 || original.number != 17 || first != 13) return 2;
+  auto &[alias, pointer_alias] = select_record(original); // owner-once
+  static_assert(__is_same(decltype(alias), int));
+  static_assert(__is_same(decltype((alias)), int &));
+  if (selections != 2 || &alias != &original.number ||
+      &pointer_alias != &original.pointer) return 3;
+  alias += 2;
+  pointer_alias = &second;
+  *pointer_alias = 23;
+  if (original.number != 19 || original.pointer != &second || second != 23 ||
+      copy != 11 || copied_pointer != &first) return 4;
+  const auto &[read, const_pointer] = select_record(original); // owner-once
+  static_assert(__is_same(decltype(read), const int));
+  static_assert(__is_same(decltype((read)), const int &));
+  static_assert(__is_same(decltype(const_pointer), int *const));
+  static_assert(__is_same(decltype((const_pointer)), int *const &));
+  if (&read != &original.number || &const_pointer != &original.pointer) return 5;
+  *const_pointer += 6;
+  original.number = 31;
+  if (read != 31 || second != 29 || selections != 3) return 6;
+  const Record constant{37, &first};
+  auto &&[constant_value, constant_alias] = constant;
+  static_assert(__is_same(decltype(constant_value), const int));
+  static_assert(__is_same(decltype((constant_alias)), int *const &));
+  *constant_alias = 41;
+  if (&constant_value != &constant.number || &constant_alias != &constant.pointer ||
+      first != 41) return 7;
+  ConstFields fields{43, &second, &first};
+  auto &[fixed, fixed_pointer, read_pointer] = fields;
+  static_assert(__is_same(decltype(fixed), const int));
+  static_assert(__is_same(decltype(fixed_pointer), int *const));
+  static_assert(__is_same(decltype(read_pointer), const int *));
+  static_assert(__is_same(decltype((read_pointer)), const int *&));
+  *fixed_pointer = 47;
+  read_pointer = &second;
+  if (&fixed != &fields.number || &fixed_pointer != &fields.pointer ||
+      &read_pointer != &fields.read_only || *read_pointer != 47) return 8;
+  static_assert(sizeof(++alias) == sizeof(int)); // unevaluated-owner
+  static_assert(sizeof(select_record(original)) == sizeof(Record)); // unevaluated-owner
+  return selections == 3 && alias == 31 && copy == 11 &&
+         copied_pointer == &first && fields.number == 43 ? 0 : 9;
+}
+"""
+
+    structured_binding_temporaries_source = """\
+struct Record { int number; int *pointer; };
+int constructions;
+int selections;
+Record make_record(int number, int *pointer) {
+  ++constructions;
+  return Record{number, pointer};
+}
+Record &select_record(Record &record) { ++selections; return record; }
+template <class T> int unused_array_binding(T &) {
+  int values[2] = {1, 2};
+  auto [first, second] = values;
+  return first + second;
+}
+int main() {
+  int sink = 3;
+  auto [value, pointer] = make_record(5, &sink); // owner-once
+  const auto &[extended, extended_pointer] = make_record(7, &sink); // owner-once
+  auto &&[temporary, temporary_pointer] = make_record(11, &sink); // owner-once
+  const int *extended_address = &extended;
+  int *temporary_address = &temporary;
+  static_assert(__is_same(decltype(temporary), int));
+  static_assert(__is_same(decltype((temporary)), int &));
+  static_assert(__is_same(decltype((extended)), const int &));
+  if (constructions != 3 || value != 5 || extended != 7 || temporary != 11 ||
+      &value == extended_address || &value == temporary_address ||
+      extended_address == temporary_address) return 1;
+  {
+    auto [other, other_pointer] = make_record(13, &sink); // owner-once
+    other += 2;
+    *other_pointer += other;
+    if (other != 15 || value != 5 || extended != 7 || temporary != 11) return 2;
+  }
+  temporary += 6;
+  *temporary_pointer += 1;
+  if (extended != 7 || &extended != extended_address || temporary != 17 ||
+      &temporary != temporary_address || *extended_pointer != 19) return 3;
+  Record original{23, &sink};
+  auto &&[lvalue, lvalue_pointer] = select_record(original); // owner-once
+  auto &&[xvalue, xvalue_pointer] = static_cast<Record &&>(select_record(original)); // owner-once
+  auto [moved, moved_pointer] = static_cast<Record &&>(select_record(original)); // owner-once
+  if (selections != 3 || &lvalue != &original.number || &xvalue != &original.number ||
+      &lvalue_pointer != &original.pointer || &xvalue_pointer != &original.pointer ||
+      &moved == &original.number || moved_pointer != &sink) return 4;
+  xvalue = 29;
+  moved = 31;
+  if (lvalue != 29 || original.number != 29 || moved != 31) return 5;
+  if (auto [branch, branch_pointer] = make_record(37, &sink); branch == 37) { // owner-once
+    *branch_pointer += 2;
+    branch = 41;
+    if (branch != 41 || extended != 7 || temporary != 17) return 6;
+  } else return 7;
+  int sum = 0;
+  for (auto [index, destination] = make_record(0, &sum); index < 3; ++index) { // owner-once
+    *destination += index;
+  }
+  if (sum != 3 || constructions != 6) return 8;
+  for (int i = 0; i < 3; ++i) {
+    auto &&[iteration, destination] = make_record(i + 1, &sum); // owner-once
+    *destination += iteration;
+    iteration = 99;
+  }
+  static_assert(sizeof(temporary) == sizeof(int));
+  return constructions == 9 && selections == 3 && sum == 9 && sink == 21 &&
+         value == 5 && pointer == &sink && extended == 7 && temporary == 17 ? 0 : 9;
+}
+"""
+
+    def check_structured_binding_record(data, source):
+        assert data["protocol"] == 1, data
+        main = next(function for function in data["functions"]
+                    if function["name"] == "main")
+        nodes = list(walk(main["body"]))
+        for node in walk(data["functions"]):
+            assert node.get("op") not in ("mapped_call", "member_pointer"), node
+            if node.get("op") == "assign":
+                assert node["target"]["type"] == node["value"]["type"], node
+        # These are source-level initializer calls, independent of the number
+        # of field bindings and the shape of the local storage representation.
+        for line, text in enumerate(source.splitlines(), 1):
+            if "// owner-once" in text or "// unevaluated-owner" in text:
+                calls = [node for node in nodes if node.get("op") == "call"
+                         and node.get("loc", {}).get("file") == "input.cpp"
+                         and node.get("loc", {}).get("line") == line]
+                expected = 1 if "// owner-once" in text else 0
+                assert len(calls) == expected, (line, text, calls)
+
+
+    for target in sdk_targets:
+        data = check("v2-structured-binding-copy-alias-cv-" + target,
+                     structured_binding_copy_alias_source, profile="cpp-core-v2", target=target)
+        check_structured_binding_record(data, structured_binding_copy_alias_source)
+
+    for target in sdk_targets:
+        data = check("v2-structured-binding-temporaries-scopes-" + target,
+                     structured_binding_temporaries_source, profile="cpp-core-v2", target=target)
+        check_structured_binding_record(data, structured_binding_temporaries_source)
+
+    structured_binding_switch_source = """\
+struct Record { int number; int *pointer; };
+int owner_calls;
+int case_calls;
+Record make_record(int number, int *pointer) { ++owner_calls; return {number, pointer}; }
+Record &select_record(Record &record) { ++case_calls; return record; }
+int main() {
+  int sink = 5, reference_cases = 0, value_cases = 0, default_cases = 0;
+  Record original{3, &sink};
+  for (int input = 0; input < 3; ++input) {
+    switch (auto [selector, destination] = make_record(input, &original.number); selector) { // owner-once
+    case 0: {
+      auto &[alias, pointer] = select_record(original); // owner-once
+      ++reference_cases;
+      alias += 10;
+      *pointer += 1;
+      if (&alias != &original.number || &pointer != &original.pointer ||
+          destination != &original.number) return 1;
+    }
+      [[fallthrough]];
+    case 1: {
+      auto [copy, pointer] = select_record(original); // owner-once
+      ++value_cases;
+      copy += 100;
+      if (copy != 113 || original.number != 13 || pointer != &sink ||
+          &copy == &original.number || &pointer == &original.pointer) return 2;
+      break;
+    }
+    default:
+      ++default_cases;
+      if (selector != 2 || destination != &original.number) return 3;
+      break;
+    }
+    if (owner_calls != input + 1 || reference_cases != 1 ||
+        value_cases != (input == 0 ? 1 : 2) || case_calls != (input == 0 ? 2 : 3) ||
+        default_cases != (input == 2 ? 1 : 0)) return 4;
+  }
+  return original.number == 13 && sink == 6 && owner_calls == 3 &&
+         case_calls == 3 && reference_cases == 1 && value_cases == 2 &&
+         default_cases == 1 ? 0 : 5;
+}
+"""
+
+    for target in sdk_targets:
+        data = check("v2-structured-binding-switch-cases-" + target,
+                     structured_binding_switch_source, profile="cpp-core-v2", target=target)
+        check_structured_binding_record(data, structured_binding_switch_source)
+
+    structured_binding_lifetimes_source = """\
+struct Row { int number; int *pointer; };
+int live;
+int destroyed;
+int trace;
+struct Envelope {
+  Row row;
+  int token;
+  Envelope(int number, int *pointer, int marker) : row{number, pointer}, token(marker) {
+    ++live;
+    trace = trace * 10 + token;
+  }
+  ~Envelope() {
+    --live;
+    ++destroyed;
+    trace = trace * 10 + token;
+  }
+};
+int extract(const Envelope &value) { return value.row.number; }
+int main() {
+  int sink = 3;
+  {
+    const auto &[number, pointer] = Envelope{extract(Envelope{7, &sink, 2}), &sink, 1}.row;
+    if (live != 1 || destroyed != 1 || trace != 212 || number != 7) return 1;
+    *pointer += number;
+    if (sink != 10 || live != 1 || destroyed != 1) return 2;
+  }
+  if (live != 0 || destroyed != 2 || trace != 2121) return 3;
+  trace = 0;
+  if (const auto &[number, pointer] = Envelope{11, &sink, 3}.row; number == 11) {
+    if (live != 1 || destroyed != 2 || trace != 3) return 4;
+    *pointer += 1;
+  } else return 5;
+  if (live != 0 || destroyed != 3 || trace != 33 || sink != 11) return 6;
+  trace = 0;
+  switch (auto &&[number, pointer] = Envelope{1, &sink, 4}.row; number) {
+  case 1:
+    if (live != 1 || destroyed != 3 || trace != 4) return 7;
+    number = 5;
+    *pointer += number;
+    break;
+  default: return 8;
+  }
+  if (live != 0 || destroyed != 4 || trace != 44 || sink != 16) return 9;
+  trace = 0;
+  int iteration = 0;
+  for (const auto &[limit, pointer] = Envelope{2, &sink, 5}.row; iteration < limit; ++iteration) {
+    if (live != 1 || destroyed != 4 || trace != 5) return 10;
+    *pointer += 1;
+    if (iteration == 0) continue;
+  }
+  if (live != 0 || destroyed != 5 || trace != 55 || sink != 18 || iteration != 2) return 11;
+  trace = 0;
+  auto [copied, pointer] = Envelope{19, &sink, 6}.row;
+  if (live != 0 || destroyed != 6 || trace != 66 || copied != 19) return 12;
+  copied += 4;
+  *pointer += copied;
+  return sink == 41 && live == 0 && destroyed == 6 && trace == 66 ? 0 : 13;
+}
+"""
+
+    for target in sdk_targets:
+        data = check("v2-structured-binding-subobject-lifetimes-" + target,
+                     structured_binding_lifetimes_source, profile="cpp-core-v2", target=target)
+        check_structured_binding_record(data, structured_binding_lifetimes_source)
+
+    structured_binding_rejections = [
+        ('native-array-value', 'void rejected(){int values[2]={1,2};auto [x,y]=values;(void)x;(void)y;}\n', 'TR0201', 'cpp-core-v2', False),
+        ('native-array-reference', 'void rejected(int (&values)[2]){auto &[x,y]=values;(void)x;(void)y;}\n', 'TR0201', 'cpp-core-v2', False),
+        ('source-tuple-like', '#include <tuple>\nstruct R{int first,second;};\nnamespace std {template<> struct tuple_size<R>{static constexpr size_t value=2;};template<size_t I> struct tuple_element<I,R>{using type=int;};}\ntemplate<__SIZE_TYPE__ I> int& get(R&r){return I==0?r.first:r.second;}\nvoid rejected(R&r){auto &[x,y]=r;(void)x;(void)y;}\n', 'TR0201', 'cpp-core-v2', True),
+        ('sdk-pair', '#include <utility>\nvoid rejected(std::pair<int,int>&r){auto &[x,y]=r;(void)x;(void)y;}\n', 'TR0201', 'cpp-core-v2', True),
+        ('sdk-tuple', '#include <tuple>\nvoid rejected(std::tuple<int,int>&r){auto &[x,y]=r;(void)x;(void)y;}\n', 'TR0201', 'cpp-core-v2', True),
+        ('sdk-array', '#include <array>\nvoid rejected(std::array<int,2>&r){auto &[x,y]=r;(void)x;(void)y;}\n', 'TR0201', 'cpp-core-v2', True),
+        ('base-members', 'struct B{int x,y;};struct R:B{};void rejected(R&r){auto &[x,y]=r;(void)x;(void)y;}\n', 'TR0201', 'cpp-core-v2', False),
+        ('reference-field', 'struct R{int &x;int y;};void rejected(R&r){auto &[x,y]=r;(void)x;(void)y;}\n', 'TR0201', 'cpp-core-v2', False),
+        ('bit-field', 'struct R{unsigned x:3;int y;};void rejected(R&r){auto &[x,y]=r;(void)x;(void)y;}\n', 'TR0201', 'cpp-core-v2', False),
+        ('mutable-field', 'struct R{mutable int x;int y;};void rejected(R&r){auto &[x,y]=r;(void)x;(void)y;}\n', 'TR0201', 'cpp-core-v2', False),
+        ('private-fields', 'class R{int x,y;public:int rejected(){auto &[a,b]=*this;return a+b;}};\n', 'TR0201', 'cpp-core-v2', False),
+        ('nontrivial-constructor', 'struct R{int x,y;R():x(1),y(2){}};void rejected(R&r){auto &[x,y]=r;(void)x;(void)y;}\n', 'TR0201', 'cpp-core-v2', False),
+        ('nontrivial-destructor', 'struct R{int x,y;~R(){}};void rejected(R&r){auto &[x,y]=r;(void)x;(void)y;}\n', 'TR0201', 'cpp-core-v2', False),
+        ('nontrivial-copy', 'struct R{int x,y;R(const R&o):x(o.x),y(o.y){}};void rejected(R&r){auto [x,y]=r;(void)x;(void)y;}\n', 'TR0201', 'cpp-core-v2', False),
+        ('volatile-owner', 'struct R{int x,y;};void rejected(volatile R&r){auto &[x,y]=r;(void)x;(void)y;}\n', 'TR0201', 'cpp-core-v2', False),
+        ('volatile-field', 'struct R{volatile int x;int y;};void rejected(R&r){auto &[x,y]=r;(void)x;(void)y;}\n', 'TR0201', 'cpp-core-v2', False),
+        ('global-owner', 'struct R{int x,y;};R value{1,2};auto [x,y]=value;\n', 'TR0201', 'cpp-core-v2', False),
+        ('static-owner', 'struct R{int x,y;};void rejected(){static auto [x,y]=R{1,2};(void)x;(void)y;}\n', 'TR0201', 'cpp-core-v2', False),
+        ('range-for', 'struct R{int x,y;};void rejected(){R values[1]={{1,2}};for(auto &[x,y]:values){(void)x;(void)y;}}\n', 'TR0201', 'cpp-core-v2', False),
+        ('record-field', 'struct E{int value;};struct R{E x;int y;};void rejected(R&r){auto &[x,y]=r;(void)x;(void)y;}\n', 'TR0201', 'cpp-core-v2', False),
+        ('array-field', 'struct R{int x[2];int y;};void rejected(R&r){auto &[x,y]=r;(void)x;(void)y;}\n', 'TR0201', 'cpp-core-v2', False),
+        ('function-pointer-field', 'struct R{int (*x)(int);int y;};void rejected(R&r){auto &[x,y]=r;(void)x;(void)y;}\n', 'TR0201', 'cpp-core-v2', False),
+        ('member-pointer-field', 'struct B{int value;};struct R{int B::*x;int y;};void rejected(R&r){auto &[x,y]=r;(void)x;(void)y;}\n', 'TR0201', 'cpp-core-v2', False),
+        ('hidden-initializer-query', 'struct R{int x,y;};void rejected(){auto [x,y]=(static_cast<void>(sizeof(long double)),R{1,2});static_assert(sizeof(x)==sizeof(int));(void)y;}\n', 'TR0201', 'cpp-core-v2', False),
+        ('dead-unsupported-initializer', 'struct R{int x,y;};R make(){long double hidden=0;return R{1,2};}void rejected(){if(false){auto [x,y]=make();(void)x;(void)y;}}\n', 'TR0201', 'cpp-core-v2', False),
+        ('if-condition-extension', 'struct R{int x,y;explicit operator bool()const{return x!=0;}};int rejected(){if(auto [x,y]=R{1,2})return x+y;return 0;}\n', 'TR0201', 'cpp-core-v2', False),
+        ('core-v1', 'struct R{int x,y;};void rejected(R&r){auto &[x,y]=r;(void)x;(void)y;}\n', 'TR0201', 'cpp-core-v1', False),
+        ('cross-case-initialization', 'struct R{int x,y;};int rejected(int n,R&r){switch(n){case 0:auto &[x,y]=r;return x+y;case 1:return 0;}return 1;}\n', 'TR0202', 'cpp-core-v2', False),
+        ('const-binding-write', 'struct R{int x,y;};void rejected(R&r){const auto &[x,y]=r;x=3;}\n', 'TR0202', 'cpp-core-v2', False),
+    ]
+    for name, source, code, profile, sdk in structured_binding_rejections:
+        assert code is not None, ("unverified structured-binding diagnostic", name)
+        check("structured-binding-reject-" + name, source, code, profile=profile, sdk=sdk)
+
     optional_swap_engagement_source = """\
 #include <functional>
 #include <optional>
