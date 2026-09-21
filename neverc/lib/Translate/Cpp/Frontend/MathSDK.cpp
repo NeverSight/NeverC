@@ -3222,12 +3222,19 @@ approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
                                      Construction->getType()))
     return UtilityTupleConstruction::CopyOrMove;
   const auto *Primary = Constructor->getPrimaryTemplate();
-  const auto SourceTuple =
-      !ReferenceTuple && Construction->getNumArgs() == 1
+  auto SourceTuple =
+      Construction->getNumArgs() == 1
           ? approvedUtilityTupleRecord(
                 S, SM, Construction->getArg(0)->getType()->getAsCXXRecordDecl(),
                 Context)
           : std::optional<UtilityTupleRecord>();
+  bool SourceReferenceTuple = false;
+  if (ReferenceTuple && Construction->getNumArgs() == 1 && !SourceTuple) {
+    SourceTuple = approvedUtilityReferenceTupleRecord(
+        S, SM, Construction->getArg(0)->getType()->getAsCXXRecordDecl(),
+        Context);
+    SourceReferenceTuple = SourceTuple.has_value();
+  }
   if (SourceTuple && Primary && Constructor->hasBody() &&
       SourceTuple->Record->getCanonicalDecl() !=
           Tuple->Record->getCanonicalDecl() &&
@@ -3241,11 +3248,35 @@ approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
             Parameter->getPointeeType(),
             Context.getRecordType(SourceTuple->Record)))
       return std::nullopt;
-    for (unsigned I = 0; I < Tuple->Elements.size(); ++I)
-      if (!utilityTupleDirectConversion(S, SM, Context,
-                                        SourceTuple->Elements[I]->getType(),
-                                        Tuple->Elements[I]->getType()))
+    for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
+      if (ReferenceTuple) {
+        const auto Destination = Tuple->Elements[I]->getType();
+        const auto SourceElement = SourceTuple->Elements[I]->getType();
+        auto SourceValue = SourceReferenceTuple
+                               ? SourceElement->getPointeeType()
+                               : SourceElement;
+        if (!SourceReferenceTuple &&
+            Parameter->getPointeeType().isConstQualified())
+          SourceValue = SourceValue.withConst();
+        const bool SourceRValue =
+            Parameter->isRValueReferenceType() &&
+            (!SourceReferenceTuple ||
+             SourceElement->isRValueReferenceType());
+        if (!Destination->isReferenceType() ||
+            !Context.hasSameUnqualifiedType(Destination->getPointeeType(),
+                                            SourceValue) ||
+            !Destination->getPointeeType().isAtLeastAsQualifiedAs(SourceValue,
+                                                                  Context) ||
+            (Destination->isRValueReferenceType() && !SourceRValue) ||
+            (Destination->isLValueReferenceType() &&
+             !Destination->getPointeeType().isConstQualified() &&
+             SourceRValue))
+          return std::nullopt;
+      } else if (!utilityTupleDirectConversion(
+                     S, SM, Context, SourceTuple->Elements[I]->getType(),
+                     Tuple->Elements[I]->getType()))
         return std::nullopt;
+    }
     return UtilityTupleConstruction::Converting;
   }
   const auto SourcePair =
@@ -3357,9 +3388,16 @@ approvedUtilityTupleAssignment(const State &S, const SourceManager &SM,
     return std::nullopt;
   auto SourceTuple = approvedUtilityTupleRecord(
       S, SM, Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
+  bool SourceReferenceTuple = false;
   if (ReferenceTuple && !SourceTuple)
     SourceTuple = approvedUtilityReferenceTupleRecord(
         S, SM, Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
+  if (ReferenceTuple && SourceTuple)
+    SourceReferenceTuple =
+        approvedUtilityReferenceTupleRecord(
+            S, SM,
+            Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context)
+            .has_value();
   const auto *Primary = Method->getPrimaryTemplate();
   if (SourceTuple) {
     if (!Context.hasSameUnqualifiedType(
@@ -3369,17 +3407,23 @@ approvedUtilityTupleAssignment(const State &S, const SourceManager &SM,
     if (SourceTuple->Record->getCanonicalDecl() ==
         Tuple->Record->getCanonicalDecl())
       return UtilityTupleAssignment::CopyOrMove;
-    if (ReferenceTuple)
-      return std::nullopt;
     if (!Primary || SourceTuple->Elements.size() != Tuple->Elements.size() ||
         !approvedStandardSDKDeclaration(S, SM, Primary) ||
         !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "tuple"))
       return std::nullopt;
-    for (unsigned I = 0; I < Tuple->Elements.size(); ++I)
-      if (!utilityTupleDirectConversion(S, SM, Context,
-                                        SourceTuple->Elements[I]->getType(),
-                                        Tuple->Elements[I]->getType()))
+    for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
+      const auto SourceElement = SourceTuple->Elements[I]->getType();
+      const auto DestinationElement = Tuple->Elements[I]->getType();
+      const auto SourceValue = ReferenceTuple && SourceReferenceTuple
+                                   ? SourceElement->getPointeeType()
+                                   : SourceElement;
+      const auto DestinationValue = ReferenceTuple
+                                        ? DestinationElement->getPointeeType()
+                                        : DestinationElement;
+      if (!utilityTupleDirectConversion(S, SM, Context, SourceValue,
+                                        DestinationValue))
         return std::nullopt;
+    }
     return UtilityTupleAssignment::Converting;
   }
   const auto SourcePair = approvedUtilityPairRecord(

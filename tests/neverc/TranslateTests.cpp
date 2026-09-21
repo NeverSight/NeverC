@@ -23958,6 +23958,68 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2ConvertingReferenceTuplesRunAtBothOptimizations) {
+  const auto Source = tmpFile("tuple-reference-conversions.cpp");
+  const auto Output = tmpFile("tuple-reference-conversions.nc");
+  writeFile(Source, R"cpp(
+#include <tuple>
+int main() {
+  int value = 3;
+  std::tuple<int &> mutable_reference(value);
+  std::tuple<const int &> constant_reference(mutable_reference);
+  if (&std::get<0>(constant_reference) != &value ||
+      std::get<0>(constant_reference) != 3)
+    return 1;
+  value = 4;
+  if (std::get<0>(constant_reference) != 4)
+    return 2;
+
+  std::tuple<int> stored_value(6);
+  std::tuple<const int &> stored_view(stored_value);
+  stored_value = std::make_tuple(7);
+  if (std::get<0>(stored_view) != 7)
+    return 3;
+
+  int rvalue = 8;
+  std::tuple<int &&> mutable_rvalue(static_cast<int &&>(rvalue));
+  std::tuple<const int &&> constant_rvalue(
+      static_cast<std::tuple<int &&> &&>(mutable_rvalue));
+  if (&std::get<0>(constant_rvalue) != &rvalue)
+    return 4;
+
+  long destination_value = 0;
+  int source_value = 11;
+  std::tuple<long &> destination(destination_value);
+  std::tuple<int &> source(source_value);
+  destination = source;
+  if (destination_value != 11 || &std::get<0>(destination) != &destination_value)
+    return 5;
+  std::tuple<short> short_value(short(13));
+  destination = short_value;
+  if (destination_value != 13)
+    return 6;
+  destination = std::make_tuple(short(15));
+  return destination_value == 15 ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("__memberwise_copy_assign"), std::string::npos);
+  EXPECT_EQ(Text.find("__memberwise_forward_assign"), std::string::npos);
+  EXPECT_EQ(Text.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("tuple-reference-conversions" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2TupleApplyCallableObjectsRunAtBothOptimizations) {
   const auto Source = tmpFile("tuple-apply-callable-objects.cpp");
   const auto Output = tmpFile("tuple-apply-callable-objects.nc");

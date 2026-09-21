@@ -8269,6 +8269,13 @@ class FunctionLowering {
           auto SourceTuple = approvedUtilityTupleRecord(
               A.S, A.Sources, Call->getArg(1)->getType()->getAsCXXRecordDecl(),
               A.Context);
+          bool SourceReferenceTuple = false;
+          if (ReferenceTuple && !SourceTuple) {
+            SourceTuple = approvedUtilityReferenceTupleRecord(
+                A.S, A.Sources,
+                Call->getArg(1)->getType()->getAsCXXRecordDecl(), A.Context);
+            SourceReferenceTuple = SourceTuple.has_value();
+          }
           if (!DestinationTuple || !SourceTuple ||
               DestinationTuple->Elements.size() != SourceTuple->Elements.size())
             reject(L, "utility tuple assignment",
@@ -8278,12 +8285,18 @@ class FunctionLowering {
                                             DestinationTuple->Elements[I], L);
             auto Value =
                 fieldStorage(json::Object(Right), SourceTuple->Elements[I], L);
-            if (recordValue(DestinationTuple->Elements[I]->getType()))
+            auto DestinationType = DestinationTuple->Elements[I]->getType();
+            if (ReferenceTuple) {
+              Destination = dereference(std::move(Destination), L);
+              if (SourceReferenceTuple)
+                Value = dereference(std::move(Value), L);
+              DestinationType = DestinationType->getPointeeType();
+            }
+            if (recordValue(DestinationType))
               assign(std::move(Destination), std::move(Value), L);
             else
               assign(std::move(Destination),
-                     cast(std::move(Value),
-                          type(DestinationTuple->Elements[I]->getType(), L), L),
+                     cast(std::move(Value), type(DestinationType, L), L),
                      L);
           }
           return Left;
@@ -10025,10 +10038,41 @@ class FunctionLowering {
         auto SourceTuple = approvedUtilityTupleRecord(
             A.S, A.Sources, C->getArg(0)->getType()->getAsCXXRecordDecl(),
             A.Context);
+        bool SourceReferenceTuple = false;
+        if (ReferenceTuple && !SourceTuple) {
+          SourceTuple = approvedUtilityReferenceTupleRecord(
+              A.S, A.Sources,
+              C->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
+          SourceReferenceTuple = SourceTuple.has_value();
+        }
         if (!SourceTuple ||
             SourceTuple->Elements.size() != Tuple->Elements.size())
           reject(L, "utility tuple construction",
                  "The source std::tuple layout is unavailable.");
+        if (ReferenceTuple) {
+          auto SourceAddress = snapshot(
+              address(lvalue(C->getArg(0)), C->getArg(0)->getType(), L), L);
+          auto Source = dereference(std::move(SourceAddress), L);
+          for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
+            auto Value = fieldStorage(json::Object(Source),
+                                      SourceTuple->Elements[I], L);
+            if (!SourceReferenceTuple) {
+              auto SourceElementType = SourceTuple->Elements[I]->getType();
+              const auto SourceParameter =
+                  C->getConstructor()->getParamDecl(0)->getType();
+              if (SourceParameter->isReferenceType() &&
+                  SourceParameter->getPointeeType().isConstQualified())
+                SourceElementType = SourceElementType.withConst();
+              Value = address(std::move(Value),
+                              SourceElementType, L);
+            }
+            assign(Member(Tuple->Elements[I]),
+                   cast(std::move(Value),
+                        type(Tuple->Elements[I]->getType(), L), L),
+                   L);
+          }
+          return;
+        }
         auto Source = snapshot(expression(C->getArg(0)), L);
         for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
           auto Value =

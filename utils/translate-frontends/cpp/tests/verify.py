@@ -881,9 +881,14 @@ extern "C" int tuple_reference_construction(int value) {
   int source_second = other + 4;
   std::tuple<int &, int &> source(source_first, source_second);
   direct = source;
+  std::tuple<const int &, const int &> view(source);
+  long converted = 0;
+  std::tuple<long &> destination(converted);
+  std::tuple<int &> conversion_source(source_first);
+  destination = conversion_source;
   std::tuple<int &&> rvalue(static_cast<int &&>(other));
   std::get<0>(rvalue) += 3;
-  return value + other;
+  return value + other + std::get<0>(view) + int(converted);
 }
 """
     tuple_reference_construction = check(

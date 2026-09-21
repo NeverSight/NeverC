@@ -268,7 +268,12 @@ copy/move construction copies the stored bindings, so both tuple objects keep
 referring to the original objects. Same-type copy/move assignment evaluates
 the source and destination once, then assigns each source referent into the
 corresponding destination referent without changing either tuple's bindings.
-The assignment result aliases the destination tuple.
+The assignment result aliases the destination tuple. Converting construction
+from another authenticated tuple admits exact unqualified referent types with
+compatible cv and value categories, including a `const T&` view over a value
+tuple field. Heterogeneous assignment admits the documented scalar conversion
+boundary and writes converted source element values through destination
+references.
 
 Exact `std::apply` calls over an authenticated empty or nonempty tuple lower to
 one ordinary callback call. The callable may be a named function, a stored
