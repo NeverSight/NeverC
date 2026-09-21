@@ -2061,6 +2061,70 @@ extern "C" int functional_function_pointer_signature(Function slot) {
         check("v2-functional-function-pointer-signature-" + target,
               functional_function_pointer_signature_source,
               profile="cpp-core-v2", target=target, sdk=True)
+    function_pointer_record_parameter_source = """\
+int copies;
+int drops;
+struct Record {
+  int value;
+  Record(int source) : value(source) {}
+  Record(const Record &source) : value(source.value) { ++copies; }
+  ~Record() { ++drops; }
+};
+int take_record(Record record) { return record.value; }
+extern "C" int function_pointer_record_parameter(int value) {
+  Record record{value};
+  auto pointer = &take_record;
+  return pointer(record) + pointer(Record{value + 1});
+}
+"""
+    function_pointer_record_parameter = check(
+        "v2-function-pointer-record-parameter",
+        function_pointer_record_parameter_source,
+        profile="cpp-core-v2", sdk=True)
+    assert any(function["name"] == "function_pointer_record_parameter"
+               for function in function_pointer_record_parameter["functions"]), function_pointer_record_parameter
+    for target in sdk_targets:
+        check("v2-function-pointer-record-parameter-" + target,
+              function_pointer_record_parameter_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    functional_record_value_source = """\
+#include <functional>
+struct Record { int value; };
+int take_record(Record record) { return ++record.value; }
+struct Callable {
+  int operator()(Record record) const { return record.value + 2; }
+};
+struct Box {
+  int take(Record record) const { return record.value + 3; }
+};
+extern "C" int functional_record_value(int value) {
+  Record record{value};
+  auto pointer = &take_record;
+  int score = std::invoke(pointer, record);
+  auto function_reference = std::ref(take_record);
+  score += std::invoke(function_reference, record);
+  Callable callable;
+  score += std::invoke(callable, record);
+  auto callable_reference = std::ref(callable);
+  score += std::invoke(callable_reference, record);
+  Box box;
+  auto member = &Box::take;
+  score += (box.*member)(record);
+  score += std::invoke(member, box, record);
+  auto wrapper = std::mem_fn(member);
+  score += std::invoke(wrapper, box, record);
+  return score + record.value;
+}
+"""
+    functional_record_value = check(
+        "v2-functional-record-value", functional_record_value_source,
+        profile="cpp-core-v2", sdk=True)
+    assert any(function["name"] == "functional_record_value"
+               for function in functional_record_value["functions"]), functional_record_value
+    for target in sdk_targets:
+        check("v2-functional-record-value-" + target,
+              functional_record_value_source,
+              profile="cpp-core-v2", target=target, sdk=True)
     functional_record_reference_source = """\
 #include <functional>
 struct Record { int value; };

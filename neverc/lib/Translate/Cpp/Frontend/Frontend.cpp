@@ -1757,11 +1757,17 @@ std::string Adapter::functionPointerType(QualType T, SourceLocation L,
   }
   chargeExpansion(P->getNumParams() + 1, L);
   std::string Result = "fnptr:" + std::to_string(P->getNumParams()) + ":";
-  auto Component = [&](QualType C, bool Void) {
-    if (C->isRecordType() || C->isArrayType()) {
-      reject(L, "callback signature", "Record and array values need a separate callback ownership contract.");
+  auto Component = [&](QualType C, bool Void, bool Parameter) {
+    if (C->isArrayType() || (C->isRecordType() && !Parameter)) {
+      reject(L, "callback signature", "Array values and record results need a separate callback ownership contract.");
       return false;
     }
+    // Function lowering already gives every by-value record parameter its own
+    // caller-constructed object and passes that object through a hidden pointer.
+    // Encode the callable with that emitted signature so indirect calls use the
+    // same ownership boundary as direct calls.
+    if (C->isRecordType())
+      C = Context.getPointerType(C.getUnqualifiedType());
     auto Spelling = type(C, L, Void, Depth + 1);
     if (Spelling.empty())
       return false;
@@ -1772,10 +1778,10 @@ std::string Adapter::functionPointerType(QualType T, SourceLocation L,
     }
     return true;
   };
-  if (!Component(P->getReturnType(), true))
+  if (!Component(P->getReturnType(), true, false))
     return {};
   for (auto Parameter : P->param_types())
-    if (!Component(Parameter, false))
+    if (!Component(Parameter, false, true))
       return {};
   return Result;
 }

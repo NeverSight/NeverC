@@ -141,7 +141,9 @@ exact C++17 `std::invoke` also lowers fixed-arity ordinary functions and stored
 function pointers with directly convertible by-value scalar parameters, exact
 fixed-arity ordinary function pointers including function-name decay, or exact
 admitted lvalue or rvalue references to those values, complete fixed arrays or
-complete source-owned records, and preserves the
+complete source-owned records, or exact by-value complete source-owned
+standard-layout records that are trivially copyable and trivially destructible,
+and preserves the
 corresponding scalar, object-pointer, function-pointer, lvalue- or
 rvalue-reference or `void` result, plus
 the admitted typed and transparent standard function objects. Exact
@@ -149,7 +151,8 @@ source-owned record callables also lower when Clang selects an admitted defined
 nonstatic `operator()` with the same argument and result boundary; lvalue,
 const-lvalue and rvalue-qualified overloads, reference results, receiver-first
 evaluation and temporary lifetime are preserved, including source-owned record
-fixed-array and record reference parameters and results. Direct named
+callables with fixed-array and source-owned-record reference parameters and
+results and trivial source-record value parameters. Direct named
 addresses of owned nonstatic member functions
 also lower on exact-class lvalue, full-expression temporary, pointer or
 `std::reference_wrapper` receivers. Admitted non-volatile scalar,
@@ -186,7 +189,8 @@ final direct call or `std::invoke` use. Reassigned or null member pointers,
 `mem_fn` copies or moves from
 parameters, reassigned `mem_fn` objects,
 base adjustments, volatile receivers, references to incomplete or runtime-bound
-arrays, and other unsupported reference or variadic function signatures stay
+arrays, nontrivial source-record value parameters, source-record value results,
+and other unsupported reference or variadic function signatures stay
 outside this boundary. Object-pointer values and exact scalar or object-pointer
 lvalue- or rvalue-reference parameters and lvalue- or rvalue-reference results are preserved. The
 frontend uses the pinned embedded libc++/resource VFS and exposes resolved type

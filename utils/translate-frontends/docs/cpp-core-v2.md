@@ -944,7 +944,8 @@ pointer also lower directly. The target must have fixed arity. Parameters may
 be admitted by-value scalars with checked direct argument conversions, exact
 fixed-arity ordinary function pointers including function-name decay, or exact
 lvalue or rvalue references to those values, complete fixed arrays or complete
-source-owned records;
+source-owned records, plus exact by-value complete source-owned standard-layout
+records that are trivially copyable and trivially destructible;
 results may be the corresponding
 scalar, object-pointer, function-pointer or exact lvalue or rvalue reference, or `void`. References retain
 their source storage and qualification. The callable is retained before the
@@ -957,8 +958,9 @@ It also accepts an exact source-owned record callable whose selected
 nonstatic `operator()` is an admitted defined method. Lvalue, const-lvalue and
 rvalue-qualified overload selection follows Clang's checked dispatch. The
 method may use the same admitted by-value and exact lvalue- or rvalue-reference
-parameter and result boundary as member invocation, including source-owned
-fixed-array and record reference parameters and results. The callable is retained
+parameter and result boundary as member invocation, including fixed-array and
+source-owned-record reference parameters and results and trivial source-record
+value parameters. The callable is retained
 before its arguments, reference results preserve storage identity, and a
 temporary callable is destroyed at its full-expression boundary.
 
@@ -967,8 +969,8 @@ lowers through `std::invoke` when the receiver is an exact-class lvalue,
 full-expression temporary, pointer or admitted `std::reference_wrapper` and the method has fixed-arity
 admitted scalar, object-pointer or fixed-arity ordinary function-pointer
 parameters, either by value with a checked direct conversion or by exact lvalue
-or rvalue reference, including references to complete fixed arrays or
-source-owned records,
+or rvalue reference, including trivial source-record value parameters and
+references to complete fixed arrays or source-owned records,
 with a scalar, object-pointer, function-pointer, exact
 lvalue- or rvalue-reference including a complete fixed array or source-owned
 record, or `void`
@@ -1031,7 +1033,8 @@ not yet lower. Reassigned or null member pointers, `mem_fn` copies or moves
 from parameters, reassigned `mem_fn` objects, base-adjusting
 receivers, volatile
 receivers, function referents, references to incomplete or runtime-bound
-arrays, other unsupported reference signatures and variadic targets remain
+arrays, nontrivial source-record value parameters, source-record value results,
+other unsupported reference signatures and variadic targets remain
 outside the `std::invoke` boundary.
 Quoted includes, shadows, forged declarations and other runtime uses remain
 rejected by the normal source and semantic checks.
@@ -4944,9 +4947,12 @@ int main() { return apply(plus_one, 2) - 3; }
 Signatures have a result and at most 64 parameters, within the existing recursive
 source and protocol budgets. Results and parameters use admitted integer/boolean
 scalars, object pointers, nested function pointers or existing reference carriers;
-only results may be void. References to records or fixed arrays retain binding,
-constness and alias behavior. By-value record arguments/results and function
-references require separate lowering and remain unsupported. Function-type aliases
+only results may be void. Parameters additionally admit complete source-owned
+records by value. The caller constructs an independent parameter object, passes
+its hidden pointer through the callable signature and retains the selected
+copy/move construction and callee-owned destruction. References to records or
+fixed arrays retain binding, constness and alias behavior. By-value record results
+and function references require separate lowering and remain unsupported. Function-type aliases
 are accepted as source spellings for these pointer signatures, without adding a
 bare function-value IR type. Nested factory callbacks may return callbacks. Record declarations are ordered
 before any callback signature that needs their complete array element types;
@@ -5046,7 +5052,7 @@ the function body, signature and complete template source before the written
 overload pseudo-type is skipped. Unsupported syntax in a second clause remains
 diagnosed even when it selects the same canonical specialization.
 
-The ordinary callback contract still excludes record-by-value signatures, function
+The ordinary callback contract still excludes record-by-value results, function
 references, nonstatic member pointers, constructor/conversion-template addresses,
 variadics, lambda conversions and nondefault ABI metadata. Function-pointer
 non-type template arguments and cross-unit callbacks remain unsupported.

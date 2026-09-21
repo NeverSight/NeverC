@@ -746,6 +746,26 @@ static bool supportedFunctionalReferenceValue(const State &S,
           S.owns(SM, Definition->getLocation()));
 }
 
+static bool supportedFunctionalByValue(const State &S,
+                                       const SourceManager &SM,
+                                       const ASTContext &Context,
+                                       QualType Type) {
+  if (Type.isNull() || Type->isReferenceType() || Type->isArrayType() ||
+      Type.isVolatileQualified() || Type.isRestrictQualified() ||
+      Type.getAddressSpace() != LangAS::Default)
+    return false;
+  if (supportedFunctionalCallableValue(Type, Context) ||
+      utilityObjectPointer(Context, Type))
+    return true;
+  const auto *Record = Type->getAsCXXRecordDecl();
+  const auto *Definition = Record ? Record->getDefinition() : nullptr;
+  return Definition && !Definition->isUnion() &&
+         !Definition->isInvalidDecl() && Definition->isStandardLayout() &&
+         Definition->isTriviallyCopyable() &&
+         Definition->hasTrivialDestructor() &&
+         S.owns(SM, Definition->getLocation());
+}
+
 std::optional<FunctionalReferenceRecord> approvedFunctionalReferenceRecord(
     const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
     const ASTContext &Context) {
@@ -824,7 +844,7 @@ std::optional<FunctionalReferenceRecord> approvedFunctionalReferenceRecord(
       if (Parameter->isReferenceType()
               ? !supportedFunctionalReferenceValue(S, SM, Context,
                                                    Parameter->getPointeeType())
-              : !supportedFunctionalCallableValue(Parameter, Context))
+              : !supportedFunctionalByValue(S, SM, Context, Parameter))
         return std::nullopt;
   }
   const auto PointerType = Context.getPointerType(Referent);
@@ -6666,7 +6686,7 @@ static bool supportedFunctionalStoredMember(const State &S,
           !supportedFunctionalReferenceValue(S, SM, Context,
                                              ParameterReferent))
         return false;
-    } else if (!supportedFunctionalMemberValue(Context, Type)) {
+    } else if (!supportedFunctionalByValue(S, SM, Context, Type)) {
       return false;
     }
   }
@@ -6950,6 +6970,34 @@ static bool approvedFunctionalForwardingCall(
                        "__utility/forward.h");
 }
 
+static bool approvedFunctionalInvokeArgumentFlow(
+    const State &S, const SourceManager &SM, const Expr *Expression,
+    const ParmVarDecl *Parameter, QualType Target,
+    const ASTContext &Context) {
+  if (functionalInvokeParameterReference(Expression, Parameter) ||
+      approvedFunctionalForwardingCall(S, SM, Expression, Parameter))
+    return true;
+  if (Target.isNull() || !Target->isRecordType())
+    return false;
+  Expression = functionalInvokeStrippedExpression(Expression);
+  if (const auto *Temporary = dyn_cast_or_null<CXXBindTemporaryExpr>(Expression))
+    Expression = functionalInvokeStrippedExpression(Temporary->getSubExpr());
+  const auto *Construction = dyn_cast_or_null<CXXConstructExpr>(Expression);
+  const auto *Constructor =
+      Construction ? Construction->getConstructor() : nullptr;
+  const auto *Definition = Target->getAsCXXRecordDecl();
+  Definition = Definition ? Definition->getDefinition() : nullptr;
+  return Construction && Constructor && Definition &&
+         Construction->getNumArgs() == 1 &&
+         Constructor->isCopyOrMoveConstructor() &&
+         Constructor->getNumParams() == 1 &&
+         Constructor->getParent()->getCanonicalDecl() ==
+             Definition->getCanonicalDecl() &&
+         S.owns(SM, Constructor->getLocation()) &&
+         Context.hasSameUnqualifiedType(Construction->getType(), Target) &&
+         functionalInvokeParameterReference(Construction->getArg(0), Parameter);
+}
+
 static bool supportedFunctionalMemberValue(const ASTContext &Context,
                                            QualType Type) {
   return supportedFunctionalCallableValue(Type, Context) ||
@@ -6991,6 +7039,9 @@ static bool functionalMemberValueConversion(const ASTContext &Context,
   }
   if (From->isFunctionType() || From->isFunctionPointerType())
     return false;
+  if (To->isRecordType())
+    return From->isRecordType() &&
+           Context.hasSameUnqualifiedType(From, To);
   if (supportedFunctionalCallableValue(From, Context) &&
       supportedFunctionalCallableValue(To, Context)) {
     return utilityScalarDirectConversion(Context, From, To);
@@ -7098,7 +7149,7 @@ approvedNativeMemberPointerCall(
       const auto *Source =
           functionalInvokeStrippedExpression(ArgumentExpression);
       Supported = !Parameter->isReferenceType() && Source &&
-                  supportedFunctionalMemberValue(Context, Parameter) &&
+                  supportedFunctionalByValue(S, SM, Context, Parameter) &&
                   functionalMemberValueConversion(Context, Source->getType(),
                                                   Parameter);
     }
@@ -7459,9 +7510,10 @@ approvedFunctionalMemberInvokeCall(
   const auto *Return = Body && Body->size() == 1
                            ? dyn_cast<ReturnStmt>(*Body->body_begin())
                            : nullptr;
-  const Expr *Operation = Return && Return->getRetValue()
-                              ? Return->getRetValue()->IgnoreParens()
-                              : nullptr;
+  const Expr *Operation =
+      Return && Return->getRetValue()
+          ? functionalInvokeStrippedExpression(Return->getRetValue())
+          : nullptr;
   const BinaryOperator *MemberOperation = nullptr;
   const CXXMemberCallExpr *MemberCall = nullptr;
   if (Method) {
@@ -7528,13 +7580,14 @@ approvedFunctionalMemberInvokeCall(
             S, SM, Context, Parameter, ArgumentExpression);
       } else {
         Supported = !Parameter->isReferenceType() &&
-                    supportedFunctionalMemberValue(Context, Parameter) &&
+                    supportedFunctionalByValue(S, SM, Context, Parameter) &&
                     functionalMemberValueConversion(Context, Argument,
                                                     Parameter);
       }
       if (!Supported ||
-          !functionalInvokeParameterReference(
-              MemberCall->getArg(I), DispatchFunction->getParamDecl(I + 2)))
+          !approvedFunctionalInvokeArgumentFlow(
+              S, SM, MemberCall->getArg(I),
+              DispatchFunction->getParamDecl(I + 2), Parameter, Context))
         return std::nullopt;
     }
   } else {
@@ -7673,16 +7726,13 @@ approvedFunctionalUserInvokeCall(const State &S, const SourceManager &SM,
         Parameter->isReferenceType()
             ? supportedFunctionalInvokeReferenceArgument(
                   S, SM, Context, Parameter, ArgumentExpression)
-            : supportedFunctionalMemberValue(Context, Parameter) &&
+            : supportedFunctionalByValue(S, SM, Context, Parameter) &&
                   functionalMemberValueConversion(
                       Context, ArgumentExpression->getType(), Parameter);
     if (!Supported ||
-        (!functionalInvokeParameterReference(
-             Operation->getArg(I + 1),
-             DispatchFunction->getParamDecl(I + 1)) &&
-         !approvedFunctionalForwardingCall(
-             S, SM, Operation->getArg(I + 1),
-             DispatchFunction->getParamDecl(I + 1))))
+        !approvedFunctionalInvokeArgumentFlow(
+            S, SM, Operation->getArg(I + 1),
+            DispatchFunction->getParamDecl(I + 1), Parameter, Context))
       return std::nullopt;
   }
   return FunctionalMemberInvokeCall{Call->getArg(0), Call->getArg(0), Method,
@@ -7903,15 +7953,12 @@ approvedFunctionalReferenceDirectInvoke(
           (Parameter->isReferenceType()
                ? supportedFunctionalInvokeReferenceArgument(
                      S, SM, Context, Parameter, ArgumentExpression)
-               : supportedFunctionalMemberValue(Context, Parameter) &&
+               : supportedFunctionalByValue(S, SM, Context, Parameter) &&
                      functionalMemberValueConversion(
                          Context, ArgumentExpression->getType(), Parameter)) &&
-          (functionalInvokeParameterReference(
-               OperationCall->getArg(I + 1),
-               DispatchFunction->getParamDecl(I + 1)) ||
-           approvedFunctionalForwardingCall(
-               S, SM, OperationCall->getArg(I + 1),
-               DispatchFunction->getParamDecl(I + 1)));
+          approvedFunctionalInvokeArgumentFlow(
+              S, SM, OperationCall->getArg(I + 1),
+              DispatchFunction->getParamDecl(I + 1), Parameter, Context);
     }
     if (Supported)
       return FunctionalReferenceInvokeCall{
@@ -7948,7 +7995,7 @@ approvedFunctionalReferenceDirectInvoke(
             ? supportedFunctionalInvokeReferenceArgument(S, SM, Context, Parameter,
                                                          ArgumentExpression)
             : !Parameter->isReferenceType() &&
-                  supportedFunctionalCallableValue(Parameter, Context) &&
+                  supportedFunctionalByValue(S, SM, Context, Parameter) &&
                   functionalMemberValueConversion(Context, Argument,
                                                   Parameter);
     if (!Supported)
@@ -8018,7 +8065,7 @@ approvedFunctionalReferenceInvokeCall(
           Parameter->isReferenceType()
               ? supportedFunctionalInvokeReferenceArgument(
                     S, SM, Context, Parameter, ArgumentExpression)
-              : supportedFunctionalMemberValue(Context, Parameter) &&
+              : supportedFunctionalByValue(S, SM, Context, Parameter) &&
                     functionalMemberValueConversion(
                         Context, ArgumentExpression->getType(), Parameter);
       if (!Supported)
@@ -11180,7 +11227,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
             S, SM, Context, Parameter, ArgumentExpression);
       } else {
         Supported = !Parameter->isReferenceType() &&
-                    supportedFunctionalCallableValue(Parameter, Context) &&
+                    supportedFunctionalByValue(S, SM, Context, Parameter) &&
                     functionalMemberValueConversion(Context, Argument,
                                                     Parameter);
       }

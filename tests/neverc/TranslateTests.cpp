@@ -14450,10 +14450,8 @@ TEST_F(TranslateTest, CoreV2FunctionPointersAcceptTypedCallbacks) {
 
 TEST_F(TranslateTest, CoreV2FunctionPointersRetainSourceAndSignatureBoundaries) {
   const std::vector<std::pair<std::string, std::string>> Cases = {
-      {"record-by-value-argument", "struct R{int n;};int get(R r){return r.n;}int main(){auto p=&get;return p(R{3});}"},
       {"record-by-value-result", "struct R{int n;};R get(){return R{3};}int main(){auto p=&get;return p().n;}"},
       {"function-reference", "int get(){return 3;}int main(){int(&r)()=get;return r();}"},
-      {"nonstatic-member", "struct R{int get(){return 3;}};int main(){auto p=&R::get;R r;return (r.*p)();}"},
       {"variadic", "int get(int,...){return 3;}int main(){auto p=&get;return p(1,2);}"},
       {"lambda-conversion", "int main(){int(*p)(int)=[](int n){return n;};return p(3);}"},
       {"double-signature", "long double get(long double n){return n;}int main(){auto p=&get;return int(p(3.0L));}"},
@@ -34482,6 +34480,103 @@ int main() {
 }
 
 TEST_F(TranslateTest,
+       CoreV2FunctionPointerRecordParametersRunAtBothOptimizations) {
+  const auto Source = tmpFile("function-pointer-record-parameters.cpp");
+  const auto Output = tmpFile("function-pointer-record-parameters.nc");
+  writeFile(Source, R"cpp(
+int copies;
+int drops;
+struct Record {
+  int value;
+  Record(int source) : value(source) {}
+  Record(const Record &source) : value(source.value) { ++copies; }
+  ~Record() { ++drops; }
+};
+int take(Record record) { return record.value; }
+int main() {
+  Record record{3};
+  auto pointer = &take;
+  int score = pointer(record) == 3;
+  score += copies == 1 && drops == 1;
+  score += pointer(Record{4}) == 4;
+  score += copies == 1 && drops == 2;
+  return score == 4 ? 0 : score;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("function-pointer-record-parameters" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2FunctionalRecordValuesRunAtBothOptimizations) {
+  const auto Source = tmpFile("functional-record-values.cpp");
+  const auto Output = tmpFile("functional-record-values.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+struct Record { int value; };
+int take(Record record) { return ++record.value; }
+struct Callable {
+  int operator()(Record record) const { return record.value + 2; }
+};
+struct Box {
+  int take(Record record) const { return record.value + 3; }
+};
+int main() {
+  Record record{3};
+  auto pointer = &take;
+  int score = pointer(record) == 4;
+  score += std::invoke(take, record) == 4;
+  score += std::invoke(pointer, record) == 4;
+  auto function_reference = std::ref(take);
+  score += std::invoke(function_reference, record) == 4;
+  auto pointer_reference = std::ref(pointer);
+  score += std::invoke(pointer_reference, record) == 4;
+  Callable callable;
+  score += std::invoke(callable, record) == 5;
+  auto callable_reference = std::ref(callable);
+  score += std::invoke(callable_reference, record) == 5;
+  Box box;
+  auto member = &Box::take;
+  score += (box.*member)(record) == 6;
+  score += std::invoke(member, box, record) == 6;
+  score += std::mem_fn(member)(box, record) == 6;
+  auto wrapper = std::mem_fn(member);
+  score += wrapper(box, record) == 6;
+  score += std::invoke(wrapper, box, record) == 6;
+  score += std::invoke(take, Record{4}) == 5;
+  score += std::invoke(Callable{}, Record{5}) == 7;
+  score += std::invoke(member, Box{}, Record{6}) == 9;
+  score += std::mem_fn(member)(Box{}, Record{7}) == 10;
+  return score == 16 && record.value == 3 ? 0 : score;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  EXPECT_EQ(Generated.find("member_pointer"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("functional-record-values" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
        CoreV2FunctionalRecordReferencesRunAtBothOptimizations) {
   const auto Source = tmpFile("functional-record-references.cpp");
   const auto Output = tmpFile("functional-record-references.nc");
@@ -35252,6 +35347,11 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
       {"invoke-volatile-reference-parameter",
        "#include <functional>\nint load(volatile int&v){return v;}int main(){"
        "volatile int v=3;return std::invoke(load,v);}",
+       "TR0201"},
+      {"invoke-nontrivial-record-value-parameter",
+       "#include <functional>\nstruct R{int n;R(int v):n(v){}"
+       "R(const R&r):n(r.n){}~R(){}};int load(R r){return r.n;}"
+       "int main(){R r{3};return std::invoke(load,r);}",
        "TR0201"},
       {"invoke-variadic",
        "#include <functional>\nint first(int v,...){return v;}int main(){"

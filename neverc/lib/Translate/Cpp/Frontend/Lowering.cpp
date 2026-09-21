@@ -1370,7 +1370,7 @@ class FunctionLowering {
         const auto Parameter = Info.Method->getParamDecl(I)->getType();
         Arguments.push_back(
             cast(argument(Call->getArg(I + ArgumentOffset), Parameter),
-                 type(Parameter, L), L));
+                 type(parameterType(Parameter), L), L));
       }
       chargeCall(Arguments, L);
       json::Object Instruction{{"op", "call"},
@@ -1900,7 +1900,7 @@ class FunctionLowering {
       for (unsigned I = 0; I < Prototype->getNumParams(); ++I) {
         auto Parameter = Prototype->getParamType(I);
         Arguments.push_back(cast(argument(Call->getArg(I + 1), Parameter),
-                                 type(Parameter, L), L));
+                                 type(parameterType(Parameter), L), L));
       }
       return emitIndirectCall(std::move(Callable), std::move(Arguments),
                               Prototype->getReturnType(), L);
@@ -1958,7 +1958,7 @@ class FunctionLowering {
           const auto Parameter = Info->Method->getParamDecl(I)->getType();
           Arguments.push_back(
               cast(argument(Call->getArg(I + 1), Parameter),
-                   type(Parameter, L), L));
+                   type(parameterType(Parameter), L), L));
         }
         chargeCall(Arguments, L);
         json::Object Instruction{{"op", "call"},
@@ -1993,7 +1993,7 @@ class FunctionLowering {
       for (unsigned I = 0; I < Prototype->getNumParams(); ++I) {
         const auto Parameter = Prototype->getParamType(I);
         Arguments.push_back(cast(argument(Call->getArg(I + 1), Parameter),
-                                 type(Parameter, L), L));
+                                 type(parameterType(Parameter), L), L));
       }
       return emitIndirectCall(std::move(Callable), std::move(Arguments),
                               Prototype->getReturnType(), L);
