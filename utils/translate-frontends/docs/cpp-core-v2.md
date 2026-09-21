@@ -199,8 +199,11 @@ Reference-valued pairs admit exact compatible direct construction for supported
 referent types and checked lvalue/rvalue categories. Same-type trivial
 copy/move construction copies the stored bindings. Public `first`/`second`
 access and index- or unique-type `get` recover the referents, so mutations write
-through to the original objects. Assignment, comparison, swap and `make_pair`
-remain outside this reference-pair surface.
+through to the original objects. Same-type copy/move assignment evaluates the
+source and destination once, assigns each source referent to the corresponding
+destination referent in field order and returns the destination pair without
+changing either pair's bindings. Comparison, swap and `make_pair` remain outside
+this reference-pair surface.
 
 All six C++17 comparisons recurse through authenticated arrays and nested pairs
 and compare their scalar leaves in lexicographic order. Corresponding scalar

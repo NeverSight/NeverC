@@ -24217,6 +24217,53 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ReferencePairAssignmentRunsAtBothOptimizations) {
+  const auto Source = tmpFile("pair-reference-assignment.cpp");
+  const auto Output = tmpFile("pair-reference-assignment.nc");
+  writeFile(Source, R"cpp(
+#include <utility>
+struct Box { int value; };
+int main() {
+  int destination_number = 1;
+  Box destination_box{2};
+  int source_number = 3;
+  Box source_box{4};
+  std::pair<int &, Box &> destination(destination_number, destination_box);
+  std::pair<int &, Box &> source(source_number, source_box);
+  auto &result = (destination = source);
+  if (&result != &destination || destination_number != 3 ||
+      destination_box.value != 4 || &destination.first != &destination_number ||
+      &destination.second != &destination_box || &source.first != &source_number ||
+      &source.second != &source_box)
+    return 1;
+  source_number = 5;
+  source_box.value = 6;
+  destination = static_cast<std::pair<int &, Box &> &&>(source);
+  if (destination_number != 5 || destination_box.value != 6)
+    return 2;
+  int first = 7;
+  int second = 8;
+  std::pair<int &, int &> crossed_destination(first, second);
+  std::pair<int &, int &> crossed_source(second, first);
+  crossed_destination = crossed_source;
+  return first == 8 && second == 8 ? 0 : 3;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("pair-reference-assignment" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2TupleApplyCallableObjectsRunAtBothOptimizations) {
   const auto Source = tmpFile("tuple-apply-callable-objects.cpp");
   const auto Output = tmpFile("tuple-apply-callable-objects.nc");

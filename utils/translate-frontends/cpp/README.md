@@ -216,8 +216,9 @@ assignment, swaps, `make_pair` and `get`; recursive standard-composite pair
 comparisons; and
 `tuple_size`, `tuple_element` and integer-sequence size queries.
 Reference-valued pairs admit exact compatible direct construction, same-type
-copy/move construction, public field access and index- or unique-type `get`;
-their bindings and writes through recovered referents are preserved. Tuple
+copy/move construction, public field access and index- or unique-type `get`.
+Same-type assignment writes through the destination bindings without changing
+either pair's bindings. Tuple
 directly lowers authenticated empty and nonempty tuples of scalars, reference
 wrappers
 or recursively composite values, compatible scalar or exact composite

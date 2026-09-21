@@ -2888,18 +2888,31 @@ approvedUtilityPairAssignment(const State &S, const SourceManager &SM,
     return std::nullopt;
   const auto *Method =
       dyn_cast_or_null<CXXMethodDecl>(Assignment->getDirectCallee());
-  const auto Pair = approvedUtilityPairRecord(
+  auto Pair = approvedUtilityPairRecord(
       S, SM, Method ? Method->getParent() : nullptr, Context);
+  bool ReferencePair = false;
+  if (!Pair) {
+    Pair = approvedUtilityReferencePairRecord(
+        S, SM, Method ? Method->getParent() : nullptr, Context);
+    ReferencePair = Pair.has_value();
+  }
+  const auto FirstType =
+      ReferencePair ? Pair->First->getType()->getPointeeType()
+                    : Pair ? Pair->First->getType() : QualType();
+  const auto SecondType =
+      ReferencePair ? Pair->Second->getType()->getPointeeType()
+                    : Pair ? Pair->Second->getType() : QualType();
   if (!Method || !Pair || Method->isStatic() || Method->isVariadic() ||
       Method->getNumParams() != 1 ||
       Method->getOverloadedOperator() != OO_Equal || !Method->hasBody() ||
       !approvedStandardSDKDeclaration(S, SM, Method) ||
       !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
                      "__utility/pair.h") ||
-      !utilityPairValue(S, SM, Context, Pair->First->getType()) ||
-      !utilityPairValue(S, SM, Context, Pair->Second->getType()) ||
-      !utilityPairAssignableValue(S, SM, Context, Pair->First->getType()) ||
-      !utilityPairAssignableValue(S, SM, Context, Pair->Second->getType()))
+      (!ReferencePair &&
+       (!utilityPairValue(S, SM, Context, FirstType) ||
+        !utilityPairValue(S, SM, Context, SecondType))) ||
+      !utilityPairAssignableValue(S, SM, Context, FirstType) ||
+      !utilityPairAssignableValue(S, SM, Context, SecondType))
     return std::nullopt;
   const auto Parameter = Method->getParamDecl(0)->getType();
   const auto Result = Method->getReturnType();

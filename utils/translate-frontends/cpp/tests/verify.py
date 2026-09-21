@@ -452,6 +452,10 @@ extern "C" int pair_reference(int value) {
   const auto copied(direct);
   std::get<0>(copied) += 2;
   std::get<Box &>(direct).value += 3;
+  int source_value = value + 4;
+  Box source_box{box.value + 5};
+  std::pair<int &, Box &> source(source_value, source_box);
+  direct = source;
   std::pair<int &&, Box &&> rvalues(static_cast<int &&>(value),
                                     static_cast<Box &&>(box));
   std::get<0>(rvalues) += 4;
@@ -529,9 +533,6 @@ extern "C" int pair_composite() {
          "TR0201"),
         ("record-pair-comparison",
          '#include <utility>\nstruct R{int n;};bool operator==(const R&a,const R&b){return a.n==b.n;}int f(){std::pair<R,int>a{{1},2},b=a;return a==b;}',
-         "TR0203"),
-        ("reference-pair-assignment",
-         '#include <utility>\nint f(){int a=1,b=2,c=3,d=4;std::pair<int&,int&>p{a,b},q{c,d};p=q;return a;}',
          "TR0203"),
         ("array-swap",
          '#include <utility>\nint f(){int a[2]{1,2},b[2]{3,4};std::swap(a,b);return a[0];}',

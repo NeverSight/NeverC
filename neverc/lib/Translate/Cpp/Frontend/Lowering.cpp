@@ -8281,6 +8281,18 @@ class FunctionLowering {
             address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
         auto Left = dereference(std::move(LeftAddress), L);
         auto Right = dereference(std::move(RightAddress), L);
+        if (approvedUtilityReferencePairRecord(
+                A.S, A.Sources,
+                Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context)) {
+          for (const auto *Field : {Pair->First, Pair->Second}) {
+            auto Destination = dereference(
+                fieldStorage(json::Object(Left), Field, L), L);
+            auto Value = dereference(
+                fieldStorage(json::Object(Right), Field, L), L);
+            assign(std::move(Destination), std::move(Value), L);
+          }
+          return Left;
+        }
         assign(Left, std::move(Right), L);
         return Left;
       }
