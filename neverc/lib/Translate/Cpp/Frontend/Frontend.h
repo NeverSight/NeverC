@@ -896,6 +896,9 @@ approvedUtilityTupleRecord(const State &S, const clang::SourceManager &SM,
 std::optional<UtilityTupleRecord> approvedUtilityReferenceTupleRecord(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+std::optional<UtilityTupleRecord> approvedUtilityMixedReferenceTupleRecord(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
 enum class UtilityTupleConstruction {
   Default,
   Elements,

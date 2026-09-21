@@ -3099,7 +3099,8 @@ static std::optional<UtilityTupleRecord>
 approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
                                const CXXRecordDecl *Record,
                                const ASTContext &Context, unsigned Depth,
-                               bool RequireReferenceElements = false);
+                               bool RequireReferenceElements = false,
+                               bool RequireMixedReferenceElements = false);
 
 static bool utilityTupleValue(const State &S, const SourceManager &SM,
                               const ASTContext &Context, QualType Type,
@@ -3111,7 +3112,8 @@ static bool utilityTupleValue(const State &S, const SourceManager &SM,
   const auto *Record = Type.getUnqualifiedType()->getAsCXXRecordDecl();
   if (approvedFunctionalReferenceRecord(S, SM, Record, Context))
     return true;
-  return approvedUtilityTupleRecordImpl(S, SM, Record, Context, Depth, false)
+  return approvedUtilityTupleRecordImpl(S, SM, Record, Context, Depth, false,
+                                        false)
       .has_value();
 }
 
@@ -3128,7 +3130,8 @@ static bool utilityTupleAssignableValue(const State &S, const SourceManager &SM,
     return Definition && Definition->hasTrivialCopyAssignment();
   }
   const auto Tuple =
-      approvedUtilityTupleRecordImpl(S, SM, Record, Context, Depth, false);
+      approvedUtilityTupleRecordImpl(S, SM, Record, Context, Depth, false,
+                                     false);
   if (!Tuple)
     return false;
   for (const auto *Element : Tuple->Elements)
@@ -3174,7 +3177,8 @@ static std::optional<UtilityTupleRecord>
 approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
                                const CXXRecordDecl *Record,
                                const ASTContext &Context, unsigned Depth,
-                               bool RequireReferenceElements) {
+                               bool RequireReferenceElements,
+                               bool RequireMixedReferenceElements) {
   if (Depth > 64)
     return std::nullopt;
   const auto *Specialization =
@@ -3199,18 +3203,24 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
       !approvedStandardSDKDeclaration(S, SM, Specialization) ||
       !cstddefOrigin(S, SM, Specialization->getLocation(), "libcxx", "tuple"))
     return std::nullopt;
+  unsigned ReferenceElements = 0;
   for (QualType Type : *Types) {
-    if (RequireReferenceElements) {
-      if (!Type->isReferenceType() ||
+    if (Type->isReferenceType()) {
+      ++ReferenceElements;
+      if ((!RequireReferenceElements && !RequireMixedReferenceElements) ||
           !supportedFunctionalReferenceValue(S, SM, Context,
                                              Type->getPointeeType()))
         return std::nullopt;
-    } else if (!utilityTupleValue(S, SM, Context, Type, Depth + 1) ||
+    } else if (RequireReferenceElements ||
+               !utilityTupleValue(S, SM, Context, Type, Depth + 1) ||
                Type.isVolatileQualified() || Type.isRestrictQualified() ||
                Type.getAddressSpace() != LangAS::Default) {
       return std::nullopt;
     }
   }
+  if (RequireMixedReferenceElements &&
+      (!ReferenceElements || ReferenceElements == Types->size()))
+    return std::nullopt;
 
   if (Empty) {
     const auto &Layout = Context.getASTRecordLayout(Specialization);
@@ -3307,7 +3317,7 @@ approvedUtilityTupleRecordImpl(const State &S, const SourceManager &SM,
     // classification. The concrete field, size, alignment and offset checks
     // below still authenticate that leaf.
     if (!LeafSpecialization->isStandardLayout() &&
-        !RequireReferenceElements &&
+        !RequireReferenceElements && !RequireMixedReferenceElements &&
         !approvedUtilityTupleMetadata(S, SM, ElementRecord))
       return std::nullopt;
     auto LeafFields = LeafSpecialization->fields();
@@ -3353,14 +3363,22 @@ std::optional<UtilityTupleRecord>
 approvedUtilityTupleRecord(const State &S, const SourceManager &SM,
                            const CXXRecordDecl *Record,
                            const ASTContext &Context) {
-  return approvedUtilityTupleRecordImpl(S, SM, Record, Context, 0, false);
+  return approvedUtilityTupleRecordImpl(S, SM, Record, Context, 0, false,
+                                        false);
 }
 
 std::optional<UtilityTupleRecord>
 approvedUtilityReferenceTupleRecord(const State &S, const SourceManager &SM,
                                     const CXXRecordDecl *Record,
                                     const ASTContext &Context) {
-  return approvedUtilityTupleRecordImpl(S, SM, Record, Context, 0, true);
+  return approvedUtilityTupleRecordImpl(S, SM, Record, Context, 0, true,
+                                        false);
+}
+
+std::optional<UtilityTupleRecord> approvedUtilityMixedReferenceTupleRecord(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
+    const ASTContext &Context) {
+  return approvedUtilityTupleRecordImpl(S, SM, Record, Context, 0, false, true);
 }
 
 std::optional<UtilityTupleConstruction>
@@ -12103,18 +12121,30 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (Origin->Path == "tuple" && Name == "make_tuple" && Call->isPRValue() &&
       !Function->getReturnType()->isReferenceType() &&
       Same(Call->getType(), Function->getReturnType())) {
-    const auto Tuple = TupleFor(Call->getType());
+    auto Tuple = TupleFor(Call->getType());
+    if (!Tuple)
+      Tuple = approvedUtilityMixedReferenceTupleRecord(
+          S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
     if (!Tuple || Call->getNumArgs() != Tuple->Elements.size())
       return std::nullopt;
     for (unsigned I = 0; I < Call->getNumArgs(); ++I) {
       auto Parameter = Function->getParamDecl(I)->getType();
       if (!Parameter->isReferenceType() ||
           !Context.hasSameUnqualifiedType(Call->getArg(I)->getType(),
-                                          Parameter->getPointeeType()) ||
-          !utilityTupleDirectConversion(S, SM, Context,
-                                        Call->getArg(I)->getType(),
-                                        Tuple->Elements[I]->getType()))
+                                          Parameter->getPointeeType()))
         return std::nullopt;
+      const auto Element = Tuple->Elements[I]->getType();
+      if (Element->isReferenceType()) {
+        const auto Wrapper = approvedFunctionalReferenceRecord(
+            S, SM, Call->getArg(I)->getType()->getAsCXXRecordDecl(), Context);
+        if (!Wrapper || !Element->isLValueReferenceType() ||
+            !Context.hasSameType(Wrapper->ReferentType,
+                                 Element->getPointeeType()))
+          return std::nullopt;
+      } else if (!utilityTupleDirectConversion(
+                     S, SM, Context, Call->getArg(I)->getType(), Element)) {
+        return std::nullopt;
+      }
     }
     return UtilityOperation::MakeTuple;
   }
@@ -12657,9 +12687,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto *Arguments = Function->getTemplateSpecializationArgs();
     auto Parameter = Function->getParamDecl(0)->getType();
     auto Result = Function->getReturnType();
-    const auto Tuple =
+    auto Tuple =
         TupleFor(Parameter->isReferenceType() ? Parameter->getPointeeType()
                                               : QualType());
+    if (!Tuple && Parameter->isReferenceType())
+      Tuple = approvedUtilityMixedReferenceTupleRecord(
+          S, SM, Parameter->getPointeeType()->getAsCXXRecordDecl(), Context);
     if (!Arguments || Arguments->size() != 2 ||
         Arguments->get(1).getKind() != TemplateArgument::Pack ||
         !Parameter->isReferenceType() || !Result->isReferenceType() || !Tuple ||

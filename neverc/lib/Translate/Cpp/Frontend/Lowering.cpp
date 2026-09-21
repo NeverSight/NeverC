@@ -6803,6 +6803,9 @@ class FunctionLowering {
     case UtilityOperation::MakeTuple: {
       auto Tuple = TupleFor(Call->getType());
       if (!Tuple)
+        Tuple = approvedUtilityMixedReferenceTupleRecord(
+            A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+      if (!Tuple)
         reject(L, "utility make_tuple",
                "The selected std::tuple layout is unavailable.");
       auto Place = Destination ? std::move(*Destination)
@@ -6813,9 +6816,24 @@ class FunctionLowering {
       if (Call->getNumArgs() != Tuple->Elements.size())
         reject(L, "utility make_tuple",
                "The std::make_tuple element count differs from its result.");
-      for (unsigned I = 0; I < Tuple->Elements.size(); ++I)
-        initialize(fieldStorage(json::Object(Place), Tuple->Elements[I], L),
-                   Call->getArg(I), L);
+      for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
+        const auto *Field = Tuple->Elements[I];
+        if (!Field->getType()->isReferenceType()) {
+          initialize(fieldStorage(json::Object(Place), Field, L),
+                     Call->getArg(I), L);
+          continue;
+        }
+        const auto Wrapper = approvedFunctionalReferenceRecord(
+            A.S, A.Sources,
+            Call->getArg(I)->getType()->getAsCXXRecordDecl(), A.Context);
+        if (!Wrapper)
+          reject(L, "utility make_tuple",
+                 "A reference tuple requires checked reference wrappers.");
+        auto Value = expression(Call->getArg(I));
+        auto Pointer = ReferenceMember(std::move(Value), *Wrapper);
+        assign(fieldStorage(json::Object(Place), Field, L),
+               cast(std::move(Pointer), type(Field->getType(), L), L), L);
+      }
       return Place;
     }
     case UtilityOperation::Tie:
@@ -7324,6 +7342,10 @@ class FunctionLowering {
     }
     case UtilityOperation::TupleGet: {
       auto Tuple = TupleFor(Call->getArg(0)->getType());
+      if (!Tuple)
+        Tuple = approvedUtilityMixedReferenceTupleRecord(
+            A.S, A.Sources,
+            Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
       const auto *Function = Call->getDirectCallee();
       const auto *Arguments =
           Function ? Function->getTemplateSpecializationArgs() : nullptr;

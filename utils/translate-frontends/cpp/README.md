@@ -239,7 +239,9 @@ swaps, recursive same-length
 heterogeneous lexicographic comparisons and index or unique-type access. Exact
 `tie` and `forward_as_tuple` construct authenticated reference tuples; their
 `get` and `apply` operations recover the referents, preserve value categories
-and retain writes to the bound objects. Exact direct element construction and
+and retain writes to the bound objects. `make_tuple` unwraps authenticated
+`ref`/`cref` arguments, including mixed reference/value results with index- or
+unique-type `get`; other mixed-tuple operations remain excluded. Exact direct element construction and
 same-type copy/move construction preserve those bindings; same-type assignment
 writes values through the destination bindings without rebinding them.
 Compatible converting construction binds source tuple elements, while

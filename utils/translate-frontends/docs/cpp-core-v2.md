@@ -274,6 +274,13 @@ unique-type `std::get` use the same authenticated records. `get` preserves
 const and lvalue/rvalue reference categories; type selection requires exactly
 one matching element, as in C++17.
 
+Exact `std::make_tuple` also unwraps authenticated `ref`/`cref` arguments. A
+result containing both reference and admitted value elements retains reference
+bindings and ordinary value storage in the same authenticated tuple layout.
+Index- and unique-type `get` recover either kind of element. Other construction,
+assignment, comparison, swap and `apply` operations for these mixed tuples
+remain outside this increment.
+
 Exact `std::tie` calls construct an authenticated tuple whose elements are
 lvalue references to supported scalar, array or source-owned record objects.
 Each argument is evaluated once, and each tuple field stores the bound address.

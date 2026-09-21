@@ -949,6 +949,7 @@ extern "C" int tuple_forward(int value) {
     tuple_reference_construction_source = """\
 #include <tuple>
 #include <utility>
+#include <functional>
 extern "C" int tuple_reference_construction(int value) {
   int other = value + 1;
   std::tuple<int &, int &> direct(value, other);
@@ -980,8 +981,11 @@ extern "C" int tuple_reference_construction(int value) {
   std::swap(swap_left, swap_right);
   std::tuple<int &&> rvalue(static_cast<int &&>(other));
   std::get<0>(rvalue) += 3;
+  auto mixed_factory = std::make_tuple(std::ref(value), long(other));
+  std::get<0>(mixed_factory) += 1;
+  std::get<long>(mixed_factory) += 1;
   return value + other + std::get<0>(view) + int(converted) +
-         std::get<0>(pair_view);
+         std::get<0>(pair_view) + int(std::get<1>(mixed_factory));
 }
 """
     tuple_reference_construction = check(

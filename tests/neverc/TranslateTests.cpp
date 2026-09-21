@@ -23889,6 +23889,48 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2MixedReferenceTupleFactoryRunsAtBothOptimizations) {
+  const auto Source = tmpFile("tuple-mixed-reference-factory.cpp");
+  const auto Output = tmpFile("tuple-mixed-reference-factory.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <tuple>
+int main() {
+  int number = 1;
+  long other = 2;
+  auto mixed = std::make_tuple(std::ref(number), 3L);
+  std::get<0>(mixed) = 4;
+  std::get<long>(mixed) = 5;
+  if (&std::get<int &>(mixed) != &number || number != 4 ||
+      std::get<1>(mixed) != 5)
+    return 1;
+  auto reversed = std::make_tuple(6L, std::ref(number));
+  std::get<0>(reversed) = 7;
+  std::get<1>(reversed) = 8;
+  if (std::get<long>(reversed) != 7 || &std::get<int &>(reversed) != &number)
+    return 2;
+  auto references = std::make_tuple(std::ref(number), std::ref(other));
+  std::get<0>(references) = 9;
+  std::get<1>(references) = 10;
+  return number == 9 && other == 10 ? 0 : 3;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("tuple-mixed-reference-factory" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ReferenceTupleAssignmentRunsAtBothOptimizations) {
   const auto Source = tmpFile("tuple-reference-assignment.cpp");
   const auto Output = tmpFile("tuple-reference-assignment.nc");
