@@ -3280,7 +3280,7 @@ approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
     return UtilityTupleConstruction::Converting;
   }
   const auto SourcePair =
-      !ReferenceTuple && Construction->getNumArgs() == 1
+      Construction->getNumArgs() == 1
           ? approvedUtilityPairRecord(
                 S, SM, Construction->getArg(0)->getType()->getAsCXXRecordDecl(),
                 Context)
@@ -3294,14 +3294,31 @@ approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
         Parameter->getPointeeType().isVolatileQualified() ||
         !Context.hasSameUnqualifiedType(
             Parameter->getPointeeType(),
-            Context.getRecordType(SourcePair->Record)) ||
-        !utilityTupleDirectConversion(S, SM, Context,
-                                      SourcePair->First->getType(),
-                                      Tuple->Elements[0]->getType()) ||
-        !utilityTupleDirectConversion(S, SM, Context,
-                                      SourcePair->Second->getType(),
-                                      Tuple->Elements[1]->getType()))
+            Context.getRecordType(SourcePair->Record)))
       return std::nullopt;
+    for (unsigned I = 0; I != 2; ++I) {
+      const auto SourceElement =
+          I ? SourcePair->Second->getType() : SourcePair->First->getType();
+      const auto Destination = Tuple->Elements[I]->getType();
+      if (ReferenceTuple) {
+        auto SourceValue = SourceElement;
+        if (Parameter->getPointeeType().isConstQualified())
+          SourceValue = SourceValue.withConst();
+        const bool SourceRValue = Parameter->isRValueReferenceType();
+        if (!Destination->isReferenceType() ||
+            !Context.hasSameUnqualifiedType(Destination->getPointeeType(),
+                                            SourceValue) ||
+            !Destination->getPointeeType().isAtLeastAsQualifiedAs(SourceValue,
+                                                                  Context) ||
+            (Destination->isRValueReferenceType() && !SourceRValue) ||
+            (Destination->isLValueReferenceType() &&
+             !Destination->getPointeeType().isConstQualified() &&
+             SourceRValue))
+          return std::nullopt;
+      } else if (!utilityTupleDirectConversion(S, SM, Context, SourceElement,
+                                               Destination))
+        return std::nullopt;
+    }
     return UtilityTupleConstruction::Pair;
   }
   if (!Primary || Construction->getNumArgs() != Tuple->Elements.size() ||
@@ -3433,14 +3450,19 @@ approvedUtilityTupleAssignment(const State &S, const SourceManager &SM,
           Parameter->getPointeeType(),
           Context.getRecordType(SourcePair->Record)) ||
       !approvedStandardSDKDeclaration(S, SM, Primary) ||
-      !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "tuple") ||
-      !utilityTupleDirectConversion(S, SM, Context,
-                                    SourcePair->First->getType(),
-                                    Tuple->Elements[0]->getType()) ||
-      !utilityTupleDirectConversion(S, SM, Context,
-                                    SourcePair->Second->getType(),
-                                    Tuple->Elements[1]->getType()))
+      !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "tuple"))
     return std::nullopt;
+  for (unsigned I = 0; I != 2; ++I) {
+    const auto SourceElement =
+        I ? SourcePair->Second->getType() : SourcePair->First->getType();
+    const auto DestinationElement = Tuple->Elements[I]->getType();
+    const auto DestinationValue = ReferenceTuple
+                                      ? DestinationElement->getPointeeType()
+                                      : DestinationElement;
+    if (!utilityTupleDirectConversion(S, SM, Context, SourceElement,
+                                      DestinationValue))
+      return std::nullopt;
+  }
   return UtilityTupleAssignment::Pair;
 }
 

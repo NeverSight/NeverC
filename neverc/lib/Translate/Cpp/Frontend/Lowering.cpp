@@ -8316,9 +8316,6 @@ class FunctionLowering {
           return Left;
         }
         case UtilityTupleAssignment::Pair: {
-          auto DestinationTuple = approvedUtilityTupleRecord(
-              A.S, A.Sources, Call->getArg(0)->getType()->getAsCXXRecordDecl(),
-              A.Context);
           auto SourcePair = approvedUtilityPairRecord(
               A.S, A.Sources, Call->getArg(1)->getType()->getAsCXXRecordDecl(),
               A.Context);
@@ -8332,12 +8329,16 @@ class FunctionLowering {
             auto Destination = fieldStorage(json::Object(Left),
                                             DestinationTuple->Elements[I], L);
             auto Value = fieldStorage(json::Object(Right), SourceField, L);
-            if (recordValue(DestinationTuple->Elements[I]->getType()))
+            auto DestinationType = DestinationTuple->Elements[I]->getType();
+            if (ReferenceTuple) {
+              Destination = dereference(std::move(Destination), L);
+              DestinationType = DestinationType->getPointeeType();
+            }
+            if (recordValue(DestinationType))
               assign(std::move(Destination), std::move(Value), L);
             else
               assign(std::move(Destination),
-                     cast(std::move(Value),
-                          type(DestinationTuple->Elements[I]->getType(), L), L),
+                     cast(std::move(Value), type(DestinationType, L), L),
                      L);
           }
           return Left;
@@ -10108,6 +10109,29 @@ class FunctionLowering {
         if (!SourcePair || Tuple->Elements.size() != 2)
           reject(L, "utility tuple construction",
                  "The source std::pair layout is unavailable.");
+        if (ReferenceTuple) {
+          auto SourceAddress = snapshot(
+              address(lvalue(C->getArg(0)), C->getArg(0)->getType(), L), L);
+          auto Source = dereference(std::move(SourceAddress), L);
+          const auto SourceParameter =
+              C->getConstructor()->getParamDecl(0)->getType();
+          for (unsigned I = 0; I != 2; ++I) {
+            const auto *SourceField =
+                I ? SourcePair->Second : SourcePair->First;
+            auto SourceType = SourceField->getType();
+            if (SourceParameter->isReferenceType() &&
+                SourceParameter->getPointeeType().isConstQualified())
+              SourceType = SourceType.withConst();
+            auto Value = address(
+                fieldStorage(json::Object(Source), SourceField, L), SourceType,
+                L);
+            assign(Member(Tuple->Elements[I]),
+                   cast(std::move(Value),
+                        type(Tuple->Elements[I]->getType(), L), L),
+                   L);
+          }
+          return;
+        }
         auto Source = snapshot(expression(C->getArg(0)), L);
         for (unsigned I = 0; I != 2; ++I) {
           const auto *SourceField = I ? SourcePair->Second : SourcePair->First;

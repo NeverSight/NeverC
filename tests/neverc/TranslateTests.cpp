@@ -24067,6 +24067,60 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2ReferenceTuplePairConversionsRunAtBothOptimizations) {
+  const auto Source = tmpFile("tuple-reference-pair-conversions.cpp");
+  const auto Output = tmpFile("tuple-reference-pair-conversions.nc");
+  writeFile(Source, R"cpp(
+#include <tuple>
+#include <utility>
+int main() {
+  std::pair<int, double> values(3, 4.5);
+  std::tuple<const int &, const double &> view(values);
+  values.first = 5;
+  values.second = 6.5;
+  if (std::get<0>(view) != 5 || std::get<1>(view) != 6.5 ||
+      &std::get<0>(view) != &values.first ||
+      &std::get<1>(view) != &values.second)
+    return 1;
+
+  std::tuple<int &&, double &&> moved_view(
+      static_cast<std::pair<int, double> &&>(values));
+  std::get<0>(moved_view) = 7;
+  if (values.first != 7 || &std::get<1>(moved_view) != &values.second)
+    return 2;
+
+  long destination_first = 0;
+  double destination_second = 0.0;
+  std::tuple<long &, double &> destination(destination_first,
+                                            destination_second);
+  std::pair<short, float> source(short(11), 12.5f);
+  destination = source;
+  if (destination_first != 11 || destination_second != 12.5 ||
+      &std::get<0>(destination) != &destination_first)
+    return 3;
+  destination = std::pair<int, float>(13, 14.5f);
+  return destination_first == 13 && destination_second == 14.5 ? 0 : 4;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("__memberwise_copy_assign"), std::string::npos);
+  EXPECT_EQ(Text.find("__memberwise_forward_assign"), std::string::npos);
+  EXPECT_EQ(Text.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("tuple-reference-pair-conversions" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2TupleApplyCallableObjectsRunAtBothOptimizations) {
   const auto Source = tmpFile("tuple-apply-callable-objects.cpp");
   const auto Output = tmpFile("tuple-apply-callable-objects.nc");

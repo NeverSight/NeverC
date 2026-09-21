@@ -228,7 +228,9 @@ writes values through the destination bindings without rebinding them.
 Compatible converting construction binds source tuple elements, while
 heterogeneous scalar assignment converts values before writing through.
 Recursive comparisons operate on referent values and retain the value tuple
-short-circuit and lexicographic rules. Exact
+short-circuit and lexicographic rules. Conversions from admitted value pairs
+either bind their fields during construction or assign through destination
+references. Exact
 `apply` lowers named functions, stored function pointers, exact source-owned
 function objects, authenticated standard scalar function objects, or exact
 `reference_wrapper` forms around those callables, exact direct or stored source

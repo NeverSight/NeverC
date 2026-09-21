@@ -275,7 +275,10 @@ tuple field. Heterogeneous assignment admits the documented scalar conversion
 boundary and writes converted source element values through destination
 references. All six tuple comparisons dereference reference fields before
 applying the existing recursive equality or lexicographic comparison, including
-heterogeneous scalar leaves and mixed reference/value tuple operands.
+heterogeneous scalar leaves and mixed reference/value tuple operands. Pair
+conversion follows the same split: construction binds compatible value-pair
+fields with checked cv and value categories, while assignment converts field
+values and writes through the existing destination bindings.
 
 Exact `std::apply` calls over an authenticated empty or nonempty tuple lower to
 one ordinary callback call. The callable may be a named function, a stored
