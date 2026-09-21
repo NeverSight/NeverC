@@ -477,6 +477,10 @@ extern "C" int pair_reference(int value) {
   std::get<0>(mixed_direct) += 1;
   std::get<long>(mixed_direct) += 1;
   const auto mixed_copy(mixed_direct);
+  std::tuple<short, double> mixed_values(short(source_first), 7.0);
+  mixed_direct = mixed_values;
+  std::pair<short, long> mixed_pair(short(source_second), 8L);
+  mixed_direct = mixed_pair;
   std::pair<short, double> mixed_values(short(source_value), 2.0);
   mixed_direct = mixed_values;
   std::pair<long, int &> mixed_reverse(long(value), box.value);

@@ -8458,34 +8458,49 @@ class FunctionLowering {
         auto DestinationTuple = approvedUtilityTupleRecord(
             A.S, A.Sources, Call->getArg(0)->getType()->getAsCXXRecordDecl(),
             A.Context);
-        bool ReferenceTuple = false;
-        if (!DestinationTuple) {
+        if (!DestinationTuple)
           DestinationTuple = approvedUtilityReferenceTupleRecord(
               A.S, A.Sources,
               Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
-          ReferenceTuple = DestinationTuple.has_value();
-        }
+        if (!DestinationTuple)
+          DestinationTuple = approvedUtilityMixedReferenceTupleRecord(
+              A.S, A.Sources,
+              Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
+        bool DestinationHasReference = false;
+        if (DestinationTuple)
+          for (const auto *Element : DestinationTuple->Elements)
+            DestinationHasReference |= Element->getType()->isReferenceType();
         switch (*Assignment) {
         case UtilityTupleAssignment::CopyOrMove: {
-          if (!ReferenceTuple) {
+          if (!DestinationHasReference) {
             assign(Left, std::move(Right), L);
             return Left;
           }
-          auto SourceTuple = approvedUtilityReferenceTupleRecord(
-              A.S, A.Sources,
-              Call->getArg(1)->getType()->getAsCXXRecordDecl(), A.Context);
+          auto SourceTuple = approvedUtilityTupleRecord(
+              A.S, A.Sources, Call->getArg(1)->getType()->getAsCXXRecordDecl(),
+              A.Context);
+          if (!SourceTuple)
+            SourceTuple = approvedUtilityReferenceTupleRecord(
+                A.S, A.Sources,
+                Call->getArg(1)->getType()->getAsCXXRecordDecl(), A.Context);
+          if (!SourceTuple)
+            SourceTuple = approvedUtilityMixedReferenceTupleRecord(
+                A.S, A.Sources,
+                Call->getArg(1)->getType()->getAsCXXRecordDecl(), A.Context);
           if (!DestinationTuple || !SourceTuple ||
               DestinationTuple->Elements.size() != SourceTuple->Elements.size())
             reject(L, "utility tuple assignment",
                    "A selected reference std::tuple layout is unavailable.");
           for (unsigned I = 0; I < DestinationTuple->Elements.size(); ++I) {
-            auto Destination = dereference(
-                fieldStorage(json::Object(Left),
-                             DestinationTuple->Elements[I], L),
-                L);
-            auto Value = dereference(
-                fieldStorage(json::Object(Right), SourceTuple->Elements[I], L),
-                L);
+            const auto *DestinationElement = DestinationTuple->Elements[I];
+            const auto *SourceElement = SourceTuple->Elements[I];
+            auto Destination =
+                fieldStorage(json::Object(Left), DestinationElement, L);
+            auto Value = fieldStorage(json::Object(Right), SourceElement, L);
+            if (DestinationElement->getType()->isReferenceType())
+              Destination = dereference(std::move(Destination), L);
+            if (SourceElement->getType()->isReferenceType())
+              Value = dereference(std::move(Value), L);
             assign(std::move(Destination), std::move(Value), L);
           }
           return Left;
@@ -8494,13 +8509,14 @@ class FunctionLowering {
           auto SourceTuple = approvedUtilityTupleRecord(
               A.S, A.Sources, Call->getArg(1)->getType()->getAsCXXRecordDecl(),
               A.Context);
-          bool SourceReferenceTuple = false;
-          if (ReferenceTuple && !SourceTuple) {
+          if (DestinationHasReference && !SourceTuple)
             SourceTuple = approvedUtilityReferenceTupleRecord(
                 A.S, A.Sources,
                 Call->getArg(1)->getType()->getAsCXXRecordDecl(), A.Context);
-            SourceReferenceTuple = SourceTuple.has_value();
-          }
+          if (DestinationHasReference && !SourceTuple)
+            SourceTuple = approvedUtilityMixedReferenceTupleRecord(
+                A.S, A.Sources,
+                Call->getArg(1)->getType()->getAsCXXRecordDecl(), A.Context);
           if (!DestinationTuple || !SourceTuple ||
               DestinationTuple->Elements.size() != SourceTuple->Elements.size())
             reject(L, "utility tuple assignment",
@@ -8511,12 +8527,12 @@ class FunctionLowering {
             auto Value =
                 fieldStorage(json::Object(Right), SourceTuple->Elements[I], L);
             auto DestinationType = DestinationTuple->Elements[I]->getType();
-            if (ReferenceTuple) {
+            if (DestinationTuple->Elements[I]->getType()->isReferenceType()) {
               Destination = dereference(std::move(Destination), L);
-              if (SourceReferenceTuple)
-                Value = dereference(std::move(Value), L);
               DestinationType = DestinationType->getPointeeType();
             }
+            if (SourceTuple->Elements[I]->getType()->isReferenceType())
+              Value = dereference(std::move(Value), L);
             if (recordValue(DestinationType))
               assign(std::move(Destination), std::move(Value), L);
             else
@@ -8530,6 +8546,14 @@ class FunctionLowering {
           auto SourcePair = approvedUtilityPairRecord(
               A.S, A.Sources, Call->getArg(1)->getType()->getAsCXXRecordDecl(),
               A.Context);
+          if (DestinationHasReference && !SourcePair)
+            SourcePair = approvedUtilityReferencePairRecord(
+                A.S, A.Sources,
+                Call->getArg(1)->getType()->getAsCXXRecordDecl(), A.Context);
+          if (DestinationHasReference && !SourcePair)
+            SourcePair = approvedUtilityMixedReferencePairRecord(
+                A.S, A.Sources,
+                Call->getArg(1)->getType()->getAsCXXRecordDecl(), A.Context);
           if (!DestinationTuple || DestinationTuple->Elements.size() != 2 ||
               !SourcePair)
             reject(L, "utility tuple assignment",
@@ -8541,10 +8565,12 @@ class FunctionLowering {
                                             DestinationTuple->Elements[I], L);
             auto Value = fieldStorage(json::Object(Right), SourceField, L);
             auto DestinationType = DestinationTuple->Elements[I]->getType();
-            if (ReferenceTuple) {
+            if (DestinationTuple->Elements[I]->getType()->isReferenceType()) {
               Destination = dereference(std::move(Destination), L);
               DestinationType = DestinationType->getPointeeType();
             }
+            if (SourceField->getType()->isReferenceType())
+              Value = dereference(std::move(Value), L);
             if (recordValue(DestinationType))
               assign(std::move(Destination), std::move(Value), L);
             else

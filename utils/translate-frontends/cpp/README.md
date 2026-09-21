@@ -242,8 +242,9 @@ heterogeneous lexicographic comparisons and index or unique-type access. Exact
 and retain writes to the bound objects. `make_tuple` unwraps authenticated
 `ref`/`cref` arguments, including mixed reference/value results with index- or
 unique-type `get`. Mixed tuples also admit exact compatible direct and same-type
-copy/move construction; assignment, converting construction, comparison, swap
-and `apply` remain excluded. Exact direct element construction and
+copy/move construction plus same-type or compatible heterogeneous assignment
+from tuples and pairs. Converting construction, comparison, swap and `apply`
+remain excluded. Exact direct element construction and
 same-type copy/move construction preserve those bindings; same-type assignment
 writes values through the destination bindings without rebinding them.
 Compatible converting construction binds source tuple elements, while

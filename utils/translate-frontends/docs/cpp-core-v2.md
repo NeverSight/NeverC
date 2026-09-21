@@ -279,8 +279,10 @@ result containing both reference and admitted value elements retains reference
 bindings and ordinary value storage in the same authenticated tuple layout.
 Exact compatible direct construction and same-type trivial copy/move
 construction preserve that split, and index- or unique-type `get` recover either
-kind of element. Assignment, converting construction, comparison, swap and
-`apply` operations for these mixed tuples remain outside this increment.
+kind of element. Same-type and compatible heterogeneous assignment from tuples
+or pairs writes through reference fields and assigns value fields in element
+order. Converting construction, comparison, swap and `apply` operations for
+these mixed tuples remain outside this increment.
 
 Exact `std::tie` calls construct an authenticated tuple whose elements are
 lvalue references to supported scalar, array or source-owned record objects.

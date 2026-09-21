@@ -23977,6 +23977,63 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2MixedReferenceTupleAssignmentRunsAtBothOptimizations) {
+  const auto Source = tmpFile("tuple-mixed-reference-assignment.cpp");
+  const auto Output = tmpFile("tuple-mixed-reference-assignment.nc");
+  writeFile(Source, R"cpp(
+#include <tuple>
+#include <utility>
+int main() {
+  int destination_number = 1;
+  int source_number = 2;
+  std::tuple<int &, long> destination(destination_number, 3L);
+  std::tuple<int &, long> source(source_number, 4L);
+  auto &result = (destination = source);
+  if (&result != &destination || destination_number != 2 ||
+      std::get<1>(destination) != 4 ||
+      &std::get<0>(destination) != &destination_number ||
+      &std::get<0>(source) != &source_number)
+    return 1;
+  source_number = 5;
+  std::get<1>(source) = 6;
+  destination = static_cast<std::tuple<int &, long> &&>(source);
+  if (destination_number != 5 || std::get<1>(destination) != 6)
+    return 2;
+  std::tuple<short, double> converted(short(7), 8.0);
+  destination = converted;
+  if (destination_number != 7 || std::get<1>(destination) != 8)
+    return 3;
+  int reversed_number = 9;
+  std::tuple<long, int &> reversed(10L, reversed_number);
+  std::pair<short, int> reversed_source(short(11), 12);
+  reversed = reversed_source;
+  if (std::get<0>(reversed) != 11 || reversed_number != 12 ||
+      &std::get<1>(reversed) != &reversed_number)
+    return 4;
+  int ordered_number = 13;
+  std::tuple<int, int &> ordered(14, ordered_number);
+  std::tuple<int, int &> ordered_source(15, std::get<0>(ordered));
+  ordered = ordered_source;
+  return std::get<0>(ordered) == 15 && ordered_number == 15 ? 0 : 5;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("tuple-mixed-reference-assignment" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ReferenceTupleAssignmentRunsAtBothOptimizations) {
   const auto Source = tmpFile("tuple-reference-assignment.cpp");
   const auto Output = tmpFile("tuple-reference-assignment.nc");

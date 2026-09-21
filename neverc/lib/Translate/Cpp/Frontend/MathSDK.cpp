@@ -3576,6 +3576,12 @@ approvedUtilityTupleAssignment(const State &S, const SourceManager &SM,
         S, SM, Method ? Method->getParent() : nullptr, Context);
     ReferenceTuple = Tuple.has_value();
   }
+  bool MixedReferenceTuple = false;
+  if (!Tuple) {
+    Tuple = approvedUtilityMixedReferenceTupleRecord(
+        S, SM, Method ? Method->getParent() : nullptr, Context);
+    MixedReferenceTuple = Tuple.has_value();
+  }
   const bool EmptyDefaultedAssignment = !ReferenceTuple && Tuple &&
                                         Tuple->Elements.empty() &&
                                         Method && Method->isTrivial() &&
@@ -3589,7 +3595,7 @@ approvedUtilityTupleAssignment(const State &S, const SourceManager &SM,
     return std::nullopt;
   for (const auto *Element : Tuple->Elements) {
     const auto ElementType = Element->getType();
-    const auto AssignedType = ReferenceTuple && ElementType->isReferenceType()
+    const auto AssignedType = ElementType->isReferenceType()
                                   ? ElementType->getPointeeType()
                                   : ElementType;
     if (!utilityTupleAssignableValue(S, SM, Context, AssignedType))
@@ -3608,16 +3614,12 @@ approvedUtilityTupleAssignment(const State &S, const SourceManager &SM,
     return std::nullopt;
   auto SourceTuple = approvedUtilityTupleRecord(
       S, SM, Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
-  bool SourceReferenceTuple = false;
-  if (ReferenceTuple && !SourceTuple)
+  if ((ReferenceTuple || MixedReferenceTuple) && !SourceTuple)
     SourceTuple = approvedUtilityReferenceTupleRecord(
         S, SM, Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
-  if (ReferenceTuple && SourceTuple)
-    SourceReferenceTuple =
-        approvedUtilityReferenceTupleRecord(
-            S, SM,
-            Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context)
-            .has_value();
+  if ((ReferenceTuple || MixedReferenceTuple) && !SourceTuple)
+    SourceTuple = approvedUtilityMixedReferenceTupleRecord(
+        S, SM, Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
   const auto *Primary = Method->getPrimaryTemplate();
   if (SourceTuple) {
     if (!Context.hasSameUnqualifiedType(
@@ -3634,10 +3636,10 @@ approvedUtilityTupleAssignment(const State &S, const SourceManager &SM,
     for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
       const auto SourceElement = SourceTuple->Elements[I]->getType();
       const auto DestinationElement = Tuple->Elements[I]->getType();
-      const auto SourceValue = ReferenceTuple && SourceReferenceTuple
+      const auto SourceValue = SourceElement->isReferenceType()
                                    ? SourceElement->getPointeeType()
                                    : SourceElement;
-      const auto DestinationValue = ReferenceTuple
+      const auto DestinationValue = DestinationElement->isReferenceType()
                                         ? DestinationElement->getPointeeType()
                                         : DestinationElement;
       if (!utilityTupleDirectConversion(S, SM, Context, SourceValue,
@@ -3646,8 +3648,14 @@ approvedUtilityTupleAssignment(const State &S, const SourceManager &SM,
     }
     return UtilityTupleAssignment::Converting;
   }
-  const auto SourcePair = approvedUtilityPairRecord(
+  auto SourcePair = approvedUtilityPairRecord(
       S, SM, Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
+  if ((ReferenceTuple || MixedReferenceTuple) && !SourcePair)
+    SourcePair = approvedUtilityReferencePairRecord(
+        S, SM, Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
+  if ((ReferenceTuple || MixedReferenceTuple) && !SourcePair)
+    SourcePair = approvedUtilityMixedReferencePairRecord(
+        S, SM, Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
   if (!SourcePair || Tuple->Elements.size() != 2 || !Primary ||
       !Context.hasSameUnqualifiedType(
           Parameter->getPointeeType(),
@@ -3659,10 +3667,13 @@ approvedUtilityTupleAssignment(const State &S, const SourceManager &SM,
     const auto SourceElement =
         I ? SourcePair->Second->getType() : SourcePair->First->getType();
     const auto DestinationElement = Tuple->Elements[I]->getType();
-    const auto DestinationValue = ReferenceTuple
+    const auto SourceValue = SourceElement->isReferenceType()
+                                 ? SourceElement->getPointeeType()
+                                 : SourceElement;
+    const auto DestinationValue = DestinationElement->isReferenceType()
                                       ? DestinationElement->getPointeeType()
                                       : DestinationElement;
-    if (!utilityTupleDirectConversion(S, SM, Context, SourceElement,
+    if (!utilityTupleDirectConversion(S, SM, Context, SourceValue,
                                       DestinationValue))
       return std::nullopt;
   }
