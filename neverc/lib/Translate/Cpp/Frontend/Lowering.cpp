@@ -1579,6 +1579,14 @@ class FunctionLowering {
         RightPair = approvedUtilityReferencePairRecord(
             A.S, A.Sources,
             RightType.getUnqualifiedType()->getAsCXXRecordDecl(), A.Context);
+      if (!LeftPair)
+        LeftPair = approvedUtilityMixedReferencePairRecord(
+            A.S, A.Sources,
+            LeftType.getUnqualifiedType()->getAsCXXRecordDecl(), A.Context);
+      if (!RightPair)
+        RightPair = approvedUtilityMixedReferencePairRecord(
+            A.S, A.Sources,
+            RightType.getUnqualifiedType()->getAsCXXRecordDecl(), A.Context);
       if (LeftPair || RightPair) {
         if (!LeftPair || !RightPair)
           return false;
@@ -7374,6 +7382,14 @@ class FunctionLowering {
             Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
       if (!RightPair)
         RightPair = approvedUtilityReferencePairRecord(
+            A.S, A.Sources,
+            Call->getArg(1)->getType()->getAsCXXRecordDecl(), A.Context);
+      if (!LeftPair)
+        LeftPair = approvedUtilityMixedReferencePairRecord(
+            A.S, A.Sources,
+            Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
+      if (!RightPair)
+        RightPair = approvedUtilityMixedReferencePairRecord(
             A.S, A.Sources,
             Call->getArg(1)->getType()->getAsCXXRecordDecl(), A.Context);
       if (!LeftPair || !RightPair)

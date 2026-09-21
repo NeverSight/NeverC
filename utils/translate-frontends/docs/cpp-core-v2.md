@@ -219,8 +219,9 @@ construction, same-type trivial copy/move construction and index- or
 unique-type `get`; reference fields retain their bindings while value fields
 retain ordinary pair value semantics. Same-type and compatible heterogeneous
 assignment preserve that split, writing through reference fields and assigning
-value fields in field order. Comparison, swap and converting construction for
-mixed pairs remain outside this increment.
+value fields in field order. All six comparisons read reference and value fields
+through the existing recursive heterogeneous comparison rules. Swap and
+converting construction for mixed pairs remain outside this increment.
 
 All six C++17 comparisons recurse through authenticated arrays and nested pairs
 and compare their scalar leaves in lexicographic order. Corresponding scalar

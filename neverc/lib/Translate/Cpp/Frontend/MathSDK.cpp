@@ -6584,6 +6584,12 @@ static bool utilityComparableValue(const State &S, const SourceManager &SM,
   if (!RightPair)
     RightPair = approvedUtilityReferencePairRecord(
         S, SM, Right.getUnqualifiedType()->getAsCXXRecordDecl(), Context);
+  if (!LeftPair)
+    LeftPair = approvedUtilityMixedReferencePairRecord(
+        S, SM, Left.getUnqualifiedType()->getAsCXXRecordDecl(), Context);
+  if (!RightPair)
+    RightPair = approvedUtilityMixedReferencePairRecord(
+        S, SM, Right.getUnqualifiedType()->getAsCXXRecordDecl(), Context);
   if (LeftPair || RightPair)
     return LeftPair && RightPair &&
            utilityComparableValue(S, SM, Context, LeftPair->First->getType(),
@@ -12262,6 +12268,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Left = approvedUtilityReferencePairRecord(S, SM, LeftRecord, Context);
     if (!Right)
       Right = approvedUtilityReferencePairRecord(S, SM, RightRecord, Context);
+    if (!Left)
+      Left = approvedUtilityMixedReferencePairRecord(S, SM, LeftRecord,
+                                                     Context);
+    if (!Right)
+      Right = approvedUtilityMixedReferencePairRecord(S, SM, RightRecord,
+                                                      Context);
     const auto LeftParameter = Function->getParamDecl(0)->getType();
     const auto RightParameter = Function->getParamDecl(1)->getType();
     if (Operator && Left && Right && LeftParameter->isLValueReferenceType() &&
