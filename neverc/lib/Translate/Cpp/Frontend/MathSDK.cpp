@@ -6658,6 +6658,12 @@ static bool utilityComparableValue(const State &S, const SourceManager &SM,
   if (!RightTuple)
     RightTuple = approvedUtilityReferenceTupleRecord(
         S, SM, Right.getUnqualifiedType()->getAsCXXRecordDecl(), Context);
+  if (!LeftTuple)
+    LeftTuple = approvedUtilityMixedReferenceTupleRecord(
+        S, SM, Left.getUnqualifiedType()->getAsCXXRecordDecl(), Context);
+  if (!RightTuple)
+    RightTuple = approvedUtilityMixedReferenceTupleRecord(
+        S, SM, Right.getUnqualifiedType()->getAsCXXRecordDecl(), Context);
   if (!LeftTuple && !RightTuple)
     return false;
   if (!LeftTuple || !RightTuple ||
@@ -12374,8 +12380,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Function->getReturnType()->isBooleanType() &&
       Same(Call->getType(), Function->getReturnType())) {
     const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
-    const auto Left = TupleFor(Call->getArg(0)->getType());
-    const auto Right = TupleFor(Call->getArg(1)->getType());
+    auto Left = TupleFor(Call->getArg(0)->getType());
+    auto Right = TupleFor(Call->getArg(1)->getType());
+    if (!Left)
+      Left = approvedUtilityMixedReferenceTupleRecord(
+          S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
+    if (!Right)
+      Right = approvedUtilityMixedReferenceTupleRecord(
+          S, SM, Call->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
     const auto LeftParameter = Function->getParamDecl(0)->getType();
     const auto RightParameter = Function->getParamDecl(1)->getType();
     if (Operator && Left && Right && LeftParameter->isLValueReferenceType() &&

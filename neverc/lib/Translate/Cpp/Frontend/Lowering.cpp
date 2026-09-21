@@ -1606,8 +1606,16 @@ class FunctionLowering {
                        Leaves, Depth + 1);
       }
 
-      const auto LeftTuple = TupleFor(LeftType);
-      const auto RightTuple = TupleFor(RightType);
+      auto LeftTuple = TupleFor(LeftType);
+      auto RightTuple = TupleFor(RightType);
+      if (!LeftTuple)
+        LeftTuple = approvedUtilityMixedReferenceTupleRecord(
+            A.S, A.Sources,
+            LeftType.getUnqualifiedType()->getAsCXXRecordDecl(), A.Context);
+      if (!RightTuple)
+        RightTuple = approvedUtilityMixedReferenceTupleRecord(
+            A.S, A.Sources,
+            RightType.getUnqualifiedType()->getAsCXXRecordDecl(), A.Context);
       if (!LeftTuple && !RightTuple)
         return false;
       if (!LeftTuple || !RightTuple ||
@@ -7454,8 +7462,16 @@ class FunctionLowering {
     case UtilityOperation::TupleGreater:
     case UtilityOperation::TupleLessEqual:
     case UtilityOperation::TupleGreaterEqual: {
-      const auto LeftTuple = TupleFor(Call->getArg(0)->getType());
-      const auto RightTuple = TupleFor(Call->getArg(1)->getType());
+      auto LeftTuple = TupleFor(Call->getArg(0)->getType());
+      auto RightTuple = TupleFor(Call->getArg(1)->getType());
+      if (!LeftTuple)
+        LeftTuple = approvedUtilityMixedReferenceTupleRecord(
+            A.S, A.Sources,
+            Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
+      if (!RightTuple)
+        RightTuple = approvedUtilityMixedReferenceTupleRecord(
+            A.S, A.Sources,
+            Call->getArg(1)->getType()->getAsCXXRecordDecl(), A.Context);
       if (!LeftTuple || !RightTuple ||
           LeftTuple->Elements.size() != RightTuple->Elements.size())
         reject(L, "utility tuple comparison",
