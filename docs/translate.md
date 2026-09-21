@@ -113,8 +113,9 @@ for complete default-new-aligned
 elements when allocation uses a count proven within `max_size` and the
 matching global new/delete definitions are source-owned. One-byte elements
 accept runtime counts after conversion to target `size_t`; larger elements
-still require a nonoverflowing integer constant expression. Counts, hints,
-receivers and pointers retain one-time evaluation. Exact C++17
+accept nonoverflowing integer constant expressions or an implicit conversion
+from an unsigned builtin type whose entire value range fits `max_size`.
+Counts, hints, receivers and pointers retain one-time evaluation. Exact C++17
 allocator `destroy` plus `allocator_traits` destruction, `max_size` and
 copy-selection forwarding reuse the checked lifetime and stateless-allocator
 paths without a libc++ call.

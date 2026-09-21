@@ -28460,6 +28460,449 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2MemoryNarrowAllocatorRuntimeCountsRunAtBothOptimizations) {
+  const std::string Program = R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+Size allocated_size;
+Size released_size;
+int allocations;
+int releases;
+int effects;
+int receiver_calls;
+int count_calls;
+int hint_calls;
+int pointer_calls;
+int conversion_calls;
+int cleanup_calls;
+
+// main executes only small requests. These source-defined allocation choices
+// preserve a visible call for size zero and retry allocation failure.
+void *operator new(Size size) {
+  ++allocations;
+  allocated_size = size;
+  effects = effects * 10 + 4;
+  void *result = malloc(size ? size : Size(1));
+  while (!result)
+    result = malloc(size ? size : Size(1));
+  return result;
+}
+void operator delete(void *pointer) noexcept {
+  ++releases;
+  effects = effects * 10 + 5;
+  free(pointer);
+}
+#if defined(NEVERC_NARROW_ALLOCATOR_SIZED_DELETE)
+void operator delete(void *pointer, Size size) noexcept {
+  ++releases;
+  released_size = size;
+  effects = effects * 10 + 5;
+  free(pointer);
+}
+#endif
+
+#include <memory>
+using Allocator = std::allocator<int>;
+using Traits = std::allocator_traits<Allocator>;
+Allocator &receiver(Allocator &allocator) {
+  ++receiver_calls;
+  effects = effects * 10 + 1;
+  return allocator;
+}
+unsigned char byte_count(unsigned char value) {
+  ++count_calls;
+  effects = effects * 10 + 2;
+  return value;
+}
+unsigned short short_count(unsigned short value) {
+  ++count_calls;
+  effects = effects * 10 + 2;
+  return value;
+}
+bool bool_count(bool value) {
+  ++count_calls;
+  effects = effects * 10 + 2;
+  return value;
+}
+int signed_count(int value) {
+  ++count_calls;
+  effects = effects * 10 + 2;
+  return value;
+}
+const void *hint() {
+  ++hint_calls;
+  effects = effects * 10 + 3;
+  return nullptr;
+}
+int *pointer(int *value) {
+  ++pointer_calls;
+  effects = effects * 10 + 3;
+  return value;
+}
+void reset_effects() {
+  effects = receiver_calls = count_calls = hint_calls = pointer_calls = 0;
+  conversion_calls = cleanup_calls = 0;
+}
+struct NarrowCount {
+  unsigned char value;
+  operator unsigned char() const {
+    ++conversion_calls;
+    effects = effects * 10 + 2;
+    return value;
+  }
+  ~NarrowCount() {
+    ++cleanup_calls;
+    effects = effects * 10 + 6;
+  }
+};
+
+int member_checks(unsigned char requested) {
+  Allocator allocator;
+  reset_effects();
+  int *first = receiver(allocator).allocate(byte_count(requested));
+  if (!first || allocated_size != Size(requested) * sizeof(int) ||
+      effects != 124 || receiver_calls != 1 || count_calls != 1)
+    return 1;
+  for (Size i = 0; i != requested; ++i)
+    allocator.construct(first + i, int(i + 1));
+  for (Size i = 0; i != requested; ++i)
+    if (first[i] != int(i + 1))
+      return 2;
+  for (Size i = 0; i != requested; ++i)
+    allocator.destroy(first + i);
+  reset_effects();
+  receiver(allocator).deallocate(pointer(first), byte_count(requested));
+  if ((effects != 1325 && effects != 1235) || receiver_calls != 1 ||
+      pointer_calls != 1 || count_calls != 1)
+    return 3;
+#if defined(NEVERC_NARROW_ALLOCATOR_SIZED_DELETE)
+  if (released_size != Size(requested) * sizeof(int))
+    return 4;
+#endif
+
+  reset_effects();
+  int *second = receiver(allocator).allocate(short_count(requested), hint());
+  if (!second || allocated_size != Size(requested) * sizeof(int) ||
+      (effects != 1234 && effects != 1324) ||
+      receiver_calls != 1 || count_calls != 1 || hint_calls != 1)
+    return 5;
+  allocator.construct(second, 23);
+  if (*second != 23)
+    return 6;
+  allocator.destroy(second);
+  allocator.deallocate(second, requested);
+
+  unsigned char zero = 0;
+  int before = allocations;
+  reset_effects();
+  int *empty = receiver(allocator).allocate(byte_count(zero));
+  if (!empty || allocated_size != 0 || allocations != before + 1 ||
+      effects != 124 || receiver_calls != 1 || count_calls != 1)
+    return 7;
+  allocator.deallocate(empty, zero);
+#if defined(NEVERC_NARROW_ALLOCATOR_SIZED_DELETE)
+  if (released_size != 0)
+    return 8;
+#endif
+  return 0;
+}
+
+int traits_checks(unsigned short requested) {
+  Allocator allocator;
+  reset_effects();
+  int *first = Traits::allocate(receiver(allocator), short_count(requested));
+  if (!first || allocated_size != Size(requested) * sizeof(int) ||
+      receiver_calls != 1 || count_calls != 1 ||
+      (effects != 124 && effects != 214))
+    return 11;
+  Traits::construct(allocator, first, 31);
+  if (*first != 31)
+    return 12;
+  Traits::destroy(allocator, first);
+  reset_effects();
+  Traits::deallocate(receiver(allocator), pointer(first), short_count(requested));
+  if (receiver_calls != 1 || count_calls != 1 || pointer_calls != 1 ||
+      effects % 10 != 5)
+    return 13;
+#if defined(NEVERC_NARROW_ALLOCATOR_SIZED_DELETE)
+  if (released_size != Size(requested) * sizeof(int))
+    return 14;
+#endif
+
+  reset_effects();
+  int *second = Traits::allocate(receiver(allocator), short_count(requested), hint());
+  if (!second || allocated_size != Size(requested) * sizeof(int) ||
+      receiver_calls != 1 || count_calls != 1 || hint_calls != 1 ||
+      effects % 10 != 4)
+    return 15;
+  Traits::deallocate(allocator, second, requested);
+  return 0;
+}
+
+int conversion_checks(bool present, int signed_value) {
+  Allocator allocator;
+  reset_effects();
+  int *one = receiver(allocator).allocate(bool_count(present));
+  if (!one || allocated_size != Size(present) * sizeof(int) ||
+      effects != 124 || receiver_calls != 1 || count_calls != 1)
+    return 21;
+  allocator.deallocate(one, Size(present));
+
+  // The actual explicitly narrowed result is 255 for the executed -1 input.
+  // Do not trace past this cast and reason about the original signed value.
+  reset_effects();
+  int *narrowed = receiver(allocator).allocate(
+      static_cast<unsigned char>(signed_count(signed_value)));
+  const unsigned char actual = static_cast<unsigned char>(signed_value);
+  if (!narrowed || allocated_size != Size(actual) * sizeof(int) ||
+      effects != 124 || receiver_calls != 1 || count_calls != 1)
+    return 22;
+  allocator.construct(narrowed, 37);
+  allocator.construct(narrowed + actual - 1, 41);
+  if (narrowed[0] != 37 || narrowed[actual - 1] != 41)
+    return 23;
+  allocator.destroy(narrowed + actual - 1);
+  allocator.destroy(narrowed);
+  allocator.deallocate(narrowed, actual);
+
+  unsigned char incremented = 255;
+  reset_effects();
+  int *postfix = receiver(allocator).allocate(incremented++);
+  if (!postfix || incremented != 0 || allocated_size != Size(255) * sizeof(int) ||
+      effects != 14 || receiver_calls != 1)
+    return 24;
+  allocator.deallocate(postfix, 255);
+
+  const unsigned char constant_qualified = 3;
+  reset_effects();
+  int *qualified = receiver(allocator).allocate(byte_count(constant_qualified));
+  if (!qualified || allocated_size != Size(3) * sizeof(int) ||
+      effects != 124 || receiver_calls != 1 || count_calls != 1)
+    return 25;
+  allocator.deallocate(qualified, constant_qualified);
+
+  reset_effects();
+  int *converted = receiver(allocator).allocate(NarrowCount{3});
+  if (!converted || allocated_size != Size(3) * sizeof(int) ||
+      effects != 1246 || receiver_calls != 1 || conversion_calls != 1 ||
+      cleanup_calls != 1)
+    return 26;
+  allocator.deallocate(converted, 3);
+  return 0;
+}
+
+// Protocol-only exports isolate the count conversion and allocation dispatch.
+// main does not call these controls, so they allocate no runtime storage.
+extern "C" int *narrow_byte_count(unsigned char value) {
+  Allocator allocator;
+  return allocator.allocate(value);
+}
+extern "C" int *narrow_short_traits_count(unsigned short value) {
+  Allocator allocator;
+  return Traits::allocate(allocator, value, nullptr);
+}
+extern "C" int *narrow_boolean_count(bool value) {
+  Allocator allocator;
+  return allocator.allocate(value);
+}
+extern "C" int *narrow_postconversion_count(int value) {
+  Allocator allocator;
+  return allocator.allocate(static_cast<unsigned char>(value));
+}
+
+int main() {
+  int result = member_checks(3);
+  if (result)
+    return result;
+  result = traits_checks(5);
+  if (result)
+    return result;
+  result = conversion_checks(true, -1);
+  if (result)
+    return result;
+  reset_effects();
+  Allocator allocator;
+  bool zero = false;
+  int before = allocations;
+  int *empty = Traits::allocate(receiver(allocator), bool_count(zero), hint());
+  if (!empty || allocated_size != 0 || allocations != before + 1 ||
+      receiver_calls != 1 || count_calls != 1 || hint_calls != 1)
+    return 31;
+  Traits::deallocate(allocator, empty, zero);
+  return allocations == 11 && releases == 11 ? 0 : 32;
+}
+)cpp";
+  for (bool Sized : {false, true}) {
+    const std::string Variant = Sized ? "sized" : "unsized";
+    SCOPED_TRACE(Variant);
+    const auto Source = tmpFile("memory-narrow-allocator-" + Variant + ".cpp");
+    const auto Output = tmpFile("memory-narrow-allocator-" + Variant + ".nc");
+    writeFile(Source,
+              (Sized ? "#define NEVERC_NARROW_ALLOCATOR_SIZED_DELETE 1\n" : "") +
+                  Program);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+    EXPECT_NE(readFile(Output).find(
+                  "translated memory lifetimes require may_alias support"),
+              std::string::npos);
+    for (const std::string &Optimization : {"-O0", "-O2"}) {
+      SCOPED_TRACE(Optimization);
+      const auto Executable =
+          tmpFile("memory-narrow-allocator-" + Variant + Optimization);
+      auto Compile = compileGenerated(Output, Executable, Optimization);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+      auto Run = exec(Executable.string(), {});
+      EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+    }
+  }
+}
+
+TEST_F(TranslateTest, CoreV2MemoryNarrowAllocatorCountsRequireProof) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+    const char *Code;
+  };
+  const Rejection Cases[] = {
+      {"signed-int", R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size size) {
+  void *p = malloc(size ? size : Size(1));
+  while (!p) p = malloc(size ? size : Size(1));
+  return p;
+}
+void operator delete(void *p) noexcept { free(p); }
+#include <memory>
+#include <cstdint>
+using Allocator = std::allocator<int>;
+using Traits = std::allocator_traits<Allocator>;
+extern "C" int *probe(int n) { Allocator a; return Traits::allocate(a, n); }
+)cpp",
+       "TR0203"},
+      {"size-type", R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size size) {
+  void *p = malloc(size ? size : Size(1));
+  while (!p) p = malloc(size ? size : Size(1));
+  return p;
+}
+void operator delete(void *p) noexcept { free(p); }
+#include <memory>
+#include <cstdint>
+using Allocator = std::allocator<int>;
+using Traits = std::allocator_traits<Allocator>;
+extern "C" int *probe(Size n) { Allocator a; return a.allocate(n); }
+)cpp",
+       "TR0203"},
+      {"promoted-byte", R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size size) {
+  void *p = malloc(size ? size : Size(1));
+  while (!p) p = malloc(size ? size : Size(1));
+  return p;
+}
+void operator delete(void *p) noexcept { free(p); }
+#include <memory>
+#include <cstdint>
+using Allocator = std::allocator<int>;
+using Traits = std::allocator_traits<Allocator>;
+extern "C" int *probe(unsigned char n) { Allocator a; return a.allocate(+n); }
+)cpp",
+       "TR0203"},
+      {"enum-unsigned", R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size size) {
+  void *p = malloc(size ? size : Size(1));
+  while (!p) p = malloc(size ? size : Size(1));
+  return p;
+}
+void operator delete(void *p) noexcept { free(p); }
+#include <memory>
+#include <cstdint>
+using Allocator = std::allocator<int>;
+using Traits = std::allocator_traits<Allocator>;
+enum Count : unsigned char { zero = 0, one = 1 };
+extern "C" int *probe(Count n) { Allocator a; return a.allocate(n); }
+)cpp",
+       "TR0203"},
+      {"volatile-byte", R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size size) {
+  void *p = malloc(size ? size : Size(1));
+  while (!p) p = malloc(size ? size : Size(1));
+  return p;
+}
+void operator delete(void *p) noexcept { free(p); }
+#include <memory>
+#include <cstdint>
+using Allocator = std::allocator<int>;
+using Traits = std::allocator_traits<Allocator>;
+extern "C" int *probe(volatile unsigned char &n) { Allocator a; return a.allocate(n); }
+)cpp",
+       "TR0201"},
+      {"hidden-unsupported", R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size size) {
+  void *p = malloc(size ? size : Size(1));
+  while (!p) p = malloc(size ? size : Size(1));
+  return p;
+}
+void operator delete(void *p) noexcept { free(p); }
+#include <memory>
+#include <cstdint>
+using Allocator = std::allocator<int>;
+using Traits = std::allocator_traits<Allocator>;
+extern "C" int *probe(unsigned char n) { Allocator a; return a.allocate((sizeof(long double), n)); }
+)cpp",
+       "TR0201"},
+      {"hidden-unsupported-conversion", R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size size) {
+  void *p = malloc(size ? size : Size(1));
+  while (!p) p = malloc(size ? size : Size(1));
+  return p;
+}
+void operator delete(void *p) noexcept { free(p); }
+#include <memory>
+#include <cstdint>
+using Allocator = std::allocator<int>;
+using Traits = std::allocator_traits<Allocator>;
+struct Count { unsigned char n; operator unsigned char() const { long double hidden = 0; return n; } };
+extern "C" int *probe(unsigned char n) { Allocator a; Count count{n}; return a.allocate(count); }
+)cpp",
+       "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("memory-narrow-allocator-reject-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("memory-narrow-allocator-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    auto Result =
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+    expectCode(Result, Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2MemoryDefaultDeleteRunsAtBothOptimizations) {
   const auto Source = tmpFile("memory-default-delete.cpp");
   const auto Output = tmpFile("memory-default-delete.nc");

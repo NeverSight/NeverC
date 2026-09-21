@@ -910,7 +910,24 @@ runtime counts are admitted. This includes admitted character types, `bool`,
 conversion to `size_t`, including wrapping negative inputs; no pre-conversion
 sign check is introduced. Count expressions, user-defined conversions and
 temporary cleanup retain their existing source checks and one-time evaluation.
-Larger elements still require a nonoverflowing integer constant expression.
+For larger elements, a nonoverflowing integer constant expression remains
+valid. Runtime counts also qualify when their final implicit conversion to
+`size_t` directly consumes an unsigned builtin type whose entire value range
+fits `max_size`. The proof uses that type's target value width, including the
+single-bit range of `bool`, and retains the original expression for source
+validation, conversion, evaluation and cleanup. For `allocator<int>`,
+`unsigned char`, `unsigned short` and `bool` counts qualify on all eight
+supported targets; `unsigned int` qualifies on the six 64-bit targets, while
+`unsigned long` qualifies only on the two 64-bit Windows targets.
+
+Earlier explicit narrowing is preserved: a conversion to `unsigned char`
+has that type's range even if its input is signed. Source-defined conversions
+returning a qualifying builtin type retain their checked bodies and temporary
+cleanup. The proof does not recover narrower declaration types through later
+promotions, explicit casts to `size_t` or full-width locals. Signed runtime
+values, unproven full-width values, enums and extended integers do not qualify
+through this rule; volatile inputs and hidden unsupported expressions still
+fail their original source checks.
 Zero is valid and still calls the selected allocator. The deprecated allocation-hint
 member and the traits hint overload evaluate the hint once after the allocator
 and count, then use the same global allocation function.

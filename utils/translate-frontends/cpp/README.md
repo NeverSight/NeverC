@@ -92,7 +92,9 @@ allocator objects, C++17 `destroy`, and allocator-traits destruction,
 allocation/deallocation forwarders call checked source-defined global new/delete
 for complete default-new-aligned elements and nonoverflowing allocation
 counts. One-byte elements accept runtime counts after target `size_t`
-conversion; larger elements require integer constant expressions. Ownership
+conversion; larger elements require nonoverflowing integer constant expressions
+or an implicit conversion from a sufficiently narrow unsigned builtin type.
+The complete source type's range must fit the target's `max_size`. Ownership
 objects remain separate. The
 exact [`<functional>`](../docs/cpp-core-v2.md#functional-header-from-functional)
 header directly lowers calls on typed and transparent specializations of all 19
@@ -434,9 +436,10 @@ deallocation accept exact member and traits forwarding, including hints and
 runtime deallocation counts, when a source-defined global new/delete path
 exists and the allocation count is proven within `max_size`. One-byte elements
 accept runtime counts, preserving the complete expression's conversions,
-side effects and temporary cleanup; larger elements still require an integer
-constant expression. Default heap allocation, unproven allocation counts,
-over-aligned elements,
+side effects and temporary cleanup. Larger elements accept integer constant
+expressions or a final implicit conversion from an unsigned builtin type,
+including `bool`, whose entire range fits the target's `max_size`. Default
+heap allocation, unproven allocation counts, over-aligned elements,
 runtime-count array factories, stateful,
 reference, non-raw-pointer, nontrivial, overloaded, ref-qualified or throwing
 custom deleters, other smart pointers and ownership factories are not yet

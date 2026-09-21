@@ -6350,12 +6350,30 @@ static bool utilityAllocatorSafeCount(const Expr *Count, QualType Element,
   // Runtime lowering still evaluates the complete count expression once.
   if (Bytes == 1)
     return true;
-  auto Value = Count->getIntegerConstantExpr(Context);
-  if (!Value || Value->isNegative())
-    return false;
   const auto Maximum = llvm::APInt::getMaxValue(Bits).udiv(
       llvm::APInt(Bits, static_cast<uint64_t>(Bytes)));
-  return Value->extOrTrunc(Bits).ule(Maximum);
+  if (auto Value = Count->getIntegerConstantExpr(Context))
+    return !Value->isNegative() && Value->extOrTrunc(Bits).ule(Maximum);
+
+  // Inspect only the final implicit conversion to size_t. The immediately
+  // preceding unsigned value has a type-wide bound, without tracing earlier
+  // casts, promotions, declarations or control flow. Keep the original count
+  // expression for source validation and one-time runtime evaluation.
+  const auto *Conversion = dyn_cast<ImplicitCastExpr>(Count->IgnoreParens());
+  if (!Conversion || Conversion->getCastKind() != CK_IntegralCast ||
+      !Context.hasSameType(Conversion->getType(), Context.getSizeType()))
+    return false;
+  const auto SourceType = Conversion->getSubExpr()->getType();
+  if (SourceType.isVolatileQualified() || SourceType.isRestrictQualified() ||
+      SourceType.getAddressSpace() != LangAS::Default ||
+      !SourceType->getAs<BuiltinType>() ||
+      !SourceType->isUnsignedIntegerType())
+    return false;
+  // getIntWidth models bool's value range as one bit, not its storage width.
+  const auto SourceBits = Context.getIntWidth(SourceType);
+  if (!SourceBits || SourceBits > 64 || SourceBits > Bits)
+    return false;
+  return llvm::APInt::getMaxValue(SourceBits).zext(Bits).ule(Maximum);
 }
 
 static std::optional<UtilityAllocatorHeapCall>
