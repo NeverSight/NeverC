@@ -23931,6 +23931,52 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2MixedReferenceTupleAccessRunsAtBothOptimizations) {
+  const auto Source = tmpFile("tuple-mixed-reference-access.cpp");
+  const auto Output = tmpFile("tuple-mixed-reference-access.nc");
+  writeFile(Source, R"cpp(
+#include <tuple>
+int main() {
+  int number = 1;
+  std::tuple<int &, long> direct(number, 2L);
+  std::get<0>(direct) = 3;
+  std::get<long>(direct) = 4;
+  if (&std::get<int &>(direct) != &number || std::get<1>(direct) != 4)
+    return 1;
+  auto copied(direct);
+  std::get<0>(copied) = 5;
+  std::get<1>(copied) = 6;
+  if (number != 5 || std::get<1>(direct) != 4 || std::get<1>(copied) != 6 ||
+      &std::get<0>(copied) != &number)
+    return 2;
+  std::tuple<long, int &> reversed(7L, number);
+  std::get<0>(reversed) = 8;
+  std::get<1>(reversed) = 9;
+  std::tuple<int &&, long> rvalue(static_cast<int &&>(number), 10L);
+  std::get<0>(rvalue) = 11;
+  std::get<1>(rvalue) = 12;
+  return number == 11 && std::get<0>(reversed) == 8 &&
+                 std::get<1>(rvalue) == 12
+             ? 0
+             : 3;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("tuple-mixed-reference-access" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ReferenceTupleAssignmentRunsAtBothOptimizations) {
   const auto Source = tmpFile("tuple-reference-assignment.cpp");
   const auto Output = tmpFile("tuple-reference-assignment.nc");

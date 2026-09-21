@@ -984,8 +984,13 @@ extern "C" int tuple_reference_construction(int value) {
   auto mixed_factory = std::make_tuple(std::ref(value), long(other));
   std::get<0>(mixed_factory) += 1;
   std::get<long>(mixed_factory) += 1;
+  std::tuple<int &, long> mixed_direct(value, long(other));
+  std::get<0>(mixed_direct) += 1;
+  std::get<long>(mixed_direct) += 1;
+  const auto mixed_copy(mixed_direct);
   return value + other + std::get<0>(view) + int(converted) +
-         std::get<0>(pair_view) + int(std::get<1>(mixed_factory));
+         std::get<0>(pair_view) + int(std::get<1>(mixed_factory)) +
+         int(std::get<1>(mixed_copy));
 }
 """
     tuple_reference_construction = check(

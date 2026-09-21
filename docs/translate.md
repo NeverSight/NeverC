@@ -150,7 +150,8 @@ construction, assignment, factories, swaps, comparisons and `get`. `std::tie`
 and `std::forward_as_tuple` create authenticated reference tuples whose `get`
 and `apply` operations preserve aliases, value categories and writes to the
 bound objects. `std::make_tuple` unwraps authenticated `ref`/`cref` arguments,
-including mixed reference/value results with index- or unique-type `get`.
+including mixed reference/value results with exact compatible direct and
+same-type copy/move construction plus index- or unique-type `get`.
 Reference tuples may also be constructed directly from exact
 compatible references and copy-constructed while preserving their bindings.
 Same-type assignment writes through those bindings element by element. Exact

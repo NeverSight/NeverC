@@ -10292,6 +10292,9 @@ class FunctionLowering {
         ReferenceTuple = Tuple.has_value();
       }
       if (!Tuple)
+        Tuple = approvedUtilityMixedReferenceTupleRecord(
+            A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context);
+      if (!Tuple)
         reject(L, "utility tuple construction",
                "The selected std::tuple layout is unavailable.");
       auto Member = [&](const FieldDecl *Field) {
@@ -10307,7 +10310,7 @@ class FunctionLowering {
           reject(L, "utility tuple construction",
                  "The constructor and tuple element counts differ.");
         for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
-          if (ReferenceTuple)
+          if (Tuple->Elements[I]->getType()->isReferenceType())
             assign(Member(Tuple->Elements[I]),
                    bind(C->getArg(I), Tuple->Elements[I]->getType()), L);
           else if (recordValue(Tuple->Elements[I]->getType()))

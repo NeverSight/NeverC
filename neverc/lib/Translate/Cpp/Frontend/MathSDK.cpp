@@ -3399,6 +3399,12 @@ approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
         S, SM, Construction->getType()->getAsCXXRecordDecl(), Context);
     ReferenceTuple = Tuple.has_value();
   }
+  bool MixedReferenceTuple = false;
+  if (!Tuple) {
+    Tuple = approvedUtilityMixedReferenceTupleRecord(
+        S, SM, Construction->getType()->getAsCXXRecordDecl(), Context);
+    MixedReferenceTuple = Tuple.has_value();
+  }
   if (!Constructor || !Tuple || Constructor->isVariadic() ||
       Constructor->getParent()->getCanonicalDecl() !=
           Tuple->Record->getCanonicalDecl() ||
@@ -3407,7 +3413,7 @@ approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
       !cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx", "tuple"))
     return std::nullopt;
   if (!Construction->getNumArgs() && Constructor->isDefaultConstructor()) {
-    if (ReferenceTuple ||
+    if (ReferenceTuple || MixedReferenceTuple ||
         (Tuple->Elements.empty() &&
          (!Constructor->isDefaulted() || !Constructor->isTrivial())))
       return std::nullopt;
@@ -3529,11 +3535,10 @@ approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
         !Context.hasSameUnqualifiedType(Construction->getArg(I)->getType(),
                                         Parameter->getPointeeType()))
       return std::nullopt;
-    if (ReferenceTuple) {
-      const auto Element = Tuple->Elements[I]->getType();
+    const auto Element = Tuple->Elements[I]->getType();
+    if (Element->isReferenceType()) {
       const auto Argument = Construction->getArg(I)->getType();
-      if (!Element->isReferenceType() ||
-          !Context.hasSameUnqualifiedType(Argument,
+      if (!Context.hasSameUnqualifiedType(Argument,
                                           Element->getPointeeType()) ||
           !Element->getPointeeType().isAtLeastAsQualifiedAs(Argument,
                                                             Context) ||
@@ -3545,7 +3550,7 @@ approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
         return std::nullopt;
     } else if (!utilityTupleDirectConversion(
                    S, SM, Context, Construction->getArg(I)->getType(),
-                   Tuple->Elements[I]->getType()))
+                   Element))
       return std::nullopt;
   }
   return UtilityTupleConstruction::Elements;
