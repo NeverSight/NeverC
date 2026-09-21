@@ -289,7 +289,10 @@ Compatible converting construction from authenticated tuples or pairs binds
 each reference element using the checked cv and value category rules, while
 independently copying or converting each value element. Exact `std::apply`
 recovers reference elements as referents and passes value elements through the
-same checked callable parameter and result rules documented below.
+same checked callable parameter and result rules documented below. Conversely,
+ordinary value tuples may use converting construction from authenticated
+all-reference or mixed tuple/pair sources, copying each referent value into
+independent destination storage.
 
 Exact `std::tie` calls construct an authenticated tuple whose elements are
 lvalue references to supported scalar, array or source-owned record objects.

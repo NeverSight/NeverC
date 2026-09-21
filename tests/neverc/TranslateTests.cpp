@@ -24168,13 +24168,21 @@ int main() {
   if (&std::get<0>(from_mixed) != owned_first ||
       std::get<1>(from_mixed) != 5)
     return 3;
+  std::tuple<long, int> values_from_mixed(mixed_source);
+  if (std::get<0>(values_from_mixed) != 3 ||
+      std::get<1>(values_from_mixed) != 5)
+    return 4;
 
   int reverse_number = 6;
   std::pair<short, int &> reverse_source(short(7), reverse_number);
   std::tuple<long, const int &> reverse(reverse_source);
   if (std::get<0>(reverse) != 7 ||
       &std::get<1>(reverse) != &reverse_number)
-    return 4;
+    return 5;
+  std::tuple<int, long> values_from_pair(reverse_source);
+  if (std::get<0>(values_from_pair) != 7 ||
+      std::get<1>(values_from_pair) != 6)
+    return 6;
 
   int reference_first = 8;
   short reference_second = 9;
@@ -24182,7 +24190,11 @@ int main() {
   std::tuple<const int &, long> from_references(references);
   if (&std::get<0>(from_references) != &reference_first ||
       std::get<1>(from_references) != 9)
-    return 5;
+    return 7;
+  std::tuple<long, int> values_from_references(references);
+  if (std::get<0>(values_from_references) != 8 ||
+      std::get<1>(values_from_references) != 9)
+    return 8;
 
   std::tuple<int, long> moving_source(10, 11L);
   int *moving_first = &std::get<0>(moving_source);
@@ -24191,7 +24203,7 @@ int main() {
   std::get<0>(moved) = 12;
   return *moving_first == 12 && std::get<1>(moved) == 11.0
              ? 0
-             : 6;
+             : 9;
 }
 )cpp");
   auto Result =

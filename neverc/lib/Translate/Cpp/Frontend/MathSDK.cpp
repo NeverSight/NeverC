@@ -3432,14 +3432,12 @@ approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
                 S, SM, Construction->getArg(0)->getType()->getAsCXXRecordDecl(),
                 Context)
           : std::optional<UtilityTupleRecord>();
-  if ((ReferenceTuple || MixedReferenceTuple) &&
-      Construction->getNumArgs() == 1 && !SourceTuple) {
+  if (Construction->getNumArgs() == 1 && !SourceTuple) {
     SourceTuple = approvedUtilityReferenceTupleRecord(
         S, SM, Construction->getArg(0)->getType()->getAsCXXRecordDecl(),
         Context);
   }
-  if ((ReferenceTuple || MixedReferenceTuple) &&
-      Construction->getNumArgs() == 1 && !SourceTuple)
+  if (Construction->getNumArgs() == 1 && !SourceTuple)
     SourceTuple = approvedUtilityMixedReferenceTupleRecord(
         S, SM, Construction->getArg(0)->getType()->getAsCXXRecordDecl(),
         Context);
@@ -3491,13 +3489,11 @@ approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
                 S, SM, Construction->getArg(0)->getType()->getAsCXXRecordDecl(),
                 Context)
           : std::optional<UtilityPairRecord>();
-  if ((ReferenceTuple || MixedReferenceTuple) &&
-      Construction->getNumArgs() == 1 && !SourcePair)
+  if (Construction->getNumArgs() == 1 && !SourcePair)
     SourcePair = approvedUtilityReferencePairRecord(
         S, SM, Construction->getArg(0)->getType()->getAsCXXRecordDecl(),
         Context);
-  if ((ReferenceTuple || MixedReferenceTuple) &&
-      Construction->getNumArgs() == 1 && !SourcePair)
+  if (Construction->getNumArgs() == 1 && !SourcePair)
     SourcePair = approvedUtilityMixedReferencePairRecord(
         S, SM, Construction->getArg(0)->getType()->getAsCXXRecordDecl(),
         Context);
