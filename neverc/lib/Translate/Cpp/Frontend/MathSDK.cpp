@@ -11992,11 +11992,18 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Call->getNumArgs() == 2 && Call->isPRValue() &&
       !Function->getReturnType()->isReferenceType() &&
       Same(Call->getType(), Function->getReturnType())) {
-    const auto Pair = approvedUtilityPairRecord(
+    auto Pair = approvedUtilityPairRecord(
         S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
+    bool ReferencePair = false;
+    if (!Pair) {
+      Pair = approvedUtilityReferencePairRecord(
+          S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
+      ReferencePair = Pair.has_value();
+    }
     if (!Pair ||
-        !utilityPairValue(S, SM, Context, Pair->First->getType()) ||
-        !utilityPairValue(S, SM, Context, Pair->Second->getType()))
+        (!ReferencePair &&
+         (!utilityPairValue(S, SM, Context, Pair->First->getType()) ||
+          !utilityPairValue(S, SM, Context, Pair->Second->getType()))))
       return std::nullopt;
     for (unsigned I = 0; I != 2; ++I) {
       auto Parameter = Function->getParamDecl(I)->getType();
@@ -12004,6 +12011,16 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           !Context.hasSameUnqualifiedType(Call->getArg(I)->getType(),
                                           Parameter->getPointeeType()))
         return std::nullopt;
+      if (ReferencePair) {
+        const auto Wrapper = approvedFunctionalReferenceRecord(
+            S, SM, Call->getArg(I)->getType()->getAsCXXRecordDecl(), Context);
+        const auto Element =
+            I ? Pair->Second->getType() : Pair->First->getType();
+        if (!Wrapper || !Element->isLValueReferenceType() ||
+            !Context.hasSameType(Wrapper->ReferentType,
+                                 Element->getPointeeType()))
+          return std::nullopt;
+      }
     }
     return UtilityOperation::MakePair;
   }

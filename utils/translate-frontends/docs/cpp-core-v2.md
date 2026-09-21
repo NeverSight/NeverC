@@ -210,7 +210,9 @@ referent values in field order without changing bindings. Compatible converting
 construction from value or reference pairs preserves checked cv and value
 categories. Heterogeneous assignment converts admitted scalar field values or
 copies exact admitted composite values before writing through destination
-bindings. `make_pair` remains outside this reference-pair surface.
+bindings. Exact `make_pair` calls unwrap authenticated `ref`/`cref` arguments,
+copy their stored pointers into the resulting lvalue-reference fields and
+preserve const qualification.
 
 All six C++17 comparisons recurse through authenticated arrays and nested pairs
 and compare their scalar leaves in lexicographic order. Corresponding scalar

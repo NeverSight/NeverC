@@ -222,7 +222,8 @@ either pair's bindings. All six comparisons read referent values, including
 mixed reference/value pairs. Member and free swap exchange referent values
 without rebinding. Compatible converting construction binds value or reference
 pair fields, while heterogeneous assignment converts values before writing
-through destination bindings. Tuple
+through destination bindings. `make_pair` unwraps authenticated `ref`/`cref`
+arguments into reference fields. Tuple
 directly lowers authenticated empty and nonempty tuples of scalars, reference
 wrappers
 or recursively composite values, compatible scalar or exact composite

@@ -6758,6 +6758,12 @@ class FunctionLowering {
     case UtilityOperation::MakePair: {
       auto Pair = approvedUtilityPairRecord(
           A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+      bool ReferencePair = false;
+      if (!Pair) {
+        Pair = approvedUtilityReferencePairRecord(
+            A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+        ReferencePair = Pair.has_value();
+      }
       if (!Pair)
         reject(L, "utility make_pair",
                "The selected std::pair layout is unavailable.");
@@ -6766,10 +6772,24 @@ class FunctionLowering {
       if (Place.getString("type") != type(Call->getType(), L))
         reject(L, "utility make_pair",
                "The std::make_pair destination type differs from its result.");
-      initialize(fieldStorage(json::Object(Place), Pair->First, L),
-                 Call->getArg(0), L);
-      initialize(fieldStorage(json::Object(Place), Pair->Second, L),
-                 Call->getArg(1), L);
+      for (unsigned I = 0; I != 2; ++I) {
+        const auto *Field = I ? Pair->Second : Pair->First;
+        if (!ReferencePair) {
+          initialize(fieldStorage(json::Object(Place), Field, L),
+                     Call->getArg(I), L);
+          continue;
+        }
+        const auto Wrapper = approvedFunctionalReferenceRecord(
+            A.S, A.Sources,
+            Call->getArg(I)->getType()->getAsCXXRecordDecl(), A.Context);
+        if (!Wrapper)
+          reject(L, "utility make_pair",
+                 "A reference pair requires checked reference wrappers.");
+        auto Value = expression(Call->getArg(I));
+        auto Pointer = ReferenceMember(std::move(Value), *Wrapper);
+        assign(fieldStorage(json::Object(Place), Field, L),
+               cast(std::move(Pointer), type(Field->getType(), L), L), L);
+      }
       return Place;
     }
     case UtilityOperation::MakeTuple: {

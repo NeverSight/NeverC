@@ -445,6 +445,7 @@ extern "C" int utility_get() {
               profile="cpp-core-v2", target=target, sdk=True)
     pair_reference_source = """\
 #include <utility>
+#include <functional>
 struct Box { int value; };
 extern "C" int pair_reference(int value) {
   Box box{value + 1};
@@ -466,6 +467,9 @@ extern "C" int pair_reference(int value) {
   std::pair<long &, double &> conversion(converted_first, converted_second);
   std::pair<short, float> conversion_source(short(source_value), 6.0f);
   conversion = conversion_source;
+  auto factory = std::make_pair(std::ref(value), std::ref(box));
+  std::get<0>(factory) += 1;
+  std::get<1>(factory).value += 1;
   std::pair<int &&, Box &&> rvalues(static_cast<int &&>(value),
                                     static_cast<Box &&>(box));
   std::get<0>(rvalues) += 4;

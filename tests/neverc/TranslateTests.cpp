@@ -24409,6 +24409,49 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ReferencePairFactoryRunsAtBothOptimizations) {
+  const auto Source = tmpFile("pair-reference-factory.cpp");
+  const auto Output = tmpFile("pair-reference-factory.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <utility>
+struct Box { int value; };
+int main() {
+  int number = 1;
+  Box box{2};
+  auto made = std::make_pair(std::ref(number), std::ref(box));
+  if (&made.first != &number || &made.second != &box)
+    return 1;
+  made.first = 3;
+  made.second.value = 4;
+  const int fixed = 5;
+  auto mixed = std::make_pair(std::ref(number), std::cref(fixed));
+  if (&mixed.first != &number || &mixed.second != &fixed ||
+      mixed.second != 5)
+    return 2;
+  auto number_wrapper = std::ref(number);
+  auto box_wrapper = std::ref(box);
+  auto stored = std::make_pair(number_wrapper, box_wrapper);
+  std::get<0>(stored) = 6;
+  std::get<1>(stored).value = 7;
+  return number == 6 && box.value == 7 ? 0 : 3;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("pair-reference-factory" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2TupleApplyCallableObjectsRunAtBothOptimizations) {
   const auto Source = tmpFile("tuple-apply-callable-objects.cpp");
   const auto Output = tmpFile("tuple-apply-callable-objects.nc");

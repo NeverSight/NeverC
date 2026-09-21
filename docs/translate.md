@@ -134,7 +134,8 @@ rebinding either pair. All six comparisons read referent values and retain the
 ordinary heterogeneous scalar comparison rules. Member and free swap exchange
 referent values without changing pair bindings. Compatible converting
 construction binds source pair fields, while heterogeneous assignment converts
-field values before writing through destination references.
+field values before writing through destination references. `make_pair` unwraps
+authenticated `ref`/`cref` arguments into the corresponding reference fields.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#scalar-utilities-and-pairs-from-utility).
 
 Core v2 accepts authenticated empty and nonempty `<tuple>` values, including
