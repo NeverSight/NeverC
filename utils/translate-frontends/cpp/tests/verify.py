@@ -2061,6 +2061,37 @@ extern "C" int functional_function_pointer_signature(Function slot) {
         check("v2-functional-function-pointer-signature-" + target,
               functional_function_pointer_signature_source,
               profile="cpp-core-v2", target=target, sdk=True)
+    functional_record_reference_source = """\
+#include <functional>
+struct Record { int value; };
+Record &alias(Record &record) { return record; }
+const Record &view(const Record &record) { return record; }
+Record &&forward(Record &&record) {
+  return static_cast<Record &&>(record);
+}
+struct Callable {
+  int operator()(Record &&record) const { return record.value; }
+};
+extern "C" int functional_record_reference(Record &record) {
+  std::invoke(alias, record).value += 1;
+  int result = std::invoke(view, record).value;
+  auto wrapped_alias = std::ref(alias);
+  std::invoke(wrapped_alias, record).value += 2;
+  Record &&moved = std::invoke(
+      forward, static_cast<Record &&>(record));
+  moved.value += std::invoke(Callable{}, Record{3});
+  return result + record.value;
+}
+"""
+    functional_record_reference = check(
+        "v2-functional-record-reference", functional_record_reference_source,
+        profile="cpp-core-v2", sdk=True)
+    assert any(function["name"] == "functional_record_reference"
+               for function in functional_record_reference["functions"]), functional_record_reference
+    for target in sdk_targets:
+        check("v2-functional-record-reference-" + target,
+              functional_record_reference_source,
+              profile="cpp-core-v2", target=target, sdk=True)
     functional_stored_data_member_source = """\
 #include <functional>
 #include <utility>
@@ -2421,10 +2452,6 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
          "TR0201"),
         ("reference-wrapper-variadic", '#include <functional>\nint first(int v,...){return v;}int main(){auto p=&first;auto r=std::ref(p);return r(3,4);}',
          "TR0201"),
-        ("invoke-record-rvalue-reference-parameter", '#include <functional>\nstruct R{int n;};int load(R&&v){return v.n;}int main(){return std::invoke(load,R{3});}',
-         "TR0203"),
-        ("invoke-record-rvalue-reference-result", '#include <functional>\nstruct R{int n;};R value{3};R&&get(){return static_cast<R&&>(value);}int main(){return std::invoke(get).n;}',
-         "TR0203"),
         ("invoke-volatile-reference-parameter", '#include <functional>\nint load(volatile int&v){return v;}int main(){volatile int v=3;return std::invoke(load,v);}',
          "TR0201"),
         ("invoke-variadic", '#include <functional>\nint first(int v,...){return v;}int main(){return std::invoke(first,3,4);}',

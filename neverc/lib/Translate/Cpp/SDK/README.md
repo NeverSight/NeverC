@@ -320,7 +320,8 @@ qualification and single evaluation. Wrapper-taking calls preserve the target;
 reference conversion. Wrappers
 around admitted standard function objects, stored fixed-arity function pointers
 and admitted function referents call directly or through `std::invoke`,
-preserving exact scalar, object-pointer and function-pointer lvalue or rvalue references and retaining the
+preserving exact scalar, object-pointer, function-pointer and complete
+source-owned record lvalue or rvalue references and retaining the
 wrapper and referenced callable before evaluating the arguments. Wrappers
 around exact source-owned record callables use the same forms when Clang
 selects an admitted defined lvalue or const-lvalue `operator()`, retaining the
@@ -330,13 +331,14 @@ direct lowering boundary, except exact C++17 `std::invoke` calls on fixed-arity
 ordinary functions or stored function pointers. Those calls accept directly
 convertible by-value scalar parameters, exact fixed-arity ordinary function
 pointers including function-name decay, or exact admitted lvalue or rvalue
-references to those values, and preserve the corresponding scalar,
+references to those values or complete source-owned records, and preserve the corresponding scalar,
 object-pointer, function-pointer, lvalue- or rvalue-reference or `void` result. The same entry point accepts
 the admitted typed and transparent standard function objects above. It also
 accepts exact source-owned record callables when Clang selects an admitted
 defined nonstatic `operator()` with the same argument and result boundary.
 Lvalue, const-lvalue and rvalue-qualified overloads, reference results,
-receiver-first evaluation and temporary lifetime are preserved. A direct
+receiver-first evaluation and temporary lifetime are preserved, including
+source-owned record reference parameters. A direct
 source-written address of an owned nonstatic member
 function may also be invoked on an exact-class lvalue, pointer or admitted
 `std::reference_wrapper` when its fixed-arity signature has the same scalar

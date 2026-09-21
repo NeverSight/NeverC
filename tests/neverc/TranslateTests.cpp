@@ -34482,6 +34482,72 @@ int main() {
 }
 
 TEST_F(TranslateTest,
+       CoreV2FunctionalRecordReferencesRunAtBothOptimizations) {
+  const auto Source = tmpFile("functional-record-references.cpp");
+  const auto Output = tmpFile("functional-record-references.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+int copies;
+int drops;
+struct Record {
+  int value;
+  Record(int source) : value(source) {}
+  Record(const Record &source) : value(source.value) { ++copies; }
+  ~Record() { ++drops; }
+};
+int load(Record &&record) { return record.value; }
+Record &alias(Record &record) { return record; }
+const Record &view(const Record &record) { return record; }
+Record &&forward(Record &&record) {
+  return static_cast<Record &&>(record);
+}
+struct Callable {
+  int operator()(Record &&record) const { return record.value; }
+};
+struct Box {
+  int load(Record &&record) const { return record.value; }
+};
+int main() {
+  int score = std::invoke(load, Record{3}) == 3;
+  score += drops == 1;
+  score += copies == 0;
+  Record record{4};
+  std::invoke(alias, record).value = 5;
+  score += record.value == 5;
+  score += std::invoke(view, record).value == 5;
+  auto wrapped_alias = std::ref(alias);
+  std::invoke(wrapped_alias, record).value = 6;
+  score += record.value == 6;
+  Record &&moved = std::invoke(
+      forward, static_cast<Record &&>(record));
+  moved.value = 7;
+  score += record.value == 7;
+  score += std::invoke(Callable{}, Record{8}) == 8;
+  score += drops == 2;
+  Box box;
+  score += std::invoke(&Box::load, box, Record{9}) == 9;
+  score += drops == 3;
+  return score == 11 ? 0 : score;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  EXPECT_EQ(Generated.find("member_pointer"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-record-references" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
        CoreV2FunctionalInvokeStoredMembersRunAtBothOptimizations) {
   const auto Source = tmpFile("functional-invoke-stored-members.cpp");
   const auto Output = tmpFile("functional-invoke-stored-members.nc");
@@ -35069,14 +35135,6 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "#include <functional>\nint first(int v,...){return v;}int main(){"
        "auto p=&first;auto r=std::ref(p);return r(3,4);}",
        "TR0201"},
-      {"invoke-record-rvalue-reference-parameter",
-       "#include <functional>\nstruct R{int n;};int load(R&&v){return v.n;}"
-       "int main(){return std::invoke(load,R{3});}",
-       "TR0203"},
-      {"invoke-record-rvalue-reference-result",
-       "#include <functional>\nstruct R{int n;};R value{3};R&&get(){return "
-       "static_cast<R&&>(value);}int main(){return std::invoke(get).n;}",
-       "TR0203"},
       {"invoke-volatile-reference-parameter",
        "#include <functional>\nint load(volatile int&v){return v;}int main(){"
        "volatile int v=3;return std::invoke(load,v);}",

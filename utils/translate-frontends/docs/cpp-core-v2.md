@@ -925,7 +925,9 @@ conversion. These operations preserve object qualification and accept object
 or raw-pointer receivers. Volatile referents remain outside this boundary.
 Wrappers around an admitted typed or transparent standard function
 object, a stored fixed-arity function pointer or an admitted function referent
-are callable directly and through `std::invoke`. The wrapper and stored referent
+are callable directly and through `std::invoke`. Fixed-arity function wrappers
+also admit exact lvalue or rvalue references to complete source-owned records.
+The wrapper and stored referent
 are retained before the arguments are evaluated, and each expression is
 evaluated once. Exact scalar, object-pointer and function-pointer lvalue- or rvalue-reference
 parameters and exact lvalue- or rvalue-reference results preserve their source storage and
@@ -940,7 +942,8 @@ Exact C++17 `std::invoke` calls on an ordinary function or stored function
 pointer also lower directly. The target must have fixed arity. Parameters may
 be admitted by-value scalars with checked direct argument conversions, exact
 fixed-arity ordinary function pointers including function-name decay, or exact
-lvalue or rvalue references to those values; results may be the corresponding
+lvalue or rvalue references to those values or complete source-owned records;
+results may be the corresponding
 scalar, object-pointer, function-pointer or exact lvalue or rvalue reference, or `void`. References retain
 their source storage and qualification. The callable is retained before the
 arguments are evaluated, then the retained function pointer is called once.
@@ -952,7 +955,8 @@ It also accepts an exact source-owned record callable whose selected
 nonstatic `operator()` is an admitted defined method. Lvalue, const-lvalue and
 rvalue-qualified overload selection follows Clang's checked dispatch. The
 method may use the same admitted by-value and exact lvalue- or rvalue-reference
-parameter and result boundary as member invocation. The callable is retained
+parameter and result boundary as member invocation, including source-owned
+record reference parameters. The callable is retained
 before its arguments, reference results preserve storage identity, and a
 temporary callable is destroyed at its full-expression boundary.
 
@@ -961,7 +965,8 @@ lowers through `std::invoke` when the receiver is an exact-class lvalue,
 full-expression temporary, pointer or admitted `std::reference_wrapper` and the method has fixed-arity
 admitted scalar, object-pointer or fixed-arity ordinary function-pointer
 parameters, either by value with a checked direct conversion or by exact lvalue
-or rvalue reference, with a scalar, object-pointer, function-pointer, exact
+or rvalue reference, including references to complete source-owned records,
+with a scalar, object-pointer, function-pointer, exact
 lvalue- or rvalue-reference, or `void`
 result. Reference parameters and results preserve the selected object's storage
 and qualification. The receiver is retained before the arguments are evaluated

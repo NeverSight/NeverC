@@ -721,18 +721,25 @@ bool approvedFunctionalObjectBaseCast(const State &S, const SourceManager &SM,
           Cast->getType().isConstQualified());
 }
 
-static bool supportedFunctionalReferenceValue(const ASTContext &Context,
+static bool supportedFunctionalReferenceValue(const State &S,
+                                              const SourceManager &SM,
+                                              const ASTContext &Context,
                                               QualType Type) {
   if (Type.isNull() || Type.isVolatileQualified() ||
       Type.isRestrictQualified() || Type.getAddressSpace() != LangAS::Default)
     return false;
   Type = Type.getUnqualifiedType();
+  const auto *Record = Type->getAsCXXRecordDecl();
+  const auto *Definition = Record ? Record->getDefinition() : nullptr;
   return (Type->isIntegralOrEnumerationType() &&
           Context.getTypeSize(Type) <= 64) ||
          Type->isSpecificBuiltinType(BuiltinType::Float) ||
          Type->isSpecificBuiltinType(BuiltinType::Double) ||
          Type->isNullPtrType() || Type->isFunctionPointerType() ||
-         utilityObjectPointer(Context, Type);
+         utilityObjectPointer(Context, Type) ||
+         (Definition && !Definition->isUnion() &&
+          !Definition->isInvalidDecl() &&
+          S.owns(SM, Definition->getLocation()));
 }
 
 std::optional<FunctionalReferenceRecord> approvedFunctionalReferenceRecord(
@@ -804,14 +811,14 @@ std::optional<FunctionalReferenceRecord> approvedFunctionalReferenceRecord(
     const auto Result = Function->getReturnType();
     if (Function->isVariadic() ||
         (Result->isReferenceType()
-             ? !supportedFunctionalReferenceValue(Context,
+             ? !supportedFunctionalReferenceValue(S, SM, Context,
                                                   Result->getPointeeType())
              : (!Result->isVoidType() &&
                 !supportedFunctionalCallableValue(Result, Context))))
       return std::nullopt;
     for (const auto Parameter : Function->param_types())
       if (Parameter->isReferenceType()
-              ? !supportedFunctionalReferenceValue(Context,
+              ? !supportedFunctionalReferenceValue(S, SM, Context,
                                                    Parameter->getPointeeType())
               : !supportedFunctionalCallableValue(Parameter, Context))
         return std::nullopt;
@@ -6944,20 +6951,24 @@ static bool supportedFunctionalMemberValue(const ASTContext &Context,
          utilityObjectPointer(Context, Type);
 }
 
-static bool supportedFunctionalInvokeReference(const ASTContext &Context,
+static bool supportedFunctionalInvokeReference(const State &S,
+                                               const SourceManager &SM,
+                                               const ASTContext &Context,
                                                QualType Type) {
-  return supportedFunctionalReferenceValue(Context, Type);
+  return supportedFunctionalReferenceValue(S, SM, Context, Type);
 }
 
 static bool
-supportedFunctionalInvokeReferenceArgument(const ASTContext &Context,
+supportedFunctionalInvokeReferenceArgument(const State &S,
+                                           const SourceManager &SM,
+                                           const ASTContext &Context,
                                            QualType Parameter,
                                            const Expr *ArgumentExpression) {
   if (!Parameter->isReferenceType() || !ArgumentExpression)
     return false;
   const auto Referent = Parameter->getPointeeType();
   const auto Argument = ArgumentExpression->getType();
-  return supportedFunctionalInvokeReference(Context, Referent) &&
+  return supportedFunctionalInvokeReference(S, SM, Context, Referent) &&
          (Parameter->isLValueReferenceType()
               ? ArgumentExpression->isLValue()
               : ArgumentExpression->isXValue()) &&
@@ -7078,7 +7089,7 @@ approvedNativeMemberPointerCall(
     bool Supported = false;
     if (Parameter->isReferenceType()) {
       Supported = supportedFunctionalInvokeReferenceArgument(
-          Context, Parameter, ArgumentExpression);
+          S, SM, Context, Parameter, ArgumentExpression);
     } else {
       const auto *Source =
           functionalInvokeStrippedExpression(ArgumentExpression);
@@ -7510,7 +7521,7 @@ approvedFunctionalMemberInvokeCall(
       bool Supported = false;
       if (Parameter->isReferenceType()) {
         Supported = supportedFunctionalInvokeReferenceArgument(
-            Context, Parameter, ArgumentExpression);
+            S, SM, Context, Parameter, ArgumentExpression);
       } else {
         Supported = !Parameter->isReferenceType() &&
                     supportedFunctionalMemberValue(Context, Parameter) &&
@@ -7658,7 +7669,7 @@ approvedFunctionalUserInvokeCall(const State &S, const SourceManager &SM,
     const bool Supported =
         Parameter->isReferenceType()
             ? supportedFunctionalInvokeReferenceArgument(
-                  Context, Parameter, ArgumentExpression)
+                  S, SM, Context, Parameter, ArgumentExpression)
             : supportedFunctionalMemberValue(Context, Parameter) &&
                   functionalMemberValueConversion(
                       Context, ArgumentExpression->getType(), Parameter);
@@ -7888,7 +7899,7 @@ approvedFunctionalReferenceDirectInvoke(
       Supported =
           (Parameter->isReferenceType()
                ? supportedFunctionalInvokeReferenceArgument(
-                     Context, Parameter, ArgumentExpression)
+                     S, SM, Context, Parameter, ArgumentExpression)
                : supportedFunctionalMemberValue(Context, Parameter) &&
                      functionalMemberValueConversion(
                          Context, ArgumentExpression->getType(), Parameter)) &&
@@ -7921,7 +7932,7 @@ approvedFunctionalReferenceDirectInvoke(
       Indirect->getNumArgs() != Prototype->getNumParams() ||
       !Context.hasSameType(Prototype->getReturnType(), MethodResult) ||
       (ReferenceResult
-           ? !supportedFunctionalInvokeReference(Context, ExpressionResult)
+           ? !supportedFunctionalInvokeReference(S, SM, Context, ExpressionResult)
            : (!Call->getType()->isVoidType() &&
               !supportedFunctionalCallableValue(Call->getType(), Context))))
     return std::nullopt;
@@ -7931,7 +7942,7 @@ approvedFunctionalReferenceDirectInvoke(
     const auto Argument = ArgumentExpression->getType();
     const bool Supported =
         Parameter->isReferenceType()
-            ? supportedFunctionalInvokeReferenceArgument(Context, Parameter,
+            ? supportedFunctionalInvokeReferenceArgument(S, SM, Context, Parameter,
                                                          ArgumentExpression)
             : !Parameter->isReferenceType() &&
                   supportedFunctionalCallableValue(Parameter, Context) &&
@@ -8003,7 +8014,7 @@ approvedFunctionalReferenceInvokeCall(
       const bool Supported =
           Parameter->isReferenceType()
               ? supportedFunctionalInvokeReferenceArgument(
-                    Context, Parameter, ArgumentExpression)
+                    S, SM, Context, Parameter, ArgumentExpression)
               : supportedFunctionalMemberValue(Context, Parameter) &&
                     functionalMemberValueConversion(
                         Context, ArgumentExpression->getType(), Parameter);
@@ -8024,7 +8035,7 @@ approvedFunctionalReferenceInvokeCall(
     const auto Parameter = Prototype->getParamType(I - 1);
     const bool Supported = Parameter->isReferenceType()
                                ? supportedFunctionalInvokeReferenceArgument(
-                                     Context, Parameter, Call->getArg(I))
+                                     S, SM, Context, Parameter, Call->getArg(I))
                                : !Parameter->isReferenceType() &&
                                      functionalMemberValueConversion(
                                          Context, Call->getArg(I)->getType(),
@@ -11138,7 +11149,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Prototype->getNumParams() + 1 != Call->getNumArgs() ||
         !Same(Result, Function->getReturnType()) ||
         (ReferenceResult
-             ? (!supportedFunctionalInvokeReference(Context, Referent) ||
+             ? (!supportedFunctionalInvokeReference(S, SM, Context, Referent) ||
                 (Result->isLValueReferenceType() ? !Call->isLValue()
                                                  : !Call->isXValue()) ||
                 !Same(Call->getType(), Referent))
@@ -11163,7 +11174,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       bool Supported = false;
       if (Parameter->isReferenceType()) {
         Supported = supportedFunctionalInvokeReferenceArgument(
-            Context, Parameter, ArgumentExpression);
+            S, SM, Context, Parameter, ArgumentExpression);
       } else {
         Supported = !Parameter->isReferenceType() &&
                     supportedFunctionalCallableValue(Parameter, Context) &&
