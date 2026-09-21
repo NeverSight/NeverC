@@ -39533,6 +39533,308 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2OptionalSwapPreservesEngagementAndBindings) {
+  const auto Source = tmpFile("optional-swap-engagement.cpp");
+  const auto Output = tmpFile("optional-swap-engagement.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <optional>
+#include <utility>
+struct Box { int value; };
+using W = std::reference_wrapper<Box>;
+using O = std::optional<W>;
+int left_calls;
+int right_calls;
+O &left_operand(O &value) { ++left_calls; return value; }
+O &right_operand(O &value) { ++right_calls; return value; }
+struct Record {
+  int value;
+  Record() = default;
+  Record(const Record &) = default;
+  Record(Record &&) noexcept(false) = default;
+  Record &operator=(const Record &) = default;
+  Record &operator=(Record &&) noexcept(false) = default;
+  ~Record() noexcept(false) = default;
+};
+int main() {
+  Box first{3}, second{5};
+  O left(std::ref(first)), right(std::ref(second)), empty, another_empty;
+  left_operand(left).swap(right_operand(right));
+  if (left_calls != 1 || right_calls != 1 || &left->get() != &second ||
+      &right->get() != &first || first.value != 3 || second.value != 5) return 1;
+  left.swap(left);
+  if (&left->get() != &second) return 2;
+  std::swap(left_operand(left), right_operand(right));
+  if (left_calls != 2 || right_calls != 2 || &left->get() != &first ||
+      &right->get() != &second) return 3;
+  left_operand(empty).swap(right_operand(another_empty));
+  if (left_calls != 3 || right_calls != 3 || empty || another_empty) return 4;
+  std::swap(left_operand(left), right_operand(empty));
+  if (left_calls != 4 || right_calls != 4 || left || !empty ||
+      &empty->get() != &first) return 5;
+  left_operand(left).swap(right_operand(empty));
+  if (left_calls != 5 || right_calls != 5 || !left || empty ||
+      &left->get() != &first) return 6;
+  another_empty.swap(right);
+  if (!another_empty || right || &another_empty->get() != &second) return 7;
+  std::swap(another_empty, right);
+  another_empty.swap(another_empty);
+  if (another_empty || !right || &right->get() != &second) return 8;
+  Record a; a.value = 11;
+  Record b; b.value = 13;
+  std::optional<Record> record(a), other_record(b), absent;
+  record.swap(other_record);
+  if (record->value != 13 || other_record->value != 11) return 9;
+  std::swap(record, absent);
+  if (record || !absent || absent->value != 13) return 10;
+  record.swap(absent);
+  if (!record || absent || record->value != 13) return 11;
+  std::optional<int> scalar(17), scalar_other(19), scalar_empty;
+  scalar.swap(scalar_other);
+  if (*scalar != 19 || *scalar_other != 17) return 12;
+  std::swap(scalar, scalar_empty);
+  if (scalar || !scalar_empty || *scalar_empty != 19) return 13;
+  scalar.swap(scalar_empty);
+  return scalar && !scalar_empty && *scalar == 19 &&
+         first.value == 3 && second.value == 5 ? 0 : 14;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("optional-swap-engagement" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OptionalSwapAuthenticatesNestedCompositeOperations) {
+  const auto Source = tmpFile("optional-swap-nested.cpp");
+  const auto Output = tmpFile("optional-swap-nested.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <functional>
+#include <optional>
+#include <tuple>
+#include <utility>
+struct Box { int value; };
+using W = std::reference_wrapper<Box>;
+using Pair = std::pair<W, int>;
+using Tuple = std::tuple<Pair, long>;
+int main() {
+  Box first{2}, second{3};
+  Pair p(std::ref(first), 5), q(std::ref(second), 7);
+  std::optional<Pair> left(p), right(q), empty, other_empty;
+  left.swap(right);
+  if (&left->first.get() != &second || left->second != 7 ||
+      &right->first.get() != &first || right->second != 5) return 1;
+  std::swap(left, right);
+  left.swap(empty);
+  if (left || !empty || &empty->first.get() != &first || empty->second != 5) return 2;
+  std::swap(left, empty);
+  left.swap(left);
+  empty.swap(other_empty);
+  if (!left || &left->first.get() != &first || empty || other_empty) return 3;
+  Tuple a(p, 11), b(q, 13);
+  std::optional<Tuple> nested(a), nested_other(b), nested_empty;
+  std::swap(nested, nested_other);
+  if (&std::get<0>(*nested).first.get() != &second || std::get<1>(*nested) != 13) return 4;
+  nested.swap(nested_empty);
+  if (nested || !nested_empty || &std::get<0>(*nested_empty).first.get() != &second) return 5;
+  std::swap(nested, nested_empty);
+  nested.swap(nested);
+  if (!nested || nested_empty ||
+      &std::get<0>(*nested).first.get() != &second || std::get<1>(*nested) != 13) return 6;
+  std::array<int, 2> x{{17, 19}}, y{{23, 29}};
+  std::optional<std::array<int, 2>> array(x), array_other(y), array_empty;
+  array.swap(array_other);
+  if ((*array)[0] != 23 || (*array)[1] != 29 ||
+      (*array_other)[0] != 17 || (*array_other)[1] != 19) return 7;
+  std::swap(array, array_empty);
+  if (array || !array_empty || (*array_empty)[0] != 23) return 8;
+  array.swap(array_empty);
+  if (!array || array_empty || (*array)[0] != 23 || (*array)[1] != 29) return 11;
+  std::optional<std::array<int, 0>> zero, zero_other(std::in_place);
+  zero.swap(zero_other);
+  if (!zero || zero_other) return 9;
+  std::swap(zero, zero_other);
+  zero.swap(zero);
+  return !zero && zero_other && first.value == 2 && second.value == 3 ? 0 : 10;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("optional-swap-nested" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OptionalSwapRequiresSelectedSDKOperations) {
+  const struct { const char *Name; const char *Source; const char *Code; } Cases[] = {
+
+    {"wrapper-adl-member", R"cpp(#include <functional>
+#include <optional>
+#include <tuple>
+#include <utility>
+namespace custom { struct Box { int value; }; void swap(std::reference_wrapper<Box>&, std::reference_wrapper<Box>&) noexcept {} }
+using O = std::optional<std::reference_wrapper<custom::Box>>;
+void rejected(O& left, O& right) { left.swap(right); }
+)cpp", "TR0203"},
+
+    {"wrapper-adl-free", R"cpp(#include <functional>
+#include <optional>
+#include <tuple>
+#include <utility>
+namespace custom { struct Box { int value; }; void swap(std::reference_wrapper<Box>&, std::reference_wrapper<Box>&) noexcept {} }
+using O = std::optional<std::reference_wrapper<custom::Box>>;
+void rejected(O& left, O& right) { std::swap(left, right); }
+)cpp", "TR0203"},
+
+    {"member-specialization", R"cpp(#include <functional>
+#include <optional>
+#include <tuple>
+#include <utility>
+struct Box { int value; };
+using W = std::reference_wrapper<Box>;
+namespace std { inline namespace __1 { template<> void optional<W>::swap(optional<W>&) noexcept {} }}
+using O = std::optional<W>;
+void rejected(O& left, O& right) { left.swap(right); }
+)cpp", "TR0201"},
+
+    {"engagement-specialization", R"cpp(#include <functional>
+#include <optional>
+#include <tuple>
+#include <utility>
+struct Box { int value; };
+using W = std::reference_wrapper<Box>;
+namespace std { inline namespace __1 { template<> constexpr bool __optional_storage_base<W, false>::has_value() const noexcept { return false; } }}
+using O = std::optional<W>;
+void rejected(O& left, O& right) { left.swap(right); }
+)cpp", "TR0201"},
+
+    {"get-specialization", R"cpp(#include <functional>
+#include <optional>
+#include <tuple>
+#include <utility>
+struct Box { int value; };
+using W = std::reference_wrapper<Box>;
+namespace std { inline namespace __1 { template<> constexpr W& __optional_storage_base<W, false>::__get() & noexcept; }}
+using O = std::optional<W>;
+void rejected(O& left, O& right) { left.swap(right); }
+)cpp", "TR0201"},
+
+    {"reset-specialization", R"cpp(#include <functional>
+#include <optional>
+#include <tuple>
+#include <utility>
+struct Box { int value; };
+using W = std::reference_wrapper<Box>;
+namespace std { inline namespace __1 { template<> void __optional_destruct_base<W, true>::reset() noexcept {} }}
+using O = std::optional<W>;
+void rejected(O& left, O& right) { left.swap(right); }
+)cpp", "TR0201"},
+
+    {"construct-specialization", R"cpp(#include <functional>
+#include <optional>
+#include <tuple>
+#include <utility>
+struct Box { int value; };
+using W = std::reference_wrapper<Box>;
+namespace std { inline namespace __1 { template<> template<> void __optional_storage_base<W, false>::__construct<W>(W&&) {} }}
+using O = std::optional<W>;
+void rejected(O& left, O& right) { left.swap(right); }
+)cpp", "TR0201"},
+
+    {"construct-at-specialization", R"cpp(#include <functional>
+#include <optional>
+#include <tuple>
+#include <utility>
+struct Box { int value; };
+using W = std::reference_wrapper<Box>;
+namespace std { inline namespace __1 { template<> W* __construct_at<W, W>(W*, W&&); }}
+using O = std::optional<W>;
+void rejected(O& left, O& right) { left.swap(right); }
+)cpp", "TR0201"},
+
+    {"forward-specialization", R"cpp(#include <functional>
+#include <optional>
+#include <tuple>
+#include <utility>
+struct Box { int value; };
+using W = std::reference_wrapper<Box>;
+namespace std { inline namespace __1 { template<> constexpr W&& forward<W>(W&) noexcept; }}
+using O = std::optional<W>;
+void rejected(O& left, O& right) { left.swap(right); }
+)cpp", "TR0201"},
+
+    {"addressof-specialization", R"cpp(#include <functional>
+#include <optional>
+#include <tuple>
+#include <utility>
+struct Box { int value; };
+using W = std::reference_wrapper<Box>;
+namespace std { inline namespace __1 { template<> constexpr W* addressof<W>(W&) noexcept; }}
+using O = std::optional<W>;
+void rejected(O& left, O& right) { left.swap(right); }
+)cpp", "TR0201"},
+
+    {"move-specialization", R"cpp(#include <functional>
+#include <optional>
+#include <tuple>
+#include <utility>
+struct Box { int value; };
+using W = std::reference_wrapper<Box>;
+namespace std { inline namespace __1 { template<> constexpr W&& move<W&>(W& value) noexcept { return static_cast<W&&>(value); } }}
+using O = std::optional<W>;
+void rejected(O& left, O& right) { left.swap(right); }
+)cpp", "TR0201"},
+
+    {"placement-new-redeclaration", R"cpp(#include <functional>
+#include <optional>
+#include <tuple>
+#include <utility>
+struct Box { int value; };
+using W = std::reference_wrapper<Box>;
+void* operator new(std::size_t, void*) noexcept;
+using O = std::optional<W>;
+void rejected(O& left, O& right) { left.swap(right); }
+)cpp", "TR0201"},
+
+    {"nontrivial-move", R"cpp(#include <functional>
+#include <optional>
+#include <tuple>
+#include <utility>
+struct R { int value; R(const R&) = default; R(R&& other):value(other.value) {} R& operator=(const R&) = default; };
+using O = std::optional<R>;
+void rejected(O& left, O& right) { left.swap(right); }
+)cpp", "TR0203"},
+
+    {"nested-reference-pair", R"cpp(#include <functional>
+#include <optional>
+#include <tuple>
+#include <utility>
+using P = std::pair<int&, int&>;
+using O = std::optional<P>;
+void rejected(O& left, O& right) { left.swap(right); }
+)cpp", "TR0203"},
+
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("optional-swap-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("optional-swap-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}), Case.Code);
+    EXPECT_FALSE(fs::exists(Output));
+  }
+}
+
 TEST_F(TranslateTest, CoreV2OptionalScalarNaNComparisonsRunAtBothOptimizations) {
   const auto Source = tmpFile("optional-scalar-nan-comparisons.cpp");
   const auto Output = tmpFile("optional-scalar-nan-comparisons.nc");

@@ -249,8 +249,9 @@ Pair and array member/free swap require exact SDK element swaps, trivial
 selected copy/move operations and authenticated nested dispatch. Array proofs
 include the range loop and iterator adapters; empty arrays perform no element
 swap. Wrapper pairs with array siblings are supported. User ADL swaps and source
-specializations remain rejected. Optional swaps containing wrapper-bearing pairs
-remain rejected until their internal swap chains are authenticated. Const
+specializations remain rejected. Optional swaps authenticate both the selected
+value swap and each one-engaged construction/reset path, including nested
+wrapper pairs and tuples. Const
 wrapper fields can be copied but not assigned, volatile wrapper fields
 remain excluded, and comparisons involving wrapper-valued leaves remain
 rejected.
@@ -339,8 +340,12 @@ target layout before exposing value-plus-flag protocol records. Scalars,
 source-owned trivial standard-layout records, arrays, pairs and tuples support
 default, value, in-place, copy/move and converting
 construction, assignment, emplacement, fallback, factories, engagement and
-access, reset and swap without libc++. Composite conversion requires exact
-unqualified element types, and mutation requires recursive assignability;
+access, reset and swap without libc++. Swap proves the selected SDK engagement
+tests and value projections, element swap and both transfer paths through exact
+forwarding, placement construction and reset. The selected construction must be
+trivial; user ADL swaps and source specializations are rejected. Both operands
+are evaluated once, including empty and self swaps. Composite conversion
+requires exact unqualified element types, and mutation requires recursive assignability;
 value comparisons recurse through authenticated arrays, pairs and tuples to
 the scalar leaf boundary, while `nullopt` comparisons work for every admitted
 element.

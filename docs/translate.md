@@ -157,8 +157,11 @@ only after authenticating both selected element swaps and their nested pair
 or array operations. All supported pair and array swaps, including source-record
 leaves, require this recursive proof. Array siblings are supported; zero-length
 arrays skip element swaps while evaluating both operands once. User ADL swaps
-and source specializations remain rejected. Optional swaps containing
-wrapper-bearing pairs require further operation proofs and are rejected.
+and source specializations remain rejected. Optional member/free swap also
+authenticates engagement tests, value projections and both one-engaged transfer
+paths, including the selected trivial construction and reset operations.
+Nested wrapper pairs and tuples are supported;
+user ADL swaps and source operation specializations remain rejected.
 Comparisons with wrapper-valued leaves remain rejected.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#scalar-utilities-and-pairs-from-utility).
 

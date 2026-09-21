@@ -9144,68 +9144,6 @@ approvedUtilityTupleApplyReferenceCall(const State &S,
   return Reference;
 }
 
-// The new pair carrier domain includes reference_wrapper. Its referent adds
-// associated namespaces to ADL, so copying the carrier implements swap only
-// after the selected SDK element swaps have been authenticated.
-static bool utilityPairSwapNeedsProof(const State &S, const SourceManager &SM,
-                                      QualType Type, const ASTContext &Context,
-                                      unsigned Depth = 0) {
-  if (Depth > 64 || Type.isNull())
-    return true;
-  if (Type->isReferenceType())
-    Type = Type->getPointeeType();
-  const auto *Record = Type->getAsCXXRecordDecl();
-  if (approvedFunctionalReferenceRecord(S, SM, Record, Context))
-    return true;
-  auto Pair = approvedUtilityPairRecord(S, SM, Record, Context);
-  if (!Pair)
-    Pair = approvedUtilityReferencePairRecord(S, SM, Record, Context);
-  if (!Pair)
-    Pair = approvedUtilityMixedReferencePairRecord(S, SM, Record, Context);
-  return Pair && (utilityPairSwapNeedsProof(S, SM, Pair->First->getType(),
-                                            Context, Depth + 1) ||
-                  utilityPairSwapNeedsProof(S, SM, Pair->Second->getType(),
-                                            Context, Depth + 1));
-}
-
-// Pair wrapper carriers also become new tuple/optional element types. Their
-// carrier-swap lowerings do not yet authenticate the nested SDK swap chain.
-// Preserve existing tuple<reference_wrapper<T>> admission; reject only an
-// actual pair containing wrappers, possibly nested through tuple/optional.
-static bool utilityContainsNewPairSwapCarrier(const State &S,
-                                              const SourceManager &SM,
-                                              QualType Type,
-                                              const ASTContext &Context,
-                                              unsigned Depth = 0) {
-  if (Depth > 64 || Type.isNull())
-    return true;
-  if (Type->isReferenceType())
-    Type = Type->getPointeeType();
-  const auto *Record = Type->getAsCXXRecordDecl();
-  auto Pair = approvedUtilityPairRecord(S, SM, Record, Context);
-  if (!Pair)
-    Pair = approvedUtilityReferencePairRecord(S, SM, Record, Context);
-  if (!Pair)
-    Pair = approvedUtilityMixedReferencePairRecord(S, SM, Record, Context);
-  if (Pair)
-    return utilityPairSwapNeedsProof(S, SM, Type, Context);
-  auto Tuple = approvedUtilityTupleRecord(S, SM, Record, Context);
-  if (!Tuple)
-    Tuple = approvedUtilityReferenceTupleRecord(S, SM, Record, Context);
-  if (!Tuple)
-    Tuple = approvedUtilityMixedReferenceTupleRecord(S, SM, Record, Context);
-  if (Tuple)
-    for (const auto *Element : Tuple->Elements)
-      if (utilityContainsNewPairSwapCarrier(S, SM, Element->getType(), Context,
-                                            Depth + 1))
-        return true;
-  if (const auto Optional =
-          approvedUtilityOptionalRecord(S, SM, Record, Context))
-    return utilityContainsNewPairSwapCarrier(S, SM, Optional->ElementType,
-                                             Context, Depth + 1);
-  return false;
-}
-
 static bool utilitySwapSDKFunction(const State &S, const SourceManager &SM,
                                    const FunctionDecl *Function,
                                    llvm::StringRef Name, llvm::StringRef Path) {
@@ -9363,6 +9301,10 @@ struct UtilitySwapProofContext {
   llvm::DenseMap<Key, unsigned> Completed;
 };
 
+static bool approvedUtilityOptionalSwapBody(
+    const State &S, const SourceManager &SM, const CXXMethodDecl *Method,
+    const ASTContext &Context, unsigned Depth, UtilitySwapProofContext *Proof);
+
 static bool approvedUtilityTupleSwapBody(
     const State &S, const SourceManager &SM, const CXXMethodDecl *Method,
     const ASTContext &Context, unsigned Depth, UtilitySwapProofContext *Proof);
@@ -9446,7 +9388,9 @@ approvedUtilityPairElementSwapImpl(const State &S, const SourceManager &SM,
       utilitySwapSDKFunction(S, SM, Function, "swap", "__utility/pair.h");
   const bool Array = utilitySwapSDKFunction(S, SM, Function, "swap", "array");
   const bool Tuple = utilitySwapSDKFunction(S, SM, Function, "swap", "tuple");
-  if (!Pair && !Array && !Tuple)
+  const bool Optional =
+      utilitySwapSDKFunction(S, SM, Function, "swap", "optional");
+  if (!Pair && !Array && !Tuple && !Optional)
     return false;
   const auto *Body = dyn_cast<CompoundStmt>(Function->getBody());
   const auto *Call = Body && Body->size() == 1
@@ -9464,8 +9408,10 @@ approvedUtilityPairElementSwapImpl(const State &S, const SourceManager &SM,
                                                 Proof)
           : Array ? approvedUtilityArraySwapBody(S, SM, Method, Context, Depth,
                                                  Proof)
-                  : approvedUtilityTupleSwapBody(S, SM, Method, Context, Depth,
-                                                 Proof));
+          : Tuple ? approvedUtilityTupleSwapBody(S, SM, Method, Context, Depth,
+                                                 Proof)
+                  : approvedUtilityOptionalSwapBody(S, SM, Method, Context,
+                                                    Depth, Proof));
 }
 
 static bool
@@ -10174,6 +10120,393 @@ approvedUtilityTupleSwapBody(const State &S, const SourceManager &SM,
                               Context, Depth, Proof);
 }
 
+// All projections in the optional swap proof remain tied to the authenticated
+// storage and destructor bases. A matching spelling alone is not a projection.
+static bool utilityOptionalSwapField(const Expr *Expression,
+                                     const FieldDecl *Field,
+                                     const CXXRecordDecl *ThisRecord,
+                                     const UtilityOptionalRecord &Optional) {
+  const auto *Access = dyn_cast_or_null<MemberExpr>(
+      functionalInvokeStrippedExpression(Expression));
+  if (!Access || Access->getMemberDecl() != Field)
+    return false;
+  const Expr *Base = Access->getBase();
+  if (Field == Optional.Value) {
+    const auto *Union =
+        dyn_cast_or_null<MemberExpr>(functionalInvokeStrippedExpression(Base));
+    const auto *Anonymous =
+        Union ? dyn_cast<FieldDecl>(Union->getMemberDecl()) : nullptr;
+    if (!Union || Access->isArrow() || !Union->isArrow() || !Anonymous ||
+        !Anonymous->isAnonymousStructOrUnion() ||
+        Anonymous->getParent() != Optional.DestructBase ||
+        Anonymous->getType()->getAsCXXRecordDecl() != Field->getParent())
+      return false;
+    Base = Union->getBase();
+  } else if (!Access->isArrow()) {
+    return false;
+  }
+  return utilityCompositeSwapThis(Base, ThisRecord);
+}
+
+static bool utilityOptionalSwapReceiver(const Expr *Expression,
+                                        const CXXMethodDecl *Outer, bool Peer) {
+  return Peer ? functionalInvokeParameterReference(Expression,
+                                                   Outer->getParamDecl(0))
+              : utilityCompositeSwapThis(Expression, Outer->getParent());
+}
+
+static bool utilityOptionalSwapRead(const State &S, const SourceManager &SM,
+                                    const Expr *Expression,
+                                    const CXXMethodDecl *Outer, bool Peer,
+                                    const UtilityOptionalRecord &Optional,
+                                    bool Engagement,
+                                    const ASTContext &Context) {
+  const auto *Call = dyn_cast_or_null<CXXMemberCallExpr>(
+      functionalInvokeStrippedExpression(Expression));
+  const auto *Method = Call ? Call->getMethodDecl() : nullptr;
+  const auto Result =
+      Engagement ? Context.BoolTy
+                 : Context.getLValueReferenceType(Optional.ElementType);
+  if (!Call || Call->getNumArgs() || !Method || Method->isStatic() ||
+      Method->isVolatile() || Method->isConst() != Engagement ||
+      Method->getNumParams() ||
+      Method->getParent()->getCanonicalDecl() !=
+          Optional.StorageBase->getCanonicalDecl() ||
+      !utilityCompositeSwapMethod(
+          S, SM, Method, Engagement ? "has_value" : "__get", "optional") ||
+      !Context.hasSameType(Method->getReturnType(), Result) ||
+      (!Engagement &&
+       (!Call->isLValue() || Method->getRefQualifier() != RQ_LValue)) ||
+      !utilityOptionalSwapReceiver(Call->getImplicitObjectArgument(), Outer,
+                                   Peer))
+    return false;
+  const auto *Return = dyn_cast_or_null<ReturnStmt>(
+      utilityCompositeSwapOnlyStatement(Method->getBody()));
+  return Return && utilityOptionalSwapField(Return->getRetValue(),
+                                            Engagement ? Optional.Engaged
+                                                       : Optional.Value,
+                                            Optional.StorageBase, Optional);
+}
+
+static bool utilityOptionalSwapEngage(const Stmt *Statement, bool Value,
+                                      const CXXRecordDecl *ThisRecord,
+                                      const UtilityOptionalRecord &Optional) {
+  const auto *Assign = dyn_cast_or_null<BinaryOperator>(Statement);
+  const auto *Boolean =
+      Assign ? dyn_cast_or_null<CXXBoolLiteralExpr>(
+                   functionalInvokeStrippedExpression(Assign->getRHS()))
+             : nullptr;
+  return Assign && Assign->getOpcode() == BO_Assign && Boolean &&
+         Boolean->getValue() == Value &&
+         utilityOptionalSwapField(Assign->getLHS(), Optional.Engaged,
+                                  ThisRecord, Optional);
+}
+
+static bool utilityOptionalSwapReset(const State &S, const SourceManager &SM,
+                                     const Stmt *Statement,
+                                     const CXXMethodDecl *Outer, bool Peer,
+                                     const UtilityOptionalRecord &Optional) {
+  const auto *Call = dyn_cast_or_null<CXXMemberCallExpr>(Statement);
+  const auto *Method = Call ? Call->getMethodDecl() : nullptr;
+  if (!Call || Call->getNumArgs() || !Method || Method->isStatic() ||
+      Method->isConst() || Method->isVolatile() || Method->getNumParams() ||
+      !Method->getReturnType()->isVoidType() ||
+      Method->getParent()->getCanonicalDecl() !=
+          Optional.DestructBase->getCanonicalDecl() ||
+      !utilityCompositeSwapMethod(S, SM, Method, "reset", "optional") ||
+      !utilityOptionalSwapReceiver(Call->getImplicitObjectArgument(), Outer,
+                                   Peer))
+    return false;
+  const auto *Branch = dyn_cast_or_null<IfStmt>(
+      utilityCompositeSwapOnlyStatement(Method->getBody()));
+  return Branch && !Branch->getInit() && !Branch->getConditionVariable() &&
+         !Branch->getElse() &&
+         utilityOptionalSwapField(Branch->getCond(), Optional.Engaged,
+                                  Optional.DestructBase, Optional) &&
+         utilityOptionalSwapEngage(
+             utilityCompositeSwapOnlyStatement(Branch->getThen()), false,
+             Optional.DestructBase, Optional);
+}
+
+static bool utilityOptionalSwapNoop(const Expr *Expression) {
+  Expression = Expression ? Expression->IgnoreParens() : nullptr;
+  const auto *Cast = dyn_cast_or_null<CStyleCastExpr>(Expression);
+  const auto *Zero =
+      Cast ? dyn_cast<IntegerLiteral>(Cast->getSubExpr()) : nullptr;
+  return Cast && Cast->getCastKind() == CK_ToVoid &&
+         Cast->getType()->isVoidType() && Zero && Zero->getValue().isZero();
+}
+
+static bool utilityOptionalSwapForward(const State &S, const SourceManager &SM,
+                                       const Expr *Expression,
+                                       const ParmVarDecl *Parameter,
+                                       QualType Type,
+                                       const ASTContext &Context) {
+  const auto *Call = dyn_cast_or_null<CallExpr>(
+      functionalInvokeStrippedExpression(Expression));
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Arguments =
+      Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  return Call && Call->getNumArgs() == 1 &&
+         utilitySwapSDKFunction(S, SM, Function, "forward",
+                                "__utility/forward.h") &&
+         Function->getNumParams() == 1 && Arguments && Arguments->size() == 1 &&
+         Arguments->get(0).getKind() == TemplateArgument::Type &&
+         Context.hasSameType(Arguments->get(0).getAsType(), Type) &&
+         Context.hasSameType(Function->getParamDecl(0)->getType(),
+                             Context.getLValueReferenceType(Type)) &&
+         Context.hasSameType(Function->getReturnType(),
+                             Context.getRValueReferenceType(Type)) &&
+         Context.hasSameType(Call->getType(), Type) && Call->isXValue() &&
+         functionalInvokeParameterReference(Call->getArg(0), Parameter);
+}
+
+static bool utilityOptionalSwapPlacement(const State &S,
+                                         const SourceManager &SM,
+                                         const FunctionDecl *Function,
+                                         bool Allocation,
+                                         const ASTContext &Context) {
+  const auto *Definition = Function ? Function->getDefinition() : nullptr;
+  if (!Definition || isa<CXXMethodDecl>(Definition) ||
+      !Definition->isReservedGlobalPlacementOperator() ||
+      Definition->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+      Definition->getOverloadedOperator() !=
+          (Allocation ? OO_New : OO_Delete) ||
+      !Definition->getDeclContext()->getRedeclContext()->isTranslationUnit() ||
+      Definition->getNumParams() != 2 || Definition->isVariadic() ||
+      !Context.hasSameType(Definition->getParamDecl(0)->getType(),
+                           Allocation ? Context.getSizeType()
+                                      : Context.VoidPtrTy) ||
+      !Context.hasSameType(Definition->getParamDecl(1)->getType(),
+                           Context.VoidPtrTy) ||
+      !Context.hasSameType(Definition->getReturnType(),
+                           Allocation ? Context.VoidPtrTy : Context.VoidTy))
+    return false;
+  for (const auto *Redeclaration : Function->redecls())
+    if (!cstddefOrigin(S, SM, Redeclaration->getLocation(), "libcxx",
+                       "__new/placement_new_delete.h"))
+      return false;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Definition->getBody());
+  if (!Body || Body->size() != (Allocation ? 1 : 0))
+    return false;
+  if (!Allocation)
+    return true;
+  const auto *Return = dyn_cast<ReturnStmt>(*Body->body_begin());
+  return Return && functionalInvokeParameterReference(
+                       Return->getRetValue(), Definition->getParamDecl(1));
+}
+
+static bool utilityOptionalSwapConstructAt(const State &S,
+                                           const SourceManager &SM,
+                                           const FunctionDecl *Function,
+                                           QualType Type,
+                                           const ASTContext &Context) {
+  if (!utilitySwapSDKFunction(S, SM, Function, "__construct_at",
+                              "__memory/construct_at.h") ||
+      Function->getNumParams() != 2 ||
+      !Context.hasSameType(Function->getParamDecl(0)->getType(),
+                           Context.getPointerType(Type)) ||
+      !Context.hasSameType(Function->getParamDecl(1)->getType(),
+                           Context.getRValueReferenceType(Type)) ||
+      !Context.hasSameType(Function->getReturnType(),
+                           Context.getPointerType(Type)))
+    return false;
+  const auto *Return = dyn_cast_or_null<ReturnStmt>(
+      utilityCompositeSwapOnlyStatement(Function->getBody()));
+  const auto *Comma =
+      Return ? dyn_cast_or_null<BinaryOperator>(Return->getRetValue())
+             : nullptr;
+  const auto *New = Comma ? dyn_cast<CXXNewExpr>(Comma->getRHS()) : nullptr;
+  if (!Comma || Comma->getOpcode() != BO_Comma ||
+      !utilityOptionalSwapNoop(Comma->getLHS()) || !New ||
+      !New->isGlobalNew() || New->isArray() ||
+      New->getNumPlacementArgs() != 1 ||
+      !Context.hasSameType(New->getAllocatedType(), Type) ||
+      !utilityOptionalSwapPlacement(S, SM, New->getOperatorNew(), true,
+                                    Context) ||
+      (New->getOperatorDelete() &&
+       !utilityOptionalSwapPlacement(S, SM, New->getOperatorDelete(), false,
+                                     Context)))
+    return false;
+  const auto *Placement = dyn_cast<CXXStaticCastExpr>(New->getPlacementArg(0));
+  if (!Placement ||
+      (Placement->getCastKind() != CK_NoOp &&
+       Placement->getCastKind() != CK_BitCast) ||
+      !Context.hasSameType(Placement->getType(), Context.VoidPtrTy) ||
+      !functionalInvokeParameterReference(Placement->getSubExpr(),
+                                          Function->getParamDecl(0)))
+    return false;
+  const Expr *Initializer = New->getInitializer();
+  if (Type->isRecordType()) {
+    const auto *Construction = dyn_cast_or_null<CXXConstructExpr>(Initializer);
+    const auto *Constructor =
+        Construction ? Construction->getConstructor() : nullptr;
+    const auto *Record = Type->getAsCXXRecordDecl();
+    if (!Construction || !Constructor || !Constructor->isTrivial() ||
+        !Constructor->isCopyOrMoveConstructor() ||
+        Construction->getNumArgs() != 1 ||
+        !Context.hasSameType(Construction->getType(), Type) || !Record ||
+        !Record->hasTrivialDestructor())
+      return false;
+    Initializer = Construction->getArg(0);
+  }
+  return utilityOptionalSwapForward(S, SM, Initializer,
+                                    Function->getParamDecl(1), Type, Context);
+}
+
+static bool utilityOptionalSwapConstruct(const State &S,
+                                         const SourceManager &SM,
+                                         const CXXMethodDecl *Method,
+                                         const UtilityOptionalRecord &Optional,
+                                         const ASTContext &Context) {
+  const auto Type = Optional.ElementType;
+  if (!utilityCompositeSwapMethod(S, SM, Method, "__construct", "optional") ||
+      Method->isStatic() || Method->isConst() || Method->isVolatile() ||
+      Method->getParent()->getCanonicalDecl() !=
+          Optional.StorageBase->getCanonicalDecl() ||
+      Method->getNumParams() != 1 || !Method->getReturnType()->isVoidType() ||
+      !Context.hasSameType(Method->getParamDecl(0)->getType(),
+                           Context.getRValueReferenceType(Type)))
+    return false;
+  const auto *Body = dyn_cast<CompoundStmt>(Method->getBody());
+  if (!Body || Body->size() != 3)
+    return false;
+  auto Statement = Body->body_begin();
+  const auto *Noop = dyn_cast<Expr>(*Statement++);
+  const auto *Call = dyn_cast<CallExpr>(*Statement++);
+  if (!Noop || !utilityOptionalSwapNoop(Noop) || !Call ||
+      Call->getNumArgs() != 2 ||
+      !utilityOptionalSwapConstructAt(S, SM, Call->getDirectCallee(), Type,
+                                      Context) ||
+      !utilityOptionalSwapForward(S, SM, Call->getArg(1),
+                                  Method->getParamDecl(0), Type, Context) ||
+      !utilityOptionalSwapEngage(*Statement, true, Optional.StorageBase,
+                                 Optional))
+    return false;
+  const auto *Address = dyn_cast_or_null<CallExpr>(
+      functionalInvokeStrippedExpression(Call->getArg(0)));
+  const auto *Function = Address ? Address->getDirectCallee() : nullptr;
+  return Address && Address->getNumArgs() == 1 &&
+         utilitySwapSDKFunction(S, SM, Function, "addressof",
+                                "__memory/addressof.h") &&
+         Function->getNumParams() == 1 &&
+         Context.hasSameType(Function->getParamDecl(0)->getType(),
+                             Context.getLValueReferenceType(Type)) &&
+         Context.hasSameType(Function->getReturnType(),
+                             Context.getPointerType(Type)) &&
+         utilityOptionalSwapField(Address->getArg(0), Optional.Value,
+                                  Optional.StorageBase, Optional);
+}
+
+static bool utilityOptionalSwapTransfer(const State &S, const SourceManager &SM,
+                                        const Stmt *Statement,
+                                        const CXXMethodDecl *Outer, bool ToPeer,
+                                        const UtilityOptionalRecord &Optional,
+                                        const ASTContext &Context) {
+  const auto *Call = dyn_cast_or_null<CXXMemberCallExpr>(Statement);
+  if (!Call || Call->getNumArgs() != 1 ||
+      !utilityOptionalSwapReceiver(Call->getImplicitObjectArgument(), Outer,
+                                   ToPeer) ||
+      !utilityOptionalSwapConstruct(S, SM, Call->getMethodDecl(), Optional,
+                                    Context))
+    return false;
+  const auto *Move = dyn_cast_or_null<CallExpr>(
+      functionalInvokeStrippedExpression(Call->getArg(0)));
+  const auto *Function = Move ? Move->getDirectCallee() : nullptr;
+  const auto *Arguments =
+      Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  const auto Type = Optional.ElementType;
+  const auto Reference = Context.getLValueReferenceType(Type);
+  return Move && Move->getNumArgs() == 1 && Move->isXValue() &&
+         utilitySwapSDKFunction(S, SM, Function, "move", "__utility/move.h") &&
+         Function->getNumParams() == 1 && Arguments && Arguments->size() == 1 &&
+         Arguments->get(0).getKind() == TemplateArgument::Type &&
+         Context.hasSameType(Arguments->get(0).getAsType(), Reference) &&
+         Context.hasSameType(Function->getParamDecl(0)->getType(), Reference) &&
+         Context.hasSameType(Function->getReturnType(),
+                             Context.getRValueReferenceType(Type)) &&
+         utilityOptionalSwapRead(S, SM, Move->getArg(0), Outer, !ToPeer,
+                                 Optional, false, Context);
+}
+
+static bool
+approvedUtilityOptionalSwapBody(const State &S, const SourceManager &SM,
+                                const CXXMethodDecl *Method,
+                                const ASTContext &Context, unsigned Depth = 0,
+                                UtilitySwapProofContext *Proof = nullptr) {
+  UtilitySwapProofContext LocalProof;
+  if (!Proof)
+    Proof = &LocalProof;
+  if (Depth > 64 ||
+      !utilityCompositeSwapMethod(S, SM, Method, "swap", "optional") ||
+      Method->isStatic() || Method->isConst() || Method->isVolatile() ||
+      Method->getNumParams() != 1 || !Method->getReturnType()->isVoidType())
+    return false;
+  const auto Optional =
+      approvedUtilityOptionalRecord(S, SM, Method->getParent(), Context);
+  if (!Optional ||
+      !utilityTupleAssignableValue(S, SM, Context, Optional->ElementType) ||
+      !Context.hasSameType(Method->getParamDecl(0)->getType(),
+                           Context.getLValueReferenceType(
+                               Context.getRecordType(Optional->Record))))
+    return false;
+  const auto *Branch = dyn_cast_or_null<IfStmt>(
+      utilityCompositeSwapOnlyStatement(Method->getBody()));
+  const auto *Condition =
+      Branch ? dyn_cast_or_null<BinaryOperator>(Branch->getCond()) : nullptr;
+  const auto *Equal =
+      Branch ? dyn_cast_or_null<CompoundStmt>(Branch->getThen()) : nullptr;
+  const auto *Different =
+      Branch ? dyn_cast_or_null<IfStmt>(
+                   utilityCompositeSwapOnlyStatement(Branch->getElse()))
+             : nullptr;
+  if (!Branch || Branch->getInit() || Branch->getConditionVariable() ||
+      !Condition || Condition->getOpcode() != BO_EQ || !Equal ||
+      Equal->size() != 2 || !Different || Different->getInit() ||
+      Different->getConditionVariable() ||
+      !utilityOptionalSwapRead(S, SM, Condition->getLHS(), Method, false,
+                               *Optional, true, Context) ||
+      !utilityOptionalSwapRead(S, SM, Condition->getRHS(), Method, true,
+                               *Optional, true, Context) ||
+      !utilityOptionalSwapRead(S, SM, Different->getCond(), Method, false,
+                               *Optional, true, Context))
+    return false;
+  auto Statement = Equal->body_begin();
+  const auto *Using = dyn_cast<DeclStmt>(*Statement++);
+  if (!Using)
+    return false;
+  for (const auto *Declaration : Using->decls())
+    if (!isa<UsingDecl>(Declaration) && !isa<UsingShadowDecl>(Declaration))
+      return false;
+  const auto *Present = dyn_cast<IfStmt>(*Statement);
+  const auto *Swap =
+      Present ? dyn_cast_or_null<CallExpr>(Present->getThen()) : nullptr;
+  if (!Present || Present->getInit() || Present->getConditionVariable() ||
+      Present->getElse() || !Swap || Swap->getNumArgs() != 2 ||
+      !utilityOptionalSwapRead(S, SM, Present->getCond(), Method, false,
+                               *Optional, true, Context) ||
+      !utilityOptionalSwapRead(S, SM, Swap->getArg(0), Method, false, *Optional,
+                               false, Context) ||
+      !utilityOptionalSwapRead(S, SM, Swap->getArg(1), Method, true, *Optional,
+                               false, Context) ||
+      !approvedUtilityPairElementSwap(S, SM, Swap->getDirectCallee(),
+                                      Optional->ElementType, Context, Depth + 1,
+                                      Proof))
+    return false;
+  for (bool ToPeer : {true, false}) {
+    const auto *Transfer = dyn_cast_or_null<CompoundStmt>(
+        ToPeer ? Different->getThen() : Different->getElse());
+    if (!Transfer || Transfer->size() != 2)
+      return false;
+    auto Part = Transfer->body_begin();
+    if (!utilityOptionalSwapTransfer(S, SM, *Part++, Method, ToPeer, *Optional,
+                                     Context) ||
+        !utilityOptionalSwapReset(S, SM, *Part, Method, !ToPeer, *Optional))
+      return false;
+  }
+  return true;
+}
+
 std::optional<UtilityOperation>
 approvedUtilityOperation(const State &S, const SourceManager &SM,
                          const CallExpr *Call, const ASTContext &Context) {
@@ -10563,7 +10896,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         SameOptional(Method->getParamDecl(0)->getType()->getPointeeType()) &&
         SameOptional(Call->getArg(0)->getType()) &&
         utilityTupleAssignableValue(S, SM, Context, Optional->ElementType))
-      if (!utilityContainsNewPairSwapCarrier(S, SM, Optional->ElementType, Context))
+      if (approvedUtilityOptionalSwapBody(S, SM, Method, Context))
         return UtilityOperation::OptionalMemberSwap;
   }
   const auto InitializerList = approvedUtilityInitializerListRecord(
@@ -11213,7 +11546,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         OptionalParameter(0, *Left, false) &&
         OptionalParameter(1, *Right, false) &&
         utilityTupleAssignableValue(S, SM, Context, Left->ElementType))
-      if (!utilityContainsNewPairSwapCarrier(S, SM, Left->ElementType, Context))
+      if (approvedUtilityPairElementSwap(
+              S, SM, Function, Context.getRecordType(Left->Record), Context))
         return UtilityOperation::OptionalSwap;
   }
   if (Origin->Path == "optional" && Name == "make_optional" &&

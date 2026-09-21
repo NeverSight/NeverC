@@ -212,9 +212,8 @@ result-pair construction and the element swap selected after ADL. Wrapper pairs
 with array siblings are supported. Zero-length arrays instantiate no element
 swap and still evaluate both caller operands once; element and source checks
 remain in force. User ADL swaps and source specializations remain rejected.
-Optional swaps containing wrapper-bearing pairs require additional internal
-operation proofs and remain rejected; their storage, construction, assignment
-and checked apply admission are unchanged.
+Optional swaps containing wrapper-bearing pairs and tuples use the separate
+engagement, selected value-swap and trivial transfer proofs described below.
 The wrapper element must retain the exact
 unqualified type for composite construction or assignment. Const wrapper
 fields remain copyable but not assignable, and volatile wrapper fields
@@ -612,6 +611,17 @@ types remain outside this boundary. Function addresses, quoted includes, user
 shadows and forged declarations remain rejected.
 
 ## Value optionals from `<optional>`
+
+Member and free swap prove the exact SDK engagement tests and value projections.
+When both objects are engaged, the selected element swap must satisfy the same
+recursive SDK operation proof as pairs, arrays and tuples. When only one is
+engaged, the proof follows `move`, `__construct`, `__construct_at`, `addressof`,
+`forward`, reserved placement construction and reset, requiring the concrete
+selected copy/move constructor and destruction to be trivial. Empty/empty swap
+performs no element operation. Source ADL swaps, redeclarations and operation
+specializations are rejected. Nested wrapper pairs and tuples retain their
+bindings through these transfers; both operands are evaluated once and self-swap
+preserves engagement and values.
 
 Core v2 accepts the exact angled `<optional>` entry from the pinned embedded
 VFS. Its authenticated 136-file libc++/resource closure is identical on all
