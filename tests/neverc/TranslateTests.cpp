@@ -34095,6 +34095,78 @@ int main() {
 }
 
 TEST_F(TranslateTest,
+       CoreV2FunctionalInvokeRvalueReferenceResultsRunAtBothOptimizations) {
+  const auto Source = tmpFile("functional-invoke-rvalue-results.cpp");
+  const auto Output = tmpFile("functional-invoke-rvalue-results.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+int value = 3;
+int *slot;
+int &&get() { return static_cast<int &&>(value); }
+const int &&view() { return static_cast<const int &&>(value); }
+int *&&pointer() { return static_cast<int *&&>(slot); }
+struct Box {
+  int value;
+  int &&take() { return static_cast<int &&>(value); }
+  const int &&inspect() const { return static_cast<const int &&>(value); }
+};
+int main() {
+  int other = 9;
+  slot = &value;
+  int &&a = std::invoke(get);
+  a = 4;
+  if (&a != &value || value != 4) return 1;
+  auto get_ref = std::ref(get);
+  int &&b = get_ref();
+  b = 5;
+  if (&b != &value || value != 5) return 2;
+  int &&c = std::invoke(get_ref);
+  c = 6;
+  if (&c != &value || value != 6) return 3;
+  const int &&read = std::invoke(view);
+  if (&read != &value || read != 6) return 4;
+  int *&&p = std::invoke(pointer);
+  p = &other;
+  if (&p != &slot || slot != &other) return 5;
+  Box box{7};
+  auto take = &Box::take;
+  int &&d = (box.*take)();
+  d = 8;
+  if (&d != &box.value || box.value != 8) return 6;
+  int &&e = std::invoke(take, box);
+  e = 9;
+  if (&e != &box.value || box.value != 9) return 7;
+  int &&f = std::mem_fn(take)(box);
+  f = 10;
+  if (&f != &box.value || box.value != 10) return 8;
+  auto wrapper = std::mem_fn(take);
+  int &&g = std::invoke(wrapper, box);
+  g = 11;
+  if (&g != &box.value || box.value != 11) return 9;
+  const Box constant{12};
+  const int &&h = std::invoke(&Box::inspect, constant);
+  if (&h != &constant.value || h != 12) return 10;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  EXPECT_EQ(Generated.find("member_pointer"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-invoke-rvalue-results" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
        CoreV2FunctionalReferenceWrappersInvokeAtBothOptimizations) {
   const auto Source = tmpFile("functional-reference-invoke.cpp");
   const auto Output = tmpFile("functional-reference-invoke.nc");
@@ -34771,11 +34843,6 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "#include <functional>\nstruct F{int operator()(int v)const{return v;}};"
        "int main(){F f;auto r=std::ref(f);return r(1);}",
        "TR0203"},
-      {"reference-wrapper-function-rvalue-reference-result",
-       "#include <functional>\nint value;int&& get(){return "
-       "static_cast<int&&>(value);}"
-       "int main(){auto r=std::ref(get);return r();}",
-       "TR0201"},
       {"reference-wrapper-function-volatile-reference-parameter",
        "#include <functional>\nint load(volatile int&v){return v;}int main(){"
        "auto p=&load;auto r=std::ref(p);volatile int v=3;return r(v);}",
@@ -34792,10 +34859,9 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "#include <functional>\nstruct R{int n;};int load(R&&v){return v.n;}"
        "int main(){return std::invoke(load,R{3});}",
        "TR0203"},
-      {"invoke-rvalue-reference-result",
-       "#include <functional>\nint value;int&&get(){return "
-       "static_cast<int&&>(value);}int main(){"
-       "return std::invoke(get);}",
+      {"invoke-record-rvalue-reference-result",
+       "#include <functional>\nstruct R{int n;};R value{3};R&&get(){return "
+       "static_cast<R&&>(value);}int main(){return std::invoke(get).n;}",
        "TR0203"},
       {"invoke-volatile-reference-parameter",
        "#include <functional>\nint load(volatile int&v){return v;}int main(){"
@@ -34853,11 +34919,6 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "struct X{int f(){return 3;}};int call(int(X::*p)(),X&x){"
        "return (x.*p)();}int main(){X x;return call(&X::f,x);}",
        "TR0201"},
-      {"invoke-member-rvalue-reference-result",
-       "#include <functional>\nstruct X{int v;int&&f(){return "
-       "static_cast<int&&>(v);}};"
-       "int main(){X x{3};return std::invoke(&X::f,x);}",
-       "TR0203"},
       {"invoke-member-volatile-receiver",
        "#include <functional>\nstruct X{int v;};int main(){volatile X x{3};"
        "return std::invoke(&X::v,x);}",

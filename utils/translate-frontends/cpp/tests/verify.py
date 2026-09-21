@@ -1827,6 +1827,44 @@ extern "C" int functional_rvalue_reference(int value, int *pointer) {
         check("v2-functional-rvalue-reference-" + target,
               functional_rvalue_reference_source, profile="cpp-core-v2",
               target=target, sdk=True)
+    functional_rvalue_result_source = """\
+#include <functional>
+int value;
+int *slot;
+int &&get() { return static_cast<int &&>(value); }
+const int &&view() { return static_cast<const int &&>(value); }
+int *&&pointer() { return static_cast<int *&&>(slot); }
+struct Box {
+  int value;
+  int &&take() { return static_cast<int &&>(value); }
+  const int &&inspect() const { return static_cast<const int &&>(value); }
+};
+extern "C" int functional_rvalue_result(Box &box, const Box &constant) {
+  int &&a = std::invoke(get);
+  auto get_ref = std::ref(get);
+  int &&b = get_ref();
+  int &&c = std::invoke(get_ref);
+  const int &&d = std::invoke(view);
+  int *&&p = std::invoke(pointer);
+  auto take = &Box::take;
+  int &&e = (box.*take)();
+  int &&f = std::invoke(take, box);
+  int &&g = std::mem_fn(take)(box);
+  auto wrapper = std::mem_fn(take);
+  int &&h = std::invoke(wrapper, box);
+  const int &&i = std::invoke(&Box::inspect, constant);
+  return a + b + c + d + e + f + g + h + i + (p != nullptr);
+}
+"""
+    functional_rvalue_result = check(
+        "v2-functional-rvalue-result", functional_rvalue_result_source,
+        profile="cpp-core-v2", sdk=True)
+    assert any(function["name"] == "functional_rvalue_result"
+               for function in functional_rvalue_result["functions"]), functional_rvalue_result
+    for target in sdk_targets:
+        check("v2-functional-rvalue-result-" + target,
+              functional_rvalue_result_source, profile="cpp-core-v2",
+              target=target, sdk=True)
     functional_member_invoke_source = """\
 #include <functional>
 struct Box {
@@ -2230,8 +2268,6 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
          "TR0202"),
         ("reference-wrapper-user-callable", '#include <functional>\nstruct F{int operator()(int v)const{return v;}};int main(){F f;auto r=std::ref(f);return r(1);}',
          "TR0203"),
-        ("reference-wrapper-function-rvalue-reference-result", '#include <functional>\nint value;int&& get(){return static_cast<int&&>(value);}int main(){auto r=std::ref(get);return r();}',
-         "TR0201"),
         ("reference-wrapper-function-volatile-reference-parameter", '#include <functional>\nint load(volatile int&v){return v;}int main(){auto p=&load;auto r=std::ref(p);volatile int v=3;return r(v);}',
          "TR0201"),
         ("reference-wrapper-variadic", '#include <functional>\nint first(int v,...){return v;}int main(){auto p=&first;auto r=std::ref(p);return r(3,4);}',
@@ -2240,7 +2276,7 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
          "TR0203"),
         ("invoke-record-rvalue-reference-parameter", '#include <functional>\nstruct R{int n;};int load(R&&v){return v.n;}int main(){return std::invoke(load,R{3});}',
          "TR0203"),
-        ("invoke-rvalue-reference-result", '#include <functional>\nint value;int&&get(){return static_cast<int&&>(value);}int main(){return std::invoke(get);}',
+        ("invoke-record-rvalue-reference-result", '#include <functional>\nstruct R{int n;};R value{3};R&&get(){return static_cast<R&&>(value);}int main(){return std::invoke(get).n;}',
          "TR0203"),
         ("invoke-volatile-reference-parameter", '#include <functional>\nint load(volatile int&v){return v;}int main(){volatile int v=3;return std::invoke(load,v);}',
          "TR0201"),
@@ -2268,8 +2304,6 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
          "TR0201"),
         ("native-member-function-pointer-from-parameter", 'struct X{int f(){return 3;}};int call(int(X::*p)(),X&x){return (x.*p)();}int main(){X x;return call(&X::f,x);}',
          "TR0201"),
-        ("invoke-member-rvalue-reference-result", '#include <functional>\nstruct X{int v;int&&f(){return static_cast<int&&>(v);}};int main(){X x{3};return std::invoke(&X::f,x);}',
-         "TR0203"),
         ("invoke-member-volatile-receiver", '#include <functional>\nstruct X{int v;};int main(){volatile X x{3};return std::invoke(&X::v,x);}',
          "TR0203"),
         ("invoke-member-function-pointer-field", '#include <functional>\nint f(){return 3;}struct X{int(*p)();};int main(){X x{f};return std::invoke(&X::p,x)();}',

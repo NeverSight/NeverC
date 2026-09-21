@@ -308,7 +308,7 @@ boundary.
 Exact object `std::reference_wrapper<T>` and
 `std::reference_wrapper<const T>`, plus exact fixed-arity function wrappers with
 admitted scalar or object-pointer values, exact lvalue- or rvalue-reference
-parameters, and exact lvalue-reference results, use their authenticated target
+parameters, and exact lvalue- or rvalue-reference results, use their authenticated target
 ABI layout:
 a single pointer slot under the Itanium ABI and an empty-base storage slot plus
 the pointer under the Microsoft ABI. Direct matching-lvalue construction,
@@ -326,13 +326,13 @@ direct lowering boundary, except exact C++17 `std::invoke` calls on fixed-arity
 ordinary functions or stored function pointers. Those calls accept directly
 convertible by-value scalar parameters or exact admitted scalar or
 object-pointer lvalue or rvalue references, and preserve the corresponding scalar,
-object-pointer, lvalue-reference or `void` result. The same entry point accepts
+object-pointer, lvalue- or rvalue-reference or `void` result. The same entry point accepts
 the admitted typed and transparent standard function objects above. A direct
 source-written address of an owned nonstatic member
 function may also be invoked on an exact-class lvalue, pointer or admitted
 `std::reference_wrapper` when its fixed-arity signature has the same scalar
 boundary, including object-pointer values, exact scalar or object-pointer
-lvalue- or rvalue-reference parameters, and exact lvalue-reference results. A
+lvalue- or rvalue-reference parameters, and exact lvalue- or rvalue-reference results. A
 direct source-written address of an admitted non-volatile scalar or object-pointer field,
 including a declared-const field, may be invoked on the same receivers and
 retains its qualified lvalue result. An exact `std::mem_fn` wrapper built from
@@ -365,7 +365,7 @@ the call, const methods accept exact const receivers, and an `&&`-qualified
 method requires that temporary receiver. Reassigned or null
 member pointers, `mem_fn` copies or moves from parameters, reassigned `mem_fn`
 objects, base adjustments,
-rvalue-reference results or other reference signatures and
+other reference signatures and
 volatile receivers remain outside this boundary.
 Core v2 never admits the `platform` root.
 Math v1 continues to use its separately checked libc++, resource and Darwin

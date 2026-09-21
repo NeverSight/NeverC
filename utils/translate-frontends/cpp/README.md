@@ -136,7 +136,7 @@ object-pointer lvalue or rvalue references. The
 exact C++17 `std::invoke` also lowers fixed-arity ordinary functions and stored
 function pointers with directly convertible by-value scalar parameters or
 exact admitted scalar or object-pointer lvalue or rvalue references, and preserves the
-corresponding scalar, object-pointer, lvalue-reference or `void` result, plus
+corresponding scalar, object-pointer, lvalue- or rvalue-reference or `void` result, plus
 the admitted typed and transparent standard function objects. Direct named
 addresses of owned nonstatic member functions
 also lower on exact-class lvalue, full-expression temporary, pointer or
@@ -158,7 +158,7 @@ may be called with native `.*` or `->*` on an exact object or pointer through
 the same fixed-arity method boundary; exact full-expression temporary objects
 are materialized and destroyed after the call, and `&&`-qualified methods
 require that temporary receiver. This includes const methods, admitted lvalue-
-or rvalue-reference parameters, and admitted lvalue-reference results. Exact
+or rvalue-reference parameters, and admitted lvalue- or rvalue-reference results. Exact
 `std::mem_fn` wrappers built from those direct named addresses or authenticated
 local member-pointer chains may be called
 immediately, directly or as the callable of `std::invoke`, through the same
@@ -169,9 +169,9 @@ their carriers, including chains through the admitted `<utility>` reference
 adapters. Reassigned or null member pointers, `mem_fn` copies or moves from
 parameters, reassigned `mem_fn` objects,
 base adjustments, volatile receivers, user-defined callable objects,
-and rvalue-reference results, other reference or variadic function signatures stay
+and other reference or variadic function signatures stay
 outside this boundary. Object-pointer values and exact scalar or object-pointer
-lvalue- or rvalue-reference parameters and lvalue-reference results are preserved. The
+lvalue- or rvalue-reference parameters and lvalue- or rvalue-reference results are preserved. The
 frontend uses the pinned embedded libc++/resource VFS and exposes resolved type
 aliases plus integral/enum constant results. It records all consumed header
 hashes: 101 for the `<type_traits>` closure, nine for standalone `<cstdint>`,
