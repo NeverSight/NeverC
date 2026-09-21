@@ -133,7 +133,8 @@ Core v2 accepts authenticated empty and nonempty `<tuple>` values, including
 construction, assignment, factories, swaps, comparisons and `get`. `std::tie`
 and `std::forward_as_tuple` create authenticated reference tuples whose `get`
 and `apply` operations preserve aliases, value categories and writes to the
-bound objects. Exact
+bound objects. Reference tuples may also be constructed directly from exact
+compatible references and copy-constructed while preserving their bindings. Exact
 `std::apply` calls over scalar tuples accept named functions or stored function
 pointers with directly convertible by-value scalar parameters and a scalar or
 void result. The callable and tuple are evaluated once and lower to an ordinary

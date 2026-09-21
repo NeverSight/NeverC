@@ -3193,8 +3193,14 @@ approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
       Construction->getConstructionKind() != CXXConstructionKind::Complete)
     return std::nullopt;
   const auto *Constructor = Construction->getConstructor();
-  const auto Tuple = approvedUtilityTupleRecord(
+  auto Tuple = approvedUtilityTupleRecord(
       S, SM, Construction->getType()->getAsCXXRecordDecl(), Context);
+  bool ReferenceTuple = false;
+  if (!Tuple) {
+    Tuple = approvedUtilityReferenceTupleRecord(
+        S, SM, Construction->getType()->getAsCXXRecordDecl(), Context);
+    ReferenceTuple = Tuple.has_value();
+  }
   if (!Constructor || !Tuple || Constructor->isVariadic() ||
       Constructor->getParent()->getCanonicalDecl() !=
           Tuple->Record->getCanonicalDecl() ||
@@ -3203,8 +3209,9 @@ approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
       !cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx", "tuple"))
     return std::nullopt;
   if (!Construction->getNumArgs() && Constructor->isDefaultConstructor()) {
-    if (Tuple->Elements.empty() &&
-        (!Constructor->isDefaulted() || !Constructor->isTrivial()))
+    if (ReferenceTuple ||
+        (Tuple->Elements.empty() &&
+         (!Constructor->isDefaulted() || !Constructor->isTrivial())))
       return std::nullopt;
     return UtilityTupleConstruction::Default;
   }
@@ -3216,7 +3223,7 @@ approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
     return UtilityTupleConstruction::CopyOrMove;
   const auto *Primary = Constructor->getPrimaryTemplate();
   const auto SourceTuple =
-      Construction->getNumArgs() == 1
+      !ReferenceTuple && Construction->getNumArgs() == 1
           ? approvedUtilityTupleRecord(
                 S, SM, Construction->getArg(0)->getType()->getAsCXXRecordDecl(),
                 Context)
@@ -3242,7 +3249,7 @@ approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
     return UtilityTupleConstruction::Converting;
   }
   const auto SourcePair =
-      Construction->getNumArgs() == 1
+      !ReferenceTuple && Construction->getNumArgs() == 1
           ? approvedUtilityPairRecord(
                 S, SM, Construction->getArg(0)->getType()->getAsCXXRecordDecl(),
                 Context)
@@ -3274,10 +3281,25 @@ approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
     auto Parameter = Constructor->getParamDecl(I)->getType();
     if (!Parameter->isReferenceType() ||
         !Context.hasSameUnqualifiedType(Construction->getArg(I)->getType(),
-                                        Parameter->getPointeeType()) ||
-        !utilityTupleDirectConversion(S, SM, Context,
-                                      Construction->getArg(I)->getType(),
-                                      Tuple->Elements[I]->getType()))
+                                        Parameter->getPointeeType()))
+      return std::nullopt;
+    if (ReferenceTuple) {
+      const auto Element = Tuple->Elements[I]->getType();
+      const auto Argument = Construction->getArg(I)->getType();
+      if (!Element->isReferenceType() ||
+          !Context.hasSameUnqualifiedType(Argument,
+                                          Element->getPointeeType()) ||
+          !Element->getPointeeType().isAtLeastAsQualifiedAs(Argument,
+                                                            Context) ||
+          (Element->isRValueReferenceType() &&
+           Construction->getArg(I)->isLValue()) ||
+          (Element->isLValueReferenceType() &&
+           !Element->getPointeeType().isConstQualified() &&
+           !Construction->getArg(I)->isLValue()))
+        return std::nullopt;
+    } else if (!utilityTupleDirectConversion(
+                   S, SM, Context, Construction->getArg(I)->getType(),
+                   Tuple->Elements[I]->getType()))
       return std::nullopt;
   }
   return UtilityTupleConstruction::Elements;

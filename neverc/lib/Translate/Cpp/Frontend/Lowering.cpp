@@ -9956,6 +9956,12 @@ class FunctionLowering {
             approvedUtilityTupleConstruction(A.S, A.Sources, C, A.Context)) {
       auto Tuple = approvedUtilityTupleRecord(
           A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context);
+      bool ReferenceTuple = false;
+      if (!Tuple) {
+        Tuple = approvedUtilityReferenceTupleRecord(
+            A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context);
+        ReferenceTuple = Tuple.has_value();
+      }
       if (!Tuple)
         reject(L, "utility tuple construction",
                "The selected std::tuple layout is unavailable.");
@@ -9972,7 +9978,10 @@ class FunctionLowering {
           reject(L, "utility tuple construction",
                  "The constructor and tuple element counts differ.");
         for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
-          if (recordValue(Tuple->Elements[I]->getType()))
+          if (ReferenceTuple)
+            assign(Member(Tuple->Elements[I]),
+                   bind(C->getArg(I), Tuple->Elements[I]->getType()), L);
+          else if (recordValue(Tuple->Elements[I]->getType()))
             initialize(Member(Tuple->Elements[I]), C->getArg(I), L);
           else
             assign(Member(Tuple->Elements[I]),

@@ -870,6 +870,29 @@ extern "C" int tuple_forward(int value) {
         check("v2-tuple-forward-" + target, tuple_forward_source,
               profile="cpp-core-v2", target=target, sdk=True)
 
+    tuple_reference_construction_source = """\
+#include <tuple>
+extern "C" int tuple_reference_construction(int value) {
+  int other = value + 1;
+  std::tuple<int &, int &> direct(value, other);
+  const auto copied(direct);
+  std::get<0>(copied) += 2;
+  std::tuple<int &&> rvalue(static_cast<int &&>(other));
+  std::get<0>(rvalue) += 3;
+  return value + other;
+}
+"""
+    tuple_reference_construction = check(
+        "v2-tuple-reference-construction", tuple_reference_construction_source,
+        profile="cpp-core-v2", sdk=True)
+    assert not [node for node in walk(
+        tuple_reference_construction["functions"])
+                if node.get("op") == "mapped_call"], tuple_reference_construction
+    for target in sdk_targets:
+        check("v2-tuple-reference-construction-" + target,
+              tuple_reference_construction_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+
     tuple_pair_source = """\
 #include <tuple>
 #include <utility>

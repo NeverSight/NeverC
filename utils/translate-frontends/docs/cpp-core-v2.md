@@ -261,6 +261,14 @@ expression, including a direct `apply`, and is destroyed afterward; storing a
 tuple that refers to an expired temporary retains ordinary C++ dangling-reference
 semantics.
 
+Authenticated reference tuples also support direct element construction when
+each selected binding has the same unqualified referent type, compatible cv
+qualification and an admissible lvalue/rvalue category. Same-type trivial
+copy/move construction copies the stored bindings, so both tuple objects keep
+referring to the original objects. Reference-tuple assignment remains outside
+this boundary because it assigns through the existing bindings rather than
+rebinding them.
+
 Exact `std::apply` calls over an authenticated empty or nonempty tuple lower to
 one ordinary callback call. The callable may be a named function, a stored
 function pointer with a fixed nonvariadic signature, or an exact source-owned

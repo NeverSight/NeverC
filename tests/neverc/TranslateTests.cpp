@@ -23843,6 +23843,52 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2ReferenceTupleConstructionRunsAtBothOptimizations) {
+  const auto Source = tmpFile("tuple-reference-construction.cpp");
+  const auto Output = tmpFile("tuple-reference-construction.nc");
+  writeFile(Source, R"cpp(
+#include <tuple>
+int effects;
+int &select(int &value) {
+  ++effects;
+  return value;
+}
+int main() {
+  int left = 2;
+  double right = 3.5;
+  effects = 0;
+  std::tuple<int &, double &> direct(select(left), right);
+  if (effects != 1 || &std::get<0>(direct) != &left ||
+      &std::get<1>(direct) != &right)
+    return 1;
+  const auto copied(direct);
+  std::get<0>(copied) = 7;
+  std::get<1>(copied) = 8.5;
+  if (left != 7 || right != 8.5 || &std::get<0>(copied) != &left ||
+      &std::get<1>(copied) != &right)
+    return 2;
+  std::tuple<int &&> rvalue(static_cast<int &&>(left));
+  std::get<0>(rvalue) = 11;
+  return left == 11 && &std::get<0>(rvalue) == &left ? 0 : 3;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Text = readFile(Output);
+  EXPECT_EQ(Text.find("std::"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("tuple-reference-construction" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2TupleApplyCallableObjectsRunAtBothOptimizations) {
   const auto Source = tmpFile("tuple-apply-callable-objects.cpp");
   const auto Output = tmpFile("tuple-apply-callable-objects.nc");
