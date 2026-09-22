@@ -1706,11 +1706,16 @@ whole range, while `all_of` and `any_of` preserve their decisive short circuit.
 Class-template or lambda objects, SDK function objects, nontrivial copying or
 destruction, reference parameters, non-boolean results and function objects in
 other algorithm overloads remain outside this increment.
-Algorithm calls inside `decltype` and other consumed query roots retain the
-existing conservative SDK source-dependency boundary, including after an
-evaluated call has instantiated the same specialization. This also applies to
-queries whose deduced variable type depends on such an initializer. Query-only calls do
-not manufacture a missing instantiated body.
+For these six source-object overloads, `decltype`, `noexcept` and queries of
+an initialized variable's deduced type can consume an already instantiated,
+authenticated algorithm specialization. Each exact call and callee reference
+retains the selected source operator's signature and exception dependencies;
+caller expressions, written template arguments, constructors and defaults still
+require ordinary source completion. Queries do not execute the predicate or its
+arguments. The pinned SDK `std::ptrdiff_t` alias supplies target pointer-difference
+metadata without requiring user traversal of its internal pointer-subtraction
+expression. Query-only calls do not manufacture a missing instantiated body,
+and taking an algorithm's address does not inherit a checked call's proof.
 
 The `shuffle` and `sample` component headers are authenticated but their
 declarations stay disabled because libc++ reaches `mbstate_t` through

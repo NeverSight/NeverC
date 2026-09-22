@@ -5359,6 +5359,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   OperationExpressionSources CheckedOperationExpressions;
   OperationTypeSources CheckedOperationTypes;
   std::map<const DeclRefExpr *, const CallExpr *> AuthenticatedProjectionGetReferences;
+  std::map<const DeclRefExpr *, std::pair<const CallExpr *, UtilityAlgorithmPredicateCall>>
+      AuthenticatedAlgorithmReferences;
   std::map<const InitListExpr *, const InitListExpr *> ZeroArrayStorageSources;
   std::set<const Expr *> TypeSourceQueries;
   std::map<OperationTypeSourceKey, SourceLocation> TypeSourceRoots;
@@ -7847,7 +7849,13 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                             Origin->Root == "libcxx" &&
                             Origin->Path == "__cstddef/size_t.h" &&
                             A.Context.hasSameType(T, A.Context.getSizeType());
-          if (Nullptr || MaxAlign || Size)
+          const bool Difference =
+              Alias->getDecl()->getName() == "ptrdiff_t" && Origin &&
+              Origin->Root == "libcxx" &&
+              Origin->Path == "__cstddef/ptrdiff_t.h" &&
+              approvedStandardSDKDeclaration(A.S, A.Sources, Alias->getDecl()) &&
+              A.Context.hasSameType(T, A.Context.getPointerDiffType());
+          if (Nullptr || MaxAlign || Size || Difference)
             return;
         } else {
           operationTypeDependency(Alias->getDecl()->getTypeSourceInfo());
@@ -7968,10 +7976,30 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     // even a trivial destructor and then omit the binding expression entirely.
     if (!ActiveOperationSources.empty()) {
       const FunctionDecl *AuthenticatedProjectionGet = nullptr;
+      std::optional<UtilityAlgorithmPredicateCall> AuthenticatedAlgorithm;
       if (const auto *Call = dyn_cast<CallExpr>(S)) {
         const auto *Function = Call->getDirectCallee();
         const auto *Prototype =
             Function ? Function->getType()->getAs<FunctionProtoType>() : nullptr;
+        // The public algorithm has no written exception specification. Its
+        // exact descriptor supplies the SDK signature/body, not a blanket
+        // exemption for other references to the same function declaration.
+        if (Prototype && Prototype->getExceptionSpecType() == EST_None) {
+          if (auto Predicate = approvedUtilityAlgorithmPredicateCall(
+                  A.S, A.Sources, Call, A.Context)) {
+            if (const auto *Reference =
+                    dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Call));
+                Reference && Reference->getDecl() == Function) {
+              auto [Entry, Inserted] =
+                  AuthenticatedAlgorithmReferences.emplace(
+                      Reference, std::make_pair(Call, *Predicate));
+              if (Inserted)
+                A.chargeExpansion(1, Call->getExprLoc());
+              if (Entry->second.first == Call)
+                AuthenticatedAlgorithm = Entry->second.second;
+            }
+          }
+        }
         // This proof belongs to an exact checked call, not every use of its
         // declaration. The pinned get overloads have no written noexcept input.
         if (Prototype && Prototype->getExceptionSpecType() == EST_BasicNoexcept &&
@@ -7993,6 +8021,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           }
         }
       } else if (const auto *Reference = dyn_cast<DeclRefExpr>(S)) {
+        if (auto Found = AuthenticatedAlgorithmReferences.find(Reference);
+            Found != AuthenticatedAlgorithmReferences.end())
+          AuthenticatedAlgorithm = Found->second.second;
         if (auto Found = AuthenticatedProjectionGetReferences.find(Reference);
             Found != AuthenticatedProjectionGetReferences.end())
           AuthenticatedProjectionGet = Found->second->getDirectCallee();
@@ -8023,6 +8054,11 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         // arguments still complete through their ordinary source traversal.
         if (Function == AuthenticatedProjectionGet)
           return;
+        // The exact algorithm descriptor supplies its pinned SDK implementation.
+        // Its selected source operator retains ordinary signature and exception
+        // dependencies, and finishAlgorithmPredicates requires its checked body.
+        if (AuthenticatedAlgorithm && Function == AuthenticatedAlgorithm->Algorithm)
+          Function = AuthenticatedAlgorithm->Method;
         collectOperationFunctionTypeSource(Function);
         Exception(Function->getType()->getAs<FunctionProtoType>(), Function);
         // Constant value calls can consume an already materialized body. Keep

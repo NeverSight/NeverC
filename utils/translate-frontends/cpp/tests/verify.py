@@ -10895,7 +10895,6 @@ int main() {
         ('factory-default-source', '#include <algorithm>\nstruct P { bool operator()(int x) const { return x != 0; } };\nP make(int n=(sizeof(long double),0)){return P{};}\nint f(int*a){return std::find_if(a,a+2,make())==a;}\n', 'TR0201', 'cpp-core-v2', True),
         ('class-template-object', '#include <algorithm>\ntemplate<class T>struct P{bool operator()(T x)const{return x!=0;}};\nint f(int*a){return std::find_if(a,a+2,P<int>{})==a;}\n', 'TR0203', 'cpp-core-v2', True),
         ('query-only-no-body', '#include <algorithm>\nstruct P { bool operator()(int x) const { return x != 0; } };\nusing Result=decltype(std::find_if(static_cast<int*>(nullptr),static_cast<int*>(nullptr),P{}));\nstatic_assert(__is_same(Result,int*));\n', 'TR0203', 'cpp-core-v2', True),
-        ('evaluated-then-query', '#include <algorithm>\nstruct P { bool operator()(int x) const { return x != 0; } };\nint*f(int*a){P p;int*result=std::find_if(a,a+2,p);using Result=decltype(std::find_if(a,a+2,p));static_assert(__is_same(Result,int*));return result;}\n', 'TR0201', 'cpp-core-v2', True),
         ('query-method-body-source', '#include <algorithm>\nstruct P{bool operator()(int x)const{long double hidden=0;return x!=0;}};\nusing Result=decltype(std::find_if(static_cast<int*>(nullptr),static_cast<int*>(nullptr),P{}));\nstatic_assert(__is_same(Result,int*));\n', 'TR0201', 'cpp-core-v2', True),
         ('query-constructor-default-source', '#include <algorithm>\nstruct P{int n;P(int v=(sizeof(long double),0)):n(v){}bool operator()(int x)const{return x!=n;}};\nusing Result=decltype(std::find_if(static_cast<int*>(nullptr),static_cast<int*>(nullptr),P{}));\nstatic_assert(__is_same(Result,int*));\n', 'TR0201', 'cpp-core-v2', True),
         ('nontrivial-copy', '#include <algorithm>\nstruct P{P()=default;P(const P&){}bool operator()(int x)const{return x!=0;}};\nint f(int*a){P p;return std::find_if(a,a+2,p)==a;}\n', 'TR0203', 'cpp-core-v2', True),
@@ -11096,7 +11095,6 @@ int main() {
         ('factory-default-source', '#include <algorithm>\nstruct P { bool operator()(int x) const { return x != 0; } };\nP make(int n=(sizeof(long double),0)){return P{};}\nint f(int*a){return std::all_of(a,a+2,make());}\n', 'TR0201', 'cpp-core-v2', True),
         ('class-template-object', '#include <algorithm>\ntemplate<class T>struct P{bool operator()(T x)const{return x!=0;}};\nint f(int*a){return std::all_of(a,a+2,P<int>{});}\n', 'TR0203', 'cpp-core-v2', True),
         ('query-only-no-body', '#include <algorithm>\nstruct P { bool operator()(int x) const { return x != 0; } };\nusing Result=decltype(std::all_of(static_cast<int*>(nullptr),static_cast<int*>(nullptr),P{}));\nstatic_assert(__is_same(Result,bool));\n', 'TR0203', 'cpp-core-v2', True),
-        ('evaluated-then-query', '#include <algorithm>\nstruct P { bool operator()(int x) const { return x != 0; } };\nbool f(int*a){P p;bool result=std::all_of(a,a+2,p);using Result=decltype(std::all_of(a,a+2,p));static_assert(__is_same(Result,bool));return result;}\n', 'TR0201', 'cpp-core-v2', True),
         ('query-method-body-source', '#include <algorithm>\nstruct P{bool operator()(int x)const{long double hidden=0;return x!=0;}};\nusing Result=decltype(std::all_of(static_cast<int*>(nullptr),static_cast<int*>(nullptr),P{}));\nstatic_assert(__is_same(Result,bool));\n', 'TR0201', 'cpp-core-v2', True),
         ('query-constructor-default-source', '#include <algorithm>\nstruct P{int n;P(int v=(sizeof(long double),0)):n(v){}bool operator()(int x)const{return x!=n;}};\nusing Result=decltype(std::all_of(static_cast<int*>(nullptr),static_cast<int*>(nullptr),P{}));\nstatic_assert(__is_same(Result,bool));\n', 'TR0201', 'cpp-core-v2', True),
         ('nontrivial-copy', '#include <algorithm>\nstruct P{P()=default;P(const P&){}bool operator()(int x)const{return x!=0;}};\nint f(int*a){P p;return std::all_of(a,a+2,p);}\n', 'TR0203', 'cpp-core-v2', True),
@@ -11114,7 +11112,6 @@ int main() {
         ('sdk-predicate', '#include <algorithm>\n#include <functional>\nint f(int*a){return std::all_of(a,a+2,std::logical_not<int>{});}\n', 'TR0203', 'cpp-core-v2', True),
         ('lambda', '#include <algorithm>\nint f(int*a){return std::all_of(a,a+2,[](int x){return x!=0;});}\n', 'TR0203', 'cpp-core-v2', True),
         ('remove-if-object', '#include <algorithm>\nstruct P { bool operator()(int x) const { return x != 0; } };\nint f(int*a){return std::remove_if(a,a+2,P{})==a;}\n', 'TR0203', 'cpp-core-v2', True),
-        ('deduced-result-query', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nint f(int*p){auto count=std::count_if(p,p+2,P{});static_assert(__is_same(decltype(count),__PTRDIFF_TYPE__));return count;}\n', 'TR0201', 'cpp-core-v2', True),
     ]
     for name, source, code, profile, sdk in algorithm_composed_rejections:
         check("v2-algorithm-composed-reject-" + name, source, code, profile=profile, sdk=sdk)
@@ -11126,6 +11123,124 @@ int main() {
     ]
     for name, source in algorithm_composed_promoted:
         check("v2-algorithm-composed-promoted-" + name, source, profile="cpp-core-v2", sdk=True)
+
+    algorithm_result_queries_source = """\
+#include <algorithm>
+#include <cstddef>
+int constructed, called, factories, endpoints;
+int limit() { ++constructed; return 2; }
+int *endpoint(int *p) { ++endpoints; return p; }
+struct Predicate {
+  int threshold;
+  Predicate(int n = limit()) : threshold(n) {}
+  bool operator()(int n) const noexcept { // predicate-method: selected
+    ++called;
+    return n >= threshold;
+  }
+};
+Predicate make() { ++factories; return Predicate(); }
+int main() {
+  int values[4] = {0, 1, 2, 3};
+  auto found = std::find_if(endpoint(values), endpoint(values+4), make()); // predicate-call: selected
+  auto missed = std::find_if_not(endpoint(values), endpoint(values+4), make()); // predicate-call: selected
+  auto none = std::none_of(endpoint(values), endpoint(values+4), make()); // predicate-call: selected
+  auto all = std::all_of(endpoint(values), endpoint(values+4), make()); // predicate-call: selected
+  auto any = std::any_of(endpoint(values), endpoint(values+4), make()); // predicate-call: selected
+  auto count=std::count_if(endpoint(values), endpoint(values+4), make()); // predicate-call: selected
+  static_assert(__is_same(decltype(found), int*));
+  static_assert(__is_same(decltype(missed), int*));
+  static_assert(__is_same(decltype(none), bool));
+  static_assert(__is_same(decltype(all), bool));
+  static_assert(__is_same(decltype(any), bool));
+  static_assert(__is_same(decltype(count), std::ptrdiff_t));
+  static_assert(__is_same(decltype(std::find_if(endpoint(values), endpoint(values+4), make())), int*));
+  static_assert(__is_same(decltype(std::find_if_not(endpoint(values), endpoint(values+4), make())), int*));
+  static_assert(__is_same(decltype(std::none_of(endpoint(values), endpoint(values+4), make())), bool));
+  static_assert(__is_same(decltype(std::all_of(endpoint(values), endpoint(values+4), make())), bool));
+  static_assert(__is_same(decltype(std::any_of(endpoint(values), endpoint(values+4), make())), bool));
+  static_assert(__is_same(decltype(std::count_if(endpoint(values), endpoint(values+4), make())), std::ptrdiff_t));
+  static_assert(!noexcept(std::all_of(values, values+4, Predicate())));
+  static_assert(!noexcept(std::count_if(values, values+4, Predicate())));
+  using Difference = std::ptrdiff_t;
+  static_assert(__is_same(Difference, __PTRDIFF_TYPE__));
+  static_assert(__is_signed(Difference));
+  static_assert(!__is_unsigned(Difference));
+  static_assert(sizeof(Difference) == sizeof(void*));
+  static_assert(alignof(Difference) == alignof(__PTRDIFF_TYPE__));
+  return found == values+2 && missed == values && !none && !all && any && count == 2 &&
+         constructed == 6 && factories == 6 && endpoints == 12 && called == 15 ? 0 : 1;
+}
+"""
+    algorithm_result_aliases_source = """\
+#include <algorithm>
+#include <cstddef>
+using Scalar = short;
+using Input = const Scalar*;
+using Answer = bool;
+int calls;
+struct Predicate {
+  Answer operator()(long long n) & noexcept(sizeof(int) >= 2) { // predicate-method: selected
+    ++calls; return n > 0;
+  }
+};
+int main() {
+  const Scalar values[3] = {-1, 0, 2};
+  Input first = values;
+  Input last = values+3;
+  const Predicate original{};
+  auto count=std::count_if<Input, Predicate>(first, last, original); // predicate-call: selected
+  auto found = std::find_if<Input, Predicate>(first, last, original); // predicate-call: selected
+  using Count = decltype(std::count_if<Input, Predicate>(first, last, original));
+  using Found = decltype(std::find_if<Input, Predicate>(first, last, original));
+  static_assert(__is_same(Count, std::ptrdiff_t));
+  static_assert(__is_same(Found, Input));
+  static_assert(__is_same(decltype(count), __PTRDIFF_TYPE__));
+  static_assert(__is_same(decltype(found), Input));
+  static_assert(__is_same(decltype((count)), __PTRDIFF_TYPE__&));
+  static_assert(__is_same(decltype((found)), Input&));
+  return count == 1 && found == values+2 && calls == 6 ? 0 : 1;
+}
+"""
+    for name, source in (("queries", algorithm_result_queries_source),
+                         ("aliases", algorithm_result_aliases_source)):
+        for target in sdk_targets:
+            data = check("v2-algorithm-result-" + name + "-" + target,
+                         source, profile="cpp-core-v2", target=target, sdk=True)
+            check_algorithm_composed_predicate_object(data, source)
+
+    algorithm_result_rejections = [
+        ('find_if-query-without-definition', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nint f(int*p){static_assert(__is_same(decltype(std::find_if(p,p+2,P{})),int*));return 0;}\n', 'TR0203', 'cpp-core-v2', True),
+        ('find_if_not-query-without-definition', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nint f(int*p){static_assert(__is_same(decltype(std::find_if_not(p,p+2,P{})),int*));return 0;}\n', 'TR0203', 'cpp-core-v2', True),
+        ('none_of-query-without-definition', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nint f(int*p){static_assert(__is_same(decltype(std::none_of(p,p+2,P{})),bool));return 0;}\n', 'TR0203', 'cpp-core-v2', True),
+        ('all_of-query-without-definition', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nint f(int*p){static_assert(__is_same(decltype(std::all_of(p,p+2,P{})),bool));return 0;}\n', 'TR0203', 'cpp-core-v2', True),
+        ('any_of-query-without-definition', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nint f(int*p){static_assert(__is_same(decltype(std::any_of(p,p+2,P{})),bool));return 0;}\n', 'TR0203', 'cpp-core-v2', True),
+        ('count_if-query-without-definition', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nint f(int*p){static_assert(__is_same(decltype(std::count_if(p,p+2,P{})),__PTRDIFF_TYPE__));return 0;}\n', 'TR0203', 'cpp-core-v2', True),
+        ('first-source', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nint f(int*p){bool live=std::all_of(p,p+2,P{});static_assert(__is_same(decltype(std::all_of((sizeof(long double),p),p+2,P{})),bool));return live;}\n', 'TR0201', 'cpp-core-v2', True),
+        ('last-source', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nint f(int*p){bool live=std::all_of(p,p+2,P{});static_assert(__is_same(decltype(std::all_of(p,(sizeof(long double),p+2),P{})),bool));return live;}\n', 'TR0201', 'cpp-core-v2', True),
+        ('object-source', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nint f(int*p){bool live=std::all_of(p,p+2,P{});static_assert(__is_same(decltype(std::all_of(p,p+2,(sizeof(long double),P{}))),bool));return live;}\n', 'TR0201', 'cpp-core-v2', True),
+        ('explicit-erased-argument', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nint object;template<auto>using Erased=P;\nint f(int*p){bool live=std::all_of(p,p+2,P{});static_assert(__is_same(decltype(std::all_of<int*,Erased<&object>>(p,p+2,P{})),bool));return live;}\n', 'TR0201', 'cpp-core-v2', True),
+        ('constructor-default-source', '#include <algorithm>\nstruct P{P(int=(sizeof(long double),0)){}bool operator()(int n)const{return n>0;}};\nint f(int*p){bool live=std::all_of(p,p+2,P(0));static_assert(__is_same(decltype(std::all_of(p,p+2,P())),bool));return live;}\n', 'TR0201', 'cpp-core-v2', True),
+        ('factory-default-source', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nP make(int=(sizeof(long double),0)){return P{};}\nint f(int*p){bool live=std::all_of(p,p+2,P{});static_assert(__is_same(decltype(std::all_of(p,p+2,make())),bool));return live;}\n', 'TR0201', 'cpp-core-v2', True),
+        ('operator-noexcept-source', '#include <algorithm>\nstruct P{bool operator()(int n)const noexcept(sizeof(long double)>0){return n>0;}};\nint f(int*p){bool live=std::all_of(p,p+2,P{});static_assert(__is_same(decltype(std::all_of(p,p+2,P{})),bool));return live;}\n', 'TR0201', 'cpp-core-v2', True),
+        ('operator-return-alias-source', '#include <algorithm>\ntemplate<int>using Erased=bool;struct P{Erased<sizeof(long double)> operator()(int n)const{return n>0;}};\nint f(int*p){bool live=std::all_of(p,p+2,P{});static_assert(__is_same(decltype(std::all_of(p,p+2,P{})),bool));return live;}\n', 'TR0201', 'cpp-core-v2', True),
+        ('different-predicate-specialization', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nstruct Other{bool operator()(int n)const{return n>0;}};\nint f(int*p){bool live=std::all_of(p,p+2,P{});static_assert(__is_same(decltype(std::all_of(p,p+2,Other{})),bool));return live;}\n', 'TR0203', 'cpp-core-v2', True),
+        ('pointer-callback-independent', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nbool check(int n){return n>0;}\nint f(int*p){bool live=std::all_of(p,p+2,P{});static_assert(__is_same(decltype(std::all_of(p,p+2,&check)),bool));return live;}\n', 'TR0201', 'cpp-core-v2', True),
+        ('address-after-checked-call', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nint f(int*p){bool live=std::all_of(p,p+2,P{});using Fn=decltype(&std::all_of<int*,P>);static_assert(__is_pointer(Fn));return live;}\n', 'TR0201', 'cpp-core-v2', True),
+        ('count-explicit-specialization', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nnamespace std{template<> __PTRDIFF_TYPE__ count_if<int*,P>(int*,int*,P){return 0;}}\nint f(int*p){auto count=std::count_if(p,p+2,P{});static_assert(__is_same(decltype(count),__PTRDIFF_TYPE__));return count;}\n', 'TR0201', 'cpp-core-v2', True),
+        ('public-redeclaration', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nnamespace std{inline namespace __1{template<class I,class Pred>bool all_of(I,I,Pred);}}\nint f(int*p){bool live=std::all_of(p,p+2,P{});static_assert(__is_same(decltype(std::all_of(p,p+2,P{})),bool));return live;}\n', 'TR0201', 'cpp-core-v2', True),
+        ('source-ptrdiff-lookalike', '#include <cstddef>\nnamespace local{using ptrdiff_t=decltype((sizeof(long double),(__PTRDIFF_TYPE__)0));}\nint f(){static_assert(__is_same(local::ptrdiff_t,__PTRDIFF_TYPE__));return 0;}\n', 'TR0201', 'cpp-core-v2', True),
+        ('source-ptrdiff-alias', '#include <cstddef>\nusing Difference=decltype((sizeof(long double),std::ptrdiff_t{}));\nint f(){static_assert(__is_same(Difference,__PTRDIFF_TYPE__));return 0;}\n', 'TR0201', 'cpp-core-v2', True),
+    ]
+    for name, source, code, profile, sdk in algorithm_result_rejections:
+        check("v2-algorithm-result-reject-" + name, source, code, profile=profile, sdk=sdk)
+
+    algorithm_result_promoted = [
+        ('callables-evaluated-then-query', '#include <algorithm>\nstruct P { bool operator()(int x) const { return x != 0; } };\nint*f(int*a){P p;int*result=std::find_if(a,a+2,p);using Result=decltype(std::find_if(a,a+2,p));static_assert(__is_same(Result,int*));return result;}\n'),
+        ('composed-predicates-evaluated-then-query', '#include <algorithm>\nstruct P { bool operator()(int x) const { return x != 0; } };\nbool f(int*a){P p;bool result=std::all_of(a,a+2,p);using Result=decltype(std::all_of(a,a+2,p));static_assert(__is_same(Result,bool));return result;}\n'),
+        ('composed-predicates-deduced-result-query', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nint f(int*p){auto count=std::count_if(p,p+2,P{});static_assert(__is_same(decltype(count),__PTRDIFF_TYPE__));return count;}\n'),
+    ]
+    for name, source in algorithm_result_promoted:
+        check("v2-algorithm-result-promoted-" + name, source, profile="cpp-core-v2", sdk=True)
 
     algorithm_predicate_queries_source = """\
 #include <algorithm>

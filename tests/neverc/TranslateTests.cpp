@@ -41261,10 +41261,6 @@ struct P { bool operator()(int x) const { return x != 0; } };
 using Result=decltype(std::find_if(static_cast<int*>(nullptr),static_cast<int*>(nullptr),P{}));
 static_assert(__is_same(Result,int*));
 )cpp", "TR0203"},
-      {"evaluated-then-query", R"cpp(#include <algorithm>
-struct P { bool operator()(int x) const { return x != 0; } };
-int*f(int*a){P p;int*result=std::find_if(a,a+2,p);using Result=decltype(std::find_if(a,a+2,p));static_assert(__is_same(Result,int*));return result;}
-)cpp", "TR0201"},
       {"query-method-body-source", R"cpp(#include <algorithm>
 struct P{bool operator()(int x)const{long double hidden=0;return x!=0;}};
 using Result=decltype(std::find_if(static_cast<int*>(nullptr),static_cast<int*>(nullptr),P{}));
@@ -41612,10 +41608,6 @@ struct P { bool operator()(int x) const { return x != 0; } };
 using Result=decltype(std::all_of(static_cast<int*>(nullptr),static_cast<int*>(nullptr),P{}));
 static_assert(__is_same(Result,bool));
 )cpp", "TR0203"},
-    {"evaluated-then-query", R"cpp(#include <algorithm>
-struct P { bool operator()(int x) const { return x != 0; } };
-bool f(int*a){P p;bool result=std::all_of(a,a+2,p);using Result=decltype(std::all_of(a,a+2,p));static_assert(__is_same(Result,bool));return result;}
-)cpp", "TR0201"},
     {"query-method-body-source", R"cpp(#include <algorithm>
 struct P{bool operator()(int x)const{long double hidden=0;return x!=0;}};
 using Result=decltype(std::all_of(static_cast<int*>(nullptr),static_cast<int*>(nullptr),P{}));
@@ -41686,15 +41678,219 @@ int f(int*a){return std::all_of(a,a+2,[](int x){return x!=0;});}
 struct P { bool operator()(int x) const { return x != 0; } };
 int f(int*a){return std::remove_if(a,a+2,P{})==a;}
 )cpp", "TR0203"},
-    {"deduced-result-query", R"cpp(#include <algorithm>
-struct P{bool operator()(int n)const{return n>0;}};
-int f(int*p){auto count=std::count_if(p,p+2,P{});static_assert(__is_same(decltype(count),__PTRDIFF_TYPE__));return count;}
-)cpp", "TR0201"},
-  };
+      };
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
     const auto Source = tmpFile(std::string("algorithm-composed-reject-") + Case.Name + ".cpp");
     const auto Output = tmpFile(std::string("algorithm-composed-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}), Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmPredicateResultQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-result-queries.cpp");
+  const auto Output = tmpFile("algorithm-result-queries.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <cstddef>
+int constructed, called, factories, endpoints;
+int limit() { ++constructed; return 2; }
+int *endpoint(int *p) { ++endpoints; return p; }
+struct Predicate {
+  int threshold;
+  Predicate(int n = limit()) : threshold(n) {}
+  bool operator()(int n) const noexcept { // predicate-method: selected
+    ++called;
+    return n >= threshold;
+  }
+};
+Predicate make() { ++factories; return Predicate(); }
+int main() {
+  int values[4] = {0, 1, 2, 3};
+  auto found = std::find_if(endpoint(values), endpoint(values+4), make()); // predicate-call: selected
+  auto missed = std::find_if_not(endpoint(values), endpoint(values+4), make()); // predicate-call: selected
+  auto none = std::none_of(endpoint(values), endpoint(values+4), make()); // predicate-call: selected
+  auto all = std::all_of(endpoint(values), endpoint(values+4), make()); // predicate-call: selected
+  auto any = std::any_of(endpoint(values), endpoint(values+4), make()); // predicate-call: selected
+  auto count=std::count_if(endpoint(values), endpoint(values+4), make()); // predicate-call: selected
+  static_assert(__is_same(decltype(found), int*));
+  static_assert(__is_same(decltype(missed), int*));
+  static_assert(__is_same(decltype(none), bool));
+  static_assert(__is_same(decltype(all), bool));
+  static_assert(__is_same(decltype(any), bool));
+  static_assert(__is_same(decltype(count), std::ptrdiff_t));
+  static_assert(__is_same(decltype(std::find_if(endpoint(values), endpoint(values+4), make())), int*));
+  static_assert(__is_same(decltype(std::find_if_not(endpoint(values), endpoint(values+4), make())), int*));
+  static_assert(__is_same(decltype(std::none_of(endpoint(values), endpoint(values+4), make())), bool));
+  static_assert(__is_same(decltype(std::all_of(endpoint(values), endpoint(values+4), make())), bool));
+  static_assert(__is_same(decltype(std::any_of(endpoint(values), endpoint(values+4), make())), bool));
+  static_assert(__is_same(decltype(std::count_if(endpoint(values), endpoint(values+4), make())), std::ptrdiff_t));
+  static_assert(!noexcept(std::all_of(values, values+4, Predicate())));
+  static_assert(!noexcept(std::count_if(values, values+4, Predicate())));
+  using Difference = std::ptrdiff_t;
+  static_assert(__is_same(Difference, __PTRDIFF_TYPE__));
+  static_assert(__is_signed(Difference));
+  static_assert(!__is_unsigned(Difference));
+  static_assert(sizeof(Difference) == sizeof(void*));
+  static_assert(alignof(Difference) == alignof(__PTRDIFF_TYPE__));
+  return found == values+2 && missed == values && !none && !all && any && count == 2 &&
+         constructed == 6 && factories == 6 && endpoints == 12 && called == 15 ? 0 : 1;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-result-queries" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmPredicateResultAliasesRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-result-aliases.cpp");
+  const auto Output = tmpFile("algorithm-result-aliases.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <cstddef>
+using Scalar = short;
+using Input = const Scalar*;
+using Answer = bool;
+int calls;
+struct Predicate {
+  Answer operator()(long long n) & noexcept(sizeof(int) >= 2) { // predicate-method: selected
+    ++calls; return n > 0;
+  }
+};
+int main() {
+  const Scalar values[3] = {-1, 0, 2};
+  Input first = values;
+  Input last = values+3;
+  const Predicate original{};
+  auto count=std::count_if<Input, Predicate>(first, last, original); // predicate-call: selected
+  auto found = std::find_if<Input, Predicate>(first, last, original); // predicate-call: selected
+  using Count = decltype(std::count_if<Input, Predicate>(first, last, original));
+  using Found = decltype(std::find_if<Input, Predicate>(first, last, original));
+  static_assert(__is_same(Count, std::ptrdiff_t));
+  static_assert(__is_same(Found, Input));
+  static_assert(__is_same(decltype(count), __PTRDIFF_TYPE__));
+  static_assert(__is_same(decltype(found), Input));
+  static_assert(__is_same(decltype((count)), __PTRDIFF_TYPE__&));
+  static_assert(__is_same(decltype((found)), Input&));
+  return count == 1 && found == values+2 && calls == 6 ? 0 : 1;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-result-aliases" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmPredicateResultQueriesRequireSource) {
+  const struct { const char *Name, *Source, *Code; } Cases[] = {
+    {"find_if-query-without-definition", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+int f(int*p){static_assert(__is_same(decltype(std::find_if(p,p+2,P{})),int*));return 0;}
+)cpp", "TR0203"},
+    {"find_if_not-query-without-definition", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+int f(int*p){static_assert(__is_same(decltype(std::find_if_not(p,p+2,P{})),int*));return 0;}
+)cpp", "TR0203"},
+    {"none_of-query-without-definition", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+int f(int*p){static_assert(__is_same(decltype(std::none_of(p,p+2,P{})),bool));return 0;}
+)cpp", "TR0203"},
+    {"all_of-query-without-definition", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+int f(int*p){static_assert(__is_same(decltype(std::all_of(p,p+2,P{})),bool));return 0;}
+)cpp", "TR0203"},
+    {"any_of-query-without-definition", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+int f(int*p){static_assert(__is_same(decltype(std::any_of(p,p+2,P{})),bool));return 0;}
+)cpp", "TR0203"},
+    {"count_if-query-without-definition", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+int f(int*p){static_assert(__is_same(decltype(std::count_if(p,p+2,P{})),__PTRDIFF_TYPE__));return 0;}
+)cpp", "TR0203"},
+    {"first-source", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+int f(int*p){bool live=std::all_of(p,p+2,P{});static_assert(__is_same(decltype(std::all_of((sizeof(long double),p),p+2,P{})),bool));return live;}
+)cpp", "TR0201"},
+    {"last-source", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+int f(int*p){bool live=std::all_of(p,p+2,P{});static_assert(__is_same(decltype(std::all_of(p,(sizeof(long double),p+2),P{})),bool));return live;}
+)cpp", "TR0201"},
+    {"object-source", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+int f(int*p){bool live=std::all_of(p,p+2,P{});static_assert(__is_same(decltype(std::all_of(p,p+2,(sizeof(long double),P{}))),bool));return live;}
+)cpp", "TR0201"},
+    {"explicit-erased-argument", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+int object;template<auto>using Erased=P;
+int f(int*p){bool live=std::all_of(p,p+2,P{});static_assert(__is_same(decltype(std::all_of<int*,Erased<&object>>(p,p+2,P{})),bool));return live;}
+)cpp", "TR0201"},
+    {"constructor-default-source", R"cpp(#include <algorithm>
+struct P{P(int=(sizeof(long double),0)){}bool operator()(int n)const{return n>0;}};
+int f(int*p){bool live=std::all_of(p,p+2,P(0));static_assert(__is_same(decltype(std::all_of(p,p+2,P())),bool));return live;}
+)cpp", "TR0201"},
+    {"factory-default-source", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+P make(int=(sizeof(long double),0)){return P{};}
+int f(int*p){bool live=std::all_of(p,p+2,P{});static_assert(__is_same(decltype(std::all_of(p,p+2,make())),bool));return live;}
+)cpp", "TR0201"},
+    {"operator-noexcept-source", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const noexcept(sizeof(long double)>0){return n>0;}};
+int f(int*p){bool live=std::all_of(p,p+2,P{});static_assert(__is_same(decltype(std::all_of(p,p+2,P{})),bool));return live;}
+)cpp", "TR0201"},
+    {"operator-return-alias-source", R"cpp(#include <algorithm>
+template<int>using Erased=bool;struct P{Erased<sizeof(long double)> operator()(int n)const{return n>0;}};
+int f(int*p){bool live=std::all_of(p,p+2,P{});static_assert(__is_same(decltype(std::all_of(p,p+2,P{})),bool));return live;}
+)cpp", "TR0201"},
+    {"different-predicate-specialization", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+struct Other{bool operator()(int n)const{return n>0;}};
+int f(int*p){bool live=std::all_of(p,p+2,P{});static_assert(__is_same(decltype(std::all_of(p,p+2,Other{})),bool));return live;}
+)cpp", "TR0203"},
+    {"pointer-callback-independent", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+bool check(int n){return n>0;}
+int f(int*p){bool live=std::all_of(p,p+2,P{});static_assert(__is_same(decltype(std::all_of(p,p+2,&check)),bool));return live;}
+)cpp", "TR0201"},
+    {"address-after-checked-call", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+int f(int*p){bool live=std::all_of(p,p+2,P{});using Fn=decltype(&std::all_of<int*,P>);static_assert(__is_pointer(Fn));return live;}
+)cpp", "TR0201"},
+    {"count-explicit-specialization", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+namespace std{template<> __PTRDIFF_TYPE__ count_if<int*,P>(int*,int*,P){return 0;}}
+int f(int*p){auto count=std::count_if(p,p+2,P{});static_assert(__is_same(decltype(count),__PTRDIFF_TYPE__));return count;}
+)cpp", "TR0201"},
+    {"public-redeclaration", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+namespace std{inline namespace __1{template<class I,class Pred>bool all_of(I,I,Pred);}}
+int f(int*p){bool live=std::all_of(p,p+2,P{});static_assert(__is_same(decltype(std::all_of(p,p+2,P{})),bool));return live;}
+)cpp", "TR0201"},
+    {"source-ptrdiff-lookalike", R"cpp(#include <cstddef>
+namespace local{using ptrdiff_t=decltype((sizeof(long double),(__PTRDIFF_TYPE__)0));}
+int f(){static_assert(__is_same(local::ptrdiff_t,__PTRDIFF_TYPE__));return 0;}
+)cpp", "TR0201"},
+    {"source-ptrdiff-alias", R"cpp(#include <cstddef>
+using Difference=decltype((sizeof(long double),std::ptrdiff_t{}));
+int f(){static_assert(__is_same(Difference,__PTRDIFF_TYPE__));return 0;}
+)cpp", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("algorithm-result-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("algorithm-result-reject-") + Case.Name + ".nc");
     writeFile(Source, Case.Source);
     expectCode(translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}), Case.Code);
     expectNoArtifacts(Output);
