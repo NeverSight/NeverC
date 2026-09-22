@@ -11755,6 +11755,137 @@ int main(){
     for name, source in algorithm_out_of_line_promoted:
         check("v2-algorithm-out-of-line-promoted-" + name, source, profile="cpp-core-v2", sdk=True)
 
+    algorithm_filter_copy_state_source = """\
+#include <algorithm>
+struct Reject {
+  int calls;
+  int *observed;
+  bool operator()(long long n) & { // template-predicate-method: reject
+    ++calls;*observed=calls;return n<2;
+  }
+  bool operator()(long long) const & { *observed=-100;return false; }
+};
+template<class T>struct Odd { bool operator()(T n)const; };
+template<class V>bool Odd<V>::operator()(V n)const { // template-predicate-method: odd
+  return n%2!=0;
+}
+int main(){
+  const int input[5]={0,1,2,3,4};long output[6]={-1,-1,-1,-1,-1,-1};
+  int observed=0;const Reject caller{0,&observed};
+  auto end=std::remove_copy_if(input,input+5,output,caller); // template-predicate-call: reject i64
+  if(end!=output+3||output[0]!=2||output[1]!=3||output[2]!=4||output[3]!=-1||observed!=5||caller.calls)return 1;
+  static_assert(__is_same(decltype(std::remove_copy_if(input,input+5,output,caller)),long*));
+  static_assert(!noexcept(std::remove_copy_if(input,input+5,output,caller)));
+  observed=0;
+  if(std::remove_copy_if(input,input,output,caller)!=output||observed||caller.calls)return 2; // template-predicate-call: reject i64
+  short even[5]={};
+  if(std::remove_copy_if(input,input+5,even,Odd<int>{})!=even+3||even[0]!=0||even[1]!=2||even[2]!=4)return 3; // template-predicate-call: odd int
+  return 0;
+}
+"""
+    algorithm_filter_copy_mutation_source = """\
+#include <algorithm>
+int sequence, firsts, lasts, outputs, factories;
+int *first(int*p){++firsts;return p;}
+int *last(int*p){++lasts;return p;}
+long *out(long*p){++outputs;return p;}
+struct Mutate {
+  int *current;
+  int calls;
+  bool operator()(int n) { // template-predicate-method: mutate
+    ++calls;sequence=sequence*10+n;*current=n+20;++current;return n%2!=0;
+  }
+};
+Mutate make(int*p){++factories;return Mutate{p,0};}
+int main(){
+  int input[4]={0,1,2,3};long output[4]={-1,-1,-1,-1};
+  auto end=std::remove_copy_if(first(input),last(input+4),out(output),make(input)); // template-predicate-call: mutate int
+  if(end!=output+2||output[0]!=20||output[1]!=22||output[2]!=-1||sequence!=123)return 1;
+  if(firsts!=1||lasts!=1||outputs!=1||factories!=1)return 2;
+  if(input[0]!=20||input[1]!=21||input[2]!=22||input[3]!=23)return 3;
+  int again[3]={0,1,2};long kept[3]={};Mutate caller{again,0};sequence=0;
+  if(std::remove_copy_if(again,again+3,kept,caller)!=kept+2||kept[0]!=20||kept[1]!=22)return 4; // template-predicate-call: mutate int
+  if(caller.current!=again||caller.calls||sequence!=12)return 5;
+  return 0;
+}
+"""
+    algorithm_filter_copy_identity_source = """\
+#include <algorithm>
+int live, destroyed, constructions, calls, bad, factories;
+struct Token { Token(){++live;}~Token(){--live;++destroyed;} };
+template<class T>struct Identity {
+  const Identity *self;
+  const Identity **receiver;
+  const Token *token;
+  bool exact;
+  Identity(const Identity **r,bool e,const Token&t=Token()):self(this),receiver(r),token(&t),exact(e){++constructions;}
+  bool operator()(T n) &;
+};
+template<class Value>
+bool Identity<Value>::operator()(Value n) & { // template-predicate-method: identity
+  ++calls;
+  if(live!=1||(exact&&self!=this)||(*receiver&&*receiver!=this))++bad;
+  *receiver=this;return n>0;
+}
+Identity<int> make(const Identity<int> **r,const Token&t){++factories;return Identity<int>(r,true,t);}
+int main(){
+  int input[3]={0,1,2},output[3]={-1,-1,-1};const Identity<int>*receiver=nullptr;
+  if(std::remove_copy_if(input,input+3,output,Identity<int>(&receiver,true))!=output+1||live!=1)return 1; // template-predicate-call: identity int
+  if(live||destroyed!=1||constructions!=1||calls!=3||bad||output[0]!=0||output[1]!=-1)return 2;
+  receiver=nullptr;
+  if(std::remove_copy_if(input,input+3,output,make(&receiver,Token{}))!=output+1||live!=1)return 3; // template-predicate-call: identity int
+  if(live||destroyed!=2||constructions!=2||factories!=1||calls!=6||bad)return 4;
+  receiver=nullptr;
+  if(std::remove_copy_if(input,input,output,Identity<int>(&receiver,true))!=output||live!=1)return 5; // template-predicate-call: identity int
+  if(live||destroyed!=3||calls!=6||constructions!=3||bad)return 6;
+  {
+    Token owner;Identity<int> caller(&receiver,false,owner);receiver=nullptr;
+    if(std::remove_copy_if(input,input+3,output,caller)!=output+1)return 7; // template-predicate-call: identity int
+    if(receiver==&caller||caller.self!=&caller||constructions!=4||calls!=9||bad)return 8;
+  }
+  return live==0&&destroyed==4&&bad==0?0:9;
+}
+"""
+    for name, source in (("state", algorithm_filter_copy_state_source),
+                         ("mutation", algorithm_filter_copy_mutation_source),
+                         ("identity", algorithm_filter_copy_identity_source)):
+        for target in sdk_targets:
+            data = check("v2-algorithm-filter-copy-" + name + "-" + target,
+                         source, profile="cpp-core-v2", target=target, sdk=True)
+            check_algorithm_template_predicate(data, source)
+
+    algorithm_filter_copy_rejections = [
+        ('generic-method', '#include <algorithm>\nstruct P{template<class T>bool operator()(T n)const{return n>0;}};\nlong*f(int*p,long*out){return std::remove_copy_if(p,p+2,out,P{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('nontrivial-copy', '#include <algorithm>\nstruct P{P(){}P(const P&){}bool operator()(int n)const{return n>0;}};\nlong*f(int*p,long*out){return std::remove_copy_if(p,p+2,out,P{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('nontrivial-destructor', '#include <algorithm>\nstruct P{~P(){}bool operator()(int n)const{return n>0;}};\nlong*f(int*p,long*out){return std::remove_copy_if(p,p+2,out,P{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('reference-argument', '#include <algorithm>\nstruct P{bool operator()(int&n)const{return n>0;}};\nlong*f(int*p,long*out){return std::remove_copy_if(p,p+2,out,P{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('nonbool-result', '#include <algorithm>\nstruct P{int operator()(int n)const{return n>0;}};\nlong*f(int*p,long*out){return std::remove_copy_if(p,p+2,out,P{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('constructor-default', '#include <algorithm>\nstruct P{P(int=(sizeof(long double),0)){}bool operator()(int n)const{return n>0;}};\nlong*f(int*p,long*out){return std::remove_copy_if(p,p+2,out,P{});}\n', 'TR0201', 'cpp-core-v2', True),
+        ('method-body', '#include <algorithm>\nstruct P{bool operator()(int n)const{long double hidden=0;return n>hidden;}};\nlong*f(int*p,long*out){return std::remove_copy_if(p,p+2,out,P{});}\n', 'TR0201', 'cpp-core-v2', True),
+        ('missing-definition', '#include <algorithm>\nstruct P{bool operator()(int n)const;};\nlong*f(int*p,long*out){return std::remove_copy_if(p,p+2,out,P{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('lambda', '#include <algorithm>\n\nlong*f(int*p,long*out){return std::remove_copy_if(p,p+2,out,[](int n){return n>0;});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('specialization', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nnamespace std{template<>long* remove_copy_if<int*,long*,P>(int*,int*,long*out,P){return out;}}\nlong*f(int*p,long*out){return std::remove_copy_if(p,p+2,out,P{});}\n', 'TR0201', 'cpp-core-v2', True),
+        ('redeclaration', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nnamespace std{inline namespace __1{template<class I,class O,class P>O remove_copy_if(I,I,O,P);}}\nlong*f(int*p,long*out){return std::remove_copy_if(p,p+2,out,P{});}\n', 'TR0201', 'cpp-core-v2', True),
+        ('query-no-body', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nint f(int*p,long*out){static_assert(__is_same(decltype(std::remove_copy_if(p,p+2,out,P{})),long*));return 0;}\n', 'TR0203', 'cpp-core-v2', True),
+        ('factory-default', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nP make(int=(sizeof(long double),0)){return P{};}\nlong*f(int*p,long*out){return std::remove_copy_if(p,p+2,out,make());}\n', 'TR0201', 'cpp-core-v2', True),
+        ('input-source', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nlong*f(int*p,long*out){return std::remove_copy_if(p,p+(sizeof(long double),2),out,P{});}\n', 'TR0201', 'cpp-core-v2', True),
+        ('output-source', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nlong*f(int*p,long*out){return std::remove_copy_if(p,p+2,(sizeof(long double),out),P{});}\n', 'TR0201', 'cpp-core-v2', True),
+        ('explicit-predicate-alias', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nint object;template<auto>using Erased=P;\nlong*f(int*p,long*out){return std::remove_copy_if<int*,long*,Erased<&object>>(p,p+2,out,P{});}\n', 'TR0201', 'cpp-core-v2', True),
+        ('volatile-input', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nlong*f(volatile int*p,long*out){return std::remove_copy_if(p,p+2,out,P{});}\n', 'TR0201', 'cpp-core-v2', True),
+        ('volatile-output', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nvolatile long*f(int*p,volatile long*out){return std::remove_copy_if(p,p+2,out,P{});}\n', 'TR0201', 'cpp-core-v2', True),
+        ('record-element', '#include <algorithm>\nstruct R{int v;};struct P{bool operator()(R n)const{return n.v>0;}};\nR*f(R*p,R*out){return std::remove_copy_if(p,p+2,out,P{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('other-mutation-independent', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nint*f(int*p){return std::remove_if(p,p+2,P{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('copy-if-independent', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nlong*f(int*p,long*out){return std::copy_if(p,p+2,out,P{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('sdk-predicate', '#include <algorithm>\n#include <functional>\nlong*f(int*p,long*out){return std::remove_copy_if(p,p+2,out,std::logical_not<int>{});}\n', 'TR0203', 'cpp-core-v2', True),
+    ]
+    for name, source, code, profile, sdk in algorithm_filter_copy_rejections:
+        check("v2-algorithm-filter-copy-reject-" + name, source, code, profile=profile, sdk=sdk)
+
+    algorithm_filter_copy_promoted = [
+    ]
+    for name, source in algorithm_filter_copy_promoted:
+        check("v2-algorithm-filter-copy-promoted-" + name, source, profile="cpp-core-v2", sdk=True)
+
     algorithm_predicate_queries_source = """\
 #include <algorithm>
 extern "C" int algorithm_predicate_queries(const int *first,
