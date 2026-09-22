@@ -6087,7 +6087,7 @@ class FunctionLowering {
     case UtilityOperation::AlgorithmCountIf: {
       auto Current = snapshot(expression(Call->getArg(0)), L);
       auto Last = snapshot(expression(Call->getArg(1)), L);
-      auto Predicate = snapshot(expression(Call->getArg(2)), L);
+      auto Predicate = captureUnaryPredicate(Call, Operation);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto PointerType = type(Call->getArg(0)->getType(), L);
       auto Count = temporary(DifferenceType, L);
@@ -6101,8 +6101,7 @@ class FunctionLowering {
       label(Test, L);
       {
         auto Selected = emitUnaryPredicate(
-            json::Object(Predicate), Call->getArg(2)->getType(),
-            dereference(json::Object(Current), L), L);
+            Predicate, dereference(json::Object(Current), L), L);
         branch(std::move(Selected), Increment, Advance, L);
       }
       label(Increment, L);

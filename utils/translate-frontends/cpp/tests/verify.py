@@ -10912,14 +10912,220 @@ int main() {
         ('initializer-source', '#include <algorithm>\nstruct P { bool operator()(int x) const { return x != 0; } };\nint f(int*a){return std::find_if(a,a+2,(sizeof(long double),P{}))==a;}\n', 'TR0201', 'cpp-core-v2', True),
         ('sdk-predicate', '#include <algorithm>\n#include <functional>\nint f(int*a){return std::find_if(a,a+2,std::logical_not<int>{})==a;}\n', 'TR0203', 'cpp-core-v2', True),
         ('lambda', '#include <algorithm>\nint f(int*a){return std::find_if(a,a+2,[](int x){return x!=0;})==a;}\n', 'TR0203', 'cpp-core-v2', True),
-        ('count-if-object', '#include <algorithm>\nstruct P { bool operator()(int x) const { return x != 0; } };\nint f(int*a){return static_cast<int>(std::count_if(a,a+2,P{}));}\n', 'TR0203', 'cpp-core-v2', True),
-        ('all-of-object', '#include <algorithm>\nstruct P { bool operator()(int x) const { return x != 0; } };\nbool f(int*a){return std::all_of(a,a+2,P{});}\n', 'TR0203', 'cpp-core-v2', True),
-        ('any-of-object', '#include <algorithm>\nstruct P { bool operator()(int x) const { return x != 0; } };\nbool f(int*a){return std::any_of(a,a+2,P{});}\n', 'TR0203', 'cpp-core-v2', True),
         ('remove-if-object', '#include <algorithm>\nstruct P { bool operator()(int x) const { return x != 0; } };\nint f(int*a){return std::remove_if(a,a+2,P{})==a;}\n', 'TR0203', 'cpp-core-v2', True),
     ]
     for name, source, code, profile, uses_sdk in algorithm_callable_rejections:
         check("v2-algorithm-callable-reject-" + name, source, code,
               profile=profile, sdk=uses_sdk)
+
+    algorithm_composed_state_source = """\
+#include <algorithm>
+int first_calls, last_calls, factory_calls;
+int *first(int *p) { ++first_calls; return p; }
+int *last(int *p) { ++last_calls; return p; }
+struct Predicate {
+  int calls, threshold;
+  int *observed, *sum;
+  bool operator()(int value) & { // predicate-method: stateful
+    ++calls; *observed = calls; *sum += value;
+    return value >= threshold;
+  }
+  bool operator()(int) const & { *observed = -100; return false; }
+};
+Predicate make(int threshold, int *observed, int *sum) {
+  ++factory_calls; return Predicate{0, threshold, observed, sum};
+}
+struct Wide {
+  int *calls;
+  bool operator()(long long value) const & { // predicate-method: wide
+    ++*calls; return value > 255;
+  }
+};
+int main() {
+  int values[]{2,4,6,8};
+  int observed=0, sum=0;
+  Predicate p{0,6,&observed,&sum};
+  if (std::all_of(values,values+4,p) || observed!=1 || sum!=2 || p.calls) return 1; // predicate-call: stateful
+  observed=sum=0;
+  if (!std::any_of(values,values+4,p) || observed!=3 || sum!=12 || p.calls) return 2; // predicate-call: stateful
+  observed=sum=0;
+  auto count=std::count_if(values,values+4,p); // predicate-call: stateful
+  if (count!=2 || observed!=4 || sum!=20 || p.calls) return 3;
+  observed=sum=0;
+  if (!std::all_of(first(values),last(values+4),make(2,&observed,&sum)) || // predicate-call: stateful
+      observed!=4 || sum!=20 || first_calls!=1 || last_calls!=1 || factory_calls!=1) return 4;
+  observed=sum=0;
+  if (std::any_of(first(values),last(values+4),make(9,&observed,&sum)) || // predicate-call: stateful
+      observed!=4 || sum!=20 || first_calls!=2 || last_calls!=2 || factory_calls!=2) return 5;
+  observed=sum=0;
+  if (std::count_if(first(values),last(values+4),make(2,&observed,&sum))!=4 || // predicate-call: stateful
+      observed!=4 || sum!=20 || first_calls!=3 || last_calls!=3 || factory_calls!=3) return 6;
+  observed=sum=0;
+  const Predicate constant{0,4,&observed,&sum};
+  if (std::count_if(values,values+4,constant)!=3 || observed!=4 || sum!=20 || constant.calls) return 7; // predicate-call: stateful
+  observed=sum=0;
+  if (!std::all_of(values,values,p) || observed || sum) return 8; // predicate-call: stateful
+  if (std::any_of(values,values,p) || observed || sum) return 9; // predicate-call: stateful
+  if (std::count_if(values,values,p) || observed || sum) return 10; // predicate-call: stateful
+  const short small[]{-3,2,300,400};
+  int calls=0; Wide w{&calls};
+  if (std::all_of(small,small+4,w) || calls!=1) return 11; // predicate-call: wide
+  calls=0;
+  if (!std::any_of(small,small+4,w) || calls!=3) return 12; // predicate-call: wide
+  calls=0;
+  if (std::count_if(small,small+4,w)!=2 || calls!=4) return 13; // predicate-call: wide
+  calls=0;
+  if (!std::all_of(small+2,small+4,w) || calls!=2) return 14; // predicate-call: wide
+  calls=0;
+  if (std::count_if(small,small+2,w)!=0 || calls!=2) return 15; // predicate-call: wide
+  return p.calls || constant.calls ? 16 : 0;
+}
+"""
+    algorithm_composed_identity_source = """\
+#include <algorithm>
+int constructions, factories;
+struct Identity {
+  Identity *self;
+  Identity **receiver;
+  int *observed, *bad;
+  int calls, stop;
+  bool expects_copy, inverse;
+  Identity(int n, Identity **address, int *seen, int *errors, bool copied, bool inverted)
+      :self(this),receiver(address),observed(seen),bad(errors),calls(0),stop(n),
+       expects_copy(copied),inverse(inverted) { ++constructions; }
+  bool operator()(int value) & { // predicate-method: identity
+    if ((self==this)==expects_copy) ++*bad;
+    if (expects_copy && self->calls) ++*bad;
+    if (*receiver==nullptr) *receiver=this;
+    else if (*receiver!=this) ++*bad;
+    ++calls; *observed=calls;
+    if (value!=calls) ++*bad;
+    bool selected=calls==stop;
+    return inverse ? !selected : selected;
+  }
+};
+Identity make(int n,Identity **address,int *seen,int *errors,bool inverted) {
+  ++factories; return Identity(n,address,seen,errors,false,inverted);
+}
+int token_live, token_destroyed, token_calls;
+struct Token {
+  int id;
+  Token():id(++token_live){}
+  ~Token(){--token_live;++token_destroyed;}
+};
+struct TokenPredicate {
+  int calls;
+  TokenPredicate(const Token & = Token{}):calls(0){}
+  bool operator()(int value) & { // predicate-method: token
+    ++token_calls;
+    return token_live==1 && value==++calls;
+  }
+};
+int main() {
+  int values[]{1,2,3,4}, observed=0,bad=0;
+  Identity *receiver=nullptr;
+  if (std::all_of(values,values+4,Identity(3,&receiver,&observed,&bad,false,true)) || observed!=3 || bad) return 1; // predicate-call: identity
+  receiver=nullptr; observed=0;
+  if (!std::any_of(values,values+4,Identity(2,&receiver,&observed,&bad,false,false)) || observed!=2 || bad) return 2; // predicate-call: identity
+  receiver=nullptr; observed=0;
+  if (std::count_if(values,values+4,Identity(3,&receiver,&observed,&bad,false,false))!=1 || observed!=4 || bad) return 3; // predicate-call: identity
+  receiver=nullptr; observed=0;
+  if (std::all_of(values,values+4,make(2,&receiver,&observed,&bad,true)) || observed!=2 || bad) return 4; // predicate-call: identity
+  receiver=nullptr; observed=0;
+  if (!std::any_of(values,values+4,make(4,&receiver,&observed,&bad,false)) || observed!=4 || bad) return 5; // predicate-call: identity
+  receiver=nullptr; observed=0;
+  if (std::count_if(values,values+4,make(2,&receiver,&observed,&bad,true))!=3 || observed!=4 || bad) return 6; // predicate-call: identity
+  receiver=nullptr; observed=0;
+  Identity caller(3,&receiver,&observed,&bad,true,true);
+  if (std::all_of(values,values+4,caller) || observed!=3 || bad || caller.calls) return 7; // predicate-call: identity
+  receiver=nullptr; observed=0; caller.inverse=false;
+  if (!std::any_of(values,values+4,caller) || observed!=3 || bad || caller.calls) return 8; // predicate-call: identity
+  receiver=nullptr; observed=0;
+  if (std::count_if(values,values+4,caller)!=1 || observed!=4 || bad || caller.calls) return 9; // predicate-call: identity
+  receiver=nullptr; observed=0;
+  if (std::count_if(values,values,make(1,&receiver,&observed,&bad,false)) || observed || bad) return 10; // predicate-call: identity
+  if (constructions!=8 || factories!=4 || caller.self!=&caller) return 11;
+  if (!std::all_of(values,values+4,TokenPredicate{}) || token_live!=1) return 12; // predicate-call: token
+  if (token_live || token_destroyed!=1 || token_calls!=4) return 13;
+  if (!std::any_of(values,values+4,TokenPredicate{}) || token_live!=1) return 14; // predicate-call: token
+  if (token_live || token_destroyed!=2 || token_calls!=5) return 15;
+  if (std::count_if(values,values+4,TokenPredicate{})!=4 || token_live!=1) return 16; // predicate-call: token
+  if (token_live || token_destroyed!=3 || token_calls!=9) return 17;
+  if (!std::all_of(values,values,TokenPredicate{}) || token_live!=1) return 18; // predicate-call: token
+  return token_live==0 && token_destroyed==4 && token_calls==9 ? 0 : 19;
+}
+"""
+
+    def check_algorithm_composed_predicate_object(data, source):
+        check_algorithm_predicate_object(data, source)
+        main = next(function for function in data["functions"] if function["name"] == "main")
+        carrier = "i64" if data["target"]["pointer_bits"] == 64 else "int"
+        for line, text in enumerate(source.splitlines(), 1):
+            if "auto count=" not in text:
+                continue
+            column = text.index("count=") + 1
+            local = [value for value in main["locals"]
+                     if value.get("loc") == {"file": "input.cpp", "line": line, "column": column}]
+            assert len(local) == 1 and local[0]["type"] == carrier, (carrier, local)
+
+    for name, source in (("state", algorithm_composed_state_source),
+                         ("identity", algorithm_composed_identity_source)):
+        for target in sdk_targets:
+            data = check("v2-algorithm-composed-predicate-" + name + "-" + target,
+                         source, profile="cpp-core-v2", target=target, sdk=True)
+            check_algorithm_composed_predicate_object(data, source)
+
+    algorithm_composed_rejections = [
+        ('all_of-specialization', '#include <algorithm>\nstruct P{bool operator()(int x)const{return x!=0;}};\nnamespace std {template<> bool all_of<int*,P>(int*,int*,P){return 0;}}\nint f(int*a){return static_cast<int>(std::all_of(a,a+2,P{}));}\n', 'TR0201', 'cpp-core-v2', True),
+        ('all_of-redeclaration', '#include <algorithm>\nstruct P{bool operator()(int x)const{return x!=0;}};\nnamespace std {inline namespace __1 {template<class I,class F>bool all_of(I,I,F);}}\nint f(int*a){return static_cast<int>(std::all_of(a,a+2,P{}));}\n', 'TR0201', 'cpp-core-v2', True),
+        ('all_of-helper-specialization', '#include <algorithm>\nstruct P{bool operator()(int x)const{return x!=0;}};\nnamespace std {template<> bool __all_of<int*,int*,__identity,P>(int*,int*,P&,__identity&){return 0;}}\nint f(int*a){return static_cast<int>(std::all_of(a,a+2,P{}));}\n', 'TR0201', 'cpp-core-v2', True),
+        ('any_of-specialization', '#include <algorithm>\nstruct P{bool operator()(int x)const{return x!=0;}};\nnamespace std {template<> bool any_of<int*,P>(int*,int*,P){return 0;}}\nint f(int*a){return static_cast<int>(std::any_of(a,a+2,P{}));}\n', 'TR0201', 'cpp-core-v2', True),
+        ('any_of-redeclaration', '#include <algorithm>\nstruct P{bool operator()(int x)const{return x!=0;}};\nnamespace std {inline namespace __1 {template<class I,class F>bool any_of(I,I,F);}}\nint f(int*a){return static_cast<int>(std::any_of(a,a+2,P{}));}\n', 'TR0201', 'cpp-core-v2', True),
+        ('any_of-helper-specialization', '#include <algorithm>\nstruct P{bool operator()(int x)const{return x!=0;}};\nnamespace std {template<> bool __any_of<int*,int*,__identity,P>(int*,int*,P&,__identity&){return 0;}}\nint f(int*a){return static_cast<int>(std::any_of(a,a+2,P{}));}\n', 'TR0201', 'cpp-core-v2', True),
+        ('count_if-specialization', '#include <algorithm>\nstruct P{bool operator()(int x)const{return x!=0;}};\nnamespace std {template<> __PTRDIFF_TYPE__ count_if<int*,P>(int*,int*,P){return 0;}}\nint f(int*a){return static_cast<int>(std::count_if(a,a+2,P{}));}\n', 'TR0201', 'cpp-core-v2', True),
+        ('count_if-redeclaration', '#include <algorithm>\nstruct P{bool operator()(int x)const{return x!=0;}};\nnamespace std {inline namespace __1 {template<class I,class F>typename iterator_traits<I>::difference_type count_if(I,I,F);}}\nint f(int*a){return static_cast<int>(std::count_if(a,a+2,P{}));}\n', 'TR0201', 'cpp-core-v2', True),
+        ('count_if-helper-specialization', '#include <algorithm>\nstruct P{bool operator()(int x)const{return x!=0;}};\nnamespace std {template<> __PTRDIFF_TYPE__ __count_if<_ClassicAlgPolicy,int*,int*,__identity,P>(int*,int*,P&,__identity&){return 0;}}\nint f(int*a){return static_cast<int>(std::count_if(a,a+2,P{}));}\n', 'TR0201', 'cpp-core-v2', True),
+        ('predicate-invoke-specialization', '#include <algorithm>\nstruct P{bool operator()(int x)const{return x!=0;}};\nnamespace std {template<> bool __invoke<P&,int&>(P&,int&)noexcept(false){return false;}}\nint f(int*a){return std::all_of(a,a+2,P{});}\n', 'TR0201', 'cpp-core-v2', True),
+        ('projection-invoke-specialization', '#include <algorithm>\nstruct P{bool operator()(int x)const{return x!=0;}};\nnamespace std {template<> int& __invoke<__identity&,int&>(__identity&,int&v)noexcept(true){return v;}}\nint f(int*a){return std::all_of(a,a+2,P{});}\n', 'TR0201', 'cpp-core-v2', True),
+        ('identity-method-specialization', '#include <algorithm>\nstruct P{bool operator()(int x)const{return x!=0;}};\nnamespace std {template<> int& __identity::operator()<int&>(int&v)const noexcept{return v;}}\nint f(int*a){return std::all_of(a,a+2,P{});}\n', 'TR0201', 'cpp-core-v2', True),
+        ('forward-specialization', '#include <algorithm>\nstruct P{bool operator()(int x)const{return x!=0;}};\nnamespace std {template<> int& forward<int&>(int&v)noexcept{return v;}}\nint f(int*a){return std::all_of(a,a+2,P{});}\n', 'TR0201', 'cpp-core-v2', True),
+        ('classic-policy-redeclaration', '#include <algorithm>\nstruct P{bool operator()(int x)const{return x!=0;}};\nnamespace std {inline namespace __1 {struct _ClassicAlgPolicy;}}\nint f(int*a){return static_cast<int>(std::count_if(a,a+2,P{}));}\n', 'TR0203', 'cpp-core-v2', True),
+        ('iterator-ops-redeclaration', '#include <algorithm>\nstruct P{bool operator()(int x)const{return x!=0;}};\nnamespace std {template<>struct _IterOps<_ClassicAlgPolicy>;}\nint f(int*a){return static_cast<int>(std::count_if(a,a+2,P{}));}\n', 'TR0203', 'cpp-core-v2', True),
+        ('iterator-traits-specialization', '#include <algorithm>\nstruct P{bool operator()(int x)const{return x!=0;}};\nnamespace std {template<>struct iterator_traits<int*>{using value_type=int;using difference_type=__PTRDIFF_TYPE__;using pointer=int*;using reference=int&;using iterator_category=random_access_iterator_tag;};}\nint f(int*a){return static_cast<int>(std::count_if(a,a+2,P{}));}\n', 'TR0201', 'cpp-core-v2', True),
+        ('constructor-default-source', '#include <algorithm>\nstruct P{int n;P(int v=(sizeof(long double),0)):n(v){}bool operator()(int x)const{return x!=n;}};\nint f(int*a){return std::all_of(a,a+2,P{});}\n', 'TR0201', 'cpp-core-v2', True),
+        ('factory-default-source', '#include <algorithm>\nstruct P { bool operator()(int x) const { return x != 0; } };\nP make(int n=(sizeof(long double),0)){return P{};}\nint f(int*a){return std::all_of(a,a+2,make());}\n', 'TR0201', 'cpp-core-v2', True),
+        ('class-template-object', '#include <algorithm>\ntemplate<class T>struct P{bool operator()(T x)const{return x!=0;}};\nint f(int*a){return std::all_of(a,a+2,P<int>{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('query-only-no-body', '#include <algorithm>\nstruct P { bool operator()(int x) const { return x != 0; } };\nusing Result=decltype(std::all_of(static_cast<int*>(nullptr),static_cast<int*>(nullptr),P{}));\nstatic_assert(__is_same(Result,bool));\n', 'TR0203', 'cpp-core-v2', True),
+        ('evaluated-then-query', '#include <algorithm>\nstruct P { bool operator()(int x) const { return x != 0; } };\nbool f(int*a){P p;bool result=std::all_of(a,a+2,p);using Result=decltype(std::all_of(a,a+2,p));static_assert(__is_same(Result,bool));return result;}\n', 'TR0201', 'cpp-core-v2', True),
+        ('query-method-body-source', '#include <algorithm>\nstruct P{bool operator()(int x)const{long double hidden=0;return x!=0;}};\nusing Result=decltype(std::all_of(static_cast<int*>(nullptr),static_cast<int*>(nullptr),P{}));\nstatic_assert(__is_same(Result,bool));\n', 'TR0201', 'cpp-core-v2', True),
+        ('query-constructor-default-source', '#include <algorithm>\nstruct P{int n;P(int v=(sizeof(long double),0)):n(v){}bool operator()(int x)const{return x!=n;}};\nusing Result=decltype(std::all_of(static_cast<int*>(nullptr),static_cast<int*>(nullptr),P{}));\nstatic_assert(__is_same(Result,bool));\n', 'TR0201', 'cpp-core-v2', True),
+        ('nontrivial-copy', '#include <algorithm>\nstruct P{P()=default;P(const P&){}bool operator()(int x)const{return x!=0;}};\nint f(int*a){P p;return std::all_of(a,a+2,p);}\n', 'TR0203', 'cpp-core-v2', True),
+        ('nontrivial-destructor', '#include <algorithm>\nstruct P{~P(){}bool operator()(int x)const{return x!=0;}};\nint f(int*a){return std::all_of(a,a+2,P{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('reference-parameter', '#include <algorithm>\nstruct P{bool operator()(const int&x)const{return x!=0;}};\nint f(int*a){return std::all_of(a,a+2,P{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('non-bool-result', '#include <algorithm>\nstruct P{int operator()(int x)const{return x;}};\nint f(int*a){return std::all_of(a,a+2,P{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('volatile-method', '#include <algorithm>\nstruct P{bool operator()(int x)volatile{return x!=0;}};\nint f(int*a){return std::all_of(a,a+2,P{});}\n', 'TR0201', 'cpp-core-v2', True),
+        ('base-method', '#include <algorithm>\nstruct B{bool operator()(int x)const{return x!=0;}};struct P:B{};\nint f(int*a){return std::all_of(a,a+2,P{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('member-template', '#include <algorithm>\nstruct P{template<class T>bool operator()(T x)const{return x!=0;}};\nint f(int*a){return std::all_of(a,a+2,P{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('missing-method-definition', '#include <algorithm>\nstruct P{bool operator()(int x)const;};\nint f(int*a){return std::all_of(a,a+2,P{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('method-body-source', '#include <algorithm>\nstruct P{bool operator()(int x)const{long double hidden=0;return x!=0;}};\nint f(int*a){return std::all_of(a,a+2,P{});}\n', 'TR0201', 'cpp-core-v2', True),
+        ('parameter-alias-source', '#include <algorithm>\ntemplate<class T>using Alias=int;struct P{bool operator()(Alias<long double>x)const{return x!=0;}};\nint f(int*a){return std::all_of(a,a+2,P{});}\n', 'TR0201', 'cpp-core-v2', True),
+        ('explicit-template-alias-source', '#include <algorithm>\nstruct P { bool operator()(int x) const { return x != 0; } };\ntemplate<class T>using Iterator=int*;\nint f(int*a){return std::all_of<Iterator<long double>,P>(a,a+2,P{});}\n', 'TR0201', 'cpp-core-v2', True),
+        ('initializer-source', '#include <algorithm>\nstruct P { bool operator()(int x) const { return x != 0; } };\nint f(int*a){return std::all_of(a,a+2,(sizeof(long double),P{}));}\n', 'TR0201', 'cpp-core-v2', True),
+        ('sdk-predicate', '#include <algorithm>\n#include <functional>\nint f(int*a){return std::all_of(a,a+2,std::logical_not<int>{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('lambda', '#include <algorithm>\nint f(int*a){return std::all_of(a,a+2,[](int x){return x!=0;});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('remove-if-object', '#include <algorithm>\nstruct P { bool operator()(int x) const { return x != 0; } };\nint f(int*a){return std::remove_if(a,a+2,P{})==a;}\n', 'TR0203', 'cpp-core-v2', True),
+        ('deduced-result-query', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nint f(int*p){auto count=std::count_if(p,p+2,P{});static_assert(__is_same(decltype(count),__PTRDIFF_TYPE__));return count;}\n', 'TR0201', 'cpp-core-v2', True),
+    ]
+    for name, source, code, profile, sdk in algorithm_composed_rejections:
+        check("v2-algorithm-composed-reject-" + name, source, code, profile=profile, sdk=sdk)
+
+    algorithm_composed_promoted = [
+        ('count-if-object', '#include <algorithm>\nstruct P { bool operator()(int x) const { return x != 0; } };\nint f(int*a){return static_cast<int>(std::count_if(a,a+2,P{}));}\n'),
+        ('all-of-object', '#include <algorithm>\nstruct P { bool operator()(int x) const { return x != 0; } };\nbool f(int*a){return std::all_of(a,a+2,P{});}\n'),
+        ('any-of-object', '#include <algorithm>\nstruct P { bool operator()(int x) const { return x != 0; } };\nbool f(int*a){return std::any_of(a,a+2,P{});}\n'),
+    ]
+    for name, source in algorithm_composed_promoted:
+        check("v2-algorithm-composed-promoted-" + name, source, profile="cpp-core-v2", sdk=True)
 
     algorithm_predicate_queries_source = """\
 #include <algorithm>
