@@ -44077,6 +44077,288 @@ namespace std{template<>int*find_if<int*,logical_not<int>&>(int*p,int*,logical_n
   }
 }
 
+TEST_F(TranslateTest, CoreV2AlgorithmPartitionPointPredicateObjectsRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-partition-point-state.cpp");
+  const auto Output = tmpFile("algorithm-partition-point-state.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+
+struct Below {
+  int limit;
+  int calls;
+  int *observed;
+  long long *trace;
+  bool operator()(long long value) & { // template-predicate-method: below
+    ++calls;
+    *observed = calls;
+    *trace = *trace * 10 + value;
+    return value < limit;
+  }
+  bool operator()(long long) const & {
+    *observed = -100;
+    return false;
+  }
+};
+
+int main() {
+  int values[]{0, 1, 2, 3, 4, 5, 6, 7, 8};
+  int calls = 0;
+  long long trace = 0;
+  const Below five{5, 0, &calls, &trace};
+  if (std::partition_point(values, values + 9, five) != values + 5 || // template-predicate-call: below i64
+      calls != 4 || trace != 4765 || five.calls)
+    return 1;
+  static_assert(__is_same(decltype(std::partition_point(values, values + 9,
+                                                        five)),
+                          int *));
+  static_assert(!noexcept(std::partition_point(values, values + 9, five)));
+  calls = 0;
+  trace = 0;
+  const Below all{20, 0, &calls, &trace};
+  if (std::partition_point(values, values + 9, all) != values + 9 || // template-predicate-call: below i64
+      calls != 3 || trace != 478 || all.calls)
+    return 2;
+  calls = 0;
+  trace = 0;
+  const Below none{0, 0, &calls, &trace};
+  if (std::partition_point(values, values + 9, none) != values || // template-predicate-call: below i64
+      calls != 4 || trace != 4210 || none.calls)
+    return 3;
+  calls = 0;
+  trace = 0;
+  if (std::partition_point(values, values, five) != values || calls || trace) // template-predicate-call: below i64
+    return 4;
+  if (std::partition_point(values, values + 9, std::logical_not<int>{}) !=
+      values + 1)
+    return 5;
+  if (std::partition_point(values, values,
+                           std::logical_not<>{}) != values)
+    return 6;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-partition-point-state" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmPartitionPointPredicateMutationRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-partition-point-mutation.cpp");
+  const auto Output = tmpFile("algorithm-partition-point-mutation.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+
+int calls;
+
+struct Mutate {
+  int *held;
+  bool operator()(int value) { // template-predicate-method: mutate
+    ++calls;
+    *held += 10;
+    return value < 3;
+  }
+};
+
+int main() {
+  int values[]{0, 1, 2, 3, 4};
+  calls = 0;
+  Mutate predicate{values + 2};
+  if (std::partition_point(values, values + 5, predicate) != values + 3 || // template-predicate-call: mutate int
+      calls != 3 || values[2] != 32)
+    return 1;
+  calls = 0;
+  if (std::partition_point(values, values, predicate) != values || calls || // template-predicate-call: mutate int
+      values[2] != 32)
+    return 2;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-partition-point-mutation" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmPartitionPointPredicateIdentityRunsAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-partition-point-identity.cpp");
+  const auto Output = tmpFile("algorithm-partition-point-identity.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+
+int calls;
+int cleanup;
+int constructed;
+
+struct Token {
+  ~Token() { ++cleanup; }
+};
+
+struct Identity {
+  int local_calls;
+  const Identity **receiver;
+  Identity(const Identity **receiver, Token token = Token{})
+      : local_calls(0), receiver(receiver) {
+    ++constructed;
+  }
+  bool operator()(int value) { // template-predicate-method: identity
+    ++local_calls;
+    ++calls;
+    *receiver = this;
+    return value < 3;
+  }
+};
+
+int main() {
+  int values[]{0, 1, 2, 3, 4};
+  const Identity *receiver = nullptr;
+  auto result = std::partition_point(values, values + 5, Identity{&receiver}); // template-predicate-call: identity int
+  if (result != values + 3 || calls != 3 || !receiver || cleanup != 1 ||
+      constructed != 1)
+    return 1;
+  calls = 0;
+  receiver = nullptr;
+  auto empty = std::partition_point(values, values, Identity{&receiver}); // template-predicate-call: identity int
+  if (empty != values || calls || receiver || cleanup != 2 || constructed != 2)
+    return 2;
+  decltype(std::partition_point(values, values + 5, Identity{&receiver})) query =
+      values;
+  if (query != values || calls || receiver || cleanup != 2 || constructed != 2)
+    return 3;
+  if (noexcept(std::partition_point(values, values + 5,
+                                    Identity{&receiver})) ||
+      calls || receiver || cleanup != 2 || constructed != 2)
+    return 4;
+  Identity caller(&receiver);
+  receiver = nullptr;
+  calls = 0;
+  if (std::partition_point(values, values + 5, caller) != values + 3 || // template-predicate-call: identity int
+      calls != 3 || !receiver || receiver == &caller || caller.local_calls ||
+      cleanup != 3 || constructed != 3)
+    return 5;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-partition-point-identity" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmPartitionPointPredicatesRequireSource) {
+  const struct { const char *Name, *Source, *Code; } Cases[] = {
+    {"generic-method", R"cpp(#include <algorithm>
+struct P{template<class T>bool operator()(T n)const{return n<1;}};
+int*f(int*p){return std::partition_point(p,p+2,P{});}
+)cpp", "TR0203"},
+    {"nontrivial-copy", R"cpp(#include <algorithm>
+struct P{P(){}P(const P&){}bool operator()(int n)const{return n<1;}};
+int*f(int*p){return std::partition_point(p,p+2,P{});}
+)cpp", "TR0203"},
+    {"nontrivial-destructor", R"cpp(#include <algorithm>
+struct P{~P(){}bool operator()(int n)const{return n<1;}};
+int*f(int*p){return std::partition_point(p,p+2,P{});}
+)cpp", "TR0203"},
+    {"reference-argument", R"cpp(#include <algorithm>
+struct P{bool operator()(int&n)const{return n<1;}};
+int*f(int*p){return std::partition_point(p,p+2,P{});}
+)cpp", "TR0203"},
+    {"nonbool-result", R"cpp(#include <algorithm>
+struct P{int operator()(int n)const{return n<1;}};
+int*f(int*p){return std::partition_point(p,p+2,P{});}
+)cpp", "TR0203"},
+    {"constructor-default", R"cpp(#include <algorithm>
+struct P{P(int=(sizeof(long double),0)){}bool operator()(int n)const{return n<1;}};
+int*f(int*p){return std::partition_point(p,p+2,P{});}
+)cpp", "TR0201"},
+    {"method-body", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{long double hidden=0;return n<hidden;}};
+int*f(int*p){return std::partition_point(p,p+2,P{});}
+)cpp", "TR0201"},
+    {"missing-definition", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const;};
+int*f(int*p){return std::partition_point(p,p+2,P{});}
+)cpp", "TR0203"},
+    {"lambda", R"cpp(#include <algorithm>
+
+int*f(int*p){return std::partition_point(p,p+2,[](int n){return n<1;});}
+)cpp", "TR0203"},
+    {"specialization", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n<1;}};
+namespace std{template<>int*partition_point<int*,P>(int*p,int*,P){return p;}}
+int*f(int*p){return std::partition_point(p,p+2,P{});}
+)cpp", "TR0201"},
+    {"redeclaration", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n<1;}};
+namespace std{inline namespace __1{template<class I,class P>I partition_point(I,I,P);}}
+int*f(int*p){return std::partition_point(p,p+2,P{});}
+)cpp", "TR0201"},
+    {"query-no-body", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n<1;}};
+int f(int*p){static_assert(__is_same(decltype(std::partition_point(p,p+2,P{})),int*));return 0;}
+)cpp", "TR0203"},
+    {"factory-default", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n<1;}};
+P make(int=(sizeof(long double),0)){return P{};}
+int*f(int*p){return std::partition_point(p,p+2,make());}
+)cpp", "TR0201"},
+    {"input-source", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n<1;}};
+int*f(int*p){return std::partition_point(p,p+(sizeof(long double),2),P{});}
+)cpp", "TR0201"},
+    {"explicit-predicate-alias", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n<1;}};
+int object;template<auto>using Erased=P;
+int*f(int*p){return std::partition_point<int*,Erased<&object>>(p,p+2,P{});}
+)cpp", "TR0201"},
+    {"volatile-input", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n<1;}};
+volatile int*f(volatile int*p){return std::partition_point(p,p+2,P{});}
+)cpp", "TR0201"},
+    {"record-element", R"cpp(#include <algorithm>
+struct R{int v;};struct P{bool operator()(R n)const{return n.v<1;}};
+R*f(R*p){return std::partition_point(p,p+2,P{});}
+)cpp", "TR0203"},
+    {"sdk-predicate-mismatch", R"cpp(#include <algorithm>
+#include <functional>
+int*f(int*p){return std::partition_point(p,p+2,std::logical_not<long>{});}
+)cpp", "TR0203"},
+    {"half-specialization", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n<1;}};
+namespace std{template<>constexpr long __half_positive<long,0>(long){return 0;}}
+int*f(int*p){return std::partition_point(p,p+2,P{});}
+)cpp", "TR0201"},
+    {"other-partition-object", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n<1;}};
+int*f(int*p){return std::partition(p,p+2,P{});}
+)cpp", "TR0203"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("algorithm-partition-point-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("algorithm-partition-point-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}), Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmPredicateQueriesRequireValueCallbacks) {
   struct Rejection {
     const char *Name;

@@ -6576,7 +6576,7 @@ class FunctionLowering {
     case UtilityOperation::AlgorithmPartitionPoint: {
       auto First = snapshot(expression(Call->getArg(0)), L);
       auto Last = snapshot(expression(Call->getArg(1)), L);
-      auto Predicate = snapshot(expression(Call->getArg(2)), L);
+      auto Predicate = captureUnaryPredicate(Call, Operation);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto PointerType = type(Call->getArg(0)->getType(), L);
       auto Length = temporary(DifferenceType, L);
@@ -6598,8 +6598,7 @@ class FunctionLowering {
       assign(Middle, binary("+", First, Half, PointerType, L), L);
       {
         auto Selected = emitUnaryPredicate(
-            json::Object(Predicate), Call->getArg(2)->getType(),
-            dereference(json::Object(Middle), L), L);
+            Predicate, dereference(json::Object(Middle), L), L);
         branch(std::move(Selected), Advance, Narrow, L);
       }
       label(Advance, L);

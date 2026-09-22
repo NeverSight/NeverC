@@ -1679,12 +1679,12 @@ selection uses pointer-width partition indexes. Generated programs do not call
 or link libc++ for these operations. Heterogeneous value types outside the
 documented binary-predicate `equal` and `mismatch` forms, other predicate or
 comparator overloads, custom iterators, record elements, callable objects outside
-the thirteen unary algorithms below and addresses of standard algorithms remain rejected, as do calls outside a
+the fourteen unary algorithms below and addresses of standard algorithms remain rejected, as do calls outside a
 documented direct lowering.
 
 `find_if`, `find_if_not`, `none_of`, `all_of`, `any_of`, `count_if`,
 `replace_if`, `replace_copy_if`, `remove_copy_if`, `copy_if`, `is_partitioned`,
-`partition_copy` and `remove_if`
+`partition_copy`, `partition_point` and `remove_if`
 additionally accept ordinary source-owned
 function objects with standard layout, trivial copy construction and destruction,
 and one Clang-selected non-template call operator taking an admitted scalar by
@@ -1729,6 +1729,12 @@ two-scan control flow. Both scans use the same parameter object and selected
 method; the first false element is tested once, then skipped before the tail
 scan. A later true result stops immediately. Empty, all-true and all-false
 ranges preserve the standard result without extra predicate calls.
+`partition_point` authenticates the pinned pointer-distance, positive-half and
+advance helpers together with the exact binary-search loop. Each iteration calls
+the same predicate parameter on the selected middle element, then narrows the
+range with target `ptrdiff_t` arithmetic. Predicate state therefore follows the
+SDK's middle-element order. Empty, all-true and all-false ranges preserve their
+exact call counts and boundary pointers.
 `partition_copy` uses the same predicate storage and authenticates both
 conditional stores, each output increment and the returned pair construction.
 The true and false destinations may have distinct admitted scalar types, with
@@ -1760,7 +1766,7 @@ algorithm-only proof does not admit out-of-line operation-trait definitions.
 Member function templates, lambda objects, nontrivial copying or
 destruction, reference parameters, non-boolean results and function objects in
 other algorithm overloads remain outside this increment.
-These thirteen algorithms also accept pinned `std::logical_not<T>` and
+These fourteen algorithms also accept pinned `std::logical_not<T>` and
 `std::logical_not<>` predicates over admitted scalar elements. A typed predicate's
 parameter must match the input element type after removing qualifiers; conversions
 that create an argument temporary remain outside this form. The actual selected
@@ -1773,7 +1779,7 @@ Other SDK function objects and other algorithm overloads require separate proofs
 Already instantiated calls support the same result queries below; the SDK operator's
 complete proof replaces source-operator dependencies, while caller arguments and
 written template arguments still require source completion.
-For these thirteen source-object overloads, `decltype`, `noexcept` and queries of
+For these fourteen source-object overloads, `decltype`, `noexcept` and queries of
 an initialized variable's deduced type can consume an already instantiated,
 authenticated algorithm specialization. Each exact call and callee reference
 retains the selected source operator's signature and exception dependencies;
