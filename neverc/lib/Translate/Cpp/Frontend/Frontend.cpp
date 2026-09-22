@@ -3303,6 +3303,181 @@ static bool operationTraitSource(Adapter &A, const OperationTraitSource &Source,
   return SourceCheck.finish(Source.Root->getExprLoc());
 }
 
+// An instantiated member can reuse an earlier declaration's TypeSourceInfo.
+// For algorithm callbacks only, prove both original signatures when each uses
+// direct builtin types or direct primary-class type parameters. This supplies
+// no general operation-trait proof for out-of-line template definitions.
+static bool
+simpleOutOfLineAlgorithmPredicateSource(Adapter &A,
+                                        const CXXMethodDecl *Method) {
+  if (!Method || Method->getOverloadedOperator() != OO_Call ||
+      !ordinaryOperator(Method) || !concreteClassFunction(Method) ||
+      Method->getTemplatedKind() != FunctionDecl::TK_MemberSpecialization ||
+      Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      Method->getPrimaryTemplate() || Method->getNumParams() != 1 ||
+      Method->getDefinition() != Method ||
+      !Method->doesThisDeclarationHaveABody() ||
+      !A.S.owns(A.Sources, Method->getLocation()))
+    return false;
+  const auto *Record =
+      dyn_cast<ClassTemplateSpecializationDecl>(Method->getParent());
+  const auto *Primary = Record ? Record->getSpecializedTemplate() : nullptr;
+  if (!Record || !Primary || Record->getInstantiatedFromMemberClass() ||
+      Record->getSpecializationKind() != TSK_ImplicitInstantiation ||
+      !isa<TranslationUnitDecl, NamespaceDecl>(Primary->getDeclContext()) ||
+      Record->getSpecializedTemplateOrPartial()
+              .dyn_cast<ClassTemplateDecl *>() != Primary)
+    return false;
+  const auto *Origin = Method->getInstantiatedFromMemberFunction();
+  const auto *Pattern = dyn_cast_or_null<CXXMethodDecl>(
+      Method->getTemplateInstantiationPattern(/*ForDefinition=*/true));
+  if (!Origin || !Pattern ||
+      Origin->getCanonicalDecl() != Pattern->getCanonicalDecl() ||
+      Pattern->getDefinition() != Pattern ||
+      !Pattern->doesThisDeclarationHaveABody() ||
+      Pattern->getLexicalDeclContext() == Pattern->getParent() ||
+      Pattern->getParent()->getCanonicalDecl() !=
+          Primary->getTemplatedDecl()->getCanonicalDecl())
+    return false;
+  const auto *ActualPrototype = Method->getType()->getAs<FunctionProtoType>();
+  if (!ActualPrototype ||
+      (ActualPrototype->getExceptionSpecType() != EST_None &&
+       ActualPrototype->getExceptionSpecType() != EST_BasicNoexcept) ||
+      ActualPrototype->getNoexceptExpr())
+    return false;
+  auto WrittenInside = [&](TypeLoc Location, const FunctionDecl *Owner) {
+    if (!Location || !A.S.owns(A.Sources, Location.getBeginLoc()))
+      return false;
+    const auto L = A.Sources.getExpansionLoc(Location.getBeginLoc());
+    const auto Begin = A.Sources.getExpansionLoc(Owner->getBeginLoc());
+    const auto End = A.Sources.getExpansionLoc(Owner->getEndLoc());
+    return L.isValid() && Begin.isValid() && End.isValid() &&
+           A.Sources.getFileID(L) == A.Sources.getFileID(Begin) &&
+           A.Sources.getFileID(L) == A.Sources.getFileID(End) &&
+           !A.Sources.isBeforeInTranslationUnit(L, Begin) &&
+           !A.Sources.isBeforeInTranslationUnit(End, L);
+  };
+  for (const auto *Declaration : Origin->redecls()) {
+    const auto *D = dyn_cast<CXXMethodDecl>(Declaration);
+    const auto *Info = D ? D->getTypeSourceInfo() : nullptr;
+    const auto Signature =
+        Info ? Info->getTypeLoc().IgnoreParens().getAs<FunctionProtoTypeLoc>()
+             : FunctionProtoTypeLoc();
+    const auto *Prototype =
+        D ? D->getType()->getAs<FunctionProtoType>() : nullptr;
+    if (!D || !Info || !Signature || !Prototype || D->isImplicit() ||
+        D->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+        !A.S.owns(A.Sources, D->getLocation()) || D->getNumParams() != 1 ||
+        D->getParent()->getCanonicalDecl() !=
+            Pattern->getParent()->getCanonicalDecl() ||
+        D->getOverloadedOperator() != OO_Call || D->isStatic() ||
+        D->isVirtual() || D->isVariadic() ||
+        D->getMethodQualifiers() != Method->getMethodQualifiers() ||
+        D->getRefQualifier() != Method->getRefQualifier() ||
+        Prototype->getCallConv() != ActualPrototype->getCallConv() ||
+        Prototype->getExceptionSpecType() !=
+            ActualPrototype->getExceptionSpecType() ||
+        Prototype->getNoexceptExpr())
+      return false;
+    A.chargeExpansion(1, D->getLocation());
+    const auto *Parameters = Primary->getTemplateParameters();
+    if (D->getLexicalDeclContext() == D->getParent()) {
+      if (D->getNumTemplateParameterLists() || D->getQualifierLoc())
+        return false;
+    } else {
+      // An out-of-line header has fresh parameter declarations. Authenticate
+      // the exact written primary qualifier before mapping their indices.
+      if (D->getNumTemplateParameterLists() != 1)
+        return false;
+      Parameters = D->getTemplateParameterList(0);
+      const auto Qualifier = D->getQualifierLoc().getTypeLoc();
+      const auto Owner = Qualifier.getAs<TemplateSpecializationTypeLoc>();
+      const auto *Template =
+          Owner ? Owner.getTypePtr()->getTemplateName().getAsTemplateDecl()
+                : nullptr;
+      if (!Owner || !Template ||
+          Template->getCanonicalDecl() != Primary->getCanonicalDecl() ||
+          Parameters->size() != Primary->getTemplateParameters()->size() ||
+          Parameters->size() != Record->getTemplateArgs().size() ||
+          Parameters->size() != Owner.getNumArgs() || Parameters->size() > 64)
+        return false;
+      for (unsigned I = 0; I < Parameters->size(); ++I) {
+        A.chargeExpansion(1, Owner.getArgLoc(I).getLocation());
+        const auto *P = Parameters->getParam(I);
+        const auto *Original = Primary->getTemplateParameters()->getParam(I);
+        const auto Argument = Owner.getArgLoc(I);
+        if (const auto *Type = dyn_cast<TemplateTypeParmDecl>(P)) {
+          const auto *PrimaryType = dyn_cast<TemplateTypeParmDecl>(Original);
+          const auto *Info =
+              Argument.getArgument().getKind() == TemplateArgument::Type
+                  ? Argument.getTypeSourceInfo()
+                  : nullptr;
+          const auto Written =
+              Info ? Info->getTypeLoc().getAs<TemplateTypeParmTypeLoc>()
+                   : TemplateTypeParmTypeLoc();
+          if (!PrimaryType || Type->isParameterPack() ||
+              PrimaryType->isParameterPack() || Type->getDepth() ||
+              Type->getIndex() != I || !Written || Written.getDecl() != Type ||
+              Info->getType().hasLocalQualifiers())
+            return false;
+        } else if (const auto *Value = dyn_cast<NonTypeTemplateParmDecl>(P)) {
+          const auto *PrimaryValue =
+              dyn_cast<NonTypeTemplateParmDecl>(Original);
+          const auto *Expression =
+              Argument.getArgument().getKind() == TemplateArgument::Expression
+                  ? Argument.getSourceExpression()
+                  : nullptr;
+          const auto *Reference =
+              Expression
+                  ? dyn_cast<DeclRefExpr>(Expression->IgnoreParenImpCasts())
+                  : nullptr;
+          if (!PrimaryValue || Value->isParameterPack() ||
+              PrimaryValue->isParameterPack() || Value->getDepth() ||
+              Value->getIndex() != I || !Reference ||
+              Reference->getDecl() != Value ||
+              !A.Context.hasSameType(Value->getType(), PrimaryValue->getType()))
+            return false;
+        } else {
+          return false;
+        }
+      }
+    }
+    const auto Return = Signature.getReturnLoc();
+    if (!WrittenInside(Return, D) ||
+        !Return.IgnoreParens().getAs<BuiltinTypeLoc>() ||
+        !A.Context.hasSameType(Return.getType(), A.Context.BoolTy) ||
+        !A.Context.hasSameType(Method->getReturnType(), A.Context.BoolTy))
+      return false;
+    const auto *Parameter = D->getParamDecl(0)->getTypeSourceInfo();
+    const auto ParameterLoc = Parameter ? Parameter->getTypeLoc() : TypeLoc();
+    if (!WrittenInside(ParameterLoc, D))
+      return false;
+    const auto Leaf = ParameterLoc.IgnoreParens().getUnqualifiedLoc();
+    QualType Expected;
+    if (Leaf.getAs<BuiltinTypeLoc>()) {
+      Expected = ParameterLoc.getType();
+    } else if (const auto T = Leaf.getAs<TemplateTypeParmTypeLoc>()) {
+      const auto *P = T.getDecl();
+      if (!P || P->isParameterPack() || P->getDepth() != 0 ||
+          P->getIndex() >= Parameters->size() ||
+          Parameters->getParam(P->getIndex())->getCanonicalDecl() !=
+              P->getCanonicalDecl() ||
+          P->getIndex() >= Record->getTemplateArgs().size())
+        return false;
+      const auto &Argument = Record->getTemplateArgs().get(P->getIndex());
+      if (Argument.getKind() != TemplateArgument::Type)
+        return false;
+      Expected = A.Context.getQualifiedType(
+          Argument.getAsType(), ParameterLoc.getType().getLocalQualifiers());
+    } else {
+      return false;
+    }
+    if (!A.Context.hasSameType(Expected, Method->getParamDecl(0)->getType()))
+      return false;
+  }
+  return true;
+}
+
 static bool operationTraitNeedsExceptionSource(TypeTrait Trait) {
   return Trait == TT_IsNothrowConstructible || Trait == BTT_IsNothrowAssignable ||
          Trait == BTT_IsNothrowConvertible;
@@ -5240,6 +5415,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   Adapter &A;
   std::set<const FunctionDecl *> CompletedOperationDefinitions;
   std::map<const CXXMethodDecl *, SourceLocation> AlgorithmPredicateMethods;
+  std::set<const CXXMethodDecl *> CompletedAlgorithmPredicateDefinitions;
   GeneratedOperationSources CompletedGeneratedOperations;
   std::vector<const CXXDestructorDecl *> ConsumedDestructorSignatures;
   std::set<const CXXDestructorDecl *> QueuedDestructorSignatures;
@@ -12161,9 +12337,13 @@ public:
     if (const auto *Function = dyn_cast_or_null<FunctionDecl>(D);
         Result && A.S.coreV2() && A.S.Diagnostics.empty() && Function && owned(Function) &&
         !Function->isImplicit() && !Function->isDefaulted() &&
-        Function->isUserProvided() && Function->doesThisDeclarationHaveABody() &&
-        operationDefinitionCategory(A, Function))
-      CompletedOperationDefinitions.insert(Function);
+        Function->isUserProvided() && Function->doesThisDeclarationHaveABody()) {
+      if (operationDefinitionCategory(A, Function))
+        CompletedOperationDefinitions.insert(Function);
+      else if (const auto *Method = dyn_cast<CXXMethodDecl>(Function);
+               simpleOutOfLineAlgorithmPredicateSource(A, Method))
+        CompletedAlgorithmPredicateDefinitions.insert(Method);
+    }
     return Result;
   }
   void queueOwningDestructorSignatures(const CXXRecordDecl *RootRecord,
@@ -12587,7 +12767,10 @@ public:
       const auto *Definition = Method->getDefinition();
       // Reading a selected SDK body never substitutes for checking the source
       // callback. The actual definition must be fully traversed and emitted.
-      if (!Definition || !CompletedOperationDefinitions.count(Definition) ||
+      if (!Definition ||
+          (!CompletedOperationDefinitions.count(Definition) &&
+           !CompletedAlgorithmPredicateDefinitions.count(
+               cast<CXXMethodDecl>(Definition))) ||
           std::find(A.Functions.begin(), A.Functions.end(), Definition) ==
               A.Functions.end()) {
         A.reject(Location, "algorithm predicate source",

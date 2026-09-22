@@ -1715,9 +1715,17 @@ primary, partial and full class specializations with an in-class non-template
 call operator. Type and value parameters, defaults, each concrete receiver's
 storage and the selected member definition retain the ordinary class-template
 source checks. Different instantiations keep distinct method and record identities.
-Out-of-line template call operators still require separate declaration/definition
-signature provenance and remain rejected by the operation-source proof. Member
-function templates, lambda objects, SDK function objects, nontrivial copying or
+Out-of-line non-template call operators of namespace primary class templates
+also qualify when every original declaration and definition writes a direct
+`bool` return and a direct builtin or class type-parameter argument. The written
+class qualifier must map each fresh outer parameter directly to the primary;
+renamed type/value parameters retain their exact identities. Both signatures
+must have no exception specification or plain `noexcept`. Aliases, adjusted
+array parameters, computed exception expressions, out-of-line partial/member
+specializations and nested template owners still require further source proof.
+The actual body must finish ordinary source traversal and be emitted; this
+algorithm-only proof does not admit out-of-line operation-trait definitions.
+Member function templates, lambda objects, SDK function objects, nontrivial copying or
 destruction, reference parameters, non-boolean results and function objects in
 other algorithm overloads remain outside this increment.
 For these eight source-object overloads, `decltype`, `noexcept` and queries of

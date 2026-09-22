@@ -42360,10 +42360,6 @@ int f(int*p){return std::all_of(p,p+2,P<Erased<&object>>{});}
 template<class T>struct P{bool operator()(int n)const{return n>0;}};
 int f(int*p){return std::all_of(p,p+2,P<long double>{});}
 )cpp", "TR0201"},
-    {"class-out-of-line-proof", R"cpp(#include <algorithm>
-template<class T>struct P{bool operator()(T n)const;};template<class T>bool P<T>::operator()(T n)const{return n>0;}
-int f(int*p){return std::all_of(p,p+2,P<int>{});}
-)cpp", "TR0203"},
     {"class-missing-definition", R"cpp(#include <algorithm>
 template<class T>struct P{bool operator()(T n)const;};
 int f(int*p){return std::all_of(p,p+2,P<int>{});}
@@ -42390,6 +42386,294 @@ int f(int*p){return std::all_of(p,p+2,std::logical_not<int>{});}
     SCOPED_TRACE(Case.Name);
     const auto Source = tmpFile(std::string("algorithm-template-reject-") + Case.Name + ".cpp");
     const auto Output = tmpFile(std::string("algorithm-template-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}), Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmOutOfLinePredicateObjectsRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-out-of-line-state.cpp");
+  const auto Output = tmpFile("algorithm-out-of-line-state.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+template<class T=int,int Limit=2> struct Threshold {
+  int calls;
+  int *observed;
+  bool operator()(T n) & noexcept;
+  bool operator()(T) const & { *observed=-100;return false; }
+};
+template<class Element,int Bound>
+bool Threshold<Element,Bound>::operator()(Element n) & noexcept { // template-predicate-method: primary
+  ++calls;*observed=calls;return n>=Bound;
+}
+int main(){
+  int input[4]={0,1,2,3},observed=0;
+  const Threshold<> caller{0,&observed};
+  auto found=std::find_if(input,input+4,caller); // template-predicate-call: primary int
+  if(found!=input+2||observed!=3||caller.calls)return 1;
+  auto missed=std::find_if_not(input,input+4,caller); // template-predicate-call: primary int
+  if(missed!=input||observed!=1||caller.calls)return 2;
+  auto none=std::none_of(input,input+4,caller); // template-predicate-call: primary int
+  if(none||observed!=3||caller.calls)return 3;
+  auto all=std::all_of(input,input+4,caller); // template-predicate-call: primary int
+  if(all||observed!=1||caller.calls)return 4;
+  auto any=std::any_of(input,input+4,caller); // template-predicate-call: primary int
+  if(!any||observed!=3||caller.calls)return 5;
+  auto count=std::count_if(input,input+4,caller); // template-predicate-call: primary int
+  if(count!=2||observed!=4||caller.calls)return 6;
+  static_assert(__is_same(decltype(count),__PTRDIFF_TYPE__));
+  using Selected=Threshold<int,2>;
+  static_assert(__is_same(decltype(std::find_if<int*,Selected>(input,input+4,caller)),int*));
+  static_assert(__is_same(decltype(std::all_of(input,input+4,caller)),bool));
+  int changed=0;const Threshold<long long,1> other{0,&changed};
+  std::replace_if(input,input+4,other,9); // template-predicate-call: primary i64
+  if(input[0]!=0||input[1]!=9||input[2]!=9||input[3]!=9||changed!=4||other.calls||observed!=4)return 7;
+  long output[4]={};
+  auto end=std::replace_copy_if(input,input+4,output,other,7); // template-predicate-call: primary i64
+  if(end!=output+4||output[0]!=0||output[1]!=7||output[2]!=7||output[3]!=7||changed!=4||other.calls)return 8;
+  observed=0;
+  if(!std::all_of(input,input,caller)||observed||caller.calls)return 9; // template-predicate-call: primary int
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-out-of-line-state" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmOutOfLinePredicateSpecializationsRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-out-of-line-specializations.cpp");
+  const auto Output = tmpFile("algorithm-out-of-line-specializations.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+template<class T>struct Select { bool operator()(T n)const{return n>0;} };
+template<class T>struct Select<T*> {
+  int *calls;
+  bool operator()(T* n) const { // template-predicate-method: partial
+    ++*calls;return n!=nullptr;
+  }
+};
+template<>struct Select<short> {
+  int *calls;
+  bool operator()(short n) & { // template-predicate-method: full
+    ++*calls;return n<0;
+  }
+};
+template<class T>struct External {
+  T limit;
+  int *calls;
+  bool operator()(T n) const;
+};
+template<class T>bool External<T>::operator()(T n) const { // template-predicate-method: external
+  ++*calls;return n>=limit;
+}
+int main(){
+  int a=1,b=2;int*values[4]={nullptr,&a,nullptr,&b};int calls=0;
+  auto count=std::count_if(values,values+4,Select<int*>{&calls}); // template-predicate-call: partial ptr:int
+  if(count!=2||calls!=4)return 1;
+  calls=0;
+  if(std::none_of(values,values+4,Select<int*>{&calls})||calls!=2)return 2; // template-predicate-call: partial ptr:int
+  short numbers[4]={0,-1,2,-3};calls=0;
+  auto found=std::find_if(numbers,numbers+4,Select<short>{&calls}); // template-predicate-call: full i16
+  if(found!=numbers+1||calls!=2)return 3;
+  calls=0;
+  std::replace_if(numbers,numbers+4,Select<short>{&calls},5); // template-predicate-call: full i16
+  if(numbers[0]!=0||numbers[1]!=5||numbers[2]!=2||numbers[3]!=5||calls!=4)return 4;
+  calls=0;External<long long> predicate{2,&calls};
+  if(std::all_of(numbers,numbers+4,predicate)||calls!=1)return 5; // template-predicate-call: external i64
+  calls=0;
+  if(!std::any_of(numbers,numbers+4,predicate)||calls!=2)return 6; // template-predicate-call: external i64
+  static_assert(__is_same(decltype(std::find_if(numbers,numbers+4,Select<short>{&calls})),short*));
+  static_assert(__is_same(decltype(std::count_if(values,values+4,Select<int*>{&calls})),__PTRDIFF_TYPE__));
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-out-of-line-specializations" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmOutOfLinePredicateIdentityRunsAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-out-of-line-identity.cpp");
+  const auto Output = tmpFile("algorithm-out-of-line-identity.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+int live, destroyed, constructions, calls, bad, factories;
+struct Token { Token(){++live;}~Token(){--live;++destroyed;} };
+template<class T>struct Identity {
+  const Identity *self;
+  const Identity **receiver;
+  const Token *token;
+  bool exact;
+  Identity(const Identity **r,bool e,const Token&t=Token()):self(this),receiver(r),token(&t),exact(e){++constructions;}
+  bool operator()(T n) &;
+};
+template<class Value>
+bool Identity<Value>::operator()(Value n) & { // template-predicate-method: identity
+  ++calls;
+  if(live!=1||(exact&&self!=this)||(*receiver&&*receiver!=this))++bad;
+  *receiver=this;return n>0;
+}
+Identity<int> make(const Identity<int> **r,const Token&t){++factories;return Identity<int>(r,true,t);}
+int main(){
+  int input[3]={0,1,2},output[3]={};const Identity<int>*receiver=nullptr;
+  if((std::replace_if(input,input+3,Identity<int>(&receiver,true),9),live!=1))return 1; // template-predicate-call: identity int
+  if(live||destroyed!=1||constructions!=1||calls!=3||bad||input[0]!=0||input[1]!=9||input[2]!=9)return 2;
+  receiver=nullptr;
+  if(std::replace_copy_if(input,input+3,output,make(&receiver,Token{}),7)!=output+3||live!=1)return 3; // template-predicate-call: identity int
+  if(live||destroyed!=2||constructions!=2||factories!=1||calls!=6||bad||output[0]!=0||output[1]!=7||output[2]!=7)return 4;
+  receiver=nullptr;
+  if((std::replace_if(input,input,Identity<int>(&receiver,true),5),live!=1))return 5; // template-predicate-call: identity int
+  if(live||destroyed!=3||calls!=6||constructions!=3||bad)return 6;
+  receiver=nullptr;
+  if(std::replace_copy_if(input,input,output,Identity<int>(&receiver,true),4)!=output||live!=1)return 7; // template-predicate-call: identity int
+  if(live||destroyed!=4||calls!=6||constructions!=4||bad)return 8;
+  {
+    Token owner;
+    Identity<int> caller(&receiver,false,owner);
+    receiver=nullptr;
+    std::replace_if(input,input+3,caller,6); // template-predicate-call: identity int
+    if(receiver==&caller||caller.self!=&caller||constructions!=5||calls!=9||bad)return 9;
+    receiver=nullptr;
+    if(std::replace_copy_if(input,input+3,output,caller,3)!=output+3)return 10; // template-predicate-call: identity int
+    if(receiver==&caller||caller.self!=&caller||constructions!=5||calls!=12||bad)return 11;
+  }
+  return live==0&&destroyed==5&&bad==0?0:12;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-out-of-line-identity" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmOutOfLinePredicatesRequireSource) {
+  const struct { const char *Name, *Source, *Code; } Cases[] = {
+    {"definition-erased-return", R"cpp(#include <algorithm>
+template<class T>struct P{bool operator()(T n)const;};
+template<class U>auto P<U>::operator()(U n)const->decltype((sizeof(long double),true)){return n>0;}
+int f(int*p){return std::all_of(p,p+2,P<int>{});}
+)cpp", "TR0203"},
+    {"definition-erased-parameter", R"cpp(#include <algorithm>
+template<class T>struct P{bool operator()(int n)const;};
+template<class U>bool P<U>::operator()(decltype((sizeof(long double),1)) n)const{return n>0;}
+int f(int*p){return std::all_of(p,p+2,P<int>{});}
+)cpp", "TR0203"},
+    {"definition-adjusted-bound", R"cpp(#include <algorithm>
+template<class T>struct P{bool operator()(int*n)const;};
+template<class U>bool P<U>::operator()(int n[(sizeof(long double),1)])const{return n!=nullptr;}
+int f(int**p){return std::all_of(p,p+2,P<int>{});}
+)cpp", "TR0203"},
+    {"definition-return-alias", R"cpp(#include <algorithm>
+using Answer=bool;
+template<class T>struct P{bool operator()(T n)const;};
+template<class U>Answer P<U>::operator()(U n)const{return n>0;}
+int f(int*p){return std::all_of(p,p+2,P<int>{});}
+)cpp", "TR0203"},
+    {"definition-parameter-alias", R"cpp(#include <algorithm>
+using Value=int;template<class T>struct P{bool operator()(int n)const;};
+template<class U>bool P<U>::operator()(Value n)const{return n>0;}
+int f(int*p){return std::all_of(p,p+2,P<int>{});}
+)cpp", "TR0203"},
+    {"definition-dependent-return", R"cpp(#include <algorithm>
+template<class T>struct P{T operator()(int n)const;};
+template<class U>U P<U>::operator()(int n)const{return n>0;}
+int f(int*p){return std::all_of(p,p+2,P<bool>{});}
+)cpp", "TR0203"},
+    {"qualifier-alias", R"cpp(#include <algorithm>
+template<class T>using Id=T;
+template<class T>struct P{bool operator()(T n)const;};
+template<class U>bool P<Id<U>>::operator()(U n)const{return n>0;}
+int f(int*p){return std::all_of(p,p+2,P<int>{});}
+)cpp", "TR0203"},
+    {"computed-noexcept", R"cpp(#include <algorithm>
+template<class T>struct P{bool operator()(T n)const noexcept(true);};
+template<class U>bool P<U>::operator()(U n)const noexcept(true){return n>0;}
+int f(int*p){return std::all_of(p,p+2,P<int>{});}
+)cpp", "TR0203"},
+    {"computed-noexcept-source", R"cpp(#include <algorithm>
+template<class T>struct P{bool operator()(T n)const noexcept(sizeof(long double)>0);};
+template<class U>bool P<U>::operator()(U n)const noexcept(sizeof(long double)>0){return n>0;}
+int f(int*p){return std::all_of(p,p+2,P<int>{});}
+)cpp", "TR0201"},
+    {"body-source", R"cpp(#include <algorithm>
+template<class T>struct P{bool operator()(T n)const;};
+template<class U>bool P<U>::operator()(U n)const{long double hidden=0;return n>hidden;}
+int f(int*p){return std::all_of(p,p+2,P<int>{});}
+)cpp", "TR0201"},
+    {"missing-definition", R"cpp(#include <algorithm>
+template<class T>struct P{bool operator()(T n)const;};
+int f(int*p){return std::all_of(p,p+2,P<int>{});}
+)cpp", "TR0203"},
+    {"query-only-no-body", R"cpp(#include <algorithm>
+template<class T>struct P{bool operator()(T n)const;};
+template<class U>bool P<U>::operator()(U n)const{return n>0;}
+int f(int*p){static_assert(__is_same(decltype(std::all_of(p,p+2,P<int>{})),bool));return 0;}
+)cpp", "TR0203"},
+    {"class-partial", R"cpp(#include <algorithm>
+template<class T>struct P;template<class T>struct P<T*>{bool operator()(T*n)const;};
+template<class U>bool P<U*>::operator()(U*n)const{return n!=nullptr;}
+int f(int**p){return std::all_of(p,p+2,P<int*>{});}
+)cpp", "TR0203"},
+    {"member-specialization", R"cpp(#include <algorithm>
+template<class T>struct P{bool operator()(T n)const;};
+template<>bool P<int>::operator()(int n)const{return n>0;}
+int f(int*p){return std::all_of(p,p+2,P<int>{});}
+)cpp", "TR0203"},
+    {"nested-class", R"cpp(#include <algorithm>
+template<class T>struct Outer{template<class U>struct P{bool operator()(U n)const;};};
+template<class T>template<class U>bool Outer<T>::P<U>::operator()(U n)const{return n>0;}
+int f(int*p){return std::all_of(p,p+2,Outer<int>::P<int>{});}
+)cpp", "TR0203"},
+    {"member-function-template", R"cpp(#include <algorithm>
+template<class T>struct P{template<class U>bool operator()(U n)const;};
+template<class T>template<class U>bool P<T>::operator()(U n)const{return n>0;}
+int f(int*p){return std::all_of(p,p+2,P<int>{});}
+)cpp", "TR0203"},
+    {"class-argument-source", R"cpp(#include <algorithm>
+template<class T,int N>struct P{bool operator()(T n)const;};
+template<class U,int K>bool P<U,K>::operator()(U n)const{return n>K;}
+int f(int*p){return std::all_of(p,p+2,P<int,(sizeof(long double),0)>{});}
+)cpp", "TR0201"},
+    {"constructor-default-source", R"cpp(#include <algorithm>
+template<class T>struct P{P(int=(sizeof(long double),0)){}bool operator()(T n)const;};
+template<class U>bool P<U>::operator()(U n)const{return n>0;}
+int f(int*p){return std::all_of(p,p+2,P<int>{});}
+)cpp", "TR0201"},
+    {"source-return-reference", R"cpp(#include <algorithm>
+template<class T>struct P{bool value;bool&operator()(T n);};
+template<class U>bool&P<U>::operator()(U n){value=n>0;return value;}
+int f(int*p){return std::all_of(p,p+2,P<int>{});}
+)cpp", "TR0203"},
+    {"public-sdk-specialization", R"cpp(#include <algorithm>
+template<class T>struct P{bool operator()(T n)const;};
+template<class U>bool P<U>::operator()(U n)const{return n>0;}
+namespace std{template<>bool all_of<int*,P<int>>(int*,int*,P<int>){return true;}}
+int f(int*p){return std::all_of(p,p+2,P<int>{});}
+)cpp", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("algorithm-out-of-line-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("algorithm-out-of-line-reject-") + Case.Name + ".nc");
     writeFile(Source, Case.Source);
     expectCode(translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}), Case.Code);
     expectNoArtifacts(Output);
