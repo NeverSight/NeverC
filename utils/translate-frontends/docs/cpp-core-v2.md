@@ -1679,11 +1679,11 @@ selection uses pointer-width partition indexes. Generated programs do not call
 or link libc++ for these operations. Heterogeneous value types outside the
 documented binary-predicate `equal` and `mismatch` forms, other predicate or
 comparator overloads, custom iterators, record elements, callable objects outside
-the nine unary algorithms below and addresses of standard algorithms remain rejected, as do calls outside a
+the ten unary algorithms below and addresses of standard algorithms remain rejected, as do calls outside a
 documented direct lowering.
 
 `find_if`, `find_if_not`, `none_of`, `all_of`, `any_of`, `count_if`,
-`replace_if`, `replace_copy_if` and `remove_copy_if` additionally accept ordinary source-owned
+`replace_if`, `replace_copy_if`, `remove_copy_if` and `copy_if` additionally accept ordinary source-owned
 function objects with standard layout, trivial copy construction and destruction,
 and one Clang-selected non-template call operator taking an admitted scalar by
 value and returning `bool`. The exact pinned algorithm specialization, complete
@@ -1710,13 +1710,18 @@ conversions from the input and replacement types. The replacement remains a
 reference throughout the scan: predicate-side changes and aliases to an input
 or output element remain visible to later stores. Empty ranges still initialize
 the predicate parameter and preserve full-expression temporary cleanup.
-`remove_copy_if` also accepts the same source predicate objects. Its exact
-conditional copy loop and both iterator increments are authenticated; output
+`copy_if` and `remove_copy_if` also accept the same source predicate objects. Their exact
+conditional copy loops and both iterator increments are authenticated; output
 storage accepts checked direct scalar conversions. Only kept elements advance
 the output iterator. The copy reads the input after the predicate returns, so
 allowed predicate-side writes through independently held pointers are visible.
 Empty ranges still construct the predicate parameter and preserve caller
 full-expression temporary cleanup.
+For `copy_if`, the public predicate parameter is passed by reference through
+`__copy_if`, the internal invoke calls and the identity projection. The helper's
+returned pointer pair, `make_pair`, `move`, `forward`, pair construction and the
+public `second` projection retain separate exact signature and source checks.
+No additional predicate object or user-visible pair is created by lowering.
 Source-owned class-template predicates additionally support checked concrete
 primary, partial and full class specializations with an in-class non-template
 call operator. Type and value parameters, defaults, each concrete receiver's
@@ -1735,7 +1740,7 @@ algorithm-only proof does not admit out-of-line operation-trait definitions.
 Member function templates, lambda objects, SDK function objects, nontrivial copying or
 destruction, reference parameters, non-boolean results and function objects in
 other algorithm overloads remain outside this increment.
-For these nine source-object overloads, `decltype`, `noexcept` and queries of
+For these ten source-object overloads, `decltype`, `noexcept` and queries of
 an initialized variable's deduced type can consume an already instantiated,
 authenticated algorithm specialization. Each exact call and callee reference
 retains the selected source operator's signature and exception dependencies;
