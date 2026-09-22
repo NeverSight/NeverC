@@ -11597,6 +11597,78 @@ utilityAlgorithmPartitionPredicate(const FunctionDecl *Function,
   return Leading;
 }
 
+static const CXXOperatorCallExpr *
+utilityAlgorithmPartitionCopyPredicate(const State &S, const SourceManager &SM,
+                                       const FunctionDecl *Function,
+                                       const ASTContext &Context) {
+  const auto *Definition = Function->getDefinition();
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Definition->getBody());
+  if (!Body || Body->size() != 2)
+    return nullptr;
+  auto Parameter = [&](const Expr *E, unsigned I) {
+    return utilityAlgorithmReference(E, Definition->getParamDecl(I), Context);
+  };
+  auto Increment = [&](const Expr *E, unsigned I) {
+    const auto *Add = dyn_cast_or_null<UnaryOperator>(E);
+    return Add && Add->getOpcode() == UO_PreInc &&
+           Parameter(Add->getSubExpr(), I);
+  };
+  auto Dereference = [&](const Expr *E, unsigned I) {
+    const auto *Read = dyn_cast_or_null<UnaryOperator>(E);
+    return Read && Read->getOpcode() == UO_Deref && Read->isLValue() &&
+           Context.hasSameType(
+               Read->getType(),
+               Definition->getParamDecl(I)->getType()->getPointeeType()) &&
+           Parameter(Read->getSubExpr(), I);
+  };
+  auto Copy = [&](const Stmt *S, unsigned I) {
+    const auto *Block = dyn_cast_or_null<CompoundStmt>(S);
+    if (!Block || Block->size() != 2)
+      return false;
+    auto Part = Block->body_begin();
+    const auto *Assign = dyn_cast<BinaryOperator>(*Part++);
+    if (!Assign || Assign->getOpcode() != BO_Assign ||
+        !Dereference(Assign->getLHS(), I) ||
+        !Context.hasSameType(Assign->getType(), Assign->getLHS()->getType()) ||
+        !Increment(dyn_cast<Expr>(*Part), I))
+      return false;
+    const Expr *RHS = Assign->getRHS();
+    while (const auto *Cast = dyn_cast<ImplicitCastExpr>(RHS)) {
+      if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
+                                         Cast->getType()))
+        return false;
+      RHS = Cast->getSubExpr();
+    }
+    return Dereference(RHS, 0);
+  };
+  auto Part = Body->body_begin();
+  const auto *Loop = dyn_cast<ForStmt>(*Part++);
+  const auto *Return = dyn_cast<ReturnStmt>(*Part);
+  const auto *Condition =
+      Loop ? dyn_cast_or_null<BinaryOperator>(Loop->getCond()) : nullptr;
+  const auto *LoopBody =
+      Loop ? dyn_cast_or_null<CompoundStmt>(Loop->getBody()) : nullptr;
+  const auto *Branch = LoopBody && LoopBody->size() == 1
+                           ? dyn_cast<IfStmt>(*LoopBody->body_begin())
+                           : nullptr;
+  const auto *Construction =
+      Return ? dyn_cast_or_null<CXXConstructExpr>(Return->getRetValue())
+             : nullptr;
+  if (!Loop || Loop->getInit() || Loop->getConditionVariable() || !Condition ||
+      Condition->getOpcode() != BO_NE || !Parameter(Condition->getLHS(), 0) ||
+      !Parameter(Condition->getRHS(), 1) || !Increment(Loop->getInc(), 0) ||
+      !Branch || Branch->getInit() || Branch->getConditionVariable() ||
+      !Copy(Branch->getThen(), 2) || !Copy(Branch->getElse(), 3) ||
+      !Construction || Construction->getNumArgs() != 2 ||
+      !Context.hasSameType(Construction->getType(),
+                           Function->getReturnType()) ||
+      !approvedUtilityPairConstruction(S, SM, Construction, Context) ||
+      !Parameter(Construction->getArg(0), 2) ||
+      !Parameter(Construction->getArg(1), 3))
+    return nullptr;
+  return dyn_cast<CXXOperatorCallExpr>(Branch->getCond());
+}
+
 std::optional<UtilityAlgorithmPredicateCall>
 approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
                                       const CallExpr *Call,
@@ -11612,18 +11684,20 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
   const bool Any = Name == "any_of", Count = Name == "count_if";
   const bool Copy = Name == "copy_if";
   const bool Partitioned = Name == "is_partitioned";
+  const bool PartitionCopy = Name == "partition_copy";
   const bool Composed = All || Any || Count || Copy;
   const bool Replace = Name == "replace_if",
              ReplaceCopy = Name == "replace_copy_if";
   const bool Replacement = Replace || ReplaceCopy;
   const bool RemoveCopy = Name == "remove_copy_if";
-  const bool CopyOutput = ReplaceCopy || RemoveCopy || Copy;
-  if (!Find && !FindNot && !None && !Composed && !Replacement &&
-      !RemoveCopy && !Partitioned)
+  const bool CopyOutput = ReplaceCopy || RemoveCopy || Copy || PartitionCopy;
+  if (!Find && !FindNot && !None && !Composed && !Replacement && !RemoveCopy &&
+      !Partitioned && !PartitionCopy)
     return std::nullopt;
-  const unsigned ParameterCount =
-      ReplaceCopy ? 5 : (Replace || RemoveCopy || Copy) ? 4 : 3;
-  const unsigned PredicateIndex = CopyOutput ? 3 : 2;
+  const unsigned ParameterCount = (ReplaceCopy || PartitionCopy)    ? 5
+                                  : (Replace || RemoveCopy || Copy) ? 4
+                                                                    : 3;
+  const unsigned PredicateIndex = PartitionCopy ? 4 : CopyOutput ? 3 : 2;
   if (Call->getNumArgs() != ParameterCount ||
       Function->getNumParams() != ParameterCount)
     return std::nullopt;
@@ -11651,12 +11725,14 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
            cstddefOrigin(S, SM, D->getLocation(), "libcxx", Path);
   };
   if (!Primary || !Pattern || !Definition || !PatternDefinition ||
-      Function->isVariadic() || (!Function->isInlined() && !Partitioned) ||
+      Function->isVariadic() ||
+      (!Function->isInlined() && !Partitioned && !PartitionCopy) ||
       Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
       !approvedUtilityReference(S, SM, Call, Function) || !Origin(Definition) ||
       !Origin(PatternDefinition) || !Arguments ||
-      Arguments->size() !=
-          (ReplaceCopy ? 4u : (Replace || RemoveCopy || Copy) ? 3u : 2u))
+      Arguments->size() != ((ReplaceCopy || PartitionCopy)    ? 4u
+                            : (Replace || RemoveCopy || Copy) ? 3u
+                                                              : 2u))
     return std::nullopt;
   for (const auto *D : Function->redecls())
     if (!Origin(D))
@@ -11667,6 +11743,18 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
   for (const auto *D : Pattern->redecls())
     if (!Origin(D))
       return std::nullopt;
+  QualType PairResult;
+  if (PartitionCopy) {
+    auto Pair = approvedUtilityPairRecord(
+        S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);
+    if (!Pair ||
+        !Context.hasSameType(Pair->First->getType(),
+                             Function->getParamDecl(2)->getType()) ||
+        !Context.hasSameType(Pair->Second->getType(),
+                             Function->getParamDecl(3)->getType()))
+      return std::nullopt;
+    PairResult = Context.getRecordType(Pair->Record);
+  }
   const auto Pointer = Function->getParamDecl(0)->getType();
   if (!utilityAlgorithmScalarPointer(Context, Pointer) ||
       !Context.hasSameType(Pointer, Function->getParamDecl(1)->getType()) ||
@@ -11674,22 +11762,35 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
       !Context.hasSameType(Pointer, Call->getArg(1)->getType()) ||
       !Context.hasSameType(Call->getType(), Function->getReturnType()) ||
       !Context.hasSameType(Function->getReturnType(),
-                           Replace       ? Context.VoidTy
+                           PartitionCopy ? PairResult
+                           : Replace     ? Context.VoidTy
                            : CopyOutput  ? Function->getParamDecl(2)->getType()
                            : Count       ? Context.getPointerDiffType()
-                           : (None || All || Any || Partitioned) ? Context.BoolTy
-                                                  : Pointer))
+                           : (None || All || Any || Partitioned)
+                               ? Context.BoolTy
+                               : Pointer))
     return std::nullopt;
   const auto Output =
       CopyOutput ? Function->getParamDecl(2)->getType() : Pointer;
-  const unsigned PredicateArgument = CopyOutput ? 2 : 1;
+  const unsigned PredicateArgument = PartitionCopy ? 3 : CopyOutput ? 2 : 1;
   for (unsigned I = 0; I <= PredicateArgument; ++I) {
     const auto Expected = I == PredicateArgument ? Object
-                          : I                    ? Output
-                                                 : Pointer;
+                          : I == 2 ? Function->getParamDecl(3)->getType()
+                          : I      ? Output
+                                   : Pointer;
     if (Arguments->get(I).getKind() != TemplateArgument::Type ||
         !Context.hasSameType(Arguments->get(I).getAsType(), Expected))
       return std::nullopt;
+  }
+  if (PartitionCopy) {
+    for (unsigned I : {2u, 3u}) {
+      const auto Destination = Function->getParamDecl(I)->getType();
+      if (!utilityAlgorithmWritableScalarPointer(Context, Destination) ||
+          !Context.hasSameType(Call->getArg(I)->getType(), Destination) ||
+          !utilityScalarDirectConversion(Context, Pointer->getPointeeType(),
+                                         Destination->getPointeeType()))
+        return std::nullopt;
+    }
   }
   if ((RemoveCopy || Copy) &&
       (!utilityAlgorithmWritableScalarPointer(Context, Output) ||
@@ -11743,7 +11844,10 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
     return Literal && Literal->getValue() == Value;
   };
   const CXXOperatorCallExpr *Invocation = nullptr;
-  if (Partitioned) {
+  if (PartitionCopy) {
+    Invocation =
+        utilityAlgorithmPartitionCopyPredicate(S, SM, Function, Context);
+  } else if (Partitioned) {
     Invocation = utilityAlgorithmPartitionPredicate(Function, Context);
   } else if (Copy) {
     Invocation = utilityAlgorithmCopyPredicate(S, SM, Function, Pointer, Output,
@@ -11832,17 +11936,18 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
       return std::nullopt;
   }
   return UtilityAlgorithmPredicateCall{
-      Replace       ? UtilityOperation::AlgorithmReplaceIf
-      : ReplaceCopy ? UtilityOperation::AlgorithmReplaceCopyIf
-      : RemoveCopy  ? UtilityOperation::AlgorithmRemoveCopyIf
-      : Copy        ? UtilityOperation::AlgorithmCopyIf
-      : Partitioned ? UtilityOperation::AlgorithmIsPartitioned
-      : All         ? UtilityOperation::AlgorithmAllOf
-      : Any         ? UtilityOperation::AlgorithmAnyOf
-      : Count       ? UtilityOperation::AlgorithmCountIf
-      : Find        ? UtilityOperation::AlgorithmFindIf
-      : FindNot     ? UtilityOperation::AlgorithmFindIfNot
-                    : UtilityOperation::AlgorithmNoneOf,
+      Replace         ? UtilityOperation::AlgorithmReplaceIf
+      : ReplaceCopy   ? UtilityOperation::AlgorithmReplaceCopyIf
+      : RemoveCopy    ? UtilityOperation::AlgorithmRemoveCopyIf
+      : Copy          ? UtilityOperation::AlgorithmCopyIf
+      : Partitioned   ? UtilityOperation::AlgorithmIsPartitioned
+      : PartitionCopy ? UtilityOperation::AlgorithmPartitionCopy
+      : All           ? UtilityOperation::AlgorithmAllOf
+      : Any           ? UtilityOperation::AlgorithmAnyOf
+      : Count         ? UtilityOperation::AlgorithmCountIf
+      : Find          ? UtilityOperation::AlgorithmFindIf
+      : FindNot       ? UtilityOperation::AlgorithmFindIfNot
+                      : UtilityOperation::AlgorithmNoneOf,
       Function,
       Invocation,
       Method,

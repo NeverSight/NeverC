@@ -43415,6 +43415,260 @@ bool f(int*p){return std::is_partitioned(p,p+2,P{});}
   }
 }
 
+TEST_F(TranslateTest, CoreV2AlgorithmPartitionCopyPredicateObjectsRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-partition-copy-state.cpp");
+  const auto Output = tmpFile("algorithm-partition-copy-state.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+struct Positive {
+  int calls;int *observed;
+  bool operator()(long long n) & { // template-predicate-method: positive
+    ++calls;*observed=calls;return n>=2;
+  }
+  bool operator()(long long)const &{*observed=-100;return false;}
+};
+template<class T>struct Odd {
+  bool operator()(T n)const { // template-predicate-method: odd
+    return n%2!=0;
+  }
+};
+int main(){
+  const int input[5]={0,1,2,3,4};long yes[6]={-1,-1,-1,-1,-1,-1};short no[6]={-1,-1,-1,-1,-1,-1};
+  int calls=0;const Positive caller{0,&calls};
+  auto result=std::partition_copy(input,input+5,yes,no,caller); // template-predicate-call: positive i64
+  if(result.first!=yes+3||result.second!=no+2||yes[0]!=2||yes[1]!=3||yes[2]!=4||yes[3]!=-1||no[0]!=0||no[1]!=1||no[2]!=-1||calls!=5||caller.calls)return 1;
+  static_assert(__is_same(decltype(result),std::pair<long*,short*>));
+  static_assert(__is_same(decltype(std::partition_copy(input,input+5,yes,no,caller)),std::pair<long*,short*>));
+  calls=0;
+  auto empty=std::partition_copy(input,input,yes,no,caller); // template-predicate-call: positive i64
+  if(empty.first!=yes||empty.second!=no||calls||caller.calls)return 2;
+  auto [odd,even]=std::partition_copy(input,input+5,yes,no,Odd<int>{}); // template-predicate-call: odd int
+  if(odd!=yes+2||even!=no+3||yes[0]!=1||yes[1]!=3||no[0]!=0||no[1]!=2||no[2]!=4)return 3;
+  calls=0;
+  auto all=std::partition_copy(input+2,input+5,yes,no,caller); // template-predicate-call: positive i64
+  if(all.first!=yes+3||all.second!=no||calls!=3)return 4;
+  calls=0;
+  auto none=std::partition_copy(input,input+2,yes,no,caller); // template-predicate-call: positive i64
+  if(none.first!=yes||none.second!=no+2||calls!=2)return 5;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-partition-copy-state" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmPartitionCopyPredicateMutationRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-partition-copy-mutation.cpp");
+  const auto Output = tmpFile("algorithm-partition-copy-mutation.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+int firsts,lasts,trues,falses,factories,trace;
+int *first(int*p){++firsts;return p;}
+int *last(int*p){++lasts;return p;}
+long *yes(long*p){++trues;return p;}
+short *no(short*p){++falses;return p;}
+struct Mutate{int*current;int calls;
+  bool operator()(int n){ // template-predicate-method: mutate
+    ++calls;trace=trace*10+n;*current=n+20;++current;return n%2!=0;
+  }
+};
+Mutate make(int*p){++factories;return {p,0};}
+int main(){
+  int input[4]={0,1,2,3};long trueOutput[4]={-1,-1,-1,-1};short falseOutput[4]={-1,-1,-1,-1};
+  auto result=std::partition_copy(first(input),last(input+4),yes(trueOutput),no(falseOutput),make(input)); // template-predicate-call: mutate int
+  if(result.first!=trueOutput+2||result.second!=falseOutput+2||trueOutput[0]!=21||trueOutput[1]!=23||trueOutput[2]!=-1||falseOutput[0]!=20||falseOutput[1]!=22||falseOutput[2]!=-1)return 1;
+  if(firsts!=1||lasts!=1||trues!=1||falses!=1||factories!=1||trace!=123)return 2;
+  int again[3]={0,1,2};Mutate caller{again,0};trace=0;
+  auto kept=std::partition_copy(again,again+3,trueOutput,falseOutput,caller); // template-predicate-call: mutate int
+  if(kept.first!=trueOutput+1||kept.second!=falseOutput+2||trueOutput[0]!=21||falseOutput[0]!=20||falseOutput[1]!=22||trace!=12)return 3;
+  if(caller.current!=again||caller.calls)return 4;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-partition-copy-mutation" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmPartitionCopyPredicateIdentityRunsAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-partition-copy-identity.cpp");
+  const auto Output = tmpFile("algorithm-partition-copy-identity.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+int live, destroyed, constructions, calls, bad, factories;
+struct Token { Token(){++live;}~Token(){--live;++destroyed;} };
+template<class T>struct Identity {
+  const Identity *self;
+  const Identity **receiver;
+  const Token *token;
+  bool exact;
+  Identity(const Identity **r,bool e,const Token&t=Token()):self(this),receiver(r),token(&t),exact(e){++constructions;}
+  bool operator()(T n) &;
+};
+template<class Value>
+bool Identity<Value>::operator()(Value n) & { // template-predicate-method: identity
+  ++calls;
+  if(live!=1||(exact&&self!=this)||(*receiver&&*receiver!=this))++bad;
+  *receiver=this;return n>0;
+}
+Identity<int> make(const Identity<int> **r,const Token&t){++factories;return Identity<int>(r,true,t);}
+int main(){
+  int input[3]={0,1,2},yes[3]={},no[3]={};const Identity<int>*receiver=nullptr;
+  if((std::partition_copy(input,input+3,yes,no,Identity<int>(&receiver,true)),live!=1))return 1; // template-predicate-call: identity int
+  if(live||destroyed!=1||constructions!=1||calls!=3||bad||yes[0]!=1||yes[1]!=2||no[0]!=0)return 2;
+  receiver=nullptr;
+  if((std::partition_copy(input,input+3,yes,no,make(&receiver,Token{})),live!=1))return 3; // template-predicate-call: identity int
+  if(live||destroyed!=2||constructions!=2||factories!=1||calls!=6||bad)return 4;
+  receiver=nullptr;
+  if((std::partition_copy(input,input,yes,no,Identity<int>(&receiver,true)),live!=1))return 5; // template-predicate-call: identity int
+  if(live||destroyed!=3||calls!=6||constructions!=3||bad)return 6;
+  {
+    Token owner;Identity<int> caller(&receiver,false,owner);receiver=nullptr;
+    auto result=std::partition_copy(input,input+3,yes,no,caller); // template-predicate-call: identity int
+    if(result.first!=yes+2||result.second!=no+1)return 7;
+    if(receiver==&caller||caller.self!=&caller||constructions!=4||calls!=9||bad)return 8;
+  }
+  return live==0&&destroyed==4&&bad==0?0:9;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-partition-copy-identity" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmPartitionCopyPredicatesRequireSource) {
+  const struct { const char *Name, *Source, *Code; } Cases[] = {
+    {"generic-method", R"cpp(#include <algorithm>
+struct P{template<class T>bool operator()(T n)const{return n>0;}};
+auto f(int*p,long*out,short*out2){return std::partition_copy(p,p+2,out,out2,P{});}
+)cpp", "TR0203"},
+    {"nontrivial-copy", R"cpp(#include <algorithm>
+struct P{P(){}P(const P&){}bool operator()(int n)const{return n>0;}};
+auto f(int*p,long*out,short*out2){return std::partition_copy(p,p+2,out,out2,P{});}
+)cpp", "TR0203"},
+    {"nontrivial-destructor", R"cpp(#include <algorithm>
+struct P{~P(){}bool operator()(int n)const{return n>0;}};
+auto f(int*p,long*out,short*out2){return std::partition_copy(p,p+2,out,out2,P{});}
+)cpp", "TR0203"},
+    {"reference-argument", R"cpp(#include <algorithm>
+struct P{bool operator()(int&n)const{return n>0;}};
+auto f(int*p,long*out,short*out2){return std::partition_copy(p,p+2,out,out2,P{});}
+)cpp", "TR0203"},
+    {"nonbool-result", R"cpp(#include <algorithm>
+struct P{int operator()(int n)const{return n>0;}};
+auto f(int*p,long*out,short*out2){return std::partition_copy(p,p+2,out,out2,P{});}
+)cpp", "TR0203"},
+    {"constructor-default", R"cpp(#include <algorithm>
+struct P{P(int=(sizeof(long double),0)){}bool operator()(int n)const{return n>0;}};
+auto f(int*p,long*out,short*out2){return std::partition_copy(p,p+2,out,out2,P{});}
+)cpp", "TR0201"},
+    {"method-body", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{long double hidden=0;return n>hidden;}};
+auto f(int*p,long*out,short*out2){return std::partition_copy(p,p+2,out,out2,P{});}
+)cpp", "TR0201"},
+    {"missing-definition", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const;};
+auto f(int*p,long*out,short*out2){return std::partition_copy(p,p+2,out,out2,P{});}
+)cpp", "TR0203"},
+    {"lambda", R"cpp(#include <algorithm>
+
+auto f(int*p,long*out,short*out2){return std::partition_copy(p,p+2,out,out2,[](int n){return n>0;});}
+)cpp", "TR0203"},
+    {"specialization", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+namespace std{template<>pair<long*,short*>partition_copy<int*,long*,short*,P>(int*,int*,long*out,short*out2,P){return {out,out2};}}
+auto f(int*p,long*out,short*out2){return std::partition_copy(p,p+2,out,out2,P{});}
+)cpp", "TR0201"},
+    {"redeclaration", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+namespace std{inline namespace __1{template<class I,class O,class R,class P>pair<O,R>partition_copy(I,I,O,R,P);}}
+auto f(int*p,long*out,short*out2){return std::partition_copy(p,p+2,out,out2,P{});}
+)cpp", "TR0201"},
+    {"query-no-body", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+int f(int*p,long*out,short*out2){static_assert(__is_same(decltype(std::partition_copy(p,p+2,out,out2,P{})),std::pair<long*,short*>));return 0;}
+)cpp", "TR0201"},
+    {"factory-default", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+P make(int=(sizeof(long double),0)){return P{};}
+auto f(int*p,long*out,short*out2){return std::partition_copy(p,p+2,out,out2,make());}
+)cpp", "TR0201"},
+    {"input-source", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+auto f(int*p,long*out,short*out2){return std::partition_copy(p,p+(sizeof(long double),2),out,out2,P{});}
+)cpp", "TR0201"},
+    {"out-source", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+auto f(int*p,long*out,short*out2){return std::partition_copy(p,p+2,(sizeof(long double),out),out2,P{});}
+)cpp", "TR0201"},
+    {"out2-source", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+auto f(int*p,long*out,short*out2){return std::partition_copy(p,p+2,out,(sizeof(long double),out2),P{});}
+)cpp", "TR0201"},
+    {"explicit-predicate-alias", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+int object;template<auto>using Erased=P;
+auto f(int*p,long*out,short*out2){return std::partition_copy<int*,long*,short*,Erased<&object>>(p,p+2,out,out2,P{});}
+)cpp", "TR0201"},
+    {"volatile-input", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+auto f(volatile int*p,long*out,short*out2){return std::partition_copy(p,p+2,out,out2,P{});}
+)cpp", "TR0201"},
+    {"volatile-true-output", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+auto f(int*p,volatile long*out,short*out2){return std::partition_copy(p,p+2,out,out2,P{});}
+)cpp", "TR0201"},
+    {"volatile-false-output", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+auto f(int*p,long*out,volatile short*out2){return std::partition_copy(p,p+2,out,out2,P{});}
+)cpp", "TR0201"},
+    {"record-element", R"cpp(#include <algorithm>
+struct R{int v;};struct P{bool operator()(R n)const{return n.v>0;}};
+auto f(R*p,R*out,R*out2){return std::partition_copy(p,p+2,out,out2,P{});}
+)cpp", "TR0203"},
+    {"other-mutation-independent", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+int*f(int*p){return std::remove_if(p,p+2,P{});}
+)cpp", "TR0203"},
+    {"sdk-predicate", R"cpp(#include <algorithm>
+#include <functional>
+auto f(int*p,long*out,short*out2){return std::partition_copy(p,p+2,out,out2,std::logical_not<int>{});}
+)cpp", "TR0203"},
+    {"pair-specialization", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+namespace std{template<>struct pair<long*,short*>{long*first;short*second;pair(long*p,short*q):first(p),second(q){}};}
+auto f(int*p,long*out,short*out2){return std::partition_copy(p,p+2,out,out2,P{});}
+)cpp", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("algorithm-partition-copy-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("algorithm-partition-copy-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}), Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmPredicateQueriesRequireValueCallbacks) {
   struct Rejection {
     const char *Name;

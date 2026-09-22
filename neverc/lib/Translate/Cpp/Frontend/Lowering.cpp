@@ -6509,7 +6509,7 @@ class FunctionLowering {
       auto Last = snapshot(expression(Call->getArg(1)), L);
       auto TrueOutput = snapshot(expression(Call->getArg(2)), L);
       auto FalseOutput = snapshot(expression(Call->getArg(3)), L);
-      auto Predicate = snapshot(expression(Call->getArg(4)), L);
+      auto Predicate = captureUnaryPredicate(Call, Operation, 4);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto InputType = type(Call->getArg(0)->getType(), L);
       const auto TrueOutputType = type(Call->getArg(2)->getType(), L);
@@ -6527,7 +6527,7 @@ class FunctionLowering {
       label(Test, L);
       {
         auto Selected = emitUnaryPredicate(
-            json::Object(Predicate), Call->getArg(4)->getType(),
+            Predicate,
             dereference(json::Object(Input), L), L);
         branch(std::move(Selected), CopyTrue, CopyFalse, L);
       }
