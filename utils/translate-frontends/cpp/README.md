@@ -46,7 +46,7 @@ for automatic source-owned trivial standard-layout aggregates with supported
 non-volatile scalar or object-pointer direct public fields. Value bindings copy
 or directly construct one hidden object; `&`, `const&` and `&&` forms alias the
 selected storage with its original qualification. Initialization occurs once,
-and exact temporary owners retain their C++17 scope lifetime. Tuple-like
+and exact temporary owners retain their C++17 scope lifetime. User tuple-like
 bindings, reference/mutable/bit-field members, bases, nontrivial or volatile
 records, static/global storage and range declarations remain excluded. Legal
 C++17 `if`/`switch` init-statements and ordinary `for` initialization remain
@@ -61,6 +61,15 @@ copy/move default-argument temporaries are cleaned up per element, and an owned
 array is destroyed once in reverse element order. Reference forms preserve
 array qualification and exact temporary extension. Existing extent, type,
 source and expansion limits remain in force.
+
+[SDK structured bindings](../docs/cpp-core-v2.md#local-sdk-structured-bindings)
+cover admitted `std::pair`, `std::tuple` and nonempty `std::array` storage,
+including existing reference and mixed elements. Exact SDK traits and selected
+`get` declarations are authenticated before initializing each hidden reference.
+Value copies, shallow const, lvalue/rvalue reference collapsing and complete
+owner temporary lifetimes follow C++17; custom tuple protocols and source
+specializations stay excluded.
+
 
 [Function type metadata](../docs/cpp-core-v2.md#bare-function-type-metadata),
 including direct lvalue/rvalue references, can pass through core v2 templates,

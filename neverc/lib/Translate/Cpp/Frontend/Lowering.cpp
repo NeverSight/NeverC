@@ -10941,6 +10941,21 @@ class FunctionLowering {
       initialize(std::move(Place), C->getSubExpr(), L);
       return;
     }
+    if (const auto *List = dyn_cast<InitListExpr>(Init);
+        A.S.coreV2() && List && List->getType()->isRecordType()) {
+      if (List->isSyntacticForm() && List->getSemanticForm())
+        List = List->getSemanticForm();
+      if (List->isSemanticForm() && List->isPRValue() && List->getNumInits() == 1 &&
+          List->getInit(0) && List->getInit(0)->isPRValue() &&
+          !List->hasArrayFiller() && !List->hasDesignatedInit() &&
+          !List->getInitializedFieldInUnion() && List->isTransparent() &&
+          A.Context.hasSameType(List->getType(), List->getInit(0)->getType())) {
+        // Braced direct initialization can wrap one complete same-type prvalue.
+        // This is not a field initializer list and creates no extra owner/copy.
+        initialize(std::move(Place), List->getInit(0), L);
+        return;
+      }
+    }
     if (Init->isPRValue() && aggregateValue(Init->getType())) {
       if (const auto *Call = dyn_cast<CallExpr>(Init); Call && recordValue(Init->getType())) {
         call(Call, std::move(Place));
@@ -11231,7 +11246,7 @@ class FunctionLowering {
         if (A.S.coreV2() && needsDestruction(V->getType()))
           own(Place, V->getType(), L, Scopes.back());
       }
-      if (Decomposition) {
+      if (Decomposition && !Decomposition->TupleLike) {
         for (const auto &Entry : Decomposition->Bindings) {
           const auto *Binding = Entry.first;
           const auto Location = Binding->getLocation();
@@ -11246,6 +11261,22 @@ class FunctionLowering {
       }
     }
     endFullExpression();
+    if (Decomposition && Decomposition->TupleLike) {
+      // The hidden owner's initializer is one full-expression. Each holding
+      // reference is initialized afterwards and owns no element lifetime.
+      for (const auto &Entry : Decomposition->Bindings) {
+        const auto *Binding = Entry.first;
+        const auto *Tuple = A.tupleDecompositionBinding(Binding);
+        if (!Tuple || Tuple->Owner != V)
+          reject(L, "structured binding", "Missing exact SDK holding reference.");
+        declaration(Tuple->Holding);
+        auto Location = Binding->getLocation();
+        auto Pointer = snapshot(address(lvalue(Binding->getBinding()),
+                                        Binding->getBinding()->getType(), Location), Location);
+        Storage.insert_or_assign(Binding->getCanonicalDecl(),
+                                 dereference(std::move(Pointer), Location));
+      }
+    }
   }
   void registerSwitchStorage(const Stmt *S) {
     if (!S)

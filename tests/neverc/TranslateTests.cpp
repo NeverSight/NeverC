@@ -3066,9 +3066,6 @@ TEST_F(TranslateTest, CoreV2NativeArrayStructuredBindingsRetainSourceAndTypeBoun
 )cpp", "TR0202", "cpp-core-v2"},
     {"deleted-destructor", R"cpp(struct R{int value;~R()=delete;};void rejected(R(&values)[2]){auto [first,second]=values;(void)first;(void)second;}
 )cpp", "TR0202", "cpp-core-v2"},
-    {"sdk-array", R"cpp(#include <array>
-void rejected(std::array<int,2>&values){auto &[first,second]=values;(void)first;(void)second;}
-)cpp", "TR0201", "cpp-core-v2"},
     {"global-owner", R"cpp(int values[2]={1,2};auto [first,second]=values;
 )cpp", "TR0201", "cpp-core-v2"},
     {"static-owner", R"cpp(void rejected(){int values[2]={1,2};static auto [first,second]=values;(void)first;(void)second;}
@@ -3094,6 +3091,339 @@ void rejected(std::array<int,2>&values){auto &[first,second]=values;(void)first;
   }
 }
 
+TEST_F(TranslateTest, CoreV2SDKStructuredBindingsPreserveValuesAndReferences) {
+  const auto Source = tmpFile("sdk-binding-pair-tuple.cpp");
+  const auto Output = tmpFile("sdk-binding-pair-tuple.nc");
+  writeFile(Source, R"cpp(#include <tuple>
+#include <utility>
+int calls;
+using Pair = std::pair<int, int>;
+Pair &choose(Pair &p) { ++calls; return p; }
+int main() {
+  Pair p{3, 5};
+  auto [a, b] = choose(p); // owner-once
+  static_assert(__is_same(decltype(a), int));
+  static_assert(__is_same(decltype((a)), int &));
+  if (calls != 1 || &a == &p.first || &b == &p.second) return 1;
+  a = 7; p.second = 11;
+  if (b != 5 || p.first != 3) return 2;
+  auto &[c, d] = choose(p); // owner-once
+  const auto &[e, f] = choose(p); // owner-once
+  auto &&[g, h] = choose(p); // owner-once
+  auto &&[i, j] = static_cast<Pair &&>(choose(p)); // owner-once
+  static_assert(__is_same(decltype(e), const int));
+  static_assert(__is_same(decltype((i)), int &));
+  c = 13; j = 17;
+  if (calls != 5 || &c != &e || &g != &i || &h != &d || f != 17 || p.first != 13) return 3;
+  const auto [ca, cb] = p;
+  if (ca != 13 || cb != 17 || &ca == &p.first) return 4;
+  int x = 19, y = 23;
+  std::pair<int &, int &&> references(x, static_cast<int &&>(y));
+  auto &[rx, ry] = references;
+  const auto &[cx, cy] = references;
+  static_assert(__is_same(decltype(rx), int &));
+  static_assert(__is_same(decltype(ry), int &&));
+  static_assert(__is_same(decltype(cx), int &));
+  static_assert(__is_same(decltype((cy)), int &));
+  cy = 29;
+  if (&rx != &x || &ry != &y || &cx != &x || y != 29) return 5;
+  auto &&[mx, my] = static_cast<decltype(references) &&>(references);
+  my = 31;
+  if (&mx != &x || &my != &y || y != 31) return 6;
+  std::tuple<int, int &, int &&> tuple(37, x, static_cast<int &&>(y));
+  auto &[v, r, s] = tuple;
+  const auto &[cv, cr, cs] = tuple;
+  auto &&[mv, mr, ms] = static_cast<decltype(tuple) &&>(tuple);
+  static_assert(__is_same(decltype(v), int));
+  static_assert(__is_same(decltype(r), int &));
+  static_assert(__is_same(decltype(s), int &&));
+  static_assert(__is_same(decltype(cv), const int));
+  static_assert(__is_same(decltype(cr), int &));
+  static_assert(__is_same(decltype(cs), int &&));
+  static_assert(__is_same(decltype((ms)), int &));
+  cr = 41; ms = 43; mv = 47;
+  if (cv != 47 || &mr != &x || &s != &y || &cs != &y || x != 41 || y != 43) return 7;
+  std::tuple<int, int &> mixed(53, x);
+  const auto [copy, alias] = mixed;
+  static_assert(__is_same(decltype(copy), const int));
+  static_assert(__is_same(decltype(alias), int &));
+  alias = 59;
+  if (&copy == &std::get<0>(mixed) || &alias != &x || x != 59 || copy != 53) return 8;
+  auto [ta, tb] = std::tuple<int, int>{61, 67};
+  auto [pa, pb]{Pair{71, 73}};
+  auto [ba, bb]{std::tuple<int, int>{79, 83}};
+  auto [qa, qb](Pair{89, 97});
+  if (ba != 79 || bb != 83 || qa != 89 || qb != 97) return 10;
+  static_assert(sizeof(++ta) == sizeof(int));
+  return ta == 61 && tb == 67 && pa == 71 && pb == 73 && calls == 5 ? 0 : 9;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("sdk-binding-pair-tuple" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2SDKStructuredBindingsPreserveArraysAndComposition) {
+  const auto Source = tmpFile("sdk-binding-array-composite.cpp");
+  const auto Output = tmpFile("sdk-binding-array-composite.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <utility>
+#include <tuple>
+struct Row { int value; int *pointer; };
+using A = std::array<Row, 2>;
+using Grid = std::array<std::array<int, 2>, 2>;
+int calls;
+A &choose(A &a) { ++calls; return a; }
+Grid &grid(Grid &a) { ++calls; return a; }
+template<class T> int sum(T &value) { auto &[a, b] = value; return a + b; }
+int main() {
+  auto [initial_a, initial_b]{std::array<int, 2>{{1, 2}}};
+  if (initial_a != 1 || initial_b != 2) return 5;
+  std::pair<int, int> sum_pair{1, 2};
+  std::tuple<int, int> sum_tuple{3, 4};
+  std::array<int, 2> sum_array{{5, 6}};
+  if (sum(sum_pair) != 3 || sum(sum_tuple) != 7 || sum(sum_array) != 11) return 6;
+  int x = 3, y = 5;
+  A original{{{7, &x}, {11, &y}}};
+  auto [a, b] = choose(original); // owner-once
+  auto &[c, d] = choose(original); // owner-once
+  const auto &[e, f] = choose(original); // owner-once
+  auto &&[g, h] = static_cast<A &&>(choose(original)); // owner-once
+  static_assert(__is_same(decltype(a), Row));
+  static_assert(__is_same(decltype(e), const Row));
+  static_assert(__is_same(decltype((h)), Row &));
+  a.value = 13; c.value = 17; *e.pointer = 19;
+  if (calls != 4 || &a == &original[0] || &c != &e || &g != &original[0] ||
+      &h != &d || b.value != 11 || f.pointer != &y || x != 19 || original[0].value != 17) return 1;
+  const auto [constant_first, constant_second] = A{{{23, &x}, {29, &y}}};
+  static_assert(__is_same(decltype(constant_first), const Row));
+  if (constant_first.value != 23 || constant_second.value != 29) return 2;
+  Grid source{{{{1, 2}}, {{3, 4}}}};
+  auto [row, other] = grid(source); // owner-once
+  auto &[alias, other_alias] = grid(source); // owner-once
+  const auto &[constant_row, constant_other] = source;
+  static_assert(__is_same(decltype(row), std::array<int, 2>));
+  static_assert(__is_same(decltype(constant_row), const std::array<int, 2>));
+  auto &[first, second] = alias;
+  first = 31; row[1] = 37;
+  if (calls != 6 || &row == &source[0] || &alias != &source[0] ||
+      constant_row[0] != 31 || row[0] != 1 || source[0][1] != 2 ||
+      constant_other[1] != 4 || other[0] != 3 || &other_alias != &source[1]) return 3;
+  std::tuple<std::pair<int, int>, std::array<int, 2>, Row> tuple(
+      std::pair<int, int>{41, 43}, std::array<int, 2>{{47, 53}}, Row{59, &x});
+  auto &[pair, array, record] = tuple;
+  auto &[p, q] = pair;
+  auto &[m, n] = array;
+  auto &[value, pointer] = record;
+  p = 61; n = 67; value = 71; *pointer = 73;
+  return std::get<0>(tuple).first == 61 && std::get<1>(tuple)[1] == 67 &&
+         std::get<2>(tuple).value == 71 && q == 43 && m == 47 && x == 73 ? 0 : 4;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("sdk-binding-array-composite" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2SDKStructuredBindingsPreserveOwnerLifetimes) {
+  const auto Source = tmpFile("sdk-binding-lifetimes.cpp");
+  const auto Output = tmpFile("sdk-binding-lifetimes.nc");
+  writeFile(Source, R"cpp(#include <utility>
+#include <tuple>
+#include <array>
+int live, dead, trace;
+struct Envelope {
+  std::pair<int, int> pair;
+  std::array<int, 2> array;
+  int token;
+  Envelope(int value, int tag) : pair(value, value + 1),
+      array{{value + 4, value + 5}}, token(tag) { ++live; trace = trace * 10 + token; }
+  ~Envelope() { --live; ++dead; trace = trace * 10 + token; }
+};
+int read(const Envelope &e) { return e.pair.first; }
+const std::pair<int, int> &identity(const std::pair<int, int> &p) { return p; }
+int early_return() {
+  auto &&[a, b] = Envelope(9, 3).pair;
+  return a + b;
+}
+int main() {
+  {
+    const auto &[a, b] = Envelope(read(Envelope(1, 2)), 1).pair;
+    if (live != 1 || dead != 1 || trace != 212 || a != 1 || b != 2) return 1;
+  }
+  if (live || dead != 2 || trace != 2121) return 2;
+  trace = 0;
+  {
+    auto &&[a, b] = Envelope(3, 4).array;
+    if (live != 1 || dead != 2 || a != 7 || b != 8) return 3;
+    a = 9;
+  }
+  if (live || dead != 3 || trace != 44) return 4;
+  trace = 0;
+  {
+    auto [a, b] = Envelope(13, 5).pair;
+    if (live || dead != 4 || trace != 55 || a != 13 || b != 14) return 5;
+  }
+  trace = 0;
+  {
+    const auto &[unused_a, unused_b] = identity(Envelope(17, 6).pair);
+    // Return-by-reference does not extend the argument. Never access either alias.
+    if (live || dead != 5 || trace != 66) return 6;
+  }
+  if (dead != 5) return 7;
+  trace = 0;
+  if (early_return() != 19 || live || dead != 6 || trace != 33) return 8;
+  trace = 0;
+  if (const auto &[a, b] = Envelope(19, 7).pair; a == 19) {
+    if (live != 1 || b != 20 || dead != 6) return 9;
+  } else return 10;
+  if (live || dead != 7 || trace != 77) return 11;
+  trace = 0;
+  switch (auto &&[a, b] = Envelope(3, 8).pair; a) {
+  case 3:
+    if (live != 1 || b != 4) return 12;
+    break;
+  default: return 13;
+  }
+  if (live || dead != 8 || trace != 88) return 14;
+  trace = 0;
+  int count = 0;
+  for (const auto &[a, b] = Envelope(2, 9).pair; count < a; ++count) {
+    if (live != 1 || b != 3 || dead != 8) return 15;
+    continue;
+  }
+  if (live || dead != 9 || trace != 99 || count != 2) return 16;
+  trace = 0;
+  for (int n = 0; n < 3; ++n) {
+    auto &&[a, b] = Envelope(n, 1).array;
+    if (live != 1 || a != n + 4) return 17;
+    if (n == 0) continue;
+    break;
+  }
+  return !live && dead == 11 && trace == 1111 ? 0 : 18;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("sdk-binding-lifetimes" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2SDKStructuredBindingsRequirePinnedSource) {
+  const struct { const char *Name; const char *Source; const char *Code; } Cases[] = {
+    {"pair-size-specialization", R"cpp(#include <utility>
+namespace std {template<>struct tuple_size<pair<int,int>> {static constexpr size_t value=2;};}
+int f(std::pair<int,int>&p){auto&[a,b]=p;return a+b;}
+)cpp", "TR0201"},
+    {"pair-const-size-inner-specialization", R"cpp(#include <utility>
+namespace std {template<>struct tuple_size<pair<int,int>> {static constexpr size_t value=2;};}
+int f(const std::pair<int,int>&p){auto&[a,b]=p;return a+b;}
+)cpp", "TR0201"},
+    {"pair-size-partial", R"cpp(#include <utility>
+namespace std {template<class T>struct tuple_size<pair<T,int>> {static constexpr size_t value=2;};}
+int f(std::pair<int,int>&p){auto&[a,b]=p;return a+b;}
+)cpp", "TR0201"},
+    {"tuple-size-specialization", R"cpp(#include <tuple>
+namespace std {template<>struct tuple_size<tuple<int,int>> {static constexpr size_t value=(sizeof(long double),2);};}
+int f(std::tuple<int,int>&p){auto&[a,b]=p;return a+b;}
+)cpp", "TR0201"},
+    {"array-size-specialization", R"cpp(#include <array>
+namespace std {template<>struct tuple_size<array<int,2>> {static constexpr size_t value=2;};}
+int f(std::array<int,2>&p){auto&[a,b]=p;return a+b;}
+)cpp", "TR0201"},
+    {"pair-element-specialization", R"cpp(#include <utility>
+namespace std {template<>struct tuple_element<0,pair<int,int>> {using type=int;};}
+int f(std::pair<int,int>&p){auto&[a,b]=p;return a+b;}
+)cpp", "TR0201"},
+    {"pair-const-element-inner-specialization", R"cpp(#include <utility>
+namespace std {template<>struct tuple_element<0,pair<int,int>> {using type=int;};}
+int f(const std::pair<int,int>&p){auto&[a,b]=p;return a+b;}
+)cpp", "TR0201"},
+    {"tuple-element-source", R"cpp(#include <tuple>
+namespace std {template<>struct tuple_element<0,tuple<int,int>> {using type=decltype((sizeof(long double),int{}));};}
+int f(std::tuple<int,int>&p){auto&[a,b]=p;return a+b;}
+)cpp", "TR0201"},
+    {"array-element-specialization", R"cpp(#include <array>
+namespace std {template<>struct tuple_element<0,array<int,2>> {using type=int;};}
+int f(std::array<int,2>&p){auto&[a,b]=p;return a+b;}
+)cpp", "TR0201"},
+    {"pair-get-specialization", R"cpp(#include <utility>
+namespace std {template<>int& get<0,int,int>(pair<int,int>&p)noexcept{return p.second;}}
+int f(std::pair<int,int>&p){auto&[a,b]=p;return a+b;}
+)cpp", "TR0201"},
+    {"tuple-get-specialization", R"cpp(#include <tuple>
+namespace std {template<>int& get<0,int,int>(tuple<int,int>&p)noexcept{return std::get<1>(p);}}
+int f(std::tuple<int,int>&p){auto&[a,b]=p;return a+b;}
+)cpp", "TR0201"},
+    {"array-get-specialization", R"cpp(#include <array>
+namespace std {template<>int& get<0,int,2>(array<int,2>&p)noexcept{return p[1];}}
+int f(std::array<int,2>&p){auto&[a,b]=p;return a+b;}
+)cpp", "TR0201"},
+    {"array-adl-get", R"cpp(#include <array>
+namespace user {struct R{int n;};template<__SIZE_TYPE__ I>R& get(std::array<R,2>&a){return a[1];}}
+int f(std::array<user::R,2>&p){auto&[a,b]=p;return a.n+b.n;}
+)cpp", "TR0201"},
+    {"initializer-source", R"cpp(#include <utility>
+int f(std::pair<int,int>&p){auto&[a,b]=(sizeof(long double),p);return a+b;}
+)cpp", "TR0201"},
+    {"erased-type-source", R"cpp(#include <tuple>
+template<class T>using Alias=std::tuple<int,int>;
+int f(){Alias<long double> p{1,2};auto[a,b]=p;return a+b;}
+)cpp", "TR0201"},
+    {"array-bound-source", R"cpp(#include <array>
+using A=std::array<int,(sizeof(long double),2)>;
+int f(A&p){auto&[a,b]=p;return a+b;}
+)cpp", "TR0201"},
+    {"volatile-owner", R"cpp(#include <utility>
+int f(volatile std::pair<int,int>&p){auto&[a,b]=p;return a+b;}
+)cpp", "TR0202"},
+    {"const-write", R"cpp(#include <utility>
+int f(const std::pair<int,int>&p){auto&[a,b]=p;a=3;return b;}
+)cpp", "TR0202"},
+    {"wrong-count", R"cpp(#include <tuple>
+int f(std::tuple<int,int>&p){auto&[a]=p;return a;}
+)cpp", "TR0202"},
+    {"range-owner", R"cpp(#include <array>
+int f(std::pair<int,int>(&values)[2]){int n=0;for(auto&[a,b]:values)n+=a+b;return n;}
+)cpp", "TR0201"},
+    {"static-owner", R"cpp(#include <utility>
+int f(std::pair<int,int>&p){static auto[a,b]=p;return a+b;}
+)cpp", "TR0201"},
+    {"tuple-internal-element-specialization", R"cpp(#include <tuple>
+namespace std {template<>struct tuple_element<0,__tuple_types<int,int>> {using type=int;};}
+int f(std::tuple<int,int>&p){auto&[a,b]=p;return a+b;}
+)cpp", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("sdk-structured-binding-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("sdk-structured-binding-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}), Case.Code);
+    EXPECT_FALSE(fs::exists(Output));
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StructuredBindingRecordRetainsSourceAndTypeBoundaries) {
   const struct { const char *Name; const char *Source; const char *Code; const char *Profile; } Cases[] = {
     {"source-tuple-like", R"cpp(#include <tuple>
@@ -3101,15 +3431,6 @@ struct R{int first,second;};
 namespace std {template<> struct tuple_size<R>{static constexpr size_t value=2;};template<size_t I> struct tuple_element<I,R>{using type=int;};}
 template<__SIZE_TYPE__ I> int& get(R&r){return I==0?r.first:r.second;}
 void rejected(R&r){auto &[x,y]=r;(void)x;(void)y;}
-)cpp", "TR0201", "cpp-core-v2"},
-    {"sdk-pair", R"cpp(#include <utility>
-void rejected(std::pair<int,int>&r){auto &[x,y]=r;(void)x;(void)y;}
-)cpp", "TR0201", "cpp-core-v2"},
-    {"sdk-tuple", R"cpp(#include <tuple>
-void rejected(std::tuple<int,int>&r){auto &[x,y]=r;(void)x;(void)y;}
-)cpp", "TR0201", "cpp-core-v2"},
-    {"sdk-array", R"cpp(#include <array>
-void rejected(std::array<int,2>&r){auto &[x,y]=r;(void)x;(void)y;}
 )cpp", "TR0201", "cpp-core-v2"},
     {"base-members", R"cpp(struct B{int x,y;};struct R:B{};void rejected(R&r){auto &[x,y]=r;(void)x;(void)y;}
 )cpp", "TR0201", "cpp-core-v2"},

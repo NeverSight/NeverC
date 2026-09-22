@@ -4278,8 +4278,8 @@ when embedded Clang would accept it with an extension warning. This restriction
 does not reject a valid init-statement followed by a separate condition.
 
 Native fixed arrays follow the separate [array contract](#local-array-structured-bindings).
-Tuple-like decomposition, including `std::pair`, `std::tuple`, `std::array` and
-user `tuple_size`/`get` protocols, remains unsupported. So do
+SDK pair/tuple/array objects follow the [SDK binding contract](#local-sdk-structured-bindings).
+User `tuple_size`/`get` protocols remain unsupported. So do
 unions, bases, private/protected fields, reference/mutable/bit-field members,
 volatile or nontrivial records, static/thread-local/global decomposition and
 structured bindings in a range-for declaration. Ordinary supported bindings
@@ -4322,10 +4322,49 @@ and references returned through calls do not create an additional extension.
 Blocks, C++17 `if`/`switch` init-statements and ordinary `for` initialization
 follow the same scope rules as [record bindings](#local-record-structured-bindings).
 Static/thread-local/namespace declarations, range-for declarations and
-structured condition variables remain excluded, as do tuple-like decomposition,
+structured condition variables remain excluded, as do user tuple-like decomposition,
 variable or unknown extents, zero-length arrays, unsupported qualifiers or
 element operations, and exception unwinding. This feature uses existing array,
 reference and cleanup operations without changing the protocol or C23 frontend.
+
+## Local SDK structured bindings
+
+Core v2 admits automatic local C++17 structured bindings of authenticated
+`std::pair`, `std::tuple` and nonempty `std::array` specializations. Their existing
+storage, element, constructor and destructor contracts apply unchanged. This
+includes pair/tuple value, reference and mixed elements, supported composite
+values and array elements. Binding count equals the authenticated container size.
+
+`auto [a, b] = source` creates one hidden value owner; reference forms retain the
+original storage. The hidden owner is passed to `get<I>` as an lvalue only when
+its declared type is an lvalue reference, and as an xvalue otherwise. Each
+binding name remains an lvalue. `decltype(name)` retains the exact
+`tuple_element` type (including `T&` or `T&&`); `decltype((name))` describes its
+lvalue use. Const owners qualify value elements, while stored references still
+alias the original objects with their original qualification.
+
+Admission proves the actual `tuple_size` and `tuple_element` instances retained
+at the owner and binding locations, their selected SDK partial specializations,
+const forwarding chains and resulting size/types. Every selected `get` must be
+an exact pinned SDK instantiation with the correct index, container parameter
+and result reference. A user specialization that returns the same number or
+type is still excluded, as are user ADL `get` implementations. These semantic
+checks do not erase the original owner initializer, written type arguments,
+extents, selected operations or source dependencies.
+
+The owner initializer executes once and completes its full-expression cleanup
+before the hidden binding references initialize in declaration order. Each
+binding holds a typed pointer alias and adds no element lifetime. Exact C++17
+temporary extension applies to reference owners, including SDK subobjects of a
+complete source object; a reference returned through a function does not extend
+the referred argument temporary. Blocks, `if`/`switch` init-statements, ordinary
+`for` initialization and abrupt exits use the existing owner cleanup rules.
+
+Custom tuple-like protocols, member `get`, source trait/get specializations,
+volatile owners, unsupported container elements, empty binding lists,
+static/thread-local/namespace storage, range-for binding declarations and
+structured condition variables remain excluded. There is no new protocol
+operation, runtime library dependency or C23 source-language feature.
 
 ## Range-based for
 

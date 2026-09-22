@@ -962,6 +962,18 @@ std::optional<UtilityTupleLikeSource>
 approvedUtilityTupleLikeSource(const State &S, const clang::SourceManager &SM,
                                clang::QualType Type,
                                const clang::ASTContext &Context);
+bool approvedUtilityTupleLikeGet(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Get,
+    clang::QualType Parameter, const UtilityTupleLikeSource &Tuple,
+    unsigned Index, const clang::ASTContext &Context);
+bool approvedUtilityTupleLikeSizeTrait(
+    const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
+    clang::QualType Object, const UtilityTupleLikeSource &Tuple,
+    const clang::ASTContext &Context);
+const clang::TypedefNameDecl *approvedUtilityTupleLikeElementTrait(
+    const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
+    clang::QualType Object, const UtilityTupleLikeSource &Tuple, unsigned Index,
+    const clang::ASTContext &Context);
 struct UtilityTupleCatCall {
   UtilityTupleRecord Result;
   std::vector<UtilityTupleLikeSource> Sources;
@@ -1228,7 +1240,14 @@ struct LocalDecomposition {
   // Native-array bindings have no FieldDecl; their exact projection is checked.
   std::vector<std::pair<const clang::BindingDecl *, const clang::FieldDecl *>>
       Bindings;
+  bool TupleLike = false;
   bool Complete = false;
+};
+struct DecompositionTupleBinding {
+  const clang::DecompositionDecl *Owner;
+  const clang::VarDecl *Holding;
+  const clang::CallExpr *Get;
+  const clang::TypedefNameDecl *ElementTrait;
 };
 struct DecompositionArrayCopy {
   const clang::DecompositionDecl *Owner;
@@ -1289,6 +1308,10 @@ public:
   std::map<const clang::VarDecl *, const clang::CXXForRangeStmt *> RangeDeclarations;
   std::map<const clang::VarDecl *, LocalDecomposition> Decompositions;
   std::map<const clang::BindingDecl *, const clang::FieldDecl *> DecompositionBindings;
+  std::map<unsigned, std::vector<const TemplateUseSource *>> DecompositionTraitSources;
+  std::map<const clang::BindingDecl *, DecompositionTupleBinding> DecompositionTupleBindings;
+  std::map<const clang::VarDecl *, const clang::BindingDecl *> DecompositionHoldingBindings;
+  std::map<const clang::CallExpr *, const clang::BindingDecl *> DecompositionGetBindings;
   std::map<const clang::ArrayInitLoopExpr *, DecompositionArrayCopy> DecompositionArrayCopies;
   std::map<const clang::Expr *, const clang::ArrayInitLoopExpr *> DecompositionArrayNodes;
   std::size_t ExpandedNodes = 0;
@@ -1395,6 +1418,8 @@ public:
   const LocalDecomposition *
   decomposition(const clang::VarDecl *Declaration) const;
   const clang::Expr *decompositionBinding(const clang::BindingDecl *Binding) const;
+  const DecompositionTupleBinding *tupleDecompositionBinding(const clang::BindingDecl *Binding) const;
+  const DecompositionTupleBinding *decompositionHolding(const clang::VarDecl *Variable) const;
   const DecompositionArrayCopy *decompositionArrayCopy(const clang::Stmt *Node) const;
   const clang::FieldDecl *
   recordBindingField(const clang::BindingDecl *Binding) const;

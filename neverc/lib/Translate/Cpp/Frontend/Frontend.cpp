@@ -1217,11 +1217,12 @@ bool Adapter::registerDecomposition(const DecompositionDecl *D) {
       Object.getAddressSpace() != LangAS::Default || D->bindings().empty())
     return false;
   LocalDecomposition Checked;
+  const auto Tuple = approvedUtilityTupleLikeSource(S, Sources, Object, Context);
   auto BindingShape = [&](const BindingDecl *Binding) {
     return Binding && !Binding->isInvalidDecl() && !Binding->isImplicit() &&
            !Binding->hasAttrs() && Binding->getIdentifier() &&
            S.owns(Sources, Binding->getLocation()) &&
-           Binding->getDecomposedDecl() == D && !Binding->getHoldingVar() &&
+           Binding->getDecomposedDecl() == D && (Tuple || !Binding->getHoldingVar()) &&
            !DecompositionBindings.count(Binding);
   };
   std::vector<DecompositionArrayCopy> Copies;
@@ -1339,6 +1340,112 @@ bool Adapter::registerDecomposition(const DecompositionDecl *D) {
         Loop = Nested;
       }
     }
+  } else if (Tuple) {
+    if (Tuple->size() != D->bindings().size() || type(Object, D->getLocation()).empty())
+      return false;
+    auto Trait = [&](SourceLocation L, llvm::StringRef Name, unsigned Index)
+        -> const CXXRecordDecl * {
+      auto Found = DecompositionTraitSources.find(L.getRawEncoding());
+      if (Found == DecompositionTraitSources.end())
+        return nullptr;
+      const CXXRecordDecl *Selected = nullptr;
+      for (const auto *Source : Found->second) {
+        chargeExpansion(1, L);
+        if (!Source->Template || Source->Template->getName() != Name)
+          continue;
+        const unsigned Count = Name == "tuple_size" ? 1 : 2;
+        // Instantiations of one written binding share its source location.
+        // Select the actual event for this owner's object and binding index;
+        // events for sibling instantiations are not conflicting evidence.
+        if (!Source->Canonical || Source->Canonical->size() != Count ||
+            (*Source->Canonical)[Count - 1].getKind() != TemplateArgument::Type ||
+            !Context.hasSameType((*Source->Canonical)[Count - 1].getAsType(), Object))
+          continue;
+        if (Count == 2 && ((*Source->Canonical)[0].getKind() != TemplateArgument::Integral ||
+            (*Source->Canonical)[0].getAsIntegral().isNegative() ||
+            (*Source->Canonical)[0].getAsIntegral().getLimitedValue(Tuple->size()) != Index))
+          continue;
+        const auto *Instance = Source->Type ? dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+            Source->Type->getAsCXXRecordDecl()) : nullptr;
+        if (!Instance || Source->Kind != TemplateSourceKind::Type ||
+            !Source->Written || Source->Written->NumTemplateArgs != Count ||
+            !Source->Canonical || Source->Canonical->size() != Count ||
+            !Source->Sugared || Source->Sugared->size() != Count ||
+            Source->DefaultsOverflow || !Source->Defaults.empty() ||
+            Source->Template->getCanonicalDecl() != Instance->getSpecializedTemplate()->getCanonicalDecl() ||
+            Instance->getTemplateArgs().size() != Count ||
+            (Selected && Selected->getCanonicalDecl() != Instance->getCanonicalDecl()))
+          return nullptr;
+        for (const auto *Arguments : {Source->Canonical, Source->Sugared, &Instance->getTemplateArgs()}) {
+          if ((*Arguments)[Count - 1].getKind() != TemplateArgument::Type ||
+              !Context.hasSameType((*Arguments)[Count - 1].getAsType(), Object))
+            return nullptr;
+          if (Count == 2 && ((*Arguments)[0].getKind() != TemplateArgument::Integral ||
+              (*Arguments)[0].getAsIntegral().isNegative() ||
+              (*Arguments)[0].getAsIntegral().getLimitedValue(Tuple->size()) != Index))
+            return nullptr;
+        }
+        Selected = Instance;
+      }
+      return Selected;
+    };
+    if (!approvedUtilityTupleLikeSizeTrait(S, Sources,
+            Trait(D->getLocation(), "tuple_size", 0), Object, *Tuple, Context))
+      return false;
+    std::vector<std::pair<const BindingDecl *, DecompositionTupleBinding>> Bindings;
+    std::set<const VarDecl *> Holdings;
+    const bool LValue = D->getType()->isLValueReferenceType();
+    const auto Parameter = LValue ? Context.getLValueReferenceType(Object)
+                                  : Context.getRValueReferenceType(Object);
+    unsigned Index = 0;
+    for (const auto *Binding : D->bindings()) {
+      chargeExpansion(1, Binding->getLocation());
+      if (!BindingShape(Binding))
+        return false;
+      const auto *Holding = Binding->getHoldingVar();
+      const auto *Projection = dyn_cast_or_null<DeclRefExpr>(Binding->getBinding());
+      const auto *Get = Holding ? dyn_cast_or_null<CallExpr>(Holding->getInit()) : nullptr;
+      const auto *Element = approvedUtilityTupleLikeElementTrait(S, Sources,
+          Trait(Binding->getLocation(), "tuple_element", Index), Object, *Tuple, Index, Context);
+      const auto *BindingAlias = Binding->getType()->getAs<TypedefType>();
+      if (!Holding || !Holding->isImplicit() || Holding->isInvalidDecl() || Holding->hasAttrs() ||
+          Holding->getKind() != Decl::Var || !Holding->isLocalVarDecl() || !Holding->hasLocalStorage() ||
+          Holding->getStorageClass() != SC_None || Holding->getTLSKind() != VarDecl::TLS_None ||
+          Holding->getDeclContext() != D->getDeclContext() ||
+          Holding->getLexicalDeclContext() != D->getLexicalDeclContext() ||
+          Holding->getIdentifier() != Binding->getIdentifier() || Holding->getLocation() != Binding->getLocation() ||
+          !Holding->getType()->isReferenceType() || !Projection || !Projection->isLValue() ||
+          Projection->getObjectKind() != OK_Ordinary || Projection->getDecl() != Holding ||
+          !Context.hasSameType(Projection->getType(), Holding->getType()->getPointeeType()) ||
+          !Element || !BindingAlias || BindingAlias->getDecl()->getCanonicalDecl() != Element->getCanonicalDecl() ||
+          !Context.hasSameType(Binding->getType(), Element->getUnderlyingType()) ||
+          !approvedUtilityTupleLikeGet(S, Sources, Get, Parameter, *Tuple, Index, Context) ||
+          !Context.hasSameType(Get->getType(), Projection->getType()) ||
+          Holding->getType()->isLValueReferenceType() != Get->isLValue() ||
+          DecompositionHoldingBindings.count(Holding) || !Holdings.insert(Holding).second)
+        return false;
+      const Expr *Argument = Get->getArg(0);
+      if (!LValue) {
+        const auto *Cast = dyn_cast<ImplicitCastExpr>(Argument);
+        if (!Cast || Cast->getCastKind() != CK_NoOp || !Cast->isXValue() ||
+            !Context.hasSameType(Cast->getType(), Object) || Cast->getObjectKind() != OK_Ordinary)
+          return false;
+        Argument = Cast->getSubExpr();
+      }
+      const auto *Base = dyn_cast<DeclRefExpr>(Argument);
+      if (!Base || Base->getDecl() != D || !Base->isLValue() || Base->getObjectKind() != OK_Ordinary ||
+          !Context.hasSameType(Base->getType(), Object))
+        return false;
+      Checked.Bindings.emplace_back(Binding, nullptr);
+      Bindings.push_back({Binding, {D, Holding, Get, Element}});
+      ++Index;
+    }
+    Checked.TupleLike = true;
+    for (const auto &[Binding, Info] : Bindings) {
+      DecompositionTupleBindings.emplace(Binding, Info);
+      DecompositionHoldingBindings.emplace(Info.Holding, Binding);
+      DecompositionGetBindings.emplace(Info.Get, Binding);
+    }
   } else {
     const auto *Record = Object->getAsCXXRecordDecl();
     Record = Record ? Record->getDefinition() : nullptr;
@@ -1408,6 +1515,14 @@ const FieldDecl *Adapter::recordBindingField(const BindingDecl *Binding) const {
   auto Found = DecompositionBindings.find(Binding);
   return decompositionBinding(Binding) && Found != DecompositionBindings.end()
              ? Found->second : nullptr;
+}
+const DecompositionTupleBinding *Adapter::tupleDecompositionBinding(const BindingDecl *Binding) const {
+  auto Found = DecompositionTupleBindings.find(Binding);
+  return Found == DecompositionTupleBindings.end() ? nullptr : &Found->second;
+}
+const DecompositionTupleBinding *Adapter::decompositionHolding(const VarDecl *Variable) const {
+  auto Found = DecompositionHoldingBindings.find(Variable);
+  return Found == DecompositionHoldingBindings.end() ? nullptr : tupleDecompositionBinding(Found->second);
 }
 const DecompositionArrayCopy *Adapter::decompositionArrayCopy(const Stmt *Node) const {
   if (!S.coreV2() || !Node)
@@ -2483,6 +2598,31 @@ utilityArrayDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
   return Array;
 }
 
+static std::optional<UtilityTupleLikeSource>
+utilityTupleDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
+  if (!Record || Record->hasUserDeclaredDestructor() || !Record->hasTrivialDestructor())
+    return std::nullopt;
+  const auto Tuple = approvedUtilityTupleLikeSource(
+      A.S, A.Sources, A.Context.getRecordType(Record), A.Context);
+  if (!Tuple || Tuple->ArrayElements)
+    return std::nullopt;
+  const auto *Destructor = Record->getDestructor();
+  if (!Destructor)
+    return Tuple; // Preserve Sema's lazy implicit declaration.
+  for (const auto *Declaration : Destructor->redecls()) {
+    A.chargeExpansion(1, Declaration->getLocation());
+    const auto *Method = cast<CXXDestructorDecl>(Declaration);
+    if (!Method->isImplicit() || !Method->isDefaulted() || !Method->isTrivial() ||
+        Method->isInvalidDecl() || Method->isDeleted() || Method->isVirtual() ||
+        Method->isVariadic() || Method->getNumParams() || Method->getAccess() != AS_public ||
+        Method->getTypeSourceInfo() || Method->getLexicalDeclContext() != Method->getParent() ||
+        Method->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
+        !approvedStandardSDKDeclaration(A.S, A.Sources, Method))
+      return std::nullopt;
+  }
+  return Tuple;
+}
+
 static const CXXMethodDecl *inferredOperationExceptionSource(Adapter &A,
     const FunctionProtoType *Prototype, const FunctionDecl *Function) {
   const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
@@ -2731,6 +2871,17 @@ public:
               A.Context.getBaseElementType(Array->ElementType)
                   ->getAsCXXRecordDecl())
         return destruction(Element, Depth + 1);
+      return true;
+    }
+    if (const auto Tuple = utilityTupleDestructionSource(A, Record)) {
+      for (unsigned I = 0; I < Tuple->size(); ++I) {
+        auto Element = Tuple->elementType(I);
+        // Reference members do not destroy their referents.
+        if (!Element->isReferenceType())
+          if (const auto *Member = A.Context.getBaseElementType(Element)->getAsCXXRecordDecl())
+            if (!destruction(Member, Depth + 1))
+              return false;
+      }
       return true;
     }
     if (!A.S.owns(A.Sources, Record->getLocation()))
@@ -5200,7 +5351,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::vector<const TemplateUseSource *> ActiveTemplateUses;
   OperationExpressionSources CheckedOperationExpressions;
   OperationTypeSources CheckedOperationTypes;
-  std::map<const DeclRefExpr *, const CallExpr *> AuthenticatedArrayGetReferences;
+  std::map<const DeclRefExpr *, const CallExpr *> AuthenticatedProjectionGetReferences;
   std::map<const InitListExpr *, const InitListExpr *> ZeroArrayStorageSources;
   std::set<const Expr *> TypeSourceQueries;
   std::map<OperationTypeSourceKey, SourceLocation> TypeSourceRoots;
@@ -5225,7 +5376,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return false;
     if (!D->isImplicit())
       return A.S.owns(A.Sources, D->getLocation());
-    return A.rangeForOwner(dyn_cast<VarDecl>(D)) != nullptr;
+    return A.rangeForOwner(dyn_cast<VarDecl>(D)) != nullptr ||
+           A.decompositionHolding(dyn_cast<VarDecl>(D)) != nullptr;
   }
   bool templateParametersShape(const TemplateParameterList *Parameters,
                                std::optional<unsigned> ExpectedDepth = 0) {
@@ -7745,6 +7897,13 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           Self(Self, Array->ElementType, true, Depth + 1);
           return;
         }
+        if (const auto Tuple = approvedUtilityTupleLikeSource(A.S, A.Sources, T, A.Context)) {
+          // SDK tuple-like shape supplies layout; retain the original element
+          // sources instead of demanding traversal of private SDK TypeLocs.
+          for (unsigned I = 0; I < Tuple->size(); ++I)
+            Self(Self, Tuple->elementType(I), true, Depth + 1);
+          return;
+        }
         const auto *Record = dyn_cast_or_null<CXXRecordDecl>(
             RecordType->getDecl()->getDefinition());
         if (!Record)
@@ -7801,7 +7960,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     // completed default consumes the evidence. MaybeBindToTemporary can resolve
     // even a trivial destructor and then omit the binding expression entirely.
     if (!ActiveOperationSources.empty()) {
-      const FunctionDecl *AuthenticatedArrayGet = nullptr;
+      const FunctionDecl *AuthenticatedProjectionGet = nullptr;
       if (const auto *Call = dyn_cast<CallExpr>(S)) {
         const auto *Function = Call->getDirectCallee();
         const auto *Prototype =
@@ -7812,23 +7971,24 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             !Prototype->getNoexceptExpr()) {
           if (auto Operation = approvedUtilityOperation(A.S, A.Sources, Call,
                                                        A.Context);
-              Operation && *Operation == UtilityOperation::ArrayGet) {
+              (Operation && *Operation == UtilityOperation::ArrayGet) ||
+              A.DecompositionGetBindings.count(Call)) {
             if (const auto *Reference =
                     dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Call));
                 Reference && Reference->getDecl() == Function) {
               auto [Entry, Inserted] =
-                  AuthenticatedArrayGetReferences.emplace(Reference, Call);
+                  AuthenticatedProjectionGetReferences.emplace(Reference, Call);
               if (Inserted)
                 A.chargeExpansion(1, Call->getExprLoc());
               if (Entry->second == Call)
-                AuthenticatedArrayGet = Function;
+                AuthenticatedProjectionGet = Function;
             }
           }
         }
       } else if (const auto *Reference = dyn_cast<DeclRefExpr>(S)) {
-        if (auto Found = AuthenticatedArrayGetReferences.find(Reference);
-            Found != AuthenticatedArrayGetReferences.end())
-          AuthenticatedArrayGet = Found->second->getDirectCallee();
+        if (auto Found = AuthenticatedProjectionGetReferences.find(Reference);
+            Found != AuthenticatedProjectionGetReferences.end())
+          AuthenticatedProjectionGet = Found->second->getDirectCallee();
       }
       auto Dependency = [&](const Stmt *Source) {
         operationExpressionDependency(Source);
@@ -7851,10 +8011,10 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       auto FunctionSource = [&](const FunctionDecl *Function) {
         if (!Function)
           return;
-        // Exact array-get admission supplies its immutable SDK definition.
+        // Exact array-get or decomposition admission supplies its SDK definition.
         // Result/argument types, caller expressions and written template
         // arguments still complete through their ordinary source traversal.
-        if (Function == AuthenticatedArrayGet)
+        if (Function == AuthenticatedProjectionGet)
           return;
         collectOperationFunctionTypeSource(Function);
         Exception(Function->getType()->getAs<FunctionProtoType>(), Function);
@@ -7878,10 +8038,13 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             else
               collectOperationTypeSource(Owner->getType(), Owner->getLocation(), true);
             Dependency(Owner->getInit());
+            if (const auto *Tuple = A.tupleDecompositionBinding(Binding))
+              Dependency(Tuple->Holding->getInit());
             Dependency(Binding->getBinding());
           }
         if (const auto *Declarator = dyn_cast<DeclaratorDecl>(Declaration);
-            Declarator && !isa<FunctionDecl>(Declaration))
+            Declarator && !isa<FunctionDecl>(Declaration) &&
+            !A.decompositionHolding(dyn_cast<VarDecl>(Declarator)))
           operationTypeDependency(Declarator->getTypeSourceInfo());
         if (const auto *Variable = dyn_cast<VarDecl>(Declaration);
             Variable && !isa<ParmVarDecl>(Variable))
@@ -7955,8 +8118,34 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           E && !E->getType().isNull() && E->isPRValue() && !DecltypeCallResults.count(E))
         Destroyed = A.Context.getBaseElementType(E->getType())->getAsCXXRecordDecl();
       if (const auto *Construction = dyn_cast<CXXConstructExpr>(S)) {
-        Selected = Construction->getConstructor();
-        FunctionSource(Selected);
+        const auto *Constructor = Construction->getConstructor();
+        bool SDKConstruction =
+            approvedUtilityPairConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
+            approvedUtilityTupleConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
+            approvedUtilityArrayConstruction(A.S, A.Sources, Construction, A.Context);
+        auto Pinned = [&](const FunctionDecl *Function) {
+          if (!Function || Function->getTemplateSpecializationKind() == TSK_ExplicitSpecialization)
+            return false;
+          for (const auto *Declaration : Function->redecls())
+            if (!approvedStandardSDKDeclaration(A.S, A.Sources, Declaration))
+              return false;
+          return !Function->getDefinition() ||
+                 approvedStandardSDKDeclaration(A.S, A.Sources, Function->getDefinition());
+        };
+        SDKConstruction &= Pinned(Constructor);
+        if (const auto *Pattern = Constructor->getTemplateInstantiationPattern())
+          SDKConstruction &= Pinned(Pattern);
+        if (const auto *Primary = Constructor->getPrimaryTemplate())
+          for (const auto *Declaration : Primary->redecls())
+            SDKConstruction &= approvedStandardSDKDeclaration(A.S, A.Sources, Declaration) &&
+                               Pinned(dyn_cast<FunctionDecl>(Declaration->getTemplatedDecl()));
+        // Exact SDK construction admission supplies the selected operation,
+        // including its generated trivial copy. Its argument expressions and
+        // element types remain ordinary source dependencies below this node.
+        if (!SDKConstruction) {
+          Selected = Constructor;
+          FunctionSource(Selected);
+        }
       } else if (const auto *Call = dyn_cast<CallExpr>(S)) {
         Exception(operationCalleePrototype(Call), Call->getDirectCallee());
         FunctionSource(Call->getDirectCallee());
@@ -8127,7 +8316,7 @@ public:
     if (!A.registerDecomposition(D)) {
       A.reject(D->getLocation(), "structured binding",
                "Expected automatic direct-member bindings of source-owned trivial flat "
-               "aggregates or bounded native arrays with admitted element operations.");
+               "aggregates, bounded native arrays or authenticated SDK pair/tuple/array objects.");
       return true;
     }
     auto *Previous = CurrentDecomposition;
@@ -8144,7 +8333,17 @@ public:
     // RAV skips these semantic expressions unless every implicit node is enabled.
     // Inspect only the exact projections authenticated with their owner.
     A.type(D->getType(), D->getLocation());
-    return WalkUpFromBindingDecl(D) && TraverseStmt(D->getBinding());
+    if (!WalkUpFromBindingDecl(D))
+      return false;
+    if (const auto *Tuple = A.tupleDecompositionBinding(D)) {
+      auto *Holding = const_cast<VarDecl *>(Tuple->Holding);
+      registerOperationValueRoots(Holding);
+      // RAV omits this implicit declaration. Visit only the authenticated
+      // holding reference and its exact initializer, preserving source closure.
+      if (!WalkUpFromVarDecl(Holding) || !TraverseStmt(Holding->getInit()))
+        return false;
+    }
+    return TraverseStmt(D->getBinding());
   }
   bool TraverseVarDecl(VarDecl *D) {
     if (A.S.coreV2() && owned(D)) {
@@ -10078,6 +10277,9 @@ public:
       A.chargeExpansion(1, Source.Location);
       switch (Source.Kind) {
       case TemplateSourceKind::Type:
+        if (Source.Template && Source.Template->getIdentifier() &&
+            (Source.Template->getName() == "tuple_size" || Source.Template->getName() == "tuple_element"))
+          A.DecompositionTraitSources[Source.Location.getRawEncoding()].push_back(&Source);
         TypeSources[{Source.Type, Source.Location.getRawEncoding()}].push_back(&Source);
         break;
       case TemplateSourceKind::Function:

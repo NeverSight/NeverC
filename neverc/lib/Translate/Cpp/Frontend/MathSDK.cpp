@@ -8238,6 +8238,214 @@ approvedFunctionalUserInvokeCall(const State &S, const SourceManager &SM,
                                     false};
 }
 
+// A matching value/type is insufficient: decomposition can select a user
+// specialization of either trait. Follow only the actual instantiated SDK chain.
+static const ClassTemplateSpecializationDecl *tupleTraitInstance(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
+    llvm::StringRef Name, llvm::StringRef Path) {
+  const auto *Instance = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      Record ? Record->getDefinition() : nullptr);
+  const auto *Primary = Instance ? Instance->getSpecializedTemplate() : nullptr;
+  if (!Instance || !Primary || Instance->getName() != Name ||
+      Instance->getSpecializationKind() != TSK_ImplicitInstantiation ||
+      Instance->isInvalidDecl() || Instance->isDependentContext())
+    return nullptr;
+  auto Origin = [&](const Decl *D, llvm::StringRef File) {
+    return approvedStandardSDKDeclaration(S, SM, D) &&
+           cstddefOrigin(S, SM, D->getLocation(), "libcxx", File);
+  };
+  for (const auto *D : Instance->redecls())
+    if (!Origin(D, Path))
+      return nullptr;
+  const auto TraitPath = Name == "tuple_size" ? "__tuple/tuple_size.h"
+                                              : "__tuple/tuple_element.h";
+  for (const auto *D : Primary->redecls())
+    if (!(Origin(D, TraitPath) || Origin(D, "__fwd/tuple.h")) ||
+        !approvedStandardSDKDeclaration(S, SM, D->getTemplatedDecl()))
+      return nullptr;
+  const auto Selected = Instance->getSpecializedTemplateOrPartial();
+  const auto *Partial = Selected.dyn_cast<ClassTemplatePartialSpecializationDecl *>();
+  if (!Partial || !Partial->getDefinition() ||
+      Partial->getSpecializedTemplate()->getCanonicalDecl() != Primary->getCanonicalDecl())
+    return nullptr;
+  for (const auto *D : Partial->redecls())
+    if (!Origin(D, Path))
+      return nullptr;
+  return Instance;
+}
+
+static const VarDecl *tupleSizeTraitValue(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
+    QualType Object, const UtilityTupleLikeSource &Tuple,
+    const ASTContext &Context, unsigned Depth) {
+  if (Depth > 2 || Object.isVolatileQualified())
+    return nullptr;
+  const auto Path = Object.isConstQualified() ? "__tuple/tuple_size.h"
+      : Tuple.ArrayElements ? "array"
+      : Object->getAsCXXRecordDecl()->getName() == "pair" ? "__utility/pair.h"
+                                                         : "__tuple/tuple_size.h";
+  const auto *Instance = tupleTraitInstance(S, SM, Record, "tuple_size", Path);
+  if (!Instance || Instance->getTemplateArgs().size() != 1 ||
+      Instance->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Instance->getTemplateArgs()[0].getAsType(), Object) ||
+      Instance->getNumBases() != 1 || !Instance->field_empty())
+    return nullptr;
+  const auto &Base = *Instance->bases_begin();
+  const auto *Constant = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      Base.getType()->getAsCXXRecordDecl());
+  const auto *Primary = Constant ? Constant->getSpecializedTemplate() : nullptr;
+  const auto *Definition = Constant ? Constant->getDefinition() : nullptr;
+  const auto ConstantPath = "__type_traits/integral_constant.h";
+  if (!Constant || !Primary || !Definition || Constant->getName() != "integral_constant" ||
+      Constant->getSpecializationKind() != TSK_ImplicitInstantiation ||
+      Constant->getSpecializedTemplateOrPartial().is<ClassTemplatePartialSpecializationDecl *>() ||
+      Constant->getTemplateArgs().size() != 2 || Base.isVirtual() || Base.getAccessSpecifier() != AS_public)
+    return nullptr;
+  for (const auto *D : Constant->redecls())
+    if (!approvedStandardSDKDeclaration(S, SM, D) ||
+        !cstddefOrigin(S, SM, D->getLocation(), "libcxx", ConstantPath))
+      return nullptr;
+  for (const auto *D : Primary->redecls())
+    if (!approvedStandardSDKDeclaration(S, SM, D) ||
+        !cstddefOrigin(S, SM, D->getLocation(), "libcxx", ConstantPath) ||
+        !approvedStandardSDKDeclaration(S, SM, D->getTemplatedDecl()))
+      return nullptr;
+  const auto &Arguments = Constant->getTemplateArgs();
+  if (Arguments[0].getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Arguments[0].getAsType(), Context.getSizeType()) ||
+      Arguments[1].getKind() != TemplateArgument::Integral ||
+      Arguments[1].getAsIntegral().isNegative() ||
+      Arguments[1].getAsIntegral().getLimitedValue(Tuple.size() + 1) != Tuple.size())
+    return nullptr;
+  const VarDecl *Value = nullptr;
+  for (const auto *D : Definition->decls())
+    if (const auto *V = dyn_cast<VarDecl>(D); V && V->getName() == "value") {
+      if (Value || !approvedStandardSDKDeclaration(S, SM, V) ||
+          !V->isStaticDataMember() || !V->isConstexpr() ||
+          !Context.hasSameType(V->getType(), Context.getSizeType().withConst()))
+        return nullptr;
+      for (const auto *Redeclaration : V->redecls())
+        if (!approvedStandardSDKDeclaration(S, SM, Redeclaration) ||
+            !cstddefOrigin(S, SM, Redeclaration->getLocation(), "libcxx", ConstantPath))
+          return nullptr;
+      Value = V;
+    }
+  if (!Value)
+    return nullptr;
+  if (Object.isConstQualified()) {
+    // The instantiated base retains the real tuple_size<T>::value qualifier;
+    // use it rather than searching for an instance with the same arguments.
+    const auto *BaseType = Base.getType()->getAs<TemplateSpecializationType>();
+    if (!BaseType || BaseType->template_arguments().size() != 2 ||
+        BaseType->template_arguments()[1].getKind() != TemplateArgument::Expression)
+      return nullptr;
+    const Expr *Expression = BaseType->template_arguments()[1].getAsExpr();
+    if (const auto *ConstantValue = dyn_cast<ConstantExpr>(Expression))
+      Expression = ConstantValue->getSubExpr();
+    const auto *Load = dyn_cast<ImplicitCastExpr>(Expression);
+    if (!Load || Load->getCastKind() != CK_LValueToRValue)
+      return nullptr;
+    const auto *Reference = dyn_cast<DeclRefExpr>(Load->getSubExpr());
+    const auto *Qualifier = Reference ? Reference->getQualifier() : nullptr;
+    const auto *InnerType = Qualifier ? Qualifier->getAsType() : nullptr;
+    const auto *InnerValue = InnerType ? tupleSizeTraitValue(
+        S, SM, InnerType->getAsCXXRecordDecl(), Object.getUnqualifiedType(),
+        Tuple, Context, Depth + 1) : nullptr;
+    if (!InnerValue || Reference->getDecl()->getCanonicalDecl() != InnerValue->getCanonicalDecl())
+      return nullptr;
+  }
+  return Value;
+}
+
+bool approvedUtilityTupleLikeSizeTrait(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
+    QualType Object, const UtilityTupleLikeSource &Tuple, const ASTContext &Context) {
+  return !Object.isNull() && Object->isRecordType() &&
+         tupleSizeTraitValue(S, SM, Record, Object, Tuple, Context, 0);
+}
+
+static const TypedefNameDecl *tupleElementTraitType(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
+    QualType Object, const UtilityTupleLikeSource &Tuple, unsigned Index,
+    const ASTContext &Context, unsigned Depth, bool Internal = false) {
+  if (Depth > 3 || Index >= Tuple.size() || Object.isVolatileQualified())
+    return nullptr;
+  const bool Pair = Object->getAsCXXRecordDecl()->getName() == "pair";
+  const auto Path = Object.isConstQualified() || Internal ? "__tuple/tuple_element.h"
+      : Tuple.ArrayElements ? "array" : Pair ? "__utility/pair.h"
+                                             : "__tuple/sfinae_helpers.h";
+  const auto *Instance = tupleTraitInstance(S, SM, Record, "tuple_element", Path);
+  if (!Instance || Instance->getTemplateArgs().size() != 2 || Instance->getNumBases() ||
+      !Instance->field_empty())
+    return nullptr;
+  const auto &Args = Instance->getTemplateArgs();
+  if (Args[0].getKind() != TemplateArgument::Integral || Args[0].getAsIntegral().isNegative() ||
+      Args[0].getAsIntegral().getLimitedValue(Tuple.size()) != Index ||
+      Args[1].getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Args[1].getAsType(), Object))
+    return nullptr;
+  auto Expected = Tuple.elementType(Index);
+  if (Object.isConstQualified() && !Expected->isReferenceType())
+    Expected = Expected.withConst();
+  const TypedefNameDecl *Type = nullptr;
+  for (const auto *D : Instance->decls())
+    if (const auto *Alias = dyn_cast<TypedefNameDecl>(D); Alias && Alias->getName() == "type") {
+      if (Type || !approvedStandardSDKDeclaration(S, SM, Alias) ||
+          !cstddefOrigin(S, SM, Alias->getLocation(), "libcxx", Path) ||
+          !Context.hasSameType(Alias->getUnderlyingType(), Expected))
+        return nullptr;
+      Type = Alias;
+    }
+  if (!Type)
+    return nullptr;
+  if (Object.isConstQualified() || (!Internal && !Pair && !Tuple.ArrayElements)) {
+    const auto *Underlying = Type->getUnderlyingType()->getAs<TypedefType>();
+    const auto *InnerAlias = Underlying ? Underlying->getDecl() : nullptr;
+    const auto *Inner = InnerAlias
+        ? dyn_cast<ClassTemplateSpecializationDecl>(InnerAlias->getDeclContext()) : nullptr;
+    if (!Inner || Inner->getTemplateArgs().size() != 2 ||
+        Inner->getTemplateArgs()[1].getKind() != TemplateArgument::Type)
+      return nullptr;
+    const auto InnerObject = Inner->getTemplateArgs()[1].getAsType();
+    const bool ConstForward = Object.isConstQualified();
+    if (ConstForward) {
+      if (!Context.hasSameType(InnerObject, Object.getUnqualifiedType()))
+        return nullptr;
+    } else {
+      const auto *Types = dyn_cast_or_null<ClassTemplateSpecializationDecl>(InnerObject->getAsCXXRecordDecl());
+      const auto *Primary = Types ? Types->getSpecializedTemplate() : nullptr;
+      if (!Types || !Primary || Types->getName() != "__tuple_types" ||
+          !approvedStandardSDKDeclaration(S, SM, Types) ||
+          !approvedStandardSDKDeclaration(S, SM, Primary) ||
+          !cstddefOrigin(S, SM, Types->getLocation(), "libcxx", "__tuple/tuple_types.h") ||
+          (Types->getSpecializationKind() != TSK_ImplicitInstantiation &&
+           Types->getSpecializationKind() != TSK_Undeclared) ||
+          Types->getTemplateArgs().size() != 1 ||
+          Types->getTemplateArgs()[0].getKind() != TemplateArgument::Pack ||
+          Types->getTemplateArgs()[0].pack_size() != Tuple.size())
+        return nullptr;
+      unsigned I = 0;
+      for (const auto &Argument : Types->getTemplateArgs()[0].pack_elements())
+        if (Argument.getKind() != TemplateArgument::Type ||
+            !Context.hasSameType(Argument.getAsType(), Tuple.elementType(I++)))
+          return nullptr;
+    }
+    const auto *Checked = tupleElementTraitType(S, SM, Inner, InnerObject, Tuple,
+                                                Index, Context, Depth + 1, !ConstForward);
+    if (!Checked || Checked->getCanonicalDecl() != InnerAlias->getCanonicalDecl())
+      return nullptr;
+  }
+  return Type;
+}
+
+const TypedefNameDecl *approvedUtilityTupleLikeElementTrait(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
+    QualType Object, const UtilityTupleLikeSource &Tuple, unsigned Index,
+    const ASTContext &Context) {
+  return !Object.isNull() && Object->isRecordType()
+      ? tupleElementTraitType(S, SM, Record, Object, Tuple, Index, Context, 0) : nullptr;
+}
+
 struct UtilityTupleApplyDispatch {
   UtilityTupleLikeSource Tuple;
   const FunctionDecl *Function;
@@ -8246,14 +8454,12 @@ struct UtilityTupleApplyDispatch {
   const Expr *Operation;
 };
 
-// apply is replaced by direct projections, so authenticate each selected get
-// and its forwarding path before erasing the SDK helper body.
-static bool approvedUtilityTupleApplyElement(
-    const State &S, const SourceManager &SM, const Expr *Expression,
-    const ParmVarDecl *TupleParameter, const UtilityTupleLikeSource &Tuple,
+// The caller proves the argument expression; this shared check authenticates
+// the exact selected SDK get and its complete type/overload identity.
+bool approvedUtilityTupleLikeGet(
+    const State &S, const SourceManager &SM, const CallExpr *Get,
+    QualType Parameter, const UtilityTupleLikeSource &Tuple,
     unsigned Index, const ASTContext &Context) {
-  const auto *Get = dyn_cast_or_null<CallExpr>(
-      functionalInvokeStrippedExpression(Expression));
   const auto *Function = Get ? Get->getDirectCallee() : nullptr;
   const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
   const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
@@ -8264,8 +8470,6 @@ static bool approvedUtilityTupleApplyElement(
                               : nullptr;
   const auto *Arguments =
       Function ? Function->getTemplateSpecializationArgs() : nullptr;
-  const auto Parameter =
-      TupleParameter ? TupleParameter->getType() : QualType();
   if (!Get || Get->getNumArgs() != 1 || !Function || !Primary || !Pattern ||
       !Reference || !Arguments || Arguments->size() < 2 ||
       !Function->getIdentifier() || Function->getName() != "get" ||
@@ -8281,8 +8485,6 @@ static bool approvedUtilityTupleApplyElement(
       !Context.hasSameType(Function->getParamDecl(0)->getType(), Parameter) ||
       !Context.hasSameType(Get->getArg(0)->getType(),
                            Parameter->getPointeeType()) ||
-      !approvedFunctionalForwardingCall(S, SM, Get->getArg(0),
-                                        TupleParameter) ||
       Arguments->get(0).getKind() != TemplateArgument::Integral ||
       Arguments->get(0).getAsIntegral().isNegative() ||
       Arguments->get(0).getAsIntegral().getLimitedValue(Tuple.size()) != Index)
@@ -8362,6 +8564,19 @@ static bool approvedUtilityTupleApplyElement(
   return Context.hasSameType(Function->getReturnType(), Result) &&
          Context.hasSameType(Get->getType(), Element) &&
          (LValue ? Get->isLValue() : Get->isXValue());
+}
+
+// apply additionally requires its exact forwarding parameter path.
+static bool approvedUtilityTupleApplyElement(
+    const State &S, const SourceManager &SM, const Expr *Expression,
+    const ParmVarDecl *TupleParameter, const UtilityTupleLikeSource &Tuple,
+    unsigned Index, const ASTContext &Context) {
+  const auto *Get = dyn_cast_or_null<CallExpr>(
+      functionalInvokeStrippedExpression(Expression));
+  return Get && Get->getNumArgs() == 1 && TupleParameter &&
+         approvedFunctionalForwardingCall(S, SM, Get->getArg(0), TupleParameter) &&
+         approvedUtilityTupleLikeGet(S, SM, Get, TupleParameter->getType(),
+                                     Tuple, Index, Context);
 }
 
 static std::optional<UtilityTupleApplyDispatch>
