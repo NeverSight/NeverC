@@ -1678,9 +1678,29 @@ mutation uses index-based upward or downward filtering with target
 selection uses pointer-width partition indexes. Generated programs do not call
 or link libc++ for these operations. Heterogeneous value types outside the
 documented binary-predicate `equal` and `mismatch` forms, other predicate or
-comparator overloads, custom iterators, record elements, callable objects and
-addresses of standard algorithms remain rejected, as do calls outside a
+comparator overloads, custom iterators, record elements, callable objects outside
+the three unary queries below and addresses of standard algorithms remain rejected, as do calls outside a
 documented direct lowering.
+
+`find_if`, `find_if_not` and `none_of` additionally accept ordinary source-owned
+function objects with standard layout, trivial copy construction and destruction,
+and one Clang-selected non-template call operator taking an admitted scalar by
+value and returning `bool`. The exact pinned algorithm specialization, complete
+redeclaration chain, loop, predicate parameter and selected call are authenticated.
+The predicate is initialized once in its own by-value parameter storage, so a
+prvalue constructor observes the final receiver and a caller lvalue supplies an
+independent copy. Mutable state persists between invocations; `const`, non-const
+and lvalue-qualified call operators retain the SDK's lvalue receiver selection.
+Scalar argument conversions, empty ranges and first-match short circuit follow
+the existing pointer algorithm contract. The selected source definition must
+complete normal signature/body checks and be emitted before lowering proceeds.
+Class-template or lambda objects, SDK function objects, nontrivial copying or
+destruction, reference parameters, non-boolean results and function objects in
+other algorithm overloads remain outside this increment.
+Algorithm calls inside `decltype` and other consumed query roots retain the
+existing conservative SDK source-dependency boundary, including after an
+evaluated call has instantiated the same specialization. Query-only calls do
+not manufacture a missing instantiated body.
 
 The `shuffle` and `sample` component headers are authenticated but their
 declarations stay disabled because libc++ reaches `mbstate_t` through

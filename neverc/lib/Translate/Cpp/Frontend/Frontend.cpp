@@ -5239,6 +5239,7 @@ json::Object Adapter::constant(const APValue &V, QualType T, SourceLocation L) {
 class Allowlist : public RecursiveASTVisitor<Allowlist> {
   Adapter &A;
   std::set<const FunctionDecl *> CompletedOperationDefinitions;
+  std::map<const CXXMethodDecl *, SourceLocation> AlgorithmPredicateMethods;
   GeneratedOperationSources CompletedGeneratedOperations;
   std::vector<const CXXDestructorDecl *> ConsumedDestructorSignatures;
   std::set<const CXXDestructorDecl *> QueuedDestructorSignatures;
@@ -12545,6 +12546,22 @@ public:
     }
     return A.S.Diagnostics.empty();
   }
+  bool finishAlgorithmPredicates() {
+    for (const auto &[Method, Location] : AlgorithmPredicateMethods) {
+      const auto *Definition = Method->getDefinition();
+      // Reading a selected SDK body never substitutes for checking the source
+      // callback. The actual definition must be fully traversed and emitted.
+      if (!Definition || !CompletedOperationDefinitions.count(Definition) ||
+          std::find(A.Functions.begin(), A.Functions.end(), Definition) ==
+              A.Functions.end()) {
+        A.reject(Location, "algorithm predicate source",
+                 "The exact selected source call operator requires a completed definition.",
+                 "TR0203");
+        return false;
+      }
+    }
+    return true;
+  }
   bool finishTypeQueries() {
     // Deferral is closed before this pass. A query in the selected definition's
     // own body can use its completed proof, but all pending roots must pass
@@ -14755,6 +14772,9 @@ public:
       if (A.S.coreV2())
         if (auto Operation =
                 approvedUtilityOperation(A.S, A.Sources, C, A.Context)) {
+          if (auto Predicate = approvedUtilityAlgorithmPredicateCall(
+                  A.S, A.Sources, C, A.Context))
+            AlgorithmPredicateMethods.emplace(Predicate->Method->getCanonicalDecl(), L);
           switch (*Operation) {
           case UtilityOperation::MemoryMakeUnique: {
             const auto Info =
@@ -15348,7 +15368,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
   if (!Traversed || !S.Diagnostics.empty())
     return;
   CheckingSource = false;
-  if (!Check.finishTypeQueries())
+  if (!Check.finishAlgorithmPredicates() || !Check.finishTypeQueries())
     return;
   if (S.coreV2())
     orderCoreV2Records(*this);

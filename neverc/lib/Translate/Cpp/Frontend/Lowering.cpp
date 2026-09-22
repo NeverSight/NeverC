@@ -654,6 +654,45 @@ class FunctionLowering {
     return emitIndirectCall(std::move(Callable), std::move(Converted),
                             Prototype->getReturnType(), L);
   }
+  struct CapturedAlgorithmPredicate {
+    Expression Storage;
+    QualType Type;
+    const CXXMethodDecl *Method = nullptr;
+  };
+  CapturedAlgorithmPredicate captureUnaryPredicate(const CallExpr *Call,
+                                                   UtilityOperation Operation) {
+    auto L = Call->getExprLoc();
+    if (auto Info = approvedUtilityAlgorithmPredicateCall(
+            A.S, A.Sources, Call, A.Context)) {
+      if (Info->Operation != Operation)
+        reject(L, "algorithm predicate", "The selected predicate operation must match its algorithm.");
+      // Construct the actual by-value parameter once in final storage. In
+      // particular, a prvalue's self pointer must not point at an extra copy.
+      return {argument(Call->getArg(2), Info->ObjectType), Info->ObjectType,
+              Info->Method};
+    }
+    return {snapshot(expression(Call->getArg(2)), L), Call->getArg(2)->getType(),
+            nullptr};
+  }
+  Expression emitUnaryPredicate(const CapturedAlgorithmPredicate &Predicate,
+                                 Expression Argument, SourceLocation L) {
+    if (!Predicate.Method)
+      return emitUnaryPredicate(json::Object(Predicate.Storage), Predicate.Type,
+                                std::move(Argument), L);
+    const auto *Method = Predicate.Method;
+    json::Array Arguments;
+    Arguments.push_back(cast(json::Object(Predicate.Storage),
+                              type(Method->getThisType(), L), L));
+    Arguments.push_back(cast(std::move(Argument),
+                              type(Method->getParamDecl(0)->getType(), L), L));
+    chargeCall(Arguments, L);
+    auto Result = temporary("bool", L);
+    Body.push_back(json::Object{{"op", "call"}, {"callee", A.name(Method)},
+                               {"args", std::move(Arguments)},
+                               {"target", json::Object(Result)},
+                               {"loc", A.loc(L)}});
+    return Result;
+  }
   Expression emitUnaryPredicate(Expression Callable, QualType PredicateType,
                                 Expression Argument, SourceLocation L) {
     const auto *Prototype =
@@ -6023,7 +6062,7 @@ class FunctionLowering {
       const bool Match = Operation == UtilityOperation::AlgorithmFindIf;
       auto Current = snapshot(expression(Call->getArg(0)), L);
       auto Last = snapshot(expression(Call->getArg(1)), L);
-      auto Predicate = snapshot(expression(Call->getArg(2)), L);
+      auto Predicate = captureUnaryPredicate(Call, Operation);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto PointerType = type(Call->getArg(0)->getType(), L);
       const auto Check = labelName(), Test = labelName();
@@ -6033,8 +6072,7 @@ class FunctionLowering {
       branch(binary("!=", Current, Last, "bool", L), Test, End, L);
       label(Test, L);
       auto Selected = emitUnaryPredicate(
-          json::Object(Predicate), Call->getArg(2)->getType(),
-          dereference(json::Object(Current), L), L);
+          Predicate, dereference(json::Object(Current), L), L);
       branch(std::move(Selected), Match ? End : Advance, Match ? Advance : End,
              L);
       label(Advance, L);
@@ -6089,7 +6127,7 @@ class FunctionLowering {
       const bool Any = Operation == UtilityOperation::AlgorithmAnyOf;
       auto Current = snapshot(expression(Call->getArg(0)), L);
       auto Last = snapshot(expression(Call->getArg(1)), L);
-      auto Predicate = snapshot(expression(Call->getArg(2)), L);
+      auto Predicate = captureUnaryPredicate(Call, Operation);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto PointerType = type(Call->getArg(0)->getType(), L);
       auto Result = temporary("bool", L);
@@ -6103,8 +6141,7 @@ class FunctionLowering {
       label(Test, L);
       {
         auto Selected = emitUnaryPredicate(
-            json::Object(Predicate), Call->getArg(2)->getType(),
-            dereference(json::Object(Current), L), L);
+            Predicate, dereference(json::Object(Current), L), L);
         branch(std::move(Selected), All ? Advance : Decisive,
                All ? Decisive : Advance, L);
       }

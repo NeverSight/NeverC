@@ -41011,6 +41011,354 @@ TEST_F(TranslateTest,
   }
 }
 
+TEST_F(TranslateTest, CoreV2AlgorithmUnaryPredicateObjectsRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-callable-unary-state.cpp");
+  const auto Output = tmpFile("algorithm-callable-unary-state.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+int first_calls, last_calls, factory_calls;
+int *first(int *p) { ++first_calls; return p; }
+int *last(int *p) { ++last_calls; return p; }
+struct Stateful {
+  int calls;
+  int threshold;
+  int *observed;
+  int *sum;
+  bool operator()(int value) & { // predicate-method: stateful
+    ++calls; *observed = calls; *sum += value;
+    return value >= threshold;
+  }
+  bool operator()(int) const & { // Unselected even for a const caller object.
+    *observed = -100;
+    return true;
+  }
+};
+Stateful make_stateful(int threshold, int *observed, int *sum) {
+  ++factory_calls;
+  return Stateful{0, threshold, observed, sum};
+}
+struct Prefix {
+  int calls;
+  int threshold;
+  int *observed;
+  bool operator()(int value) { // predicate-method: prefix
+    ++calls; *observed = calls;
+    return value < threshold;
+  }
+};
+struct ConstMatch {
+  int threshold;
+  int *calls;
+  bool operator()(int value) const { // predicate-method: const-match
+    ++*calls;
+    return value >= threshold;
+  }
+};
+struct WideMatch {
+  int *calls;
+  bool operator()(long long value) const & { // predicate-method: wide-match
+    ++*calls;
+    return value > 255;
+  }
+};
+int main() {
+  int values[]{2, 4, 6, 8};
+  int observed = 0, sum = 0;
+  Stateful caller{0, 6, &observed, &sum};
+  if (std::find_if(first(values), last(values + 4), caller) != values + 2 || // predicate-call: stateful
+      caller.calls || observed != 3 || sum != 12 || first_calls != 1 || last_calls != 1) return 1;
+  observed = sum = 0;
+  if (std::none_of(values, values + 4, caller) || caller.calls || observed != 3 || sum != 12) return 2; // predicate-call: stateful
+  observed = sum = 0;
+  if (std::find_if(values, values + 4, make_stateful(8, &observed, &sum)) != values + 3 || // predicate-call: stateful
+      observed != 4 || sum != 20 || factory_calls != 1) return 3;
+  observed = sum = 0;
+  const Stateful constant{0, 4, &observed, &sum};
+  if (std::find_if(values, values + 4, constant) != values + 1 || // predicate-call: stateful
+      constant.calls || observed != 2 || sum != 6) return 4;
+  Prefix prefix{0, 6, &observed};
+  observed = 0;
+  if (std::find_if_not(values, values + 4, prefix) != values + 2 || prefix.calls || observed != 3) return 5; // predicate-call: prefix
+  observed = 0;
+  if (std::find_if_not(values, values + 1, prefix) != values + 1 || prefix.calls || observed != 1) return 6; // predicate-call: prefix
+  int calls = 0;
+  ConstMatch match{6, &calls};
+  const int *read_only = values;
+  if (std::find_if(read_only, read_only + 4, match) != read_only + 2 || calls != 3) return 7; // predicate-call: const-match
+  calls = 0;
+  if (std::find_if_not(read_only, read_only + 4, match) != read_only || calls != 1) return 8; // predicate-call: const-match
+  calls = 0;
+  if (std::none_of(read_only, read_only + 4, match) || calls != 3) return 9; // predicate-call: const-match
+  calls = 0;
+  if (!std::none_of(values, values + 1, match) || calls != 1) return 10; // predicate-call: const-match
+  observed = sum = 0;
+  if (std::find_if(values, values, caller) != values || // predicate-call: stateful
+      std::find_if_not(values, values, prefix) != values || // predicate-call: prefix
+      !std::none_of(values, values, caller) || observed || sum || caller.calls || prefix.calls) return 11; // predicate-call: stateful
+  short small[]{-3, 2, 300, 400};
+  calls = 0;
+  WideMatch wide{&calls};
+  if (std::find_if(small, small + 4, wide) != small + 2 || calls != 3) return 12; // predicate-call: wide-match
+  calls = 0;
+  if (std::find_if_not(small + 2, small + 4, wide) != small + 4 || calls != 2) return 13; // predicate-call: wide-match
+  calls = 0;
+  if (std::none_of(small, small + 4, wide) || calls != 3) return 14; // predicate-call: wide-match
+  observed = sum = 0;
+  if (std::find_if(first(values), last(values), make_stateful(2, &observed, &sum)) != values || // predicate-call: stateful
+      observed || sum || first_calls != 2 || last_calls != 2 || factory_calls != 2) return 15;
+  observed = sum = 0;
+  if (std::find_if(values, values + 4, Stateful{0, 4, &observed, &sum}) != values + 1 || // predicate-call: stateful
+      observed != 2 || sum != 6) return 16;
+  return caller.calls == 0 && prefix.calls == 0 && constant.calls == 0 ? 0 : 17;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-callable-unary-state" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmPredicateParameterIdentityRunsAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-callable-parameter-identity.cpp");
+  const auto Output = tmpFile("algorithm-callable-parameter-identity.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+int constructions, factories, limit_calls;
+int limit(int value) { ++limit_calls; return value; }
+struct Identity {
+  Identity *self;
+  Identity **receiver;
+  int *observed;
+  int *bad;
+  int calls;
+  int stop;
+  bool expects_copy;
+  bool inverse;
+  Identity(int count, Identity **address, int *seen, int *errors, bool copied, bool inverted)
+      : self(this), receiver(address), observed(seen), bad(errors), calls(0),
+        stop(count), expects_copy(copied), inverse(inverted) { ++constructions; }
+  bool operator()(int value) & { // predicate-method: identity
+    if ((self == this) == expects_copy) ++*bad;
+    if (expects_copy && self->calls != 0) ++*bad;
+    if (*receiver == nullptr) *receiver = this;
+    else if (*receiver != this) ++*bad;
+    ++calls; *observed = calls;
+    if (value != calls) ++*bad;
+    bool selected = calls == stop;
+    return inverse ? !selected : selected;
+  }
+};
+Identity make_identity(int count, Identity **address, int *seen, int *errors, bool inverted) {
+  ++factories;
+  return Identity(count, address, seen, errors, false, inverted);
+}
+int main() {
+  int values[]{1, 2, 3, 4};
+  Identity *receiver = nullptr;
+  int observed = 0, bad = 0;
+  if (std::find_if(values, values + 4, Identity(limit(3), &receiver, &observed, &bad, false, false)) != values + 2 || // predicate-call: identity
+      observed != 3 || bad || constructions != 1 || limit_calls != 1) return 1;
+  receiver = nullptr; observed = 0;
+  if (std::find_if_not(values, values + 4, make_identity(limit(2), &receiver, &observed, &bad, true)) != values + 1 || // predicate-call: identity
+      observed != 2 || bad || constructions != 2 || factories != 1 || limit_calls != 2) return 2;
+  receiver = nullptr; observed = 0;
+  if (std::none_of(values, values + 4, make_identity(limit(4), &receiver, &observed, &bad, false)) || // predicate-call: identity
+      observed != 4 || bad || constructions != 3 || factories != 2 || limit_calls != 3) return 3;
+  receiver = nullptr; observed = 0;
+  Identity caller(3, &receiver, &observed, &bad, true, false);
+  if (std::find_if(values, values + 4, caller) != values + 2 || // predicate-call: identity
+      observed != 3 || bad || caller.calls || caller.self != &caller || constructions != 4) return 4;
+  receiver = nullptr; observed = 0;
+  caller.inverse = true;
+  if (std::find_if_not(values, values + 4, caller) != values + 2 || // predicate-call: identity
+      observed != 3 || bad || caller.calls || constructions != 4) return 5;
+  receiver = nullptr; observed = 0;
+  caller.inverse = false;
+  if (std::none_of(values, values + 4, caller) || observed != 3 || bad || caller.calls || constructions != 4) return 6; // predicate-call: identity
+  receiver = nullptr; observed = 0;
+  if (!std::none_of(values, values, Identity(limit(1), &receiver, &observed, &bad, false, false)) || // predicate-call: identity
+      observed || bad || constructions != 5 || limit_calls != 4) return 7;
+  receiver = nullptr; observed = 0;
+  if (std::find_if_not(values, values, make_identity(limit(1), &receiver, &observed, &bad, true)) != values || // predicate-call: identity
+      observed || bad || constructions != 6 || factories != 3 || limit_calls != 5) return 8;
+  return caller.calls == 0 && caller.self == &caller ? 0 : 9;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-callable-parameter-identity" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmPredicateObjectPromotesOriginalQueryCase) {
+  const auto Source = tmpFile("algorithm-predicate-promoted.cpp");
+  const auto Output = tmpFile("algorithm-predicate-promoted.nc");
+  writeFile(Source, R"cpp(struct predicate{bool operator()(int n)const{return n>0;}};
+#include <algorithm>
+int main(){int a[2]{1,2};return std::find_if(a,a+2,predicate{})==a?0:1;})cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmPredicateObjectsRequireExactSource) {
+  struct Rejection { const char *Name, *Source, *Code; };
+  const Rejection Cases[] = {
+      {"find_if-specialization", R"cpp(#include <algorithm>
+struct P { bool operator()(int x) const { return x != 0; } };
+namespace std {template<> int * find_if<int *, P>(int *first, int *, P){return first;}}
+int f(int *a){return std::find_if(a,a+2,P{}) == a ? 1 : 0;}
+)cpp", "TR0201"},
+      {"find_if-redeclaration", R"cpp(#include <algorithm>
+struct P { bool operator()(int x) const { return x != 0; } };
+namespace std {inline namespace __1 {template<class I, class F> I find_if(I, I, F);}}
+int f(int *a){return std::find_if(a,a+2,P{}) == a ? 1 : 0;}
+)cpp", "TR0201"},
+      {"find_if_not-specialization", R"cpp(#include <algorithm>
+struct P { bool operator()(int x) const { return x != 0; } };
+namespace std {template<> int * find_if_not<int *, P>(int *first, int *, P){return first;}}
+int f(int *a){return std::find_if_not(a,a+2,P{}) == a ? 1 : 0;}
+)cpp", "TR0201"},
+      {"find_if_not-redeclaration", R"cpp(#include <algorithm>
+struct P { bool operator()(int x) const { return x != 0; } };
+namespace std {inline namespace __1 {template<class I, class F> I find_if_not(I, I, F);}}
+int f(int *a){return std::find_if_not(a,a+2,P{}) == a ? 1 : 0;}
+)cpp", "TR0201"},
+      {"none_of-specialization", R"cpp(#include <algorithm>
+struct P { bool operator()(int x) const { return x != 0; } };
+namespace std {template<> bool none_of<int *, P>(int *first, int *, P){return true;}}
+int f(int *a){return std::none_of(a,a+2,P{}) ? 1 : 0;}
+)cpp", "TR0201"},
+      {"none_of-redeclaration", R"cpp(#include <algorithm>
+struct P { bool operator()(int x) const { return x != 0; } };
+namespace std {inline namespace __1 {template<class I, class F> bool none_of(I, I, F);}}
+int f(int *a){return std::none_of(a,a+2,P{}) ? 1 : 0;}
+)cpp", "TR0201"},
+      {"constructor-default-source", R"cpp(#include <algorithm>
+struct P{int n;P(int v=(sizeof(long double),0)):n(v){}bool operator()(int x)const{return x!=n;}};
+int f(int*a){return std::find_if(a,a+2,P{})==a;}
+)cpp", "TR0201"},
+      {"factory-default-source", R"cpp(#include <algorithm>
+struct P { bool operator()(int x) const { return x != 0; } };
+P make(int n=(sizeof(long double),0)){return P{};}
+int f(int*a){return std::find_if(a,a+2,make())==a;}
+)cpp", "TR0201"},
+      {"class-template-object", R"cpp(#include <algorithm>
+template<class T>struct P{bool operator()(T x)const{return x!=0;}};
+int f(int*a){return std::find_if(a,a+2,P<int>{})==a;}
+)cpp", "TR0203"},
+      {"query-only-no-body", R"cpp(#include <algorithm>
+struct P { bool operator()(int x) const { return x != 0; } };
+using Result=decltype(std::find_if(static_cast<int*>(nullptr),static_cast<int*>(nullptr),P{}));
+static_assert(__is_same(Result,int*));
+)cpp", "TR0203"},
+      {"evaluated-then-query", R"cpp(#include <algorithm>
+struct P { bool operator()(int x) const { return x != 0; } };
+int*f(int*a){P p;int*result=std::find_if(a,a+2,p);using Result=decltype(std::find_if(a,a+2,p));static_assert(__is_same(Result,int*));return result;}
+)cpp", "TR0201"},
+      {"query-method-body-source", R"cpp(#include <algorithm>
+struct P{bool operator()(int x)const{long double hidden=0;return x!=0;}};
+using Result=decltype(std::find_if(static_cast<int*>(nullptr),static_cast<int*>(nullptr),P{}));
+static_assert(__is_same(Result,int*));
+)cpp", "TR0201"},
+      {"query-constructor-default-source", R"cpp(#include <algorithm>
+struct P{int n;P(int v=(sizeof(long double),0)):n(v){}bool operator()(int x)const{return x!=n;}};
+using Result=decltype(std::find_if(static_cast<int*>(nullptr),static_cast<int*>(nullptr),P{}));
+static_assert(__is_same(Result,int*));
+)cpp", "TR0201"},
+      {"nontrivial-copy", R"cpp(#include <algorithm>
+struct P{P()=default;P(const P&){}bool operator()(int x)const{return x!=0;}};
+int f(int*a){P p;return std::find_if(a,a+2,p)==a;}
+)cpp", "TR0203"},
+      {"nontrivial-destructor", R"cpp(#include <algorithm>
+struct P{~P(){}bool operator()(int x)const{return x!=0;}};
+int f(int*a){return std::find_if(a,a+2,P{})==a;}
+)cpp", "TR0203"},
+      {"reference-parameter", R"cpp(#include <algorithm>
+struct P{bool operator()(const int&x)const{return x!=0;}};
+int f(int*a){return std::find_if(a,a+2,P{})==a;}
+)cpp", "TR0203"},
+      {"non-bool-result", R"cpp(#include <algorithm>
+struct P{int operator()(int x)const{return x;}};
+int f(int*a){return std::find_if(a,a+2,P{})==a;}
+)cpp", "TR0203"},
+      {"volatile-method", R"cpp(#include <algorithm>
+struct P{bool operator()(int x)volatile{return x!=0;}};
+int f(int*a){return std::find_if(a,a+2,P{})==a;}
+)cpp", "TR0201"},
+      {"base-method", R"cpp(#include <algorithm>
+struct B{bool operator()(int x)const{return x!=0;}};struct P:B{};
+int f(int*a){return std::find_if(a,a+2,P{})==a;}
+)cpp", "TR0203"},
+      {"member-template", R"cpp(#include <algorithm>
+struct P{template<class T>bool operator()(T x)const{return x!=0;}};
+int f(int*a){return std::find_if(a,a+2,P{})==a;}
+)cpp", "TR0203"},
+      {"missing-method-definition", R"cpp(#include <algorithm>
+struct P{bool operator()(int x)const;};
+int f(int*a){return std::find_if(a,a+2,P{})==a;}
+)cpp", "TR0203"},
+      {"method-body-source", R"cpp(#include <algorithm>
+struct P{bool operator()(int x)const{long double hidden=0;return x!=0;}};
+int f(int*a){return std::find_if(a,a+2,P{})==a;}
+)cpp", "TR0201"},
+      {"parameter-alias-source", R"cpp(#include <algorithm>
+template<class T>using Alias=int;struct P{bool operator()(Alias<long double>x)const{return x!=0;}};
+int f(int*a){return std::find_if(a,a+2,P{})==a;}
+)cpp", "TR0201"},
+      {"explicit-template-alias-source", R"cpp(#include <algorithm>
+struct P { bool operator()(int x) const { return x != 0; } };
+template<class T>using Iterator=int*;
+int f(int*a){return std::find_if<Iterator<long double>,P>(a,a+2,P{})==a;}
+)cpp", "TR0201"},
+      {"initializer-source", R"cpp(#include <algorithm>
+struct P { bool operator()(int x) const { return x != 0; } };
+int f(int*a){return std::find_if(a,a+2,(sizeof(long double),P{}))==a;}
+)cpp", "TR0201"},
+      {"sdk-predicate", R"cpp(#include <algorithm>
+#include <functional>
+int f(int*a){return std::find_if(a,a+2,std::logical_not<int>{})==a;}
+)cpp", "TR0203"},
+      {"lambda", R"cpp(#include <algorithm>
+int f(int*a){return std::find_if(a,a+2,[](int x){return x!=0;})==a;}
+)cpp", "TR0203"},
+      {"count-if-object", R"cpp(#include <algorithm>
+struct P { bool operator()(int x) const { return x != 0; } };
+int f(int*a){return static_cast<int>(std::count_if(a,a+2,P{}));}
+)cpp", "TR0203"},
+      {"all-of-object", R"cpp(#include <algorithm>
+struct P { bool operator()(int x) const { return x != 0; } };
+bool f(int*a){return std::all_of(a,a+2,P{});}
+)cpp", "TR0203"},
+      {"any-of-object", R"cpp(#include <algorithm>
+struct P { bool operator()(int x) const { return x != 0; } };
+bool f(int*a){return std::any_of(a,a+2,P{});}
+)cpp", "TR0203"},
+      {"remove-if-object", R"cpp(#include <algorithm>
+struct P { bool operator()(int x) const { return x != 0; } };
+int f(int*a){return std::remove_if(a,a+2,P{})==a;}
+)cpp", "TR0203"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("algorithm-callable-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("algorithm-callable-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+               Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmPredicateQueriesRequireValueCallbacks) {
   struct Rejection {
     const char *Name;
@@ -41018,9 +41366,7 @@ TEST_F(TranslateTest, CoreV2AlgorithmPredicateQueriesRequireValueCallbacks) {
   };
   const Rejection Cases[] = {
       {"reference-parameter", "bool predicate(const int&n){return n>0;}"},
-      {"non-bool-result", "int predicate(int n){return n>0;}"},
-      {"function-object",
-       "struct predicate{bool operator()(int n)const{return n>0;}};"}};
+      {"non-bool-result", "int predicate(int n){return n>0;}"}};
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
     const auto Source = tmpFile(std::string("algorithm-predicate-queries-") +
@@ -41029,10 +41375,7 @@ TEST_F(TranslateTest, CoreV2AlgorithmPredicateQueriesRequireValueCallbacks) {
                                 Case.Name + ".nc");
     std::string Call = std::string(Case.Predicate) +
                        "\n#include <algorithm>\nint main(){int a[2]{1,2};";
-    if (std::string(Case.Name) == "function-object")
-      Call += "return std::find_if(a,a+2,predicate{})==a?0:1;}";
-    else
-      Call += "return std::find_if(a,a+2,predicate)==a?0:1;}";
+    Call += "return std::find_if(a,a+2,predicate)==a?0:1;}";
     writeFile(Source, Call);
     expectCode(
         translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),

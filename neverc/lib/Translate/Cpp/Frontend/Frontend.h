@@ -850,6 +850,19 @@ enum class UtilityOperation {
   OptionalGreaterEqual,
   MakeOptional,
 };
+// A source function object selected by an exact unary algorithm body. The
+// outer algorithm owns a by-value predicate; Invocation uses that same lvalue.
+struct UtilityAlgorithmPredicateCall {
+  UtilityOperation Operation;
+  const clang::FunctionDecl *Algorithm;
+  const clang::CXXOperatorCallExpr *Invocation;
+  const clang::CXXMethodDecl *Method;
+  clang::QualType ObjectType;
+};
+std::optional<UtilityAlgorithmPredicateCall>
+approvedUtilityAlgorithmPredicateCall(const State &S,
+    const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 struct UtilityPairRecord {
   const clang::CXXRecordDecl *Record;
   const clang::FieldDecl *First, *Second;
