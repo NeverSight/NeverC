@@ -11490,7 +11490,7 @@ int main(){
 }
 """
 
-    def check_algorithm_template_predicate(data, source):
+    def check_algorithm_template_predicate(data, source, method_result='bool'):
         assert data['protocol'] == 1
         definitions = {f['name']: f for f in data['functions']}
         assert len(definitions) == len(data['functions'])
@@ -11512,7 +11512,10 @@ int main(){
             selected = [f for f in data['functions'] if f['loc']['line'] == line]
             assert selected, (label, line)
             for method in selected:
-                assert method['result'] == 'bool' and len(method['params']) == 2, method
+                expected_result = (method_result[label]
+                                   if isinstance(method_result, dict)
+                                   else method_result)
+                assert method['result'] == expected_result and len(method['params']) == 2, method
                 assert method['params'][0]['type'].startswith(('ptr:', 'cptr:')), method
                 key = (label, method['params'][1]['type'])
                 assert key not in methods, (key, selected)
@@ -11529,12 +11532,18 @@ int main(){
             multiplicity = int(parts[2]) if len(parts) == 3 else 1
             assert multiplicity in (1, 2), text
             method = methods[key]
+            expected_result = (method_result[key[0]]
+                               if isinstance(method_result, dict)
+                               else method_result)
             used.add(key)
             calls = [node for node in nodes if node.get('op') == 'call'
                      and node.get('callee') == method['name'] and node.get('loc', {}).get('line') == line]
             assert len(calls) == multiplicity, (key, line, calls)
             for call in calls:
-                assert call['target']['type'] == 'bool'
+                if expected_result == 'void':
+                    assert 'target' not in call, call
+                else:
+                    assert call['target']['type'] == expected_result
                 assert [arg['type'] for arg in call['args']] == [param['type'] for param in method['params']], call
                 assert call['args'][0] == calls[0]['args'][0], calls
             expected += multiplicity
@@ -12802,6 +12811,88 @@ int main() {
     algorithm_partition_point_promoted = []
     for name, source in algorithm_partition_point_promoted:
         check("v2-algorithm-partition-point-promoted-" + name, source, profile="cpp-core-v2", sdk=True)
+
+    algorithm_for_each_n_object_source = """\
+#include <algorithm>
+#include <functional>
+int calls, sum, void_calls, first_calls, count_calls, factories, cleanup, constructed, bad;
+struct Token { ~Token(){++cleanup;} };
+struct Stateful {
+  const Stateful *self;
+  const Stateful **receiver;
+  int local_calls;
+  bool exact;
+  Stateful(const Stateful **r,bool e,Token token=Token{}):self(this),receiver(r),local_calls(0),exact(e){++constructed;}
+  int operator()(long long value) & { // template-predicate-method: stateful
+    ++local_calls;++calls;sum+=int(value);*receiver=this;
+    if(exact&&self!=this)++bad;
+    return int(value)+1;
+  }
+  int operator()(long long) const & {bad+=100;return 0;}
+};
+struct Sink {
+  int local_calls;
+  void operator()(int value) & { // template-predicate-method: sink
+    ++local_calls;++void_calls;sum+=value;
+  }
+};
+int *first(int*p){++first_calls;return p;}
+short count(short n){++count_calls;return n;}
+Stateful make(const Stateful **r){++factories;return Stateful(r,true);}
+enum Amount:unsigned char{two=2};
+int main(){
+ int values[4]={1,2,3,4};const Stateful*receiver=nullptr;
+ if(std::for_each_n(first(values),count(3),make(&receiver))!=values+3|| // template-predicate-call: stateful i64
+    calls!=3||sum!=6||first_calls!=1||count_calls!=1||factories!=1||cleanup!=1||constructed!=1||bad||!receiver)return 1;
+ calls=sum=0;receiver=nullptr;
+ auto zero=std::for_each_n(values,0,Stateful(&receiver,true)); // template-predicate-call: stateful i64
+ if(zero!=values||calls||sum||receiver||cleanup!=2||constructed!=2||bad)return 2;
+ {
+  Token owner;Stateful caller(&receiver,false,owner);receiver=nullptr;calls=sum=0;
+  if(std::for_each_n(values,two,caller)!=values+2||calls!=2||sum!=3|| // template-predicate-call: stateful i64
+     !receiver||receiver==&caller||caller.local_calls||cleanup!=3||constructed!=3||bad)return 3;
+ }
+ if(cleanup!=4)return 4;
+ calls=sum=0;receiver=nullptr;
+ auto negative=std::for_each_n(values,-2,Stateful(&receiver,true)); // template-predicate-call: stateful i64
+ if(negative!=values||calls||sum||receiver||cleanup!=5||constructed!=4||bad)return 5;
+ Sink sink{0};sum=void_calls=0;
+ if(std::for_each_n(values,2,sink)!=values+2||sum!=3||void_calls!=2||sink.local_calls)return 6; // template-predicate-call: sink int
+ if(std::for_each_n(values,2,std::logical_not<int>{})!=values+2)return 7;
+ if(std::for_each_n(values,0,std::logical_not<>{})!=values)return 8;
+ decltype(std::for_each_n(values,2,Stateful(&receiver,true))) query=values;
+ if(query!=values||constructed!=4||cleanup!=5||calls||receiver)return 9;
+ if(noexcept(std::for_each_n(values,2,Stateful(&receiver,true)))||constructed!=4||cleanup!=5)return 10;
+ return bad?11:0;
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-algorithm-for-each-n-object-" + target,
+                     algorithm_for_each_n_object_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        check_algorithm_template_predicate(
+            data, algorithm_for_each_n_object_source,
+            {'stateful': 'int', 'sink': 'void'})
+
+    algorithm_for_each_n_object_rejections = [
+        ('generic-method', '#include <algorithm>\nstruct F{template<class T>void operator()(T){}};int*f(int*p){return std::for_each_n(p,2,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('nontrivial-copy', '#include <algorithm>\nstruct F{F(){}F(const F&){}void operator()(int){}};int*f(int*p){return std::for_each_n(p,2,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('nontrivial-destructor', '#include <algorithm>\nstruct F{~F(){}void operator()(int){}};int*f(int*p){return std::for_each_n(p,2,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('reference-argument', '#include <algorithm>\nstruct F{void operator()(int&){}};int*f(int*p){return std::for_each_n(p,2,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('record-result', '#include <algorithm>\nstruct R{int n;};struct F{R operator()(int){return {1};}};int*f(int*p){return std::for_each_n(p,2,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('missing-definition', '#include <algorithm>\nstruct F{void operator()(int);};int*f(int*p){return std::for_each_n(p,2,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('lambda', '#include <algorithm>\nint*f(int*p){return std::for_each_n(p,2,[](int){});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('specialization', '#include <algorithm>\nstruct F{void operator()(int){}};namespace std{template<>int*for_each_n<int*,int,F>(int*p,int,F){return p;}}int*f(int*p){return std::for_each_n(p,2,F{});}\n', 'TR0201', 'cpp-core-v2', True),
+        ('redeclaration', '#include <algorithm>\nstruct F{void operator()(int){}};namespace std{inline namespace __1{template<class I,class N,class F>I for_each_n(I,N,F);}}int*f(int*p){return std::for_each_n(p,2,F{});}\n', 'TR0201', 'cpp-core-v2', True),
+        ('query-no-body', '#include <algorithm>\nstruct F{void operator()(int){}};int f(int*p){static_assert(__is_same(decltype(std::for_each_n(p,2,F{})),int*));return 0;}\n', 'TR0203', 'cpp-core-v2', True),
+        ('sdk-mismatch', '#include <algorithm>\n#include <functional>\nint*f(int*p){return std::for_each_n(p,2,std::logical_not<long>{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('for-each-independent', '#include <algorithm>\nstruct F{void operator()(int){}};F f(int*p){return std::for_each(p,p+2,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('volatile-input', '#include <algorithm>\nstruct F{void operator()(int){}};volatile int*f(volatile int*p){return std::for_each_n(p,2,F{});}\n', 'TR0201', 'cpp-core-v2', True),
+        ('count-source', '#include <algorithm>\nstruct F{void operator()(int){}};int n(int=(sizeof(long double),0)){return 2;}int*f(int*p){return std::for_each_n(p,n(),F{});}\n', 'TR0201', 'cpp-core-v2', True),
+    ]
+    for name, source, code, profile, sdk in algorithm_for_each_n_object_rejections:
+        check("v2-algorithm-for-each-n-object-reject-" + name, source, code,
+              profile=profile, sdk=sdk)
 
     algorithm_predicate_queries_source = """\
 #include <algorithm>

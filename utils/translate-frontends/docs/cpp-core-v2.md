@@ -1475,6 +1475,15 @@ Output ranges are writable, callback values are retained once, and each visited
 or generated element invokes its callback exactly once. The counted forms use
 the same promoted integral or non-scoped enum count boundary as `copy_n`; a
 non-positive signed count performs no calls and returns the original iterator.
+`for_each_n` additionally accepts the same standard-layout, trivially copied
+source function objects described for unary predicates below. Its exact pinned
+count conversion and loop are authenticated, the selected non-template call
+operator may return `void` or an admitted scalar, and that result is discarded.
+The algorithm invokes one retained by-value object in input order and returns
+the advanced pointer. Pinned typed or transparent `std::logical_not` objects
+are accepted under their exact scalar input rule. Ordinary `for_each` function
+objects remain excluded because returning their final callable state needs a
+separate record-result lifetime contract.
 
 The exact default-equality four-iterator `std::search`, `std::find_end` and
 `std::find_first_of` templates lower nested equality scans over two ranges;

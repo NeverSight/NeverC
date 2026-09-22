@@ -699,6 +699,36 @@ class FunctionLowering {
                                {"loc", A.loc(L)}});
     return Result;
   }
+  void emitUnaryOperation(const CapturedAlgorithmPredicate &Operation,
+                          Expression Argument, SourceLocation L) {
+    if (Operation.SDKOperation) {
+      (void)functionalOperationValues(L, std::move(Argument), std::nullopt,
+                                      *Operation.SDKOperation);
+      return;
+    }
+    const auto *Method = Operation.Method;
+    if (!Method) {
+      json::Array Arguments;
+      Arguments.push_back(std::move(Argument));
+      (void)emitAlgorithmCallback(json::Object(Operation.Storage),
+                                  Operation.Type, std::move(Arguments), L);
+      return;
+    }
+    json::Array Arguments;
+    Arguments.push_back(cast(json::Object(Operation.Storage),
+                             type(Method->getThisType(), L), L));
+    Arguments.push_back(cast(std::move(Argument),
+                             type(Method->getParamDecl(0)->getType(), L), L));
+    chargeCall(Arguments, L);
+    json::Object Instruction{{"op", "call"},
+                             {"callee", A.name(Method)},
+                             {"args", std::move(Arguments)},
+                             {"loc", A.loc(L)}};
+    auto ResultType = type(Method->getReturnType(), L, true);
+    if (ResultType != "void")
+      Instruction["target"] = json::Object(temporary(ResultType, L));
+    Body.push_back(std::move(Instruction));
+  }
   Expression emitUnaryPredicate(Expression Callable, QualType PredicateType,
                                 Expression Argument, SourceLocation L) {
     const auto *Prototype =
@@ -6653,7 +6683,7 @@ class FunctionLowering {
       const auto CountTypeName = type(CountType, L);
       auto Remaining =
           snapshot(cast(expression(Call->getArg(1)), CountTypeName, L), L);
-      auto Callback = snapshot(expression(Call->getArg(2)), L);
+      auto Callback = captureUnaryPredicate(Call, Operation);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto PointerType = type(Call->getArg(0)->getType(), L);
       const auto Check = labelName(), Invoke = labelName(), End = labelName();
@@ -6662,13 +6692,7 @@ class FunctionLowering {
       branch(binary(">", Remaining, quantity(0, CountTypeName, L), "bool", L),
              Invoke, End, L);
       label(Invoke, L);
-      {
-        json::Array Arguments;
-        Arguments.push_back(dereference(json::Object(Current), L));
-        emitAlgorithmCallback(json::Object(Callback),
-                              Call->getArg(2)->getType(), std::move(Arguments),
-                              L);
-      }
+      emitUnaryOperation(Callback, dereference(json::Object(Current), L), L);
       assign(
           Current,
           binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),

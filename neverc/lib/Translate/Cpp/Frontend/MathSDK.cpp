@@ -12028,11 +12028,207 @@ utilityAlgorithmRemovePredicate(const State &S, const SourceManager &SM,
   return FirstCall;
 }
 
+// for_each_n discards the unary result but otherwise has the same by-value
+// function-object boundary as the predicate algorithms. Authenticate its exact
+// counted loop so source methods cannot replace an unchecked SDK callback.
+static std::optional<UtilityAlgorithmPredicateCall>
+utilityAlgorithmForEachNObjectCall(const State &S, const SourceManager &SM,
+                                   const CallExpr *Call,
+                                   const ASTContext &Context) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  if (!S.coreV2() || !Call || !Function ||
+      Function->getName() != "for_each_n" || Call->getNumArgs() != 3 ||
+      Function->getNumParams() != 3 || !Call->isPRValue() ||
+      Call->isTypeDependent() || Call->isValueDependent() ||
+      Call->isInstantiationDependent())
+    return std::nullopt;
+  const auto Pointer = Function->getParamDecl(0)->getType();
+  auto Count = Function->getParamDecl(1)->getType();
+  const auto Object = Function->getParamDecl(2)->getType();
+  const auto *Record = Object->getAsCXXRecordDecl();
+  Record = Record ? Record->getDefinition() : nullptr;
+  const bool SDKObject =
+      Record &&
+      approvedFunctionalObjectRecord(S, SM, Record, Context).has_value();
+  if (!utilityAlgorithmScalarPointer(Context, Pointer) ||
+      !Context.hasSameType(Call->getArg(0)->getType(), Pointer) ||
+      !Context.hasSameType(Call->getArg(1)->getType(), Count) ||
+      !Context.hasSameType(Call->getArg(2)->getType(), Object) ||
+      !Context.hasSameType(Function->getReturnType(), Pointer) ||
+      !Context.hasSameType(Call->getType(), Pointer) || !Record ||
+      Object.hasLocalQualifiers() || Record->isLambda() || Record->isUnion() ||
+      !Record->isStandardLayout() || !Record->isTriviallyCopyable() ||
+      !Record->hasTrivialCopyConstructor() || !Record->hasTrivialDestructor() ||
+      (!S.owns(SM, Record->getLocation()) && !SDKObject))
+    return std::nullopt;
+  if (const auto *Enumeration = Count->getAs<EnumType>()) {
+    if (Enumeration->getDecl()->isScoped())
+      return std::nullopt;
+    Count = Enumeration->getDecl()->getPromotionType();
+  } else if (Context.isPromotableIntegerType(Count)) {
+    Count = Context.getPromotedIntegerType(Count);
+  } else if (!Count->isIntegerType()) {
+    return std::nullopt;
+  }
+  if (Count.isNull() || !Count->isIntegerType() ||
+      Context.getTypeSize(Count) > 64)
+    return std::nullopt;
+
+  const auto *Primary = Function->getPrimaryTemplate();
+  const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+  const auto *Definition = Function->getDefinition();
+  const auto *PatternDefinition = Pattern ? Pattern->getDefinition() : nullptr;
+  const auto *Arguments = Function->getTemplateSpecializationArgs();
+  auto Origin = [&](const Decl *D) {
+    return approvedStandardSDKDeclaration(S, SM, D) &&
+           cstddefOrigin(S, SM, D->getLocation(), "libcxx",
+                         "__algorithm/for_each_n.h");
+  };
+  if (!Primary || !Pattern || !Definition || !PatternDefinition ||
+      Function->isVariadic() || !Function->isInlined() ||
+      Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      !approvedUtilityReference(S, SM, Call, Function) || !Origin(Definition) ||
+      !Origin(PatternDefinition) || !Arguments || Arguments->size() != 3)
+    return std::nullopt;
+  for (const auto *D : Function->redecls())
+    if (!Origin(D))
+      return std::nullopt;
+  for (const auto *D : Primary->redecls())
+    if (!Origin(D) || !Origin(D->getTemplatedDecl()))
+      return std::nullopt;
+  for (const auto *D : Pattern->redecls())
+    if (!Origin(D))
+      return std::nullopt;
+  for (unsigned I = 0; I != 3; ++I)
+    if (Arguments->get(I).getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Arguments->get(I).getAsType(),
+                             Function->getParamDecl(I)->getType()))
+      return std::nullopt;
+
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Definition->getBody());
+  if (!Body || Body->size() != 4)
+    return std::nullopt;
+  auto Part = Body->body_begin();
+  const auto *AliasStatement = dyn_cast<DeclStmt>(*Part++);
+  const auto *Alias =
+      AliasStatement && AliasStatement->isSingleDecl()
+          ? dyn_cast<TypedefDecl>(AliasStatement->getSingleDecl())
+          : nullptr;
+  const auto *CountStatement = dyn_cast<DeclStmt>(*Part++);
+  const auto *Remaining =
+      CountStatement && CountStatement->isSingleDecl()
+          ? dyn_cast<VarDecl>(CountStatement->getSingleDecl())
+          : nullptr;
+  const auto *Loop = dyn_cast<WhileStmt>(*Part++);
+  const auto *Return = dyn_cast<ReturnStmt>(*Part);
+  auto Reference = [&](const Expr *Expression, const ValueDecl *Value) {
+    return utilityAlgorithmReference(Expression, Value, Context);
+  };
+  const Expr *CountSource = Remaining ? Remaining->getInit() : nullptr;
+  while (const auto *Cast = dyn_cast_or_null<ImplicitCastExpr>(CountSource)) {
+    if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
+                                       Cast->getType()))
+      return std::nullopt;
+    CountSource = Cast->getSubExpr();
+  }
+  if (!Alias || Alias->isImplicit() || Alias->getDeclContext() != Definition ||
+      Alias->getName() != "_IntegralSize" ||
+      !Context.hasSameType(Alias->getUnderlyingType(), Count) || !Remaining ||
+      Remaining->isImplicit() || Remaining->getDeclContext() != Definition ||
+      !Context.hasSameType(Remaining->getType(), Count) ||
+      !Reference(CountSource, Definition->getParamDecl(1)) || !Loop ||
+      Loop->getConditionVariable() || !Return ||
+      !Reference(Return->getRetValue(), Definition->getParamDecl(0)))
+    return std::nullopt;
+  const auto *Condition = dyn_cast<BinaryOperator>(Loop->getCond());
+  const auto *LoopBody = dyn_cast<CompoundStmt>(Loop->getBody());
+  const auto *Zero =
+      Condition
+          ? dyn_cast<IntegerLiteral>(Condition->getRHS()->IgnoreParenImpCasts())
+          : nullptr;
+  if (!Condition || Condition->getOpcode() != BO_GT ||
+      !Reference(Condition->getLHS(), Remaining) || !Zero ||
+      !Zero->getValue().isZero() || !LoopBody || LoopBody->size() != 3)
+    return std::nullopt;
+  auto LoopPart = LoopBody->body_begin();
+  const auto *Invocation = dyn_cast<CXXOperatorCallExpr>(*LoopPart++);
+  const auto *Advance = dyn_cast<UnaryOperator>(*LoopPart++);
+  const auto *Reduce = dyn_cast<UnaryOperator>(*LoopPart);
+  if (!Invocation || Invocation->getOperator() != OO_Call ||
+      Invocation->getNumArgs() != 2 || !Invocation->isPRValue() ||
+      !Reference(Invocation->getArg(0), Definition->getParamDecl(2)) ||
+      !Advance || Advance->getOpcode() != UO_PreInc ||
+      !Reference(Advance->getSubExpr(), Definition->getParamDecl(0)) ||
+      !Reduce || Reduce->getOpcode() != UO_PreDec ||
+      !Reference(Reduce->getSubExpr(), Remaining))
+    return std::nullopt;
+  const Expr *ElementArgument = Invocation->getArg(1);
+  while (const auto *Cast = dyn_cast<ImplicitCastExpr>(ElementArgument)) {
+    if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
+                                       Cast->getType()))
+      return std::nullopt;
+    ElementArgument = Cast->getSubExpr();
+  }
+  const auto *Element = dyn_cast<UnaryOperator>(ElementArgument);
+  if (!Element || Element->getOpcode() != UO_Deref || !Element->isLValue() ||
+      !Context.hasSameType(Element->getType(), Pointer->getPointeeType()) ||
+      !Reference(Element->getSubExpr(), Definition->getParamDecl(0)))
+    return std::nullopt;
+
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Invocation->getDirectCallee());
+  const auto *MethodDefinition = Method ? Method->getDefinition() : nullptr;
+  if (!Method || !MethodDefinition || Method->isStatic() ||
+      Method->isVolatile() || Method->getOverloadedOperator() != OO_Call ||
+      Method->getNumParams() != 1 ||
+      Method->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
+      !functionalMemberReceiverValueCategory(Method, Invocation->getArg(0),
+                                             false) ||
+      (!Method->getReturnType()->isVoidType() &&
+       !utilityScalar(Context, Method->getReturnType())))
+    return std::nullopt;
+  std::optional<FunctionalOperationInfo> SDKOperation;
+  if (SDKObject) {
+    SDKOperation =
+        approvedFunctionalOperationImpl(S, SM, Invocation, Context, false);
+    if (!SDKOperation ||
+        SDKOperation->Operation != FunctionalOperation::LogicalNot ||
+        !Context.hasSameUnqualifiedType(
+            Pointer->getPointeeType(),
+            Method->getParamDecl(0)->getType().getNonReferenceType()))
+      return std::nullopt;
+  } else {
+    if ((Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
+         Method->getTemplatedKind() != FunctionDecl::TK_MemberSpecialization) ||
+        Method->getPrimaryTemplate() ||
+        Method->getDescribedFunctionTemplate() || !ordinaryOperator(Method) ||
+        !callableMethod(Method) || !S.owns(SM, MethodDefinition->getLocation()))
+      return std::nullopt;
+    for (const auto *D : Method->redecls())
+      if (!S.owns(SM, D->getLocation()))
+        return std::nullopt;
+  }
+  const auto ArgumentType = SDKOperation ? SDKOperation->LeftType
+                                         : Method->getParamDecl(0)->getType();
+  if (!utilityScalarDirectConversion(Context, Pointer->getPointeeType(),
+                                     ArgumentType))
+    return std::nullopt;
+  return UtilityAlgorithmPredicateCall{UtilityOperation::AlgorithmForEachN,
+                                       Function,
+                                       Invocation,
+                                       Method,
+                                       Object,
+                                       2,
+                                       SDKOperation};
+}
+
 std::optional<UtilityAlgorithmPredicateCall>
 approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
                                       const CallExpr *Call,
                                       const ASTContext &Context) {
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  if (Function && Function->getName() == "for_each_n")
+    return utilityAlgorithmForEachNObjectCall(S, SM, Call, Context);
   if (!S.coreV2() || !Call || !Function || !Function->getIdentifier() ||
       Call->isTypeDependent() || Call->isValueDependent() ||
       Call->isInstantiationDependent() || !Call->isPRValue())

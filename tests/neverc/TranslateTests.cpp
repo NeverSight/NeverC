@@ -44359,6 +44359,130 @@ int*f(int*p){return std::partition(p,p+2,P{});}
   }
 }
 
+TEST_F(TranslateTest, CoreV2AlgorithmForEachNObjectsRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-for-each-n-object.cpp");
+  const auto Output = tmpFile("algorithm-for-each-n-object.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+int calls, sum, void_calls, first_calls, count_calls, factories, cleanup, constructed, bad;
+struct Token { ~Token(){++cleanup;} };
+struct Stateful {
+  const Stateful *self;
+  const Stateful **receiver;
+  int local_calls;
+  bool exact;
+  Stateful(const Stateful **r,bool e,Token token=Token{}):self(this),receiver(r),local_calls(0),exact(e){++constructed;}
+  int operator()(long long value) & { // template-predicate-method: stateful
+    ++local_calls;++calls;sum+=int(value);*receiver=this;
+    if(exact&&self!=this)++bad;
+    return int(value)+1;
+  }
+  int operator()(long long) const & {bad+=100;return 0;}
+};
+struct Sink {
+  int local_calls;
+  void operator()(int value) & { // template-predicate-method: sink
+    ++local_calls;++void_calls;sum+=value;
+  }
+};
+int *first(int*p){++first_calls;return p;}
+short count(short n){++count_calls;return n;}
+Stateful make(const Stateful **r){++factories;return Stateful(r,true);}
+enum Amount:unsigned char{two=2};
+int main(){
+ int values[4]={1,2,3,4};const Stateful*receiver=nullptr;
+ if(std::for_each_n(first(values),count(3),make(&receiver))!=values+3|| // template-predicate-call: stateful i64
+    calls!=3||sum!=6||first_calls!=1||count_calls!=1||factories!=1||cleanup!=1||constructed!=1||bad||!receiver)return 1;
+ calls=sum=0;receiver=nullptr;
+ auto zero=std::for_each_n(values,0,Stateful(&receiver,true)); // template-predicate-call: stateful i64
+ if(zero!=values||calls||sum||receiver||cleanup!=2||constructed!=2||bad)return 2;
+ {
+  Token owner;Stateful caller(&receiver,false,owner);receiver=nullptr;calls=sum=0;
+  if(std::for_each_n(values,two,caller)!=values+2||calls!=2||sum!=3|| // template-predicate-call: stateful i64
+     !receiver||receiver==&caller||caller.local_calls||cleanup!=3||constructed!=3||bad)return 3;
+ }
+ if(cleanup!=4)return 4;
+ calls=sum=0;receiver=nullptr;
+ auto negative=std::for_each_n(values,-2,Stateful(&receiver,true)); // template-predicate-call: stateful i64
+ if(negative!=values||calls||sum||receiver||cleanup!=5||constructed!=4||bad)return 5;
+ Sink sink{0};sum=void_calls=0;
+ if(std::for_each_n(values,2,sink)!=values+2||sum!=3||void_calls!=2||sink.local_calls)return 6; // template-predicate-call: sink int
+ if(std::for_each_n(values,2,std::logical_not<int>{})!=values+2)return 7;
+ if(std::for_each_n(values,0,std::logical_not<>{})!=values)return 8;
+ decltype(std::for_each_n(values,2,Stateful(&receiver,true))) query=values;
+ if(query!=values||constructed!=4||cleanup!=5||calls||receiver)return 9;
+ if(noexcept(std::for_each_n(values,2,Stateful(&receiver,true)))||constructed!=4||cleanup!=5)return 10;
+ return bad?11:0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-for-each-n-object" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmForEachNObjectsRequireSource) {
+  const struct { const char *Name, *Source, *Code; } Cases[] = {
+    {"generic-method", R"cpp(#include <algorithm>
+struct F{template<class T>void operator()(T){}};int*f(int*p){return std::for_each_n(p,2,F{});}
+)cpp", "TR0203"},
+    {"nontrivial-copy", R"cpp(#include <algorithm>
+struct F{F(){}F(const F&){}void operator()(int){}};int*f(int*p){return std::for_each_n(p,2,F{});}
+)cpp", "TR0203"},
+    {"nontrivial-destructor", R"cpp(#include <algorithm>
+struct F{~F(){}void operator()(int){}};int*f(int*p){return std::for_each_n(p,2,F{});}
+)cpp", "TR0203"},
+    {"reference-argument", R"cpp(#include <algorithm>
+struct F{void operator()(int&){}};int*f(int*p){return std::for_each_n(p,2,F{});}
+)cpp", "TR0203"},
+    {"record-result", R"cpp(#include <algorithm>
+struct R{int n;};struct F{R operator()(int){return {1};}};int*f(int*p){return std::for_each_n(p,2,F{});}
+)cpp", "TR0203"},
+    {"missing-definition", R"cpp(#include <algorithm>
+struct F{void operator()(int);};int*f(int*p){return std::for_each_n(p,2,F{});}
+)cpp", "TR0203"},
+    {"lambda", R"cpp(#include <algorithm>
+int*f(int*p){return std::for_each_n(p,2,[](int){});}
+)cpp", "TR0203"},
+    {"specialization", R"cpp(#include <algorithm>
+struct F{void operator()(int){}};namespace std{template<>int*for_each_n<int*,int,F>(int*p,int,F){return p;}}int*f(int*p){return std::for_each_n(p,2,F{});}
+)cpp", "TR0201"},
+    {"redeclaration", R"cpp(#include <algorithm>
+struct F{void operator()(int){}};namespace std{inline namespace __1{template<class I,class N,class F>I for_each_n(I,N,F);}}int*f(int*p){return std::for_each_n(p,2,F{});}
+)cpp", "TR0201"},
+    {"query-no-body", R"cpp(#include <algorithm>
+struct F{void operator()(int){}};int f(int*p){static_assert(__is_same(decltype(std::for_each_n(p,2,F{})),int*));return 0;}
+)cpp", "TR0203"},
+    {"sdk-mismatch", R"cpp(#include <algorithm>
+#include <functional>
+int*f(int*p){return std::for_each_n(p,2,std::logical_not<long>{});}
+)cpp", "TR0203"},
+    {"for-each-independent", R"cpp(#include <algorithm>
+struct F{void operator()(int){}};F f(int*p){return std::for_each(p,p+2,F{});}
+)cpp", "TR0203"},
+    {"volatile-input", R"cpp(#include <algorithm>
+struct F{void operator()(int){}};volatile int*f(volatile int*p){return std::for_each_n(p,2,F{});}
+)cpp", "TR0201"},
+    {"count-source", R"cpp(#include <algorithm>
+struct F{void operator()(int){}};int n(int=(sizeof(long double),0)){return 2;}int*f(int*p){return std::for_each_n(p,n(),F{});}
+)cpp", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("algorithm-for-each-n-object-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("algorithm-for-each-n-object-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}), Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmPredicateQueriesRequireValueCallbacks) {
   struct Rejection {
     const char *Name;
