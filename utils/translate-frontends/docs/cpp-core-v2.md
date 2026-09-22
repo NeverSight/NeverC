@@ -1710,7 +1710,14 @@ conversions from the input and replacement types. The replacement remains a
 reference throughout the scan: predicate-side changes and aliases to an input
 or output element remain visible to later stores. Empty ranges still initialize
 the predicate parameter and preserve full-expression temporary cleanup.
-Class-template or lambda objects, SDK function objects, nontrivial copying or
+Source-owned class-template predicates additionally support checked concrete
+primary, partial and full class specializations with an in-class non-template
+call operator. Type and value parameters, defaults, each concrete receiver's
+storage and the selected member definition retain the ordinary class-template
+source checks. Different instantiations keep distinct method and record identities.
+Out-of-line template call operators still require separate declaration/definition
+signature provenance and remain rejected by the operation-source proof. Member
+function templates, lambda objects, SDK function objects, nontrivial copying or
 destruction, reference parameters, non-boolean results and function objects in
 other algorithm overloads remain outside this increment.
 For these eight source-object overloads, `decltype`, `noexcept` and queries of

@@ -11261,10 +11261,11 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
   const auto Object = Function->getParamDecl(PredicateIndex)->getType();
   const auto *Record = Object->getAsCXXRecordDecl();
   Record = Record ? Record->getDefinition() : nullptr;
-  // Keep this increment separate from SDK function objects, closures, template
-  // call operators and nontrivial algorithm-parameter lifetimes.
+  // Concrete class-template records retain ordinary source and member-origin
+  // checks. SDK objects, closures, function-template call operators and
+  // nontrivial algorithm-parameter lifetimes remain separate.
   if (!Record || Object.hasLocalQualifiers() || Record->isLambda() ||
-      isa<ClassTemplateSpecializationDecl>(Record) || Record->isUnion() ||
+      Record->isUnion() ||
       !Record->isStandardLayout() || !Record->isTriviallyCopyable() ||
       !Record->hasTrivialCopyConstructor() || !Record->hasTrivialDestructor() ||
       !S.owns(SM, Record->getLocation()) ||
@@ -11414,7 +11415,9 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
   if (!Invocation || Invocation->getOperator() != OO_Call ||
       Invocation->getNumArgs() != 2 || !Invocation->isPRValue() ||
       !Invocation->getType()->isBooleanType() || !Method || !MethodDefinition ||
-      Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+      (Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
+       Method->getTemplatedKind() != FunctionDecl::TK_MemberSpecialization) ||
+      Method->getPrimaryTemplate() || Method->getDescribedFunctionTemplate() ||
       Method->isStatic() || Method->isVolatile() ||
       Method->getOverloadedOperator() != OO_Call || !ordinaryOperator(Method) ||
       !callableMethod(Method) || Method->getNumParams() != 1 ||
