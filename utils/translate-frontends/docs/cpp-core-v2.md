@@ -1484,6 +1484,14 @@ the advanced pointer. Pinned typed or transparent `std::logical_not` objects
 are accepted under their exact scalar input rule. Ordinary `for_each` function
 objects remain excluded because returning their final callable state needs a
 separate record-result lifetime contract.
+The unary `transform` overload also accepts these source-owned trivial function
+objects when the selected non-template operator returns an admitted scalar that
+converts directly to the writable output element. Its exact pinned loop is
+authenticated, retains one by-value operation object, reads each input before
+the corresponding store, and advances both pointers once. Empty and overlapping
+in-place ranges preserve that order. Binary `transform` function objects remain
+outside this increment; its existing fixed-signature function-pointer path is
+unchanged.
 
 The exact default-equality four-iterator `std::search`, `std::find_end` and
 `std::find_first_of` templates lower nested equality scans over two ranges;

@@ -699,20 +699,17 @@ class FunctionLowering {
                                {"loc", A.loc(L)}});
     return Result;
   }
-  void emitUnaryOperation(const CapturedAlgorithmPredicate &Operation,
-                          Expression Argument, SourceLocation L) {
-    if (Operation.SDKOperation) {
-      (void)functionalOperationValues(L, std::move(Argument), std::nullopt,
-                                      *Operation.SDKOperation);
-      return;
-    }
+  Expression emitUnaryCallable(const CapturedAlgorithmPredicate &Operation,
+                               Expression Argument, SourceLocation L) {
+    if (Operation.SDKOperation)
+      return functionalOperationValues(L, std::move(Argument), std::nullopt,
+                                       *Operation.SDKOperation);
     const auto *Method = Operation.Method;
     if (!Method) {
       json::Array Arguments;
       Arguments.push_back(std::move(Argument));
-      (void)emitAlgorithmCallback(json::Object(Operation.Storage),
-                                  Operation.Type, std::move(Arguments), L);
-      return;
+      return emitAlgorithmCallback(json::Object(Operation.Storage),
+                                   Operation.Type, std::move(Arguments), L);
     }
     json::Array Arguments;
     Arguments.push_back(cast(json::Object(Operation.Storage),
@@ -725,9 +722,17 @@ class FunctionLowering {
                              {"args", std::move(Arguments)},
                              {"loc", A.loc(L)}};
     auto ResultType = type(Method->getReturnType(), L, true);
-    if (ResultType != "void")
-      Instruction["target"] = json::Object(temporary(ResultType, L));
+    Expression Result;
+    if (ResultType != "void") {
+      Result = temporary(ResultType, L);
+      Instruction["target"] = json::Object(Result);
+    }
     Body.push_back(std::move(Instruction));
+    return Result;
+  }
+  void emitUnaryOperation(const CapturedAlgorithmPredicate &Operation,
+                          Expression Argument, SourceLocation L) {
+    (void)emitUnaryCallable(Operation, std::move(Argument), L);
   }
   Expression emitUnaryPredicate(Expression Callable, QualType PredicateType,
                                 Expression Argument, SourceLocation L) {
@@ -6717,7 +6722,14 @@ class FunctionLowering {
       const unsigned OutputIndex = Binary ? 3 : 2;
       const unsigned CallbackIndex = Binary ? 4 : 3;
       auto Output = snapshot(expression(Call->getArg(OutputIndex)), L);
-      auto Callback = snapshot(expression(Call->getArg(CallbackIndex)), L);
+      auto Callback =
+          Binary ? CapturedAlgorithmPredicate{snapshot(expression(Call->getArg(
+                                                           CallbackIndex)),
+                                                       L),
+                                              Call->getArg(CallbackIndex)
+                                                  ->getType(),
+                                              nullptr}
+                 : captureUnaryPredicate(Call, Operation, CallbackIndex);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto FirstType = type(Call->getArg(0)->getType(), L);
       const auto SecondType =
@@ -6729,13 +6741,17 @@ class FunctionLowering {
       branch(binary("!=", First, Last, "bool", L), Invoke, End, L);
       label(Invoke, L);
       {
-        json::Array Arguments;
-        Arguments.push_back(dereference(json::Object(First), L));
-        if (Second)
+        Expression Value;
+        if (Second) {
+          json::Array Arguments;
+          Arguments.push_back(dereference(json::Object(First), L));
           Arguments.push_back(dereference(json::Object(*Second), L));
-        auto Value = emitAlgorithmCallback(
-            json::Object(Callback), Call->getArg(CallbackIndex)->getType(),
-            std::move(Arguments), L);
+          Value = emitAlgorithmCallback(json::Object(Callback.Storage),
+                                        Callback.Type, std::move(Arguments), L);
+        } else {
+          Value = emitUnaryCallable(Callback,
+                                    dereference(json::Object(First), L), L);
+        }
         const auto ElementType =
             type(Call->getArg(OutputIndex)->getType()->getPointeeType(), L);
         assign(dereference(Output, L), cast(std::move(Value), ElementType, L),

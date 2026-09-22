@@ -12894,6 +12894,66 @@ int main(){
         check("v2-algorithm-for-each-n-object-reject-" + name, source, code,
               profile=profile, sdk=sdk)
 
+    algorithm_transform_object_source = """\
+#include <algorithm>
+int calls,trace,first_calls,last_calls,output_calls,factories,cleanup,constructed,bad;
+struct Token{~Token(){++cleanup;}};
+struct Transform{
+ const Transform*self;const Transform**receiver;int bias,local_calls;bool exact;
+ Transform(const Transform**r,int b,bool e,Token token=Token{}):self(this),receiver(r),bias(b),local_calls(0),exact(e){++constructed;}
+ long long operator()(long long value)&{ // template-predicate-method: transform
+  ++calls;++local_calls;trace=trace*10+int(value);*receiver=this;if(exact&&self!=this)++bad;return value+bias;
+ }
+ long long operator()(long long)const&{bad+=100;return 0;}
+};
+int*first(int*p){++first_calls;return p;}int*last(int*p){++last_calls;return p;}long*out(long*p){++output_calls;return p;}
+Transform make(const Transform**r){++factories;return Transform(r,10,true);}
+int main(){
+ int input[4]={1,2,3,4};long output[4]={-1,-1,-1,-1};const Transform*receiver=nullptr;
+ auto end=std::transform(first(input),last(input+3),out(output),make(&receiver)); // template-predicate-call: transform i64
+ if(end!=output+3||output[0]!=11||output[1]!=12||output[2]!=13||output[3]!=-1||calls!=3||trace!=123||first_calls!=1||last_calls!=1||output_calls!=1||factories!=1||cleanup!=1||constructed!=1||bad||!receiver)return 1;
+ calls=trace=0;receiver=nullptr;
+ auto empty=std::transform(input,input,output,Transform(&receiver,2,true)); // template-predicate-call: transform i64
+ if(empty!=output||calls||trace||receiver||cleanup!=2||constructed!=2||bad)return 2;
+ {
+  Token owner;Transform caller(&receiver,3,false,owner);receiver=nullptr;calls=trace=0;
+  if(std::transform(input,input+4,output,caller)!=output+4|| // template-predicate-call: transform i64
+     calls!=4||trace!=1234||output[0]!=4||output[3]!=7||!receiver||receiver==&caller||caller.local_calls||cleanup!=3||constructed!=3||bad)return 3;
+ }
+ if(cleanup!=4)return 4;
+ Transform caller(&receiver,1,false,Token{});receiver=nullptr;calls=trace=0;
+ if(std::transform(input,input+4,input,caller)!=input+4|| // template-predicate-call: transform i64
+    calls!=4||trace!=1234||input[0]!=2||input[1]!=3||input[2]!=4||input[3]!=5||caller.local_calls||bad)return 5;
+ decltype(std::transform(input,input+4,output,caller)) query=output;
+ if(query!=output||calls!=4||constructed!=4||cleanup!=5)return 6;
+ if(noexcept(std::transform(input,input+4,output,caller))||calls!=4)return 7;
+ return 0;
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-algorithm-transform-object-" + target,
+                     algorithm_transform_object_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        check_algorithm_template_predicate(data, algorithm_transform_object_source, 'i64')
+
+    algorithm_transform_object_rejections = [
+        ('generic-method', '#include <algorithm>\nstruct F{template<class T>int operator()(T n){return n;}};long*f(int*p,long*out){return std::transform(p,p+2,out,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('nontrivial-copy', '#include <algorithm>\nstruct F{F(){}F(const F&){}int operator()(int n){return n;}};long*f(int*p,long*out){return std::transform(p,p+2,out,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('nontrivial-destructor', '#include <algorithm>\nstruct F{~F(){}int operator()(int n){return n;}};long*f(int*p,long*out){return std::transform(p,p+2,out,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('reference-argument', '#include <algorithm>\nstruct F{int operator()(int&n){return n;}};long*f(int*p,long*out){return std::transform(p,p+2,out,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('missing-definition', '#include <algorithm>\nstruct F{int operator()(int);};long*f(int*p,long*out){return std::transform(p,p+2,out,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('lambda', '#include <algorithm>\nlong*f(int*p,long*out){return std::transform(p,p+2,out,[](int n){return n;});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('specialization', '#include <algorithm>\nstruct F{int operator()(int n){return n;}};namespace std{template<>long*transform<int*,long*,F>(int*p,int*,long*out,F){return out;}}long*f(int*p,long*out){return std::transform(p,p+2,out,F{});}\n', 'TR0201', 'cpp-core-v2', True),
+        ('redeclaration', '#include <algorithm>\nstruct F{int operator()(int n){return n;}};namespace std{inline namespace __1{template<class I,class O,class F>O transform(I,I,O,F);}}long*f(int*p,long*out){return std::transform(p,p+2,out,F{});}\n', 'TR0201', 'cpp-core-v2', True),
+        ('query-no-body', '#include <algorithm>\nstruct F{int operator()(int n){return n;}};int f(int*p,long*out){static_assert(__is_same(decltype(std::transform(p,p+2,out,F{})),long*));return 0;}\n', 'TR0203', 'cpp-core-v2', True),
+        ('binary-independent', '#include <algorithm>\nstruct F{int operator()(int a,int b){return a+b;}};long*f(int*p,long*out){return std::transform(p,p+2,p,out,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('volatile-input', '#include <algorithm>\nstruct F{int operator()(int n){return n;}};long*f(volatile int*p,long*out){return std::transform(p,p+2,out,F{});}\n', 'TR0201', 'cpp-core-v2', True),
+        ('record-input', '#include <algorithm>\nstruct R{int n;};struct F{int operator()(R r){return r.n;}};long*f(R*p,long*out){return std::transform(p,p+2,out,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+    ]
+    for name, source, code, profile, sdk in algorithm_transform_object_rejections:
+        check("v2-algorithm-transform-object-reject-" + name, source, code,
+              profile=profile, sdk=sdk)
+
     algorithm_predicate_queries_source = """\
 #include <algorithm>
 extern "C" int algorithm_predicate_queries(const int *first,
