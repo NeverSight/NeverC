@@ -6202,7 +6202,7 @@ class FunctionLowering {
     case UtilityOperation::AlgorithmRemoveIf: {
       auto Input = snapshot(expression(Call->getArg(0)), L);
       auto Last = snapshot(expression(Call->getArg(1)), L);
-      auto Predicate = snapshot(expression(Call->getArg(2)), L);
+      auto Predicate = captureUnaryPredicate(Call, Operation);
       auto Output = snapshot(json::Object(Input), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto PointerType = type(Call->getArg(0)->getType(), L);
@@ -6216,7 +6216,7 @@ class FunctionLowering {
       label(Test, L);
       {
         auto Selected = emitUnaryPredicate(
-            json::Object(Predicate), Call->getArg(2)->getType(),
+            Predicate,
             dereference(json::Object(Input), L), L);
         branch(std::move(Selected), AdvanceInput, Keep, L);
       }

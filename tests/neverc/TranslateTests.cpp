@@ -41323,10 +41323,6 @@ int f(int*a){return std::find_if(a,a+2,std::logical_not<int>{})==a;}
       {"lambda", R"cpp(#include <algorithm>
 int f(int*a){return std::find_if(a,a+2,[](int x){return x!=0;})==a;}
 )cpp", "TR0203"},
-      {"remove-if-object", R"cpp(#include <algorithm>
-struct P { bool operator()(int x) const { return x != 0; } };
-int f(int*a){return std::remove_if(a,a+2,P{})==a;}
-)cpp", "TR0203"},
   };
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
@@ -41665,10 +41661,6 @@ int f(int*a){return std::all_of(a,a+2,std::logical_not<int>{});}
 )cpp", "TR0203"},
     {"lambda", R"cpp(#include <algorithm>
 int f(int*a){return std::all_of(a,a+2,[](int x){return x!=0;});}
-)cpp", "TR0203"},
-    {"remove-if-object", R"cpp(#include <algorithm>
-struct P { bool operator()(int x) const { return x != 0; } };
-int f(int*a){return std::remove_if(a,a+2,P{})==a;}
 )cpp", "TR0203"},
       };
   for (const auto &Case : Cases) {
@@ -42105,10 +42097,6 @@ int f(int*p){std::replace_if(p,p+2,P{},V{});return 0;}
     {"record-element", R"cpp(#include <algorithm>
 struct R{int v;};struct P{bool operator()(R n)const{return n.v>0;}};
 int f(R*p){std::replace_if(p,p+2,P{},R{1});return 0;}
-)cpp", "TR0203"},
-    {"other-mutation-independent", R"cpp(#include <algorithm>
-struct P{bool operator()(int n)const{return n>0;}};
-int f(int*p){return std::remove_if(p,p+2,P{})==p;}
 )cpp", "TR0203"},
     {"sdk-predicate", R"cpp(#include <algorithm>
 #include <functional>
@@ -42895,10 +42883,6 @@ volatile long*f(int*p,volatile long*out){return std::remove_copy_if(p,p+2,out,P{
 struct R{int v;};struct P{bool operator()(R n)const{return n.v>0;}};
 R*f(R*p,R*out){return std::remove_copy_if(p,p+2,out,P{});}
 )cpp", "TR0203"},
-    {"other-mutation-independent", R"cpp(#include <algorithm>
-struct P{bool operator()(int n)const{return n>0;}};
-int*f(int*p){return std::remove_if(p,p+2,P{});}
-)cpp", "TR0203"},
     {"sdk-predicate", R"cpp(#include <algorithm>
 #include <functional>
 long*f(int*p,long*out){return std::remove_copy_if(p,p+2,out,std::logical_not<int>{});}
@@ -43128,10 +43112,6 @@ volatile long*f(int*p,volatile long*out){return std::copy_if(p,p+2,out,P{});}
     {"record-element", R"cpp(#include <algorithm>
 struct R{int v;};struct P{bool operator()(R n)const{return n.v>0;}};
 R*f(R*p,R*out){return std::copy_if(p,p+2,out,P{});}
-)cpp", "TR0203"},
-    {"other-mutation-independent", R"cpp(#include <algorithm>
-struct P{bool operator()(int n)const{return n>0;}};
-int*f(int*p){return std::remove_if(p,p+2,P{});}
 )cpp", "TR0203"},
     {"sdk-predicate", R"cpp(#include <algorithm>
 #include <functional>
@@ -43645,10 +43625,6 @@ auto f(int*p,long*out,volatile short*out2){return std::partition_copy(p,p+2,out,
 struct R{int v;};struct P{bool operator()(R n)const{return n.v>0;}};
 auto f(R*p,R*out,R*out2){return std::partition_copy(p,p+2,out,out2,P{});}
 )cpp", "TR0203"},
-    {"other-mutation-independent", R"cpp(#include <algorithm>
-struct P{bool operator()(int n)const{return n>0;}};
-int*f(int*p){return std::remove_if(p,p+2,P{});}
-)cpp", "TR0203"},
     {"sdk-predicate", R"cpp(#include <algorithm>
 #include <functional>
 auto f(int*p,long*out,short*out2){return std::partition_copy(p,p+2,out,out2,std::logical_not<int>{});}
@@ -43663,6 +43639,236 @@ auto f(int*p,long*out,short*out2){return std::partition_copy(p,p+2,out,out2,P{})
     SCOPED_TRACE(Case.Name);
     const auto Source = tmpFile(std::string("algorithm-partition-copy-reject-") + Case.Name + ".cpp");
     const auto Output = tmpFile(std::string("algorithm-partition-copy-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}), Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmRemovePredicateObjectsRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-remove-predicate-state.cpp");
+  const auto Output = tmpFile("algorithm-remove-predicate-state.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+struct Odd {
+  int calls;int *observed,*trace;
+  bool operator()(long long n) & { // template-predicate-method: odd
+    ++calls;*observed=calls;*trace=*trace*10+int(n);return n%2!=0;
+  }
+  bool operator()(long long) const &{*observed=-100;return false;}
+};
+template<class T>struct AfterTwo{int calls;int*observed;bool operator()(T)&;};
+template<class V>bool AfterTwo<V>::operator()(V)& { // template-predicate-method: stateful
+  ++calls;*observed=calls;return calls>2;
+}
+int main(){
+  int input[6]={0,1,2,3,4,5},calls=0,trace=0;const Odd caller{0,&calls,&trace};
+  auto end=std::remove_if(input,input+6,caller); // template-predicate-call: odd i64
+  if(end!=input+3||input[0]!=0||input[1]!=2||input[2]!=4||calls!=6||trace!=12345||caller.calls)return 1;
+  static_assert(__is_same(decltype(std::remove_if(input,input+6,caller)),int*));
+  static_assert(!noexcept(std::remove_if(input,input+6,caller)));
+  calls=trace=0;
+  if(std::remove_if(input,input,caller)!=input||calls||trace)return 2; // template-predicate-call: odd i64
+  int even[3]={2,4,6};calls=trace=0;
+  if(std::remove_if(even,even+3,caller)!=even+3||calls!=3||trace!=246||even[0]!=2||even[1]!=4||even[2]!=6)return 3; // template-predicate-call: odd i64
+  int odd[3]={1,3,5};calls=trace=0;
+  if(std::remove_if(odd,odd+3,caller)!=odd||calls!=3||trace!=135)return 4; // template-predicate-call: odd i64
+  int same[5]={9,9,9,9,9};calls=0;const AfterTwo<int> state{0,&calls};
+  if(std::remove_if(same,same+5,state)!=same+2||calls!=5||state.calls)return 5; // template-predicate-call: stateful int
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-remove-predicate-state" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmRemovePredicateMutationRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-remove-predicate-mutation.cpp");
+  const auto Output = tmpFile("algorithm-remove-predicate-mutation.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+int firsts,lasts,factories,trace;
+int *first(int*p){++firsts;return p;}
+int *last(int*p){++lasts;return p;}
+struct Mutate{int*current;int calls;
+  bool operator()(int n){ // template-predicate-method: mutate
+    ++calls;trace=trace*10+n;*current=n+20;++current;return n%2!=0;
+  }
+};
+Mutate make(int*p){++factories;return {p,0};}
+int main(){
+  int input[5]={0,1,2,3,4};
+  auto end=std::remove_if(first(input),last(input+5),make(input)); // template-predicate-call: mutate int
+  if(end!=input+3||input[0]!=20||input[1]!=22||input[2]!=24||trace!=1234)return 1;
+  if(firsts!=1||lasts!=1||factories!=1)return 2;
+  int again[3]={1,2,3};Mutate caller{again,0};trace=0;
+  if(std::remove_if(again,again+3,caller)!=again+1||again[0]!=22||trace!=123)return 3; // template-predicate-call: mutate int
+  if(caller.current!=again||caller.calls)return 4;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-remove-predicate-mutation" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmRemovePredicateIdentityRunsAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-remove-predicate-identity.cpp");
+  const auto Output = tmpFile("algorithm-remove-predicate-identity.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+int live, destroyed, constructions, calls, bad, factories;
+struct Token { Token(){++live;}~Token(){--live;++destroyed;} };
+template<class T>struct Identity {
+  const Identity *self;
+  const Identity **receiver;
+  const Token *token;
+  bool exact;
+  Identity(const Identity **r,bool e,const Token&t=Token()):self(this),receiver(r),token(&t),exact(e){++constructions;}
+  bool operator()(T n) &;
+};
+template<class Value>
+bool Identity<Value>::operator()(Value n) & { // template-predicate-method: identity
+  ++calls;
+  if(live!=1||(exact&&self!=this)||(*receiver&&*receiver!=this))++bad;
+  *receiver=this;return n>0;
+}
+Identity<int> make(const Identity<int> **r,const Token&t){++factories;return Identity<int>(r,true,t);}
+int main(){
+  int input[3]={0,1,2},output[3]={-1,-1,-1};const Identity<int>*receiver=nullptr;
+  if(std::remove_if(input,input+3,Identity<int>(&receiver,true))!=input+1||live!=1)return 1; // template-predicate-call: identity int
+  if(live||destroyed!=1||constructions!=1||calls!=3||bad||input[0]!=0)return 2;
+  receiver=nullptr;
+  if(std::remove_if(input,input+3,make(&receiver,Token{}))!=input+1||live!=1)return 3; // template-predicate-call: identity int
+  if(live||destroyed!=2||constructions!=2||factories!=1||calls!=6||bad)return 4;
+  receiver=nullptr;
+  if(std::remove_if(input,input,Identity<int>(&receiver,true))!=input||live!=1)return 5; // template-predicate-call: identity int
+  if(live||destroyed!=3||calls!=6||constructions!=3||bad)return 6;
+  {
+    Token owner;Identity<int> caller(&receiver,false,owner);receiver=nullptr;
+    if(std::remove_if(input,input+3,caller)!=input+1)return 7; // template-predicate-call: identity int
+    if(receiver==&caller||caller.self!=&caller||constructions!=4||calls!=9||bad)return 8;
+  }
+  return live==0&&destroyed==4&&bad==0?0:9;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-remove-predicate-identity" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmRemovePredicatesRequireSource) {
+  const struct { const char *Name, *Source, *Code; } Cases[] = {
+    {"generic-method", R"cpp(#include <algorithm>
+struct P{template<class T>bool operator()(T n)const{return n>0;}};
+int*f(int*p){return std::remove_if(p,p+2,P{});}
+)cpp", "TR0203"},
+    {"nontrivial-copy", R"cpp(#include <algorithm>
+struct P{P(){}P(const P&){}bool operator()(int n)const{return n>0;}};
+int*f(int*p){return std::remove_if(p,p+2,P{});}
+)cpp", "TR0203"},
+    {"nontrivial-destructor", R"cpp(#include <algorithm>
+struct P{~P(){}bool operator()(int n)const{return n>0;}};
+int*f(int*p){return std::remove_if(p,p+2,P{});}
+)cpp", "TR0203"},
+    {"reference-argument", R"cpp(#include <algorithm>
+struct P{bool operator()(int&n)const{return n>0;}};
+int*f(int*p){return std::remove_if(p,p+2,P{});}
+)cpp", "TR0203"},
+    {"nonbool-result", R"cpp(#include <algorithm>
+struct P{int operator()(int n)const{return n>0;}};
+int*f(int*p){return std::remove_if(p,p+2,P{});}
+)cpp", "TR0203"},
+    {"constructor-default", R"cpp(#include <algorithm>
+struct P{P(int=(sizeof(long double),0)){}bool operator()(int n)const{return n>0;}};
+int*f(int*p){return std::remove_if(p,p+2,P{});}
+)cpp", "TR0201"},
+    {"method-body", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{long double hidden=0;return n>hidden;}};
+int*f(int*p){return std::remove_if(p,p+2,P{});}
+)cpp", "TR0201"},
+    {"missing-definition", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const;};
+int*f(int*p){return std::remove_if(p,p+2,P{});}
+)cpp", "TR0203"},
+    {"lambda", R"cpp(#include <algorithm>
+
+int*f(int*p){return std::remove_if(p,p+2,[](int n){return n>0;});}
+)cpp", "TR0203"},
+    {"specialization", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+namespace std{template<>int*remove_if<int*,P>(int*p,int*,P){return p;}}
+int*f(int*p){return std::remove_if(p,p+2,P{});}
+)cpp", "TR0201"},
+    {"redeclaration", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+namespace std{inline namespace __1{template<class I,class P>I remove_if(I,I,P);}}
+int*f(int*p){return std::remove_if(p,p+2,P{});}
+)cpp", "TR0201"},
+    {"query-no-body", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+int f(int*p){static_assert(__is_same(decltype(std::remove_if(p,p+2,P{})),int*));return 0;}
+)cpp", "TR0203"},
+    {"factory-default", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+P make(int=(sizeof(long double),0)){return P{};}
+int*f(int*p){return std::remove_if(p,p+2,make());}
+)cpp", "TR0201"},
+    {"input-source", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+int*f(int*p){return std::remove_if(p,p+(sizeof(long double),2),P{});}
+)cpp", "TR0201"},
+    {"explicit-predicate-alias", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+int object;template<auto>using Erased=P;
+int*f(int*p){return std::remove_if<int*,Erased<&object>>(p,p+2,P{});}
+)cpp", "TR0201"},
+    {"volatile-input", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+volatile int*f(volatile int*p){return std::remove_if(p,p+2,P{});}
+)cpp", "TR0201"},
+    {"record-element", R"cpp(#include <algorithm>
+struct R{int v;};struct P{bool operator()(R n)const{return n.v>0;}};
+R*f(R*p){return std::remove_if(p,p+2,P{});}
+)cpp", "TR0203"},
+    {"sdk-predicate", R"cpp(#include <algorithm>
+#include <functional>
+int*f(int*p){return std::remove_if(p,p+2,std::logical_not<int>{});}
+)cpp", "TR0203"},
+    {"find-helper-specialization", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+namespace std{template<>int*find_if<int*,P&>(int*p,int*,P&){return p;}}
+int*f(int*p){return std::remove_if(p,p+2,P{});}
+)cpp", "TR0201"},
+    {"move-specialization", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+namespace std{template<>int&& move<int&>(int&p)noexcept{return static_cast<int&&>(p);}}
+int*f(int*p){return std::remove_if(p,p+2,P{});}
+)cpp", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("algorithm-remove-predicate-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("algorithm-remove-predicate-reject-") + Case.Name + ".nc");
     writeFile(Source, Case.Source);
     expectCode(translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}), Case.Code);
     expectNoArtifacts(Output);

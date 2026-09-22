@@ -11308,29 +11308,36 @@ utilityAlgorithmRemoveCopyPredicate(const FunctionDecl *Function,
   return dyn_cast<CXXOperatorCallExpr>(Not->getSubExpr());
 }
 
-static bool utilityAlgorithmPointerForward(const State &S,
-                                           const SourceManager &SM,
-                                           const CallExpr *Call,
-                                           const ValueDecl *Source,
-                                           QualType Pointer, bool Move,
-                                           const ASTContext &Context) {
+static bool utilityAlgorithmScalarForward(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ValueDecl *Source, QualType ValueType, bool Move,
+    const ASTContext &Context, bool ReadElement = false) {
   const auto *F = Call ? Call->getDirectCallee() : nullptr;
   const auto *Args = F ? F->getTemplateSpecializationArgs() : nullptr;
-  const auto Reference = Context.getLValueReferenceType(Pointer);
+  const auto Reference = Context.getLValueReferenceType(ValueType);
   if (!Call || !Call->isXValue() || Call->getNumArgs() != 1 || !F ||
       F->getNumParams() != 1 || !Args || Args->size() != 1 ||
       Args->get(0).getKind() != TemplateArgument::Type ||
       !Context.hasSameType(Args->get(0).getAsType(),
-                           Move ? Reference : Pointer) ||
+                           Move ? Reference : ValueType) ||
       !Context.hasSameType(F->getParamDecl(0)->getType(), Reference) ||
       !Context.hasSameType(F->getReturnType(),
-                           Context.getRValueReferenceType(Pointer)) ||
-      !Context.hasSameType(Call->getType(), Pointer) ||
+                           Context.getRValueReferenceType(ValueType)) ||
+      !Context.hasSameType(Call->getType(), ValueType) ||
       !utilitySwapSDKFunction(S, SM, F, Move ? "move" : "forward",
                               Move ? "__utility/move.h"
                                    : "__utility/forward.h") ||
-      !utilityAlgorithmSDKReference(S, SM, Call, F) ||
-      !utilityAlgorithmReference(Call->getArg(0), Source, Context))
+      !utilityAlgorithmSDKReference(S, SM, Call, F))
+    return false;
+  const Expr *Argument = Call->getArg(0);
+  if (ReadElement) {
+    const auto *Read = dyn_cast<UnaryOperator>(Argument);
+    if (!Read || Read->getOpcode() != UO_Deref || !Read->isLValue() ||
+        !Context.hasSameType(Read->getType(), ValueType))
+      return false;
+    Argument = Read->getSubExpr();
+  }
+  if (!utilityAlgorithmReference(Argument, Source, Context))
     return false;
   // Builtin recognition may leave the actual body uninstantiated. The pinned
   // pattern must still return only a static cast of its own formal parameter.
@@ -11481,10 +11488,10 @@ utilityAlgorithmCopyPredicate(const State &S, const SourceManager &SM,
         !Context.hasSameType(MakeArgs->get(I).getAsType(), T) ||
         !Context.hasSameType(Maker->getParamDecl(I)->getType(),
                              Context.getRValueReferenceType(T)) ||
-        !utilityAlgorithmPointerForward(
+        !utilityAlgorithmScalarForward(
             S, SM, dyn_cast<CallExpr>(Make->getArg(I)),
             D->getParamDecl(I ? 2 : 0), T, true, Context) ||
-        !utilityAlgorithmPointerForward(
+        !utilityAlgorithmScalarForward(
             S, SM, dyn_cast<CallExpr>(Construct->getArg(I)),
             MakeDefinition->getParamDecl(I), T, false, Context))
       return nullptr;
@@ -11669,6 +11676,199 @@ utilityAlgorithmPartitionCopyPredicate(const State &S, const SourceManager &SM,
   return dyn_cast<CXXOperatorCallExpr>(Branch->getCond());
 }
 
+static const CXXOperatorCallExpr *
+utilityAlgorithmSearchPredicate(const FunctionDecl *Function,
+                                llvm::StringRef Name,
+                                const ASTContext &Context) {
+  const auto *Definition = Function->getDefinition();
+  const bool None = Name == "none_of", FindNot = Name == "find_if_not";
+  auto Parameter = [&](const Expr *Expression, unsigned I) {
+    while (const auto *Cast = dyn_cast_or_null<ImplicitCastExpr>(Expression)) {
+      if ((Cast->getCastKind() != CK_LValueToRValue &&
+           Cast->getCastKind() != CK_NoOp) ||
+          !Context.hasSameUnqualifiedType(Cast->getType(),
+                                          Cast->getSubExpr()->getType()))
+        return false;
+      Expression = Cast->getSubExpr();
+    }
+    const auto *Reference = dyn_cast_or_null<DeclRefExpr>(Expression);
+    return Reference && Reference->isLValue() &&
+           Reference->getDecl() == Definition->getParamDecl(I);
+  };
+  auto BooleanReturn = [](const Stmt *Statement, bool Value) {
+    const auto *Return = dyn_cast_or_null<ReturnStmt>(Statement);
+    const auto *Literal =
+        Return ? dyn_cast_or_null<CXXBoolLiteralExpr>(Return->getRetValue())
+               : nullptr;
+    return Literal && Literal->getValue() == Value;
+  };
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Definition->getBody());
+  if (!Body || Body->size() != 2)
+    return nullptr;
+  auto Statement = Body->body_begin();
+  const auto *Loop = dyn_cast<ForStmt>(*Statement++);
+  const auto *Return = dyn_cast<ReturnStmt>(*Statement);
+  const auto *Condition =
+      Loop ? dyn_cast_or_null<BinaryOperator>(Loop->getCond()) : nullptr;
+  const auto *Increment =
+      Loop ? dyn_cast_or_null<UnaryOperator>(Loop->getInc()) : nullptr;
+  const auto *Branch =
+      Loop ? dyn_cast_or_null<IfStmt>(Loop->getBody()) : nullptr;
+  if (!Loop || Loop->getInit() || Loop->getConditionVariable() || !Condition ||
+      Condition->getOpcode() != BO_NE || !Parameter(Condition->getLHS(), 0) ||
+      !Parameter(Condition->getRHS(), 1) || !Increment ||
+      Increment->getOpcode() != UO_PreInc ||
+      !Parameter(Increment->getSubExpr(), 0) || !Branch || Branch->getInit() ||
+      Branch->getConditionVariable() || Branch->getElse() || !Return ||
+      (None ? !BooleanReturn(Return, true)
+            : !Parameter(Return->getRetValue(), 0)) ||
+      (None ? !BooleanReturn(Branch->getThen(), false)
+            : !isa<BreakStmt>(Branch->getThen())))
+    return nullptr;
+  const Expr *Predicate = Branch->getCond();
+  if (FindNot) {
+    const auto *Negation = dyn_cast<UnaryOperator>(Predicate);
+    if (!Negation || Negation->getOpcode() != UO_LNot)
+      return nullptr;
+    Predicate = Negation->getSubExpr();
+  }
+  return dyn_cast<CXXOperatorCallExpr>(Predicate);
+}
+
+static const CXXOperatorCallExpr *
+utilityAlgorithmRemovePredicate(const State &S, const SourceManager &SM,
+                                const FunctionDecl *Function, QualType Pointer,
+                                QualType Object, const ASTContext &Context) {
+  const auto *Definition = Function->getDefinition();
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Definition->getBody());
+  if (!Body || Body->size() != 3)
+    return nullptr;
+  auto Parameter = [&](const Expr *E, unsigned I) {
+    return utilityAlgorithmReference(E, Definition->getParamDecl(I), Context);
+  };
+  auto Part = Body->body_begin();
+  const auto *Start = dyn_cast<BinaryOperator>(*Part++);
+  const auto *Outer = dyn_cast<IfStmt>(*Part++);
+  const auto *End = dyn_cast<ReturnStmt>(*Part);
+  const auto *Find = Start ? dyn_cast<CallExpr>(Start->getRHS()) : nullptr;
+  const auto *F = Find ? Find->getDirectCallee() : nullptr;
+  const auto *D = F ? F->getDefinition() : nullptr;
+  const auto *Arguments = F ? F->getTemplateSpecializationArgs() : nullptr;
+  const auto *Different =
+      Outer ? dyn_cast<BinaryOperator>(Outer->getCond()) : nullptr;
+  const auto *Block =
+      Outer ? dyn_cast<CompoundStmt>(Outer->getThen()) : nullptr;
+  if (!Start || Start->getOpcode() != BO_Assign ||
+      !Parameter(Start->getLHS(), 0) || !Find || Find->getNumArgs() != 3 ||
+      !Find->isPRValue() || !D ||
+      !utilitySwapSDKFunction(S, SM, F, "find_if", "__algorithm/find_if.h") ||
+      !utilityAlgorithmSDKReference(S, SM, Find, F) || F->getNumParams() != 3 ||
+      !Arguments || Arguments->size() != 2 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      Arguments->get(1).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Arguments->get(0).getAsType(), Pointer) ||
+      !Context.hasSameType(Arguments->get(1).getAsType(),
+                           Context.getLValueReferenceType(Object)) ||
+      !Context.hasSameType(F->getReturnType(), Pointer) ||
+      !Context.hasSameType(Find->getType(), Pointer) ||
+      !Context.hasSameType(F->getParamDecl(0)->getType(), Pointer) ||
+      !Context.hasSameType(F->getParamDecl(1)->getType(), Pointer) ||
+      !Context.hasSameType(F->getParamDecl(2)->getType(),
+                           Context.getLValueReferenceType(Object)) ||
+      !Outer || Outer->getInit() || Outer->getConditionVariable() ||
+      Outer->getElse() || !Different || Different->getOpcode() != BO_NE ||
+      !Parameter(Different->getLHS(), 0) ||
+      !Parameter(Different->getRHS(), 1) || !Block || Block->size() != 2 ||
+      !End || !Parameter(End->getRetValue(), 0))
+    return nullptr;
+  for (unsigned I = 0; I != 3; ++I)
+    if (!Parameter(Find->getArg(I), I))
+      return nullptr;
+  const auto *FirstCall =
+      utilityAlgorithmSearchPredicate(F, "find_if", Context);
+  Part = Block->body_begin();
+  const auto *Local = dyn_cast<DeclStmt>(*Part++);
+  const auto *Scan = Local && Local->isSingleDecl()
+                         ? dyn_cast<VarDecl>(Local->getSingleDecl())
+                         : nullptr;
+  const auto *Loop = dyn_cast<WhileStmt>(*Part);
+  const auto *Condition =
+      Loop ? dyn_cast<BinaryOperator>(Loop->getCond()) : nullptr;
+  const auto *IncrementValue =
+      Condition ? dyn_cast<ImplicitCastExpr>(Condition->getLHS()) : nullptr;
+  const auto *Increment =
+      IncrementValue ? dyn_cast<UnaryOperator>(IncrementValue->getSubExpr())
+                     : nullptr;
+  const auto *LoopBody =
+      Loop ? dyn_cast<CompoundStmt>(Loop->getBody()) : nullptr;
+  const auto *Branch = LoopBody && LoopBody->size() == 1
+                           ? dyn_cast<IfStmt>(*LoopBody->body_begin())
+                           : nullptr;
+  const auto *Not =
+      Branch ? dyn_cast<UnaryOperator>(Branch->getCond()) : nullptr;
+  const auto *TailCall =
+      Not ? dyn_cast<CXXOperatorCallExpr>(Not->getSubExpr()) : nullptr;
+  const auto *Transfer =
+      Branch ? dyn_cast<CompoundStmt>(Branch->getThen()) : nullptr;
+  if (!FirstCall || !Scan || !Scan->hasLocalStorage() || Scan->isImplicit() ||
+      Scan->getDeclContext() != Definition ||
+      !Context.hasSameType(Scan->getType(), Pointer) ||
+      !Parameter(Scan->getInit(), 0) || !Loop || Loop->getConditionVariable() ||
+      !Condition || Condition->getOpcode() != BO_NE || !IncrementValue ||
+      IncrementValue->getCastKind() != CK_LValueToRValue ||
+      !Context.hasSameType(IncrementValue->getType(), Pointer) || !Increment ||
+      Increment->getOpcode() != UO_PreInc ||
+      !utilityAlgorithmReference(Increment->getSubExpr(), Scan, Context) ||
+      !Parameter(Condition->getRHS(), 1) || !Branch || Branch->getInit() ||
+      Branch->getConditionVariable() || Branch->getElse() || !Not ||
+      Not->getOpcode() != UO_LNot || !TailCall || !Transfer ||
+      Transfer->size() != 2 || !FirstCall->getDirectCallee() ||
+      FirstCall->getDirectCallee() != TailCall->getDirectCallee())
+    return nullptr;
+  auto Invocation = [&](const CXXOperatorCallExpr *Call,
+                        const ValueDecl *Receiver, const ValueDecl *Iterator) {
+    if (Call->getOperator() != OO_Call || Call->getNumArgs() != 2 ||
+        !Call->isPRValue() || !Call->getType()->isBooleanType() ||
+        !Call->getArg(0)->isLValue() ||
+        !utilityAlgorithmReference(Call->getArg(0), Receiver, Context))
+      return false;
+    const Expr *Argument = Call->getArg(1);
+    while (const auto *Cast = dyn_cast<ImplicitCastExpr>(Argument)) {
+      if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
+                                         Cast->getType()))
+        return false;
+      Argument = Cast->getSubExpr();
+    }
+    const auto *Element = dyn_cast<UnaryOperator>(Argument);
+    return Element && Element->getOpcode() == UO_Deref && Element->isLValue() &&
+           Context.hasSameType(Element->getType(), Pointer->getPointeeType()) &&
+           utilityAlgorithmReference(Element->getSubExpr(), Iterator, Context);
+  };
+  if (!Invocation(FirstCall, D->getParamDecl(2), D->getParamDecl(0)) ||
+      !Invocation(TailCall, Definition->getParamDecl(2), Scan))
+    return nullptr;
+  Part = Transfer->body_begin();
+  const auto *Assign = dyn_cast<BinaryOperator>(*Part++);
+  const auto *Advance = dyn_cast<UnaryOperator>(*Part);
+  const auto *Place =
+      Assign ? dyn_cast<UnaryOperator>(Assign->getLHS()) : nullptr;
+  const auto *Read =
+      Assign ? dyn_cast<ImplicitCastExpr>(Assign->getRHS()) : nullptr;
+  const auto *Move = Read ? dyn_cast<CallExpr>(Read->getSubExpr()) : nullptr;
+  if (!Assign || Assign->getOpcode() != BO_Assign || !Place ||
+      Place->getOpcode() != UO_Deref || !Place->isLValue() ||
+      !Context.hasSameType(Place->getType(), Pointer->getPointeeType()) ||
+      !Parameter(Place->getSubExpr(), 0) || !Read ||
+      Read->getCastKind() != CK_LValueToRValue ||
+      !Context.hasSameType(Read->getType(), Pointer->getPointeeType()) ||
+      !utilityAlgorithmScalarForward(
+          S, SM, Move, Scan, Pointer->getPointeeType(), true, Context, true) ||
+      !Advance || Advance->getOpcode() != UO_PreInc ||
+      !Parameter(Advance->getSubExpr(), 0))
+    return nullptr;
+  return FirstCall;
+}
+
 std::optional<UtilityAlgorithmPredicateCall>
 approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
                                       const CallExpr *Call,
@@ -11683,6 +11883,7 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
   const bool None = Name == "none_of", All = Name == "all_of";
   const bool Any = Name == "any_of", Count = Name == "count_if";
   const bool Copy = Name == "copy_if";
+  const bool Remove = Name == "remove_if";
   const bool Partitioned = Name == "is_partitioned";
   const bool PartitionCopy = Name == "partition_copy";
   const bool Composed = All || Any || Count || Copy;
@@ -11692,7 +11893,7 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
   const bool RemoveCopy = Name == "remove_copy_if";
   const bool CopyOutput = ReplaceCopy || RemoveCopy || Copy || PartitionCopy;
   if (!Find && !FindNot && !None && !Composed && !Replacement && !RemoveCopy &&
-      !Partitioned && !PartitionCopy)
+      !Partitioned && !PartitionCopy && !Remove)
     return std::nullopt;
   const unsigned ParameterCount = (ReplaceCopy || PartitionCopy)    ? 5
                                   : (Replace || RemoveCopy || Copy) ? 4
@@ -11726,7 +11927,7 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
   };
   if (!Primary || !Pattern || !Definition || !PatternDefinition ||
       Function->isVariadic() ||
-      (!Function->isInlined() && !Partitioned && !PartitionCopy) ||
+      (!Function->isInlined() && !Partitioned && !PartitionCopy && !Remove) ||
       Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
       !approvedUtilityReference(S, SM, Call, Function) || !Origin(Definition) ||
       !Origin(PatternDefinition) || !Arguments ||
@@ -11792,6 +11993,8 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
         return std::nullopt;
     }
   }
+  if (Remove && !utilityAlgorithmWritableScalarPointer(Context, Pointer))
+    return std::nullopt;
   if ((RemoveCopy || Copy) &&
       (!utilityAlgorithmWritableScalarPointer(Context, Output) ||
        !Context.hasSameType(Call->getArg(2)->getType(), Output) ||
@@ -11836,15 +12039,11 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
     return Reference && Reference->isLValue() &&
            Reference->getDecl() == Definition->getParamDecl(I);
   };
-  auto BooleanReturn = [](const Stmt *Statement, bool Value) {
-    const auto *Return = dyn_cast_or_null<ReturnStmt>(Statement);
-    const auto *Literal =
-        Return ? dyn_cast_or_null<CXXBoolLiteralExpr>(Return->getRetValue())
-               : nullptr;
-    return Literal && Literal->getValue() == Value;
-  };
   const CXXOperatorCallExpr *Invocation = nullptr;
-  if (PartitionCopy) {
+  if (Remove) {
+    Invocation = utilityAlgorithmRemovePredicate(S, SM, Function, Pointer,
+                                                 Object, Context);
+  } else if (PartitionCopy) {
     Invocation =
         utilityAlgorithmPartitionCopyPredicate(S, SM, Function, Context);
   } else if (Partitioned) {
@@ -11860,39 +12059,7 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
     Invocation = utilityAlgorithmComposedPredicate(S, SM, Function, Name,
                                                    Pointer, Object, Context);
   } else {
-    const auto *Body = dyn_cast_or_null<CompoundStmt>(Definition->getBody());
-    if (!Body || Body->size() != 2)
-      return std::nullopt;
-    auto Statement = Body->body_begin();
-    const auto *Loop = dyn_cast<ForStmt>(*Statement++);
-    const auto *Return = dyn_cast<ReturnStmt>(*Statement);
-    const auto *Condition =
-        Loop ? dyn_cast_or_null<BinaryOperator>(Loop->getCond()) : nullptr;
-    const auto *Increment =
-        Loop ? dyn_cast_or_null<UnaryOperator>(Loop->getInc()) : nullptr;
-    const auto *Branch =
-        Loop ? dyn_cast_or_null<IfStmt>(Loop->getBody()) : nullptr;
-    if (!Loop || Loop->getInit() || Loop->getConditionVariable() ||
-        !Condition || Condition->getOpcode() != BO_NE ||
-        !Parameter(Condition->getLHS(), 0) ||
-        !Parameter(Condition->getRHS(), 1) || !Increment ||
-        Increment->getOpcode() != UO_PreInc ||
-        !Parameter(Increment->getSubExpr(), 0) || !Branch ||
-        Branch->getInit() || Branch->getConditionVariable() ||
-        Branch->getElse() || !Return ||
-        (None ? !BooleanReturn(Return, true)
-              : !Parameter(Return->getRetValue(), 0)) ||
-        (None ? !BooleanReturn(Branch->getThen(), false)
-              : !isa<BreakStmt>(Branch->getThen())))
-      return std::nullopt;
-    const Expr *Predicate = Branch->getCond();
-    if (FindNot) {
-      const auto *Negation = dyn_cast<UnaryOperator>(Predicate);
-      if (!Negation || Negation->getOpcode() != UO_LNot)
-        return std::nullopt;
-      Predicate = Negation->getSubExpr();
-    }
-    Invocation = dyn_cast<CXXOperatorCallExpr>(Predicate);
+    Invocation = utilityAlgorithmSearchPredicate(Function, Name, Context);
   }
   const auto *Method = dyn_cast_or_null<CXXMethodDecl>(
       Invocation ? Invocation->getDirectCallee() : nullptr);
@@ -11910,7 +12077,8 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
       Method->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
       !S.owns(SM, MethodDefinition->getLocation()) ||
       !Invocation->getArg(0)->isLValue() ||
-      (!Composed && !Parameter(Invocation->getArg(0), PredicateIndex)) ||
+      (!Composed && !Remove &&
+       !Parameter(Invocation->getArg(0), PredicateIndex)) ||
       !functionalMemberReceiverValueCategory(Method, Invocation->getArg(0),
                                              false))
     return std::nullopt;
@@ -11921,7 +12089,7 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
   if (!utilityScalarDirectConversion(Context, Pointer->getPointeeType(),
                                      ArgumentType))
     return std::nullopt;
-  if (!Composed) {
+  if (!Composed && !Remove) {
     const Expr *Argument = Invocation->getArg(1);
     while (const auto *Cast = dyn_cast<ImplicitCastExpr>(Argument)) {
       if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
@@ -11940,6 +12108,7 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
       : ReplaceCopy   ? UtilityOperation::AlgorithmReplaceCopyIf
       : RemoveCopy    ? UtilityOperation::AlgorithmRemoveCopyIf
       : Copy          ? UtilityOperation::AlgorithmCopyIf
+      : Remove        ? UtilityOperation::AlgorithmRemoveIf
       : Partitioned   ? UtilityOperation::AlgorithmIsPartitioned
       : PartitionCopy ? UtilityOperation::AlgorithmPartitionCopy
       : All           ? UtilityOperation::AlgorithmAllOf
