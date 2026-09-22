@@ -4281,9 +4281,9 @@ Native fixed arrays follow the separate [array contract](#local-array-structured
 SDK pair/tuple/array objects follow the [SDK binding contract](#local-sdk-structured-bindings).
 User `tuple_size`/`get` protocols remain unsupported. So do
 unions, bases, private/protected fields, reference/mutable/bit-field members,
-volatile or nontrivial records, static/thread-local/global decomposition and
-structured bindings in a range-for declaration. Ordinary supported bindings
-inside a loop body keep their block scope. Other profiles retain their existing
+volatile or nontrivial records and static/thread-local/global decomposition.
+Admitted range-for declarations follow the [range contract](#range-based-for).
+Ordinary supported bindings inside a loop body keep their block scope. Other profiles retain their existing
 restrictions; this increment adds no protocol operation or C23 source feature.
 
 ## Local array structured bindings
@@ -4321,8 +4321,8 @@ and references returned through calls do not create an additional extension.
 
 Blocks, C++17 `if`/`switch` init-statements and ordinary `for` initialization
 follow the same scope rules as [record bindings](#local-record-structured-bindings).
-Static/thread-local/namespace declarations, range-for declarations and
-structured condition variables remain excluded, as do user tuple-like decomposition,
+Static/thread-local/namespace declarations and structured condition variables
+remain excluded, as do user tuple-like decomposition,
 variable or unknown extents, zero-length arrays, unsupported qualifiers or
 element operations, and exception unwinding. This feature uses existing array,
 reference and cleanup operations without changing the protocol or C23 frontend.
@@ -4362,9 +4362,9 @@ the referred argument temporary. Blocks, `if`/`switch` init-statements, ordinary
 
 Custom tuple-like protocols, member `get`, source trait/get specializations,
 volatile owners, unsupported container elements, empty binding lists,
-static/thread-local/namespace storage, range-for binding declarations and
-structured condition variables remain excluded. There is no new protocol
-operation, runtime library dependency or C23 source-language feature.
+static/thread-local/namespace storage and structured condition variables remain
+excluded. Range-for binding declarations follow the [range contract](#range-based-for).
+There is no new protocol operation, runtime library dependency or C23 source-language feature.
 
 ## Range-based for
 
@@ -4377,6 +4377,20 @@ type, definition and source-ownership checks. This includes unused or folded
 source operations. The frontend remains built in; no external Clang executable
 is used.
 
+The loop declaration may use the admitted local record, native fixed-array or
+SDK pair/tuple/array structured-binding forms. One hidden owner is initialized
+from the selected iterator dereference per iteration, preserving its lvalue,
+xvalue or prvalue semantics. Value owners copy their elements independently;
+reference owners retain aliases and qualification. Native-array copies retain
+selected element constructors and each element's default-argument cleanup.
+The owner's initializer completes before SDK binding references initialize.
+Neither the binding names nor those references acquire independent lifetimes.
+
+The original range expression, selected iterator operations, loop declaration
+and binding initializer all retain their source checks. Synthetic hidden
+iterator type locations are not treated as user-written type sources; their
+actual initializers lead back to the original range and selected calls.
+
 The range initializer runs once, followed by `begin` and then `end`, also once.
 The condition precedes each iteration. A value loop variable uses its selected
 copy or direct prvalue destination; references alias the selected element.
@@ -4387,8 +4401,9 @@ captures its result before cleaning up the body, iteration and range scopes.
 The end iterator is destroyed before the begin iterator and then the range.
 Nested loops and switches retain their own control targets.
 
-Only the exact three hidden declarations belonging to a checked range statement
-are admitted. Their names do not grant access to implicit declarations generally.
+Only the exact three hidden declarations and the loop declaration belonging to
+a checked range statement are registered. Their names do not grant access to
+implicit declarations generally.
 The exact hidden range reference may extend its C++17 temporary to the loop's
 scope; supported member/array subobjects retain the complete temporary owner.
 Per-iteration references can extend their own temporary only to that iteration.
@@ -4404,8 +4419,7 @@ one-time initialization, cleanup paths and relocation. Native results require
 CI from the implementing revision.
 
 Unsupported class-template forms, standard headers and STL containers, initializer-list ranges,
-structured bindings in the range declaration, C++20 range init-statements
-and coroutine range loops
+C++20 range init-statements and coroutine range loops
 remain outside this increment. Existing extent and expansion budgets still
 apply, and older profiles retain their previous range-loop rejection.
 

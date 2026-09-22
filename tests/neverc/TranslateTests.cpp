@@ -3070,8 +3070,6 @@ TEST_F(TranslateTest, CoreV2NativeArrayStructuredBindingsRetainSourceAndTypeBoun
 )cpp", "TR0201", "cpp-core-v2"},
     {"static-owner", R"cpp(void rejected(){int values[2]={1,2};static auto [first,second]=values;(void)first;(void)second;}
 )cpp", "TR0201", "cpp-core-v2"},
-    {"range-for", R"cpp(void rejected(){int values[1][2]={{1,2}};for(auto &[first,second]:values){(void)first;(void)second;}}
-)cpp", "TR0201", "cpp-core-v2"},
     {"condition-owner", R"cpp(void rejected(int(&values)[2]){if(auto [first,second]=values){(void)first;(void)second;}}
 )cpp", "TR0202", "cpp-core-v2"},
     {"lambda-array-copy", R"cpp(int rejected(){int values[2]={1,2};auto copied=[values](){return values[0];};return copied();}
@@ -3403,9 +3401,6 @@ int f(const std::pair<int,int>&p){auto&[a,b]=p;a=3;return b;}
     {"wrong-count", R"cpp(#include <tuple>
 int f(std::tuple<int,int>&p){auto&[a]=p;return a;}
 )cpp", "TR0202"},
-    {"range-owner", R"cpp(#include <array>
-int f(std::pair<int,int>(&values)[2]){int n=0;for(auto&[a,b]:values)n+=a+b;return n;}
-)cpp", "TR0201"},
     {"static-owner", R"cpp(#include <utility>
 int f(std::pair<int,int>&p){static auto[a,b]=p;return a+b;}
 )cpp", "TR0201"},
@@ -3456,8 +3451,6 @@ void rejected(R&r){auto &[x,y]=r;(void)x;(void)y;}
 )cpp", "TR0201", "cpp-core-v2"},
     {"static-owner", R"cpp(struct R{int x,y;};void rejected(){static auto [x,y]=R{1,2};(void)x;(void)y;}
 )cpp", "TR0201", "cpp-core-v2"},
-    {"range-for", R"cpp(struct R{int x,y;};void rejected(){R values[1]={{1,2}};for(auto &[x,y]:values){(void)x;(void)y;}}
-)cpp", "TR0201", "cpp-core-v2"},
     {"record-field", R"cpp(struct E{int value;};struct R{E x;int y;};void rejected(R&r){auto &[x,y]=r;(void)x;(void)y;}
 )cpp", "TR0201", "cpp-core-v2"},
     {"array-field", R"cpp(struct R{int x[2];int y;};void rejected(R&r){auto &[x,y]=r;(void)x;(void)y;}
@@ -3486,6 +3479,335 @@ void rejected(R&r){auto &[x,y]=r;(void)x;(void)y;}
     writeFile(Source, Case.Source);
     expectCode(translate(Source, {"--profile", Case.Profile, "-o", Output.string()}), Case.Code);
     EXPECT_FALSE(fs::exists(Output));
+  }
+}
+
+TEST_F(TranslateTest, CoreV2RangeStructuredBindingsPreserveNativeValuesAndAliases) {
+  const auto Source = tmpFile("range-binding-native-record-array.cpp");
+  const auto Output = tmpFile("range-binding-native-record-array.nc");
+  writeFile(Source, R"cpp(struct Record { int value; int *pointer; };
+int selections;
+using Records = Record[2];
+using Grid = int[2][2];
+Records &select_records(Records &r) { ++selections; return r; }
+Grid &select_grid(Grid &r) { ++selections; return r; }
+template<class T> int sum(T &range) {
+  int total = 0;
+  for (const auto &[a, b] : range) total += a + b;
+  return total;
+}
+int main() {
+  int first = 3, second = 5;
+  Records records{{7, &first}, {11, &second}};
+  int index = 0;
+  for (auto [value, pointer] : select_records(records)) { // range-once: select_records
+    static_assert(__is_same(decltype(value), int));
+    static_assert(__is_same(decltype((value)), int &));
+    if (&value == &records[index].value || &pointer == &records[index].pointer) return 1;
+    value += 100; *pointer += 1; ++index;
+  }
+  if (selections != 1 || index != 2 || records[0].value != 7 || records[1].value != 11 || first != 4 || second != 6) return 2;
+  index = 0;
+  for (auto &[value, pointer] : select_records(records)) { // range-once: select_records
+    if (&value != &records[index].value || &pointer != &records[index].pointer) return 3;
+    value += 1; ++index;
+  }
+  index = 0;
+  for (const auto &[value, pointer] : records) {
+    static_assert(__is_same(decltype(value), const int));
+    static_assert(__is_same(decltype(pointer), int *const));
+    static_assert(__is_same(decltype((pointer)), int *const &));
+    if (&value != &records[index].value || *pointer != (index == 0 ? 4 : 6)) return 4;
+    ++index;
+  }
+  for (auto &&[value, pointer] : records) { value += 2; *pointer += 3; }
+  if (selections != 2 || records[0].value != 10 || records[1].value != 14 || first != 7 || second != 9) return 5;
+  for (auto &record : records) {
+    static_assert(__is_same(decltype(record), Record &));
+    static_assert(__is_same(decltype((record.value)), int &));
+    if (record.value != 10 && record.value != 14) return 11;
+  }
+  Grid rows{{1, 2}, {3, 4}};
+  index = 0;
+  for (auto [a, b] : select_grid(rows)) { // range-once: select_grid
+    if (&a == &rows[index][0] || &b == &rows[index][1]) return 6;
+    a += 20; b += 30; ++index;
+  }
+  if (selections != 3 || rows[0][0] != 1 || rows[1][1] != 4) return 7;
+  index = 0;
+  for (auto &[a, b] : rows) {
+    if (&a != &rows[index][0] || &b != &rows[index][1]) return 8;
+    a += 2; b += 3; ++index;
+  }
+  for (const auto &[a, b] : rows) {
+    static_assert(__is_same(decltype(a), const int));
+    static_assert(__is_same(decltype((a)), const int &));
+    if (b != a + 2) return 9;
+  }
+  for (auto &&[a, b] : rows) { a += 1; b += 1; }
+  int wide[1][2]{{11, 13}};
+  return sum(rows) == 24 && sum(wide) == 24 && selections == 3 ? 0 : 10;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("range-binding-native-record-array" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2RangeStructuredBindingsPreserveSDKElements) {
+  const auto Source = tmpFile("range-binding-sdk-elements.cpp");
+  const auto Output = tmpFile("range-binding-sdk-elements.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <tuple>
+#include <utility>
+int selections, begins, ends;
+template<class T, int N> struct Range {
+  T data[N];
+  T *begin() { ++begins; return data; }
+  T *end() { ++ends; return data + N; }
+};
+template<class T, int N> Range<T, N> &select_range(Range<T, N> &r) { ++selections; return r; }
+template<class T> int sum(T &range) {
+  int total = 0;
+  for (const auto &[a, b] : range) total += a + b;
+  return total;
+}
+int main() {
+  using Pair = std::pair<int, int>;
+  using Tuple = std::tuple<int, int>;
+  using Array = std::array<int, 2>;
+  Pair pairs[2]{{1, 2}, {3, 4}};
+  Tuple tuples[2]{Tuple(5, 6), Tuple(7, 8)};
+  Array arrays[2]{{{9, 10}}, {{11, 12}}};
+  int index = 0;
+  for (auto [a, b] : pairs) {
+    if (&a == &pairs[index].first || &b == &pairs[index].second) return 1;
+    a += 20; b += 30; ++index;
+  }
+  index = 0;
+  for (auto &[a, b] : pairs) {
+    if (&a != &pairs[index].first || &b != &pairs[index].second) return 2;
+    a += 1; b += 1; ++index;
+  }
+  index = 0;
+  for (auto &&[a, b] : tuples) {
+    if (&a != &std::get<0>(tuples[index]) || &b != &std::get<1>(tuples[index])) return 3;
+    a += 2; b += 2; ++index;
+  }
+  index = 0;
+  for (const auto &[a, b] : arrays) {
+    static_assert(__is_same(decltype(a), const int));
+    static_assert(__is_same(decltype((a)), const int &));
+    if (&a != &arrays[index][0] || &b != &arrays[index][1]) return 4;
+    ++index;
+  }
+  if (sum(pairs) != 14 || sum(tuples) != 34 || sum(arrays) != 42) return 5;
+  Range<Pair, 2> range{{Pair(13, 14), Pair(15, 16)}};
+  index = 0;
+  for (auto &[a, b] : select_range(range)) { // range-once: select_range
+    if (&a != &range.data[index].first || &b != &range.data[index].second) return 6;
+    a += 3; b += 3; ++index;
+  }
+  if (selections != 1 || begins != 1 || ends != 1 || index != 2) return 7;
+  int x = 17, y = 19;
+  std::pair<int &, int &> references[1]{std::pair<int &, int &>(x, y)};
+  for (const auto [a, b] : references) {
+    static_assert(__is_same(decltype(a), int &));
+    static_assert(__is_same(decltype((a)), int &));
+    if (&a != &x || &b != &y) return 8;
+    a += 5; b += 7;
+  }
+  return x == 22 && y == 26 && range.data[0].first == 16 && range.data[1].second == 19 ? 0 : 9;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("range-binding-sdk-elements" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2RangeStructuredBindingsPreserveIterationLifetimes) {
+  const auto Source = tmpFile("range-binding-iterator-lifetimes.cpp");
+  const auto Output = tmpFile("range-binding-iterator-lifetimes.nc");
+  writeFile(Source, R"cpp(int live, copies, dead, tokens, bad;
+int selections, begins, ends, reads, advances, comparisons;
+int events[64], used;
+void mark(int n) { events[used++] = n; }
+struct Token {
+  int number;
+  Token() : number(9) { ++tokens; mark(90); }
+  ~Token() { --tokens; mark(91); }
+};
+struct Element {
+  int value;
+  int tag;
+  Element(int v, int t) : value(v), tag(t) { ++live; }
+  Element(const Element &other, const Token &token = Token{}) : value(other.value), tag(other.tag) {
+    if (token.number != 9 || tokens != 1) ++bad;
+    ++live; ++copies; mark(100 + tag);
+  }
+  ~Element() { --live; ++dead; mark(200 + tag); }
+};
+using Row = Element[2];
+struct Sentinel { Row *end; };
+struct Cursor {
+  Row *pointer;
+  Row &operator*() const { ++reads; return *pointer; }
+  Cursor &operator++() { ++advances; ++pointer; return *this; }
+  bool operator!=(const Sentinel &other) const { ++comparisons; return pointer != other.end; }
+};
+struct Range {
+  Row *data;
+  int count;
+  Cursor begin() { ++begins; return Cursor{data}; }
+  Sentinel end() { ++ends; return Sentinel{data + count}; }
+};
+Range &select_range(Range &range) { ++selections; return range; }
+int return_early(Range &range) {
+  for (auto [first, second] : select_range(range)) {
+    if (live != 8 || tokens) return -1;
+    return first.value + second.value;
+  }
+  return -2;
+}
+struct Value { int number; int tag; };
+struct ValueSentinel { int end; };
+struct ValueCursor {
+  int index;
+  Value operator*() const { ++reads; return Value{index + 10, index + 1}; }
+  ValueCursor &operator++() { ++advances; ++index; return *this; }
+  bool operator!=(const ValueSentinel &other) const { ++comparisons; return index != other.end; }
+};
+struct ValueRange {
+  ValueCursor begin() { ++begins; return ValueCursor{0}; }
+  ValueSentinel end() { ++ends; return ValueSentinel{2}; }
+};
+bool sequence(const int *wanted, int count) {
+  if (used != count) return false;
+  for (int i = 0; i < count; ++i) if (events[i] != wanted[i]) return false;
+  return true;
+}
+int main() {
+  {
+    Row source[3]{{Element(3, 1), Element(5, 2)}, {Element(7, 3), Element(11, 4)}, {Element(13, 5), Element(17, 6)}};
+    Range range{source, 3};
+    int total = 0;
+    for (auto [first, second] : select_range(range)) { // range-once: select_range
+      if (live != 8 || tokens || bad) return 1;
+      total += first.value + second.value;
+      first.value = 99; second.value = 100;
+      if (first.tag == 1) continue;
+      break;
+    }
+    const int first_events[]{90, 101, 91, 90, 102, 91, 202, 201, 90, 103, 91, 90, 104, 91, 204, 203};
+    if (!sequence(first_events, 16) || total != 26 || copies != 4 || dead != 4 || live != 6 ||
+        selections != 1 || begins != 1 || ends != 1 || reads != 2 || advances != 1 || comparisons != 2 ||
+        source[0][0].value != 3 || source[0][1].value != 5 || source[1][0].value != 7 || source[1][1].value != 11) return 2;
+    used = 0;
+    if (return_early(range) != 8 || copies != 6 || dead != 6 || live != 6 || tokens) return 3;
+    const int returned[]{90, 101, 91, 90, 102, 91, 202, 201};
+    if (!sequence(returned, 8) || selections != 2 || begins != 2 || ends != 2 || reads != 3 || advances != 1 || comparisons != 3) return 4;
+    used = 0;
+  }
+  const int destroyed[]{206, 205, 204, 203, 202, 201};
+  if (!sequence(destroyed, 6) || live || dead != 12 || bad || tokens) return 5;
+  int total = 0;
+  for (const auto &[value, tag] : ValueRange{}) {
+    static_assert(__is_same(decltype(value), const int));
+    static_assert(__is_same(decltype((value)), const int &));
+    total += value + tag;
+    continue;
+  }
+  if (total != 24 || live || dead != 12 || copies != 6) return 6;
+  for (auto &&[value, tag] : ValueRange{}) {
+    static_assert(__is_same(decltype(value), int));
+    if (value != 10 || tag != 1) return 7;
+    value = 20;
+    break;
+  }
+  return !live && dead == 12 && copies == 6 && !bad && !tokens &&
+         begins == 4 && ends == 4 && reads == 6 && advances == 3 && comparisons == 7 ? 0 : 8;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("range-binding-iterator-lifetimes" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2RangeStructuredBindingsRetainSourceAndTypeBoundaries) {
+  const struct { const char *Name; const char *Source; const char *Code; const char *Profile; } Cases[] = {
+    {"range-expression-source", R"cpp(int f(int(&a)[2][2]){int n=0;for(auto &[x,y]:(sizeof(long double),a))n+=x+y;return n;}
+)cpp", "TR0201", "cpp-core-v2"},
+    {"unused-range-expression-source", R"cpp(int f(int(&a)[2][2]){int n=0;for(auto &[x,y]:(false?(sizeof(long double),a):a))n+=x+y;return n;}
+)cpp", "TR0201", "cpp-core-v2"},
+    {"array-bound-source", R"cpp(using A=int[(sizeof(long double),2)][2];int f(A&a){int n=0;for(auto &[x,y]:a)n+=x+y;return n;}
+)cpp", "TR0201", "cpp-core-v2"},
+    {"erased-template-source", R"cpp(template<class T>using A=int[2][2];int f(){A<long double>a{};int n=0;for(auto &[x,y]:a)n+=x+y;return n;}
+)cpp", "TR0201", "cpp-core-v2"},
+    {"row-copy-default-source", R"cpp(struct R{int n;R(const R&r,int=(sizeof(long double),0)):n(r.n){}};int f(R(&a)[2][2]){int n=0;for(auto [x,y]:a)n+=x.n+y.n;return n;}
+)cpp", "TR0201", "cpp-core-v2"},
+    {"row-copy-body-source", R"cpp(struct R{int n;R(const R&r):n(r.n){long double hidden=0;}};int f(R(&a)[2][2]){int n=0;for(auto [x,y]:a)n+=x.n+y.n;return n;}
+)cpp", "TR0201", "cpp-core-v2"},
+    {"row-destructor-source", R"cpp(struct R{int n;~R(){long double hidden=0;}};int f(R(&a)[2][2]){int n=0;for(auto [x,y]:a)n+=x.n+y.n;return n;}
+)cpp", "TR0201", "cpp-core-v2"},
+    {"volatile-elements", R"cpp(int f(volatile int(&a)[2][2]){int n=0;for(auto &[x,y]:a)n+=x+y;return n;}
+)cpp", "TR0201", "cpp-core-v2"},
+    {"long-double-elements", R"cpp(int f(long double(&a)[2][2]){int n=0;for(auto &[x,y]:a)n+=static_cast<int>(x+y);return n;}
+)cpp", "TR0201", "cpp-core-v2"},
+    {"missing-copy-definition", R"cpp(struct R{int n;R(const R&);};int f(R(&a)[2][2]){int n=0;for(auto [x,y]:a)n+=x.n+y.n;return n;}
+)cpp", "TR0203", "cpp-core-v2"},
+    {"missing-destructor-definition", R"cpp(struct R{int n;~R();};int f(R(&a)[2][2]){int n=0;for(auto [x,y]:a)n+=x.n+y.n;return n;}
+)cpp", "TR0203", "cpp-core-v2"},
+    {"deleted-copy", R"cpp(struct R{int n;R(const R&)=delete;};int f(R(&a)[2][2]){int n=0;for(auto [x,y]:a)n+=x.n+y.n;return n;}
+)cpp", "TR0202", "cpp-core-v2"},
+    {"wrong-count", R"cpp(int f(int(&a)[2][2]){int n=0;for(auto &[x]:a)n+=x;return n;}
+)cpp", "TR0202", "cpp-core-v2"},
+    {"const-write", R"cpp(int f(const int(&a)[2][2]){int n=0;for(auto &[x,y]:a){x=3;n+=y;}return n;}
+)cpp", "TR0202", "cpp-core-v2"},
+    {"range-init-statement", R"cpp(int f(int(&a)[2][2]){int n=0;for(int i=0;auto &[x,y]:a)n+=x+y+i;return n;}
+)cpp", "TR0201", "cpp-core-v2"},
+    {"pair-get-specialization", R"cpp(#include <utility>
+namespace std {template<>int& get<0,int,int>(pair<int,int>&p)noexcept{return p.second;}}
+int f(std::pair<int,int>(&a)[2]){int n=0;for(auto &[x,y]:a)n+=x+y;return n;}
+)cpp", "TR0201", "cpp-core-v2"},
+    {"tuple-size-specialization", R"cpp(#include <tuple>
+namespace std {template<>struct tuple_size<tuple<int,int>>{static constexpr size_t value=2;};}
+int f(std::tuple<int,int>(&a)[2]){int n=0;for(auto &[x,y]:a)n+=x+y;return n;}
+)cpp", "TR0201", "cpp-core-v2"},
+    {"array-element-specialization", R"cpp(#include <array>
+namespace std {template<>struct tuple_element<0,array<int,2>>{using type=int;};}
+int f(std::array<int,2>(&a)[2]){int n=0;for(auto &[x,y]:a)n+=x+y;return n;}
+)cpp", "TR0201", "cpp-core-v2"},
+    {"core-v1", R"cpp(int f(int(&a)[2][2]){int n=0;for(auto &[x,y]:a)n+=x+y;return n;}
+)cpp", "TR0201", "cpp-core-v1"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("range-binding-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("range-binding-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(translate(Source, {"--profile", Case.Profile, "-o", Output.string()}), Case.Code);
+    expectNoArtifacts(Output);
   }
 }
 
@@ -3677,7 +3999,6 @@ TEST_F(TranslateTest, CoreV2RangeForRetainsSourceAndTypeBoundaries) {
       {"cxx20-init-statement", "void f(){for(int a[1]={1};int v:a){}}", "TR0201"},
       {"floating-range", "void f(){long double a[1]={1.0L};for(auto v:a){}}", "TR0201"},
       {"volatile-range", "void f(){volatile int a[1]={1};for(auto&v:a){}}", "TR0201"},
-      {"structured-binding", "struct R{int a,b;};void f(){R a[1]={{1,2}};for(auto [x,y]:a){}}", "TR0201"},
       {"unused-floating-body", "void f(){int a[1]={1};for(int v:a){long double unused=1.0L;}}", "TR0201"},
       {"dead-floating-body", "void f(){int a[1]={1};if(false)for(int v:a){long double unused=1.0L;}}", "TR0201"},
       {"floating-begin-body", "struct R{int a[1];int*begin(){long double v=1.0L;return a;}int*end(){return a+1;}};void f(){for(int v:R{{1}}){}}", "TR0201"},

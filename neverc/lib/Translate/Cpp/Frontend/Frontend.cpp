@@ -1154,11 +1154,12 @@ std::optional<RangeForComponents> rangeForComponents(const CXXForRangeStmt *Loop
       !Loop->getBody() || !Resolved(Loop->getCond()) ||
       !Loop->getCond()->getType()->isBooleanType() || !Resolved(Loop->getInc()))
     return std::nullopt;
-  auto Variable = [&](const DeclStmt *Statement) -> const VarDecl * {
+  auto Variable = [&](const DeclStmt *Statement, bool LoopVariable = false) -> const VarDecl * {
     if (!Statement || !Statement->isSingleDecl())
       return nullptr;
     const auto *V = dyn_cast<VarDecl>(Statement->getSingleDecl());
-    if (!V || V->getKind() != Decl::Var || V->isInvalidDecl() ||
+    if (!V || (V->getKind() != Decl::Var &&
+               !(LoopVariable && isa<DecompositionDecl>(V))) || V->isInvalidDecl() ||
         !V->isLocalVarDecl() || !V->hasLocalStorage() ||
         V->getType().isNull() || !Resolved(V->getInit()))
       return nullptr;
@@ -1167,7 +1168,7 @@ std::optional<RangeForComponents> rangeForComponents(const CXXForRangeStmt *Loop
   RangeForComponents Parts{Variable(Loop->getRangeStmt()),
                            Variable(Loop->getBeginStmt()),
                            Variable(Loop->getEndStmt()),
-                           Variable(Loop->getLoopVarStmt())};
+                           Variable(Loop->getLoopVarStmt(), true)};
   if (!Parts.Range || !Parts.Begin || !Parts.End || !Parts.Variable ||
       !Parts.Range->isImplicit() || !Parts.Begin->isImplicit() ||
       !Parts.End->isImplicit() || Parts.Variable->isImplicit() ||
@@ -1203,13 +1204,18 @@ static const ArraySubscriptExpr *decompositionArrayProjection(
 bool Adapter::registerDecomposition(const DecompositionDecl *D) {
   if (!S.coreV2() || !D || D->isInvalidDecl() || D->isImplicit() ||
       !S.owns(Sources, D->getLocation()) || !D->isLocalVarDecl() ||
-      !D->hasLocalStorage() || D->isCXXForRangeDecl() ||
+      !D->hasLocalStorage() ||
       D->getStorageClass() != SC_None || D->getTLSKind() != VarDecl::TLS_None ||
       D->hasAttrs() || !D->getTypeSourceInfo() || !D->getInit() ||
       D->getType().isNull() || D->getType()->isDependentType() ||
       D->getInit()->isTypeDependent() || D->getInit()->isValueDependent() ||
       D->getInit()->isInstantiationDependent())
     return false;
+  if (D->isCXXForRangeDecl()) {
+    const auto Parts = rangeForComponents(rangeForOwner(D));
+    if (!Parts || Parts->Variable != D)
+      return false;
+  }
   if (Decompositions.count(D->getCanonicalDecl()))
     return true;
   const auto Object = D->getType().getNonReferenceType();
@@ -1542,12 +1548,12 @@ bool Adapter::registerRangeFor(const CXXForRangeStmt *Loop) {
   const auto Parts = rangeForComponents(Loop);
   if (!S.coreV2() || !Parts || !S.owns(Sources, Loop->getForLoc()))
     return false;
-  for (const auto *V : {Parts->Range, Parts->Begin, Parts->End}) {
+  for (const auto *V : {Parts->Range, Parts->Begin, Parts->End, Parts->Variable}) {
     auto Found = RangeDeclarations.find(V->getCanonicalDecl());
     if (Found != RangeDeclarations.end() && Found->second != Loop)
       return false;
   }
-  for (const auto *V : {Parts->Range, Parts->Begin, Parts->End})
+  for (const auto *V : {Parts->Range, Parts->Begin, Parts->End, Parts->Variable})
     RangeDeclarations.emplace(V->getCanonicalDecl(), Loop);
   return true;
 }
@@ -1560,7 +1566,7 @@ const CXXForRangeStmt *Adapter::rangeForOwner(const VarDecl *Variable) const {
   const auto Parts = rangeForComponents(Found->second);
   if (!Parts)
     return nullptr;
-  for (const auto *V : {Parts->Range, Parts->Begin, Parts->End})
+  for (const auto *V : {Parts->Range, Parts->Begin, Parts->End, Parts->Variable})
     if (Variable->getCanonicalDecl() == V->getCanonicalDecl())
       return Found->second;
   return nullptr;
@@ -8042,12 +8048,16 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
               Dependency(Tuple->Holding->getInit());
             Dependency(Binding->getBinding());
           }
+        const auto *Variable = dyn_cast<VarDecl>(Declaration);
+        const bool SyntheticType = A.decompositionHolding(Variable) ||
+            (Variable && Variable->isImplicit() && A.rangeForOwner(Variable));
+        // Hidden references/iterators have no written type. Their exact
+        // initializer roots retain the original range and selected calls.
         if (const auto *Declarator = dyn_cast<DeclaratorDecl>(Declaration);
             Declarator && !isa<FunctionDecl>(Declaration) &&
-            !A.decompositionHolding(dyn_cast<VarDecl>(Declarator)))
+            !SyntheticType)
           operationTypeDependency(Declarator->getTypeSourceInfo());
-        if (const auto *Variable = dyn_cast<VarDecl>(Declaration);
-            Variable && !isa<ParmVarDecl>(Variable))
+        if (Variable && !isa<ParmVarDecl>(Variable))
           Dependency(Variable->getAnyInitializer());
         if (const auto *Constant = dyn_cast<EnumConstantDecl>(Declaration)) {
           // An implicit enumerator inherits the preceding value. Its nearest
@@ -8322,7 +8332,10 @@ public:
     auto *Previous = CurrentDecomposition;
     CurrentDecomposition = D;
     auto Restore = llvm::make_scope_exit([&] { CurrentDecomposition = Previous; });
-    const bool Result = RecursiveASTVisitor<Allowlist>::TraverseDecompositionDecl(D);
+    const bool Result = RecursiveASTVisitor<Allowlist>::TraverseDecompositionDecl(D) &&
+        // RAV omits a range variable's semantic initializer. Keep it under the
+        // exact decomposition owner and complete it before publishing readiness.
+        (!D->isCXXForRangeDecl() || TraverseStmt(D->getInit()));
     if (Result && A.S.Diagnostics.empty())
       A.Decompositions.at(D->getCanonicalDecl()).Complete = true;
     return Result;
@@ -12596,12 +12609,14 @@ public:
     const auto Parts = rangeForComponents(Loop);
     if (!Parts || !A.registerRangeFor(Loop)) {
       A.reject(Loop->getForLoc(), "range for",
-               "A resolved C++17 range with one ordinary loop variable is required.");
+               "A resolved C++17 range with one admitted loop declaration is required.");
       return true;
     }
     // RAV omits these declarations and their resolved calls by default.
-    // Register all three identities before checking a range initializer's MTE.
+    // Register the hidden identities and exact loop declaration before checking
+    // initializers, including a decomposition's per-iteration temporary owner.
     for (const auto *V : {Parts->Range, Parts->Begin, Parts->End}) {
+      registerOperationValueRoots(V);
       if (!WalkUpFromVarDecl(const_cast<VarDecl *>(V)) ||
           !TraverseStmt(const_cast<Expr *>(V->getInit())))
         return false;
@@ -12609,7 +12624,8 @@ public:
     // The written type still needs ordinary declaration traversal. RAV skips
     // the semantic initializer of the user isCXXForRangeDecl variable.
     return TraverseDecl(const_cast<VarDecl *>(Parts->Variable)) &&
-           TraverseStmt(const_cast<Expr *>(Parts->Variable->getInit())) &&
+           (isa<DecompositionDecl>(Parts->Variable) ||
+            TraverseStmt(const_cast<Expr *>(Parts->Variable->getInit()))) &&
            TraverseStmt(Loop->getCond()) && TraverseStmt(Loop->getInc()) &&
            TraverseStmt(Loop->getBody());
   }

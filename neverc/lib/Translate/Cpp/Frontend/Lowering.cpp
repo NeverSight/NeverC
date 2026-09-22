@@ -11516,7 +11516,8 @@ class FunctionLowering {
     } else if (const auto *F = dyn_cast<CXXForRangeStmt>(S)) {
       const auto Parts = rangeForComponents(F);
       if (!A.S.coreV2() || !Parts || A.rangeForOwner(Parts->Range) != F ||
-          A.rangeForOwner(Parts->Begin) != F || A.rangeForOwner(Parts->End) != F)
+          A.rangeForOwner(Parts->Begin) != F || A.rangeForOwner(Parts->End) != F ||
+          A.rangeForOwner(Parts->Variable) != F)
         reject(L, "range for", "A checked range and its exact hidden declarations are required.");
       Scopes.emplace_back(); // Range and iterators outlive all iterations.
       declaration(Parts->Range);

@@ -48,7 +48,7 @@ or directly construct one hidden object; `&`, `const&` and `&&` forms alias the
 selected storage with its original qualification. Initialization occurs once,
 and exact temporary owners retain their C++17 scope lifetime. User tuple-like
 bindings, reference/mutable/bit-field members, bases, nontrivial or volatile
-records, static/global storage and range declarations remain excluded. Legal
+records and static/global storage remain excluded. Legal
 C++17 `if`/`switch` init-statements and ordinary `for` initialization remain
 available; decomposition condition variables do not.
 
@@ -70,6 +70,12 @@ Value copies, shallow const, lvalue/rvalue reference collapsing and complete
 owner temporary lifetimes follow C++17; custom tuple protocols and source
 specializations stay excluded.
 
+These binding forms also work as the declaration in an admitted C++17
+[range-based `for`](../docs/cpp-core-v2.md#range-based-for). Each iteration
+initializes one hidden owner from the selected dereference, then binds its
+names. Copied array elements retain their selected copy/move and per-element
+argument cleanup; iteration cleanup runs before increment or abrupt exit.
+Range initialization and `begin/end` still execute once per loop.
 
 [Function type metadata](../docs/cpp-core-v2.md#bare-function-type-metadata),
 including direct lvalue/rvalue references, can pass through core v2 templates,
