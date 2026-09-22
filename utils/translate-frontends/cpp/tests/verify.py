@@ -11242,6 +11242,136 @@ int main() {
     for name, source in algorithm_result_promoted:
         check("v2-algorithm-result-promoted-" + name, source, profile="cpp-core-v2", sdk=True)
 
+    algorithm_replacement_state_source = """\
+#include <algorithm>
+int endpoints, factories, value_calls;
+int *point(int*p){++endpoints;return p;}
+int &value(int&v){++value_calls;return v;}
+struct Stateful {
+  int calls;
+  int *observed;
+  int *replacement;
+  int threshold;
+  bool operator()(long long n) & { // predicate-method: state
+    ++calls; *observed=calls; ++*replacement; return n>=threshold;
+  }
+  bool operator()(long long) const & { *observed=-100; return false; }
+};
+Stateful make(int*observed,int*replacement,int threshold){++factories;return Stateful{0,observed,replacement,threshold};}
+int main(){
+  int input[4]={-1,0,1,2}, observed=0, replacement=5;
+  const Stateful caller{0,&observed,&replacement,1};
+  std::replace_if(point(input),point(input+4),caller,value(replacement)); // predicate-call: state
+  static_assert(__is_same(decltype(std::replace_if(input,input+4,caller,replacement)),void));
+  if(input[0]!=-1||input[1]!=0||input[2]!=8||input[3]!=9||observed!=4||replacement!=9||caller.calls||endpoints!=2||value_calls!=1)return 1;
+  const short small[4]={0,1,2,3};long output[4]={};
+  observed=0;replacement=10;
+  auto end=std::replace_copy_if(small,small+4,output,make(&observed,&replacement,2),value(replacement)); // predicate-call: state
+  static_assert(__is_same(decltype(end),long*));
+  static_assert(__is_same(decltype(std::replace_copy_if(small,small+4,output,caller,replacement)),long*));
+  if(end!=output+4||output[0]!=0||output[1]!=1||output[2]!=13||output[3]!=14||observed!=4||replacement!=14||factories!=1||value_calls!=2)return 2;
+  int alias[3]={5,1,2};observed=0;
+  std::replace_if(alias,alias+3,make(&observed,alias,-100),alias[0]); // predicate-call: state
+  if(alias[0]!=8||alias[1]!=7||alias[2]!=8||observed!=3)return 3;
+  int separate[3]={1,2,3}, alias_out[3]={5,0,0};observed=0;
+  if(std::replace_copy_if(separate,separate+3,alias_out,make(&observed,alias_out,-100),alias_out[0])!=alias_out+3)return 4; // predicate-call: state
+  if(alias_out[0]!=8||alias_out[1]!=7||alias_out[2]!=8||observed!=3)return 5;
+  observed=0;replacement=1;
+  std::replace_if(input,input,make(&observed,&replacement,0),value(replacement)); // predicate-call: state
+  if(observed||replacement!=1||factories!=4||value_calls!=3)return 6;
+  if(std::replace_copy_if(small,small,output,make(&observed,&replacement,0),value(replacement))!=output)return 7; // predicate-call: state
+  if(observed||replacement!=1||factories!=5||value_calls!=4)return 8;
+  observed=0;replacement=0;
+  if(std::replace_copy_if(small,small+4,output,make(&observed,&replacement,100),replacement)!=output+4)return 9; // predicate-call: state
+  return output[0]==0&&output[1]==1&&output[2]==2&&output[3]==3&&observed==4&&replacement==4?0:10;
+}
+"""
+    algorithm_replacement_identity_source = """\
+#include <algorithm>
+int live, destroyed, constructions, calls, bad, factories;
+struct Token { Token(){++live;}~Token(){--live;++destroyed;} };
+struct Identity {
+  const Identity *self;
+  const Identity **receiver;
+  const Token *token;
+  bool exact;
+  Identity(const Identity **r,bool e,const Token&t=Token()):self(this),receiver(r),token(&t),exact(e){++constructions;}
+  bool operator()(int n) & { // predicate-method: identity
+    ++calls;
+    if(live!=1||(exact&&self!=this)||(*receiver&&*receiver!=this))++bad;
+    *receiver=this;return n>0;
+  }
+};
+Identity make(const Identity **r,const Token&t){++factories;return Identity(r,true,t);}
+int main(){
+  int input[3]={0,1,2},output[3]={};const Identity*receiver=nullptr;
+  if((std::replace_if(input,input+3,Identity(&receiver,true),9),live!=1))return 1; // predicate-call: identity
+  if(live||destroyed!=1||constructions!=1||calls!=3||bad||input[0]!=0||input[1]!=9||input[2]!=9)return 2;
+  receiver=nullptr;
+  if(std::replace_copy_if(input,input+3,output,make(&receiver,Token{}),7)!=output+3||live!=1)return 3; // predicate-call: identity
+  if(live||destroyed!=2||constructions!=2||factories!=1||calls!=6||bad||output[0]!=0||output[1]!=7||output[2]!=7)return 4;
+  receiver=nullptr;
+  if((std::replace_if(input,input,Identity(&receiver,true),5),live!=1))return 5; // predicate-call: identity
+  if(live||destroyed!=3||calls!=6||constructions!=3||bad)return 6;
+  receiver=nullptr;
+  if(std::replace_copy_if(input,input,output,Identity(&receiver,true),4)!=output||live!=1)return 7; // predicate-call: identity
+  if(live||destroyed!=4||calls!=6||constructions!=4||bad)return 8;
+  {
+    Token owner;
+    Identity caller(&receiver,false,owner);
+    receiver=nullptr;
+    std::replace_if(input,input+3,caller,6); // predicate-call: identity
+    if(receiver==&caller||caller.self!=&caller||constructions!=5||calls!=9||bad)return 9;
+    receiver=nullptr;
+    if(std::replace_copy_if(input,input+3,output,caller,3)!=output+3)return 10; // predicate-call: identity
+    if(receiver==&caller||caller.self!=&caller||constructions!=5||calls!=12||bad)return 11;
+  }
+  return live==0&&destroyed==5&&bad==0?0:12;
+}
+"""
+    for name, source in (("state", algorithm_replacement_state_source),
+                         ("identity", algorithm_replacement_identity_source)):
+        for target in sdk_targets:
+            data = check("v2-algorithm-replacement-" + name + "-" + target,
+                         source, profile="cpp-core-v2", target=target, sdk=True)
+            check_algorithm_composed_predicate_object(data, source)
+
+    algorithm_replacement_rejections = [
+        ('replace_if-specialization', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nnamespace std{template<> void replace_if<int*,P,int>(int*,int*,P,const int&){}}\nint f(int*p){std::replace_if(p,p+2,P{},1);return 0;}\n', 'TR0201', 'cpp-core-v2', True),
+        ('replace_if-redeclaration', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nnamespace std{inline namespace __1{template<class I,class P,class T>void replace_if(I,I,P,const T&);}}\nint f(int*p){std::replace_if(p,p+2,P{},1);return 0;}\n', 'TR0201', 'cpp-core-v2', True),
+        ('replace_if-query-no-body', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nint f(int*p){using T=decltype(std::replace_if(p,p+2,P{},1));static_assert(__is_same(T,void));return 0;}\n', 'TR0203', 'cpp-core-v2', True),
+        ('replace_copy_if-specialization', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nnamespace std{template<> int* replace_copy_if<int*,int*,P,int>(int*,int*,int*out,P,const int&){return out;}}\nint f(int*p){std::replace_copy_if(p,p+2,p+2,P{},1);return 0;}\n', 'TR0201', 'cpp-core-v2', True),
+        ('replace_copy_if-redeclaration', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nnamespace std{inline namespace __1{template<class I,class O,class P,class T>O replace_copy_if(I,I,O,P,const T&);}}\nint f(int*p){std::replace_copy_if(p,p+2,p+2,P{},1);return 0;}\n', 'TR0201', 'cpp-core-v2', True),
+        ('replace_copy_if-query-no-body', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nint f(int*p){using T=decltype(std::replace_copy_if(p,p+2,p+2,P{},1));static_assert(__is_same(T,int*));return 0;}\n', 'TR0203', 'cpp-core-v2', True),
+        ('class-template', '#include <algorithm>\ntemplate<class T>struct P{bool operator()(T n)const{return n>0;}};\nint f(int*p){std::replace_if(p,p+2,P<int>{},1);return 0;}\n', 'TR0203', 'cpp-core-v2', True),
+        ('generic-method', '#include <algorithm>\nstruct P{template<class T>bool operator()(T n)const{return n>0;}};\nint f(int*p){std::replace_if(p,p+2,P{},1);return 0;}\n', 'TR0203', 'cpp-core-v2', True),
+        ('nontrivial-copy', '#include <algorithm>\nstruct P{P(){}P(const P&){}bool operator()(int n)const{return n>0;}};\nint f(int*p){std::replace_if(p,p+2,P{},1);return 0;}\n', 'TR0203', 'cpp-core-v2', True),
+        ('nontrivial-destructor', '#include <algorithm>\nstruct P{~P(){}bool operator()(int n)const{return n>0;}};\nint f(int*p){std::replace_if(p,p+2,P{},1);return 0;}\n', 'TR0203', 'cpp-core-v2', True),
+        ('reference-argument', '#include <algorithm>\nstruct P{bool operator()(int&n)const{return n>0;}};\nint f(int*p){std::replace_if(p,p+2,P{},1);return 0;}\n', 'TR0203', 'cpp-core-v2', True),
+        ('nonbool-result', '#include <algorithm>\nstruct P{int operator()(int n)const{return n>0;}};\nint f(int*p){std::replace_if(p,p+2,P{},1);return 0;}\n', 'TR0203', 'cpp-core-v2', True),
+        ('constructor-default', '#include <algorithm>\nstruct P{P(int=(sizeof(long double),0)){}bool operator()(int n)const{return n>0;}};\nint f(int*p){std::replace_if(p,p+2,P{},1);return 0;}\n', 'TR0201', 'cpp-core-v2', True),
+        ('method-body', '#include <algorithm>\nstruct P{bool operator()(int n)const{long double hidden=0;return n>hidden;}};\nint f(int*p){std::replace_if(p,p+2,P{},1);return 0;}\n', 'TR0201', 'cpp-core-v2', True),
+        ('lambda', '#include <algorithm>\n\nint f(int*p){std::replace_if(p,p+2,[](int n){return n>0;},1);return 0;}\n', 'TR0203', 'cpp-core-v2', True),
+        ('factory-default', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nP make(int=(sizeof(long double),0)){return P{};}\nint f(int*p){std::replace_copy_if(p,p+2,p+2,make(),1);return 0;}\n', 'TR0201', 'cpp-core-v2', True),
+        ('replacement-source', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nint f(int*p){std::replace_if(p,p+2,P{},(sizeof(long double),1));return 0;}\n', 'TR0201', 'cpp-core-v2', True),
+        ('explicit-value-alias', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nint object;template<auto>using Erased=int;\nint f(int*p){std::replace_copy_if<int*,int*,P,Erased<&object>>(p,p+2,p+2,P{},1);return 0;}\n', 'TR0201', 'cpp-core-v2', True),
+        ('explicit-predicate-alias', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nint object;template<auto>using Erased=P;\nint f(int*p){std::replace_if<int*,Erased<&object>,int>(p,p+2,P{},1);return 0;}\n', 'TR0201', 'cpp-core-v2', True),
+        ('volatile-value', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nint f(int*p){volatile int v=1;std::replace_if(p,p+2,P{},v);return 0;}\n', 'TR0201', 'cpp-core-v2', True),
+        ('volatile-input', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nint f(volatile int*p){std::replace_if(p,p+2,P{},1);return 0;}\n', 'TR0201', 'cpp-core-v2', True),
+        ('volatile-output', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nint f(int*p,volatile int*out){std::replace_copy_if(p,p+2,out,P{},1);return 0;}\n', 'TR0201', 'cpp-core-v2', True),
+        ('value-conversion', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nstruct V{operator int()const{return 1;}};\nint f(int*p){std::replace_if(p,p+2,P{},V{});return 0;}\n', 'TR0203', 'cpp-core-v2', True),
+        ('record-element', '#include <algorithm>\nstruct R{int v;};struct P{bool operator()(R n)const{return n.v>0;}};\nint f(R*p){std::replace_if(p,p+2,P{},R{1});return 0;}\n', 'TR0203', 'cpp-core-v2', True),
+        ('other-mutation-independent', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nint f(int*p){return std::remove_if(p,p+2,P{})==p;}\n', 'TR0203', 'cpp-core-v2', True),
+        ('sdk-predicate', '#include <algorithm>\n#include <functional>\nint f(int*p){std::replace_if(p,p+2,std::logical_not<int>{},1);return 0;}\n', 'TR0203', 'cpp-core-v2', True),
+    ]
+    for name, source, code, profile, sdk in algorithm_replacement_rejections:
+        check("v2-algorithm-replacement-reject-" + name, source, code, profile=profile, sdk=sdk)
+
+    algorithm_replacement_promoted = [
+    ]
+    for name, source in algorithm_replacement_promoted:
+        check("v2-algorithm-replacement-promoted-" + name, source, profile="cpp-core-v2", sdk=True)
+
     algorithm_predicate_queries_source = """\
 #include <algorithm>
 extern "C" int algorithm_predicate_queries(const int *first,

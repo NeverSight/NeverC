@@ -660,19 +660,21 @@ class FunctionLowering {
     const CXXMethodDecl *Method = nullptr;
   };
   CapturedAlgorithmPredicate captureUnaryPredicate(const CallExpr *Call,
-                                                   UtilityOperation Operation) {
+                                                   UtilityOperation Operation,
+                                                   unsigned Index = 2) {
     auto L = Call->getExprLoc();
-    if (auto Info = approvedUtilityAlgorithmPredicateCall(
-            A.S, A.Sources, Call, A.Context)) {
-      if (Info->Operation != Operation)
-        reject(L, "algorithm predicate", "The selected predicate operation must match its algorithm.");
+    if (auto Info = approvedUtilityAlgorithmPredicateCall(A.S, A.Sources, Call,
+                                                          A.Context)) {
+      if (Info->Operation != Operation || Info->ParameterIndex != Index)
+        reject(L, "algorithm predicate",
+               "The selected predicate operation must match its algorithm.");
       // Construct the actual by-value parameter once in final storage. In
       // particular, a prvalue's self pointer must not point at an extra copy.
-      return {argument(Call->getArg(2), Info->ObjectType), Info->ObjectType,
+      return {argument(Call->getArg(Index), Info->ObjectType), Info->ObjectType,
               Info->Method};
     }
-    return {snapshot(expression(Call->getArg(2)), L), Call->getArg(2)->getType(),
-            nullptr};
+    return {snapshot(expression(Call->getArg(Index)), L),
+            Call->getArg(Index)->getType(), nullptr};
   }
   Expression emitUnaryPredicate(const CapturedAlgorithmPredicate &Predicate,
                                  Expression Argument, SourceLocation L) {
@@ -6242,7 +6244,7 @@ class FunctionLowering {
     case UtilityOperation::AlgorithmReplaceIf: {
       auto Current = snapshot(expression(Call->getArg(0)), L);
       auto Last = snapshot(expression(Call->getArg(1)), L);
-      auto Predicate = snapshot(expression(Call->getArg(2)), L);
+      auto Predicate = captureUnaryPredicate(Call, Operation);
       auto ValueAddress = snapshot(
           address(lvalue(Call->getArg(3)), Call->getArg(3)->getType(), L), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
@@ -6258,8 +6260,7 @@ class FunctionLowering {
       label(Test, L);
       {
         auto Selected = emitUnaryPredicate(
-            json::Object(Predicate), Call->getArg(2)->getType(),
-            dereference(json::Object(Current), L), L);
+            Predicate, dereference(json::Object(Current), L), L);
         branch(std::move(Selected), Replace, Advance, L);
       }
       label(Replace, L);
@@ -6279,7 +6280,7 @@ class FunctionLowering {
       auto Input = snapshot(expression(Call->getArg(0)), L);
       auto Last = snapshot(expression(Call->getArg(1)), L);
       auto Output = snapshot(expression(Call->getArg(2)), L);
-      auto Predicate = snapshot(expression(Call->getArg(3)), L);
+      auto Predicate = captureUnaryPredicate(Call, Operation, 3);
       auto ValueAddress = snapshot(
           address(lvalue(Call->getArg(4)), Call->getArg(4)->getType(), L), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
@@ -6296,8 +6297,7 @@ class FunctionLowering {
       label(Test, L);
       {
         auto Selected = emitUnaryPredicate(
-            json::Object(Predicate), Call->getArg(3)->getType(),
-            dereference(json::Object(Input), L), L);
+            Predicate, dereference(json::Object(Input), L), L);
         branch(std::move(Selected), Replace, Copy, L);
       }
       label(Replace, L);

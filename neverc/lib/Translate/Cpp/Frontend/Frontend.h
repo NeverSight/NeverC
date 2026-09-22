@@ -858,6 +858,7 @@ struct UtilityAlgorithmPredicateCall {
   const clang::CXXOperatorCallExpr *Invocation;
   const clang::CXXMethodDecl *Method;
   clang::QualType ObjectType;
+  unsigned ParameterIndex;
 };
 std::optional<UtilityAlgorithmPredicateCall>
 approvedUtilityAlgorithmPredicateCall(const State &S,

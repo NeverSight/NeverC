@@ -11165,13 +11165,81 @@ utilityAlgorithmComposedPredicate(const State &S, const SourceManager &SM,
   return Invocation;
 }
 
+static const CXXOperatorCallExpr *
+utilityAlgorithmReplacementPredicate(const FunctionDecl *Function, bool Copy,
+                                     const ASTContext &Context) {
+  const auto *Definition = Function->getDefinition();
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Definition->getBody());
+  if (!Body || Body->size() != (Copy ? 2u : 1u))
+    return nullptr;
+  const unsigned Output = Copy ? 2 : 0, Value = Copy ? 4 : 3;
+  auto Parameter = [&](const Expr *E, unsigned I) {
+    return utilityAlgorithmReference(E, Definition->getParamDecl(I), Context);
+  };
+  auto Dereference = [&](const Expr *E, unsigned I) {
+    const auto *Read = dyn_cast_or_null<UnaryOperator>(E);
+    return Read && Read->getOpcode() == UO_Deref && Read->isLValue() &&
+           Context.hasSameType(
+               Read->getType(),
+               Definition->getParamDecl(I)->getType()->getPointeeType()) &&
+           Parameter(Read->getSubExpr(), I);
+  };
+  auto Increment = [&](const Expr *E, unsigned I) {
+    const auto *Add = dyn_cast_or_null<UnaryOperator>(E);
+    return Add && Add->getOpcode() == UO_PreInc &&
+           Parameter(Add->getSubExpr(), I);
+  };
+  auto Assignment = [&](const Stmt *S, bool Replacement) {
+    const auto *Assign = dyn_cast_or_null<BinaryOperator>(S);
+    if (!Assign || Assign->getOpcode() != BO_Assign ||
+        !Dereference(Assign->getLHS(), Output) ||
+        !Context.hasSameType(Assign->getType(), Assign->getLHS()->getType()))
+      return false;
+    const Expr *RHS = Assign->getRHS();
+    while (const auto *Cast = dyn_cast<ImplicitCastExpr>(RHS)) {
+      if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
+                                         Cast->getType()))
+        return false;
+      RHS = Cast->getSubExpr();
+    }
+    return Replacement ? Parameter(RHS, Value) : Dereference(RHS, 0);
+  };
+  auto Statement = Body->body_begin();
+  const auto *Loop = dyn_cast<ForStmt>(*Statement++);
+  const auto *Condition =
+      Loop ? dyn_cast_or_null<BinaryOperator>(Loop->getCond()) : nullptr;
+  const auto *Branch =
+      Loop ? dyn_cast_or_null<IfStmt>(Loop->getBody()) : nullptr;
+  if (!Loop || Loop->getInit() || Loop->getConditionVariable() || !Condition ||
+      Condition->getOpcode() != BO_NE || !Parameter(Condition->getLHS(), 0) ||
+      !Parameter(Condition->getRHS(), 1) || !Branch || Branch->getInit() ||
+      Branch->getConditionVariable() || !Assignment(Branch->getThen(), true))
+    return nullptr;
+  if (Copy) {
+    const auto *Comma = dyn_cast_or_null<BinaryOperator>(Loop->getInc());
+    const auto *Discard =
+        Comma ? dyn_cast<CStyleCastExpr>(Comma->getRHS()) : nullptr;
+    const auto *Return = dyn_cast<ReturnStmt>(*Statement);
+    if (!Comma || Comma->getOpcode() != BO_Comma ||
+        !Increment(Comma->getLHS(), 0) || !Discard ||
+        Discard->getCastKind() != CK_ToVoid ||
+        !Discard->getType()->isVoidType() ||
+        !Increment(Discard->getSubExpr(), Output) ||
+        !Assignment(Branch->getElse(), false) || !Return ||
+        !Parameter(Return->getRetValue(), Output))
+      return nullptr;
+  } else if (!Increment(Loop->getInc(), 0) || Branch->getElse()) {
+    return nullptr;
+  }
+  return dyn_cast<CXXOperatorCallExpr>(Branch->getCond());
+}
+
 std::optional<UtilityAlgorithmPredicateCall>
 approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
                                       const CallExpr *Call,
                                       const ASTContext &Context) {
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
-  if (!S.coreV2() || !Call || Call->getNumArgs() != 3 || !Function ||
-      !Function->getIdentifier() || Function->getNumParams() != 3 ||
+  if (!S.coreV2() || !Call || !Function || !Function->getIdentifier() ||
       Call->isTypeDependent() || Call->isValueDependent() ||
       Call->isInstantiationDependent() || !Call->isPRValue())
     return std::nullopt;
@@ -11180,9 +11248,17 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
   const bool None = Name == "none_of", All = Name == "all_of";
   const bool Any = Name == "any_of", Count = Name == "count_if";
   const bool Composed = All || Any || Count;
-  if (!Find && !FindNot && !None && !Composed)
+  const bool Replace = Name == "replace_if",
+             ReplaceCopy = Name == "replace_copy_if";
+  const bool Replacement = Replace || ReplaceCopy;
+  if (!Find && !FindNot && !None && !Composed && !Replacement)
     return std::nullopt;
-  const auto Object = Function->getParamDecl(2)->getType();
+  const unsigned ParameterCount = ReplaceCopy ? 5 : Replace ? 4 : 3;
+  const unsigned PredicateIndex = ReplaceCopy ? 3 : 2;
+  if (Call->getNumArgs() != ParameterCount ||
+      Function->getNumParams() != ParameterCount)
+    return std::nullopt;
+  const auto Object = Function->getParamDecl(PredicateIndex)->getType();
   const auto *Record = Object->getAsCXXRecordDecl();
   Record = Record ? Record->getDefinition() : nullptr;
   // Keep this increment separate from SDK function objects, closures, template
@@ -11192,7 +11268,7 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
       !Record->isStandardLayout() || !Record->isTriviallyCopyable() ||
       !Record->hasTrivialCopyConstructor() || !Record->hasTrivialDestructor() ||
       !S.owns(SM, Record->getLocation()) ||
-      !Context.hasSameType(Call->getArg(2)->getType(), Object))
+      !Context.hasSameType(Call->getArg(PredicateIndex)->getType(), Object))
     return std::nullopt;
   const auto *Primary = Function->getPrimaryTemplate();
   const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
@@ -11208,7 +11284,10 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
       Function->isVariadic() || !Function->isInlined() ||
       Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
       !approvedUtilityReference(S, SM, Call, Function) || !Origin(Definition) ||
-      !Origin(PatternDefinition) || !Arguments || Arguments->size() != 2)
+      !Origin(PatternDefinition) || !Arguments ||
+      Arguments->size() != (ReplaceCopy ? 4u
+                            : Replace   ? 3u
+                                        : 2u))
     return std::nullopt;
   for (const auto *D : Function->redecls())
     if (!Origin(D))
@@ -11226,15 +11305,46 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
       !Context.hasSameType(Pointer, Call->getArg(1)->getType()) ||
       !Context.hasSameType(Call->getType(), Function->getReturnType()) ||
       !Context.hasSameType(Function->getReturnType(),
-                           Count                  ? Context.getPointerDiffType()
+                           Replace       ? Context.VoidTy
+                           : ReplaceCopy ? Function->getParamDecl(2)->getType()
+                           : Count       ? Context.getPointerDiffType()
                            : (None || All || Any) ? Context.BoolTy
                                                   : Pointer))
     return std::nullopt;
-  for (unsigned I = 0; I != 2; ++I)
+  const auto Output =
+      ReplaceCopy ? Function->getParamDecl(2)->getType() : Pointer;
+  const unsigned PredicateArgument = ReplaceCopy ? 2 : 1;
+  for (unsigned I = 0; I <= PredicateArgument; ++I) {
+    const auto Expected = I == PredicateArgument ? Object
+                          : I                    ? Output
+                                                 : Pointer;
     if (Arguments->get(I).getKind() != TemplateArgument::Type ||
-        !Context.hasSameType(Arguments->get(I).getAsType(),
-                             I ? Object : Pointer))
+        !Context.hasSameType(Arguments->get(I).getAsType(), Expected))
       return std::nullopt;
+  }
+  if (Replacement) {
+    const unsigned ValueIndex = ParameterCount - 1;
+    const auto Value = Function->getParamDecl(ValueIndex)->getType();
+    const auto &TemplateValue = Arguments->get(PredicateArgument + 1);
+    if (!utilityAlgorithmWritableScalarPointer(Context, Output) ||
+        (ReplaceCopy &&
+         (!Context.hasSameType(Call->getArg(2)->getType(), Output) ||
+          !utilityScalarDirectConversion(Context, Pointer->getPointeeType(),
+                                         Output->getPointeeType()))) ||
+        !Value->isLValueReferenceType() ||
+        !Value->getPointeeType().isConstQualified() ||
+        Value->getPointeeType().isVolatileQualified() ||
+        !utilityScalar(Context, Value->getPointeeType()) ||
+        !Context.hasSameUnqualifiedType(Call->getArg(ValueIndex)->getType(),
+                                        Value->getPointeeType()) ||
+        !utilityScalarDirectConversion(Context, Value->getPointeeType(),
+                                       Output->getPointeeType()) ||
+        TemplateValue.getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(
+            Value, Context.getLValueReferenceType(
+                       Context.getConstType(TemplateValue.getAsType()))))
+      return std::nullopt;
+  }
   // Use the actual instantiated definition's parameter identities. Its body is
   // not traversed as user code and no declaration lookup chooses the callback.
   auto Parameter = [&](const Expr *Expression, unsigned I) {
@@ -11258,7 +11368,9 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
     return Literal && Literal->getValue() == Value;
   };
   const CXXOperatorCallExpr *Invocation = nullptr;
-  if (Composed) {
+  if (Replacement) {
+    Invocation = utilityAlgorithmReplacementPredicate(Function, ReplaceCopy, Context);
+  } else if (Composed) {
     Invocation = utilityAlgorithmComposedPredicate(S, SM, Function, Name,
                                                    Pointer, Object, Context);
   } else {
@@ -11310,7 +11422,7 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
       Method->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
       !S.owns(SM, MethodDefinition->getLocation()) ||
       !Invocation->getArg(0)->isLValue() ||
-      (!Composed && !Parameter(Invocation->getArg(0), 2)) ||
+      (!Composed && !Parameter(Invocation->getArg(0), PredicateIndex)) ||
       !functionalMemberReceiverValueCategory(Method, Invocation->getArg(0),
                                              false))
     return std::nullopt;
@@ -11336,13 +11448,19 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
       return std::nullopt;
   }
   return UtilityAlgorithmPredicateCall{
-      All       ? UtilityOperation::AlgorithmAllOf
-      : Any     ? UtilityOperation::AlgorithmAnyOf
-      : Count   ? UtilityOperation::AlgorithmCountIf
-      : Find    ? UtilityOperation::AlgorithmFindIf
-      : FindNot ? UtilityOperation::AlgorithmFindIfNot
-                : UtilityOperation::AlgorithmNoneOf,
-      Function, Invocation, Method, Object};
+      Replace       ? UtilityOperation::AlgorithmReplaceIf
+      : ReplaceCopy ? UtilityOperation::AlgorithmReplaceCopyIf
+      : All         ? UtilityOperation::AlgorithmAllOf
+      : Any         ? UtilityOperation::AlgorithmAnyOf
+      : Count       ? UtilityOperation::AlgorithmCountIf
+      : Find        ? UtilityOperation::AlgorithmFindIf
+      : FindNot     ? UtilityOperation::AlgorithmFindIfNot
+                    : UtilityOperation::AlgorithmNoneOf,
+      Function,
+      Invocation,
+      Method,
+      Object,
+      PredicateIndex};
 }
 
 std::optional<UtilityOperation>
