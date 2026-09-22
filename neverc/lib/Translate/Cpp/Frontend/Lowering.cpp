@@ -6322,7 +6322,7 @@ class FunctionLowering {
     case UtilityOperation::AlgorithmIsPartitioned: {
       auto Current = snapshot(expression(Call->getArg(0)), L);
       auto Last = snapshot(expression(Call->getArg(1)), L);
-      auto Predicate = snapshot(expression(Call->getArg(2)), L);
+      auto Predicate = captureUnaryPredicate(Call, Operation);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto PointerType = type(Call->getArg(0)->getType(), L);
       auto Result = temporary("bool", L);
@@ -6338,7 +6338,7 @@ class FunctionLowering {
       label(LeadingTest, L);
       {
         auto Selected = emitUnaryPredicate(
-            json::Object(Predicate), Call->getArg(2)->getType(),
+            Predicate,
             dereference(json::Object(Current), L), L);
         branch(std::move(Selected), LeadingAdvance, BeginTail, L);
       }
@@ -6359,7 +6359,7 @@ class FunctionLowering {
       label(TailTest, L);
       {
         auto Selected = emitUnaryPredicate(
-            json::Object(Predicate), Call->getArg(2)->getType(),
+            Predicate,
             dereference(json::Object(Current), L), L);
         branch(std::move(Selected), False, TailAdvance, L);
       }

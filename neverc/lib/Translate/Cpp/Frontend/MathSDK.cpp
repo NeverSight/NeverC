@@ -11514,6 +11514,89 @@ utilityAlgorithmCopyPredicate(const State &S, const SourceManager &SM,
   return Invocation;
 }
 
+// The two scans share the one predicate parameter and skip the first false
+// element between them. Verify both selected calls, including their receiver.
+static const CXXOperatorCallExpr *
+utilityAlgorithmPartitionPredicate(const FunctionDecl *Function,
+                                   const ASTContext &Context) {
+  const auto *Definition = Function->getDefinition();
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Definition->getBody());
+  if (!Body || Body->size() != 5)
+    return nullptr;
+  auto Parameter = [&](const Expr *E, unsigned I) {
+    return utilityAlgorithmReference(E, Definition->getParamDecl(I), Context);
+  };
+  auto Increment = [&](const Expr *E) {
+    const auto *Add = dyn_cast_or_null<UnaryOperator>(E);
+    return Add && Add->getOpcode() == UO_PreInc &&
+           Parameter(Add->getSubExpr(), 0);
+  };
+  auto Compare = [&](const Expr *E, BinaryOperatorKind Kind) {
+    const auto *Comparison = dyn_cast_or_null<BinaryOperator>(E);
+    return Comparison && Comparison->getOpcode() == Kind &&
+           Parameter(Comparison->getLHS(), 0) &&
+           Parameter(Comparison->getRHS(), 1);
+  };
+  auto BooleanReturn = [](const Stmt *S, bool Value) {
+    const auto *R = dyn_cast_or_null<ReturnStmt>(S);
+    const auto *Literal =
+        R ? dyn_cast_or_null<CXXBoolLiteralExpr>(R->getRetValue()) : nullptr;
+    return Literal && Literal->getValue() == Value;
+  };
+  auto Scan = [&](const Stmt *S, bool Leading) -> const CXXOperatorCallExpr * {
+    const auto *Loop = dyn_cast_or_null<ForStmt>(S);
+    const auto *Branch =
+        Loop ? dyn_cast_or_null<IfStmt>(Loop->getBody()) : nullptr;
+    if (!Loop || Loop->getInit() || Loop->getConditionVariable() ||
+        !Compare(Loop->getCond(), BO_NE) || !Increment(Loop->getInc()) ||
+        !Branch || Branch->getInit() || Branch->getConditionVariable() ||
+        Branch->getElse() ||
+        (Leading ? !isa<BreakStmt>(Branch->getThen())
+                 : !BooleanReturn(Branch->getThen(), false)))
+      return nullptr;
+    const Expr *Test = Branch->getCond();
+    if (Leading) {
+      const auto *Not = dyn_cast<UnaryOperator>(Test);
+      if (!Not || Not->getOpcode() != UO_LNot)
+        return nullptr;
+      Test = Not->getSubExpr();
+    }
+    const auto *Call = dyn_cast<CXXOperatorCallExpr>(Test);
+    if (!Call || Call->getOperator() != OO_Call || Call->getNumArgs() != 2 ||
+        !Call->isPRValue() || !Call->getType()->isBooleanType() ||
+        !Call->getArg(0)->isLValue() || !Parameter(Call->getArg(0), 2))
+      return nullptr;
+    const Expr *Argument = Call->getArg(1);
+    while (const auto *Cast = dyn_cast<ImplicitCastExpr>(Argument)) {
+      if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
+                                         Cast->getType()))
+        return nullptr;
+      Argument = Cast->getSubExpr();
+    }
+    const auto *Element = dyn_cast<UnaryOperator>(Argument);
+    if (!Element || Element->getOpcode() != UO_Deref || !Element->isLValue() ||
+        !Context.hasSameType(
+            Element->getType(),
+            Definition->getParamDecl(0)->getType()->getPointeeType()) ||
+        !Parameter(Element->getSubExpr(), 0))
+      return nullptr;
+    return Call;
+  };
+  auto Part = Body->body_begin();
+  const auto *Leading = Scan(*Part++, true);
+  const auto *EndOfRange = dyn_cast<IfStmt>(*Part++);
+  const auto *Advance = dyn_cast<Expr>(*Part++);
+  const auto *Tail = Scan(*Part++, false);
+  if (!Leading || !Tail || !Leading->getDirectCallee() ||
+      Leading->getDirectCallee() != Tail->getDirectCallee() || !EndOfRange ||
+      EndOfRange->getInit() || EndOfRange->getConditionVariable() ||
+      EndOfRange->getElse() || !Compare(EndOfRange->getCond(), BO_EQ) ||
+      !BooleanReturn(EndOfRange->getThen(), true) || !Increment(Advance) ||
+      !BooleanReturn(*Part, true))
+    return nullptr;
+  return Leading;
+}
+
 std::optional<UtilityAlgorithmPredicateCall>
 approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
                                       const CallExpr *Call,
@@ -11528,13 +11611,15 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
   const bool None = Name == "none_of", All = Name == "all_of";
   const bool Any = Name == "any_of", Count = Name == "count_if";
   const bool Copy = Name == "copy_if";
+  const bool Partitioned = Name == "is_partitioned";
   const bool Composed = All || Any || Count || Copy;
   const bool Replace = Name == "replace_if",
              ReplaceCopy = Name == "replace_copy_if";
   const bool Replacement = Replace || ReplaceCopy;
   const bool RemoveCopy = Name == "remove_copy_if";
   const bool CopyOutput = ReplaceCopy || RemoveCopy || Copy;
-  if (!Find && !FindNot && !None && !Composed && !Replacement && !RemoveCopy)
+  if (!Find && !FindNot && !None && !Composed && !Replacement &&
+      !RemoveCopy && !Partitioned)
     return std::nullopt;
   const unsigned ParameterCount =
       ReplaceCopy ? 5 : (Replace || RemoveCopy || Copy) ? 4 : 3;
@@ -11566,7 +11651,7 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
            cstddefOrigin(S, SM, D->getLocation(), "libcxx", Path);
   };
   if (!Primary || !Pattern || !Definition || !PatternDefinition ||
-      Function->isVariadic() || !Function->isInlined() ||
+      Function->isVariadic() || (!Function->isInlined() && !Partitioned) ||
       Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
       !approvedUtilityReference(S, SM, Call, Function) || !Origin(Definition) ||
       !Origin(PatternDefinition) || !Arguments ||
@@ -11592,7 +11677,7 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
                            Replace       ? Context.VoidTy
                            : CopyOutput  ? Function->getParamDecl(2)->getType()
                            : Count       ? Context.getPointerDiffType()
-                           : (None || All || Any) ? Context.BoolTy
+                           : (None || All || Any || Partitioned) ? Context.BoolTy
                                                   : Pointer))
     return std::nullopt;
   const auto Output =
@@ -11658,7 +11743,9 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
     return Literal && Literal->getValue() == Value;
   };
   const CXXOperatorCallExpr *Invocation = nullptr;
-  if (Copy) {
+  if (Partitioned) {
+    Invocation = utilityAlgorithmPartitionPredicate(Function, Context);
+  } else if (Copy) {
     Invocation = utilityAlgorithmCopyPredicate(S, SM, Function, Pointer, Output,
                                                 Object, Context);
   } else if (RemoveCopy) {
@@ -11749,6 +11836,7 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
       : ReplaceCopy ? UtilityOperation::AlgorithmReplaceCopyIf
       : RemoveCopy  ? UtilityOperation::AlgorithmRemoveCopyIf
       : Copy        ? UtilityOperation::AlgorithmCopyIf
+      : Partitioned ? UtilityOperation::AlgorithmIsPartitioned
       : All         ? UtilityOperation::AlgorithmAllOf
       : Any         ? UtilityOperation::AlgorithmAnyOf
       : Count       ? UtilityOperation::AlgorithmCountIf

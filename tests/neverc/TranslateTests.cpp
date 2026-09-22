@@ -43168,6 +43168,253 @@ long*f(int*p,long*out){return std::copy_if(p,p+2,out,P{});}
   }
 }
 
+TEST_F(TranslateTest, CoreV2AlgorithmPartitionPredicateObjectsRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-partition-predicate-state.cpp");
+  const auto Output = tmpFile("algorithm-partition-predicate-state.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+struct Positive {
+  int calls;
+  int *observed,*trace;
+  bool operator()(long long n) & { // template-predicate-method: positive
+    ++calls;*observed=calls;*trace=*trace*10+int(n)+3;return n>0;
+  }
+  bool operator()(long long) const & { *observed=-100;return false; }
+};
+template<class T>struct FirstTwo { int calls;int *observed;bool operator()(T n)&; };
+template<class V>bool FirstTwo<V>::operator()(V) & { // template-predicate-method: stateful
+  ++calls;*observed=calls;return calls<=2;
+}
+int main(){
+  const int good[5]={4,3,0,-1,-2},bad[4]={4,0,3,2};int calls=0,trace=0;
+  const Positive caller{0,&calls,&trace};
+  if(!std::is_partitioned(good,good+5,caller)||calls!=5||trace!=76321||caller.calls)return 1; // template-predicate-call: positive i64 2
+  calls=trace=0;
+  if(std::is_partitioned(bad,bad+4,caller)||calls!=3||trace!=736||caller.calls)return 2; // template-predicate-call: positive i64 2
+  static_assert(__is_same(decltype(std::is_partitioned(good,good+5,caller)),bool));
+  static_assert(!noexcept(std::is_partitioned(good,good+5,caller)));
+  calls=trace=0;
+  if(!std::is_partitioned(good,good,caller)||calls||trace)return 3; // template-predicate-call: positive i64 2
+  if(!std::is_partitioned(good,good+2,caller)||calls!=2||trace!=76)return 4; // template-predicate-call: positive i64 2
+  calls=trace=0;
+  if(!std::is_partitioned(good+2,good+5,caller)||calls!=3||trace!=321)return 5; // template-predicate-call: positive i64 2
+  calls=trace=0;
+  if(!std::is_partitioned(good+2,good+3,caller)||calls!=1||trace!=3)return 6; // template-predicate-call: positive i64 2
+  int same[5]={9,9,9,9,9};const FirstTwo<int> state{0,&calls};calls=0;
+  if(!std::is_partitioned(same,same+5,state)||calls!=5||state.calls)return 7; // template-predicate-call: stateful int 2
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-partition-predicate-state" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmPartitionPredicateMutationRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-partition-predicate-mutation.cpp");
+  const auto Output = tmpFile("algorithm-partition-predicate-mutation.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+int firsts,lasts,factories,trace,calls;
+int *first(int*p){++firsts;return p;}
+int *last(int*p){++lasts;return p;}
+struct Mutate { int *current;int count;
+  bool operator()(int n){ // template-predicate-method: mutate
+    ++count;calls=count;trace=trace*10+n;*current=n+10;++current;return n>1;
+  }
+};
+Mutate make(int*p){++factories;return {p,0};}
+int main(){
+  int input[4]={0,1,2,3};
+  if(std::is_partitioned(first(input),last(input+4),make(input)))return 1; // template-predicate-call: mutate int 2
+  if(firsts!=1||lasts!=1||factories!=1||calls!=3||trace!=12)return 2;
+  if(input[0]!=10||input[1]!=11||input[2]!=12||input[3]!=3)return 3;
+  int good[4]={3,2,1,0};Mutate caller{good,0};trace=calls=0;
+  if(!std::is_partitioned(good,good+4,caller)||calls!=4||trace!=3210)return 4; // template-predicate-call: mutate int 2
+  if(caller.current!=good||caller.count||good[0]!=13||good[1]!=12||good[2]!=11||good[3]!=10)return 5;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-partition-predicate-mutation" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmPartitionPredicateIdentityRunsAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-partition-predicate-identity.cpp");
+  const auto Output = tmpFile("algorithm-partition-predicate-identity.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+int live, destroyed, constructions, calls, bad, factories;
+struct Token { Token(){++live;}~Token(){--live;++destroyed;} };
+template<class T>struct Identity {
+  const Identity *self;
+  const Identity **receiver;
+  const Token *token;
+  bool exact;
+  Identity(const Identity **r,bool e,const Token&t=Token()):self(this),receiver(r),token(&t),exact(e){++constructions;}
+  bool operator()(T n) &;
+};
+template<class Value>
+bool Identity<Value>::operator()(Value n) & { // template-predicate-method: identity
+  ++calls;
+  if(live!=1||(exact&&self!=this)||(*receiver&&*receiver!=this))++bad;
+  *receiver=this;return n>0;
+}
+Identity<int> make(const Identity<int> **r,const Token&t){++factories;return Identity<int>(r,true,t);}
+int main(){
+  int input[4]={2,1,0,2};const Identity<int>*receiver=nullptr;
+  if(std::is_partitioned(input,input+3,Identity<int>(&receiver,true))!=true||live!=1)return 1; // template-predicate-call: identity int 2
+  if(live||destroyed!=1||constructions!=1||calls!=3||bad)return 2;
+  receiver=nullptr;
+  if(std::is_partitioned(input,input+4,make(&receiver,Token{}))!=false||live!=1)return 3; // template-predicate-call: identity int 2
+  if(live||destroyed!=2||constructions!=2||factories!=1||calls!=7||bad)return 4;
+  receiver=nullptr;
+  if(std::is_partitioned(input,input,Identity<int>(&receiver,true))!=true||live!=1)return 5; // template-predicate-call: identity int 2
+  if(live||destroyed!=3||calls!=7||constructions!=3||bad)return 6;
+  {
+    Token owner;Identity<int> caller(&receiver,false,owner);receiver=nullptr;
+    if(!std::is_partitioned(input,input+3,caller))return 7; // template-predicate-call: identity int 2
+    if(receiver==&caller||caller.self!=&caller||constructions!=4||calls!=10||bad)return 8;
+  }
+  return live==0&&destroyed==4&&bad==0?0:9;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-partition-predicate-identity" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization, {"-fno-inline"});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2AlgorithmPartitionPredicatesRequireSource) {
+  const struct { const char *Name, *Source, *Code; } Cases[] = {
+    {"query-only-no-body", R"cpp(#include <algorithm>
+template<class T>struct P{bool operator()(T n)const{return n>0;}};
+int f(int*p){static_assert(__is_same(decltype(std::is_partitioned(p,p+2,P<int>{})),bool));return 0;}
+)cpp", "TR0203"},
+    {"member-function-template", R"cpp(#include <algorithm>
+template<class T>struct P{template<class U>bool operator()(U n)const{return n>0;}};
+int f(int*p){return std::is_partitioned(p,p+2,P<int>{});}
+)cpp", "TR0203"},
+    {"nontrivial-copy", R"cpp(#include <algorithm>
+template<class T>struct P{P(){}P(const P&){}bool operator()(T n)const{return n>0;}};
+int f(int*p){return std::is_partitioned(p,p+2,P<int>{});}
+)cpp", "TR0203"},
+    {"nontrivial-destructor", R"cpp(#include <algorithm>
+template<class T>struct P{~P(){}bool operator()(T n)const{return n>0;}};
+int f(int*p){return std::is_partitioned(p,p+2,P<int>{});}
+)cpp", "TR0203"},
+    {"reference-argument", R"cpp(#include <algorithm>
+template<class T>struct P{bool operator()(T&n)const{return n>0;}};
+int f(int*p){return std::is_partitioned(p,p+2,P<int>{});}
+)cpp", "TR0203"},
+    {"nonbool-result", R"cpp(#include <algorithm>
+template<class T>struct P{T operator()(T n)const{return n>0;}};
+int f(int*p){return std::is_partitioned(p,p+2,P<int>{});}
+)cpp", "TR0203"},
+    {"constructor-default", R"cpp(#include <algorithm>
+template<class T>struct P{P(int=(sizeof(long double),0)){}bool operator()(T n)const{return n>0;}};
+int f(int*p){return std::is_partitioned(p,p+2,P<int>{});}
+)cpp", "TR0201"},
+    {"method-body", R"cpp(#include <algorithm>
+template<class T>struct P{bool operator()(T n)const{long double hidden=0;return n>hidden;}};
+int f(int*p){return std::is_partitioned(p,p+2,P<int>{});}
+)cpp", "TR0201"},
+    {"field-source", R"cpp(#include <algorithm>
+template<class T>struct P{int values[(sizeof(long double),1)];bool operator()(T n)const{return n>0;}};
+int f(int*p){return std::is_partitioned(p,p+2,P<int>{});}
+)cpp", "TR0201"},
+    {"nonstandard-layout", R"cpp(#include <algorithm>
+struct B{int base;};template<class T>struct P:B{int field;bool operator()(T n)const{return n>0;}};
+int f(int*p){return std::is_partitioned(p,p+2,P<int>{});}
+)cpp", "TR0201"},
+    {"inherited-operator", R"cpp(#include <algorithm>
+struct B{bool operator()(int n)const{return n>0;}};template<class T>struct P:B{};
+int f(int*p){return std::is_partitioned(p,p+2,P<int>{});}
+)cpp", "TR0203"},
+    {"lambda", R"cpp(#include <algorithm>
+
+int f(int*p){return std::is_partitioned(p,p+2,[](int n){return n>0;});}
+)cpp", "TR0203"},
+    {"written-value-source", R"cpp(#include <algorithm>
+template<class T,int N>struct P{bool operator()(T n)const{return n>N;}};
+int f(int*p){return std::is_partitioned(p,p+2,P<int,(sizeof(long double),0)>{});}
+)cpp", "TR0201"},
+    {"default-value-source", R"cpp(#include <algorithm>
+template<class T,int N=(sizeof(long double),0)>struct P{bool operator()(T n)const{return n>N;}};
+int f(int*p){return std::is_partitioned(p,p+2,P<int>{});}
+)cpp", "TR0201"},
+    {"erased-type-argument", R"cpp(#include <algorithm>
+template<class T>struct P{bool operator()(T n)const{return n>0;}};
+int object;template<auto>using Erased=int;
+int f(int*p){return std::is_partitioned(p,p+2,P<Erased<&object>>{});}
+)cpp", "TR0201"},
+    {"unused-type-argument", R"cpp(#include <algorithm>
+template<class T>struct P{bool operator()(int n)const{return n>0;}};
+int f(int*p){return std::is_partitioned(p,p+2,P<long double>{});}
+)cpp", "TR0201"},
+    {"class-missing-definition", R"cpp(#include <algorithm>
+template<class T>struct P{bool operator()(T n)const;};
+int f(int*p){return std::is_partitioned(p,p+2,P<int>{});}
+)cpp", "TR0203"},
+    {"partial-body-source", R"cpp(#include <algorithm>
+template<class T>struct P;template<class T>struct P<T*>{bool operator()(T*n)const{long double hidden=0;return n!=nullptr;}};
+int f(int**p){return std::is_partitioned(p,p+2,P<int*>{});}
+)cpp", "TR0201"},
+    {"full-body-source", R"cpp(#include <algorithm>
+template<class T>struct P;template<>struct P<int>{bool operator()(int n)const{long double hidden=0;return n>hidden;}};
+int f(int*p){return std::is_partitioned(p,p+2,P<int>{});}
+)cpp", "TR0201"},
+    {"sdk-specialization", R"cpp(#include <algorithm>
+template<class T>struct P{bool operator()(T n)const{return n>0;}};
+namespace std{template<> bool is_partitioned<int*,P<int>>(int*,int*,P<int>){return true;}}
+int f(int*p){return std::is_partitioned(p,p+2,P<int>{});}
+)cpp", "TR0201"},
+    {"sdk-predicate", R"cpp(#include <algorithm>
+#include <functional>
+int f(int*p){return std::is_partitioned(p,p+2,std::logical_not<int>{});}
+)cpp", "TR0203"},
+    {"volatile-input", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+bool f(volatile int*p){return std::is_partitioned(p,p+2,P{});}
+)cpp", "TR0201"},
+    {"input-source", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+bool f(int*p){return std::is_partitioned(p,p+(sizeof(long double),2),P{});}
+)cpp", "TR0201"},
+    {"sdk-redeclaration", R"cpp(#include <algorithm>
+struct P{bool operator()(int n)const{return n>0;}};
+namespace std{inline namespace __1{template<class I,class P>bool is_partitioned(I,I,P);}}
+bool f(int*p){return std::is_partitioned(p,p+2,P{});}
+)cpp", "TR0201"},
+  };
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source = tmpFile(std::string("algorithm-partition-predicate-reject-") + Case.Name + ".cpp");
+    const auto Output = tmpFile(std::string("algorithm-partition-predicate-reject-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}), Case.Code);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmPredicateQueriesRequireValueCallbacks) {
   struct Rejection {
     const char *Name;
