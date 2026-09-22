@@ -11905,14 +11905,16 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
   const auto Object = Function->getParamDecl(PredicateIndex)->getType();
   const auto *Record = Object->getAsCXXRecordDecl();
   Record = Record ? Record->getDefinition() : nullptr;
-  // Concrete class-template records retain ordinary source and member-origin
-  // checks. SDK objects, closures, function-template call operators and
-  // nontrivial algorithm-parameter lifetimes remain separate.
+  // Source operators and pinned SDK functional operators retain independent
+  // declaration and body proofs, sharing the exact algorithm loop proof.
+  const bool SDKObject =
+      Record &&
+      approvedFunctionalObjectRecord(S, SM, Record, Context).has_value();
   if (!Record || Object.hasLocalQualifiers() || Record->isLambda() ||
-      Record->isUnion() ||
-      !Record->isStandardLayout() || !Record->isTriviallyCopyable() ||
-      !Record->hasTrivialCopyConstructor() || !Record->hasTrivialDestructor() ||
-      !S.owns(SM, Record->getLocation()) ||
+      Record->isUnion() || !Record->isStandardLayout() ||
+      !Record->isTriviallyCopyable() || !Record->hasTrivialCopyConstructor() ||
+      !Record->hasTrivialDestructor() ||
+      (!S.owns(SM, Record->getLocation()) && !SDKObject) ||
       !Context.hasSameType(Call->getArg(PredicateIndex)->getType(), Object))
     return std::nullopt;
   const auto *Primary = Function->getPrimaryTemplate();
@@ -12067,25 +12069,41 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
   if (!Invocation || Invocation->getOperator() != OO_Call ||
       Invocation->getNumArgs() != 2 || !Invocation->isPRValue() ||
       !Invocation->getType()->isBooleanType() || !Method || !MethodDefinition ||
-      (Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
-       Method->getTemplatedKind() != FunctionDecl::TK_MemberSpecialization) ||
-      Method->getPrimaryTemplate() || Method->getDescribedFunctionTemplate() ||
       Method->isStatic() || Method->isVolatile() ||
-      Method->getOverloadedOperator() != OO_Call || !ordinaryOperator(Method) ||
-      !callableMethod(Method) || Method->getNumParams() != 1 ||
+      Method->getOverloadedOperator() != OO_Call ||
+      Method->getNumParams() != 1 ||
       !Method->getReturnType()->isBooleanType() ||
       Method->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
-      !S.owns(SM, MethodDefinition->getLocation()) ||
       !Invocation->getArg(0)->isLValue() ||
       (!Composed && !Remove &&
        !Parameter(Invocation->getArg(0), PredicateIndex)) ||
       !functionalMemberReceiverValueCategory(Method, Invocation->getArg(0),
                                              false))
     return std::nullopt;
-  for (const auto *D : Method->redecls())
-    if (!S.owns(SM, D->getLocation()))
+  std::optional<FunctionalOperationInfo> SDKOperation;
+  if (SDKObject) {
+    SDKOperation =
+        approvedFunctionalOperationImpl(S, SM, Invocation, Context, false);
+    if (!SDKOperation ||
+        SDKOperation->Operation != FunctionalOperation::LogicalNot ||
+        !SDKOperation->ResultType->isBooleanType() ||
+        !Context.hasSameUnqualifiedType(
+            Pointer->getPointeeType(),
+            Method->getParamDecl(0)->getType().getNonReferenceType()))
       return std::nullopt;
-  const auto ArgumentType = Method->getParamDecl(0)->getType();
+  } else {
+    if ((Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
+         Method->getTemplatedKind() != FunctionDecl::TK_MemberSpecialization) ||
+        Method->getPrimaryTemplate() ||
+        Method->getDescribedFunctionTemplate() || !ordinaryOperator(Method) ||
+        !callableMethod(Method) || !S.owns(SM, MethodDefinition->getLocation()))
+      return std::nullopt;
+    for (const auto *D : Method->redecls())
+      if (!S.owns(SM, D->getLocation()))
+        return std::nullopt;
+  }
+  const auto ArgumentType = SDKOperation ? SDKOperation->LeftType
+                                         : Method->getParamDecl(0)->getType();
   if (!utilityScalarDirectConversion(Context, Pointer->getPointeeType(),
                                      ArgumentType))
     return std::nullopt;
@@ -12121,7 +12139,8 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
       Invocation,
       Method,
       Object,
-      PredicateIndex};
+      PredicateIndex,
+      SDKOperation};
 }
 
 std::optional<UtilityOperation>

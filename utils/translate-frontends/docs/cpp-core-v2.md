@@ -1757,9 +1757,22 @@ array parameters, computed exception expressions, out-of-line partial/member
 specializations and nested template owners still require further source proof.
 The actual body must finish ordinary source traversal and be emitted; this
 algorithm-only proof does not admit out-of-line operation-trait definitions.
-Member function templates, lambda objects, SDK function objects, nontrivial copying or
+Member function templates, lambda objects, nontrivial copying or
 destruction, reference parameters, non-boolean results and function objects in
 other algorithm overloads remain outside this increment.
+These thirteen algorithms also accept pinned `std::logical_not<T>` and
+`std::logical_not<>` predicates over admitted scalar elements. A typed predicate's
+parameter must match the input element type after removing qualifiers; conversions
+that create an argument temporary remain outside this form. The actual selected
+SDK operator, its template origins and boolean expression are independently
+authenticated, then lowered to a scalar logical negation without emitting an SDK
+function. The empty predicate object is still initialized once, preserving factory
+calls and full-expression cleanup even for empty ranges. Typed empty-base aggregate
+initializers retain their checked effects in the one-byte functional-object carrier.
+Other SDK function objects and other algorithm overloads require separate proofs.
+Already instantiated calls support the same result queries below; the SDK operator's
+complete proof replaces source-operator dependencies, while caller arguments and
+written template arguments still require source completion.
 For these thirteen source-object overloads, `decltype`, `noexcept` and queries of
 an initialized variable's deduced type can consume an already instantiated,
 authenticated algorithm specialization. Each exact call and callee reference

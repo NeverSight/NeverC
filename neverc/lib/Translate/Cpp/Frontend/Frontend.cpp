@@ -8233,8 +8233,12 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         // The exact algorithm descriptor supplies its pinned SDK implementation.
         // Its selected source operator retains ordinary signature and exception
         // dependencies, and finishAlgorithmPredicates requires its checked body.
-        if (AuthenticatedAlgorithm && Function == AuthenticatedAlgorithm->Algorithm)
+        if (AuthenticatedAlgorithm &&
+            Function == AuthenticatedAlgorithm->Algorithm) {
+          if (AuthenticatedAlgorithm->SDKOperation)
+            return;
           Function = AuthenticatedAlgorithm->Method;
+        }
         collectOperationFunctionTypeSource(Function);
         Exception(Function->getType()->getAs<FunctionProtoType>(), Function);
         // Constant value calls can consume an already materialized body. Keep
@@ -14993,7 +14997,9 @@ public:
                 approvedUtilityOperation(A.S, A.Sources, C, A.Context)) {
           if (auto Predicate = approvedUtilityAlgorithmPredicateCall(
                   A.S, A.Sources, C, A.Context))
-            AlgorithmPredicateMethods.emplace(Predicate->Method->getCanonicalDecl(), L);
+            if (!Predicate->SDKOperation)
+              AlgorithmPredicateMethods.emplace(
+                  Predicate->Method->getCanonicalDecl(), L);
           switch (*Operation) {
           case UtilityOperation::MemoryMakeUnique: {
             const auto Info =

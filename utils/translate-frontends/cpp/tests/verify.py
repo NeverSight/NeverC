@@ -10908,7 +10908,6 @@ int main() {
         ('parameter-alias-source', '#include <algorithm>\ntemplate<class T>using Alias=int;struct P{bool operator()(Alias<long double>x)const{return x!=0;}};\nint f(int*a){return std::find_if(a,a+2,P{})==a;}\n', 'TR0201', 'cpp-core-v2', True),
         ('explicit-template-alias-source', '#include <algorithm>\nstruct P { bool operator()(int x) const { return x != 0; } };\ntemplate<class T>using Iterator=int*;\nint f(int*a){return std::find_if<Iterator<long double>,P>(a,a+2,P{})==a;}\n', 'TR0201', 'cpp-core-v2', True),
         ('initializer-source', '#include <algorithm>\nstruct P { bool operator()(int x) const { return x != 0; } };\nint f(int*a){return std::find_if(a,a+2,(sizeof(long double),P{}))==a;}\n', 'TR0201', 'cpp-core-v2', True),
-        ('sdk-predicate', '#include <algorithm>\n#include <functional>\nint f(int*a){return std::find_if(a,a+2,std::logical_not<int>{})==a;}\n', 'TR0203', 'cpp-core-v2', True),
         ('lambda', '#include <algorithm>\nint f(int*a){return std::find_if(a,a+2,[](int x){return x!=0;})==a;}\n', 'TR0203', 'cpp-core-v2', True),
     ]
     for name, source, code, profile, uses_sdk in algorithm_callable_rejections:
@@ -11106,7 +11105,6 @@ int main() {
         ('parameter-alias-source', '#include <algorithm>\ntemplate<class T>using Alias=int;struct P{bool operator()(Alias<long double>x)const{return x!=0;}};\nint f(int*a){return std::all_of(a,a+2,P{});}\n', 'TR0201', 'cpp-core-v2', True),
         ('explicit-template-alias-source', '#include <algorithm>\nstruct P { bool operator()(int x) const { return x != 0; } };\ntemplate<class T>using Iterator=int*;\nint f(int*a){return std::all_of<Iterator<long double>,P>(a,a+2,P{});}\n', 'TR0201', 'cpp-core-v2', True),
         ('initializer-source', '#include <algorithm>\nstruct P { bool operator()(int x) const { return x != 0; } };\nint f(int*a){return std::all_of(a,a+2,(sizeof(long double),P{}));}\n', 'TR0201', 'cpp-core-v2', True),
-        ('sdk-predicate', '#include <algorithm>\n#include <functional>\nint f(int*a){return std::all_of(a,a+2,std::logical_not<int>{});}\n', 'TR0203', 'cpp-core-v2', True),
         ('lambda', '#include <algorithm>\nint f(int*a){return std::all_of(a,a+2,[](int x){return x!=0;});}\n', 'TR0203', 'cpp-core-v2', True),
     ]
     for name, source, code, profile, sdk in algorithm_composed_rejections:
@@ -11356,7 +11354,6 @@ int main(){
         ('volatile-output', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nint f(int*p,volatile int*out){std::replace_copy_if(p,p+2,out,P{},1);return 0;}\n', 'TR0201', 'cpp-core-v2', True),
         ('value-conversion', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nstruct V{operator int()const{return 1;}};\nint f(int*p){std::replace_if(p,p+2,P{},V{});return 0;}\n', 'TR0203', 'cpp-core-v2', True),
         ('record-element', '#include <algorithm>\nstruct R{int v;};struct P{bool operator()(R n)const{return n.v>0;}};\nint f(R*p){std::replace_if(p,p+2,P{},R{1});return 0;}\n', 'TR0203', 'cpp-core-v2', True),
-        ('sdk-predicate', '#include <algorithm>\n#include <functional>\nint f(int*p){std::replace_if(p,p+2,std::logical_not<int>{},1);return 0;}\n', 'TR0203', 'cpp-core-v2', True),
     ]
     for name, source, code, profile, sdk in algorithm_replacement_rejections:
         check("v2-algorithm-replacement-reject-" + name, source, code, profile=profile, sdk=sdk)
@@ -11574,7 +11571,6 @@ int main(){
         ('partial-body-source', '#include <algorithm>\ntemplate<class T>struct P;template<class T>struct P<T*>{bool operator()(T*n)const{long double hidden=0;return n!=nullptr;}};\nint f(int**p){return std::all_of(p,p+2,P<int*>{});}\n', 'TR0201', 'cpp-core-v2', True),
         ('full-body-source', '#include <algorithm>\ntemplate<class T>struct P;template<>struct P<int>{bool operator()(int n)const{long double hidden=0;return n>hidden;}};\nint f(int*p){return std::all_of(p,p+2,P<int>{});}\n', 'TR0201', 'cpp-core-v2', True),
         ('sdk-specialization', '#include <algorithm>\ntemplate<class T>struct P{bool operator()(T n)const{return n>0;}};\nnamespace std{template<> bool all_of<int*,P<int>>(int*,int*,P<int>){return true;}}\nint f(int*p){return std::all_of(p,p+2,P<int>{});}\n', 'TR0201', 'cpp-core-v2', True),
-        ('sdk-predicate', '#include <algorithm>\n#include <functional>\nint f(int*p){return std::all_of(p,p+2,std::logical_not<int>{});}\n', 'TR0203', 'cpp-core-v2', True),
     ]
     for name, source, code, profile, sdk in algorithm_template_rejections:
         check("v2-algorithm-template-reject-" + name, source, code, profile=profile, sdk=sdk)
@@ -11876,7 +11872,6 @@ int main(){
         ('volatile-input', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nlong*f(volatile int*p,long*out){return std::remove_copy_if(p,p+2,out,P{});}\n', 'TR0201', 'cpp-core-v2', True),
         ('volatile-output', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nvolatile long*f(int*p,volatile long*out){return std::remove_copy_if(p,p+2,out,P{});}\n', 'TR0201', 'cpp-core-v2', True),
         ('record-element', '#include <algorithm>\nstruct R{int v;};struct P{bool operator()(R n)const{return n.v>0;}};\nR*f(R*p,R*out){return std::remove_copy_if(p,p+2,out,P{});}\n', 'TR0203', 'cpp-core-v2', True),
-        ('sdk-predicate', '#include <algorithm>\n#include <functional>\nlong*f(int*p,long*out){return std::remove_copy_if(p,p+2,out,std::logical_not<int>{});}\n', 'TR0203', 'cpp-core-v2', True),
     ]
     for name, source, code, profile, sdk in algorithm_filter_copy_rejections:
         check("v2-algorithm-filter-copy-reject-" + name, source, code, profile=profile, sdk=sdk)
@@ -12005,7 +12000,6 @@ int main(){
         ('volatile-input', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nlong*f(volatile int*p,long*out){return std::copy_if(p,p+2,out,P{});}\n', 'TR0201', 'cpp-core-v2', True),
         ('volatile-output', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nvolatile long*f(int*p,volatile long*out){return std::copy_if(p,p+2,out,P{});}\n', 'TR0201', 'cpp-core-v2', True),
         ('record-element', '#include <algorithm>\nstruct R{int v;};struct P{bool operator()(R n)const{return n.v>0;}};\nR*f(R*p,R*out){return std::copy_if(p,p+2,out,P{});}\n', 'TR0203', 'cpp-core-v2', True),
-        ('sdk-predicate', '#include <algorithm>\n#include <functional>\nlong*f(int*p,long*out){return std::copy_if(p,p+2,out,std::logical_not<int>{});}\n', 'TR0203', 'cpp-core-v2', True),
         ('helper-specialization', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nnamespace std{template<> pair<int*,long*> __copy_if<int*,int*,long*,__identity,P>(int*p,int*,long*out,P&,__identity&){return {p,out};}}\nlong*f(int*p,long*out){return std::copy_if(p,p+2,out,P{});}\n', 'TR0201', 'cpp-core-v2', True),
         ('make-pair-specialization', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nnamespace std{template<> pair<int*,long*> make_pair<int*,long*>(int*&&p,long*&&out){return {p,out};}}\nlong*f(int*p,long*out){return std::copy_if(p,p+2,out,P{});}\n', 'TR0201', 'cpp-core-v2', True),
         ('move-specialization', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nnamespace std{template<>int*&& move<int*&>(int*&p)noexcept{return static_cast<int*&&>(p);}}\nlong*f(int*p,long*out){return std::copy_if(p,p+2,out,P{});}\n', 'TR0201', 'cpp-core-v2', True),
@@ -12142,7 +12136,6 @@ int main(){
         ('partial-body-source', '#include <algorithm>\ntemplate<class T>struct P;template<class T>struct P<T*>{bool operator()(T*n)const{long double hidden=0;return n!=nullptr;}};\nint f(int**p){return std::is_partitioned(p,p+2,P<int*>{});}\n', 'TR0201', 'cpp-core-v2', True),
         ('full-body-source', '#include <algorithm>\ntemplate<class T>struct P;template<>struct P<int>{bool operator()(int n)const{long double hidden=0;return n>hidden;}};\nint f(int*p){return std::is_partitioned(p,p+2,P<int>{});}\n', 'TR0201', 'cpp-core-v2', True),
         ('sdk-specialization', '#include <algorithm>\ntemplate<class T>struct P{bool operator()(T n)const{return n>0;}};\nnamespace std{template<> bool is_partitioned<int*,P<int>>(int*,int*,P<int>){return true;}}\nint f(int*p){return std::is_partitioned(p,p+2,P<int>{});}\n', 'TR0201', 'cpp-core-v2', True),
-        ('sdk-predicate', '#include <algorithm>\n#include <functional>\nint f(int*p){return std::is_partitioned(p,p+2,std::logical_not<int>{});}\n', 'TR0203', 'cpp-core-v2', True),
         ('volatile-input', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nbool f(volatile int*p){return std::is_partitioned(p,p+2,P{});}\n', 'TR0201', 'cpp-core-v2', True),
         ('input-source', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nbool f(int*p){return std::is_partitioned(p,p+(sizeof(long double),2),P{});}\n', 'TR0201', 'cpp-core-v2', True),
         ('sdk-redeclaration', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nnamespace std{inline namespace __1{template<class I,class P>bool is_partitioned(I,I,P);}}\nbool f(int*p){return std::is_partitioned(p,p+2,P{});}\n', 'TR0201', 'cpp-core-v2', True),
@@ -12283,7 +12276,6 @@ int main(){
         ('volatile-true-output', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nauto f(int*p,volatile long*out,short*out2){return std::partition_copy(p,p+2,out,out2,P{});}\n', 'TR0201', 'cpp-core-v2', True),
         ('volatile-false-output', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nauto f(int*p,long*out,volatile short*out2){return std::partition_copy(p,p+2,out,out2,P{});}\n', 'TR0201', 'cpp-core-v2', True),
         ('record-element', '#include <algorithm>\nstruct R{int v;};struct P{bool operator()(R n)const{return n.v>0;}};\nauto f(R*p,R*out,R*out2){return std::partition_copy(p,p+2,out,out2,P{});}\n', 'TR0203', 'cpp-core-v2', True),
-        ('sdk-predicate', '#include <algorithm>\n#include <functional>\nauto f(int*p,long*out,short*out2){return std::partition_copy(p,p+2,out,out2,std::logical_not<int>{});}\n', 'TR0203', 'cpp-core-v2', True),
         ('pair-specialization', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nnamespace std{template<>struct pair<long*,short*>{long*first;short*second;pair(long*p,short*q):first(p),second(q){}};}\nauto f(int*p,long*out,short*out2){return std::partition_copy(p,p+2,out,out2,P{});}\n', 'TR0201', 'cpp-core-v2', True),
     ]
     for name, source, code, profile, sdk in algorithm_partition_copy_rejections:
@@ -12409,7 +12401,6 @@ int main(){
         ('explicit-predicate-alias', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nint object;template<auto>using Erased=P;\nint*f(int*p){return std::remove_if<int*,Erased<&object>>(p,p+2,P{});}\n', 'TR0201', 'cpp-core-v2', True),
         ('volatile-input', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nvolatile int*f(volatile int*p){return std::remove_if(p,p+2,P{});}\n', 'TR0201', 'cpp-core-v2', True),
         ('record-element', '#include <algorithm>\nstruct R{int v;};struct P{bool operator()(R n)const{return n.v>0;}};\nR*f(R*p){return std::remove_if(p,p+2,P{});}\n', 'TR0203', 'cpp-core-v2', True),
-        ('sdk-predicate', '#include <algorithm>\n#include <functional>\nint*f(int*p){return std::remove_if(p,p+2,std::logical_not<int>{});}\n', 'TR0203', 'cpp-core-v2', True),
         ('find-helper-specialization', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nnamespace std{template<>int*find_if<int*,P&>(int*p,int*,P&){return p;}}\nint*f(int*p){return std::remove_if(p,p+2,P{});}\n', 'TR0201', 'cpp-core-v2', True),
         ('move-specialization', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n>0;}};\nnamespace std{template<>int&& move<int&>(int&p)noexcept{return static_cast<int&&>(p);}}\nint*f(int*p){return std::remove_if(p,p+2,P{});}\n', 'TR0201', 'cpp-core-v2', True),
     ]
@@ -12426,6 +12417,212 @@ int main(){
     ]
     for name, source in algorithm_remove_promoted:
         check("v2-algorithm-remove-predicate-promoted-" + name, source, profile="cpp-core-v2", sdk=True)
+
+    def check_algorithm_sdk_predicate(data, source):
+        import re
+        assert data['protocol'] == 1
+        definitions = {f['name']: f for f in data['functions']}
+        assert len(definitions) == len(data['functions'])
+        main = definitions['main']
+        nodes = list(walk(main['body']))
+        all_nodes = list(walk(data['functions']))
+        for f in data['functions']:
+            assert f.get('loc', {}).get('file') == 'input.cpp', f
+        for node in walk(data['functions']):
+            assert node.get('op') not in ('mapped_call', 'member_pointer', 'indirect_call'), node
+            if node.get('op') == 'call':
+                assert node['callee'] in definitions, node
+            if node.get('op') == 'assign':
+                assert node['target']['type'] == node['value']['type'], node
+        selected = {'main'}
+        expected_operations = []
+        for line, text in enumerate(source.splitlines(), 1):
+            if '// sdk-predicate-function:' in text:
+                count = int(text.split('// sdk-predicate-function:', 1)[1])
+                functions = [f for f in data['functions'] if f['loc']['line'] == line]
+                assert len(functions) == 1, (line, functions)
+                name = functions[0]['name']
+                selected.add(name)
+                assert sum(n.get('op') == 'call' and n.get('callee') == name
+                           for n in all_nodes) == count
+            if 'decltype(' in text or 'noexcept(' in text:
+                continue
+            for match in re.finditer(r'std::(find_if_not|find_if|none_of|all_of|any_of|count_if|replace_copy_if|replace_if|remove_copy_if|copy_if|is_partitioned|partition_copy|remove_if)\(', text):
+                expected_operations.extend([(line, match.start() + 1)] *
+                                           (2 if match.group(1) == 'is_partitioned' else 1))
+        assert selected == set(definitions)
+        actual_operations = []
+        for node in nodes:
+            if node.get('kind') != 'unary' or node.get('operator') != '!':
+                continue
+            operand = node['args'][0]
+            while operand.get('kind') == 'cast':
+                operand = operand['args'][0]
+            if operand.get('kind') != 'dereference':
+                continue
+            assert node['type'] == 'bool' and node['args'][0]['type'] == 'bool', node
+            assert operand['args'][0]['type'].startswith(('ptr:', 'cptr:')), node
+            actual_operations.append((node['loc']['line'], node['loc']['column']))
+        assert expected_operations and sorted(actual_operations) == sorted(expected_operations), (actual_operations, expected_operations)
+
+    algorithm_sdk_predicate_state_source = """\
+#include <algorithm>
+#include <functional>
+int main(){
+ { const int a[]={0,2,0,4}; const std::logical_not<int> pred{};
+ if(std::find_if(a,a+4,pred)!=a)return 1;
+ if(std::find_if_not(a,a+4,pred)!=a+1)return 2;
+ if(std::none_of(a,a+4,pred))return 3;
+ if(std::all_of(a,a+4,pred))return 4;
+ if(!std::any_of(a,a+4,pred))return 5;
+ if(std::count_if(a,a+4,pred)!=2)return 6;
+ if(std::is_partitioned(a,a+4,pred))return 7;
+ if(!std::is_partitioned(a,a+2,pred))return 8;
+ if(std::find_if(a,a,pred)!=a || std::count_if(a,a,pred)!=0)return 9;
+ if(!std::all_of(a,a,pred) || std::any_of(a,a,pred) || !std::none_of(a,a,pred))return 10;
+ }
+ { const int a[]={0,2,0,4}; const std::logical_not<> pred{};
+ if(std::find_if(a,a+4,pred)!=a)return 1;
+ if(std::find_if_not(a,a+4,pred)!=a+1)return 2;
+ if(std::none_of(a,a+4,pred))return 3;
+ if(std::all_of(a,a+4,pred))return 4;
+ if(!std::any_of(a,a+4,pred))return 5;
+ if(std::count_if(a,a+4,pred)!=2)return 6;
+ if(std::is_partitioned(a,a+4,pred))return 7;
+ if(!std::is_partitioned(a,a+2,pred))return 8;
+ if(std::find_if(a,a,pred)!=a || std::count_if(a,a,pred)!=0)return 9;
+ if(!std::all_of(a,a,pred) || std::any_of(a,a,pred) || !std::none_of(a,a,pred))return 10;
+ }
+ { const double a[]={-0.0,2.5,0.0,-4.5}; const std::logical_not<double> pred{};
+ if(std::find_if(a,a+4,pred)!=a)return 1;
+ if(std::find_if_not(a,a+4,pred)!=a+1)return 2;
+ if(std::none_of(a,a+4,pred))return 3;
+ if(std::all_of(a,a+4,pred))return 4;
+ if(!std::any_of(a,a+4,pred))return 5;
+ if(std::count_if(a,a+4,pred)!=2)return 6;
+ if(std::is_partitioned(a,a+4,pred))return 7;
+ if(!std::is_partitioned(a,a+2,pred))return 8;
+ if(std::find_if(a,a,pred)!=a || std::count_if(a,a,pred)!=0)return 9;
+ if(!std::all_of(a,a,pred) || std::any_of(a,a,pred) || !std::none_of(a,a,pred))return 10;
+ }
+ { const bool a[]={false,true,false,true}; const std::logical_not<> pred{};
+ if(std::find_if(a,a+4,pred)!=a)return 1;
+ if(std::find_if_not(a,a+4,pred)!=a+1)return 2;
+ if(std::none_of(a,a+4,pred))return 3;
+ if(std::all_of(a,a+4,pred))return 4;
+ if(!std::any_of(a,a+4,pred))return 5;
+ if(std::count_if(a,a+4,pred)!=2)return 6;
+ if(std::is_partitioned(a,a+4,pred))return 7;
+ if(!std::is_partitioned(a,a+2,pred))return 8;
+ if(std::find_if(a,a,pred)!=a || std::count_if(a,a,pred)!=0)return 9;
+ if(!std::all_of(a,a,pred) || std::any_of(a,a,pred) || !std::none_of(a,a,pred))return 10;
+ }
+ return 0;
+}
+"""
+    algorithm_sdk_predicate_mutation_source = """\
+#include <algorithm>
+#include <functional>
+int main(){
+ { int a[]={0,2,0,4}; std::logical_not<int> pred{}; long out[4]={-1,-1,-1,-1};
+ if(std::copy_if(a,a+4,out,pred)!=out+2 || out[0]!=0 || out[1]!=0 || out[2]!=-1)return 1;
+ if(std::remove_copy_if(a,a+4,out,pred)!=out+2 || out[0]!=2 || out[1]!=4 || out[2]!=-1)return 2;
+ if(std::replace_copy_if(a,a+4,out,pred,7)!=out+4 || out[0]!=7 || out[1]!=2 || out[2]!=7 || out[3]!=4)return 3;
+ int yes[4]={-1,-1,-1,-1}; long no[4]={-1,-1,-1,-1};
+ auto [y,n]=std::partition_copy(a,a+4,yes,no,pred);
+ if(y!=yes+2 || n!=no+2 || yes[0]!=0 || yes[1]!=0 || no[0]!=2 || no[1]!=4)return 4;
+ auto end=std::remove_if(a,a+4,pred);
+ if(end!=a+2 || a[0]!=2 || a[1]!=4)return 5;
+ int b[]={0,2,0,4}; std::replace_if(b,b+4,pred,9);
+ if(b[0]!=9 || b[1]!=2 || b[2]!=9 || b[3]!=4)return 6;
+ if(std::remove_if(b,b,pred)!=b || std::copy_if(b,b,out,pred)!=out)return 7;
+ auto empty=std::partition_copy(b,b,yes,no,pred);
+ if(empty.first!=yes || empty.second!=no)return 8;
+ }
+ { int a[]={0,2,0,4}; std::logical_not<> pred{}; long out[4]={-1,-1,-1,-1};
+ if(std::copy_if(a,a+4,out,pred)!=out+2 || out[0]!=0 || out[1]!=0 || out[2]!=-1)return 1;
+ if(std::remove_copy_if(a,a+4,out,pred)!=out+2 || out[0]!=2 || out[1]!=4 || out[2]!=-1)return 2;
+ if(std::replace_copy_if(a,a+4,out,pred,7)!=out+4 || out[0]!=7 || out[1]!=2 || out[2]!=7 || out[3]!=4)return 3;
+ int yes[4]={-1,-1,-1,-1}; long no[4]={-1,-1,-1,-1};
+ auto [y,n]=std::partition_copy(a,a+4,yes,no,pred);
+ if(y!=yes+2 || n!=no+2 || yes[0]!=0 || yes[1]!=0 || no[0]!=2 || no[1]!=4)return 4;
+ auto end=std::remove_if(a,a+4,pred);
+ if(end!=a+2 || a[0]!=2 || a[1]!=4)return 5;
+ int b[]={0,2,0,4}; std::replace_if(b,b+4,pred,9);
+ if(b[0]!=9 || b[1]!=2 || b[2]!=9 || b[3]!=4)return 6;
+ if(std::remove_if(b,b,pred)!=b || std::copy_if(b,b,out,pred)!=out)return 7;
+ auto empty=std::partition_copy(b,b,yes,no,pred);
+ if(empty.first!=yes || empty.second!=no)return 8;
+ }
+ return 0;
+}
+"""
+    algorithm_sdk_predicate_identity_source = """\
+#include <algorithm>
+#include <functional>
+int calls=0; int cleanup=0;
+struct Token { ~Token(){++cleanup;} }; // sdk-predicate-function: 1
+std::logical_not<int> make(Token t=Token{}){++calls; return {};} // sdk-predicate-function: 3
+std::logical_not<> transparent(){++calls; return {};} // sdk-predicate-function: 1
+int main(){
+ int a[]={0,1,0}; int out[3]={9,9,9};
+ auto count_value=std::count_if(a,a+3,make());
+ if(count_value!=2 || calls!=1 || cleanup!=1)return 1;
+ auto empty_value=std::find_if(a,a,make());
+ if(empty_value!=a || calls!=2 || cleanup!=2)return 2;
+ if(std::copy_if(a,a+3,out,transparent())!=out+2 || calls!=3)return 3;
+ auto remove_value=std::remove_if(a,a+3,make());
+ if(remove_value!=a+1 || calls!=4 || cleanup!=3)return 4;
+ decltype(std::count_if(a,a+3,make())) count=0;
+ decltype(std::copy_if(a,a+3,out,transparent())) end=out;
+ if(count || end!=out || calls!=4 || cleanup!=3)return 5;
+ if(noexcept(std::count_if(a,a+3,make())) || calls!=4 || cleanup!=3)return 6;
+ return 0;
+}
+"""
+    for name, source in (("state", algorithm_sdk_predicate_state_source),
+                         ("mutation", algorithm_sdk_predicate_mutation_source),
+                         ("identity", algorithm_sdk_predicate_identity_source)):
+        for target in sdk_targets:
+            data = check("v2-algorithm-sdk-predicate-" + name + "-" + target,
+                         source, profile="cpp-core-v2", target=target, sdk=True)
+            check_algorithm_sdk_predicate(data, source)
+
+    algorithm_sdk_predicate_rejections = [
+        ('heterogeneous-typed', '#include <algorithm>\n#include <functional>\nint*f(int*p){return std::find_if(p,p+2,std::logical_not<long>{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('nonboolean-sdk', '#include <algorithm>\n#include <functional>\nint*f(int*p){return std::find_if(p,p+2,std::negate<int>{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('nonboolean-transparent', '#include <algorithm>\n#include <functional>\nint*f(int*p){return std::find_if(p,p+2,std::bit_not<>{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('record-input', '#include <algorithm>\n#include <functional>\nstruct R{explicit operator bool()const{return true;}};R*f(R*p){return std::find_if(p,p+2,std::logical_not<>{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('volatile-input', '#include <algorithm>\n#include <functional>\nvolatile int*f(volatile int*p){return std::find_if(p,p+2,std::logical_not<>{});}\n', 'TR0201', 'cpp-core-v2', True),
+        ('functional-specialization', '#include <algorithm>\n#include <functional>\nnamespace std{template<>struct logical_not<int>{bool operator()(int)const{return true;}};}int*f(int*p){return std::find_if(p,p+2,std::logical_not<int>{});}\n', 'TR0201', 'cpp-core-v2', True),
+        ('functional-method-specialization', '#include <algorithm>\n#include <functional>\nnamespace std{template<>constexpr bool logical_not<int>::operator()(const int&n)const{return n>1;}}int*f(int*p){return std::find_if(p,p+2,std::logical_not<int>{});}\n', 'TR0201', 'cpp-core-v2', True),
+        ('functional-redeclaration', '#include <algorithm>\n#include <functional>\nnamespace std{inline namespace __1{template<class T>struct logical_not;}}int*f(int*p){return std::find_if(p,p+2,std::logical_not<int>{});}\n', 'TR0201', 'cpp-core-v2', True),
+        ('algorithm-specialization', '#include <algorithm>\n#include <functional>\nnamespace std{template<>int*find_if<int*,logical_not<int>>(int*p,int*,logical_not<int>){return p;}}int*f(int*p){return std::find_if(p,p+2,std::logical_not<int>{});}\n', 'TR0201', 'cpp-core-v2', True),
+        ('query-no-body', '#include <algorithm>\n#include <functional>\nint f(int*p){static_assert(__is_same(decltype(std::find_if(p,p+2,std::logical_not<int>{})),int*));return 0;}\n', 'TR0203', 'cpp-core-v2', True),
+        ('factory-default', '#include <algorithm>\n#include <functional>\nstd::logical_not<int> make(int=(sizeof(long double),0)){return {};}int*f(int*p){return std::find_if(p,p+2,make());}\n', 'TR0201', 'cpp-core-v2', True),
+        ('input-source', '#include <algorithm>\n#include <functional>\nint*f(int*p){return std::find_if(p,p+(sizeof(long double),2),std::logical_not<int>{});}\n', 'TR0201', 'cpp-core-v2', True),
+        ('predicate-alias', '#include <algorithm>\n#include <functional>\nint object;template<auto>using Erased=std::logical_not<int>;int*f(int*p){return std::find_if<int*,Erased<&object>>(p,p+2,std::logical_not<int>{});}\n', 'TR0201', 'cpp-core-v2', True),
+        ('generic-source-method', '#include <algorithm>\n#include <functional>\nstruct P{template<class T>bool operator()(T n)const{return !n;}};int*f(int*p){return std::find_if(p,p+2,P{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('lambda', '#include <algorithm>\n#include <functional>\nint*f(int*p){return std::find_if(p,p+2,[](int n){return !n;});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('partition-independent', '#include <algorithm>\n#include <functional>\nint*f(int*p){return std::partition(p,p+2,std::logical_not<int>{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('remove-helper-specialization', '#include <algorithm>\n#include <functional>\nnamespace std{template<>int*find_if<int*,logical_not<int>&>(int*p,int*,logical_not<int>&){return p;}}int*f(int*p){return std::remove_if(p,p+2,std::logical_not<int>{});}\n', 'TR0201', 'cpp-core-v2', True),
+    ]
+    for name, source, code, profile, sdk in algorithm_sdk_predicate_rejections:
+        check("v2-algorithm-sdk-predicate-reject-" + name, source, code, profile=profile, sdk=sdk)
+
+    algorithm_sdk_predicate_promoted = [
+        ('callables-sdk-predicate', '#include <algorithm>\n#include <functional>\nint f(int*a){return std::find_if(a,a+2,std::logical_not<int>{})==a;}\n'),
+        ('composed-predicates-sdk-predicate', '#include <algorithm>\n#include <functional>\nint f(int*a){return std::all_of(a,a+2,std::logical_not<int>{});}\n'),
+        ('replacement-sdk-predicate', '#include <algorithm>\n#include <functional>\nint f(int*p){std::replace_if(p,p+2,std::logical_not<int>{},1);return 0;}\n'),
+        ('template-sdk-predicate', '#include <algorithm>\n#include <functional>\nint f(int*p){return std::all_of(p,p+2,std::logical_not<int>{});}\n'),
+        ('filter-copy-sdk-predicate', '#include <algorithm>\n#include <functional>\nlong*f(int*p,long*out){return std::remove_copy_if(p,p+2,out,std::logical_not<int>{});}\n'),
+        ('copy-if-sdk-predicate', '#include <algorithm>\n#include <functional>\nlong*f(int*p,long*out){return std::copy_if(p,p+2,out,std::logical_not<int>{});}\n'),
+        ('partition-predicate-sdk-predicate', '#include <algorithm>\n#include <functional>\nint f(int*p){return std::is_partitioned(p,p+2,std::logical_not<int>{});}\n'),
+        ('partition-copy-sdk-predicate', '#include <algorithm>\n#include <functional>\nauto f(int*p,long*out,short*out2){return std::partition_copy(p,p+2,out,out2,std::logical_not<int>{});}\n'),
+        ('remove-predicate-sdk-predicate', '#include <algorithm>\n#include <functional>\nint*f(int*p){return std::remove_if(p,p+2,std::logical_not<int>{});}\n'),
+    ]
+    for name, source in algorithm_sdk_predicate_promoted:
+        check("v2-algorithm-sdk-predicate-promoted-" + name, source, profile="cpp-core-v2", sdk=True)
 
     algorithm_predicate_queries_source = """\
 #include <algorithm>

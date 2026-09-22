@@ -850,7 +850,7 @@ enum class UtilityOperation {
   OptionalGreaterEqual,
   MakeOptional,
 };
-// A source function object selected by an exact unary algorithm body. The
+// A checked function object selected by an exact unary algorithm body. The
 // outer algorithm owns a by-value predicate; Invocation uses that same lvalue.
 struct UtilityAlgorithmPredicateCall {
   UtilityOperation Operation;
@@ -859,6 +859,7 @@ struct UtilityAlgorithmPredicateCall {
   const clang::CXXMethodDecl *Method;
   clang::QualType ObjectType;
   unsigned ParameterIndex;
+  std::optional<FunctionalOperationInfo> SDKOperation;
 };
 std::optional<UtilityAlgorithmPredicateCall>
 approvedUtilityAlgorithmPredicateCall(const State &S,

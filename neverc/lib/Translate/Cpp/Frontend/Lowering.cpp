@@ -658,6 +658,7 @@ class FunctionLowering {
     Expression Storage;
     QualType Type;
     const CXXMethodDecl *Method = nullptr;
+    std::optional<FunctionalOperationInfo> SDKOperation;
   };
   CapturedAlgorithmPredicate captureUnaryPredicate(const CallExpr *Call,
                                                    UtilityOperation Operation,
@@ -671,13 +672,16 @@ class FunctionLowering {
       // Construct the actual by-value parameter once in final storage. In
       // particular, a prvalue's self pointer must not point at an extra copy.
       return {argument(Call->getArg(Index), Info->ObjectType), Info->ObjectType,
-              Info->Method};
+              Info->Method, Info->SDKOperation};
     }
     return {snapshot(expression(Call->getArg(Index)), L),
             Call->getArg(Index)->getType(), nullptr};
   }
   Expression emitUnaryPredicate(const CapturedAlgorithmPredicate &Predicate,
                                  Expression Argument, SourceLocation L) {
+    if (Predicate.SDKOperation)
+      return functionalOperationValues(L, std::move(Argument), std::nullopt,
+                                       *Predicate.SDKOperation);
     if (!Predicate.Method)
       return emitUnaryPredicate(json::Object(Predicate.Storage), Predicate.Type,
                                 std::move(Argument), L);
@@ -11112,6 +11116,15 @@ class FunctionLowering {
       if (I->isSyntacticForm() && I->getSemanticForm())
         I = I->getSemanticForm();
       const auto *Record = I->getType()->getAsCXXRecordDecl()->getDefinition();
+      if (A.S.coreV2() &&
+          approvedFunctionalObjectRecord(A.S, A.Sources, Record, A.Context)) {
+        // Pinned empty functional records use one byte of portable storage.
+        // Retain every checked initializer effect, including a typed functor's
+        // legacy empty base, before initializing that carrier.
+        discardFunctionalObject(I);
+        assign(std::move(Place), A.zero(I->getType(), L), L);
+        return;
+      }
       const auto UtilityArray = approvedUtilityArrayRecord(
           A.S, A.Sources, Record, A.Context);
       if (UtilityArray && !UtilityArray->Size) {
