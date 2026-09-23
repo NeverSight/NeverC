@@ -3176,9 +3176,20 @@ class FunctionLowering {
       auto Output = snapshot(expression(Call->getArg(2)), L);
       std::optional<Expression> Callback;
       std::optional<QualType> CallbackType;
+      std::optional<CapturedAlgorithmPredicate> OperationObject;
       if (Call->getNumArgs() >= 4) {
-        CallbackType = Call->getArg(3)->getType();
-        Callback = snapshot(expression(Call->getArg(3)), L);
+        if (Operation == UtilityOperation::NumericPartialSum) {
+          auto Captured = captureUnaryPredicate(Call, Operation, 3);
+          if (Captured.Method)
+            OperationObject = std::move(Captured);
+          else {
+            CallbackType = Captured.Type;
+            Callback = std::move(Captured.Storage);
+          }
+        } else {
+          CallbackType = Call->getArg(3)->getType();
+          Callback = snapshot(expression(Call->getArg(3)), L);
+        }
       }
       const auto FirstType = type(Call->getArg(0)->getType(), L);
       const auto OutputType = type(Call->getArg(2)->getType(), L);
@@ -3244,6 +3255,10 @@ class FunctionLowering {
       assign(CurrentValue, dereference(First, L), L);
       auto Combine = [&](Expression Left, Expression Right,
                          llvm::StringRef DefaultOperator) {
+        if (OperationObject)
+          return cast(emitBinaryCallable(*OperationObject, std::move(Left),
+                                         std::move(Right), L),
+                      ElementType, L);
         if (!Callback)
           return binary(DefaultOperator, std::move(Left), std::move(Right),
                         ElementType, L);

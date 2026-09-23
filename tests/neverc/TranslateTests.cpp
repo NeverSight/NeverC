@@ -36855,6 +36855,64 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2NumericPartialSumSDKObjectRunsAtBothOptimizations) {
+  const auto Source = tmpFile("numeric-partial-sum-sdk-object.cpp");
+  const auto Output = tmpFile("numeric-partial-sum-sdk-object.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+#include <functional>
+int first_calls, last_calls, output_calls;
+int *first(int *p) { ++first_calls; return p; }
+int *last(int *p) { ++last_calls; return p; }
+long *output(long *p) { ++output_calls; return p; }
+int calls, factories;
+struct Add {
+  int local_calls;
+  int operator()(int total, int value) & {
+    ++calls; ++local_calls; return total + value + local_calls;
+  }
+  int operator()(int, int) const & { return -100; }
+};
+Add make() { ++factories; return Add{0}; }
+int main() {
+  int values[3]{1, 2, 3};
+  long sums[3]{};
+  long *end = std::partial_sum(first(values), last(values + 3),
+                               output(sums), std::plus<int>{});
+  if (end != sums + 3 || sums[0] != 1 || sums[1] != 3 || sums[2] != 6 ||
+      first_calls != 1 || last_calls != 1 || output_calls != 1) return 1;
+  long products[3]{};
+  if (std::partial_sum(values, values + 3, products,
+                       std::multiplies<int>{}) != products + 3 ||
+      products[0] != 1 || products[1] != 2 || products[2] != 6) return 2;
+  if (std::partial_sum(values, values, sums, std::plus<>{}) != sums ||
+      sums[0] != 1) return 3;
+  long custom[3]{};
+  Add caller{0};
+  if (std::partial_sum(values, values + 3, custom, caller) != custom + 3 ||
+      custom[0] != 1 || custom[1] != 4 || custom[2] != 9 ||
+      calls != 2 || caller.local_calls != 0) return 4;
+  if (std::partial_sum(values, values, custom, make()) != custom ||
+      calls != 2 || factories != 1) return 5;
+  if (std::partial_sum(values, values + 3, values, std::plus<>{}) !=
+          values + 3 || values[0] != 1 || values[1] != 3 ||
+      values[2] != 6) return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("numeric-partial-sum-sdk-object" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2NumericTransformScansRunAtBothOptimizations) {
   const auto Source = tmpFile("numeric-transform-scans.cpp");
   const auto Output = tmpFile("numeric-transform-scans.nc");

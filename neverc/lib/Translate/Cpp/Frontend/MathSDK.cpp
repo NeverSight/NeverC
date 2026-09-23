@@ -13001,6 +13001,236 @@ utilityNumericReductionObjectCall(const State &S, const SourceManager &SM,
       SDKOperation};
 }
 
+// The pinned C++17 partial_sum overload retains one binary operation across
+// the range. Prove the exact scalar loop and selected source or SDK method.
+static std::optional<UtilityAlgorithmPredicateCall>
+utilityNumericPartialSumObjectCall(const State &S, const SourceManager &SM,
+                                   const CallExpr *Call,
+                                   const ASTContext &Context) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  if (!S.coreV2() || !Call || !Function ||
+      Function->getName() != "partial_sum" || Call->getNumArgs() != 4 ||
+      Function->getNumParams() != 4 || !Call->isPRValue() ||
+      Call->isTypeDependent() || Call->isValueDependent() ||
+      Call->isInstantiationDependent())
+    return std::nullopt;
+  const auto Input = Function->getParamDecl(0)->getType();
+  const auto Output = Function->getParamDecl(2)->getType();
+  const auto Object = Function->getParamDecl(3)->getType();
+  const auto Element = Input->isPointerType()
+                           ? Input->getPointeeType().getUnqualifiedType()
+                           : QualType{};
+  const bool Arithmetic =
+      !Element.isNull() &&
+      ((!Element->isEnumeralType() && Element->isIntegerType() &&
+        !Context.isPromotableIntegerType(Element) &&
+        Context.getTypeSize(Element) <= 64) ||
+       Element->isSpecificBuiltinType(BuiltinType::Float) ||
+       Element->isSpecificBuiltinType(BuiltinType::Double));
+  const auto *Record = Object->getAsCXXRecordDecl();
+  Record = Record ? Record->getDefinition() : nullptr;
+  const bool SDKObject =
+      Record &&
+      approvedFunctionalObjectRecord(S, SM, Record, Context).has_value();
+  if (!Arithmetic || !utilityAlgorithmScalarPointer(Context, Input) ||
+      !utilityAlgorithmWritableScalarPointer(Context, Output) ||
+      !utilityScalarDirectConversion(Context, Element,
+                                     Output->getPointeeType()) ||
+      !Context.hasSameType(Function->getParamDecl(1)->getType(), Input) ||
+      !Context.hasSameType(Call->getArg(0)->getType(), Input) ||
+      !Context.hasSameType(Call->getArg(1)->getType(), Input) ||
+      !Context.hasSameType(Call->getArg(2)->getType(), Output) ||
+      !Context.hasSameType(Call->getArg(3)->getType(), Object) ||
+      !Context.hasSameType(Function->getReturnType(), Output) ||
+      !Context.hasSameType(Call->getType(), Output) || !Record ||
+      Object.hasLocalQualifiers() || Record->isLambda() || Record->isUnion() ||
+      !Record->isStandardLayout() || !Record->isTriviallyCopyable() ||
+      !Record->hasTrivialCopyConstructor() || !Record->hasTrivialDestructor() ||
+      (!S.owns(SM, Record->getLocation()) && !SDKObject))
+    return std::nullopt;
+  const auto *Primary = Function->getPrimaryTemplate();
+  const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+  const auto *Definition = Function->getDefinition();
+  const auto *PatternDefinition = Pattern ? Pattern->getDefinition() : nullptr;
+  const auto *Arguments = Function->getTemplateSpecializationArgs();
+  auto Origin = [&](const Decl *D) {
+    return approvedStandardSDKDeclaration(S, SM, D) &&
+           cstddefOrigin(S, SM, D->getLocation(), "libcxx",
+                         "__numeric/partial_sum.h");
+  };
+  if (!Primary || !Pattern || !Definition || !PatternDefinition ||
+      Function->isVariadic() ||
+      Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      !approvedUtilityReference(S, SM, Call, Function) || !Origin(Definition) ||
+      !Origin(PatternDefinition) || !Arguments || Arguments->size() != 3)
+    return std::nullopt;
+  for (const auto *D : Function->redecls())
+    if (!Origin(D))
+      return std::nullopt;
+  for (const auto *D : Primary->redecls())
+    if (!Origin(D) || !Origin(D->getTemplatedDecl()))
+      return std::nullopt;
+  for (const auto *D : Pattern->redecls())
+    if (!Origin(D))
+      return std::nullopt;
+  for (const auto [Index, Expected] :
+       {std::pair{0u, Input}, std::pair{1u, Output}, std::pair{2u, Object}})
+    if (Arguments->get(Index).getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Arguments->get(Index).getAsType(), Expected))
+      return std::nullopt;
+
+  auto Reference = [&](const Expr *Expression, const ValueDecl *Value) {
+    return utilityAlgorithmReference(Expression, Value, Context);
+  };
+  auto ScalarReference = [&](const Expr *Expression, const ValueDecl *Value) {
+    while (const auto *Cast = dyn_cast_or_null<ImplicitCastExpr>(Expression)) {
+      if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
+                                         Cast->getType()))
+        return false;
+      Expression = Cast->getSubExpr();
+    }
+    return Reference(Expression, Value);
+  };
+  auto Dereference = [&](const Expr *Expression, const ValueDecl *Pointer,
+                         QualType Expected) {
+    const auto *Deref =
+        dyn_cast_or_null<UnaryOperator>(Expression->IgnoreParenImpCasts());
+    return Deref && Deref->getOpcode() == UO_Deref && Deref->isLValue() &&
+           Context.hasSameType(Deref->getType(), Expected) &&
+           Reference(Deref->getSubExpr(), Pointer);
+  };
+  auto Increment = [&](const Expr *Expression, const ValueDecl *Value) {
+    const auto *Unary = dyn_cast_or_null<UnaryOperator>(Expression);
+    return Unary && Unary->getOpcode() == UO_PreInc &&
+           Reference(Unary->getSubExpr(), Value);
+  };
+  auto Steps = [&](const Expr *Expression) {
+    const auto *Comma = dyn_cast_or_null<BinaryOperator>(Expression);
+    const auto *VoidStep =
+        Comma ? dyn_cast<CStyleCastExpr>(Comma->getRHS()) : nullptr;
+    return Comma && Comma->getOpcode() == BO_Comma &&
+           Increment(Comma->getLHS(), Definition->getParamDecl(0)) &&
+           VoidStep && VoidStep->getCastKind() == CK_ToVoid &&
+           Increment(VoidStep->getSubExpr(), Definition->getParamDecl(2));
+  };
+  auto Condition = [&](const Expr *Expression) {
+    const auto *Compare = dyn_cast_or_null<BinaryOperator>(Expression);
+    return Compare && Compare->getOpcode() == BO_NE &&
+           Reference(Compare->getLHS(), Definition->getParamDecl(0)) &&
+           Reference(Compare->getRHS(), Definition->getParamDecl(1));
+  };
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Definition->getBody());
+  if (!Body || Body->size() != 2)
+    return std::nullopt;
+  auto Part = Body->body_begin();
+  const auto *Branch = dyn_cast<IfStmt>(*Part++);
+  const auto *Return = dyn_cast<ReturnStmt>(*Part);
+  const auto *Then =
+      Branch ? dyn_cast<CompoundStmt>(Branch->getThen()) : nullptr;
+  if (!Branch || Branch->getInit() || Branch->getConditionVariable() ||
+      Branch->getElse() || !Condition(Branch->getCond()) || !Then ||
+      Then->size() != 3 || !Return ||
+      !Reference(Return->getRetValue(), Definition->getParamDecl(2)))
+    return std::nullopt;
+  auto Statement = Then->body_begin();
+  const auto *Declaration = dyn_cast<DeclStmt>(*Statement++);
+  const auto *Variable = Declaration && Declaration->isSingleDecl()
+                             ? dyn_cast<VarDecl>(Declaration->getSingleDecl())
+                             : nullptr;
+  const auto *Initial = Variable ? Variable->getInit() : nullptr;
+  const auto *FirstStore = dyn_cast<BinaryOperator>(*Statement++);
+  const auto *Loop = dyn_cast<ForStmt>(*Statement);
+  const auto *LoopBody =
+      Loop ? dyn_cast<CompoundStmt>(Loop->getBody()) : nullptr;
+  if (!Variable || Variable->isImplicit() ||
+      Variable->getDeclContext() != Definition ||
+      !Context.hasSameUnqualifiedType(Variable->getType(), Element) ||
+      !Initial ||
+      !Dereference(Initial, Definition->getParamDecl(0),
+                   Input->getPointeeType()) ||
+      !FirstStore || FirstStore->getOpcode() != BO_Assign ||
+      !Dereference(FirstStore->getLHS(), Definition->getParamDecl(2),
+                   Output->getPointeeType()) ||
+      !ScalarReference(FirstStore->getRHS(), Variable) || !Loop ||
+      Loop->getConditionVariable() ||
+      !Steps(dyn_cast_or_null<Expr>(Loop->getInit())) ||
+      !Condition(Loop->getCond()) || !Steps(Loop->getInc()) || !LoopBody ||
+      LoopBody->size() != 2)
+    return std::nullopt;
+  auto LoopStatement = LoopBody->body_begin();
+  const auto *Combine = dyn_cast<BinaryOperator>(*LoopStatement++);
+  const auto *Store = dyn_cast<BinaryOperator>(*LoopStatement);
+  if (!Combine || Combine->getOpcode() != BO_Assign ||
+      !Reference(Combine->getLHS(), Variable) || !Store ||
+      Store->getOpcode() != BO_Assign ||
+      !Dereference(Store->getLHS(), Definition->getParamDecl(2),
+                   Output->getPointeeType()) ||
+      !ScalarReference(Store->getRHS(), Variable))
+    return std::nullopt;
+  const Expr *Result = Combine->getRHS();
+  while (const auto *Cast = dyn_cast<ImplicitCastExpr>(Result)) {
+    if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
+                                       Cast->getType()))
+      return std::nullopt;
+    Result = Cast->getSubExpr();
+  }
+  const auto *Invocation = dyn_cast<CXXOperatorCallExpr>(Result);
+  if (!Invocation || Invocation->getOperator() != OO_Call ||
+      Invocation->getNumArgs() != 3 || !Invocation->isPRValue() ||
+      !Reference(Invocation->getArg(0), Definition->getParamDecl(3)) ||
+      !Reference(Invocation->getArg(1), Variable) ||
+      !Dereference(Invocation->getArg(2), Definition->getParamDecl(0),
+                   Input->getPointeeType()))
+    return std::nullopt;
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Invocation->getDirectCallee());
+  const auto *MethodDefinition = Method ? Method->getDefinition() : nullptr;
+  if (!Method || !MethodDefinition || Method->isStatic() ||
+      Method->isVolatile() || Method->getOverloadedOperator() != OO_Call ||
+      Method->getNumParams() != 2 ||
+      Method->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
+      !functionalMemberReceiverValueCategory(Method, Invocation->getArg(0),
+                                             false) ||
+      !utilityScalarDirectConversion(Context, Method->getReturnType(), Element))
+    return std::nullopt;
+  std::optional<FunctionalOperationInfo> SDKOperation;
+  if (SDKObject) {
+    SDKOperation =
+        approvedFunctionalOperationImpl(S, SM, Invocation, Context, false);
+    if (!SDKOperation || SDKOperation->RightType.isNull() ||
+        !Context.hasSameUnqualifiedType(
+            Element,
+            Method->getParamDecl(0)->getType().getNonReferenceType()) ||
+        !Context.hasSameUnqualifiedType(
+            Element, Method->getParamDecl(1)->getType().getNonReferenceType()))
+      return std::nullopt;
+  } else {
+    if ((Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
+         Method->getTemplatedKind() != FunctionDecl::TK_MemberSpecialization) ||
+        Method->getPrimaryTemplate() ||
+        Method->getDescribedFunctionTemplate() || !ordinaryOperator(Method) ||
+        !callableMethod(Method) || !S.owns(SM, MethodDefinition->getLocation()))
+      return std::nullopt;
+    for (const auto *D : Method->redecls())
+      if (!S.owns(SM, D->getLocation()))
+        return std::nullopt;
+  }
+  const auto LeftType = SDKOperation ? SDKOperation->LeftType
+                                     : Method->getParamDecl(0)->getType();
+  const auto RightType = SDKOperation ? SDKOperation->RightType
+                                      : Method->getParamDecl(1)->getType();
+  if (!utilityScalarDirectConversion(Context, Element, LeftType) ||
+      !utilityScalarDirectConversion(Context, Element, RightType))
+    return std::nullopt;
+  return UtilityAlgorithmPredicateCall{UtilityOperation::NumericPartialSum,
+                                       Function,
+                                       Invocation,
+                                       Method,
+                                       Object,
+                                       3,
+                                       SDKOperation};
+}
+
 std::optional<UtilityAlgorithmPredicateCall>
 approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
                                       const CallExpr *Call,
@@ -13022,6 +13252,8 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
     return utilityAlgorithmGenerateObjectCall(S, SM, Call, Context);
   if (Name == "accumulate" || Name == "reduce")
     return utilityNumericReductionObjectCall(S, SM, Call, Context);
+  if (Name == "partial_sum" && Call->getNumArgs() == 4)
+    return utilityNumericPartialSumObjectCall(S, SM, Call, Context);
   const bool Find = Name == "find_if", FindNot = Name == "find_if_not";
   const bool None = Name == "none_of", All = Name == "all_of";
   const bool Any = Name == "any_of", Count = Name == "count_if";
