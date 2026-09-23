@@ -706,9 +706,9 @@ offset, subscript, difference and comparisons. Generated programs use existing
 pointer and control-flow operations and do not link libc++.
 
 The four stream-iterator component headers remain authenticated in the VFS but
-their declarations are disabled because libc++ obtains `mbstate_t` from a target
-C runtime header. Custom iterator classes, function-pointer iterators, quoted
-includes and forged declarations remain rejected.
+their declarations are disabled until the I/O header closure and runtime
+operations are admitted. Custom iterator classes, function-pointer iterators,
+quoted includes and forged declarations remain rejected.
 
 ## Numeric header from `<numeric>`
 
@@ -2040,10 +2040,9 @@ expression. Query-only calls do not manufacture a missing instantiated body,
 and taking an algorithm's address does not inherit a checked call's proof.
 
 The `shuffle` and `sample` component headers are authenticated but their
-declarations stay disabled because libc++ reaches `mbstate_t` through
-`uniform_int_distribution`. They will be enabled after the core SDK has a
-checked C runtime character-state ABI on every target. Quoted includes, user
-shadow headers and forged declarations remain rejected.
+declarations stay disabled until the random-distribution header closure and
+direct lowering are implemented. Quoted includes, user shadow headers and
+forged declarations remain rejected.
 
 ## Standard template parsing across targets
 
@@ -2136,9 +2135,8 @@ Namespace and local/member static arrays also follow the
 [fixed-array static storage contract](#fixed-array-static-storage).
 Object pointers follow their [static address contract](#static-object-pointer-storage).
 Static reference bindings follow their [alias contract](#static-reference-bindings).
-Dynamic initialization, global destruction,
-user-defined literal operators, other standard string headers and `std::string`
-allocation/operations remain unfinished.
+Dynamic initialization, global destruction, user-defined literal operators,
+and `std::string` allocation/operations remain unfinished.
 Existing array extent and generated-node budgets apply; no runtime bounds checks
 are added. V1 profiles retain their previous accepted inputs.
 
@@ -2162,11 +2160,26 @@ Only the `std::` names introduced by the pinned header are admitted. Global
 and function addresses remain outside this boundary. The caller still supplies
 zero-terminated strings to `strlen` and `strcmp`, and readable character arrays
 through the bytes examined by `strncmp`. This does not add `std::string` or
-`std::string_view`.
+runtime `std::string_view` operations.
 
 Eight-target protocol checks and O0/O2 execution cover the direct lowering,
 unsigned comparison order, prefix and zero-count behavior, and one-time
 argument evaluation.
+
+## String-view header and metadata from `<string_view>`
+
+Core v2 admits an exact angle include of the pinned C++17 `<string_view>`
+header. Its 240-file libc++/resource closure is identical on all eight core
+targets and uses no platform SDK header. The closure exposes
+`std::string_view`'s `size_type`, `npos`, and constant size/alignment queries.
+The parsed object has the libc++ two-field pointer-and-size layout.
+
+NeverC's SDK supplies the target C runtime `mbstate_t` declaration required by
+the pinned `char_traits` header: 128-byte, 8-aligned on Darwin, and 8-byte,
+4-aligned on the supported glibc and UCRT targets. A minimal C `stdio.h` shim
+provides `EOF` for parsing. Neither shim admits a top-level C header or
+runtime C I/O call. String-view construction, storage and member calls still
+require direct lowering and remain rejected by the runtime-object boundary.
 
 ## Dynamic local static initialization
 

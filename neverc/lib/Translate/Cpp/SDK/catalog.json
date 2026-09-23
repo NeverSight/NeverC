@@ -1,7 +1,7 @@
 {
   "schema": "neverc.cpp.sdk.catalog",
   "version": 1,
-  "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r11",
+  "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r12",
   "clang_version": "20.1.8",
   "libcxx_version": 200100,
   "platform_sdk_version": "15.5",
@@ -1032,6 +1032,11 @@
     },
     {
       "root": "libcxx",
+      "path": "__fwd/string_view.h",
+      "sha256": "24da6015f8050b92c15e00bb46fa5772d96d7152eb85d5a3310cd4047a6ed660"
+    },
+    {
+      "root": "libcxx",
       "path": "__fwd/subrange.h",
       "sha256": "5f380816368c4402f2b44480eb2ef2283eebe31e76eb2b98f7f136febed2f729"
     },
@@ -1659,6 +1664,11 @@
       "root": "libcxx",
       "path": "__std_mbstate_t.h",
       "sha256": "2677e8a6fe4469233279818ed7ff9eb5a204faacd0011f6706f3df5a8785df86"
+    },
+    {
+      "root": "libcxx",
+      "path": "__string/char_traits.h",
+      "sha256": "3f98b388dccd487782573ad7e2c0c05e47fa85ef6ee7f7fef3b41457f856fd6b"
     },
     {
       "root": "libcxx",
@@ -2457,6 +2467,11 @@
     },
     {
       "root": "libcxx",
+      "path": "cstdio",
+      "sha256": "5b5f9dfafabe1feb541a6bd6498053e602c4067d949dff583cc7e49a1f39ebc7"
+    },
+    {
+      "root": "libcxx",
       "path": "cstdlib",
       "sha256": "f2f5a516b5353f1e55272c092a628f03911c386d1bd9acbc4fda1c69593f9ca5"
     },
@@ -2537,6 +2552,11 @@
     },
     {
       "root": "libcxx",
+      "path": "stdio.h",
+      "sha256": "d6722336708b2f485b3d05d99f42f5d80fdef3a46e081c62214168d44ef727a0"
+    },
+    {
+      "root": "libcxx",
       "path": "stdlib.h",
       "sha256": "faca704a728e950b2ae47e42a707558b95fcef0e7df4d2237a6bf8104c85d51e"
     },
@@ -2544,6 +2564,11 @@
       "root": "libcxx",
       "path": "string.h",
       "sha256": "9e6f3b3d0a59f913f6a193b8689d3f77e7b23418dc124cfdeb8028eb7c1a5dfe"
+    },
+    {
+      "root": "libcxx",
+      "path": "string_view",
+      "sha256": "5c1162d2b96b7878d773ed695c1feac3d5d1e62f6ff1cefcc35b6835385e42f7"
     },
     {
       "root": "libcxx",
@@ -3037,6 +3062,11 @@
     },
     {
       "root": "resource",
+      "path": "include/bits/types/mbstate_t.h",
+      "sha256": "e177236307ffc23987b918e6177eb13bd69fd949516f620ea48d4088dccc215c"
+    },
+    {
+      "root": "resource",
       "path": "include/limits.h",
       "sha256": "6b59cc1b6f86c901bf41ce942b8434530e852eb16e79e6e9287f89441f71efca"
     },
@@ -3049,6 +3079,11 @@
       "root": "resource",
       "path": "include/stdint.h",
       "sha256": "655616d8fcb2c92b38c039019685c658c2346b3dd0021aed4ea057b43f621247"
+    },
+    {
+      "root": "resource",
+      "path": "include/stdio.h",
+      "sha256": "ec13a7562c88362b8079ca0d721ebf92735fd88b9c3b94788e8ead255539be5b"
     },
     {
       "root": "resource",

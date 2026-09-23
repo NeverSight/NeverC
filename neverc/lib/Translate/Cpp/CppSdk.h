@@ -7,7 +7,7 @@
 
 namespace neverc::translate {
 inline constexpr const char *CppMathSDKID =
-    "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r11";
+    "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r12";
 struct CppSdkContext {
   std::string DistributionID;
   std::string CatalogSHA256;

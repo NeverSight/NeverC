@@ -16003,7 +16003,8 @@ public:
             Name != "tuple" && Name != "iterator" && Name != "algorithm" &&
             Name != "numeric" && Name != "initializer_list" &&
             Name != "optional" && Name != "memory" && Name != "new" &&
-            Name != "functional" && Name != "ratio" && Name != "cstring"))) {
+            Name != "functional" && Name != "ratio" && Name != "cstring" &&
+            Name != "string_view"))) {
         reject(L, "include",
                "Only exact #include <type_traits>, #include <cstdint> and "
                "#include <limits>, #include <cstddef>, #include <utility> and "
@@ -16011,8 +16012,8 @@ public:
                "#include <algorithm>, #include <numeric>, "
                "#include <initializer_list>, #include <optional> and "
                "#include <memory>, #include <new> and #include <functional> "
-               "and #include <ratio> and #include <cstring> entries are "
-               "admitted in cpp-core-v2.");
+               "and #include <ratio>, #include <cstring> and "
+               "#include <string_view> entries are admitted in cpp-core-v2.");
         return;
       }
       if (!S.owns(SM, L) && !S.sdkFile(SM, L))
@@ -17060,20 +17061,17 @@ extern "C" int neverc_cpp_frontend_main(int Argc, const char **Argv) {
                                "-fno-ms-compatibility", "-fno-ms-extensions",
                                "-fno-delayed-template-parsing",
                                "-D_LIBCPP_REMOVE_TRANSITIVE_INCLUDES",
-                               // Stream iterators require platform C runtime
-                               // types that the core SDK does not carry yet.
-                               // Their exact headers remain authenticated, but
-                               // their declarations stay absent until the I/O
-                               // ABI boundary supplies mbstate_t everywhere.
+                               // Stream iterators require an unpinned I/O
+                               // header closure and runtime operations. Their
+                               // declarations stay absent even though the
+                               // SDK now supplies mbstate_t metadata.
                                "-D_LIBCPP___ITERATOR_ISTREAM_ITERATOR_H",
                                "-D_LIBCPP___ITERATOR_ISTREAMBUF_ITERATOR_H",
                                "-D_LIBCPP___ITERATOR_OSTREAM_ITERATOR_H",
                                "-D_LIBCPP___ITERATOR_OSTREAMBUF_ITERATOR_H",
-                               // Randomized algorithms pull iosfwd through
-                               // uniform_int_distribution. Keep their exact
-                               // headers authenticated but their declarations
-                               // absent until every core target supplies a
-                               // checked mbstate_t ABI.
+                               // Randomized algorithms still require an
+                               // unpinned random-distribution header closure
+                               // and direct operation lowering.
                                "-D_LIBCPP___ALGORITHM_SHUFFLE_H",
                                "-D_LIBCPP___ALGORITHM_SAMPLE_H",
                                "-D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS",

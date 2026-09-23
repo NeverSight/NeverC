@@ -2,14 +2,23 @@
 
 This directory supplies the immutable header inputs for NeverC's built-in C++
 frontend. The distribution is
-`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r11`. It contains the 609 header
+`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r12`. It contains the 616 header
 files admitted by the current
-`clang20.1.8-libcxx200100-macos15.5` catalog: 513 libc++ headers, 14 Clang
-resource headers, one NeverC resource header, and 81 Darwin platform headers.
+`clang20.1.8-libcxx200100-macos15.5` catalog: 518 libc++ headers, 14 Clang
+resource headers, three NeverC resource headers, and 81 Darwin platform headers.
 The upstream-source bytes, including copyright and license notices, are
-preserved; the NeverC-authored C string declaration shim is identified
+preserved; the NeverC-authored C declaration shims are identified
 separately below. This is a fixed input set for the supported translation
 profiles, not a complete Apple SDK.
+
+The `<string_view>` parsing closure adds the pinned libc++ public header,
+`char_traits`, forwarding declarations and C stdio wrappers. NeverC's resource
+headers provide only the target C runtime `mbstate_t` layout and the `EOF`
+constant needed by those declarations. The layouts are 128 bytes with 8-byte
+alignment on Darwin and 8 bytes with 4-byte alignment on the supported glibc
+and UCRT targets. The `stdio.h` resource shim does not declare C stdio calls.
+The exact source is checked for every core-v2 target; runtime string-view
+operations require separate direct lowering.
 
 Core v2 uses only the catalog's `libcxx` and `resource` roots for its
 compile-time `<type_traits>` and fixed-width `<cstdint>` surfaces. The
@@ -88,8 +97,8 @@ The `<iterator>` surface has a 171-file libc++/resource closure on every core-v2
 target. It exposes pointer `iterator_traits` metadata and directly lowered
 pointer, array-range and raw-pointer reverse-iterator operations while retaining
 the exact upstream iterator headers. Four stream-iterator declarations stay
-disabled until the core SDK has an authenticated cross-target C runtime
-`mbstate_t` boundary.
+disabled while their I/O header closure and runtime operations remain outside
+core v2.
 The `<algorithm>` surface has a 354-file libc++/resource closure on every
 core-v2 target. Its upstream declarations and the NeverC C string declaration
 shim are available without platform headers. Scalar-pointer `copy`,
@@ -141,8 +150,8 @@ Predicate mutation algorithms require writable destinations; ordered output
 algorithms accept directly convertible writable scalar destinations;
 `copy_n`, `fill_n` and `search_n` accept at-most-64-bit integral and non-scoped
 enum counts after the libc++ integer promotion.
-`shuffle` and `sample` stay disabled until the same authenticated cross-target
-`mbstate_t` boundary is available through their random-distribution dependency.
+`shuffle` and `sample` stay disabled while their random-distribution header
+closure and direct lowering remain unfinished.
 The `<numeric>` surface has a 126-file libc++/resource closure on every
 core-v2 target. The exact default `iota`, `accumulate`, `inner_product`,
 `partial_sum`, `adjacent_difference`, `reduce`, two-range `transform_reduce`,
@@ -406,8 +415,8 @@ the exact header bytes supplied here.
 
 | Header group | Files | Applicable notices |
 | --- | ---: | --- |
-| libc++ and Clang resource headers | 465 | Apache-2.0 with LLVM exceptions |
-| NeverC C string declaration shim | 1 | AGPL-3.0-only |
+| libc++ and Clang resource headers | 532 | Apache-2.0 with LLVM exceptions |
+| NeverC C declaration shims | 3 | AGPL-3.0-only |
 | Darwin headers with an APSL notice | 63 | APSL-2.0 |
 | Darwin headers with APSL and Berkeley notices | 12 | APSL-2.0 and BSD-4-Clause |
 | `arm/endian.h`, `arm/types.h` | 2 | BSD-4-Clause |
@@ -421,7 +430,7 @@ The license texts are copied from these upstream sources:
 - [licenses/APSL-2.0.txt](licenses/APSL-2.0.txt): [Apple's XNU license](https://github.com/apple-oss-distributions/xnu/blob/f6217f891ac0bb64f3d375211650a4c1ff8ca1ea/APPLE_LICENSE).
 - [licenses/BSD-4-NOTICES.txt](licenses/BSD-4-NOTICES.txt): the original Berkeley redistribution comments from all 14 applicable headers, grouped by catalog path without replacing the original authors or terms.
 
-The NeverC C string declaration shim follows the repository's
+The NeverC C declaration shims follow the repository's
 [AGPL-3.0-only project license](../../../../../LICENSE).
 
 This product includes software developed by the University of California,

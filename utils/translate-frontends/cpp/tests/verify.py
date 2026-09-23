@@ -29,8 +29,8 @@ def main():
     repository = Path(__file__).resolve().parents[4]
     count = 0
     sdk_identity = {
-        "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r11",
-        "catalog_sha256": "5ff65ee45ea2a15c5e0ebfd18726d21d7a60f3b43bbf5f44e18d14b632cc80c6",
+        "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r12",
+        "catalog_sha256": "067055380521a12d0e0872a1fecd1f93c59ba59f961197106bfa6b980f01bf92",
     }
 
     def check(name, source, code=None, options=(), root=None, profile="cpp-core-v1",
@@ -28977,6 +28977,39 @@ int compare_n(const char *left, const char *right, std::size_t count) {
     check("v2-cstring-function-address", '#include <cstring>\nauto pointer=&std::strlen;',
           "TR0201", profile="cpp-core-v2", sdk=True)
     check("v2-cstring-quoted", '#include "cstring"\nint f(){return 0;}',
+          "TR0201", profile="cpp-core-v2", sdk=True)
+
+    string_view_metadata_source = """\
+#include <string_view>
+static_assert(sizeof(std::string_view) == 2 * sizeof(void*));
+static_assert(alignof(std::string_view) == alignof(void*));
+static_assert(std::string_view::npos == static_cast<std::size_t>(-1));
+std::string_view::size_type passthrough(std::string_view::size_type n) {
+  return n;
+}
+"""
+    string_view_dependencies = None
+    for target in sdk_targets:
+        view_ir = check("v2-string-view-metadata-" + target,
+                        string_view_metadata_source, profile="cpp-core-v2",
+                        target=target, sdk=True)
+        dependencies = {(entry["root"], entry["path"])
+                        for entry in view_ir["sdk_dependencies"]}
+        assert len(dependencies) == 240, target
+        assert {("libcxx", "string_view"), ("libcxx", "__string/char_traits.h"),
+                ("resource", "include/bits/types/mbstate_t.h"),
+                ("resource", "include/stdio.h")} <= dependencies, target
+        if string_view_dependencies is None:
+            string_view_dependencies = dependencies
+        else:
+            assert dependencies == string_view_dependencies, target
+        assert len(view_ir["functions"]) == 1, target
+    check("v2-string-view-runtime-object",
+          '#include <string_view>\nint f(){std::string_view view;return view.size();}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-string-view-quoted", '#include "string_view"\nint f(){return 0;}',
+          "TR0201", profile="cpp-core-v2", sdk=True)
+    check("v2-string-view-c-stdio", '#include <stdio.h>\nint f(){return EOF;}',
           "TR0201", profile="cpp-core-v2", sdk=True)
 
     floating_positive = {
