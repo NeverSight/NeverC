@@ -37077,6 +37077,65 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2NumericExclusiveScanObjectsRunAtBothOptimizations) {
+  const auto Source = tmpFile("numeric-exclusive-scan-objects.cpp");
+  const auto Output = tmpFile("numeric-exclusive-scan-objects.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+#include <functional>
+int calls, factories, first_calls, last_calls, output_calls;
+int *first(int *p) { ++first_calls; return p; }
+int *last(int *p) { ++last_calls; return p; }
+long *output(long *p) { ++output_calls; return p; }
+struct Add {
+  int local_calls;
+  int operator()(int total, int value) & {
+    ++calls; ++local_calls; return total + value + local_calls;
+  }
+  int operator()(int, int) const & { return -100; }
+};
+Add make() { ++factories; return Add{0}; }
+int main() {
+  int values[3]{1, 2, 3};
+  long sums[3]{};
+  long *end = std::exclusive_scan(first(values), last(values + 3),
+                                   output(sums), 4, std::plus<int>{});
+  if (end != sums + 3 || sums[0] != 4 || sums[1] != 5 || sums[2] != 7 ||
+      first_calls != 1 || last_calls != 1 || output_calls != 1) return 1;
+  long products[3]{};
+  if (std::exclusive_scan(values, values + 3, products, 2,
+                          std::multiplies<int>{}) != products + 3 ||
+      products[0] != 2 || products[1] != 2 || products[2] != 4) return 2;
+  long flags[3]{-1, -1, -1};
+  if (std::exclusive_scan(values, values + 3, flags, 0,
+                          std::equal_to<int>{}) != flags + 3 ||
+      flags[0] != 0 || flags[1] != 0 || flags[2] != 0) return 6;
+  long custom[3]{};
+  Add caller{0};
+  if (std::exclusive_scan(values, values + 3, custom, 4, caller) != custom + 3 ||
+      custom[0] != 4 || custom[1] != 6 || custom[2] != 10 ||
+      calls != 3 || caller.local_calls != 0) return 3;
+  if (std::exclusive_scan(values, values, custom, 7, make()) != custom ||
+      calls != 3 || factories != 1) return 4;
+  if (std::exclusive_scan(values, values + 3, values, 0, std::plus<>{}) !=
+          values + 3 || values[0] != 0 || values[1] != 1 ||
+      values[2] != 3) return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("numeric-exclusive-scan-objects" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2NumericTransformScansRunAtBothOptimizations) {
   const auto Source = tmpFile("numeric-transform-scans.cpp");
   const auto Output = tmpFile("numeric-transform-scans.nc");

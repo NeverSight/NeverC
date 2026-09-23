@@ -3303,9 +3303,15 @@ class FunctionLowering {
       auto Value = snapshot(expression(Call->getArg(3)), L);
       std::optional<Expression> Callback;
       std::optional<QualType> CallbackType;
+      std::optional<CapturedAlgorithmPredicate> OperationObject;
       if (Call->getNumArgs() == 5) {
-        CallbackType = Call->getArg(4)->getType();
-        Callback = snapshot(expression(Call->getArg(4)), L);
+        auto Captured = captureUnaryPredicate(Call, Operation, 4);
+        if (Captured.Method)
+          OperationObject = std::move(Captured);
+        else {
+          CallbackType = Captured.Type;
+          Callback = std::move(Captured.Storage);
+        }
       }
       const auto FirstType = type(Call->getArg(0)->getType(), L);
       const auto OutputType = type(Call->getArg(2)->getType(), L);
@@ -3330,7 +3336,13 @@ class FunctionLowering {
       branch(binary("!=", First, Last, "bool", L), Store, End, L);
       label(Store, L);
       assign(InputValue, dereference(First, L), L);
-      if (Callback) {
+      if (OperationObject) {
+        assign(Next,
+               cast(emitBinaryCallable(*OperationObject, json::Object(Value),
+                                       json::Object(InputValue), L),
+                    ValueType, L),
+               L);
+      } else if (Callback) {
         json::Array Arguments;
         Arguments.push_back(json::Object(Value));
         Arguments.push_back(json::Object(InputValue));

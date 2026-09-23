@@ -781,6 +781,10 @@ The four-argument no-init overload authenticates the pinned first-element
 branch and its delegation to that initialized overload. The first element is
 written without invoking the operation; subsequent elements retain one copied
 object's mutable state.
+The five-argument `exclusive_scan` overload also accepts these binary objects
+on the same input/initial and output types. Its pinned loop computes the next
+accumulator before writing the old one, and both SDK `move` sites are checked
+so empty and in-place ranges preserve their sequential behavior.
 
 `gcd` and `lcm` accept any non-boolean built-in integer argument combination
 through 64 bits and return libc++'s exact `common_type_t` result. Signed inputs
