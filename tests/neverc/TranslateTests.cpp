@@ -37617,6 +37617,23 @@ int main() {
   if (std::transform_reduce(left, left + 2, right, 3,
                             std::bit_xor<int>{}, std::bit_or<int>{}) != 2)
     return 13;
+  int wide[2]{258, 260};
+  short weights[2]{2, 3};
+  if (std::inner_product(wide, wide + 2, weights, 300L,
+                         std::plus<unsigned char>{},
+                         std::divides<unsigned char>{}) != 46 ||
+      std::transform_reduce(wide, wide + 2, weights, 300L,
+                            std::plus<unsigned char>{},
+                            std::divides<unsigned char>{}) != 46)
+    return 14;
+  if (std::inner_product(wide, wide + 2, weights, 300L,
+                         std::plus<unsigned char>{},
+                         std::divides<>{}) != 3)
+    return 15;
+  if (std::transform_reduce(wide, wide + 2, weights, 300L,
+                            std::plus<unsigned char>{},
+                            std::divides<short>{}) != 3)
+    return 16;
   return 0;
 }
 )cpp");
@@ -37685,6 +37702,11 @@ int main() {
                             std::plus<unsigned char>{},
                             std::bit_not<unsigned char>{}) != 217)
     return 11;
+  int wide[2]{258, 260};
+  if (std::transform_reduce(wide, wide + 2, 300L,
+                            std::plus<unsigned char>{},
+                            std::negate<unsigned char>{}) != 38)
+    return 12;
   return 0;
 }
 )cpp");

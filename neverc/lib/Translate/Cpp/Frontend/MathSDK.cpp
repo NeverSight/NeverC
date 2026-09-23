@@ -16172,16 +16172,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           ValueType.isNull() ||
           (!ValueType->isVoidType() &&
            (!NumericArithmetic(ValueType, true) ||
-            !Same(ValueType,
-                  Function->getParamDecl(Unary ? 2 : 3)->getType()) ||
-            !Same(ValueType, Function->getParamDecl(0)
-                                 ->getType()
-                                 ->getPointeeType()
-                                 .getUnqualifiedType()) ||
-            (!Unary && !Same(ValueType, Function->getParamDecl(2)
-                                            ->getType()
-                                            ->getPointeeType()
-                                            .getUnqualifiedType())))) ||
+            !utilityScalarDirectConversion(
+                Context, Function->getParamDecl(Unary ? 2 : 3)->getType(),
+                ValueType) ||
+            !utilityScalarDirectConversion(
+                Context, Function->getParamDecl(0)->getType()->getPointeeType(),
+                ValueType) ||
+            (!Unary &&
+             !utilityScalarDirectConversion(
+                 Context,
+                 Function->getParamDecl(2)->getType()->getPointeeType(),
+                 ValueType)))) ||
           !Same(Call->getArg(Index)->getType(), Object) || !Cast || !List ||
           (List->getNumInits() != 0 &&
            (!EmptyBase || EmptyBase->getNumInits() != 0)))

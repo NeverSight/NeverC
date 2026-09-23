@@ -749,19 +749,21 @@ arithmetic function-object pairs: either operation may be `std::plus`,
 `std::minus`, `std::multiplies` or `std::divides`; `std::modulus`, `std::bit_and`,
 `std::bit_or` and `std::bit_xor` are admitted when the accumulator and both
 input ranges have integer elements. Transparent forms use checked common
-arithmetic; typed `T` forms require both ranges and the accumulator to have
-the same admitted arithmetic type `T`, including non-boolean narrow integers.
-Each typed transform result converts to `T` before reduction, and each
-reduction result converts back to the accumulator. Stored objects and other
+arithmetic; typed `T` forms convert admitted arithmetic range elements and
+the accumulator to `T` at each invocation, including non-boolean narrow
+integers. Each typed transform result converts to its own `T` before reduction,
+and each typed reduction result converts to its own `T` before the accumulator.
+Stored objects and other
 object combinations remain outside this direct lowering.
 The five-argument unary `transform_reduce` likewise accepts a directly empty
 list-initialized `std::negate` transformation, or integral `std::bit_not`, with
 `std::plus`, `std::minus` or
 `std::multiplies`, `std::divides` or integral `std::modulus`, `std::bit_and`,
-`std::bit_or` or `std::bit_xor` reduction. Typed
-`T` forms require an exact arithmetic input
-and accumulator type. Negation and bitwise complement use source integer
-promotion, and a typed transform result converts to `T` before reduction.
+`std::bit_or` or `std::bit_xor` reduction. Typed `T` forms convert an admitted
+arithmetic input and accumulator to the selected function object's type at
+each invocation. Negation and bitwise complement use integer promotion after
+the typed input conversion, and a typed transform result converts to its own
+`T` before reduction.
 
 The operation-taking overloads of `accumulate`, `inner_product`, `partial_sum`,
 `adjacent_difference`, `reduce`, unary and two-range `transform_reduce`,

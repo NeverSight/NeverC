@@ -3057,18 +3057,24 @@ class FunctionLowering {
           Call->getNumArgs() == 6 && Call->getArg(4)->getType()->isRecordType();
       const bool DefaultUnaryFunctionalPair =
           UnaryTransformReduce && Call->getArg(3)->getType()->isRecordType();
-      auto TypedFunctionalAt = [&](unsigned Index) {
+      auto FunctionalValueTypeAt = [&](unsigned Index) -> QualType {
         const auto *Record = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
             Call->getArg(Index)->getType()->getAsCXXRecordDecl());
-        return Record && Record->getTemplateArgs().size() == 1 &&
-               Record->getTemplateArgs().get(0).getKind() ==
-                   TemplateArgument::Type &&
-               !Record->getTemplateArgs().get(0).getAsType()->isVoidType();
+        if (!Record || Record->getTemplateArgs().size() != 1 ||
+            Record->getTemplateArgs().get(0).getKind() !=
+                TemplateArgument::Type)
+          return {};
+        auto Value = Record->getTemplateArgs().get(0).getAsType();
+        return Value->isVoidType() ? QualType{} : Value;
       };
-      const bool TypedTransformFunctional =
-          DefaultFunctionalPair        ? TypedFunctionalAt(5)
-          : DefaultUnaryFunctionalPair ? TypedFunctionalAt(4)
-                                       : false;
+      const auto TypedTransformType =
+          DefaultFunctionalPair        ? FunctionalValueTypeAt(5)
+          : DefaultUnaryFunctionalPair ? FunctionalValueTypeAt(4)
+                                       : QualType{};
+      const auto TypedReductionType =
+          DefaultFunctionalPair        ? FunctionalValueTypeAt(4)
+          : DefaultUnaryFunctionalPair ? FunctionalValueTypeAt(3)
+                                       : QualType{};
       auto ArithmeticFunctionalOperator = [&](unsigned Index) {
         const auto *Record =
             Call->getArg(Index)->getType()->getAsCXXRecordDecl();
@@ -3142,12 +3148,24 @@ class FunctionLowering {
                  "The input elements have no arithmetic common type.");
         DefaultTermQualType = *Common;
       }
+      if (!TypedTransformType.isNull())
+        DefaultTermQualType = TypedTransformType;
       auto DefaultSumQualType = utilityScalarComparisonType(
-          A.Context, ResultQualType, DefaultTermQualType, false);
+          A.Context,
+          TypedReductionType.isNull() ? ResultQualType : TypedReductionType,
+          TypedReductionType.isNull() ? DefaultTermQualType
+                                      : TypedReductionType,
+          false);
       if (!DefaultSumQualType)
         reject(L, "numeric reduction",
                "The accumulator and term have no arithmetic common type.");
       const auto DefaultTermType = type(DefaultTermQualType, L);
+      const auto PromotedTermQualType =
+          TypedTransformType.isNull()
+              ? DefaultTermQualType
+              : *utilityScalarComparisonType(A.Context, TypedTransformType,
+                                             TypedTransformType, false);
+      const auto PromotedTermType = type(PromotedTermQualType, L);
       const auto DefaultSumType = type(*DefaultSumQualType, L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto Check = labelName(), Add = labelName(), End = labelName();
@@ -3170,10 +3188,11 @@ class FunctionLowering {
             {"kind", "unary"},
             {"type", PromotedType},
             {"operator", UnaryOperator},
-            {"args", json::Array{cast(std::move(Term), PromotedType, L)}},
+            {"args", json::Array{cast(cast(std::move(Term), DefaultTermType, L),
+                                      PromotedType, L)}},
             {"loc", A.loc(L)}};
-        if (TypedTransformFunctional)
-          Term = cast(std::move(Term), ResultType, L);
+        if (!TypedTransformType.isNull())
+          Term = cast(std::move(Term), DefaultTermType, L);
       } else if (TransformCallback) {
         json::Array Arguments;
         Arguments.push_back(std::move(Term));
@@ -3184,13 +3203,17 @@ class FunctionLowering {
                                           std::move(Arguments), L),
                     ResultType, L);
       } else if (Second) {
+        auto TransformOperand = [&](Expression Value) {
+          return cast(cast(std::move(Value), DefaultTermType, L),
+                      PromotedTermType, L);
+        };
         Term = binary(DefaultFunctionalPair ? ArithmeticFunctionalOperator(5)
                                             : llvm::StringRef("*"),
-                      cast(std::move(Term), DefaultTermType, L),
-                      cast(dereference(*Second, L), DefaultTermType, L),
-                      DefaultTermType, L);
-        if (TypedTransformFunctional)
-          Term = cast(std::move(Term), ResultType, L);
+                      TransformOperand(std::move(Term)),
+                      TransformOperand(dereference(*Second, L)),
+                      PromotedTermType, L);
+        if (!TypedTransformType.isNull())
+          Term = cast(std::move(Term), DefaultTermType, L);
       }
       if (ReductionObject) {
         assign(Result,
@@ -3213,13 +3236,17 @@ class FunctionLowering {
             DefaultFunctionalPair        ? ArithmeticFunctionalOperator(4)
             : DefaultUnaryFunctionalPair ? ArithmeticFunctionalOperator(3)
                                          : llvm::StringRef("+");
-        assign(
-            Result,
-            cast(binary(Operator, cast(json::Object(Result), DefaultSumType, L),
-                        cast(std::move(Term), DefaultSumType, L),
-                        DefaultSumType, L),
-                 ResultType, L),
-            L);
+        auto ReductionOperand = [&](Expression Value) {
+          if (!TypedReductionType.isNull())
+            Value = cast(std::move(Value), type(TypedReductionType, L), L);
+          return cast(std::move(Value), DefaultSumType, L);
+        };
+        auto Combined =
+            binary(Operator, ReductionOperand(json::Object(Result)),
+                   ReductionOperand(std::move(Term)), DefaultSumType, L);
+        if (!TypedReductionType.isNull())
+          Combined = cast(std::move(Combined), type(TypedReductionType, L), L);
+        assign(Result, cast(std::move(Combined), ResultType, L), L);
       }
       assign(First,
              binary("+", First, quantity(1, DifferenceType, L), FirstType, L),
