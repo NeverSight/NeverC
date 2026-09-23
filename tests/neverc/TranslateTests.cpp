@@ -41011,6 +41011,47 @@ TEST_F(TranslateTest,
   }
 }
 
+TEST_F(TranslateTest, CoreV2AlgorithmGenerateObjectRunsAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-generate-object.cpp");
+  const auto Output = tmpFile("algorithm-generate-object.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+int calls, factories, first_calls, last_calls;
+int *first(int *p) { ++first_calls; return p; }
+int *last(int *p) { ++last_calls; return p; }
+struct Generator {
+  int next;
+  int operator()() & { ++calls; return ++next; }
+  int operator()() const & { return -100; }
+};
+Generator make(int n) { ++factories; return Generator{n}; }
+int main() {
+  int values[4]{-1, -1, -1, -1};
+  Generator caller{3};
+  std::generate(first(values), last(values + 3), caller);
+  if (calls != 3 || first_calls != 1 || last_calls != 1 ||
+      values[0] != 4 || values[1] != 5 || values[2] != 6 ||
+      values[3] != -1 || caller.next != 3) return 1;
+  std::generate(values, values, make(9));
+  if (calls != 3 || factories != 1) return 2;
+  std::generate(values, values + 2, make(9));
+  if (calls != 5 || factories != 2 || values[0] != 10 ||
+      values[1] != 11) return 3;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-generate-object" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmUnaryPredicateObjectsRunAtBothOptimizations) {
   const auto Source = tmpFile("algorithm-callable-unary-state.cpp");
   const auto Output = tmpFile("algorithm-callable-unary-state.nc");

@@ -12379,6 +12379,132 @@ utilityAlgorithmForEachNObjectCall(const State &S, const SourceManager &SM,
                                        SDKOperation};
 }
 
+// Retain a source generator only after proving the selected libc++ loop and
+// the exact zero-argument call made from its body.
+static std::optional<UtilityAlgorithmPredicateCall>
+utilityAlgorithmGenerateObjectCall(const State &S, const SourceManager &SM,
+                                   const CallExpr *Call,
+                                   const ASTContext &Context) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  if (!S.coreV2() || !Call || !Function || Function->getName() != "generate" ||
+      Call->getNumArgs() != 3 || Function->getNumParams() != 3 ||
+      Call->isTypeDependent() || Call->isValueDependent() ||
+      Call->isInstantiationDependent())
+    return std::nullopt;
+  const auto Pointer = Function->getParamDecl(0)->getType();
+  const auto Object = Function->getParamDecl(2)->getType();
+  const auto *Record = Object->getAsCXXRecordDecl();
+  Record = Record ? Record->getDefinition() : nullptr;
+  if (!utilityAlgorithmWritableScalarPointer(Context, Pointer) ||
+      !Context.hasSameType(Function->getParamDecl(1)->getType(), Pointer) ||
+      !Context.hasSameType(Call->getArg(0)->getType(), Pointer) ||
+      !Context.hasSameType(Call->getArg(1)->getType(), Pointer) ||
+      !Context.hasSameType(Call->getArg(2)->getType(), Object) ||
+      !Function->getReturnType()->isVoidType() ||
+      !Context.hasSameType(Call->getType(), Function->getReturnType()) ||
+      !Record || Object.hasLocalQualifiers() || Record->isLambda() ||
+      Record->isUnion() || !Record->isStandardLayout() ||
+      !Record->isTriviallyCopyable() || !Record->hasTrivialCopyConstructor() ||
+      !Record->hasTrivialDestructor() || !S.owns(SM, Record->getLocation()))
+    return std::nullopt;
+  const auto *Primary = Function->getPrimaryTemplate();
+  const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+  const auto *Definition = Function->getDefinition();
+  const auto *PatternDefinition = Pattern ? Pattern->getDefinition() : nullptr;
+  const auto *Arguments = Function->getTemplateSpecializationArgs();
+  auto Origin = [&](const Decl *D) {
+    return approvedStandardSDKDeclaration(S, SM, D) &&
+           cstddefOrigin(S, SM, D->getLocation(), "libcxx",
+                         "__algorithm/generate.h");
+  };
+  if (!Primary || !Pattern || !Definition || !PatternDefinition ||
+      Function->isVariadic() || !Function->isInlined() ||
+      Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      !approvedUtilityReference(S, SM, Call, Function) || !Origin(Definition) ||
+      !Origin(PatternDefinition) || !Arguments || Arguments->size() != 2)
+    return std::nullopt;
+  for (const auto *D : Function->redecls())
+    if (!Origin(D))
+      return std::nullopt;
+  for (const auto *D : Primary->redecls())
+    if (!Origin(D) || !Origin(D->getTemplatedDecl()))
+      return std::nullopt;
+  for (const auto *D : Pattern->redecls())
+    if (!Origin(D))
+      return std::nullopt;
+  for (const auto [Index, Expected] :
+       {std::pair{0u, Pointer}, std::pair{1u, Object}})
+    if (Arguments->get(Index).getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Arguments->get(Index).getAsType(), Expected))
+      return std::nullopt;
+
+  auto Reference = [&](const Expr *Expression, const ValueDecl *Value) {
+    return utilityAlgorithmReference(Expression, Value, Context);
+  };
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Definition->getBody());
+  if (!Body || Body->size() != 1)
+    return std::nullopt;
+  const auto *Loop = dyn_cast<ForStmt>(*Body->body_begin());
+  const auto *Condition =
+      Loop ? dyn_cast_or_null<BinaryOperator>(Loop->getCond()) : nullptr;
+  const auto *Advance =
+      Loop ? dyn_cast_or_null<UnaryOperator>(Loop->getInc()) : nullptr;
+  const auto *Assignment =
+      Loop ? dyn_cast_or_null<BinaryOperator>(Loop->getBody()) : nullptr;
+  const auto *Destination =
+      Assignment ? dyn_cast<UnaryOperator>(Assignment->getLHS()) : nullptr;
+  if (!Loop || Loop->getInit() || Loop->getConditionVariable() || !Condition ||
+      Condition->getOpcode() != BO_NE ||
+      !Reference(Condition->getLHS(), Definition->getParamDecl(0)) ||
+      !Reference(Condition->getRHS(), Definition->getParamDecl(1)) ||
+      !Advance || Advance->getOpcode() != UO_PreInc ||
+      !Reference(Advance->getSubExpr(), Definition->getParamDecl(0)) ||
+      !Assignment || Assignment->getOpcode() != BO_Assign || !Destination ||
+      Destination->getOpcode() != UO_Deref || !Destination->isLValue() ||
+      !Context.hasSameType(Destination->getType(), Pointer->getPointeeType()) ||
+      !Reference(Destination->getSubExpr(), Definition->getParamDecl(0)))
+    return std::nullopt;
+  const Expr *Result = Assignment->getRHS();
+  while (const auto *Cast = dyn_cast<ImplicitCastExpr>(Result)) {
+    if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
+                                       Cast->getType()))
+      return std::nullopt;
+    Result = Cast->getSubExpr();
+  }
+  const auto *Invocation = dyn_cast<CXXOperatorCallExpr>(Result);
+  if (!Invocation || Invocation->getOperator() != OO_Call ||
+      Invocation->getNumArgs() != 1 || !Invocation->isPRValue() ||
+      !Reference(Invocation->getArg(0), Definition->getParamDecl(2)))
+    return std::nullopt;
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Invocation->getDirectCallee());
+  const auto *MethodDefinition = Method ? Method->getDefinition() : nullptr;
+  if (!Method || !MethodDefinition || Method->isStatic() ||
+      Method->isVolatile() || Method->getOverloadedOperator() != OO_Call ||
+      Method->getNumParams() != 0 ||
+      Method->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
+      !functionalMemberReceiverValueCategory(Method, Invocation->getArg(0),
+                                             false) ||
+      !utilityScalarDirectConversion(Context, Method->getReturnType(),
+                                     Pointer->getPointeeType()) ||
+      (Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
+       Method->getTemplatedKind() != FunctionDecl::TK_MemberSpecialization) ||
+      Method->getPrimaryTemplate() || Method->getDescribedFunctionTemplate() ||
+      !ordinaryOperator(Method) || !callableMethod(Method) ||
+      !S.owns(SM, MethodDefinition->getLocation()))
+    return std::nullopt;
+  for (const auto *D : Method->redecls())
+    if (!S.owns(SM, D->getLocation()))
+      return std::nullopt;
+  return UtilityAlgorithmPredicateCall{UtilityOperation::AlgorithmGenerate,
+                                       Function,
+                                       Invocation,
+                                       Method,
+                                       Object,
+                                       2,
+                                       std::nullopt};
+}
+
 std::optional<UtilityAlgorithmPredicateCall>
 approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
                                       const CallExpr *Call,
@@ -12388,6 +12514,8 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
     return utilityAlgorithmTransformObjectCall(S, SM, Call, Context);
   if (Function && Function->getName() == "for_each_n")
     return utilityAlgorithmForEachNObjectCall(S, SM, Call, Context);
+  if (Function && Function->getName() == "generate")
+    return utilityAlgorithmGenerateObjectCall(S, SM, Call, Context);
   if (!S.coreV2() || !Call || !Function || !Function->getIdentifier() ||
       Call->isTypeDependent() || Call->isValueDependent() ||
       Call->isInstantiationDependent() || !Call->isPRValue())

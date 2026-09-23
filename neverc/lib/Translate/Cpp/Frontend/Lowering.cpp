@@ -730,6 +730,23 @@ class FunctionLowering {
     Body.push_back(std::move(Instruction));
     return Result;
   }
+  Expression emitNullaryCallable(const CapturedAlgorithmPredicate &Operation,
+                                 SourceLocation L) {
+    if (!Operation.Method)
+      return emitAlgorithmCallback(json::Object(Operation.Storage),
+                                   Operation.Type, json::Array{}, L);
+    json::Array Arguments;
+    Arguments.push_back(cast(json::Object(Operation.Storage),
+                             type(Operation.Method->getThisType(), L), L));
+    chargeCall(Arguments, L);
+    auto Result = temporary(type(Operation.Method->getReturnType(), L), L);
+    Body.push_back(json::Object{{"op", "call"},
+                                {"callee", A.name(Operation.Method)},
+                                {"args", std::move(Arguments)},
+                                {"target", json::Object(Result)},
+                                {"loc", A.loc(L)}});
+    return Result;
+  }
   void emitUnaryOperation(const CapturedAlgorithmPredicate &Operation,
                           Expression Argument, SourceLocation L) {
     (void)emitUnaryCallable(Operation, std::move(Argument), L);
@@ -6791,7 +6808,7 @@ class FunctionLowering {
       } else {
         Last = snapshot(expression(Call->getArg(1)), L);
       }
-      auto Callback = snapshot(expression(Call->getArg(2)), L);
+      auto Callback = captureUnaryPredicate(Call, Operation);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto PointerType = type(Call->getArg(0)->getType(), L);
       const auto Check = labelName(), Invoke = labelName(), End = labelName();
@@ -6803,10 +6820,7 @@ class FunctionLowering {
              Invoke, End, L);
       label(Invoke, L);
       {
-        json::Array Arguments;
-        auto Value = emitAlgorithmCallback(json::Object(Callback),
-                                           Call->getArg(2)->getType(),
-                                           std::move(Arguments), L);
+        auto Value = emitNullaryCallable(Callback, L);
         const auto ElementType =
             type(Call->getArg(0)->getType()->getPointeeType(), L);
         assign(dereference(Current, L), cast(std::move(Value), ElementType, L),
