@@ -16111,9 +16111,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            utilityScalarDirectConversion(Context, Right,
                                          Prototype->getParamType(1));
   };
-  // Empty, directly value-initialized transparent arithmetic function objects
-  // have no state or construction effects. Their pinned operations are exactly
-  // the default product and sum used by the four-argument overloads.
+  // Empty, directly value-initialized arithmetic function objects have no
+  // state or construction effects. Transparent operators retain the default
+  // arithmetic; typed operators do so for exact, non-promoted operand types.
   auto NumericDefaultFunctionalPair = [&](bool Unary) {
     if (Call->getNumArgs() != (Unary ? 5u : 6u))
       return false;
@@ -16131,16 +16131,34 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Call->getArg(Index)->IgnoreParenImpCasts());
       const auto *List =
           Cast ? dyn_cast<InitListExpr>(Cast->getSubExpr()) : nullptr;
+      const auto *EmptyBase = List && List->getNumInits() == 1
+                                  ? dyn_cast<InitListExpr>(List->getInit(0))
+                                  : nullptr;
+      const auto ValueType =
+          Specialization && Specialization->getTemplateArgs().size() == 1 &&
+                  Specialization->getTemplateArgs().get(0).getKind() ==
+                      TemplateArgument::Type
+              ? Specialization->getTemplateArgs().get(0).getAsType()
+              : QualType{};
       if (!Specialization || !Approved ||
           Approved->Record->getCanonicalDecl() !=
               Specialization->getCanonicalDecl() ||
-          Specialization->getName() != Name ||
-          Specialization->getTemplateArgs().size() != 1 ||
-          Specialization->getTemplateArgs().get(0).getKind() !=
-              TemplateArgument::Type ||
-          !Specialization->getTemplateArgs().get(0).getAsType()->isVoidType() ||
+          Specialization->getName() != Name || ValueType.isNull() ||
+          (!ValueType->isVoidType() &&
+           (!NumericArithmetic(ValueType, false) ||
+            !Same(ValueType,
+                  Function->getParamDecl(Unary ? 2 : 3)->getType()) ||
+            !Same(ValueType, Function->getParamDecl(0)
+                                 ->getType()
+                                 ->getPointeeType()
+                                 .getUnqualifiedType()) ||
+            (!Unary && !Same(ValueType, Function->getParamDecl(2)
+                                            ->getType()
+                                            ->getPointeeType()
+                                            .getUnqualifiedType())))) ||
           !Same(Call->getArg(Index)->getType(), Object) || !Cast || !List ||
-          List->getNumInits() != 0)
+          (List->getNumInits() != 0 &&
+           (!EmptyBase || EmptyBase->getNumInits() != 0)))
         return false;
     }
     return true;

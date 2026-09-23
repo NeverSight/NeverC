@@ -9982,19 +9982,25 @@ long long inner(unsigned char* first, unsigned char* last, signed char* second) 
 long long reduce(unsigned char* first, unsigned char* last, signed char* second) {
  return std::transform_reduce(first,last,second,5LL,std::plus<>{},std::multiplies<>{});
 }
+int typed(int* first, int* last) {
+ return std::inner_product(first,last,first,5,std::plus<int>{},std::multiplies<int>{});
+}
 """
     for target in sdk_targets:
         data = check("v2-numeric-default-functional-pair-" + target,
                      numeric_default_functional_pair_source,
                      profile="cpp-core-v2", target=target, sdk=True)
         assert len(data['sdk_dependencies']) == 126, data
-        for line in (2, 5):
+        for line in (2, 5, 8):
             functions = [f for f in data['functions'] if f['loc']['line'] == line]
-            assert len(functions) == 1 and functions[0]['result'] == 'i64', functions
+            assert len(functions) == 1 and functions[0]['result'] == ('int' if line == 8 else 'i64'), functions
             assert not any(node.get('op') in ('call', 'indirect_call', 'mapped_call')
                            for node in walk(functions[0]['body'])), functions
     check("v2-numeric-default-functional-pair-stored",
           '#include <numeric>\nlong long f(int*a,int*b){std::plus<> sum;std::multiplies<> product;return std::inner_product(a,b,a,0LL,sum,product);}',
+          code="TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-numeric-default-functional-pair-narrow-typed",
+          '#include <numeric>\nunsigned char f(unsigned char*a,unsigned char*b){return std::inner_product(a,b,a,(unsigned char)0,std::plus<unsigned char>{},std::multiplies<unsigned char>{});}',
           code="TR0203", profile="cpp-core-v2", sdk=True)
 
     numeric_unary_functional_pair_source = """\
@@ -10002,16 +10008,20 @@ long long reduce(unsigned char* first, unsigned char* last, signed char* second)
 long long reduce(unsigned char* first, unsigned char* last) {
  return std::transform_reduce(first,last,20LL,std::plus<>{},std::negate<>{});
 }
+int typed(int* first, int* last) {
+ return std::transform_reduce(first,last,20,std::plus<int>{},std::negate<int>{});
+}
 """
     for target in sdk_targets:
         data = check("v2-numeric-unary-functional-pair-" + target,
                      numeric_unary_functional_pair_source,
                      profile="cpp-core-v2", target=target, sdk=True)
         assert len(data['sdk_dependencies']) == 126, data
-        functions = [f for f in data['functions'] if f['loc']['line'] == 2]
-        assert len(functions) == 1 and functions[0]['result'] == 'i64', functions
-        assert not any(node.get('op') in ('call', 'indirect_call', 'mapped_call')
-                       for node in walk(functions[0]['body'])), functions
+        for line in (2, 5):
+            functions = [f for f in data['functions'] if f['loc']['line'] == line]
+            assert len(functions) == 1 and functions[0]['result'] == ('int' if line == 5 else 'i64'), functions
+            assert not any(node.get('op') in ('call', 'indirect_call', 'mapped_call')
+                           for node in walk(functions[0]['body'])), functions
 
     numeric_mixed_unary_transform_reduce_source = """\
 #include <numeric>

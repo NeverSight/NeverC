@@ -745,12 +745,15 @@ Default `inner_product` and two-range `transform_reduce` additionally admit
 non-boolean narrow input elements in either range and a narrow initial
 accumulator.
 Their six-argument overloads also accept an explicit pair of directly empty
-list-initialized `std::plus<>` and `std::multiplies<>` objects. The authenticated
-stateless SDK objects use the same checked product and sum conversions as the
-default overloads; stored objects and other object combinations remain outside
-this direct lowering.
+list-initialized `std::plus<>` and `std::multiplies<>` objects, or the typed
+`std::plus<T>`/`std::multiplies<T>` pair when both ranges and the accumulator
+have the same admitted non-promoted type `T`. The authenticated stateless SDK
+objects use the same checked product and sum conversions as the default
+overloads; stored objects and other object combinations remain outside this
+direct lowering.
 The five-argument unary `transform_reduce` likewise accepts directly empty
-list-initialized `std::plus<>` and `std::negate<>`; negation uses the source
+list-initialized `std::plus<>` and `std::negate<>`, or their typed `T` forms for
+an exact non-promoted input and accumulator type. Negation uses the source
 integer promotion before adding into and narrowing back to the accumulator.
 
 The operation-taking overloads of `accumulate`, `inner_product`, `partial_sum`,
