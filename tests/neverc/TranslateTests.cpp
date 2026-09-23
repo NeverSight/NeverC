@@ -36806,6 +36806,55 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2NumericReduceObjectRunsAtBothOptimizations) {
+  const auto Source = tmpFile("numeric-reduce-object.cpp");
+  const auto Output = tmpFile("numeric-reduce-object.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+#include <functional>
+int calls, factories, first_calls, last_calls;
+int *first(int *p) { ++first_calls; return p; }
+int *last(int *p) { ++last_calls; return p; }
+struct Add {
+  int bias;
+  int local_calls;
+  int operator()(int total, int value) & {
+    ++calls; ++local_calls; return total + value + bias + local_calls;
+  }
+  int operator()(int, int) const & { return -100; }
+};
+Add make(int bias) { ++factories; return Add{bias, 0}; }
+int main() {
+  int values[3]{1, 2, 3};
+  Add caller{1, 0};
+  int result = std::reduce(first(values), last(values + 3), 0, caller);
+  if (result != 15 || calls != 3 || caller.local_calls != 0 ||
+      first_calls != 1 || last_calls != 1) return 1;
+  if (std::reduce(values, values, 7, make(4)) != 7 ||
+      calls != 3 || factories != 1) return 2;
+  if (std::reduce(values, values + 2, 1, make(0)) != 7 ||
+      calls != 5 || factories != 2) return 3;
+  if (std::reduce(values, values + 3, 0, std::plus<int>{}) != 6 ||
+      calls != 5) return 4;
+  if (std::reduce(values, values + 3, 0, std::plus<>{}) != 6 ||
+      calls != 5) return 5;
+  if (std::reduce(values, values + 3, 1,
+                  std::multiplies<int>{}) != 6 || calls != 5) return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("numeric-reduce-object" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2NumericTransformScansRunAtBothOptimizations) {
   const auto Source = tmpFile("numeric-transform-scans.cpp");
   const auto Output = tmpFile("numeric-transform-scans.nc");

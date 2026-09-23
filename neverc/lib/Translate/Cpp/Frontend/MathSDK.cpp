@@ -12795,18 +12795,19 @@ utilityAlgorithmGenerateObjectCall(const State &S, const SourceManager &SM,
       std::nullopt};
 }
 
-// The C++17 accumulate overload carries its source operation by value. Prove
-// the exact pinned loop before retaining the selected two-argument method.
+// The C++17 accumulate and reduce overloads carry their source operation by
+// value. Prove the exact pinned loop before retaining the selected method.
 static std::optional<UtilityAlgorithmPredicateCall>
-utilityNumericAccumulateObjectCall(const State &S, const SourceManager &SM,
-                                   const CallExpr *Call,
-                                   const ASTContext &Context) {
+utilityNumericReductionObjectCall(const State &S, const SourceManager &SM,
+                                  const CallExpr *Call,
+                                  const ASTContext &Context) {
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const bool Reduce = Function && Function->getName() == "reduce";
   if (!S.coreV2() || !Call || !Function ||
-      Function->getName() != "accumulate" || Call->getNumArgs() != 4 ||
-      Function->getNumParams() != 4 || !Call->isPRValue() ||
-      Call->isTypeDependent() || Call->isValueDependent() ||
-      Call->isInstantiationDependent())
+      (Function->getName() != "accumulate" && !Reduce) ||
+      Call->getNumArgs() != 4 || Function->getNumParams() != 4 ||
+      !Call->isPRValue() || Call->isTypeDependent() ||
+      Call->isValueDependent() || Call->isInstantiationDependent())
     return std::nullopt;
   const auto Pointer = Function->getParamDecl(0)->getType();
   const auto Initial = Function->getParamDecl(2)->getType();
@@ -12848,7 +12849,8 @@ utilityNumericAccumulateObjectCall(const State &S, const SourceManager &SM,
   auto Origin = [&](const Decl *D) {
     return approvedStandardSDKDeclaration(S, SM, D) &&
            cstddefOrigin(S, SM, D->getLocation(), "libcxx",
-                         "__numeric/accumulate.h");
+                         Reduce ? "__numeric/reduce.h"
+                                : "__numeric/accumulate.h");
   };
   if (!Primary || !Pattern || !Definition || !PatternDefinition ||
       Function->isVariadic() ||
@@ -12906,9 +12908,33 @@ utilityNumericAccumulateObjectCall(const State &S, const SourceManager &SM,
   const auto *Invocation = dyn_cast<CXXOperatorCallExpr>(Result);
   if (!Invocation || Invocation->getOperator() != OO_Call ||
       Invocation->getNumArgs() != 3 || !Invocation->isPRValue() ||
-      !Reference(Invocation->getArg(0), Definition->getParamDecl(3)) ||
-      !Reference(Invocation->getArg(1), Definition->getParamDecl(2)))
+      !Reference(Invocation->getArg(0), Definition->getParamDecl(3)))
     return std::nullopt;
+  if (Reduce) {
+    const auto *Move = dyn_cast<CallExpr>(
+        functionalInvokeStrippedExpression(Invocation->getArg(1)));
+    const auto *MoveFunction = Move ? Move->getDirectCallee() : nullptr;
+    const auto *MoveArguments =
+        MoveFunction ? MoveFunction->getTemplateSpecializationArgs() : nullptr;
+    const auto ReferenceType = Context.getLValueReferenceType(Initial);
+    if (!Move || Move->getNumArgs() != 1 || !Move->isXValue() ||
+        !utilitySwapSDKFunction(S, SM, MoveFunction, "move",
+                                "__utility/move.h") ||
+        MoveFunction->getNumParams() != 1 || !MoveArguments ||
+        MoveArguments->size() != 1 ||
+        MoveArguments->get(0).getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(MoveArguments->get(0).getAsType(),
+                             ReferenceType) ||
+        !Context.hasSameType(MoveFunction->getParamDecl(0)->getType(),
+                             ReferenceType) ||
+        !Context.hasSameType(MoveFunction->getReturnType(),
+                             Context.getRValueReferenceType(Initial)) ||
+        !Context.hasSameType(Move->getType(), Initial) ||
+        !Reference(Move->getArg(0), Definition->getParamDecl(2)))
+      return std::nullopt;
+  } else if (!Reference(Invocation->getArg(1), Definition->getParamDecl(2))) {
+    return std::nullopt;
+  }
   const Expr *ElementArgument = Invocation->getArg(2);
   while (const auto *Cast = dyn_cast<ImplicitCastExpr>(ElementArgument)) {
     if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
@@ -12964,13 +12990,15 @@ utilityNumericAccumulateObjectCall(const State &S, const SourceManager &SM,
       !utilityScalarDirectConversion(Context, Pointer->getPointeeType(),
                                      RightType))
     return std::nullopt;
-  return UtilityAlgorithmPredicateCall{UtilityOperation::NumericAccumulate,
-                                       Function,
-                                       Invocation,
-                                       Method,
-                                       Object,
-                                       3,
-                                       SDKOperation};
+  return UtilityAlgorithmPredicateCall{
+      Reduce ? UtilityOperation::NumericReduce
+             : UtilityOperation::NumericAccumulate,
+      Function,
+      Invocation,
+      Method,
+      Object,
+      3,
+      SDKOperation};
 }
 
 std::optional<UtilityAlgorithmPredicateCall>
@@ -12992,8 +13020,8 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
     return utilityAlgorithmForEachObjectCall(S, SM, Call, Context);
   if (Name == "generate" || Name == "generate_n")
     return utilityAlgorithmGenerateObjectCall(S, SM, Call, Context);
-  if (Name == "accumulate")
-    return utilityNumericAccumulateObjectCall(S, SM, Call, Context);
+  if (Name == "accumulate" || Name == "reduce")
+    return utilityNumericReductionObjectCall(S, SM, Call, Context);
   const bool Find = Name == "find_if", FindNot = Name == "find_if_not";
   const bool None = Name == "none_of", All = Name == "all_of";
   const bool Any = Name == "any_of", Count = Name == "count_if";

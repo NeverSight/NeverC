@@ -754,12 +754,13 @@ The callback forms of `inner_product` and two-range `transform_reduce` accept a
 different numeric second-range element when the transform callback accepts the
 respective element types and returns a value directly convertible to the
 accumulator type.
-The four-argument `accumulate` overload additionally accepts a source-owned,
+The four-argument `accumulate` and `reduce` overloads additionally accept a source-owned,
 standard-layout, trivially copied operation object when its non-template binary
 call operator takes directly convertible by-value arithmetic scalars and returns
 one directly convertible to the accumulator. The input and initial value share
 an admitted non-promoted arithmetic type. The pinned C++17 loop and selected
-source method are authenticated; one by-value object retains its mutable state
+source method are authenticated, including `reduce`'s `std::move` of the
+accumulator; one by-value object retains its mutable state
 throughout the reduction without changing the caller's object. An empty range
 returns the initial value without invoking the operation.
 Pinned typed or transparent `<functional>` binary objects, including arithmetic

@@ -3068,17 +3068,12 @@ class FunctionLowering {
       if ((Operation == UtilityOperation::NumericAccumulate ||
            Operation == UtilityOperation::NumericReduce) &&
           Call->getNumArgs() == 4) {
-        if (Operation == UtilityOperation::NumericAccumulate) {
-          auto Captured = captureUnaryPredicate(Call, Operation, 3);
-          if (Captured.Method)
-            ReductionObject = std::move(Captured);
-          else {
-            ReductionCallbackType = Captured.Type;
-            ReductionCallback = std::move(Captured.Storage);
-          }
-        } else {
-          ReductionCallbackType = Call->getArg(3)->getType();
-          ReductionCallback = snapshot(expression(Call->getArg(3)), L);
+        auto Captured = captureUnaryPredicate(Call, Operation, 3);
+        if (Captured.Method)
+          ReductionObject = std::move(Captured);
+        else {
+          ReductionCallbackType = Captured.Type;
+          ReductionCallback = std::move(Captured.Storage);
         }
       } else if (Operation == UtilityOperation::NumericInnerProduct &&
                  Call->getNumArgs() == 6) {
