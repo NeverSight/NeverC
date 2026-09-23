@@ -9937,6 +9937,41 @@ int main(){
           '#include <numeric>\n#include <functional>\nint f(int*p){return std::reduce(p,p+2,0,std::plus<long>{});}\n',
           'TR0203', profile='cpp-core-v2', sdk=True)
 
+    numeric_mixed_reduction_object_source = """\
+#include <numeric>
+#include <functional>
+struct Add { long long operator()(long long total,int value)& { return total+value; } }; // mixed-method
+long long mixed(int*first,int*last) {
+ long long a=std::accumulate(first,last,5LL,Add{}); // mixed-call
+ long long b=std::reduce(first,last,5LL,Add{}); // mixed-call
+ long long c=std::accumulate(first,last,5LL,std::plus<>{});
+ long long d=std::reduce(first,last,5LL,std::plus<>{});
+ return a+b+c+d;
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-numeric-mixed-reduction-object-" + target,
+                     numeric_mixed_reduction_object_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        assert len(data['sdk_dependencies']) == 360, data
+        method_line = next(i for i, line in enumerate(numeric_mixed_reduction_object_source.splitlines(), 1)
+                           if '// mixed-method' in line)
+        methods = [f for f in data['functions'] if f['loc']['line'] == method_line]
+        assert len(methods) == 1 and methods[0]['result'] == 'i64', methods
+        assert [p['type'] for p in methods[0]['params'][1:]] == ['i64', 'int'], methods
+        mixed_line = next(i for i, line in enumerate(numeric_mixed_reduction_object_source.splitlines(), 1)
+                          if 'mixed(int*first' in line)
+        mixed = [f for f in data['functions'] if f['loc']['line'] == mixed_line]
+        assert len(mixed) == 1, mixed
+        calls = [node for node in walk(mixed[0]['body'])
+                 if node.get('op') == 'call']
+        expected_lines = [i for i, line in enumerate(numeric_mixed_reduction_object_source.splitlines(), 1)
+                          if '// mixed-call' in line]
+        assert len(calls) == 2 and [node['loc']['line'] for node in calls] == expected_lines, calls
+        assert all(node['callee'] == methods[0]['name'] for node in calls), calls
+        for node in walk(data['functions']):
+            assert node.get('op') not in ('mapped_call', 'indirect_call', 'member_pointer'), node
+
     numeric_partial_sum_sdk_object_source = """\
 #include <numeric>
 #include <functional>

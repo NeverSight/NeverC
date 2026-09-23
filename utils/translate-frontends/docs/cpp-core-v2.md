@@ -757,15 +757,18 @@ accumulator type.
 The four-argument `accumulate` and `reduce` overloads additionally accept a source-owned,
 standard-layout, trivially copied operation object when its non-template binary
 call operator takes directly convertible by-value arithmetic scalars and returns
-one directly convertible to the accumulator. The input and initial value share
-an admitted non-promoted arithmetic type. The pinned C++17 loop and selected
+one directly convertible to the accumulator. The input and initial value may
+have different admitted non-promoted arithmetic types with a checked common
+arithmetic type. The pinned C++17 loop and selected
 source method are authenticated, including `reduce`'s `std::move` of the
 accumulator; one by-value object retains its mutable state
 throughout the reduction without changing the caller's object. An empty range
 returns the initial value without invoking the operation.
 Pinned typed or transparent `<functional>` binary objects, including arithmetic
 operations, use the same loop after authenticating their selected SDK method and
-matching both operands to the accumulator and input element types.
+matching both operands to the accumulator and input element types. Transparent
+SDK objects may use different accumulator and input types; typed SDK objects
+still require each argument to match their template type.
 The four-argument `partial_sum` and `adjacent_difference` overloads also
 accept these SDK binary objects and source-owned trivial binary objects for a
 non-promoted arithmetic input element and a directly convertible writable

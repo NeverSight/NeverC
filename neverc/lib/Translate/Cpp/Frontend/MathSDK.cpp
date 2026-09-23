@@ -12822,17 +12822,24 @@ utilityNumericReductionObjectCall(const State &S, const SourceManager &SM,
         Context.getTypeSize(ElementType) <= 64) ||
        ElementType->isSpecificBuiltinType(BuiltinType::Float) ||
        ElementType->isSpecificBuiltinType(BuiltinType::Double));
+  const bool InitialArithmetic =
+      !Initial->isEnumeralType() &&
+      ((!Context.isPromotableIntegerType(Initial) && Initial->isIntegerType() &&
+        Context.getTypeSize(Initial) <= 64) ||
+       Initial->isSpecificBuiltinType(BuiltinType::Float) ||
+       Initial->isSpecificBuiltinType(BuiltinType::Double));
   const auto *Record = Object->getAsCXXRecordDecl();
   Record = Record ? Record->getDefinition() : nullptr;
   const bool SDKObject =
       Record &&
       approvedFunctionalObjectRecord(S, SM, Record, Context).has_value();
-  if (!Arithmetic || !utilityAlgorithmScalarPointer(Context, Pointer) ||
+  if (!Arithmetic || !InitialArithmetic ||
+      !utilityScalarComparisonType(Context, Initial, ElementType, false) ||
+      !utilityAlgorithmScalarPointer(Context, Pointer) ||
       !Context.hasSameType(Function->getParamDecl(1)->getType(), Pointer) ||
       !Context.hasSameType(Call->getArg(0)->getType(), Pointer) ||
       !Context.hasSameType(Call->getArg(1)->getType(), Pointer) ||
       !Context.hasSameType(Call->getArg(2)->getType(), Initial) ||
-      !Context.hasSameUnqualifiedType(Initial, Pointer->getPointeeType()) ||
       !Context.hasSameType(Call->getArg(3)->getType(), Object) ||
       !Context.hasSameType(Function->getReturnType(), Initial) ||
       !Context.hasSameType(Call->getType(), Initial) || !Record ||
