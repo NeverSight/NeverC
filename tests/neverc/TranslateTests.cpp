@@ -37184,6 +37184,40 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2NumericNarrowIotaRunAtBothOptimizations) {
+  const auto Source = tmpFile("numeric-narrow-iota.cpp");
+  const auto Output = tmpFile("numeric-narrow-iota.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+int main() {
+  unsigned char narrow[4]{};
+  std::iota(narrow, narrow + 4, (unsigned char)254);
+  if (narrow[0] != 254 || narrow[1] != 255 ||
+      narrow[2] != 0 || narrow[3] != 1) return 1;
+  int wide[3]{};
+  std::iota(wide, wide + 3, (unsigned char)254);
+  if (wide[0] != 254 || wide[1] != 255 || wide[2] != 0) return 2;
+  unsigned char converted[3]{};
+  std::iota(converted, converted + 3, 254);
+  if (converted[0] != 254 || converted[1] != 255 || converted[2] != 0)
+    return 3;
+  std::iota(narrow, narrow, (unsigned char)7);
+  if (narrow[0] != 254) return 4;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("numeric-narrow-iota" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2NumericDefaultNarrowScansRunAtBothOptimizations) {
   const auto Source = tmpFile("numeric-default-narrow-scans.cpp");
   const auto Output = tmpFile("numeric-default-narrow-scans.nc");

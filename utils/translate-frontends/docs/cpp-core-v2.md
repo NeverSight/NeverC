@@ -731,8 +731,9 @@ and `exclusive_scan` likewise admit non-boolean narrow integer inputs, and
 common arithmetic for their default operations and convert each result back to
 the initial value type. Initialized scans additionally accept a writable output
 element to which that accumulator converts directly.
-`iota` likewise accepts an independent initial arithmetic type when its values
-convert directly to the output element, and increments in that initial type.
+`iota` likewise accepts an independent initial arithmetic type, including
+non-boolean narrow integers, when its values convert directly to the output
+element (which may also be narrow), and increments in that initial type.
 Other generated values retain the input type.
 Two-argument `reduce` starts from the element type's zero value. The sequential
 scan operations preserve empty-range and in-place behavior. Every argument is

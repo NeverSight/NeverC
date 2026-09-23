@@ -16037,7 +16037,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     auto Iterator = Function->getParamDecl(IteratorIndex)->getType();
     auto Value = Function->getParamDecl(ValueIndex)->getType();
     return utilityAlgorithmWritableScalarPointer(Context, Iterator) &&
-           NumericArithmetic(Value) &&
+           NumericArithmetic(Value, true) &&
            Same(Call->getArg(ValueIndex)->getType(), Value) &&
            utilityScalarDirectConversion(Context, Value,
                                          Iterator->getPointeeType());
@@ -16107,7 +16107,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   };
   if (Origin->Path == "__numeric/iota.h" && Name == "iota" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
-      NumericPointerParameter(0, true) && NumericPointerParameter(1, true) &&
+      NumericPointerParameter(0, true, true) &&
+      NumericPointerParameter(1, true, true) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       NumericIotaValueParameter(2, 0) &&

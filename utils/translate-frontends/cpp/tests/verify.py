@@ -9974,6 +9974,26 @@ long long mixed(int*first,int*last) {
         for node in walk(data['functions']):
             assert node.get('op') not in ('mapped_call', 'indirect_call', 'member_pointer'), node
 
+    numeric_narrow_iota_source = """\
+#include <numeric>
+void fill(unsigned char*first,unsigned char*last,int*out) {
+ std::iota(first,last,(unsigned char)254);
+ std::iota(out,out+3,(unsigned char)254);
+ std::iota(first,last,254);
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-numeric-narrow-iota-" + target,
+                     numeric_narrow_iota_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        assert len(data['sdk_dependencies']) == 126, data
+        fill_line = next(i for i, line in enumerate(numeric_narrow_iota_source.splitlines(), 1)
+                         if 'fill(unsigned char*first' in line)
+        fill = [f for f in data['functions'] if f['loc']['line'] == fill_line]
+        assert len(fill) == 1, fill
+        assert not [node for node in walk(fill[0]['body'])
+                    if node.get('op') in ('call', 'mapped_call', 'indirect_call', 'member_pointer')], fill
+
     numeric_default_narrow_scan_source = """\
 #include <numeric>
 void scan(unsigned char*first,unsigned char*last,int*out) {
