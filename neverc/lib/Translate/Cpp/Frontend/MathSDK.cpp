@@ -16126,6 +16126,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
       const auto OperatorName =
           Specialization ? Specialization->getName() : llvm::StringRef();
+      const bool IntegerOperator =
+          OperatorName == "modulus" || OperatorName == "bit_and" ||
+          OperatorName == "bit_or" || OperatorName == "bit_xor";
       const auto Approved =
           approvedFunctionalObjectRecord(S, SM, Record, Context);
       const auto *Cast = dyn_cast<CXXFunctionalCastExpr>(
@@ -16148,8 +16151,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                ? OperatorName != "negate"
                : OperatorName != "plus" && OperatorName != "minus" &&
                      OperatorName != "multiplies" &&
-                     OperatorName != "divides" && OperatorName != "modulus") ||
-          (OperatorName == "modulus" &&
+                     OperatorName != "divides" && OperatorName != "modulus" &&
+                     OperatorName != "bit_and" && OperatorName != "bit_or" &&
+                     OperatorName != "bit_xor") ||
+          (IntegerOperator &&
            (!NumericArithmetic(Function->getParamDecl(Unary ? 2 : 3)->getType(),
                                true) ||
             !Function->getParamDecl(Unary ? 2 : 3)

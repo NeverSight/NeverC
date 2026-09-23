@@ -37607,6 +37607,15 @@ int main() {
   if (std::transform_reduce(dividends, dividends + 2, remainders, 2,
                             std::plus<>{}, std::modulus<>{}) != 6)
     return 11;
+  int bits[2]{10, 12}, masks[2]{6, 5};
+  if (std::inner_product(bits, bits + 2, masks, 1,
+                         std::bit_or<>{}, std::bit_and<>{}) != 7 ||
+      std::transform_reduce(bits, bits + 2, masks, 1,
+                            std::bit_or<>{}, std::bit_and<>{}) != 7)
+    return 12;
+  if (std::transform_reduce(left, left + 2, right, 3,
+                            std::bit_xor<int>{}, std::bit_or<int>{}) != 2)
+    return 13;
   return 0;
 }
 )cpp");
@@ -37663,6 +37672,9 @@ int main() {
       std::transform_reduce(exact, exact + 2, 50,
                             std::modulus<int>{}, std::negate<int>{}) != 0)
     return 8;
+  if (std::transform_reduce(exact, exact + 2, 15,
+                            std::bit_and<>{}, std::negate<>{}) != 12)
+    return 9;
   return 0;
 }
 )cpp");

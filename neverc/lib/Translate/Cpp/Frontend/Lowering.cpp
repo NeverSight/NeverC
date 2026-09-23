@@ -3076,6 +3076,9 @@ class FunctionLowering {
                : Record->getName() == "multiplies" ? llvm::StringRef("*")
                : Record->getName() == "divides"    ? llvm::StringRef("/")
                : Record->getName() == "modulus"    ? llvm::StringRef("%")
+               : Record->getName() == "bit_and"    ? llvm::StringRef("&")
+               : Record->getName() == "bit_or"     ? llvm::StringRef("|")
+               : Record->getName() == "bit_xor"    ? llvm::StringRef("^")
                                                    : llvm::StringRef("+");
       };
       const bool Inner = Operation == UtilityOperation::NumericInnerProduct ||
