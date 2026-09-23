@@ -780,6 +780,10 @@ across the loop.
 The five-argument unary `transform_reduce` callback form likewise admits
 matching non-boolean narrow input and accumulator types, converting the unary
 result and each reduction result back to that accumulator.
+The no-init and initialized `transform_inclusive_scan` and initialized
+`transform_exclusive_scan` callback forms also admit non-boolean narrow inputs;
+initialized forms accept a narrow accumulator and convert each binary result
+back to it before writing the output.
 The four-argument `accumulate` and `reduce` overloads additionally accept a source-owned,
 standard-layout, trivially copied operation object when its non-template binary
 call operator takes directly convertible by-value arithmetic scalars and returns

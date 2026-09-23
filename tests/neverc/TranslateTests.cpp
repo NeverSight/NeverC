@@ -37184,6 +37184,54 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2NumericNarrowTransformScansRunAtBothOptimizations) {
+  const auto Source = tmpFile("numeric-narrow-transform-scans.cpp");
+  const auto Output = tmpFile("numeric-narrow-transform-scans.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+int sums, transforms;
+unsigned char sum(unsigned char a, unsigned char b) {
+  ++sums; return a + b;
+}
+unsigned char plus_one(unsigned char value) {
+  ++transforms; return value + 1;
+}
+int main() {
+  unsigned char values[3]{250, 10, 20};
+  int seed[3]{}, inclusive[3]{}, exclusive[3]{};
+  if (std::transform_inclusive_scan(values, values + 3, seed,
+                                     sum, plus_one) != seed + 3 ||
+      seed[0] != 251 || seed[1] != 6 || seed[2] != 27 ||
+      sums != 2 || transforms != 3) return 1;
+  if (std::transform_inclusive_scan(values, values + 3, inclusive,
+                                     sum, plus_one, (unsigned char)5) !=
+          inclusive + 3 || inclusive[0] != 0 || inclusive[1] != 11 ||
+      inclusive[2] != 32 || sums != 5 || transforms != 6) return 2;
+  if (std::transform_exclusive_scan(values, values + 3, exclusive,
+                                     (unsigned char)5, sum, plus_one) !=
+          exclusive + 3 || exclusive[0] != 5 || exclusive[1] != 0 ||
+      exclusive[2] != 11 || sums != 8 || transforms != 9) return 3;
+  if (std::transform_inclusive_scan(values, values, seed,
+                                     sum, plus_one) != seed ||
+      std::transform_exclusive_scan(values, values, exclusive,
+                                     (unsigned char)5, sum, plus_one) !=
+          exclusive || sums != 8 || transforms != 9) return 4;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("numeric-narrow-transform-scans" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest,
        CoreV2NumericNarrowUnaryTransformReduceRunAtBothOptimizations) {
   const auto Source = tmpFile("numeric-narrow-unary-transform-reduce.cpp");

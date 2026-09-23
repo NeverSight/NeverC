@@ -16267,29 +16267,31 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
        (Origin->Path == "__numeric/transform_exclusive_scan.h" &&
         Name == "transform_exclusive_scan" && Call->getNumArgs() == 6)) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      NumericPointerParameter(0, false) && NumericPointerParameter(1, false) &&
-      NumericPointerParameter(2, true) &&
+      NumericPointerParameter(0, false, true) &&
+      NumericPointerParameter(1, false, true) &&
+      NumericPointerParameter(2, true, true) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
     auto Element = Function->getParamDecl(0)->getType()->getPointeeType();
     if (Name == "transform_inclusive_scan") {
-      if (NumericUnaryCallback(4, Element) &&
+      if (NumericUnaryCallback(4, Element, true) &&
           ((Call->getNumArgs() == 5 && AlgorithmTransferParameters(0, 2) &&
-            NumericBinaryCallback(3, Element)) ||
-           (Call->getNumArgs() == 6 && NumericReductionValueParameter(5, 0) &&
-            NumericValueOutputParameter(5, 2) &&
+            NumericBinaryCallback(3, Element, true)) ||
+           (Call->getNumArgs() == 6 &&
+            NumericReductionValueParameter(5, 0, true) &&
+            NumericValueOutputParameter(5, 2, true) &&
             NumericBinaryTransformCallback(
                 3, Function->getParamDecl(5)->getType(),
-                Function->getParamDecl(5)->getType(), Element))))
+                Function->getParamDecl(5)->getType(), Element, true))))
         return UtilityOperation::NumericTransformInclusiveScan;
-    } else if (NumericReductionValueParameter(3, 0) &&
-               NumericValueOutputParameter(3, 2) &&
+    } else if (NumericReductionValueParameter(3, 0, true) &&
+               NumericValueOutputParameter(3, 2, true) &&
                NumericBinaryTransformCallback(
                    4, Function->getParamDecl(3)->getType(),
-                   Function->getParamDecl(3)->getType(), Element) &&
-               NumericUnaryCallback(5, Element)) {
+                   Function->getParamDecl(3)->getType(), Element, true) &&
+               NumericUnaryCallback(5, Element, true)) {
       return UtilityOperation::NumericTransformExclusiveScan;
     }
   }
