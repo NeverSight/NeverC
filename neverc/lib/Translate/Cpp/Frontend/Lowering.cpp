@@ -6672,7 +6672,7 @@ class FunctionLowering {
     case UtilityOperation::AlgorithmForEach: {
       auto Current = snapshot(expression(Call->getArg(0)), L);
       auto Last = snapshot(expression(Call->getArg(1)), L);
-      auto Callback = snapshot(expression(Call->getArg(2)), L);
+      auto Callback = captureUnaryPredicate(Call, Operation);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto PointerType = type(Call->getArg(0)->getType(), L);
       const auto Check = labelName(), Invoke = labelName(), End = labelName();
@@ -6681,11 +6681,7 @@ class FunctionLowering {
       branch(binary("!=", Current, Last, "bool", L), Invoke, End, L);
       label(Invoke, L);
       {
-        json::Array Arguments;
-        Arguments.push_back(dereference(json::Object(Current), L));
-        emitAlgorithmCallback(json::Object(Callback),
-                              Call->getArg(2)->getType(), std::move(Arguments),
-                              L);
+        emitUnaryOperation(Callback, dereference(json::Object(Current), L), L);
       }
       assign(
           Current,
@@ -6693,7 +6689,12 @@ class FunctionLowering {
           L);
       jump(Check, L);
       label(End, L);
-      return Callback;
+      if (!Callback.Method)
+        return Callback.Storage;
+      auto Place = Destination ? std::move(*Destination)
+                               : objectTemporary(Call->getType(), L);
+      assign(json::Object(Place), dereference(Callback.Storage, L), L);
+      return Place;
     }
     case UtilityOperation::AlgorithmForEachN: {
       auto Current = snapshot(expression(Call->getArg(0)), L);

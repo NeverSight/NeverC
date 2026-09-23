@@ -41011,6 +41011,59 @@ TEST_F(TranslateTest,
   }
 }
 
+TEST_F(TranslateTest, CoreV2AlgorithmForEachObjectRunsAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-for-each-object.cpp");
+  const auto Output = tmpFile("algorithm-for-each-object.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+int calls, factories, first_calls, last_calls;
+int *first(int *p) { ++first_calls; return p; }
+int *last(int *p) { ++last_calls; return p; }
+struct Accumulate {
+  int sum;
+  int visits;
+  void operator()(long long value) & {
+    ++calls; ++visits; sum += int(value);
+  }
+  void operator()(long long) const & { calls += 100; }
+};
+Accumulate make(int n) { ++factories; return Accumulate{n, 0}; }
+struct Count {
+  int sum;
+  int operator()(int value) & { ++calls; sum += value; return value * 2; }
+};
+int main() {
+  int values[3]{1, 2, 3};
+  Accumulate caller{4, 0};
+  Accumulate result = std::for_each(first(values), last(values + 3), caller);
+  if (result.sum != 10 || result.visits != 3 || caller.sum != 4 ||
+      caller.visits != 0 || calls != 3 || first_calls != 1 ||
+      last_calls != 1) return 1;
+  result = std::for_each(values, values, make(9));
+  if (result.sum != 9 || result.visits != 0 || calls != 3 ||
+      factories != 1) return 2;
+  result = std::for_each(values, values + 2, make(9));
+  if (result.sum != 12 || result.visits != 2 || calls != 5 ||
+      factories != 2) return 3;
+  Count counted{0};
+  Count counted_result = std::for_each(values, values + 3, counted);
+  if (counted_result.sum != 6 || counted.sum != 0 || calls != 8)
+    return 4;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-for-each-object" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmGenerateObjectRunsAtBothOptimizations) {
   const auto Source = tmpFile("algorithm-generate-object.cpp");
   const auto Output = tmpFile("algorithm-generate-object.nc");

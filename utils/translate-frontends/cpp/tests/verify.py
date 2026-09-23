@@ -12894,6 +12894,53 @@ int main(){
         check("v2-algorithm-for-each-n-object-reject-" + name, source, code,
               profile=profile, sdk=sdk)
 
+    algorithm_for_each_object_source = """\
+#include <algorithm>
+int calls,factories,first_calls,last_calls;
+int*first(int*p){++first_calls;return p;}
+int*last(int*p){++last_calls;return p;}
+struct Accumulate{
+ int sum,visits;
+ void operator()(long long value)&{ // template-predicate-method: accumulate
+  ++calls;++visits;sum+=int(value);
+ }
+ void operator()(long long)const&{calls+=100;}
+};
+Accumulate make(int n){++factories;return Accumulate{n,0};}
+int main(){
+ int values[3]={1,2,3};Accumulate caller{4,0};
+ Accumulate result=std::for_each(first(values),last(values+3),caller); // template-predicate-call: accumulate i64
+ if(result.sum!=10||result.visits!=3||caller.sum!=4||caller.visits||calls!=3||first_calls!=1||last_calls!=1)return 1;
+ result=std::for_each(values,values,make(9)); // template-predicate-call: accumulate i64
+ if(result.sum!=9||result.visits||calls!=3||factories!=1)return 2;
+ result=std::for_each(values,values+2,make(9)); // template-predicate-call: accumulate i64
+ if(result.sum!=12||result.visits!=2||calls!=5||factories!=2)return 3;
+ static_assert(__is_same(decltype(std::for_each(values,values,caller)),Accumulate));
+ return 0;
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-algorithm-for-each-object-" + target,
+                     algorithm_for_each_object_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        check_algorithm_template_predicate(data, algorithm_for_each_object_source,
+                                           'void')
+
+    algorithm_for_each_object_rejections = [
+        ('generic-method', '#include <algorithm>\nstruct F{template<class T>void operator()(T){}};F f(int*p){return std::for_each(p,p+2,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('nontrivial-copy', '#include <algorithm>\nstruct F{F(){}F(const F&){}void operator()(int){}};F f(int*p){return std::for_each(p,p+2,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('nontrivial-destructor', '#include <algorithm>\nstruct F{~F(){}void operator()(int){}};F f(int*p){return std::for_each(p,p+2,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('reference-argument', '#include <algorithm>\nstruct F{void operator()(int&){}};F f(int*p){return std::for_each(p,p+2,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('record-result', '#include <algorithm>\nstruct R{int n;};struct F{R operator()(int){return {1};}};F f(int*p){return std::for_each(p,p+2,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('missing-definition', '#include <algorithm>\nstruct F{void operator()(int);};F f(int*p){return std::for_each(p,p+2,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('lambda', '#include <algorithm>\nauto f(int*p){return std::for_each(p,p+2,[](int){});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('specialization', '#include <algorithm>\nstruct F{void operator()(int){}};namespace std{template<>F for_each<int*,F>(int*p,int*,F f){return f;}}F g(int*p){return std::for_each(p,p+2,F{});}\n', 'TR0201', 'cpp-core-v2', True),
+        ('query-no-body', '#include <algorithm>\nstruct F{void operator()(int);};int f(int*p){static_assert(__is_same(decltype(std::for_each(p,p+2,F{})),F));return 0;}\n', 'TR0203', 'cpp-core-v2', True),
+    ]
+    for name, source, code, profile, sdk in algorithm_for_each_object_rejections:
+        check("v2-algorithm-for-each-object-reject-" + name, source, code,
+              profile=profile, sdk=sdk)
+
     algorithm_generate_object_source = """\
 #include <algorithm>
 int calls, factories, first_calls, last_calls;
