@@ -15417,35 +15417,87 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       S, SM, Method ? Method->getParent() : nullptr, Context);
   if (Method && StringView) {
     const auto *Reference = directMethodReference(Call);
+    const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
     const auto *MemberCall = dyn_cast<CXXMemberCallExpr>(Call);
-    const auto *Object =
-        MemberCall ? MemberCall->getImplicitObjectArgument() : nullptr;
+    const Expr *Object = Operator && Call->getNumArgs() ? Call->getArg(0)
+                         : MemberCall ? MemberCall->getImplicitObjectArgument()
+                                      : nullptr;
+    const unsigned Offset = Operator ? 1 : 0;
     const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
     const auto ViewType = Context.getRecordType(StringView->Record);
     if (!Reference || !Object || !Prototype || !Prototype->isNothrow() ||
-        Method->isStatic() || Method->isVariadic() || Method->getNumParams() ||
-        Call->getNumArgs() || !Method->isConst() || !Method->isConstexpr() ||
-        !Method->hasBody() || Method->getRefQualifier() != RQ_None ||
+        Method->isStatic() || Method->isVariadic() ||
+        Call->getNumArgs() != Method->getNumParams() + Offset ||
+        !Method->isConstexpr() || !Method->hasBody() ||
+        Method->getRefQualifier() != RQ_None ||
         Method->getParent()->getCanonicalDecl() !=
             StringView->Record->getCanonicalDecl() ||
         !Context.hasSameUnqualifiedType(Object->getType(), ViewType) ||
         !approvedStandardSDKDeclaration(S, SM, Method) ||
         !cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "string_view") ||
-        !S.owns(SM, Reference->getExprLoc()) || !Call->isPRValue() ||
-        !Context.hasSameType(Call->getType(), Method->getReturnType()))
+        !S.owns(SM, Reference->getExprLoc()))
       return std::nullopt;
     const llvm::StringRef Name = Method->getIdentifier()
                                      ? Method->getIdentifier()->getName()
                                      : llvm::StringRef();
-    if ((Name == "size" || Name == "length") &&
-        Context.hasSameType(Method->getReturnType(), Context.getSizeType()))
-      return UtilityOperation::StringViewSize;
-    if (Name == "empty" && Method->getReturnType()->isBooleanType())
-      return UtilityOperation::StringViewEmpty;
-    if (Name == "data" &&
-        Context.hasSameType(Method->getReturnType(),
-                            Context.getPointerType(Context.CharTy.withConst())))
-      return UtilityOperation::StringViewData;
+    const auto Pointer = Context.getPointerType(Context.CharTy.withConst());
+    if (!Operator && Method->isConst() && !Method->getNumParams() &&
+        Call->isPRValue() &&
+        Context.hasSameType(Call->getType(), Method->getReturnType())) {
+      if ((Name == "size" || Name == "length") &&
+          Context.hasSameType(Method->getReturnType(), Context.getSizeType()))
+        return UtilityOperation::StringViewSize;
+      if (Name == "empty" && Method->getReturnType()->isBooleanType())
+        return UtilityOperation::StringViewEmpty;
+      if (Context.hasSameType(Method->getReturnType(), Pointer)) {
+        if (Name == "data")
+          return UtilityOperation::StringViewData;
+        if (Name == "begin" || Name == "cbegin")
+          return UtilityOperation::StringViewBegin;
+        if (Name == "end" || Name == "cend")
+          return UtilityOperation::StringViewEnd;
+      }
+    }
+    const auto Result = Method->getReturnType();
+    const bool CharacterReference =
+        Method->isConst() && Result->isLValueReferenceType() &&
+        Context.hasSameType(Result->getPointeeType(),
+                            Context.CharTy.withConst()) &&
+        Context.hasSameUnqualifiedType(Call->getType(), Context.CharTy) &&
+        Call->isLValue();
+    if (CharacterReference && !Operator && !Method->getNumParams() &&
+        (Name == "front" || Name == "back"))
+      return Name == "front" ? UtilityOperation::StringViewFront
+                             : UtilityOperation::StringViewBack;
+    if (CharacterReference && Operator &&
+        Operator->getOperator() == OO_Subscript &&
+        Method->getNumParams() == 1 && Call->getNumArgs() == 2 &&
+        Context.hasSameType(Method->getParamDecl(0)->getType(),
+                            Context.getSizeType()) &&
+        Context.hasSameType(Call->getArg(1)->getType(), Context.getSizeType()))
+      return UtilityOperation::StringViewSubscript;
+    if (!Operator && !Method->isConst() &&
+        !Object->getType().isConstQualified() && Result->isVoidType() &&
+        Call->getType()->isVoidType() && Method->getNumParams() == 1 &&
+        Call->getNumArgs() == 1 &&
+        Context.hasSameType(Method->getParamDecl(0)->getType(),
+                            Context.getSizeType()) &&
+        Context.hasSameType(Call->getArg(0)->getType(),
+                            Context.getSizeType())) {
+      if (Name == "remove_prefix")
+        return UtilityOperation::StringViewRemovePrefix;
+      if (Name == "remove_suffix")
+        return UtilityOperation::StringViewRemoveSuffix;
+    }
+    if (!Operator && Name == "swap" && !Method->isConst() &&
+        !Object->getType().isConstQualified() && Result->isVoidType() &&
+        Call->getType()->isVoidType() && Method->getNumParams() == 1 &&
+        Call->getNumArgs() == 1 &&
+        Method->getParamDecl(0)->getType()->isLValueReferenceType() &&
+        Context.hasSameUnqualifiedType(
+            Method->getParamDecl(0)->getType()->getPointeeType(), ViewType) &&
+        Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), ViewType))
+      return UtilityOperation::StringViewSwap;
     return std::nullopt;
   }
   const auto Array = approvedUtilityArrayRecord(

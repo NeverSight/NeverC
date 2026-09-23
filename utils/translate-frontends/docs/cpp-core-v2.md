@@ -2185,9 +2185,14 @@ and zero-terminated pointer construction, plus copy assignment, lower directly
 to field stores and a byte scan where needed. `size()`, `length()`, `empty()`
 and `data()` read the verified fields without an SDK runtime call. The pointer
 argument is evaluated once; pointer-and-length construction preserves embedded
-zero bytes. The caller remains responsible for the ordinary view lifetime and
-readable-range preconditions. Custom traits, other character types, and other
-string-view operations still require separate direct lowerings.
+zero bytes. `begin()`, `cbegin()`, `end()` and `cend()` expose the verified
+`const char*` range, including range-for iteration. `operator[]`, `front()` and
+`back()` return read-only character elements. `remove_prefix()`,
+`remove_suffix()` and member `swap()` update the view fields directly; each
+receiver and argument is evaluated once. The caller remains responsible for
+the ordinary view lifetime, readable-range and valid-index preconditions.
+Custom traits, other character types, throwing `at()`, and other string-view
+operations still require separate direct lowerings.
 
 ## Dynamic local static initialization
 

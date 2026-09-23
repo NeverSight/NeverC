@@ -8975,6 +8975,97 @@ class FunctionLowering {
                              "bool", L),
                       L);
     }
+    case UtilityOperation::StringViewBegin:
+    case UtilityOperation::StringViewEnd: {
+      const auto *Object = MemberObject();
+      auto View = Object ? StringViewFor(Object->getType())
+                         : std::optional<UtilityStringViewRecord>();
+      if (!Object || !View)
+        reject(L, "string view iterator",
+               "The selected std::string_view layout is unavailable.");
+      auto ObjectAddress =
+          snapshot(address(lvalue(Object), Object->getType(), L), L);
+      auto Data = fieldStorage(dereference(json::Object(ObjectAddress), L),
+                               View->Data, L);
+      if (Operation == UtilityOperation::StringViewBegin)
+        return Data;
+      auto Size =
+          fieldStorage(dereference(std::move(ObjectAddress), L), View->Size, L);
+      return binary("+", std::move(Data), std::move(Size),
+                    type(View->Data->getType(), L), L);
+    }
+    case UtilityOperation::StringViewSubscript:
+    case UtilityOperation::StringViewFront:
+    case UtilityOperation::StringViewBack: {
+      const auto *Object = MemberObject();
+      auto View = Object ? StringViewFor(Object->getType())
+                         : std::optional<UtilityStringViewRecord>();
+      if (!Object || !View)
+        reject(L, "string view element",
+               "The selected std::string_view layout is unavailable.");
+      auto ObjectAddress =
+          snapshot(address(lvalue(Object), Object->getType(), L), L);
+      auto Data = fieldStorage(dereference(json::Object(ObjectAddress), L),
+                               View->Data, L);
+      Expression Position;
+      if (Operation == UtilityOperation::StringViewSubscript)
+        Position = expression(Call->getArg(1));
+      else if (Operation == UtilityOperation::StringViewFront)
+        Position = quantity(0, type(View->Size->getType(), L), L);
+      else {
+        auto Size = fieldStorage(dereference(std::move(ObjectAddress), L),
+                                 View->Size, L);
+        Position = binary("-", std::move(Size),
+                          quantity(1, type(View->Size->getType(), L), L),
+                          type(View->Size->getType(), L), L);
+      }
+      return index(std::move(Data), std::move(Position),
+                   type(Call->getType(), L), L);
+    }
+    case UtilityOperation::StringViewRemovePrefix:
+    case UtilityOperation::StringViewRemoveSuffix: {
+      const auto *Object = MemberObject();
+      auto View = Object ? StringViewFor(Object->getType())
+                         : std::optional<UtilityStringViewRecord>();
+      if (!Object || !View)
+        reject(L, "string view modifier",
+               "The selected std::string_view layout is unavailable.");
+      auto ObjectAddress =
+          snapshot(address(lvalue(Object), Object->getType(), L), L);
+      auto Count = snapshot(expression(Call->getArg(0)), L);
+      if (Operation == UtilityOperation::StringViewRemovePrefix) {
+        auto Data = fieldStorage(dereference(json::Object(ObjectAddress), L),
+                                 View->Data, L);
+        assign(Data,
+               binary("+", json::Object(Data), json::Object(Count),
+                      type(View->Data->getType(), L), L),
+               L);
+      }
+      auto Size =
+          fieldStorage(dereference(std::move(ObjectAddress), L), View->Size, L);
+      assign(Size,
+             binary("-", json::Object(Size), std::move(Count),
+                    type(View->Size->getType(), L), L),
+             L);
+      return {};
+    }
+    case UtilityOperation::StringViewSwap: {
+      const auto *Object = MemberObject();
+      auto View = Object ? StringViewFor(Object->getType())
+                         : std::optional<UtilityStringViewRecord>();
+      if (!Object || !View)
+        reject(L, "string view swap",
+               "The selected std::string_view layout is unavailable.");
+      auto LeftAddress =
+          snapshot(address(lvalue(Object), Object->getType(), L), L);
+      auto RightAddress = snapshot(
+          address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
+      auto OldLeft = snapshot(dereference(json::Object(LeftAddress), L), L);
+      auto OldRight = snapshot(dereference(json::Object(RightAddress), L), L);
+      assign(dereference(std::move(LeftAddress), L), std::move(OldRight), L);
+      assign(dereference(std::move(RightAddress), L), std::move(OldLeft), L);
+      return {};
+    }
     case UtilityOperation::ArraySize:
     case UtilityOperation::ArrayMaxSize:
     case UtilityOperation::ArrayEmpty: {

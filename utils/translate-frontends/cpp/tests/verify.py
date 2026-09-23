@@ -29019,6 +29019,17 @@ const char* data() {
   empty = literal;
   return empty.data();
 }
+std::string_view::size_type trim(std::string_view view) {
+  if (view.cbegin() != view.cend() && view.front() == view[0])
+    view.remove_prefix(1);
+  if (!view.empty())
+    view.remove_suffix(1);
+  return view.end() - view.begin();
+}
+std::string_view exchange(std::string_view left, std::string_view right) {
+  left.swap(right);
+  return left;
+}
 """, profile="cpp-core-v2", target=target, sdk=True)
         assert not [node for node in walk(runtime_ir["functions"])
                     if node.get("op") in ("call", "mapped_call", "indirect_call",
@@ -29027,7 +29038,7 @@ const char* data() {
           '#include <string_view>\nstruct Traits{using char_type=char;};int f(){std::basic_string_view<char,Traits> view;return view.size();}',
           "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-string-view-unlowered-member",
-          '#include <string_view>\nint f(){std::string_view view("a",1);view.remove_prefix(1);return view.size();}',
+          '#include <string_view>\nint f(){std::string_view view("a",1);return view.at(0);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-string-view-quoted", '#include "string_view"\nint f(){return 0;}',
           "TR0201", profile="cpp-core-v2", sdk=True)

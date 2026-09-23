@@ -14897,6 +14897,64 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2StringViewIterationAndModifiersRunAtBothOptimizations) {
+  const auto Source = tmpFile("string-view-iteration.cpp");
+  const auto Output = tmpFile("string-view-iteration.nc");
+  writeFile(Source, R"cpp(
+#include <string_view>
+std::string_view& touch(std::string_view& view, int& count) {
+  ++count;
+  return view;
+}
+int main() {
+  const char text[] = {'a', 'b', 'c', 'd', 0};
+  std::string_view view(text, 4);
+  if (view.begin() != view.data() || view.cbegin() != view.begin() ||
+      view.end() - view.begin() != 4 || view.cend() != view.end())
+    return 1;
+  if (view[0] != 'a' || view[3] != 'd' ||
+      view.front() != 'a' || view.back() != 'd')
+    return 2;
+  int sum = 0;
+  for (char letter : view)
+    sum += letter;
+  if (sum != 'a' + 'b' + 'c' + 'd')
+    return 3;
+  int effects = 0;
+  if (touch(view, effects)[1] != 'b' || effects != 1)
+    return 4;
+  int count = 0;
+  view.remove_prefix(++count);
+  view.remove_suffix(1);
+  if (count != 1 || view.size() != 2 || view.data() != text + 1 ||
+      view.front() != 'b' || view.back() != 'c')
+    return 5;
+  std::string_view other("XYZ");
+  effects = 0;
+  touch(view, effects).swap(other);
+  if (effects != 1 || view.size() != 3 || view.front() != 'X' ||
+      other.size() != 2 || other[0] != 'b' || other.back() != 'c')
+    return 6;
+  view.swap(view);
+  if (view.size() != 3 || view.back() != 'Z')
+    return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-view-iteration" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StringsRetainSourceAndLifetimeRestrictions) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"literal-unused-declaration", "unsigned operator\"\"_n(const char*,decltype(sizeof(0))){return 1;}", "TR0201"},
