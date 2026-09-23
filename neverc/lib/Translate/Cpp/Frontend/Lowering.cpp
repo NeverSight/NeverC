@@ -3083,6 +3083,13 @@ class FunctionLowering {
               : llvm::StringRef();
       const bool LogicalReduction =
           ReductionName == "logical_and" || ReductionName == "logical_or";
+      const auto BinaryTransformName =
+          DefaultFunctionalPair
+              ? Call->getArg(5)->getType()->getAsCXXRecordDecl()->getName()
+              : llvm::StringRef();
+      const bool LogicalBinaryTransform =
+          BinaryTransformName == "logical_and" ||
+          BinaryTransformName == "logical_or";
       const auto UnaryTransformName =
           DefaultUnaryFunctionalPair
               ? Call->getArg(4)->getType()->getAsCXXRecordDecl()->getName()
@@ -3165,7 +3172,7 @@ class FunctionLowering {
       }
       if (!TypedTransformType.isNull())
         DefaultTermQualType = TypedTransformType;
-      if (LogicalNotTransform)
+      if (LogicalNotTransform || LogicalBinaryTransform)
         DefaultTermQualType = A.Context.BoolTy;
       auto DefaultSumQualType =
           LogicalReduction
@@ -3182,7 +3189,8 @@ class FunctionLowering {
                "The accumulator and term have no arithmetic common type.");
       const auto DefaultTermType = type(DefaultTermQualType, L);
       const auto PromotedTermQualType =
-          TypedTransformType.isNull()
+          LogicalBinaryTransform ? A.Context.IntTy
+          : TypedTransformType.isNull()
               ? DefaultTermQualType
               : *utilityScalarComparisonType(A.Context, TypedTransformType,
                                              TypedTransformType, false);
@@ -3228,15 +3236,20 @@ class FunctionLowering {
                     ResultType, L);
       } else if (Second) {
         auto TransformOperand = [&](Expression Value) {
-          return cast(cast(std::move(Value), DefaultTermType, L),
-                      PromotedTermType, L);
+          if (!TypedTransformType.isNull())
+            Value = cast(std::move(Value), type(TypedTransformType, L), L);
+          if (LogicalBinaryTransform)
+            Value = cast(std::move(Value), "bool", L);
+          return cast(std::move(Value), PromotedTermType, L);
         };
         Term = binary(DefaultFunctionalPair ? ArithmeticFunctionalOperator(5)
                                             : llvm::StringRef("*"),
                       TransformOperand(std::move(Term)),
                       TransformOperand(dereference(*Second, L)),
                       PromotedTermType, L);
-        if (!TypedTransformType.isNull())
+        if (LogicalBinaryTransform)
+          Term = cast(std::move(Term), "bool", L);
+        else if (!TypedTransformType.isNull())
           Term = cast(std::move(Term), DefaultTermType, L);
       }
       if (ReductionObject) {

@@ -756,6 +756,8 @@ and each typed reduction result converts to its own `T` before the accumulator.
 `std::logical_and` and `std::logical_or` are also admitted as reduction
 objects, with transparent or typed arithmetic/`bool` operands and a `bool`
 result converted back to the accumulator after each step.
+Either may also transform the two input elements into a `bool` term, including
+with a distinct typed operand conversion, before the selected reduction.
 Stored objects and other
 object combinations remain outside this direct lowering.
 The five-argument unary `transform_reduce` likewise accepts a directly empty

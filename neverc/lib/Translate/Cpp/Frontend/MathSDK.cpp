@@ -16128,6 +16128,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Specialization ? Specialization->getName() : llvm::StringRef();
       const bool LogicalReduction = !Offset && (OperatorName == "logical_and" ||
                                                 OperatorName == "logical_or");
+      const bool LogicalTransform =
+          Offset && !Unary &&
+          (OperatorName == "logical_and" || OperatorName == "logical_or");
       const bool IntegerOperator =
           OperatorName == "modulus" || OperatorName == "bit_and" ||
           OperatorName == "bit_or" || OperatorName == "bit_xor" ||
@@ -16157,7 +16160,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                      OperatorName != "multiplies" &&
                      OperatorName != "divides" && OperatorName != "modulus" &&
                      OperatorName != "bit_and" && OperatorName != "bit_or" &&
-                     OperatorName != "bit_xor" && !LogicalReduction) ||
+                     OperatorName != "bit_xor" && !LogicalReduction &&
+                     !LogicalTransform) ||
           (IntegerOperator &&
            (!NumericArithmetic(Function->getParamDecl(Unary ? 2 : 3)->getType(),
                                true) ||
@@ -16176,7 +16180,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           (!ValueType->isVoidType() &&
            (!(NumericArithmetic(ValueType, true) ||
               ((UnaryTransform && OperatorName == "logical_not" ||
-                LogicalReduction) &&
+                LogicalReduction || LogicalTransform) &&
                ValueType->isBooleanType())) ||
             !utilityScalarDirectConversion(
                 Context, Function->getParamDecl(Unary ? 2 : 3)->getType(),

@@ -37644,6 +37644,26 @@ int main() {
   if (std::transform_reduce(truthy, truthy + 2, identity, 0,
                             std::logical_or<bool>{}, std::plus<>{}) != 1)
     return 18;
+  int logicalValues[2]{256, 0}, logicalWeights[2]{1, 1};
+  if (std::inner_product(logicalValues, logicalValues + 2, logicalWeights, 2,
+                         std::plus<>{}, std::logical_and<>{}) != 3 ||
+      std::transform_reduce(logicalValues, logicalValues + 2, logicalWeights,
+                            2, std::plus<>{},
+                            std::logical_and<unsigned char>{}) != 2)
+    return 19;
+  if (std::transform_reduce(logicalValues, logicalValues + 2, logicalWeights,
+                            2, std::plus<>{},
+                            std::logical_or<bool>{}) != 4 ||
+      std::inner_product(logicalValues, logicalValues + 2, logicalWeights, 0,
+                         std::logical_or<>{},
+                         std::logical_and<>{}) != 1)
+    return 20;
+  if (std::inner_product(logicalValues, logicalValues, logicalWeights, 7,
+                         std::plus<>{}, std::logical_and<>{}) != 7 ||
+      std::transform_reduce(logicalValues, logicalValues, logicalWeights, 7,
+                            std::logical_or<>{},
+                            std::logical_or<>{}) != 7)
+    return 21;
   return 0;
 }
 )cpp");
