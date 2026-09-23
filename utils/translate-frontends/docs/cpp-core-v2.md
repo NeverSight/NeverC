@@ -744,18 +744,19 @@ to the accumulator type.
 Default `inner_product` and two-range `transform_reduce` additionally admit
 non-boolean narrow input elements in either range and a narrow initial
 accumulator.
-Their six-argument overloads also accept an explicit pair of directly empty
-list-initialized `std::plus<>` and `std::multiplies<>` objects, or the typed
-`std::plus<T>`/`std::multiplies<T>` pair when both ranges and the accumulator
-have the same admitted arithmetic type `T`, including non-boolean narrow
-integers. The typed product converts to `T` before the sum. The authenticated
-stateless SDK objects use the checked product and sum conversions of their
-overloads; stored objects and other object combinations remain outside this
-direct lowering.
-The five-argument unary `transform_reduce` likewise accepts directly empty
-list-initialized `std::plus<>` and `std::negate<>`, or their typed `T` forms for
-an exact arithmetic input and accumulator type. Negation uses source integer
-promotion, and the typed result converts to `T` before addition.
+Their six-argument overloads also accept directly empty list-initialized
+arithmetic function-object pairs: either operation may be `std::plus`,
+`std::minus` or `std::multiplies`. Transparent forms use checked common
+arithmetic; typed `T` forms require both ranges and the accumulator to have
+the same admitted arithmetic type `T`, including non-boolean narrow integers.
+Each typed transform result converts to `T` before reduction, and each
+reduction result converts back to the accumulator. Stored objects and other
+object combinations remain outside this direct lowering.
+The five-argument unary `transform_reduce` likewise accepts a directly empty
+list-initialized `std::negate` transformation with `std::plus`, `std::minus` or
+`std::multiplies` reduction. Typed `T` forms require an exact arithmetic input
+and accumulator type. Negation uses source integer promotion, and its typed
+result converts to `T` before reduction.
 
 The operation-taking overloads of `accumulate`, `inner_product`, `partial_sum`,
 `adjacent_difference`, `reduce`, unary and two-range `transform_reduce`,

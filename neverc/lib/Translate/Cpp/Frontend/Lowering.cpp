@@ -3069,6 +3069,13 @@ class FunctionLowering {
           DefaultFunctionalPair && TypedFunctionalAt(4);
       const bool TypedUnaryFunctionalPair =
           DefaultUnaryFunctionalPair && TypedFunctionalAt(3);
+      auto ArithmeticFunctionalOperator = [&](unsigned Index) {
+        const auto *Record =
+            Call->getArg(Index)->getType()->getAsCXXRecordDecl();
+        return Record->getName() == "minus"        ? llvm::StringRef("-")
+               : Record->getName() == "multiplies" ? llvm::StringRef("*")
+                                                   : llvm::StringRef("+");
+      };
       const bool Inner = Operation == UtilityOperation::NumericInnerProduct ||
                          (TransformReduce && !UnaryTransformReduce);
       auto First = snapshot(expression(Call->getArg(0)), L);
@@ -3167,7 +3174,9 @@ class FunctionLowering {
                                           std::move(Arguments), L),
                     ResultType, L);
       } else if (Second) {
-        Term = binary("*", cast(std::move(Term), DefaultTermType, L),
+        Term = binary(DefaultFunctionalPair ? ArithmeticFunctionalOperator(5)
+                                            : llvm::StringRef("*"),
+                      cast(std::move(Term), DefaultTermType, L),
                       cast(dereference(*Second, L), DefaultTermType, L),
                       DefaultTermType, L);
         if (TypedFunctionalPair)
@@ -3190,12 +3199,17 @@ class FunctionLowering {
                     ResultType, L),
                L);
       } else {
-        assign(Result,
-               cast(binary("+", cast(json::Object(Result), DefaultSumType, L),
-                           cast(std::move(Term), DefaultSumType, L),
-                           DefaultSumType, L),
-                    ResultType, L),
-               L);
+        const auto Operator =
+            DefaultFunctionalPair        ? ArithmeticFunctionalOperator(4)
+            : DefaultUnaryFunctionalPair ? ArithmeticFunctionalOperator(3)
+                                         : llvm::StringRef("+");
+        assign(
+            Result,
+            cast(binary(Operator, cast(json::Object(Result), DefaultSumType, L),
+                        cast(std::move(Term), DefaultSumType, L),
+                        DefaultSumType, L),
+                 ResultType, L),
+            L);
       }
       assign(First,
              binary("+", First, quantity(1, DifferenceType, L), FirstType, L),

@@ -37575,6 +37575,18 @@ int main() {
                             std::plus<unsigned char>{},
                             std::multiplies<unsigned char>{}) != 195)
     return 5;
+  int left[2]{2, 3}, right[2]{4, 5};
+  if (std::inner_product(left, left + 2, right, 2,
+                         std::multiplies<>{}, std::plus<>{}) != 96 ||
+      std::transform_reduce(left, left + 2, right, 2,
+                            std::multiplies<>{}, std::plus<>{}) != 96)
+    return 6;
+  int larger[2]{10, 9}, smaller[2]{3, 4};
+  if (std::inner_product(larger, larger + 2, smaller, 30,
+                         std::minus<int>{}, std::minus<int>{}) != 18 ||
+      std::transform_reduce(larger, larger + 2, smaller, 30,
+                            std::minus<int>{}, std::minus<int>{}) != 18)
+    return 7;
   return 0;
 }
 )cpp");
@@ -37616,6 +37628,11 @@ int main() {
                             std::plus<unsigned char>{},
                             std::negate<unsigned char>{}) != 206)
     return 5;
+  if (std::transform_reduce(exact, exact + 2, 2,
+                            std::multiplies<>{}, std::negate<>{}) != 12 ||
+      std::transform_reduce(exact, exact + 2, 20,
+                            std::minus<int>{}, std::negate<int>{}) != 25)
+    return 6;
   return 0;
 }
 )cpp");

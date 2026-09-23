@@ -16112,16 +16112,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                          Prototype->getParamType(1));
   };
   // Empty, directly value-initialized arithmetic function objects have no
-  // state or construction effects. Transparent operators retain the default
-  // arithmetic; typed operators explicitly narrow their result to the exact
-  // operand type before the next operation.
-  auto NumericDefaultFunctionalPair = [&](bool Unary) {
+  // state or construction effects. Typed operators explicitly narrow their
+  // result to the exact operand type before the next operation.
+  auto NumericArithmeticFunctionalPair = [&](bool Unary) {
     if (Call->getNumArgs() != (Unary ? 5u : 6u))
       return false;
     for (unsigned Offset = 0; Offset != 2; ++Offset) {
       const unsigned Index = (Unary ? 3u : 4u) + Offset;
-      const llvm::StringRef Name =
-          Offset ? (Unary ? "negate" : "multiplies") : "plus";
+      const bool UnaryTransform = Unary && Offset;
       const auto Object = Function->getParamDecl(Index)->getType();
       const auto *Record = Object->getAsCXXRecordDecl();
       const auto *Specialization =
@@ -16144,7 +16142,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       if (!Specialization || !Approved ||
           Approved->Record->getCanonicalDecl() !=
               Specialization->getCanonicalDecl() ||
-          Specialization->getName() != Name || ValueType.isNull() ||
+          (UnaryTransform ? Specialization->getName() != "negate"
+                          : Specialization->getName() != "plus" &&
+                                Specialization->getName() != "minus" &&
+                                Specialization->getName() != "multiplies") ||
+          ValueType.isNull() ||
           (!ValueType->isVoidType() &&
            (!NumericArithmetic(ValueType, true) ||
             !Same(ValueType,
@@ -16203,7 +16205,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       ((Call->getNumArgs() == 4 && NumericReductionValueParameter(3, 0, true) &&
         NumericCommonElements(0, 2, true)) ||
        (Call->getNumArgs() == 6 && NumericReductionValueParameter(3, 0, true) &&
-        ((NumericDefaultFunctionalPair(false) &&
+        ((NumericArithmeticFunctionalPair(false) &&
           NumericCommonElements(0, 2, true)) ||
          (NumericBinaryTransformCallback(
               4, Function->getParamDecl(3)->getType(),
@@ -16272,7 +16274,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Same(Function->getReturnType(), Function->getParamDecl(3)->getType()) &&
         ((Call->getNumArgs() == 4 && NumericCommonElements(0, 2, true)) ||
          (Call->getNumArgs() == 6 &&
-          ((NumericDefaultFunctionalPair(false) &&
+          ((NumericArithmeticFunctionalPair(false) &&
             NumericCommonElements(0, 2, true)) ||
            (NumericBinaryTransformCallback(
                 4, Function->getParamDecl(3)->getType(),
@@ -16285,7 +16287,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return UtilityOperation::NumericTransformReduce;
     if (Call->getNumArgs() == 5 && NumericReductionValueParameter(2, 0, true) &&
         Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
-        ((NumericDefaultFunctionalPair(true) &&
+        ((NumericArithmeticFunctionalPair(true) &&
           NumericArithmetic(Element, true)) ||
          (NumericBinaryTransformCallback(
               3, Function->getParamDecl(2)->getType(),

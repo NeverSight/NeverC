@@ -9988,15 +9988,18 @@ int typed(int* first, int* last) {
 unsigned char narrow(unsigned char* first, unsigned char* last) {
  return std::inner_product(first,last,first,(unsigned char)7,std::plus<unsigned char>{},std::multiplies<unsigned char>{});
 }
+int composed(int* first, int* last) {
+ return std::transform_reduce(first,last,first,2,std::multiplies<>{},std::plus<>{});
+}
 """
     for target in sdk_targets:
         data = check("v2-numeric-default-functional-pair-" + target,
                      numeric_default_functional_pair_source,
                      profile="cpp-core-v2", target=target, sdk=True)
         assert len(data['sdk_dependencies']) == 126, data
-        for line in (2, 5, 8, 11):
+        for line in (2, 5, 8, 11, 14):
             functions = [f for f in data['functions'] if f['loc']['line'] == line]
-            assert len(functions) == 1 and functions[0]['result'] == ('int' if line == 8 else 'u8' if line == 11 else 'i64'), functions
+            assert len(functions) == 1 and functions[0]['result'] == ('int' if line in (8, 14) else 'u8' if line == 11 else 'i64'), functions
             assert not any(node.get('op') in ('call', 'indirect_call', 'mapped_call')
                            for node in walk(functions[0]['body'])), functions
     check("v2-numeric-default-functional-pair-stored",
@@ -10014,15 +10017,18 @@ int typed(int* first, int* last) {
 unsigned char narrow(unsigned char* first, unsigned char* last) {
  return std::transform_reduce(first,last,(unsigned char)250,std::plus<unsigned char>{},std::negate<unsigned char>{});
 }
+int composed(int* first, int* last) {
+ return std::transform_reduce(first,last,2,std::multiplies<>{},std::negate<>{});
+}
 """
     for target in sdk_targets:
         data = check("v2-numeric-unary-functional-pair-" + target,
                      numeric_unary_functional_pair_source,
                      profile="cpp-core-v2", target=target, sdk=True)
         assert len(data['sdk_dependencies']) == 126, data
-        for line in (2, 5, 8):
+        for line in (2, 5, 8, 11):
             functions = [f for f in data['functions'] if f['loc']['line'] == line]
-            assert len(functions) == 1 and functions[0]['result'] == ('int' if line == 5 else 'u8' if line == 8 else 'i64'), functions
+            assert len(functions) == 1 and functions[0]['result'] == ('int' if line in (5, 11) else 'u8' if line == 8 else 'i64'), functions
             assert not any(node.get('op') in ('call', 'indirect_call', 'mapped_call')
                            for node in walk(functions[0]['body'])), functions
 
