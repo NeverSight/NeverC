@@ -10016,6 +10016,41 @@ int narrow(unsigned char*first,unsigned char*last) {
           '#include <numeric>\n#include <functional>\nenum E{A=1,B=2};int f(E*p){return std::reduce(p,p+2,0,std::plus<>{});}\n',
           'TR0203', profile='cpp-core-v2', sdk=True)
 
+    numeric_narrow_scan_object_source = """\
+#include <numeric>
+#include <functional>
+struct Add { int operator()(int total,unsigned char value)& { return total+value; } }; // narrow-scan-method
+void scan(unsigned char*first,unsigned char*last,int*out) {
+ std::inclusive_scan(first,last,out,Add{},5); // narrow-scan-call
+ std::exclusive_scan(first,last,out,5,Add{}); // narrow-scan-call
+ std::inclusive_scan(first,last,out,std::plus<int>{},5);
+ std::exclusive_scan(first,last,out,5,std::plus<int>{});
+ std::inclusive_scan(first,last,out,std::plus<>{},5);
+ std::exclusive_scan(first,last,out,5,std::plus<>{});
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-numeric-narrow-scan-object-" + target,
+                     numeric_narrow_scan_object_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        assert len(data['sdk_dependencies']) == 360, data
+        method_line = next(i for i, line in enumerate(numeric_narrow_scan_object_source.splitlines(), 1)
+                           if '// narrow-scan-method' in line)
+        methods = [f for f in data['functions'] if f['loc']['line'] == method_line]
+        assert len(methods) == 1 and methods[0]['result'] == 'int', methods
+        assert [p['type'] for p in methods[0]['params'][1:]] == ['int', 'u8'], methods
+        scan_line = next(i for i, line in enumerate(numeric_narrow_scan_object_source.splitlines(), 1)
+                         if 'scan(unsigned char*first' in line)
+        scan = [f for f in data['functions'] if f['loc']['line'] == scan_line]
+        assert len(scan) == 1, scan
+        calls = [node for node in walk(scan[0]['body']) if node.get('op') == 'call']
+        expected_lines = [i for i, line in enumerate(numeric_narrow_scan_object_source.splitlines(), 1)
+                          if '// narrow-scan-call' in line]
+        assert len(calls) == 2 and [node['loc']['line'] for node in calls] == expected_lines, calls
+        assert all(node['callee'] == methods[0]['name'] for node in calls), calls
+        for node in walk(data['functions']):
+            assert node.get('op') not in ('mapped_call', 'indirect_call', 'member_pointer'), node
+
     numeric_mixed_inclusive_scan_object_source = """\
 #include <numeric>
 #include <functional>

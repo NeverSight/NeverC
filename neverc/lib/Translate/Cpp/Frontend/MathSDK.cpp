@@ -13327,9 +13327,8 @@ utilityNumericInclusiveScanObjectCall(const State &S, const SourceManager &SM,
                            : QualType{};
   const bool Arithmetic =
       !Element.isNull() &&
-      ((!Element->isEnumeralType() && Element->isIntegerType() &&
-        !Context.isPromotableIntegerType(Element) &&
-        Context.getTypeSize(Element) <= 64) ||
+      ((!Element->isEnumeralType() && !Element->isBooleanType() &&
+        Element->isIntegerType() && Context.getTypeSize(Element) <= 64) ||
        Element->isSpecificBuiltinType(BuiltinType::Float) ||
        Element->isSpecificBuiltinType(BuiltinType::Double));
   const bool InitialArithmetic =
@@ -13741,9 +13740,8 @@ utilityNumericExclusiveScanObjectCall(const State &S, const SourceManager &SM,
                            : QualType{};
   const bool Arithmetic =
       !Element.isNull() &&
-      ((!Element->isEnumeralType() && Element->isIntegerType() &&
-        !Context.isPromotableIntegerType(Element) &&
-        Context.getTypeSize(Element) <= 64) ||
+      ((!Element->isEnumeralType() && !Element->isBooleanType() &&
+        Element->isIntegerType() && Context.getTypeSize(Element) <= 64) ||
        Element->isSpecificBuiltinType(BuiltinType::Float) ||
        Element->isSpecificBuiltinType(BuiltinType::Double));
   const bool InitialArithmetic =

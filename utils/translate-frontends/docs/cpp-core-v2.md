@@ -799,6 +799,10 @@ both checked scalar temporaries bind to the selected const-reference method.
 Its pinned loop computes the next
 accumulator before writing the old one, and both SDK `move` sites are checked
 so empty and in-place ranges preserve their sequential behavior.
+The initialized object-taking forms of both scans also admit non-boolean
+narrow integer inputs with an admitted non-promoted arithmetic initial value.
+The source method or selected typed/transparent SDK operation receives the
+input through the same checked scalar conversions.
 
 `gcd` and `lcm` accept any non-boolean built-in integer argument combination
 through 64 bits and return libc++'s exact `common_type_t` result. Signed inputs

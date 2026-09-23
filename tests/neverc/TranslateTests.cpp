@@ -37235,6 +37235,61 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2NumericNarrowScanObjectsRunAtBothOptimizations) {
+  const auto Source = tmpFile("numeric-narrow-scan-objects.cpp");
+  const auto Output = tmpFile("numeric-narrow-scan-objects.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+#include <functional>
+int calls, factories;
+struct Add {
+  int local_calls;
+  int operator()(int total, unsigned char value) & {
+    ++calls; ++local_calls;
+    return total + value + local_calls;
+  }
+};
+Add make() { ++factories; return Add{0}; }
+int main() {
+  unsigned char values[3]{1, 2, 3};
+  int inclusive[3]{}, exclusive[3]{};
+  Add caller{0};
+  if (std::inclusive_scan(values, values + 3, inclusive, caller, 5) !=
+          inclusive + 3 || inclusive[0] != 7 || inclusive[1] != 11 ||
+      inclusive[2] != 17 || caller.local_calls != 0 || calls != 3) return 1;
+  if (std::exclusive_scan(values, values + 3, exclusive, 5, caller) !=
+          exclusive + 3 || exclusive[0] != 5 || exclusive[1] != 7 ||
+      exclusive[2] != 11 || caller.local_calls != 0 || calls != 6) return 2;
+  int typed[3]{}, transparent[3]{};
+  if (std::inclusive_scan(values, values + 3, typed, std::plus<int>{}, 5) !=
+          typed + 3 || typed[0] != 6 || typed[1] != 8 || typed[2] != 11 ||
+      std::exclusive_scan(values, values + 3, transparent, 5,
+                          std::plus<>{}) != transparent + 3 ||
+      transparent[0] != 5 || transparent[1] != 6 ||
+      transparent[2] != 8 || calls != 6) return 3;
+  unsigned short wider[2]{60000, 10000};
+  int wide_output[2]{};
+  if (std::inclusive_scan(wider, wider + 2, wide_output,
+                          std::plus<int>{}, 0) != wide_output + 2 ||
+      wide_output[0] != 60000 || wide_output[1] != 70000) return 4;
+  if (std::exclusive_scan(values, values, exclusive, 7, make()) !=
+          exclusive || factories != 1 || calls != 6) return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("numeric-narrow-scan-objects" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest,
        CoreV2NumericMixedInclusiveScanObjectsRunAtBothOptimizations) {
   const auto Source = tmpFile("numeric-mixed-inclusive-scan-objects.cpp");
