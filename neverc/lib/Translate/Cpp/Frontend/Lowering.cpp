@@ -1485,7 +1485,9 @@ class FunctionLowering {
                    llvm::StringRef PointerType, llvm::StringRef ElementType,
                    llvm::StringRef DifferenceType, SourceLocation L,
                    const std::optional<Expression> &Comparator = std::nullopt,
-                   QualType ComparatorType = {}) {
+                   QualType ComparatorType = {},
+                   const std::optional<FunctionalOperationInfo> &SDKComparator =
+                       std::nullopt) {
     auto Left = snapshot(std::move(First), L);
     auto Right = snapshot(std::move(Middle), L);
     auto End = snapshot(std::move(Last), L);
@@ -1493,6 +1495,9 @@ class FunctionLowering {
     auto Previous = temporary(PointerType, L);
     auto Value = temporary(ElementType, L);
     auto Less = [&](Expression LeftValue, Expression RightValue) {
+      if (SDKComparator)
+        return functionalOperationValues(L, std::move(LeftValue),
+                                         std::move(RightValue), *SDKComparator);
       if (Comparator)
         return emitBinaryPredicate(json::Object(*Comparator), ComparatorType,
                                    std::move(LeftValue), std::move(RightValue),
@@ -5895,8 +5900,13 @@ class FunctionLowering {
       auto First = snapshot(expression(Call->getArg(0)), L);
       auto Last = snapshot(expression(Call->getArg(1)), L);
       std::optional<Expression> Comparator;
-      if (Call->getNumArgs() == 3)
-        Comparator = snapshot(expression(Call->getArg(2)), L);
+      std::optional<FunctionalOperationInfo> SDKComparator;
+      if (Call->getNumArgs() == 3) {
+        const auto Element = Call->getArg(0)->getType()->getPointeeType();
+        SDKComparator = captureRangeSDKComparator(Call, 2, Element, Element);
+        if (!SDKComparator)
+          Comparator = snapshot(expression(Call->getArg(2)), L);
+      }
       const auto ComparatorType =
           Comparator ? Call->getArg(2)->getType() : QualType{};
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
@@ -5946,7 +5956,7 @@ class FunctionLowering {
       label(Merge, L);
       stableMerge(json::Object(RunFirst), json::Object(Middle),
                   json::Object(RunLast), PointerType, ElementType,
-                  DifferenceType, L, Comparator, ComparatorType);
+                  DifferenceType, L, Comparator, ComparatorType, SDKComparator);
       jump(AdvanceRun, L);
       label(AdvanceRun, L);
       assign(RunFirst, RunLast, L);
@@ -5969,15 +5979,21 @@ class FunctionLowering {
       auto Middle = snapshot(expression(Call->getArg(1)), L);
       auto Last = snapshot(expression(Call->getArg(2)), L);
       std::optional<Expression> Comparator;
-      if (Call->getNumArgs() == 4)
-        Comparator = snapshot(expression(Call->getArg(3)), L);
+      std::optional<FunctionalOperationInfo> SDKComparator;
+      if (Call->getNumArgs() == 4) {
+        const auto Element = Call->getArg(0)->getType()->getPointeeType();
+        SDKComparator = captureRangeSDKComparator(Call, 3, Element, Element);
+        if (!SDKComparator)
+          Comparator = snapshot(expression(Call->getArg(3)), L);
+      }
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto PointerType = type(Call->getArg(0)->getType(), L);
       const auto ElementType =
           type(Call->getArg(0)->getType()->getPointeeType(), L);
       stableMerge(std::move(First), std::move(Middle), std::move(Last),
                   PointerType, ElementType, DifferenceType, L, Comparator,
-                  Comparator ? Call->getArg(3)->getType() : QualType{});
+                  Comparator ? Call->getArg(3)->getType() : QualType{},
+                  SDKComparator);
       return {};
     }
     case UtilityOperation::AlgorithmPartialSort: {

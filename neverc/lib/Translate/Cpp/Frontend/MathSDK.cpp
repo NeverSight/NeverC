@@ -17482,7 +17482,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Function->getReturnType()->isVoidType() &&
       Same(Call->getType(), Function->getReturnType()) &&
       ((Call->getNumArgs() == 2 && AlgorithmOrderedPointerParameter(0)) ||
-       (Call->getNumArgs() == 3 && AlgorithmBinaryPredicateParameter(2, 0, 0))))
+       (Call->getNumArgs() == 3 &&
+        AlgorithmBinaryComparisonParameter(2, 0, 0))))
     return UtilityOperation::AlgorithmStableSort;
   if (Origin->Path == "__algorithm/inplace_merge.h" &&
       Name == "inplace_merge" &&
@@ -17499,7 +17500,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Function->getReturnType()->isVoidType() &&
       Same(Call->getType(), Function->getReturnType()) &&
       ((Call->getNumArgs() == 3 && AlgorithmOrderedPointerParameter(0)) ||
-       (Call->getNumArgs() == 4 && AlgorithmBinaryPredicateParameter(3, 0, 0))))
+       (Call->getNumArgs() == 4 &&
+        AlgorithmBinaryComparisonParameter(3, 0, 0))))
     return UtilityOperation::AlgorithmInplaceMerge;
   if (Origin->Path == "__algorithm/partial_sort.h" && Name == "partial_sort" &&
       (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&

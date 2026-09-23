@@ -41624,12 +41624,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmStableSortRequiresPinnedScalarForms) {
     const char *Code = "TR0203";
   };
   const Rejection Cases[] = {
-      {"default-enum", "#include <algorithm>\nenum E{low,high};"
-                       "int main(){E a[2]{high,low};"
-                       "std::stable_sort(a,a+2);return 0;}"},
-      {"default-pointer",
-       "#include <algorithm>\nint main(){int a=1,b=2;int*p[2]{&a,&b};"
-       "std::stable_sort(p,p+2);return 0;}"},
       {"reference-parameter",
        "bool p(const int&a,int b){return a<b;}\n#include <algorithm>\n"
        "int main(){int a[2]{2,1};std::stable_sort(a,a+2,p);return 0;}"},
@@ -41772,6 +41766,86 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2AlgorithmFunctionalStableSortAndMergeRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-functional-stable-merge.cpp");
+  const auto Output = tmpFile("algorithm-functional-stable-merge.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main() {
+  int stable[8]{4, 1, 7, 4, -2, 0, 3, 7};
+  int effects = 0;
+  std::stable_sort((++effects, stable), (++effects, stable + 8),
+                   (++effects, std::greater<>{}));
+  const int descending[8]{7, 7, 4, 4, 3, 1, 0, -2};
+  if (effects != 3)
+    return 1;
+  for (int i = 0; i != 8; ++i)
+    if (stable[i] != descending[i])
+      return 2;
+  std::less<int> less;
+  std::stable_sort(stable, stable + 8, less);
+  const int ascending[8]{-2, 0, 1, 3, 4, 4, 7, 7};
+  for (int i = 0; i != 8; ++i)
+    if (stable[i] != ascending[i])
+      return 3;
+
+  int merged[8]{9, 7, 5, 3, 8, 6, 4, 2};
+  effects = 0;
+  std::inplace_merge((++effects, merged), (++effects, merged + 4),
+                     (++effects, merged + 8),
+                     (++effects, std::greater<>{}));
+  if (effects != 4)
+    return 4;
+  for (int i = 0; i != 8; ++i)
+    if (merged[i] != 9 - i)
+      return 5;
+  int increasing[8]{0, 2, 4, 6, 1, 3, 5, 7};
+  std::inplace_merge(increasing, increasing + 4, increasing + 8, less);
+  for (int i = 0; i != 8; ++i)
+    if (increasing[i] != i)
+      return 6;
+  enum Rank { low, medium, high };
+  Rank ranks[4]{high, low, medium, low};
+  std::stable_sort(ranks, ranks + 4);
+  if (ranks[0] != low || ranks[1] != low || ranks[2] != medium ||
+      ranks[3] != high)
+    return 7;
+  Rank merged_ranks[4]{low, high, low, medium};
+  std::inplace_merge(merged_ranks, merged_ranks + 2, merged_ranks + 4);
+  if (merged_ranks[0] != low || merged_ranks[1] != low ||
+      merged_ranks[2] != medium || merged_ranks[3] != high)
+    return 8;
+  int objects[4]{};
+  int *pointers[4]{objects + 3, objects + 1, objects + 2, objects};
+  std::stable_sort(pointers, pointers + 4);
+  for (int i = 0; i != 4; ++i)
+    if (pointers[i] != objects + i)
+      return 9;
+  int *merged_pointers[4]{objects, objects + 2, objects + 1, objects + 3};
+  std::inplace_merge(merged_pointers, merged_pointers + 2,
+                     merged_pointers + 4);
+  for (int i = 0; i != 4; ++i)
+    if (merged_pointers[i] != objects + i)
+      return 10;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("algorithm-functional-stable-merge" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmInplaceMergeRequiresPinnedScalarForms) {
   struct Rejection {
     const char *Name;
@@ -41779,12 +41853,6 @@ TEST_F(TranslateTest, CoreV2AlgorithmInplaceMergeRequiresPinnedScalarForms) {
     const char *Code = "TR0203";
   };
   const Rejection Cases[] = {
-      {"default-enum", "#include <algorithm>\nenum E{low,high};"
-                       "int main(){E a[2]{low,high};"
-                       "std::inplace_merge(a,a+1,a+2);return 0;}"},
-      {"default-pointer",
-       "#include <algorithm>\nint main(){int a=1,b=2;int*p[2]{&a,&b};"
-       "std::inplace_merge(p,p+1,p+2);return 0;}"},
       {"reference-parameter",
        "bool p(const int&a,int b){return a<b;}\n#include <algorithm>\n"
        "int main(){int a[2]{2,1};std::inplace_merge(a,a+1,a+2,p);return 0;}"},

@@ -11964,6 +11964,34 @@ extern "C" void algorithm_inplace_merge(
           'struct R{int n;};bool p(R a,R b){return a.n<b.n;}\n#include <algorithm>\nint main(){R a[2]{{2},{1}};std::inplace_merge(a,a+1,a+2,p);return 0;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    algorithm_functional_stable_merge_source = """\
+#include <algorithm>
+#include <functional>
+extern "C" void algorithm_functional_stable_sort(int *first, int *last) {
+  std::stable_sort(first, last, std::greater<int>{});
+}
+extern "C" void algorithm_functional_inplace_merge(
+    int *first, int *middle, int *last) {
+  std::inplace_merge(first, middle, last, std::less<>{});
+}
+"""
+
+    def assert_functional_stable_merge(data):
+        assert len(data["sdk_dependencies"]) == 435, data
+        assert not [node for node in walk(data["functions"])
+                    if node.get("op") in ("call", "mapped_call",
+                                          "indirect_call")], data
+
+    assert_functional_stable_merge(check(
+        "v2-algorithm-functional-stable-merge",
+        algorithm_functional_stable_merge_source,
+        profile="cpp-core-v2", sdk=True))
+    for target in sdk_targets:
+        assert_functional_stable_merge(check(
+            "v2-algorithm-functional-stable-merge-" + target,
+            algorithm_functional_stable_merge_source,
+            profile="cpp-core-v2", target=target, sdk=True))
+
     algorithm_permutation_source = """\
 #include <algorithm>
 extern "C" int algorithm_permutation(int *first, int *last,

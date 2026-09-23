@@ -1788,8 +1788,11 @@ bottom-up merge retains the relative order of equivalent elements without a
 heap or libc++ runtime dependency and performs `O(N log N)` comparisons. The
 iterators and optional callback are retained once; empty and single-element
 ranges make no callback calls. Comparator overloads additionally admit enum
-and object-pointer elements, while unsupported callbacks, callable objects and
-record elements remain rejected.
+and object-pointer elements. The comparator overload also admits authenticated
+typed or transparent empty standard `<functional>` comparison objects on
+arithmetic scalars. The selected instantiated operator body is proved and
+lowered directly, and the object argument is evaluated once. Other callable
+objects, unsupported callbacks and record elements remain rejected.
 
 The exact `std::inplace_merge` overloads reuse the same stable in-place merge
 for two adjacent, already ordered writable scalar ranges. Equivalent elements
@@ -1798,7 +1801,8 @@ and at most `N - 1` comparisons are made. An empty half performs no comparison.
 The default overload uses built-in arithmetic, enum or complete object-pointer
 ordering; the comparator overload
 also admits enum and object-pointer elements through the checked callback
-boundary.
+boundary. Authenticated typed or transparent empty standard comparison objects
+also lower directly on arithmetic scalars, with one-time argument evaluation.
 
 The exact default-order `std::next_permutation` and `std::prev_permutation`
 templates use the same writable built-in arithmetic, enum or complete
