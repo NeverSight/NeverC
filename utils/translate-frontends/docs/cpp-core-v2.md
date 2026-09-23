@@ -2159,8 +2159,7 @@ Only the `std::` names introduced by the pinned header are admitted. Global
 `::strlen` and `::strcmp`, other `<cstring>` functions, quoted or shadow headers,
 and function addresses remain outside this boundary. The caller still supplies
 zero-terminated strings to `strlen` and `strcmp`, and readable character arrays
-through the bytes examined by `strncmp`. This does not add `std::string` or
-runtime `std::string_view` operations.
+through the bytes examined by `strncmp`. This does not add `std::string`.
 
 Eight-target protocol checks and O0/O2 execution cover the direct lowering,
 unsigned comparison order, prefix and zero-count behavior, and one-time
@@ -2178,8 +2177,17 @@ NeverC's SDK supplies the target C runtime `mbstate_t` declaration required by
 the pinned `char_traits` header: 128-byte, 8-aligned on Darwin, and 8-byte,
 4-aligned on the supported glibc and UCRT targets. A minimal C `stdio.h` shim
 provides `EOF` for parsing. Neither shim admits a top-level C header or
-runtime C I/O call. String-view construction, storage and member calls still
-require direct lowering and remain rejected by the runtime-object boundary.
+runtime C I/O call.
+
+The exact `std::basic_string_view<char, std::char_traits<char>>` specialization
+admits the pinned pointer-and-size layout. Default, copy, pointer-and-length,
+and zero-terminated pointer construction, plus copy assignment, lower directly
+to field stores and a byte scan where needed. `size()`, `length()`, `empty()`
+and `data()` read the verified fields without an SDK runtime call. The pointer
+argument is evaluated once; pointer-and-length construction preserves embedded
+zero bytes. The caller remains responsible for the ordinary view lifetime and
+readable-range preconditions. Custom traits, other character types, and other
+string-view operations still require separate direct lowerings.
 
 ## Dynamic local static initialization
 

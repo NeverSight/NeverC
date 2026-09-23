@@ -2329,6 +2329,10 @@ void Adapter::checkQueryType(QualType T, SourceLocation L,
       checkQueryType(Arguments.get(0).getAsType(), L, AllowIncompleteArrays,
                      AllowIncompleteRecords, Depth + 1);
     } else if (AllowIncompleteRecords &&
+               approvedUtilityStringViewMetadata(S, Sources,
+                                                 T->getAsCXXRecordDecl())) {
+      // Only the pinned char and char_traits<char> specialization qualifies.
+    } else if (AllowIncompleteRecords &&
                approvedUtilityReverseIteratorMetadata(
                    S, Sources, T->getAsCXXRecordDecl())) {
       const auto *Iterator =
@@ -4623,6 +4627,9 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
       } else if (approvedUtilityInitializerListMetadata(S, Sources, D) &&
                  !requireUtilityInitializerList(D, L, Depth + 1)) {
         return {};
+      } else if (approvedUtilityStringViewMetadata(S, Sources, D) &&
+                 !requireUtilityStringView(D, L, Depth + 1)) {
+        return {};
       } else if (approvedUtilityOptionalMetadata(S, Sources, D) &&
                  !requireUtilityOptional(D, L, Depth + 1)) {
         return {};
@@ -4748,6 +4755,31 @@ bool Adapter::requireUtilityInitializerList(const CXXRecordDecl *Record,
     if (type(Field->getType(), Location, false, Depth + 1).empty())
       return false;
   Records.push_back(const_cast<CXXRecordDecl *>(List->Record));
+  return true;
+}
+
+bool Adapter::requireUtilityStringView(const CXXRecordDecl *Record,
+                                       SourceLocation Location,
+                                       unsigned Depth) {
+  if (Depth > 64) {
+    reject(Location, "string view type",
+           "Nested std::string_view types exceed the protocol limit.");
+    return false;
+  }
+  auto View = approvedUtilityStringViewRecord(S, Sources, Record, Context);
+  if (!View) {
+    reject(Location, "standard library record",
+           "Only the pinned std::string_view record layout is admitted.",
+           "TR0203");
+    return false;
+  }
+  const auto *Canonical = View->Record->getCanonicalDecl();
+  if (!RequiredUtilityStringViews.insert(Canonical).second)
+    return true;
+  for (const auto *Field : {View->Data, View->Size})
+    if (type(Field->getType(), Location, false, Depth + 1).empty())
+      return false;
+  Records.push_back(const_cast<CXXRecordDecl *>(View->Record));
   return true;
 }
 
@@ -7799,6 +7831,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
          approvedUtilityArrayConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityInitializerListConstruction(A.S, A.Sources, C,
                                                     A.Context) ||
+         approvedUtilityStringViewConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityOptionalConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityReverseIteratorConstruction(A.S, A.Sources, C,
                                                     A.Context))) {
@@ -14896,6 +14929,10 @@ public:
           A.S.coreV2() && approvedUtilityInitializerListAssignment(
                               A.S, A.Sources, Operator, A.Context)
                               .has_value();
+      const bool UtilityStringViewAssignment =
+          A.S.coreV2() && approvedUtilityStringViewAssignment(
+                              A.S, A.Sources, Operator, A.Context)
+                              .has_value();
       const bool UtilityOptionalAssignment =
           A.S.coreV2() &&
           approvedUtilityOptionalAssignment(A.S, A.Sources, Operator, A.Context)
@@ -14928,12 +14965,12 @@ public:
         const bool Ordinary = ordinaryOperator(F) &&
             F->getOverloadedOperator() == Operator->getOperator();
         if (!TrivialAssignment && !FunctionalObjectAssignment &&
-            !FunctionalReferenceAssignment &&
-            !UtilityPairAssignment &&
+            !FunctionalReferenceAssignment && !UtilityPairAssignment &&
             !UtilityTupleAssignment && !UtilityArrayAssignment &&
-            !UtilityInitializerListAssignment && !UtilityOptionalAssignment &&
-            !UtilityReverseIteratorAssignment && !UtilityAllocatorAssignment &&
-            !UtilityDefaultDelete && !UtilityUniquePtr && !Ordinary &&
+            !UtilityInitializerListAssignment && !UtilityStringViewAssignment &&
+            !UtilityOptionalAssignment && !UtilityReverseIteratorAssignment &&
+            !UtilityAllocatorAssignment && !UtilityDefaultDelete &&
+            !UtilityUniquePtr && !Ordinary &&
             !(supportedAssignment(Method) &&
               Operator->getOperator() == OO_Equal &&
               Operator->getNumArgs() == 2))
@@ -15184,6 +15221,8 @@ public:
         return true;
       if (A.S.coreV2() && UtilityInitializerListAssignment)
         return true;
+      if (A.S.coreV2() && UtilityStringViewAssignment)
+        return true;
       if (A.S.coreV2() && UtilityOptionalAssignment)
         return true;
       if (A.S.coreV2() && UtilityReverseIteratorAssignment)
@@ -15259,6 +15298,8 @@ public:
                                                     A.Context) ||
                    approvedUtilityInitializerListConstruction(A.S, A.Sources, C,
                                                               A.Context) ||
+                   approvedUtilityStringViewConstruction(A.S, A.Sources, C,
+                                                         A.Context) ||
                    approvedUtilityOptionalConstruction(A.S, A.Sources, C,
                                                        A.Context) ||
                    approvedUtilityReverseIteratorConstruction(A.S, A.Sources, C,
@@ -15274,6 +15315,7 @@ public:
                    "std::allocator, std::pair, "
                    "std::tuple, std::array, "
                    "std::initializer_list, "
+                   "std::string_view, "
                    "std::optional and pointer std::reverse_iterator "
                    "construction.",
                    "TR0203");

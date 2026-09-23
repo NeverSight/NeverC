@@ -4121,6 +4121,190 @@ approvedUtilityInitializerListExpression(
   return UtilityInitializerListExpression{*List, Backing, Size};
 }
 
+bool approvedUtilityStringViewMetadata(const State &S, const SourceManager &SM,
+                                       const CXXRecordDecl *Record) {
+  const auto *View = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+  const auto *Template = View ? View->getSpecializedTemplate() : nullptr;
+  const auto *Primary = Template ? Template->getCanonicalDecl() : nullptr;
+  if (!View || !Template || !Primary || View->isUnion() ||
+      View->isDependentContext() || View->getName() != "basic_string_view" ||
+      !approvedStandardSDKDeclaration(S, SM, Template) ||
+      !approvedStandardSDKDeclaration(S, SM, Primary) ||
+      !cstddefOrigin(S, SM, Template->getLocation(), "libcxx",
+                     "__fwd/string_view.h") ||
+      !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
+                     "__fwd/string_view.h"))
+    return false;
+  const auto &Arguments = View->getTemplateArgs();
+  if (Arguments.size() != 2 ||
+      Arguments.get(0).getKind() != TemplateArgument::Type ||
+      Arguments.get(1).getKind() != TemplateArgument::Type)
+    return false;
+  const auto Character = Arguments.get(0).getAsType();
+  if (!Character->isSpecificBuiltinType(BuiltinType::Char_S) &&
+      !Character->isSpecificBuiltinType(BuiltinType::Char_U))
+    return false;
+  const auto *Traits = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      Arguments.get(1).getAsType()->getAsCXXRecordDecl());
+  const auto *TraitsDefinition = Traits ? Traits->getDefinition() : nullptr;
+  const auto *TraitsTemplate =
+      Traits ? Traits->getSpecializedTemplate() : nullptr;
+  const auto *TraitsPrimary =
+      TraitsTemplate ? TraitsTemplate->getCanonicalDecl() : nullptr;
+  if (!Traits || !TraitsDefinition || !TraitsTemplate || !TraitsPrimary ||
+      Traits->getName() != "char_traits" ||
+      Traits->getSpecializationKind() != TSK_ExplicitSpecialization ||
+      !approvedStandardSDKDeclaration(S, SM, Traits) ||
+      !approvedStandardSDKDeclaration(S, SM, TraitsDefinition) ||
+      !approvedStandardSDKDeclaration(S, SM, TraitsTemplate) ||
+      !approvedStandardSDKDeclaration(S, SM, TraitsPrimary) ||
+      !cstddefOrigin(S, SM, Traits->getLocation(), "libcxx",
+                     "__string/char_traits.h") ||
+      !cstddefOrigin(S, SM, TraitsDefinition->getLocation(), "libcxx",
+                     "__string/char_traits.h") ||
+      !cstddefOrigin(S, SM, TraitsTemplate->getLocation(), "libcxx",
+                     "__string/char_traits.h") ||
+      !cstddefOrigin(S, SM, TraitsPrimary->getLocation(), "libcxx",
+                     "__fwd/string.h"))
+    return false;
+  const auto &TraitsArguments = Traits->getTemplateArgs();
+  return TraitsArguments.size() == 1 &&
+         TraitsArguments.get(0).getKind() == TemplateArgument::Type &&
+         TraitsArguments.get(0).getAsType().getCanonicalType() ==
+             Character.getCanonicalType();
+}
+
+std::optional<UtilityStringViewRecord>
+approvedUtilityStringViewRecord(const State &S, const SourceManager &SM,
+                                const CXXRecordDecl *Record,
+                                const ASTContext &Context) {
+  const auto *View = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+  View = View ? dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+                    View->getDefinition())
+              : nullptr;
+  if (!approvedUtilityStringViewMetadata(S, SM, View) || !View ||
+      View->getSpecializationKind() != TSK_ImplicitInstantiation ||
+      View->getNumBases() || !View->isStandardLayout() ||
+      !View->hasTrivialCopyConstructor() || !View->hasTrivialCopyAssignment() ||
+      !View->hasTrivialDestructor() ||
+      !approvedStandardSDKDeclaration(S, SM, View) ||
+      !cstddefOrigin(S, SM, View->getLocation(), "libcxx", "string_view"))
+    return std::nullopt;
+  auto Fields = View->fields();
+  auto It = Fields.begin();
+  const auto *Data = It == Fields.end() ? nullptr : *It++;
+  const auto *Size = It == Fields.end() ? nullptr : *It++;
+  const auto Pointer = Context.getPointerType(Context.CharTy.withConst());
+  if (!Data || !Size || It != Fields.end() || Data->getName() != "__data_" ||
+      Size->getName() != "__size_" || Data->getAccess() != AS_private ||
+      Size->getAccess() != AS_private || Data->isBitField() ||
+      Size->isBitField() || Data->isMutable() || Size->isMutable() ||
+      Data->hasAttrs() || Size->hasAttrs() ||
+      !Context.hasSameType(Data->getType(), Pointer) ||
+      !Context.hasSameType(Size->getType(), Context.getSizeType()) ||
+      !approvedStandardSDKDeclaration(S, SM, Data) ||
+      !approvedStandardSDKDeclaration(S, SM, Size) ||
+      !cstddefOrigin(S, SM, Data->getLocation(), "libcxx", "string_view") ||
+      !cstddefOrigin(S, SM, Size->getLocation(), "libcxx", "string_view"))
+    return std::nullopt;
+  const auto &Layout = Context.getASTRecordLayout(View);
+  const uint64_t PointerBits = Context.getTypeSize(Pointer);
+  if (Layout.getFieldCount() != 2 || Layout.getFieldOffset(0) != 0 ||
+      Layout.getFieldOffset(1) != PointerBits ||
+      PointerBits != Context.getTypeSize(Context.getSizeType()) ||
+      uint64_t(Layout.getSize().getQuantity()) * 8 != 2 * PointerBits ||
+      uint64_t(Layout.getAlignment().getQuantity()) * 8 !=
+          Context.getTypeAlign(Pointer))
+    return std::nullopt;
+  return UtilityStringViewRecord{View, Data, Size};
+}
+
+std::optional<UtilityStringViewConstruction>
+approvedUtilityStringViewConstruction(const State &S, const SourceManager &SM,
+                                      const CXXConstructExpr *Construction,
+                                      const ASTContext &Context) {
+  if (!Construction || Construction->isTypeDependent() ||
+      Construction->isValueDependent() ||
+      Construction->isInstantiationDependent() ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete)
+    return std::nullopt;
+  const auto View = approvedUtilityStringViewRecord(
+      S, SM, Construction->getType()->getAsCXXRecordDecl(), Context);
+  const auto *Constructor = Construction->getConstructor();
+  if (!View || !Constructor || Constructor->isVariadic() ||
+      Constructor->getParent()->getCanonicalDecl() !=
+          View->Record->getCanonicalDecl() ||
+      Construction->getNumArgs() != Constructor->getNumParams())
+    return std::nullopt;
+  if (Constructor->isCopyOrMoveConstructor() && Constructor->isTrivial() &&
+      Constructor->isDefaulted() && Construction->getNumArgs() == 1 &&
+      approvedStandardSDKDeclaration(S, SM, Constructor) &&
+      cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx",
+                    "string_view") &&
+      Context.hasSameUnqualifiedType(Construction->getArg(0)->getType(),
+                                     Construction->getType()))
+    return UtilityStringViewConstruction::CopyOrMove;
+  if (!Constructor->hasBody() ||
+      !approvedStandardSDKDeclaration(S, SM, Constructor) ||
+      !cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx",
+                     "string_view"))
+    return std::nullopt;
+  if (Constructor->isDefaultConstructor() && !Construction->getNumArgs())
+    return UtilityStringViewConstruction::Default;
+  const auto Pointer = Context.getPointerType(Context.CharTy.withConst());
+  if (Construction->getNumArgs() == 2 &&
+      Context.hasSameType(Constructor->getParamDecl(0)->getType(), Pointer) &&
+      Context.hasSameType(Constructor->getParamDecl(1)->getType(),
+                          Context.getSizeType()) &&
+      Context.hasSameType(Construction->getArg(0)->getType(), Pointer) &&
+      Context.hasSameType(Construction->getArg(1)->getType(),
+                          Context.getSizeType()))
+    return UtilityStringViewConstruction::PointerAndSize;
+  if (Construction->getNumArgs() == 1 &&
+      Context.hasSameType(Constructor->getParamDecl(0)->getType(), Pointer) &&
+      Context.hasSameType(Construction->getArg(0)->getType(), Pointer))
+    return UtilityStringViewConstruction::Pointer;
+  return std::nullopt;
+}
+
+std::optional<UtilityStringViewRecord>
+approvedUtilityStringViewAssignment(const State &S, const SourceManager &SM,
+                                    const CXXOperatorCallExpr *Assignment,
+                                    const ASTContext &Context) {
+  if (!Assignment || Assignment->isTypeDependent() ||
+      Assignment->isValueDependent() ||
+      Assignment->isInstantiationDependent() ||
+      Assignment->getOperator() != OO_Equal || Assignment->getNumArgs() != 2 ||
+      !Assignment->isLValue())
+    return std::nullopt;
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Assignment->getDirectCallee());
+  const auto View = approvedUtilityStringViewRecord(
+      S, SM, Method ? Method->getParent() : nullptr, Context);
+  if (!Method || !View || Method->isStatic() || Method->isVariadic() ||
+      Method->getNumParams() != 1 ||
+      Method->getOverloadedOperator() != OO_Equal ||
+      !Method->isCopyAssignmentOperator() || !Method->isTrivial() ||
+      !Method->isDefaulted() ||
+      !approvedStandardSDKDeclaration(S, SM, Method) ||
+      !cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "string_view"))
+    return std::nullopt;
+  const auto ViewType = Context.getRecordType(View->Record);
+  const auto Parameter = Method->getParamDecl(0)->getType();
+  if (!Parameter->isLValueReferenceType() ||
+      !Method->getReturnType()->isLValueReferenceType() ||
+      !Context.hasSameUnqualifiedType(Parameter->getPointeeType(), ViewType) ||
+      !Context.hasSameUnqualifiedType(Method->getReturnType()->getPointeeType(),
+                                      ViewType) ||
+      !Context.hasSameUnqualifiedType(Assignment->getArg(0)->getType(),
+                                      ViewType) ||
+      !Context.hasSameUnqualifiedType(Assignment->getArg(1)->getType(),
+                                      ViewType) ||
+      !Context.hasSameUnqualifiedType(Assignment->getType(), ViewType))
+    return std::nullopt;
+  return View;
+}
+
 bool approvedUtilityOptionalMetadata(const State &S, const SourceManager &SM,
                                      const CXXRecordDecl *Record) {
   const auto *Specialization =
@@ -15227,6 +15411,41 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Context.hasSameType(Call->getType(), Iterator))
       return Name == "begin" ? UtilityOperation::InitializerListBegin
                              : UtilityOperation::InitializerListEnd;
+    return std::nullopt;
+  }
+  const auto StringView = approvedUtilityStringViewRecord(
+      S, SM, Method ? Method->getParent() : nullptr, Context);
+  if (Method && StringView) {
+    const auto *Reference = directMethodReference(Call);
+    const auto *MemberCall = dyn_cast<CXXMemberCallExpr>(Call);
+    const auto *Object =
+        MemberCall ? MemberCall->getImplicitObjectArgument() : nullptr;
+    const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
+    const auto ViewType = Context.getRecordType(StringView->Record);
+    if (!Reference || !Object || !Prototype || !Prototype->isNothrow() ||
+        Method->isStatic() || Method->isVariadic() || Method->getNumParams() ||
+        Call->getNumArgs() || !Method->isConst() || !Method->isConstexpr() ||
+        !Method->hasBody() || Method->getRefQualifier() != RQ_None ||
+        Method->getParent()->getCanonicalDecl() !=
+            StringView->Record->getCanonicalDecl() ||
+        !Context.hasSameUnqualifiedType(Object->getType(), ViewType) ||
+        !approvedStandardSDKDeclaration(S, SM, Method) ||
+        !cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "string_view") ||
+        !S.owns(SM, Reference->getExprLoc()) || !Call->isPRValue() ||
+        !Context.hasSameType(Call->getType(), Method->getReturnType()))
+      return std::nullopt;
+    const llvm::StringRef Name = Method->getIdentifier()
+                                     ? Method->getIdentifier()->getName()
+                                     : llvm::StringRef();
+    if ((Name == "size" || Name == "length") &&
+        Context.hasSameType(Method->getReturnType(), Context.getSizeType()))
+      return UtilityOperation::StringViewSize;
+    if (Name == "empty" && Method->getReturnType()->isBooleanType())
+      return UtilityOperation::StringViewEmpty;
+    if (Name == "data" &&
+        Context.hasSameType(Method->getReturnType(),
+                            Context.getPointerType(Context.CharTy.withConst())))
+      return UtilityOperation::StringViewData;
     return std::nullopt;
   }
   const auto Array = approvedUtilityArrayRecord(

@@ -853,6 +853,9 @@ enum class UtilityOperation {
   InitializerListEnd,
   InitializerListRBegin,
   InitializerListREnd,
+  StringViewSize,
+  StringViewEmpty,
+  StringViewData,
   OptionalHasValue,
   OptionalDereference,
   OptionalArrow,
@@ -1052,6 +1055,32 @@ std::optional<UtilityInitializerListExpression>
 approvedUtilityInitializerListExpression(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXStdInitializerListExpr *Expression,
+    const clang::ASTContext &Context);
+struct UtilityStringViewRecord {
+  const clang::CXXRecordDecl *Record;
+  const clang::FieldDecl *Data, *Size;
+};
+bool approvedUtilityStringViewMetadata(const State &S,
+                                       const clang::SourceManager &SM,
+                                       const clang::CXXRecordDecl *Record);
+std::optional<UtilityStringViewRecord>
+approvedUtilityStringViewRecord(const State &S, const clang::SourceManager &SM,
+                                const clang::CXXRecordDecl *Record,
+                                const clang::ASTContext &Context);
+enum class UtilityStringViewConstruction {
+  Default,
+  CopyOrMove,
+  PointerAndSize,
+  Pointer,
+};
+std::optional<UtilityStringViewConstruction>
+approvedUtilityStringViewConstruction(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction,
+    const clang::ASTContext &Context);
+std::optional<UtilityStringViewRecord> approvedUtilityStringViewAssignment(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXOperatorCallExpr *Assignment,
     const clang::ASTContext &Context);
 struct UtilityOptionalRecord {
   const clang::CXXRecordDecl *Record;
@@ -1331,6 +1360,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredUtilityTuples;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityArrays;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityInitializerLists;
+  std::set<const clang::CXXRecordDecl *> RequiredUtilityStringViews;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityOptionals;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityReverseIterators;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityDefaultDeletes;
@@ -1372,6 +1402,9 @@ public:
   bool requireUtilityInitializerList(const clang::CXXRecordDecl *Record,
                                      clang::SourceLocation Location,
                                      unsigned Depth = 0);
+  bool requireUtilityStringView(const clang::CXXRecordDecl *Record,
+                                clang::SourceLocation Location,
+                                unsigned Depth = 0);
   bool requireUtilityOptional(const clang::CXXRecordDecl *Record,
                               clang::SourceLocation Location,
                               unsigned Depth = 0);

@@ -14847,6 +14847,56 @@ TEST_F(TranslateTest, CoreV2CStringRejectsUnapprovedCalls) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringViewBasicAccessRunsAtBothOptimizations) {
+  const auto Source = tmpFile("string-view-basic.cpp");
+  const auto Output = tmpFile("string-view-basic.nc");
+  writeFile(Source, R"cpp(
+#include <string_view>
+std::string_view::size_type length(std::string_view view) {
+  return view.length();
+}
+int main() {
+  std::string_view empty;
+  if (!empty.empty() || empty.size() != 0 || empty.data() != nullptr)
+    return 1;
+  const char text[] = {'a', 'b', 'c', 'd', 0};
+  int effects = 0;
+  std::string_view view((++effects, text), 3);
+  if (effects != 1 || view.empty() || view.size() != 3 ||
+      length(view) != 3 || view.data()[0] != 'a' ||
+      view.data()[2] != 'c')
+    return 2;
+  std::string_view copy(view);
+  if (copy.data() != text || copy.length() != 3)
+    return 3;
+  effects = 0;
+  std::string_view terminated((++effects, text));
+  if (effects != 1 || terminated.size() != 4 ||
+      terminated.data() != text)
+    return 4;
+  empty = copy;
+  if (empty.empty() || empty.length() != 3 || empty.data() != text)
+    return 5;
+  const char embedded[] = {'x', 0, 'y'};
+  std::string_view extent(embedded, 3);
+  if (extent.size() != 3 || extent.data()[2] != 'y')
+    return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-view-basic" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StringsRetainSourceAndLifetimeRestrictions) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"literal-unused-declaration", "unsigned operator\"\"_n(const char*,decltype(sizeof(0))){return 1;}", "TR0201"},

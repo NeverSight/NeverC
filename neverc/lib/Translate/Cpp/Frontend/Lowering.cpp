@@ -1648,6 +1648,11 @@ class FunctionLowering {
           A.S, A.Sources, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(),
           A.Context);
     };
+    auto StringViewFor = [&](QualType Type) {
+      return approvedUtilityStringViewRecord(
+          A.S, A.Sources, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(),
+          A.Context);
+    };
     auto OptionalFor = [&](QualType Type) {
       return approvedUtilityOptionalRecord(
           A.S, A.Sources, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(),
@@ -8950,6 +8955,26 @@ class FunctionLowering {
                               : std::move(Begin),
                           *Reverse);
     }
+    case UtilityOperation::StringViewSize:
+    case UtilityOperation::StringViewEmpty:
+    case UtilityOperation::StringViewData: {
+      const auto *Object = MemberObject();
+      auto View = Object ? StringViewFor(Object->getType())
+                         : std::optional<UtilityStringViewRecord>();
+      if (!Object || !View)
+        reject(L, "string view access",
+               "The selected std::string_view layout is unavailable.");
+      auto Base = lvalue(Object);
+      if (Operation == UtilityOperation::StringViewData)
+        return fieldStorage(std::move(Base), View->Data, L);
+      auto Size = fieldStorage(std::move(Base), View->Size, L);
+      if (Operation == UtilityOperation::StringViewSize)
+        return Size;
+      return snapshot(binary("==", std::move(Size),
+                             quantity(0, type(A.Context.getSizeType(), L), L),
+                             "bool", L),
+                      L);
+    }
     case UtilityOperation::ArraySize:
     case UtilityOperation::ArrayMaxSize:
     case UtilityOperation::ArrayEmpty: {
@@ -9397,6 +9422,20 @@ class FunctionLowering {
           reject(L, "initializer list assignment",
                  "std::initializer_list assignment cannot initialize a "
                  "record result.");
+        auto RightAddress = snapshot(
+            address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
+        auto LeftAddress = snapshot(
+            address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
+        auto Left = dereference(std::move(LeftAddress), L);
+        assign(Left, dereference(std::move(RightAddress), L), L);
+        return Left;
+      }
+      if (auto View = approvedUtilityStringViewAssignment(
+              A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call), A.Context)) {
+        if (Destination)
+          reject(L, "string view assignment",
+                 "std::string_view assignment cannot initialize a record "
+                 "result.");
         auto RightAddress = snapshot(
             address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
         auto LeftAddress = snapshot(
@@ -11281,6 +11320,63 @@ class FunctionLowering {
       }
       reject(L, "initializer list construction",
              "Unknown approved std::initializer_list construction.");
+    }
+    if (auto Kind = approvedUtilityStringViewConstruction(A.S, A.Sources, C,
+                                                          A.Context)) {
+      auto View = approvedUtilityStringViewRecord(
+          A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context);
+      if (!View)
+        reject(L, "string view construction",
+               "The selected std::string_view layout is unavailable.");
+      switch (*Kind) {
+      case UtilityStringViewConstruction::Default:
+        initializeZero(fieldStorage(json::Object(Place), View->Data, L),
+                       View->Data->getType(), L);
+        initializeZero(fieldStorage(json::Object(Place), View->Size, L),
+                       View->Size->getType(), L);
+        return;
+      case UtilityStringViewConstruction::CopyOrMove:
+        assign(std::move(Place), expression(C->getArg(0)), L);
+        return;
+      case UtilityStringViewConstruction::PointerAndSize:
+        assign(fieldStorage(json::Object(Place), View->Data, L),
+               expression(C->getArg(0)), L);
+        assign(fieldStorage(std::move(Place), View->Size, L),
+               expression(C->getArg(1)), L);
+        return;
+      case UtilityStringViewConstruction::Pointer: {
+        auto Current = snapshot(expression(C->getArg(0)), L);
+        assign(fieldStorage(json::Object(Place), View->Data, L),
+               json::Object(Current), L);
+        const auto PointerType = type(View->Data->getType(), L);
+        const auto CharacterType = type(A.Context.CharTy, L);
+        const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+        const auto SizeType = type(View->Size->getType(), L);
+        auto Length = temporary(SizeType, L);
+        assign(Length, quantity(0, SizeType, L), L);
+        const auto Check = labelName(), Advance = labelName(),
+                   End = labelName();
+        jump(Check, L);
+        label(Check, L);
+        branch(binary("!=", dereference(json::Object(Current), L),
+                      quantity(0, CharacterType, L), "bool", L),
+               Advance, End, L);
+        label(Advance, L);
+        assign(Current,
+               binary("+", Current, quantity(1, DifferenceType, L), PointerType,
+                      L),
+               L);
+        assign(Length,
+               binary("+", Length, quantity(1, SizeType, L), SizeType, L), L);
+        jump(Check, L);
+        label(End, L);
+        assign(fieldStorage(std::move(Place), View->Size, L), std::move(Length),
+               L);
+        return;
+      }
+      }
+      reject(L, "string view construction",
+             "Unknown approved std::string_view construction.");
     }
     if (auto Kind =
             approvedUtilityOptionalConstruction(A.S, A.Sources, C, A.Context)) {

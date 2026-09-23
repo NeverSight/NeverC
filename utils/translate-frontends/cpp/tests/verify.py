@@ -29004,8 +29004,30 @@ std::string_view::size_type passthrough(std::string_view::size_type n) {
         else:
             assert dependencies == string_view_dependencies, target
         assert len(view_ir["functions"]) == 1, target
-    check("v2-string-view-runtime-object",
-          '#include <string_view>\nint f(){std::string_view view;return view.size();}',
+        runtime_ir = check(
+            "v2-string-view-basic-" + target,
+            """#include <string_view>
+std::string_view::size_type measure(const char* p,
+                                    std::string_view::size_type n) {
+  std::string_view view(p, n);
+  std::string_view copy(view);
+  return copy.empty() ? 0 : copy.length();
+}
+const char* data() {
+  std::string_view empty;
+  std::string_view literal("hi");
+  empty = literal;
+  return empty.data();
+}
+""", profile="cpp-core-v2", target=target, sdk=True)
+        assert not [node for node in walk(runtime_ir["functions"])
+                    if node.get("op") in ("call", "mapped_call", "indirect_call",
+                                          "native_heap_call")], target
+    check("v2-string-view-custom-traits",
+          '#include <string_view>\nstruct Traits{using char_type=char;};int f(){std::basic_string_view<char,Traits> view;return view.size();}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-string-view-unlowered-member",
+          '#include <string_view>\nint f(){std::string_view view("a",1);view.remove_prefix(1);return view.size();}',
           "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-string-view-quoted", '#include "string_view"\nint f(){return 0;}',
           "TR0201", profile="cpp-core-v2", sdk=True)
