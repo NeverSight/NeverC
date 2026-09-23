@@ -778,8 +778,10 @@ authenticated, including the empty-range return, in-place output behavior,
 and mutable state of the copied source operation. `adjacent_difference`
 checks the source's move of each current element into the previous value.
 The five-argument initialized `inclusive_scan` overload accepts the same
-binary objects when the initial value has the input element type and converts
-directly to the writable output element. Its pinned sequential loop retains
+binary objects when the initial value has the input element type. Source-owned
+and transparent SDK objects also admit a different non-promoted arithmetic
+initial type with a checked common type. The initial value converts directly
+to the writable output element. Its pinned sequential loop retains
 the copied object's state and does not invoke it for an empty range.
 The four-argument no-init overload authenticates the pinned first-element
 branch and its delegation to that initialized overload. The first element is
