@@ -29044,6 +29044,32 @@ std::string_view::size_type locate_default(std::string_view view,
                                            char needle) {
   return view.find(needle);
 }
+std::string_view::size_type find_view(std::string_view view,
+                                     std::string_view needle,
+                                     std::string_view::size_type pos) {
+  return view.find(needle, pos);
+}
+std::string_view::size_type find_view_default(std::string_view view,
+                                             std::string_view needle) {
+  return view.find(needle);
+}
+std::string_view::size_type reverse_find(std::string_view view, char needle,
+                                         std::string_view::size_type pos) {
+  return view.rfind(needle, pos);
+}
+std::string_view::size_type reverse_find_default(std::string_view view,
+                                                 char needle) {
+  return view.rfind(needle);
+}
+std::string_view::size_type reverse_find_view(std::string_view view,
+                                              std::string_view needle,
+                                              std::string_view::size_type pos) {
+  return view.rfind(needle, pos);
+}
+std::string_view::size_type reverse_find_view_default(
+    std::string_view view, std::string_view needle) {
+  return view.rfind(needle);
+}
 char reverse_first(std::string_view view) {
   return view.rbegin() != view.rend() ? *view.crbegin() : 0;
 }
@@ -29059,6 +29085,9 @@ char reverse_first(std::string_view view) {
           "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-string-view-unlowered-find-pointer",
           '#include <string_view>\nstd::string_view::size_type f(std::string_view view){return view.find("a",0);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-string-view-unlowered-rfind-pointer",
+          '#include <string_view>\nstd::string_view::size_type f(std::string_view view){return view.rfind("a",0);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-string-view-quoted", '#include "string_view"\nint f(){return 0;}',
           "TR0201", profile="cpp-core-v2", sdk=True)

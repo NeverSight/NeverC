@@ -2194,8 +2194,12 @@ receiver and argument is evaluated once. `rbegin()`, `crbegin()`, `rend()` and
 `max_size()` reports the target `size_t` maximum. `compare(string_view)`
 compares unsigned character values lexicographically, including embedded zero
 bytes; `find(char, size_t)` and its zero-position default return the first
-matching offset or `npos`. The caller remains responsible for the ordinary
-view lifetime, readable-range and valid-index preconditions.
+matching offset or `npos`. `find(string_view, size_t)` searches for the first
+matching byte sequence, while `rfind(char, size_t)` and
+`rfind(string_view, size_t)` search backward. Their omitted positions use the
+pinned zero or `npos` defaults. Empty patterns and out-of-range positions
+follow libc++'s view-search results. The caller remains responsible for the
+ordinary view lifetime, readable-range and valid-index preconditions.
 Custom traits, other character types, throwing `at()`, and other string-view
 operations still require separate direct lowerings.
 

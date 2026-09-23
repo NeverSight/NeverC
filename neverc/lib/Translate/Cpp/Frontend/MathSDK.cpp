@@ -7007,10 +7007,12 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
         Parameter->getFunctionScopeIndex() == 1 && Index == 1 &&
         !Method->isStatic() && !Method->isVariadic() && Method->isConst() &&
         Method->isConstexpr() && Method->hasBody() && Method->getIdentifier() &&
-        Method->getName() == "find" &&
+        (Method->getName() == "find" || Method->getName() == "rfind") &&
         Context.hasSameType(Method->getReturnType(), Context.getSizeType()) &&
-        Context.hasSameType(Method->getParamDecl(0)->getType(),
-                            Context.CharTy) &&
+        (Context.hasSameType(Method->getParamDecl(0)->getType(),
+                             Context.CharTy) ||
+         Context.hasSameUnqualifiedType(Method->getParamDecl(0)->getType(),
+                                        Context.getRecordType(View->Record))) &&
         Context.hasSameType(Parameter->getType(), Context.getSizeType()) &&
         approvedStandardSDKDeclaration(S, SM, Method) &&
         cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "string_view") &&
@@ -7018,12 +7020,13 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
         Context.hasSameType(Init->getType(), Context.getSizeType()) &&
         !Init->isTypeDependent() && !Init->isValueDependent() &&
         !Init->isInstantiationDependent()) {
-      const auto *Value = Init->IgnoreParenImpCasts();
-      while (const auto *Constant = dyn_cast<ConstantExpr>(Value))
-        Value = Constant->getSubExpr()->IgnoreParenImpCasts();
-      if (const auto *Literal = dyn_cast<IntegerLiteral>(Value))
-        if (Literal->getValue() == 0)
+      Expr::EvalResult Evaluated;
+      if (Init->EvaluateAsInt(Evaluated, Context) && Evaluated.Val.isInt()) {
+        const auto &Value = Evaluated.Val.getInt();
+        if ((Method->getName() == "find" && Value == 0) ||
+            (Method->getName() == "rfind" && Value.isAllOnes()))
           return true;
+      }
     }
     const auto Unique =
         approvedUtilityUniquePtrRecord(S, SM, Method->getParent(), Context);
@@ -15546,17 +15549,25 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                          ViewType) &&
           Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), ViewType))
         return UtilityOperation::StringViewCompare;
-      if (Name == "find" && Method->getNumParams() == 2 &&
+      if ((Name == "find" || Name == "rfind") && Method->getNumParams() == 2 &&
           Call->getNumArgs() == 2 &&
           Context.hasSameType(Method->getReturnType(), Context.getSizeType()) &&
-          Context.hasSameType(Method->getParamDecl(0)->getType(),
-                              Context.CharTy) &&
-          Context.hasSameType(Call->getArg(0)->getType(), Context.CharTy) &&
           Context.hasSameType(Method->getParamDecl(1)->getType(),
                               Context.getSizeType()) &&
           Context.hasSameType(Call->getArg(1)->getType(),
-                              Context.getSizeType()))
-        return UtilityOperation::StringViewFindCharacter;
+                              Context.getSizeType())) {
+        if (Context.hasSameType(Method->getParamDecl(0)->getType(),
+                                Context.CharTy) &&
+            Context.hasSameType(Call->getArg(0)->getType(), Context.CharTy))
+          return Name == "find" ? UtilityOperation::StringViewFindCharacter
+                                : UtilityOperation::StringViewRFindCharacter;
+        if (Context.hasSameUnqualifiedType(Method->getParamDecl(0)->getType(),
+                                           ViewType) &&
+            Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
+                                           ViewType))
+          return Name == "find" ? UtilityOperation::StringViewFindView
+                                : UtilityOperation::StringViewRFindView;
+      }
     }
     return std::nullopt;
   }

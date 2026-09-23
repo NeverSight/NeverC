@@ -9233,6 +9233,196 @@ class FunctionLowering {
       label(End, L);
       return Result;
     }
+    case UtilityOperation::StringViewRFindCharacter: {
+      const auto *Object = MemberObject();
+      auto View = Object ? StringViewFor(Object->getType())
+                         : std::optional<UtilityStringViewRecord>();
+      if (!Object || !View)
+        reject(L, "string view reverse search",
+               "The selected std::string_view layout is unavailable.");
+      auto ObjectAddress =
+          snapshot(address(lvalue(Object), Object->getType(), L), L);
+      auto Character = snapshot(expression(Call->getArg(0)), L);
+      auto Position =
+          snapshot(argument(Call->getArg(1), A.Context.getSizeType()), L);
+      auto Data =
+          snapshot(fieldStorage(dereference(json::Object(ObjectAddress), L),
+                                View->Data, L),
+                   L);
+      auto Size = snapshot(
+          fieldStorage(dereference(std::move(ObjectAddress), L), View->Size, L),
+          L);
+      const auto SizeType = type(Call->getType(), L);
+      const unsigned Bits = integerBits(SizeType);
+      const uint64_t NotFound = Bits == 64
+                                    ? std::numeric_limits<uint64_t>::max()
+                                    : (uint64_t(1) << Bits) - 1;
+      auto Result = temporary(SizeType, L);
+      assign(Result, quantity(NotFound, SizeType, L), L);
+      const auto Start = labelName(), Clip = labelName();
+      const auto Check = labelName(), Advance = labelName();
+      const auto Decrement = labelName(), Found = labelName();
+      const auto End = labelName();
+      branch(
+          binary("==", json::Object(Size), quantity(0, SizeType, L), "bool", L),
+          End, Start, L);
+      label(Start, L);
+      branch(binary("<", json::Object(Position), json::Object(Size), "bool", L),
+             Check, Clip, L);
+      label(Clip, L);
+      assign(Position,
+             binary("-", json::Object(Size), quantity(1, SizeType, L), SizeType,
+                    L),
+             L);
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("==",
+                    index(json::Object(Data), json::Object(Position),
+                          type(A.Context.CharTy, L), L),
+                    json::Object(Character), "bool", L),
+             Found, Advance, L);
+      label(Advance, L);
+      branch(binary("==", json::Object(Position), quantity(0, SizeType, L),
+                    "bool", L),
+             End, Decrement, L);
+      label(Decrement, L);
+      assign(Position,
+             binary("-", json::Object(Position), quantity(1, SizeType, L),
+                    SizeType, L),
+             L);
+      jump(Check, L);
+      label(Found, L);
+      assign(Result, std::move(Position), L);
+      jump(End, L);
+      label(End, L);
+      return Result;
+    }
+    case UtilityOperation::StringViewFindView:
+    case UtilityOperation::StringViewRFindView: {
+      const bool Reverse = Operation == UtilityOperation::StringViewRFindView;
+      const auto *Object = MemberObject();
+      auto View = Object ? StringViewFor(Object->getType())
+                         : std::optional<UtilityStringViewRecord>();
+      if (!Object || !View)
+        reject(L, "string view substring search",
+               "The selected std::string_view layout is unavailable.");
+      auto ObjectAddress =
+          snapshot(address(lvalue(Object), Object->getType(), L), L);
+      auto Needle = snapshot(expression(Call->getArg(0)), L);
+      auto Position =
+          snapshot(argument(Call->getArg(1), A.Context.getSizeType()), L);
+      auto Data =
+          snapshot(fieldStorage(dereference(json::Object(ObjectAddress), L),
+                                View->Data, L),
+                   L);
+      auto Size = snapshot(
+          fieldStorage(dereference(std::move(ObjectAddress), L), View->Size, L),
+          L);
+      auto NeedleData =
+          snapshot(fieldStorage(json::Object(Needle), View->Data, L), L);
+      auto NeedleSize =
+          snapshot(fieldStorage(std::move(Needle), View->Size, L), L);
+      const auto SizeType = type(Call->getType(), L);
+      const unsigned Bits = integerBits(SizeType);
+      const uint64_t NotFound = Bits == 64
+                                    ? std::numeric_limits<uint64_t>::max()
+                                    : (uint64_t(1) << Bits) - 1;
+      auto Result = temporary(SizeType, L);
+      assign(Result, quantity(NotFound, SizeType, L), L);
+      auto Offset = temporary(SizeType, L);
+      const auto CheckPosition = labelName(), CheckEmpty = labelName();
+      const auto CheckFits = labelName(), Clip = labelName();
+      const auto Candidate = labelName(), CheckByte = labelName();
+      const auto CompareByte = labelName(), AdvanceByte = labelName();
+      const auto AdvanceCandidate = labelName(), ShiftCandidate = labelName();
+      const auto Found = labelName(), End = labelName();
+      if (Reverse) {
+        branch(binary("<=", json::Object(NeedleSize), json::Object(Size),
+                      "bool", L),
+               CheckPosition, End, L);
+        label(CheckPosition, L);
+        branch(binary(">", json::Object(Position),
+                      binary("-", json::Object(Size), json::Object(NeedleSize),
+                             SizeType, L),
+                      "bool", L),
+               Clip, CheckEmpty, L);
+        label(Clip, L);
+        assign(Position,
+               binary("-", json::Object(Size), json::Object(NeedleSize),
+                      SizeType, L),
+               L);
+        jump(CheckEmpty, L);
+        label(CheckEmpty, L);
+        branch(binary("==", json::Object(NeedleSize), quantity(0, SizeType, L),
+                      "bool", L),
+               Found, Candidate, L);
+      } else {
+        branch(
+            binary("<=", json::Object(Position), json::Object(Size), "bool", L),
+            CheckEmpty, End, L);
+        label(CheckEmpty, L);
+        branch(binary("==", json::Object(NeedleSize), quantity(0, SizeType, L),
+                      "bool", L),
+               Found, CheckFits, L);
+        label(CheckFits, L);
+        branch(binary("<=", json::Object(NeedleSize),
+                      binary("-", json::Object(Size), json::Object(Position),
+                             SizeType, L),
+                      "bool", L),
+               Candidate, End, L);
+      }
+      label(Candidate, L);
+      assign(Offset, quantity(0, SizeType, L), L);
+      jump(CheckByte, L);
+      label(CheckByte, L);
+      branch(binary("<", json::Object(Offset), json::Object(NeedleSize), "bool",
+                    L),
+             CompareByte, Found, L);
+      label(CompareByte, L);
+      branch(binary("==",
+                    index(json::Object(Data),
+                          binary("+", json::Object(Position),
+                                 json::Object(Offset), SizeType, L),
+                          type(A.Context.CharTy, L), L),
+                    index(json::Object(NeedleData), json::Object(Offset),
+                          type(A.Context.CharTy, L), L),
+                    "bool", L),
+             AdvanceByte, AdvanceCandidate, L);
+      label(AdvanceByte, L);
+      assign(Offset,
+             binary("+", json::Object(Offset), quantity(1, SizeType, L),
+                    SizeType, L),
+             L);
+      jump(CheckByte, L);
+      label(AdvanceCandidate, L);
+      if (Reverse) {
+        branch(binary("==", json::Object(Position), quantity(0, SizeType, L),
+                      "bool", L),
+               End, ShiftCandidate, L);
+        label(ShiftCandidate, L);
+        assign(Position,
+               binary("-", json::Object(Position), quantity(1, SizeType, L),
+                      SizeType, L),
+               L);
+      } else {
+        branch(binary("<", json::Object(Position),
+                      binary("-", json::Object(Size), json::Object(NeedleSize),
+                             SizeType, L),
+                      "bool", L),
+               ShiftCandidate, End, L);
+        label(ShiftCandidate, L);
+        assign(Position,
+               binary("+", json::Object(Position), quantity(1, SizeType, L),
+                      SizeType, L),
+               L);
+      }
+      jump(Candidate, L);
+      label(Found, L);
+      assign(Result, std::move(Position), L);
+      jump(End, L);
+      label(End, L);
+      return Result;
+    }
     case UtilityOperation::ArraySize:
     case UtilityOperation::ArrayMaxSize:
     case UtilityOperation::ArrayEmpty: {

@@ -15017,6 +15017,65 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringViewSubstringSearchRunsAtBothOptimizations) {
+  const auto Source = tmpFile("string-view-substring.cpp");
+  const auto Output = tmpFile("string-view-substring.nc");
+  writeFile(Source, R"cpp(
+#include <string_view>
+std::string_view& touch(std::string_view& view, int& count) {
+  ++count;
+  return view;
+}
+int main() {
+  std::string_view empty;
+  if (empty.find(empty) != 0 || empty.rfind(empty) != 0 ||
+      empty.rfind('x') != std::string_view::npos)
+    return 1;
+  std::string_view hay("ababa", 5);
+  std::string_view needle("aba", 3);
+  std::string_view nothing;
+  if (hay.find(needle) != 0 || hay.find(needle, 1) != 2 ||
+      hay.find(needle, 3) != std::string_view::npos ||
+      hay.find(nothing, 5) != 5 ||
+      hay.find(nothing, 6) != std::string_view::npos)
+    return 2;
+  if (hay.rfind(needle) != 2 || hay.rfind(needle, 1) != 0 ||
+      hay.rfind(needle, 0) != 0 || hay.rfind(nothing) != 5 ||
+      hay.rfind(nothing, 2) != 2 ||
+      hay.rfind(std::string_view("longer", 6)) != std::string_view::npos)
+    return 3;
+  if (hay.rfind('a') != 4 || hay.rfind('a', 3) != 2 ||
+      hay.rfind('z') != std::string_view::npos ||
+      hay.rfind('a', 0) != 0)
+    return 4;
+  const char bytes[] = {'x', 0, static_cast<char>(0x80), 0, 'y'};
+  std::string_view binary(bytes, 5);
+  std::string_view binaryNeedle(bytes + 1, 3);
+  if (binary.find(binaryNeedle) != 1 || binary.rfind(binaryNeedle) != 1 ||
+      binary.rfind('\0') != 3)
+    return 5;
+  int count = 0;
+  if (touch(hay, count).find((++count, needle), 1) != 2 || count != 2)
+    return 6;
+  count = 0;
+  if (touch(hay, count).rfind((++count, 'a'), 3) != 2 || count != 2)
+    return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-view-substring" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StringsRetainSourceAndLifetimeRestrictions) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"literal-unused-declaration", "unsigned operator\"\"_n(const char*,decltype(sizeof(0))){return 1;}", "TR0201"},
