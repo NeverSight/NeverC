@@ -16128,13 +16128,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       NumericPointerParameter(1, false, true) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      (Call->getNumArgs() == 3 ? NumericReductionValueParameter(2, 0, true)
-                               : NumericValueParameter(2, 0, true)) &&
+      NumericReductionValueParameter(2, 0, true) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType()) &&
       (Call->getNumArgs() == 3 ||
-       NumericBinaryCallback(
-           3, Function->getParamDecl(0)->getType()->getPointeeType(), true)))
+       NumericBinaryTransformCallback(
+           3, Function->getParamDecl(2)->getType(),
+           Function->getParamDecl(2)->getType(),
+           Function->getParamDecl(0)->getType()->getPointeeType(), true)))
     return UtilityOperation::NumericAccumulate;
   if (Origin->Path == "__numeric/inner_product.h" && Name == "inner_product" &&
       (Call->getNumArgs() == 4 || Call->getNumArgs() == 6) &&
@@ -16189,13 +16190,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                             ->getPointeeType()
                                             .getUnqualifiedType()))
       return UtilityOperation::NumericReduce;
-    if (Call->getNumArgs() >= 3 &&
-        (Call->getNumArgs() == 3 ? NumericReductionValueParameter(2, 0, true)
-                                 : NumericValueParameter(2, 0, true)) &&
+    if (Call->getNumArgs() >= 3 && NumericReductionValueParameter(2, 0, true) &&
         Same(Function->getReturnType(), Function->getParamDecl(2)->getType())) {
       if (Call->getNumArgs() == 3 ||
-          NumericBinaryCallback(
-              3, Function->getParamDecl(0)->getType()->getPointeeType(), true))
+          NumericBinaryTransformCallback(
+              3, Function->getParamDecl(2)->getType(),
+              Function->getParamDecl(2)->getType(),
+              Function->getParamDecl(0)->getType()->getPointeeType(), true))
         return UtilityOperation::NumericReduce;
     }
   }

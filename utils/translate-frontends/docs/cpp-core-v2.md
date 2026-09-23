@@ -761,7 +761,8 @@ scalar conversion from its corresponding element. Callback values are captured
 once, empty ranges make no callback calls, and the sequential scan forms retain
 their in-place behavior.
 The four-argument `accumulate` and `reduce` function-pointer callbacks also
-admit matching non-boolean narrow integer inputs and accumulators; their
+admit independent arithmetic input and accumulator types, including
+non-boolean narrow integers, through a checked common arithmetic type; their
 directly convertible scalar results are converted back after each call.
 The four-argument `partial_sum` and `adjacent_difference` function-pointer
 callbacks admit non-boolean narrow integer inputs and writable scalar outputs;
