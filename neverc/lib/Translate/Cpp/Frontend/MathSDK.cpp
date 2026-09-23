@@ -12795,6 +12795,163 @@ utilityAlgorithmGenerateObjectCall(const State &S, const SourceManager &SM,
       std::nullopt};
 }
 
+// The C++17 accumulate overload carries its source operation by value. Prove
+// the exact pinned loop before retaining the selected two-argument method.
+static std::optional<UtilityAlgorithmPredicateCall>
+utilityNumericAccumulateObjectCall(const State &S, const SourceManager &SM,
+                                   const CallExpr *Call,
+                                   const ASTContext &Context) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  if (!S.coreV2() || !Call || !Function ||
+      Function->getName() != "accumulate" || Call->getNumArgs() != 4 ||
+      Function->getNumParams() != 4 || !Call->isPRValue() ||
+      Call->isTypeDependent() || Call->isValueDependent() ||
+      Call->isInstantiationDependent())
+    return std::nullopt;
+  const auto Pointer = Function->getParamDecl(0)->getType();
+  const auto Initial = Function->getParamDecl(2)->getType();
+  const auto Object = Function->getParamDecl(3)->getType();
+  const auto ElementType = Pointer->isPointerType()
+                               ? Pointer->getPointeeType().getUnqualifiedType()
+                               : QualType{};
+  const bool Arithmetic =
+      !ElementType.isNull() &&
+      ((!ElementType->isEnumeralType() && ElementType->isIntegerType() &&
+        !Context.isPromotableIntegerType(ElementType) &&
+        Context.getTypeSize(ElementType) <= 64) ||
+       ElementType->isSpecificBuiltinType(BuiltinType::Float) ||
+       ElementType->isSpecificBuiltinType(BuiltinType::Double));
+  const auto *Record = Object->getAsCXXRecordDecl();
+  Record = Record ? Record->getDefinition() : nullptr;
+  if (!Arithmetic || !utilityAlgorithmScalarPointer(Context, Pointer) ||
+      !Context.hasSameType(Function->getParamDecl(1)->getType(), Pointer) ||
+      !Context.hasSameType(Call->getArg(0)->getType(), Pointer) ||
+      !Context.hasSameType(Call->getArg(1)->getType(), Pointer) ||
+      !Context.hasSameType(Call->getArg(2)->getType(), Initial) ||
+      !Context.hasSameUnqualifiedType(Initial, Pointer->getPointeeType()) ||
+      !Context.hasSameType(Call->getArg(3)->getType(), Object) ||
+      !Context.hasSameType(Function->getReturnType(), Initial) ||
+      !Context.hasSameType(Call->getType(), Initial) || !Record ||
+      Object.hasLocalQualifiers() || Record->isLambda() || Record->isUnion() ||
+      !Record->isStandardLayout() || !Record->isTriviallyCopyable() ||
+      !Record->hasTrivialCopyConstructor() || !Record->hasTrivialDestructor() ||
+      !S.owns(SM, Record->getLocation()))
+    return std::nullopt;
+  const auto *Primary = Function->getPrimaryTemplate();
+  const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+  const auto *Definition = Function->getDefinition();
+  const auto *PatternDefinition = Pattern ? Pattern->getDefinition() : nullptr;
+  const auto *Arguments = Function->getTemplateSpecializationArgs();
+  auto Origin = [&](const Decl *D) {
+    return approvedStandardSDKDeclaration(S, SM, D) &&
+           cstddefOrigin(S, SM, D->getLocation(), "libcxx",
+                         "__numeric/accumulate.h");
+  };
+  if (!Primary || !Pattern || !Definition || !PatternDefinition ||
+      Function->isVariadic() ||
+      Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      !approvedUtilityReference(S, SM, Call, Function) || !Origin(Definition) ||
+      !Origin(PatternDefinition) || !Arguments || Arguments->size() != 3)
+    return std::nullopt;
+  for (const auto *D : Function->redecls())
+    if (!Origin(D))
+      return std::nullopt;
+  for (const auto *D : Primary->redecls())
+    if (!Origin(D) || !Origin(D->getTemplatedDecl()))
+      return std::nullopt;
+  for (const auto *D : Pattern->redecls())
+    if (!Origin(D))
+      return std::nullopt;
+  for (const auto [Index, Expected] :
+       {std::pair{0u, Pointer}, std::pair{1u, Initial}, std::pair{2u, Object}})
+    if (Arguments->get(Index).getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Arguments->get(Index).getAsType(), Expected))
+      return std::nullopt;
+
+  auto Reference = [&](const Expr *Expression, const ValueDecl *Value) {
+    return utilityAlgorithmReference(Expression, Value, Context);
+  };
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Definition->getBody());
+  if (!Body || Body->size() != 2)
+    return std::nullopt;
+  auto Part = Body->body_begin();
+  const auto *Loop = dyn_cast<ForStmt>(*Part++);
+  const auto *Return = dyn_cast<ReturnStmt>(*Part);
+  const auto *Condition =
+      Loop ? dyn_cast_or_null<BinaryOperator>(Loop->getCond()) : nullptr;
+  const auto *Advance =
+      Loop ? dyn_cast_or_null<UnaryOperator>(Loop->getInc()) : nullptr;
+  const auto *Assignment =
+      Loop ? dyn_cast_or_null<BinaryOperator>(Loop->getBody()) : nullptr;
+  if (!Loop || Loop->getInit() || Loop->getConditionVariable() || !Condition ||
+      Condition->getOpcode() != BO_NE ||
+      !Reference(Condition->getLHS(), Definition->getParamDecl(0)) ||
+      !Reference(Condition->getRHS(), Definition->getParamDecl(1)) ||
+      !Advance || Advance->getOpcode() != UO_PreInc ||
+      !Reference(Advance->getSubExpr(), Definition->getParamDecl(0)) ||
+      !Assignment || Assignment->getOpcode() != BO_Assign ||
+      !Reference(Assignment->getLHS(), Definition->getParamDecl(2)) ||
+      !Return || !Reference(Return->getRetValue(), Definition->getParamDecl(2)))
+    return std::nullopt;
+  const Expr *Result = Assignment->getRHS();
+  while (const auto *Cast = dyn_cast<ImplicitCastExpr>(Result)) {
+    if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
+                                       Cast->getType()))
+      return std::nullopt;
+    Result = Cast->getSubExpr();
+  }
+  const auto *Invocation = dyn_cast<CXXOperatorCallExpr>(Result);
+  if (!Invocation || Invocation->getOperator() != OO_Call ||
+      Invocation->getNumArgs() != 3 || !Invocation->isPRValue() ||
+      !Reference(Invocation->getArg(0), Definition->getParamDecl(3)) ||
+      !Reference(Invocation->getArg(1), Definition->getParamDecl(2)))
+    return std::nullopt;
+  const Expr *ElementArgument = Invocation->getArg(2);
+  while (const auto *Cast = dyn_cast<ImplicitCastExpr>(ElementArgument)) {
+    if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
+                                       Cast->getType()))
+      return std::nullopt;
+    ElementArgument = Cast->getSubExpr();
+  }
+  const auto *Element = dyn_cast<UnaryOperator>(ElementArgument);
+  if (!Element || Element->getOpcode() != UO_Deref || !Element->isLValue() ||
+      !Context.hasSameType(Element->getType(), Pointer->getPointeeType()) ||
+      !Reference(Element->getSubExpr(), Definition->getParamDecl(0)))
+    return std::nullopt;
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Invocation->getDirectCallee());
+  const auto *MethodDefinition = Method ? Method->getDefinition() : nullptr;
+  if (!Method || !MethodDefinition || Method->isStatic() ||
+      Method->isVolatile() || Method->getOverloadedOperator() != OO_Call ||
+      Method->getNumParams() != 2 ||
+      Method->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
+      !functionalMemberReceiverValueCategory(Method, Invocation->getArg(0),
+                                             false) ||
+      !utilityScalar(Context, Method->getReturnType()) ||
+      !utilityScalarDirectConversion(Context, Initial,
+                                     Method->getParamDecl(0)->getType()) ||
+      !utilityScalarDirectConversion(Context, Pointer->getPointeeType(),
+                                     Method->getParamDecl(1)->getType()) ||
+      !utilityScalarDirectConversion(Context, Method->getReturnType(),
+                                     Initial) ||
+      (Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
+       Method->getTemplatedKind() != FunctionDecl::TK_MemberSpecialization) ||
+      Method->getPrimaryTemplate() || Method->getDescribedFunctionTemplate() ||
+      !ordinaryOperator(Method) || !callableMethod(Method) ||
+      !S.owns(SM, MethodDefinition->getLocation()))
+    return std::nullopt;
+  for (const auto *D : Method->redecls())
+    if (!S.owns(SM, D->getLocation()))
+      return std::nullopt;
+  return UtilityAlgorithmPredicateCall{UtilityOperation::NumericAccumulate,
+                                       Function,
+                                       Invocation,
+                                       Method,
+                                       Object,
+                                       3,
+                                       std::nullopt};
+}
+
 std::optional<UtilityAlgorithmPredicateCall>
 approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
                                       const CallExpr *Call,
@@ -12814,6 +12971,8 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
     return utilityAlgorithmForEachObjectCall(S, SM, Call, Context);
   if (Name == "generate" || Name == "generate_n")
     return utilityAlgorithmGenerateObjectCall(S, SM, Call, Context);
+  if (Name == "accumulate")
+    return utilityNumericAccumulateObjectCall(S, SM, Call, Context);
   const bool Find = Name == "find_if", FindNot = Name == "find_if_not";
   const bool None = Name == "none_of", All = Name == "all_of";
   const bool Any = Name == "any_of", Count = Name == "count_if";

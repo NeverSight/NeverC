@@ -9805,6 +9805,75 @@ extern "C" int numeric_callbacks() {
           '#include <numeric>\nint main(){auto p=&std::gcd<int,int>;return p(12,18)==6?0:1;}',
           "TR0201", profile="cpp-core-v2", sdk=True)
 
+    numeric_accumulate_object_source = """\
+#include <numeric>
+int calls,factories,first_calls,last_calls;
+int*first(int*p){++first_calls;return p;}
+int*last(int*p){++last_calls;return p;}
+struct Add{
+ int bias,local_calls;
+ int operator()(int total,int value)&{ // template-binary-method: accumulate
+  ++calls;++local_calls;return total+value+bias+local_calls;
+ }
+ int operator()(int,int)const&{return -100;}
+};
+Add make(int bias){++factories;return Add{bias,0};}
+int main(){
+ int values[3]={1,2,3};Add caller{1,0};
+ int result=std::accumulate(first(values),last(values+3),0,caller); // template-binary-call: accumulate
+ if(result!=15||calls!=3||caller.local_calls||first_calls!=1||last_calls!=1)return 1;
+ if(std::accumulate(values,values,7,make(4))!=7||calls!=3||factories!=1)return 2; // template-binary-call: accumulate
+ if(std::accumulate(values,values+2,1,make(0))!=7||calls!=5||factories!=2)return 3; // template-binary-call: accumulate
+ static_assert(__is_same(decltype(std::accumulate(values,values,0,caller)),int));
+ return 0;
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-numeric-accumulate-object-" + target,
+                     numeric_accumulate_object_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        definitions = {f['name']: f for f in data['functions']}
+        assert len(definitions) == len(data['functions'])
+        main_nodes = list(walk(definitions['main']['body']))
+        method_line = next(i for i, line in enumerate(numeric_accumulate_object_source.splitlines(), 1)
+                           if '// template-binary-method:' in line)
+        methods = [f for f in data['functions'] if f['loc']['line'] == method_line]
+        assert len(methods) == 1 and methods[0]['result'] == 'int', methods
+        assert (len(methods[0]['params']) == 3 and
+                [p['type'] for p in methods[0]['params'][1:]] == ['int', 'int']), methods
+        calls = [node for node in main_nodes if node.get('op') == 'call'
+                 and node.get('callee') == methods[0]['name']]
+        expected_lines = [i for i, line in enumerate(numeric_accumulate_object_source.splitlines(), 1)
+                          if '// template-binary-call:' in line]
+        assert len(calls) == 3 and [call['loc']['line'] for call in calls] == expected_lines, calls
+        assert all(call['target']['type'] == 'int' and
+                   [arg['type'] for arg in call['args']] ==
+                   [param['type'] for param in methods[0]['params']]
+                   for call in calls), calls
+        for function in data['functions']:
+            assert function.get('loc', {}).get('file') == 'input.cpp', function
+        for node in walk(data['functions']):
+            assert node.get('op') not in ('mapped_call', 'indirect_call', 'member_pointer'), node
+            if node.get('op') == 'call':
+                assert node['callee'] in definitions, node
+            if node.get('op') == 'assign':
+                assert node['target']['type'] == node['value']['type'], node
+
+    numeric_accumulate_object_rejections = [
+        ('generic-method', '#include <numeric>\nstruct F{template<class T>int operator()(T a,T b){return a+b;}};int f(int*p){return std::accumulate(p,p+2,0,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('nontrivial-copy', '#include <numeric>\nstruct F{F(){}F(const F&){}int operator()(int a,int b){return a+b;}};int f(int*p){return std::accumulate(p,p+2,0,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('nontrivial-destructor', '#include <numeric>\nstruct F{~F(){}int operator()(int a,int b){return a+b;}};int f(int*p){return std::accumulate(p,p+2,0,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('reference-argument', '#include <numeric>\nstruct F{int operator()(int&a,int b){return a+b;}};int f(int*p){return std::accumulate(p,p+2,0,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('record-result', '#include <numeric>\nstruct R{int n;operator int()const{return n;}};struct F{R operator()(int,int){return {1};}};int f(int*p){return std::accumulate(p,p+2,0,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('missing-definition', '#include <numeric>\nstruct F{int operator()(int,int);};int f(int*p){return std::accumulate(p,p+2,0,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('lambda', '#include <numeric>\nint f(int*p){return std::accumulate(p,p+2,0,[](int a,int b){return a+b;});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('specialization', '#include <numeric>\nstruct F{int operator()(int a,int b){return a+b;}};namespace std{template<>int accumulate<int*,int,F>(int*p,int*,int,F){return 0;}}int f(int*p){return std::accumulate(p,p+2,0,F{});}\n', 'TR0201', 'cpp-core-v2', True),
+        ('query-no-body', '#include <numeric>\nstruct F{int operator()(int,int);};int f(int*p){static_assert(__is_same(decltype(std::accumulate(p,p+2,0,F{})),int));return 0;}\n', 'TR0203', 'cpp-core-v2', True),
+    ]
+    for name, source, code, profile, sdk in numeric_accumulate_object_rejections:
+        check("v2-numeric-accumulate-object-reject-" + name, source,
+              code, profile=profile, sdk=sdk)
+
     algorithm_header_source = """\
 #include <algorithm>
 extern "C" int algorithm_header() { return 0; }

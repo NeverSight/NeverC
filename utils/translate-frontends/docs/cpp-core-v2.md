@@ -740,8 +740,8 @@ The operation-taking overloads of `accumulate`, `inner_product`, `partial_sum`,
 `inclusive_scan` with or without an initial value, and `exclusive_scan` also
 lower directly. The no-init and initialized `transform_inclusive_scan` forms
 and initialized `transform_exclusive_scan` are admitted on the same ranges.
-Each operation must be an ordinary function pointer whose return and by-value
-parameters are admitted scalars. Uninitialized scans combine in the input
+These operation forms accept an ordinary function pointer whose return and
+by-value parameters are admitted scalars. Uninitialized scans combine in the input
 element type. Initialized scans may use an independent arithmetic accumulator:
 the binary callback accepts that accumulator and an input or unary-transformed
 element, its return converts directly back to the accumulator, and the
@@ -754,6 +754,14 @@ The callback forms of `inner_product` and two-range `transform_reduce` accept a
 different numeric second-range element when the transform callback accepts the
 respective element types and returns a value directly convertible to the
 accumulator type.
+The four-argument `accumulate` overload additionally accepts a source-owned,
+standard-layout, trivially copied operation object when its non-template binary
+call operator takes directly convertible by-value arithmetic scalars and returns
+one directly convertible to the accumulator. The input and initial value share
+an admitted non-promoted arithmetic type. The pinned C++17 loop and selected
+source method are authenticated; one by-value object retains its mutable state
+throughout the reduction without changing the caller's object. An empty range
+returns the initial value without invoking the operation.
 
 `gcd` and `lcm` accept any non-boolean built-in integer argument combination
 through 64 bits and return libc++'s exact `common_type_t` result. Signed inputs
@@ -761,7 +769,7 @@ are converted to unsigned magnitudes before the Euclidean loop, so supported
 negative, narrow and mixed-signedness calls retain the standard result and
 representability preconditions. Each argument is evaluated once.
 
-Callable objects, reference callback parameters or results, record callback
+Other callable objects, reference callback parameters or results, record callback
 results, heterogeneous input ranges in callback-taking forms, heterogeneous
 initial values outside the documented operations, promotable range integers,
 enums, records, custom iterators and the other range-based

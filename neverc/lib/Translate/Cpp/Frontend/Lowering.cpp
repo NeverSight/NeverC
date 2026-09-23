@@ -3064,11 +3064,22 @@ class FunctionLowering {
              L);
       std::optional<Expression> ReductionCallback, TransformCallback;
       std::optional<QualType> ReductionCallbackType, TransformCallbackType;
+      std::optional<CapturedAlgorithmPredicate> ReductionObject;
       if ((Operation == UtilityOperation::NumericAccumulate ||
            Operation == UtilityOperation::NumericReduce) &&
           Call->getNumArgs() == 4) {
-        ReductionCallbackType = Call->getArg(3)->getType();
-        ReductionCallback = snapshot(expression(Call->getArg(3)), L);
+        if (Operation == UtilityOperation::NumericAccumulate) {
+          auto Captured = captureUnaryPredicate(Call, Operation, 3);
+          if (Captured.Method)
+            ReductionObject = std::move(Captured);
+          else {
+            ReductionCallbackType = Captured.Type;
+            ReductionCallback = std::move(Captured.Storage);
+          }
+        } else {
+          ReductionCallbackType = Call->getArg(3)->getType();
+          ReductionCallback = snapshot(expression(Call->getArg(3)), L);
+        }
       } else if (Operation == UtilityOperation::NumericInnerProduct &&
                  Call->getNumArgs() == 6) {
         ReductionCallbackType = Call->getArg(4)->getType();
@@ -3124,7 +3135,13 @@ class FunctionLowering {
                       cast(dereference(*Second, L), DefaultTermType, L),
                       DefaultTermType, L);
       }
-      if (ReductionCallback) {
+      if (ReductionObject) {
+        assign(Result,
+               cast(emitBinaryCallable(*ReductionObject, json::Object(Result),
+                                       std::move(Term), L),
+                    ResultType, L),
+               L);
+      } else if (ReductionCallback) {
         json::Array Arguments;
         Arguments.push_back(json::Object(Result));
         Arguments.push_back(std::move(Term));
