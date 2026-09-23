@@ -397,7 +397,9 @@ objects convert each tuple element to the selected `operator()` parameter type
 before the scalar operation, including narrowing integral conversions. Exact
 `std::reference_wrapper` forms around these named functions, stored function
 pointers, source function objects and standard function objects use the same
-admitted parameter and result boundary. Exact direct or stored source member
+admitted parameter and result boundary. Typed standard objects in a wrapper
+also convert arguments to the selected `operator()` parameter types for direct
+calls, `std::invoke` and `std::apply`. Exact direct or stored source member
 pointers, and temporary or stored `std::mem_fn` wrappers around them, take their
 receiver from the first source element, including an authenticated
 `std::reference_wrapper` where the source element type is admitted, and preserve

@@ -9075,7 +9075,10 @@ approvedFunctionalReferenceDirectInvoke(
     const auto *OperationCall = dyn_cast<CXXOperatorCallExpr>(Invoked);
     auto Operation = approvedFunctionalOperationImpl(
         S, SM, OperationCall, Context, false);
-    if (!Operation || !OperationCall ||
+    const auto *OperationMethod = dyn_cast_or_null<CXXMethodDecl>(
+        OperationCall ? OperationCall->getDirectCallee() : nullptr);
+    if (!Operation || !OperationCall || !OperationMethod ||
+        OperationMethod->getNumParams() + 1 != Call->getNumArgs() ||
         OperationCall->getNumArgs() != Call->getNumArgs() ||
         !Context.hasSameType(Operation->ResultType, Call->getType()))
       return std::nullopt;
@@ -9086,7 +9089,7 @@ approvedFunctionalReferenceDirectInvoke(
         return std::nullopt;
     return FunctionalReferenceInvokeCall{
         *Wrapper, FunctionalReferenceInvokeKind::FunctionObject, {},
-        std::move(Operation), nullptr};
+        std::move(Operation), OperationMethod};
   }
 
   const auto *ReferentRecord =
@@ -9309,16 +9312,13 @@ approvedUtilityTupleApplyReferenceCall(const State &S,
           ? Reference->FunctionPointerType->getPointeeType()
                 ->getAs<FunctionProtoType>()
           : nullptr;
-  if ((StandardObject && !Reference->Operation) ||
+  if ((StandardObject && (!Reference->Operation || !Reference->Method)) ||
       (UserObject && !Reference->Method) ||
       (!StandardObject && !UserObject && !Prototype))
     return std::nullopt;
 
   auto Parameter = [&](unsigned I) -> QualType {
-    if (StandardObject)
-      return I == 0 ? Reference->Operation->LeftType
-                    : Reference->Operation->RightType;
-    if (UserObject)
+    if (StandardObject || UserObject)
       return Reference->Method->getParamDecl(I)->getType();
     return Prototype->getParamType(I);
   };
@@ -9337,7 +9337,10 @@ approvedUtilityTupleApplyReferenceCall(const State &S,
                              ? StoredElement->getPointeeType()
                              : StoredElement;
     bool Supported = false;
-    if (Target->isReferenceType()) {
+    if (StandardObject) {
+      Supported = utilityScalarDirectConversion(
+          Context, Element, Target.getNonReferenceType());
+    } else if (Target->isReferenceType()) {
       const auto Referent = Target->getPointeeType();
       const bool ElementIsLValue =
           StoredElement->isLValueReferenceType() ||

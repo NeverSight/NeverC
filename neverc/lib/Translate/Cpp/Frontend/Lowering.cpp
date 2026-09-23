@@ -2178,17 +2178,23 @@ class FunctionLowering {
       auto Referent = snapshot(
           ReferenceMember(std::move(Wrapper), Info->Wrapper), L);
       if (Info->Kind == FunctionalReferenceInvokeKind::FunctionObject) {
-        if (!Info->Operation)
+        if (!Info->Operation || !Info->Method)
           reject(L, "functional reference invoke",
                  "A checked standard function object is required.");
         const bool Unary = Info->Operation->RightType.isNull();
         if (Call->getNumArgs() != (Unary ? 2u : 3u))
           reject(L, "functional reference invoke",
                  "The checked function object arity must match its arguments.");
-        auto Left = snapshot(expression(Call->getArg(1)), L);
+        auto Left = snapshot(cast(
+            expression(Call->getArg(1)),
+            type(Info->Method->getParamDecl(0)->getType()
+                     .getNonReferenceType(), L), L), L);
         std::optional<Expression> Right;
         if (!Unary)
-          Right = snapshot(expression(Call->getArg(2)), L);
+          Right = snapshot(cast(
+              expression(Call->getArg(2)),
+              type(Info->Method->getParamDecl(1)->getType()
+                       .getNonReferenceType(), L), L), L);
         return functionalOperationValues(L, std::move(Left),
                                          std::move(Right), *Info->Operation);
       }
@@ -7396,19 +7402,24 @@ class FunctionLowering {
         auto TupleValue = dereference(std::move(TupleAddress), L);
         if (ReferenceCallable->Kind ==
             FunctionalReferenceInvokeKind::FunctionObject) {
-          if (!ReferenceCallable->Operation || Destination)
+          if (!ReferenceCallable->Operation || !ReferenceCallable->Method ||
+              Destination)
             reject(L, "utility tuple apply",
                    "The referenced standard function object is unavailable.");
           const bool Unary = ReferenceCallable->Operation->RightType.isNull();
           if (!Tuple || Tuple->size() != (Unary ? 1u : 2u))
             reject(L, "utility tuple apply",
                    "The referenced function object arity differs from the tuple.");
-          auto Left = snapshot(
-              ApplyElement(json::Object(TupleValue), 0), L);
+          auto Left = snapshot(cast(
+              ApplyElement(json::Object(TupleValue), 0),
+              type(ReferenceCallable->Method->getParamDecl(0)->getType()
+                       .getNonReferenceType(), L), L), L);
           std::optional<Expression> Right;
           if (!Unary)
-            Right = snapshot(
-                ApplyElement(std::move(TupleValue), 1), L);
+            Right = snapshot(cast(
+                ApplyElement(std::move(TupleValue), 1),
+                type(ReferenceCallable->Method->getParamDecl(1)->getType()
+                         .getNonReferenceType(), L), L), L);
           return functionalOperationValues(
               L, std::move(Left), std::move(Right),
               *ReferenceCallable->Operation);

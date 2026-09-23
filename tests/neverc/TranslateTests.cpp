@@ -27458,6 +27458,15 @@ int main() {
   std::plus<int> plus;
   if (std::apply(std::cref(plus), std::make_tuple(6, 7)) != 13)
     return 5;
+  std::divides<unsigned char> narrow_divides;
+  if (std::apply(std::ref(narrow_divides), std::make_tuple(256, 2)) != 0)
+    return 9;
+  std::less<unsigned char> narrow_less;
+  if (!std::apply(std::cref(narrow_less), std::make_tuple(256, 1)))
+    return 10;
+  std::logical_not<unsigned char> narrow_not;
+  if (!std::apply(std::ref(narrow_not), std::make_tuple(256)))
+    return 11;
   std::tuple<int> scalar(8);
   int &alias = std::apply(std::ref(bump), scalar);
   alias = 10;
@@ -48802,6 +48811,12 @@ int main() {
   score += less_reference(short(2), 3.0);
   score += global_reference(7, 8) == 15;
   score += std::invoke(std::ref(plus), 9, 10) == 19;
+  std::divides<unsigned char> narrow_divides;
+  score += std::ref(narrow_divides)(256, 2) == 0;
+  std::less<unsigned char> narrow_less;
+  score += std::invoke(std::cref(narrow_less), 256, 1);
+  std::logical_not<unsigned char> narrow_not;
+  score += std::invoke(std::ref(narrow_not), 256);
   trace = 0;
   selected = first;
   int direct = function_reference(argument());
@@ -48843,7 +48858,7 @@ int main() {
               reference_argument(first_value)) = 11;
   score += first_value == 11;
   score += trace == 123;
-  return score == 25 ? 0 : score;
+  return score == 28 ? 0 : score;
 }
 )cpp");
   auto Result =
