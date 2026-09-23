@@ -28939,6 +28939,46 @@ int&&freshRvalue(MoveArg<int>&r){return moveArgument(r);}
                           root=Path(temp)/"project", profile="cpp-core-v2")
         assert relocated == string_ir, "string identities depend on the source root"
 
+    cstring_source = """\
+#include <cstring>
+std::size_t length(const char *text) { return std::strlen(text); }
+int compare(const char *left, const char *right) {
+  return std::strcmp(left, right);
+}
+int compare_n(const char *left, const char *right, std::size_t count) {
+  return std::strncmp(left, right, count);
+}
+"""
+    cstring_dependencies = None
+    for target in sdk_targets:
+        cstring_ir = check("v2-cstring-" + target, cstring_source,
+                           profile="cpp-core-v2", target=target, sdk=True)
+        dependencies = {(entry["root"], entry["path"])
+                        for entry in cstring_ir["sdk_dependencies"]}
+        assert len(dependencies) == 22, target
+        assert {("libcxx", "cstring"), ("resource", "include/string.h")} <= dependencies
+        if cstring_dependencies is None:
+            cstring_dependencies = dependencies
+        else:
+            assert dependencies == cstring_dependencies, target
+        assert len(cstring_ir["functions"]) == 3, target
+        length_function = cstring_ir["functions"][0]
+        character_type = length_function["params"][0]["type"].split(":", 1)[1]
+        length_check = next(node for node in length_function["body"]
+                            if node.get("op") == "branch")
+        assert any(node.get("kind") == "literal" and node.get("type") == character_type
+                   and node.get("value") == "0"
+                   for node in walk(length_check["condition"])), target
+        assert not [node for node in walk(cstring_ir["functions"])
+                    if node.get("op") in ("call", "mapped_call", "indirect_call",
+                                          "native_heap_call")], target
+    check("v2-cstring-global-call", '#include <cstring>\nint f(){return ::strcmp("a","b");}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-cstring-function-address", '#include <cstring>\nauto pointer=&std::strlen;',
+          "TR0201", profile="cpp-core-v2", sdk=True)
+    check("v2-cstring-quoted", '#include "cstring"\nint f(){return 0;}',
+          "TR0201", profile="cpp-core-v2", sdk=True)
+
     floating_positive = {
         'float-arithmetic': 'float f(float a,float b){return (a+b)*(a-b)/2.0f;}',
         'double-arithmetic': 'double f(double a,double b){return (a+b)*(a-b)/2.0;}',

@@ -603,6 +603,9 @@ bool approvedUtilityAllocatorAssignment(
     const clang::CXXOperatorCallExpr *Assignment,
     const clang::ASTContext &Context);
 enum class UtilityOperation {
+  CStringLength,
+  CStringCompare,
+  CStringCompareN,
   Move,
   Forward,
   MoveIfNoexcept,

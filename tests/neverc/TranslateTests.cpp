@@ -14774,6 +14774,79 @@ TEST_F(TranslateTest, CoreV2StringsAcceptSourceComposition) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2CStringScansRunAtBothOptimizations) {
+  const auto Source = tmpFile("cstring-scans.cpp");
+  const auto Output = tmpFile("cstring-scans.nc");
+  writeFile(Source, R"cpp(
+#include <cstring>
+int main() {
+  const char high[3]{'A', static_cast<char>(0x80), 0};
+  const char low[3]{'A', static_cast<char>(0x7f), 0};
+  int effects = 0;
+  if (std::strlen((++effects, high)) != 2 || effects != 1 ||
+      std::strlen("") != 0 || std::strlen("hello") != 5)
+    return 1;
+  if (std::strcmp(high, low) <= 0 || std::strcmp(low, high) >= 0 ||
+      std::strcmp(high, high) != 0 || std::strcmp("ab", "abc") >= 0 ||
+      std::strcmp("abc", "ab") <= 0)
+    return 2;
+  effects = 0;
+  if (std::strncmp(high, low, (++effects, 1)) != 0 || effects != 1 ||
+      std::strncmp(high, low, 2) <= 0 ||
+      std::strncmp("x", "y", 0) != 0 ||
+      std::strncmp("abc", "abd", 2) != 0 ||
+      std::strncmp("ab", "abc", 3) >= 0)
+    return 3;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Dependencies =
+      Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+  }
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("cstring-scans" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2CStringRejectsUnapprovedCalls) {
+  const std::tuple<const char *, const char *, const char *> Cases[] = {
+      {"global-name", "#include <cstring>\nint main(){return ::strlen(\"x\");}",
+       "TR0203"},
+      {"unsupported-copy",
+       "#include <cstring>\nint main(){char "
+       "s[3]{};std::strcpy(s,\"x\");return 0;}",
+       "TR0203"},
+      {"quoted-header", "#include \"cstring\"\nint main(){return 0;}",
+       "TR0201"}};
+  for (const auto &[Name, Code, Diagnostic] : Cases) {
+    SCOPED_TRACE(Name);
+    const auto Source = tmpFile(std::string("cstring-") + Name + ".cpp");
+    const auto Output = tmpFile(std::string("cstring-") + Name + ".nc");
+    writeFile(Source, Code);
+    expectCode(
+        translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+        Diagnostic);
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StringsRetainSourceAndLifetimeRestrictions) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"literal-unused-declaration", "unsigned operator\"\"_n(const char*,decltype(sizeof(0))){return 1;}", "TR0201"},

@@ -14729,12 +14729,81 @@ approvedRangeAlgorithmComparator(const State &S, const SourceManager &SM,
   return Selected;
 }
 
+static std::optional<UtilityOperation>
+approvedCStringOperation(const State &S, const SourceManager &SM,
+                         const CallExpr *Call, const ASTContext &Context) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Reference =
+      Call && Call->getCallee()
+          ? dyn_cast<DeclRefExpr>(Call->getCallee()->IgnoreParenImpCasts())
+          : nullptr;
+  if (!S.coreV2() || !Function || !Reference || !Function->getIdentifier() ||
+      Function->isImplicit() || Function->isVariadic() || Function->hasBody() ||
+      !Function->isExternC() ||
+      Function->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+      !Function->getDeclContext()->getRedeclContext()->isTranslationUnit() ||
+      !Call->isPRValue() || Call->getNumArgs() != Function->getNumParams() ||
+      Reference->getDecl()->getCanonicalDecl() !=
+          Function->getCanonicalDecl() ||
+      !S.owns(SM, Reference->getExprLoc()) || !Reference->getQualifier() ||
+      !Reference->getQualifier()->getAsNamespace() ||
+      !Reference->getQualifier()->getAsNamespace()->isStdNamespace())
+    return std::nullopt;
+  const auto *Shadow = dyn_cast<UsingShadowDecl>(Reference->getFoundDecl());
+  if (!Shadow || !approvedStandardSDKDeclaration(S, SM, Shadow) ||
+      !Shadow->getIntroducer() ||
+      !cstddefOrigin(S, SM, Shadow->getIntroducer()->getLocation(), "libcxx",
+                     "cstring"))
+    return std::nullopt;
+  const NamedDecl *Target = Shadow->getTargetDecl();
+  while (const auto *Next = dyn_cast<UsingShadowDecl>(Target))
+    Target = Next->getTargetDecl();
+  if (Target->getCanonicalDecl() != Function->getCanonicalDecl())
+    return std::nullopt;
+  bool SourceDeclaration = false;
+  for (const auto *Redeclaration : Function->redecls()) {
+    if (Redeclaration->isImplicit())
+      continue;
+    if (Redeclaration->getLocation().isMacroID() ||
+        !cstddefOrigin(S, SM, Redeclaration->getLocation(), "resource",
+                       "include/string.h"))
+      return std::nullopt;
+    SourceDeclaration = true;
+  }
+  if (!SourceDeclaration)
+    return std::nullopt;
+  const auto Character =
+      Context.getPointerType(Context.getConstType(Context.CharTy));
+  const auto Same = [&](QualType Left, QualType Right) {
+    return Context.hasSameType(Left, Right);
+  };
+  const auto Name = Function->getName();
+  if (Name == "strlen" && Function->getNumParams() == 1 &&
+      Same(Function->getParamDecl(0)->getType(), Character) &&
+      Same(Function->getReturnType(), Context.getSizeType()) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return UtilityOperation::CStringLength;
+  if ((Name == "strcmp" || Name == "strncmp") &&
+      Function->getNumParams() == (Name == "strcmp" ? 2u : 3u) &&
+      Same(Function->getParamDecl(0)->getType(), Character) &&
+      Same(Function->getParamDecl(1)->getType(), Character) &&
+      (Name == "strcmp" ||
+       Same(Function->getParamDecl(2)->getType(), Context.getSizeType())) &&
+      Same(Function->getReturnType(), Context.IntTy) &&
+      Same(Call->getType(), Function->getReturnType()))
+    return Name == "strcmp" ? UtilityOperation::CStringCompare
+                            : UtilityOperation::CStringCompareN;
+  return std::nullopt;
+}
+
 std::optional<UtilityOperation>
 approvedUtilityOperation(const State &S, const SourceManager &SM,
                          const CallExpr *Call, const ASTContext &Context) {
   if (!Call || Call->isTypeDependent() || Call->isValueDependent() ||
       Call->isInstantiationDependent())
     return std::nullopt;
+  if (auto CString = approvedCStringOperation(S, SM, Call, Context))
+    return CString;
   if (auto Predicate =
           approvedUtilityAlgorithmPredicateCall(S, SM, Call, Context))
     return Predicate->Operation;

@@ -2165,6 +2165,97 @@ class FunctionLowering {
       return Expression();
     };
     switch (Operation) {
+    case UtilityOperation::CStringLength: {
+      auto Current = snapshot(expression(Call->getArg(0)), L);
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto CharacterType = type(A.Context.CharTy, L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto SizeType = type(Call->getType(), L);
+      auto Result = temporary(SizeType, L);
+      assign(Result, quantity(0, SizeType, L), L);
+      const auto Check = labelName(), Advance = labelName(), End = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", dereference(json::Object(Current), L),
+                    quantity(0, CharacterType, L), "bool", L),
+             Advance, End, L);
+      label(Advance, L);
+      assign(
+          Current,
+          binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),
+          L);
+      assign(Result, binary("+", Result, quantity(1, SizeType, L), SizeType, L),
+             L);
+      jump(Check, L);
+      label(End, L);
+      return Result;
+    }
+    case UtilityOperation::CStringCompare:
+    case UtilityOperation::CStringCompareN: {
+      const bool Bounded = Operation == UtilityOperation::CStringCompareN;
+      auto Left = snapshot(expression(Call->getArg(0)), L);
+      auto Right = snapshot(expression(Call->getArg(1)), L);
+      std::optional<Expression> Remaining;
+      if (Bounded)
+        Remaining = snapshot(expression(Call->getArg(2)), L);
+      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto SizeType =
+          Bounded ? type(Call->getArg(2)->getType(), L) : std::string();
+      auto Result = temporary("int", L);
+      const auto Check = labelName(), Compare = labelName();
+      const auto Differ = labelName(), CheckZero = labelName();
+      const auto Advance = labelName(), Less = labelName();
+      const auto Greater = labelName(), Equal = labelName();
+      const auto End = labelName();
+      jump(Check, L);
+      label(Check, L);
+      if (Bounded)
+        branch(binary("!=", json::Object(*Remaining), quantity(0, SizeType, L),
+                      "bool", L),
+               Compare, Equal, L);
+      else
+        jump(Compare, L);
+      label(Compare, L);
+      auto LeftByte =
+          snapshot(cast(dereference(json::Object(Left), L), "u8", L), L);
+      auto RightByte =
+          snapshot(cast(dereference(json::Object(Right), L), "u8", L), L);
+      branch(binary("!=", LeftByte, RightByte, "bool", L), Differ, CheckZero,
+             L);
+      label(Differ, L);
+      branch(binary("<", LeftByte, RightByte, "bool", L), Less, Greater, L);
+      label(CheckZero, L);
+      branch(binary("==", LeftByte, quantity(0, "u8", L), "bool", L), Equal,
+             Advance, L);
+      label(Advance, L);
+      assign(Left,
+             binary("+", Left, quantity(1, DifferenceType, L), PointerType, L),
+             L);
+      assign(Right,
+             binary("+", Right, quantity(1, DifferenceType, L), PointerType, L),
+             L);
+      if (Bounded)
+        assign(*Remaining,
+               binary("-", json::Object(*Remaining), quantity(1, SizeType, L),
+                      SizeType, L),
+               L);
+      jump(Check, L);
+      label(Less, L);
+      assign(
+          Result,
+          binary("-", quantity(0, "int", L), quantity(1, "int", L), "int", L),
+          L);
+      jump(End, L);
+      label(Greater, L);
+      assign(Result, quantity(1, "int", L), L);
+      jump(End, L);
+      label(Equal, L);
+      assign(Result, quantity(0, "int", L), L);
+      jump(End, L);
+      label(End, L);
+      return Result;
+    }
     case UtilityOperation::Move:
     case UtilityOperation::Forward:
     case UtilityOperation::MoveIfNoexcept:

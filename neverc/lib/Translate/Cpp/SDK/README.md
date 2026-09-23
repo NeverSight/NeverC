@@ -23,6 +23,12 @@ compile time without a runtime libc++ link.
 The `<cstddef>` surface has a 29-file closure and provides its target aliases,
 including authenticated `std::size_t` function metadata, folded layout queries
 and directly lowered `std::byte` operations. The
+`<cstring>` surface has a 22-file libc++/resource closure on every core-v2
+target, using the existing libc++ header and NeverC C declaration shim. Core v2
+directly lowers the authenticated `std::strlen`, `std::strcmp`
+and `std::strncmp` scans, including unsigned-byte ordering, without a runtime
+libc string call. Other `<cstring>` functions and global C names remain outside
+this boundary. The SDK inventory and catalog identity are unchanged. The
 `<utility>` surface has an 87-file closure and directly lowers scalar
 `move`, `forward`, `move_if_noexcept`, `as_const`, `exchange` and `swap`, plus
 scalar or recursively composite `pair` construction, assignment, swaps,
