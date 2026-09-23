@@ -41052,6 +41052,51 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2AlgorithmGenerateNObjectRunsAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-generate-n-object.cpp");
+  const auto Output = tmpFile("algorithm-generate-n-object.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+int calls, factories, first_calls, count_calls;
+int *first(int *p) { ++first_calls; return p; }
+short count(short n) { ++count_calls; return n; }
+struct Generator {
+  int next;
+  int operator()() & { ++calls; return ++next; }
+  int operator()() const & { return -100; }
+};
+Generator make(int n) { ++factories; return Generator{n}; }
+enum Amount : unsigned char { two = 2 };
+int main() {
+  int values[4]{-1, -1, -1, -1};
+  Generator caller{3};
+  if (std::generate_n(first(values), count(3), caller) != values + 3 ||
+      calls != 3 || first_calls != 1 || count_calls != 1 ||
+      values[0] != 4 || values[1] != 5 || values[2] != 6 ||
+      values[3] != -1 || caller.next != 3) return 1;
+  if (std::generate_n(values, 0, make(9)) != values ||
+      calls != 3 || factories != 1) return 2;
+  if (std::generate_n(values, -2, make(9)) != values ||
+      calls != 3 || factories != 2) return 3;
+  if (std::generate_n(values, two, make(9)) != values + 2 ||
+      calls != 5 || factories != 3 || values[0] != 10 ||
+      values[1] != 11) return 4;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("algorithm-generate-n-object" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmUnaryPredicateObjectsRunAtBothOptimizations) {
   const auto Source = tmpFile("algorithm-callable-unary-state.cpp");
   const auto Output = tmpFile("algorithm-callable-unary-state.nc");

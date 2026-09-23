@@ -12960,6 +12960,73 @@ int main(){
         check("v2-algorithm-generate-object-reject-" + name, source, code,
               profile=profile, sdk=sdk)
 
+    algorithm_generate_n_object_source = """\
+#include <algorithm>
+int calls,factories,first_calls,count_calls;
+int*first(int*p){++first_calls;return p;}
+short count(short n){++count_calls;return n;}
+struct Generator{
+ int next;
+ int operator()()&{ // template-generator-method: stateful int
+  ++calls;return ++next;
+ }
+ int operator()()const&{return -100;}
+};
+Generator make(int n){++factories;return Generator{n};}
+enum Amount:unsigned char{two=2};
+int main(){
+ int values[4]={-1,-1,-1,-1};Generator caller{3};
+ if(std::generate_n(first(values),count(3),caller)!=values+3|| // template-generator-call: stateful int
+    calls!=3||first_calls!=1||count_calls!=1||values[0]!=4||values[1]!=5||values[2]!=6||values[3]!=-1||caller.next!=3)return 1;
+ if(std::generate_n(values,0,make(9))!=values||calls!=3||factories!=1)return 2; // template-generator-call: stateful int
+ if(std::generate_n(values,-2,make(9))!=values||calls!=3||factories!=2)return 3; // template-generator-call: stateful int
+ if(std::generate_n(values,two,make(9))!=values+2||calls!=5||factories!=3||values[0]!=10||values[1]!=11)return 4; // template-generator-call: stateful int
+ static_assert(__is_same(decltype(std::generate_n(values,2,caller)),int*));
+ return 0;
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-algorithm-generate-n-object-" + target,
+                     algorithm_generate_n_object_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        definitions = {f['name']: f for f in data['functions']}
+        assert len(definitions) == len(data['functions'])
+        main_nodes = list(walk(definitions['main']['body']))
+        method_line = next(i for i, line in enumerate(algorithm_generate_n_object_source.splitlines(), 1)
+                           if '// template-generator-method:' in line)
+        methods = [f for f in data['functions'] if f['loc']['line'] == method_line]
+        assert len(methods) == 1 and methods[0]['result'] == 'int', methods
+        assert len(methods[0]['params']) == 1 and methods[0]['params'][0]['type'].startswith('ptr:'), methods
+        calls = [node for node in main_nodes if node.get('op') == 'call'
+                 and node.get('callee') == methods[0]['name']]
+        expected_lines = [i for i, line in enumerate(algorithm_generate_n_object_source.splitlines(), 1)
+                          if '// template-generator-call:' in line]
+        assert len(calls) == 4 and [call['loc']['line'] for call in calls] == expected_lines, calls
+        assert all(call['target']['type'] == 'int' and len(call['args']) == 1 for call in calls), calls
+        for function in data['functions']:
+            assert function.get('loc', {}).get('file') == 'input.cpp', function
+        for node in walk(data['functions']):
+            assert node.get('op') not in ('mapped_call', 'indirect_call', 'member_pointer'), node
+            if node.get('op') == 'call':
+                assert node['callee'] in definitions, node
+            if node.get('op') == 'assign':
+                assert node['target']['type'] == node['value']['type'], node
+
+    algorithm_generate_n_object_rejections = [
+        ('generic-method', '#include <algorithm>\nstruct F{template<class T=int>int operator()(){return 1;}};int*f(int*p){return std::generate_n(p,2,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('nontrivial-copy', '#include <algorithm>\nstruct F{F(){}F(const F&){}int operator()(){return 1;}};int*f(int*p){return std::generate_n(p,2,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('nontrivial-destructor', '#include <algorithm>\nstruct F{~F(){}int operator()(){return 1;}};int*f(int*p){return std::generate_n(p,2,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('missing-definition', '#include <algorithm>\nstruct F{int operator()();};int*f(int*p){return std::generate_n(p,2,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('lambda', '#include <algorithm>\nint*f(int*p){return std::generate_n(p,2,[]{return 1;});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('specialization', '#include <algorithm>\nstruct F{int operator()(){return 1;}};namespace std{template<>int*generate_n<int*,int,F>(int*p,int,F){return p;}}int*f(int*p){return std::generate_n(p,2,F{});}\n', 'TR0201', 'cpp-core-v2', True),
+        ('query-no-body', '#include <algorithm>\nstruct F{int operator()();};void f(int*p){using T=decltype(std::generate_n(p,2,F{}));}\n', 'TR0203', 'cpp-core-v2', True),
+        ('record-result', '#include <algorithm>\nstruct R{int n;operator int()const{return n;}};struct F{R operator()(){return {1};}};int*f(int*p){return std::generate_n(p,2,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('count-source', '#include <algorithm>\nstruct F{int operator()(){return 1;}};int count(int=(sizeof(long double),0)){return 2;}int*f(int*p){return std::generate_n(p,count(),F{});}\n', 'TR0201', 'cpp-core-v2', True),
+    ]
+    for name, source, code, profile, sdk in algorithm_generate_n_object_rejections:
+        check("v2-algorithm-generate-n-object-reject-" + name, source, code,
+              profile=profile, sdk=sdk)
+
     algorithm_transform_object_source = """\
 #include <algorithm>
 int calls,trace,first_calls,last_calls,output_calls,factories,cleanup,constructed,bad;

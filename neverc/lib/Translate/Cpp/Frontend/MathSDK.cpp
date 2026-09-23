@@ -12386,27 +12386,46 @@ utilityAlgorithmGenerateObjectCall(const State &S, const SourceManager &SM,
                                    const CallExpr *Call,
                                    const ASTContext &Context) {
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
-  if (!S.coreV2() || !Call || !Function || Function->getName() != "generate" ||
+  const bool Counted = Function && Function->getName() == "generate_n";
+  if (!S.coreV2() || !Call || !Function ||
+      (Function->getName() != "generate" && !Counted) ||
       Call->getNumArgs() != 3 || Function->getNumParams() != 3 ||
       Call->isTypeDependent() || Call->isValueDependent() ||
       Call->isInstantiationDependent())
     return std::nullopt;
   const auto Pointer = Function->getParamDecl(0)->getType();
   const auto Object = Function->getParamDecl(2)->getType();
+  auto Count = Function->getParamDecl(1)->getType();
   const auto *Record = Object->getAsCXXRecordDecl();
   Record = Record ? Record->getDefinition() : nullptr;
   if (!utilityAlgorithmWritableScalarPointer(Context, Pointer) ||
-      !Context.hasSameType(Function->getParamDecl(1)->getType(), Pointer) ||
       !Context.hasSameType(Call->getArg(0)->getType(), Pointer) ||
-      !Context.hasSameType(Call->getArg(1)->getType(), Pointer) ||
+      !Context.hasSameType(Call->getArg(1)->getType(), Count) ||
       !Context.hasSameType(Call->getArg(2)->getType(), Object) ||
-      !Function->getReturnType()->isVoidType() ||
+      (Counted ? (!Call->isPRValue() ||
+                  !Context.hasSameType(Function->getReturnType(), Pointer))
+               : (!Function->getReturnType()->isVoidType() ||
+                  !Context.hasSameType(Count, Pointer))) ||
       !Context.hasSameType(Call->getType(), Function->getReturnType()) ||
       !Record || Object.hasLocalQualifiers() || Record->isLambda() ||
       Record->isUnion() || !Record->isStandardLayout() ||
       !Record->isTriviallyCopyable() || !Record->hasTrivialCopyConstructor() ||
       !Record->hasTrivialDestructor() || !S.owns(SM, Record->getLocation()))
     return std::nullopt;
+  if (Counted) {
+    if (const auto *Enumeration = Count->getAs<EnumType>()) {
+      if (Enumeration->getDecl()->isScoped())
+        return std::nullopt;
+      Count = Enumeration->getDecl()->getPromotionType();
+    } else if (Context.isPromotableIntegerType(Count)) {
+      Count = Context.getPromotedIntegerType(Count);
+    } else if (!Count->isIntegerType()) {
+      return std::nullopt;
+    }
+    if (Count.isNull() || !Count->isIntegerType() ||
+        Context.getTypeSize(Count) > 64)
+      return std::nullopt;
+  }
   const auto *Primary = Function->getPrimaryTemplate();
   const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
   const auto *Definition = Function->getDefinition();
@@ -12415,13 +12434,15 @@ utilityAlgorithmGenerateObjectCall(const State &S, const SourceManager &SM,
   auto Origin = [&](const Decl *D) {
     return approvedStandardSDKDeclaration(S, SM, D) &&
            cstddefOrigin(S, SM, D->getLocation(), "libcxx",
-                         "__algorithm/generate.h");
+                         Counted ? "__algorithm/generate_n.h"
+                                 : "__algorithm/generate.h");
   };
   if (!Primary || !Pattern || !Definition || !PatternDefinition ||
       Function->isVariadic() || !Function->isInlined() ||
       Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
       !approvedUtilityReference(S, SM, Call, Function) || !Origin(Definition) ||
-      !Origin(PatternDefinition) || !Arguments || Arguments->size() != 2)
+      !Origin(PatternDefinition) || !Arguments ||
+      Arguments->size() != (Counted ? 3u : 2u))
     return std::nullopt;
   for (const auto *D : Function->redecls())
     if (!Origin(D))
@@ -12432,31 +12453,66 @@ utilityAlgorithmGenerateObjectCall(const State &S, const SourceManager &SM,
   for (const auto *D : Pattern->redecls())
     if (!Origin(D))
       return std::nullopt;
-  for (const auto [Index, Expected] :
-       {std::pair{0u, Pointer}, std::pair{1u, Object}})
+  for (unsigned Index = 0; Index != Arguments->size(); ++Index) {
+    const auto Expected = Index == 0 ? Pointer
+                          : Index == (Counted ? 2u : 1u)
+                              ? Object
+                              : Function->getParamDecl(1)->getType();
     if (Arguments->get(Index).getKind() != TemplateArgument::Type ||
         !Context.hasSameType(Arguments->get(Index).getAsType(), Expected))
       return std::nullopt;
+  }
 
   auto Reference = [&](const Expr *Expression, const ValueDecl *Value) {
     return utilityAlgorithmReference(Expression, Value, Context);
   };
   const auto *Body = dyn_cast_or_null<CompoundStmt>(Definition->getBody());
-  if (!Body || Body->size() != 1)
+  if (!Body || Body->size() != (Counted ? 4u : 1u))
     return std::nullopt;
-  const auto *Loop = dyn_cast<ForStmt>(*Body->body_begin());
+  auto Part = Body->body_begin();
+  const TypedefDecl *Alias = nullptr;
+  const VarDecl *Remaining = nullptr;
+  if (Counted) {
+    const auto *AliasStatement = dyn_cast<DeclStmt>(*Part++);
+    Alias = AliasStatement && AliasStatement->isSingleDecl()
+                ? dyn_cast<TypedefDecl>(AliasStatement->getSingleDecl())
+                : nullptr;
+    const auto *CountStatement = dyn_cast<DeclStmt>(*Part++);
+    Remaining = CountStatement && CountStatement->isSingleDecl()
+                    ? dyn_cast<VarDecl>(CountStatement->getSingleDecl())
+                    : nullptr;
+    const Expr *CountSource = Remaining ? Remaining->getInit() : nullptr;
+    while (const auto *Cast = dyn_cast_or_null<ImplicitCastExpr>(CountSource)) {
+      if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
+                                         Cast->getType()))
+        return std::nullopt;
+      CountSource = Cast->getSubExpr();
+    }
+    if (!Alias || Alias->isImplicit() ||
+        Alias->getDeclContext() != Definition ||
+        Alias->getName() != "_IntegralSize" ||
+        !Context.hasSameType(Alias->getUnderlyingType(), Count) || !Remaining ||
+        Remaining->isImplicit() || Remaining->getDeclContext() != Definition ||
+        !Context.hasSameType(Remaining->getType(), Count) ||
+        !Reference(CountSource, Definition->getParamDecl(1)))
+      return std::nullopt;
+  }
+  const auto *Loop = dyn_cast<ForStmt>(*Part++);
+  const auto *Return = Counted ? dyn_cast<ReturnStmt>(*Part) : nullptr;
   const auto *Condition =
       Loop ? dyn_cast_or_null<BinaryOperator>(Loop->getCond()) : nullptr;
+  const auto *Steps = Counted && Loop
+                          ? dyn_cast_or_null<BinaryOperator>(Loop->getInc())
+                          : nullptr;
   const auto *Advance =
-      Loop ? dyn_cast_or_null<UnaryOperator>(Loop->getInc()) : nullptr;
+      Loop ? dyn_cast_or_null<UnaryOperator>(
+                 Counted ? Steps ? Steps->getLHS() : nullptr : Loop->getInc())
+           : nullptr;
   const auto *Assignment =
       Loop ? dyn_cast_or_null<BinaryOperator>(Loop->getBody()) : nullptr;
   const auto *Destination =
       Assignment ? dyn_cast<UnaryOperator>(Assignment->getLHS()) : nullptr;
   if (!Loop || Loop->getInit() || Loop->getConditionVariable() || !Condition ||
-      Condition->getOpcode() != BO_NE ||
-      !Reference(Condition->getLHS(), Definition->getParamDecl(0)) ||
-      !Reference(Condition->getRHS(), Definition->getParamDecl(1)) ||
       !Advance || Advance->getOpcode() != UO_PreInc ||
       !Reference(Advance->getSubExpr(), Definition->getParamDecl(0)) ||
       !Assignment || Assignment->getOpcode() != BO_Assign || !Destination ||
@@ -12464,6 +12520,27 @@ utilityAlgorithmGenerateObjectCall(const State &S, const SourceManager &SM,
       !Context.hasSameType(Destination->getType(), Pointer->getPointeeType()) ||
       !Reference(Destination->getSubExpr(), Definition->getParamDecl(0)))
     return std::nullopt;
+  if (Counted) {
+    const auto *Zero =
+        dyn_cast<IntegerLiteral>(Condition->getRHS()->IgnoreParenImpCasts());
+    const auto *Reduction =
+        Steps ? dyn_cast<CStyleCastExpr>(Steps->getRHS()) : nullptr;
+    const auto *Decrement =
+        Reduction ? dyn_cast<UnaryOperator>(Reduction->getSubExpr()) : nullptr;
+    if (Condition->getOpcode() != BO_GT ||
+        !Reference(Condition->getLHS(), Remaining) || !Zero ||
+        !Zero->getValue().isZero() || !Steps ||
+        Steps->getOpcode() != BO_Comma || !Reduction ||
+        Reduction->getCastKind() != CK_ToVoid || !Decrement ||
+        Decrement->getOpcode() != UO_PreDec ||
+        !Reference(Decrement->getSubExpr(), Remaining) || !Return ||
+        !Reference(Return->getRetValue(), Definition->getParamDecl(0)))
+      return std::nullopt;
+  } else if (Condition->getOpcode() != BO_NE ||
+             !Reference(Condition->getLHS(), Definition->getParamDecl(0)) ||
+             !Reference(Condition->getRHS(), Definition->getParamDecl(1))) {
+    return std::nullopt;
+  }
   const Expr *Result = Assignment->getRHS();
   while (const auto *Cast = dyn_cast<ImplicitCastExpr>(Result)) {
     if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
@@ -12496,13 +12573,15 @@ utilityAlgorithmGenerateObjectCall(const State &S, const SourceManager &SM,
   for (const auto *D : Method->redecls())
     if (!S.owns(SM, D->getLocation()))
       return std::nullopt;
-  return UtilityAlgorithmPredicateCall{UtilityOperation::AlgorithmGenerate,
-                                       Function,
-                                       Invocation,
-                                       Method,
-                                       Object,
-                                       2,
-                                       std::nullopt};
+  return UtilityAlgorithmPredicateCall{
+      Counted ? UtilityOperation::AlgorithmGenerateN
+              : UtilityOperation::AlgorithmGenerate,
+      Function,
+      Invocation,
+      Method,
+      Object,
+      2,
+      std::nullopt};
 }
 
 std::optional<UtilityAlgorithmPredicateCall>
@@ -12514,7 +12593,8 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
     return utilityAlgorithmTransformObjectCall(S, SM, Call, Context);
   if (Function && Function->getName() == "for_each_n")
     return utilityAlgorithmForEachNObjectCall(S, SM, Call, Context);
-  if (Function && Function->getName() == "generate")
+  if (Function && (Function->getName() == "generate" ||
+                   Function->getName() == "generate_n"))
     return utilityAlgorithmGenerateObjectCall(S, SM, Call, Context);
   if (!S.coreV2() || !Call || !Function || !Function->getIdentifier() ||
       Call->isTypeDependent() || Call->isValueDependent() ||
