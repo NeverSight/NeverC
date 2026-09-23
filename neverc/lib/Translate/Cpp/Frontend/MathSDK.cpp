@@ -17045,7 +17045,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType())) {
     if (!((Call->getNumArgs() == 2 && AlgorithmOrderedPointerParameter(0)) ||
           (Call->getNumArgs() == 3 &&
-           AlgorithmBinaryPredicateParameter(2, 0, 0))))
+           AlgorithmBinaryComparisonParameter(2, 0, 0))))
       return std::nullopt;
     if (Name == "is_sorted" && Function->getReturnType()->isBooleanType())
       return UtilityOperation::AlgorithmIsSorted;
@@ -17571,7 +17571,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Function->getReturnType()->isBooleanType() &&
       Same(Call->getType(), Function->getReturnType()) &&
       ((Call->getNumArgs() == 2 && AlgorithmOrderedPointerParameter(0)) ||
-       (Call->getNumArgs() == 3 && AlgorithmBinaryPredicateParameter(2, 0, 0))))
+       (Call->getNumArgs() == 3 &&
+        AlgorithmBinaryComparisonParameter(2, 0, 0))))
     return Name == "next_permutation"
                ? UtilityOperation::AlgorithmNextPermutation
                : UtilityOperation::AlgorithmPrevPermutation;

@@ -1693,6 +1693,12 @@ logarithmic bisection. Reference parameters, non-boolean results, variadic
 functions, callable objects, heterogeneous values and record elements stay
 outside this boundary.
 
+The comparator overloads of `std::is_sorted` and `std::is_sorted_until` also
+accept authenticated typed or transparent empty standard `<functional>`
+comparison objects on arithmetic scalar ranges. The selected instantiated
+`operator()` is proved and lowered directly; the object argument is evaluated
+once, including for an empty range.
+
 The exact two-argument `std::min` and `std::max`, three-argument `std::clamp`,
 two-argument `std::minmax` and two-iterator `std::minmax_element` templates use
 the same built-in arithmetic, enum or complete object-pointer ordering boundary.
@@ -1825,7 +1831,10 @@ function-pointer boundary, including enum and object-pointer elements. The
 callback defines the lexicographical order, is retained once, and is not called
 for empty or single-element ranges. Repeated values, suffix reversal and
 endpoint wraparound retain the same behavior under that order. Unsupported
-callbacks, callable objects and record elements remain rejected.
+callbacks, other callable objects and record elements remain rejected. These
+two overloads also accept authenticated typed or transparent empty standard
+comparison objects on arithmetic scalars, preserving the selected ordering,
+wraparound and one-time object evaluation without a libc++ runtime call.
 
 The exact default-equality three- and four-iterator `std::is_permutation`
 templates use the equality element boundary, so const ranges, enums and

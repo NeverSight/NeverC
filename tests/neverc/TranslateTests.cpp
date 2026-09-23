@@ -42197,6 +42197,72 @@ int main() {
 }
 
 TEST_F(TranslateTest,
+       CoreV2AlgorithmFunctionalSortedPermutationRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-functional-sorted-permutation.cpp");
+  const auto Output = tmpFile("algorithm-functional-sorted-permutation.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main() {
+  int descending[5]{5, 4, 4, 2, 1};
+  int effects = 0;
+  if (!std::is_sorted((++effects, descending),
+                       (++effects, descending + 5),
+                       (++effects, std::greater<>{})) || effects != 3)
+    return 1;
+  std::greater<int> greater;
+  if (std::is_sorted_until(descending, descending + 5, greater) !=
+      descending + 5)
+    return 2;
+  int unsorted[5]{5, 3, 4, 2, 1};
+  if (std::is_sorted(unsorted, unsorted + 5, greater) ||
+      std::is_sorted_until(unsorted, unsorted + 5, greater) != unsorted + 2)
+    return 3;
+
+  int values[3]{3, 2, 1};
+  effects = 0;
+  if (!std::next_permutation((++effects, values),
+                              (++effects, values + 3),
+                              (++effects, std::greater<>{})) ||
+      effects != 3 || values[0] != 3 || values[1] != 1 || values[2] != 2)
+    return 4;
+  if (!std::prev_permutation(values, values + 3, greater) ||
+      values[0] != 3 || values[1] != 2 || values[2] != 1)
+    return 5;
+  if (std::prev_permutation(values, values + 3, greater) ||
+      values[0] != 1 || values[1] != 2 || values[2] != 3)
+    return 6;
+  std::less<int> less;
+  if (!std::next_permutation(values, values + 3, less) ||
+      values[0] != 1 || values[1] != 3 || values[2] != 2)
+    return 7;
+  if (!std::prev_permutation(values, values + 3, less) ||
+      values[0] != 1 || values[1] != 2 || values[2] != 3)
+    return 8;
+  int one[1]{7};
+  effects = 0;
+  if (std::next_permutation((++effects, one), (++effects, one + 1),
+                             (++effects, std::less<>{})) ||
+      effects != 3 || one[0] != 7)
+    return 9;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("algorithm-functional-sorted-permutation" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
        CoreV2AlgorithmComparatorPermutationRequiresValueCallbacks) {
   struct Rejection {
     const char *Name;

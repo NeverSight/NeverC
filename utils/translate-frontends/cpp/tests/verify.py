@@ -12023,6 +12023,36 @@ extern "C" void algorithm_functional_inplace_merge(
             algorithm_functional_stable_merge_source,
             profile="cpp-core-v2", target=target, sdk=True))
 
+    algorithm_functional_sorted_permutation_source = """\
+#include <algorithm>
+#include <functional>
+extern "C" int algorithm_functional_sorted_permutation(int *first,
+                                                       int *last) {
+  std::greater<int> greater;
+  bool sorted = std::is_sorted(first, last, greater);
+  int *until = std::is_sorted_until(first, last, std::greater<>{});
+  bool next = std::next_permutation(first, last, greater);
+  bool previous = std::prev_permutation(first, last, std::greater<>{});
+  return sorted + next + previous + static_cast<int>(until - first);
+}
+"""
+
+    def assert_functional_sorted_permutation(data):
+        assert len(data["sdk_dependencies"]) == 435, data
+        assert not [node for node in walk(data["functions"])
+                    if node.get("op") in ("call", "mapped_call",
+                                          "indirect_call")], data
+
+    assert_functional_sorted_permutation(check(
+        "v2-algorithm-functional-sorted-permutation",
+        algorithm_functional_sorted_permutation_source,
+        profile="cpp-core-v2", sdk=True))
+    for target in sdk_targets:
+        assert_functional_sorted_permutation(check(
+            "v2-algorithm-functional-sorted-permutation-" + target,
+            algorithm_functional_sorted_permutation_source,
+            profile="cpp-core-v2", target=target, sdk=True))
+
     algorithm_permutation_source = """\
 #include <algorithm>
 extern "C" int algorithm_permutation(int *first, int *last,
