@@ -652,9 +652,9 @@ signaling-NaN builtin argument is not silently mapped to a dynamic runtime call.
 Dynamic binary64 parameters can still carry NaNs and infinities.
 
 The immutable translation headers are embedded in NeverC as distribution
-`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r13`. The
+`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r14`. The
 [SDK catalog](../../../neverc/lib/Translate/Cpp/SDK/catalog.json) records all
-620 approved header files and separate SDK metadata. The original header bytes
+624 approved header files and separate SDK metadata. The original header bytes
 are preserved, including observable macros such as `M_PI` and `_LIBCPP_VERSION`.
 The [SDK notices](../../../neverc/lib/Translate/Cpp/SDK/README.md) document
 origins, redistribution terms and the minimal owned SDK configuration.

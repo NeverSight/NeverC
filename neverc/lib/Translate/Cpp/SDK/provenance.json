@@ -2,7 +2,7 @@
   "schema": "neverc.cpp.sdk.provenance",
   "version": 1,
   "source_distribution_id": "clang20.1.8-libcxx200100-macos15.5",
-  "scope": "620 approved header files; upstream references document source and license provenance, not a claim that every SDK export is byte-identical to that upstream revision.",
+  "scope": "624 approved header files; upstream references document source and license provenance, not a claim that every SDK export is byte-identical to that upstream revision.",
   "headers": [
     {
       "root": "libcxx",
@@ -2526,6 +2526,18 @@
     },
     {
       "root": "libcxx",
+      "path": "__ios/fpos.h",
+      "sha256": "9a7ba3bf481eab778e0f00ee22ce016b465df91864f755162b7a20d8320ee6c3",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__ios/fpos.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__ios/fpos.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
       "path": "__iterator/access.h",
       "sha256": "bbce9419527d68ad3188a30bf82afc4c45467fb320fde7cfe21b229f0e893849",
       "license": "Apache-2.0 WITH LLVM-exception",
@@ -4010,6 +4022,18 @@
       "upstream_revision": "llvmorg-20.1.8",
       "upstream_path": "libcxx/include/__string/constexpr_c_functions.h",
       "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__string/constexpr_c_functions.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "__string/extern_template_lists.h",
+      "sha256": "cd91c3369519d6baf3b5c0c80a9b7a8d5c2fb5fa8ab30a731d157909c9f53efc",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__string/extern_template_lists.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__string/extern_template_lists.h",
       "upstream_relationship": "source-reference"
     },
     {
@@ -5730,6 +5754,18 @@
     },
     {
       "root": "libcxx",
+      "path": "__utility/scope_guard.h",
+      "sha256": "c4889999df8b6cd3e0d723c39899f477482f1fef00cd46648e46c8184bc5e3fb",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__utility/scope_guard.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__utility/scope_guard.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
       "path": "__utility/swap.h",
       "sha256": "fc368db7b9dfdd96b558997ec6ac6aebb487d625108f5e1591a92a1d0ad1e051",
       "license": "Apache-2.0 WITH LLVM-exception",
@@ -6158,6 +6194,18 @@
       "upstream_revision": "llvmorg-20.1.8",
       "upstream_path": "libcxx/include/stdlib.h",
       "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/stdlib.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "string",
+      "sha256": "247d9fc3b642fab6d26a23415cb7f1ed423fe75d4045bf389777f2240c19d889",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/string",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/string",
       "upstream_relationship": "source-reference"
     },
     {
@@ -7432,7 +7480,7 @@
     {
       "root": "resource",
       "path": "include/stdio.h",
-      "sha256": "ec13a7562c88362b8079ca0d721ebf92735fd88b9c3b94788e8ead255539be5b",
+      "sha256": "61671cdf4407de89e23a90a8b80cc7acddcdd1bd28d5be6a4242063a6fc9d6da",
       "license": "AGPL-3.0-only",
       "license_basis": "project-license",
       "upstream_repository": "https://github.com/NeverSight/NeverC",
@@ -7461,7 +7509,7 @@
       "sha256": "58a133735f0a55a624a1703067059f6e78925e51725ec6e1f966072e142c9c42"
     }
   ],
-  "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r13",
+  "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r14",
   "metadata": [
     {
       "root": "platform",

@@ -13,4 +13,13 @@
 
 #define EOF (-1)
 
+/* Required to keep libc++'s C remove overload distinct from std::remove. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+int remove(const char *);
+#ifdef __cplusplus
+}
+#endif
+
 #endif /* NEVERC_CPP_SDK_STDIO_H */

@@ -2,9 +2,9 @@
 
 This directory supplies the immutable header inputs for NeverC's built-in C++
 frontend. The distribution is
-`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r13`. It contains the 620 header
+`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r14`. It contains the 624 header
 files admitted by the current
-`clang20.1.8-libcxx200100-macos15.5` catalog: 522 libc++ headers, 14 Clang
+`clang20.1.8-libcxx200100-macos15.5` catalog: 526 libc++ headers, 14 Clang
 resource headers, three NeverC resource headers, and 81 Darwin platform headers.
 The upstream-source bytes, including copyright and license notices, are
 preserved; the NeverC-authored C declaration shims are identified
@@ -13,12 +13,20 @@ profiles, not a complete Apple SDK.
 
 The `<string_view>` parsing closure adds the pinned libc++ public header,
 `char_traits`, forwarding declarations and C stdio wrappers. NeverC's resource
-headers provide only the target C runtime `mbstate_t` layout and the `EOF`
+headers provide the target C runtime `mbstate_t` layout and the `EOF`
 constant needed by those declarations. The layouts are 128 bytes with 8-byte
 alignment on Darwin and 8 bytes with 4-byte alignment on the supported glibc
-and UCRT targets. The `stdio.h` resource shim does not declare C stdio calls.
+and UCRT targets. The `stdio.h` resource shim also declares the C-linkage
+`remove(const char*)` function so the public `<string>` header can import it
+alongside the algorithm overload. Core v2 does not admit a runtime C stdio call.
 The exact source is checked for every core-v2 target; runtime string-view
 operations require separate direct lowering.
+
+The `<string>` parsing closure adds the pinned public libc++ header,
+`__ios/fpos.h`, `__string/extern_template_lists.h`, and
+`__utility/scope_guard.h`. Its 286-file libc++/resource closure provides
+compile-time `std::string` layout, `size_type`, and `npos` metadata. String
+objects and operations still require direct lowering.
 
 The `<vector>` parsing closure adds the pinned public libc++ header and its
 `__bit_reference`, `__vector/pmr.h`, and `__vector/vector_bool.h` dependencies.

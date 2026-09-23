@@ -1,7 +1,7 @@
 {
   "schema": "neverc.cpp.sdk.catalog",
   "version": 1,
-  "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r13",
+  "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r14",
   "clang_version": "20.1.8",
   "libcxx_version": 200100,
   "platform_sdk_version": "15.5",
@@ -1062,6 +1062,11 @@
     },
     {
       "root": "libcxx",
+      "path": "__ios/fpos.h",
+      "sha256": "9a7ba3bf481eab778e0f00ee22ce016b465df91864f755162b7a20d8320ee6c3"
+    },
+    {
+      "root": "libcxx",
       "path": "__iterator/access.h",
       "sha256": "bbce9419527d68ad3188a30bf82afc4c45467fb320fde7cfe21b229f0e893849"
     },
@@ -1679,6 +1684,11 @@
       "root": "libcxx",
       "path": "__string/constexpr_c_functions.h",
       "sha256": "4f4679260252472f82c31da39fe7ca5ee5a4dbb904e152fd143f319130570361"
+    },
+    {
+      "root": "libcxx",
+      "path": "__string/extern_template_lists.h",
+      "sha256": "cd91c3369519d6baf3b5c0c80a9b7a8d5c2fb5fa8ab30a731d157909c9f53efc"
     },
     {
       "root": "libcxx",
@@ -2397,6 +2407,11 @@
     },
     {
       "root": "libcxx",
+      "path": "__utility/scope_guard.h",
+      "sha256": "c4889999df8b6cd3e0d723c39899f477482f1fef00cd46648e46c8184bc5e3fb"
+    },
+    {
+      "root": "libcxx",
       "path": "__utility/swap.h",
       "sha256": "fc368db7b9dfdd96b558997ec6ac6aebb487d625108f5e1591a92a1d0ad1e051"
     },
@@ -2574,6 +2589,11 @@
       "root": "libcxx",
       "path": "stdlib.h",
       "sha256": "faca704a728e950b2ae47e42a707558b95fcef0e7df4d2237a6bf8104c85d51e"
+    },
+    {
+      "root": "libcxx",
+      "path": "string",
+      "sha256": "247d9fc3b642fab6d26a23415cb7f1ed423fe75d4045bf389777f2240c19d889"
     },
     {
       "root": "libcxx",
@@ -3103,7 +3123,7 @@
     {
       "root": "resource",
       "path": "include/stdio.h",
-      "sha256": "ec13a7562c88362b8079ca0d721ebf92735fd88b9c3b94788e8ead255539be5b"
+      "sha256": "61671cdf4407de89e23a90a8b80cc7acddcdd1bd28d5be6a4242063a6fc9d6da"
     },
     {
       "root": "resource",

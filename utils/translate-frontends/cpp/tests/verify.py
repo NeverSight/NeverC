@@ -29,8 +29,8 @@ def main():
     repository = Path(__file__).resolve().parents[4]
     count = 0
     sdk_identity = {
-        "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r13",
-        "catalog_sha256": "29f5f4f6f83e67782673d64ca82db95448452b1d9d9ce6e6221a1ed3f0739622",
+        "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r14",
+        "catalog_sha256": "b81c0e242f5efd7c47ef491a284bd7e9dc82fc0f36fb77a8e1811dec61578ceb",
     }
 
     def check(name, source, code=None, options=(), root=None, profile="cpp-core-v1",
@@ -29007,6 +29007,41 @@ std::vector<int>::size_type passthrough(std::vector<int>::size_type n) {
           '#include <vector>\nint f(){std::vector<int> v;return v.size();}',
           "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-vector-quoted", '#include "vector"\nint f(){return 0;}',
+          "TR0201", profile="cpp-core-v2", sdk=True)
+
+    string_metadata_source = """\
+#include <string>
+static_assert(sizeof(std::string) >= 3 * sizeof(void*));
+static_assert(alignof(std::string) >= alignof(void*));
+static_assert(std::string::npos == static_cast<std::size_t>(-1));
+std::string::size_type passthrough(std::string::size_type n) {
+  return n;
+}
+"""
+    string_dependencies = None
+    for target in sdk_targets:
+        string_ir = check("v2-string-metadata-" + target,
+                          string_metadata_source, profile="cpp-core-v2",
+                          target=target, sdk=True)
+        dependencies = {(entry["root"], entry["path"])
+                        for entry in string_ir["sdk_dependencies"]}
+        assert len(dependencies) == 286, target
+        assert {("libcxx", "string"), ("libcxx", "__ios/fpos.h"),
+                ("libcxx", "__string/extern_template_lists.h"),
+                ("libcxx", "__utility/scope_guard.h"),
+                ("resource", "include/stdio.h")} <= dependencies, target
+        if string_dependencies is None:
+            string_dependencies = dependencies
+        else:
+            assert dependencies == string_dependencies, target
+        assert len(string_ir["functions"]) == 1, target
+    check("v2-string-runtime-object",
+          '#include <string>\nint f(){std::string s;return s.size();}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-string-c-remove",
+          '#include <string>\nint f(){return ::remove("x");}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-string-quoted", '#include "string"\nint f(){return 0;}',
           "TR0201", profile="cpp-core-v2", sdk=True)
 
     string_view_metadata_source = """\

@@ -2176,7 +2176,8 @@ The parsed object has the libc++ two-field pointer-and-size layout.
 NeverC's SDK supplies the target C runtime `mbstate_t` declaration required by
 the pinned `char_traits` header: 128-byte, 8-aligned on Darwin, and 8-byte,
 4-aligned on the supported glibc and UCRT targets. A minimal C `stdio.h` shim
-provides `EOF` for parsing. Neither shim admits a top-level C header or
+provides `EOF` and a C-linkage `remove(const char*)` declaration for the
+`<string>` header's overload set. Neither shim admits a top-level C header or
 runtime C I/O call.
 
 The exact `std::basic_string_view<char, std::char_traits<char>>` specialization
@@ -2204,6 +2205,18 @@ follow libc++'s view-search results. The caller remains responsible for the
 ordinary view lifetime, readable-range and valid-index preconditions.
 Custom traits, other character types, throwing `at()`, and other string-view
 operations still require separate direct lowerings.
+
+## String header and metadata from `<string>`
+
+Core v2 admits an exact angle include of the pinned C++17 `<string>` header.
+With reduced transitive includes, its 286-file libc++/resource closure is
+platform-free. The public header and `__ios/fpos.h`,
+`__string/extern_template_lists.h`, and `__utility/scope_guard.h` retain their
+LLVM 20.1.8 source bytes and catalog hashes. Clang can fold constant
+`std::string` size and alignment queries and `npos`, and resolve its
+`size_type` alias. This is compile-time metadata only: constructing a string
+object, calling its members, or destroying it still requires an authenticated
+direct lowering. Quoted and shadow headers remain rejected.
 
 ## Vector header and metadata from `<vector>`
 
