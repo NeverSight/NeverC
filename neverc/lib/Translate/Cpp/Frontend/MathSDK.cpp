@@ -16131,6 +16131,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       const bool LogicalTransform =
           Offset && !Unary &&
           (OperatorName == "logical_and" || OperatorName == "logical_or");
+      const bool ComparisonTransform =
+          Offset && !Unary &&
+          (OperatorName == "equal_to" || OperatorName == "not_equal_to" ||
+           OperatorName == "less" || OperatorName == "less_equal" ||
+           OperatorName == "greater" || OperatorName == "greater_equal");
       const bool IntegerOperator =
           OperatorName == "modulus" || OperatorName == "bit_and" ||
           OperatorName == "bit_or" || OperatorName == "bit_xor" ||
@@ -16161,7 +16166,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                      OperatorName != "divides" && OperatorName != "modulus" &&
                      OperatorName != "bit_and" && OperatorName != "bit_or" &&
                      OperatorName != "bit_xor" && !LogicalReduction &&
-                     !LogicalTransform) ||
+                     !LogicalTransform && !ComparisonTransform) ||
           (IntegerOperator &&
            (!NumericArithmetic(Function->getParamDecl(Unary ? 2 : 3)->getType(),
                                true) ||
@@ -16180,7 +16185,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           (!ValueType->isVoidType() &&
            (!(NumericArithmetic(ValueType, true) ||
               ((UnaryTransform && OperatorName == "logical_not" ||
-                LogicalReduction || LogicalTransform) &&
+                LogicalReduction || LogicalTransform || ComparisonTransform) &&
                ValueType->isBooleanType())) ||
             !utilityScalarDirectConversion(
                 Context, Function->getParamDecl(Unary ? 2 : 3)->getType(),

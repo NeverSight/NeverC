@@ -37664,6 +37664,33 @@ int main() {
                             std::logical_or<>{},
                             std::logical_or<>{}) != 7)
     return 21;
+  int compared[3]{0, 2, 2}, bounds[3]{1, 2, 3};
+  if (std::inner_product(compared, compared + 3, bounds, 0,
+                         std::plus<>{}, std::equal_to<>{}) != 1 ||
+      std::transform_reduce(compared, compared + 3, bounds, 0,
+                            std::plus<>{}, std::not_equal_to<>{}) != 2)
+    return 22;
+  if (std::inner_product(compared, compared + 3, bounds, 0,
+                         std::plus<>{}, std::less<>{}) != 2 ||
+      std::transform_reduce(compared, compared + 3, bounds, 0,
+                            std::plus<>{}, std::less_equal<>{}) != 3)
+    return 23;
+  if (std::inner_product(compared, compared + 3, bounds, 0,
+                         std::plus<>{}, std::greater<>{}) != 0 ||
+      std::transform_reduce(compared, compared + 3, bounds, 0,
+                            std::plus<>{}, std::greater_equal<>{}) != 1)
+    return 24;
+  if (std::inner_product(logicalValues, logicalValues + 2, logicalWeights, 0,
+                         std::plus<>{},
+                         std::less<unsigned char>{}) != 2 ||
+      std::transform_reduce(logicalValues, logicalValues + 2, logicalWeights,
+                            0, std::plus<>{}, std::less<bool>{}) != 1)
+    return 25;
+  float fractions[2]{1.5f, 2.5f};
+  double limits[2]{2.0, 2.0};
+  if (std::inner_product(fractions, fractions + 2, limits, 0,
+                         std::plus<>{}, std::less<float>{}) != 1)
+    return 26;
   return 0;
 }
 )cpp");

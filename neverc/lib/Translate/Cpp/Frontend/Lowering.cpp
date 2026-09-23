@@ -3090,6 +3090,13 @@ class FunctionLowering {
       const bool LogicalBinaryTransform =
           BinaryTransformName == "logical_and" ||
           BinaryTransformName == "logical_or";
+      const bool ComparisonBinaryTransform =
+          BinaryTransformName == "equal_to" ||
+          BinaryTransformName == "not_equal_to" ||
+          BinaryTransformName == "less" ||
+          BinaryTransformName == "less_equal" ||
+          BinaryTransformName == "greater" ||
+          BinaryTransformName == "greater_equal";
       const auto UnaryTransformName =
           DefaultUnaryFunctionalPair
               ? Call->getArg(4)->getType()->getAsCXXRecordDecl()->getName()
@@ -3098,16 +3105,22 @@ class FunctionLowering {
       auto ArithmeticFunctionalOperator = [&](unsigned Index) {
         const auto *Record =
             Call->getArg(Index)->getType()->getAsCXXRecordDecl();
-        return Record->getName() == "minus"         ? llvm::StringRef("-")
-               : Record->getName() == "multiplies"  ? llvm::StringRef("*")
-               : Record->getName() == "divides"     ? llvm::StringRef("/")
-               : Record->getName() == "modulus"     ? llvm::StringRef("%")
-               : Record->getName() == "bit_and"     ? llvm::StringRef("&")
-               : Record->getName() == "bit_or"      ? llvm::StringRef("|")
-               : Record->getName() == "bit_xor"     ? llvm::StringRef("^")
-               : Record->getName() == "logical_and" ? llvm::StringRef("&")
-               : Record->getName() == "logical_or"  ? llvm::StringRef("|")
-                                                    : llvm::StringRef("+");
+        return Record->getName() == "minus"           ? llvm::StringRef("-")
+               : Record->getName() == "multiplies"    ? llvm::StringRef("*")
+               : Record->getName() == "divides"       ? llvm::StringRef("/")
+               : Record->getName() == "modulus"       ? llvm::StringRef("%")
+               : Record->getName() == "bit_and"       ? llvm::StringRef("&")
+               : Record->getName() == "bit_or"        ? llvm::StringRef("|")
+               : Record->getName() == "bit_xor"       ? llvm::StringRef("^")
+               : Record->getName() == "logical_and"   ? llvm::StringRef("&")
+               : Record->getName() == "logical_or"    ? llvm::StringRef("|")
+               : Record->getName() == "equal_to"      ? llvm::StringRef("==")
+               : Record->getName() == "not_equal_to"  ? llvm::StringRef("!=")
+               : Record->getName() == "less"          ? llvm::StringRef("<")
+               : Record->getName() == "less_equal"    ? llvm::StringRef("<=")
+               : Record->getName() == "greater"       ? llvm::StringRef(">")
+               : Record->getName() == "greater_equal" ? llvm::StringRef(">=")
+                                                      : llvm::StringRef("+");
       };
       const bool Inner = Operation == UtilityOperation::NumericInnerProduct ||
                          (TransformReduce && !UnaryTransformReduce);
@@ -3172,7 +3185,9 @@ class FunctionLowering {
       }
       if (!TypedTransformType.isNull())
         DefaultTermQualType = TypedTransformType;
-      if (LogicalNotTransform || LogicalBinaryTransform)
+      const auto TransformInputQualType = DefaultTermQualType;
+      if (LogicalNotTransform || LogicalBinaryTransform ||
+          ComparisonBinaryTransform)
         DefaultTermQualType = A.Context.BoolTy;
       auto DefaultSumQualType =
           LogicalReduction
@@ -3190,6 +3205,9 @@ class FunctionLowering {
       const auto DefaultTermType = type(DefaultTermQualType, L);
       const auto PromotedTermQualType =
           LogicalBinaryTransform ? A.Context.IntTy
+          : ComparisonBinaryTransform
+              ? *utilityScalarComparisonType(A.Context, TransformInputQualType,
+                                             TransformInputQualType, false)
           : TypedTransformType.isNull()
               ? DefaultTermQualType
               : *utilityScalarComparisonType(A.Context, TypedTransformType,
@@ -3246,10 +3264,10 @@ class FunctionLowering {
                                             : llvm::StringRef("*"),
                       TransformOperand(std::move(Term)),
                       TransformOperand(dereference(*Second, L)),
-                      PromotedTermType, L);
+                      ComparisonBinaryTransform ? "bool" : PromotedTermType, L);
         if (LogicalBinaryTransform)
           Term = cast(std::move(Term), "bool", L);
-        else if (!TypedTransformType.isNull())
+        else if (!TypedTransformType.isNull() && !ComparisonBinaryTransform)
           Term = cast(std::move(Term), DefaultTermType, L);
       }
       if (ReductionObject) {
