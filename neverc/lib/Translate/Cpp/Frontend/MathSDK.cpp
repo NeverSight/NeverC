@@ -15966,21 +15966,23 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                utilityScalarDirectConversion(Context, Reference,
                                              RightParameter);
       };
-  auto NumericArithmetic = [&](QualType Type) {
+  auto NumericArithmetic = [&](QualType Type, bool IncludeNarrow = false) {
     if (Type.isNull() || Type->isReferenceType())
       return false;
     Type = Type.getUnqualifiedType();
-    return (!Type->isEnumeralType() && Type->isIntegerType() &&
-            !Context.isPromotableIntegerType(Type) &&
+    return (!Type->isEnumeralType() && !Type->isBooleanType() &&
+            Type->isIntegerType() &&
+            (IncludeNarrow || !Context.isPromotableIntegerType(Type)) &&
             Context.getTypeSize(Type) <= 64) ||
            Type->isSpecificBuiltinType(BuiltinType::Float) ||
            Type->isSpecificBuiltinType(BuiltinType::Double);
   };
-  auto NumericPointerParameter = [&](unsigned Index, bool Writable) {
+  auto NumericPointerParameter = [&](unsigned Index, bool Writable,
+                                     bool IncludeNarrow = false) {
     if (!AlgorithmPointerParameter(Index))
       return false;
     auto Pointer = Function->getParamDecl(Index)->getType();
-    return NumericArithmetic(Pointer->getPointeeType()) &&
+    return NumericArithmetic(Pointer->getPointeeType(), IncludeNarrow) &&
            (!Writable ||
             utilityAlgorithmWritableScalarPointer(Context, Pointer));
   };
@@ -16010,7 +16012,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Context.hasSameUnqualifiedType(Value, Iterator->getPointeeType());
   };
   auto NumericReductionValueParameter = [&](unsigned ValueIndex,
-                                            unsigned IteratorIndex) {
+                                            unsigned IteratorIndex,
+                                            bool IncludeNarrow = false) {
     if (ValueIndex >= Function->getNumParams() ||
         ValueIndex >= Call->getNumArgs() ||
         IteratorIndex >= Function->getNumParams())
@@ -16018,8 +16021,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     auto Iterator = Function->getParamDecl(IteratorIndex)->getType();
     auto Value = Function->getParamDecl(ValueIndex)->getType();
     return utilityAlgorithmScalarPointer(Context, Iterator) &&
-           NumericArithmetic(Iterator->getPointeeType()) &&
-           NumericArithmetic(Value) &&
+           NumericArithmetic(Iterator->getPointeeType(), IncludeNarrow) &&
+           NumericArithmetic(Value, IncludeNarrow) &&
            Same(Call->getArg(ValueIndex)->getType(), Value) &&
            utilityScalarComparisonType(Context, Value,
                                        Iterator->getPointeeType(), false)
@@ -16113,10 +16116,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (Origin->Path == "__numeric/accumulate.h" && Name == "accumulate" &&
       (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      NumericPointerParameter(0, false) && NumericPointerParameter(1, false) &&
+      NumericPointerParameter(0, false, Call->getNumArgs() == 3) &&
+      NumericPointerParameter(1, false, Call->getNumArgs() == 3) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      (Call->getNumArgs() == 3 ? NumericReductionValueParameter(2, 0)
+      (Call->getNumArgs() == 3 ? NumericReductionValueParameter(2, 0, true)
                                : NumericValueParameter(2, 0)) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType()) &&
@@ -16164,7 +16168,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       (Call->getNumArgs() == 2 || Call->getNumArgs() == 3 ||
        Call->getNumArgs() == 4) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      NumericPointerParameter(0, false) && NumericPointerParameter(1, false) &&
+      NumericPointerParameter(0, false, Call->getNumArgs() != 4) &&
+      NumericPointerParameter(1, false, Call->getNumArgs() != 4) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
@@ -16175,7 +16180,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                             .getUnqualifiedType()))
       return UtilityOperation::NumericReduce;
     if (Call->getNumArgs() >= 3 &&
-        (Call->getNumArgs() == 3 ? NumericReductionValueParameter(2, 0)
+        (Call->getNumArgs() == 3 ? NumericReductionValueParameter(2, 0, true)
                                  : NumericValueParameter(2, 0)) &&
         Same(Function->getReturnType(), Function->getParamDecl(2)->getType())) {
       if (Call->getNumArgs() == 3 ||

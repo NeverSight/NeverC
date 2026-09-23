@@ -9974,6 +9974,29 @@ long long mixed(int*first,int*last) {
         for node in walk(data['functions']):
             assert node.get('op') not in ('mapped_call', 'indirect_call', 'member_pointer'), node
 
+    numeric_default_narrow_reduction_source = """\
+#include <numeric>
+unsigned char narrow(unsigned char*first,unsigned char*last) {
+ unsigned char a=std::accumulate(first,last,(unsigned char)5);
+ unsigned char b=std::reduce(first,last,(unsigned char)5);
+ unsigned char c=std::reduce(first,last);
+ int d=std::accumulate(first,last,5);
+ int e=std::reduce(first,last,5);
+ return a+b+c+d+e;
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-numeric-default-narrow-reduction-" + target,
+                     numeric_default_narrow_reduction_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        assert len(data['sdk_dependencies']) == 126, data
+        narrow_line = next(i for i, line in enumerate(numeric_default_narrow_reduction_source.splitlines(), 1)
+                           if 'narrow(unsigned char*first' in line)
+        narrow = [f for f in data['functions'] if f['loc']['line'] == narrow_line]
+        assert len(narrow) == 1, narrow
+        assert not [node for node in walk(narrow[0]['body'])
+                    if node.get('op') in ('call', 'mapped_call', 'indirect_call', 'member_pointer')], narrow
+
     numeric_narrow_reduction_object_source = """\
 #include <numeric>
 #include <functional>

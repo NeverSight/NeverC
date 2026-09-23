@@ -37185,6 +37185,41 @@ int main() {
 }
 
 TEST_F(TranslateTest,
+       CoreV2NumericDefaultNarrowReductionsRunAtBothOptimizations) {
+  const auto Source = tmpFile("numeric-default-narrow-reductions.cpp");
+  const auto Output = tmpFile("numeric-default-narrow-reductions.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+int main() {
+  unsigned char values[3]{250, 10, 20};
+  if (std::accumulate(values, values + 3, (unsigned char)5) != 29 ||
+      std::reduce(values, values + 3, (unsigned char)5) != 29 ||
+      std::reduce(values, values + 3) != 24) return 1;
+  if (std::accumulate(values, values + 3, 5) != 285 ||
+      std::reduce(values, values + 3, 5) != 285) return 2;
+  if (std::accumulate(values, values, (unsigned char)7) != 7 ||
+      std::reduce(values, values, (unsigned char)7) != 7 ||
+      std::reduce(values, values) != 0) return 3;
+  signed char negative[2]{-3, 1};
+  if (std::accumulate(negative, negative + 2, (signed char)5) != 3 ||
+      std::reduce(negative, negative + 2) != -2) return 4;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("numeric-default-narrow-reductions" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
        CoreV2NumericNarrowReductionObjectsRunAtBothOptimizations) {
   const auto Source = tmpFile("numeric-narrow-reduction-objects.cpp");
   const auto Output = tmpFile("numeric-narrow-reduction-objects.nc");

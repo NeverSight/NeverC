@@ -719,7 +719,9 @@ and `exclusive_scan` overloads lower to direct pointer loops. Input and output
 ranges use admitted non-promoted built-in integers through 64 bits, `float` or
 `double`. `partial_sum`, `adjacent_difference`, `inclusive_scan` and
 `exclusive_scan` accept a writable scalar output whose element accepts a
-checked direct conversion from the input element. Default `accumulate`,
+checked direct conversion from the input element. Default `accumulate` and
+`reduce` additionally admit non-boolean narrow integer input elements and
+initial values. Default `accumulate`,
 `inner_product`, initialized `reduce`, two-range `transform_reduce` and
 `exclusive_scan` accept an independent arithmetic initial value, use checked
 common arithmetic for their default operations and convert each result back to
