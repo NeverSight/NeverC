@@ -730,6 +730,32 @@ class FunctionLowering {
     Body.push_back(std::move(Instruction));
     return Result;
   }
+  Expression emitBinaryCallable(const CapturedAlgorithmPredicate &Operation,
+                                Expression Left, Expression Right,
+                                SourceLocation L) {
+    json::Array Arguments;
+    if (!Operation.Method) {
+      Arguments.push_back(std::move(Left));
+      Arguments.push_back(std::move(Right));
+      return emitAlgorithmCallback(json::Object(Operation.Storage),
+                                   Operation.Type, std::move(Arguments), L);
+    }
+    const auto *Method = Operation.Method;
+    Arguments.push_back(cast(json::Object(Operation.Storage),
+                             type(Method->getThisType(), L), L));
+    Arguments.push_back(
+        cast(std::move(Left), type(Method->getParamDecl(0)->getType(), L), L));
+    Arguments.push_back(
+        cast(std::move(Right), type(Method->getParamDecl(1)->getType(), L), L));
+    chargeCall(Arguments, L);
+    auto Result = temporary(type(Method->getReturnType(), L), L);
+    Body.push_back(json::Object{{"op", "call"},
+                                {"callee", A.name(Method)},
+                                {"args", std::move(Arguments)},
+                                {"target", json::Object(Result)},
+                                {"loc", A.loc(L)}});
+    return Result;
+  }
   Expression emitNullaryCallable(const CapturedAlgorithmPredicate &Operation,
                                  SourceLocation L) {
     if (!Operation.Method)
@@ -6740,14 +6766,7 @@ class FunctionLowering {
       const unsigned OutputIndex = Binary ? 3 : 2;
       const unsigned CallbackIndex = Binary ? 4 : 3;
       auto Output = snapshot(expression(Call->getArg(OutputIndex)), L);
-      auto Callback =
-          Binary ? CapturedAlgorithmPredicate{snapshot(expression(Call->getArg(
-                                                           CallbackIndex)),
-                                                       L),
-                                              Call->getArg(CallbackIndex)
-                                                  ->getType(),
-                                              nullptr}
-                 : captureUnaryPredicate(Call, Operation, CallbackIndex);
+      auto Callback = captureUnaryPredicate(Call, Operation, CallbackIndex);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto FirstType = type(Call->getArg(0)->getType(), L);
       const auto SecondType =
@@ -6761,11 +6780,9 @@ class FunctionLowering {
       {
         Expression Value;
         if (Second) {
-          json::Array Arguments;
-          Arguments.push_back(dereference(json::Object(First), L));
-          Arguments.push_back(dereference(json::Object(*Second), L));
-          Value = emitAlgorithmCallback(json::Object(Callback.Storage),
-                                        Callback.Type, std::move(Arguments), L);
+          Value =
+              emitBinaryCallable(Callback, dereference(json::Object(First), L),
+                                 dereference(json::Object(*Second), L), L);
         } else {
           Value = emitUnaryCallable(Callback,
                                     dereference(json::Object(First), L), L);

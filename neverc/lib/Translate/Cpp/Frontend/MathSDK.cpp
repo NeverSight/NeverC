@@ -12028,21 +12028,27 @@ utilityAlgorithmRemovePredicate(const State &S, const SourceManager &SM,
   return FirstCall;
 }
 
-// Authenticate the exact unary transform loop before retaining a source-owned
-// operation object. The binary overload remains on its function-pointer path.
+// Authenticate the exact unary or binary transform loop before retaining a
+// source-owned operation object.
 static std::optional<UtilityAlgorithmPredicateCall>
 utilityAlgorithmTransformObjectCall(const State &S, const SourceManager &SM,
                                     const CallExpr *Call,
                                     const ASTContext &Context) {
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const bool Binary = Call && Call->getNumArgs() == 5;
   if (!S.coreV2() || !Call || !Function || Function->getName() != "transform" ||
-      Call->getNumArgs() != 4 || Function->getNumParams() != 4 ||
-      !Call->isPRValue() || Call->isTypeDependent() ||
-      Call->isValueDependent() || Call->isInstantiationDependent())
+      (Call->getNumArgs() != 4 && !Binary) ||
+      Function->getNumParams() != Call->getNumArgs() || !Call->isPRValue() ||
+      Call->isTypeDependent() || Call->isValueDependent() ||
+      Call->isInstantiationDependent())
     return std::nullopt;
   const auto Input = Function->getParamDecl(0)->getType();
-  const auto Output = Function->getParamDecl(2)->getType();
-  const auto Object = Function->getParamDecl(3)->getType();
+  const auto Second =
+      Binary ? Function->getParamDecl(2)->getType() : QualType{};
+  const unsigned OutputIndex = Binary ? 3 : 2;
+  const unsigned ObjectIndex = Binary ? 4 : 3;
+  const auto Output = Function->getParamDecl(OutputIndex)->getType();
+  const auto Object = Function->getParamDecl(ObjectIndex)->getType();
   const auto *Record = Object->getAsCXXRecordDecl();
   Record = Record ? Record->getDefinition() : nullptr;
   if (!utilityAlgorithmScalarPointer(Context, Input) ||
@@ -12050,8 +12056,10 @@ utilityAlgorithmTransformObjectCall(const State &S, const SourceManager &SM,
       !utilityAlgorithmWritableScalarPointer(Context, Output) ||
       !Context.hasSameType(Call->getArg(0)->getType(), Input) ||
       !Context.hasSameType(Call->getArg(1)->getType(), Input) ||
-      !Context.hasSameType(Call->getArg(2)->getType(), Output) ||
-      !Context.hasSameType(Call->getArg(3)->getType(), Object) ||
+      (Binary && (!utilityAlgorithmScalarPointer(Context, Second) ||
+                  !Context.hasSameType(Call->getArg(2)->getType(), Second))) ||
+      !Context.hasSameType(Call->getArg(OutputIndex)->getType(), Output) ||
+      !Context.hasSameType(Call->getArg(ObjectIndex)->getType(), Object) ||
       !Context.hasSameType(Function->getReturnType(), Output) ||
       !Context.hasSameType(Call->getType(), Output) || !Record ||
       Object.hasLocalQualifiers() || Record->isLambda() || Record->isUnion() ||
@@ -12073,7 +12081,8 @@ utilityAlgorithmTransformObjectCall(const State &S, const SourceManager &SM,
       Function->isVariadic() || !Function->isInlined() ||
       Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
       !approvedUtilityReference(S, SM, Call, Function) || !Origin(Definition) ||
-      !Origin(PatternDefinition) || !Arguments || Arguments->size() != 3)
+      !Origin(PatternDefinition) || !Arguments ||
+      Arguments->size() != (Binary ? 4u : 3u))
     return std::nullopt;
   for (const auto *D : Function->redecls())
     if (!Origin(D))
@@ -12084,11 +12093,15 @@ utilityAlgorithmTransformObjectCall(const State &S, const SourceManager &SM,
   for (const auto *D : Pattern->redecls())
     if (!Origin(D))
       return std::nullopt;
-  for (const auto [Index, Expected] :
-       {std::pair{0u, Input}, std::pair{1u, Output}, std::pair{2u, Object}})
+  for (unsigned Index = 0; Index != Arguments->size(); ++Index) {
+    const auto Expected = Index == 0                    ? Input
+                          : Binary && Index == 1        ? Second
+                          : Index == (Binary ? 2u : 1u) ? Output
+                                                        : Object;
     if (Arguments->get(Index).getKind() != TemplateArgument::Type ||
         !Context.hasSameType(Arguments->get(Index).getAsType(), Expected))
       return std::nullopt;
+  }
 
   auto Reference = [&](const Expr *Expression, const ValueDecl *Value) {
     return utilityAlgorithmReference(Expression, Value, Context);
@@ -12108,8 +12121,12 @@ utilityAlgorithmTransformObjectCall(const State &S, const SourceManager &SM,
       Loop ? dyn_cast_or_null<BinaryOperator>(Loop->getCond()) : nullptr;
   const auto *Steps =
       Loop ? dyn_cast_or_null<BinaryOperator>(Loop->getInc()) : nullptr;
-  const auto *OutputStep =
-      Steps ? dyn_cast<CStyleCastExpr>(Steps->getRHS()) : nullptr;
+  const auto *InputSteps =
+      Binary && Steps ? dyn_cast<BinaryOperator>(Steps->getLHS()) : nullptr;
+  const auto *SecondStep =
+      InputSteps ? dyn_cast<CStyleCastExpr>(InputSteps->getRHS()) : nullptr;
+  const auto *UnaryOutputStep =
+      !Binary && Steps ? dyn_cast<CStyleCastExpr>(Steps->getRHS()) : nullptr;
   const auto *Assignment =
       Loop ? dyn_cast_or_null<BinaryOperator>(Loop->getBody()) : nullptr;
   const auto *Destination =
@@ -12118,14 +12135,22 @@ utilityAlgorithmTransformObjectCall(const State &S, const SourceManager &SM,
       Condition->getOpcode() != BO_NE ||
       !Reference(Condition->getLHS(), Definition->getParamDecl(0)) ||
       !Reference(Condition->getRHS(), Definition->getParamDecl(1)) || !Steps ||
-      Steps->getOpcode() != BO_Comma || !Increment(Steps->getLHS(), 0) ||
-      !OutputStep || OutputStep->getCastKind() != CK_ToVoid ||
-      !Increment(OutputStep->getSubExpr(), 2) || !Assignment ||
-      Assignment->getOpcode() != BO_Assign || !Destination ||
+      Steps->getOpcode() != BO_Comma ||
+      (Binary ? (!InputSteps || InputSteps->getOpcode() != BO_Comma ||
+                 !Increment(InputSteps->getLHS(), 0) || !SecondStep ||
+                 SecondStep->getCastKind() != CK_ToVoid ||
+                 !Increment(SecondStep->getSubExpr(), 2) ||
+                 !Increment(Steps->getRHS(), OutputIndex))
+              : (!Increment(Steps->getLHS(), 0) || !UnaryOutputStep ||
+                 UnaryOutputStep->getCastKind() != CK_ToVoid ||
+                 !Increment(UnaryOutputStep->getSubExpr(), OutputIndex))) ||
+      !Assignment || Assignment->getOpcode() != BO_Assign || !Destination ||
       Destination->getOpcode() != UO_Deref || !Destination->isLValue() ||
       !Context.hasSameType(Destination->getType(), Output->getPointeeType()) ||
-      !Reference(Destination->getSubExpr(), Definition->getParamDecl(2)) ||
-      !Return || !Reference(Return->getRetValue(), Definition->getParamDecl(2)))
+      !Reference(Destination->getSubExpr(),
+                 Definition->getParamDecl(OutputIndex)) ||
+      !Return ||
+      !Reference(Return->getRetValue(), Definition->getParamDecl(OutputIndex)))
     return std::nullopt;
 
   const Expr *Result = Assignment->getRHS();
@@ -12137,33 +12162,42 @@ utilityAlgorithmTransformObjectCall(const State &S, const SourceManager &SM,
   }
   const auto *Invocation = dyn_cast<CXXOperatorCallExpr>(Result);
   if (!Invocation || Invocation->getOperator() != OO_Call ||
-      Invocation->getNumArgs() != 2 || !Invocation->isPRValue() ||
-      !Reference(Invocation->getArg(0), Definition->getParamDecl(3)))
+      Invocation->getNumArgs() != (Binary ? 3u : 2u) ||
+      !Invocation->isPRValue() ||
+      !Reference(Invocation->getArg(0), Definition->getParamDecl(ObjectIndex)))
     return std::nullopt;
-  const Expr *ElementArgument = Invocation->getArg(1);
-  while (const auto *Cast = dyn_cast<ImplicitCastExpr>(ElementArgument)) {
-    if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
-                                       Cast->getType()))
+  for (unsigned Index = 0; Index != (Binary ? 2u : 1u); ++Index) {
+    const Expr *ElementArgument = Invocation->getArg(Index + 1);
+    while (const auto *Cast = dyn_cast<ImplicitCastExpr>(ElementArgument)) {
+      if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
+                                         Cast->getType()))
+        return std::nullopt;
+      ElementArgument = Cast->getSubExpr();
+    }
+    const auto *Element = dyn_cast<UnaryOperator>(ElementArgument);
+    const auto ExpectedPointer = Index ? Second : Input;
+    const auto *Parameter = Definition->getParamDecl(Index ? 2 : 0);
+    if (!Element || Element->getOpcode() != UO_Deref || !Element->isLValue() ||
+        !Context.hasSameType(Element->getType(),
+                             ExpectedPointer->getPointeeType()) ||
+        !Reference(Element->getSubExpr(), Parameter))
       return std::nullopt;
-    ElementArgument = Cast->getSubExpr();
   }
-  const auto *Element = dyn_cast<UnaryOperator>(ElementArgument);
-  if (!Element || Element->getOpcode() != UO_Deref || !Element->isLValue() ||
-      !Context.hasSameType(Element->getType(), Input->getPointeeType()) ||
-      !Reference(Element->getSubExpr(), Definition->getParamDecl(0)))
-    return std::nullopt;
   const auto *Method =
       dyn_cast_or_null<CXXMethodDecl>(Invocation->getDirectCallee());
   const auto *MethodDefinition = Method ? Method->getDefinition() : nullptr;
   if (!Method || !MethodDefinition || Method->isStatic() ||
       Method->isVolatile() || Method->getOverloadedOperator() != OO_Call ||
-      Method->getNumParams() != 1 ||
+      Method->getNumParams() != (Binary ? 2u : 1u) ||
       Method->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
       !functionalMemberReceiverValueCategory(Method, Invocation->getArg(0),
                                              false) ||
       !utilityScalar(Context, Method->getReturnType()) ||
       !utilityScalarDirectConversion(Context, Input->getPointeeType(),
                                      Method->getParamDecl(0)->getType()) ||
+      (Binary &&
+       !utilityScalarDirectConversion(Context, Second->getPointeeType(),
+                                      Method->getParamDecl(1)->getType())) ||
       !utilityScalarDirectConversion(Context, Method->getReturnType(),
                                      Output->getPointeeType()) ||
       (Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
@@ -12176,12 +12210,13 @@ utilityAlgorithmTransformObjectCall(const State &S, const SourceManager &SM,
     if (!S.owns(SM, D->getLocation()))
       return std::nullopt;
   return UtilityAlgorithmPredicateCall{
-      UtilityOperation::AlgorithmTransformUnary,
+      Binary ? UtilityOperation::AlgorithmTransformBinary
+             : UtilityOperation::AlgorithmTransformUnary,
       Function,
       Invocation,
       Method,
       Object,
-      3,
+      ObjectIndex,
       std::nullopt};
 }
 
@@ -12747,7 +12782,8 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
       Call->isInstantiationDependent() || !Call->isPRValue())
     return std::nullopt;
   const auto Name = Function->getName();
-  if (Name == "transform" && Call->getNumArgs() == 4)
+  if (Name == "transform" &&
+      (Call->getNumArgs() == 4 || Call->getNumArgs() == 5))
     return utilityAlgorithmTransformObjectCall(S, SM, Call, Context);
   if (Name == "for_each_n")
     return utilityAlgorithmForEachNObjectCall(S, SM, Call, Context);

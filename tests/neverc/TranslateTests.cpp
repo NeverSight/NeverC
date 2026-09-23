@@ -41071,6 +41071,58 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2AlgorithmBinaryTransformObjectRunsAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-binary-transform-object.cpp");
+  const auto Output = tmpFile("algorithm-binary-transform-object.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+int calls, factories, first_calls, last_calls, second_calls, output_calls;
+int *first(int *p) { ++first_calls; return p; }
+int *last(int *p) { ++last_calls; return p; }
+short *second(short *p) { ++second_calls; return p; }
+long *output(long *p) { ++output_calls; return p; }
+struct Combine {
+  int bias;
+  int local_calls;
+  long long operator()(long long left, long long right) & {
+    ++calls; ++local_calls; return left + right + bias;
+  }
+  long long operator()(long long, long long) const & { return -100; }
+};
+Combine make(int bias) { ++factories; return Combine{bias, 0}; }
+int main() {
+  int left[3]{1, 2, 3};
+  short right[3]{10, 20, 30};
+  long result[3]{-1, -1, -1};
+  Combine caller{5, 0};
+  if (std::transform(first(left), last(left + 3), second(right),
+                     output(result), caller) != result + 3 ||
+      calls != 3 || first_calls != 1 || last_calls != 1 ||
+      second_calls != 1 || output_calls != 1 ||
+      result[0] != 16 || result[1] != 27 || result[2] != 38 ||
+      caller.local_calls != 0) return 1;
+  if (std::transform(left, left, right, result, make(9)) != result ||
+      calls != 3 || factories != 1) return 2;
+  if (std::transform(left, left + 2, right, result, make(1)) != result + 2 ||
+      calls != 5 || factories != 2 || result[0] != 12 ||
+      result[1] != 23) return 3;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("algorithm-binary-transform-object" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmGenerateObjectRunsAtBothOptimizations) {
   const auto Source = tmpFile("algorithm-generate-object.cpp");
   const auto Output = tmpFile("algorithm-generate-object.nc");

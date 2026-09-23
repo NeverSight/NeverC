@@ -13149,13 +13149,84 @@ int main(){
         ('specialization', '#include <algorithm>\nstruct F{int operator()(int n){return n;}};namespace std{template<>long*transform<int*,long*,F>(int*p,int*,long*out,F){return out;}}long*f(int*p,long*out){return std::transform(p,p+2,out,F{});}\n', 'TR0201', 'cpp-core-v2', True),
         ('redeclaration', '#include <algorithm>\nstruct F{int operator()(int n){return n;}};namespace std{inline namespace __1{template<class I,class O,class F>O transform(I,I,O,F);}}long*f(int*p,long*out){return std::transform(p,p+2,out,F{});}\n', 'TR0201', 'cpp-core-v2', True),
         ('query-no-body', '#include <algorithm>\nstruct F{int operator()(int n){return n;}};int f(int*p,long*out){static_assert(__is_same(decltype(std::transform(p,p+2,out,F{})),long*));return 0;}\n', 'TR0203', 'cpp-core-v2', True),
-        ('binary-independent', '#include <algorithm>\nstruct F{int operator()(int a,int b){return a+b;}};long*f(int*p,long*out){return std::transform(p,p+2,p,out,F{});}\n', 'TR0203', 'cpp-core-v2', True),
         ('volatile-input', '#include <algorithm>\nstruct F{int operator()(int n){return n;}};long*f(volatile int*p,long*out){return std::transform(p,p+2,out,F{});}\n', 'TR0201', 'cpp-core-v2', True),
         ('record-input', '#include <algorithm>\nstruct R{int n;};struct F{int operator()(R r){return r.n;}};long*f(R*p,long*out){return std::transform(p,p+2,out,F{});}\n', 'TR0203', 'cpp-core-v2', True),
     ]
     for name, source, code, profile, sdk in algorithm_transform_object_rejections:
         check("v2-algorithm-transform-object-reject-" + name, source, code,
               profile=profile, sdk=sdk)
+
+    algorithm_transform_binary_object_source = """\
+#include <algorithm>
+int calls,factories,first_calls,last_calls,second_calls,output_calls;
+int*first(int*p){++first_calls;return p;}
+int*last(int*p){++last_calls;return p;}
+short*second(short*p){++second_calls;return p;}
+long*output(long*p){++output_calls;return p;}
+struct Combine{
+ int bias,local_calls;
+ long long operator()(long long left,long long right)&{ // template-binary-method: combine
+  ++calls;++local_calls;return left+right+bias;
+ }
+ long long operator()(long long,long long)const&{return -100;}
+};
+Combine make(int bias){++factories;return Combine{bias,0};}
+int main(){
+ int left[3]={1,2,3};short right[3]={10,20,30};long result[3]={-1,-1,-1};Combine caller{5,0};
+ if(std::transform(first(left),last(left+3),second(right),output(result),caller)!=result+3|| // template-binary-call: combine
+    calls!=3||first_calls!=1||last_calls!=1||second_calls!=1||output_calls!=1||
+    result[0]!=16||result[1]!=27||result[2]!=38||caller.local_calls)return 1;
+ if(std::transform(left,left,right,result,make(9))!=result||calls!=3||factories!=1)return 2; // template-binary-call: combine
+ if(std::transform(left,left+2,right,result,make(1))!=result+2||calls!=5||factories!=2||result[0]!=12||result[1]!=23)return 3; // template-binary-call: combine
+ static_assert(__is_same(decltype(std::transform(left,left,right,result,caller)),long*));
+ return 0;
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-algorithm-transform-binary-object-" + target,
+                     algorithm_transform_binary_object_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        definitions = {f['name']: f for f in data['functions']}
+        assert len(definitions) == len(data['functions'])
+        main_nodes = list(walk(definitions['main']['body']))
+        method_line = next(i for i, line in enumerate(algorithm_transform_binary_object_source.splitlines(), 1)
+                           if '// template-binary-method:' in line)
+        methods = [f for f in data['functions'] if f['loc']['line'] == method_line]
+        assert len(methods) == 1 and methods[0]['result'] == 'i64', methods
+        assert [p['type'] for p in methods[0]['params'][1:]] == ['i64', 'i64'], methods
+        assert len(methods[0]['params']) == 3 and methods[0]['params'][0]['type'].startswith('ptr:'), methods
+        calls = [node for node in main_nodes if node.get('op') == 'call'
+                 and node.get('callee') == methods[0]['name']]
+        expected_lines = [i for i, line in enumerate(algorithm_transform_binary_object_source.splitlines(), 1)
+                          if '// template-binary-call:' in line]
+        assert len(calls) == 3 and [call['loc']['line'] for call in calls] == expected_lines, calls
+        assert all(call['target']['type'] == 'i64' and
+                   [arg['type'] for arg in call['args']] ==
+                   [param['type'] for param in methods[0]['params']]
+                   for call in calls), calls
+        for function in data['functions']:
+            assert function.get('loc', {}).get('file') == 'input.cpp', function
+        for node in walk(data['functions']):
+            assert node.get('op') not in ('mapped_call', 'indirect_call', 'member_pointer'), node
+            if node.get('op') == 'call':
+                assert node['callee'] in definitions, node
+            if node.get('op') == 'assign':
+                assert node['target']['type'] == node['value']['type'], node
+
+    algorithm_transform_binary_object_rejections = [
+        ('generic-method', '#include <algorithm>\nstruct F{template<class T>int operator()(T a,T b){return a+b;}};long*f(int*p,long*out){return std::transform(p,p+2,p,out,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('nontrivial-copy', '#include <algorithm>\nstruct F{F(){}F(const F&){}int operator()(int a,int b){return a+b;}};long*f(int*p,long*out){return std::transform(p,p+2,p,out,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('nontrivial-destructor', '#include <algorithm>\nstruct F{~F(){}int operator()(int a,int b){return a+b;}};long*f(int*p,long*out){return std::transform(p,p+2,p,out,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('reference-argument', '#include <algorithm>\nstruct F{int operator()(int&a,int b){return a+b;}};long*f(int*p,long*out){return std::transform(p,p+2,p,out,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('record-result', '#include <algorithm>\nstruct R{int n;operator int()const{return n;}};struct F{R operator()(int,int){return {1};}};long*f(int*p,long*out){return std::transform(p,p+2,p,out,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('missing-definition', '#include <algorithm>\nstruct F{int operator()(int,int);};long*f(int*p,long*out){return std::transform(p,p+2,p,out,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('lambda', '#include <algorithm>\nlong*f(int*p,long*out){return std::transform(p,p+2,p,out,[](int a,int b){return a+b;});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('specialization', '#include <algorithm>\nstruct F{int operator()(int a,int b){return a+b;}};namespace std{template<>long*transform<int*,int*,long*,F>(int*p,int*,int*,long*out,F){return out;}}long*f(int*p,long*out){return std::transform(p,p+2,p,out,F{});}\n', 'TR0201', 'cpp-core-v2', True),
+        ('query-no-body', '#include <algorithm>\nstruct F{int operator()(int,int);};int f(int*p,long*out){static_assert(__is_same(decltype(std::transform(p,p+2,p,out,F{})),long*));return 0;}\n', 'TR0203', 'cpp-core-v2', True),
+    ]
+    for name, source, code, profile, sdk in algorithm_transform_binary_object_rejections:
+        check("v2-algorithm-transform-binary-object-reject-" + name, source,
+              code, profile=profile, sdk=sdk)
 
     algorithm_predicate_queries_source = """\
 #include <algorithm>
