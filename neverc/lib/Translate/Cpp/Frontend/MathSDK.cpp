@@ -16082,8 +16082,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         return false;
     return true;
   };
-  auto NumericUnaryCallback = [&](unsigned Index, QualType Element) {
-    return NumericCallback(Index, Element, 1);
+  auto NumericUnaryCallback = [&](unsigned Index, QualType Element,
+                                  bool IncludeNarrow = false) {
+    return NumericCallback(Index, Element, 1, IncludeNarrow);
   };
   auto NumericBinaryCallback = [&](unsigned Index, QualType Element,
                                    bool IncludeNarrow = false) {
@@ -16202,8 +16203,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Name == "transform_reduce" &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
       Same(Call->getType(), Function->getReturnType()) &&
-      NumericPointerParameter(0, false, Call->getNumArgs() != 5) &&
-      NumericPointerParameter(1, false, Call->getNumArgs() != 5) &&
+      NumericPointerParameter(0, false, true) &&
+      NumericPointerParameter(1, false, true) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType())) {
     auto Element = Function->getParamDecl(0)->getType()->getPointeeType();
@@ -16218,9 +16219,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
               5, Element, Element,
               Function->getParamDecl(2)->getType()->getPointeeType(), true))))
       return UtilityOperation::NumericTransformReduce;
-    if (Call->getNumArgs() == 5 && NumericValueParameter(2, 0) &&
+    if (Call->getNumArgs() == 5 && NumericValueParameter(2, 0, true) &&
         Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
-        NumericBinaryCallback(3, Element) && NumericUnaryCallback(4, Element))
+        NumericBinaryCallback(3, Element, true) &&
+        NumericUnaryCallback(4, Element, true))
       return UtilityOperation::NumericTransformReduce;
   }
   if (((Origin->Path == "__numeric/inclusive_scan.h" &&

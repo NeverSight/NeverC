@@ -9974,6 +9974,29 @@ long long mixed(int*first,int*last) {
         for node in walk(data['functions']):
             assert node.get('op') not in ('mapped_call', 'indirect_call', 'member_pointer'), node
 
+    numeric_narrow_unary_transform_reduce_source = """\
+#include <numeric>
+unsigned char sum(unsigned char a,unsigned char b){return a+b;}
+unsigned char plus_one(unsigned char x){return x+1;}
+unsigned char reduce(unsigned char*first,unsigned char*last) {
+ return std::transform_reduce(first,last,(unsigned char)5,sum,plus_one);
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-numeric-narrow-unary-transform-reduce-" + target,
+                     numeric_narrow_unary_transform_reduce_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        assert len(data['sdk_dependencies']) == 126, data
+        reduce_line = next(i for i, line in enumerate(numeric_narrow_unary_transform_reduce_source.splitlines(), 1)
+                           if 'reduce(unsigned char*first' in line)
+        reductions = [f for f in data['functions'] if f['loc']['line'] == reduce_line]
+        assert len(reductions) == 1, reductions
+        calls = [node for node in walk(reductions[0]['body']) if node.get('op') == 'indirect_call']
+        addresses = [node for node in walk(reductions[0]['body']) if node.get('kind') == 'function_address']
+        assert len(calls) == 2 and len(addresses) == 2, (calls, addresses)
+        names = {f['name'] for f in data['functions'] if f['loc']['line'] in (2, 3)}
+        assert {node['name'] for node in addresses} == names, addresses
+
     numeric_narrow_transform_reduce_callback_source = """\
 #include <numeric>
 unsigned char sum(unsigned char a,unsigned char b){return a+b;}
