@@ -733,6 +733,9 @@ class FunctionLowering {
   Expression emitBinaryCallable(const CapturedAlgorithmPredicate &Operation,
                                 Expression Left, Expression Right,
                                 SourceLocation L) {
+    if (Operation.SDKOperation)
+      return functionalOperationValues(L, std::move(Left), std::move(Right),
+                                       *Operation.SDKOperation);
     json::Array Arguments;
     if (!Operation.Method) {
       Arguments.push_back(std::move(Left));

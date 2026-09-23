@@ -41076,6 +41076,7 @@ TEST_F(TranslateTest,
   const auto Source = tmpFile("algorithm-binary-transform-object.cpp");
   const auto Output = tmpFile("algorithm-binary-transform-object.nc");
   writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
 int calls, factories, first_calls, last_calls, second_calls, output_calls;
 int *first(int *p) { ++first_calls; return p; }
 int *last(int *p) { ++last_calls; return p; }
@@ -41106,6 +41107,15 @@ int main() {
   if (std::transform(left, left + 2, right, result, make(1)) != result + 2 ||
       calls != 5 || factories != 2 || result[0] != 12 ||
       result[1] != 23) return 3;
+  if (std::transform(left, left + 3, right, result, std::plus<>{}) !=
+          result + 3 || result[0] != 11 || result[1] != 22 ||
+      result[2] != 33 || calls != 5) return 4;
+  if (std::transform(left, left + 3, left, result,
+                     std::multiplies<int>{}) != result + 3 ||
+      result[0] != 1 || result[1] != 4 || result[2] != 9) return 5;
+  bool flags[3]{};
+  if (std::transform(left, left + 3, right, flags, std::less<>{}) !=
+          flags + 3 || !flags[0] || !flags[1] || !flags[2]) return 6;
   return 0;
 }
 )cpp");

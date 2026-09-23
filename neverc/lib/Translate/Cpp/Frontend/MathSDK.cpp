@@ -12051,6 +12051,9 @@ utilityAlgorithmTransformObjectCall(const State &S, const SourceManager &SM,
   const auto Object = Function->getParamDecl(ObjectIndex)->getType();
   const auto *Record = Object->getAsCXXRecordDecl();
   Record = Record ? Record->getDefinition() : nullptr;
+  const bool SDKObject =
+      Record && Binary &&
+      approvedFunctionalObjectRecord(S, SM, Record, Context).has_value();
   if (!utilityAlgorithmScalarPointer(Context, Input) ||
       !Context.hasSameType(Function->getParamDecl(1)->getType(), Input) ||
       !utilityAlgorithmWritableScalarPointer(Context, Output) ||
@@ -12065,7 +12068,7 @@ utilityAlgorithmTransformObjectCall(const State &S, const SourceManager &SM,
       Object.hasLocalQualifiers() || Record->isLambda() || Record->isUnion() ||
       !Record->isStandardLayout() || !Record->isTriviallyCopyable() ||
       !Record->hasTrivialCopyConstructor() || !Record->hasTrivialDestructor() ||
-      !S.owns(SM, Record->getLocation()))
+      (!S.owns(SM, Record->getLocation()) && !SDKObject))
     return std::nullopt;
   const auto *Primary = Function->getPrimaryTemplate();
   const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
@@ -12193,22 +12196,42 @@ utilityAlgorithmTransformObjectCall(const State &S, const SourceManager &SM,
       !functionalMemberReceiverValueCategory(Method, Invocation->getArg(0),
                                              false) ||
       !utilityScalar(Context, Method->getReturnType()) ||
-      !utilityScalarDirectConversion(Context, Input->getPointeeType(),
-                                     Method->getParamDecl(0)->getType()) ||
-      (Binary &&
-       !utilityScalarDirectConversion(Context, Second->getPointeeType(),
-                                      Method->getParamDecl(1)->getType())) ||
       !utilityScalarDirectConversion(Context, Method->getReturnType(),
-                                     Output->getPointeeType()) ||
-      (Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
-       Method->getTemplatedKind() != FunctionDecl::TK_MemberSpecialization) ||
-      Method->getPrimaryTemplate() || Method->getDescribedFunctionTemplate() ||
-      !ordinaryOperator(Method) || !callableMethod(Method) ||
-      !S.owns(SM, MethodDefinition->getLocation()))
+                                     Output->getPointeeType()))
     return std::nullopt;
-  for (const auto *D : Method->redecls())
-    if (!S.owns(SM, D->getLocation()))
+  std::optional<FunctionalOperationInfo> SDKOperation;
+  if (SDKObject) {
+    SDKOperation =
+        approvedFunctionalOperationImpl(S, SM, Invocation, Context, false);
+    if (!SDKOperation || SDKOperation->RightType.isNull() ||
+        !Context.hasSameUnqualifiedType(
+            Input->getPointeeType(),
+            Method->getParamDecl(0)->getType().getNonReferenceType()) ||
+        !Context.hasSameUnqualifiedType(
+            Second->getPointeeType(),
+            Method->getParamDecl(1)->getType().getNonReferenceType()))
       return std::nullopt;
+  } else {
+    if ((Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
+         Method->getTemplatedKind() != FunctionDecl::TK_MemberSpecialization) ||
+        Method->getPrimaryTemplate() ||
+        Method->getDescribedFunctionTemplate() || !ordinaryOperator(Method) ||
+        !callableMethod(Method) || !S.owns(SM, MethodDefinition->getLocation()))
+      return std::nullopt;
+    for (const auto *D : Method->redecls())
+      if (!S.owns(SM, D->getLocation()))
+        return std::nullopt;
+  }
+  const auto LeftType = SDKOperation ? SDKOperation->LeftType
+                                     : Method->getParamDecl(0)->getType();
+  const auto RightType = SDKOperation ? SDKOperation->RightType
+                         : Binary     ? Method->getParamDecl(1)->getType()
+                                      : QualType{};
+  if (!utilityScalarDirectConversion(Context, Input->getPointeeType(),
+                                     LeftType) ||
+      (Binary && !utilityScalarDirectConversion(
+                     Context, Second->getPointeeType(), RightType)))
+    return std::nullopt;
   return UtilityAlgorithmPredicateCall{
       Binary ? UtilityOperation::AlgorithmTransformBinary
              : UtilityOperation::AlgorithmTransformUnary,
@@ -12217,7 +12240,7 @@ utilityAlgorithmTransformObjectCall(const State &S, const SourceManager &SM,
       Method,
       Object,
       ObjectIndex,
-      std::nullopt};
+      SDKOperation};
 }
 
 // for_each_n discards the unary result but otherwise has the same by-value
