@@ -1,7 +1,7 @@
 {
   "schema": "neverc.cpp.sdk.catalog",
   "version": 1,
-  "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r12",
+  "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r13",
   "clang_version": "20.1.8",
   "libcxx_version": 200100,
   "platform_sdk_version": "15.5",
@@ -594,6 +594,11 @@
       "root": "libcxx",
       "path": "__bit/rotate.h",
       "sha256": "8e6a199a766c33c343c22eeec9f26377e2109939eaf97834e2e7e7c9c804bee8"
+    },
+    {
+      "root": "libcxx",
+      "path": "__bit_reference",
+      "sha256": "1f3bd0543609287dfe862e8a2f9727cc401450f98b7120a32be27a229186932e"
     },
     {
       "root": "libcxx",
@@ -2412,6 +2417,11 @@
     },
     {
       "root": "libcxx",
+      "path": "__vector/pmr.h",
+      "sha256": "c9bba3b7a775294b1880b4476b98f5446cb143d230434653e7d25d0afeef0453"
+    },
+    {
+      "root": "libcxx",
       "path": "__vector/swap.h",
       "sha256": "0fe1aabe2f751959559c11ddb4b1277df411d0fd931a3f2a9f179c74b123d887"
     },
@@ -2419,6 +2429,11 @@
       "root": "libcxx",
       "path": "__vector/vector.h",
       "sha256": "2165b450d03957b8a06adcb73290979b4fb0ce4b71c44c5aec9f83cc37531f74"
+    },
+    {
+      "root": "libcxx",
+      "path": "__vector/vector_bool.h",
+      "sha256": "3c2740176a98de8102781acefcc41ad935ce751b0394c7ccc85c2547e6f6d188"
     },
     {
       "root": "libcxx",
@@ -2594,6 +2609,11 @@
       "root": "libcxx",
       "path": "utility",
       "sha256": "08786944ad1607e42e1effb569171a08914f52029f3abffbfffe10542cd7b82b"
+    },
+    {
+      "root": "libcxx",
+      "path": "vector",
+      "sha256": "cdd816152d507ac40d88f8e7b5bf4fafea594073f74daec2e405c435c054427f"
     },
     {
       "root": "libcxx",

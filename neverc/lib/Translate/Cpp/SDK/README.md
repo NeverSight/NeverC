@@ -2,9 +2,9 @@
 
 This directory supplies the immutable header inputs for NeverC's built-in C++
 frontend. The distribution is
-`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r12`. It contains the 616 header
+`neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r13`. It contains the 620 header
 files admitted by the current
-`clang20.1.8-libcxx200100-macos15.5` catalog: 518 libc++ headers, 14 Clang
+`clang20.1.8-libcxx200100-macos15.5` catalog: 522 libc++ headers, 14 Clang
 resource headers, three NeverC resource headers, and 81 Darwin platform headers.
 The upstream-source bytes, including copyright and license notices, are
 preserved; the NeverC-authored C declaration shims are identified
@@ -19,6 +19,13 @@ alignment on Darwin and 8 bytes with 4-byte alignment on the supported glibc
 and UCRT targets. The `stdio.h` resource shim does not declare C stdio calls.
 The exact source is checked for every core-v2 target; runtime string-view
 operations require separate direct lowering.
+
+The `<vector>` parsing closure adds the pinned public libc++ header and its
+`__bit_reference`, `__vector/pmr.h`, and `__vector/vector_bool.h` dependencies.
+Core v2's reduced transitive includes keep its 300-file libc++/resource closure
+identical and platform-free on all eight targets. `std::vector<int>` exposes
+compile-time layout and `size_type` metadata; vector objects and operations
+still require direct lowering.
 
 Core v2 uses only the catalog's `libcxx` and `resource` roots for its
 compile-time `<type_traits>` and fixed-width `<cstdint>` surfaces. The

@@ -2205,6 +2205,19 @@ ordinary view lifetime, readable-range and valid-index preconditions.
 Custom traits, other character types, throwing `at()`, and other string-view
 operations still require separate direct lowerings.
 
+## Vector header and metadata from `<vector>`
+
+Core v2 admits an exact angle include of the pinned C++17 `<vector>` header.
+With reduced transitive includes, its 300-file libc++/resource closure is
+identical and platform-free on all eight core targets. The public header and
+the `__bit_reference`, `__vector/pmr.h`, and `__vector/vector_bool.h` files
+retain their LLVM 20.1.8 source bytes and catalog hashes. For the default
+allocator specialization, Clang can fold `std::vector<int>` size and alignment
+queries from libc++'s three-pointer layout and resolve its `size_type` alias.
+This is compile-time metadata only: constructing a vector object, calling its
+members, or destroying it still requires an authenticated direct lowering.
+Quoted and shadow headers remain rejected.
+
 ## Dynamic local static initialization
 
 Admitted non-constexpr functions can dynamically initialize local static numeric,

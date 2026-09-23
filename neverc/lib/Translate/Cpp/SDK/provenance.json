@@ -2,7 +2,7 @@
   "schema": "neverc.cpp.sdk.provenance",
   "version": 1,
   "source_distribution_id": "clang20.1.8-libcxx200100-macos15.5",
-  "scope": "616 approved header files; upstream references document source and license provenance, not a claim that every SDK export is byte-identical to that upstream revision.",
+  "scope": "620 approved header files; upstream references document source and license provenance, not a claim that every SDK export is byte-identical to that upstream revision.",
   "headers": [
     {
       "root": "libcxx",
@@ -1406,6 +1406,18 @@
       "upstream_revision": "llvmorg-20.1.8",
       "upstream_path": "libcxx/include/__bit/rotate.h",
       "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__bit/rotate.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "__bit_reference",
+      "sha256": "1f3bd0543609287dfe862e8a2f9727cc401450f98b7120a32be27a229186932e",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__bit_reference",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__bit_reference",
       "upstream_relationship": "source-reference"
     },
     {
@@ -5766,6 +5778,18 @@
     },
     {
       "root": "libcxx",
+      "path": "__vector/pmr.h",
+      "sha256": "c9bba3b7a775294b1880b4476b98f5446cb143d230434653e7d25d0afeef0453",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__vector/pmr.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__vector/pmr.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
       "path": "__vector/swap.h",
       "sha256": "0fe1aabe2f751959559c11ddb4b1277df411d0fd931a3f2a9f179c74b123d887",
       "license": "Apache-2.0 WITH LLVM-exception",
@@ -5786,6 +5810,18 @@
       "upstream_revision": "llvmorg-20.1.8",
       "upstream_path": "libcxx/include/__vector/vector.h",
       "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__vector/vector.h",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "__vector/vector_bool.h",
+      "sha256": "3c2740176a98de8102781acefcc41ad935ce751b0394c7ccc85c2547e6f6d188",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/__vector/vector_bool.h",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/__vector/vector_bool.h",
       "upstream_relationship": "source-reference"
     },
     {
@@ -6206,6 +6242,18 @@
       "upstream_revision": "llvmorg-20.1.8",
       "upstream_path": "libcxx/include/utility",
       "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/utility",
+      "upstream_relationship": "source-reference"
+    },
+    {
+      "root": "libcxx",
+      "path": "vector",
+      "sha256": "cdd816152d507ac40d88f8e7b5bf4fafea594073f74daec2e405c435c054427f",
+      "license": "Apache-2.0 WITH LLVM-exception",
+      "license_basis": "file-notice",
+      "upstream_repository": "https://github.com/llvm/llvm-project",
+      "upstream_revision": "llvmorg-20.1.8",
+      "upstream_path": "libcxx/include/vector",
+      "upstream_url": "https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/libcxx/include/vector",
       "upstream_relationship": "source-reference"
     },
     {
@@ -7413,7 +7461,7 @@
       "sha256": "58a133735f0a55a624a1703067059f6e78925e51725ec6e1f966072e142c9c42"
     }
   ],
-  "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r12",
+  "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r13",
   "metadata": [
     {
       "root": "platform",

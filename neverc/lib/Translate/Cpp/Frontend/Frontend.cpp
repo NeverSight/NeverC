@@ -16046,7 +16046,7 @@ public:
             Name != "numeric" && Name != "initializer_list" &&
             Name != "optional" && Name != "memory" && Name != "new" &&
             Name != "functional" && Name != "ratio" && Name != "cstring" &&
-            Name != "string_view"))) {
+            Name != "string_view" && Name != "vector"))) {
         reject(L, "include",
                "Only exact #include <type_traits>, #include <cstdint> and "
                "#include <limits>, #include <cstddef>, #include <utility> and "
@@ -16055,7 +16055,8 @@ public:
                "#include <initializer_list>, #include <optional> and "
                "#include <memory>, #include <new> and #include <functional> "
                "and #include <ratio>, #include <cstring> and "
-               "#include <string_view> entries are admitted in cpp-core-v2.");
+               "#include <string_view> and #include <vector> entries are "
+               "admitted in cpp-core-v2.");
         return;
       }
       if (!S.owns(SM, L) && !S.sdkFile(SM, L))

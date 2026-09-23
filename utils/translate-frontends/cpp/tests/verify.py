@@ -29,8 +29,8 @@ def main():
     repository = Path(__file__).resolve().parents[4]
     count = 0
     sdk_identity = {
-        "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r12",
-        "catalog_sha256": "067055380521a12d0e0872a1fecd1f93c59ba59f961197106bfa6b980f01bf92",
+        "distribution_id": "neverc-embedded-clang20.1.8-libcxx200100-macos15.5-r13",
+        "catalog_sha256": "29f5f4f6f83e67782673d64ca82db95448452b1d9d9ce6e6221a1ed3f0739622",
     }
 
     def check(name, source, code=None, options=(), root=None, profile="cpp-core-v1",
@@ -149,7 +149,7 @@ extern "C" int traits() {
               profile="cpp-core-v2", target=target, sdk=True)
     check("v2-type-traits-quoted", '#include "type_traits"\nint f(){return 0;}',
           "TR0201", profile="cpp-core-v2", sdk=True)
-    check("v2-type-traits-other-header", "#include <vector>\nint f(){return 0;}",
+    check("v2-type-traits-other-header", "#include <deque>\nint f(){return 0;}",
           "TR0201", profile="cpp-core-v2", sdk=True)
     check("v2-type-traits-runtime-object",
           "#include <type_traits>\nusing T=std::integral_constant<int,3>; int f(){return T{};}",
@@ -24560,7 +24560,7 @@ int main(){return early()-10;}
         'skipped-body': 'namespace N{int f(){if(false){long double n=3;}return 0;}}using N::f;',
         'folded-body': 'namespace N{constexpr int f(){return static_cast<int>(3.0L);}}using N::f;const int value=f();',
         'inactive-include': '#if 0\n#include "missing.h"\n#endif\nnamespace N{int n=3;}using N::n;',
-        'active-include': '#include <vector>\nnamespace N{int n=3;}using N::n;',
+        'active-include': '#include <deque>\nnamespace N{int n=3;}using N::n;',
     }
     for name, source in imports_reject.items():
         check("v2-name-imports-reject-" + name, source, 'TR0201', profile="cpp-core-v2")
@@ -24820,7 +24820,7 @@ int main(){return boolChoice()-20;}
         'unused-body': 'namespace N{inline namespace V{int f(){long double n=3;return static_cast<int>(n);}}}',
         'skipped-body': 'namespace N{inline namespace V{int f(){if(false){long double n=3;}return 0;}}}',
         'folded-initializer': 'namespace N{inline namespace V{int n=static_cast<int>(3.0L);}}',
-        'active-include': '#include <vector>\nnamespace N{inline namespace V{int n=3;}}',
+        'active-include': '#include <deque>\nnamespace N{inline namespace V{int n=3;}}',
         'inactive-include': '#if 0\n#include "missing.h"\n#endif\nnamespace N{inline namespace V{int n=3;}}',
     }
     for name, source in inline_namespaces_reject.items():
@@ -28977,6 +28977,36 @@ int compare_n(const char *left, const char *right, std::size_t count) {
     check("v2-cstring-function-address", '#include <cstring>\nauto pointer=&std::strlen;',
           "TR0201", profile="cpp-core-v2", sdk=True)
     check("v2-cstring-quoted", '#include "cstring"\nint f(){return 0;}',
+          "TR0201", profile="cpp-core-v2", sdk=True)
+
+    vector_metadata_source = """\
+#include <vector>
+static_assert(sizeof(std::vector<int>) == 3 * sizeof(void*));
+static_assert(alignof(std::vector<int>) == alignof(void*));
+std::vector<int>::size_type passthrough(std::vector<int>::size_type n) {
+  return n;
+}
+"""
+    vector_dependencies = None
+    for target in sdk_targets:
+        vector_ir = check("v2-vector-metadata-" + target,
+                          vector_metadata_source, profile="cpp-core-v2",
+                          target=target, sdk=True)
+        dependencies = {(entry["root"], entry["path"])
+                        for entry in vector_ir["sdk_dependencies"]}
+        assert len(dependencies) == 300, target
+        assert {("libcxx", "vector"), ("libcxx", "__bit_reference"),
+                ("libcxx", "__vector/pmr.h"),
+                ("libcxx", "__vector/vector_bool.h")} <= dependencies, target
+        if vector_dependencies is None:
+            vector_dependencies = dependencies
+        else:
+            assert dependencies == vector_dependencies, target
+        assert len(vector_ir["functions"]) == 1, target
+    check("v2-vector-runtime-object",
+          '#include <vector>\nint f(){std::vector<int> v;return v.size();}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-vector-quoted", '#include "vector"\nint f(){return 0;}',
           "TR0201", profile="cpp-core-v2", sdk=True)
 
     string_view_metadata_source = """\
