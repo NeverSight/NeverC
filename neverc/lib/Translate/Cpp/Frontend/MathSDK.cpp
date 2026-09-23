@@ -1117,7 +1117,8 @@ bool approvedFunctionalReferenceAssignment(
 
 static std::optional<FunctionalOperationInfo> approvedFunctionalOperationImpl(
     const State &S, const SourceManager &SM, const CallExpr *Call,
-    const ASTContext &Context, bool RequireOwnedReference);
+    const ASTContext &Context, bool RequireOwnedReference,
+    const CXXMethodDecl *SelectedMethod = nullptr);
 
 static std::optional<FunctionalOperationInfo> approvedPointerHashOperation(
     const State &S, const SourceManager &SM, const CallExpr *Call,
@@ -1597,35 +1598,43 @@ static std::optional<FunctionalOperationInfo> approvedWideIntegralHashOperation(
 
 static std::optional<FunctionalOperationInfo> approvedFunctionalOperationImpl(
     const State &S, const SourceManager &SM, const CallExpr *Call,
-    const ASTContext &Context, bool RequireOwnedReference) {
-  if (auto Pointer = approvedPointerHashOperation(
-          S, SM, Call, Context, RequireOwnedReference))
-    return Pointer;
-  if (auto Enum = approvedEnumHashOperation(
-          S, SM, Call, Context, RequireOwnedReference))
-    return Enum;
-  if (auto Floating = approvedFloatingHashOperation(
-          S, SM, Call, Context, RequireOwnedReference))
-    return Floating;
-  if (auto Wide = approvedWideIntegralHashOperation(
-          S, SM, Call, Context, RequireOwnedReference))
-    return Wide;
+    const ASTContext &Context, bool RequireOwnedReference,
+    const CXXMethodDecl *SelectedMethod) {
+  if (Call) {
+    if (auto Pointer = approvedPointerHashOperation(
+            S, SM, Call, Context, RequireOwnedReference))
+      return Pointer;
+    if (auto Enum = approvedEnumHashOperation(
+            S, SM, Call, Context, RequireOwnedReference))
+      return Enum;
+    if (auto Floating = approvedFloatingHashOperation(
+            S, SM, Call, Context, RequireOwnedReference))
+      return Floating;
+    if (auto Wide = approvedWideIntegralHashOperation(
+            S, SM, Call, Context, RequireOwnedReference))
+      return Wide;
+  }
   const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
-  const auto *Method =
-      dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);
+  const auto *Method = SelectedMethod
+                           ? SelectedMethod
+                           : dyn_cast_or_null<CXXMethodDecl>(
+                                 Call ? Call->getDirectCallee() : nullptr);
   const auto *Record = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
       Method ? Method->getParent()->getDefinition() : nullptr);
   const auto *Template = Record ? Record->getSpecializedTemplate() : nullptr;
   const auto *CanonicalTemplate =
       Template ? Template->getCanonicalDecl() : nullptr;
-  const auto *Reference = directMethodReference(Call);
+  const auto *Reference = Call ? directMethodReference(Call) : nullptr;
   const auto Name = Record ? Record->getName() : llvm::StringRef();
-  if (!Call || !Operator || !Method || !Record || !Template ||
-      !CanonicalTemplate || !Reference || Operator->getOperator() != OO_Call ||
+  if (!Method || !Record || !Template || !CanonicalTemplate ||
+      (Call && (!Operator || !Reference ||
+                Operator->getOperator() != OO_Call ||
+                (SelectedMethod && Call->getDirectCallee() != Method))) ||
+      (!Call && (!SelectedMethod || RequireOwnedReference)) ||
       Method->getOverloadedOperator() != OO_Call || Method->isStatic() ||
       !Method->isConst() || Method->isVariadic() ||
       (!Method->isConstexpr() && Name != "hash") || !Method->isInlined() ||
-      !Method->hasBody() || !Call->isPRValue() || Record->isUnion() ||
+      !Method->hasBody() || (Call && !Call->isPRValue()) || Record->isUnion() ||
       Record->isDependentContext() || !Record->isEmpty() ||
       !Record->isStandardLayout() || !Record->isTriviallyCopyable() ||
       !Record->hasTrivialDestructor() ||
@@ -1637,7 +1646,8 @@ static std::optional<FunctionalOperationInfo> approvedFunctionalOperationImpl(
       !functionalObjectTemplateOrigin(S, SM, Template, Name, false) ||
       !functionalObjectTemplateOrigin(S, SM, CanonicalTemplate, Name, true) ||
       !functionalObjectOrigin(S, SM, Method, Name) ||
-      (RequireOwnedReference && !S.owns(SM, Reference->getExprLoc())))
+      (RequireOwnedReference &&
+       (!Reference || !S.owns(SM, Reference->getExprLoc()))))
     return std::nullopt;
 
   const auto FunctionalRecord =
@@ -1652,6 +1662,8 @@ static std::optional<FunctionalOperationInfo> approvedFunctionalOperationImpl(
     return std::nullopt;
   const auto ValueType = Arguments.get(0).getAsType();
   if (Name == "hash") {
+    if (!Call)
+      return std::nullopt;
     const auto *Body = dyn_cast<CompoundStmt>(Method->getBody());
     if (ValueType->isNullPtrType()) {
       const auto *NullReturn = Body && Body->size() == 1
@@ -1799,12 +1811,14 @@ static std::optional<FunctionalOperationInfo> approvedFunctionalOperationImpl(
   const auto ExpectedResult = Selected->BooleanResult ? Context.BoolTy
                                                        : ValueType;
   if (Method->getNumParams() != Parameters ||
-      Call->getNumArgs() != Parameters + 1 ||
+      (Call && Call->getNumArgs() != Parameters + 1) ||
       (!Transparent &&
        !Context.hasSameType(Method->getReturnType(), ExpectedResult)) ||
-      !Context.hasSameType(Call->getType(), Method->getReturnType()) ||
-      !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
-                                      Context.getRecordType(Record)))
+      (Call && (!Context.hasSameType(Call->getType(),
+                                     Method->getReturnType()) ||
+                !Context.hasSameUnqualifiedType(
+                    Call->getArg(0)->getType(),
+                    Context.getRecordType(Record)))))
     return std::nullopt;
 
   const FunctionTemplateDecl *Primary = nullptr;
@@ -1860,8 +1874,9 @@ static std::optional<FunctionalOperationInfo> approvedFunctionalOperationImpl(
           Deduced.isNull() || !SupportedScalar(Deduced) ||
           !PatternParameter->isRValueReferenceType() ||
           !Context.hasSameType(InstantiatedParameter, ExpectedParameter) ||
-          !Context.hasSameUnqualifiedType(
-              Call->getArg(I + 1)->getType(), Deduced.getNonReferenceType()))
+          (Call && !Context.hasSameUnqualifiedType(
+                       Call->getArg(I + 1)->getType(),
+                       Deduced.getNonReferenceType())))
         return std::nullopt;
     }
   } else {
@@ -1872,8 +1887,8 @@ static std::optional<FunctionalOperationInfo> approvedFunctionalOperationImpl(
           Parameter->getPointeeType().isVolatileQualified() ||
           !Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
                                           ValueType) ||
-          !Context.hasSameUnqualifiedType(Call->getArg(I + 1)->getType(),
-                                          ValueType))
+          (Call && !Context.hasSameUnqualifiedType(
+                       Call->getArg(I + 1)->getType(), ValueType)))
         return std::nullopt;
     }
   }
@@ -14633,13 +14648,95 @@ std::optional<FunctionalOperationInfo> approvedDirectAlgorithmComparator(
   return Operation;
 }
 
+std::optional<FunctionalOperationInfo>
+approvedRangeAlgorithmComparator(const State &S, const SourceManager &SM,
+                                 const CallExpr *Call, unsigned ComparatorIndex,
+                                 QualType LeftElement, QualType RightElement,
+                                 const ASTContext &Context) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  if (!S.coreV2() || !Function || ComparatorIndex >= Call->getNumArgs() ||
+      ComparatorIndex >= Function->getNumParams() ||
+      !approvedStandardSDKDeclaration(S, SM, Function) ||
+      !approvedUtilityReference(S, SM, Call, Function))
+    return std::nullopt;
+  const auto Object = Function->getParamDecl(ComparatorIndex)->getType();
+  const auto *Record = Object->getAsCXXRecordDecl();
+  const auto Approved = approvedFunctionalObjectRecord(S, SM, Record, Context);
+  if (!Approved || Object.hasLocalQualifiers() ||
+      !Context.hasSameType(Call->getArg(ComparatorIndex)->getType(), Object))
+    return std::nullopt;
+  Record = Approved->Record;
+  const auto *Specialization =
+      dyn_cast<ClassTemplateSpecializationDecl>(Record);
+  const auto ValueType =
+      Specialization && Specialization->getTemplateArgs().size() == 1 &&
+              Specialization->getTemplateArgs().get(0).getKind() ==
+                  TemplateArgument::Type
+          ? Specialization->getTemplateArgs().get(0).getAsType()
+          : QualType();
+  const bool Transparent = !ValueType.isNull() && ValueType->isVoidType();
+  const auto Name = Record->getName();
+  if (ValueType.isNull() || (Name != "less" && Name != "greater" &&
+                             Name != "equal_to" && Name != "not_equal_to" &&
+                             Name != "less_equal" && Name != "greater_equal"))
+    return std::nullopt;
+  std::optional<FunctionalOperationInfo> Selected;
+  const auto Consider = [&](const CXXMethodDecl *Method) {
+    if (!Method || Method->getOverloadedOperator() != OO_Call ||
+        Method->getNumParams() != 2 ||
+        Method->getParent()->getCanonicalDecl() != Record->getCanonicalDecl())
+      return true;
+    const auto LeftType =
+        Method->getParamDecl(0)->getType().getNonReferenceType();
+    const auto RightType =
+        Method->getParamDecl(1)->getType().getNonReferenceType();
+    if ((Transparent &&
+         (!Context.hasSameUnqualifiedType(LeftElement, LeftType) ||
+          !Context.hasSameUnqualifiedType(RightElement, RightType))) ||
+        !utilityScalarDirectConversion(Context, LeftElement, LeftType) ||
+        !utilityScalarDirectConversion(Context, RightElement, RightType))
+      return true;
+    auto Operation =
+        approvedFunctionalOperationImpl(S, SM, nullptr, Context, false, Method);
+    if (!Operation || Operation->RightType.isNull() ||
+        !Operation->ResultType->isBooleanType() ||
+        (Selected && (Selected->Operation != Operation->Operation ||
+                      !Context.hasSameUnqualifiedType(Selected->LeftType,
+                                                      Operation->LeftType) ||
+                      !Context.hasSameUnqualifiedType(Selected->RightType,
+                                                      Operation->RightType))))
+      return false;
+    Selected = std::move(Operation);
+    return true;
+  };
+  if (Transparent) {
+    for (const auto *Declaration : Record->decls()) {
+      const auto *Template = dyn_cast<FunctionTemplateDecl>(Declaration);
+      const auto *Pattern =
+          Template ? dyn_cast<CXXMethodDecl>(Template->getTemplatedDecl())
+                   : nullptr;
+      if (!Pattern || Pattern->getOverloadedOperator() != OO_Call)
+        continue;
+      for (const auto *Specialized : Template->specializations())
+        if (!Consider(dyn_cast<CXXMethodDecl>(Specialized)))
+          return std::nullopt;
+    }
+  } else {
+    for (const auto *Method : Record->methods())
+      if (!Consider(Method))
+        return std::nullopt;
+  }
+  return Selected;
+}
+
 std::optional<UtilityOperation>
 approvedUtilityOperation(const State &S, const SourceManager &SM,
                          const CallExpr *Call, const ASTContext &Context) {
   if (!Call || Call->isTypeDependent() || Call->isValueDependent() ||
       Call->isInstantiationDependent())
     return std::nullopt;
-  if (auto Predicate = approvedUtilityAlgorithmPredicateCall(S, SM, Call, Context))
+  if (auto Predicate =
+          approvedUtilityAlgorithmPredicateCall(S, SM, Call, Context))
     return Predicate->Operation;
   if (approvedUtilityTupleCatCall(S, SM, Call, Context))
     return UtilityOperation::TupleCat;
@@ -16212,6 +16309,26 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            utilityScalarDirectConversion(Context, Right->getPointeeType(),
                                          RightParameter);
   };
+  auto AlgorithmBinaryComparisonParameter =
+      [&](unsigned PredicateIndex, unsigned LeftIteratorIndex,
+          unsigned RightIteratorIndex) {
+        if (AlgorithmBinaryPredicateParameter(PredicateIndex,
+                                              LeftIteratorIndex,
+                                              RightIteratorIndex))
+          return true;
+        if (LeftIteratorIndex >= Function->getNumParams() ||
+            RightIteratorIndex >= Function->getNumParams())
+          return false;
+        const auto Left =
+            Function->getParamDecl(LeftIteratorIndex)->getType();
+        const auto Right =
+            Function->getParamDecl(RightIteratorIndex)->getType();
+        return utilityAlgorithmScalarPointer(Context, Left) &&
+               utilityAlgorithmScalarPointer(Context, Right) &&
+               approvedRangeAlgorithmComparator(
+                   S, SM, Call, PredicateIndex, Left->getPointeeType(),
+                   Right->getPointeeType(), Context).has_value();
+      };
   auto AlgorithmBinaryPredicateValueParameter = [&](unsigned PredicateIndex,
                                                     unsigned IteratorIndex,
                                                     unsigned ValueIndex) {
@@ -17307,7 +17424,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType()) &&
       ((Call->getNumArgs() == 2 && AlgorithmOrderedPointerParameter(0)) ||
        (Call->getNumArgs() == 3 &&
-        AlgorithmBinaryPredicateParameter(2, 0, 0)))) {
+        AlgorithmBinaryComparisonParameter(2, 0, 0)))) {
     if (Name == "is_heap" && Function->getReturnType()->isBooleanType())
       return UtilityOperation::AlgorithmIsHeap;
     if (Name == "is_heap_until" &&
@@ -17331,7 +17448,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType()) &&
       ((Call->getNumArgs() == 2 && AlgorithmOrderedPointerParameter(0)) ||
        (Call->getNumArgs() == 3 &&
-        AlgorithmBinaryPredicateParameter(2, 0, 0)))) {
+        AlgorithmBinaryComparisonParameter(2, 0, 0)))) {
     if (Name == "make_heap")
       return UtilityOperation::AlgorithmMakeHeap;
     if (Name == "push_heap")
@@ -17351,7 +17468,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Function->getReturnType()->isVoidType() &&
       Same(Call->getType(), Function->getReturnType()) &&
       ((Call->getNumArgs() == 2 && AlgorithmOrderedPointerParameter(0)) ||
-       (Call->getNumArgs() == 3 && AlgorithmBinaryPredicateParameter(2, 0, 0))))
+       (Call->getNumArgs() == 3 &&
+        AlgorithmBinaryComparisonParameter(2, 0, 0))))
     return UtilityOperation::AlgorithmSort;
   if (Origin->Path == "__algorithm/stable_sort.h" && Name == "stable_sort" &&
       (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&

@@ -1745,7 +1745,12 @@ callback builds a minimum heap and `sort_heap` produces descending order. Each
 call retains the callback once; query ranges may be read-only, mutation ranges
 remain writable, and empty or single-element work performs no callback calls.
 Reference callback signatures, non-boolean results, variadic functions,
-callable objects and record elements remain rejected.
+other callable objects and record elements remain rejected. The six heap
+overloads also accept authenticated empty standard `<functional>` comparison
+objects on arithmetic scalars, including typed and transparent forms. The
+selected instantiated `operator()` body is proved before its comparison is
+lowered directly. The object argument is evaluated once; a greater-than object
+builds a minimum heap and makes `sort_heap` produce descending order.
 
 The exact default-order `std::sort`, `std::partial_sort`,
 `std::partial_sort_copy` and `std::nth_element` templates use that arithmetic,
@@ -1770,6 +1775,11 @@ selects in descending order. All callback and iterator arguments are retained
 once. Empty selected prefixes and outputs make no callback calls, and the
 three-way `nth_element` partition still terminates directly on equivalent
 values. Unsupported callbacks and record elements remain rejected.
+
+The three-argument `std::sort` overload also accepts the same authenticated
+standard comparison objects as the heap algorithms. Its checked heap lowering
+applies the selected scalar `operator()` operation directly, preserving the
+object argument's single evaluation and the comparator's ordering.
 
 The exact `std::stable_sort` overloads use the same default arithmetic, enum or
 complete object-pointer ordering and
@@ -1869,7 +1879,8 @@ selection uses pointer-width partition indexes. Generated programs do not call
 or link libc++ for these operations. Heterogeneous value types outside the
 documented binary-predicate `equal` and `mismatch` forms, other predicate or
 comparator overloads, custom iterators, record elements, callable objects outside
-the fourteen unary algorithms below and four scalar-reference extrema operations,
+the fourteen unary algorithms below, four scalar-reference extrema operations,
+six heap operations and `sort`,
 and addresses of standard algorithms remain rejected, as do calls outside a
 documented direct lowering.
 

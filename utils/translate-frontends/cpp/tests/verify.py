@@ -11795,6 +11795,41 @@ extern "C" int algorithm_comparator_heap(
           'struct R{int n;};bool p(R a,R b){return a.n<b.n;}\n#include <algorithm>\nint main(){R a[2]{{2},{1}};std::pop_heap(a,a+2,p);return 0;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    algorithm_functional_heap_sort_source = """\
+#include <algorithm>
+#include <functional>
+extern "C" int algorithm_functional_heap_sort(int *first, int *last) {
+  std::greater<int> greater;
+  bool heap = std::is_heap(first, last, greater);
+  int *until = std::is_heap_until(first, last, std::greater<>{});
+  std::make_heap(first, last, std::greater<>{});
+  std::push_heap(first, last, greater);
+  std::pop_heap(first, last, greater);
+  std::sort_heap(first, last, greater);
+  std::sort(first, last, std::less<>{});
+  return heap + static_cast<int>(until - first);
+}
+"""
+
+    def assert_functional_heap_sort(data):
+        assert len(data["sdk_dependencies"]) == 435, data
+        assert not [node for node in walk(data["functions"])
+                    if node.get("op") in ("call", "mapped_call",
+                                          "indirect_call")], data
+
+    assert_functional_heap_sort(check(
+        "v2-algorithm-functional-heap-sort",
+        algorithm_functional_heap_sort_source, profile="cpp-core-v2",
+        sdk=True))
+    for target in sdk_targets:
+        assert_functional_heap_sort(check(
+            "v2-algorithm-functional-heap-sort-" + target,
+            algorithm_functional_heap_sort_source, profile="cpp-core-v2",
+            target=target, sdk=True))
+    check("v2-algorithm-functional-heap-sort-user-object",
+          'struct Greater { bool operator()(int a,int b) const { return a>b; } };\n#include <algorithm>\nint main(){int a[2]{1,2};std::sort(a,a+2,Greater{});return 0;}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     algorithm_ordering_source = """\
 #include <algorithm>
 extern "C" int algorithm_ordering(int *first, int *middle, int *last,

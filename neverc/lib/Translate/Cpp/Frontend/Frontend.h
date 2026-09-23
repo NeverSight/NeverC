@@ -303,6 +303,11 @@ approvedFunctionalOperation(const State &S, const clang::SourceManager &SM,
 std::optional<FunctionalOperationInfo> approvedDirectAlgorithmComparator(
     const State &S, const clang::SourceManager &SM,
     const clang::CallExpr *Call, const clang::ASTContext &Context);
+std::optional<FunctionalOperationInfo> approvedRangeAlgorithmComparator(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *Call, unsigned ComparatorIndex,
+    clang::QualType LeftElement, clang::QualType RightElement,
+    const clang::ASTContext &Context);
 struct FunctionalInvokeObjectCall {
   FunctionalOperationInfo Operation;
   const clang::CXXMethodDecl *Method;

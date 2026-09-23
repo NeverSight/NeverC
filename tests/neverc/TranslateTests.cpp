@@ -41053,6 +41053,66 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2AlgorithmFunctionalHeapAndSortRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-functional-heap-sort.cpp");
+  const auto Output = tmpFile("algorithm-functional-heap-sort.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main() {
+  int values[6]{4, 1, 3, 2, 5, 0};
+  int effects = 0;
+  std::make_heap((++effects, values), (++effects, values + 5),
+                 (++effects, std::greater<>{}));
+  if (effects != 3 || values[0] != 1)
+    return 1;
+  std::greater<int> greater;
+  if (!std::is_heap(values, values + 5, greater) ||
+      std::is_heap_until(values, values + 5, greater) != values + 5 ||
+      !std::is_heap(values, values + 5, std::greater<>{}))
+    return 2;
+  std::push_heap(values, values + 6, greater);
+  if (values[0] != 0 || !std::is_heap(values, values + 6, greater))
+    return 3;
+  std::pop_heap(values, values + 6, greater);
+  if (values[5] != 0 || !std::is_heap(values, values + 5, greater))
+    return 4;
+  std::sort_heap(values, values + 5, greater);
+  if (values[0] != 5 || values[1] != 4 || values[2] != 3 ||
+      values[3] != 2 || values[4] != 1)
+    return 5;
+
+  int ordered[7]{4, 1, 7, 4, -2, 0, 3};
+  effects = 0;
+  std::sort((++effects, ordered), (++effects, ordered + 7),
+            (++effects, std::greater<>{}));
+  if (effects != 3 || ordered[0] != 7 || ordered[1] != 4 ||
+      ordered[2] != 4 || ordered[3] != 3 || ordered[4] != 1 ||
+      ordered[5] != 0 || ordered[6] != -2)
+    return 6;
+  std::less<int> less;
+  std::sort(ordered, ordered + 7, less);
+  if (ordered[0] != -2 || ordered[1] != 0 || ordered[2] != 1 ||
+      ordered[3] != 3 || ordered[4] != 4 || ordered[5] != 4 ||
+      ordered[6] != 7)
+    return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("algorithm-functional-heap-sort" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmComparatorHeapRequiresValueCallbacks) {
   struct Rejection {
     const char *Name;
