@@ -42835,6 +42835,10 @@ int main() {
   (void)negated;
   (void)complemented;
   if (calls != 8 || values[0] != 1 || values[2] != 3) return 7;
+  auto narrowed = std::for_each(values, values + 3,
+                                std::logical_not<unsigned char>{});
+  (void)narrowed;
+  if (calls != 8 || values[0] != 1 || values[2] != 3) return 8;
   return 0;
 }
 )cpp");
@@ -42949,6 +42953,23 @@ int main() {
   if (std::transform(flags, flags + 3, flags, std::logical_not<bool>{}) !=
           flags + 3 || !flags[0] || !flags[1] || !flags[2])
     return 7;
+  int converted[3]{256, 0, 257};
+  bool convertedFlags[3]{};
+  if (std::transform(converted, converted + 3, convertedFlags,
+                     std::logical_not<unsigned char>{}) != convertedFlags + 3 ||
+      !convertedFlags[0] || !convertedFlags[1] || convertedFlags[2])
+    return 8;
+  unsigned char convertedOutput[3]{};
+  if (std::transform(converted, converted + 3, convertedOutput,
+                     std::negate<unsigned char>{}) != convertedOutput + 3 ||
+      convertedOutput[0] != 0 || convertedOutput[1] != 0 ||
+      convertedOutput[2] != 255)
+    return 9;
+  if (std::transform(converted, converted + 3, convertedOutput,
+                     std::bit_not<unsigned char>{}) != convertedOutput + 3 ||
+      convertedOutput[0] != 255 || convertedOutput[1] != 255 ||
+      convertedOutput[2] != 254)
+    return 10;
   return 0;
 }
 )cpp");
@@ -46452,6 +46473,7 @@ int main(){
  if(std::for_each_n(values,0,std::logical_not<>{})!=values)return 8;
  if(std::for_each_n(values,3,std::negate<int>{})!=values+3)return 12;
  if(std::for_each_n(values,-1,std::bit_not<>{})!=values)return 13;
+ if(std::for_each_n(values,3,std::negate<unsigned char>{})!=values+3)return 14;
  decltype(std::for_each_n(values,2,Stateful(&receiver,true))) query=values;
  if(query!=values||constructed!=4||cleanup!=5||calls||receiver)return 9;
  if(noexcept(std::for_each_n(values,2,Stateful(&receiver,true)))||constructed!=4||cleanup!=5)return 10;
@@ -46504,7 +46526,7 @@ struct F{void operator()(int){}};int f(int*p){static_assert(__is_same(decltype(s
 )cpp", "TR0203"},
     {"sdk-mismatch", R"cpp(#include <algorithm>
 #include <functional>
-int*f(int*p){return std::for_each_n(p,2,std::logical_not<long>{});}
+int*f(int*p){return std::for_each_n(p,2,std::logical_not<long double>{});}
 )cpp", "TR0203"},
     {"volatile-input", R"cpp(#include <algorithm>
 struct F{void operator()(int){}};volatile int*f(volatile int*p){return std::for_each_n(p,2,F{});}
@@ -48087,6 +48109,12 @@ int main() {
   score += std::bit_xor<U>{}(0xff00ULL, 0x0ff0ULL) == 0xf0f0ULL;
   int value = std::plus<int>{}(next(1), next(2));
   score += value == 7 && (trace == 12 || trace == 21);
+  int wide = 256;
+  if (!std::logical_not<unsigned char>{}(wide)) return 25;
+  if (std::negate<unsigned char>{}(wide + 1) != 255) return 26;
+  if (std::bit_not<unsigned char>{}(wide) != 255) return 27;
+  if (!std::less<unsigned char>{}(wide, 1)) return 28;
+  if (std::divides<unsigned char>{}(wide, 2) != 0) return 29;
   return score == 24 ? 0 : score;
 }
 )cpp");

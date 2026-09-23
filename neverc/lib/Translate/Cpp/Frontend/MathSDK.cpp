@@ -12130,8 +12130,15 @@ utilityAlgorithmTransformObjectCall(const State &S, const SourceManager &SM,
       InputSteps ? dyn_cast<CStyleCastExpr>(InputSteps->getRHS()) : nullptr;
   const auto *UnaryOutputStep =
       !Binary && Steps ? dyn_cast<CStyleCastExpr>(Steps->getRHS()) : nullptr;
-  const auto *Assignment =
-      Loop ? dyn_cast_or_null<BinaryOperator>(Loop->getBody()) : nullptr;
+  const Expr *LoopExpression = Loop ? dyn_cast<Expr>(Loop->getBody()) : nullptr;
+  if (const auto *Cleanup =
+          dyn_cast_or_null<ExprWithCleanups>(LoopExpression)) {
+    if (!SDKObject || Cleanup->cleanupsHaveSideEffects() ||
+        Cleanup->getNumObjects() != 0)
+      return std::nullopt;
+    LoopExpression = Cleanup->getSubExpr();
+  }
+  const auto *Assignment = dyn_cast_or_null<BinaryOperator>(LoopExpression);
   const auto *Destination =
       Assignment ? dyn_cast<UnaryOperator>(Assignment->getLHS()) : nullptr;
   if (!Loop || Loop->getInit() || Loop->getConditionVariable() || !Condition ||
@@ -12171,7 +12178,18 @@ utilityAlgorithmTransformObjectCall(const State &S, const SourceManager &SM,
     return std::nullopt;
   for (unsigned Index = 0; Index != (Binary ? 2u : 1u); ++Index) {
     const Expr *ElementArgument = Invocation->getArg(Index + 1);
-    while (const auto *Cast = dyn_cast<ImplicitCastExpr>(ElementArgument)) {
+    while (ElementArgument) {
+      if (const auto *Temporary =
+              dyn_cast<MaterializeTemporaryExpr>(ElementArgument)) {
+        if (!Temporary->isLValue() || Temporary->getExtendingDecl() ||
+            !utilityScalar(Context, Temporary->getType()))
+          return std::nullopt;
+        ElementArgument = Temporary->getSubExpr();
+        continue;
+      }
+      const auto *Cast = dyn_cast<ImplicitCastExpr>(ElementArgument);
+      if (!Cast)
+        break;
       if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
                                          Cast->getType()))
         return std::nullopt;
@@ -12210,9 +12228,10 @@ utilityAlgorithmTransformObjectCall(const State &S, const SourceManager &SM,
          SDKOperation->Operation == FunctionalOperation::LogicalNot);
     if (!SDKOperation ||
         (Binary ? SDKOperation->RightType.isNull() : !UnaryOperation) ||
-        !Context.hasSameUnqualifiedType(
-            Input->getPointeeType(),
-            Method->getParamDecl(0)->getType().getNonReferenceType()) ||
+        (Binary &&
+         !Context.hasSameUnqualifiedType(
+             Input->getPointeeType(),
+             Method->getParamDecl(0)->getType().getNonReferenceType())) ||
         (Binary &&
          !Context.hasSameUnqualifiedType(
              Second->getPointeeType(),
@@ -12373,7 +12392,16 @@ utilityAlgorithmForEachNObjectCall(const State &S, const SourceManager &SM,
       !Zero->getValue().isZero() || !LoopBody || LoopBody->size() != 3)
     return std::nullopt;
   auto LoopPart = LoopBody->body_begin();
-  const auto *Invocation = dyn_cast<CXXOperatorCallExpr>(*LoopPart++);
+  const auto *InvocationStatement = dyn_cast<Expr>(*LoopPart++);
+  if (const auto *Cleanup =
+          dyn_cast_or_null<ExprWithCleanups>(InvocationStatement)) {
+    if (!SDKObject || Cleanup->cleanupsHaveSideEffects() ||
+        Cleanup->getNumObjects() != 0)
+      return std::nullopt;
+    InvocationStatement = Cleanup->getSubExpr();
+  }
+  const auto *Invocation =
+      dyn_cast_or_null<CXXOperatorCallExpr>(InvocationStatement);
   const auto *Advance = dyn_cast<UnaryOperator>(*LoopPart++);
   const auto *Reduce = dyn_cast<UnaryOperator>(*LoopPart);
   if (!Invocation || Invocation->getOperator() != OO_Call ||
@@ -12385,7 +12413,18 @@ utilityAlgorithmForEachNObjectCall(const State &S, const SourceManager &SM,
       !Reference(Reduce->getSubExpr(), Remaining))
     return std::nullopt;
   const Expr *ElementArgument = Invocation->getArg(1);
-  while (const auto *Cast = dyn_cast<ImplicitCastExpr>(ElementArgument)) {
+  while (ElementArgument) {
+    if (const auto *Temporary =
+            dyn_cast<MaterializeTemporaryExpr>(ElementArgument)) {
+      if (!Temporary->isLValue() || Temporary->getExtendingDecl() ||
+          !utilityScalar(Context, Temporary->getType()))
+        return std::nullopt;
+      ElementArgument = Temporary->getSubExpr();
+      continue;
+    }
+    const auto *Cast = dyn_cast<ImplicitCastExpr>(ElementArgument);
+    if (!Cast)
+      break;
     if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
                                        Cast->getType()))
       return std::nullopt;
@@ -12416,10 +12455,7 @@ utilityAlgorithmForEachNObjectCall(const State &S, const SourceManager &SM,
     if (!SDKOperation ||
         (SDKOperation->Operation != FunctionalOperation::LogicalNot &&
          SDKOperation->Operation != FunctionalOperation::Negate &&
-         SDKOperation->Operation != FunctionalOperation::BitNot) ||
-        !Context.hasSameUnqualifiedType(
-            Pointer->getPointeeType(),
-            Method->getParamDecl(0)->getType().getNonReferenceType()))
+         SDKOperation->Operation != FunctionalOperation::BitNot))
       return std::nullopt;
   } else {
     if ((Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
@@ -12521,8 +12557,17 @@ utilityAlgorithmForEachObjectCall(const State &S, const SourceManager &SM,
       Loop ? dyn_cast_or_null<BinaryOperator>(Loop->getCond()) : nullptr;
   const auto *Advance =
       Loop ? dyn_cast_or_null<UnaryOperator>(Loop->getInc()) : nullptr;
+  const Expr *InvocationStatement = Loop ? dyn_cast<Expr>(Loop->getBody())
+                                         : nullptr;
+  if (const auto *Cleanup =
+          dyn_cast_or_null<ExprWithCleanups>(InvocationStatement)) {
+    if (!SDKObject || Cleanup->cleanupsHaveSideEffects() ||
+        Cleanup->getNumObjects() != 0)
+      return std::nullopt;
+    InvocationStatement = Cleanup->getSubExpr();
+  }
   const auto *Invocation =
-      Loop ? dyn_cast_or_null<CXXOperatorCallExpr>(Loop->getBody()) : nullptr;
+      dyn_cast_or_null<CXXOperatorCallExpr>(InvocationStatement);
   const auto *Result =
       Return ? dyn_cast_or_null<CXXConstructExpr>(Return->getRetValue())
              : nullptr;
@@ -12541,7 +12586,18 @@ utilityAlgorithmForEachObjectCall(const State &S, const SourceManager &SM,
       !Reference(Result->getArg(0), Definition->getParamDecl(2)))
     return std::nullopt;
   const Expr *ElementArgument = Invocation->getArg(1);
-  while (const auto *Cast = dyn_cast<ImplicitCastExpr>(ElementArgument)) {
+  while (ElementArgument) {
+    if (const auto *Temporary =
+            dyn_cast<MaterializeTemporaryExpr>(ElementArgument)) {
+      if (!Temporary->isLValue() || Temporary->getExtendingDecl() ||
+          !utilityScalar(Context, Temporary->getType()))
+        return std::nullopt;
+      ElementArgument = Temporary->getSubExpr();
+      continue;
+    }
+    const auto *Cast = dyn_cast<ImplicitCastExpr>(ElementArgument);
+    if (!Cast)
+      break;
     if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
                                        Cast->getType()))
       return std::nullopt;
@@ -12571,10 +12627,7 @@ utilityAlgorithmForEachObjectCall(const State &S, const SourceManager &SM,
     if (!SDKOperation ||
         (SDKOperation->Operation != FunctionalOperation::LogicalNot &&
          SDKOperation->Operation != FunctionalOperation::Negate &&
-         SDKOperation->Operation != FunctionalOperation::BitNot) ||
-        !Context.hasSameUnqualifiedType(
-            Pointer->getPointeeType(),
-            Method->getParamDecl(0)->getType().getNonReferenceType()))
+         SDKOperation->Operation != FunctionalOperation::BitNot))
       return std::nullopt;
   } else {
     if ((Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&

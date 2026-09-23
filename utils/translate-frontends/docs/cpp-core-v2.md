@@ -1608,12 +1608,13 @@ operator may return `void` or an admitted scalar, and that result is discarded.
 The algorithm invokes one retained by-value object in input order and returns
 the advanced pointer. Pinned typed or transparent `std::logical_not`,
 `std::negate` and integral `std::bit_not` objects are accepted under their
-exact scalar input rule. Ordinary `for_each` also
+checked scalar input conversion rule. Typed objects may convert a distinct
+input element to their operand type before each call. Ordinary `for_each` also
 accepts those source objects under its authenticated loop and trivial move
 return. It copies the modified by-value callable into the result without
 changing the caller's object, including on empty ranges. Pinned typed or
 transparent `std::logical_not`, `std::negate` and integral `std::bit_not`
-objects use the same checked input and return boundary.
+objects use the same checked input conversion and return boundary.
 
 `generate` and `generate_n` accept source-owned, standard-layout, trivially
 copied generator objects with a defined non-template nullary call operator.
@@ -1634,7 +1635,8 @@ arithmetic and comparison operators, after authenticating the selected SDK
 method and matching each input element to its corresponding operand type.
 The unary overload similarly accepts authenticated typed or transparent
 `std::negate`, integral `std::bit_not` and `std::logical_not` objects. Their
-selected operand type must match the input element, and the result converts
+selected operand type accepts a checked direct conversion from the input
+element, including typed narrowing before the operation; the result converts
 directly to the output element. Other unary SDK objects remain excluded.
 
 The exact default-equality four-iterator `std::search`, `std::find_end` and

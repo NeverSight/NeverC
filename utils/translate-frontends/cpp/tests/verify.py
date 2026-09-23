@@ -14171,6 +14171,7 @@ int main(){
  if(std::for_each_n(values,0,std::logical_not<>{})!=values)return 8;
  if(std::for_each_n(values,3,std::negate<int>{})!=values+3)return 12;
  if(std::for_each_n(values,-1,std::bit_not<>{})!=values)return 13;
+ if(std::for_each_n(values,3,std::negate<unsigned char>{})!=values+3)return 14;
  decltype(std::for_each_n(values,2,Stateful(&receiver,true))) query=values;
  if(query!=values||constructed!=4||cleanup!=5||calls||receiver)return 9;
  if(noexcept(std::for_each_n(values,2,Stateful(&receiver,true)))||constructed!=4||cleanup!=5)return 10;
@@ -14196,8 +14197,8 @@ int main(){
         ('specialization', '#include <algorithm>\nstruct F{void operator()(int){}};namespace std{template<>int*for_each_n<int*,int,F>(int*p,int,F){return p;}}int*f(int*p){return std::for_each_n(p,2,F{});}\n', 'TR0201', 'cpp-core-v2', True),
         ('redeclaration', '#include <algorithm>\nstruct F{void operator()(int){}};namespace std{inline namespace __1{template<class I,class N,class F>I for_each_n(I,N,F);}}int*f(int*p){return std::for_each_n(p,2,F{});}\n', 'TR0201', 'cpp-core-v2', True),
         ('query-no-body', '#include <algorithm>\nstruct F{void operator()(int){}};int f(int*p){static_assert(__is_same(decltype(std::for_each_n(p,2,F{})),int*));return 0;}\n', 'TR0203', 'cpp-core-v2', True),
-        ('sdk-mismatch', '#include <algorithm>\n#include <functional>\nint*f(int*p){return std::for_each_n(p,2,std::logical_not<long>{});}\n', 'TR0203', 'cpp-core-v2', True),
-        ('sdk-negate-mismatch', '#include <algorithm>\n#include <functional>\nint*f(int*p){return std::for_each_n(p,2,std::negate<long>{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('sdk-mismatch', '#include <algorithm>\n#include <functional>\nint*f(int*p){return std::for_each_n(p,2,std::logical_not<long double>{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('sdk-negate-mismatch', '#include <algorithm>\n#include <functional>\nint*f(int*p){return std::for_each_n(p,2,std::negate<long double>{});}\n', 'TR0203', 'cpp-core-v2', True),
         ('volatile-input', '#include <algorithm>\nstruct F{void operator()(int){}};volatile int*f(volatile int*p){return std::for_each_n(p,2,F{});}\n', 'TR0201', 'cpp-core-v2', True),
         ('count-source', '#include <algorithm>\nstruct F{void operator()(int){}};int n(int=(sizeof(long double),0)){return 2;}int*f(int*p){return std::for_each_n(p,n(),F{});}\n', 'TR0201', 'cpp-core-v2', True),
     ]
@@ -14261,7 +14262,8 @@ int main(){
  auto transparent=std::for_each(values,values+3,std::logical_not<>{});
  auto negated=std::for_each(values,values+3,std::negate<int>{});
  auto complemented=std::for_each(values,values,std::bit_not<>{});
- (void)typed;(void)transparent;(void)negated;(void)complemented;
+ auto narrowed=std::for_each(values,values+3,std::logical_not<unsigned char>{});
+ (void)typed;(void)transparent;(void)negated;(void)complemented;(void)narrowed;
  return 0;
 }
 """
@@ -14274,7 +14276,7 @@ int main(){
         assert not [node for node in nodes
                     if node.get('op') in ('call', 'mapped_call', 'indirect_call', 'member_pointer')], data
     check("v2-algorithm-for-each-sdk-object-mismatch",
-          '#include <algorithm>\n#include <functional>\nint f(int*p){auto x=std::for_each(p,p+2,std::logical_not<long>{});return 0;}\n',
+          '#include <algorithm>\n#include <functional>\nint f(int*p){auto x=std::for_each(p,p+2,std::logical_not<long double>{});return 0;}\n',
           'TR0203', profile='cpp-core-v2', sdk=True)
     check("v2-algorithm-for-each-sdk-object-hash",
           '#include <algorithm>\n#include <functional>\nint f(int*p){auto x=std::for_each(p,p+2,std::hash<int>{});return 0;}\n',
@@ -14559,18 +14561,27 @@ bool*logical_not(int*first,int*last,bool*out){
 unsigned char*narrow(unsigned char*first,unsigned char*last,unsigned char*out){
  return std::transform(first,last,out,std::negate<unsigned char>{});
 }
+bool*converted_logical(int*first,int*last,bool*out){
+ return std::transform(first,last,out,std::logical_not<unsigned char>{});
+}
+unsigned char*converted_negate(int*first,int*last,unsigned char*out){
+ return std::transform(first,last,out,std::negate<unsigned char>{});
+}
+unsigned char*converted_bit_not(int*first,int*last,unsigned char*out){
+ return std::transform(first,last,out,std::bit_not<unsigned char>{});
+}
 """
     for target in sdk_targets:
         data = check("v2-algorithm-transform-unary-sdk-object-" + target,
                      algorithm_transform_unary_sdk_object_source,
                      profile="cpp-core-v2", target=target, sdk=True)
         assert len(data['sdk_dependencies']) == 435, data
-        assert len([f for f in data['functions'] if f['loc']['line'] in (3, 6, 9, 12)]) == 4, data
+        assert len([f for f in data['functions'] if f['loc']['line'] in (3, 6, 9, 12, 15, 18, 21)]) == 7, data
         nodes = list(walk(data['functions']))
         assert not [node for node in nodes
                     if node.get('op') in ('call', 'mapped_call', 'indirect_call', 'member_pointer')], data
     check("v2-algorithm-transform-unary-sdk-object-mismatch",
-          '#include <algorithm>\n#include <functional>\nlong*f(int*p,long*out){return std::transform(p,p+2,out,std::negate<long>{});}\n',
+          '#include <algorithm>\n#include <functional>\nlong*f(int*p,long*out){return std::transform(p,p+2,out,std::negate<long double>{});}\n',
           'TR0203', profile='cpp-core-v2', sdk=True)
     check("v2-algorithm-transform-unary-sdk-object-hash",
           '#include <algorithm>\n#include <functional>\nunsigned long*f(int*p,unsigned long*out){return std::transform(p,p+2,out,std::hash<int>{});}\n',

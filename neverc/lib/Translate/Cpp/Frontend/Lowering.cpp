@@ -679,9 +679,17 @@ class FunctionLowering {
   }
   Expression emitUnaryPredicate(const CapturedAlgorithmPredicate &Predicate,
                                  Expression Argument, SourceLocation L) {
-    if (Predicate.SDKOperation)
-      return functionalOperationValues(L, std::move(Argument), std::nullopt,
-                                       *Predicate.SDKOperation);
+    if (Predicate.SDKOperation) {
+      if (!Predicate.Method)
+        reject(L, "algorithm predicate",
+               "The checked SDK predicate method is required.");
+      const auto ParameterType =
+          type(Predicate.Method->getParamDecl(0)->getType().getNonReferenceType(),
+               L);
+      return functionalOperationValues(
+          L, cast(std::move(Argument), ParameterType, L), std::nullopt,
+          *Predicate.SDKOperation);
+    }
     if (!Predicate.Method)
       return emitUnaryPredicate(json::Object(Predicate.Storage), Predicate.Type,
                                 std::move(Argument), L);
@@ -701,9 +709,17 @@ class FunctionLowering {
   }
   Expression emitUnaryCallable(const CapturedAlgorithmPredicate &Operation,
                                Expression Argument, SourceLocation L) {
-    if (Operation.SDKOperation)
-      return functionalOperationValues(L, std::move(Argument), std::nullopt,
-                                       *Operation.SDKOperation);
+    if (Operation.SDKOperation) {
+      if (!Operation.Method)
+        reject(L, "algorithm operation",
+               "The checked SDK operation method is required.");
+      const auto ParameterType =
+          type(Operation.Method->getParamDecl(0)->getType().getNonReferenceType(),
+               L);
+      return functionalOperationValues(
+          L, cast(std::move(Argument), ParameterType, L), std::nullopt,
+          *Operation.SDKOperation);
+    }
     const auto *Method = Operation.Method;
     if (!Method) {
       json::Array Arguments;
