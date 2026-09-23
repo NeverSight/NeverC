@@ -780,8 +780,11 @@ checks the source's move of each current element into the previous value.
 The five-argument initialized `inclusive_scan` overload accepts the same
 binary objects when the initial value has the input element type. Source-owned
 and transparent SDK objects also admit a different non-promoted arithmetic
-initial type with a checked common type. The initial value converts directly
-to the writable output element. Its pinned sequential loop retains
+initial type with a checked common type. Typed SDK objects admit that pair when
+the input converts directly to the object's parameter type, including a
+checked scalar temporary bound to its const-reference parameter. The initial
+value converts directly to the writable output element. Its pinned sequential
+loop retains
 the copied object's state and does not invoke it for an empty range.
 The four-argument no-init overload authenticates the pinned first-element
 branch and its delegation to that initialized overload. The first element is

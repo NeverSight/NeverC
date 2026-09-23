@@ -37210,6 +37210,10 @@ int main() {
   if (std::inclusive_scan(values, values + 3, sdk, std::plus<>{}, 5L) !=
           sdk + 3 || sdk[0] != 6 || sdk[1] != 8 || sdk[2] != 11 ||
       calls != 3) return 2;
+  long typed[3]{};
+  if (std::inclusive_scan(values, values + 3, typed, std::plus<long>{}, 5L) !=
+          typed + 3 || typed[0] != 6 || typed[1] != 8 || typed[2] != 11 ||
+      calls != 3) return 4;
   if (std::inclusive_scan(values, values, output, make(), 7L) != output ||
       factories != 1 || calls != 3) return 3;
   return 0;

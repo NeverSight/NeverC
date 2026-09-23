@@ -13440,7 +13440,13 @@ utilityNumericInclusiveScanObjectCall(const State &S, const SourceManager &SM,
       !Reference(Return->getRetValue(), Definition->getParamDecl(2)))
     return std::nullopt;
   auto Statement = LoopBody->body_begin();
-  const auto *Combine = dyn_cast<BinaryOperator>(*Statement++);
+  const Stmt *CombineStatement = *Statement++;
+  if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(CombineStatement)) {
+    if (Cleanup->getNumObjects())
+      return std::nullopt;
+    CombineStatement = Cleanup->getSubExpr();
+  }
+  const auto *Combine = dyn_cast<BinaryOperator>(CombineStatement);
   const auto *Store = dyn_cast<BinaryOperator>(*Statement);
   if (!Combine || Combine->getOpcode() != BO_Assign ||
       !Reference(Combine->getLHS(), Definition->getParamDecl(4)) || !Store ||
@@ -13465,11 +13471,31 @@ utilityNumericInclusiveScanObjectCall(const State &S, const SourceManager &SM,
     Result = Cast->getSubExpr();
   }
   const auto *Invocation = dyn_cast<CXXOperatorCallExpr>(Result);
+  const Expr *ElementArgument = Invocation && Invocation->getNumArgs() == 3
+                                    ? Invocation->getArg(2)
+                                    : nullptr;
+  while (ElementArgument) {
+    if (const auto *Temporary =
+            dyn_cast<MaterializeTemporaryExpr>(ElementArgument)) {
+      if (!Temporary->isLValue() || Temporary->getExtendingDecl() ||
+          !utilityScalar(Context, Temporary->getType()))
+        return std::nullopt;
+      ElementArgument = Temporary->getSubExpr();
+      continue;
+    }
+    const auto *Cast = dyn_cast<ImplicitCastExpr>(ElementArgument);
+    if (!Cast)
+      break;
+    if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
+                                       Cast->getType()))
+      return std::nullopt;
+    ElementArgument = Cast->getSubExpr();
+  }
   if (!Invocation || Invocation->getOperator() != OO_Call ||
       Invocation->getNumArgs() != 3 || !Invocation->isPRValue() ||
       !Reference(Invocation->getArg(0), Definition->getParamDecl(3)) ||
       !Reference(Invocation->getArg(1), Definition->getParamDecl(4)) ||
-      !Dereference(Invocation->getArg(2), Definition->getParamDecl(0),
+      !Dereference(ElementArgument, Definition->getParamDecl(0),
                    Input->getPointeeType()))
     return std::nullopt;
   const auto *Method =
@@ -13491,8 +13517,9 @@ utilityNumericInclusiveScanObjectCall(const State &S, const SourceManager &SM,
         !Context.hasSameUnqualifiedType(
             Initial,
             Method->getParamDecl(0)->getType().getNonReferenceType()) ||
-        !Context.hasSameUnqualifiedType(
-            Element, Method->getParamDecl(1)->getType().getNonReferenceType()))
+        !utilityScalarDirectConversion(
+            Context, Element,
+            Method->getParamDecl(1)->getType().getNonReferenceType()))
       return std::nullopt;
   } else {
     if ((Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
