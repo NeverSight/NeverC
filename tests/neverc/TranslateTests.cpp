@@ -37587,6 +37587,11 @@ int main() {
       std::transform_reduce(larger, larger + 2, smaller, 30,
                             std::minus<int>{}, std::minus<int>{}) != 18)
     return 7;
+  if (std::inner_product(left, left + 2, right, 5,
+                         std::plus<int>{}, std::multiplies<>{}) != 28 ||
+      std::transform_reduce(left, left + 2, right, 5,
+                            std::plus<>{}, std::multiplies<int>{}) != 28)
+    return 8;
   return 0;
 }
 )cpp");
@@ -37633,6 +37638,11 @@ int main() {
       std::transform_reduce(exact, exact + 2, 20,
                             std::minus<int>{}, std::negate<int>{}) != 25)
     return 6;
+  if (std::transform_reduce(exact, exact + 2, 20,
+                            std::plus<int>{}, std::negate<>{}) != 15 ||
+      std::transform_reduce(exact, exact + 2, 20,
+                            std::plus<>{}, std::negate<int>{}) != 15)
+    return 7;
   return 0;
 }
 )cpp");

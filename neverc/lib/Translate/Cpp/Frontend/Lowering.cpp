@@ -3065,10 +3065,10 @@ class FunctionLowering {
                    TemplateArgument::Type &&
                !Record->getTemplateArgs().get(0).getAsType()->isVoidType();
       };
-      const bool TypedFunctionalPair =
-          DefaultFunctionalPair && TypedFunctionalAt(4);
-      const bool TypedUnaryFunctionalPair =
-          DefaultUnaryFunctionalPair && TypedFunctionalAt(3);
+      const bool TypedTransformFunctional =
+          DefaultFunctionalPair        ? TypedFunctionalAt(5)
+          : DefaultUnaryFunctionalPair ? TypedFunctionalAt(4)
+                                       : false;
       auto ArithmeticFunctionalOperator = [&](unsigned Index) {
         const auto *Record =
             Call->getArg(Index)->getType()->getAsCXXRecordDecl();
@@ -3162,7 +3162,7 @@ class FunctionLowering {
             {"operator", "-"},
             {"args", json::Array{cast(std::move(Term), PromotedType, L)}},
             {"loc", A.loc(L)}};
-        if (TypedUnaryFunctionalPair)
+        if (TypedTransformFunctional)
           Term = cast(std::move(Term), ResultType, L);
       } else if (TransformCallback) {
         json::Array Arguments;
@@ -3179,7 +3179,7 @@ class FunctionLowering {
                       cast(std::move(Term), DefaultTermType, L),
                       cast(dereference(*Second, L), DefaultTermType, L),
                       DefaultTermType, L);
-        if (TypedFunctionalPair)
+        if (TypedTransformFunctional)
           Term = cast(std::move(Term), ResultType, L);
       }
       if (ReductionObject) {
