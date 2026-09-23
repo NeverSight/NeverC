@@ -16152,8 +16152,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Name == "adjacent_difference")) &&
       (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      NumericPointerParameter(0, false) && NumericPointerParameter(1, false) &&
-      NumericPointerParameter(2, true) &&
+      NumericPointerParameter(0, false, Call->getNumArgs() == 3) &&
+      NumericPointerParameter(1, false, Call->getNumArgs() == 3) &&
+      NumericPointerParameter(2, true, Call->getNumArgs() == 3) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       AlgorithmTransferParameters(0, 2) &&

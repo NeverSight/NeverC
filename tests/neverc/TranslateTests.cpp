@@ -37184,6 +37184,49 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2NumericDefaultNarrowPrefixRunAtBothOptimizations) {
+  const auto Source = tmpFile("numeric-default-narrow-prefix.cpp");
+  const auto Output = tmpFile("numeric-default-narrow-prefix.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+int main() {
+  unsigned char values[3]{250, 10, 20};
+  int sums[3]{}, differences[3]{};
+  if (std::partial_sum(values, values + 3, sums) != sums + 3 ||
+      sums[0] != 250 || sums[1] != 4 || sums[2] != 24) return 1;
+  if (std::adjacent_difference(values, values + 3, differences) !=
+          differences + 3 || differences[0] != 250 ||
+      differences[1] != -240 || differences[2] != 10) return 2;
+  unsigned char in_place_sums[3]{250, 10, 20};
+  unsigned char in_place_differences[3]{250, 10, 20};
+  if (std::partial_sum(in_place_sums, in_place_sums + 3, in_place_sums) !=
+          in_place_sums + 3 || in_place_sums[0] != 250 ||
+      in_place_sums[1] != 4 || in_place_sums[2] != 24) return 3;
+  if (std::adjacent_difference(in_place_differences,
+                               in_place_differences + 3,
+                               in_place_differences) !=
+          in_place_differences + 3 || in_place_differences[0] != 250 ||
+      in_place_differences[1] != 16 ||
+      in_place_differences[2] != 10) return 4;
+  if (std::partial_sum(values, values, sums) != sums ||
+      std::adjacent_difference(values, values, differences) != differences)
+    return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("numeric-default-narrow-prefix" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest,
        CoreV2NumericDefaultNarrowReductionsRunAtBothOptimizations) {
   const auto Source = tmpFile("numeric-default-narrow-reductions.cpp");

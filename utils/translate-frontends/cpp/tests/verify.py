@@ -9974,6 +9974,25 @@ long long mixed(int*first,int*last) {
         for node in walk(data['functions']):
             assert node.get('op') not in ('mapped_call', 'indirect_call', 'member_pointer'), node
 
+    numeric_default_narrow_prefix_source = """\
+#include <numeric>
+void prefix(unsigned char*first,unsigned char*last,int*out) {
+ std::partial_sum(first,last,out);
+ std::adjacent_difference(first,last,out);
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-numeric-default-narrow-prefix-" + target,
+                     numeric_default_narrow_prefix_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        assert len(data['sdk_dependencies']) == 126, data
+        prefix_line = next(i for i, line in enumerate(numeric_default_narrow_prefix_source.splitlines(), 1)
+                           if 'prefix(unsigned char*first' in line)
+        prefix = [f for f in data['functions'] if f['loc']['line'] == prefix_line]
+        assert len(prefix) == 1, prefix
+        assert not [node for node in walk(prefix[0]['body'])
+                    if node.get('op') in ('call', 'mapped_call', 'indirect_call', 'member_pointer')], prefix
+
     numeric_default_narrow_reduction_source = """\
 #include <numeric>
 unsigned char narrow(unsigned char*first,unsigned char*last) {

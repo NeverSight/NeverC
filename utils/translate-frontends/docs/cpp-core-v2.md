@@ -721,7 +721,9 @@ ranges use admitted non-promoted built-in integers through 64 bits, `float` or
 `exclusive_scan` accept a writable scalar output whose element accepts a
 checked direct conversion from the input element. Default `accumulate` and
 `reduce` additionally admit non-boolean narrow integer input elements and
-initial values. Default `accumulate`,
+initial values. Default `partial_sum` and `adjacent_difference` also admit
+non-boolean narrow integer inputs; adjacent differences retain integer
+promotion before converting to the output element. Default `accumulate`,
 `inner_product`, initialized `reduce`, two-range `transform_reduce` and
 `exclusive_scan` accept an independent arithmetic initial value, use checked
 common arithmetic for their default operations and convert each result back to

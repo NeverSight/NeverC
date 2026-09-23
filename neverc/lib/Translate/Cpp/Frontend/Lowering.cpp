@@ -3265,9 +3265,20 @@ class FunctionLowering {
           return cast(emitBinaryCallable(*OperationObject, std::move(Left),
                                          std::move(Right), L),
                       Adjacent ? OutputElementType : ElementType, L);
-        if (!Callback)
-          return binary(DefaultOperator, std::move(Left), std::move(Right),
-                        ElementType, L);
+        if (!Callback) {
+          auto ResultType = ElementType;
+          if (Adjacent) {
+            auto Common = utilityScalarComparisonType(
+                A.Context, Call->getArg(0)->getType()->getPointeeType(),
+                Call->getArg(0)->getType()->getPointeeType(), false);
+            if (!Common)
+              reject(L, "adjacent difference",
+                     "The input elements have no arithmetic common type.");
+            ResultType = type(*Common, L);
+          }
+          return binary(DefaultOperator, cast(std::move(Left), ResultType, L),
+                        cast(std::move(Right), ResultType, L), ResultType, L);
+        }
         json::Array Arguments;
         Arguments.push_back(std::move(Left));
         Arguments.push_back(std::move(Right));
