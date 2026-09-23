@@ -9974,6 +9974,29 @@ long long mixed(int*first,int*last) {
         for node in walk(data['functions']):
             assert node.get('op') not in ('mapped_call', 'indirect_call', 'member_pointer'), node
 
+    numeric_default_functional_pair_source = """\
+#include <numeric>
+long long inner(unsigned char* first, unsigned char* last, signed char* second) {
+ return std::inner_product(first,last,second,5LL,std::plus<>{},std::multiplies<>{});
+}
+long long reduce(unsigned char* first, unsigned char* last, signed char* second) {
+ return std::transform_reduce(first,last,second,5LL,std::plus<>{},std::multiplies<>{});
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-numeric-default-functional-pair-" + target,
+                     numeric_default_functional_pair_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        assert len(data['sdk_dependencies']) == 126, data
+        for line in (2, 5):
+            functions = [f for f in data['functions'] if f['loc']['line'] == line]
+            assert len(functions) == 1 and functions[0]['result'] == 'i64', functions
+            assert not any(node.get('op') in ('call', 'indirect_call', 'mapped_call')
+                           for node in walk(functions[0]['body'])), functions
+    check("v2-numeric-default-functional-pair-stored",
+          '#include <numeric>\nlong long f(int*a,int*b){std::plus<> sum;std::multiplies<> product;return std::inner_product(a,b,a,0LL,sum,product);}',
+          code="TR0203", profile="cpp-core-v2", sdk=True)
+
     numeric_mixed_unary_transform_reduce_source = """\
 #include <numeric>
 long long sum(long long a,long long b){return a+b;}

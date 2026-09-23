@@ -744,6 +744,11 @@ to the accumulator type.
 Default `inner_product` and two-range `transform_reduce` additionally admit
 non-boolean narrow input elements in either range and a narrow initial
 accumulator.
+Their six-argument overloads also accept an explicit pair of directly empty
+list-initialized `std::plus<>` and `std::multiplies<>` objects. The authenticated
+stateless SDK objects use the same checked product and sum conversions as the
+default overloads; stored objects and other object combinations remain outside
+this direct lowering.
 
 The operation-taking overloads of `accumulate`, `inner_product`, `partial_sum`,
 `adjacent_difference`, `reduce`, unary and two-range `transform_reduce`,

@@ -3053,6 +3053,8 @@ class FunctionLowering {
           Operation == UtilityOperation::NumericTransformReduce;
       const bool UnaryTransformReduce =
           TransformReduce && Call->getNumArgs() == 5;
+      const bool DefaultFunctionalPair =
+          Call->getNumArgs() == 6 && Call->getArg(4)->getType()->isRecordType();
       const bool Inner = Operation == UtilityOperation::NumericInnerProduct ||
                          (TransformReduce && !UnaryTransformReduce);
       auto First = snapshot(expression(Call->getArg(0)), L);
@@ -3087,12 +3089,13 @@ class FunctionLowering {
           ReductionCallback = std::move(Captured.Storage);
         }
       } else if (Operation == UtilityOperation::NumericInnerProduct &&
-                 Call->getNumArgs() == 6) {
+                 Call->getNumArgs() == 6 && !DefaultFunctionalPair) {
         ReductionCallbackType = Call->getArg(4)->getType();
         TransformCallbackType = Call->getArg(5)->getType();
         ReductionCallback = snapshot(expression(Call->getArg(4)), L);
         TransformCallback = snapshot(expression(Call->getArg(5)), L);
-      } else if (TransformReduce && Call->getNumArgs() >= 5) {
+      } else if (TransformReduce && Call->getNumArgs() >= 5 &&
+                 !DefaultFunctionalPair) {
         const unsigned ReductionIndex = UnaryTransformReduce ? 3 : 4;
         const unsigned TransformIndex = UnaryTransformReduce ? 4 : 5;
         ReductionCallbackType = Call->getArg(ReductionIndex)->getType();

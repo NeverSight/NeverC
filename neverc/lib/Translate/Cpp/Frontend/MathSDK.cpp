@@ -16111,6 +16111,39 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            utilityScalarDirectConversion(Context, Right,
                                          Prototype->getParamType(1));
   };
+  // Empty, directly value-initialized transparent arithmetic function objects
+  // have no state or construction effects. Their pinned operations are exactly
+  // the default product and sum used by the four-argument overloads.
+  auto NumericDefaultFunctionalPair = [&] {
+    if (Call->getNumArgs() != 6)
+      return false;
+    for (const auto [Index, Name] :
+         {std::pair{4u, llvm::StringRef("plus")},
+          std::pair{5u, llvm::StringRef("multiplies")}}) {
+      const auto Object = Function->getParamDecl(Index)->getType();
+      const auto *Record = Object->getAsCXXRecordDecl();
+      const auto *Specialization =
+          dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+      const auto Approved =
+          approvedFunctionalObjectRecord(S, SM, Record, Context);
+      const auto *Cast = dyn_cast<CXXFunctionalCastExpr>(
+          Call->getArg(Index)->IgnoreParenImpCasts());
+      const auto *List =
+          Cast ? dyn_cast<InitListExpr>(Cast->getSubExpr()) : nullptr;
+      if (!Specialization || !Approved ||
+          Approved->Record->getCanonicalDecl() !=
+              Specialization->getCanonicalDecl() ||
+          Specialization->getName() != Name ||
+          Specialization->getTemplateArgs().size() != 1 ||
+          Specialization->getTemplateArgs().get(0).getKind() !=
+              TemplateArgument::Type ||
+          !Specialization->getTemplateArgs().get(0).getAsType()->isVoidType() ||
+          !Same(Call->getArg(Index)->getType(), Object) || !Cast || !List ||
+          List->getNumInits() != 0)
+        return false;
+    }
+    return true;
+  };
   if (Origin->Path == "__numeric/iota.h" && Name == "iota" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
       NumericPointerParameter(0, true, true) &&
@@ -16150,14 +16183,16 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       ((Call->getNumArgs() == 4 && NumericReductionValueParameter(3, 0, true) &&
         NumericCommonElements(0, 2, true)) ||
        (Call->getNumArgs() == 6 && NumericReductionValueParameter(3, 0, true) &&
-        NumericBinaryTransformCallback(4, Function->getParamDecl(3)->getType(),
-                                       Function->getParamDecl(3)->getType(),
-                                       Function->getParamDecl(3)->getType(),
-                                       true) &&
-        NumericBinaryTransformCallback(
-            5, Function->getParamDecl(3)->getType(),
-            Function->getParamDecl(0)->getType()->getPointeeType(),
-            Function->getParamDecl(2)->getType()->getPointeeType(), true))))
+        ((NumericDefaultFunctionalPair() &&
+          NumericCommonElements(0, 2, true)) ||
+         (NumericBinaryTransformCallback(
+              4, Function->getParamDecl(3)->getType(),
+              Function->getParamDecl(3)->getType(),
+              Function->getParamDecl(3)->getType(), true) &&
+          NumericBinaryTransformCallback(
+              5, Function->getParamDecl(3)->getType(),
+              Function->getParamDecl(0)->getType()->getPointeeType(),
+              Function->getParamDecl(2)->getType()->getPointeeType(), true))))))
     return UtilityOperation::NumericInnerProduct;
   if (((Origin->Path == "__numeric/partial_sum.h" && Name == "partial_sum") ||
        (Origin->Path == "__numeric/adjacent_difference.h" &&
@@ -16217,13 +16252,16 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Same(Function->getReturnType(), Function->getParamDecl(3)->getType()) &&
         ((Call->getNumArgs() == 4 && NumericCommonElements(0, 2, true)) ||
          (Call->getNumArgs() == 6 &&
-          NumericBinaryTransformCallback(
-              4, Function->getParamDecl(3)->getType(),
-              Function->getParamDecl(3)->getType(),
-              Function->getParamDecl(3)->getType(), true) &&
-          NumericBinaryTransformCallback(
-              5, Function->getParamDecl(3)->getType(), Element,
-              Function->getParamDecl(2)->getType()->getPointeeType(), true))))
+          ((NumericDefaultFunctionalPair() &&
+            NumericCommonElements(0, 2, true)) ||
+           (NumericBinaryTransformCallback(
+                4, Function->getParamDecl(3)->getType(),
+                Function->getParamDecl(3)->getType(),
+                Function->getParamDecl(3)->getType(), true) &&
+            NumericBinaryTransformCallback(
+                5, Function->getParamDecl(3)->getType(), Element,
+                Function->getParamDecl(2)->getType()->getPointeeType(),
+                true))))))
       return UtilityOperation::NumericTransformReduce;
     if (Call->getNumArgs() == 5 && NumericReductionValueParameter(2, 0, true) &&
         Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
