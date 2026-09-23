@@ -9974,6 +9974,29 @@ long long mixed(int*first,int*last) {
         for node in walk(data['functions']):
             assert node.get('op') not in ('mapped_call', 'indirect_call', 'member_pointer'), node
 
+    numeric_mixed_inner_product_callback_source = """\
+#include <numeric>
+long long sum(long long a,long long b){return a+b+1;}
+long long product(unsigned char a,signed char b){return a*b+1;}
+long long inner(unsigned char*first,unsigned char*last,signed char*other) {
+ return std::inner_product(first,last,other,5LL,sum,product);
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-numeric-mixed-inner-product-callback-" + target,
+                     numeric_mixed_inner_product_callback_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        assert len(data['sdk_dependencies']) == 126, data
+        inner_line = next(i for i, line in enumerate(numeric_mixed_inner_product_callback_source.splitlines(), 1)
+                          if 'inner(unsigned char*first' in line)
+        inner = [f for f in data['functions'] if f['loc']['line'] == inner_line]
+        assert len(inner) == 1, inner
+        calls = [node for node in walk(inner[0]['body']) if node.get('op') == 'indirect_call']
+        addresses = [node for node in walk(inner[0]['body']) if node.get('kind') == 'function_address']
+        assert len(calls) == 2 and len(addresses) == 2, (calls, addresses)
+        names = {f['name'] for f in data['functions'] if f['loc']['line'] in (2, 3)}
+        assert {node['name'] for node in addresses} == names, addresses
+
     numeric_mixed_reduction_callback_source = """\
 #include <numeric>
 long long add(long long total,unsigned char value){return total+value+1;}

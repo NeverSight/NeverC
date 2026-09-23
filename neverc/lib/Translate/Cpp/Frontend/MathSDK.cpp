@@ -16149,11 +16149,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType()) &&
       ((Call->getNumArgs() == 4 && NumericReductionValueParameter(3, 0, true) &&
         NumericCommonElements(0, 2, true)) ||
-       (Call->getNumArgs() == 6 && NumericValueParameter(3, 0, true) &&
-        NumericBinaryCallback(
-            4, Function->getParamDecl(0)->getType()->getPointeeType(), true) &&
+       (Call->getNumArgs() == 6 && NumericReductionValueParameter(3, 0, true) &&
+        NumericBinaryTransformCallback(4, Function->getParamDecl(3)->getType(),
+                                       Function->getParamDecl(3)->getType(),
+                                       Function->getParamDecl(3)->getType(),
+                                       true) &&
         NumericBinaryTransformCallback(
-            5, Function->getParamDecl(0)->getType()->getPointeeType(),
+            5, Function->getParamDecl(3)->getType(),
             Function->getParamDecl(0)->getType()->getPointeeType(),
             Function->getParamDecl(2)->getType()->getPointeeType(), true))))
     return UtilityOperation::NumericInnerProduct;

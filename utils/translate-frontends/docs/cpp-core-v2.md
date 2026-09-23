@@ -774,10 +774,12 @@ The callback forms of `inner_product` and two-range `transform_reduce` accept a
 different numeric second-range element when the transform callback accepts the
 respective element types and returns a value directly convertible to the
 accumulator type.
-The six-argument `inner_product` and two-range `transform_reduce` callback
-forms additionally admit matching non-boolean narrow input and accumulator
-types and a narrow second-range element, retaining both callback values
-across the loop.
+The six-argument `inner_product` callback form admits an independent arithmetic
+accumulator and different numeric second-range element, including non-boolean
+narrow inputs. Its transform and reduction callbacks return values directly
+convertible to the accumulator. The two-range `transform_reduce` callback form
+also admits matching narrow input and accumulator types with a narrow second
+range; both forms retain their callback values across the loop.
 The five-argument unary `transform_reduce` callback form likewise admits
 matching non-boolean narrow input and accumulator types, converting the unary
 result and each reduction result back to that accumulator.
