@@ -773,6 +773,10 @@ output element. Their pinned first-element and subsequent-loop structures are
 authenticated, including the empty-range return, in-place output behavior,
 and mutable state of the copied source operation. `adjacent_difference`
 checks the source's move of each current element into the previous value.
+The five-argument initialized `inclusive_scan` overload accepts the same
+binary objects when the initial value has the input element type and converts
+directly to the writable output element. Its pinned sequential loop retains
+the copied object's state and does not invoke it for an empty range.
 
 `gcd` and `lcm` accept any non-boolean built-in integer argument combination
 through 64 bits and return libc++'s exact `common_type_t` result. Signed inputs

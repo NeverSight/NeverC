@@ -3179,7 +3179,9 @@ class FunctionLowering {
       std::optional<CapturedAlgorithmPredicate> OperationObject;
       if (Call->getNumArgs() >= 4) {
         if (Operation == UtilityOperation::NumericPartialSum ||
-            Operation == UtilityOperation::NumericAdjacentDifference) {
+            Operation == UtilityOperation::NumericAdjacentDifference ||
+            (Operation == UtilityOperation::NumericInclusiveScan &&
+             Call->getNumArgs() == 5)) {
           auto Captured = captureUnaryPredicate(Call, Operation, 3);
           if (Captured.Method)
             OperationObject = std::move(Captured);
@@ -3211,15 +3213,18 @@ class FunctionLowering {
         branch(binary("!=", First, Last, "bool", L), Store, End, L);
         label(Store, L);
         assign(CurrentValue, dereference(First, L), L);
-        json::Array Arguments;
-        Arguments.push_back(json::Object(Value));
-        Arguments.push_back(json::Object(CurrentValue));
-        assign(
-            Value,
-            cast(emitAlgorithmCallback(json::Object(*Callback), *CallbackType,
-                                       std::move(Arguments), L),
-                 ValueType, L),
-            L);
+        Expression Next;
+        if (OperationObject) {
+          Next = emitBinaryCallable(*OperationObject, json::Object(Value),
+                                    json::Object(CurrentValue), L);
+        } else {
+          json::Array Arguments;
+          Arguments.push_back(json::Object(Value));
+          Arguments.push_back(json::Object(CurrentValue));
+          Next = emitAlgorithmCallback(json::Object(*Callback), *CallbackType,
+                                       std::move(Arguments), L);
+        }
+        assign(Value, cast(std::move(Next), ValueType, L), L);
         assign(dereference(Output, L),
                cast(json::Object(Value), OutputElementType, L), L);
         assign(First,

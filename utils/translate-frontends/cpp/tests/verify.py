@@ -10069,6 +10069,73 @@ int main(){
           '#include <numeric>\nstruct F{F(){}F(const F&){}int operator()(int a,int b){return a-b;}};int f(int*p,int*q){return int(std::adjacent_difference(p,p+2,q,F{})-q);}\n',
           'TR0203', profile='cpp-core-v2', sdk=True)
 
+    numeric_initialized_inclusive_scan_sdk_object_source = """\
+#include <numeric>
+#include <functional>
+int main(){
+ int values[3]={1,2,3};long sums[3]={};long products[3]={};
+ long*end=std::inclusive_scan(values,values+3,sums,std::plus<int>{},4);
+ long*other=std::inclusive_scan(values,values+3,products,std::multiplies<int>{},2);
+ int*inside=std::inclusive_scan(values,values+3,values,std::plus<>{},0);
+ return end==sums+3&&other==products+3&&inside==values+3&&
+        sums[0]==5&&sums[1]==7&&sums[2]==10&&
+        products[0]==2&&products[1]==4&&products[2]==12&&
+        values[0]==1&&values[1]==3&&values[2]==6?0:1;
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-numeric-initialized-inclusive-scan-sdk-object-" + target,
+                     numeric_initialized_inclusive_scan_sdk_object_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        assert len(data['sdk_dependencies']) == 360, data
+        nodes = list(walk(data['functions']))
+        assert not [node for node in nodes
+                    if node.get('op') in ('call', 'mapped_call', 'indirect_call', 'member_pointer')], data
+    check("v2-numeric-initialized-inclusive-scan-sdk-object-mismatch",
+          '#include <numeric>\n#include <functional>\nint f(int*p,int*q){return int(std::inclusive_scan(p,p+2,q,std::plus<long>{},0)-q);}\n',
+          'TR0203', profile='cpp-core-v2', sdk=True)
+
+    numeric_initialized_inclusive_scan_source_object_source = """\
+#include <numeric>
+int calls,factories;
+struct Add{
+ int local_calls;
+ int operator()(int total,int value)&{ // template-binary-method: inclusive_scan
+  ++calls;++local_calls;return total+value+local_calls;
+ }
+ int operator()(int,int)const&{return -100;}
+};
+Add make(){++factories;return Add{0};}
+int main(){
+ int values[3]={1,2,3};long output[3]={};Add caller{0};
+ long*end=std::inclusive_scan(values,values+3,output,caller,4); // template-binary-call: inclusive_scan
+ if(end!=output+3||output[0]!=6||output[1]!=10||output[2]!=16||calls!=3||caller.local_calls)return 1;
+ if(std::inclusive_scan(values,values,output,make(),7)!=output||calls!=3||factories!=1)return 2; // template-binary-call: inclusive_scan
+ return 0;
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-numeric-initialized-inclusive-scan-source-object-" + target,
+                     numeric_initialized_inclusive_scan_source_object_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        definitions = {f['name']: f for f in data['functions']}
+        method_line = next(i for i, line in enumerate(numeric_initialized_inclusive_scan_source_object_source.splitlines(), 1)
+                           if '// template-binary-method:' in line)
+        methods = [f for f in data['functions'] if f['loc']['line'] == method_line]
+        assert len(methods) == 1 and methods[0]['result'] == 'int', methods
+        calls = [node for node in walk(definitions['main']['body'])
+                 if node.get('op') == 'call' and node.get('callee') == methods[0]['name']]
+        expected_lines = [i for i, line in enumerate(numeric_initialized_inclusive_scan_source_object_source.splitlines(), 1)
+                          if '// template-binary-call:' in line]
+        assert len(calls) == 2 and [call['loc']['line'] for call in calls] == expected_lines, calls
+        for node in walk(data['functions']):
+            assert node.get('op') not in ('mapped_call', 'indirect_call', 'member_pointer'), node
+            if node.get('op') == 'call':
+                assert node['callee'] in definitions, node
+    check("v2-numeric-initialized-inclusive-scan-source-object-nontrivial-copy",
+          '#include <numeric>\nstruct F{F(){}F(const F&){}int operator()(int a,int b){return a+b;}};int f(int*p,int*q){return int(std::inclusive_scan(p,p+2,q,F{},0)-q);}\n',
+          'TR0203', profile='cpp-core-v2', sdk=True)
+
     algorithm_header_source = """\
 #include <algorithm>
 extern "C" int algorithm_header() { return 0; }
