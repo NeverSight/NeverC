@@ -6385,6 +6385,36 @@ extern "C" std::size_t functional_pointer_hash(int *pointer) {
                 target, pointer_literals)
             assert "1540483477" not in pointer_literals, (
                 target, pointer_literals)
+    functional_function_pointer_hash_source = """\
+#include <functional>
+#include <cstddef>
+using Callback = int (*)(int);
+int twice(int value) { return value * 2; }
+extern "C" std::size_t functional_function_pointer_hash(Callback callback) {
+  std::hash<Callback> stored;
+  auto copied = stored;
+  return stored(callback) + std::invoke(copied, &twice)
+      + std::invoke(copied, nullptr) + std::hash<Callback>{}(nullptr);
+}
+"""
+    for target in sdk_targets:
+        function_pointer_hash = check(
+            "v2-functional-function-pointer-hash-" + target,
+            functional_function_pointer_hash_source,
+            profile="cpp-core-v2", target=target, sdk=True)
+        assert any(function["name"] == "functional_function_pointer_hash"
+                   for function in function_pointer_hash["functions"]), (
+                       target, function_pointer_hash)
+        calls = [node for node in walk(function_pointer_hash["functions"])
+                 if node.get("op") in ("call", "mapped_call")]
+        assert not calls, (target, calls)
+        bit_casts = [node for node in walk(function_pointer_hash["functions"])
+                     if node.get("kind") == "bit_cast"]
+        result_type = "uint" if target.startswith("i686-") else "u64"
+        assert len(bit_casts) == 4 and all(
+            node["args"][0]["type"].startswith("fnptr:") and
+            node["type"] == result_type for node in bit_casts
+        ), (target, bit_casts)
     functional_reference_source = """\
 #include <functional>
 int functional_reference_global_value;

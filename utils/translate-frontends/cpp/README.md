@@ -155,12 +155,15 @@ its 32-bit representation, while `double` preserves its bits on 64-bit targets
 and uses the eight-byte Murmur2 path on 32-bit targets. Complete enum
 specializations authenticate the primary `hash` and `__enum_hash<E, true>`
 inheritance before delegating to the exact underlying integer hash. Exact non-volatile
-object- or void-pointer `std::hash<T *>` specializations authenticate the pinned pointer
+object-, void- or fixed-arity ordinary function-pointer `std::hash<T *>`
+specializations authenticate the pinned pointer
 partial specialization, its pointer/`size_t` union and its exact internal hash
 call. They reproduce libc++'s four-byte Murmur2 path on 32-bit targets and its
 ABI-v1 eight-byte CityHash path on 64-bit targets through the same object,
-assignment and invocation forms. `long double`, volatile-object, volatile-void and
-function-pointer hashes remain outside this boundary. Exact object
+assignment and invocation forms. Function pointers require the target's
+object-pointer size and alignment. `long double`, volatile-object,
+volatile-void and variadic function-pointer hashes remain outside this boundary.
+Exact object
 forms of `std::reference_wrapper<T>` and `std::reference_wrapper<const T>`, plus
 exact fixed-arity function forms with admitted scalar, object-pointer or
 fixed-arity ordinary function-pointer values, exact lvalue- or rvalue-reference

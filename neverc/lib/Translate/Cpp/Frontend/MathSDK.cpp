@@ -464,7 +464,17 @@ pointerHashPartial(const State &S, const SourceManager &SM,
       ValueType->getPointeeType().getAddressSpace() == LangAS::Default &&
       Context.getTypeSize(ValueType) == Context.getTypeSize(Context.VoidPtrTy) &&
       Context.getTypeAlign(ValueType) == Context.getTypeAlign(Context.VoidPtrTy);
-  if ((!utilityObjectPointer(Context, ValueType) && !VoidPointer) || !Template ||
+  const auto *Function =
+      !ValueType.isNull() && ValueType->isFunctionPointerType()
+          ? ValueType->getPointeeType()->getAs<FunctionProtoType>()
+          : nullptr;
+  const bool FunctionPointer =
+      Function && !Function->isVariadic() && !ValueType.hasQualifiers() &&
+      Context.getTypeSize(ValueType) == Context.getTypeSize(Context.VoidPtrTy) &&
+      Context.getTypeAlign(ValueType) == Context.getTypeAlign(Context.VoidPtrTy);
+  if ((!utilityObjectPointer(Context, ValueType) && !VoidPointer &&
+       !FunctionPointer) ||
+      !Template ||
       !Partial || Partial->getName() != "hash" || Partial->isUnion() ||
       !Partial->isDependentContext() ||
       Partial->getSpecializedTemplate()->getCanonicalDecl() !=
@@ -8170,10 +8180,18 @@ std::optional<FunctionalInvokeObjectCall> approvedFunctionalInvokeObjectOperatio
       OperationCall->getNumArgs() != Call->getNumArgs() ||
       !Context.hasSameType(Operation->ResultType, Call->getType()))
     return std::nullopt;
-  for (unsigned I = 1; I < Call->getNumArgs(); ++I)
-    if (!utilityScalarDirectConversion(Context, Call->getArg(I)->getType(),
-                                       OperationCall->getArg(I)->getType()))
+  for (unsigned I = 1; I < Call->getNumArgs(); ++I) {
+    const auto From = Call->getArg(I)->getType();
+    const auto To = OperationCall->getArg(I)->getType();
+    const bool ExactFunctionPointerHash =
+        Operation->Operation == FunctionalOperation::Hash &&
+        Operation->LeftType->isFunctionPointerType() &&
+        Context.hasSameType(To, Operation->LeftType) &&
+        (Context.hasSameType(From, To) || From->isNullPtrType());
+    if (!utilityScalarDirectConversion(Context, From, To) &&
+        !ExactFunctionPointerHash)
       return std::nullopt;
+  }
   return FunctionalInvokeObjectCall{*Operation, Method};
 }
 

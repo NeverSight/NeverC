@@ -1118,9 +1118,10 @@ class Verifier {
       if (From.Kind == TypeKind::NullPtr || To.Kind == TypeKind::NullPtr)
         return (From == To || (From.Kind == TypeKind::NullPtr &&
                                (To.Kind == TypeKind::Bool ||
-                                To.Kind == TypeKind::Pointer))) ||
+                                To.Kind == TypeKind::Pointer ||
+                                To.Kind == TypeKind::FunctionPointer))) ||
                error(E.Loc, "Null pointer values permit only identity, bool or "
-                            "object-pointer casts.");
+                            "pointer casts.");
       if (From.Kind == TypeKind::FunctionPointer || To.Kind == TypeKind::FunctionPointer)
         return (From == To || (From.Kind == TypeKind::FunctionPointer &&
                               To.Kind == TypeKind::Bool)) ||
@@ -1144,12 +1145,12 @@ class Verifier {
       const auto FromLayout = storageLayout(From);
       const auto ToLayout = storageLayout(To);
       return (M.Profile == "cpp-core-v2" &&
-              (From.isFloating() ||
+              (From.isFloating() || From.Kind == TypeKind::FunctionPointer ||
                (From.Kind == TypeKind::Pointer && From.Elements.size() == 1)) &&
               To.Kind == TypeKind::UInt && FromLayout && ToLayout &&
               FromLayout->SizeBits == ToLayout->SizeBits) ||
-             error(E.Loc, "Bit casts require a core-v2 float, double or "
-                          "pointer and a same-width unsigned integer result.");
+             error(E.Loc, "Bit casts require a core-v2 float, double, pointer "
+                          "or function pointer and a same-width unsigned integer result.");
     }
     case ExprKind::Member: {
       if (!Arity(1))

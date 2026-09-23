@@ -48479,6 +48479,55 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2FunctionPointerHashesRunAtBothOptimizations) {
+  const auto Source = tmpFile("functional-function-pointer-hash.cpp");
+  const auto Output = tmpFile("functional-function-pointer-hash.nc");
+  writeFile(Source, R"cpp(
+#include <functional>
+#include <cstddef>
+using Callback = int (*)(int);
+int twice(int value) { return value * 2; }
+std::hash<Callback> global_hash;
+std::size_t apply(std::hash<Callback> hash, Callback callback) {
+  return hash(callback);
+}
+int main() {
+  Callback callback = &twice;
+  std::hash<Callback> stored;
+  auto copied = stored;
+  std::hash<Callback> assigned;
+  assigned = copied;
+  const std::size_t expected = stored(callback);
+  int score = 0;
+  score += expected != std::size_t(0);
+  score += std::invoke(copied, callback) == expected;
+  score += apply(assigned, callback) == expected;
+  score += global_hash(callback) == expected;
+  score += stored(nullptr) == std::size_t(15546534240171485050ULL);
+  score += std::invoke(copied, nullptr) ==
+           std::size_t(15546534240171485050ULL);
+  score += twice(3) == 6;
+  return score == 7 ? 0 : score;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  const auto Generated = readFile(Output);
+  EXPECT_EQ(Generated.find("std::"), std::string::npos);
+  EXPECT_EQ(Generated.find("__murmur2_or_cityhash"), std::string::npos);
+  EXPECT_NE(Generated.find("11376068507788127593"), std::string::npos);
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-function-pointer-hash" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest,
        CoreV2FunctionalReferenceWrappersRunAtBothOptimizations) {
   const auto Source = tmpFile("functional-reference-wrappers.cpp");
@@ -50056,10 +50105,6 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "#include <functional>\nint main(){volatile int n=0;return "
        "std::hash<volatile void*>{}(&n);}",
        "TR0201"},
-      {"hash-function-pointer",
-       "#include <functional>\nint f(){return 0;}int main(){return "
-       "std::hash<int(*)()>{}(&f);}",
-       "TR0203"},
       {"reference-wrapper-volatile",
        "#include <functional>\nint main(){volatile int v=0;"
        "std::reference_wrapper<volatile int> r(v);return r.get();}",
