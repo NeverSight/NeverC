@@ -844,6 +844,20 @@ class FunctionLowering {
       discardFunctionalObject(Call->getArg(Index));
     return Info;
   }
+  std::optional<std::pair<FunctionalOperationInfo, FunctionalOperationInfo>>
+  captureRangeSDKComparatorPair(const CallExpr *Call, unsigned Index,
+                                QualType LeftElement, QualType RightElement) {
+    auto Forward = approvedRangeAlgorithmComparator(
+        A.S, A.Sources, Call, Index, LeftElement, RightElement, A.Context);
+    if (!Forward)
+      return std::nullopt;
+    auto Reverse = approvedRangeAlgorithmComparator(
+        A.S, A.Sources, Call, Index, RightElement, LeftElement, A.Context);
+    if (!Reverse)
+      return std::nullopt;
+    discardFunctionalObject(Call->getArg(Index));
+    return std::make_pair(std::move(*Forward), std::move(*Reverse));
+  }
   Expression indirectCall(
       const CallExpr *Call,
       std::optional<Expression> Destination = std::nullopt) {
@@ -4154,8 +4168,23 @@ class FunctionLowering {
       auto Candidate = snapshot(expression(Call->getArg(0)), L);
       auto Last = snapshot(expression(Call->getArg(1)), L);
       std::optional<Expression> Comparator;
-      if (Call->getNumArgs() == 3)
-        Comparator = snapshot(expression(Call->getArg(2)), L);
+      std::optional<FunctionalOperationInfo> SDKComparator;
+      if (Call->getNumArgs() == 3) {
+        const auto Element = Call->getArg(0)->getType()->getPointeeType();
+        SDKComparator = captureRangeSDKComparator(Call, 2, Element, Element);
+        if (!SDKComparator)
+          Comparator = snapshot(expression(Call->getArg(2)), L);
+      }
+      auto Less = [&](Expression Left, Expression Right) {
+        if (SDKComparator)
+          return functionalOperationValues(L, std::move(Left), std::move(Right),
+                                           *SDKComparator);
+        if (Comparator)
+          return emitBinaryPredicate(json::Object(*Comparator),
+                                     Call->getArg(2)->getType(),
+                                     std::move(Left), std::move(Right), L);
+        return binary("<", std::move(Left), std::move(Right), "bool", L);
+      };
       auto Current = snapshot(json::Object(Candidate), L);
       const auto Initialize = labelName(), Check = labelName();
       const auto Compare = labelName(), Select = labelName();
@@ -4172,18 +4201,10 @@ class FunctionLowering {
       label(Check, L);
       branch(binary("!=", Current, Last, "bool", L), Compare, End, L);
       label(Compare, L);
-      branch(Comparator
-                 ? emitBinaryPredicate(
-                       json::Object(*Comparator), Call->getArg(2)->getType(),
-                       Minimum ? dereference(json::Object(Current), L)
-                               : dereference(json::Object(Candidate), L),
-                       Minimum ? dereference(json::Object(Candidate), L)
-                               : dereference(json::Object(Current), L),
-                       L)
-             : Minimum ? binary("<", dereference(Current, L),
-                                dereference(Candidate, L), "bool", L)
-                       : binary("<", dereference(Candidate, L),
-                                dereference(Current, L), "bool", L),
+      branch(Less(Minimum ? dereference(json::Object(Current), L)
+                          : dereference(json::Object(Candidate), L),
+                  Minimum ? dereference(json::Object(Candidate), L)
+                          : dereference(json::Object(Current), L)),
              Select, Next, L);
       label(Select, L);
       assign(Candidate, json::Object(Current), L);
@@ -5181,10 +5202,18 @@ class FunctionLowering {
       auto Second = snapshot(expression(Call->getArg(2)), L);
       auto SecondLast = snapshot(expression(Call->getArg(3)), L);
       std::optional<Expression> Comparator;
-      if (Call->getNumArgs() == 5)
-        Comparator = snapshot(expression(Call->getArg(4)), L);
+      std::optional<std::pair<FunctionalOperationInfo, FunctionalOperationInfo>>
+          SDKComparators;
+      if (Call->getNumArgs() == 5) {
+        const auto LeftElement = Call->getArg(0)->getType()->getPointeeType();
+        const auto RightElement = Call->getArg(2)->getType()->getPointeeType();
+        SDKComparators =
+            captureRangeSDKComparatorPair(Call, 4, LeftElement, RightElement);
+        if (!SDKComparators)
+          Comparator = snapshot(expression(Call->getArg(4)), L);
+      }
       std::optional<std::string> DefaultComparisonType;
-      if (!Comparator) {
+      if (!Comparator && !SDKComparators) {
         auto Common = utilityScalarComparisonType(
             A.Context, Call->getArg(0)->getType()->getPointeeType(),
             Call->getArg(2)->getType()->getPointeeType(), true);
@@ -5193,7 +5222,11 @@ class FunctionLowering {
                  "The range elements have no ordered common type.");
         DefaultComparisonType = type(*Common, L);
       }
-      auto Less = [&](Expression Left, Expression Right) {
+      auto Less = [&](Expression Left, Expression Right, bool Reversed) {
+        if (SDKComparators)
+          return functionalOperationValues(L, std::move(Left), std::move(Right),
+                                           Reversed ? SDKComparators->second
+                                                    : SDKComparators->first);
         if (Comparator)
           return emitBinaryPredicate(json::Object(*Comparator),
                                      Call->getArg(4)->getType(),
@@ -5218,11 +5251,11 @@ class FunctionLowering {
              L);
       label(CompareFirst, L);
       branch(Less(dereference(json::Object(First), L),
-                  dereference(json::Object(Second), L)),
+                  dereference(json::Object(Second), L), false),
              True, CompareSecond, L);
       label(CompareSecond, L);
       branch(Less(dereference(json::Object(Second), L),
-                  dereference(json::Object(First), L)),
+                  dereference(json::Object(First), L), true),
              False, Advance, L);
       label(Advance, L);
       assign(First,
@@ -5249,10 +5282,18 @@ class FunctionLowering {
       auto Second = snapshot(expression(Call->getArg(2)), L);
       auto SecondLast = snapshot(expression(Call->getArg(3)), L);
       std::optional<Expression> Comparator;
-      if (Call->getNumArgs() == 5)
-        Comparator = snapshot(expression(Call->getArg(4)), L);
+      std::optional<std::pair<FunctionalOperationInfo, FunctionalOperationInfo>>
+          SDKComparators;
+      if (Call->getNumArgs() == 5) {
+        const auto LeftElement = Call->getArg(0)->getType()->getPointeeType();
+        const auto RightElement = Call->getArg(2)->getType()->getPointeeType();
+        SDKComparators =
+            captureRangeSDKComparatorPair(Call, 4, LeftElement, RightElement);
+        if (!SDKComparators)
+          Comparator = snapshot(expression(Call->getArg(4)), L);
+      }
       std::optional<std::string> DefaultComparisonType;
-      if (!Comparator) {
+      if (!Comparator && !SDKComparators) {
         auto Common = utilityScalarComparisonType(
             A.Context, Call->getArg(0)->getType()->getPointeeType(),
             Call->getArg(2)->getType()->getPointeeType(), true);
@@ -5261,7 +5302,11 @@ class FunctionLowering {
                  "The range elements have no ordered common type.");
         DefaultComparisonType = type(*Common, L);
       }
-      auto Less = [&](Expression Left, Expression Right) {
+      auto Less = [&](Expression Left, Expression Right, bool Reversed) {
+        if (SDKComparators)
+          return functionalOperationValues(L, std::move(Left), std::move(Right),
+                                           Reversed ? SDKComparators->second
+                                                    : SDKComparators->first);
         if (Comparator)
           return emitBinaryPredicate(json::Object(*Comparator),
                                      Call->getArg(4)->getType(),
@@ -5285,11 +5330,11 @@ class FunctionLowering {
       branch(binary("!=", First, Last, "bool", L), Missing, False, L);
       label(Missing, L);
       branch(Less(dereference(json::Object(Second), L),
-                  dereference(json::Object(First), L)),
+                  dereference(json::Object(First), L), true),
              False, Compare, L);
       label(Compare, L);
       branch(Less(dereference(json::Object(First), L),
-                  dereference(json::Object(Second), L)),
+                  dereference(json::Object(Second), L), false),
              AdvanceFirst, AdvanceBoth, L);
       label(AdvanceFirst, L);
       assign(First,
@@ -5332,10 +5377,18 @@ class FunctionLowering {
       auto SecondLast = snapshot(expression(Call->getArg(3)), L);
       auto Output = snapshot(expression(Call->getArg(4)), L);
       std::optional<Expression> Comparator;
-      if (Call->getNumArgs() == 6)
-        Comparator = snapshot(expression(Call->getArg(5)), L);
+      std::optional<std::pair<FunctionalOperationInfo, FunctionalOperationInfo>>
+          SDKComparators;
+      if (Call->getNumArgs() == 6) {
+        const auto LeftElement = Call->getArg(0)->getType()->getPointeeType();
+        const auto RightElement = Call->getArg(2)->getType()->getPointeeType();
+        SDKComparators =
+            captureRangeSDKComparatorPair(Call, 5, LeftElement, RightElement);
+        if (!SDKComparators)
+          Comparator = snapshot(expression(Call->getArg(5)), L);
+      }
       std::optional<std::string> DefaultComparisonType;
-      if (!Comparator) {
+      if (!Comparator && !SDKComparators) {
         auto Common = utilityScalarComparisonType(
             A.Context, Call->getArg(0)->getType()->getPointeeType(),
             Call->getArg(2)->getType()->getPointeeType(), true);
@@ -5344,7 +5397,11 @@ class FunctionLowering {
                  "The input elements have no ordered common type.");
         DefaultComparisonType = type(*Common, L);
       }
-      auto Less = [&](Expression Left, Expression Right) {
+      auto Less = [&](Expression Left, Expression Right, bool Reversed) {
+        if (SDKComparators)
+          return functionalOperationValues(L, std::move(Left), std::move(Right),
+                                           Reversed ? SDKComparators->second
+                                                    : SDKComparators->first);
         if (Comparator)
           return emitBinaryPredicate(json::Object(*Comparator),
                                      Call->getArg(5)->getType(),
@@ -5386,11 +5443,11 @@ class FunctionLowering {
              SecondDone, L);
       label(CompareFirst, L);
       branch(Less(dereference(json::Object(First), L),
-                  dereference(json::Object(Second), L)),
+                  dereference(json::Object(Second), L), false),
              FirstLess, CompareSecond, L);
       label(CompareSecond, L);
       branch(Less(dereference(json::Object(Second), L),
-                  dereference(json::Object(First), L)),
+                  dereference(json::Object(First), L), true),
              SecondLess, Equal, L);
       label(FirstLess, L);
       Emit(First, FirstType, Merge || Union || Difference || Symmetric);

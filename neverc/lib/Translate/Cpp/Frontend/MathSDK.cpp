@@ -17016,7 +17016,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType())) {
     if (!((Call->getNumArgs() == 2 && AlgorithmOrderedPointerParameter(0)) ||
           (Call->getNumArgs() == 3 &&
-           AlgorithmBinaryPredicateParameter(2, 0, 0))))
+           AlgorithmBinaryComparisonParameter(2, 0, 0))))
       return std::nullopt;
     return Name == "min_element" ? UtilityOperation::AlgorithmMinElement
                                  : UtilityOperation::AlgorithmMaxElement;
@@ -17324,7 +17324,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Function->getParamDecl(2)->getType(),
            Function->getParamDecl(3)->getType()) &&
       ((Call->getNumArgs() == 4 && AlgorithmOrderedParameters(0, 2)) ||
-       (Call->getNumArgs() == 5 && AlgorithmBinaryPredicateParameter(4, 0, 2))))
+       (Call->getNumArgs() == 5 &&
+        AlgorithmBinaryComparisonParameter(4, 0, 2) &&
+        AlgorithmBinaryComparisonParameter(4, 2, 0))))
     return Name == "includes"
                ? UtilityOperation::AlgorithmIncludes
                : UtilityOperation::AlgorithmLexicographicalCompare;
@@ -17351,7 +17353,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType()) &&
       ((Call->getNumArgs() == 5 && AlgorithmOrderedParameters(0, 2)) ||
        (Call->getNumArgs() == 6 &&
-        AlgorithmBinaryPredicateParameter(5, 0, 2)))) {
+        AlgorithmBinaryComparisonParameter(5, 0, 2) &&
+        AlgorithmBinaryComparisonParameter(5, 2, 0)))) {
     if (Name == "merge")
       return UtilityOperation::AlgorithmMerge;
     if (Name == "set_union")

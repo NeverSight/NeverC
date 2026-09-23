@@ -1690,8 +1690,14 @@ the other scalar carriers. The callback is evaluated and retained once.
 Extremum scans keep the first equivalent element; sortedness scans stop at the
 first inversion; empty and single-element ranges make no calls. Bounds retain
 logarithmic bisection. Reference parameters, non-boolean results, variadic
-functions, callable objects, heterogeneous values and record elements stay
-outside this boundary.
+functions, source-owned callable objects, heterogeneous values and record
+elements stay outside this function-pointer boundary.
+
+The `std::min_element` and `std::max_element` comparator overloads also accept
+authenticated typed or transparent empty standard `<functional>` comparison
+objects on arithmetic scalar ranges. The selected instantiated `operator()`
+is proved and lowered directly. The object argument is evaluated once, even
+for an empty range, and equivalent extrema retain their first position.
 
 The comparator overloads of `std::is_sorted` and `std::is_sorted_until` also
 accept authenticated typed or transparent empty standard `<functional>`
@@ -1873,13 +1879,17 @@ complete object or array.
 
 The corresponding comparator overloads admit heterogeneous scalar ranges with
 a checked function pointer whose two by-value scalar parameters are reachable
-through direct conversions from the respective element types and whose result
-is exactly `bool`. This includes enum and pointer elements whose ordering is supplied
-entirely by the callback. Ordered output forms require conversions from both
-inputs to the writable destination. The
-callback object is retained once, and the generated loops invoke it in both
-argument orientations when distinguishing equivalent elements. Function
-objects, reference parameters and converted result types remain rejected.
+through direct conversions from the respective element types in both argument
+orientations and whose result is exactly `bool`. This includes enum and pointer
+elements whose ordering is supplied entirely by the callback. They also accept
+authenticated typed or transparent empty standard `<functional>` comparison
+objects on arithmetic scalar ranges. Both selected instantiated `operator()`
+directions are proved and lowered directly, including when the input ranges
+have different element types. Ordered output forms require conversions from
+both inputs to the writable destination. The comparator argument is evaluated
+once, and the generated loops use both argument orientations when
+distinguishing equivalent elements. Source-owned function objects, reference
+parameters and converted result types remain rejected.
 
 Each call evaluates and retains its arguments once before entering generated
 pointer loops. `find` preserves the bound value reference, `count` uses the

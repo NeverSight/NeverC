@@ -11658,6 +11658,53 @@ extern "C" int algorithm_comparator_ordered_ranges(
     check("v2-algorithm-comparator-ordered-ranges-reference",
           'bool p(const int&a,int b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{1,2};return std::includes(a,a+2,a,a+1,p)?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
+    algorithm_standard_comparator_ordered_ranges_source = """\
+#include <algorithm>
+#include <functional>
+extern "C" int algorithm_standard_comparator_ordered_ranges(
+    const int *first, const int *last, const long *second,
+    const long *second_last, long *output) {
+  auto minimum = std::min_element(first, last, std::less<>{});
+  auto maximum = std::max_element(first, last, std::greater<int>{});
+  bool lexical = std::lexicographical_compare(first, last, second,
+                                               second_last, std::greater<>{});
+  bool contained = std::includes(first, last, second, second_last,
+                                  std::greater<long>{});
+  long *merged = std::merge(first, last, second, second_last, output,
+                            std::greater<>{});
+  long *united = std::set_union(first, last, second, second_last, output,
+                                std::greater<long>{});
+  long *common = std::set_intersection(first, last, second, second_last,
+                                       output, std::greater<>{});
+  long *remaining = std::set_difference(first, last, second, second_last,
+                                        output, std::greater<long>{});
+  long *symmetric = std::set_symmetric_difference(
+      first, last, second, second_last, output, std::greater<>{});
+  return static_cast<int>((minimum - first) + (maximum - first) +
+                          (merged - output) + (united - output) +
+                          (common - output) + (remaining - output) +
+                          (symmetric - output) + lexical + contained);
+}
+"""
+
+    def assert_standard_comparator_ordered_ranges(data):
+        assert len(data["sdk_dependencies"]) == 435, data
+        assert not [node for node in walk(data["functions"])
+                    if node.get("op") in ("call", "mapped_call",
+                                          "indirect_call")], data
+
+    algorithm_standard_comparator_ordered_ranges = check(
+        "v2-algorithm-standard-comparator-ordered-ranges",
+        algorithm_standard_comparator_ordered_ranges_source,
+        profile="cpp-core-v2", sdk=True)
+    assert_standard_comparator_ordered_ranges(
+        algorithm_standard_comparator_ordered_ranges)
+    for target in sdk_targets:
+        target_result = check(
+            "v2-algorithm-standard-comparator-ordered-ranges-" + target,
+            algorithm_standard_comparator_ordered_ranges_source,
+            profile="cpp-core-v2", target=target, sdk=True)
+        assert_standard_comparator_ordered_ranges(target_result)
     algorithm_extrema_source = """\
 #include <algorithm>
 extern "C" int algorithm_extrema(const int *first, const int *last,

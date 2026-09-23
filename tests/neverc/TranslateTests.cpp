@@ -40551,6 +40551,119 @@ TEST_F(TranslateTest,
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2AlgorithmStandardComparatorOrderedRangesRunAtBothOptimizations) {
+  const auto Source =
+      tmpFile("algorithm-standard-comparator-ordered-ranges.cpp");
+  const auto Output =
+      tmpFile("algorithm-standard-comparator-ordered-ranges.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main() {
+  int duplicates[5]{4, 1, 1, 5, 5};
+  std::less<int> less;
+  if (std::min_element(duplicates, duplicates + 5, std::less<>{}) !=
+          duplicates + 1 ||
+      std::max_element(duplicates, duplicates + 5, less) != duplicates + 3 ||
+      std::min_element(duplicates, duplicates + 5, std::greater<>{}) !=
+          duplicates + 3 ||
+      std::max_element(duplicates, duplicates + 5, std::greater<int>{}) !=
+          duplicates + 1)
+    return 1;
+  int effects = 0;
+  if (std::min_element(duplicates, duplicates,
+                       (++effects, std::less<>{})) != duplicates ||
+      effects != 1)
+    return 2;
+
+  const int left[5]{9, 7, 7, 4, 1};
+  const long right[4]{8, 7, 5, 1};
+  const long subset[2]{7, 1};
+  const long missing[1]{8};
+  std::greater<long> greater;
+  if (!std::lexicographical_compare(left, left + 5, right, right + 4,
+                                    std::greater<>{}) ||
+      std::lexicographical_compare(right, right + 4, left, left + 5,
+                                   greater) ||
+      !std::includes(left, left + 5, subset, subset + 2, greater) ||
+      std::includes(left, left + 5, missing, missing + 1,
+                    std::greater<>{}) ||
+      std::lexicographical_compare(left, left, right, right,
+                                   std::greater<>{}) ||
+      !std::includes(left, left, right, right, std::greater<>{}))
+    return 3;
+
+  long merged[9]{};
+  effects = 0;
+  if (std::merge(left, left + 5, right, right + 4, merged,
+                 (++effects, std::greater<>{})) != merged + 9 ||
+      effects != 1)
+    return 4;
+  const int expected_merge[9]{9, 8, 7, 7, 7, 5, 4, 1, 1};
+  for (int i = 0; i != 9; ++i)
+    if (merged[i] != expected_merge[i])
+      return 5;
+
+  double combined[7]{};
+  if (std::set_union(left, left + 5, right, right + 4, combined,
+                     std::greater<>{}) != combined + 7)
+    return 6;
+  const int expected_union[7]{9, 8, 7, 7, 5, 4, 1};
+  for (int i = 0; i != 7; ++i)
+    if (combined[i] != expected_union[i])
+      return 7;
+
+  long common[2]{};
+  if (std::set_intersection(left, left + 5, right, right + 4, common,
+                            greater) != common + 2 ||
+      common[0] != 7 || common[1] != 1)
+    return 8;
+  double remaining[3]{};
+  if (std::set_difference(left, left + 5, right, right + 4, remaining,
+                          std::greater<>{}) != remaining + 3 ||
+      remaining[0] != 9 || remaining[1] != 7 || remaining[2] != 4)
+    return 9;
+  long symmetric[5]{};
+  if (std::set_symmetric_difference(left, left + 5, right, right + 4,
+                                    symmetric, greater) != symmetric + 5)
+    return 10;
+  const int expected_symmetric[5]{9, 8, 7, 5, 4};
+  for (int i = 0; i != 5; ++i)
+    if (symmetric[i] != expected_symmetric[i])
+      return 11;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+
+  auto Manifest =
+      llvm::json::parse(readFile(fs::path(Output.string() + ".manifest.json")));
+  ASSERT_TRUE(static_cast<bool>(Manifest))
+      << llvm::toString(Manifest.takeError()).str().str();
+  const auto *Dependencies =
+      Manifest->getAsObject()->getObject("sdk")->getArray("dependencies");
+  ASSERT_NE(Dependencies, nullptr);
+  EXPECT_EQ(Dependencies->size(), 435u);
+  for (const auto &Entry : *Dependencies) {
+    const auto *Dependency = Entry.getAsObject();
+    ASSERT_NE(Dependency, nullptr);
+    EXPECT_NE(Dependency->getString("root"), "platform");
+  }
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("algorithm-standard-comparator-ordered-ranges" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmExtremaRunAtBothOptimizations) {
   const auto Source = tmpFile("algorithm-extrema.cpp");
   const auto Output = tmpFile("algorithm-extrema.nc");
