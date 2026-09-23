@@ -48175,6 +48175,11 @@ int main() {
   if (std::bit_not<unsigned char>{}(wide) != 255) return 27;
   if (!std::less<unsigned char>{}(wide, 1)) return 28;
   if (std::divides<unsigned char>{}(wide, 2) != 0) return 29;
+  if (!std::less<const unsigned char>{}(wide, 1)) return 30;
+  if (!std::logical_not<const unsigned char>{}(wide)) return 31;
+  std::greater_equal<const double> const_comparison;
+  if (!std::invoke(const_comparison, 3.5, 2.5)) return 32;
+  if (std::logical_and<const unsigned char>{}(wide, 1)) return 33;
   return score == 24 ? 0 : score;
 }
 )cpp");

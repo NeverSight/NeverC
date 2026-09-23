@@ -690,7 +690,18 @@ approvedFunctionalObjectRecord(const State &S, const SourceManager &SM,
         !cstddefOrigin(S, SM, TransparentMarker->getLocation(), "libcxx",
                        "__functional/operations.h"))
       return std::nullopt;
-  } else if (!supportedFunctionalScalar(ValueType, Context) ||
+  } else if (!(supportedFunctionalScalar(ValueType, Context) ||
+               ((Name == "equal_to" || Name == "not_equal_to" ||
+                 Name == "less" || Name == "greater" ||
+                 Name == "less_equal" || Name == "greater_equal" ||
+                 Name == "logical_and" || Name == "logical_or" ||
+                 Name == "logical_not") &&
+                !ValueType.isNull() && ValueType.isConstQualified() &&
+                !ValueType.isVolatileQualified() &&
+                !ValueType.isRestrictQualified() &&
+                ValueType.getAddressSpace() == LangAS::Default &&
+                supportedFunctionalScalar(ValueType.getUnqualifiedType(),
+                                          Context))) ||
              (integralFunctionalObject(Definition->getName()) &&
               !ValueType->isIntegralType(Context))) {
     return std::nullopt;
@@ -1719,7 +1730,8 @@ static std::optional<FunctionalOperationInfo> approvedFunctionalOperationImpl(
            Type->isSpecificBuiltinType(BuiltinType::Double);
   };
   if (ValueType.isNull() ||
-      (!Transparent && (ValueType.hasQualifiers() ||
+      (!Transparent && (ValueType.isRestrictQualified() ||
+                        ValueType.getAddressSpace() != LangAS::Default ||
                         !SupportedScalar(ValueType))))
     return std::nullopt;
 
@@ -1766,6 +1778,7 @@ static std::optional<FunctionalOperationInfo> approvedFunctionalOperationImpl(
       break;
     }
   if (!Selected ||
+      (ValueType.isConstQualified() && !Selected->BooleanResult) ||
       (!Transparent && Selected->Integral &&
        !ValueType->isIntegralType(Context)))
     return std::nullopt;

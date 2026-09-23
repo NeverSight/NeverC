@@ -135,11 +135,13 @@ objects remain separate. The
 exact [`<functional>`](../docs/cpp-core-v2.md#functional-header-from-functional)
 header directly lowers calls on typed and transparent specializations of all 19
 C++17 arithmetic, bitwise, comparison and logical standard function objects for
-admitted arithmetic types, including heterogeneous transparent operands. Exact
-empty objects use a one-byte carrier and support trivial construction,
-assignment, local and global storage, copying and by-value passing. Exact
-integral `std::hash` specializations from `bool` through `unsigned long`, plus
-`long long` and `unsigned long long`, use that carrier and lower to target
+admitted arithmetic types, including heterogeneous transparent operands. Typed
+comparison and logical objects also admit a top-level `const` scalar template
+argument. Exact empty objects use a one-byte carrier and support trivial
+construction, assignment, local and global storage, copying and by-value
+passing. Exact integral `std::hash` specializations from `bool` through
+`unsigned long`, plus `long long` and `unsigned long long`, use that carrier
+and lower to target
 `size_t` for temporary, stored, copied and by-value objects. Wide values retain
 their bits on 64-bit targets and use libc++'s Murmur2 algorithm over eight
 little-endian bytes on 32-bit targets. They support same-type copy and move

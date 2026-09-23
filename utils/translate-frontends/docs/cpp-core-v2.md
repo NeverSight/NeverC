@@ -1297,6 +1297,9 @@ operator body before emitting scalar IR. Narrow integers use C++ integer
 promotion and typed specializations convert the result back to their selected
 type. Both function arguments are captured once before a logical result is
 formed, preserving the eager argument evaluation of a function call.
+The nine comparison and logical objects also accept a top-level `const` on
+their typed scalar template argument. Their selected operator still returns
+`bool`, with the same input conversion and one-time argument evaluation.
 
 The exact empty specializations may also be stored in local or global objects,
 passed by value, and trivially default/copy/move constructed or copy/move
@@ -1471,7 +1474,7 @@ moves from parameters and reassignment remain outside the runtime boundary.
 The same adapters may wrap an authenticated local wrapper at its final direct
 call or `std::invoke` use.
 
-Cv-qualified typed template arguments, addresses or pointers to function
+Other cv-qualified typed template arguments, addresses or pointers to function
 objects, user-defined operands, `long double`, `std::function`, binders and searchers do
 not yet lower. Reassigned or null member pointers, `mem_fn` copies or moves
 from parameters, reassigned `mem_fn` objects, base-adjusting
