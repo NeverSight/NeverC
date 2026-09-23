@@ -37634,6 +37634,16 @@ int main() {
                             std::plus<unsigned char>{},
                             std::divides<short>{}) != 3)
     return 16;
+  int truthy[2]{0, 2}, identity[2]{1, 1};
+  if (std::inner_product(truthy, truthy + 2, identity, 256,
+                         std::logical_and<unsigned char>{},
+                         std::plus<>{}) != 0 ||
+      std::transform_reduce(truthy, truthy + 2, identity, 256,
+                            std::logical_and<>{}, std::plus<>{}) != 1)
+    return 17;
+  if (std::transform_reduce(truthy, truthy + 2, identity, 0,
+                            std::logical_or<bool>{}, std::plus<>{}) != 1)
+    return 18;
   return 0;
 }
 )cpp");
@@ -37718,6 +37728,14 @@ int main() {
                             std::plus<unsigned char>{},
                             std::logical_not<bool>{}) != 45)
     return 14;
+  int small[2]{0, 2};
+  if (std::transform_reduce(small, small + 2, 4,
+                            std::logical_and<>{},
+                            std::logical_not<>{}) != 0 ||
+      std::transform_reduce(small, small + 2, 0,
+                            std::logical_or<>{},
+                            std::logical_not<>{}) != 1)
+    return 15;
   return 0;
 }
 )cpp");

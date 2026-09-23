@@ -10009,15 +10009,21 @@ long long converted(int* first, int* last, short* second) {
 long long different_typed(int* first, int* last, short* second) {
  return std::inner_product(first,last,second,300LL,std::plus<unsigned char>{},std::divides<short>{});
 }
+int logical_and(int* first, int* last) {
+ return std::inner_product(first,last,first,256,std::logical_and<unsigned char>{},std::plus<>{});
+}
+int logical_or(int* first, int* last) {
+ return std::transform_reduce(first,last,first,0,std::logical_or<bool>{},std::plus<>{});
+}
 """
     for target in sdk_targets:
         data = check("v2-numeric-default-functional-pair-" + target,
                      numeric_default_functional_pair_source,
                      profile="cpp-core-v2", target=target, sdk=True)
         assert len(data['sdk_dependencies']) == 126, data
-        for line in (2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32):
+        for line in (2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35, 38):
             functions = [f for f in data['functions'] if f['loc']['line'] == line]
-            assert len(functions) == 1 and functions[0]['result'] == ('int' if line in (8, 14, 17, 20, 23, 26) else 'u8' if line == 11 else 'i64'), functions
+            assert len(functions) == 1 and functions[0]['result'] == ('int' if line in (8, 14, 17, 20, 23, 26, 35, 38) else 'u8' if line == 11 else 'i64'), functions
             assert not any(node.get('op') in ('call', 'indirect_call', 'mapped_call')
                            for node in walk(functions[0]['body'])), functions
     check("v2-numeric-default-functional-pair-stored",
@@ -10062,15 +10068,18 @@ long long logical_converted(int* first, int* last) {
 long long logical_bool(int* first, int* last) {
  return std::transform_reduce(first,last,4LL,std::plus<>{},std::logical_not<bool>{});
 }
+int logical_reduction(int* first, int* last) {
+ return std::transform_reduce(first,last,4,std::logical_and<>{},std::logical_not<>{});
+}
 """
     for target in sdk_targets:
         data = check("v2-numeric-unary-functional-pair-" + target,
                      numeric_unary_functional_pair_source,
                      profile="cpp-core-v2", target=target, sdk=True)
         assert len(data['sdk_dependencies']) == 126, data
-        for line in (2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35):
+        for line in (2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35, 38):
             functions = [f for f in data['functions'] if f['loc']['line'] == line]
-            assert len(functions) == 1 and functions[0]['result'] == ('int' if line in (5, 11, 14, 17, 20, 23) else 'u8' if line == 8 else 'i64'), functions
+            assert len(functions) == 1 and functions[0]['result'] == ('int' if line in (5, 11, 14, 17, 20, 23, 38) else 'u8' if line == 8 else 'i64'), functions
             assert not any(node.get('op') in ('call', 'indirect_call', 'mapped_call')
                            for node in walk(functions[0]['body'])), functions
 

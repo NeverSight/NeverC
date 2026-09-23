@@ -3075,6 +3075,14 @@ class FunctionLowering {
           DefaultFunctionalPair        ? FunctionalValueTypeAt(4)
           : DefaultUnaryFunctionalPair ? FunctionalValueTypeAt(3)
                                        : QualType{};
+      const auto ReductionName =
+          DefaultFunctionalPair
+              ? Call->getArg(4)->getType()->getAsCXXRecordDecl()->getName()
+          : DefaultUnaryFunctionalPair
+              ? Call->getArg(3)->getType()->getAsCXXRecordDecl()->getName()
+              : llvm::StringRef();
+      const bool LogicalReduction =
+          ReductionName == "logical_and" || ReductionName == "logical_or";
       const auto UnaryTransformName =
           DefaultUnaryFunctionalPair
               ? Call->getArg(4)->getType()->getAsCXXRecordDecl()->getName()
@@ -3083,14 +3091,16 @@ class FunctionLowering {
       auto ArithmeticFunctionalOperator = [&](unsigned Index) {
         const auto *Record =
             Call->getArg(Index)->getType()->getAsCXXRecordDecl();
-        return Record->getName() == "minus"        ? llvm::StringRef("-")
-               : Record->getName() == "multiplies" ? llvm::StringRef("*")
-               : Record->getName() == "divides"    ? llvm::StringRef("/")
-               : Record->getName() == "modulus"    ? llvm::StringRef("%")
-               : Record->getName() == "bit_and"    ? llvm::StringRef("&")
-               : Record->getName() == "bit_or"     ? llvm::StringRef("|")
-               : Record->getName() == "bit_xor"    ? llvm::StringRef("^")
-                                                   : llvm::StringRef("+");
+        return Record->getName() == "minus"         ? llvm::StringRef("-")
+               : Record->getName() == "multiplies"  ? llvm::StringRef("*")
+               : Record->getName() == "divides"     ? llvm::StringRef("/")
+               : Record->getName() == "modulus"     ? llvm::StringRef("%")
+               : Record->getName() == "bit_and"     ? llvm::StringRef("&")
+               : Record->getName() == "bit_or"      ? llvm::StringRef("|")
+               : Record->getName() == "bit_xor"     ? llvm::StringRef("^")
+               : Record->getName() == "logical_and" ? llvm::StringRef("&")
+               : Record->getName() == "logical_or"  ? llvm::StringRef("|")
+                                                    : llvm::StringRef("+");
       };
       const bool Inner = Operation == UtilityOperation::NumericInnerProduct ||
                          (TransformReduce && !UnaryTransformReduce);
@@ -3157,12 +3167,16 @@ class FunctionLowering {
         DefaultTermQualType = TypedTransformType;
       if (LogicalNotTransform)
         DefaultTermQualType = A.Context.BoolTy;
-      auto DefaultSumQualType = utilityScalarComparisonType(
-          A.Context,
-          TypedReductionType.isNull() ? ResultQualType : TypedReductionType,
-          TypedReductionType.isNull() ? DefaultTermQualType
-                                      : TypedReductionType,
-          false);
+      auto DefaultSumQualType =
+          LogicalReduction
+              ? std::optional<QualType>(A.Context.IntTy)
+              : utilityScalarComparisonType(
+                    A.Context,
+                    TypedReductionType.isNull() ? ResultQualType
+                                                : TypedReductionType,
+                    TypedReductionType.isNull() ? DefaultTermQualType
+                                                : TypedReductionType,
+                    false);
       if (!DefaultSumQualType)
         reject(L, "numeric reduction",
                "The accumulator and term have no arithmetic common type.");
@@ -3249,12 +3263,18 @@ class FunctionLowering {
         auto ReductionOperand = [&](Expression Value) {
           if (!TypedReductionType.isNull())
             Value = cast(std::move(Value), type(TypedReductionType, L), L);
+          if (LogicalReduction)
+            Value = cast(std::move(Value), "bool", L);
           return cast(std::move(Value), DefaultSumType, L);
         };
+        // Both scalar operands were evaluated before the SDK function call.
+        // Their normalized 0/1 values can use the protocol's integer bit ops.
         auto Combined =
             binary(Operator, ReductionOperand(json::Object(Result)),
                    ReductionOperand(std::move(Term)), DefaultSumType, L);
-        if (!TypedReductionType.isNull())
+        if (LogicalReduction)
+          Combined = cast(std::move(Combined), "bool", L);
+        else if (!TypedReductionType.isNull())
           Combined = cast(std::move(Combined), type(TypedReductionType, L), L);
         assign(Result, cast(std::move(Combined), ResultType, L), L);
       }
