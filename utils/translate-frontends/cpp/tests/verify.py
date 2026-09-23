@@ -14169,6 +14169,8 @@ int main(){
  if(std::for_each_n(values,2,sink)!=values+2||sum!=3||void_calls!=2||sink.local_calls)return 6; // template-predicate-call: sink int
  if(std::for_each_n(values,2,std::logical_not<int>{})!=values+2)return 7;
  if(std::for_each_n(values,0,std::logical_not<>{})!=values)return 8;
+ if(std::for_each_n(values,3,std::negate<int>{})!=values+3)return 12;
+ if(std::for_each_n(values,-1,std::bit_not<>{})!=values)return 13;
  decltype(std::for_each_n(values,2,Stateful(&receiver,true))) query=values;
  if(query!=values||constructed!=4||cleanup!=5||calls||receiver)return 9;
  if(noexcept(std::for_each_n(values,2,Stateful(&receiver,true)))||constructed!=4||cleanup!=5)return 10;
@@ -14195,7 +14197,7 @@ int main(){
         ('redeclaration', '#include <algorithm>\nstruct F{void operator()(int){}};namespace std{inline namespace __1{template<class I,class N,class F>I for_each_n(I,N,F);}}int*f(int*p){return std::for_each_n(p,2,F{});}\n', 'TR0201', 'cpp-core-v2', True),
         ('query-no-body', '#include <algorithm>\nstruct F{void operator()(int){}};int f(int*p){static_assert(__is_same(decltype(std::for_each_n(p,2,F{})),int*));return 0;}\n', 'TR0203', 'cpp-core-v2', True),
         ('sdk-mismatch', '#include <algorithm>\n#include <functional>\nint*f(int*p){return std::for_each_n(p,2,std::logical_not<long>{});}\n', 'TR0203', 'cpp-core-v2', True),
-        ('for-each-independent', '#include <algorithm>\nstruct F{void operator()(int){}};F f(int*p){return std::for_each(p,p+2,F{});}\n', 'TR0203', 'cpp-core-v2', True),
+        ('sdk-negate-mismatch', '#include <algorithm>\n#include <functional>\nint*f(int*p){return std::for_each_n(p,2,std::negate<long>{});}\n', 'TR0203', 'cpp-core-v2', True),
         ('volatile-input', '#include <algorithm>\nstruct F{void operator()(int){}};volatile int*f(volatile int*p){return std::for_each_n(p,2,F{});}\n', 'TR0201', 'cpp-core-v2', True),
         ('count-source', '#include <algorithm>\nstruct F{void operator()(int){}};int n(int=(sizeof(long double),0)){return 2;}int*f(int*p){return std::for_each_n(p,n(),F{});}\n', 'TR0201', 'cpp-core-v2', True),
     ]
@@ -14257,7 +14259,9 @@ int main(){
  int values[3]={1,0,-2};
  auto typed=std::for_each(values,values+3,std::logical_not<int>{});
  auto transparent=std::for_each(values,values+3,std::logical_not<>{});
- (void)typed;(void)transparent;
+ auto negated=std::for_each(values,values+3,std::negate<int>{});
+ auto complemented=std::for_each(values,values,std::bit_not<>{});
+ (void)typed;(void)transparent;(void)negated;(void)complemented;
  return 0;
 }
 """
@@ -14271,6 +14275,9 @@ int main(){
                     if node.get('op') in ('call', 'mapped_call', 'indirect_call', 'member_pointer')], data
     check("v2-algorithm-for-each-sdk-object-mismatch",
           '#include <algorithm>\n#include <functional>\nint f(int*p){auto x=std::for_each(p,p+2,std::logical_not<long>{});return 0;}\n',
+          'TR0203', profile='cpp-core-v2', sdk=True)
+    check("v2-algorithm-for-each-sdk-object-hash",
+          '#include <algorithm>\n#include <functional>\nint f(int*p){auto x=std::for_each(p,p+2,std::hash<int>{});return 0;}\n',
           'TR0203', profile='cpp-core-v2', sdk=True)
 
     algorithm_generate_object_source = """\

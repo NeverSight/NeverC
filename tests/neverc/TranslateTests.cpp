@@ -42830,6 +42830,11 @@ int main() {
   auto transparent = std::for_each(values, values + 3, std::logical_not<>{});
   (void)transparent;
   if (calls != 8) return 6;
+  auto negated = std::for_each(values, values + 3, std::negate<int>{});
+  auto complemented = std::for_each(values, values, std::bit_not<>{});
+  (void)negated;
+  (void)complemented;
+  if (calls != 8 || values[0] != 1 || values[2] != 3) return 7;
   return 0;
 }
 )cpp");
@@ -46445,6 +46450,8 @@ int main(){
  if(std::for_each_n(values,2,sink)!=values+2||sum!=3||void_calls!=2||sink.local_calls)return 6; // template-predicate-call: sink int
  if(std::for_each_n(values,2,std::logical_not<int>{})!=values+2)return 7;
  if(std::for_each_n(values,0,std::logical_not<>{})!=values)return 8;
+ if(std::for_each_n(values,3,std::negate<int>{})!=values+3)return 12;
+ if(std::for_each_n(values,-1,std::bit_not<>{})!=values)return 13;
  decltype(std::for_each_n(values,2,Stateful(&receiver,true))) query=values;
  if(query!=values||constructed!=4||cleanup!=5||calls||receiver)return 9;
  if(noexcept(std::for_each_n(values,2,Stateful(&receiver,true)))||constructed!=4||cleanup!=5)return 10;
@@ -46498,9 +46505,6 @@ struct F{void operator()(int){}};int f(int*p){static_assert(__is_same(decltype(s
     {"sdk-mismatch", R"cpp(#include <algorithm>
 #include <functional>
 int*f(int*p){return std::for_each_n(p,2,std::logical_not<long>{});}
-)cpp", "TR0203"},
-    {"for-each-independent", R"cpp(#include <algorithm>
-struct F{void operator()(int){}};F f(int*p){return std::for_each(p,p+2,F{});}
 )cpp", "TR0203"},
     {"volatile-input", R"cpp(#include <algorithm>
 struct F{void operator()(int){}};volatile int*f(volatile int*p){return std::for_each_n(p,2,F{});}

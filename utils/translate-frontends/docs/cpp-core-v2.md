@@ -1606,13 +1606,14 @@ source function objects described for unary predicates below. Its exact pinned
 count conversion and loop are authenticated, the selected non-template call
 operator may return `void` or an admitted scalar, and that result is discarded.
 The algorithm invokes one retained by-value object in input order and returns
-the advanced pointer. Pinned typed or transparent `std::logical_not` objects
-are accepted under their exact scalar input rule. Ordinary `for_each` also
+the advanced pointer. Pinned typed or transparent `std::logical_not`,
+`std::negate` and integral `std::bit_not` objects are accepted under their
+exact scalar input rule. Ordinary `for_each` also
 accepts those source objects under its authenticated loop and trivial move
 return. It copies the modified by-value callable into the result without
 changing the caller's object, including on empty ranges. Pinned typed or
-transparent `std::logical_not` objects use the same checked input and return
-boundary.
+transparent `std::logical_not`, `std::negate` and integral `std::bit_not`
+objects use the same checked input and return boundary.
 
 `generate` and `generate_n` accept source-owned, standard-layout, trivially
 copied generator objects with a defined non-template nullary call operator.

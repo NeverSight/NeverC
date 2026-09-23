@@ -12414,7 +12414,9 @@ utilityAlgorithmForEachNObjectCall(const State &S, const SourceManager &SM,
     SDKOperation =
         approvedFunctionalOperationImpl(S, SM, Invocation, Context, false);
     if (!SDKOperation ||
-        SDKOperation->Operation != FunctionalOperation::LogicalNot ||
+        (SDKOperation->Operation != FunctionalOperation::LogicalNot &&
+         SDKOperation->Operation != FunctionalOperation::Negate &&
+         SDKOperation->Operation != FunctionalOperation::BitNot) ||
         !Context.hasSameUnqualifiedType(
             Pointer->getPointeeType(),
             Method->getParamDecl(0)->getType().getNonReferenceType()))
@@ -12567,7 +12569,9 @@ utilityAlgorithmForEachObjectCall(const State &S, const SourceManager &SM,
     SDKOperation =
         approvedFunctionalOperationImpl(S, SM, Invocation, Context, false);
     if (!SDKOperation ||
-        SDKOperation->Operation != FunctionalOperation::LogicalNot ||
+        (SDKOperation->Operation != FunctionalOperation::LogicalNot &&
+         SDKOperation->Operation != FunctionalOperation::Negate &&
+         SDKOperation->Operation != FunctionalOperation::BitNot) ||
         !Context.hasSameUnqualifiedType(
             Pointer->getPointeeType(),
             Method->getParamDecl(0)->getType().getNonReferenceType()))
