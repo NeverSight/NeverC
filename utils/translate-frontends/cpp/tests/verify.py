@@ -9946,7 +9946,9 @@ long long mixed(int*first,int*last) {
  long long b=std::reduce(first,last,5LL,Add{}); // mixed-call
  long long c=std::accumulate(first,last,5LL,std::plus<>{});
  long long d=std::reduce(first,last,5LL,std::plus<>{});
- return a+b+c+d;
+ long long e=std::accumulate(first,last,5LL,std::plus<long long>{});
+ long long f=std::reduce(first,last,5LL,std::plus<long long>{});
+ return a+b+c+d+e+f;
 }
 """
     for target in sdk_targets:

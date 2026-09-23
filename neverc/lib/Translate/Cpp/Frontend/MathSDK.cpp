@@ -12893,8 +12893,13 @@ utilityNumericReductionObjectCall(const State &S, const SourceManager &SM,
       Loop ? dyn_cast_or_null<BinaryOperator>(Loop->getCond()) : nullptr;
   const auto *Advance =
       Loop ? dyn_cast_or_null<UnaryOperator>(Loop->getInc()) : nullptr;
-  const auto *Assignment =
-      Loop ? dyn_cast_or_null<BinaryOperator>(Loop->getBody()) : nullptr;
+  const Stmt *LoopBody = Loop ? Loop->getBody() : nullptr;
+  if (const auto *Cleanup = dyn_cast_or_null<ExprWithCleanups>(LoopBody)) {
+    if (Cleanup->getNumObjects())
+      return std::nullopt;
+    LoopBody = Cleanup->getSubExpr();
+  }
+  const auto *Assignment = dyn_cast_or_null<BinaryOperator>(LoopBody);
   if (!Loop || Loop->getInit() || Loop->getConditionVariable() || !Condition ||
       Condition->getOpcode() != BO_NE ||
       !Reference(Condition->getLHS(), Definition->getParamDecl(0)) ||
@@ -12943,7 +12948,18 @@ utilityNumericReductionObjectCall(const State &S, const SourceManager &SM,
     return std::nullopt;
   }
   const Expr *ElementArgument = Invocation->getArg(2);
-  while (const auto *Cast = dyn_cast<ImplicitCastExpr>(ElementArgument)) {
+  while (ElementArgument) {
+    if (const auto *Temporary =
+            dyn_cast<MaterializeTemporaryExpr>(ElementArgument)) {
+      if (!Temporary->isLValue() || Temporary->getExtendingDecl() ||
+          !utilityScalar(Context, Temporary->getType()))
+        return std::nullopt;
+      ElementArgument = Temporary->getSubExpr();
+      continue;
+    }
+    const auto *Cast = dyn_cast<ImplicitCastExpr>(ElementArgument);
+    if (!Cast)
+      break;
     if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
                                        Cast->getType()))
       return std::nullopt;
@@ -12974,8 +12990,8 @@ utilityNumericReductionObjectCall(const State &S, const SourceManager &SM,
         !Context.hasSameUnqualifiedType(
             Initial,
             Method->getParamDecl(0)->getType().getNonReferenceType()) ||
-        !Context.hasSameUnqualifiedType(
-            Pointer->getPointeeType(),
+        !utilityScalarDirectConversion(
+            Context, Pointer->getPointeeType(),
             Method->getParamDecl(1)->getType().getNonReferenceType()))
       return std::nullopt;
   } else {

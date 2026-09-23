@@ -37162,6 +37162,9 @@ int main() {
   if (std::accumulate(values, values + 3, 5L, std::plus<>{}) != 11 ||
       std::reduce(values, values + 3, 5L, std::plus<>{}) != 11 ||
       calls != 6) return 3;
+  if (std::accumulate(values, values + 3, 5L, std::plus<long>{}) != 11 ||
+      std::reduce(values, values + 3, 5L, std::plus<long>{}) != 11 ||
+      calls != 6) return 5;
   if (std::accumulate(values, values, 7L, make(4)) != 7 ||
       factories != 2 || calls != 6) return 4;
   return 0;

@@ -768,7 +768,8 @@ Pinned typed or transparent `<functional>` binary objects, including arithmetic
 operations, use the same loop after authenticating their selected SDK method and
 matching both operands to the accumulator and input element types. Transparent
 SDK objects may use different accumulator and input types; typed SDK objects
-still require each argument to match their template type.
+also accept a direct scalar conversion of the input element to their template
+type, including the checked temporary bound to their const-reference parameter.
 The four-argument `partial_sum` and `adjacent_difference` overloads also
 accept these SDK binary objects and source-owned trivial binary objects for a
 non-promoted arithmetic input element and a directly convertible writable
