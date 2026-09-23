@@ -14541,6 +14541,98 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
       SDKOperation};
 }
 
+std::optional<FunctionalOperationInfo> approvedDirectAlgorithmComparator(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+  const auto *Definition = Function ? Function->getDefinition() : nullptr;
+  const auto Name = Function && Function->getIdentifier()
+                        ? Function->getName()
+                        : llvm::StringRef();
+  const bool Clamp = Name == "clamp";
+  const unsigned Index = Clamp ? 3u : 2u;
+  const std::string Path = "__algorithm/" + Name.str() + ".h";
+  if (!S.coreV2() || !Function || !Primary || !Definition ||
+      (Name != "min" && Name != "max" && Name != "minmax" && !Clamp) ||
+      Call->getNumArgs() != Index + 1 ||
+      Function->getNumParams() != Index + 1 ||
+      !approvedStandardSDKDeclaration(S, SM, Function) ||
+      !approvedStandardSDKDeclaration(S, SM, Primary) ||
+      !approvedUtilityReference(S, SM, Call, Function) ||
+      !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", Path) ||
+      !cstddefOrigin(S, SM, Definition->getLocation(), "libcxx", Path))
+    return std::nullopt;
+  const auto Object = Function->getParamDecl(Index)->getType();
+  const auto *Record = Object->getAsCXXRecordDecl();
+  const auto Approved = approvedFunctionalObjectRecord(S, SM, Record, Context);
+  if (!Approved || Object.hasLocalQualifiers() ||
+      !Context.hasSameType(Call->getArg(Index)->getType(), Object) ||
+      !Function->getParamDecl(0)->getType()->isLValueReferenceType() ||
+      !Context.hasSameType(Function->getParamDecl(0)->getType(),
+                           Function->getParamDecl(1)->getType()) ||
+      (Clamp && !Context.hasSameType(
+                    Function->getParamDecl(0)->getType(),
+                    Function->getParamDecl(2)->getType())))
+    return std::nullopt;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Definition->getBody());
+  const auto *Return =
+      Body && Body->size() == (Clamp ? 2u : 1u)
+          ? dyn_cast<ReturnStmt>(Body->body_back())
+          : nullptr;
+  const auto *Choice = Return && Return->getRetValue()
+                           ? dyn_cast<ConditionalOperator>(
+                                 Return->getRetValue()->IgnoreParenImpCasts())
+                           : nullptr;
+  const auto Check = [&](const ConditionalOperator *Selected,
+                         unsigned Left, unsigned Right)
+      -> std::optional<FunctionalOperationInfo> {
+    const auto *Invocation = Selected
+                                 ? dyn_cast<CXXOperatorCallExpr>(
+                                       Selected->getCond()->IgnoreParenImpCasts())
+                                 : nullptr;
+    if (!Invocation || Invocation->getOperator() != OO_Call ||
+        Invocation->getNumArgs() != 3 || !Invocation->isPRValue() ||
+        !Invocation->getType()->isBooleanType())
+      return std::nullopt;
+    const auto Reference = [&](unsigned Argument, unsigned Parameter) {
+      const auto *Ref = dyn_cast<DeclRefExpr>(
+          Invocation->getArg(Argument)->IgnoreParenImpCasts());
+      return Ref && Ref->getDecl() == Definition->getParamDecl(Parameter);
+    };
+    if (!Reference(0, Index) || !Reference(1, Left) ||
+        !Reference(2, Right))
+      return std::nullopt;
+    return approvedFunctionalOperationImpl(S, SM, Invocation, Context, false);
+  };
+  const bool Forward = Name == "max" || Clamp;
+  auto Operation = Check(Choice, Forward ? 0u : 1u, Forward ? 1u : 0u);
+  if (!Operation || Operation->RightType.isNull() ||
+      !Operation->ResultType->isBooleanType() ||
+      !utilityScalarDirectConversion(
+          Context, Function->getParamDecl(0)->getType()->getPointeeType(),
+          Operation->LeftType) ||
+      !utilityScalarDirectConversion(
+          Context, Function->getParamDecl(0)->getType()->getPointeeType(),
+          Operation->RightType))
+    return std::nullopt;
+  if (Clamp) {
+    const auto *Second = dyn_cast<ConditionalOperator>(
+        Choice->getFalseExpr()->IgnoreParenImpCasts());
+    const auto SecondOperation = Check(Second, 2, 0);
+    if (!SecondOperation ||
+        SecondOperation->Operation != Operation->Operation ||
+        !Context.hasSameType(SecondOperation->LeftType,
+                             Operation->LeftType) ||
+        !Context.hasSameType(SecondOperation->RightType,
+                             Operation->RightType) ||
+        !Context.hasSameType(SecondOperation->ResultType,
+                             Operation->ResultType))
+      return std::nullopt;
+  }
+  return Operation;
+}
+
 std::optional<UtilityOperation>
 approvedUtilityOperation(const State &S, const SourceManager &SM,
                          const CallExpr *Call, const ASTContext &Context) {
@@ -17145,7 +17237,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType()->getPointeeType()) &&
       ((Call->getNumArgs() == 2 && AlgorithmOrderedReferenceParameter(0)) ||
        (Call->getNumArgs() == 3 &&
-        AlgorithmBinaryPredicateReferenceParameter(2, 0))))
+        (AlgorithmBinaryPredicateReferenceParameter(2, 0) ||
+         approvedDirectAlgorithmComparator(S, SM, Call, Context)))))
     return Name == "min" ? UtilityOperation::AlgorithmMin
                          : UtilityOperation::AlgorithmMax;
   if (Origin->Path == "__algorithm/clamp.h" && Name == "clamp" &&
@@ -17162,7 +17255,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType()->getPointeeType()) &&
       ((Call->getNumArgs() == 3 && AlgorithmOrderedReferenceParameter(0)) ||
        (Call->getNumArgs() == 4 &&
-        AlgorithmBinaryPredicateReferenceParameter(3, 0))))
+        (AlgorithmBinaryPredicateReferenceParameter(3, 0) ||
+         approvedDirectAlgorithmComparator(S, SM, Call, Context)))))
     return UtilityOperation::AlgorithmClamp;
   if (Origin->Path == "__algorithm/minmax.h" && Name == "minmax" &&
       (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
@@ -17173,7 +17267,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType()) &&
       ((Call->getNumArgs() == 2 && AlgorithmOrderedReferenceParameter(0)) ||
        (Call->getNumArgs() == 3 &&
-        AlgorithmBinaryPredicateReferenceParameter(2, 0)))) {
+        (AlgorithmBinaryPredicateReferenceParameter(2, 0) ||
+         approvedDirectAlgorithmComparator(S, SM, Call, Context))))) {
     auto Pair = approvedUtilityReferencePairRecord(
         S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);
     if (Pair &&

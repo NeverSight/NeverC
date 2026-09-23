@@ -40719,6 +40719,84 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2DirectAlgorithmFunctionalComparatorsRun) {
+  const auto Source = tmpFile("algorithm-functional-extrema.cpp");
+  const auto Output = tmpFile("algorithm-functional-extrema.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main() {
+  int left = 2;
+  int right = 5;
+  int effects = 0;
+  const int &minimum = std::min((++effects, left), (++effects, right),
+                                (++effects, std::greater<long>{}));
+  if (effects != 3 || &minimum != &right)
+    return 1;
+  std::greater<int> stored;
+  if (&std::max(left, right, stored) != &left)
+    return 2;
+  auto extrema = std::minmax(left, right, std::greater<>{});
+  if (&extrema.first != &right || &extrema.second != &left)
+    return 3;
+  int same = 2;
+  auto equal_extrema = std::minmax(left, same, std::less<>{});
+  if (&equal_extrema.first != &left || &equal_extrema.second != &same)
+    return 4;
+
+  int low = 9;
+  int high = 2;
+  int below = 10;
+  int middle = 4;
+  int above = 1;
+  effects = 0;
+  const int &bounded = std::clamp((++effects, below), (++effects, low),
+                                  (++effects, high),
+                                  (++effects, std::greater<>{}));
+  if (effects != 4 || &bounded != &low ||
+      &std::clamp(middle, low, high, stored) != &middle ||
+      &std::clamp(above, low, high, std::greater<>{}) != &high)
+    return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("algorithm-functional-extrema" +
+                                    Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2DirectAlgorithmFunctionalComparatorRejectsSpoof) {
+  const auto Source = tmpFile("algorithm-functional-spoof.cpp");
+  const auto Output = tmpFile("algorithm-functional-spoof.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+namespace std {
+template <> struct greater<int> {
+  bool operator()(const int&, const int&) const { return false; }
+};
+}
+int main() {
+  int left = 1;
+  int right = 2;
+  return std::min(left, right, std::greater<int>{});
+}
+)cpp");
+  expectCode(
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+      "TR0201");
+  expectNoArtifacts(Output);
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmComparatorExtremaRequireValueCallbacks) {
   struct Rejection {
     const char *Name;

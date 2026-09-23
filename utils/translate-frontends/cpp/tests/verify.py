@@ -11698,6 +11698,41 @@ extern "C" long long algorithm_comparator_extrema(
           'struct R{int n;};bool p(R a,R b){return a.n<b.n;}\n#include <algorithm>\nint main(){R a[2]{{1},{2}};return std::minmax_element(a,a+2,p).first==a?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    algorithm_functional_extrema_source = """\
+#include <algorithm>
+#include <functional>
+extern "C" int algorithm_functional_extrema(
+    const int &left, const int &right, const int &low, const int &high) {
+  std::greater<int> stored;
+  const int &minimum = std::min(left, right, std::greater<>{});
+  const int &maximum = std::max(left, right, stored);
+  const int &bounded = std::clamp(left, low, high, std::less<>{});
+  auto values = std::minmax(left, right, std::greater<long>{});
+  return minimum + maximum + bounded + values.first + values.second;
+}
+"""
+
+    def assert_functional_extrema(data):
+        assert len(data["sdk_dependencies"]) == 435, data
+        assert not [node for node in walk(data["functions"])
+                    if node.get("op") in ("call", "mapped_call",
+                                          "indirect_call")], data
+
+    assert_functional_extrema(check(
+        "v2-algorithm-functional-extrema", algorithm_functional_extrema_source,
+        profile="cpp-core-v2", sdk=True))
+    for target in sdk_targets:
+        assert_functional_extrema(check(
+            "v2-algorithm-functional-extrema-" + target,
+            algorithm_functional_extrema_source, profile="cpp-core-v2",
+            target=target, sdk=True))
+    check("v2-algorithm-functional-extrema-spoof",
+          '#include <algorithm>\n#include <functional>\nnamespace std { template <> struct greater<int> { bool operator()(const int&, const int&) const { return false; } }; }\nint main(){int a=1,b=2;return std::min(a,b,std::greater<int>{});}',
+          "TR0201", profile="cpp-core-v2", sdk=True)
+    check("v2-algorithm-functional-extrema-user-object",
+          '#include <algorithm>\nstruct Greater { bool operator()(int a,int b) const { return a>b; } };\nint main(){int a=1,b=2;return std::min(a,b,Greater{});}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     algorithm_heap_source = """\
 #include <algorithm>
 extern "C" int algorithm_heap(int *first, int *last) {

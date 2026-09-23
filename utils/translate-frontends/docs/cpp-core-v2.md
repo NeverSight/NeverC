@@ -1714,6 +1714,18 @@ and performs no calls for empty or single-element ranges. Enum and object
 pointer values are admitted, while records and unsupported callbacks remain
 rejected.
 
+The scalar-reference `min`, `max`, `minmax` and `clamp` comparator overloads
+also accept authenticated empty standard `<functional>` objects with a selected
+binary `bool` operation on admitted arithmetic scalars. This includes typed
+objects such as `std::greater<int>` and transparent objects such as
+`std::greater<>`. The exact instantiated libc++ algorithm body must call that
+object with its own parameter objects in the documented order, and the selected
+`operator()` body must pass the existing functional-operation proof. The object
+argument is evaluated once; checked scalar conversions and the selected
+reference identity are preserved. Generated programs make no libc++ call for
+these comparisons. Source specializations and user-defined comparator objects
+remain outside this boundary.
+
 The exact two-iterator `std::is_heap`, `std::is_heap_until`, `std::make_heap`,
 `std::push_heap`, `std::pop_heap` and `std::sort_heap` templates use the same
 built-in arithmetic, enum or complete object-pointer ordering boundary. Heap queries accept const or writable
@@ -1857,7 +1869,8 @@ selection uses pointer-width partition indexes. Generated programs do not call
 or link libc++ for these operations. Heterogeneous value types outside the
 documented binary-predicate `equal` and `mismatch` forms, other predicate or
 comparator overloads, custom iterators, record elements, callable objects outside
-the fourteen unary algorithms below and addresses of standard algorithms remain rejected, as do calls outside a
+the fourteen unary algorithms below and four scalar-reference extrema operations,
+and addresses of standard algorithms remain rejected, as do calls outside a
 documented direct lowering.
 
 `find_if`, `find_if_not`, `none_of`, `all_of`, `any_of`, `count_if`,
