@@ -772,8 +772,11 @@ also accept a direct scalar conversion of the input element to their template
 type, including the checked temporary bound to their const-reference parameter.
 The four-argument `partial_sum` and `adjacent_difference` overloads also
 accept these SDK binary objects and source-owned trivial binary objects for a
-non-promoted arithmetic input element and a directly convertible writable
-output element. Their pinned first-element and subsequent-loop structures are
+non-promoted arithmetic or non-boolean narrow integer input element and a
+directly convertible writable output element. `partial_sum` converts each
+operation result back to its input element type before storing it;
+`adjacent_difference` converts the operation result directly to the output
+element type. Their pinned first-element and subsequent-loop structures are
 authenticated, including the empty-range return, in-place output behavior,
 and mutable state of the copied source operation. `adjacent_difference`
 checks the source's move of each current element into the previous value.

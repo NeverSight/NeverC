@@ -37290,6 +37290,76 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2NumericNarrowPrefixObjectsRunAtBothOptimizations) {
+  const auto Source = tmpFile("numeric-narrow-prefix-objects.cpp");
+  const auto Output = tmpFile("numeric-narrow-prefix-objects.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+#include <functional>
+int calls;
+struct Sum {
+  int local_calls;
+  unsigned char operator()(unsigned char prior, unsigned char current) & {
+    ++calls; ++local_calls; return prior + current;
+  }
+};
+struct Difference {
+  int local_calls;
+  int operator()(unsigned char current, unsigned char prior) & {
+    ++calls; ++local_calls; return int(current) - int(prior);
+  }
+};
+int main() {
+  unsigned char values[3]{250, 10, 20};
+  int sums[3]{}, differences[3]{};
+  Sum sum{0}; Difference difference{0};
+  if (std::partial_sum(values, values + 3, sums, sum) != sums + 3 ||
+      sums[0] != 250 || sums[1] != 4 || sums[2] != 24 ||
+      calls != 2 || sum.local_calls != 0) return 1;
+  if (std::adjacent_difference(values, values + 3, differences,
+                               difference) != differences + 3 ||
+      differences[0] != 250 || differences[1] != -240 ||
+      differences[2] != 10 || calls != 4 ||
+      difference.local_calls != 0) return 2;
+  int transparent_sums[3]{}, transparent_differences[3]{};
+  if (std::partial_sum(values, values + 3, transparent_sums,
+                       std::plus<>{}) != transparent_sums + 3 ||
+      transparent_sums[0] != 250 || transparent_sums[1] != 4 ||
+      transparent_sums[2] != 24 ||
+      std::adjacent_difference(values, values + 3,
+                               transparent_differences,
+                               std::minus<>{}) != transparent_differences + 3 ||
+      transparent_differences[0] != 250 ||
+      transparent_differences[1] != -240 ||
+      transparent_differences[2] != 10 || calls != 4) return 3;
+  int typed_sums[3]{}, typed_differences[3]{};
+  if (std::partial_sum(values, values + 3, typed_sums,
+                       std::plus<unsigned char>{}) != typed_sums + 3 ||
+      typed_sums[0] != 250 || typed_sums[1] != 4 || typed_sums[2] != 24 ||
+      std::adjacent_difference(values, values + 3, typed_differences,
+                               std::minus<unsigned char>{}) !=
+          typed_differences + 3 || typed_differences[0] != 250 ||
+      typed_differences[1] != 16 || typed_differences[2] != 10 ||
+      calls != 4) return 4;
+  if (std::partial_sum(values, values, sums, sum) != sums ||
+      std::adjacent_difference(values, values, differences, difference) !=
+          differences || calls != 4) return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("numeric-narrow-prefix-objects" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest,
        CoreV2NumericMixedInclusiveScanObjectsRunAtBothOptimizations) {
   const auto Source = tmpFile("numeric-mixed-inclusive-scan-objects.cpp");

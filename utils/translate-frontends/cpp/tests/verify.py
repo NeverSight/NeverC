@@ -10051,6 +10051,43 @@ void scan(unsigned char*first,unsigned char*last,int*out) {
         for node in walk(data['functions']):
             assert node.get('op') not in ('mapped_call', 'indirect_call', 'member_pointer'), node
 
+    numeric_narrow_prefix_object_source = """\
+#include <numeric>
+#include <functional>
+struct Sum { unsigned char operator()(unsigned char a,unsigned char b)& { return a+b; } }; // narrow-sum-method
+struct Difference { int operator()(unsigned char a,unsigned char b)& { return int(a)-int(b); } }; // narrow-difference-method
+void prefix(unsigned char*first,unsigned char*last,int*out) {
+ std::partial_sum(first,last,out,Sum{}); // narrow-prefix-call
+ std::adjacent_difference(first,last,out,Difference{}); // narrow-prefix-call
+ std::partial_sum(first,last,out,std::plus<>{});
+ std::adjacent_difference(first,last,out,std::minus<>{});
+ std::partial_sum(first,last,out,std::plus<unsigned char>{});
+ std::adjacent_difference(first,last,out,std::minus<unsigned char>{});
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-numeric-narrow-prefix-object-" + target,
+                     numeric_narrow_prefix_object_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        assert len(data['sdk_dependencies']) == 360, data
+        method_lines = [i for i, line in enumerate(numeric_narrow_prefix_object_source.splitlines(), 1)
+                        if '// narrow-sum-method' in line or '// narrow-difference-method' in line]
+        methods = sorted((f for f in data['functions'] if f['loc']['line'] in method_lines),
+                         key=lambda f: f['loc']['line'])
+        assert len(methods) == 2 and [f['result'] for f in methods] == ['u8', 'int'], methods
+        assert all([p['type'] for p in f['params'][1:]] == ['u8', 'u8'] for f in methods), methods
+        prefix_line = next(i for i, line in enumerate(numeric_narrow_prefix_object_source.splitlines(), 1)
+                           if 'prefix(unsigned char*first' in line)
+        prefix = [f for f in data['functions'] if f['loc']['line'] == prefix_line]
+        assert len(prefix) == 1, prefix
+        calls = [node for node in walk(prefix[0]['body']) if node.get('op') == 'call']
+        expected_lines = [i for i, line in enumerate(numeric_narrow_prefix_object_source.splitlines(), 1)
+                          if '// narrow-prefix-call' in line]
+        assert len(calls) == 2 and [node['loc']['line'] for node in calls] == expected_lines, calls
+        assert {node['callee'] for node in calls} == {f['name'] for f in methods}, calls
+        for node in walk(data['functions']):
+            assert node.get('op') not in ('mapped_call', 'indirect_call', 'member_pointer'), node
+
     numeric_mixed_inclusive_scan_object_source = """\
 #include <numeric>
 #include <functional>

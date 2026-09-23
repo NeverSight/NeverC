@@ -3264,7 +3264,7 @@ class FunctionLowering {
         if (OperationObject)
           return cast(emitBinaryCallable(*OperationObject, std::move(Left),
                                          std::move(Right), L),
-                      ElementType, L);
+                      Adjacent ? OutputElementType : ElementType, L);
         if (!Callback)
           return binary(DefaultOperator, std::move(Left), std::move(Right),
                         ElementType, L);
@@ -3274,7 +3274,7 @@ class FunctionLowering {
         return cast(emitAlgorithmCallback(json::Object(*Callback),
                                           *CallbackType, std::move(Arguments),
                                           L),
-                    ElementType, L);
+                    Adjacent ? OutputElementType : ElementType, L);
       };
       if (Adjacent) {
         assign(dereference(Output, L),
