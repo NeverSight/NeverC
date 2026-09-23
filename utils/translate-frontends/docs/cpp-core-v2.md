@@ -1699,6 +1699,15 @@ comparison objects on arithmetic scalar ranges. The selected instantiated
 `operator()` is proved and lowered directly; the object argument is evaluated
 once, including for an empty range.
 
+The comparator overloads of `std::lower_bound`, `std::upper_bound`,
+`std::binary_search` and `std::equal_range` also accept authenticated typed or
+transparent empty standard `<functional>` comparison objects on arithmetic
+scalar elements and values. The selected instantiated operation is checked for
+the element-to-value direction in lower bounds, the value-to-element direction
+in upper bounds, and both directions in searches and equal ranges. The object
+argument is evaluated once and comparisons lower directly, including when the
+range and value have different admitted arithmetic types.
+
 The exact two-argument `std::min` and `std::max`, three-argument `std::clamp`,
 two-argument `std::minmax` and two-iterator `std::minmax_element` templates use
 the same built-in arithmetic, enum or complete object-pointer ordering boundary.

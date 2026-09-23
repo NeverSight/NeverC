@@ -4207,10 +4207,28 @@ class FunctionLowering {
       auto ValueAddress = snapshot(
           address(lvalue(Call->getArg(2)), Call->getArg(2)->getType(), L), L);
       std::optional<Expression> Comparator;
-      if (Call->getNumArgs() == 4)
-        Comparator = snapshot(expression(Call->getArg(3)), L);
+      std::optional<FunctionalOperationInfo> SDKForward;
+      std::optional<FunctionalOperationInfo> SDKReverse;
+      if (Call->getNumArgs() == 4) {
+        const auto Element = Call->getArg(0)->getType()->getPointeeType();
+        const auto Value = Call->getArg(2)->getType();
+        if (Upper) {
+          SDKReverse = captureRangeSDKComparator(Call, 3, Value, Element);
+        } else {
+          SDKForward = captureRangeSDKComparator(Call, 3, Element, Value);
+          if (Search && SDKForward) {
+            SDKReverse = approvedRangeAlgorithmComparator(
+                A.S, A.Sources, Call, 3, Value, Element, A.Context);
+            if (!SDKReverse)
+              reject(L, "algorithm binary_search",
+                     "The standard comparator lacks the reverse comparison.");
+          }
+        }
+        if (!SDKForward && !SDKReverse)
+          Comparator = snapshot(expression(Call->getArg(3)), L);
+      }
       std::optional<std::string> DefaultComparisonType;
-      if (!Comparator) {
+      if (!Comparator && !SDKForward && !SDKReverse) {
         auto Common = utilityScalarComparisonType(
             A.Context, Call->getArg(0)->getType()->getPointeeType(),
             Call->getArg(2)->getType(), true);
@@ -4219,7 +4237,11 @@ class FunctionLowering {
                  "The range element and value have no ordered common type.");
         DefaultComparisonType = type(*Common, L);
       }
-      auto Less = [&](Expression Left, Expression Right) {
+      auto Less = [&](Expression Left, Expression Right, bool Reversed) {
+        const auto &SDKComparator = Reversed ? SDKReverse : SDKForward;
+        if (SDKComparator)
+          return functionalOperationValues(L, std::move(Left), std::move(Right),
+                                           *SDKComparator);
         if (Comparator)
           return emitBinaryPredicate(json::Object(*Comparator),
                                      Call->getArg(3)->getType(),
@@ -4250,7 +4272,8 @@ class FunctionLowering {
       branch(Less(Upper ? dereference(json::Object(ValueAddress), L)
                         : dereference(json::Object(Middle), L),
                   Upper ? dereference(json::Object(Middle), L)
-                        : dereference(json::Object(ValueAddress), L)),
+                        : dereference(json::Object(ValueAddress), L),
+                  Upper),
              Upper ? Narrow : Advance, Upper ? Advance : Narrow, L);
       label(Advance, L);
       assign(
@@ -4274,7 +4297,7 @@ class FunctionLowering {
       branch(binary("!=", First, Last, "bool", L), Compare, Absent, L);
       label(Compare, L);
       branch(Less(dereference(json::Object(ValueAddress), L),
-                  dereference(json::Object(First), L)),
+                  dereference(json::Object(First), L), true),
              Absent, Present, L);
       label(Present, L);
       assign(Result, boolean(true, L), L);
@@ -5051,10 +5074,24 @@ class FunctionLowering {
       auto ValueAddress = snapshot(
           address(lvalue(Call->getArg(2)), Call->getArg(2)->getType(), L), L);
       std::optional<Expression> Comparator;
-      if (Call->getNumArgs() == 4)
-        Comparator = snapshot(expression(Call->getArg(3)), L);
+      std::optional<FunctionalOperationInfo> SDKForward;
+      std::optional<FunctionalOperationInfo> SDKReverse;
+      if (Call->getNumArgs() == 4) {
+        const auto Element = Call->getArg(0)->getType()->getPointeeType();
+        const auto Value = Call->getArg(2)->getType();
+        SDKForward = captureRangeSDKComparator(Call, 3, Element, Value);
+        if (SDKForward) {
+          SDKReverse = approvedRangeAlgorithmComparator(
+              A.S, A.Sources, Call, 3, Value, Element, A.Context);
+          if (!SDKReverse)
+            reject(L, "algorithm equal_range",
+                   "The standard comparator lacks the reverse comparison.");
+        } else {
+          Comparator = snapshot(expression(Call->getArg(3)), L);
+        }
+      }
       std::optional<std::string> DefaultComparisonType;
-      if (!Comparator) {
+      if (!Comparator && !SDKForward) {
         auto Common = utilityScalarComparisonType(
             A.Context, Call->getArg(0)->getType()->getPointeeType(),
             Call->getArg(2)->getType(), true);
@@ -5063,7 +5100,11 @@ class FunctionLowering {
                  "The range element and value have no ordered common type.");
         DefaultComparisonType = type(*Common, L);
       }
-      auto Less = [&](Expression Left, Expression Right) {
+      auto Less = [&](Expression Left, Expression Right, bool Reversed) {
+        const auto &SDKComparator = Reversed ? SDKReverse : SDKForward;
+        if (SDKComparator)
+          return functionalOperationValues(L, std::move(Left), std::move(Right),
+                                           *SDKComparator);
         if (Comparator)
           return emitBinaryPredicate(json::Object(*Comparator),
                                      Call->getArg(3)->getType(),
@@ -5098,7 +5139,8 @@ class FunctionLowering {
         branch(Less(Upper ? dereference(json::Object(ValueAddress), L)
                           : dereference(json::Object(Middle), L),
                     Upper ? dereference(json::Object(Middle), L)
-                          : dereference(json::Object(ValueAddress), L)),
+                          : dereference(json::Object(ValueAddress), L),
+                    Upper),
                Upper ? Narrow : Advance, Upper ? Advance : Narrow, L);
         label(Advance, L);
         assign(

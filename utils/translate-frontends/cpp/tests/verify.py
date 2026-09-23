@@ -11392,6 +11392,38 @@ extern "C" long long algorithm_comparator_queries(
     check("v2-algorithm-comparator-queries-reference",
           'bool p(const int&a,int b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{1,2};return std::min_element(a,a+2,p)==a?0:1;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
+    algorithm_functional_bound_queries_source = """\
+#include <algorithm>
+#include <functional>
+extern "C" int algorithm_functional_bound_queries(
+    const int *first, const int *last, const short &value) {
+  std::less<int> typed;
+  const int *lower = std::lower_bound(first, last, value, std::less<>{});
+  const int *upper = std::upper_bound(first, last, value, typed);
+  auto equal = std::equal_range(first, last, value, std::less<>{});
+  bool found = std::binary_search(first, last, value, typed);
+  return static_cast<int>((lower - first) + (upper - first) +
+                          (equal.first - first) +
+                          (equal.second - first) + found);
+}
+"""
+
+    def assert_functional_bound_queries(data):
+        assert len(data["sdk_dependencies"]) == 435, data
+        assert not [node for node in walk(data["functions"])
+                    if node.get("op") in ("call", "mapped_call",
+                                          "indirect_call")], data
+
+    assert_functional_bound_queries(check(
+        "v2-algorithm-functional-bound-queries",
+        algorithm_functional_bound_queries_source,
+        profile="cpp-core-v2", sdk=True))
+    for target in sdk_targets:
+        assert_functional_bound_queries(check(
+            "v2-algorithm-functional-bound-queries-" + target,
+            algorithm_functional_bound_queries_source,
+            profile="cpp-core-v2", target=target, sdk=True))
+
     algorithm_equality_mutation_source = """\
 #include <algorithm>
 extern "C" int algorithm_equality_mutation(int *first, int *last,

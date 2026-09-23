@@ -39525,6 +39525,74 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2AlgorithmFunctionalBoundQueriesRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-functional-bound-queries.cpp");
+  const auto Output = tmpFile("algorithm-functional-bound-queries.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main() {
+  const int descending[7]{9, 7, 7, 5, 3, 1, 0};
+  short key = 7;
+  int effects = 0;
+  const int *lower = std::lower_bound(
+      (++effects, descending), (++effects, descending + 7),
+      (++effects, key), (++effects, std::greater<>{}));
+  if (effects != 4 || lower != descending + 1)
+    return 1;
+  std::greater<int> greater;
+  if (std::upper_bound(descending, descending + 7, key, greater) !=
+      descending + 3)
+    return 2;
+  auto descending_equal =
+      std::equal_range(descending, descending + 7, key, std::greater<>{});
+  if (descending_equal.first != descending + 1 ||
+      descending_equal.second != descending + 3 ||
+      !std::binary_search(descending, descending + 7, key, greater))
+    return 3;
+  short absent = 8;
+  if (std::binary_search(descending, descending + 7, absent,
+                          std::greater<>{}))
+    return 4;
+
+  const int ascending[7]{0, 2, 2, 4, 6, 6, 9};
+  short two = 2;
+  if (std::lower_bound(ascending, ascending + 7, two, std::less<>{}) !=
+          ascending + 1 ||
+      std::upper_bound(ascending, ascending + 7, two, std::less<>{}) !=
+          ascending + 3)
+    return 5;
+  auto ascending_equal =
+      std::equal_range(ascending, ascending + 7, two, std::less<>{});
+  std::less<int> less;
+  if (ascending_equal.first != ascending + 1 ||
+      ascending_equal.second != ascending + 3 ||
+      !std::binary_search(ascending, ascending + 7, two, less))
+    return 6;
+  effects = 0;
+  if (std::lower_bound((++effects, descending), (++effects, descending),
+                        (++effects, key), (++effects, std::greater<>{})) !=
+          descending ||
+      effects != 4)
+    return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("algorithm-functional-bound-queries" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmComparatorQueriesRequireValueCallbacks) {
   struct Rejection {
     const char *Name;

@@ -16388,6 +16388,26 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                              Iterator->getPointeeType(),
                                              Prototype->getParamType(1));
       };
+  auto AlgorithmBinaryComparisonValueParameter = [&](unsigned PredicateIndex,
+                                                     unsigned IteratorIndex,
+                                                     unsigned ValueIndex,
+                                                     bool Reversed) {
+    if (Reversed ? AlgorithmBinaryPredicateReversedValueParameter(
+                       PredicateIndex, IteratorIndex, ValueIndex)
+                 : AlgorithmBinaryPredicateValueParameter(
+                       PredicateIndex, IteratorIndex, ValueIndex))
+      return true;
+    if (!AlgorithmScalarValueParameter(ValueIndex, IteratorIndex))
+      return false;
+    const auto Element =
+        Function->getParamDecl(IteratorIndex)->getType()->getPointeeType();
+    const auto Value =
+        Function->getParamDecl(ValueIndex)->getType()->getPointeeType();
+    return approvedRangeAlgorithmComparator(S, SM, Call, PredicateIndex,
+                                            Reversed ? Value : Element,
+                                            Reversed ? Element : Value, Context)
+        .has_value();
+  };
   auto AlgorithmBinaryPredicateReferenceParameter =
       [&](unsigned PredicateIndex, unsigned ReferenceIndex) {
         if (!AlgorithmReferenceParameter(ReferenceIndex))
@@ -17015,10 +17035,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const bool Default = Call->getNumArgs() == 3;
     const bool ForwardComparator =
         Call->getNumArgs() == 4 &&
-        AlgorithmBinaryPredicateValueParameter(3, 0, 2);
+        AlgorithmBinaryComparisonValueParameter(3, 0, 2, false);
     const bool ReverseComparator =
         Call->getNumArgs() == 4 &&
-        AlgorithmBinaryPredicateReversedValueParameter(3, 0, 2);
+        AlgorithmBinaryComparisonValueParameter(3, 0, 2, true);
     if (!((Default && AlgorithmOrderedPointerParameter(0) &&
            AlgorithmOrderedValueParameter(2, 0)) ||
           (Name == "lower_bound" && ForwardComparator) ||
@@ -17280,8 +17300,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if (!((Call->getNumArgs() == 3 && AlgorithmOrderedPointerParameter(0) &&
            AlgorithmOrderedValueParameter(2, 0)) ||
           (Call->getNumArgs() == 4 &&
-           AlgorithmBinaryPredicateValueParameter(3, 0, 2) &&
-           AlgorithmBinaryPredicateReversedValueParameter(3, 0, 2))))
+           AlgorithmBinaryComparisonValueParameter(3, 0, 2, false) &&
+           AlgorithmBinaryComparisonValueParameter(3, 0, 2, true))))
       return std::nullopt;
     auto Pair = approvedUtilityPairRecord(
         S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);
