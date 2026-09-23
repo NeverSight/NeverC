@@ -37566,6 +37566,15 @@ int main() {
       std::transform_reduce(exact, exact + 3, exact, 5,
                             std::plus<int>{}, std::multiplies<int>{}) != 34)
     return 4;
+  unsigned char narrow[2]{200, 100};
+  unsigned char factors[2]{2, 3};
+  if (std::inner_product(narrow, narrow + 2, factors, (unsigned char)7,
+                         std::plus<unsigned char>{},
+                         std::multiplies<unsigned char>{}) != 195 ||
+      std::transform_reduce(narrow, narrow + 2, factors, (unsigned char)7,
+                            std::plus<unsigned char>{},
+                            std::multiplies<unsigned char>{}) != 195)
+    return 5;
   return 0;
 }
 )cpp");
@@ -37603,6 +37612,10 @@ int main() {
   if (std::transform_reduce(exact, exact + 3, 20,
                             std::plus<int>{}, std::negate<int>{}) != 11)
     return 4;
+  if (std::transform_reduce(narrow, narrow + 2, (unsigned char)250,
+                            std::plus<unsigned char>{},
+                            std::negate<unsigned char>{}) != 206)
+    return 5;
   return 0;
 }
 )cpp");

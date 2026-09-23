@@ -3057,6 +3057,18 @@ class FunctionLowering {
           Call->getNumArgs() == 6 && Call->getArg(4)->getType()->isRecordType();
       const bool DefaultUnaryFunctionalPair =
           UnaryTransformReduce && Call->getArg(3)->getType()->isRecordType();
+      auto TypedFunctionalAt = [&](unsigned Index) {
+        const auto *Record = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+            Call->getArg(Index)->getType()->getAsCXXRecordDecl());
+        return Record && Record->getTemplateArgs().size() == 1 &&
+               Record->getTemplateArgs().get(0).getKind() ==
+                   TemplateArgument::Type &&
+               !Record->getTemplateArgs().get(0).getAsType()->isVoidType();
+      };
+      const bool TypedFunctionalPair =
+          DefaultFunctionalPair && TypedFunctionalAt(4);
+      const bool TypedUnaryFunctionalPair =
+          DefaultUnaryFunctionalPair && TypedFunctionalAt(3);
       const bool Inner = Operation == UtilityOperation::NumericInnerProduct ||
                          (TransformReduce && !UnaryTransformReduce);
       auto First = snapshot(expression(Call->getArg(0)), L);
@@ -3143,6 +3155,8 @@ class FunctionLowering {
             {"operator", "-"},
             {"args", json::Array{cast(std::move(Term), PromotedType, L)}},
             {"loc", A.loc(L)}};
+        if (TypedUnaryFunctionalPair)
+          Term = cast(std::move(Term), ResultType, L);
       } else if (TransformCallback) {
         json::Array Arguments;
         Arguments.push_back(std::move(Term));
@@ -3156,6 +3170,8 @@ class FunctionLowering {
         Term = binary("*", cast(std::move(Term), DefaultTermType, L),
                       cast(dereference(*Second, L), DefaultTermType, L),
                       DefaultTermType, L);
+        if (TypedFunctionalPair)
+          Term = cast(std::move(Term), ResultType, L);
       }
       if (ReductionObject) {
         assign(Result,

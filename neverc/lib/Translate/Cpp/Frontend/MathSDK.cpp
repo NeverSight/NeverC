@@ -16113,7 +16113,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   };
   // Empty, directly value-initialized arithmetic function objects have no
   // state or construction effects. Transparent operators retain the default
-  // arithmetic; typed operators do so for exact, non-promoted operand types.
+  // arithmetic; typed operators explicitly narrow their result to the exact
+  // operand type before the next operation.
   auto NumericDefaultFunctionalPair = [&](bool Unary) {
     if (Call->getNumArgs() != (Unary ? 5u : 6u))
       return false;
@@ -16145,7 +16146,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
               Specialization->getCanonicalDecl() ||
           Specialization->getName() != Name || ValueType.isNull() ||
           (!ValueType->isVoidType() &&
-           (!NumericArithmetic(ValueType, false) ||
+           (!NumericArithmetic(ValueType, true) ||
             !Same(ValueType,
                   Function->getParamDecl(Unary ? 2 : 3)->getType()) ||
             !Same(ValueType, Function->getParamDecl(0)

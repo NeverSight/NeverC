@@ -747,14 +747,15 @@ accumulator.
 Their six-argument overloads also accept an explicit pair of directly empty
 list-initialized `std::plus<>` and `std::multiplies<>` objects, or the typed
 `std::plus<T>`/`std::multiplies<T>` pair when both ranges and the accumulator
-have the same admitted non-promoted type `T`. The authenticated stateless SDK
-objects use the same checked product and sum conversions as the default
+have the same admitted arithmetic type `T`, including non-boolean narrow
+integers. The typed product converts to `T` before the sum. The authenticated
+stateless SDK objects use the checked product and sum conversions of their
 overloads; stored objects and other object combinations remain outside this
 direct lowering.
 The five-argument unary `transform_reduce` likewise accepts directly empty
 list-initialized `std::plus<>` and `std::negate<>`, or their typed `T` forms for
-an exact non-promoted input and accumulator type. Negation uses the source
-integer promotion before adding into and narrowing back to the accumulator.
+an exact arithmetic input and accumulator type. Negation uses source integer
+promotion, and the typed result converts to `T` before addition.
 
 The operation-taking overloads of `accumulate`, `inner_product`, `partial_sum`,
 `adjacent_difference`, `reduce`, unary and two-range `transform_reduce`,
