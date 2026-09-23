@@ -37361,6 +37361,67 @@ int main() {
 }
 
 TEST_F(TranslateTest,
+       CoreV2NumericNarrowAccumulatorScansRunAtBothOptimizations) {
+  const auto Source = tmpFile("numeric-narrow-accumulator-scans.cpp");
+  const auto Output = tmpFile("numeric-narrow-accumulator-scans.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+#include <functional>
+int calls;
+struct Sum {
+  int local_calls;
+  unsigned char operator()(unsigned char a, unsigned char b) & {
+    ++calls; ++local_calls; return a + b;
+  }
+};
+int main() {
+  unsigned char values[3]{250, 10, 20};
+  int seed[3]{}, inclusive[3]{}, exclusive[3]{};
+  Sum caller{0};
+  if (std::inclusive_scan(values, values + 3, seed, caller) != seed + 3 ||
+      seed[0] != 250 || seed[1] != 4 || seed[2] != 24 ||
+      calls != 2 || caller.local_calls != 0) return 1;
+  if (std::inclusive_scan(values, values + 3, inclusive, caller,
+                          (unsigned char)5) != inclusive + 3 ||
+      inclusive[0] != 255 || inclusive[1] != 9 || inclusive[2] != 29 ||
+      calls != 5 || caller.local_calls != 0) return 2;
+  if (std::exclusive_scan(values, values + 3, exclusive,
+                          (unsigned char)5, caller) != exclusive + 3 ||
+      exclusive[0] != 5 || exclusive[1] != 255 || exclusive[2] != 9 ||
+      calls != 8 || caller.local_calls != 0) return 3;
+  int typed[3]{}, transparent[3]{};
+  if (std::inclusive_scan(values, values + 3, typed,
+                          std::plus<unsigned char>{}) != typed + 3 ||
+      typed[0] != 250 || typed[1] != 4 || typed[2] != 24 ||
+      std::inclusive_scan(values, values + 3, typed,
+                          std::plus<unsigned char>{},
+                          (unsigned char)5) != typed + 3 ||
+      typed[0] != 255 || typed[1] != 9 || typed[2] != 29 ||
+      std::exclusive_scan(values, values + 3, transparent,
+                          (unsigned char)5, std::plus<>{}) !=
+          transparent + 3 || transparent[0] != 5 ||
+      transparent[1] != 255 || transparent[2] != 9 || calls != 8) return 4;
+  unsigned char in_place[3]{250, 10, 20};
+  if (std::inclusive_scan(in_place, in_place + 3, in_place,
+                          std::plus<>{}) != in_place + 3 ||
+      in_place[0] != 250 || in_place[1] != 4 || in_place[2] != 24) return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("numeric-narrow-accumulator-scans" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
        CoreV2NumericMixedInclusiveScanObjectsRunAtBothOptimizations) {
   const auto Source = tmpFile("numeric-mixed-inclusive-scan-objects.cpp");
   const auto Output = tmpFile("numeric-mixed-inclusive-scan-objects.nc");

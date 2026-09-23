@@ -806,6 +806,11 @@ The initialized object-taking forms of both scans also admit non-boolean
 narrow integer inputs with an admitted non-promoted arithmetic initial value.
 The source method or selected typed/transparent SDK operation receives the
 input through the same checked scalar conversions.
+They may also retain a non-boolean narrow integer initial value, converting
+each operation result back to that accumulator type before the output write.
+The four-argument no-init `inclusive_scan` authenticates the same narrow
+input's first-element seed and delegates the remaining range to the initialized
+loop. Its first value is written without invoking the operation.
 
 `gcd` and `lcm` accept any non-boolean built-in integer argument combination
 through 64 bits and return libc++'s exact `common_type_t` result. Signed inputs

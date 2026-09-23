@@ -10088,6 +10088,44 @@ void prefix(unsigned char*first,unsigned char*last,int*out) {
         for node in walk(data['functions']):
             assert node.get('op') not in ('mapped_call', 'indirect_call', 'member_pointer'), node
 
+    numeric_narrow_accumulator_scan_source = """\
+#include <numeric>
+#include <functional>
+struct Sum { unsigned char operator()(unsigned char a,unsigned char b)& { return a+b; } }; // narrow-accumulator-method
+void scan(unsigned char*first,unsigned char*last,int*out) {
+ std::inclusive_scan(first,last,out,Sum{}); // narrow-accumulator-call
+ std::inclusive_scan(first,last,out,Sum{},(unsigned char)5); // narrow-accumulator-call
+ std::exclusive_scan(first,last,out,(unsigned char)5,Sum{}); // narrow-accumulator-call
+ std::inclusive_scan(first,last,out,std::plus<>{});
+ std::inclusive_scan(first,last,out,std::plus<unsigned char>{});
+ std::inclusive_scan(first,last,out,std::plus<>{},(unsigned char)5);
+ std::inclusive_scan(first,last,out,std::plus<unsigned char>{},(unsigned char)5);
+ std::exclusive_scan(first,last,out,(unsigned char)5,std::plus<>{});
+ std::exclusive_scan(first,last,out,(unsigned char)5,std::plus<unsigned char>{});
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-numeric-narrow-accumulator-scan-" + target,
+                     numeric_narrow_accumulator_scan_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        assert len(data['sdk_dependencies']) == 360, data
+        method_line = next(i for i, line in enumerate(numeric_narrow_accumulator_scan_source.splitlines(), 1)
+                           if '// narrow-accumulator-method' in line)
+        methods = [f for f in data['functions'] if f['loc']['line'] == method_line]
+        assert len(methods) == 1 and methods[0]['result'] == 'u8', methods
+        assert [p['type'] for p in methods[0]['params'][1:]] == ['u8', 'u8'], methods
+        scan_line = next(i for i, line in enumerate(numeric_narrow_accumulator_scan_source.splitlines(), 1)
+                         if 'scan(unsigned char*first' in line)
+        scan = [f for f in data['functions'] if f['loc']['line'] == scan_line]
+        assert len(scan) == 1, scan
+        calls = [node for node in walk(scan[0]['body']) if node.get('op') == 'call']
+        expected_lines = [i for i, line in enumerate(numeric_narrow_accumulator_scan_source.splitlines(), 1)
+                          if '// narrow-accumulator-call' in line]
+        assert len(calls) == 3 and [node['loc']['line'] for node in calls] == expected_lines, calls
+        assert all(node['callee'] == methods[0]['name'] for node in calls), calls
+        for node in walk(data['functions']):
+            assert node.get('op') not in ('mapped_call', 'indirect_call', 'member_pointer'), node
+
     numeric_mixed_inclusive_scan_object_source = """\
 #include <numeric>
 #include <functional>

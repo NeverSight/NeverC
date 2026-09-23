@@ -13333,9 +13333,8 @@ utilityNumericInclusiveScanObjectCall(const State &S, const SourceManager &SM,
        Element->isSpecificBuiltinType(BuiltinType::Float) ||
        Element->isSpecificBuiltinType(BuiltinType::Double));
   const bool InitialArithmetic =
-      !Initial->isEnumeralType() &&
-      ((!Context.isPromotableIntegerType(Initial) && Initial->isIntegerType() &&
-        Context.getTypeSize(Initial) <= 64) ||
+      !Initial->isEnumeralType() && !Initial->isBooleanType() &&
+      ((Initial->isIntegerType() && Context.getTypeSize(Initial) <= 64) ||
        Initial->isSpecificBuiltinType(BuiltinType::Float) ||
        Initial->isSpecificBuiltinType(BuiltinType::Double));
   const auto *Record = Object->getAsCXXRecordDecl();
@@ -13570,9 +13569,8 @@ utilityNumericInclusiveScanSeedObjectCall(const State &S,
                            : QualType{};
   const bool Arithmetic =
       !Element.isNull() &&
-      ((!Element->isEnumeralType() && Element->isIntegerType() &&
-        !Context.isPromotableIntegerType(Element) &&
-        Context.getTypeSize(Element) <= 64) ||
+      ((!Element->isEnumeralType() && !Element->isBooleanType() &&
+        Element->isIntegerType() && Context.getTypeSize(Element) <= 64) ||
        Element->isSpecificBuiltinType(BuiltinType::Float) ||
        Element->isSpecificBuiltinType(BuiltinType::Double));
   if (!Arithmetic || !utilityAlgorithmScalarPointer(Context, Input) ||
@@ -13746,9 +13744,8 @@ utilityNumericExclusiveScanObjectCall(const State &S, const SourceManager &SM,
        Element->isSpecificBuiltinType(BuiltinType::Float) ||
        Element->isSpecificBuiltinType(BuiltinType::Double));
   const bool InitialArithmetic =
-      !Initial->isEnumeralType() &&
-      ((!Context.isPromotableIntegerType(Initial) && Initial->isIntegerType() &&
-        Context.getTypeSize(Initial) <= 64) ||
+      !Initial->isEnumeralType() && !Initial->isBooleanType() &&
+      ((Initial->isIntegerType() && Context.getTypeSize(Initial) <= 64) ||
        Initial->isSpecificBuiltinType(BuiltinType::Float) ||
        Initial->isSpecificBuiltinType(BuiltinType::Double));
   const auto *Record = Object->getAsCXXRecordDecl();
