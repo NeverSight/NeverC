@@ -29030,6 +29030,23 @@ std::string_view exchange(std::string_view left, std::string_view right) {
   left.swap(right);
   return left;
 }
+std::string_view::size_type capacity(std::string_view view) {
+  return view.max_size();
+}
+int compare(std::string_view left, std::string_view right) {
+  return left.compare(right);
+}
+std::string_view::size_type locate(std::string_view view, char needle,
+                                   std::string_view::size_type pos) {
+  return view.find(needle, pos);
+}
+std::string_view::size_type locate_default(std::string_view view,
+                                           char needle) {
+  return view.find(needle);
+}
+char reverse_first(std::string_view view) {
+  return view.rbegin() != view.rend() ? *view.crbegin() : 0;
+}
 """, profile="cpp-core-v2", target=target, sdk=True)
         assert not [node for node in walk(runtime_ir["functions"])
                     if node.get("op") in ("call", "mapped_call", "indirect_call",
@@ -29039,6 +29056,9 @@ std::string_view exchange(std::string_view left, std::string_view right) {
           "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-string-view-unlowered-member",
           '#include <string_view>\nint f(){std::string_view view("a",1);return view.at(0);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-string-view-unlowered-find-pointer",
+          '#include <string_view>\nstd::string_view::size_type f(std::string_view view){return view.find("a",0);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-string-view-quoted", '#include "string_view"\nint f(){return 0;}',
           "TR0201", profile="cpp-core-v2", sdk=True)

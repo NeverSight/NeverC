@@ -6996,10 +6996,37 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
       return true;
   }
   if (const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function)) {
-    const auto Unique =
-        approvedUtilityUniquePtrRecord(S, SM, Method->getParent(), Context);
+    const auto View =
+        approvedUtilityStringViewRecord(S, SM, Method->getParent(), Context);
     const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
     const auto *Init = selectedDefaultArgument(Default, Context);
+    if (Default && Parameter && Owner && View && Prototype &&
+        Prototype->isNothrow() &&
+        Owner->getCanonicalDecl() == Method->getCanonicalDecl() &&
+        Method->getNumParams() == 2 && Parameter == Method->getParamDecl(1) &&
+        Parameter->getFunctionScopeIndex() == 1 && Index == 1 &&
+        !Method->isStatic() && !Method->isVariadic() && Method->isConst() &&
+        Method->isConstexpr() && Method->hasBody() && Method->getIdentifier() &&
+        Method->getName() == "find" &&
+        Context.hasSameType(Method->getReturnType(), Context.getSizeType()) &&
+        Context.hasSameType(Method->getParamDecl(0)->getType(),
+                            Context.CharTy) &&
+        Context.hasSameType(Parameter->getType(), Context.getSizeType()) &&
+        approvedStandardSDKDeclaration(S, SM, Method) &&
+        cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "string_view") &&
+        S.owns(SM, Default->getExprLoc()) && Init &&
+        Context.hasSameType(Init->getType(), Context.getSizeType()) &&
+        !Init->isTypeDependent() && !Init->isValueDependent() &&
+        !Init->isInstantiationDependent()) {
+      const auto *Value = Init->IgnoreParenImpCasts();
+      while (const auto *Constant = dyn_cast<ConstantExpr>(Value))
+        Value = Constant->getSubExpr()->IgnoreParenImpCasts();
+      if (const auto *Literal = dyn_cast<IntegerLiteral>(Value))
+        if (Literal->getValue() == 0)
+          return true;
+    }
+    const auto Unique =
+        approvedUtilityUniquePtrRecord(S, SM, Method->getParent(), Context);
     if (Default && Parameter && Owner && Unique && Prototype &&
         Prototype->isNothrow() &&
         Owner->getCanonicalDecl() == Function->getCanonicalDecl() &&
@@ -15447,6 +15474,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       if ((Name == "size" || Name == "length") &&
           Context.hasSameType(Method->getReturnType(), Context.getSizeType()))
         return UtilityOperation::StringViewSize;
+      if (Name == "max_size" &&
+          Context.hasSameType(Method->getReturnType(), Context.getSizeType()))
+        return UtilityOperation::StringViewMaxSize;
       if (Name == "empty" && Method->getReturnType()->isBooleanType())
         return UtilityOperation::StringViewEmpty;
       if (Context.hasSameType(Method->getReturnType(), Pointer)) {
@@ -15456,6 +15486,15 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           return UtilityOperation::StringViewBegin;
         if (Name == "end" || Name == "cend")
           return UtilityOperation::StringViewEnd;
+      }
+      if (Name == "rbegin" || Name == "crbegin" || Name == "rend" ||
+          Name == "crend") {
+        const auto Reverse = approvedUtilityReverseIteratorRecord(
+            S, SM, Method->getReturnType()->getAsCXXRecordDecl(), Context);
+        if (Reverse && Context.hasSameType(Reverse->IteratorType, Pointer))
+          return Name == "rend" || Name == "crend"
+                     ? UtilityOperation::StringViewREnd
+                     : UtilityOperation::StringViewRBegin;
       }
     }
     const auto Result = Method->getReturnType();
@@ -15498,6 +15537,27 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
             Method->getParamDecl(0)->getType()->getPointeeType(), ViewType) &&
         Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), ViewType))
       return UtilityOperation::StringViewSwap;
+    if (!Operator && Method->isConst() && Call->isPRValue() &&
+        Context.hasSameType(Call->getType(), Method->getReturnType())) {
+      if (Name == "compare" && Method->getNumParams() == 1 &&
+          Call->getNumArgs() == 1 &&
+          Context.hasSameType(Method->getReturnType(), Context.IntTy) &&
+          Context.hasSameUnqualifiedType(Method->getParamDecl(0)->getType(),
+                                         ViewType) &&
+          Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), ViewType))
+        return UtilityOperation::StringViewCompare;
+      if (Name == "find" && Method->getNumParams() == 2 &&
+          Call->getNumArgs() == 2 &&
+          Context.hasSameType(Method->getReturnType(), Context.getSizeType()) &&
+          Context.hasSameType(Method->getParamDecl(0)->getType(),
+                              Context.CharTy) &&
+          Context.hasSameType(Call->getArg(0)->getType(), Context.CharTy) &&
+          Context.hasSameType(Method->getParamDecl(1)->getType(),
+                              Context.getSizeType()) &&
+          Context.hasSameType(Call->getArg(1)->getType(),
+                              Context.getSizeType()))
+        return UtilityOperation::StringViewFindCharacter;
+    }
     return std::nullopt;
   }
   const auto Array = approvedUtilityArrayRecord(

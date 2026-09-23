@@ -14955,6 +14955,68 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2StringViewComparisonAndSearchRunAtBothOptimizations) {
+  const auto Source = tmpFile("string-view-comparison.cpp");
+  const auto Output = tmpFile("string-view-comparison.nc");
+  writeFile(Source, R"cpp(
+#include <string_view>
+std::string_view& touch(std::string_view& view, int& count) {
+  ++count;
+  return view;
+}
+int main() {
+  std::string_view empty;
+  if (empty.max_size() != std::string_view::npos ||
+      empty.compare(empty) != 0 ||
+      empty.find('x') != std::string_view::npos)
+    return 1;
+  const char bytes[] = {'a', 0, static_cast<char>(0x80), 'b'};
+  std::string_view view(bytes, 4);
+  std::string_view prefix(bytes, 2);
+  std::string_view equal(bytes, 4);
+  if (view.compare(equal) != 0 || view.compare(prefix) <= 0 ||
+      prefix.compare(view) >= 0)
+    return 2;
+  const char high[] = {static_cast<char>(0x80)};
+  const char ascii[] = {'z'};
+  if (std::string_view(high, 1).compare(std::string_view(ascii, 1)) <= 0)
+    return 3;
+  if (*view.rbegin() != 'b' || *view.crbegin() != 'b' ||
+      view.rend().base() != view.begin() ||
+      view.crend().base() != view.cbegin())
+    return 4;
+  int count = 0;
+  if (touch(view, count).max_size() != std::string_view::npos || count != 1)
+    return 5;
+  count = 0;
+  if (touch(view, count).compare((++count, equal)) != 0 || count != 2)
+    return 6;
+  if (view.find('a') != 0 || view.find('\0') != 1 ||
+      view.find(static_cast<char>(0x80)) != 2 || view.find('b', 3) != 3 ||
+      view.find('b', 4) != std::string_view::npos ||
+      view.find('a', 1) != std::string_view::npos ||
+      view.find('\0', 2) != std::string_view::npos)
+    return 7;
+  count = 0;
+  if (touch(view, count).find((++count, 'b'), 2) != 3 || count != 2)
+    return 8;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-view-comparison" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StringsRetainSourceAndLifetimeRestrictions) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"literal-unused-declaration", "unsigned operator\"\"_n(const char*,decltype(sizeof(0))){return 1;}", "TR0201"},

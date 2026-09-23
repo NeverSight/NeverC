@@ -2189,8 +2189,13 @@ zero bytes. `begin()`, `cbegin()`, `end()` and `cend()` expose the verified
 `const char*` range, including range-for iteration. `operator[]`, `front()` and
 `back()` return read-only character elements. `remove_prefix()`,
 `remove_suffix()` and member `swap()` update the view fields directly; each
-receiver and argument is evaluated once. The caller remains responsible for
-the ordinary view lifetime, readable-range and valid-index preconditions.
+receiver and argument is evaluated once. `rbegin()`, `crbegin()`, `rend()` and
+`crend()` return the authenticated reverse iterator over the same range.
+`max_size()` reports the target `size_t` maximum. `compare(string_view)`
+compares unsigned character values lexicographically, including embedded zero
+bytes; `find(char, size_t)` and its zero-position default return the first
+matching offset or `npos`. The caller remains responsible for the ordinary
+view lifetime, readable-range and valid-index preconditions.
 Custom traits, other character types, throwing `at()`, and other string-view
 operations still require separate direct lowerings.
 

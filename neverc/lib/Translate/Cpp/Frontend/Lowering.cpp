@@ -8956,6 +8956,7 @@ class FunctionLowering {
                           *Reverse);
     }
     case UtilityOperation::StringViewSize:
+    case UtilityOperation::StringViewMaxSize:
     case UtilityOperation::StringViewEmpty:
     case UtilityOperation::StringViewData: {
       const auto *Object = MemberObject();
@@ -8964,6 +8965,15 @@ class FunctionLowering {
       if (!Object || !View)
         reject(L, "string view access",
                "The selected std::string_view layout is unavailable.");
+      if (Operation == UtilityOperation::StringViewMaxSize) {
+        lvalue(Object);
+        const auto SizeType = type(Call->getType(), L);
+        const unsigned Bits = integerBits(SizeType);
+        const uint64_t Maximum = Bits == 64
+                                     ? std::numeric_limits<uint64_t>::max()
+                                     : (uint64_t(1) << Bits) - 1;
+        return quantity(Maximum, SizeType, L);
+      }
       auto Base = lvalue(Object);
       if (Operation == UtilityOperation::StringViewData)
         return fieldStorage(std::move(Base), View->Data, L);
@@ -8993,6 +9003,27 @@ class FunctionLowering {
           fieldStorage(dereference(std::move(ObjectAddress), L), View->Size, L);
       return binary("+", std::move(Data), std::move(Size),
                     type(View->Data->getType(), L), L);
+    }
+    case UtilityOperation::StringViewRBegin:
+    case UtilityOperation::StringViewREnd: {
+      const auto *Object = MemberObject();
+      auto View = Object ? StringViewFor(Object->getType())
+                         : std::optional<UtilityStringViewRecord>();
+      auto Reverse = ReverseFor(Call->getType());
+      if (!Object || !View || !Reverse)
+        reject(L, "string view reverse iterator",
+               "The selected std::string_view iterator layout is unavailable.");
+      auto ObjectAddress =
+          snapshot(address(lvalue(Object), Object->getType(), L), L);
+      auto Data = fieldStorage(dereference(json::Object(ObjectAddress), L),
+                               View->Data, L);
+      if (Operation == UtilityOperation::StringViewREnd)
+        return ReverseValue(std::move(Data), *Reverse);
+      auto Size =
+          fieldStorage(dereference(std::move(ObjectAddress), L), View->Size, L);
+      return ReverseValue(binary("+", std::move(Data), std::move(Size),
+                                 type(View->Data->getType(), L), L),
+                          *Reverse);
     }
     case UtilityOperation::StringViewSubscript:
     case UtilityOperation::StringViewFront:
@@ -9065,6 +9096,142 @@ class FunctionLowering {
       assign(dereference(std::move(LeftAddress), L), std::move(OldRight), L);
       assign(dereference(std::move(RightAddress), L), std::move(OldLeft), L);
       return {};
+    }
+    case UtilityOperation::StringViewCompare: {
+      const auto *Object = MemberObject();
+      auto View = Object ? StringViewFor(Object->getType())
+                         : std::optional<UtilityStringViewRecord>();
+      if (!Object || !View)
+        reject(L, "string view comparison",
+               "The selected std::string_view layout is unavailable.");
+      auto ObjectAddress =
+          snapshot(address(lvalue(Object), Object->getType(), L), L);
+      auto Other = snapshot(expression(Call->getArg(0)), L);
+      auto LeftData =
+          snapshot(fieldStorage(dereference(json::Object(ObjectAddress), L),
+                                View->Data, L),
+                   L);
+      auto LeftSize = snapshot(
+          fieldStorage(dereference(std::move(ObjectAddress), L), View->Size, L),
+          L);
+      auto RightData =
+          snapshot(fieldStorage(json::Object(Other), View->Data, L), L);
+      auto RightSize =
+          snapshot(fieldStorage(std::move(Other), View->Size, L), L);
+      const auto SizeType = type(View->Size->getType(), L);
+      auto Position = temporary(SizeType, L);
+      assign(Position, quantity(0, SizeType, L), L);
+      auto Result = temporary("int", L);
+      const auto CheckLeft = labelName(), CheckRight = labelName();
+      const auto Compare = labelName(), Differ = labelName();
+      const auto Advance = labelName(), CompareSizes = labelName();
+      const auto CheckGreater = labelName(), Less = labelName();
+      const auto Greater = labelName(), Equal = labelName();
+      const auto End = labelName();
+      jump(CheckLeft, L);
+      label(CheckLeft, L);
+      branch(binary("<", json::Object(Position), json::Object(LeftSize), "bool",
+                    L),
+             CheckRight, CompareSizes, L);
+      label(CheckRight, L);
+      branch(binary("<", json::Object(Position), json::Object(RightSize),
+                    "bool", L),
+             Compare, CompareSizes, L);
+      label(Compare, L);
+      auto LeftByte =
+          snapshot(cast(index(json::Object(LeftData), json::Object(Position),
+                              type(A.Context.CharTy, L), L),
+                        "u8", L),
+                   L);
+      auto RightByte =
+          snapshot(cast(index(json::Object(RightData), json::Object(Position),
+                              type(A.Context.CharTy, L), L),
+                        "u8", L),
+                   L);
+      branch(binary("!=", json::Object(LeftByte), json::Object(RightByte),
+                    "bool", L),
+             Differ, Advance, L);
+      label(Differ, L);
+      branch(binary("<", std::move(LeftByte), std::move(RightByte), "bool", L),
+             Less, Greater, L);
+      label(Advance, L);
+      assign(Position,
+             binary("+", json::Object(Position), quantity(1, SizeType, L),
+                    SizeType, L),
+             L);
+      jump(CheckLeft, L);
+      label(CompareSizes, L);
+      branch(binary("<", json::Object(LeftSize), json::Object(RightSize),
+                    "bool", L),
+             Less, CheckGreater, L);
+      label(CheckGreater, L);
+      branch(binary(">", std::move(LeftSize), std::move(RightSize), "bool", L),
+             Greater, Equal, L);
+      label(Less, L);
+      assign(
+          Result,
+          binary("-", quantity(0, "int", L), quantity(1, "int", L), "int", L),
+          L);
+      jump(End, L);
+      label(Greater, L);
+      assign(Result, quantity(1, "int", L), L);
+      jump(End, L);
+      label(Equal, L);
+      assign(Result, quantity(0, "int", L), L);
+      jump(End, L);
+      label(End, L);
+      return Result;
+    }
+    case UtilityOperation::StringViewFindCharacter: {
+      const auto *Object = MemberObject();
+      auto View = Object ? StringViewFor(Object->getType())
+                         : std::optional<UtilityStringViewRecord>();
+      if (!Object || !View)
+        reject(L, "string view search",
+               "The selected std::string_view layout is unavailable.");
+      auto ObjectAddress =
+          snapshot(address(lvalue(Object), Object->getType(), L), L);
+      auto Character = snapshot(expression(Call->getArg(0)), L);
+      auto Position =
+          snapshot(argument(Call->getArg(1), A.Context.getSizeType()), L);
+      auto Data =
+          snapshot(fieldStorage(dereference(json::Object(ObjectAddress), L),
+                                View->Data, L),
+                   L);
+      auto Size = snapshot(
+          fieldStorage(dereference(std::move(ObjectAddress), L), View->Size, L),
+          L);
+      const auto SizeType = type(Call->getType(), L);
+      const unsigned Bits = integerBits(SizeType);
+      const uint64_t NotFound = Bits == 64
+                                    ? std::numeric_limits<uint64_t>::max()
+                                    : (uint64_t(1) << Bits) - 1;
+      auto Result = temporary(SizeType, L);
+      assign(Result, quantity(NotFound, SizeType, L), L);
+      const auto Check = labelName(), Compare = labelName();
+      const auto Advance = labelName(), Found = labelName();
+      const auto End = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("<", json::Object(Position), json::Object(Size), "bool", L),
+             Compare, End, L);
+      label(Compare, L);
+      branch(binary("==",
+                    index(json::Object(Data), json::Object(Position),
+                          type(A.Context.CharTy, L), L),
+                    json::Object(Character), "bool", L),
+             Found, Advance, L);
+      label(Advance, L);
+      assign(Position,
+             binary("+", json::Object(Position), quantity(1, SizeType, L),
+                    SizeType, L),
+             L);
+      jump(Check, L);
+      label(Found, L);
+      assign(Result, std::move(Position), L);
+      jump(End, L);
+      label(End, L);
+      return Result;
     }
     case UtilityOperation::ArraySize:
     case UtilityOperation::ArrayMaxSize:
