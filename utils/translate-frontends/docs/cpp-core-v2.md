@@ -1326,13 +1326,13 @@ the one-byte carrier and the same object forms. Its exact
 `__enum_hash<E, true>` base, underlying-type cast and nested integer hash call
 are authenticated; narrow underlying types use the direct size conversion and
 64-bit underlying types retain the target-specific path above. Exact
-`std::hash<T *>` specializations for non-volatile object pointers authenticate
+`std::hash<T *>` specializations for non-volatile object or `void` pointers authenticate
 the pinned partial specialization, its pointer/`size_t` union, the pointer
 store and the exact `__murmur2_or_cityhash<size_t>` call. The pointer bits use
 libc++'s four-byte Murmur2 algorithm on 32-bit targets and its ABI-v1 eight-byte
 CityHash algorithm on 64-bit targets. Pointer hashes support the same temporary,
 stored, copied, assigned, by-value and direct or `std::invoke` forms. `long double`,
-`void *`, volatile-object and function-pointer hash specializations
+volatile-object, volatile-void and function-pointer hash specializations
 remain outside this boundary.
 
 Exact `std::reference_wrapper<T>` and `std::reference_wrapper<const T>` for

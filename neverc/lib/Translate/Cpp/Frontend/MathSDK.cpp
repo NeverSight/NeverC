@@ -455,7 +455,16 @@ pointerHashPartial(const State &S, const SourceManager &SM,
   const auto Specialized = Definition->getSpecializedTemplateOrPartial();
   const auto *Partial =
       Specialized.dyn_cast<ClassTemplatePartialSpecializationDecl *>();
-  if (!utilityObjectPointer(Context, ValueType) || !Template ||
+  const bool VoidPointer =
+      !ValueType.isNull() && !ValueType.isVolatileQualified() &&
+      ValueType.getAddressSpace() == LangAS::Default &&
+      ValueType->isPointerType() &&
+      ValueType->getPointeeType()->isVoidType() &&
+      !ValueType->getPointeeType().isVolatileQualified() &&
+      ValueType->getPointeeType().getAddressSpace() == LangAS::Default &&
+      Context.getTypeSize(ValueType) == Context.getTypeSize(Context.VoidPtrTy) &&
+      Context.getTypeAlign(ValueType) == Context.getTypeAlign(Context.VoidPtrTy);
+  if ((!utilityObjectPointer(Context, ValueType) && !VoidPointer) || !Template ||
       !Partial || Partial->getName() != "hash" || Partial->isUnion() ||
       !Partial->isDependentContext() ||
       Partial->getSpecializedTemplate()->getCanonicalDecl() !=

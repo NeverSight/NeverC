@@ -48444,7 +48444,16 @@ int main() {
   score += apply(assigned, pointer) == expected;
   score += std::hash<int *>{}(pointer) == expected;
   score += stored(nullptr) == std::size_t(15546534240171485050ULL);
-  return score == 5 ? 0 : score;
+  std::hash<void *> erased;
+  auto erased_copy = erased;
+  std::hash<void *> erased_assigned;
+  erased_assigned = erased_copy;
+  score += erased(pointer) == expected;
+  score += std::invoke(erased_copy, static_cast<void *>(pointer)) == expected;
+  score += erased_assigned(nullptr) ==
+           std::size_t(15546534240171485050ULL);
+  score += std::hash<const void *>{}(pointer) == expected;
+  return score == 9 ? 0 : score;
 }
 )cpp");
   auto Result =
@@ -50034,13 +50043,13 @@ TEST_F(TranslateTest, CoreV2FunctionalFunctionObjectsRequireExactForms) {
        "#include <functional>\nint main(){return "
        "std::plus<long double>{}(1,2)==3;}",
        "TR0201"},
-      {"hash-void-pointer",
-       "#include <functional>\nint main(){return "
-       "std::hash<void*>{}(nullptr);}",
-       "TR0203"},
       {"hash-volatile-pointer",
        "#include <functional>\nint main(){volatile int n=0;return "
        "std::hash<volatile int*>{}(&n);}",
+       "TR0201"},
+      {"hash-volatile-void-pointer",
+       "#include <functional>\nint main(){volatile int n=0;return "
+       "std::hash<volatile void*>{}(&n);}",
        "TR0201"},
       {"hash-function-pointer",
        "#include <functional>\nint f(){return 0;}int main(){return "
