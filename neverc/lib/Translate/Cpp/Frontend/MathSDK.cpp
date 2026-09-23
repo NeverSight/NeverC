@@ -17517,7 +17517,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Function->getReturnType()->isVoidType() &&
       Same(Call->getType(), Function->getReturnType()) &&
       ((Call->getNumArgs() == 3 && AlgorithmOrderedPointerParameter(0)) ||
-       (Call->getNumArgs() == 4 && AlgorithmBinaryPredicateParameter(3, 0, 0))))
+       (Call->getNumArgs() == 4 &&
+        AlgorithmBinaryComparisonParameter(3, 0, 0))))
     return UtilityOperation::AlgorithmPartialSort;
   if (Origin->Path == "__algorithm/partial_sort_copy.h" &&
       Name == "partial_sort_copy" &&
@@ -17533,8 +17534,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType()) &&
       ((Call->getNumArgs() == 4 && AlgorithmOrderedPointerParameter(0) &&
         AlgorithmOrderedPointerParameter(2)) ||
-       (Call->getNumArgs() == 5 && AlgorithmBinaryPredicateParameter(4, 0, 2) &&
-        AlgorithmBinaryPredicateParameter(4, 2, 2))))
+       (Call->getNumArgs() == 5 &&
+        AlgorithmBinaryComparisonParameter(4, 0, 2) &&
+        AlgorithmBinaryComparisonParameter(4, 2, 2))))
     return UtilityOperation::AlgorithmPartialSortCopy;
   if (Origin->Path == "__algorithm/nth_element.h" && Name == "nth_element" &&
       (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
@@ -17550,7 +17552,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Function->getReturnType()->isVoidType() &&
       Same(Call->getType(), Function->getReturnType()) &&
       ((Call->getNumArgs() == 3 && AlgorithmOrderedPointerParameter(0)) ||
-       (Call->getNumArgs() == 4 && AlgorithmBinaryPredicateParameter(3, 0, 0))))
+       (Call->getNumArgs() == 4 &&
+        AlgorithmBinaryComparisonParameter(3, 0, 0))))
     return UtilityOperation::AlgorithmNthElement;
   const bool PermutationMutation =
       (Origin->Path == "__algorithm/next_permutation.h" &&

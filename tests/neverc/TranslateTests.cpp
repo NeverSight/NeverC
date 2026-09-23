@@ -41469,6 +41469,91 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2AlgorithmFunctionalPartialOrderingRunAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-functional-partial-ordering.cpp");
+  const auto Output = tmpFile("algorithm-functional-partial-ordering.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int main() {
+  int partial[10]{0, 9, 1, 8, 2, 7, 3, 6, 4, 5};
+  int effects = 0;
+  std::partial_sort((++effects, partial), (++effects, partial + 4),
+                    (++effects, partial + 10),
+                    (++effects, std::greater<>{}));
+  if (effects != 4)
+    return 1;
+  for (int i = 0; i != 4; ++i)
+    if (partial[i] != 9 - i)
+      return 2;
+  for (int i = 4; i != 10; ++i)
+    if (partial[i] > partial[3])
+      return 3;
+  std::less<int> less;
+  std::partial_sort(partial, partial + 3, partial + 10, less);
+  if (partial[0] != 0 || partial[1] != 1 || partial[2] != 2)
+    return 4;
+
+  const short input[10]{0, 9, 1, 8, 2, 7, 3, 6, 4, 5};
+  long output[5]{-1, -1, -1, -1, -1};
+  effects = 0;
+  long *end = std::partial_sort_copy(
+      (++effects, input), (++effects, input + 10), (++effects, output),
+      (++effects, output + 4), (++effects, std::greater<>{}));
+  if (effects != 5 || end != output + 4 || output[4] != -1)
+    return 5;
+  for (int i = 0; i != 4; ++i)
+    if (output[i] != 9 - i)
+      return 6;
+  std::less<long> less_long;
+  long ascending[3]{};
+  end = std::partial_sort_copy(input, input + 10, ascending,
+                               ascending + 3, less_long);
+  if (end != ascending + 3 || ascending[0] != 0 ||
+      ascending[1] != 1 || ascending[2] != 2)
+    return 7;
+  if (std::partial_sort_copy(input, input + 10, output, output,
+                             std::greater<>{}) != output)
+    return 8;
+
+  int selected[12]{7, 2, 5, 2, 9, 1, 5, 0, 8, 5, 3, 4};
+  std::nth_element(selected, selected + 5, selected + 12,
+                   std::greater<>{});
+  if (selected[5] != 5)
+    return 9;
+  for (int i = 0; i != 5; ++i)
+    if (selected[i] < selected[5])
+      return 10;
+  for (int i = 6; i != 12; ++i)
+    if (selected[i] > selected[5])
+      return 11;
+  std::nth_element(selected, selected + 5, selected + 12, less);
+  if (selected[5] != 4)
+    return 12;
+  for (int i = 0; i != 5; ++i)
+    if (selected[i] > selected[5])
+      return 13;
+  for (int i = 6; i != 12; ++i)
+    if (selected[i] < selected[5])
+      return 14;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("algorithm-functional-partial-ordering" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmComparatorOrderingRequiresValueCallbacks) {
   struct Rejection {
     const char *Name;

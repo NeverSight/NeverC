@@ -11892,6 +11892,37 @@ extern "C" int algorithm_comparator_ordering(
     check("v2-algorithm-comparator-ordering-reference",
           'bool p(const int&a,int b){return a<b;}\n#include <algorithm>\nint main(){int a[2]{2,1};std::sort(a,a+2,p);return 0;}',
           "TR0203", profile="cpp-core-v2", sdk=True)
+    algorithm_functional_partial_ordering_source = """\
+#include <algorithm>
+#include <functional>
+extern "C" int algorithm_functional_partial_ordering(
+    int *first, int *middle, int *last,
+    const short *input, const short *input_last,
+    long *output, long *output_last) {
+  std::partial_sort(first, middle, last, std::greater<>{});
+  long *end = std::partial_sort_copy(input, input_last, output, output_last,
+                                     std::less<>{});
+  std::nth_element(first, middle, last, std::less<int>{});
+  return static_cast<int>(end - output);
+}
+"""
+
+    def assert_functional_partial_ordering(data):
+        assert len(data["sdk_dependencies"]) == 435, data
+        assert not [node for node in walk(data["functions"])
+                    if node.get("op") in ("call", "mapped_call",
+                                          "indirect_call")], data
+
+    assert_functional_partial_ordering(check(
+        "v2-algorithm-functional-partial-ordering",
+        algorithm_functional_partial_ordering_source,
+        profile="cpp-core-v2", sdk=True))
+    for target in sdk_targets:
+        assert_functional_partial_ordering(check(
+            "v2-algorithm-functional-partial-ordering-" + target,
+            algorithm_functional_partial_ordering_source,
+            profile="cpp-core-v2", target=target, sdk=True))
+
     algorithm_stable_sort_source = """\
 #include <algorithm>
 extern "C" void algorithm_stable_sort(

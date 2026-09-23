@@ -1781,6 +1781,13 @@ standard comparison objects as the heap algorithms. Its checked heap lowering
 applies the selected scalar `operator()` operation directly, preserving the
 object argument's single evaluation and the comparator's ordering.
 
+The comparator overloads of `std::partial_sort`, `std::partial_sort_copy` and
+`std::nth_element` accept these authenticated typed or transparent standard
+comparison objects on arithmetic scalars. `partial_sort_copy` separately
+checks the instantiated operations for input-to-output comparison and
+output-heap comparison, including different input and output element types.
+Each object argument is evaluated once, and comparisons lower directly.
+
 The exact `std::stable_sort` overloads use the same default arithmetic, enum or
 complete object-pointer ordering and
 checked function-pointer comparator boundaries on writable scalar ranges. An in-place

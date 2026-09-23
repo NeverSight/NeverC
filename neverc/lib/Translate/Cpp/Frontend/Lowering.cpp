@@ -6001,11 +6001,19 @@ class FunctionLowering {
       auto Middle = snapshot(expression(Call->getArg(1)), L);
       auto Last = snapshot(expression(Call->getArg(2)), L);
       std::optional<Expression> Comparator;
-      if (Call->getNumArgs() == 4)
-        Comparator = snapshot(expression(Call->getArg(3)), L);
+      std::optional<FunctionalOperationInfo> SDKComparator;
+      if (Call->getNumArgs() == 4) {
+        const auto Element = Call->getArg(0)->getType()->getPointeeType();
+        SDKComparator = captureRangeSDKComparator(Call, 3, Element, Element);
+        if (!SDKComparator)
+          Comparator = snapshot(expression(Call->getArg(3)), L);
+      }
       const auto ComparatorType =
           Comparator ? Call->getArg(3)->getType() : QualType{};
       auto Less = [&](Expression Left, Expression Right) {
+        if (SDKComparator)
+          return functionalOperationValues(L, std::move(Left), std::move(Right),
+                                           *SDKComparator);
         if (Comparator)
           return emitBinaryPredicate(json::Object(*Comparator), ComparatorType,
                                      std::move(Left), std::move(Right), L);
@@ -6024,7 +6032,7 @@ class FunctionLowering {
              NonEmpty, End, L);
       label(NonEmpty, L);
       makeHeap(json::Object(First), json::Object(HeapSize), PointerType,
-               DifferenceType, L, Comparator, ComparatorType);
+               DifferenceType, L, Comparator, ComparatorType, SDKComparator);
       jump(Scan, L);
       label(Scan, L);
       branch(binary("!=", Current, Last, "bool", L), Compare, Finish, L);
@@ -6039,7 +6047,7 @@ class FunctionLowering {
       assign(dereference(Current, L), std::move(RootValue), L);
       heapSiftDown(json::Object(First), json::Object(HeapSize),
                    quantity(0, DifferenceType, L), PointerType, DifferenceType,
-                   L, Comparator, ComparatorType);
+                   L, Comparator, ComparatorType, SDKComparator);
       jump(Advance, L);
       label(Advance, L);
       assign(
@@ -6049,7 +6057,7 @@ class FunctionLowering {
       jump(Scan, L);
       label(Finish, L);
       sortHeap(json::Object(First), json::Object(HeapSize), PointerType,
-               DifferenceType, L, Comparator, ComparatorType);
+               DifferenceType, L, Comparator, ComparatorType, SDKComparator);
       jump(End, L);
       label(End, L);
       return {};
@@ -6060,12 +6068,27 @@ class FunctionLowering {
       auto OutputFirst = snapshot(expression(Call->getArg(2)), L);
       auto OutputLast = snapshot(expression(Call->getArg(3)), L);
       std::optional<Expression> Comparator;
-      if (Call->getNumArgs() == 5)
-        Comparator = snapshot(expression(Call->getArg(4)), L);
+      std::optional<FunctionalOperationInfo> SDKComparison;
+      std::optional<FunctionalOperationInfo> SDKHeapComparison;
+      if (Call->getNumArgs() == 5) {
+        const auto InputElement = Call->getArg(0)->getType()->getPointeeType();
+        const auto OutputElement = Call->getArg(2)->getType()->getPointeeType();
+        SDKComparison =
+            captureRangeSDKComparator(Call, 4, InputElement, OutputElement);
+        if (SDKComparison) {
+          SDKHeapComparison = approvedRangeAlgorithmComparator(
+              A.S, A.Sources, Call, 4, OutputElement, OutputElement, A.Context);
+          if (!SDKHeapComparison)
+            reject(L, "algorithm partial_sort_copy",
+                   "The standard comparator does not cover the output range.");
+        } else {
+          Comparator = snapshot(expression(Call->getArg(4)), L);
+        }
+      }
       const auto ComparatorType =
           Comparator ? Call->getArg(4)->getType() : QualType{};
       std::optional<std::string> DefaultComparisonType;
-      if (!Comparator) {
+      if (!Comparator && !SDKComparison) {
         auto Common = utilityScalarComparisonType(
             A.Context, Call->getArg(0)->getType()->getPointeeType(),
             Call->getArg(2)->getType()->getPointeeType(), true);
@@ -6075,6 +6098,9 @@ class FunctionLowering {
         DefaultComparisonType = type(*Common, L);
       }
       auto Less = [&](Expression Left, Expression Right) {
+        if (SDKComparison)
+          return functionalOperationValues(L, std::move(Left), std::move(Right),
+                                           *SDKComparison);
         if (Comparator)
           return emitBinaryPredicate(json::Object(*Comparator), ComparatorType,
                                      std::move(Left), std::move(Right), L);
@@ -6118,7 +6144,8 @@ class FunctionLowering {
              NonEmpty, End, L);
       label(NonEmpty, L);
       makeHeap(json::Object(OutputFirst), json::Object(HeapSize), OutputType,
-               DifferenceType, L, Comparator, ComparatorType);
+               DifferenceType, L, Comparator, ComparatorType,
+               SDKHeapComparison);
       jump(Scan, L);
       label(Scan, L);
       branch(binary("!=", Input, InputLast, "bool", L), Compare, Finish, L);
@@ -6131,7 +6158,7 @@ class FunctionLowering {
              cast(dereference(Input, L), OutputElementType, L), L);
       heapSiftDown(json::Object(OutputFirst), json::Object(HeapSize),
                    quantity(0, DifferenceType, L), OutputType, DifferenceType,
-                   L, Comparator, ComparatorType);
+                   L, Comparator, ComparatorType, SDKHeapComparison);
       jump(Advance, L);
       label(Advance, L);
       assign(Input,
@@ -6140,7 +6167,8 @@ class FunctionLowering {
       jump(Scan, L);
       label(Finish, L);
       sortHeap(json::Object(OutputFirst), json::Object(HeapSize), OutputType,
-               DifferenceType, L, Comparator, ComparatorType);
+               DifferenceType, L, Comparator, ComparatorType,
+               SDKHeapComparison);
       jump(End, L);
       label(End, L);
       return Output;
@@ -6150,9 +6178,17 @@ class FunctionLowering {
       auto Nth = snapshot(expression(Call->getArg(1)), L);
       auto Last = snapshot(expression(Call->getArg(2)), L);
       std::optional<Expression> Comparator;
-      if (Call->getNumArgs() == 4)
-        Comparator = snapshot(expression(Call->getArg(3)), L);
+      std::optional<FunctionalOperationInfo> SDKComparator;
+      if (Call->getNumArgs() == 4) {
+        const auto Element = Call->getArg(0)->getType()->getPointeeType();
+        SDKComparator = captureRangeSDKComparator(Call, 3, Element, Element);
+        if (!SDKComparator)
+          Comparator = snapshot(expression(Call->getArg(3)), L);
+      }
       auto Less = [&](Expression LeftValue, Expression RightValue) {
+        if (SDKComparator)
+          return functionalOperationValues(
+              L, std::move(LeftValue), std::move(RightValue), *SDKComparator);
         if (Comparator)
           return emitBinaryPredicate(
               json::Object(*Comparator), Call->getArg(3)->getType(),
