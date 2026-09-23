@@ -9974,6 +9974,26 @@ long long mixed(int*first,int*last) {
         for node in walk(data['functions']):
             assert node.get('op') not in ('mapped_call', 'indirect_call', 'member_pointer'), node
 
+    numeric_default_narrow_scan_source = """\
+#include <numeric>
+void scan(unsigned char*first,unsigned char*last,int*out) {
+ std::inclusive_scan(first,last,out);
+ std::exclusive_scan(first,last,out,(unsigned char)5);
+ std::exclusive_scan(first,last,out,5);
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-numeric-default-narrow-scan-" + target,
+                     numeric_default_narrow_scan_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        assert len(data['sdk_dependencies']) == 126, data
+        scan_line = next(i for i, line in enumerate(numeric_default_narrow_scan_source.splitlines(), 1)
+                         if 'scan(unsigned char*first' in line)
+        scan = [f for f in data['functions'] if f['loc']['line'] == scan_line]
+        assert len(scan) == 1, scan
+        assert not [node for node in walk(scan[0]['body'])
+                    if node.get('op') in ('call', 'mapped_call', 'indirect_call', 'member_pointer')], scan
+
     numeric_default_narrow_prefix_source = """\
 #include <numeric>
 void prefix(unsigned char*first,unsigned char*last,int*out) {

@@ -723,7 +723,9 @@ checked direct conversion from the input element. Default `accumulate` and
 `reduce` additionally admit non-boolean narrow integer input elements and
 initial values. Default `partial_sum` and `adjacent_difference` also admit
 non-boolean narrow integer inputs; adjacent differences retain integer
-promotion before converting to the output element. Default `accumulate`,
+promotion before converting to the output element. Default `inclusive_scan`
+and `exclusive_scan` likewise admit non-boolean narrow integer inputs, and
+`exclusive_scan` accepts a narrow initial accumulator. Default `accumulate`,
 `inner_product`, initialized `reduce`, two-range `transform_reduce` and
 `exclusive_scan` accept an independent arithmetic initial value, use checked
 common arithmetic for their default operations and convert each result back to

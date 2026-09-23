@@ -37184,6 +37184,52 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2NumericDefaultNarrowScansRunAtBothOptimizations) {
+  const auto Source = tmpFile("numeric-default-narrow-scans.cpp");
+  const auto Output = tmpFile("numeric-default-narrow-scans.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+int main() {
+  unsigned char values[3]{250, 10, 20};
+  int inclusive[3]{}, exclusive[3]{}, wide[3]{};
+  if (std::inclusive_scan(values, values + 3, inclusive) != inclusive + 3 ||
+      inclusive[0] != 250 || inclusive[1] != 4 || inclusive[2] != 24)
+    return 1;
+  if (std::exclusive_scan(values, values + 3, exclusive,
+                          (unsigned char)5) != exclusive + 3 ||
+      exclusive[0] != 5 || exclusive[1] != 255 || exclusive[2] != 9)
+    return 2;
+  if (std::exclusive_scan(values, values + 3, wide, 5) != wide + 3 ||
+      wide[0] != 5 || wide[1] != 255 || wide[2] != 265) return 3;
+  unsigned char in_place_inclusive[3]{250, 10, 20};
+  unsigned char in_place_exclusive[3]{250, 10, 20};
+  if (std::inclusive_scan(in_place_inclusive, in_place_inclusive + 3,
+                          in_place_inclusive) != in_place_inclusive + 3 ||
+      in_place_inclusive[0] != 250 || in_place_inclusive[1] != 4 ||
+      in_place_inclusive[2] != 24) return 4;
+  if (std::exclusive_scan(in_place_exclusive, in_place_exclusive + 3,
+                          in_place_exclusive, (unsigned char)5) !=
+          in_place_exclusive + 3 || in_place_exclusive[0] != 5 ||
+      in_place_exclusive[1] != 255 || in_place_exclusive[2] != 9) return 5;
+  if (std::inclusive_scan(values, values, inclusive) != inclusive ||
+      std::exclusive_scan(values, values, exclusive,
+                          (unsigned char)5) != exclusive) return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("numeric-default-narrow-scans" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2NumericDefaultNarrowPrefixRunAtBothOptimizations) {
   const auto Source = tmpFile("numeric-default-narrow-prefix.cpp");
   const auto Output = tmpFile("numeric-default-narrow-prefix.nc");

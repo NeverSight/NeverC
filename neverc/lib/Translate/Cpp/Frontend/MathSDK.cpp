@@ -16043,13 +16043,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                          Iterator->getPointeeType());
   };
   auto NumericValueOutputParameter = [&](unsigned ValueIndex,
-                                         unsigned OutputIndex) {
+                                         unsigned OutputIndex,
+                                         bool IncludeNarrow = false) {
     if (ValueIndex >= Function->getNumParams() ||
         OutputIndex >= Function->getNumParams())
       return false;
     auto Value = Function->getParamDecl(ValueIndex)->getType();
     auto Output = Function->getParamDecl(OutputIndex)->getType();
-    return NumericArithmetic(Value) &&
+    return NumericArithmetic(Value, IncludeNarrow) &&
            utilityAlgorithmWritableScalarPointer(Context, Output) &&
            utilityScalarDirectConversion(Context, Value,
                                          Output->getPointeeType());
@@ -16214,6 +16215,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         NumericBinaryCallback(3, Element) && NumericUnaryCallback(4, Element))
       return UtilityOperation::NumericTransformReduce;
   }
+  const bool DefaultNarrowScan =
+      (Name == "inclusive_scan" && Call->getNumArgs() == 3) ||
+      (Name == "exclusive_scan" && Call->getNumArgs() == 4);
   if (((Origin->Path == "__numeric/inclusive_scan.h" &&
         Name == "inclusive_scan" && Call->getNumArgs() >= 3 &&
         Call->getNumArgs() <= 5) ||
@@ -16221,8 +16225,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Name == "exclusive_scan" &&
         (Call->getNumArgs() == 4 || Call->getNumArgs() == 5))) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      NumericPointerParameter(0, false) && NumericPointerParameter(1, false) &&
-      NumericPointerParameter(2, true) &&
+      NumericPointerParameter(0, false, DefaultNarrowScan) &&
+      NumericPointerParameter(1, false, DefaultNarrowScan) &&
+      NumericPointerParameter(2, true, DefaultNarrowScan) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
@@ -16238,8 +16243,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                3, Function->getParamDecl(4)->getType(),
                Function->getParamDecl(4)->getType(), Element)))
         return UtilityOperation::NumericInclusiveScan;
-    } else if (NumericReductionValueParameter(3, 0) &&
-               NumericValueOutputParameter(3, 2) &&
+    } else if (NumericReductionValueParameter(3, 0, DefaultNarrowScan) &&
+               NumericValueOutputParameter(3, 2, DefaultNarrowScan) &&
                (Call->getNumArgs() == 4 ||
                 NumericBinaryTransformCallback(
                     4, Function->getParamDecl(3)->getType(),
