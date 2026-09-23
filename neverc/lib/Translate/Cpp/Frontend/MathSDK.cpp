@@ -12823,9 +12823,8 @@ utilityNumericReductionObjectCall(const State &S, const SourceManager &SM,
        ElementType->isSpecificBuiltinType(BuiltinType::Float) ||
        ElementType->isSpecificBuiltinType(BuiltinType::Double));
   const bool InitialArithmetic =
-      !Initial->isEnumeralType() &&
-      ((!Context.isPromotableIntegerType(Initial) && Initial->isIntegerType() &&
-        Context.getTypeSize(Initial) <= 64) ||
+      !Initial->isEnumeralType() && !Initial->isBooleanType() &&
+      ((Initial->isIntegerType() && Context.getTypeSize(Initial) <= 64) ||
        Initial->isSpecificBuiltinType(BuiltinType::Float) ||
        Initial->isSpecificBuiltinType(BuiltinType::Double));
   const auto *Record = Object->getAsCXXRecordDecl();

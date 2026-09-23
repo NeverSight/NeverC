@@ -10016,6 +10016,42 @@ int narrow(unsigned char*first,unsigned char*last) {
           '#include <numeric>\n#include <functional>\nenum E{A=1,B=2};int f(E*p){return std::reduce(p,p+2,0,std::plus<>{});}\n',
           'TR0203', profile='cpp-core-v2', sdk=True)
 
+    numeric_narrow_accumulator_reduction_source = """\
+#include <numeric>
+#include <functional>
+struct Sum { unsigned char operator()(unsigned char a,unsigned char b)& { return a+b; } }; // narrow-accumulator-reduction-method
+unsigned char reduce(unsigned char*first,unsigned char*last) {
+ unsigned char a=std::accumulate(first,last,(unsigned char)5,Sum{}); // narrow-accumulator-reduction-call
+ unsigned char b=std::reduce(first,last,(unsigned char)5,Sum{}); // narrow-accumulator-reduction-call
+ unsigned char c=std::accumulate(first,last,(unsigned char)5,std::plus<unsigned char>{});
+ unsigned char d=std::reduce(first,last,(unsigned char)5,std::plus<unsigned char>{});
+ unsigned char e=std::accumulate(first,last,(unsigned char)5,std::plus<>{});
+ unsigned char f=std::reduce(first,last,(unsigned char)5,std::plus<>{});
+ return a+b+c+d+e+f;
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-numeric-narrow-accumulator-reduction-" + target,
+                     numeric_narrow_accumulator_reduction_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        assert len(data['sdk_dependencies']) == 360, data
+        method_line = next(i for i, line in enumerate(numeric_narrow_accumulator_reduction_source.splitlines(), 1)
+                           if '// narrow-accumulator-reduction-method' in line)
+        methods = [f for f in data['functions'] if f['loc']['line'] == method_line]
+        assert len(methods) == 1 and methods[0]['result'] == 'u8', methods
+        assert [p['type'] for p in methods[0]['params'][1:]] == ['u8', 'u8'], methods
+        reduction_line = next(i for i, line in enumerate(numeric_narrow_accumulator_reduction_source.splitlines(), 1)
+                              if 'reduce(unsigned char*first' in line)
+        reduction = [f for f in data['functions'] if f['loc']['line'] == reduction_line]
+        assert len(reduction) == 1, reduction
+        calls = [node for node in walk(reduction[0]['body']) if node.get('op') == 'call']
+        expected_lines = [i for i, line in enumerate(numeric_narrow_accumulator_reduction_source.splitlines(), 1)
+                          if '// narrow-accumulator-reduction-call' in line]
+        assert len(calls) == 2 and [node['loc']['line'] for node in calls] == expected_lines, calls
+        assert all(node['callee'] == methods[0]['name'] for node in calls), calls
+        for node in walk(data['functions']):
+            assert node.get('op') not in ('mapped_call', 'indirect_call', 'member_pointer'), node
+
     numeric_narrow_scan_object_source = """\
 #include <numeric>
 #include <functional>

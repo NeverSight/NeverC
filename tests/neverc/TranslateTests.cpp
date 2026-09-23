@@ -37235,6 +37235,53 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2NumericNarrowAccumulatorReductionsRunAtBothOptimizations) {
+  const auto Source = tmpFile("numeric-narrow-accumulator-reductions.cpp");
+  const auto Output = tmpFile("numeric-narrow-accumulator-reductions.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+#include <functional>
+int calls, factories;
+struct Sum {
+  int local_calls;
+  unsigned char operator()(unsigned char a, unsigned char b) & {
+    ++calls; ++local_calls; return a + b;
+  }
+};
+Sum make() { ++factories; return Sum{0}; }
+int main() {
+  unsigned char values[3]{250, 10, 20};
+  Sum caller{0};
+  if (std::accumulate(values, values + 3, (unsigned char)5, caller) != 29 ||
+      calls != 3 || caller.local_calls != 0) return 1;
+  if (std::reduce(values, values + 3, (unsigned char)5, make()) != 29 ||
+      calls != 6 || factories != 1) return 2;
+  if (std::accumulate(values, values + 3, (unsigned char)5,
+                      std::plus<unsigned char>{}) != 29 ||
+      std::reduce(values, values + 3, (unsigned char)5,
+                  std::plus<unsigned char>{}) != 29 ||
+      std::accumulate(values, values + 3, (unsigned char)5,
+                      std::plus<>{}) != 29 ||
+      std::reduce(values, values + 3, (unsigned char)5,
+                  std::plus<>{}) != 29 || calls != 6) return 3;
+  if (std::accumulate(values, values, (unsigned char)7, make()) != 7 ||
+      factories != 2 || calls != 6) return 4;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("numeric-narrow-accumulator-reductions" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
 TEST_F(TranslateTest, CoreV2NumericNarrowScanObjectsRunAtBothOptimizations) {
   const auto Source = tmpFile("numeric-narrow-scan-objects.cpp");
   const auto Output = tmpFile("numeric-narrow-scan-objects.nc");

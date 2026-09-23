@@ -758,8 +758,8 @@ The four-argument `accumulate` and `reduce` overloads additionally accept a sour
 standard-layout, trivially copied operation object when its non-template binary
 call operator takes directly convertible by-value arithmetic scalars and returns
 one directly convertible to the accumulator. The initial value is an admitted
-non-promoted arithmetic type; the input may also be a non-boolean narrow
-integer. The pair has a checked common arithmetic type. The pinned C++17 loop
+arithmetic type, including non-boolean narrow integers; the input may also be a
+non-boolean narrow integer. The pair has a checked common arithmetic type. The pinned C++17 loop
 and selected source method are authenticated, including `reduce`'s `std::move`
 of the accumulator; one by-value object retains its mutable state
 throughout the reduction without changing the caller's object. An empty range
