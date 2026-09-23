@@ -300,7 +300,11 @@ std::optional<FunctionalOperationInfo>
 approvedFunctionalOperation(const State &S, const clang::SourceManager &SM,
                             const clang::CallExpr *Call,
                             const clang::ASTContext &Context);
-std::optional<FunctionalOperationInfo> approvedFunctionalInvokeObjectOperation(
+struct FunctionalInvokeObjectCall {
+  FunctionalOperationInfo Operation;
+  const clang::CXXMethodDecl *Method;
+};
+std::optional<FunctionalInvokeObjectCall> approvedFunctionalInvokeObjectOperation(
     const State &S, const clang::SourceManager &SM,
     const clang::CallExpr *Call, const clang::ASTContext &Context);
 struct FunctionalReferenceRecord {

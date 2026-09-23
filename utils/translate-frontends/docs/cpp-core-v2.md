@@ -1393,7 +1393,9 @@ arguments are evaluated, then the retained function pointer is called once.
 The same entry point accepts every admitted typed or transparent standard
 function object, including temporary and stored objects, and reuses the exact
 authenticated operation body and scalar conversion rules above. Its callable
-expression and arguments are each evaluated once.
+expression and arguments are each evaluated once. Typed objects convert each
+argument to the selected `operator()` parameter type before the scalar
+operation, including narrowing integral conversions.
 It also accepts an exact source-owned record callable whose selected
 nonstatic `operator()` is an admitted defined method. Lvalue, const-lvalue and
 rvalue-qualified overload selection follows Clang's checked dispatch. The

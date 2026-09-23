@@ -49578,10 +49578,13 @@ int main() {
   score += std::invoke(std::plus<>{}, -2, 5u) == 3u;
   score += std::invoke(negate, 4) == -4;
   score += std::invoke(std::less<>{}, short(2), 3.0);
+  score += std::invoke(std::divides<unsigned char>{}, 256, 2) == 0;
+  score += std::invoke(std::less<unsigned char>{}, 256, 1);
+  score += std::invoke(std::logical_not<unsigned char>{}, 256);
   trace = 0;
   score += std::invoke((trace = trace * 10 + 1, plus), left(), right()) == 9;
   score += trace == 123;
-  return score == 7 ? 0 : score;
+  return score == 10 ? 0 : score;
 }
 )cpp");
   auto Result =

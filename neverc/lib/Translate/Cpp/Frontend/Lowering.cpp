@@ -1315,17 +1315,24 @@ class FunctionLowering {
   }
 
   Expression functionalInvokeObjectOperation(
-      const CallExpr *Call, const FunctionalOperationInfo &Info) {
+      const CallExpr *Call, const FunctionalInvokeObjectCall &Approved) {
     auto L = Call->getExprLoc();
+    const auto &Info = Approved.Operation;
     const bool Unary = Info.RightType.isNull();
     if (Call->getNumArgs() != (Unary ? 2u : 3u))
       reject(L, "functional invoke",
              "The checked function object arity must match its arguments.");
     discardFunctionalObject(Call->getArg(0));
-    auto Left = snapshot(expression(Call->getArg(1)), L);
+    auto Left = snapshot(cast(
+        expression(Call->getArg(1)),
+        type(Approved.Method->getParamDecl(0)->getType()
+                 .getNonReferenceType(), L), L), L);
     std::optional<Expression> Right;
     if (!Unary)
-      Right = snapshot(expression(Call->getArg(2)), L);
+      Right = snapshot(cast(
+          expression(Call->getArg(2)),
+          type(Approved.Method->getParamDecl(1)->getType()
+                   .getNonReferenceType(), L), L), L);
     return functionalOperationValues(L, std::move(Left), std::move(Right),
                                      Info);
   }

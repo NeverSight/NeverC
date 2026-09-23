@@ -8114,7 +8114,7 @@ approvedFunctionalMemberInvokeCall(
   return approvedFunctionalMemberInvokeCallImpl(S, SM, Call, Context);
 }
 
-std::optional<FunctionalOperationInfo> approvedFunctionalInvokeObjectOperation(
+std::optional<FunctionalInvokeObjectCall> approvedFunctionalInvokeObjectOperation(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
   if (!Call || Call->getNumArgs() < 2 ||
@@ -8141,7 +8141,10 @@ std::optional<FunctionalOperationInfo> approvedFunctionalInvokeObjectOperation(
           : nullptr;
   auto Operation = approvedFunctionalOperationImpl(
       S, SM, OperationCall, Context, false);
-  if (!Operation || !OperationCall ||
+  const auto *Method = dyn_cast_or_null<CXXMethodDecl>(
+      OperationCall ? OperationCall->getDirectCallee() : nullptr);
+  if (!Operation || !OperationCall || !Method ||
+      Method->getNumParams() + 1 != Call->getNumArgs() ||
       OperationCall->getNumArgs() != Call->getNumArgs() ||
       !Context.hasSameType(Operation->ResultType, Call->getType()))
     return std::nullopt;
@@ -8149,7 +8152,7 @@ std::optional<FunctionalOperationInfo> approvedFunctionalInvokeObjectOperation(
     if (!utilityScalarDirectConversion(Context, Call->getArg(I)->getType(),
                                        OperationCall->getArg(I)->getType()))
       return std::nullopt;
-  return Operation;
+  return FunctionalInvokeObjectCall{*Operation, Method};
 }
 
 std::optional<FunctionalMemberInvokeCall>
