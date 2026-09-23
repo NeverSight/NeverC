@@ -1481,17 +1481,30 @@ count conversion and loop are authenticated, the selected non-template call
 operator may return `void` or an admitted scalar, and that result is discarded.
 The algorithm invokes one retained by-value object in input order and returns
 the advanced pointer. Pinned typed or transparent `std::logical_not` objects
-are accepted under their exact scalar input rule. Ordinary `for_each` function
-objects remain excluded because returning their final callable state needs a
-separate record-result lifetime contract.
-The unary `transform` overload also accepts these source-owned trivial function
-objects when the selected non-template operator returns an admitted scalar that
-converts directly to the writable output element. Its exact pinned loop is
-authenticated, retains one by-value operation object, reads each input before
-the corresponding store, and advances both pointers once. Empty and overlapping
-in-place ranges preserve that order. Binary `transform` function objects remain
-outside this increment; its existing fixed-signature function-pointer path is
-unchanged.
+are accepted under their exact scalar input rule. Ordinary `for_each` also
+accepts those source objects under its authenticated loop and trivial move
+return. It copies the modified by-value callable into the result without
+changing the caller's object, including on empty ranges. Pinned typed or
+transparent `std::logical_not` objects use the same checked input and return
+boundary.
+
+`generate` and `generate_n` accept source-owned, standard-layout, trivially
+copied generator objects with a defined non-template nullary call operator.
+The selected scalar result must convert directly to the writable output
+element. Their exact pinned loops are authenticated, and the generator's
+by-value state is retained once across visits. Empty ranges and non-positive
+counted ranges do not invoke it.
+
+Both `transform` overloads accept these source-owned trivial function objects
+when the selected non-template operator returns an admitted scalar that converts
+directly to the writable output element. The unary overload reads one scalar
+input; the binary overload reads two independently typed scalar inputs. Their
+exact pinned loops are authenticated, retaining one by-value operation object
+and advancing each pointer once after its corresponding read and store. Empty
+and overlapping in-place ranges preserve that order. The binary overload also
+accepts admitted typed or transparent `<functional>` binary objects, including
+arithmetic and comparison operators, after authenticating the selected SDK
+method and matching each input element to its corresponding operand type.
 
 The exact default-equality four-iterator `std::search`, `std::find_end` and
 `std::find_first_of` templates lower nested equality scans over two ranges;
