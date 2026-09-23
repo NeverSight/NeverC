@@ -27374,6 +27374,15 @@ int main() {
     return 5;
   if (std::apply(std::hash<int>{}, std::make_tuple(7)) != 7)
     return 6;
+  if (std::apply(std::divides<unsigned char>{},
+                 std::make_tuple(256, 2)) != 0)
+    return 7;
+  if (!std::apply(std::less<unsigned char>{},
+                  std::make_tuple(256, 1)))
+    return 8;
+  if (!std::apply(std::logical_not<unsigned char>{},
+                  std::make_tuple(256)))
+    return 9;
   return 0;
 }
 )cpp");

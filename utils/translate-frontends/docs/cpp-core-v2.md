@@ -392,7 +392,9 @@ may be a named function, a stored function pointer with a fixed nonvariadic
 signature, or an exact source-owned function object whose selected `operator()`
 has a checked body. Authenticated typed or transparent standard scalar
 arithmetic, bitwise, comparison and logical function objects, plus admitted
-scalar hashes, retain their documented operand restrictions. Exact
+scalar hashes, retain their documented operand restrictions. Typed function
+objects convert each tuple element to the selected `operator()` parameter type
+before the scalar operation, including narrowing integral conversions. Exact
 `std::reference_wrapper` forms around these named functions, stored function
 pointers, source function objects and standard function objects use the same
 admitted parameter and result boundary. Exact direct or stored source member

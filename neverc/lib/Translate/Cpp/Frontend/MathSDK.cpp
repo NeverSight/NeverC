@@ -8821,7 +8821,7 @@ approvedUtilityTupleApplyUserCall(const State &S, const SourceManager &SM,
       nullptr,         nullptr,         std::nullopt, false};
 }
 
-std::optional<FunctionalOperationInfo>
+std::optional<UtilityTupleApplyObjectOperation>
 approvedUtilityTupleApplyObjectOperation(const State &S,
                                          const SourceManager &SM,
                                          const CallExpr *Call,
@@ -8835,9 +8835,12 @@ approvedUtilityTupleApplyObjectOperation(const State &S,
     return std::nullopt;
   auto Operation = approvedFunctionalOperationImpl(
       S, SM, OperationCall, Context, false);
+  const auto *Method = dyn_cast_or_null<CXXMethodDecl>(
+      OperationCall->getDirectCallee());
   const bool Unary = Operation && Operation->RightType.isNull();
   const unsigned Arity = Unary ? 1u : 2u;
-  if (!Operation || Apply->Tuple.size() != Arity ||
+  if (!Operation || !Method || Method->getNumParams() != Arity ||
+      Apply->Tuple.size() != Arity ||
       OperationCall->getNumArgs() != Arity + 1 ||
       !Context.hasSameType(Operation->ResultType,
                            Apply->Function->getReturnType()) ||
@@ -8850,7 +8853,7 @@ approvedUtilityTupleApplyObjectOperation(const State &S,
             Stored->isReferenceType() ? Stored->getPointeeType() : Stored,
             OperationCall->getArg(I + 1)->getType()))
       return std::nullopt;
-  return Operation;
+  return UtilityTupleApplyObjectOperation{*Operation, Method};
 }
 
 std::optional<FunctionalMemberInvokeCall>
@@ -17850,14 +17853,16 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto Result =
         Prototype ? Prototype->getReturnType()
                   : UserCallable ? UserCallable->Method->getReturnType()
-                  : ObjectOperation ? ObjectOperation->ResultType
+                  : ObjectOperation ? ObjectOperation->Operation.ResultType
                   : ReferenceCallable ? ReferenceCallableResult
                   : MemberCallable ? Function->getReturnType()
                                     : QualType();
     const unsigned Arity =
         Prototype ? Prototype->getNumParams()
         : UserCallable ? UserCallable->Method->getNumParams()
-        : ObjectOperation ? (ObjectOperation->RightType.isNull() ? 1u : 2u)
+        : ObjectOperation ? (ObjectOperation->Operation.RightType.isNull()
+                                 ? 1u
+                                 : 2u)
         : ReferenceCallable ? Tuple->size()
         : MemberCallable ? Tuple->size()
                           : 0u;

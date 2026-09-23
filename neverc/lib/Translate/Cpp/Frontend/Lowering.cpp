@@ -7503,7 +7503,7 @@ class FunctionLowering {
       const auto ObjectOperation = approvedUtilityTupleApplyObjectOperation(
           A.S, A.Sources, Call, A.Context);
       if (ObjectOperation) {
-        const bool Unary = ObjectOperation->RightType.isNull();
+        const bool Unary = ObjectOperation->Operation.RightType.isNull();
         if (!Tuple || Tuple->size() != (Unary ? 1u : 2u) ||
             Destination)
           reject(L, "utility tuple apply",
@@ -7512,14 +7512,18 @@ class FunctionLowering {
         auto TupleAddress = snapshot(
             address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
         auto TupleValue = dereference(std::move(TupleAddress), L);
-        auto Left = snapshot(
-            ApplyElement(json::Object(TupleValue), 0), L);
+        auto Left = snapshot(cast(
+            ApplyElement(json::Object(TupleValue), 0),
+            type(ObjectOperation->Method->getParamDecl(0)->getType()
+                     .getNonReferenceType(), L), L), L);
         std::optional<Expression> Right;
         if (!Unary)
-          Right = snapshot(
-              ApplyElement(std::move(TupleValue), 1), L);
+          Right = snapshot(cast(
+              ApplyElement(std::move(TupleValue), 1),
+              type(ObjectOperation->Method->getParamDecl(1)->getType()
+                       .getNonReferenceType(), L), L), L);
         return functionalOperationValues(L, std::move(Left), std::move(Right),
-                                         *ObjectOperation);
+                                         ObjectOperation->Operation);
       }
       const auto UserCallable =
           approvedUtilityTupleApplyUserCall(A.S, A.Sources, Call, A.Context);

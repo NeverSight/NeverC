@@ -378,7 +378,11 @@ approvedUtilityTupleApplyUserCall(const State &S,
                                   const clang::SourceManager &SM,
                                   const clang::CallExpr *Call,
                                   const clang::ASTContext &Context);
-std::optional<FunctionalOperationInfo>
+struct UtilityTupleApplyObjectOperation {
+  FunctionalOperationInfo Operation;
+  const clang::CXXMethodDecl *Method;
+};
+std::optional<UtilityTupleApplyObjectOperation>
 approvedUtilityTupleApplyObjectOperation(
     const State &S, const clang::SourceManager &SM,
     const clang::CallExpr *Call, const clang::ASTContext &Context);
