@@ -3083,6 +3083,10 @@ class FunctionLowering {
               : llvm::StringRef();
       const bool LogicalReduction =
           ReductionName == "logical_and" || ReductionName == "logical_or";
+      const bool ComparisonReduction =
+          ReductionName == "equal_to" || ReductionName == "not_equal_to" ||
+          ReductionName == "less" || ReductionName == "less_equal" ||
+          ReductionName == "greater" || ReductionName == "greater_equal";
       const auto BinaryTransformName =
           DefaultFunctionalPair
               ? Call->getArg(5)->getType()->getAsCXXRecordDecl()->getName()
@@ -3302,10 +3306,11 @@ class FunctionLowering {
         // Their normalized 0/1 values can use the protocol's integer bit ops.
         auto Combined =
             binary(Operator, ReductionOperand(json::Object(Result)),
-                   ReductionOperand(std::move(Term)), DefaultSumType, L);
+                   ReductionOperand(std::move(Term)),
+                   ComparisonReduction ? "bool" : DefaultSumType, L);
         if (LogicalReduction)
           Combined = cast(std::move(Combined), "bool", L);
-        else if (!TypedReductionType.isNull())
+        else if (!TypedReductionType.isNull() && !ComparisonReduction)
           Combined = cast(std::move(Combined), type(TypedReductionType, L), L);
         assign(Result, cast(std::move(Combined), ResultType, L), L);
       }

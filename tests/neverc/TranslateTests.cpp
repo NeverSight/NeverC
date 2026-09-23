@@ -37691,6 +37691,37 @@ int main() {
   if (std::inner_product(fractions, fractions + 2, limits, 0,
                          std::plus<>{}, std::less<float>{}) != 1)
     return 26;
+  int comparedOne[1]{2}, comparedWeight[1]{1};
+  if (std::inner_product(comparedOne, comparedOne + 1, comparedWeight, 2,
+                         std::equal_to<>{}, std::plus<>{}) != 0 ||
+      std::transform_reduce(comparedOne, comparedOne + 1, comparedWeight, 2,
+                            std::not_equal_to<>{}, std::plus<>{}) != 1)
+    return 27;
+  if (std::inner_product(comparedOne, comparedOne + 1, comparedWeight, 2,
+                         std::less<>{}, std::plus<>{}) != 1 ||
+      std::transform_reduce(comparedOne, comparedOne + 1, comparedWeight, 2,
+                            std::less_equal<>{}, std::plus<>{}) != 1)
+    return 28;
+  if (std::inner_product(comparedOne, comparedOne + 1, comparedWeight, 2,
+                         std::greater<>{}, std::plus<>{}) != 0 ||
+      std::transform_reduce(comparedOne, comparedOne + 1, comparedWeight, 2,
+                            std::greater_equal<>{}, std::plus<>{}) != 0)
+    return 29;
+  int zero[1]{0};
+  if (std::inner_product(zero, zero + 1, zero, 256,
+                         std::equal_to<unsigned char>{}, std::plus<>{}) != 1 ||
+      std::transform_reduce(zero, zero + 1, zero, 256,
+                            std::equal_to<>{}, std::plus<>{}) != 0)
+    return 30;
+  if (std::transform_reduce(comparedOne, comparedOne + 1, comparedWeight, 2,
+                            std::less<bool>{}, std::plus<>{}) != 0 ||
+      std::inner_product(comparedOne, comparedOne + 1, comparedWeight, 2,
+                         std::less<>{}, std::greater<>{}) != 0)
+    return 31;
+  int zeros[2]{0, 0};
+  if (std::inner_product(zeros, zeros + 2, zeros, 256,
+                         std::equal_to<unsigned char>{}, std::plus<>{}) != 0)
+    return 32;
   return 0;
 }
 )cpp");
@@ -37783,6 +37814,12 @@ int main() {
                             std::logical_or<>{},
                             std::logical_not<>{}) != 1)
     return 15;
+  int compared[1]{2};
+  if (std::transform_reduce(compared, compared + 1, 4,
+                            std::less<>{}, std::negate<>{}) != 0 ||
+      std::transform_reduce(compared, compared + 1, 4,
+                            std::less<unsigned char>{}, std::negate<>{}) != 1)
+    return 16;
   return 0;
 }
 )cpp");

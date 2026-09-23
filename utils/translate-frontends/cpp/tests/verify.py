@@ -10036,15 +10036,24 @@ int compare_typed(int* first, int* last) {
 int compare_float(float* first, float* last, double* second) {
  return std::transform_reduce(first,last,second,0,std::plus<>{},std::less<float>{});
 }
+int compare_reduction(int* first, int* last) {
+ return std::inner_product(first,last,first,2,std::less<>{},std::plus<>{});
+}
+int compare_reduction_typed(int* first, int* last) {
+ return std::transform_reduce(first,last,first,256,std::equal_to<unsigned char>{},std::plus<>{});
+}
+int compare_reduction_both(int* first, int* last) {
+ return std::inner_product(first,last,first,2,std::less<>{},std::greater<>{});
+}
 """
     for target in sdk_targets:
         data = check("v2-numeric-default-functional-pair-" + target,
                      numeric_default_functional_pair_source,
                      profile="cpp-core-v2", target=target, sdk=True)
         assert len(data['sdk_dependencies']) == 126, data
-        for line in (2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35, 38, 41, 44, 47, 50, 53, 56, 59):
+        for line in (2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35, 38, 41, 44, 47, 50, 53, 56, 59, 62, 65, 68):
             functions = [f for f in data['functions'] if f['loc']['line'] == line]
-            assert len(functions) == 1 and functions[0]['result'] == ('int' if line in (8, 14, 17, 20, 23, 26, 35, 38, 41, 44, 47, 50, 53, 56, 59) else 'u8' if line == 11 else 'i64'), functions
+            assert len(functions) == 1 and functions[0]['result'] == ('int' if line in (8, 14, 17, 20, 23, 26, 35, 38, 41, 44, 47, 50, 53, 56, 59, 62, 65, 68) else 'u8' if line == 11 else 'i64'), functions
             assert not any(node.get('op') in ('call', 'indirect_call', 'mapped_call')
                            for node in walk(functions[0]['body'])), functions
     check("v2-numeric-default-functional-pair-stored",
@@ -10092,15 +10101,21 @@ long long logical_bool(int* first, int* last) {
 int logical_reduction(int* first, int* last) {
  return std::transform_reduce(first,last,4,std::logical_and<>{},std::logical_not<>{});
 }
+int compare_reduction(int* first, int* last) {
+ return std::transform_reduce(first,last,4,std::less<>{},std::negate<>{});
+}
+int compare_reduction_typed(int* first, int* last) {
+ return std::transform_reduce(first,last,4,std::less<unsigned char>{},std::negate<>{});
+}
 """
     for target in sdk_targets:
         data = check("v2-numeric-unary-functional-pair-" + target,
                      numeric_unary_functional_pair_source,
                      profile="cpp-core-v2", target=target, sdk=True)
         assert len(data['sdk_dependencies']) == 126, data
-        for line in (2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35, 38):
+        for line in (2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35, 38, 41, 44):
             functions = [f for f in data['functions'] if f['loc']['line'] == line]
-            assert len(functions) == 1 and functions[0]['result'] == ('int' if line in (5, 11, 14, 17, 20, 23, 38) else 'u8' if line == 8 else 'i64'), functions
+            assert len(functions) == 1 and functions[0]['result'] == ('int' if line in (5, 11, 14, 17, 20, 23, 38, 41, 44) else 'u8' if line == 8 else 'i64'), functions
             assert not any(node.get('op') in ('call', 'indirect_call', 'mapped_call')
                            for node in walk(functions[0]['body'])), functions
 

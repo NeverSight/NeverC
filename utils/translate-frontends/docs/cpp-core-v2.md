@@ -763,6 +763,10 @@ The two-range forms additionally admit `std::equal_to`, `std::not_equal_to`,
 transforms. Transparent forms compare the checked common arithmetic type;
 typed forms convert both input elements to their selected arithmetic or `bool`
 type before comparison. Each comparison yields a `bool` term.
+These six comparisons are also admitted as reduction objects in the two-range
+forms and unary `transform_reduce`. Their operands use the same transparent or
+typed conversion rules, and each `bool` result converts back to the accumulator
+type before the next step.
 Stored objects and other
 object combinations remain outside this direct lowering.
 The five-argument unary `transform_reduce` likewise accepts a directly empty
