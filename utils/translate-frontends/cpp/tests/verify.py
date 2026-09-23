@@ -11666,6 +11666,7 @@ extern "C" int algorithm_standard_comparator_ordered_ranges(
     const long *second_last, long *output) {
   auto minimum = std::min_element(first, last, std::less<>{});
   auto maximum = std::max_element(first, last, std::greater<int>{});
+  auto extrema = std::minmax_element(first, last, std::greater<>{});
   bool lexical = std::lexicographical_compare(first, last, second,
                                                second_last, std::greater<>{});
   bool contained = std::includes(first, last, second, second_last,
@@ -11681,6 +11682,8 @@ extern "C" int algorithm_standard_comparator_ordered_ranges(
   long *symmetric = std::set_symmetric_difference(
       first, last, second, second_last, output, std::greater<>{});
   return static_cast<int>((minimum - first) + (maximum - first) +
+                          (extrema.first - first) +
+                          (extrema.second - first) +
                           (merged - output) + (united - output) +
                           (common - output) + (remaining - output) +
                           (symmetric - output) + lexical + contained);

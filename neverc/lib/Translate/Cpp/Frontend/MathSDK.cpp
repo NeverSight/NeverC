@@ -17426,7 +17426,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType()) &&
       ((Call->getNumArgs() == 2 && AlgorithmOrderedPointerParameter(0)) ||
        (Call->getNumArgs() == 3 &&
-        AlgorithmBinaryPredicateParameter(2, 0, 0)))) {
+        AlgorithmBinaryComparisonParameter(2, 0, 0)))) {
     auto Pair = approvedUtilityPairRecord(
         S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);
     if (Pair &&

@@ -40571,11 +40571,27 @@ int main() {
       std::max_element(duplicates, duplicates + 5, std::greater<int>{}) !=
           duplicates + 1)
     return 1;
+  auto extrema =
+      std::minmax_element(duplicates, duplicates + 5, std::less<>{});
+  auto reversed =
+      std::minmax_element(duplicates, duplicates + 5, std::greater<long>{});
+  if (extrema.first != duplicates + 1 || extrema.second != duplicates + 4 ||
+      reversed.first != duplicates + 3 || reversed.second != duplicates + 2)
+    return 12;
   int effects = 0;
   if (std::min_element(duplicates, duplicates,
                        (++effects, std::less<>{})) != duplicates ||
       effects != 1)
     return 2;
+  effects = 0;
+  auto empty = std::minmax_element(duplicates, duplicates,
+                                   (++effects, std::less<>{}));
+  auto one = std::minmax_element(duplicates, duplicates + 1,
+                                 std::greater<int>{});
+  if (effects != 1 || empty.first != duplicates ||
+      empty.second != duplicates || one.first != duplicates ||
+      one.second != duplicates)
+    return 13;
 
   const int left[5]{9, 7, 7, 4, 1};
   const long right[4]{8, 7, 5, 1};

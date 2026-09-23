@@ -1735,6 +1735,13 @@ and performs no calls for empty or single-element ranges. Enum and object
 pointer values are admitted, while records and unsupported callbacks remain
 rejected.
 
+The three-argument `std::minmax_element` overload also accepts authenticated
+typed or transparent empty standard `<functional>` comparison objects on
+arithmetic scalar ranges. Its selected instantiated `operator()` lowers
+directly; the object argument is evaluated once, even for an empty or
+single-element range. The first equivalent minimum, last equivalent maximum
+and pairwise comparison bound are preserved.
+
 The scalar-reference `min`, `max`, `minmax` and `clamp` comparator overloads
 also accept authenticated empty standard `<functional>` objects with a selected
 binary `bool` operation on admitted arithmetic scalars. This includes typed

@@ -5664,9 +5664,17 @@ class FunctionLowering {
       auto First = snapshot(expression(Call->getArg(0)), L);
       auto Last = snapshot(expression(Call->getArg(1)), L);
       std::optional<Expression> Comparator;
-      if (Call->getNumArgs() == 3)
-        Comparator = snapshot(expression(Call->getArg(2)), L);
+      std::optional<FunctionalOperationInfo> SDKComparator;
+      if (Call->getNumArgs() == 3) {
+        const auto Element = Call->getArg(0)->getType()->getPointeeType();
+        SDKComparator = captureRangeSDKComparator(Call, 2, Element, Element);
+        if (!SDKComparator)
+          Comparator = snapshot(expression(Call->getArg(2)), L);
+      }
       auto Less = [&](Expression Left, Expression Right) {
+        if (SDKComparator)
+          return functionalOperationValues(L, std::move(Left), std::move(Right),
+                                           *SDKComparator);
         if (Comparator)
           return emitBinaryPredicate(json::Object(*Comparator),
                                      Call->getArg(2)->getType(),
