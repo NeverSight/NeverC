@@ -29036,6 +29036,13 @@ std::string_view::size_type capacity(std::string_view view) {
 int compare(std::string_view left, std::string_view right) {
   return left.compare(right);
 }
+bool relations(std::string_view left, std::string_view right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
+}
+bool literal_relations(std::string_view view) {
+  return view == "x" && "x" == view && view < "y" && "y" > view;
+}
 std::string_view::size_type locate(std::string_view view, char needle,
                                    std::string_view::size_type pos) {
   return view.find(needle, pos);

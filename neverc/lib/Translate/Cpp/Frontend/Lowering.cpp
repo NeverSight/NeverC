@@ -9097,23 +9097,39 @@ class FunctionLowering {
       assign(dereference(std::move(RightAddress), L), std::move(OldLeft), L);
       return {};
     }
-    case UtilityOperation::StringViewCompare: {
-      const auto *Object = MemberObject();
+    case UtilityOperation::StringViewCompare:
+    case UtilityOperation::StringViewEqual:
+    case UtilityOperation::StringViewNotEqual:
+    case UtilityOperation::StringViewLess:
+    case UtilityOperation::StringViewGreater:
+    case UtilityOperation::StringViewLessEqual:
+    case UtilityOperation::StringViewGreaterEqual: {
+      const bool Member = Operation == UtilityOperation::StringViewCompare;
+      const auto *Object = Member ? MemberObject() : Call->getArg(0);
       auto View = Object ? StringViewFor(Object->getType())
                          : std::optional<UtilityStringViewRecord>();
       if (!Object || !View)
         reject(L, "string view comparison",
                "The selected std::string_view layout is unavailable.");
-      auto ObjectAddress =
-          snapshot(address(lvalue(Object), Object->getType(), L), L);
-      auto Other = snapshot(expression(Call->getArg(0)), L);
-      auto LeftData =
-          snapshot(fieldStorage(dereference(json::Object(ObjectAddress), L),
-                                View->Data, L),
-                   L);
-      auto LeftSize = snapshot(
-          fieldStorage(dereference(std::move(ObjectAddress), L), View->Size, L),
-          L);
+      auto LeftSource =
+          Member ? snapshot(address(lvalue(Object), Object->getType(), L), L)
+                 : snapshot(expression(Call->getArg(0)), L);
+      auto Other = snapshot(expression(Call->getArg(Member ? 0 : 1)), L);
+      Expression LeftData, LeftSize;
+      if (Member) {
+        LeftData =
+            snapshot(fieldStorage(dereference(json::Object(LeftSource), L),
+                                  View->Data, L),
+                     L);
+        LeftSize = snapshot(
+            fieldStorage(dereference(std::move(LeftSource), L), View->Size, L),
+            L);
+      } else {
+        LeftData =
+            snapshot(fieldStorage(json::Object(LeftSource), View->Data, L), L);
+        LeftSize =
+            snapshot(fieldStorage(std::move(LeftSource), View->Size, L), L);
+      }
       auto RightData =
           snapshot(fieldStorage(json::Object(Other), View->Data, L), L);
       auto RightSize =
@@ -9180,7 +9196,36 @@ class FunctionLowering {
       assign(Result, quantity(0, "int", L), L);
       jump(End, L);
       label(End, L);
-      return Result;
+      if (Member)
+        return Result;
+      const char *Relation = nullptr;
+      switch (Operation) {
+      case UtilityOperation::StringViewEqual:
+        Relation = "==";
+        break;
+      case UtilityOperation::StringViewNotEqual:
+        Relation = "!=";
+        break;
+      case UtilityOperation::StringViewLess:
+        Relation = "<";
+        break;
+      case UtilityOperation::StringViewGreater:
+        Relation = ">";
+        break;
+      case UtilityOperation::StringViewLessEqual:
+        Relation = "<=";
+        break;
+      case UtilityOperation::StringViewGreaterEqual:
+        Relation = ">=";
+        break;
+      default:
+        break;
+      }
+      if (!Relation)
+        reject(L, "string view comparison",
+               "An unknown string-view relation was selected.");
+      return binary(Relation, std::move(Result), quantity(0, "int", L), "bool",
+                    L);
     }
     case UtilityOperation::StringViewFindCharacter: {
       const auto *Object = MemberObject();

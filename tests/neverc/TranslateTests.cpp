@@ -15076,6 +15076,66 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringViewRelationsRunAtBothOptimizations) {
+  const auto Source = tmpFile("string-view-relations.cpp");
+  const auto Output = tmpFile("string-view-relations.nc");
+  writeFile(Source, R"cpp(
+#include <string_view>
+std::string_view& touch(std::string_view& view, int& count) {
+  ++count;
+  return view;
+}
+std::string_view shorten(std::string_view& view, int& count) {
+  ++count;
+  view.remove_prefix(1);
+  return view;
+}
+int main() {
+  std::string_view a("ab");
+  std::string_view b("ab");
+  std::string_view c("ac");
+  std::string_view prefix("a");
+  if (!(a == b) || a != b || a == c || !(a != c) ||
+      !(a < c) || a > c || !(a <= c) || a >= c ||
+      !(c > a) || c < a || !(c >= a) || c <= a ||
+      !(prefix < a) || !(a > prefix))
+    return 1;
+  if (!(a == "ab") || !("ab" == a) || !(a < "ac") ||
+      !("ac" > a) || "a" == a)
+    return 2;
+  const char high[] = {static_cast<char>(0x80)};
+  const char ascii[] = {'z'};
+  if (!(std::string_view(high, 1) > std::string_view(ascii, 1)))
+    return 3;
+  const char zero[] = {'a', 0, 'b'};
+  std::string_view bytes(zero, 3);
+  std::string_view same(zero, 3);
+  std::string_view shortBytes(zero, 2);
+  if (!(bytes == same) || !(shortBytes < bytes))
+    return 4;
+  int count = 0;
+  if (!(touch(a, count) == touch(b, count)) || count != 2)
+    return 5;
+  std::string_view moving("abc");
+  count = 0;
+  if (moving.compare(shorten(moving, count)) != 0 || count != 1)
+    return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-view-relations" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StringsRetainSourceAndLifetimeRestrictions) {
   const std::vector<std::tuple<std::string, std::string, std::string>> Cases = {
       {"literal-unused-declaration", "unsigned operator\"\"_n(const char*,decltype(sizeof(0))){return 1;}", "TR0201"},

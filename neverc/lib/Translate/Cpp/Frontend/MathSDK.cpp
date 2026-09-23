@@ -15904,6 +15904,44 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   const llvm::StringRef Name = Function->getIdentifier()
                                    ? Function->getIdentifier()->getName()
                                    : llvm::StringRef();
+  if (Origin->Path == "string_view" && Call->getNumArgs() == 2 &&
+      Function->getNumParams() == 2 && Function->isConstexpr() &&
+      Call->isPRValue() && Function->getReturnType()->isBooleanType() &&
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+    const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
+    const auto View = approvedUtilityStringViewRecord(
+        S, SM, Function->getParamDecl(0)->getType()->getAsCXXRecordDecl(),
+        Context);
+    if (Operator && Prototype && Prototype->isNothrow() && View &&
+        Function->isOverloadedOperator() &&
+        Function->getOverloadedOperator() == Operator->getOperator() &&
+        Same(Function->getParamDecl(0)->getType(),
+             Context.getRecordType(View->Record)) &&
+        Same(Function->getParamDecl(1)->getType(),
+             Context.getRecordType(View->Record)) &&
+        Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
+                                       Context.getRecordType(View->Record)) &&
+        Context.hasSameUnqualifiedType(Call->getArg(1)->getType(),
+                                       Context.getRecordType(View->Record))) {
+      switch (Operator->getOperator()) {
+      case OO_EqualEqual:
+        return UtilityOperation::StringViewEqual;
+      case OO_ExclaimEqual:
+        return UtilityOperation::StringViewNotEqual;
+      case OO_Less:
+        return UtilityOperation::StringViewLess;
+      case OO_Greater:
+        return UtilityOperation::StringViewGreater;
+      case OO_LessEqual:
+        return UtilityOperation::StringViewLessEqual;
+      case OO_GreaterEqual:
+        return UtilityOperation::StringViewGreaterEqual;
+      default:
+        break;
+      }
+    }
+  }
   if (Origin->Path == "__memory/unique_ptr.h" && Name == "swap" &&
       Function->isInlined() && Call->getNumArgs() == 2 &&
       Function->getNumParams() == 2 &&

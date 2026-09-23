@@ -2193,7 +2193,9 @@ receiver and argument is evaluated once. `rbegin()`, `crbegin()`, `rend()` and
 `crend()` return the authenticated reverse iterator over the same range.
 `max_size()` reports the target `size_t` maximum. `compare(string_view)`
 compares unsigned character values lexicographically, including embedded zero
-bytes; `find(char, size_t)` and its zero-position default return the first
+bytes. The six free `==`, `!=`, `<`, `>`, `<=` and `>=` operators use the same
+ordering and accept the pinned view's ordinary implicit pointer construction.
+`find(char, size_t)` and its zero-position default return the first
 matching offset or `npos`. `find(string_view, size_t)` searches for the first
 matching byte sequence, while `rfind(char, size_t)` and
 `rfind(string_view, size_t)` search backward. Their omitted positions use the
