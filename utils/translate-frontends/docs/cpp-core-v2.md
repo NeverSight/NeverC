@@ -779,9 +779,9 @@ forms admit an independent arithmetic accumulator and different numeric
 second-range element, including non-boolean narrow inputs. Their transform
 and reduction callbacks return values directly convertible to the accumulator,
 and both callback values are retained across the loop.
-The five-argument unary `transform_reduce` callback form likewise admits
-matching non-boolean narrow input and accumulator types, converting the unary
-result and each reduction result back to that accumulator.
+The five-argument unary `transform_reduce` callback form likewise admits an
+independent arithmetic accumulator with non-boolean narrow input, converting
+the unary result and each reduction result to that accumulator.
 The no-init and initialized `transform_inclusive_scan` and initialized
 `transform_exclusive_scan` callback forms also admit non-boolean narrow inputs;
 initialized forms accept a narrow accumulator and convert each binary result

@@ -37185,6 +37185,43 @@ int main() {
 }
 
 TEST_F(TranslateTest,
+       CoreV2NumericMixedUnaryTransformReduceRunAtBothOptimizations) {
+  const auto Source = tmpFile("numeric-mixed-unary-transform-reduce.cpp");
+  const auto Output = tmpFile("numeric-mixed-unary-transform-reduce.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+int sums, transforms;
+long long sum(long long a, long long b) {
+  ++sums; return a + b;
+}
+unsigned char plus_one(unsigned char value) {
+  ++transforms; return value + 1;
+}
+int main() {
+  unsigned char values[3]{250, 10, 20};
+  if (std::transform_reduce(values, values + 3, 5LL,
+                             sum, plus_one) != 288 ||
+      sums != 3 || transforms != 3) return 1;
+  if (std::transform_reduce(values, values, 7LL,
+                             sum, plus_one) != 7 ||
+      sums != 3 || transforms != 3) return 2;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("numeric-mixed-unary-transform-reduce" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
        CoreV2NumericMixedTransformReduceCallbacksRunAtBothOptimizations) {
   const auto Source = tmpFile("numeric-mixed-transform-reduce-callbacks.cpp");
   const auto Output = tmpFile("numeric-mixed-transform-reduce-callbacks.nc");

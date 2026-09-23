@@ -16225,9 +16225,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
               5, Function->getParamDecl(3)->getType(), Element,
               Function->getParamDecl(2)->getType()->getPointeeType(), true))))
       return UtilityOperation::NumericTransformReduce;
-    if (Call->getNumArgs() == 5 && NumericValueParameter(2, 0, true) &&
+    if (Call->getNumArgs() == 5 && NumericReductionValueParameter(2, 0, true) &&
         Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
-        NumericBinaryCallback(3, Element, true) &&
+        NumericBinaryTransformCallback(3, Function->getParamDecl(2)->getType(),
+                                       Function->getParamDecl(2)->getType(),
+                                       Function->getParamDecl(2)->getType(),
+                                       true) &&
         NumericUnaryCallback(4, Element, true))
       return UtilityOperation::NumericTransformReduce;
   }
