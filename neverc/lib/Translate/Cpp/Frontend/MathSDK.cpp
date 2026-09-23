@@ -12817,8 +12817,8 @@ utilityNumericReductionObjectCall(const State &S, const SourceManager &SM,
                                : QualType{};
   const bool Arithmetic =
       !ElementType.isNull() &&
-      ((!ElementType->isEnumeralType() && ElementType->isIntegerType() &&
-        !Context.isPromotableIntegerType(ElementType) &&
+      ((!ElementType->isEnumeralType() && !ElementType->isBooleanType() &&
+        ElementType->isIntegerType() &&
         Context.getTypeSize(ElementType) <= 64) ||
        ElementType->isSpecificBuiltinType(BuiltinType::Float) ||
        ElementType->isSpecificBuiltinType(BuiltinType::Double));

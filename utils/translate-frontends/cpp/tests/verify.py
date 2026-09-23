@@ -9974,6 +9974,48 @@ long long mixed(int*first,int*last) {
         for node in walk(data['functions']):
             assert node.get('op') not in ('mapped_call', 'indirect_call', 'member_pointer'), node
 
+    numeric_narrow_reduction_object_source = """\
+#include <numeric>
+#include <functional>
+struct Add { int operator()(int total,unsigned char value)& { return total+value; } }; // narrow-method
+int narrow(unsigned char*first,unsigned char*last) {
+ int a=std::accumulate(first,last,5,Add{}); // narrow-call
+ int b=std::reduce(first,last,5,Add{}); // narrow-call
+ int c=std::accumulate(first,last,5,std::plus<int>{});
+ int d=std::reduce(first,last,5,std::plus<int>{});
+ int e=std::accumulate(first,last,5,std::plus<>{});
+ int f=std::reduce(first,last,5,std::plus<>{});
+ return a+b+c+d+e+f;
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-numeric-narrow-reduction-object-" + target,
+                     numeric_narrow_reduction_object_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        assert len(data['sdk_dependencies']) == 360, data
+        method_line = next(i for i, line in enumerate(numeric_narrow_reduction_object_source.splitlines(), 1)
+                           if '// narrow-method' in line)
+        methods = [f for f in data['functions'] if f['loc']['line'] == method_line]
+        assert len(methods) == 1 and methods[0]['result'] == 'int', methods
+        assert [p['type'] for p in methods[0]['params'][1:]] == ['int', 'u8'], methods
+        narrow_line = next(i for i, line in enumerate(numeric_narrow_reduction_object_source.splitlines(), 1)
+                           if 'narrow(unsigned char*first' in line)
+        narrow = [f for f in data['functions'] if f['loc']['line'] == narrow_line]
+        assert len(narrow) == 1, narrow
+        calls = [node for node in walk(narrow[0]['body']) if node.get('op') == 'call']
+        expected_lines = [i for i, line in enumerate(numeric_narrow_reduction_object_source.splitlines(), 1)
+                          if '// narrow-call' in line]
+        assert len(calls) == 2 and [node['loc']['line'] for node in calls] == expected_lines, calls
+        assert all(node['callee'] == methods[0]['name'] for node in calls), calls
+        for node in walk(data['functions']):
+            assert node.get('op') not in ('mapped_call', 'indirect_call', 'member_pointer'), node
+    check("v2-numeric-narrow-reduction-object-reject-bool",
+          '#include <numeric>\n#include <functional>\nint f(bool*p){return std::accumulate(p,p+2,0,std::plus<>{});}\n',
+          'TR0203', profile='cpp-core-v2', sdk=True)
+    check("v2-numeric-narrow-reduction-object-reject-enum",
+          '#include <numeric>\n#include <functional>\nenum E{A=1,B=2};int f(E*p){return std::reduce(p,p+2,0,std::plus<>{});}\n',
+          'TR0203', profile='cpp-core-v2', sdk=True)
+
     numeric_mixed_inclusive_scan_object_source = """\
 #include <numeric>
 #include <functional>

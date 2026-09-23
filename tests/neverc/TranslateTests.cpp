@@ -37185,6 +37185,57 @@ int main() {
 }
 
 TEST_F(TranslateTest,
+       CoreV2NumericNarrowReductionObjectsRunAtBothOptimizations) {
+  const auto Source = tmpFile("numeric-narrow-reduction-objects.cpp");
+  const auto Output = tmpFile("numeric-narrow-reduction-objects.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+#include <functional>
+int calls, factories;
+struct Add {
+  int local_calls;
+  int operator()(int total, unsigned char value) & {
+    ++calls; ++local_calls;
+    return total + value + 1;
+  }
+};
+Add make() { ++factories; return Add{0}; }
+int main() {
+  unsigned char values[3]{1, 2, 3};
+  Add caller{0};
+  if (std::accumulate(values, values + 3, 5, caller) != 14 ||
+      calls != 3 || caller.local_calls != 0) return 1;
+  if (std::reduce(values, values + 3, 5, make()) != 14 ||
+      calls != 6 || factories != 1) return 2;
+  if (std::accumulate(values, values + 3, 5, std::plus<int>{}) != 11 ||
+      std::reduce(values, values + 3, 5, std::plus<int>{}) != 11 ||
+      std::accumulate(values, values + 3, 5, std::plus<>{}) != 11 ||
+      std::reduce(values, values + 3, 5, std::plus<>{}) != 11 ||
+      calls != 6) return 3;
+  signed char signed_values[2]{-1, 2};
+  if (std::accumulate(signed_values, signed_values + 2, 0,
+                      std::plus<>{}) != 1) return 4;
+  unsigned short wider[2]{60000, 10000};
+  if (std::reduce(wider, wider + 2, 0, std::plus<int>{}) != 70000) return 5;
+  if (std::accumulate(values, values, 7, make()) != 7 ||
+      factories != 2 || calls != 6) return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("numeric-narrow-reduction-objects" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
        CoreV2NumericMixedInclusiveScanObjectsRunAtBothOptimizations) {
   const auto Source = tmpFile("numeric-mixed-inclusive-scan-objects.cpp");
   const auto Output = tmpFile("numeric-mixed-inclusive-scan-objects.nc");
