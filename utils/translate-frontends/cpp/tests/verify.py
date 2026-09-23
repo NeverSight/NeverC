@@ -14537,6 +14537,38 @@ int main(){
         check("v2-algorithm-transform-binary-object-reject-" + name, source,
               code, profile=profile, sdk=sdk)
 
+    algorithm_transform_unary_sdk_object_source = """\
+#include <algorithm>
+#include <functional>
+long*negate(int*first,int*last,long*out){
+ return std::transform(first,last,out,std::negate<>{});
+}
+int*bit_not(int*first,int*last,int*out){
+ return std::transform(first,last,out,std::bit_not<int>{});
+}
+bool*logical_not(int*first,int*last,bool*out){
+ return std::transform(first,last,out,std::logical_not<>{});
+}
+unsigned char*narrow(unsigned char*first,unsigned char*last,unsigned char*out){
+ return std::transform(first,last,out,std::negate<unsigned char>{});
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-algorithm-transform-unary-sdk-object-" + target,
+                     algorithm_transform_unary_sdk_object_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        assert len(data['sdk_dependencies']) == 435, data
+        assert len([f for f in data['functions'] if f['loc']['line'] in (3, 6, 9, 12)]) == 4, data
+        nodes = list(walk(data['functions']))
+        assert not [node for node in nodes
+                    if node.get('op') in ('call', 'mapped_call', 'indirect_call', 'member_pointer')], data
+    check("v2-algorithm-transform-unary-sdk-object-mismatch",
+          '#include <algorithm>\n#include <functional>\nlong*f(int*p,long*out){return std::transform(p,p+2,out,std::negate<long>{});}\n',
+          'TR0203', profile='cpp-core-v2', sdk=True)
+    check("v2-algorithm-transform-unary-sdk-object-hash",
+          '#include <algorithm>\n#include <functional>\nunsigned long*f(int*p,unsigned long*out){return std::transform(p,p+2,out,std::hash<int>{});}\n',
+          'TR0203', profile='cpp-core-v2', sdk=True)
+
     algorithm_transform_binary_sdk_object_source = """\
 #include <algorithm>
 #include <functional>

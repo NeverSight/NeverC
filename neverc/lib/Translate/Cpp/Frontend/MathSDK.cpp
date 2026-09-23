@@ -12052,7 +12052,7 @@ utilityAlgorithmTransformObjectCall(const State &S, const SourceManager &SM,
   const auto *Record = Object->getAsCXXRecordDecl();
   Record = Record ? Record->getDefinition() : nullptr;
   const bool SDKObject =
-      Record && Binary &&
+      Record &&
       approvedFunctionalObjectRecord(S, SM, Record, Context).has_value();
   if (!utilityAlgorithmScalarPointer(Context, Input) ||
       !Context.hasSameType(Function->getParamDecl(1)->getType(), Input) ||
@@ -12203,13 +12203,20 @@ utilityAlgorithmTransformObjectCall(const State &S, const SourceManager &SM,
   if (SDKObject) {
     SDKOperation =
         approvedFunctionalOperationImpl(S, SM, Invocation, Context, false);
-    if (!SDKOperation || SDKOperation->RightType.isNull() ||
+    const bool UnaryOperation =
+        SDKOperation &&
+        (SDKOperation->Operation == FunctionalOperation::Negate ||
+         SDKOperation->Operation == FunctionalOperation::BitNot ||
+         SDKOperation->Operation == FunctionalOperation::LogicalNot);
+    if (!SDKOperation ||
+        (Binary ? SDKOperation->RightType.isNull() : !UnaryOperation) ||
         !Context.hasSameUnqualifiedType(
             Input->getPointeeType(),
             Method->getParamDecl(0)->getType().getNonReferenceType()) ||
-        !Context.hasSameUnqualifiedType(
-            Second->getPointeeType(),
-            Method->getParamDecl(1)->getType().getNonReferenceType()))
+        (Binary &&
+         !Context.hasSameUnqualifiedType(
+             Second->getPointeeType(),
+             Method->getParamDecl(1)->getType().getNonReferenceType())))
       return std::nullopt;
   } else {
     if ((Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&

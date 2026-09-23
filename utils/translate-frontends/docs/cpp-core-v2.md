@@ -1631,6 +1631,10 @@ and overlapping in-place ranges preserve that order. The binary overload also
 accepts admitted typed or transparent `<functional>` binary objects, including
 arithmetic and comparison operators, after authenticating the selected SDK
 method and matching each input element to its corresponding operand type.
+The unary overload similarly accepts authenticated typed or transparent
+`std::negate`, integral `std::bit_not` and `std::logical_not` objects. Their
+selected operand type must match the input element, and the result converts
+directly to the output element. Other unary SDK objects remain excluded.
 
 The exact default-equality four-iterator `std::search`, `std::find_end` and
 `std::find_first_of` templates lower nested equality scans over two ranges;

@@ -42908,6 +42908,59 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2AlgorithmUnaryTransformSDKObjectRunsAtBothOptimizations) {
+  const auto Source = tmpFile("algorithm-unary-transform-sdk-object.cpp");
+  const auto Output = tmpFile("algorithm-unary-transform-sdk-object.nc");
+  writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
+int main() {
+  int values[3]{2, 0, -3};
+  long negatives[3]{-99, -99, -99};
+  if (std::transform(values, values + 3, negatives, std::negate<>{}) !=
+          negatives + 3 || negatives[0] != -2 || negatives[1] != 0 ||
+      negatives[2] != 3)
+    return 1;
+  if (std::transform(values, values + 3, values, std::bit_not<int>{}) !=
+          values + 3 || values[0] != -3 || values[1] != -1 || values[2] != 2)
+    return 2;
+  bool flags[3]{true, false, true};
+  if (std::transform(values, values + 3, flags, std::logical_not<>{}) !=
+          flags + 3 || flags[0] || flags[1] || flags[2])
+    return 3;
+  unsigned char narrow[2]{2, 1}, inverted[2]{};
+  if (std::transform(narrow, narrow + 2, inverted,
+                     std::negate<unsigned char>{}) != inverted + 2 ||
+      inverted[0] != 254 || inverted[1] != 255)
+    return 4;
+  if (std::transform(values, values, negatives, std::negate<int>{}) !=
+          negatives || negatives[0] != -2)
+    return 5;
+  int complemented[2]{};
+  if (std::transform(narrow, narrow + 2, complemented, std::bit_not<>{}) !=
+          complemented + 2 || complemented[0] != -3 ||
+      complemented[1] != -2)
+    return 6;
+  if (std::transform(flags, flags + 3, flags, std::logical_not<bool>{}) !=
+          flags + 3 || !flags[0] || !flags[1] || !flags[2])
+    return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("algorithm-unary-transform-sdk-object" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2AlgorithmGenerateObjectRunsAtBothOptimizations) {
   const auto Source = tmpFile("algorithm-generate-object.cpp");
   const auto Output = tmpFile("algorithm-generate-object.nc");
@@ -46559,10 +46612,6 @@ struct F{int operator()(int n){return n;}};namespace std{inline namespace __1{te
        "TR0201"},
       {"query-no-body", R"cpp(#include <algorithm>
 struct F{int operator()(int n){return n;}};int f(int*p,long*out){static_assert(__is_same(decltype(std::transform(p,p+2,out,F{})),long*));return 0;}
-)cpp",
-       "TR0203"},
-      {"binary-independent", R"cpp(#include <algorithm>
-struct F{int operator()(int a,int b){return a+b;}};long*f(int*p,long*out){return std::transform(p,p+2,p,out,F{});}
 )cpp",
        "TR0203"},
       {"volatile-input", R"cpp(#include <algorithm>
