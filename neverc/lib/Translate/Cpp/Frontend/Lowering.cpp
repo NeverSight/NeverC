@@ -3055,6 +3055,8 @@ class FunctionLowering {
           TransformReduce && Call->getNumArgs() == 5;
       const bool DefaultFunctionalPair =
           Call->getNumArgs() == 6 && Call->getArg(4)->getType()->isRecordType();
+      const bool DefaultUnaryFunctionalPair =
+          UnaryTransformReduce && Call->getArg(3)->getType()->isRecordType();
       const bool Inner = Operation == UtilityOperation::NumericInnerProduct ||
                          (TransformReduce && !UnaryTransformReduce);
       auto First = snapshot(expression(Call->getArg(0)), L);
@@ -3095,7 +3097,7 @@ class FunctionLowering {
         ReductionCallback = snapshot(expression(Call->getArg(4)), L);
         TransformCallback = snapshot(expression(Call->getArg(5)), L);
       } else if (TransformReduce && Call->getNumArgs() >= 5 &&
-                 !DefaultFunctionalPair) {
+                 !DefaultFunctionalPair && !DefaultUnaryFunctionalPair) {
         const unsigned ReductionIndex = UnaryTransformReduce ? 3 : 4;
         const unsigned TransformIndex = UnaryTransformReduce ? 4 : 5;
         ReductionCallbackType = Call->getArg(ReductionIndex)->getType();
@@ -3130,7 +3132,18 @@ class FunctionLowering {
       branch(binary("!=", First, Last, "bool", L), Add, End, L);
       label(Add, L);
       auto Term = dereference(First, L);
-      if (TransformCallback) {
+      if (DefaultUnaryFunctionalPair) {
+        auto Promoted = DefaultTermQualType;
+        if (A.Context.isPromotableIntegerType(Promoted))
+          Promoted = A.Context.getPromotedIntegerType(Promoted);
+        const auto PromotedType = type(Promoted, L);
+        Term = Expression{
+            {"kind", "unary"},
+            {"type", PromotedType},
+            {"operator", "-"},
+            {"args", json::Array{cast(std::move(Term), PromotedType, L)}},
+            {"loc", A.loc(L)}};
+      } else if (TransformCallback) {
         json::Array Arguments;
         Arguments.push_back(std::move(Term));
         if (Second)

@@ -37577,6 +37577,39 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2NumericUnaryFunctionalPairRunAtBothOptimizations) {
+  const auto Source = tmpFile("numeric-unary-functional-pair.cpp");
+  const auto Output = tmpFile("numeric-unary-functional-pair.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+int main() {
+  unsigned char values[3]{2, 3, 4};
+  if (std::transform_reduce(values, values + 3, 20LL,
+                            std::plus<>{}, std::negate<>{}) != 11)
+    return 1;
+  if (std::transform_reduce(values, values, 7LL,
+                            std::plus<>{}, std::negate<>{}) != 7)
+    return 2;
+  unsigned char narrow[2]{200, 100};
+  if (std::transform_reduce(narrow, narrow + 2, (unsigned char)250,
+                            std::plus<>{}, std::negate<>{}) != 206)
+    return 3;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("numeric-unary-functional-pair" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest,
        CoreV2NumericNarrowPrefixCallbacksRunAtBothOptimizations) {
   const auto Source = tmpFile("numeric-narrow-prefix-callbacks.cpp");

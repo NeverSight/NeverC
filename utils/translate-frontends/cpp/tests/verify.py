@@ -9997,6 +9997,22 @@ long long reduce(unsigned char* first, unsigned char* last, signed char* second)
           '#include <numeric>\nlong long f(int*a,int*b){std::plus<> sum;std::multiplies<> product;return std::inner_product(a,b,a,0LL,sum,product);}',
           code="TR0203", profile="cpp-core-v2", sdk=True)
 
+    numeric_unary_functional_pair_source = """\
+#include <numeric>
+long long reduce(unsigned char* first, unsigned char* last) {
+ return std::transform_reduce(first,last,20LL,std::plus<>{},std::negate<>{});
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-numeric-unary-functional-pair-" + target,
+                     numeric_unary_functional_pair_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        assert len(data['sdk_dependencies']) == 126, data
+        functions = [f for f in data['functions'] if f['loc']['line'] == 2]
+        assert len(functions) == 1 and functions[0]['result'] == 'i64', functions
+        assert not any(node.get('op') in ('call', 'indirect_call', 'mapped_call')
+                       for node in walk(functions[0]['body'])), functions
+
     numeric_mixed_unary_transform_reduce_source = """\
 #include <numeric>
 long long sum(long long a,long long b){return a+b;}

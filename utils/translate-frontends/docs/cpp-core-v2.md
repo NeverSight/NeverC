@@ -749,6 +749,9 @@ list-initialized `std::plus<>` and `std::multiplies<>` objects. The authenticate
 stateless SDK objects use the same checked product and sum conversions as the
 default overloads; stored objects and other object combinations remain outside
 this direct lowering.
+The five-argument unary `transform_reduce` likewise accepts directly empty
+list-initialized `std::plus<>` and `std::negate<>`; negation uses the source
+integer promotion before adding into and narrowing back to the accumulator.
 
 The operation-taking overloads of `accumulate`, `inner_product`, `partial_sum`,
 `adjacent_difference`, `reduce`, unary and two-range `transform_reduce`,

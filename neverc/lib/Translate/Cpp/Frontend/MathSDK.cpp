@@ -16114,12 +16114,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   // Empty, directly value-initialized transparent arithmetic function objects
   // have no state or construction effects. Their pinned operations are exactly
   // the default product and sum used by the four-argument overloads.
-  auto NumericDefaultFunctionalPair = [&] {
-    if (Call->getNumArgs() != 6)
+  auto NumericDefaultFunctionalPair = [&](bool Unary) {
+    if (Call->getNumArgs() != (Unary ? 5u : 6u))
       return false;
-    for (const auto [Index, Name] :
-         {std::pair{4u, llvm::StringRef("plus")},
-          std::pair{5u, llvm::StringRef("multiplies")}}) {
+    for (unsigned Offset = 0; Offset != 2; ++Offset) {
+      const unsigned Index = (Unary ? 3u : 4u) + Offset;
+      const llvm::StringRef Name =
+          Offset ? (Unary ? "negate" : "multiplies") : "plus";
       const auto Object = Function->getParamDecl(Index)->getType();
       const auto *Record = Object->getAsCXXRecordDecl();
       const auto *Specialization =
@@ -16183,7 +16184,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       ((Call->getNumArgs() == 4 && NumericReductionValueParameter(3, 0, true) &&
         NumericCommonElements(0, 2, true)) ||
        (Call->getNumArgs() == 6 && NumericReductionValueParameter(3, 0, true) &&
-        ((NumericDefaultFunctionalPair() &&
+        ((NumericDefaultFunctionalPair(false) &&
           NumericCommonElements(0, 2, true)) ||
          (NumericBinaryTransformCallback(
               4, Function->getParamDecl(3)->getType(),
@@ -16252,7 +16253,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Same(Function->getReturnType(), Function->getParamDecl(3)->getType()) &&
         ((Call->getNumArgs() == 4 && NumericCommonElements(0, 2, true)) ||
          (Call->getNumArgs() == 6 &&
-          ((NumericDefaultFunctionalPair() &&
+          ((NumericDefaultFunctionalPair(false) &&
             NumericCommonElements(0, 2, true)) ||
            (NumericBinaryTransformCallback(
                 4, Function->getParamDecl(3)->getType(),
@@ -16265,11 +16266,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return UtilityOperation::NumericTransformReduce;
     if (Call->getNumArgs() == 5 && NumericReductionValueParameter(2, 0, true) &&
         Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
-        NumericBinaryTransformCallback(3, Function->getParamDecl(2)->getType(),
-                                       Function->getParamDecl(2)->getType(),
-                                       Function->getParamDecl(2)->getType(),
-                                       true) &&
-        NumericUnaryCallback(4, Element, true))
+        ((NumericDefaultFunctionalPair(true) &&
+          NumericArithmetic(Element, true)) ||
+         (NumericBinaryTransformCallback(
+              3, Function->getParamDecl(2)->getType(),
+              Function->getParamDecl(2)->getType(),
+              Function->getParamDecl(2)->getType(), true) &&
+          NumericUnaryCallback(4, Element, true))))
       return UtilityOperation::NumericTransformReduce;
   }
   if (((Origin->Path == "__numeric/inclusive_scan.h" &&
