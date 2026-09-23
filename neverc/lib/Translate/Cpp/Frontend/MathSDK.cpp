@@ -13286,7 +13286,8 @@ utilityNumericPrefixObjectCall(const State &S, const SourceManager &SM,
 static std::optional<UtilityAlgorithmPredicateCall>
 utilityNumericInclusiveScanObjectCall(const State &S, const SourceManager &SM,
                                       const CallExpr *Call,
-                                      const ASTContext &Context) {
+                                      const ASTContext &Context,
+                                      bool SDKInternal = false) {
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
   if (!S.coreV2() || !Call || !Function ||
       Function->getName() != "inclusive_scan" || Call->getNumArgs() != 5 ||
@@ -13344,8 +13345,11 @@ utilityNumericInclusiveScanObjectCall(const State &S, const SourceManager &SM,
   if (!Primary || !Pattern || !Definition || !PatternDefinition ||
       Function->isVariadic() ||
       Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
-      !approvedUtilityReference(S, SM, Call, Function) || !Origin(Definition) ||
-      !Origin(PatternDefinition) || !Arguments || Arguments->size() != 4)
+      !(SDKInternal
+            ? utilityAlgorithmSDKReference(S, SM, Call, Function)
+            : approvedUtilityReference(S, SM, Call, Function) != nullptr) ||
+      !Origin(Definition) || !Origin(PatternDefinition) || !Arguments ||
+      Arguments->size() != 4)
     return std::nullopt;
   for (const auto *D : Function->redecls())
     if (!Origin(D))
@@ -13487,6 +13491,177 @@ utilityNumericInclusiveScanObjectCall(const State &S, const SourceManager &SM,
                                        SDKOperation};
 }
 
+// The no-init overload seeds the first output and delegates the remaining
+// range to the authenticated initialized overload with a trivial object copy.
+static std::optional<UtilityAlgorithmPredicateCall>
+utilityNumericInclusiveScanSeedObjectCall(const State &S,
+                                          const SourceManager &SM,
+                                          const CallExpr *Call,
+                                          const ASTContext &Context) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  if (!S.coreV2() || !Call || !Function ||
+      Function->getName() != "inclusive_scan" || Call->getNumArgs() != 4 ||
+      Function->getNumParams() != 4 || !Call->isPRValue() ||
+      Call->isTypeDependent() || Call->isValueDependent() ||
+      Call->isInstantiationDependent())
+    return std::nullopt;
+  const auto Input = Function->getParamDecl(0)->getType();
+  const auto Output = Function->getParamDecl(2)->getType();
+  const auto Object = Function->getParamDecl(3)->getType();
+  const auto Element = Input->isPointerType()
+                           ? Input->getPointeeType().getUnqualifiedType()
+                           : QualType{};
+  const bool Arithmetic =
+      !Element.isNull() &&
+      ((!Element->isEnumeralType() && Element->isIntegerType() &&
+        !Context.isPromotableIntegerType(Element) &&
+        Context.getTypeSize(Element) <= 64) ||
+       Element->isSpecificBuiltinType(BuiltinType::Float) ||
+       Element->isSpecificBuiltinType(BuiltinType::Double));
+  if (!Arithmetic || !utilityAlgorithmScalarPointer(Context, Input) ||
+      !utilityAlgorithmWritableScalarPointer(Context, Output) ||
+      !utilityScalarDirectConversion(Context, Element,
+                                     Output->getPointeeType()) ||
+      !Context.hasSameType(Function->getParamDecl(1)->getType(), Input) ||
+      !Context.hasSameType(Call->getArg(0)->getType(), Input) ||
+      !Context.hasSameType(Call->getArg(1)->getType(), Input) ||
+      !Context.hasSameType(Call->getArg(2)->getType(), Output) ||
+      !Context.hasSameType(Call->getArg(3)->getType(), Object) ||
+      !Context.hasSameType(Function->getReturnType(), Output) ||
+      !Context.hasSameType(Call->getType(), Output))
+    return std::nullopt;
+  const auto *Primary = Function->getPrimaryTemplate();
+  const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+  const auto *Definition = Function->getDefinition();
+  const auto *PatternDefinition = Pattern ? Pattern->getDefinition() : nullptr;
+  const auto *Arguments = Function->getTemplateSpecializationArgs();
+  auto Origin = [&](const Decl *D) {
+    return approvedStandardSDKDeclaration(S, SM, D) &&
+           cstddefOrigin(S, SM, D->getLocation(), "libcxx",
+                         "__numeric/inclusive_scan.h");
+  };
+  if (!Primary || !Pattern || !Definition || !PatternDefinition ||
+      Function->isVariadic() ||
+      Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      !approvedUtilityReference(S, SM, Call, Function) || !Origin(Definition) ||
+      !Origin(PatternDefinition) || !Arguments || Arguments->size() != 3)
+    return std::nullopt;
+  for (const auto *D : Function->redecls())
+    if (!Origin(D))
+      return std::nullopt;
+  for (const auto *D : Primary->redecls())
+    if (!Origin(D) || !Origin(D->getTemplatedDecl()))
+      return std::nullopt;
+  for (const auto *D : Pattern->redecls())
+    if (!Origin(D))
+      return std::nullopt;
+  for (const auto [Index, Expected] :
+       {std::pair{0u, Input}, std::pair{1u, Output}, std::pair{2u, Object}})
+    if (Arguments->get(Index).getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Arguments->get(Index).getAsType(), Expected))
+      return std::nullopt;
+
+  auto Reference = [&](const Expr *Expression, const ValueDecl *Value) {
+    return utilityAlgorithmReference(Expression, Value, Context);
+  };
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Definition->getBody());
+  if (!Body || Body->size() != 2)
+    return std::nullopt;
+  auto Part = Body->body_begin();
+  const auto *Branch = dyn_cast<IfStmt>(*Part++);
+  const auto *Return = dyn_cast<ReturnStmt>(*Part);
+  const auto *Condition =
+      Branch ? dyn_cast<BinaryOperator>(Branch->getCond()) : nullptr;
+  const auto *Then =
+      Branch ? dyn_cast<CompoundStmt>(Branch->getThen()) : nullptr;
+  if (!Branch || Branch->getInit() || Branch->getConditionVariable() ||
+      Branch->getElse() || !Condition || Condition->getOpcode() != BO_NE ||
+      !Reference(Condition->getLHS(), Definition->getParamDecl(0)) ||
+      !Reference(Condition->getRHS(), Definition->getParamDecl(1)) || !Then ||
+      Then->size() != 3 || !Return ||
+      !Reference(Return->getRetValue(), Definition->getParamDecl(2)))
+    return std::nullopt;
+  auto Statement = Then->body_begin();
+  const auto *Declaration = dyn_cast<DeclStmt>(*Statement++);
+  const auto *Variable = Declaration && Declaration->isSingleDecl()
+                             ? dyn_cast<VarDecl>(Declaration->getSingleDecl())
+                             : nullptr;
+  const auto *Initial = Variable ? Variable->getInit() : nullptr;
+  const auto *InitialDeref =
+      Initial ? dyn_cast<UnaryOperator>(Initial->IgnoreParenImpCasts())
+              : nullptr;
+  const auto *FirstStore = dyn_cast<BinaryOperator>(*Statement++);
+  const auto *Destination =
+      FirstStore ? dyn_cast<UnaryOperator>(FirstStore->getLHS()) : nullptr;
+  const auto *OutputAdvance =
+      Destination ? dyn_cast<UnaryOperator>(Destination->getSubExpr())
+                  : nullptr;
+  const auto *NextBranch = dyn_cast<IfStmt>(*Statement);
+  const auto *NextCondition =
+      NextBranch ? dyn_cast<BinaryOperator>(NextBranch->getCond()) : nullptr;
+  const auto *InputAdvance =
+      NextCondition ? dyn_cast<UnaryOperator>(
+                          NextCondition->getLHS()->IgnoreParenImpCasts())
+                    : nullptr;
+  const auto *NextReturn =
+      NextBranch ? dyn_cast<ReturnStmt>(NextBranch->getThen()) : nullptr;
+  const auto *Nested =
+      NextReturn ? dyn_cast<CallExpr>(NextReturn->getRetValue()) : nullptr;
+  if (!Variable || Variable->isImplicit() ||
+      Variable->getDeclContext() != Definition ||
+      !Context.hasSameUnqualifiedType(Variable->getType(), Element) ||
+      !InitialDeref || InitialDeref->getOpcode() != UO_Deref ||
+      !InitialDeref->isLValue() ||
+      !Context.hasSameType(InitialDeref->getType(), Input->getPointeeType()) ||
+      !Reference(InitialDeref->getSubExpr(), Definition->getParamDecl(0)) ||
+      !FirstStore || FirstStore->getOpcode() != BO_Assign || !Destination ||
+      Destination->getOpcode() != UO_Deref || !Destination->isLValue() ||
+      !Context.hasSameType(Destination->getType(), Output->getPointeeType()) ||
+      !OutputAdvance || OutputAdvance->getOpcode() != UO_PostInc ||
+      !Reference(OutputAdvance->getSubExpr(), Definition->getParamDecl(2)) ||
+      !NextBranch || NextBranch->getInit() ||
+      NextBranch->getConditionVariable() || NextBranch->getElse() ||
+      !NextCondition || NextCondition->getOpcode() != BO_NE || !InputAdvance ||
+      InputAdvance->getOpcode() != UO_PreInc ||
+      !Reference(InputAdvance->getSubExpr(), Definition->getParamDecl(0)) ||
+      !Reference(NextCondition->getRHS(), Definition->getParamDecl(1)) ||
+      !Nested || Nested->getNumArgs() != 5 || !Nested->isPRValue() ||
+      !Context.hasSameType(Nested->getType(), Output))
+    return std::nullopt;
+  const Expr *Stored = FirstStore->getRHS();
+  while (const auto *Cast = dyn_cast<ImplicitCastExpr>(Stored)) {
+    if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
+                                       Cast->getType()))
+      return std::nullopt;
+    Stored = Cast->getSubExpr();
+  }
+  if (!Reference(Stored, Variable) ||
+      !Reference(Nested->getArg(0), Definition->getParamDecl(0)) ||
+      !Reference(Nested->getArg(1), Definition->getParamDecl(1)) ||
+      !Reference(Nested->getArg(2), Definition->getParamDecl(2)) ||
+      !Reference(Nested->getArg(4), Variable))
+    return std::nullopt;
+  const auto *Copy = dyn_cast<CXXConstructExpr>(Nested->getArg(3));
+  if (!Copy || Copy->getNumArgs() != 1 ||
+      !Copy->getConstructor()->isCopyConstructor() ||
+      !Copy->getConstructor()->isTrivial() ||
+      !Context.hasSameType(Copy->getType(), Object) ||
+      !Reference(Copy->getArg(0), Definition->getParamDecl(3)))
+    return std::nullopt;
+  auto NestedInfo =
+      utilityNumericInclusiveScanObjectCall(S, SM, Nested, Context, true);
+  if (!NestedInfo || NestedInfo->ParameterIndex != 3 ||
+      !Context.hasSameType(NestedInfo->ObjectType, Object))
+    return std::nullopt;
+  return UtilityAlgorithmPredicateCall{UtilityOperation::NumericInclusiveScan,
+                                       Function,
+                                       NestedInfo->Invocation,
+                                       NestedInfo->Method,
+                                       Object,
+                                       3,
+                                       NestedInfo->SDKOperation};
+}
+
 std::optional<UtilityAlgorithmPredicateCall>
 approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
                                       const CallExpr *Call,
@@ -13513,6 +13688,8 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
     return utilityNumericPrefixObjectCall(S, SM, Call, Context);
   if (Name == "inclusive_scan" && Call->getNumArgs() == 5)
     return utilityNumericInclusiveScanObjectCall(S, SM, Call, Context);
+  if (Name == "inclusive_scan" && Call->getNumArgs() == 4)
+    return utilityNumericInclusiveScanSeedObjectCall(S, SM, Call, Context);
   const bool Find = Name == "find_if", FindNot = Name == "find_if_not";
   const bool None = Name == "none_of", All = Name == "all_of";
   const bool Any = Name == "any_of", Count = Name == "count_if";

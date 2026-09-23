@@ -3181,7 +3181,7 @@ class FunctionLowering {
         if (Operation == UtilityOperation::NumericPartialSum ||
             Operation == UtilityOperation::NumericAdjacentDifference ||
             (Operation == UtilityOperation::NumericInclusiveScan &&
-             Call->getNumArgs() == 5)) {
+             (Call->getNumArgs() == 4 || Call->getNumArgs() == 5))) {
           auto Captured = captureUnaryPredicate(Call, Operation, 3);
           if (Captured.Method)
             OperationObject = std::move(Captured);

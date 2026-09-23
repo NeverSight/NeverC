@@ -777,6 +777,10 @@ The five-argument initialized `inclusive_scan` overload accepts the same
 binary objects when the initial value has the input element type and converts
 directly to the writable output element. Its pinned sequential loop retains
 the copied object's state and does not invoke it for an empty range.
+The four-argument no-init overload authenticates the pinned first-element
+branch and its delegation to that initialized overload. The first element is
+written without invoking the operation; subsequent elements retain one copied
+object's mutable state.
 
 `gcd` and `lcm` accept any non-boolean built-in integer argument combination
 through 64 bits and return libc++'s exact `common_type_t` result. Signed inputs
