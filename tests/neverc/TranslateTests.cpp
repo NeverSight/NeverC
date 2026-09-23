@@ -37185,6 +37185,52 @@ int main() {
 }
 
 TEST_F(TranslateTest,
+       CoreV2NumericNarrowPrefixCallbacksRunAtBothOptimizations) {
+  const auto Source = tmpFile("numeric-narrow-prefix-callbacks.cpp");
+  const auto Output = tmpFile("numeric-narrow-prefix-callbacks.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+int calls;
+unsigned char sum(unsigned char a, unsigned char b) {
+  ++calls; return a + b;
+}
+int difference(int a, int b) { ++calls; return a - b; }
+int main() {
+  unsigned char values[3]{250, 10, 20};
+  int sums[3]{}, differences[3]{};
+  if (std::partial_sum(values, values + 3, sums, sum) != sums + 3 ||
+      sums[0] != 250 || sums[1] != 4 || sums[2] != 24 ||
+      calls != 2) return 1;
+  if (std::adjacent_difference(values, values + 3, differences,
+                               difference) != differences + 3 ||
+      differences[0] != 250 || differences[1] != -240 ||
+      differences[2] != 10 || calls != 4) return 2;
+  unsigned char in_place[3]{250, 10, 20};
+  if (std::adjacent_difference(in_place, in_place + 3, in_place,
+                               difference) != in_place + 3 ||
+      in_place[0] != 250 || in_place[1] != 16 || in_place[2] != 10 ||
+      calls != 6) return 3;
+  if (std::partial_sum(values, values, sums, sum) != sums ||
+      std::adjacent_difference(values, values, differences,
+                               difference) != differences || calls != 6)
+    return 4;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("numeric-narrow-prefix-callbacks" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
        CoreV2NumericNarrowReductionCallbacksRunAtBothOptimizations) {
   const auto Source = tmpFile("numeric-narrow-reduction-callbacks.cpp");
   const auto Output = tmpFile("numeric-narrow-reduction-callbacks.nc");

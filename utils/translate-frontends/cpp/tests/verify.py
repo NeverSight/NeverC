@@ -9974,6 +9974,30 @@ long long mixed(int*first,int*last) {
         for node in walk(data['functions']):
             assert node.get('op') not in ('mapped_call', 'indirect_call', 'member_pointer'), node
 
+    numeric_narrow_prefix_callback_source = """\
+#include <numeric>
+unsigned char sum(unsigned char a,unsigned char b){return a+b;}
+int difference(int a,int b){return a-b;}
+void prefix(unsigned char*first,unsigned char*last,int*out) {
+ std::partial_sum(first,last,out,sum);
+ std::adjacent_difference(first,last,out,difference);
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-numeric-narrow-prefix-callback-" + target,
+                     numeric_narrow_prefix_callback_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        assert len(data['sdk_dependencies']) == 126, data
+        prefix_line = next(i for i, line in enumerate(numeric_narrow_prefix_callback_source.splitlines(), 1)
+                           if 'prefix(unsigned char*first' in line)
+        prefix = [f for f in data['functions'] if f['loc']['line'] == prefix_line]
+        assert len(prefix) == 1, prefix
+        calls = [node for node in walk(prefix[0]['body']) if node.get('op') == 'indirect_call']
+        addresses = [node for node in walk(prefix[0]['body']) if node.get('kind') == 'function_address']
+        assert len(calls) == 2 and len(addresses) == 2, (calls, addresses)
+        names = {f['name'] for f in data['functions'] if f['loc']['line'] in (2, 3)}
+        assert {node['name'] for node in addresses} == names, addresses
+
     numeric_narrow_reduction_callback_source = """\
 #include <numeric>
 unsigned char add(unsigned char a,unsigned char b){return a+b;}

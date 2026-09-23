@@ -16158,9 +16158,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Name == "adjacent_difference")) &&
       (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      NumericPointerParameter(0, false, Call->getNumArgs() == 3) &&
-      NumericPointerParameter(1, false, Call->getNumArgs() == 3) &&
-      NumericPointerParameter(2, true, Call->getNumArgs() == 3) &&
+      NumericPointerParameter(0, false, true) &&
+      NumericPointerParameter(1, false, true) &&
+      NumericPointerParameter(2, true, true) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       AlgorithmTransferParameters(0, 2) &&
@@ -16168,7 +16168,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType()) &&
       (Call->getNumArgs() == 3 ||
        NumericBinaryCallback(
-           3, Function->getParamDecl(0)->getType()->getPointeeType())))
+           3, Function->getParamDecl(0)->getType()->getPointeeType(), true)))
     return Name == "partial_sum" ? UtilityOperation::NumericPartialSum
                                  : UtilityOperation::NumericAdjacentDifference;
   if (Origin->Path == "__numeric/reduce.h" && Name == "reduce" &&

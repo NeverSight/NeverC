@@ -763,6 +763,9 @@ their in-place behavior.
 The four-argument `accumulate` and `reduce` function-pointer callbacks also
 admit matching non-boolean narrow integer inputs and accumulators; their
 directly convertible scalar results are converted back after each call.
+The four-argument `partial_sum` and `adjacent_difference` function-pointer
+callbacks admit non-boolean narrow integer inputs and writable scalar outputs;
+the adjacent result converts directly to the output element after its callback.
 The callback forms of `inner_product` and two-range `transform_reduce` accept a
 different numeric second-range element when the transform callback accepts the
 respective element types and returns a value directly convertible to the
