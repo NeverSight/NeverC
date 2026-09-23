@@ -15986,9 +15986,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            (!Writable ||
             utilityAlgorithmWritableScalarPointer(Context, Pointer));
   };
-  auto NumericCommonElements = [&](unsigned LeftIndex, unsigned RightIndex) {
-    if (!NumericPointerParameter(LeftIndex, false) ||
-        !NumericPointerParameter(RightIndex, false))
+  auto NumericCommonElements = [&](unsigned LeftIndex, unsigned RightIndex,
+                                   bool IncludeNarrow = false) {
+    if (!NumericPointerParameter(LeftIndex, false, IncludeNarrow) ||
+        !NumericPointerParameter(RightIndex, false, IncludeNarrow))
       return false;
     return utilityScalarComparisonType(
                Context,
@@ -16133,14 +16134,15 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (Origin->Path == "__numeric/inner_product.h" && Name == "inner_product" &&
       (Call->getNumArgs() == 4 || Call->getNumArgs() == 6) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      NumericPointerParameter(0, false) && NumericPointerParameter(1, false) &&
-      NumericPointerParameter(2, false) &&
+      NumericPointerParameter(0, false, Call->getNumArgs() == 4) &&
+      NumericPointerParameter(1, false, Call->getNumArgs() == 4) &&
+      NumericPointerParameter(2, false, Call->getNumArgs() == 4) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(3)->getType()) &&
       Same(Call->getType(), Function->getReturnType()) &&
-      ((Call->getNumArgs() == 4 && NumericReductionValueParameter(3, 0) &&
-        NumericCommonElements(0, 2)) ||
+      ((Call->getNumArgs() == 4 && NumericReductionValueParameter(3, 0, true) &&
+        NumericCommonElements(0, 2, true)) ||
        (Call->getNumArgs() == 6 && NumericValueParameter(3, 0) &&
         NumericBinaryCallback(
             4, Function->getParamDecl(0)->getType()->getPointeeType()) &&
