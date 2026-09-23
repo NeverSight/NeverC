@@ -45997,6 +45997,15 @@ int main(){
  if(std::find_if(a,a,pred)!=a || std::count_if(a,a,pred)!=0)return 9;
  if(!std::all_of(a,a,pred) || std::any_of(a,a,pred) || !std::none_of(a,a,pred))return 10;
  }
+ { const int a[]={256,0,257,1}; const std::logical_not<unsigned char> pred{};
+ if(std::find_if(a,a+4,pred)!=a)return 11;
+ if(std::find_if_not(a,a+4,pred)!=a+2)return 12;
+ if(std::count_if(a,a+4,pred)!=2)return 13;
+ if(!std::all_of(a,a+2,pred) || !std::any_of(a,a+4,pred))return 14;
+ if(!std::none_of(a+2,a+4,pred))return 15;
+ if(!std::is_partitioned(a,a+4,pred))return 16;
+ if(std::partition_point(a,a+4,pred)!=a+2)return 17;
+ }
  return 0;
 }
 )cpp");
@@ -46047,6 +46056,19 @@ int main(){
  if(std::remove_if(b,b,pred)!=b || std::copy_if(b,b,out,pred)!=out)return 7;
  auto empty=std::partition_copy(b,b,yes,no,pred);
  if(empty.first!=yes || empty.second!=no)return 8;
+ }
+ { int a[]={256,0,257,1}; std::logical_not<unsigned char> pred{};
+ int out[4]={-1,-1,-1,-1};
+ if(std::copy_if(a,a+4,out,pred)!=out+2 || out[0]!=256 || out[1]!=0)return 9;
+ if(std::remove_copy_if(a,a+4,out,pred)!=out+2 || out[0]!=257 || out[1]!=1)return 10;
+ if(std::replace_copy_if(a,a+4,out,pred,7)!=out+4 || out[0]!=7 || out[1]!=7 || out[2]!=257 || out[3]!=1)return 11;
+ int yes[4]={-1,-1,-1,-1}; int no[4]={-1,-1,-1,-1};
+ auto [y,n]=std::partition_copy(a,a+4,yes,no,pred);
+ if(y!=yes+2 || n!=no+2 || yes[0]!=256 || yes[1]!=0 || no[0]!=257 || no[1]!=1)return 12;
+ auto end=std::remove_if(a,a+4,pred);
+ if(end!=a+2 || a[0]!=257 || a[1]!=1)return 13;
+ int b[]={256,0,257,1}; std::replace_if(b,b+4,pred,9);
+ if(b[0]!=9 || b[1]!=9 || b[2]!=257 || b[3]!=1)return 14;
  }
  return 0;
 }
@@ -46102,10 +46124,6 @@ int main(){
 
 TEST_F(TranslateTest, CoreV2AlgorithmSDKPredicatesRequireSource) {
   const struct { const char *Name, *Source, *Code; } Cases[] = {
-    {"heterogeneous-typed", R"cpp(#include <algorithm>
-#include <functional>
-int*f(int*p){return std::find_if(p,p+2,std::logical_not<long>{});}
-)cpp", "TR0203"},
     {"nonboolean-sdk", R"cpp(#include <algorithm>
 #include <functional>
 int*f(int*p){return std::find_if(p,p+2,std::negate<int>{});}

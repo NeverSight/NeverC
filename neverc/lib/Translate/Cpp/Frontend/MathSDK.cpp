@@ -10809,9 +10809,13 @@ utilityAlgorithmUnaryDispatch(const State &S, const SourceManager &SM,
   const auto *Return = Body && Body->size() == 1
                            ? dyn_cast<ReturnStmt>(*Body->body_begin())
                            : nullptr;
-  const auto *Invocation =
-      Return ? dyn_cast_or_null<CXXOperatorCallExpr>(Return->getRetValue())
-             : nullptr;
+  const Expr *Result = Return ? Return->getRetValue() : nullptr;
+  if (const auto *Cleanup = dyn_cast_or_null<ExprWithCleanups>(Result)) {
+    if (Cleanup->getNumObjects())
+      return nullptr;
+    Result = Cleanup->getSubExpr();
+  }
+  const auto *Invocation = dyn_cast_or_null<CXXOperatorCallExpr>(Result);
   if (!Invocation || Invocation->getOperator() != OO_Call ||
       Invocation->getNumArgs() != 2 ||
       !Context.hasSameType(Invocation->getType(), Call->getType()) ||
@@ -10820,7 +10824,17 @@ utilityAlgorithmUnaryDispatch(const State &S, const SourceManager &SM,
                                  Context, true))
     return nullptr;
   const Expr *Argument = Invocation->getArg(1);
-  while (const auto *Cast = dyn_cast<ImplicitCastExpr>(Argument)) {
+  while (Argument) {
+    if (const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(Argument)) {
+      if (!Temporary->isLValue() || Temporary->getExtendingDecl() ||
+          !utilityScalar(Context, Temporary->getType()))
+        return nullptr;
+      Argument = Temporary->getSubExpr();
+      continue;
+    }
+    const auto *Cast = dyn_cast<ImplicitCastExpr>(Argument);
+    if (!Cast)
+      break;
     if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
                                        Cast->getType()))
       return nullptr;
@@ -11240,7 +11254,13 @@ utilityAlgorithmReplacementPredicate(const FunctionDecl *Function, bool Copy,
   } else if (!Increment(Loop->getInc(), 0) || Branch->getElse()) {
     return nullptr;
   }
-  return dyn_cast<CXXOperatorCallExpr>(Branch->getCond());
+  const Expr *Test = Branch->getCond();
+  if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(Test)) {
+    if (Cleanup->getNumObjects())
+      return nullptr;
+    Test = Cleanup->getSubExpr();
+  }
+  return dyn_cast<CXXOperatorCallExpr>(Test);
 }
 
 // Filtering copy loops read each retained element again after the predicate.
@@ -11309,12 +11329,24 @@ utilityAlgorithmRemoveCopyPredicate(const FunctionDecl *Function,
   const auto *End = Body && Body->size() == 2
                         ? dyn_cast<ReturnStmt>(Body->body_back())
                         : nullptr;
-  const auto *Not = dyn_cast_or_null<UnaryOperator>(Condition);
+  const Expr *Test = Condition;
+  if (const auto *Cleanup = dyn_cast_or_null<ExprWithCleanups>(Test)) {
+    if (Cleanup->getNumObjects())
+      return nullptr;
+    Test = Cleanup->getSubExpr();
+  }
+  const auto *Not = dyn_cast_or_null<UnaryOperator>(Test);
   if (!Not || Not->getOpcode() != UO_LNot || !End ||
       !utilityAlgorithmReference(End->getRetValue(),
                                  Definition->getParamDecl(2), Context))
     return nullptr;
-  return dyn_cast<CXXOperatorCallExpr>(Not->getSubExpr());
+  Test = Not->getSubExpr();
+  if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(Test)) {
+    if (Cleanup->getNumObjects())
+      return nullptr;
+    Test = Cleanup->getSubExpr();
+  }
+  return dyn_cast<CXXOperatorCallExpr>(Test);
 }
 
 static bool utilityAlgorithmScalarForward(
@@ -11645,7 +11677,13 @@ static const CXXOperatorCallExpr *utilityAlgorithmPartitionPointPredicate(
       Branch->getConditionVariable() || !Branch->getElse())
     return nullptr;
 
-  const auto *Invocation = dyn_cast<CXXOperatorCallExpr>(Branch->getCond());
+  const Expr *Test = Branch->getCond();
+  if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(Test)) {
+    if (Cleanup->getNumObjects())
+      return nullptr;
+    Test = Cleanup->getSubExpr();
+  }
+  const auto *Invocation = dyn_cast<CXXOperatorCallExpr>(Test);
   const auto *Then = dyn_cast<CompoundStmt>(Branch->getThen());
   const auto *Else = dyn_cast<BinaryOperator>(Branch->getElse());
   if (!Invocation || Invocation->getOperator() != OO_Call ||
@@ -11656,7 +11694,17 @@ static const CXXOperatorCallExpr *utilityAlgorithmPartitionPointPredicate(
       !Reference(Else->getLHS(), Length) || !Reference(Else->getRHS(), Half))
     return nullptr;
   const Expr *Argument = Invocation->getArg(1);
-  while (const auto *Cast = dyn_cast<ImplicitCastExpr>(Argument)) {
+  while (Argument) {
+    if (const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(Argument)) {
+      if (!Temporary->isLValue() || Temporary->getExtendingDecl() ||
+          !utilityScalar(Context, Temporary->getType()))
+        return nullptr;
+      Argument = Temporary->getSubExpr();
+      continue;
+    }
+    const auto *Cast = dyn_cast<ImplicitCastExpr>(Argument);
+    if (!Cast)
+      break;
     if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
                                        Cast->getType()))
       return nullptr;
@@ -11730,11 +11778,21 @@ utilityAlgorithmPartitionPredicate(const FunctionDecl *Function,
                  : !BooleanReturn(Branch->getThen(), false)))
       return nullptr;
     const Expr *Test = Branch->getCond();
+    if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(Test)) {
+      if (Cleanup->getNumObjects())
+        return nullptr;
+      Test = Cleanup->getSubExpr();
+    }
     if (Leading) {
       const auto *Not = dyn_cast<UnaryOperator>(Test);
       if (!Not || Not->getOpcode() != UO_LNot)
         return nullptr;
       Test = Not->getSubExpr();
+      if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(Test)) {
+        if (Cleanup->getNumObjects())
+          return nullptr;
+        Test = Cleanup->getSubExpr();
+      }
     }
     const auto *Call = dyn_cast<CXXOperatorCallExpr>(Test);
     if (!Call || Call->getOperator() != OO_Call || Call->getNumArgs() != 2 ||
@@ -11742,7 +11800,18 @@ utilityAlgorithmPartitionPredicate(const FunctionDecl *Function,
         !Call->getArg(0)->isLValue() || !Parameter(Call->getArg(0), 2))
       return nullptr;
     const Expr *Argument = Call->getArg(1);
-    while (const auto *Cast = dyn_cast<ImplicitCastExpr>(Argument)) {
+    while (Argument) {
+      if (const auto *Temporary =
+              dyn_cast<MaterializeTemporaryExpr>(Argument)) {
+        if (!Temporary->isLValue() || Temporary->getExtendingDecl() ||
+            !utilityScalar(Context, Temporary->getType()))
+          return nullptr;
+        Argument = Temporary->getSubExpr();
+        continue;
+      }
+      const auto *Cast = dyn_cast<ImplicitCastExpr>(Argument);
+      if (!Cast)
+        break;
       if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
                                          Cast->getType()))
         return nullptr;
@@ -11841,7 +11910,13 @@ utilityAlgorithmPartitionCopyPredicate(const State &S, const SourceManager &SM,
       !Parameter(Construction->getArg(0), 2) ||
       !Parameter(Construction->getArg(1), 3))
     return nullptr;
-  return dyn_cast<CXXOperatorCallExpr>(Branch->getCond());
+  const Expr *Test = Branch->getCond();
+  if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(Test)) {
+    if (Cleanup->getNumObjects())
+      return nullptr;
+    Test = Cleanup->getSubExpr();
+  }
+  return dyn_cast<CXXOperatorCallExpr>(Test);
 }
 
 static const CXXOperatorCallExpr *
@@ -11894,11 +11969,21 @@ utilityAlgorithmSearchPredicate(const FunctionDecl *Function,
             : !isa<BreakStmt>(Branch->getThen())))
     return nullptr;
   const Expr *Predicate = Branch->getCond();
+  if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(Predicate)) {
+    if (Cleanup->getNumObjects())
+      return nullptr;
+    Predicate = Cleanup->getSubExpr();
+  }
   if (FindNot) {
     const auto *Negation = dyn_cast<UnaryOperator>(Predicate);
     if (!Negation || Negation->getOpcode() != UO_LNot)
       return nullptr;
     Predicate = Negation->getSubExpr();
+    if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(Predicate)) {
+      if (Cleanup->getNumObjects())
+        return nullptr;
+      Predicate = Cleanup->getSubExpr();
+    }
   }
   return dyn_cast<CXXOperatorCallExpr>(Predicate);
 }
@@ -11972,10 +12057,20 @@ utilityAlgorithmRemovePredicate(const State &S, const SourceManager &SM,
   const auto *Branch = LoopBody && LoopBody->size() == 1
                            ? dyn_cast<IfStmt>(*LoopBody->body_begin())
                            : nullptr;
-  const auto *Not =
-      Branch ? dyn_cast<UnaryOperator>(Branch->getCond()) : nullptr;
-  const auto *TailCall =
-      Not ? dyn_cast<CXXOperatorCallExpr>(Not->getSubExpr()) : nullptr;
+  const Expr *Test = Branch ? Branch->getCond() : nullptr;
+  if (const auto *Cleanup = dyn_cast_or_null<ExprWithCleanups>(Test)) {
+    if (Cleanup->getNumObjects())
+      return nullptr;
+    Test = Cleanup->getSubExpr();
+  }
+  const auto *Not = dyn_cast_or_null<UnaryOperator>(Test);
+  Test = Not ? Not->getSubExpr() : nullptr;
+  if (const auto *Cleanup = dyn_cast_or_null<ExprWithCleanups>(Test)) {
+    if (Cleanup->getNumObjects())
+      return nullptr;
+    Test = Cleanup->getSubExpr();
+  }
+  const auto *TailCall = dyn_cast_or_null<CXXOperatorCallExpr>(Test);
   const auto *Transfer =
       Branch ? dyn_cast<CompoundStmt>(Branch->getThen()) : nullptr;
   if (!FirstCall || !Scan || !Scan->hasLocalStorage() || Scan->isImplicit() ||
@@ -12001,7 +12096,18 @@ utilityAlgorithmRemovePredicate(const State &S, const SourceManager &SM,
         !utilityAlgorithmReference(Call->getArg(0), Receiver, Context))
       return false;
     const Expr *Argument = Call->getArg(1);
-    while (const auto *Cast = dyn_cast<ImplicitCastExpr>(Argument)) {
+    while (Argument) {
+      if (const auto *Temporary =
+              dyn_cast<MaterializeTemporaryExpr>(Argument)) {
+        if (!Temporary->isLValue() || Temporary->getExtendingDecl() ||
+            !utilityScalar(Context, Temporary->getType()))
+          return false;
+        Argument = Temporary->getSubExpr();
+        continue;
+      }
+      const auto *Cast = dyn_cast<ImplicitCastExpr>(Argument);
+      if (!Cast)
+        break;
       if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
                                          Cast->getType()))
         return false;
@@ -14327,8 +14433,8 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
     if (!SDKOperation ||
         SDKOperation->Operation != FunctionalOperation::LogicalNot ||
         !SDKOperation->ResultType->isBooleanType() ||
-        !Context.hasSameUnqualifiedType(
-            Pointer->getPointeeType(),
+        !utilityScalarDirectConversion(
+            Context, Pointer->getPointeeType(),
             Method->getParamDecl(0)->getType().getNonReferenceType()))
       return std::nullopt;
   } else {
@@ -14349,7 +14455,18 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
     return std::nullopt;
   if (!Composed && !Remove && !PartitionPoint) {
     const Expr *Argument = Invocation->getArg(1);
-    while (const auto *Cast = dyn_cast<ImplicitCastExpr>(Argument)) {
+    while (Argument) {
+      if (const auto *Temporary =
+              dyn_cast<MaterializeTemporaryExpr>(Argument)) {
+        if (!Temporary->isLValue() || Temporary->getExtendingDecl() ||
+            !utilityScalar(Context, Temporary->getType()))
+          return std::nullopt;
+        Argument = Temporary->getSubExpr();
+        continue;
+      }
+      const auto *Cast = dyn_cast<ImplicitCastExpr>(Argument);
+      if (!Cast)
+        break;
       if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
                                          Cast->getType()))
         return std::nullopt;
