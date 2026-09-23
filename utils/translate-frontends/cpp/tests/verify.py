@@ -10005,6 +10005,32 @@ void mixed_scan(int*first,int*last,long long*out) {
         for node in walk(data['functions']):
             assert node.get('op') not in ('mapped_call', 'indirect_call', 'member_pointer'), node
 
+    numeric_mixed_exclusive_scan_object_source = numeric_mixed_inclusive_scan_object_source.replace(
+        "inclusive_scan", "exclusive_scan").replace(
+        "out,Add{},5LL", "out,5LL,Add{}").replace(
+        "out,std::plus<>{},5LL", "out,5LL,std::plus<>{}")
+    for target in sdk_targets:
+        data = check("v2-numeric-mixed-exclusive-scan-object-" + target,
+                     numeric_mixed_exclusive_scan_object_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        assert len(data['sdk_dependencies']) == 360, data
+        method_line = next(i for i, line in enumerate(numeric_mixed_exclusive_scan_object_source.splitlines(), 1)
+                           if '// mixed-scan-method' in line)
+        methods = [f for f in data['functions'] if f['loc']['line'] == method_line]
+        assert len(methods) == 1 and methods[0]['result'] == 'i64', methods
+        assert [p['type'] for p in methods[0]['params'][1:]] == ['i64', 'int'], methods
+        mixed_line = next(i for i, line in enumerate(numeric_mixed_exclusive_scan_object_source.splitlines(), 1)
+                          if 'mixed_scan(int*first' in line)
+        mixed = [f for f in data['functions'] if f['loc']['line'] == mixed_line]
+        assert len(mixed) == 1, mixed
+        calls = [node for node in walk(mixed[0]['body']) if node.get('op') == 'call']
+        expected_line = next(i for i, line in enumerate(numeric_mixed_exclusive_scan_object_source.splitlines(), 1)
+                             if '// mixed-scan-call' in line)
+        assert len(calls) == 1 and calls[0]['loc']['line'] == expected_line, calls
+        assert calls[0]['callee'] == methods[0]['name'], calls
+        for node in walk(data['functions']):
+            assert node.get('op') not in ('mapped_call', 'indirect_call', 'member_pointer'), node
+
     numeric_partial_sum_sdk_object_source = """\
 #include <numeric>
 #include <functional>

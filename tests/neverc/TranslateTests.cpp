@@ -37229,6 +37229,51 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest,
+       CoreV2NumericMixedExclusiveScanObjectsRunAtBothOptimizations) {
+  const auto Source = tmpFile("numeric-mixed-exclusive-scan-objects.cpp");
+  const auto Output = tmpFile("numeric-mixed-exclusive-scan-objects.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+#include <functional>
+int calls, factories;
+struct Add {
+  int local_calls;
+  long operator()(long total, int value) & {
+    ++calls; ++local_calls;
+    return total + value + local_calls;
+  }
+};
+Add make() { ++factories; return Add{0}; }
+int main() {
+  int values[3]{1, 2, 3};
+  long output[3]{};
+  Add caller{0};
+  if (std::exclusive_scan(values, values + 3, output, 5L, caller) !=
+          output + 3 || output[0] != 5 || output[1] != 7 ||
+      output[2] != 11 || calls != 3 || caller.local_calls != 0) return 1;
+  long sdk[3]{};
+  if (std::exclusive_scan(values, values + 3, sdk, 5L, std::plus<>{}) !=
+          sdk + 3 || sdk[0] != 5 || sdk[1] != 6 || sdk[2] != 8 ||
+      calls != 3) return 2;
+  if (std::exclusive_scan(values, values, output, 7L, make()) != output ||
+      factories != 1 || calls != 3) return 3;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("numeric-mixed-exclusive-scan-objects" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2NumericTransformScansRunAtBothOptimizations) {
   const auto Source = tmpFile("numeric-transform-scans.cpp");
   const auto Output = tmpFile("numeric-transform-scans.nc");

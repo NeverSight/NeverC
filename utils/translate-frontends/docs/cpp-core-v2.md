@@ -788,7 +788,9 @@ branch and its delegation to that initialized overload. The first element is
 written without invoking the operation; subsequent elements retain one copied
 object's mutable state.
 The five-argument `exclusive_scan` overload also accepts these binary objects
-on the same input/initial and output types. Its pinned loop computes the next
+on the same input/initial type. Source-owned and transparent SDK objects also
+admit a different non-promoted arithmetic initial type with a checked common
+type and a direct conversion to the writable output. Its pinned loop computes the next
 accumulator before writing the old one, and both SDK `move` sites are checked
 so empty and in-place ranges preserve their sequential behavior.
 

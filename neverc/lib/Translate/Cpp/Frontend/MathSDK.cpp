@@ -13719,14 +13719,21 @@ utilityNumericExclusiveScanObjectCall(const State &S, const SourceManager &SM,
         Context.getTypeSize(Element) <= 64) ||
        Element->isSpecificBuiltinType(BuiltinType::Float) ||
        Element->isSpecificBuiltinType(BuiltinType::Double));
+  const bool InitialArithmetic =
+      !Initial->isEnumeralType() &&
+      ((!Context.isPromotableIntegerType(Initial) && Initial->isIntegerType() &&
+        Context.getTypeSize(Initial) <= 64) ||
+       Initial->isSpecificBuiltinType(BuiltinType::Float) ||
+       Initial->isSpecificBuiltinType(BuiltinType::Double));
   const auto *Record = Object->getAsCXXRecordDecl();
   Record = Record ? Record->getDefinition() : nullptr;
   const bool SDKObject =
       Record &&
       approvedFunctionalObjectRecord(S, SM, Record, Context).has_value();
-  if (!Arithmetic || !utilityAlgorithmScalarPointer(Context, Input) ||
+  if (!Arithmetic || !InitialArithmetic ||
+      !utilityScalarComparisonType(Context, Initial, Element, false) ||
+      !utilityAlgorithmScalarPointer(Context, Input) ||
       !utilityAlgorithmWritableScalarPointer(Context, Output) ||
-      !Context.hasSameUnqualifiedType(Initial, Element) ||
       !utilityScalarDirectConversion(Context, Initial,
                                      Output->getPointeeType()) ||
       !Context.hasSameType(Function->getParamDecl(1)->getType(), Input) ||
