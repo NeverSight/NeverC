@@ -36510,8 +36510,8 @@ TEST_F(TranslateTest, CoreV2NumericSequentialRequiresPinnedScalarForms) {
     const char *Source;
   };
   const Rejection Cases[] = {
-      {"promoted-iota", "#include <numeric>\nint main(){short a[2]{};"
-                        "std::iota(a,a+2,(short)1);return 0;}"},
+      {"long-double-iota", "#include <numeric>\nint main(){long double a[2]{};"
+                           "std::iota(a,a+2,1.0L);return 0;}"},
       {"reference-callback-accumulate",
        "#include <numeric>\nint add(const int&a,const int&b){return a+b;}"
        "int main(){int v[2]{1,2};return std::accumulate(v,v+2,0,add);}"},
@@ -36523,9 +36523,10 @@ TEST_F(TranslateTest, CoreV2NumericSequentialRequiresPinnedScalarForms) {
        "#include <numeric>\nstruct R{int n;operator int()const{return n;}};"
        "R add(int a,int b){return {a+b};}"
        "int main(){int v[2]{1,2};return std::accumulate(v,v+2,0,add);}"},
-      {"callable-object-accumulate",
-       "#include <numeric>\nstruct Add{int operator()(int a,int b)const{"
-       "return a+b;}};int main(){int v[2]{1,2};"
+      {"nontrivial-object-accumulate",
+       "#include <numeric>\nstruct Add{Add()=default;Add(const Add&){};"
+       "int operator()(int a,int b)const{return a+b;}};"
+       "int main(){int v[2]{1,2};"
        "return std::accumulate(v,v+2,0,Add{});}"},
   };
   for (const auto &Case : Cases) {
@@ -38503,10 +38504,11 @@ TEST_F(TranslateTest, CoreV2NumericTransformScansRequirePinnedScalarForms) {
     const char *Source;
   };
   const Rejection Cases[] = {
-      {"promoted-element",
-       "#include <numeric>\nshort add(short a,short b){return a+b;}"
-       "short twice(short a){return a*2;}int main(){short a[2]{1,2},b[2]{};"
-       "return std::transform_inclusive_scan(a,a+2,b,add,twice)==b+2?0:1;}"},
+      {"boolean-element",
+       "#include <numeric>\nbool add(bool a,bool b){return a||b;}"
+       "bool invert(bool a){return !a;}"
+       "int main(){bool a[2]{true,false},b[2]{};"
+       "return std::transform_inclusive_scan(a,a+2,b,add,invert)==b+2?0:1;}"},
       {"callable-object",
        "#include <numeric>\nstruct Add{int operator()(int a,int b)const{"
        "return a+b;}};struct Twice{int operator()(int a)const{return a*2;}};"
@@ -38604,8 +38606,8 @@ TEST_F(TranslateTest, CoreV2NumericCxx17DefaultsRequirePinnedScalarForms) {
     const char *Source;
   };
   const Rejection Cases[] = {
-      {"promoted-reduce", "#include <numeric>\nint main(){short a[2]{1,2};"
-                          "return std::reduce(a,a+2);}"},
+      {"boolean-reduce", "#include <numeric>\nint main(){bool a[2]{true,false};"
+                         "return std::reduce(a,a+2);}"},
   };
   for (const auto &Case : Cases) {
     SCOPED_TRACE(Case.Name);
