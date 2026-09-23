@@ -9974,6 +9974,29 @@ long long mixed(int*first,int*last) {
         for node in walk(data['functions']):
             assert node.get('op') not in ('mapped_call', 'indirect_call', 'member_pointer'), node
 
+    numeric_narrow_inner_product_callback_source = """\
+#include <numeric>
+unsigned char sum(unsigned char a,unsigned char b){return a+b;}
+unsigned char product(unsigned char a,unsigned char b){return a*b+1;}
+unsigned char inner(unsigned char*first,unsigned char*last,unsigned char*other) {
+ return std::inner_product(first,last,other,(unsigned char)5,sum,product);
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-numeric-narrow-inner-product-callback-" + target,
+                     numeric_narrow_inner_product_callback_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        assert len(data['sdk_dependencies']) == 126, data
+        inner_line = next(i for i, line in enumerate(numeric_narrow_inner_product_callback_source.splitlines(), 1)
+                          if 'inner(unsigned char*first' in line)
+        inner = [f for f in data['functions'] if f['loc']['line'] == inner_line]
+        assert len(inner) == 1, inner
+        calls = [node for node in walk(inner[0]['body']) if node.get('op') == 'indirect_call']
+        addresses = [node for node in walk(inner[0]['body']) if node.get('kind') == 'function_address']
+        assert len(calls) == 2 and len(addresses) == 2, (calls, addresses)
+        names = {f['name'] for f in data['functions'] if f['loc']['line'] in (2, 3)}
+        assert {node['name'] for node in addresses} == names, addresses
+
     numeric_narrow_scan_callback_source = """\
 #include <numeric>
 unsigned char sum(unsigned char a,unsigned char b){return a+b;}

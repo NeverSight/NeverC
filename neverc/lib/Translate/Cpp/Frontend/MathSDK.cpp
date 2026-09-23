@@ -16138,22 +16138,22 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (Origin->Path == "__numeric/inner_product.h" && Name == "inner_product" &&
       (Call->getNumArgs() == 4 || Call->getNumArgs() == 6) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      NumericPointerParameter(0, false, Call->getNumArgs() == 4) &&
-      NumericPointerParameter(1, false, Call->getNumArgs() == 4) &&
-      NumericPointerParameter(2, false, Call->getNumArgs() == 4) &&
+      NumericPointerParameter(0, false, true) &&
+      NumericPointerParameter(1, false, true) &&
+      NumericPointerParameter(2, false, true) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(3)->getType()) &&
       Same(Call->getType(), Function->getReturnType()) &&
       ((Call->getNumArgs() == 4 && NumericReductionValueParameter(3, 0, true) &&
         NumericCommonElements(0, 2, true)) ||
-       (Call->getNumArgs() == 6 && NumericValueParameter(3, 0) &&
+       (Call->getNumArgs() == 6 && NumericValueParameter(3, 0, true) &&
         NumericBinaryCallback(
-            4, Function->getParamDecl(0)->getType()->getPointeeType()) &&
+            4, Function->getParamDecl(0)->getType()->getPointeeType(), true) &&
         NumericBinaryTransformCallback(
             5, Function->getParamDecl(0)->getType()->getPointeeType(),
             Function->getParamDecl(0)->getType()->getPointeeType(),
-            Function->getParamDecl(2)->getType()->getPointeeType()))))
+            Function->getParamDecl(2)->getType()->getPointeeType(), true))))
     return UtilityOperation::NumericInnerProduct;
   if (((Origin->Path == "__numeric/partial_sum.h" && Name == "partial_sum") ||
        (Origin->Path == "__numeric/adjacent_difference.h" &&

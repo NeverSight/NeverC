@@ -773,6 +773,9 @@ The callback forms of `inner_product` and two-range `transform_reduce` accept a
 different numeric second-range element when the transform callback accepts the
 respective element types and returns a value directly convertible to the
 accumulator type.
+The six-argument `inner_product` callback form additionally admits matching
+non-boolean narrow input and accumulator types and a narrow second-range
+element, retaining both callback values across the loop.
 The four-argument `accumulate` and `reduce` overloads additionally accept a source-owned,
 standard-layout, trivially copied operation object when its non-template binary
 call operator takes directly convertible by-value arithmetic scalars and returns
