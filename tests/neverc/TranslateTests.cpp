@@ -36761,6 +36761,7 @@ TEST_F(TranslateTest, CoreV2NumericAccumulateObjectRunsAtBothOptimizations) {
   const auto Source = tmpFile("numeric-accumulate-object.cpp");
   const auto Output = tmpFile("numeric-accumulate-object.nc");
   writeFile(Source, R"cpp(#include <numeric>
+#include <functional>
 int calls, factories, first_calls, last_calls;
 int *first(int *p) { ++first_calls; return p; }
 int *last(int *p) { ++last_calls; return p; }
@@ -36783,6 +36784,12 @@ int main() {
       calls != 3 || factories != 1) return 2;
   if (std::accumulate(values, values + 2, 1, make(0)) != 7 ||
       calls != 5 || factories != 2) return 3;
+  if (std::accumulate(values, values + 3, 0, std::plus<int>{}) != 6 ||
+      calls != 5) return 4;
+  if (std::accumulate(values, values + 3, 0, std::plus<>{}) != 6 ||
+      calls != 5) return 5;
+  if (std::accumulate(values, values + 3, 1,
+                      std::multiplies<int>{}) != 6 || calls != 5) return 6;
   return 0;
 }
 )cpp");

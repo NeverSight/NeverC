@@ -762,6 +762,9 @@ an admitted non-promoted arithmetic type. The pinned C++17 loop and selected
 source method are authenticated; one by-value object retains its mutable state
 throughout the reduction without changing the caller's object. An empty range
 returns the initial value without invoking the operation.
+Pinned typed or transparent `<functional>` binary objects, including arithmetic
+operations, use the same loop after authenticating their selected SDK method and
+matching both operands to the accumulator and input element types.
 
 `gcd` and `lcm` accept any non-boolean built-in integer argument combination
 through 64 bits and return libc++'s exact `common_type_t` result. Signed inputs

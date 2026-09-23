@@ -9874,6 +9874,29 @@ int main(){
         check("v2-numeric-accumulate-object-reject-" + name, source,
               code, profile=profile, sdk=sdk)
 
+    numeric_accumulate_sdk_object_source = """\
+#include <numeric>
+#include <functional>
+int main(){
+ int values[3]={1,2,3};
+ int typed=std::accumulate(values,values+3,0,std::plus<int>{});
+ int transparent=std::accumulate(values,values+3,0,std::plus<>{});
+ int product=std::accumulate(values,values+3,1,std::multiplies<int>{});
+ return typed==6&&transparent==6&&product==6?0:1;
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-numeric-accumulate-sdk-object-" + target,
+                     numeric_accumulate_sdk_object_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        assert len(data['sdk_dependencies']) == 360, data
+        nodes = list(walk(data['functions']))
+        assert not [node for node in nodes
+                    if node.get('op') in ('call', 'mapped_call', 'indirect_call', 'member_pointer')], data
+    check("v2-numeric-accumulate-sdk-object-mismatch",
+          '#include <numeric>\n#include <functional>\nint f(int*p){return std::accumulate(p,p+2,0,std::plus<long>{});}\n',
+          'TR0203', profile='cpp-core-v2', sdk=True)
+
     algorithm_header_source = """\
 #include <algorithm>
 extern "C" int algorithm_header() { return 0; }

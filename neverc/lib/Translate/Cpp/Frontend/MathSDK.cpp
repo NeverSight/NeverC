@@ -12823,6 +12823,9 @@ utilityNumericAccumulateObjectCall(const State &S, const SourceManager &SM,
        ElementType->isSpecificBuiltinType(BuiltinType::Double));
   const auto *Record = Object->getAsCXXRecordDecl();
   Record = Record ? Record->getDefinition() : nullptr;
+  const bool SDKObject =
+      Record &&
+      approvedFunctionalObjectRecord(S, SM, Record, Context).has_value();
   if (!Arithmetic || !utilityAlgorithmScalarPointer(Context, Pointer) ||
       !Context.hasSameType(Function->getParamDecl(1)->getType(), Pointer) ||
       !Context.hasSameType(Call->getArg(0)->getType(), Pointer) ||
@@ -12835,7 +12838,7 @@ utilityNumericAccumulateObjectCall(const State &S, const SourceManager &SM,
       Object.hasLocalQualifiers() || Record->isLambda() || Record->isUnion() ||
       !Record->isStandardLayout() || !Record->isTriviallyCopyable() ||
       !Record->hasTrivialCopyConstructor() || !Record->hasTrivialDestructor() ||
-      !S.owns(SM, Record->getLocation()))
+      (!S.owns(SM, Record->getLocation()) && !SDKObject))
     return std::nullopt;
   const auto *Primary = Function->getPrimaryTemplate();
   const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
@@ -12928,28 +12931,46 @@ utilityNumericAccumulateObjectCall(const State &S, const SourceManager &SM,
       !functionalMemberReceiverValueCategory(Method, Invocation->getArg(0),
                                              false) ||
       !utilityScalar(Context, Method->getReturnType()) ||
-      !utilityScalarDirectConversion(Context, Initial,
-                                     Method->getParamDecl(0)->getType()) ||
-      !utilityScalarDirectConversion(Context, Pointer->getPointeeType(),
-                                     Method->getParamDecl(1)->getType()) ||
-      !utilityScalarDirectConversion(Context, Method->getReturnType(),
-                                     Initial) ||
-      (Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
-       Method->getTemplatedKind() != FunctionDecl::TK_MemberSpecialization) ||
-      Method->getPrimaryTemplate() || Method->getDescribedFunctionTemplate() ||
-      !ordinaryOperator(Method) || !callableMethod(Method) ||
-      !S.owns(SM, MethodDefinition->getLocation()))
+      !utilityScalarDirectConversion(Context, Method->getReturnType(), Initial))
     return std::nullopt;
-  for (const auto *D : Method->redecls())
-    if (!S.owns(SM, D->getLocation()))
+  std::optional<FunctionalOperationInfo> SDKOperation;
+  if (SDKObject) {
+    SDKOperation =
+        approvedFunctionalOperationImpl(S, SM, Invocation, Context, false);
+    if (!SDKOperation || SDKOperation->RightType.isNull() ||
+        !Context.hasSameUnqualifiedType(
+            Initial,
+            Method->getParamDecl(0)->getType().getNonReferenceType()) ||
+        !Context.hasSameUnqualifiedType(
+            Pointer->getPointeeType(),
+            Method->getParamDecl(1)->getType().getNonReferenceType()))
       return std::nullopt;
+  } else {
+    if ((Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
+         Method->getTemplatedKind() != FunctionDecl::TK_MemberSpecialization) ||
+        Method->getPrimaryTemplate() ||
+        Method->getDescribedFunctionTemplate() || !ordinaryOperator(Method) ||
+        !callableMethod(Method) || !S.owns(SM, MethodDefinition->getLocation()))
+      return std::nullopt;
+    for (const auto *D : Method->redecls())
+      if (!S.owns(SM, D->getLocation()))
+        return std::nullopt;
+  }
+  const auto LeftType = SDKOperation ? SDKOperation->LeftType
+                                     : Method->getParamDecl(0)->getType();
+  const auto RightType = SDKOperation ? SDKOperation->RightType
+                                      : Method->getParamDecl(1)->getType();
+  if (!utilityScalarDirectConversion(Context, Initial, LeftType) ||
+      !utilityScalarDirectConversion(Context, Pointer->getPointeeType(),
+                                     RightType))
+    return std::nullopt;
   return UtilityAlgorithmPredicateCall{UtilityOperation::NumericAccumulate,
                                        Function,
                                        Invocation,
                                        Method,
                                        Object,
                                        3,
-                                       std::nullopt};
+                                       SDKOperation};
 }
 
 std::optional<UtilityAlgorithmPredicateCall>
