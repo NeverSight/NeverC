@@ -12229,12 +12229,12 @@ utilityAlgorithmTransformObjectCall(const State &S, const SourceManager &SM,
     if (!SDKOperation ||
         (Binary ? SDKOperation->RightType.isNull() : !UnaryOperation) ||
         (Binary &&
-         !Context.hasSameUnqualifiedType(
-             Input->getPointeeType(),
+         !utilityScalarDirectConversion(
+             Context, Input->getPointeeType(),
              Method->getParamDecl(0)->getType().getNonReferenceType())) ||
         (Binary &&
-         !Context.hasSameUnqualifiedType(
-             Second->getPointeeType(),
+         !utilityScalarDirectConversion(
+             Context, Second->getPointeeType(),
              Method->getParamDecl(1)->getType().getNonReferenceType())))
       return std::nullopt;
   } else {

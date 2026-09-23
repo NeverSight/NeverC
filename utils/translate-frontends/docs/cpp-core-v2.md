@@ -1631,8 +1631,10 @@ exact pinned loops are authenticated, retaining one by-value operation object
 and advancing each pointer once after its corresponding read and store. Empty
 and overlapping in-place ranges preserve that order. The binary overload also
 accepts admitted typed or transparent `<functional>` binary objects, including
-arithmetic and comparison operators, after authenticating the selected SDK
-method and matching each input element to its corresponding operand type.
+arithmetic, comparison and logical operators, after authenticating the selected
+SDK method and checking direct scalar conversions from both input elements to
+their operand types. Typed objects convert both inputs before the
+binary operation, including narrowing conversions.
 The unary overload similarly accepts authenticated typed or transparent
 `std::negate`, integral `std::bit_not` and `std::logical_not` objects. Their
 selected operand type accepts a checked direct conversion from the input

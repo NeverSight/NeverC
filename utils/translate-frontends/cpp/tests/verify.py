@@ -14593,10 +14593,16 @@ unsigned char*converted_bit_not(int*first,int*last,unsigned char*out){
 int main(){
  int left[3]={1,2,3};short right[3]={4,5,6};int other[3]={4,5,6};
  long output[3]={};bool flags[3]={};
+ int wide_left[3]={256,257,258};int wide_right[3]={2,258,257};
+ unsigned char quotients[3]={};bool narrowed[3]={};
  std::transform(left,left+3,other,output,std::plus<int>{});
  std::transform(left,left+3,right,output,std::plus<>{});
  std::transform(left,left+3,other,output,std::multiplies<int>{});
  std::transform(left,left+3,right,flags,std::less<>{});
+ std::transform(wide_left,wide_left+3,wide_right,quotients,
+                std::divides<unsigned char>{});
+ std::transform(wide_left,wide_left+3,wide_right,narrowed,
+                std::less<unsigned char>{});
  return output[0]==4&&output[2]==18&&flags[0]&&flags[2]?0:1;
 }
 """
@@ -14604,12 +14610,12 @@ int main(){
         data = check("v2-algorithm-transform-binary-sdk-object-" + target,
                      algorithm_transform_binary_sdk_object_source,
                      profile="cpp-core-v2", target=target, sdk=True)
-        assert len(data['sdk_dependencies']) == 354, data
+        assert len(data['sdk_dependencies']) == 435, data
         nodes = list(walk(data['functions']))
         assert not [node for node in nodes
                     if node.get('op') in ('call', 'mapped_call', 'indirect_call', 'member_pointer')], data
     check("v2-algorithm-transform-binary-sdk-object-mismatch",
-          '#include <algorithm>\n#include <functional>\nlong*f(int*p,long*out){return std::transform(p,p+2,p,out,std::plus<long>{});}\n',
+          '#include <algorithm>\n#include <functional>\nlong*f(int*p,long*out){return std::transform(p,p+2,p,out,std::plus<long double>{});}\n',
           'TR0203', profile='cpp-core-v2', sdk=True)
 
     algorithm_predicate_queries_source = """\

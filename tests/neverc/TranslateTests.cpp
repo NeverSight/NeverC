@@ -42900,6 +42900,30 @@ int main() {
   bool flags[3]{};
   if (std::transform(left, left + 3, right, flags, std::less<>{}) !=
           flags + 3 || !flags[0] || !flags[1] || !flags[2]) return 6;
+  int convertedLeft[3]{256, 257, 258};
+  int convertedRight[3]{2, 258, 257};
+  unsigned char quotients[3]{};
+  if (std::transform(convertedLeft, convertedLeft + 3, convertedRight,
+                     quotients, std::divides<unsigned char>{}) !=
+          quotients + 3 || quotients[0] != 0 || quotients[1] != 0 ||
+      quotients[2] != 2)
+    return 7;
+  bool convertedFlags[3]{};
+  if (std::transform(convertedLeft, convertedLeft + 3, convertedRight,
+                     convertedFlags, std::less<unsigned char>{}) !=
+          convertedFlags + 3 || !convertedFlags[0] || !convertedFlags[1] ||
+      convertedFlags[2])
+    return 8;
+  int small[3]{1, 2, 3};
+  if (std::transform(small, small + 3, convertedLeft, convertedFlags,
+                     std::greater<unsigned char>{}) != convertedFlags + 3 ||
+      !convertedFlags[0] || !convertedFlags[1] || !convertedFlags[2])
+    return 9;
+  if (std::transform(convertedLeft, convertedLeft + 3, convertedRight,
+                     convertedFlags, std::logical_and<unsigned char>{}) !=
+          convertedFlags + 3 || convertedFlags[0] || !convertedFlags[1] ||
+      !convertedFlags[2])
+    return 10;
   return 0;
 }
 )cpp");

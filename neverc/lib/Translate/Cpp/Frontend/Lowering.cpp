@@ -749,9 +749,20 @@ class FunctionLowering {
   Expression emitBinaryCallable(const CapturedAlgorithmPredicate &Operation,
                                 Expression Left, Expression Right,
                                 SourceLocation L) {
-    if (Operation.SDKOperation)
-      return functionalOperationValues(L, std::move(Left), std::move(Right),
-                                       *Operation.SDKOperation);
+    if (Operation.SDKOperation) {
+      if (!Operation.Method)
+        reject(L, "algorithm operation",
+               "The checked SDK operation method is required.");
+      const auto LeftType =
+          type(Operation.Method->getParamDecl(0)->getType().getNonReferenceType(),
+               L);
+      const auto RightType =
+          type(Operation.Method->getParamDecl(1)->getType().getNonReferenceType(),
+               L);
+      return functionalOperationValues(
+          L, cast(std::move(Left), LeftType, L),
+          cast(std::move(Right), RightType, L), *Operation.SDKOperation);
+    }
     json::Array Arguments;
     if (!Operation.Method) {
       Arguments.push_back(std::move(Left));
