@@ -766,12 +766,13 @@ returns the initial value without invoking the operation.
 Pinned typed or transparent `<functional>` binary objects, including arithmetic
 operations, use the same loop after authenticating their selected SDK method and
 matching both operands to the accumulator and input element types.
-The four-argument `partial_sum` overload also accepts these SDK binary objects
-and source-owned trivial binary objects for a non-promoted arithmetic input
-element and a directly convertible writable output element. Its pinned
-first-element and subsequent-loop structure is authenticated, including the
-empty-range return, in-place output behavior, and mutable state of the copied
-source operation.
+The four-argument `partial_sum` and `adjacent_difference` overloads also
+accept these SDK binary objects and source-owned trivial binary objects for a
+non-promoted arithmetic input element and a directly convertible writable
+output element. Their pinned first-element and subsequent-loop structures are
+authenticated, including the empty-range return, in-place output behavior,
+and mutable state of the copied source operation. `adjacent_difference`
+checks the source's move of each current element into the previous value.
 
 `gcd` and `lcm` accept any non-boolean built-in integer argument combination
 through 64 bits and return libc++'s exact `common_type_t` result. Signed inputs

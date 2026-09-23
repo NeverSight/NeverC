@@ -13001,18 +13001,20 @@ utilityNumericReductionObjectCall(const State &S, const SourceManager &SM,
       SDKOperation};
 }
 
-// The pinned C++17 partial_sum overload retains one binary operation across
-// the range. Prove the exact scalar loop and selected source or SDK method.
+// The pinned C++17 prefix algorithms retain one binary operation across the
+// range. Prove the exact scalar loop and selected source or SDK method.
 static std::optional<UtilityAlgorithmPredicateCall>
-utilityNumericPartialSumObjectCall(const State &S, const SourceManager &SM,
-                                   const CallExpr *Call,
-                                   const ASTContext &Context) {
+utilityNumericPrefixObjectCall(const State &S, const SourceManager &SM,
+                               const CallExpr *Call,
+                               const ASTContext &Context) {
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  const bool Adjacent =
+      Function && Function->getName() == "adjacent_difference";
   if (!S.coreV2() || !Call || !Function ||
-      Function->getName() != "partial_sum" || Call->getNumArgs() != 4 ||
-      Function->getNumParams() != 4 || !Call->isPRValue() ||
-      Call->isTypeDependent() || Call->isValueDependent() ||
-      Call->isInstantiationDependent())
+      (Function->getName() != "partial_sum" && !Adjacent) ||
+      Call->getNumArgs() != 4 || Function->getNumParams() != 4 ||
+      !Call->isPRValue() || Call->isTypeDependent() ||
+      Call->isValueDependent() || Call->isInstantiationDependent())
     return std::nullopt;
   const auto Input = Function->getParamDecl(0)->getType();
   const auto Output = Function->getParamDecl(2)->getType();
@@ -13056,7 +13058,8 @@ utilityNumericPartialSumObjectCall(const State &S, const SourceManager &SM,
   auto Origin = [&](const Decl *D) {
     return approvedStandardSDKDeclaration(S, SM, D) &&
            cstddefOrigin(S, SM, D->getLocation(), "libcxx",
-                         "__numeric/partial_sum.h");
+                         Adjacent ? "__numeric/adjacent_difference.h"
+                                  : "__numeric/partial_sum.h");
   };
   if (!Primary || !Pattern || !Definition || !PatternDefinition ||
       Function->isVariadic() ||
@@ -13155,19 +13158,62 @@ utilityNumericPartialSumObjectCall(const State &S, const SourceManager &SM,
       Loop->getConditionVariable() ||
       !Steps(dyn_cast_or_null<Expr>(Loop->getInit())) ||
       !Condition(Loop->getCond()) || !Steps(Loop->getInc()) || !LoopBody ||
-      LoopBody->size() != 2)
+      LoopBody->size() != (Adjacent ? 3u : 2u))
     return std::nullopt;
   auto LoopStatement = LoopBody->body_begin();
-  const auto *Combine = dyn_cast<BinaryOperator>(*LoopStatement++);
-  const auto *Store = dyn_cast<BinaryOperator>(*LoopStatement);
-  if (!Combine || Combine->getOpcode() != BO_Assign ||
-      !Reference(Combine->getLHS(), Variable) || !Store ||
-      Store->getOpcode() != BO_Assign ||
+  const auto *CurrentDeclaration =
+      Adjacent ? dyn_cast<DeclStmt>(*LoopStatement++) : nullptr;
+  const auto *Current =
+      CurrentDeclaration && CurrentDeclaration->isSingleDecl()
+          ? dyn_cast<VarDecl>(CurrentDeclaration->getSingleDecl())
+          : nullptr;
+  const auto *Combine =
+      Adjacent ? nullptr : dyn_cast<BinaryOperator>(*LoopStatement++);
+  const auto *Store = dyn_cast<BinaryOperator>(*LoopStatement++);
+  const auto *Transfer =
+      Adjacent ? dyn_cast<BinaryOperator>(*LoopStatement) : nullptr;
+  if ((Adjacent &&
+       (!Current || Current->isImplicit() ||
+        Current->getDeclContext() != Definition ||
+        !Context.hasSameUnqualifiedType(Current->getType(), Element) ||
+        !Current->getInit() ||
+        !Dereference(Current->getInit(), Definition->getParamDecl(0),
+                     Input->getPointeeType()))) ||
+      (!Adjacent && (!Combine || Combine->getOpcode() != BO_Assign ||
+                     !Reference(Combine->getLHS(), Variable))) ||
+      !Store || Store->getOpcode() != BO_Assign ||
       !Dereference(Store->getLHS(), Definition->getParamDecl(2),
                    Output->getPointeeType()) ||
-      !ScalarReference(Store->getRHS(), Variable))
+      (!Adjacent && !ScalarReference(Store->getRHS(), Variable)))
     return std::nullopt;
-  const Expr *Result = Combine->getRHS();
+  if (Adjacent) {
+    const auto *Move =
+        Transfer ? dyn_cast<CallExpr>(
+                       functionalInvokeStrippedExpression(Transfer->getRHS()))
+                 : nullptr;
+    const auto *MoveFunction = Move ? Move->getDirectCallee() : nullptr;
+    const auto *MoveArguments =
+        MoveFunction ? MoveFunction->getTemplateSpecializationArgs() : nullptr;
+    const auto ReferenceType = Context.getLValueReferenceType(Element);
+    if (!Transfer || Transfer->getOpcode() != BO_Assign ||
+        !Reference(Transfer->getLHS(), Variable) || !Move ||
+        Move->getNumArgs() != 1 || !Move->isXValue() ||
+        !utilitySwapSDKFunction(S, SM, MoveFunction, "move",
+                                "__utility/move.h") ||
+        MoveFunction->getNumParams() != 1 || !MoveArguments ||
+        MoveArguments->size() != 1 ||
+        MoveArguments->get(0).getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(MoveArguments->get(0).getAsType(),
+                             ReferenceType) ||
+        !Context.hasSameType(MoveFunction->getParamDecl(0)->getType(),
+                             ReferenceType) ||
+        !Context.hasSameType(MoveFunction->getReturnType(),
+                             Context.getRValueReferenceType(Element)) ||
+        !Context.hasSameType(Move->getType(), Element) ||
+        !Reference(Move->getArg(0), Current))
+      return std::nullopt;
+  }
+  const Expr *Result = Adjacent ? Store->getRHS() : Combine->getRHS();
   while (const auto *Cast = dyn_cast<ImplicitCastExpr>(Result)) {
     if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
                                        Cast->getType()))
@@ -13178,9 +13224,11 @@ utilityNumericPartialSumObjectCall(const State &S, const SourceManager &SM,
   if (!Invocation || Invocation->getOperator() != OO_Call ||
       Invocation->getNumArgs() != 3 || !Invocation->isPRValue() ||
       !Reference(Invocation->getArg(0), Definition->getParamDecl(3)) ||
-      !Reference(Invocation->getArg(1), Variable) ||
-      !Dereference(Invocation->getArg(2), Definition->getParamDecl(0),
-                   Input->getPointeeType()))
+      !Reference(Invocation->getArg(1), Adjacent ? Current : Variable) ||
+      (Adjacent
+           ? !Reference(Invocation->getArg(2), Variable)
+           : !Dereference(Invocation->getArg(2), Definition->getParamDecl(0),
+                          Input->getPointeeType())))
     return std::nullopt;
   const auto *Method =
       dyn_cast_or_null<CXXMethodDecl>(Invocation->getDirectCallee());
@@ -13222,13 +13270,15 @@ utilityNumericPartialSumObjectCall(const State &S, const SourceManager &SM,
   if (!utilityScalarDirectConversion(Context, Element, LeftType) ||
       !utilityScalarDirectConversion(Context, Element, RightType))
     return std::nullopt;
-  return UtilityAlgorithmPredicateCall{UtilityOperation::NumericPartialSum,
-                                       Function,
-                                       Invocation,
-                                       Method,
-                                       Object,
-                                       3,
-                                       SDKOperation};
+  return UtilityAlgorithmPredicateCall{
+      Adjacent ? UtilityOperation::NumericAdjacentDifference
+               : UtilityOperation::NumericPartialSum,
+      Function,
+      Invocation,
+      Method,
+      Object,
+      3,
+      SDKOperation};
 }
 
 std::optional<UtilityAlgorithmPredicateCall>
@@ -13252,8 +13302,9 @@ approvedUtilityAlgorithmPredicateCall(const State &S, const SourceManager &SM,
     return utilityAlgorithmGenerateObjectCall(S, SM, Call, Context);
   if (Name == "accumulate" || Name == "reduce")
     return utilityNumericReductionObjectCall(S, SM, Call, Context);
-  if (Name == "partial_sum" && Call->getNumArgs() == 4)
-    return utilityNumericPartialSumObjectCall(S, SM, Call, Context);
+  if ((Name == "partial_sum" || Name == "adjacent_difference") &&
+      Call->getNumArgs() == 4)
+    return utilityNumericPrefixObjectCall(S, SM, Call, Context);
   const bool Find = Name == "find_if", FindNot = Name == "find_if_not";
   const bool None = Name == "none_of", All = Name == "all_of";
   const bool Any = Name == "any_of", Count = Name == "count_if";

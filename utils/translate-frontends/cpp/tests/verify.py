@@ -10004,6 +10004,71 @@ int main(){
           '#include <numeric>\nstruct F{F(){}F(const F&){}int operator()(int a,int b){return a+b;}};int f(int*p,int*q){return int(std::partial_sum(p,p+2,q,F{})-q);}\n',
           'TR0203', profile='cpp-core-v2', sdk=True)
 
+    numeric_adjacent_difference_sdk_object_source = """\
+#include <numeric>
+#include <functional>
+int main(){
+ int values[4]={1,3,6,10};long output[4]={};
+ long*end=std::adjacent_difference(values,values+4,output,std::minus<int>{});
+ int*inside=std::adjacent_difference(values,values+4,values,std::minus<>{});
+ return end==output+4&&inside==values+4&&
+        output[0]==1&&output[1]==2&&output[2]==3&&output[3]==4&&
+        values[0]==1&&values[1]==2&&values[2]==3&&values[3]==4?0:1;
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-numeric-adjacent-difference-sdk-object-" + target,
+                     numeric_adjacent_difference_sdk_object_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        assert len(data['sdk_dependencies']) == 360, data
+        nodes = list(walk(data['functions']))
+        assert not [node for node in nodes
+                    if node.get('op') in ('call', 'mapped_call', 'indirect_call', 'member_pointer')], data
+    check("v2-numeric-adjacent-difference-sdk-object-mismatch",
+          '#include <numeric>\n#include <functional>\nint f(int*p,int*q){return int(std::adjacent_difference(p,p+2,q,std::minus<long>{})-q);}\n',
+          'TR0203', profile='cpp-core-v2', sdk=True)
+
+    numeric_adjacent_difference_source_object_source = """\
+#include <numeric>
+int calls,factories;
+struct Difference{
+ int local_calls;
+ int operator()(int current,int previous)&{ // template-binary-method: adjacent_difference
+  ++calls;++local_calls;return current-previous+local_calls;
+ }
+ int operator()(int,int)const&{return -100;}
+};
+Difference make(){++factories;return Difference{0};}
+int main(){
+ int values[4]={1,3,6,10};long output[4]={};Difference caller{0};
+ long*end=std::adjacent_difference(values,values+4,output,caller); // template-binary-call: adjacent_difference
+ if(end!=output+4||output[0]!=1||output[1]!=3||output[2]!=5||output[3]!=7||calls!=3||caller.local_calls)return 1;
+ if(std::adjacent_difference(values,values,output,make())!=output||calls!=3||factories!=1)return 2; // template-binary-call: adjacent_difference
+ return 0;
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-numeric-adjacent-difference-source-object-" + target,
+                     numeric_adjacent_difference_source_object_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        definitions = {f['name']: f for f in data['functions']}
+        method_line = next(i for i, line in enumerate(numeric_adjacent_difference_source_object_source.splitlines(), 1)
+                           if '// template-binary-method:' in line)
+        methods = [f for f in data['functions'] if f['loc']['line'] == method_line]
+        assert len(methods) == 1 and methods[0]['result'] == 'int', methods
+        calls = [node for node in walk(definitions['main']['body'])
+                 if node.get('op') == 'call' and node.get('callee') == methods[0]['name']]
+        expected_lines = [i for i, line in enumerate(numeric_adjacent_difference_source_object_source.splitlines(), 1)
+                          if '// template-binary-call:' in line]
+        assert len(calls) == 2 and [call['loc']['line'] for call in calls] == expected_lines, calls
+        for node in walk(data['functions']):
+            assert node.get('op') not in ('mapped_call', 'indirect_call', 'member_pointer'), node
+            if node.get('op') == 'call':
+                assert node['callee'] in definitions, node
+    check("v2-numeric-adjacent-difference-source-object-nontrivial-copy",
+          '#include <numeric>\nstruct F{F(){}F(const F&){}int operator()(int a,int b){return a-b;}};int f(int*p,int*q){return int(std::adjacent_difference(p,p+2,q,F{})-q);}\n',
+          'TR0203', profile='cpp-core-v2', sdk=True)
+
     algorithm_header_source = """\
 #include <algorithm>
 extern "C" int algorithm_header() { return 0; }

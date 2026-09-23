@@ -3178,7 +3178,8 @@ class FunctionLowering {
       std::optional<QualType> CallbackType;
       std::optional<CapturedAlgorithmPredicate> OperationObject;
       if (Call->getNumArgs() >= 4) {
-        if (Operation == UtilityOperation::NumericPartialSum) {
+        if (Operation == UtilityOperation::NumericPartialSum ||
+            Operation == UtilityOperation::NumericAdjacentDifference) {
           auto Captured = captureUnaryPredicate(Call, Operation, 3);
           if (Captured.Method)
             OperationObject = std::move(Captured);

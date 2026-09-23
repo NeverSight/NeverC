@@ -36855,7 +36855,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2NumericPartialSumSDKObjectRunsAtBothOptimizations) {
+TEST_F(TranslateTest, CoreV2NumericPartialSumObjectsRunAtBothOptimizations) {
   const auto Source = tmpFile("numeric-partial-sum-sdk-object.cpp");
   const auto Output = tmpFile("numeric-partial-sum-sdk-object.nc");
   writeFile(Source, R"cpp(#include <numeric>
@@ -36906,6 +36906,60 @@ int main() {
     SCOPED_TRACE(Optimization);
     const auto Executable =
         tmpFile("numeric-partial-sum-sdk-object" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest,
+       CoreV2NumericAdjacentDifferenceObjectsRunAtBothOptimizations) {
+  const auto Source = tmpFile("numeric-adjacent-difference-objects.cpp");
+  const auto Output = tmpFile("numeric-adjacent-difference-objects.nc");
+  writeFile(Source, R"cpp(#include <numeric>
+#include <functional>
+int calls, factories, first_calls, last_calls, output_calls;
+int *first(int *p) { ++first_calls; return p; }
+int *last(int *p) { ++last_calls; return p; }
+long *output(long *p) { ++output_calls; return p; }
+struct Difference {
+  int local_calls;
+  int operator()(int current, int previous) & {
+    ++calls; ++local_calls; return current - previous + local_calls;
+  }
+  int operator()(int, int) const & { return -100; }
+};
+Difference make() { ++factories; return Difference{0}; }
+int main() {
+  int values[4]{1, 3, 6, 10};
+  long differences[4]{};
+  long *end = std::adjacent_difference(first(values), last(values + 4),
+                                       output(differences), std::minus<int>{});
+  if (end != differences + 4 || differences[0] != 1 ||
+      differences[1] != 2 || differences[2] != 3 || differences[3] != 4 ||
+      first_calls != 1 || last_calls != 1 || output_calls != 1) return 1;
+  long custom[4]{};
+  Difference caller{0};
+  if (std::adjacent_difference(values, values + 4, custom, caller) !=
+          custom + 4 || custom[0] != 1 || custom[1] != 3 ||
+      custom[2] != 5 || custom[3] != 7 || calls != 3 ||
+      caller.local_calls != 0) return 2;
+  if (std::adjacent_difference(values, values, custom, make()) != custom ||
+      calls != 3 || factories != 1) return 3;
+  if (std::adjacent_difference(values, values + 4, values, std::minus<>{}) !=
+          values + 4 || values[0] != 1 || values[1] != 2 ||
+      values[2] != 3 || values[3] != 4) return 4;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("numeric-adjacent-difference-objects" + Optimization);
     auto Compile = compileGenerated(Output, Executable, Optimization);
     ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
     auto Run = exec(Executable.string(), {});
