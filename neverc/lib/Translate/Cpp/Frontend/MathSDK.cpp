@@ -15998,8 +15998,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                false)
         .has_value();
   };
-  auto NumericValueParameter = [&](unsigned ValueIndex,
-                                   unsigned IteratorIndex) {
+  auto NumericValueParameter = [&](unsigned ValueIndex, unsigned IteratorIndex,
+                                   bool IncludeNarrow = false) {
     if (ValueIndex >= Function->getNumParams() ||
         ValueIndex >= Call->getNumArgs() ||
         IteratorIndex >= Function->getNumParams())
@@ -16007,8 +16007,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     auto Iterator = Function->getParamDecl(IteratorIndex)->getType();
     auto Value = Function->getParamDecl(ValueIndex)->getType();
     return utilityAlgorithmScalarPointer(Context, Iterator) &&
-           NumericArithmetic(Iterator->getPointeeType()) &&
-           NumericArithmetic(Value) &&
+           NumericArithmetic(Iterator->getPointeeType(), IncludeNarrow) &&
+           NumericArithmetic(Value, IncludeNarrow) &&
            Same(Call->getArg(ValueIndex)->getType(), Value) &&
            Context.hasSameUnqualifiedType(Value, Iterator->getPointeeType());
   };
@@ -16066,12 +16066,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Context.getTypeSize(Parameter) <= 64 &&
            Same(Call->getArg(Index)->getType(), Parameter);
   };
-  auto NumericCallback = [&](unsigned Index, QualType Element, unsigned Arity) {
+  auto NumericCallback = [&](unsigned Index, QualType Element, unsigned Arity,
+                             bool IncludeNarrow = false) {
     const auto *Prototype = AlgorithmCallbackPrototype(Index);
     if (!Prototype || Prototype->getNumParams() != Arity)
       return false;
     Element = Element.getUnqualifiedType();
-    if (!NumericArithmetic(Element) ||
+    if (!NumericArithmetic(Element, IncludeNarrow) ||
         !utilityScalarDirectConversion(Context, Prototype->getReturnType(),
                                        Element))
       return false;
@@ -16084,8 +16085,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   auto NumericUnaryCallback = [&](unsigned Index, QualType Element) {
     return NumericCallback(Index, Element, 1);
   };
-  auto NumericBinaryCallback = [&](unsigned Index, QualType Element) {
-    return NumericCallback(Index, Element, 2);
+  auto NumericBinaryCallback = [&](unsigned Index, QualType Element,
+                                   bool IncludeNarrow = false) {
+    return NumericCallback(Index, Element, 2, IncludeNarrow);
   };
   auto NumericBinaryTransformCallback = [&](unsigned Index, QualType Result,
                                             QualType Left, QualType Right) {
@@ -16119,17 +16121,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (Origin->Path == "__numeric/accumulate.h" && Name == "accumulate" &&
       (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      NumericPointerParameter(0, false, Call->getNumArgs() == 3) &&
-      NumericPointerParameter(1, false, Call->getNumArgs() == 3) &&
+      NumericPointerParameter(0, false, true) &&
+      NumericPointerParameter(1, false, true) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       (Call->getNumArgs() == 3 ? NumericReductionValueParameter(2, 0, true)
-                               : NumericValueParameter(2, 0)) &&
+                               : NumericValueParameter(2, 0, true)) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType()) &&
       (Call->getNumArgs() == 3 ||
        NumericBinaryCallback(
-           3, Function->getParamDecl(0)->getType()->getPointeeType())))
+           3, Function->getParamDecl(0)->getType()->getPointeeType(), true)))
     return UtilityOperation::NumericAccumulate;
   if (Origin->Path == "__numeric/inner_product.h" && Name == "inner_product" &&
       (Call->getNumArgs() == 4 || Call->getNumArgs() == 6) &&
@@ -16173,8 +16175,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       (Call->getNumArgs() == 2 || Call->getNumArgs() == 3 ||
        Call->getNumArgs() == 4) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      NumericPointerParameter(0, false, Call->getNumArgs() != 4) &&
-      NumericPointerParameter(1, false, Call->getNumArgs() != 4) &&
+      NumericPointerParameter(0, false, true) &&
+      NumericPointerParameter(1, false, true) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
@@ -16186,11 +16188,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return UtilityOperation::NumericReduce;
     if (Call->getNumArgs() >= 3 &&
         (Call->getNumArgs() == 3 ? NumericReductionValueParameter(2, 0, true)
-                                 : NumericValueParameter(2, 0)) &&
+                                 : NumericValueParameter(2, 0, true)) &&
         Same(Function->getReturnType(), Function->getParamDecl(2)->getType())) {
       if (Call->getNumArgs() == 3 ||
           NumericBinaryCallback(
-              3, Function->getParamDecl(0)->getType()->getPointeeType()))
+              3, Function->getParamDecl(0)->getType()->getPointeeType(), true))
         return UtilityOperation::NumericReduce;
     }
   }

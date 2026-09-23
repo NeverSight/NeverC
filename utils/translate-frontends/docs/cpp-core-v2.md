@@ -760,6 +760,9 @@ return an input-range element, and each parameter accepts the checked direct
 scalar conversion from its corresponding element. Callback values are captured
 once, empty ranges make no callback calls, and the sequential scan forms retain
 their in-place behavior.
+The four-argument `accumulate` and `reduce` function-pointer callbacks also
+admit matching non-boolean narrow integer inputs and accumulators; their
+directly convertible scalar results are converted back after each call.
 The callback forms of `inner_product` and two-range `transform_reduce` accept a
 different numeric second-range element when the transform callback accepts the
 respective element types and returns a value directly convertible to the
