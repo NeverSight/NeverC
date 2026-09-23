@@ -41015,6 +41015,7 @@ TEST_F(TranslateTest, CoreV2AlgorithmForEachObjectRunsAtBothOptimizations) {
   const auto Source = tmpFile("algorithm-for-each-object.cpp");
   const auto Output = tmpFile("algorithm-for-each-object.nc");
   writeFile(Source, R"cpp(#include <algorithm>
+#include <functional>
 int calls, factories, first_calls, last_calls;
 int *first(int *p) { ++first_calls; return p; }
 int *last(int *p) { ++last_calls; return p; }
@@ -41048,6 +41049,12 @@ int main() {
   Count counted_result = std::for_each(values, values + 3, counted);
   if (counted_result.sum != 6 || counted.sum != 0 || calls != 8)
     return 4;
+  auto logical = std::for_each(values, values + 3, std::logical_not<int>{});
+  (void)logical;
+  if (calls != 8) return 5;
+  auto transparent = std::for_each(values, values + 3, std::logical_not<>{});
+  (void)transparent;
+  if (calls != 8) return 6;
   return 0;
 }
 )cpp");

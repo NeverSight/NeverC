@@ -12941,6 +12941,29 @@ int main(){
         check("v2-algorithm-for-each-object-reject-" + name, source, code,
               profile=profile, sdk=sdk)
 
+    algorithm_for_each_sdk_object_source = """\
+#include <algorithm>
+#include <functional>
+int main(){
+ int values[3]={1,0,-2};
+ auto typed=std::for_each(values,values+3,std::logical_not<int>{});
+ auto transparent=std::for_each(values,values+3,std::logical_not<>{});
+ (void)typed;(void)transparent;
+ return 0;
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-algorithm-for-each-sdk-object-" + target,
+                     algorithm_for_each_sdk_object_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        assert len(data['sdk_dependencies']) == 354, data
+        nodes = list(walk(data['functions']))
+        assert not [node for node in nodes
+                    if node.get('op') in ('call', 'mapped_call', 'indirect_call', 'member_pointer')], data
+    check("v2-algorithm-for-each-sdk-object-mismatch",
+          '#include <algorithm>\n#include <functional>\nint f(int*p){auto x=std::for_each(p,p+2,std::logical_not<long>{});return 0;}\n',
+          'TR0203', profile='cpp-core-v2', sdk=True)
+
     algorithm_generate_object_source = """\
 #include <algorithm>
 int calls, factories, first_calls, last_calls;

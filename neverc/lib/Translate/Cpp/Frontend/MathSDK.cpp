@@ -12395,6 +12395,9 @@ utilityAlgorithmForEachObjectCall(const State &S, const SourceManager &SM,
   const auto Object = Function->getParamDecl(2)->getType();
   const auto *Record = Object->getAsCXXRecordDecl();
   Record = Record ? Record->getDefinition() : nullptr;
+  const bool SDKObject =
+      Record &&
+      approvedFunctionalObjectRecord(S, SM, Record, Context).has_value();
   if (!utilityAlgorithmScalarPointer(Context, Pointer) ||
       !Context.hasSameType(Function->getParamDecl(1)->getType(), Pointer) ||
       !Context.hasSameType(Call->getArg(0)->getType(), Pointer) ||
@@ -12405,7 +12408,7 @@ utilityAlgorithmForEachObjectCall(const State &S, const SourceManager &SM,
       Object.hasLocalQualifiers() || Record->isLambda() || Record->isUnion() ||
       !Record->isStandardLayout() || !Record->isTriviallyCopyable() ||
       !Record->hasTrivialCopyConstructor() || !Record->hasTrivialDestructor() ||
-      !S.owns(SM, Record->getLocation()))
+      (!S.owns(SM, Record->getLocation()) && !SDKObject))
     return std::nullopt;
   const auto *Primary = Function->getPrimaryTemplate();
   const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
@@ -12492,25 +12495,41 @@ utilityAlgorithmForEachObjectCall(const State &S, const SourceManager &SM,
       !functionalMemberReceiverValueCategory(Method, Invocation->getArg(0),
                                              false) ||
       (!Method->getReturnType()->isVoidType() &&
-       !utilityScalar(Context, Method->getReturnType())) ||
-      !utilityScalarDirectConversion(Context, Pointer->getPointeeType(),
-                                     Method->getParamDecl(0)->getType()) ||
-      (Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
-       Method->getTemplatedKind() != FunctionDecl::TK_MemberSpecialization) ||
-      Method->getPrimaryTemplate() || Method->getDescribedFunctionTemplate() ||
-      !ordinaryOperator(Method) || !callableMethod(Method) ||
-      !S.owns(SM, MethodDefinition->getLocation()))
+       !utilityScalar(Context, Method->getReturnType())))
     return std::nullopt;
-  for (const auto *D : Method->redecls())
-    if (!S.owns(SM, D->getLocation()))
+  std::optional<FunctionalOperationInfo> SDKOperation;
+  if (SDKObject) {
+    SDKOperation =
+        approvedFunctionalOperationImpl(S, SM, Invocation, Context, false);
+    if (!SDKOperation ||
+        SDKOperation->Operation != FunctionalOperation::LogicalNot ||
+        !Context.hasSameUnqualifiedType(
+            Pointer->getPointeeType(),
+            Method->getParamDecl(0)->getType().getNonReferenceType()))
       return std::nullopt;
+  } else {
+    if ((Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
+         Method->getTemplatedKind() != FunctionDecl::TK_MemberSpecialization) ||
+        Method->getPrimaryTemplate() ||
+        Method->getDescribedFunctionTemplate() || !ordinaryOperator(Method) ||
+        !callableMethod(Method) || !S.owns(SM, MethodDefinition->getLocation()))
+      return std::nullopt;
+    for (const auto *D : Method->redecls())
+      if (!S.owns(SM, D->getLocation()))
+        return std::nullopt;
+  }
+  const auto ArgumentType = SDKOperation ? SDKOperation->LeftType
+                                         : Method->getParamDecl(0)->getType();
+  if (!utilityScalarDirectConversion(Context, Pointer->getPointeeType(),
+                                     ArgumentType))
+    return std::nullopt;
   return UtilityAlgorithmPredicateCall{UtilityOperation::AlgorithmForEach,
                                        Function,
                                        Invocation,
                                        Method,
                                        Object,
                                        2,
-                                       std::nullopt};
+                                       SDKOperation};
 }
 
 // Retain a source generator only after proving the selected libc++ loop and
