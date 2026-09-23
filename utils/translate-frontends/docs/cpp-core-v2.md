@@ -793,7 +793,10 @@ object's mutable state.
 The five-argument `exclusive_scan` overload also accepts these binary objects
 on the same input/initial type. Source-owned and transparent SDK objects also
 admit a different non-promoted arithmetic initial type with a checked common
-type and a direct conversion to the writable output. Its pinned loop computes the next
+type and a direct conversion to the writable output. Typed SDK objects also
+admit that pair when the input converts directly to their parameter type;
+both checked scalar temporaries bind to the selected const-reference method.
+Its pinned loop computes the next
 accumulator before writing the old one, and both SDK `move` sites are checked
 so empty and in-place ranges preserve their sequential behavior.
 

@@ -10046,6 +10046,21 @@ long long* scan(int*first,int*last,long long*out) {
         for node in walk(data['functions']):
             assert node.get('op') not in ('mapped_call', 'indirect_call', 'member_pointer'), node
 
+    numeric_typed_mixed_exclusive_scan_source = """\
+#include <numeric>
+#include <functional>
+long long* scan(int*first,int*last,long long*out) {
+ return std::exclusive_scan(first,last,out,5LL,std::plus<long long>{});
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-numeric-typed-mixed-exclusive-scan-" + target,
+                     numeric_typed_mixed_exclusive_scan_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        assert len(data['sdk_dependencies']) == 360, data
+        assert not [node for node in walk(data['functions'])
+                    if node.get('op') in ('call', 'mapped_call', 'indirect_call', 'member_pointer')], data
+
     numeric_partial_sum_sdk_object_source = """\
 #include <numeric>
 #include <functional>

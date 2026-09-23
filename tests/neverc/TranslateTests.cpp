@@ -37259,6 +37259,10 @@ int main() {
   if (std::exclusive_scan(values, values + 3, sdk, 5L, std::plus<>{}) !=
           sdk + 3 || sdk[0] != 5 || sdk[1] != 6 || sdk[2] != 8 ||
       calls != 3) return 2;
+  long typed[3]{};
+  if (std::exclusive_scan(values, values + 3, typed, 5L,
+                          std::plus<long>{}) != typed + 3 ||
+      typed[0] != 5 || typed[1] != 6 || typed[2] != 8 || calls != 3) return 4;
   if (std::exclusive_scan(values, values, output, 7L, make()) != output ||
       factories != 1 || calls != 3) return 3;
   return 0;

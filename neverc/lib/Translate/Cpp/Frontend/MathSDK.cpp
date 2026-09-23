@@ -13814,7 +13814,8 @@ utilityNumericExclusiveScanObjectCall(const State &S, const SourceManager &SM,
   auto Dereference = [&](const Expr *Expression, const ValueDecl *Pointer,
                          QualType Expected) {
     const auto *Deref =
-        dyn_cast_or_null<UnaryOperator>(Expression->IgnoreParenImpCasts());
+        Expression ? dyn_cast<UnaryOperator>(Expression->IgnoreParenImpCasts())
+                   : nullptr;
     return Deref && Deref->getOpcode() == UO_Deref && Deref->isLValue() &&
            Context.hasSameType(Deref->getType(), Expected) &&
            Reference(Deref->getSubExpr(), Pointer);
@@ -13846,6 +13847,32 @@ utilityNumericExclusiveScanObjectCall(const State &S, const SourceManager &SM,
            Context.hasSameType(MoveCall->getType(), Initial) &&
            Reference(MoveCall->getArg(0), Value);
   };
+  auto StripScalar = [&](const Expr *Expression) -> const Expr * {
+    while (Expression) {
+      if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(Expression)) {
+        if (Cleanup->getNumObjects())
+          return nullptr;
+        Expression = Cleanup->getSubExpr();
+        continue;
+      }
+      if (const auto *Temporary =
+              dyn_cast<MaterializeTemporaryExpr>(Expression)) {
+        if (!Temporary->isLValue() || Temporary->getExtendingDecl() ||
+            !utilityScalar(Context, Temporary->getType()))
+          return nullptr;
+        Expression = Temporary->getSubExpr();
+        continue;
+      }
+      const auto *Cast = dyn_cast<ImplicitCastExpr>(Expression);
+      if (!Cast)
+        break;
+      if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
+                                         Cast->getType()))
+        return nullptr;
+      Expression = Cast->getSubExpr();
+    }
+    return Expression;
+  };
   const auto *Body = dyn_cast_or_null<CompoundStmt>(Definition->getBody());
   if (!Body || Body->size() != 2)
     return std::nullopt;
@@ -13868,13 +13895,8 @@ utilityNumericExclusiveScanObjectCall(const State &S, const SourceManager &SM,
   const auto *Temporary = Declaration && Declaration->isSingleDecl()
                               ? dyn_cast<VarDecl>(Declaration->getSingleDecl())
                               : nullptr;
-  const Expr *FirstResult = Temporary ? Temporary->getInit() : nullptr;
-  while (const auto *Cast = dyn_cast_or_null<ImplicitCastExpr>(FirstResult)) {
-    if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
-                                       Cast->getType()))
-      return std::nullopt;
-    FirstResult = Cast->getSubExpr();
-  }
+  const Expr *FirstResult =
+      Temporary ? StripScalar(Temporary->getInit()) : nullptr;
   const auto *InitialInvocation =
       dyn_cast_or_null<CXXOperatorCallExpr>(FirstResult);
   const auto *Loop = dyn_cast<WhileStmt>(*Statement);
@@ -13896,7 +13918,13 @@ utilityNumericExclusiveScanObjectCall(const State &S, const SourceManager &SM,
   const auto *BreakCondition =
       BreakBranch ? dyn_cast<BinaryOperator>(BreakBranch->getCond()) : nullptr;
   const auto *Transfer = dyn_cast<BinaryOperator>(*LoopStatement++);
-  const auto *Recompute = dyn_cast<BinaryOperator>(*LoopStatement);
+  const Stmt *RecomputeStatement = *LoopStatement;
+  if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(RecomputeStatement)) {
+    if (Cleanup->getNumObjects())
+      return std::nullopt;
+    RecomputeStatement = Cleanup->getSubExpr();
+  }
+  const auto *Recompute = dyn_cast<BinaryOperator>(RecomputeStatement);
   if (!Store || Store->getOpcode() != BO_Assign ||
       !Dereference(Store->getLHS(), Definition->getParamDecl(2),
                    Output->getPointeeType()) ||
@@ -13917,21 +13945,15 @@ utilityNumericExclusiveScanObjectCall(const State &S, const SourceManager &SM,
       Recompute->getOpcode() != BO_Assign ||
       !Reference(Recompute->getLHS(), Temporary))
     return std::nullopt;
-  const Expr *SecondResult = Recompute->getRHS();
-  while (const auto *Cast = dyn_cast<ImplicitCastExpr>(SecondResult)) {
-    if (!utilityScalarDirectConversion(Context, Cast->getSubExpr()->getType(),
-                                       Cast->getType()))
-      return std::nullopt;
-    SecondResult = Cast->getSubExpr();
-  }
+  const Expr *SecondResult = StripScalar(Recompute->getRHS());
   const auto *SecondInvocation = dyn_cast<CXXOperatorCallExpr>(SecondResult);
   auto Invocation = [&](const CXXOperatorCallExpr *Selected) {
     return Selected && Selected->getOperator() == OO_Call &&
            Selected->getNumArgs() == 3 && Selected->isPRValue() &&
            Reference(Selected->getArg(0), Definition->getParamDecl(4)) &&
            Reference(Selected->getArg(1), Definition->getParamDecl(3)) &&
-           Dereference(Selected->getArg(2), Definition->getParamDecl(0),
-                       Input->getPointeeType());
+           Dereference(StripScalar(Selected->getArg(2)),
+                       Definition->getParamDecl(0), Input->getPointeeType());
   };
   if (!Invocation(InitialInvocation) || !Invocation(SecondInvocation))
     return std::nullopt;
@@ -13963,8 +13985,9 @@ utilityNumericExclusiveScanObjectCall(const State &S, const SourceManager &SM,
         !Context.hasSameUnqualifiedType(
             Initial,
             Method->getParamDecl(0)->getType().getNonReferenceType()) ||
-        !Context.hasSameUnqualifiedType(
-            Element, Method->getParamDecl(1)->getType().getNonReferenceType()))
+        !utilityScalarDirectConversion(
+            Context, Element,
+            Method->getParamDecl(1)->getType().getNonReferenceType()))
       return std::nullopt;
   } else {
     if ((Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate &&
