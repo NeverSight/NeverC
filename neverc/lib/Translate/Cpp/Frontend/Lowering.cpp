@@ -3016,6 +3016,13 @@ class FunctionLowering {
       auto Value = snapshot(expression(Call->getArg(2)), L);
       const auto PointerType = type(Call->getArg(0)->getType(), L);
       const auto ValueType = type(Call->getArg(2)->getType(), L);
+      auto IncrementType =
+          utilityScalarComparisonType(A.Context, Call->getArg(2)->getType(),
+                                      Call->getArg(2)->getType(), false);
+      if (!IncrementType)
+        reject(L, "numeric iota",
+               "The initial value has no arithmetic promotion type.");
+      const auto PromotedValueType = type(*IncrementType, L);
       const auto ElementType =
           type(Call->getArg(0)->getType()->getPointeeType(), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
@@ -3029,7 +3036,11 @@ class FunctionLowering {
           Current,
           binary("+", Current, quantity(1, DifferenceType, L), PointerType, L),
           L);
-      assign(Value, binary("+", Value, one(ValueType, L), ValueType, L), L);
+      assign(Value,
+             cast(binary("+", cast(json::Object(Value), PromotedValueType, L),
+                         one(PromotedValueType, L), PromotedValueType, L),
+                  ValueType, L),
+             L);
       jump(Check, L);
       label(End, L);
       return {};
@@ -3266,16 +3277,13 @@ class FunctionLowering {
                                          std::move(Right), L),
                       Adjacent ? OutputElementType : ElementType, L);
         if (!Callback) {
-          auto ResultType = ElementType;
-          if (Adjacent) {
-            auto Common = utilityScalarComparisonType(
-                A.Context, Call->getArg(0)->getType()->getPointeeType(),
-                Call->getArg(0)->getType()->getPointeeType(), false);
-            if (!Common)
-              reject(L, "adjacent difference",
-                     "The input elements have no arithmetic common type.");
-            ResultType = type(*Common, L);
-          }
+          auto Common = utilityScalarComparisonType(
+              A.Context, Call->getArg(0)->getType()->getPointeeType(),
+              Call->getArg(0)->getType()->getPointeeType(), false);
+          if (!Common)
+            reject(L, "numeric prefix",
+                   "The input elements have no arithmetic common type.");
+          const auto ResultType = type(*Common, L);
           return binary(DefaultOperator, cast(std::move(Left), ResultType, L),
                         cast(std::move(Right), ResultType, L), ResultType, L);
         }
@@ -3293,7 +3301,8 @@ class FunctionLowering {
                L);
         assign(Previous, CurrentValue, L);
       } else {
-        assign(Previous, Combine(Previous, CurrentValue, "+"), L);
+        assign(Previous,
+               cast(Combine(Previous, CurrentValue, "+"), ElementType, L), L);
         assign(dereference(Output, L),
                cast(json::Object(Previous), OutputElementType, L), L);
       }
