@@ -9974,6 +9974,26 @@ long long mixed(int*first,int*last) {
         for node in walk(data['functions']):
             assert node.get('op') not in ('mapped_call', 'indirect_call', 'member_pointer'), node
 
+    numeric_default_narrow_transform_reduce_source = """\
+#include <numeric>
+unsigned char product(unsigned char*first,unsigned char*last,signed char*other) {
+ unsigned char a=std::transform_reduce(first,last,other,(unsigned char)5);
+ int b=std::transform_reduce(first,last,other,5);
+ return a+b;
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-numeric-default-narrow-transform-reduce-" + target,
+                     numeric_default_narrow_transform_reduce_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        assert len(data['sdk_dependencies']) == 126, data
+        product_line = next(i for i, line in enumerate(numeric_default_narrow_transform_reduce_source.splitlines(), 1)
+                            if 'product(unsigned char*first' in line)
+        product = [f for f in data['functions'] if f['loc']['line'] == product_line]
+        assert len(product) == 1, product
+        assert not [node for node in walk(product[0]['body'])
+                    if node.get('op') in ('call', 'mapped_call', 'indirect_call', 'member_pointer')], product
+
     numeric_default_narrow_inner_product_source = """\
 #include <numeric>
 unsigned char product(unsigned char*first,unsigned char*last,signed char*other) {

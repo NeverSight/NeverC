@@ -16198,16 +16198,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Name == "transform_reduce" &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
       Same(Call->getType(), Function->getReturnType()) &&
-      NumericPointerParameter(0, false) && NumericPointerParameter(1, false) &&
+      NumericPointerParameter(0, false, Call->getNumArgs() == 4) &&
+      NumericPointerParameter(1, false, Call->getNumArgs() == 4) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType())) {
     auto Element = Function->getParamDecl(0)->getType()->getPointeeType();
     if ((Call->getNumArgs() == 4 || Call->getNumArgs() == 6) &&
-        NumericPointerParameter(2, false) &&
-        (Call->getNumArgs() == 4 ? NumericReductionValueParameter(3, 0)
+        NumericPointerParameter(2, false, Call->getNumArgs() == 4) &&
+        (Call->getNumArgs() == 4 ? NumericReductionValueParameter(3, 0, true)
                                  : NumericValueParameter(3, 0)) &&
         Same(Function->getReturnType(), Function->getParamDecl(3)->getType()) &&
-        ((Call->getNumArgs() == 4 && NumericCommonElements(0, 2)) ||
+        ((Call->getNumArgs() == 4 && NumericCommonElements(0, 2, true)) ||
          (Call->getNumArgs() == 6 && NumericBinaryCallback(4, Element) &&
           NumericBinaryTransformCallback(
               5, Element, Element,

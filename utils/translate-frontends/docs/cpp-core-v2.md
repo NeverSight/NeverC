@@ -741,8 +741,9 @@ captured once before the loop. Default `inner_product` and two-range
 `transform_reduce` may use a different numeric second-range element; their
 product and sum follow checked arithmetic common types before conversion back
 to the accumulator type.
-Default `inner_product` additionally admits non-boolean narrow input elements
-in either range and a narrow initial accumulator.
+Default `inner_product` and two-range `transform_reduce` additionally admit
+non-boolean narrow input elements in either range and a narrow initial
+accumulator.
 
 The operation-taking overloads of `accumulate`, `inner_product`, `partial_sum`,
 `adjacent_difference`, `reduce`, unary and two-range `transform_reduce`,
