@@ -3075,6 +3075,11 @@ class FunctionLowering {
           DefaultFunctionalPair        ? FunctionalValueTypeAt(4)
           : DefaultUnaryFunctionalPair ? FunctionalValueTypeAt(3)
                                        : QualType{};
+      const auto UnaryTransformName =
+          DefaultUnaryFunctionalPair
+              ? Call->getArg(4)->getType()->getAsCXXRecordDecl()->getName()
+              : llvm::StringRef();
+      const bool LogicalNotTransform = UnaryTransformName == "logical_not";
       auto ArithmeticFunctionalOperator = [&](unsigned Index) {
         const auto *Record =
             Call->getArg(Index)->getType()->getAsCXXRecordDecl();
@@ -3150,6 +3155,8 @@ class FunctionLowering {
       }
       if (!TypedTransformType.isNull())
         DefaultTermQualType = TypedTransformType;
+      if (LogicalNotTransform)
+        DefaultTermQualType = A.Context.BoolTy;
       auto DefaultSumQualType = utilityScalarComparisonType(
           A.Context,
           TypedReductionType.isNull() ? ResultQualType : TypedReductionType,
@@ -3175,22 +3182,25 @@ class FunctionLowering {
       label(Add, L);
       auto Term = dereference(First, L);
       if (DefaultUnaryFunctionalPair) {
-        auto Promoted = DefaultTermQualType;
-        if (A.Context.isPromotableIntegerType(Promoted))
+        auto InputType = TypedTransformType.isNull() ? Call->getArg(0)
+                                                           ->getType()
+                                                           ->getPointeeType()
+                                                           .getUnqualifiedType()
+                                                     : TypedTransformType;
+        auto Promoted = LogicalNotTransform ? A.Context.BoolTy : InputType;
+        if (!LogicalNotTransform && A.Context.isPromotableIntegerType(Promoted))
           Promoted = A.Context.getPromotedIntegerType(Promoted);
         const auto PromotedType = type(Promoted, L);
-        const auto UnaryOperator =
-            Call->getArg(4)->getType()->getAsCXXRecordDecl()->getName() ==
-                    "bit_not"
-                ? "~"
-                : "-";
-        Term = Expression{
-            {"kind", "unary"},
-            {"type", PromotedType},
-            {"operator", UnaryOperator},
-            {"args", json::Array{cast(cast(std::move(Term), DefaultTermType, L),
-                                      PromotedType, L)}},
-            {"loc", A.loc(L)}};
+        const auto UnaryOperator = LogicalNotTransform               ? "!"
+                                   : UnaryTransformName == "bit_not" ? "~"
+                                                                     : "-";
+        Term = Expression{{"kind", "unary"},
+                          {"type", PromotedType},
+                          {"operator", UnaryOperator},
+                          {"args", json::Array{cast(cast(std::move(Term),
+                                                         type(InputType, L), L),
+                                                    PromotedType, L)}},
+                          {"loc", A.loc(L)}};
         if (!TypedTransformType.isNull())
           Term = cast(std::move(Term), DefaultTermType, L);
       } else if (TransformCallback) {

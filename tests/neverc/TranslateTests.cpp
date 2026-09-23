@@ -37707,6 +37707,17 @@ int main() {
                             std::plus<unsigned char>{},
                             std::negate<unsigned char>{}) != 38)
     return 12;
+  int truthy[2]{256, 0};
+  if (std::transform_reduce(truthy, truthy + 2, 4,
+                            std::plus<>{}, std::logical_not<>{}) != 5 ||
+      std::transform_reduce(truthy, truthy + 2, 4,
+                            std::plus<>{},
+                            std::logical_not<unsigned char>{}) != 6)
+    return 13;
+  if (std::transform_reduce(truthy, truthy + 2, 300L,
+                            std::plus<unsigned char>{},
+                            std::logical_not<bool>{}) != 45)
+    return 14;
   return 0;
 }
 )cpp");

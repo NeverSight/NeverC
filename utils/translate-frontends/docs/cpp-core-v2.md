@@ -756,14 +756,16 @@ and each typed reduction result converts to its own `T` before the accumulator.
 Stored objects and other
 object combinations remain outside this direct lowering.
 The five-argument unary `transform_reduce` likewise accepts a directly empty
-list-initialized `std::negate` transformation, or integral `std::bit_not`, with
+list-initialized `std::negate` transformation, integral `std::bit_not` or
+`std::logical_not`, with
 `std::plus`, `std::minus` or
 `std::multiplies`, `std::divides` or integral `std::modulus`, `std::bit_and`,
 `std::bit_or` or `std::bit_xor` reduction. Typed `T` forms convert an admitted
 arithmetic input and accumulator to the selected function object's type at
 each invocation. Negation and bitwise complement use integer promotion after
-the typed input conversion, and a typed transform result converts to its own
-`T` before reduction.
+the typed input conversion; logical negation yields `bool`, including when its
+typed operand is a different arithmetic type. A typed arithmetic transform
+result converts to its own `T` before reduction.
 
 The operation-taking overloads of `accumulate`, `inner_product`, `partial_sum`,
 `adjacent_difference`, `reduce`, unary and two-range `transform_reduce`,

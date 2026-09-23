@@ -16149,7 +16149,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Approved->Record->getCanonicalDecl() !=
               Specialization->getCanonicalDecl() ||
           (UnaryTransform
-               ? OperatorName != "negate" && OperatorName != "bit_not"
+               ? OperatorName != "negate" && OperatorName != "bit_not" &&
+                     OperatorName != "logical_not"
                : OperatorName != "plus" && OperatorName != "minus" &&
                      OperatorName != "multiplies" &&
                      OperatorName != "divides" && OperatorName != "modulus" &&
@@ -16171,7 +16172,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                             ->isIntegerType()))) ||
           ValueType.isNull() ||
           (!ValueType->isVoidType() &&
-           (!NumericArithmetic(ValueType, true) ||
+           (!(NumericArithmetic(ValueType, true) ||
+              (UnaryTransform && OperatorName == "logical_not" &&
+               ValueType->isBooleanType())) ||
             !utilityScalarDirectConversion(
                 Context, Function->getParamDecl(Unary ? 2 : 3)->getType(),
                 ValueType) ||
