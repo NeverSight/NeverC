@@ -9974,6 +9974,31 @@ long long mixed(int*first,int*last) {
         for node in walk(data['functions']):
             assert node.get('op') not in ('mapped_call', 'indirect_call', 'member_pointer'), node
 
+    numeric_narrow_scan_callback_source = """\
+#include <numeric>
+unsigned char sum(unsigned char a,unsigned char b){return a+b;}
+int promoted(int a,int b){return a+b;}
+void scan(unsigned char*first,unsigned char*last,int*out) {
+ std::inclusive_scan(first,last,out,sum);
+ std::inclusive_scan(first,last,out,promoted,(unsigned char)5);
+ std::exclusive_scan(first,last,out,(unsigned char)5,promoted);
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-numeric-narrow-scan-callback-" + target,
+                     numeric_narrow_scan_callback_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        assert len(data['sdk_dependencies']) == 126, data
+        scan_line = next(i for i, line in enumerate(numeric_narrow_scan_callback_source.splitlines(), 1)
+                         if 'scan(unsigned char*first' in line)
+        scan = [f for f in data['functions'] if f['loc']['line'] == scan_line]
+        assert len(scan) == 1, scan
+        calls = [node for node in walk(scan[0]['body']) if node.get('op') == 'indirect_call']
+        addresses = [node for node in walk(scan[0]['body']) if node.get('kind') == 'function_address']
+        assert len(calls) == 3 and len(addresses) == 3, (calls, addresses)
+        names = {f['name'] for f in data['functions'] if f['loc']['line'] in (2, 3)}
+        assert {node['name'] for node in addresses} == names, addresses
+
     numeric_narrow_prefix_callback_source = """\
 #include <numeric>
 unsigned char sum(unsigned char a,unsigned char b){return a+b;}

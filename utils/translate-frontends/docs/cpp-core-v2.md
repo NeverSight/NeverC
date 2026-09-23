@@ -766,6 +766,9 @@ directly convertible scalar results are converted back after each call.
 The four-argument `partial_sum` and `adjacent_difference` function-pointer
 callbacks admit non-boolean narrow integer inputs and writable scalar outputs;
 the adjacent result converts directly to the output element after its callback.
+Function-pointer `inclusive_scan` and `exclusive_scan` also admit non-boolean
+narrow input elements; initialized forms admit narrow accumulators and convert
+each callback result back to that accumulator before storing the output.
 The callback forms of `inner_product` and two-range `transform_reduce` accept a
 different numeric second-range element when the transform callback accepts the
 respective element types and returns a value directly convertible to the

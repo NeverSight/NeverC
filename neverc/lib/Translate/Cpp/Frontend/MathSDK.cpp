@@ -16090,15 +16090,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return NumericCallback(Index, Element, 2, IncludeNarrow);
   };
   auto NumericBinaryTransformCallback = [&](unsigned Index, QualType Result,
-                                            QualType Left, QualType Right) {
+                                            QualType Left, QualType Right,
+                                            bool IncludeNarrow = false) {
     const auto *Prototype = AlgorithmCallbackPrototype(Index);
     if (!Prototype || Prototype->getNumParams() != 2)
       return false;
     Result = Result.getUnqualifiedType();
     Left = Left.getUnqualifiedType();
     Right = Right.getUnqualifiedType();
-    return NumericArithmetic(Result) && NumericArithmetic(Left) &&
-           NumericArithmetic(Right) &&
+    return NumericArithmetic(Result, IncludeNarrow) &&
+           NumericArithmetic(Left, IncludeNarrow) &&
+           NumericArithmetic(Right, IncludeNarrow) &&
            utilityScalarDirectConversion(Context, Prototype->getReturnType(),
                                          Result) &&
            !Prototype->getParamType(0)->isReferenceType() &&
@@ -16221,9 +16223,6 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         NumericBinaryCallback(3, Element) && NumericUnaryCallback(4, Element))
       return UtilityOperation::NumericTransformReduce;
   }
-  const bool DefaultNarrowScan =
-      (Name == "inclusive_scan" && Call->getNumArgs() == 3) ||
-      (Name == "exclusive_scan" && Call->getNumArgs() == 4);
   if (((Origin->Path == "__numeric/inclusive_scan.h" &&
         Name == "inclusive_scan" && Call->getNumArgs() >= 3 &&
         Call->getNumArgs() <= 5) ||
@@ -16231,9 +16230,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Name == "exclusive_scan" &&
         (Call->getNumArgs() == 4 || Call->getNumArgs() == 5))) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      NumericPointerParameter(0, false, DefaultNarrowScan) &&
-      NumericPointerParameter(1, false, DefaultNarrowScan) &&
-      NumericPointerParameter(2, true, DefaultNarrowScan) &&
+      NumericPointerParameter(0, false, true) &&
+      NumericPointerParameter(1, false, true) &&
+      NumericPointerParameter(2, true, true) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
@@ -16242,19 +16241,21 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if (Name == "inclusive_scan") {
       if (((Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
            AlgorithmTransferParameters(0, 2) &&
-           (Call->getNumArgs() == 3 || NumericBinaryCallback(3, Element))) ||
-          (Call->getNumArgs() == 5 && NumericReductionValueParameter(4, 0) &&
-           NumericValueOutputParameter(4, 2) &&
+           (Call->getNumArgs() == 3 ||
+            NumericBinaryCallback(3, Element, true))) ||
+          (Call->getNumArgs() == 5 &&
+           NumericReductionValueParameter(4, 0, true) &&
+           NumericValueOutputParameter(4, 2, true) &&
            NumericBinaryTransformCallback(
                3, Function->getParamDecl(4)->getType(),
-               Function->getParamDecl(4)->getType(), Element)))
+               Function->getParamDecl(4)->getType(), Element, true)))
         return UtilityOperation::NumericInclusiveScan;
-    } else if (NumericReductionValueParameter(3, 0, DefaultNarrowScan) &&
-               NumericValueOutputParameter(3, 2, DefaultNarrowScan) &&
+    } else if (NumericReductionValueParameter(3, 0, true) &&
+               NumericValueOutputParameter(3, 2, true) &&
                (Call->getNumArgs() == 4 ||
                 NumericBinaryTransformCallback(
                     4, Function->getParamDecl(3)->getType(),
-                    Function->getParamDecl(3)->getType(), Element))) {
+                    Function->getParamDecl(3)->getType(), Element, true))) {
       return UtilityOperation::NumericExclusiveScan;
     }
   }
