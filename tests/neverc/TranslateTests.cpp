@@ -37675,6 +37675,15 @@ int main() {
   if (std::transform_reduce(exact, exact + 2, 15,
                             std::bit_and<>{}, std::negate<>{}) != 12)
     return 9;
+  if (std::transform_reduce(exact, exact + 2, 0,
+                            std::plus<>{}, std::bit_not<>{}) != -7 ||
+      std::transform_reduce(exact, exact + 2, 3,
+                            std::bit_xor<>{}, std::bit_not<>{}) != 2)
+    return 10;
+  if (std::transform_reduce(narrow, narrow + 2, (unsigned char)7,
+                            std::plus<unsigned char>{},
+                            std::bit_not<unsigned char>{}) != 217)
+    return 11;
   return 0;
 }
 )cpp");

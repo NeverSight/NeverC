@@ -3161,10 +3161,15 @@ class FunctionLowering {
         if (A.Context.isPromotableIntegerType(Promoted))
           Promoted = A.Context.getPromotedIntegerType(Promoted);
         const auto PromotedType = type(Promoted, L);
+        const auto UnaryOperator =
+            Call->getArg(4)->getType()->getAsCXXRecordDecl()->getName() ==
+                    "bit_not"
+                ? "~"
+                : "-";
         Term = Expression{
             {"kind", "unary"},
             {"type", PromotedType},
-            {"operator", "-"},
+            {"operator", UnaryOperator},
             {"args", json::Array{cast(std::move(Term), PromotedType, L)}},
             {"loc", A.loc(L)}};
         if (TypedTransformFunctional)
