@@ -3074,6 +3074,8 @@ class FunctionLowering {
             Call->getArg(Index)->getType()->getAsCXXRecordDecl();
         return Record->getName() == "minus"        ? llvm::StringRef("-")
                : Record->getName() == "multiplies" ? llvm::StringRef("*")
+               : Record->getName() == "divides"    ? llvm::StringRef("/")
+               : Record->getName() == "modulus"    ? llvm::StringRef("%")
                                                    : llvm::StringRef("+");
       };
       const bool Inner = Operation == UtilityOperation::NumericInnerProduct ||

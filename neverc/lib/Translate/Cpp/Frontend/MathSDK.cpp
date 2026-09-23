@@ -16124,6 +16124,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       const auto *Record = Object->getAsCXXRecordDecl();
       const auto *Specialization =
           dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+      const auto OperatorName =
+          Specialization ? Specialization->getName() : llvm::StringRef();
       const auto Approved =
           approvedFunctionalObjectRecord(S, SM, Record, Context);
       const auto *Cast = dyn_cast<CXXFunctionalCastExpr>(
@@ -16142,10 +16144,25 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       if (!Specialization || !Approved ||
           Approved->Record->getCanonicalDecl() !=
               Specialization->getCanonicalDecl() ||
-          (UnaryTransform ? Specialization->getName() != "negate"
-                          : Specialization->getName() != "plus" &&
-                                Specialization->getName() != "minus" &&
-                                Specialization->getName() != "multiplies") ||
+          (UnaryTransform
+               ? OperatorName != "negate"
+               : OperatorName != "plus" && OperatorName != "minus" &&
+                     OperatorName != "multiplies" &&
+                     OperatorName != "divides" && OperatorName != "modulus") ||
+          (OperatorName == "modulus" &&
+           (!NumericArithmetic(Function->getParamDecl(Unary ? 2 : 3)->getType(),
+                               true) ||
+            !Function->getParamDecl(Unary ? 2 : 3)
+                 ->getType()
+                 ->isIntegerType() ||
+            !Function->getParamDecl(0)
+                 ->getType()
+                 ->getPointeeType()
+                 ->isIntegerType() ||
+            (!Unary && !Function->getParamDecl(2)
+                            ->getType()
+                            ->getPointeeType()
+                            ->isIntegerType()))) ||
           ValueType.isNull() ||
           (!ValueType->isVoidType() &&
            (!NumericArithmetic(ValueType, true) ||

@@ -746,7 +746,9 @@ non-boolean narrow input elements in either range and a narrow initial
 accumulator.
 Their six-argument overloads also accept directly empty list-initialized
 arithmetic function-object pairs: either operation may be `std::plus`,
-`std::minus` or `std::multiplies`. Transparent forms use checked common
+`std::minus`, `std::multiplies` or `std::divides`; `std::modulus` is admitted
+when the accumulator and both input ranges have integer elements. Transparent
+forms use checked common
 arithmetic; typed `T` forms require both ranges and the accumulator to have
 the same admitted arithmetic type `T`, including non-boolean narrow integers.
 Each typed transform result converts to `T` before reduction, and each
@@ -754,7 +756,8 @@ reduction result converts back to the accumulator. Stored objects and other
 object combinations remain outside this direct lowering.
 The five-argument unary `transform_reduce` likewise accepts a directly empty
 list-initialized `std::negate` transformation with `std::plus`, `std::minus` or
-`std::multiplies` reduction. Typed `T` forms require an exact arithmetic input
+`std::multiplies`, `std::divides` or integral `std::modulus` reduction. Typed
+`T` forms require an exact arithmetic input
 and accumulator type. Negation uses source integer promotion, and its typed
 result converts to `T` before reduction.
 

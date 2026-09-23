@@ -37592,6 +37592,21 @@ int main() {
       std::transform_reduce(left, left + 2, right, 5,
                             std::plus<>{}, std::multiplies<int>{}) != 28)
     return 8;
+  int dividends[2]{20, 18}, divisors[2]{4, 3};
+  if (std::inner_product(dividends, dividends + 2, divisors, 2,
+                         std::plus<>{}, std::divides<>{}) != 13 ||
+      std::transform_reduce(dividends, dividends + 2, divisors, 2,
+                            std::plus<>{}, std::divides<>{}) != 13)
+    return 9;
+  if (std::inner_product(left, left + 2, right, 96,
+                         std::divides<>{}, std::plus<>{}) != 2 ||
+      std::transform_reduce(left, left + 2, right, 50,
+                            std::modulus<int>{}, std::plus<int>{}) != 2)
+    return 10;
+  int remainders[2]{6, 4};
+  if (std::transform_reduce(dividends, dividends + 2, remainders, 2,
+                            std::plus<>{}, std::modulus<>{}) != 6)
+    return 11;
   return 0;
 }
 )cpp");
@@ -37643,6 +37658,11 @@ int main() {
       std::transform_reduce(exact, exact + 2, 20,
                             std::plus<>{}, std::negate<int>{}) != 15)
     return 7;
+  if (std::transform_reduce(exact, exact + 2, 120,
+                            std::divides<>{}, std::negate<>{}) != 20 ||
+      std::transform_reduce(exact, exact + 2, 50,
+                            std::modulus<int>{}, std::negate<int>{}) != 0)
+    return 8;
   return 0;
 }
 )cpp");
