@@ -7617,6 +7617,39 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
           return true;
       }
     }
+    if (Default && Parameter && Owner && String && Prototype &&
+        Prototype->isNothrow() &&
+        Owner->getCanonicalDecl() == Method->getCanonicalDecl() &&
+        Method->getNumParams() == 2 && Index == 1 &&
+        Parameter == Method->getParamDecl(1) &&
+        Parameter->getFunctionScopeIndex() == 1 && !Method->isStatic() &&
+        !Method->isVariadic() && Method->isConst() && Method->getIdentifier() &&
+        (Method->getName() == "find" || Method->getName() == "rfind") &&
+        Context.hasSameType(Method->getReturnType(), Context.getSizeType()) &&
+        Context.hasSameType(Parameter->getType(), Context.getSizeType()) &&
+        approvedStandardSDKDeclaration(S, SM, Method) &&
+        cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "string") &&
+        S.owns(SM, Default->getExprLoc()) && Init &&
+        Context.hasSameType(Init->getType(), Context.getSizeType()) &&
+        !Init->isTypeDependent() && !Init->isValueDependent() &&
+        !Init->isInstantiationDependent()) {
+      const auto First = Method->getParamDecl(0)->getType();
+      const auto StringType = Context.getRecordType(String->Record);
+      const bool StringParameter =
+          First->isLValueReferenceType() &&
+          Context.hasSameType(First->getPointeeType(), StringType.withConst());
+      if (Context.hasSameType(First, Context.CharTy) || StringParameter ||
+          Context.hasSameType(
+              First, Context.getPointerType(Context.CharTy.withConst()))) {
+        Expr::EvalResult Evaluated;
+        if (Init->EvaluateAsInt(Evaluated, Context) && Evaluated.Val.isInt()) {
+          const auto &Value = Evaluated.Val.getInt();
+          if ((Method->getName() == "find" && Value == 0) ||
+              (Method->getName() == "rfind" && Value.isAllOnes()))
+            return true;
+        }
+      }
+    }
     const auto View =
         approvedUtilityStringViewRecord(S, SM, Method->getParent(), Context);
     if (Default && Parameter && Owner && View && Prototype &&
@@ -16160,12 +16193,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if (!Reference || !Object || !Prototype ||
         (!Prototype->isNothrow() && Name != "push_back" && Name != "pop_back" &&
          Name != "reserve" && Name != "resize" && Name != "append" &&
-         Name != "assign" && Name != "erase" &&
-         !PlusEqual) ||
+         Name != "assign" && Name != "erase" && !PlusEqual) ||
         Method->isStatic() || Method->isVariadic() ||
         (!Method->hasBody() && Name != "push_back" && Name != "reserve" &&
          Name != "resize" && Name != "append" && Name != "assign" &&
-         Name != "erase" && Name != "compare") ||
+         Name != "erase" && Name != "compare" && Name != "find" &&
+         Name != "rfind") ||
         Method->getRefQualifier() != RQ_None ||
         Method->getParent()->getCanonicalDecl() !=
             String->Record->getCanonicalDecl() ||
@@ -16223,6 +16256,42 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       if (Context.hasSameType(Parameter, ConstPointer) &&
           Context.hasSameType(Call->getArg(0)->getType(), ConstPointer))
         return UtilityOperation::StringCompareCString;
+    }
+    if (!Operator && (Name == "find" || Name == "rfind") && Method->isConst() &&
+        Call->isPRValue() &&
+        Context.hasSameType(Method->getReturnType(), Context.getSizeType()) &&
+        Context.hasSameType(Call->getType(), Context.getSizeType()) &&
+        (Method->getNumParams() == 2 || Method->getNumParams() == 3) &&
+        Context.hasSameType(Method->getParamDecl(1)->getType(),
+                            Context.getSizeType()) &&
+        Context.hasSameType(Call->getArg(1)->getType(),
+                            Context.getSizeType())) {
+      const auto FirstParameter = Method->getParamDecl(0)->getType();
+      const auto FirstArgument = Call->getArg(0)->getType();
+      if (Method->getNumParams() == 2 &&
+          Context.hasSameType(FirstParameter, Context.CharTy) &&
+          Context.hasSameType(FirstArgument, Context.CharTy))
+        return Name == "find" ? UtilityOperation::StringFindCharacter
+                              : UtilityOperation::StringRFindCharacter;
+      const auto StringType = Context.getRecordType(String->Record);
+      if (Method->getNumParams() == 2 &&
+          FirstParameter->isLValueReferenceType() &&
+          Context.hasSameType(FirstParameter->getPointeeType(),
+                              StringType.withConst()) &&
+          Context.hasSameUnqualifiedType(FirstArgument, StringType))
+        return Name == "find" ? UtilityOperation::StringFindSubstring
+                              : UtilityOperation::StringRFindSubstring;
+      const auto ConstPointer =
+          Context.getPointerType(Context.CharTy.withConst());
+      if (Context.hasSameType(FirstParameter, ConstPointer) &&
+          Context.hasSameType(FirstArgument, ConstPointer) &&
+          (Method->getNumParams() == 2 ||
+           (Context.hasSameType(Method->getParamDecl(2)->getType(),
+                                Context.getSizeType()) &&
+            Context.hasSameType(Call->getArg(2)->getType(),
+                                Context.getSizeType()))))
+        return Name == "find" ? UtilityOperation::StringFindSubstring
+                              : UtilityOperation::StringRFindSubstring;
     }
     if (!Operator && Name == "erase" && !Method->isConst() &&
         !Object->getType().isConstQualified() &&

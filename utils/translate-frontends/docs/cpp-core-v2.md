@@ -2239,6 +2239,10 @@ retain capacity, and return the receiver reference.
 compare unsigned bytes lexicographically, then lengths, without allocating.
 `compare(const char*)` and the twelve string/C-string relation overloads scan
 the zero-terminated argument once and use the same byte comparison.
+The `find` and `rfind` overloads for `char`, `const std::string&`,
+`const char*`, and `(const char*, position, count)` search without allocating.
+They honor default positions, `npos`, embedded NUL in counted patterns, and
+the standard empty-pattern bounds.
 The frontend checks the pinned libc++ representation before emitting three
 storage words, including the alternate short-string layout selected on Apple
 arm64. Short strings stay inline, while long strings use the selected
@@ -2250,9 +2254,10 @@ appending grow storage when needed. Host O0/O2 fixtures exercise both
 representations, embedded NUL, mutable and const access, copy and move,
 push/pop, resize/reserve, fill, pointer and string append with self-reference,
 the three `operator+=` overloads, four `assign` overloads, positional erase,
-member/free swap, comparison, clearing, and lifetime release; all eight
-supported target triples pass frontend translation. Other modifiers, character
-or allocator types, and throwing length/allocation paths remain unsupported.
+member/free swap, comparison, forward/reverse search, clearing, and lifetime
+release; all eight supported target triples pass frontend translation. Other
+modifiers, character or allocator types, and throwing length/allocation paths
+remain unsupported.
 Quoted and shadow headers remain rejected.
 
 ## Vector header and metadata from `<vector>`

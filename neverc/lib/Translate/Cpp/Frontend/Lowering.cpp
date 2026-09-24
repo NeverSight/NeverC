@@ -1658,6 +1658,101 @@ class FunctionLowering {
           A.S, A.Sources, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(),
           A.Context);
     };
+    auto ReadStringAt = [&](Expression Address,
+                            const UtilityStringRecord &String) {
+      const auto SizeType = type(A.Context.getSizeType(), L);
+      const auto PointerType =
+          type(A.Context.getPointerType(A.Context.CharTy.withConst()), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const char *FlagName =
+          String.AlternateLayout ? "nct_string_word2" : "nct_string_word0";
+      const char *PointerName =
+          String.AlternateLayout ? "nct_string_word0" : "nct_string_word2";
+      const auto LongFlag =
+          String.AlternateLayout
+              ? uint64_t(1)
+                    << (A.Context.getTypeSize(A.Context.getSizeType()) - 1)
+              : uint64_t(1);
+      auto Word = [&](const char *Name) {
+        return Expression{
+            {"kind", "member"},
+            {"type", type(llvm::StringRef(Name) == PointerName
+                              ? String.PointerType
+                              : A.Context.getSizeType(),
+                          L)},
+            {"name", Name},
+            {"args", json::Array{dereference(json::Object(Address), L)}},
+            {"loc", A.loc(L)}};
+      };
+      auto First = snapshot(Word(FlagName), L);
+      auto Data = temporary(PointerType, L);
+      auto Size = temporary(SizeType, L);
+      const auto Long = labelName(), Short = labelName();
+      const auto Ready = labelName();
+      branch(binary("!=",
+                    binary("&", json::Object(First),
+                           quantity(LongFlag, SizeType, L), SizeType, L),
+                    quantity(0, SizeType, L), "bool", L),
+             Long, Short, L);
+      label(Long, L);
+      assign(Data, cast(Word(PointerName), PointerType, L), L);
+      assign(Size, Word("nct_string_word1"), L);
+      jump(Ready, L);
+      label(Short, L);
+      auto ShortPointer =
+          cast(cast(json::Object(Address), "ptr:void", L), PointerType, L);
+      assign(Data,
+             String.AlternateLayout
+                 ? std::move(ShortPointer)
+                 : binary("+", std::move(ShortPointer),
+                          quantity(1, DifferenceType, L), PointerType, L),
+             L);
+      assign(
+          Size,
+          String.AlternateLayout
+              ? binary(
+                    ">>", json::Object(First),
+                    quantity(A.Context.getTypeSize(A.Context.getSizeType()) - 8,
+                             SizeType, L),
+                    SizeType, L)
+              : binary("/", json::Object(First), quantity(2, SizeType, L),
+                       SizeType, L),
+          L);
+      jump(Ready, L);
+      label(Ready, L);
+      return std::pair<Expression, Expression>{std::move(Data),
+                                               std::move(Size)};
+    };
+    auto ReadCStringAt = [&](Expression Data) {
+      const auto SizeType = type(A.Context.getSizeType(), L);
+      const auto PointerType =
+          type(A.Context.getPointerType(A.Context.CharTy.withConst()), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      auto Cursor = temporary(PointerType, L);
+      auto Size = temporary(SizeType, L);
+      assign(Cursor, json::Object(Data), L);
+      assign(Size, quantity(0, SizeType, L), L);
+      const auto Check = labelName(), Advance = labelName();
+      const auto Ready = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("==", dereference(json::Object(Cursor), L),
+                    quantity(0, type(A.Context.CharTy, L), L), "bool", L),
+             Ready, Advance, L);
+      label(Advance, L);
+      assign(Cursor,
+             binary("+", json::Object(Cursor), quantity(1, DifferenceType, L),
+                    PointerType, L),
+             L);
+      assign(Size,
+             binary("+", json::Object(Size), quantity(1, SizeType, L), SizeType,
+                    L),
+             L);
+      jump(Check, L);
+      label(Ready, L);
+      return std::pair<Expression, Expression>{std::move(Data),
+                                               std::move(Size)};
+    };
     auto VectorFor = [&](QualType Type) {
       return approvedUtilityVectorRecord(
           A.S, A.Sources, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(),
@@ -10682,103 +10777,21 @@ class FunctionLowering {
                "The selected std::string layout is unavailable.");
       Expression LeftData, LeftSize, RightData, RightSize;
       if (StringComparison) {
-        const auto SizeType = type(A.Context.getSizeType(), L);
-        const auto PointerType =
-            type(A.Context.getPointerType(A.Context.CharTy.withConst()), L);
-        const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-        const char *FlagName =
-            String->AlternateLayout ? "nct_string_word2" : "nct_string_word0";
-        const char *PointerName =
-            String->AlternateLayout ? "nct_string_word0" : "nct_string_word2";
-        const auto LongFlag =
-            String->AlternateLayout
-                ? uint64_t(1)
-                      << (A.Context.getTypeSize(A.Context.getSizeType()) - 1)
-                : uint64_t(1);
-        auto ReadString = [&](const Expr *Value) {
-          auto Address =
-              snapshot(address(lvalue(Value), Value->getType(), L), L);
-          auto Word = [&](const char *Name) {
-            return Expression{
-                {"kind", "member"},
-                {"type", type(llvm::StringRef(Name) == PointerName
-                                  ? String->PointerType
-                                  : A.Context.getSizeType(),
-                              L)},
-                {"name", Name},
-                {"args", json::Array{dereference(json::Object(Address), L)}},
-                {"loc", A.loc(L)}};
-          };
-          auto First = snapshot(Word(FlagName), L);
-          auto Data = temporary(PointerType, L);
-          auto Size = temporary(SizeType, L);
-          const auto Long = labelName(), Short = labelName();
-          const auto Ready = labelName();
-          branch(binary("!=",
-                        binary("&", json::Object(First),
-                               quantity(LongFlag, SizeType, L), SizeType, L),
-                        quantity(0, SizeType, L), "bool", L),
-                 Long, Short, L);
-          label(Long, L);
-          assign(Data, cast(Word(PointerName), PointerType, L), L);
-          assign(Size, Word("nct_string_word1"), L);
-          jump(Ready, L);
-          label(Short, L);
-          auto ShortPointer =
-              cast(cast(json::Object(Address), "ptr:void", L), PointerType, L);
-          assign(Data,
-                 String->AlternateLayout
-                     ? std::move(ShortPointer)
-                     : binary("+", std::move(ShortPointer),
-                              quantity(1, DifferenceType, L), PointerType, L),
-                 L);
-          assign(Size,
-                 String->AlternateLayout
-                     ? binary(">>", json::Object(First),
-                              quantity(A.Context.getTypeSize(
-                                           A.Context.getSizeType()) -
-                                           8,
-                                       SizeType, L),
-                              SizeType, L)
-                     : binary("/", json::Object(First),
-                              quantity(2, SizeType, L), SizeType, L),
-                 L);
-          jump(Ready, L);
-          label(Ready, L);
-          return std::pair<Expression, Expression>{std::move(Data),
-                                                   std::move(Size)};
-        };
-        auto ReadCString = [&](const Expr *Value) {
-          auto Data = snapshot(expression(Value), L);
-          auto Cursor = temporary(PointerType, L);
-          auto Size = temporary(SizeType, L);
-          assign(Cursor, json::Object(Data), L);
-          assign(Size, quantity(0, SizeType, L), L);
-          const auto Check = labelName(), Advance = labelName();
-          const auto Ready = labelName();
-          jump(Check, L);
-          label(Check, L);
-          branch(binary("==", dereference(json::Object(Cursor), L),
-                        quantity(0, type(A.Context.CharTy, L), L), "bool", L),
-                 Ready, Advance, L);
-          label(Advance, L);
-          assign(Cursor,
-                 binary("+", json::Object(Cursor),
-                        quantity(1, DifferenceType, L), PointerType, L),
-                 L);
-          assign(Size,
-                 binary("+", json::Object(Size), quantity(1, SizeType, L),
-                        SizeType, L),
-                 L);
-          jump(Check, L);
-          label(Ready, L);
-          return std::pair<Expression, Expression>{std::move(Data),
-                                                   std::move(Size)};
-        };
-        auto Left =
-            LeftCString ? ReadCString(LeftValue) : ReadString(LeftValue);
-        auto Right =
-            RightCString ? ReadCString(RightValue) : ReadString(RightValue);
+        auto LeftSource =
+            LeftCString
+                ? snapshot(expression(LeftValue), L)
+                : snapshot(address(lvalue(LeftValue), LeftValue->getType(), L),
+                           L);
+        auto RightSource =
+            RightCString
+                ? snapshot(expression(RightValue), L)
+                : snapshot(
+                      address(lvalue(RightValue), RightValue->getType(), L), L);
+        auto Left = LeftCString ? ReadCStringAt(std::move(LeftSource))
+                                : ReadStringAt(std::move(LeftSource), *String);
+        auto Right = RightCString
+                         ? ReadCStringAt(std::move(RightSource))
+                         : ReadStringAt(std::move(RightSource), *String);
         LeftData = std::move(Left.first);
         LeftSize = std::move(Left.second);
         RightData = std::move(Right.first);
@@ -10933,25 +10946,39 @@ class FunctionLowering {
       return binary(Relation, std::move(Result), quantity(0, "int", L), "bool",
                     L);
     }
+    case UtilityOperation::StringFindCharacter:
     case UtilityOperation::StringViewFindCharacter: {
+      const bool StringSearch =
+          Operation == UtilityOperation::StringFindCharacter;
       const auto *Object = MemberObject();
-      auto View = Object ? StringViewFor(Object->getType())
-                         : std::optional<UtilityStringViewRecord>();
-      if (!Object || !View)
-        reject(L, "string view search",
-               "The selected std::string_view layout is unavailable.");
+      auto View = Object && !StringSearch
+                      ? StringViewFor(Object->getType())
+                      : std::optional<UtilityStringViewRecord>();
+      auto String = Object && StringSearch
+                        ? StringFor(Object->getType())
+                        : std::optional<UtilityStringRecord>();
+      if (!Object || (StringSearch ? !String : !View))
+        reject(L, "string search",
+               "The selected string layout is unavailable.");
       auto ObjectAddress =
           snapshot(address(lvalue(Object), Object->getType(), L), L);
       auto Character = snapshot(expression(Call->getArg(0)), L);
       auto Position =
           snapshot(argument(Call->getArg(1), A.Context.getSizeType()), L);
-      auto Data =
-          snapshot(fieldStorage(dereference(json::Object(ObjectAddress), L),
-                                View->Data, L),
-                   L);
-      auto Size = snapshot(
-          fieldStorage(dereference(std::move(ObjectAddress), L), View->Size, L),
-          L);
+      Expression Data, Size;
+      if (StringSearch) {
+        auto Haystack = ReadStringAt(std::move(ObjectAddress), *String);
+        Data = std::move(Haystack.first);
+        Size = std::move(Haystack.second);
+      } else {
+        Data =
+            snapshot(fieldStorage(dereference(json::Object(ObjectAddress), L),
+                                  View->Data, L),
+                     L);
+        Size = snapshot(fieldStorage(dereference(std::move(ObjectAddress), L),
+                                     View->Size, L),
+                        L);
+      }
       const auto SizeType = type(Call->getType(), L);
       const unsigned Bits = integerBits(SizeType);
       const uint64_t NotFound = Bits == 64
@@ -10984,25 +11011,39 @@ class FunctionLowering {
       label(End, L);
       return Result;
     }
+    case UtilityOperation::StringRFindCharacter:
     case UtilityOperation::StringViewRFindCharacter: {
+      const bool StringSearch =
+          Operation == UtilityOperation::StringRFindCharacter;
       const auto *Object = MemberObject();
-      auto View = Object ? StringViewFor(Object->getType())
-                         : std::optional<UtilityStringViewRecord>();
-      if (!Object || !View)
-        reject(L, "string view reverse search",
-               "The selected std::string_view layout is unavailable.");
+      auto View = Object && !StringSearch
+                      ? StringViewFor(Object->getType())
+                      : std::optional<UtilityStringViewRecord>();
+      auto String = Object && StringSearch
+                        ? StringFor(Object->getType())
+                        : std::optional<UtilityStringRecord>();
+      if (!Object || (StringSearch ? !String : !View))
+        reject(L, "string reverse search",
+               "The selected string layout is unavailable.");
       auto ObjectAddress =
           snapshot(address(lvalue(Object), Object->getType(), L), L);
       auto Character = snapshot(expression(Call->getArg(0)), L);
       auto Position =
           snapshot(argument(Call->getArg(1), A.Context.getSizeType()), L);
-      auto Data =
-          snapshot(fieldStorage(dereference(json::Object(ObjectAddress), L),
-                                View->Data, L),
-                   L);
-      auto Size = snapshot(
-          fieldStorage(dereference(std::move(ObjectAddress), L), View->Size, L),
-          L);
+      Expression Data, Size;
+      if (StringSearch) {
+        auto Haystack = ReadStringAt(std::move(ObjectAddress), *String);
+        Data = std::move(Haystack.first);
+        Size = std::move(Haystack.second);
+      } else {
+        Data =
+            snapshot(fieldStorage(dereference(json::Object(ObjectAddress), L),
+                                  View->Data, L),
+                     L);
+        Size = snapshot(fieldStorage(dereference(std::move(ObjectAddress), L),
+                                     View->Size, L),
+                        L);
+      }
       const auto SizeType = type(Call->getType(), L);
       const unsigned Bits = integerBits(SizeType);
       const uint64_t NotFound = Bits == 64
@@ -11048,31 +11089,71 @@ class FunctionLowering {
       label(End, L);
       return Result;
     }
+    case UtilityOperation::StringFindSubstring:
+    case UtilityOperation::StringRFindSubstring:
     case UtilityOperation::StringViewFindView:
     case UtilityOperation::StringViewRFindView: {
-      const bool Reverse = Operation == UtilityOperation::StringViewRFindView;
+      const bool StringSearch =
+          Operation == UtilityOperation::StringFindSubstring ||
+          Operation == UtilityOperation::StringRFindSubstring;
+      const bool Reverse =
+          Operation == UtilityOperation::StringRFindSubstring ||
+          Operation == UtilityOperation::StringViewRFindView;
       const auto *Object = MemberObject();
-      auto View = Object ? StringViewFor(Object->getType())
-                         : std::optional<UtilityStringViewRecord>();
-      if (!Object || !View)
-        reject(L, "string view substring search",
-               "The selected std::string_view layout is unavailable.");
+      auto View = Object && !StringSearch
+                      ? StringViewFor(Object->getType())
+                      : std::optional<UtilityStringViewRecord>();
+      auto String = Object && StringSearch
+                        ? StringFor(Object->getType())
+                        : std::optional<UtilityStringRecord>();
+      if (!Object || (StringSearch ? !String : !View))
+        reject(L, "string substring search",
+               "The selected string layout is unavailable.");
       auto ObjectAddress =
           snapshot(address(lvalue(Object), Object->getType(), L), L);
-      auto Needle = snapshot(expression(Call->getArg(0)), L);
-      auto Position =
-          snapshot(argument(Call->getArg(1), A.Context.getSizeType()), L);
-      auto Data =
-          snapshot(fieldStorage(dereference(json::Object(ObjectAddress), L),
-                                View->Data, L),
-                   L);
-      auto Size = snapshot(
-          fieldStorage(dereference(std::move(ObjectAddress), L), View->Size, L),
-          L);
-      auto NeedleData =
-          snapshot(fieldStorage(json::Object(Needle), View->Data, L), L);
-      auto NeedleSize =
-          snapshot(fieldStorage(std::move(Needle), View->Size, L), L);
+      Expression Data, Size, NeedleData, NeedleSize, Position;
+      if (StringSearch) {
+        if (Call->getArg(0)->getType()->isPointerType()) {
+          auto Pointer = snapshot(expression(Call->getArg(0)), L);
+          Position =
+              snapshot(argument(Call->getArg(1), A.Context.getSizeType()), L);
+          if (Call->getNumArgs() == 3) {
+            NeedleData = std::move(Pointer);
+            NeedleSize = snapshot(expression(Call->getArg(2)), L);
+          } else {
+            auto Needle = ReadCStringAt(std::move(Pointer));
+            NeedleData = std::move(Needle.first);
+            NeedleSize = std::move(Needle.second);
+          }
+        } else {
+          const auto *NeedleValue = Call->getArg(0);
+          auto NeedleAddress = snapshot(
+              address(lvalue(NeedleValue), NeedleValue->getType(), L), L);
+          Position =
+              snapshot(argument(Call->getArg(1), A.Context.getSizeType()), L);
+          auto Needle = ReadStringAt(std::move(NeedleAddress), *String);
+          NeedleData = std::move(Needle.first);
+          NeedleSize = std::move(Needle.second);
+        }
+        auto Haystack = ReadStringAt(std::move(ObjectAddress), *String);
+        Data = std::move(Haystack.first);
+        Size = std::move(Haystack.second);
+      } else {
+        auto Needle = snapshot(expression(Call->getArg(0)), L);
+        Position =
+            snapshot(argument(Call->getArg(1), A.Context.getSizeType()), L);
+        Data =
+            snapshot(fieldStorage(dereference(json::Object(ObjectAddress), L),
+                                  View->Data, L),
+                     L);
+        Size = snapshot(fieldStorage(dereference(std::move(ObjectAddress), L),
+                                     View->Size, L),
+                        L);
+        NeedleData =
+            snapshot(fieldStorage(json::Object(Needle), View->Data, L), L);
+        NeedleSize =
+            snapshot(fieldStorage(std::move(Needle), View->Size, L), L);
+      }
       const auto SizeType = type(Call->getType(), L);
       const unsigned Bits = integerBits(SizeType);
       const uint64_t NotFound = Bits == 64

@@ -29105,6 +29105,20 @@ int main() {
                                 compared <= "abc" && "abc" <= compared &&
                                 compared >= "abc" && "abc" >= compared &&
                                 compared.compare("abc") == 0;
+  const std::string searched("ababa");
+  const std::string pattern("aba");
+  const char embedded_pattern[] = {'b', 0, 'a'};
+  const char embedded_text[] = {'a', 'b', 0, 'a'};
+  const std::string searched_with_nul(embedded_text, 4);
+  bool search_intact = searched.find('a') == 0 &&
+                       searched.rfind('a') == 4 &&
+                       searched.find(pattern, 1) == 2 &&
+                       searched.rfind(pattern) == 2 &&
+                       searched.find("aba", 1) == 2 &&
+                       searched.rfind("aba", 1) == 0 &&
+                       searched_with_nul.find(embedded_pattern, 0, 3) == 1 &&
+                       searched_with_nul.rfind(embedded_pattern,
+                                               std::string::npos, 3) == 1;
   return intact && emptied && assigned.size() == 14 &&
          assigned[0] == 'x' && assigned[2] == 'a' &&
          assigned[3] == 'b' && assigned[4] == 'c' && assigned[5] == 'd' &&
@@ -29116,7 +29130,7 @@ int main() {
          reassigned.size() == 2 && reassigned[0] == 'a' &&
          reassigned[1] == 'a' &&
          erase_intact && erased.empty() && compare_intact &&
-         cstring_compare_intact &&
+         cstring_compare_intact && search_intact &&
          assigned.capacity() >= requested_capacity
              ? 0 : 1;
 }

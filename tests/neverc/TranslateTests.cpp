@@ -52647,6 +52647,10 @@ extern "C" void free(void *);
 void *operator new(Size n) { return malloc(n); }
 void operator delete(void *p) noexcept { free(p); }
 #include <string>
+const std::string &overwrite(std::string &target) {
+  target.assign("ac");
+  return target;
+}
 int main() {
   const std::string empty;
   const std::string empty_again;
@@ -52693,6 +52697,9 @@ int main() {
       long_later.compare(long_left) <= 0 ||
       !(prefix < long_left) || !(long_left > prefix))
     return 6;
+  std::string changing("ab");
+  if (changing.compare(overwrite(changing)) != 0 || changing != "ac")
+    return 7;
   return 0;
 }
 )cpp");
@@ -52721,6 +52728,10 @@ void operator delete(void *p) noexcept { free(p); }
 #include <string>
 int evaluations;
 const char *value() { ++evaluations; return "abc"; }
+const char *overwrite_c(std::string &target) {
+  target.assign("ac");
+  return "ac";
+}
 int main() {
   const std::string text("abc");
   if (!(text == "abc") || !("abc" == text) ||
@@ -52757,6 +52768,12 @@ int main() {
       !(long_text < "abcdefghijklmnopqrstuvwxzz") ||
       !("abcdefghijklmnopqrstuvwxzz" > long_text))
     return 6;
+  std::string changing("ab");
+  if (changing.compare(overwrite_c(changing)) != 0 || changing != "ac")
+    return 7;
+  changing.assign("ab");
+  if (!(changing == overwrite_c(changing)))
+    return 8;
   return 0;
 }
 )cpp");
@@ -52766,6 +52783,77 @@ int main() {
   for (const std::string &Optimization : {"-O0", "-O2"}) {
     SCOPED_TRACE(Optimization);
     const auto Executable = tmpFile("string-cstring-comparison" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StringFindAndRFindRun) {
+  const auto Source = tmpFile("string-find.cpp");
+  const auto Output = tmpFile("string-find.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <string>
+int evaluations;
+const char *pattern() { ++evaluations; return "aba"; }
+Size change(std::string &target) { target.assign("cccaba"); return 0; }
+int main() {
+  const std::string text("ababa");
+  const std::string needle("aba");
+  if (text.find('a') != 0 || text.find('a', 1) != 2 ||
+      text.find('z') != std::string::npos ||
+      text.rfind('a') != 4 || text.rfind('a', 3) != 2 ||
+      text.rfind('z') != std::string::npos ||
+      text.rfind('a', 0) != 0)
+    return 1;
+  if (text.find(needle) != 0 || text.find(needle, 1) != 2 ||
+      text.rfind(needle) != 2 || text.rfind(needle, 1) != 0 ||
+      text.find(std::string("zz")) != std::string::npos)
+    return 2;
+  if (text.find("aba") != 0 || text.find("aba", 1) != 2 ||
+      text.rfind("aba") != 2 || text.rfind("aba", 1) != 0 ||
+      text.find("zz") != std::string::npos ||
+      text.find(pattern()) != 0 || evaluations != 1)
+    return 3;
+  const char embedded[] = {'b', 0, 'a', 0};
+  const char raw[] = {'a', 'b', 0, 'a', 'b', 'a'};
+  const std::string with_nul(raw, 6);
+  if (with_nul.find(embedded, 0, 3) != 1 ||
+      with_nul.rfind(embedded, std::string::npos, 3) != 1 ||
+      with_nul.find(embedded) != 1 || with_nul.rfind(embedded) != 4 ||
+      with_nul.find(embedded, 2, 3) != std::string::npos)
+    return 4;
+  if (text.find("", text.size()) != text.size() ||
+      text.find("", text.size() + 1) != std::string::npos ||
+      text.rfind("") != text.size() ||
+      text.rfind("", 1) != 1 ||
+      text.find("abc", 0, 0) != 0 ||
+      text.rfind("abc", 2, 0) != 2)
+    return 5;
+  const std::string long_text("abcdefghijklmnopqrstuvwxyzabc");
+  if (long_text.find("abc") != 0 || long_text.find("abc", 1) != 26 ||
+      long_text.rfind("abc") != 26 || long_text.rfind('a') != 26 ||
+      long_text.find(std::string("xyz")) != 23 ||
+      long_text.rfind(std::string("xyz")) != 23)
+    return 6;
+  std::string changing("ababa");
+  if (changing.find("aba", change(changing)) != 3)
+    return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-find" + Optimization);
     auto Compile = compileGenerated(Output, Executable, Optimization);
     ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
     auto Run = exec(Executable.string(), {});
