@@ -6327,6 +6327,32 @@ approvedUtilityWrapIteratorConstruction(const State &S,
       cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx",
                      "__iterator/wrap_iter.h"))
     return UtilityWrapIteratorConstruction::Default;
+  const auto *Primary = Constructor->getPrimaryTemplate();
+  const auto Source =
+      Construction->getNumArgs() == 1
+          ? approvedUtilityWrapIteratorRecord(
+                S, SM, Construction->getArg(0)->getType()->getAsCXXRecordDecl(),
+                Context)
+          : std::nullopt;
+  if (Primary && Source && Constructor->hasBody() &&
+      approvedStandardSDKDeclaration(S, SM, Constructor) &&
+      approvedStandardSDKDeclaration(S, SM, Primary) &&
+      cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx",
+                    "__iterator/wrap_iter.h") &&
+      cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
+                    "__iterator/wrap_iter.h")) {
+    const auto Parameter = Constructor->getParamDecl(0)->getType();
+    if (Parameter->isLValueReferenceType() &&
+        Parameter->getPointeeType().isConstQualified() &&
+        Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                       Context.getRecordType(Source->Record)) &&
+        Context.hasSameUnqualifiedType(
+            Source->IteratorType->getPointeeType(),
+            Iterator->IteratorType->getPointeeType()) &&
+        utilityPointerConversion(Context, Source->IteratorType,
+                                 Iterator->IteratorType))
+      return UtilityWrapIteratorConstruction::Converting;
+  }
   return std::nullopt;
 }
 
@@ -16603,8 +16629,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                      ? Method->getIdentifier()->getName()
                                      : llvm::StringRef();
     if (!Reference || !Object || !Prototype ||
-        (!Prototype->isNothrow() && Name != "push_back" &&
-         Name != "pop_back" && Name != "reserve" && Name != "resize") ||
+        (!Prototype->isNothrow() && Name != "push_back" && Name != "pop_back" &&
+         Name != "reserve" && Name != "resize" && Name != "erase") ||
         Method->isStatic() || Method->isVariadic() || !Method->hasBody() ||
         Method->getRefQualifier() != RQ_None ||
         Method->getParent()->getCanonicalDecl() !=
@@ -16710,6 +16736,29 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
                                          VectorType))
         return UtilityOperation::VectorMemberSwap;
+    }
+    if (!Operator && Name == "erase" && !Method->isConst() &&
+        !Object->getType().isConstQualified() && Call->isPRValue() &&
+        (Method->getNumParams() == 1 || Method->getNumParams() == 2) &&
+        Context.hasSameType(Call->getType(), Method->getReturnType())) {
+      const auto Result = approvedUtilityWrapIteratorRecord(
+          S, SM, Method->getReturnType()->getAsCXXRecordDecl(), Context);
+      if (Result &&
+          Context.hasSameType(Result->IteratorType, Vector->PointerType)) {
+        bool Valid = true;
+        for (unsigned I = 0; I != Method->getNumParams(); ++I) {
+          const auto Parameter = Method->getParamDecl(I)->getType();
+          const auto Iterator = approvedUtilityWrapIteratorRecord(
+              S, SM, Parameter->getAsCXXRecordDecl(), Context);
+          Valid &= Iterator &&
+                   Context.hasSameType(Iterator->IteratorType,
+                                       Context.getPointerType(
+                                           Vector->ElementType.withConst())) &&
+                   Context.hasSameType(Parameter, Call->getArg(I)->getType());
+        }
+        if (Valid)
+          return UtilityOperation::VectorErase;
+      }
     }
     if (!Operator && !Method->isConst() &&
         !Object->getType().isConstQualified() &&

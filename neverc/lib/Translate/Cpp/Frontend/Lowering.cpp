@@ -10256,6 +10256,117 @@ class FunctionLowering {
       return dereference(binary("+", std::move(Data), std::move(Index),
                                 PointerType, L), L);
     }
+    case UtilityOperation::VectorErase: {
+      const auto *Object = MemberObject();
+      auto Vector = Object ? VectorFor(Object->getType())
+                           : std::optional<UtilityVectorRecord>();
+      auto Result = approvedUtilityWrapIteratorRecord(
+          A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+      auto First = approvedUtilityWrapIteratorRecord(
+          A.S, A.Sources, Call->getArg(0)->getType()->getAsCXXRecordDecl(),
+          A.Context);
+      if (!Object || !Vector || !Result || !First)
+        reject(L, "vector erase",
+               "The selected std::vector iterator layout is unavailable.");
+      auto Receiver =
+          snapshot(address(lvalue(Object), Object->getType(), L), L);
+      auto FirstValue = snapshot(expression(Call->getArg(0)), L);
+      auto FirstPointer =
+          snapshot(fieldStorage(std::move(FirstValue), First->Current, L), L);
+      std::optional<Expression> LastPointer;
+      if (Call->getNumArgs() == 2) {
+        auto Last = approvedUtilityWrapIteratorRecord(
+            A.S, A.Sources, Call->getArg(1)->getType()->getAsCXXRecordDecl(),
+            A.Context);
+        if (!Last)
+          reject(L, "vector erase",
+                 "The selected last iterator layout is unavailable.");
+        auto LastValue = snapshot(expression(Call->getArg(1)), L);
+        LastPointer =
+            snapshot(fieldStorage(std::move(LastValue), Last->Current, L), L);
+      }
+      const auto PointerType = type(Vector->PointerType, L);
+      const auto ConstPointerType =
+          type(A.Context.getPointerType(Vector->ElementType.withConst()), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      auto Member = [&](const char *Name) {
+        return Expression{
+            {"kind", "member"},
+            {"type", PointerType},
+            {"name", Name},
+            {"args", json::Array{dereference(json::Object(Receiver), L)}},
+            {"loc", A.loc(L)}};
+      };
+      auto Begin = snapshot(Member("nct_vector_begin"), L);
+      auto End = snapshot(Member("nct_vector_end"), L);
+      auto Position = temporary(PointerType, L);
+      const auto HasStorage = labelName(), NoStorage = labelName();
+      const auto Ready = labelName(), Copy = labelName();
+      const auto Finish = labelName(), Done = labelName();
+      branch(cast(json::Object(Begin), "bool", L), HasStorage, NoStorage, L);
+      label(NoStorage, L);
+      assign(Position, json::Object(Begin), L);
+      jump(Done, L);
+      label(HasStorage, L);
+      auto ConstBegin =
+          snapshot(cast(json::Object(Begin), ConstPointerType, L), L);
+      auto Offset = binary("-", json::Object(FirstPointer),
+                           json::Object(ConstBegin), DifferenceType, L);
+      assign(
+          Position,
+          binary("+", json::Object(Begin), std::move(Offset), PointerType, L),
+          L);
+      auto Source = temporary(PointerType, L);
+      if (LastPointer) {
+        branch(binary("==", json::Object(FirstPointer),
+                      json::Object(*LastPointer), "bool", L),
+               Done, Ready, L);
+        label(Ready, L);
+        auto LastOffset = binary("-", json::Object(*LastPointer),
+                                 json::Object(ConstBegin), DifferenceType, L);
+        assign(Source,
+               binary("+", json::Object(Begin), std::move(LastOffset),
+                      PointerType, L),
+               L);
+      } else {
+        assign(Source,
+               binary("+", json::Object(Position),
+                      quantity(1, DifferenceType, L), PointerType, L),
+               L);
+      }
+      auto Target = temporary(PointerType, L);
+      assign(Target, json::Object(Position), L);
+      const auto Check = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", json::Object(Source), json::Object(End), "bool", L),
+             Copy, Finish, L);
+      label(Copy, L);
+      assign(dereference(json::Object(Target), L),
+             dereference(json::Object(Source), L), L);
+      assign(Target,
+             binary("+", json::Object(Target), quantity(1, DifferenceType, L),
+                    PointerType, L),
+             L);
+      assign(Source,
+             binary("+", json::Object(Source), quantity(1, DifferenceType, L),
+                    PointerType, L),
+             L);
+      jump(Check, L);
+      label(Finish, L);
+      assign(Member("nct_vector_end"), json::Object(Target), L);
+      jump(Done, L);
+      label(Done, L);
+      auto Place = Destination ? std::move(*Destination)
+                               : objectTemporary(Call->getType(), L);
+      Destination.reset();
+      if (Place.getString("type") != type(Call->getType(), L))
+        reject(L, "vector erase",
+               "The iterator destination type differs from the result.");
+      assign(fieldStorage(json::Object(Place), Result->Current, L),
+             json::Object(Position), L);
+      return Place;
+    }
     case UtilityOperation::VectorMemberSwap:
     case UtilityOperation::VectorSwap: {
       const Expr *LeftObject = Operation == UtilityOperation::VectorMemberSwap
@@ -14906,6 +15017,16 @@ class FunctionLowering {
                "The selected std::__wrap_iter layout is unavailable.");
       if (*Kind == UtilityWrapIteratorConstruction::CopyOrMove) {
         assign(std::move(Place), expression(C->getArg(0)), L);
+      } else if (*Kind == UtilityWrapIteratorConstruction::Converting) {
+        auto Source = approvedUtilityWrapIteratorRecord(
+            A.S, A.Sources, C->getArg(0)->getType()->getAsCXXRecordDecl(),
+            A.Context);
+        if (!Source)
+          reject(L, "wrap iterator conversion",
+                 "The source std::__wrap_iter layout is unavailable.");
+        auto Current = fieldStorage(lvalue(C->getArg(0)), Source->Current, L);
+        assign(fieldStorage(std::move(Place), Iterator->Current, L),
+               cast(std::move(Current), type(Iterator->IteratorType, L), L), L);
       } else {
         initializeZero(fieldStorage(std::move(Place), Iterator->Current, L),
                        Iterator->IteratorType, L);

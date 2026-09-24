@@ -51705,6 +51705,64 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorEraseRun) {
+  const auto Source = tmpFile("vector-erase.cpp");
+  const auto Output = tmpFile("vector-erase.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <vector>
+int main() {
+  {
+    std::vector<int> values{1, 2, 3, 4, 5};
+    int *storage = values.data();
+    Size capacity = values.capacity();
+    auto after_first = values.erase(values.begin());
+    if (after_first.base() != storage || *after_first != 2 ||
+        values.size() != 4 || values[3] != 5)
+      return 1;
+    auto first = values.cbegin();
+    ++first;
+    auto last = values.cend();
+    --last;
+    auto after_range = values.erase(first, last);
+    if (after_range.base() != storage + 1 || *after_range != 5 ||
+        values.size() != 2 || values[0] != 2 || values[1] != 5)
+      return 2;
+    auto no_change = values.erase(values.cbegin(), values.cbegin());
+    if (no_change.base() != storage || values.size() != 2 ||
+        values.data() != storage || values.capacity() != capacity)
+      return 3;
+    auto removed_last = values.erase(--values.cend());
+    if (removed_last != values.end() || values.size() != 1 ||
+        values[0] != 2)
+      return 4;
+    std::vector<int> empty;
+    auto empty_result = empty.erase(empty.cbegin(), empty.cend());
+    if (empty_result != empty.end() || !empty.empty())
+      return 5;
+  }
+  return allocations == releases ? 0 : 6;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-erase" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorCopyAndMoveConstructionRun) {
   const auto Source = tmpFile("vector-copy-move.cpp");
   const auto Output = tmpFile("vector-copy-move.nc");

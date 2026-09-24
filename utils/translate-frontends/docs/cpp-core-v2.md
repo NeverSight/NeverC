@@ -2228,7 +2228,8 @@ access, mutable and const `front`/`back`, `clear`, `push_back(char)`,
 Mutable and const `begin`/`end`, plus `cbegin`/`cend`, produce authenticated
 libc++ `__wrap_iter` values for forward traversal and mutable element access.
 The authenticated wrapper also supports `base()`, prefix decrement, equality,
-inequality and same-type iterator difference, shared with vector iterators.
+inequality, same-type iterator difference and mutable-to-const construction,
+shared with vector iterators.
 Mutable and const `rbegin`/`rend`, plus `crbegin`/`crend`, construct checked
 reverse iterators over those wrappers. Matching and const-converting reverse
 construction and assignment, `make_reverse_iterator`, traversal and indexed
@@ -2291,13 +2292,16 @@ integer or floating elements use direct lowering for default, bounded
 count/fill/list, copy and move construction; copy and move assignment;
 destruction; size, capacity, empty, data, element/front/back access; clear,
 push/pop, begin/end, cbegin/cend, rbegin/rend, crbegin/crend and const
-iteration; reserve/resize; and member/free swap. Growth preserves element values
-and the selected allocator calls, and copy construction owns independent storage.
+iteration; reserve/resize; single-position and range `erase`; and member/free
+swap. Erase shifts surviving arithmetic elements in place and returns the
+following mutable iterator. Growth preserves element values and the selected
+allocator calls, and copy construction owns independent storage.
 Host O0/O2 fixtures check capacity reuse, reallocation, aliased fill arguments,
 forward/reverse iterator access, iterator base/decrement/equality/difference,
-swap ownership and eventual release. Record elements, other allocators,
-remaining vector methods and throwing allocation or length-error paths remain
-unsupported. Quoted and shadow headers remain rejected.
+erase return positions and empty ranges, swap ownership and eventual release.
+Record elements, other allocators, remaining vector methods and throwing
+allocation or length-error paths remain unsupported. Quoted and shadow headers
+remain rejected.
 
 ## Dynamic local static initialization
 

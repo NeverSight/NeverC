@@ -29004,6 +29004,12 @@ void swap_vectors(std::vector<int>& left, std::vector<int>& right) {
   left.swap(right);
   std::swap(left, right);
 }
+std::vector<int>::iterator erase_vector(std::vector<int>& values) {
+  if (values.empty())
+    return values.erase(values.cbegin(), values.cend());
+  auto after_first = values.erase(values.begin());
+  return values.erase(after_first, values.cend());
+}
 """
     vector_dependencies = None
     for target in sdk_targets:
@@ -29020,7 +29026,7 @@ void swap_vectors(std::vector<int>& left, std::vector<int>& right) {
             vector_dependencies = dependencies
         else:
             assert dependencies == vector_dependencies, target
-        assert len(vector_ir["functions"]) == 3, target
+        assert len(vector_ir["functions"]) == 4, target
     check("v2-vector-runtime-object",
           '#include <vector>\nint f(){std::vector<int> v;return v.size();}',
           "TR0203", profile="cpp-core-v2", sdk=True)
@@ -29191,6 +29197,9 @@ int main() {
                       reverse_cursor != reverse_text.rend() &&
                       reverse_text[2] == 'Z';
   const std::string &reverse_const = reverse_text;
+  std::string::const_iterator converted_forward(reverse_text.begin());
+  bool forward_conversion = *converted_forward == 'a' &&
+                            converted_forward.base() == reverse_const.data();
   auto const_reverse = reverse_const.crbegin();
   bool reverse_const_intact = *const_reverse == 'Z' &&
                               const_reverse[1] == 'b' &&
@@ -29236,7 +29245,8 @@ int main() {
          erase_intact && erased.empty() && compare_intact &&
          cstring_compare_intact && search_intact && set_search_intact &&
          mutable_iteration && const_iteration && long_iteration &&
-         iterator_arithmetic && reverse_start && reverse_walk &&
+         iterator_arithmetic && forward_conversion &&
+         reverse_start && reverse_walk &&
          reverse_const_intact && reverse_construction &&
          reverse_long_intact && reverse_standard_iterators &&
          assigned.capacity() >= requested_capacity

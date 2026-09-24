@@ -918,6 +918,7 @@ enum class UtilityOperation {
   VectorEnd,
   VectorRBegin,
   VectorREnd,
+  VectorErase,
   WrapIteratorDereference,
   WrapIteratorPreIncrement,
   WrapIteratorPreDecrement,
@@ -1307,7 +1308,7 @@ approvedUtilityWrapIteratorRecord(const State &S,
                                   const clang::SourceManager &SM,
                                   const clang::CXXRecordDecl *Record,
                                   const clang::ASTContext &Context);
-enum class UtilityWrapIteratorConstruction { Default, CopyOrMove };
+enum class UtilityWrapIteratorConstruction { Default, CopyOrMove, Converting };
 std::optional<UtilityWrapIteratorConstruction>
 approvedUtilityWrapIteratorConstruction(const State &S,
                                         const clang::SourceManager &SM,
