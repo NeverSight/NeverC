@@ -17490,6 +17490,42 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return UtilityOperation::VectorSwap;
     }
   }
+  if (Origin->Path == "__vector/comparison.h" && Function->isInlined() &&
+      Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
+      Call->isPRValue() && Function->getReturnType()->isBooleanType() &&
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+    const auto Left = approvedUtilityVectorRecord(
+        S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
+    const auto Right = approvedUtilityVectorRecord(
+        S, SM, Call->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
+    if (Operator && Left && Right && Function->isOverloadedOperator() &&
+        Function->getOverloadedOperator() == Operator->getOperator() &&
+        Left->Record->getCanonicalDecl() == Right->Record->getCanonicalDecl()) {
+      const auto VectorType = Context.getRecordType(Left->Record);
+      bool Matching = true;
+      for (unsigned I = 0; I != 2; ++I) {
+        const auto Parameter = Function->getParamDecl(I)->getType();
+        Matching &= Parameter->isLValueReferenceType() &&
+                    Context.hasSameType(Parameter->getPointeeType(),
+                                        VectorType.withConst()) &&
+                    Context.hasSameUnqualifiedType(Call->getArg(I)->getType(),
+                                                   VectorType);
+      }
+      if (Matching)
+        switch (Operator->getOperator()) {
+        case OO_EqualEqual:
+        case OO_ExclaimEqual:
+        case OO_Less:
+        case OO_Greater:
+        case OO_LessEqual:
+        case OO_GreaterEqual:
+          return UtilityOperation::VectorRelation;
+        default:
+          break;
+        }
+    }
+  }
   if (Origin->Path == "string" && Name == "swap" &&
       Function->isInlined() && Call->getNumArgs() == 2 &&
       Function->getNumParams() == 2 &&

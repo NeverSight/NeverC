@@ -10982,6 +10982,143 @@ class FunctionLowering {
       }
       return {};
     }
+    case UtilityOperation::VectorRelation: {
+      const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+      auto LeftVector = VectorFor(Call->getArg(0)->getType());
+      auto RightVector = VectorFor(Call->getArg(1)->getType());
+      if (!Operator || !LeftVector || !RightVector ||
+          LeftVector->Record->getCanonicalDecl() !=
+              RightVector->Record->getCanonicalDecl())
+        reject(L, "vector comparison",
+               "The selected std::vector layout is unavailable.");
+      const auto PointerType = type(LeftVector->PointerType, L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      auto LeftAddress = snapshot(
+          address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
+      auto RightAddress = snapshot(
+          address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
+      auto Member = [&](Expression Address, const char *Name) {
+        return Expression{
+            {"kind", "member"},
+            {"type", PointerType},
+            {"name", Name},
+            {"args", json::Array{dereference(std::move(Address), L)}},
+            {"loc", A.loc(L)}};
+      };
+      auto LeftCurrent =
+          snapshot(Member(json::Object(LeftAddress), "nct_vector_begin"), L);
+      auto LeftEnd =
+          snapshot(Member(json::Object(LeftAddress), "nct_vector_end"), L);
+      auto RightCurrent =
+          snapshot(Member(json::Object(RightAddress), "nct_vector_begin"), L);
+      auto RightEnd =
+          snapshot(Member(json::Object(RightAddress), "nct_vector_end"), L);
+      auto Advance = [&] {
+        assign(LeftCurrent,
+               binary("+", json::Object(LeftCurrent),
+                      quantity(1, DifferenceType, L), PointerType, L),
+               L);
+        assign(RightCurrent,
+               binary("+", json::Object(RightCurrent),
+                      quantity(1, DifferenceType, L), PointerType, L),
+               L);
+      };
+      auto Result = temporary("bool", L);
+      const auto CheckLeft = labelName(), CheckRight = labelName();
+      const auto Compare = labelName(), Next = labelName();
+      const auto LeftDone = labelName(), Equal = labelName();
+      const auto Done = labelName();
+      const bool Equality = Operator->getOperator() == OO_EqualEqual ||
+                            Operator->getOperator() == OO_ExclaimEqual;
+      if (Equality) {
+        const auto Different = labelName();
+        jump(CheckLeft, L);
+        label(CheckLeft, L);
+        branch(binary("!=", json::Object(LeftCurrent), json::Object(LeftEnd),
+                      "bool", L),
+               CheckRight, LeftDone, L);
+        label(CheckRight, L);
+        branch(binary("!=", json::Object(RightCurrent), json::Object(RightEnd),
+                      "bool", L),
+               Compare, Different, L);
+        label(Compare, L);
+        auto LeftElement =
+            snapshot(dereference(json::Object(LeftCurrent), L), L);
+        auto RightElement =
+            snapshot(dereference(json::Object(RightCurrent), L), L);
+        branch(binary("==", std::move(LeftElement), std::move(RightElement),
+                      "bool", L),
+               Next, Different, L);
+        label(Next, L);
+        Advance();
+        jump(CheckLeft, L);
+        label(LeftDone, L);
+        branch(binary("==", json::Object(RightCurrent), json::Object(RightEnd),
+                      "bool", L),
+               Equal, Different, L);
+        label(Equal, L);
+        assign(Result, boolean(Operator->getOperator() == OO_EqualEqual, L), L);
+        jump(Done, L);
+        label(Different, L);
+        assign(Result, boolean(Operator->getOperator() == OO_ExclaimEqual, L),
+               L);
+        jump(Done, L);
+        label(Done, L);
+        return Result;
+      }
+      const auto Less = labelName(), Greater = labelName();
+      const auto CheckGreater = labelName();
+      jump(CheckLeft, L);
+      label(CheckLeft, L);
+      branch(binary("!=", json::Object(LeftCurrent), json::Object(LeftEnd),
+                    "bool", L),
+             CheckRight, LeftDone, L);
+      label(CheckRight, L);
+      branch(binary("!=", json::Object(RightCurrent), json::Object(RightEnd),
+                    "bool", L),
+             Compare, Greater, L);
+      label(Compare, L);
+      auto LeftElement = snapshot(dereference(json::Object(LeftCurrent), L), L);
+      auto RightElement =
+          snapshot(dereference(json::Object(RightCurrent), L), L);
+      branch(binary("<", json::Object(LeftElement), json::Object(RightElement),
+                    "bool", L),
+             Less, CheckGreater, L);
+      label(CheckGreater, L);
+      branch(binary("<", std::move(RightElement), std::move(LeftElement),
+                    "bool", L),
+             Greater, Next, L);
+      label(Next, L);
+      Advance();
+      jump(CheckLeft, L);
+      label(LeftDone, L);
+      branch(binary("!=", json::Object(RightCurrent), json::Object(RightEnd),
+                    "bool", L),
+             Less, Equal, L);
+      label(Less, L);
+      assign(Result,
+             boolean(Operator->getOperator() == OO_Less ||
+                         Operator->getOperator() == OO_LessEqual,
+                     L),
+             L);
+      jump(Done, L);
+      label(Greater, L);
+      assign(Result,
+             boolean(Operator->getOperator() == OO_Greater ||
+                         Operator->getOperator() == OO_GreaterEqual,
+                     L),
+             L);
+      jump(Done, L);
+      label(Equal, L);
+      assign(Result,
+             boolean(Operator->getOperator() == OO_LessEqual ||
+                         Operator->getOperator() == OO_GreaterEqual,
+                     L),
+             L);
+      jump(Done, L);
+      label(Done, L);
+      return Result;
+    }
     case UtilityOperation::VectorSize:
     case UtilityOperation::VectorCapacity:
     case UtilityOperation::VectorMaxSize:

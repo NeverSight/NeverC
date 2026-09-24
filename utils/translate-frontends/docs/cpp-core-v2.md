@@ -2298,7 +2298,8 @@ reserve/resize/shrink_to_fit; lvalue/rvalue, counted-value, pointer and wrapped 
 range, and initializer-list `insert`; zero- or one-argument positional
 `emplace` with exact element types; counted-value, pointer and wrapped
 iterator range, and initializer-list `assign`; single-position and range
-`erase`; and member/free swap. Insert and positional emplace return mutable
+`erase`; member/free swap; and all six vector/vector comparison operators.
+Insert and positional emplace return mutable
 iterators. Single-value insertion and emplace preserve aliased element inputs;
 they shift in place when capacity permits and otherwise move storage through
 the selected allocator.
@@ -2316,7 +2317,9 @@ insert return positions, source aliasing, empty ranges, and insertion from a
 distinct vector; assignment from values, ranges, and lists with capacity reuse
 and growth, plus initializer-list assignment's returned reference and right
 operand evaluation order; erase return positions and empty ranges; swap
-ownership and eventual release.
+ownership and eventual release. Comparison fixtures cover equality,
+lexicographic ordering, empty and prefix ranges, signed and floating elements,
+single evaluation of operands, and the pinned NaN behavior.
 Record elements, other allocators, remaining vector methods and throwing
 allocation or length-error paths remain unsupported. Quoted and shadow headers
 remain rejected.

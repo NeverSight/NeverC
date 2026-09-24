@@ -52227,6 +52227,83 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorRelationsRun) {
+  const auto Source = tmpFile("vector-relations.cpp");
+  const auto Output = tmpFile("vector-relations.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int observations;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <vector>
+bool relations(const std::vector<int> &left, const std::vector<int> &right,
+               bool equal, bool different, bool less, bool greater,
+               bool less_equal, bool greater_equal) {
+  return (left == right) == equal && (left != right) == different &&
+         (left < right) == less && (left > right) == greater &&
+         (left <= right) == less_equal &&
+         (left >= right) == greater_equal;
+}
+const std::vector<int> &observe(const std::vector<int> &value) {
+  ++observations;
+  return value;
+}
+int main() {
+  {
+    std::vector<int> empty;
+    std::vector<int> prefix{1, 2};
+    std::vector<int> longer{1, 2, 3};
+    std::vector<int> equal{1, 2};
+    std::vector<int> changed{1, 4};
+    std::vector<int> negative{-1};
+    if (!relations(empty, empty, true, false, false, false, true, true) ||
+        !relations(empty, prefix, false, true, true, false, true, false) ||
+        !relations(prefix, empty, false, true, false, true, false, true))
+      return 1;
+    if (!relations(prefix, longer, false, true, true, false, true, false) ||
+        !relations(longer, prefix, false, true, false, true, false, true) ||
+        !relations(prefix, equal, true, false, false, false, true, true))
+      return 2;
+    if (!relations(changed, prefix, false, true, false, true, false, true) ||
+        !relations(negative, prefix, false, true, true, false, true, false))
+      return 3;
+    int before = allocations;
+    if (!(observe(prefix) < observe(longer)) || observations != 2 ||
+        allocations != before)
+      return 4;
+    if (!(std::vector<int>{1, 2} < std::vector<int>{1, 3}) ||
+        std::vector<int>{1, 2} == std::vector<int>{1, 3})
+      return 5;
+    double zero = 0.0;
+    double nan = zero / zero;
+    std::vector<double> floating_left{nan, 1.0};
+    std::vector<double> floating_right{2.0, 0.0};
+    if (floating_left == floating_left || !(floating_left != floating_left) ||
+        floating_left < floating_right || !(floating_left > floating_right) ||
+        floating_left <= floating_right ||
+        !(floating_left >= floating_right))
+      return 6;
+  }
+  return allocations == releases ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-relations" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorCopyAndMoveConstructionRun) {
   const auto Source = tmpFile("vector-copy-move.cpp");
   const auto Output = tmpFile("vector-copy-move.nc");
