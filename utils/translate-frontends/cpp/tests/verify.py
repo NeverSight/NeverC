@@ -29049,6 +29049,9 @@ std::vector<int>::size_type shrink_vector(std::vector<int>& values,
   values.shrink_to_fit();
   return source.max_size();
 }
+std::vector<int>& assign_list_vector(std::vector<int>& values) {
+  return values = {1, 2};
+}
 """
     vector_dependencies = None
     for target in sdk_targets:
@@ -29065,7 +29068,7 @@ std::vector<int>::size_type shrink_vector(std::vector<int>& values,
             vector_dependencies = dependencies
         else:
             assert dependencies == vector_dependencies, target
-        assert len(vector_ir["functions"]) == 12, target
+        assert len(vector_ir["functions"]) == 13, target
     check("v2-vector-runtime-object",
           '#include <vector>\nint f(){std::vector<int> v;return v.size();}',
           "TR0203", profile="cpp-core-v2", sdk=True)

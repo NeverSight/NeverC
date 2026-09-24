@@ -2289,8 +2289,9 @@ allocator specialization, Clang can fold `std::vector<int>` size and alignment
 queries from libc++'s three-pointer layout and resolve its `size_type` alias.
 Authenticated `std::vector<T, std::allocator<T>>` objects with non-boolean
 integer or floating elements use direct lowering for default, bounded
-count/fill/list, copy and move construction; copy and move assignment;
-destruction; size, capacity, max_size, empty, data, element/front/back access; clear,
+count/fill/list, copy and move construction; copy, move and initializer-list
+assignment; destruction; size, capacity, max_size, empty, data,
+element/front/back access; clear,
 push/pop, zero- or one-argument `emplace_back` with exact element types,
 begin/end, cbegin/cend, rbegin/rend, crbegin/crend and const iteration;
 reserve/resize/shrink_to_fit; lvalue/rvalue, counted-value, pointer and wrapped iterator
@@ -2313,8 +2314,9 @@ maximum size, occupied and empty capacity shrinking,
 forward/reverse iterator access, iterator base/decrement/equality/difference,
 insert return positions, source aliasing, empty ranges, and insertion from a
 distinct vector; assignment from values, ranges, and lists with capacity reuse
-and growth; erase return positions and empty ranges; swap ownership and
-eventual release.
+and growth, plus initializer-list assignment's returned reference and right
+operand evaluation order; erase return positions and empty ranges; swap
+ownership and eventual release.
 Record elements, other allocators, remaining vector methods and throwing
 allocation or length-error paths remain unsupported. Quoted and shadow headers
 remain rejected.

@@ -52151,6 +52151,82 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorInitializerAssignmentRun) {
+  const auto Source = tmpFile("vector-initializer-assignment.cpp");
+  const auto Output = tmpFile("vector-initializer-assignment.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int left_calls;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <vector>
+std::vector<int> &left(std::vector<int> &value) {
+  ++left_calls;
+  return value;
+}
+int right() { return left_calls == 0 ? 7 : 8; }
+int main() {
+  {
+    std::vector<int> values{1, 2};
+    values.reserve(8);
+    int *storage = values.data();
+    std::vector<int> &same = (values = {3, 4, 5});
+    if (&same != &values || values.data() != storage ||
+        values.capacity() != 8 || values.size() != 3 ||
+        values[0] != 3 || values[1] != 4 || values[2] != 5)
+      return 1;
+    std::vector<int> &cleared = (values = {});
+    if (&cleared != &values || values.data() != storage ||
+        values.capacity() != 8 || !values.empty())
+      return 2;
+    int previous_allocations = allocations;
+    int previous_releases = releases;
+    values = {7, 8, 9, 10, 11, 12, 13, 14, 15};
+    if (allocations != previous_allocations + 1 ||
+        releases != previous_releases + 1 || values.size() != 9 ||
+        values[0] != 7 || values[8] != 15)
+      return 3;
+    int *grown_storage = values.data();
+    values = {values[0], values[1]};
+    if (values.data() != grown_storage || values.size() != 2 ||
+        values[0] != 7 || values[1] != 8)
+      return 4;
+    left(values) = {right()};
+    if (left_calls != 1 || values.size() != 1 || values[0] != 7)
+      return 5;
+    std::vector<int> fresh;
+    std::vector<int> &assigned = (fresh = {1, 2});
+    assigned = {3, 4};
+    if (&assigned != &fresh || fresh.size() != 2 ||
+        fresh[0] != 3 || fresh[1] != 4)
+      return 6;
+    std::vector<double> fractions;
+    fractions = {1.5, 2.5};
+    if (fractions.size() != 2 || fractions[0] != 1.5 ||
+        fractions[1] != 2.5)
+      return 7;
+  }
+  return allocations == releases ? 0 : 8;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("vector-initializer-assignment" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorCopyAndMoveConstructionRun) {
   const auto Source = tmpFile("vector-copy-move.cpp");
   const auto Output = tmpFile("vector-copy-move.nc");

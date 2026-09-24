@@ -16632,7 +16632,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         (!Prototype->isNothrow() && Name != "push_back" &&
          Name != "emplace_back" && Name != "pop_back" && Name != "reserve" &&
          Name != "resize" && Name != "erase" && Name != "insert" &&
-         Name != "emplace" && Name != "assign") ||
+         Name != "emplace" && Name != "assign" &&
+         !(Operator && Method->getOverloadedOperator() == OO_Equal)) ||
         Method->isStatic() || Method->isVariadic() || !Method->hasBody() ||
         Method->getRefQualifier() != RQ_None ||
         Method->getParent()->getCanonicalDecl() !=
@@ -16865,6 +16866,21 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
             Context.hasSameUnqualifiedType(Call->getArg(1)->getType(), Element))
           return UtilityOperation::VectorEmplace;
       }
+    }
+    if (Operator && Method->getOverloadedOperator() == OO_Equal &&
+        !Method->isConst() && !Object->getType().isConstQualified() &&
+        !Method->getPrimaryTemplate() && Method->getNumParams() == 1 &&
+        Call->isLValue() && Method->getReturnType()->isLValueReferenceType()) {
+      const auto VectorType = Context.getRecordType(Vector->Record);
+      const auto Parameter = Method->getParamDecl(0)->getType();
+      const auto List = approvedUtilityInitializerListRecord(
+          S, SM, Parameter->getAsCXXRecordDecl(), Context);
+      if (List && Context.hasSameType(List->ElementType, Vector->ElementType) &&
+          Context.hasSameType(Parameter, Call->getArg(1)->getType()) &&
+          Context.hasSameType(Method->getReturnType()->getPointeeType(),
+                              VectorType) &&
+          Context.hasSameUnqualifiedType(Call->getType(), VectorType))
+        return UtilityOperation::VectorAssignList;
     }
     if (!Operator && Name == "assign" && !Method->isConst() &&
         !Object->getType().isConstQualified() &&

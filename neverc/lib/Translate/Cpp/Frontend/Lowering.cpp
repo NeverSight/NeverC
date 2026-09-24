@@ -10616,13 +10616,22 @@ class FunctionLowering {
       return Place;
     }
     case UtilityOperation::VectorAssignFill:
-    case UtilityOperation::VectorAssignRange: {
+    case UtilityOperation::VectorAssignRange:
+    case UtilityOperation::VectorAssignList: {
       const auto *Object = MemberObject();
       auto Vector = Object ? VectorFor(Object->getType())
                            : std::optional<UtilityVectorRecord>();
       if (!Object || !Vector)
         reject(L, "vector assign",
                "The selected std::vector layout is unavailable.");
+      std::optional<Expression> OperatorListValue;
+      if (Operation == UtilityOperation::VectorAssignList) {
+        if (Destination)
+          reject(L, "vector assignment",
+                 "std::vector assignment cannot initialize a record result.");
+        // C++17 assignment evaluates the right operand before the left.
+        OperatorListValue = snapshot(expression(Call->getArg(1)), L);
+      }
       auto Receiver =
           snapshot(address(lvalue(Object), Object->getType(), L), L);
       const auto PointerType = type(Vector->PointerType, L);
@@ -10642,14 +10651,19 @@ class FunctionLowering {
         Value = snapshot(expression(Call->getArg(1)), L);
       } else {
         Expression RangeBegin;
-        if (Call->getNumArgs() == 1) {
+        if (Operation == UtilityOperation::VectorAssignList ||
+            Call->getNumArgs() == 1) {
+          const auto *ListArgument = Call->getArg(
+              Operation == UtilityOperation::VectorAssignList ? 1 : 0);
           auto List = approvedUtilityInitializerListRecord(
-              A.S, A.Sources, Call->getArg(0)->getType()->getAsCXXRecordDecl(),
+              A.S, A.Sources, ListArgument->getType()->getAsCXXRecordDecl(),
               A.Context);
           if (!List)
             reject(L, "vector assign",
                    "The selected initializer-list layout is unavailable.");
-          auto ListValue = snapshot(expression(Call->getArg(0)), L);
+          auto ListValue = OperatorListValue
+                               ? json::Object(*OperatorListValue)
+                               : snapshot(expression(ListArgument), L);
           RangePointerType = type(List->Begin->getType(), L);
           RangeBegin = snapshot(
               fieldStorage(json::Object(ListValue), List->Begin, L), L);
@@ -10815,6 +10829,8 @@ class FunctionLowering {
       assign(Member("nct_vector_capacity"), json::Object(NewCurrent), L);
       jump(Done, L);
       label(Done, L);
+      if (Operation == UtilityOperation::VectorAssignList)
+        return dereference(json::Object(Receiver), L);
       return {};
     }
     case UtilityOperation::VectorErase: {
