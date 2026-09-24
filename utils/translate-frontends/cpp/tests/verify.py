@@ -29087,6 +29087,17 @@ int main() {
   bool erase_intact = erased.size() == 2 && erased[0] == 'a' &&
                       erased[1] == 'd';
   erased.erase();
+  const std::string compared("abc");
+  const std::string compared_same("abc");
+  const std::string compared_later("abd");
+  bool compare_intact = compared == compared_same &&
+                        compared != compared_later &&
+                        compared < compared_later &&
+                        compared_later > compared &&
+                        compared <= compared_same &&
+                        compared >= compared_same &&
+                        compared.compare(compared_same) == 0 &&
+                        compared.compare(compared_later) < 0;
   return intact && emptied && assigned.size() == 14 &&
          assigned[0] == 'x' && assigned[2] == 'a' &&
          assigned[3] == 'b' && assigned[4] == 'c' && assigned[5] == 'd' &&
@@ -29097,7 +29108,7 @@ int main() {
          joined[7] == 'e' &&
          reassigned.size() == 2 && reassigned[0] == 'a' &&
          reassigned[1] == 'a' &&
-         erase_intact && erased.empty() &&
+         erase_intact && erased.empty() && compare_intact &&
          assigned.capacity() >= requested_capacity
              ? 0 : 1;
 }

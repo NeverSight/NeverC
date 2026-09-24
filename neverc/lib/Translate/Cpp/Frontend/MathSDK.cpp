@@ -16205,6 +16205,18 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Context.hasSameUnqualifiedType(
             Call->getArg(0)->getType(), Context.getRecordType(String->Record)))
       return UtilityOperation::StringMemberSwap;
+    if (!Operator && Name == "compare" && Method->isConst() &&
+        Method->getNumParams() == 1 && Call->getNumArgs() == 1 &&
+        Call->isPRValue() &&
+        Context.hasSameType(Method->getReturnType(), Context.IntTy) &&
+        Context.hasSameType(Call->getType(), Context.IntTy) &&
+        Method->getParamDecl(0)->getType()->isLValueReferenceType() &&
+        Context.hasSameType(
+            Method->getParamDecl(0)->getType()->getPointeeType(),
+            Context.getRecordType(String->Record).withConst()) &&
+        Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
+                                       Context.getRecordType(String->Record)))
+      return UtilityOperation::StringCompare;
     if (!Operator && Name == "erase" && !Method->isConst() &&
         !Object->getType().isConstQualified() &&
         Method->getNumParams() == 2 && Call->getNumArgs() == 2 &&
@@ -17003,6 +17015,49 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           return std::nullopt;
       }
       return UtilityOperation::StringSwap;
+    }
+  }
+  if (Origin->Path == "string" && Call->getNumArgs() == 2 &&
+      Function->getNumParams() == 2 && Function->isInlined() &&
+      Call->isPRValue() && Function->getReturnType()->isBooleanType() &&
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+    const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
+    const auto Left = approvedUtilityStringRecord(
+        S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
+    const auto Right = approvedUtilityStringRecord(
+        S, SM, Call->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
+    if (Operator && Prototype && Prototype->isNothrow() && Left && Right &&
+        Function->isOverloadedOperator() &&
+        Function->getOverloadedOperator() == Operator->getOperator() &&
+        Left->Record->getCanonicalDecl() == Right->Record->getCanonicalDecl()) {
+      const auto StringType = Context.getRecordType(Left->Record);
+      bool Matching = true;
+      for (unsigned I = 0; I != 2; ++I) {
+        const auto Parameter = Function->getParamDecl(I)->getType();
+        Matching &= Parameter->isLValueReferenceType() &&
+                    Context.hasSameType(Parameter->getPointeeType(),
+                                        StringType.withConst()) &&
+                    Context.hasSameUnqualifiedType(Call->getArg(I)->getType(),
+                                                   StringType);
+      }
+      if (Matching)
+        switch (Operator->getOperator()) {
+        case OO_EqualEqual:
+          return UtilityOperation::StringEqual;
+        case OO_ExclaimEqual:
+          return UtilityOperation::StringNotEqual;
+        case OO_Less:
+          return UtilityOperation::StringLess;
+        case OO_Greater:
+          return UtilityOperation::StringGreater;
+        case OO_LessEqual:
+          return UtilityOperation::StringLessEqual;
+        case OO_GreaterEqual:
+          return UtilityOperation::StringGreaterEqual;
+        default:
+          break;
+        }
     }
   }
   if (Origin->Path == "string_view" && Call->getNumArgs() == 2 &&

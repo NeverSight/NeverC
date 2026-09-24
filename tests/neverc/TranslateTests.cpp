@@ -52637,4 +52637,76 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringComparisonRun) {
+  const auto Source = tmpFile("string-comparison.cpp");
+  const auto Output = tmpFile("string-comparison.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <string>
+int main() {
+  const std::string empty;
+  const std::string empty_again;
+  const std::string prefix("ab");
+  const std::string same("ab");
+  const std::string longer("abc");
+  const std::string later("ac");
+  if (!(empty == empty_again) || empty != empty_again ||
+      !(empty <= empty_again) || !(empty >= empty_again) ||
+      empty < empty_again || empty > empty_again ||
+      empty.compare(empty_again) != 0)
+    return 1;
+  if (!(prefix == same) || prefix != same || prefix < same ||
+      prefix > same || !(prefix <= same) || !(prefix >= same) ||
+      prefix.compare(same) != 0 || !(prefix == std::string("ab")))
+    return 2;
+  if (!(prefix != longer) || prefix == longer ||
+      !(prefix < longer) || prefix > longer ||
+      !(prefix <= longer) || prefix >= longer ||
+      prefix.compare(longer) >= 0 || longer.compare(prefix) <= 0 ||
+      !(later > longer) || later.compare(longer) <= 0)
+    return 3;
+  const char embedded_left[] = {'a', 0, 'b'};
+  const char embedded_right[] = {'a', 0, 'c'};
+  const std::string with_nul(embedded_left, 3);
+  const std::string with_nul_later(embedded_right, 3);
+  if (!(with_nul < with_nul_later) ||
+      with_nul.compare(with_nul_later) >= 0 ||
+      !(with_nul != with_nul_later))
+    return 4;
+  const char high_byte[] = {char(0x80)};
+  const char low_byte[] = {char(0x7f)};
+  const std::string high(high_byte, 1);
+  const std::string low(low_byte, 1);
+  if (!(high > low) || high.compare(low) <= 0)
+    return 5;
+  const std::string long_left("abcdefghijklmnopqrstuvwxyz");
+  const std::string long_same("abcdefghijklmnopqrstuvwxyz");
+  const std::string long_later("abcdefghijklmnopqrstuvwxzz");
+  if (!(long_left == long_same) || long_left.compare(long_same) != 0 ||
+      !(long_left < long_later) || !(long_later > long_left) ||
+      !(long_left <= long_later) || !(long_later >= long_left) ||
+      long_left.compare(long_later) >= 0 ||
+      long_later.compare(long_left) <= 0 ||
+      !(prefix < long_left) || !(long_left > prefix))
+    return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-comparison" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 } // namespace

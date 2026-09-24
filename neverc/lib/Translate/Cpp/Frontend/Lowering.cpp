@@ -10631,6 +10631,13 @@ class FunctionLowering {
       assign(dereference(std::move(RightAddress), L), std::move(OldLeft), L);
       return {};
     }
+    case UtilityOperation::StringCompare:
+    case UtilityOperation::StringEqual:
+    case UtilityOperation::StringNotEqual:
+    case UtilityOperation::StringLess:
+    case UtilityOperation::StringGreater:
+    case UtilityOperation::StringLessEqual:
+    case UtilityOperation::StringGreaterEqual:
     case UtilityOperation::StringViewCompare:
     case UtilityOperation::StringViewEqual:
     case UtilityOperation::StringViewNotEqual:
@@ -10638,37 +10645,126 @@ class FunctionLowering {
     case UtilityOperation::StringViewGreater:
     case UtilityOperation::StringViewLessEqual:
     case UtilityOperation::StringViewGreaterEqual: {
-      const bool Member = Operation == UtilityOperation::StringViewCompare;
+      const bool StringComparison =
+          Operation == UtilityOperation::StringCompare ||
+          Operation == UtilityOperation::StringEqual ||
+          Operation == UtilityOperation::StringNotEqual ||
+          Operation == UtilityOperation::StringLess ||
+          Operation == UtilityOperation::StringGreater ||
+          Operation == UtilityOperation::StringLessEqual ||
+          Operation == UtilityOperation::StringGreaterEqual;
+      const bool Member = Operation == UtilityOperation::StringCompare ||
+                          Operation == UtilityOperation::StringViewCompare;
       const auto *Object = Member ? MemberObject() : Call->getArg(0);
-      auto View = Object ? StringViewFor(Object->getType())
-                         : std::optional<UtilityStringViewRecord>();
-      if (!Object || !View)
-        reject(L, "string view comparison",
-               "The selected std::string_view layout is unavailable.");
-      auto LeftSource =
-          Member ? snapshot(address(lvalue(Object), Object->getType(), L), L)
-                 : snapshot(expression(Call->getArg(0)), L);
-      auto Other = snapshot(expression(Call->getArg(Member ? 0 : 1)), L);
-      Expression LeftData, LeftSize;
-      if (Member) {
-        LeftData =
-            snapshot(fieldStorage(dereference(json::Object(LeftSource), L),
-                                  View->Data, L),
-                     L);
-        LeftSize = snapshot(
-            fieldStorage(dereference(std::move(LeftSource), L), View->Size, L),
-            L);
+      auto View = Object && !StringComparison
+                      ? StringViewFor(Object->getType())
+                      : std::optional<UtilityStringViewRecord>();
+      auto String = Object && StringComparison
+                        ? StringFor(Object->getType())
+                        : std::optional<UtilityStringRecord>();
+      if (!Object || (StringComparison ? !String : !View))
+        reject(L, "string comparison",
+               "The selected std::string layout is unavailable.");
+      Expression LeftData, LeftSize, RightData, RightSize;
+      if (StringComparison) {
+        const auto SizeType = type(A.Context.getSizeType(), L);
+        const auto PointerType =
+            type(A.Context.getPointerType(A.Context.CharTy.withConst()), L);
+        const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+        const char *FlagName =
+            String->AlternateLayout ? "nct_string_word2" : "nct_string_word0";
+        const char *PointerName =
+            String->AlternateLayout ? "nct_string_word0" : "nct_string_word2";
+        const auto LongFlag =
+            String->AlternateLayout
+                ? uint64_t(1)
+                      << (A.Context.getTypeSize(A.Context.getSizeType()) - 1)
+                : uint64_t(1);
+        auto ReadString = [&](const Expr *Value) {
+          auto Address =
+              snapshot(address(lvalue(Value), Value->getType(), L), L);
+          auto Word = [&](const char *Name) {
+            return Expression{
+                {"kind", "member"},
+                {"type", type(llvm::StringRef(Name) == PointerName
+                                  ? String->PointerType
+                                  : A.Context.getSizeType(),
+                              L)},
+                {"name", Name},
+                {"args", json::Array{dereference(json::Object(Address), L)}},
+                {"loc", A.loc(L)}};
+          };
+          auto First = snapshot(Word(FlagName), L);
+          auto Data = temporary(PointerType, L);
+          auto Size = temporary(SizeType, L);
+          const auto Long = labelName(), Short = labelName();
+          const auto Ready = labelName();
+          branch(binary("!=",
+                        binary("&", json::Object(First),
+                               quantity(LongFlag, SizeType, L), SizeType, L),
+                        quantity(0, SizeType, L), "bool", L),
+                 Long, Short, L);
+          label(Long, L);
+          assign(Data, cast(Word(PointerName), PointerType, L), L);
+          assign(Size, Word("nct_string_word1"), L);
+          jump(Ready, L);
+          label(Short, L);
+          auto ShortPointer =
+              cast(cast(json::Object(Address), "ptr:void", L), PointerType, L);
+          assign(Data,
+                 String->AlternateLayout
+                     ? std::move(ShortPointer)
+                     : binary("+", std::move(ShortPointer),
+                              quantity(1, DifferenceType, L), PointerType, L),
+                 L);
+          assign(Size,
+                 String->AlternateLayout
+                     ? binary(">>", json::Object(First),
+                              quantity(A.Context.getTypeSize(
+                                           A.Context.getSizeType()) -
+                                           8,
+                                       SizeType, L),
+                              SizeType, L)
+                     : binary("/", json::Object(First),
+                              quantity(2, SizeType, L), SizeType, L),
+                 L);
+          jump(Ready, L);
+          label(Ready, L);
+          return std::pair<Expression, Expression>{std::move(Data),
+                                                   std::move(Size)};
+        };
+        auto Left = ReadString(Object);
+        auto Right = ReadString(Call->getArg(Member ? 0 : 1));
+        LeftData = std::move(Left.first);
+        LeftSize = std::move(Left.second);
+        RightData = std::move(Right.first);
+        RightSize = std::move(Right.second);
       } else {
-        LeftData =
-            snapshot(fieldStorage(json::Object(LeftSource), View->Data, L), L);
-        LeftSize =
-            snapshot(fieldStorage(std::move(LeftSource), View->Size, L), L);
+        auto LeftSource =
+            Member ? snapshot(address(lvalue(Object), Object->getType(), L), L)
+                   : snapshot(expression(Call->getArg(0)), L);
+        auto Other = snapshot(expression(Call->getArg(Member ? 0 : 1)), L);
+        if (Member) {
+          LeftData =
+              snapshot(fieldStorage(dereference(json::Object(LeftSource), L),
+                                    View->Data, L),
+                       L);
+          LeftSize =
+              snapshot(fieldStorage(dereference(std::move(LeftSource), L),
+                                    View->Size, L),
+                       L);
+        } else {
+          LeftData = snapshot(
+              fieldStorage(json::Object(LeftSource), View->Data, L), L);
+          LeftSize =
+              snapshot(fieldStorage(std::move(LeftSource), View->Size, L), L);
+        }
+        RightData =
+            snapshot(fieldStorage(json::Object(Other), View->Data, L), L);
+        RightSize = snapshot(fieldStorage(std::move(Other), View->Size, L), L);
       }
-      auto RightData =
-          snapshot(fieldStorage(json::Object(Other), View->Data, L), L);
-      auto RightSize =
-          snapshot(fieldStorage(std::move(Other), View->Size, L), L);
-      const auto SizeType = type(View->Size->getType(), L);
+      const auto SizeType = StringComparison ? type(A.Context.getSizeType(), L)
+                                             : type(View->Size->getType(), L);
       auto Position = temporary(SizeType, L);
       assign(Position, quantity(0, SizeType, L), L);
       auto Result = temporary("int", L);
@@ -10734,21 +10830,27 @@ class FunctionLowering {
         return Result;
       const char *Relation = nullptr;
       switch (Operation) {
+      case UtilityOperation::StringEqual:
       case UtilityOperation::StringViewEqual:
         Relation = "==";
         break;
+      case UtilityOperation::StringNotEqual:
       case UtilityOperation::StringViewNotEqual:
         Relation = "!=";
         break;
+      case UtilityOperation::StringLess:
       case UtilityOperation::StringViewLess:
         Relation = "<";
         break;
+      case UtilityOperation::StringGreater:
       case UtilityOperation::StringViewGreater:
         Relation = ">";
         break;
+      case UtilityOperation::StringLessEqual:
       case UtilityOperation::StringViewLessEqual:
         Relation = "<=";
         break;
+      case UtilityOperation::StringGreaterEqual:
       case UtilityOperation::StringViewGreaterEqual:
         Relation = ">=";
         break;
