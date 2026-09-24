@@ -522,6 +522,11 @@ OPTION(prefix_2, "--Tdata=", Tdata_eq, Joined, INVALID, Tdata, nullptr, 0,
        nullptr, nullptr)
 OPTION(prefix_2, "--Tdata", Tdata, Separate, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_3, "--threads=", threads_eq, Joined, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0,
+       "Number of worker threads; 1 disables multi-threading (default: "
+       "chosen from the input size and available CPUs)",
+       "<number>", nullptr)
 OPTION(prefix_2, "--trace-symbol=", trace_symbol_eq, Joined, INVALID,
        trace_symbol, nullptr, 0, DefaultVis, 0, "Trace references to symbols",
        nullptr, nullptr)

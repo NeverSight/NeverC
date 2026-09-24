@@ -34,6 +34,7 @@ struct MachOLinkerContext::Impl {
   llvm::DenseMap<llvm::CachedHashStringRef, DylibFile *> LoadedDylibs;
   std::unique_ptr<MachOLinkGraphAdapter> PluginLinkAdapter;
   detail::IncrementalInputWorkload AdaptiveInputWorkload;
+  MachOLoadState LoadState;
   int NextInputFileId = 0;
   uint32_t LCDylibCount = 0;
 };
@@ -56,6 +57,7 @@ std::unique_ptr<SymbolTable> &machoSymtab() {
   return machoContext().state().Symbols;
 }
 TargetInfo *&machoTarget() { return machoContext().state().Target; }
+MachOLoadState &machoLoadState() { return machoContext().state().LoadState; }
 InStruct &machoIn() { return machoContext().state().SyntheticInputs; }
 std::vector<SyntheticSection *> &machoSyntheticSections() {
   return machoContext().state().SyntheticSectionList;

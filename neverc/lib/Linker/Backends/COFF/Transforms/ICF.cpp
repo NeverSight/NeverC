@@ -429,17 +429,42 @@ void ICF::run() {
   // the same group are consecutive in the vector.
   // Use a deterministic tiebreaker (file name, then section number)
   // so that the leader chosen for each ICF class is stable across runs.
-  auto byEqClass = [](const SectionChunk *a, const SectionChunk *b) {
-    if (a->eqClass[0] != b->eqClass[0])
-      return a->eqClass[0] < b->eqClass[0];
-    if (a->file != b->file) {
-      int cmp = a->file->getName().compare(b->file->getName());
-      if (cmp != 0)
-        return cmp < 0;
+  // File names are ranked once so the sort compares integers only.
+  DenseMap<const InputFile *, uint32_t> fileRank;
+  {
+    std::vector<ObjFile *> files(ctx.objFileInstances.begin(),
+                                 ctx.objFileInstances.end());
+    llvm::stable_sort(files, [](const ObjFile *a, const ObjFile *b) {
+      return a->getName() < b->getName();
+    });
+    fileRank.reserve(files.size());
+    uint32_t rank = 0;
+    for (size_t i = 0; i < files.size(); ++i) {
+      if (i && files[i - 1]->getName() != files[i]->getName())
+        ++rank;
+      fileRank[files[i]] = rank;
     }
-    return a->getSectionNumber() < b->getSectionNumber();
+  }
+  struct SortKey {
+    uint32_t eqClass;
+    uint32_t fileRank;
+    uint32_t sectionNumber;
+    SectionChunk *chunk;
   };
-  parallelSort(chunks, byEqClass);
+  std::vector<SortKey> keys(chunks.size());
+  parallelFor(0, chunks.size(), [&](size_t i) {
+    SectionChunk *sc = chunks[i];
+    auto it = fileRank.find(sc->file);
+    keys[i] = {sc->eqClass[0], it == fileRank.end() ? UINT32_MAX : it->second,
+               static_cast<uint32_t>(sc->getSectionNumber()), sc};
+  });
+  // The integer comparator is equivalent to the name-based one, so llvm::sort
+  // makes the same decisions and even ties keep their previous order.
+  llvm::sort(keys, [](const SortKey &a, const SortKey &b) {
+    return std::tie(a.eqClass, a.fileRank, a.sectionNumber) <
+           std::tie(b.eqClass, b.fileRank, b.sectionNumber);
+  });
+  parallelFor(0, keys.size(), [&](size_t i) { chunks[i] = keys[i].chunk; });
 
   forEachClass([&](size_t begin, size_t end) {
     if (end - begin > 1)

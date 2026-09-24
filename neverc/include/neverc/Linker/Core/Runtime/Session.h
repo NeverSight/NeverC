@@ -17,6 +17,7 @@
 #include "Linker/Core/Runtime/Diagnostic.h"
 #include "neverc/Foundation/Core/ProcessResourceBroker.h"
 #include "llvm/Support/StringSaver.h"
+#include <atomic>
 #include <cassert>
 #include <cstdint>
 #include <map>
@@ -95,6 +96,11 @@ public:
   llvm::StringSaver saver{bAlloc};
   llvm::DenseMap<const void *, SpecificAllocBase *> instances;
   std::vector<SpecificAllocBase *> instanceOrder;
+  // Creation sequence of each instanceOrder entry. Worker arenas are recorded
+  // separately (see WorkerInstanceOrder) and both lists are destroyed together
+  // in reverse creation order.
+  std::vector<uint64_t> instanceSequence;
+  std::atomic<uint64_t> allocatorSequence{0};
 
   ErrorHandler e;
 
@@ -120,8 +126,20 @@ private:
   unsigned NextWorkerSlot = 1;
   std::map<std::pair<unsigned, const void *>, SpecificAllocBase *>
       WorkerInstances;
+  // Storage and creation order for worker arenas, guarded by WorkerMutex.
+  // Workers may create arenas while the owning thread keeps allocating from
+  // bAlloc, so they must not share it.
+  llvm::BumpPtrAllocator WorkerAllocatorStorage;
+  std::vector<std::pair<uint64_t, SpecificAllocBase *>> WorkerInstanceOrder;
   std::unique_ptr<llvm::ThreadPool> ParallelPool;
   unsigned ParallelThreadCount = 1;
+  // On hybrid CPUs the thread that configured the worker pool runs the serial
+  // phases on performance cores; workers keep the original CPU mask.
+  bool MainThreadPinned = false;
+  unsigned long PinnedThreadHandle = 0;
+  // The pinned thread's CPU mask before pinning, restored to it and to the
+  // workers that inherit the pinned mask.
+  std::vector<unsigned char> SavedAffinity;
 
   friend class LinkerExecutionContext;
 };
@@ -151,6 +169,15 @@ template <typename T = CommonLinkerContext> T &context() {
 bool hasContext();
 
 inline llvm::StringSaver &saver() { return context().saver; }
+
+// Keeps serial link phases on performance cores of hybrid CPUs; see
+// CommonLinkerContext::configureParallel().
+bool pinToPerformanceCores(unsigned long &Handle,
+                           std::vector<unsigned char> &SavedAffinity);
+void restoreWorkerAffinity(unsigned long PinnedHandle,
+                           const std::vector<unsigned char> &SavedAffinity);
+void unpinThread(unsigned long Handle,
+                 const std::vector<unsigned char> &SavedAffinity);
 inline llvm::BumpPtrAllocator &bAlloc() { return context().bAlloc; }
 
 } // namespace linker

@@ -6,16 +6,182 @@
 
 #include "Linker/Core/Runtime/Session.h"
 #include "Linker/Core/Runtime/Allocator.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/ThreadPool.h"
 #include "llvm/Support/Threading.h"
 #include <algorithm>
+#include <atomic>
+#include <cstdlib>
+#include <cstring>
+#if defined(__linux__)
+#include <pthread.h>
+#include <sched.h>
+#endif
 
 using namespace llvm;
 using namespace linker;
 
 namespace {
+// Hybrid CPUs run serial work far faster on performance cores than on
+// efficiency cores, and the scheduler freely moves a busy thread between the
+// two. Linux lists the performance cores in /sys/devices/cpu_core/cpus.
+#if defined(__linux__)
+struct PerformanceCores {
+  cpu_set_t Cpus;
+  bool Known = false;
+};
+
+const PerformanceCores &performanceCores() {
+  static const PerformanceCores Cores = [] {
+    PerformanceCores P;
+    CPU_ZERO(&P.Cpus);
+    auto List = MemoryBuffer::getFile("/sys/devices/cpu_core/cpus",
+                                      /*IsText=*/true);
+    if (!List)
+      return P;
+    SmallVector<StringRef, 8> Ranges;
+    StringRef((*List)->getBuffer()).trim().split(Ranges, ',');
+    for (StringRef Range : Ranges) {
+      auto [Lo, Hi] = Range.split('-');
+      unsigned First = 0, Last = 0;
+      if (Lo.getAsInteger(10, First))
+        return P;
+      Last = First;
+      if (!Hi.empty() && Hi.getAsInteger(10, Last))
+        return P;
+      for (unsigned Cpu = First; Cpu <= Last && Cpu < CPU_SETSIZE; ++Cpu)
+        CPU_SET(Cpu, &P.Cpus);
+    }
+    P.Known = CPU_COUNT(&P.Cpus) > 0;
+    return P;
+  }();
+  return Cores;
+}
+
+void setAffinity(pthread_t Thread, const std::vector<unsigned char> &Mask) {
+  if (Mask.size() != sizeof(cpu_set_t))
+    return;
+  cpu_set_t Set;
+  memcpy(&Set, Mask.data(), sizeof(Set));
+  (void)pthread_setaffinity_np(Thread, sizeof(Set), &Set);
+}
+#endif
+} // namespace
+
+// Pins the calling thread to the performance cores among those it may run
+// on, saving its current mask. Returns false, leaving the thread alone, when
+// that subset is empty or is already the whole mask, or when
+// NEVERC_LINK_NO_PIN is set.
+bool linker::pinToPerformanceCores(unsigned long &Handle,
+                                   std::vector<unsigned char> &SavedAffinity) {
+#if defined(__linux__)
+  const PerformanceCores &Cores = performanceCores();
+  if (!Cores.Known || std::getenv("NEVERC_LINK_NO_PIN"))
+    return false;
+  cpu_set_t Current, Pinned;
+  if (sched_getaffinity(0, sizeof(Current), &Current) != 0)
+    return false;
+  CPU_AND(&Pinned, &Current, &Cores.Cpus);
+  const int Count = CPU_COUNT(&Pinned);
+  if (Count == 0 || Count == CPU_COUNT(&Current))
+    return false;
+  if (sched_setaffinity(0, sizeof(Pinned), &Pinned) != 0)
+    return false;
+  SavedAffinity.assign(reinterpret_cast<unsigned char *>(&Current),
+                       reinterpret_cast<unsigned char *>(&Current) +
+                           sizeof(Current));
+  Handle = static_cast<unsigned long>(pthread_self());
+  return true;
+#else
+  (void)Handle;
+  (void)SavedAffinity;
+  return false;
+#endif
+}
+
+// Called on a thread's first task for a context. Pool threads are started by
+// the pinned thread and inherit its mask; hand them the saved one.
+void linker::restoreWorkerAffinity(
+    unsigned long PinnedHandle,
+    const std::vector<unsigned char> &SavedAffinity) {
+#if defined(__linux__)
+  if (static_cast<unsigned long>(pthread_self()) != PinnedHandle)
+    setAffinity(pthread_self(), SavedAffinity);
+#else
+  (void)PinnedHandle;
+  (void)SavedAffinity;
+#endif
+}
+
+void linker::unpinThread(unsigned long Handle,
+                         const std::vector<unsigned char> &SavedAffinity) {
+#if defined(__linux__)
+  setAffinity(static_cast<pthread_t>(Handle), SavedAffinity);
+#else
+  (void)Handle;
+  (void)SavedAffinity;
+#endif
+}
+
+namespace {
 thread_local CommonLinkerContext *ActiveLinkerContext = nullptr;
 thread_local unsigned CurrentWorkerSlot = 0;
+
+// Every context construction and finalization advances this epoch, so a
+// per-thread cache filled for one context can never be observed by a later
+// context that happens to reuse the same address.
+std::atomic<uint64_t> WorkerCacheEpoch{1};
+
+// Per-thread memo of the worker slot and per-type arenas for one context.
+// makeThreadLocal<T>() runs on every section and symbol a worker creates, so
+// resolving the arena under the context mutex serialized the parallel phases.
+// The cache is filled under that mutex once per (thread, context, type) and
+// then read without locking.
+struct WorkerAllocCache {
+  static constexpr unsigned NumEntries = 64;
+  const CommonLinkerContext *Context = nullptr;
+  uint64_t Epoch = 0;
+  unsigned Slot = 0;
+  const void *Tags[NumEntries];
+  SpecificAllocBase *Instances[NumEntries];
+
+  bool matches(const CommonLinkerContext *C) const {
+    return Context == C &&
+           Epoch == WorkerCacheEpoch.load(std::memory_order_acquire);
+  }
+  void reset(const CommonLinkerContext *C, unsigned S) {
+    Context = C;
+    Epoch = WorkerCacheEpoch.load(std::memory_order_acquire);
+    Slot = S;
+    std::memset(Tags, 0, sizeof(Tags));
+  }
+  static unsigned bucket(const void *Tag) {
+    return static_cast<unsigned>(reinterpret_cast<uintptr_t>(Tag) >> 3) %
+           NumEntries;
+  }
+  SpecificAllocBase *find(const void *Tag) const {
+    for (unsigned I = bucket(Tag), N = 0; N != NumEntries;
+         I = (I + 1) % NumEntries, ++N) {
+      if (Tags[I] == Tag)
+        return Instances[I];
+      if (!Tags[I])
+        return nullptr;
+    }
+    return nullptr;
+  }
+  void insert(const void *Tag, SpecificAllocBase *Instance) {
+    for (unsigned I = bucket(Tag), N = 0; N != NumEntries;
+         I = (I + 1) % NumEntries, ++N) {
+      if (!Tags[I]) {
+        Tags[I] = Tag;
+        Instances[I] = Instance;
+        return;
+      }
+    }
+  }
+};
+thread_local WorkerAllocCache WorkerCache;
 } // namespace
 
 unsigned linker::selectAdaptiveLinkThreadCount(unsigned RequestedThreads,
@@ -47,6 +213,7 @@ CommonLinkerContext::CommonLinkerContext()
   ActiveLinkerContext = this;
   CurrentWorkerSlot = 0;
   WorkerSlots.emplace(std::this_thread::get_id(), 0);
+  WorkerCacheEpoch.fetch_add(1, std::memory_order_acq_rel);
 }
 
 CommonLinkerContext::CommonLinkerContext(
@@ -75,13 +242,39 @@ void CommonLinkerContext::finalizeOwnedState() noexcept {
   if ((StateFlags & FinalizedFlag) != 0)
     return;
   StateFlags |= FinalizedFlag;
-  ParallelPool.reset();
+  if (MainThreadPinned) {
+    unpinThread(PinnedThreadHandle, SavedAffinity);
+    MainThreadPinned = false;
+  }
+  if (ParallelPool)
+    ParallelPool->wait();
+  WorkerCacheEpoch.fetch_add(1, std::memory_order_acq_rel);
   e.runCleanup();
-  for (auto It = instanceOrder.rbegin(); It != instanceOrder.rend(); ++It)
-    (*It)->destroy();
+  // Worker arenas hold objects that tasks created; their destructors only
+  // release memory those objects own. Destroy them concurrently while the
+  // pool still exists, since a large link spends a noticeable time here.
+  if (ParallelPool && WorkerInstanceOrder.size() > 1) {
+    for (auto &Entry : WorkerInstanceOrder)
+      ParallelPool->async([Instance = Entry.second] { Instance->destroy(); });
+    ParallelPool->wait();
+    WorkerInstanceOrder.clear();
+  }
+  ParallelPool.reset();
+  // Destroy the remaining arenas newest first.
+  std::vector<std::pair<uint64_t, SpecificAllocBase *>> Order =
+      std::move(WorkerInstanceOrder);
+  Order.reserve(Order.size() + instanceOrder.size());
+  for (size_t I = 0; I != instanceOrder.size(); ++I)
+    Order.emplace_back(instanceSequence[I], instanceOrder[I]);
+  llvm::sort(Order,
+             [](const auto &A, const auto &B) { return A.first > B.first; });
+  for (auto &Entry : Order)
+    Entry.second->destroy();
   instances.clear();
   WorkerInstances.clear();
   instanceOrder.clear();
+  instanceSequence.clear();
+  WorkerInstanceOrder.clear();
 }
 
 void CommonLinkerContext::configureParallel(unsigned RequestedThreads,
@@ -100,8 +293,10 @@ void CommonLinkerContext::configureParallel(unsigned RequestedThreads,
     ThreadCount = DefaultThreadLimit;
   }
   ParallelThreadCount = ThreadCount;
-  if (ThreadCount > 1)
+  if (ThreadCount > 1) {
     ParallelPool = std::make_unique<ThreadPool>(Strategy);
+    MainThreadPinned = pinToPerformanceCores(PinnedThreadHandle, SavedAffinity);
+  }
 }
 
 unsigned CommonLinkerContext::configureParallelForInputWorkload(
@@ -121,26 +316,45 @@ unsigned CommonLinkerContext::configureParallelForInputWorkload(
 }
 
 unsigned CommonLinkerContext::workerSlotForCurrentThread() {
-  std::lock_guard<std::mutex> Lock(WorkerMutex);
-  auto [It, Inserted] =
-      WorkerSlots.try_emplace(std::this_thread::get_id(), NextWorkerSlot);
-  if (Inserted)
-    ++NextWorkerSlot;
-  return It->second;
+  if (WorkerCache.matches(this))
+    return WorkerCache.Slot;
+  // Pool threads start lazily from the pinned thread and inherit its mask;
+  // give them back the original one before their first task.
+  if (MainThreadPinned)
+    restoreWorkerAffinity(PinnedThreadHandle, SavedAffinity);
+  unsigned Slot;
+  {
+    std::lock_guard<std::mutex> Lock(WorkerMutex);
+    auto [It, Inserted] =
+        WorkerSlots.try_emplace(std::this_thread::get_id(), NextWorkerSlot);
+    if (Inserted)
+      ++NextWorkerSlot;
+    Slot = It->second;
+  }
+  WorkerCache.reset(this, Slot);
+  return Slot;
 }
 
 SpecificAllocBase *CommonLinkerContext::getOrCreateWorkerAllocator(
     const void *Tag, size_t Size, size_t Alignment,
     SpecificAllocBase *(&Creator)(void *)) {
   const unsigned Slot = workerSlotForCurrentThread();
-  std::lock_guard<std::mutex> Lock(WorkerMutex);
-  SpecificAllocBase *&Instance = WorkerInstances[{Slot, Tag}];
-  if (!Instance) {
-    void *Storage = bAlloc.Allocate(Size, Alignment);
-    Instance = Creator(Storage);
-    instanceOrder.push_back(Instance);
+  if (SpecificAllocBase *Cached = WorkerCache.find(Tag))
+    return Cached;
+  SpecificAllocBase *Result;
+  {
+    std::lock_guard<std::mutex> Lock(WorkerMutex);
+    SpecificAllocBase *&Instance = WorkerInstances[{Slot, Tag}];
+    if (!Instance) {
+      void *Storage = WorkerAllocatorStorage.Allocate(Size, Alignment);
+      Instance = Creator(Storage);
+      WorkerInstanceOrder.emplace_back(
+          allocatorSequence.fetch_add(1, std::memory_order_relaxed), Instance);
+    }
+    Result = Instance;
   }
-  return Instance;
+  WorkerCache.insert(Tag, Result);
+  return Result;
 }
 
 CommonLinkerContext &linker::commonContext() {

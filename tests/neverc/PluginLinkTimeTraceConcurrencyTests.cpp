@@ -796,7 +796,8 @@ int runUnmanagedAmbientNoTraceDirectProbe(DirectLink Direct) {
   bool Result = true;
   llvm::CrashRecoveryContext CRC;
   if (!CRC.RunSafely([&] {
-        Result = Direct(Args, StdoutStream, StderrStream,
+        Result = Direct(llvm::ArrayRef<const char *>(Args), StdoutStream,
+                        StderrStream,
                         /*exitEarly=*/false, /*disableOutput=*/false, Config);
       })) {
     llvm::errs().flush();
@@ -984,8 +985,9 @@ TEST(PluginLinkTimeTraceConcurrencyTest,
     bool LinkResult = true;
     llvm::CrashRecoveryContext CRC;
     EXPECT_TRUE(CRC.RunSafely([&] {
-      LinkResult = Link(Args, StdoutStream, StderrStream,
-                        /*exitEarly=*/false, /*disableOutput=*/false, Config);
+      LinkResult =
+          Link(llvm::ArrayRef<const char *>(Args), StdoutStream, StderrStream,
+               /*exitEarly=*/false, /*disableOutput=*/false, Config);
     }));
     EXPECT_FALSE(LinkResult);
     EXPECT_TRUE(Stdout.empty());

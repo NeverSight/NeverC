@@ -5,18 +5,20 @@
 
 #include "Linker/Core/Driver/ArgList.h"
 #include "Linker/Core/Runtime/Session.h"
+#include "Linker/MachO/MachOContextAccess.h"
 #include "llvm/ADT/CachedHashString.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/LTO/LTO.h"
 #include "llvm/Option/Arg.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/Option.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
 #include "llvm/TextAPI/InterfaceFile.h"
 #include "llvm/TextAPI/TextAPIReader.h"
-#include "Linker/MachO/MachOContextAccess.h"
 
 using namespace llvm;
 using namespace llvm::MachO;
@@ -59,6 +61,11 @@ InputArgList MachOOptTable::parse(ArrayRef<const char *> argv) {
   unsigned missingCount;
   SmallVector<const char *, 256> vec(argv.data(), argv.data() + argv.size());
 
+  // Expand GNU-style @file response files, as build systems pass very long
+  // link lines through them.
+  if (!cl::ExpandResponseFiles(saver(), cl::TokenizeGNUCommandLine, vec))
+    error("cannot expand response file");
+
   InputArgList args = ParseArgs(vec, missingIndex, missingCount);
 
   if (missingCount)
@@ -71,6 +78,12 @@ InputArgList MachOOptTable::parse(ArrayRef<const char *> argv) {
     else
       error("unknown argument '" + arg->getAsString(args) +
             "', did you mean '" + nearest + "'");
+  }
+  if (const auto *arg = args.getLastArg(OPT_threads_eq)) {
+    unsigned threads = 0;
+    if (!to_integer(arg->getValue(), threads) || threads == 0)
+      error(arg->getSpelling() + ": expected a positive integer, but got '" +
+            arg->getValue() + "'");
   }
   return args;
 }

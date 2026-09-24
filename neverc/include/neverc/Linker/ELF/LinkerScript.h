@@ -314,6 +314,7 @@ public:
   ExprValue getSymbolValue(StringRef name, const Twine &loc);
 
   void addOrphanSections();
+  bool addPlainOrphansParallel();
   void diagnoseOrphanHandling() const;
   void adjustOutputSections();
   void adjustSectionsAfterSorting();

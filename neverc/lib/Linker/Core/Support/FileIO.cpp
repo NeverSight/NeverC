@@ -54,7 +54,8 @@ void linker::prefaultBuffer(uint8_t *buf, size_t size, bool fileBacked) {
     long p = ::sysconf(_SC_PAGESIZE);
     return p > 0 ? static_cast<size_t>(p) : size_t(4096);
   }();
-  const size_t chunkSize = 32 * 1024 * 1024;
+  // Small chunks let every worker share the page-allocation work.
+  const size_t chunkSize = 4 * 1024 * 1024;
   const size_t numChunks = (size + chunkSize - 1) / chunkSize;
   parallelFor(0, numChunks, [&](size_t i) {
     size_t begin = i * chunkSize;

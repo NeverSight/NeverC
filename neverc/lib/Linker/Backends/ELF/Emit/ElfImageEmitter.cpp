@@ -97,7 +97,50 @@ bool needsInterpSection() {
          script->needsInterpSection();
 }
 
-template <class ELFT> void elf::writeOutput() { OutputWriter<ELFT>().run(); }
+namespace {
+// After the output is committed, input contents are no longer needed, but the
+// memory buffers stay mapped until the link context is torn down, and that
+// munmap tears down page tables on one thread. Drop the page tables of large
+// mapped inputs now from all workers; MADV_DONTNEED on a read-only file
+// mapping keeps the contents readable, so a later access merely faults again.
+void releaseInputPageTables() {
+#if defined(MADV_DONTNEED) && defined(__unix__)
+  if (!parallelEnabled())
+    return;
+  const size_t pageSize = [] {
+    long p = ::sysconf(_SC_PAGESIZE);
+    return p > 0 ? static_cast<size_t>(p) : size_t(4096);
+  }();
+  constexpr size_t minBytes = size_t(1) << 20;
+  constexpr size_t chunkBytes = size_t(16) << 20;
+  struct Range {
+    uintptr_t begin, end;
+  };
+  SmallVector<Range, 0> ranges;
+  for (const std::unique_ptr<MemoryBuffer> &mb : elfState().memoryBuffers) {
+    if (!mb || mb->getBufferKind() != MemoryBuffer::MemoryBuffer_MMap ||
+        mb->getBufferSize() < minBytes)
+      continue;
+    uintptr_t begin = reinterpret_cast<uintptr_t>(mb->getBufferStart());
+    uintptr_t end = begin + mb->getBufferSize();
+    begin = (begin + pageSize - 1) / pageSize * pageSize;
+    end = end / pageSize * pageSize;
+    for (uintptr_t p = begin; p < end; p += chunkBytes)
+      ranges.push_back({p, std::min<uintptr_t>(end, p + chunkBytes)});
+  }
+  parallelFor(0, ranges.size(), [&](size_t i) {
+    (void)::madvise(reinterpret_cast<void *>(ranges[i].begin),
+                    ranges[i].end - ranges[i].begin, MADV_DONTNEED);
+  });
+#endif
+}
+} // namespace
+
+template <class ELFT> void elf::writeOutput() {
+  OutputWriter<ELFT>().run();
+  if (!errorCount())
+    releaseInputPageTables();
+}
 
 void removeEmptyPTLoad(SmallVector<PhdrEntry *, 0> &phdrs) {
   auto it = std::stable_partition(
@@ -213,21 +256,69 @@ void resolveSymbolVisibility() {
 
   auto symbols = symtab.getSymbols();
 
-  // Phase 1: demote dead/lazy symbols (inherently serial due to overwrite).
-  DenseMap<InputFile *, DenseMap<SectionBase *, size_t>> sectionIndexMap;
-  for (Symbol *sym : symbols) {
-    if (auto *d = dyn_cast<Defined>(sym)) {
-      if (d->section && !d->section->isLive())
-        demoteDefined(*d, sectionIndexMap[d->file]);
-    } else {
-      auto *s = dyn_cast<SharedSymbol>(sym);
-      if (sym->isLazy() || (s && !cast<SharedFile>(s->file)->isNeeded)) {
-        uint8_t binding = sym->isLazy() ? sym->binding : uint8_t(STB_WEAK);
-        Undefined(nullptr, sym->getName(), binding, sym->stOther, sym->type)
-            .overwrite(*sym);
-        sym->versionId = VER_NDX_GLOBAL;
+  // Phase 1: demote dead/lazy symbols. Each demotion only rewrites its own
+  // symbol; the section index of a demoted definition comes from a per-file
+  // map. Tracing prints while overwriting, so keep the sequential order when
+  // any symbol is traced.
+  auto demoteUndefinedOrShared = [](Symbol *sym) {
+    auto *s = dyn_cast<SharedSymbol>(sym);
+    if (sym->isLazy() || (s && !cast<SharedFile>(s->file)->isNeeded)) {
+      uint8_t binding = sym->isLazy() ? sym->binding : uint8_t(STB_WEAK);
+      Undefined(nullptr, sym->getName(), binding, sym->stOther, sym->type)
+          .overwrite(*sym);
+      sym->versionId = VER_NDX_GLOBAL;
+    }
+  };
+  const bool anyTraced =
+      llvm::any_of(symbols, [](const Symbol *sym) { return sym->traced; });
+  if (!parallelEnabled() || anyTraced) {
+    DenseMap<InputFile *, DenseMap<SectionBase *, size_t>> sectionIndexMap;
+    for (Symbol *sym : symbols) {
+      if (auto *d = dyn_cast<Defined>(sym)) {
+        if (d->section && !d->section->isLive())
+          demoteDefined(*d, sectionIndexMap[d->file]);
+      } else {
+        demoteUndefinedOrShared(sym);
       }
     }
+  } else {
+    // Find definitions in dead sections and mark their files.
+    DenseMap<InputFile *, uint32_t> fileIndex;
+    ArrayRef<ELFFileBase *> files = elfState().objectFiles;
+    for (uint32_t i = 0; i != files.size(); ++i)
+      fileIndex[files[i]] = i;
+    std::vector<uint8_t> fileHasDeadDef(files.size() + 1);
+    std::vector<uint8_t> deadDef(symbols.size());
+    parallelFor(0, symbols.size(), [&](size_t i) {
+      if (auto *d = dyn_cast<Defined>(symbols[i]))
+        if (d->section && !d->section->isLive()) {
+          deadDef[i] = 1;
+          auto it = fileIndex.find(d->file);
+          fileHasDeadDef[it == fileIndex.end() ? files.size() : it->second] = 1;
+        }
+    });
+    // Definitions from files outside objectFiles (none in practice) keep the
+    // sequential path so their maps are built exactly once.
+    std::vector<DenseMap<SectionBase *, size_t>> maps(files.size());
+    parallelFor(0, files.size(), [&](size_t i) {
+      if (fileHasDeadDef[i])
+        for (auto [index, sec] : llvm::enumerate(files[i]->getSections()))
+          maps[i].try_emplace(sec, index);
+    });
+    DenseMap<InputFile *, DenseMap<SectionBase *, size_t>> otherMaps;
+    for (size_t i = 0; i != symbols.size(); ++i)
+      if (deadDef[i] && !fileIndex.count(symbols[i]->file))
+        demoteDefined(*cast<Defined>(symbols[i]), otherMaps[symbols[i]->file]);
+    parallelFor(0, symbols.size(), [&](size_t i) {
+      Symbol *sym = symbols[i];
+      if (deadDef[i]) {
+        auto it = fileIndex.find(sym->file);
+        if (it != fileIndex.end())
+          demoteDefined(*cast<Defined>(sym), maps[it->second]);
+      } else if (!isa<Defined>(sym)) {
+        demoteUndefinedOrShared(sym);
+      }
+    });
   }
 
   // Phase 2: compute preemptibility in parallel — each symbol is independent.
@@ -1517,9 +1608,20 @@ void removeUnusedSyntheticSections() {
           llvm::erase_if(isd->sections, [&](InputSection *isec) {
             return unused.count(isec);
           });
-  llvm::erase_if(script->orphanSections, [&](const InputSectionBase *sec) {
-    return unused.count(sec);
-  });
+  // Synthetic sections come after all input sections, so only the trailing
+  // synthetic part of the orphan list can hold an unused one.
+  if (unused.empty())
+    return;
+  auto &orphans = script->orphanSections;
+  auto syntheticBegin =
+      llvm::find_if(llvm::reverse(orphans), [](const InputSectionBase *s) {
+        return !isa<SyntheticSection>(s);
+      }).base();
+  orphans.erase(std::remove_if(syntheticBegin, orphans.end(),
+                               [&](const InputSectionBase *sec) {
+                                 return unused.count(sec);
+                               }),
+                orphans.end());
 }
 
 // Create output section objects and add them to OutputSections.
@@ -1621,13 +1723,25 @@ template <class ELFT> void OutputWriter<ELFT>::prepareLayout() {
         sym->binding = sym->computeBinding();
     });
 
-    for (Symbol *sym : symbols) {
+    // Deciding membership reads every symbol; do that with the workers and
+    // append the selected symbols in order.
+    enum : uint8_t { InSymtab = 1, InDynsym = 2 };
+    std::vector<uint8_t> membership(symbols.size());
+    parallelFor(0, symbols.size(), [&](size_t i) {
+      Symbol *sym = symbols[i];
       if (!sym->isUsedInRegularObj || !includeInSymtab(*sym))
+        return;
+      membership[i] = InSymtab | (sym->includeInDynsym() ? InDynsym : 0);
+    });
+
+    for (size_t i = 0, e = symbols.size(); i != e; ++i) {
+      if (!membership[i])
         continue;
+      Symbol *sym = symbols[i];
       if (in.symTab)
         in.symTab->addSymbol(sym);
 
-      if (sym->includeInDynsym()) {
+      if (membership[i] & InDynsym) {
         partitions[sym->partition - 1].dynSymTab->addSymbol(sym);
         if (auto *file = dyn_cast_or_null<SharedFile>(sym->file))
           if (file->isNeeded && !sym->isUndefined())
@@ -2358,6 +2472,12 @@ template <class ELFT> void OutputWriter<ELFT>::allocateOutputBuffer() {
   if (!config->mmapOutputFile)
     flags |= FileOutputBuffer::F_no_mmap;
 
+  llvm::TimeTraceScope openScope("Open output file");
+  // Replacing an existing output releases its pages when the new file is
+  // renamed over it at commit time. Drop the old file now, off the critical
+  // path, instead.
+  unlinkAsync(config->outputFile);
+
   Expected<std::unique_ptr<FileOutputBuffer>> bufferOrErr =
       FileOutputBuffer::createWithFileBacking(config->outputFile, fileSize,
                                               flags, outputBufferIsFileBacked);
@@ -2376,6 +2496,7 @@ template <class ELFT> void OutputWriter<ELFT>::allocateOutputBuffer() {
   buffer = std::move(*bufferOrErr);
   elfOut().bufferStart = buffer->getBufferStart();
 
+  llvm::TimeTraceScope prefaultScope("Prefault output file");
   prefaultBuffer(elfOut().bufferStart, fileSize, outputBufferIsFileBacked);
 }
 

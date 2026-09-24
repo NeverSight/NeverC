@@ -341,6 +341,9 @@ struct Config {
   bool androidMemtagStack;
 
   unsigned threadCount;
+  // Worker count requested by --threads=, or by the driver when absent.
+  // Zero selects the automatic budget.
+  unsigned requestedThreadCount = 0;
 
   // If an input file equals a key, remap it to the value.
   llvm::DenseMap<llvm::StringRef, llvm::StringRef> remapInputs;
@@ -375,6 +378,14 @@ struct DuplicateSymbol {
 struct Ctx {
   LinkerDriver driver;
   SmallVector<std::unique_ptr<MemoryBuffer>> memoryBuffers;
+  // Command-line inputs mapped, and archives indexed, by worker threads ahead
+  // of the ordered file loading; readFile() and archive loading consume them.
+  struct PrefetchedInput {
+    std::unique_ptr<MemoryBuffer> buffer;
+    const char *bufferStart = nullptr;
+    std::optional<std::vector<std::pair<MemoryBufferRef, uint64_t>>> members;
+  };
+  llvm::StringMap<PrefetchedInput> prefetchedInputs;
   SmallVector<ELFFileBase *, 0> objectFiles;
   SmallVector<SharedFile *, 0> sharedFiles;
   SmallVector<BinaryFile *, 0> binaryFiles;

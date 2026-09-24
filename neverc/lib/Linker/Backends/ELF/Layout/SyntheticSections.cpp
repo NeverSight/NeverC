@@ -25,6 +25,9 @@
 #include "llvm/Support/LEB128.h"
 #include "llvm/Support/TimeProfiler.h"
 #include <cstdlib>
+#include <cstring>
+#include <memory>
+#include <type_traits>
 
 using namespace llvm;
 using namespace llvm::dwarf;
@@ -915,12 +918,44 @@ void RelocationBaseSection::addAddendOnlyRelocIfNonPreemptible(
 }
 
 void RelocationBaseSection::mergeRels() {
-  size_t newSize = relocs.size();
+  const size_t oldSize = relocs.size();
+  size_t newSize = oldSize;
   for (const auto &v : relocsVec)
     newSize += v.size();
-  relocs.reserve(newSize);
-  for (const auto &v : relocsVec)
-    llvm::append_range(relocs, v);
+  if (!parallelEnabled() || newSize - oldSize < (size_t(1) << 16)) {
+    relocs.reserve(newSize);
+    for (const auto &v : relocsVec)
+      llvm::append_range(relocs, v);
+    relocsVec.clear();
+    return;
+  }
+
+  // Copy the per-worker vectors into place, in the same order, with the
+  // workers: the copy and the page faults of the new storage are large.
+  static_assert(std::is_trivially_default_constructible_v<DynamicReloc> &&
+                std::is_trivially_copyable_v<DynamicReloc>);
+  relocs.resize_for_overwrite(newSize);
+  constexpr size_t piece = size_t(1) << 14;
+  struct Copy {
+    const DynamicReloc *from;
+    size_t count;
+    DynamicReloc *to;
+  };
+  SmallVector<Copy, 0> copies;
+  size_t offset = oldSize;
+  for (const auto &v : relocsVec) {
+    for (size_t i = 0; i < v.size(); i += piece)
+      copies.push_back({v.data() + i, std::min(piece, v.size() - i),
+                        relocs.data() + offset + i});
+    offset += v.size();
+  }
+  parallelForEach(copies, [](const Copy &c) {
+    std::memcpy(c.to, c.from, c.count * sizeof(DynamicReloc));
+  });
+  // Freeing the per-worker storage is also sizable; do it concurrently.
+  parallelFor(0, relocsVec.size(), [&](size_t i) {
+    SmallVector<DynamicReloc, 0>().swap(relocsVec[i]);
+  });
   relocsVec.clear();
 }
 
@@ -928,9 +963,45 @@ void RelocationBaseSection::partitionRels() {
   if (!combreloc)
     return;
   const RelType relativeRel = target->relativeRel;
-  numRelativeRelocs =
-      llvm::partition(relocs, [=](auto &r) { return r.type == relativeRel; }) -
-      relocs.begin();
+  auto isRelative = [=](const DynamicReloc &r) {
+    return r.type == relativeRel;
+  };
+  // Both groups are fully sorted by computeRels() on unique keys, so the order
+  // produced here does not matter; partition large sets with the workers.
+  const size_t count = relocs.size();
+  if (!parallelEnabled() || count < (size_t(1) << 16)) {
+    numRelativeRelocs = llvm::partition(relocs, isRelative) - relocs.begin();
+    return;
+  }
+  const size_t chunks = size_t(parallelThreadCount()) * 4;
+  const size_t width = (count + chunks - 1) / chunks;
+  std::vector<size_t> relative(chunks + 1), other(chunks + 1);
+  parallelFor(0, chunks, [&](size_t c) {
+    for (size_t i = c * width, e = std::min(count, i + width); i < e; ++i)
+      (isRelative(relocs[i]) ? relative : other)[c + 1]++;
+  });
+  for (size_t c = 0; c != chunks; ++c) {
+    relative[c + 1] += relative[c];
+    other[c + 1] += other[c];
+  }
+  numRelativeRelocs = relative[chunks];
+  // DynamicReloc has no default constructor; scatter into raw storage.
+  static_assert(std::is_trivially_destructible_v<DynamicReloc>);
+  std::unique_ptr<char[]> storage(
+      new char[count * sizeof(DynamicReloc) + alignof(DynamicReloc)]);
+  void *raw = storage.get();
+  size_t space = count * sizeof(DynamicReloc) + alignof(DynamicReloc);
+  auto *scratch = static_cast<DynamicReloc *>(std::align(
+      alignof(DynamicReloc), count * sizeof(DynamicReloc), raw, space));
+  parallelFor(0, chunks, [&](size_t c) {
+    size_t r = relative[c], o = numRelativeRelocs + other[c];
+    for (size_t i = c * width, e = std::min(count, i + width); i < e; ++i)
+      new (&scratch[isRelative(relocs[i]) ? r++ : o++]) DynamicReloc(relocs[i]);
+  });
+  parallelFor(0, chunks, [&](size_t c) {
+    for (size_t i = c * width, e = std::min(count, i + width); i < e; ++i)
+      relocs[i] = scratch[i];
+  });
 }
 
 void RelocationBaseSection::finalizeContents() {
@@ -970,8 +1041,13 @@ void RelocationBaseSection::computeRels() {
   // is to make results easier to read.
   if (combreloc) {
     auto nonRelative = relocs.begin() + numRelativeRelocs;
-    parallelSort(relocs.begin(), nonRelative,
-                 [&](auto &a, auto &b) { return a.r_offset < b.r_offset; });
+    // Relative relocations have distinct offsets, so the stable parallel
+    // sort orders them exactly as llvm::sort would.
+    auto byOffset = [](auto &a, auto &b) { return a.r_offset < b.r_offset; };
+    if (parallelEnabled())
+      parallelStableSort(relocs.begin(), nonRelative, byOffset);
+    else
+      llvm::sort(relocs.begin(), nonRelative, byOffset);
     // Non-relative relocations are few, so don't bother with parallelSort.
     llvm::sort(nonRelative, relocs.end(), [&](auto &a, auto &b) {
       return std::tie(a.r_sym, a.r_offset) < std::tie(b.r_sym, b.r_offset);

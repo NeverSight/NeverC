@@ -82,7 +82,10 @@ public:
   StringRef findFile(StringRef filename);
   StringRef findLib(StringRef filename);
 
-  bool findUnderscoreMangle(StringRef sym);
+  struct EntryCandidates {
+    bool main, wmain, winMain, wWinMain;
+  };
+  EntryCandidates findEntryCandidates();
 
   // Symbol names are mangled by prepending "_" on x86.
   StringRef mangle(StringRef sym);
@@ -143,6 +146,10 @@ public:
 
   void addBuffer(std::unique_ptr<MemoryBuffer> mb, bool wholeArchive,
                  bool lazy);
+  // Sizes the worker pool from archive sizes, before members are loaded.
+  void configureParallelismForArchive(uint64_t archiveBytes);
+  uint64_t archiveBytesSeen = 0;
+
   void addArchiveBuffer(MemoryBufferRef mbref, StringRef symName,
                         StringRef parentName, ArchiveFile *parentArchive,
                         uint64_t offsetInArchive);

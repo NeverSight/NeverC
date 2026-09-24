@@ -228,17 +228,21 @@ public:
     // the addend but still reference the symbol.
     AgainstSymbolWithTargetVA,
   };
+  /// Leaves every member uninitialized, for storage that is filled in bulk.
+  DynamicReloc() = default;
   /// This constructor records a relocation against a symbol.
   DynamicReloc(RelType type, const InputSectionBase *inputSec,
                uint64_t offsetInSec, Kind kind, Symbol &sym, int64_t addend,
                RelExpr expr)
-      : sym(&sym), inputSec(inputSec), offsetInSec(offsetInSec), type(type),
-        addend(addend), kind(kind), expr(expr) {}
+      : sym(&sym), outputSec(nullptr), inputSec(inputSec),
+        offsetInSec(offsetInSec), type(type), addend(addend), kind(kind),
+        expr(expr) {}
   /// This constructor records a relative relocation with no symbol.
   DynamicReloc(RelType type, const InputSectionBase *inputSec,
                uint64_t offsetInSec, int64_t addend = 0)
-      : sym(nullptr), inputSec(inputSec), offsetInSec(offsetInSec), type(type),
-        addend(addend), kind(AddendOnly), expr(R_ADDEND) {}
+      : sym(nullptr), outputSec(nullptr), inputSec(inputSec),
+        offsetInSec(offsetInSec), type(type), addend(addend), kind(AddendOnly),
+        expr(R_ADDEND) {}
 
   uint64_t getOffset() const;
   uint32_t getSymIndex(SymbolTableBaseSection *symTab) const;
@@ -254,7 +258,7 @@ public:
   void computeRaw(SymbolTableBaseSection *symbolTable);
 
   Symbol *sym;
-  const OutputSection *outputSec = nullptr;
+  const OutputSection *outputSec;
   const InputSectionBase *inputSec;
   uint64_t offsetInSec;
   uint64_t r_offset;

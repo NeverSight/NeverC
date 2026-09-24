@@ -1,12 +1,13 @@
 #include "Linker/ELF/SymbolTable.h"
 #include "Linker/Core/Runtime/Allocator.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
+#include "Linker/Core/Runtime/LinkerParallel.h"
 #include "Linker/Core/Support/Strings.h"
 #include "Linker/ELF/Config.h"
+#include "Linker/ELF/ELFContextAccess.h"
 #include "Linker/ELF/InputFiles.h"
 #include "Linker/ELF/Symbols.h"
 #include "llvm/ADT/STLExtras.h"
-#include "Linker/ELF/ELFContextAccess.h"
 using namespace llvm;
 using namespace llvm::object;
 using namespace llvm::ELF;
@@ -19,12 +20,13 @@ using namespace linker::elf;
 
 void SymbolTable::wrap(Symbol *sym, Symbol *real, Symbol *wrap) {
   // Redirect __real_foo to the original foo and foo to the original __wrap_foo.
-  int &idx1 = symMap[CachedHashStringRef(sym->getName())];
-  int &idx2 = symMap[CachedHashStringRef(real->getName())];
-  int &idx3 = symMap[CachedHashStringRef(wrap->getName())];
+  // All three names were inserted before wrapping, so their slots exist.
+  Symbol *&symTarget = intern(CachedHashStringRef(sym->getName()))->symbol;
+  Symbol *&realTarget = intern(CachedHashStringRef(real->getName()))->symbol;
+  Symbol *&wrapTarget = intern(CachedHashStringRef(wrap->getName()))->symbol;
 
-  idx2 = idx1;
-  idx1 = idx3;
+  realTarget = symTarget;
+  symTarget = wrapTarget;
 
   // Propagate symbol usage information to the redirected symbols.
   if (sym->isUsedInRegularObj)
@@ -52,6 +54,52 @@ void SymbolTable::wrap(Symbol *sym, Symbol *real, Symbol *wrap) {
 // Symbol lookup & insertion
 // ===----------------------------------------------------------------------===
 
+SymbolNameSlot *SymbolTable::intern(CachedHashStringRef name) {
+  NameShard &shard = shardFor(name);
+  NameShardGuard lock(shard.mutex, concurrentInterning);
+  SymbolNameSlot *&slot = shard.map[name];
+  if (!slot) {
+    slot = new (shard.slots.Allocate()) SymbolNameSlot;
+    slot->symbol = nullptr;
+    slot->size = static_cast<uint32_t>(name.size());
+    slot->comdatOwner = nullptr;
+  }
+  return slot;
+}
+
+SymbolNameSlot *SymbolTable::lookup(CachedHashStringRef name) {
+  NameShard &shard = shardFor(name);
+  NameShardGuard lock(shard.mutex, concurrentInterning);
+  auto it = shard.map.find(name);
+  return it == shard.map.end() ? nullptr : it->second;
+}
+
+void SymbolTable::reserveNames(size_t expectedNames) {
+  const size_t perShard = expectedNames / numNameShards + 1;
+  // Sizing all shards touches tens of megabytes; spread it over the workers.
+  parallelFor(0, numNameShards,
+              [&](size_t i) { nameShards[i].map.reserve(perShard); });
+}
+
+Symbol *SymbolTable::createSymbol(SymbolNameSlot *slot, StringRef name,
+                                  bool hasVersionSuffix) {
+  if (!symbolArena)
+    symbolArena = &getSpecificAllocSingleton<SymbolUnion>();
+  Symbol *sym =
+      reinterpret_cast<Symbol *>(new (symbolArena->Allocate()) SymbolUnion());
+  slot->symbol = sym;
+  symVector.push_back(sym);
+
+  // *sym was not initialized by a constructor. Initialize all Symbol fields.
+  memset(sym, 0, sizeof(Symbol));
+  sym->setName(name);
+  sym->partition = 1;
+  sym->versionId = VER_NDX_GLOBAL;
+  if (hasVersionSuffix)
+    sym->hasVersionSuffix = true;
+  return sym;
+}
+
 // Find an existing symbol or create a new one.
 Symbol *SymbolTable::insert(StringRef name) {
   // <name>@@<version> means the symbol is the default version. In that
@@ -65,27 +113,15 @@ Symbol *SymbolTable::insert(StringRef name) {
   if (pos != StringRef::npos && pos + 1 < name.size() && name[pos + 1] == '@')
     stem = name.take_front(pos);
 
-  auto p = symMap.insert({CachedHashStringRef(stem), (int)symVector.size()});
-  if (!p.second) {
-    Symbol *sym = symVector[p.first->second];
+  SymbolNameSlot *slot = intern(CachedHashStringRef(stem));
+  if (Symbol *sym = slot->symbol) {
     if (stem.size() != name.size()) {
       sym->setName(name);
       sym->hasVersionSuffix = true;
     }
     return sym;
   }
-
-  Symbol *sym = reinterpret_cast<Symbol *>(make<SymbolUnion>());
-  symVector.push_back(sym);
-
-  // *sym was not initialized by a constructor. Initialize all Symbol fields.
-  memset(sym, 0, sizeof(Symbol));
-  sym->setName(name);
-  sym->partition = 1;
-  sym->versionId = VER_NDX_GLOBAL;
-  if (pos != StringRef::npos)
-    sym->hasVersionSuffix = true;
-  return sym;
+  return createSymbol(slot, name, pos != StringRef::npos);
 }
 
 // This variant of addSymbol is used by BinaryFile::parse to check duplicate
@@ -100,10 +136,8 @@ Symbol *SymbolTable::addAndCheckDuplicate(const Defined &newSym) {
 }
 
 Symbol *SymbolTable::find(StringRef name) {
-  auto it = symMap.find(CachedHashStringRef(name));
-  if (it == symMap.end())
-    return nullptr;
-  return symVector[it->second];
+  SymbolNameSlot *slot = lookup(CachedHashStringRef(name));
+  return slot ? slot->symbol : nullptr;
 }
 
 // ===----------------------------------------------------------------------===

@@ -10,6 +10,7 @@
 #include "Linker/MachO/SyntheticSections.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SmallVector.h"
+#include <algorithm>
 using namespace llvm;
 using namespace linker;
 using namespace linker::macho;
@@ -51,37 +52,37 @@ SymbolTable::~SymbolTable() = default;
 // ===----------------------------------------------------------------------===
 
 Symbol *SymbolTable::find(CachedHashStringRef cachedName) {
-  auto it = symMap.find(cachedName);
-  if (it == symMap.end())
-    return nullptr;
-  return symVector[it->second];
+  SymbolNameSlot *slot = names.lookup(cachedName.val());
+  return slot ? slot->symbol : nullptr;
 }
 
 void SymbolTable::reserve(size_t additional) {
   if (additional == 0)
     return;
   size_t required = symVector.size() + additional;
+  // Grow geometrically: every extracted archive member calls this, and exact
+  // reservations would copy the whole vector once per member.
   if (required > symVector.capacity())
-    symVector.reserve(required);
-  symMap.reserve(required);
+    symVector.reserve(std::max(required, symVector.capacity() * 2));
 }
 
 std::pair<Symbol *, bool> SymbolTable::insert(StringRef name,
                                               const InputFile *file) {
-  auto p = symMap.insert({CachedHashStringRef(name), (int)symVector.size()});
+  SymbolNameSlot *slot = std::exchange(insertHint, {}).match(name);
+  if (!slot)
+    slot = names.intern(name);
 
-  Symbol *sym;
-  if (!p.second) {
-    // Name already present in the symbol table.
-    sym = symVector[p.first->second];
-  } else {
+  Symbol *sym = slot->symbol;
+  const bool inserted = !sym;
+  if (inserted) {
     // Name is a new symbol.
     sym = reinterpret_cast<Symbol *>(make<SymbolUnion>());
+    slot->symbol = sym;
     symVector.push_back(sym);
   }
 
   sym->isUsedInRegularObj |= !file || isa<ObjFile>(file);
-  return {sym, p.second};
+  return {sym, inserted};
 }
 
 // Move symbols at \p fromOff in \p fromIsec into \p toIsec, unless that symbol

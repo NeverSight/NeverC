@@ -3,6 +3,7 @@
 
 #include "Linker/MachO/Symbols.h"
 
+#include "Linker/Core/Runtime/NameTable.h"
 #include "Linker/Core/Support/LlvmAliases.h"
 #include "llvm/ADT/CachedHashString.h"
 #include "llvm/ADT/DenseMap.h"
@@ -21,6 +22,8 @@ class MachHeaderSection;
 class Symbol;
 class Defined;
 class Undefined;
+
+using SymbolNameSlot = NameSlot<Symbol>;
 
 /*
  * Note that the SymbolTable handles name collisions by calling
@@ -62,6 +65,18 @@ public:
   Symbol *find(StringRef name) { return find(llvm::CachedHashStringRef(name)); }
   void reserve(size_t additional);
 
+  // Returns the name's slot, creating it if needed. Thread-safe while
+  // concurrent interning is enabled; symbols are still only inserted by the
+  // thread that resolves them.
+  SymbolNameSlot *intern(StringRef name) { return names.intern(name); }
+  void setConcurrentInterning(bool enabled) { names.setConcurrent(enabled); }
+
+  // Lets the next insert() of the hinted name use its pre-interned slot
+  // instead of looking the name up.
+  NameHint<Symbol> exchangeInsertHint(NameHint<Symbol> hint) {
+    return std::exchange(insertHint, hint);
+  }
+
 private:
   friend void reportPendingUndefinedSymbols();
   friend void reportPendingDuplicateSymbols();
@@ -72,7 +87,9 @@ private:
   struct Diagnostics;
 
   std::pair<Symbol *, bool> insert(StringRef name, const InputFile *);
-  llvm::DenseMap<llvm::CachedHashStringRef, int> symMap;
+
+  ShardedNameTable<Symbol> names;
+  NameHint<Symbol> insertHint;
   std::vector<Symbol *> symVector;
   std::unique_ptr<Diagnostics> diagnostics;
 };

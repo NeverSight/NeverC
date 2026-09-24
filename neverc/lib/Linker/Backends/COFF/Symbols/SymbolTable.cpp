@@ -6,6 +6,7 @@
 #include "Linker/COFF/Symbols.h"
 #include "Linker/Core/Runtime/Allocator.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
+#include "Linker/Core/Runtime/LinkerParallel.h"
 #include "Linker/Core/Runtime/Stopwatch.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/LTO/LTO.h"
@@ -328,9 +329,10 @@ void reportProblemSymbols(const COFFLinkerContext &ctx,
 } // namespace
 
 void SymbolTable::reportUnresolvable() {
+  // Only set membership is observable here, so any iteration order will do.
   SmallPtrSet<Symbol *, 8> undefs;
-  for (auto &i : symMap) {
-    Symbol *sym = i.second;
+  for (NameSlot<Symbol> *slot : insertionOrder) {
+    Symbol *sym = slot->symbol;
     auto *undef = dyn_cast<Undefined>(sym);
     if (!undef || sym->deferUndefined)
       continue;
@@ -358,13 +360,32 @@ void SymbolTable::resolveRemainingUndefines() {
   SmallPtrSet<Symbol *, 8> undefs;
   DenseMap<Symbol *, Symbol *> localImports;
 
-  for (auto &i : symMap) {
-    Symbol *sym = i.second;
-    auto *undef = dyn_cast<Undefined>(sym);
-    if (!undef)
-      continue;
-    if (!sym->isUsedInRegularObj)
-      continue;
+  // Each step below changes only the symbol it visits. The visiting order is
+  // observable only when a later step inspects an earlier symbol: an __imp_
+  // name looks up the symbol it imports (which may have been resolved by a
+  // weak alias or /force already) and appends to localImportChunks. Only then
+  // visit the symbols in hash table order; otherwise resolution order gives
+  // the same result without building that table.
+  auto isCandidate = [](NameSlot<Symbol> *slot) {
+    return isa<Undefined>(slot->symbol) && slot->symbol->isUsedInRegularObj;
+  };
+  std::vector<NameSlot<Symbol> *> candidates;
+  for (NameSlot<Symbol> *slot : insertionOrder)
+    if (isCandidate(slot))
+      candidates.push_back(slot);
+  if (candidates.size() > 1 &&
+      (ctx.config.forceUnresolved ||
+       llvm::any_of(candidates, [](NameSlot<Symbol> *slot) {
+         return slot->symbol->getName().starts_with("__imp_");
+       }))) {
+    candidates = slotsInHashOrder();
+    llvm::erase_if(candidates,
+                   [&](NameSlot<Symbol> *slot) { return !isCandidate(slot); });
+  }
+
+  for (NameSlot<Symbol> *slot : candidates) {
+    Symbol *sym = slot->symbol;
+    auto *undef = cast<Undefined>(sym);
 
     StringRef name = undef->getName();
 
@@ -413,16 +434,100 @@ void SymbolTable::resolveRemainingUndefines() {
 }
 
 std::pair<Symbol *, bool> SymbolTable::insert(StringRef name) {
+  NameSlot<Symbol> *slot = std::exchange(insertHint, {}).match(name);
+  if (!slot)
+    slot = names.intern(name);
   bool inserted = false;
-  Symbol *&sym = symMap[CachedHashStringRef(name)];
-  if (!sym) {
-    sym = reinterpret_cast<Symbol *>(make<SymbolUnion>());
+  if (!slot->symbol) {
+    Symbol *sym = reinterpret_cast<Symbol *>(make<SymbolUnion>());
     sym->isUsedInRegularObj = false;
     sym->pendingArchiveLoad = false;
     sym->canInline = true;
+    slot->symbol = sym;
+    insertionOrder.push_back(slot);
     inserted = true;
   }
-  return {sym, inserted};
+  return {slot->symbol, inserted};
+}
+
+std::vector<NameSlot<Symbol> *> SymbolTable::slotsInHashOrder() const {
+  // A hash table that only ever grows lays its entries out as a function of
+  // the order the keys arrived in, so replaying the resolution order
+  // reproduces the table exactly.
+  DenseMap<CachedHashStringRef, NameSlot<Symbol> *> replay;
+  for (NameSlot<Symbol> *slot : insertionOrder)
+    replay[CachedHashStringRef(slot->name())] = slot;
+  std::vector<NameSlot<Symbol> *> slots;
+  slots.reserve(replay.size());
+  for (auto &entry : replay)
+    slots.push_back(entry.second);
+  return slots;
+}
+
+namespace {
+// Interns the names initializeSymbols() inserts: those of external and weak
+// external symbols. A member that does not parse is left to the ordinary
+// path, which diagnoses it.
+void internMemberNames(ShardedNameTable<Symbol> &names,
+                       ArchiveFile::MemberNames &member) {
+  Expected<std::unique_ptr<COFFObjectFile>> obj =
+      COFFObjectFile::create(member.mb);
+  if (!obj) {
+    consumeError(obj.takeError());
+    return;
+  }
+  const uint32_t numSymbols = (*obj)->getNumberOfSymbols();
+  member.hints.assign(numSymbols, {});
+  for (uint32_t i = 0; i < numSymbols; ++i) {
+    Expected<COFFSymbolRef> sym = (*obj)->getSymbol(i);
+    if (!sym) {
+      consumeError(sym.takeError());
+      member.hints.clear();
+      return;
+    }
+    if (sym->isExternal() || sym->isWeakExternal()) {
+      Expected<StringRef> name = (*obj)->getSymbolName(*sym);
+      if (!name) {
+        consumeError(name.takeError());
+        member.hints.clear();
+        return;
+      }
+      member.hints[i] = {names.intern(*name), name->data()};
+    }
+    i += sym->getNumberOfAuxSymbols();
+  }
+}
+} // namespace
+
+void SymbolTable::startMemberNameInterning(ArchiveFile &archive) {
+  if (!interningWorkers) {
+    interningWorkers = std::make_unique<LinkerTaskGroup>();
+    names.setConcurrent(true);
+  }
+  for (ArchiveFile::MemberNames *member : archive.internedMembers)
+    interningWorkers->spawn([this, member] {
+      if (interningCancelled.load(std::memory_order_relaxed))
+        return;
+      uint8_t state = ArchiveFile::MemberNames::Pending;
+      if (!member->state.compare_exchange_strong(
+              state, ArchiveFile::MemberNames::Running,
+              std::memory_order_acquire))
+        return;
+      internMemberNames(names, *member);
+      member->state.store(ArchiveFile::MemberNames::Done,
+                          std::memory_order_release);
+    });
+}
+
+void SymbolTable::finishMemberNameInterning() {
+  interningClosed = true;
+  // Members no worker has started are left to the ordinary path.
+  interningCancelled.store(true, std::memory_order_relaxed);
+  if (!interningWorkers)
+    return;
+  interningWorkers->sync();
+  interningWorkers.reset();
+  names.setConcurrent(false);
 }
 
 std::pair<Symbol *, bool> SymbolTable::insert(StringRef name, InputFile *file) {
@@ -760,53 +865,105 @@ std::vector<Chunk *> SymbolTable::getChunks() const {
 }
 
 Symbol *SymbolTable::find(StringRef name) const {
-  return symMap.lookup(CachedHashStringRef(name));
+  NameSlot<Symbol> *slot = names.lookup(name);
+  return slot ? slot->symbol : nullptr;
 }
 
 Symbol *SymbolTable::findUnderscore(StringRef name) const { return find(name); }
 
-// Return all symbols that start with Prefix, possibly ignoring the first
-// character of Prefix or the first character symbol.
-std::vector<Symbol *> SymbolTable::getSymsWithPrefix(StringRef prefix) {
-  std::vector<Symbol *> syms;
-  for (auto pair : symMap) {
-    StringRef name = pair.first.val();
-    if (name.starts_with(prefix) || name.starts_with(prefix.drop_front()) ||
-        name.drop_front().starts_with(prefix) ||
-        name.drop_front().starts_with(prefix.drop_front())) {
-      syms.push_back(pair.second);
-    }
-  }
-  return syms;
+Symbol *SymbolTable::findMangle(StringRef name) {
+  Symbol *result = nullptr;
+  findMangles(name, result);
+  return result;
 }
 
-Symbol *SymbolTable::findMangle(StringRef name) {
-  if (Symbol *sym = find(name)) {
-    if (auto *u = dyn_cast<Undefined>(sym)) {
-      // We're specifically looking for weak aliases that ultimately resolve to
-      // defined symbols, hence the call to getWeakAlias() instead of just using
-      // the weakAlias member variable. This matches link.exe's behavior.
-      if (Symbol *weakAlias = u->getWeakAlias())
-        return weakAlias;
-    } else {
-      return sym;
+void SymbolTable::findMangles(ArrayRef<StringRef> names,
+                              MutableArrayRef<Symbol *> results) {
+  assert(names.size() == results.size());
+  SmallVector<std::pair<std::string, size_t>, 4> pending;
+  for (size_t i = 0; i < names.size(); ++i) {
+    results[i] = nullptr;
+    if (Symbol *sym = find(names[i])) {
+      if (auto *u = dyn_cast<Undefined>(sym)) {
+        // We're specifically looking for weak aliases that ultimately resolve
+        // to defined symbols, hence the call to getWeakAlias() instead of just
+        // using the weakAlias member variable. This matches link.exe's
+        // behavior.
+        if (Symbol *weakAlias = u->getWeakAlias()) {
+          results[i] = weakAlias;
+          continue;
+        }
+      } else {
+        results[i] = sym;
+        continue;
+      }
     }
+    pending.emplace_back(("?" + names[i] + "@@Y").str(), i);
   }
+  if (pending.empty())
+    return;
 
-  // Efficient fuzzy string lookup is impossible with a hash table, so iterate
-  // the symbol table once and collect all possibly matching symbols into this
-  // vector. Then compare each possibly matching symbol with each possible
-  // mangling.
-  std::vector<Symbol *> syms = getSymsWithPrefix(name);
-  auto findByPrefix = [&syms](const Twine &t) -> Symbol * {
-    std::string prefix = t.str();
-    for (auto *s : syms)
-      if (s->getName().starts_with(prefix))
-        return s;
-    return nullptr;
+  // Efficient fuzzy string lookup is impossible with a hash table, so scan all
+  // names once, in parallel, for symbols that carry the C++ mangling of a
+  // pending name. The result is the first such symbol in hash table order,
+  // which only needs that order when a name has several candidates.
+  struct Matches {
+    SmallVector<NameSlot<Symbol> *, 4> first;
+    SmallVector<uint32_t, 4> count;
   };
+  const size_t numTasks =
+      std::max<size_t>(1, std::min<size_t>(insertionOrder.size() / 4096,
+                                           parallelThreadCount() * 4));
+  std::vector<Matches> matches(numTasks);
+  auto scan = [&](size_t task) {
+    Matches &m = matches[task];
+    m.first.assign(pending.size(), nullptr);
+    m.count.assign(pending.size(), 0);
+    const size_t begin = task * insertionOrder.size() / numTasks;
+    const size_t end = (task + 1) * insertionOrder.size() / numTasks;
+    for (size_t i = begin; i < end; ++i) {
+      StringRef symName = insertionOrder[i]->name();
+      if (!symName.starts_with("?"))
+        continue;
+      for (size_t p = 0; p < pending.size(); ++p) {
+        if (!symName.starts_with(pending[p].first))
+          continue;
+        if (!m.count[p]++)
+          m.first[p] = insertionOrder[i];
+      }
+    }
+  };
+  parallelFor(0, numTasks, scan);
 
-  return findByPrefix("?" + name + "@@Y");
+  bool ambiguous = false;
+  for (size_t p = 0; p < pending.size(); ++p) {
+    uint32_t count = 0;
+    for (const Matches &m : matches) {
+      if (m.count[p] && !results[pending[p].second])
+        results[pending[p].second] = m.first[p]->symbol;
+      count += m.count[p];
+    }
+    ambiguous |= count > 1;
+  }
+  if (!ambiguous)
+    return;
+
+  for (auto &[prefix, index] : pending)
+    results[index] = nullptr;
+  size_t unresolved = pending.size();
+  for (NameSlot<Symbol> *slot : slotsInHashOrder()) {
+    StringRef symName = slot->name();
+    if (!symName.starts_with("?"))
+      continue;
+    for (auto &[prefix, index] : pending) {
+      if (results[index] || !symName.starts_with(prefix))
+        continue;
+      results[index] = slot->symbol;
+      --unresolved;
+    }
+    if (unresolved == 0)
+      return;
+  }
 }
 
 Symbol *SymbolTable::addUndefined(StringRef name) {

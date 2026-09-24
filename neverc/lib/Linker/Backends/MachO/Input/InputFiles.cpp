@@ -19,6 +19,7 @@
 #include "Linker/Core/Runtime/LinkerParallel.h"
 #include "Linker/Core/Runtime/Session.h"
 #include "Linker/Core/Support/Dwarf.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/iterator.h"
 #include "llvm/BinaryFormat/MachO.h"
 #include "llvm/LTO/LTO.h"
@@ -31,6 +32,7 @@
 #include "llvm/TextAPI/Architecture.h"
 #include "llvm/TextAPI/InterfaceFile.h"
 
+#include <cstring>
 #include <mutex>
 #include <optional>
 #include <type_traits>
@@ -743,6 +745,26 @@ void ObjFile::parseRelocations(ArrayRef<SectionHeader> sectionHeaders,
 }
 
 namespace {
+// Hands a symbol's pre-interned name slot to the symbol table insert that the
+// enclosed symbol creation performs; an unused hint is dropped on exit.
+class InsertHintScope {
+public:
+  InsertHintScope(SymbolNameSlot *slot, const char *name) : active(slot) {
+    if (active)
+      previous = symtab->exchangeInsertHint({slot, name});
+  }
+  ~InsertHintScope() {
+    if (active)
+      symtab->exchangeInsertHint(previous);
+  }
+
+private:
+  NameHint<macho::Symbol> previous;
+  bool active;
+};
+} // namespace
+
+namespace {
 template <class NList>
 macho::Symbol *createDefined(const NList &sym, StringRef name,
                              InputSection *isec, uint64_t value, uint64_t size,
@@ -926,7 +948,10 @@ void ObjFile::parseSymbols(ArrayRef<typename LP::section> sectionHeaders,
     } else if (isUndef(sym)) {
       undefineds.push_back(i);
     } else {
-      symbols[i] = parseNonSectionSymbol(sym, strtab);
+      {
+        InsertHintScope hint(internedNameSlot(i), strtab + sym.n_strx);
+        symbols[i] = parseNonSectionSymbol(sym, strtab);
+      }
       recordLocalNoDeadStrip(symbols[i]);
     }
   }
@@ -955,6 +980,7 @@ void ObjFile::parseSymbols(ArrayRef<typename LP::section> sectionHeaders,
                 " at misaligned offset");
           continue;
         }
+        InsertHintScope hint(internedNameSlot(symIndex), name.data());
         symbols[symIndex] =
             createDefined(sym, name, isec, 0, isec->getSize(), forceHidden);
         recordLocalNoDeadStrip(symbols[symIndex]);
@@ -1008,8 +1034,11 @@ void ObjFile::parseSymbols(ArrayRef<typename LP::section> sectionHeaders,
       if (!subsectionsViaSymbols || symbolOffset == 0 ||
           sym.n_desc & N_ALT_ENTRY || !isa<ConcatInputSection>(isec)) {
         isec->hasAltEntry = symbolOffset != 0;
-        symbols[symIndex] = createDefined(sym, name, isec, symbolOffset,
-                                          symbolSize, forceHidden);
+        {
+          InsertHintScope hint(internedNameSlot(symIndex), name.data());
+          symbols[symIndex] = createDefined(sym, name, isec, symbolOffset,
+                                            symbolSize, forceHidden);
+        }
         recordLocalNoDeadStrip(symbols[symIndex]);
         continue;
       }
@@ -1028,8 +1057,11 @@ void ObjFile::parseSymbols(ArrayRef<typename LP::section> sectionHeaders,
 
       // By construction, the symbol will be at offset zero in the new
       // subsection.
-      symbols[symIndex] = createDefined(sym, name, nextIsec, /*value=*/0,
-                                        symbolSize, forceHidden);
+      {
+        InsertHintScope hint(internedNameSlot(symIndex), name.data());
+        symbols[symIndex] = createDefined(sym, name, nextIsec, /*value=*/0,
+                                          symbolSize, forceHidden);
+      }
       recordLocalNoDeadStrip(symbols[symIndex]);
       nextIsec->align = MinAlign(sectionAlign, sym.n_value);
       subsections.push_back({sym.n_value - sectionAddr, nextIsec});
@@ -1042,8 +1074,10 @@ void ObjFile::parseSymbols(ArrayRef<typename LP::section> sectionHeaders,
   // symbol resolution behavior. In addition, a set of interconnected symbols
   // will all be resolved to the same file, instead of being resolved to
   // different files.
-  for (unsigned i : undefineds)
+  for (unsigned i : undefineds) {
+    InsertHintScope hint(internedNameSlot(i), strtab + nList[i].n_strx);
     symbols[i] = parseNonSectionSymbol(nList[i], strtab);
+  }
 }
 
 OpaqueFile::OpaqueFile(MemoryBufferRef mb, StringRef segName,
@@ -1086,11 +1120,73 @@ ObjFile::ObjFile(MemoryBufferRef mb, uint32_t modTime, StringRef archiveName,
     parse<LP64>();
 }
 
+namespace {
+bool deferRelocationsEnabled() { return machoLoadState().deferRelocations; }
+void deferRelocationsOf(ObjFile *file) {
+  MachOLoadState &state = machoLoadState();
+  std::lock_guard<std::mutex> lock(state.deferredMutex);
+  state.deferredFiles.push_back(file);
+}
+bool isUnwindInfoSection(const Section &sec) {
+  return sec.name == section_names::compactUnwind ||
+         sec.name == section_names::ehFrame;
+}
+} // namespace
+
+void macho::beginDeferredRelocations() {
+  resetDeferredRelocations();
+  machoLoadState().deferRelocations = true;
+}
+
+void macho::finishDeferredRelocations() {
+  MachOLoadState &state = machoLoadState();
+  state.deferRelocations = false;
+  if (state.deferredFiles.empty())
+    return;
+  TimeTraceScope timeScope("Parse relocations");
+  parallelForEach(state.deferredFiles, [](ObjFile *file) {
+    file->parseDeferredRelocations<LP64>();
+  });
+  state.deferredFiles.clear();
+}
+
+void macho::resetDeferredRelocations() {
+  MachOLoadState &state = machoLoadState();
+  state.deferRelocations = false;
+  state.deferredFiles.clear();
+}
+
+template <class LP> void ObjFile::parseDeferredRelocations() {
+  using Header = typename LP::mach_header;
+  using SegmentCommand = typename LP::segment_command;
+  using SectionHeader = typename LP::section;
+  auto *hdr = reinterpret_cast<const Header *>(mb.getBufferStart());
+  const llvm_macho::load_command *cmd = findCommand(hdr, LP::segmentLCType);
+  if (!cmd)
+    return;
+  auto *c = reinterpret_cast<const SegmentCommand *>(cmd);
+  ArrayRef<SectionHeader> sectionHeaders{
+      reinterpret_cast<const SectionHeader *>(c + 1), c->nsects};
+  for (size_t i = 0, n = sections.size(); i < n; ++i)
+    if (!sections[i]->subsections.empty() && !isUnwindInfoSection(*sections[i]))
+      parseRelocations(sectionHeaders, sectionHeaders[i], *sections[i]);
+}
+
 template <class LP> void ObjFile::parse() {
   using Header = typename LP::mach_header;
   using SegmentCommand = typename LP::segment_command;
   using SectionHeader = typename LP::section;
   using NList = typename LP::nlist;
+
+  internedNames = std::exchange(machoLoadState().pendingInternedNames, {});
+  auto dropInternedNames = llvm::make_scope_exit([&] { internedNames = {}; });
+  // Resolution visits every slot once; start loading them all now so that the
+  // cache misses overlap instead of stalling each insert in turn.
+#if defined(__GNUC__) || defined(__clang__)
+  for (SymbolNameSlot *slot : internedNames)
+    if (slot)
+      __builtin_prefetch(slot);
+#endif
 
   auto *buf = reinterpret_cast<const uint8_t *>(mb.getBufferStart());
   auto *hdr = reinterpret_cast<const Header *>(mb.getBufferStart());
@@ -1137,9 +1233,19 @@ template <class LP> void ObjFile::parse() {
   // relocations are independent
   {
     SmallVector<size_t> relocSections;
-    for (size_t i = 0, n = sections.size(); i < n; ++i)
-      if (!sections[i]->subsections.empty())
-        relocSections.push_back(i);
+    const bool defer = deferRelocationsEnabled();
+    bool deferred = false;
+    for (size_t i = 0, n = sections.size(); i < n; ++i) {
+      if (sections[i]->subsections.empty())
+        continue;
+      if (defer && !isUnwindInfoSection(*sections[i])) {
+        deferred = true;
+        continue;
+      }
+      relocSections.push_back(i);
+    }
+    if (deferred)
+      deferRelocationsOf(this);
 
     static constexpr size_t kParallelRelocSectionThreshold = 8;
     if (relocSections.size() < kParallelRelocSectionThreshold) {
@@ -2212,6 +2318,168 @@ void DylibFile::checkAppExtensionSafety(bool dylibIsAppExtensionSafe) const {
     warn("using '-application_extension' with unsafe dylib: " + toString(this));
 }
 
+namespace linker::macho {
+// Interns archive members' external symbol names on the worker pool while the
+// main thread loads inputs in order. Each member is claimed exactly once:
+// either by a worker, or by the main thread when it extracts a member that no
+// worker has started, in which case the names are resolved the ordinary way.
+class MemberNameInterning {
+public:
+  static void begin() {
+    MachOLoadState &state = machoLoadState();
+    state.interningOpen = true;
+    state.interningCancelled.store(false, std::memory_order_relaxed);
+  }
+
+  static void start(ArchiveFile &archive) {
+    MachOLoadState &state = machoLoadState();
+    if (!state.interningWorkers) {
+      state.interningWorkers = std::make_unique<LinkerTaskGroup>();
+      symtab->setConcurrentInterning(true);
+    }
+    for (ArchiveFile::MemberNames *member : archive.memberQueue)
+      state.interningWorkers->spawn([&state, member] {
+        if (!state.interningCancelled.load(std::memory_order_relaxed))
+          internMember(*member);
+      });
+  }
+
+  static void finish() {
+    MachOLoadState &state = machoLoadState();
+    state.interningOpen = false;
+    // Members no worker has started are left to the ordinary path.
+    state.interningCancelled.store(true, std::memory_order_relaxed);
+    if (!state.interningWorkers)
+      return;
+    state.interningWorkers->sync();
+    state.interningWorkers.reset();
+    symtab->setConcurrentInterning(false);
+  }
+
+  static bool isOpen() { return machoLoadState().interningOpen; }
+
+  // Returns the member's interned name slots, or an empty array when the
+  // caller should resolve names itself.
+  static ArrayRef<SymbolNameSlot *> claim(ArchiveFile::MemberNames &member) {
+    uint8_t state = ArchiveFile::MemberNames::Pending;
+    if (member.state.compare_exchange_strong(state,
+                                             ArchiveFile::MemberNames::Skipped,
+                                             std::memory_order_acquire))
+      return {};
+    while (state == ArchiveFile::MemberNames::Running)
+      state = member.state.load(std::memory_order_acquire);
+    if (state != ArchiveFile::MemberNames::Done)
+      return {};
+    return member.slots;
+  }
+
+private:
+  static void internMember(ArchiveFile::MemberNames &member) {
+    uint8_t state = ArchiveFile::MemberNames::Pending;
+    if (!member.state.compare_exchange_strong(state,
+                                              ArchiveFile::MemberNames::Running,
+                                              std::memory_order_acquire))
+      return;
+    if (!internNames(member.mb, member.slots))
+      member.slots.clear();
+    member.state.store(ArchiveFile::MemberNames::Done,
+                       std::memory_order_release);
+  }
+
+  // Interns the names ObjFile::parseSymbols() will insert: the external,
+  // non-debug symbols. The input is not validated yet, so anything out of
+  // bounds leaves the member to the ordinary path, which diagnoses it.
+  static bool internNames(MemoryBufferRef mb,
+                          std::vector<SymbolNameSlot *> &slots) {
+    using Header = LP64::mach_header;
+    using NList = LP64::nlist;
+    const StringRef buf = mb.getBuffer();
+    if (buf.size() < sizeof(Header))
+      return false;
+    Header hdr;
+    memcpy(&hdr, buf.data(), sizeof(hdr));
+    if (hdr.magic != LP64::magic ||
+        hdr.sizeofcmds > buf.size() - sizeof(Header))
+      return false;
+    const llvm_macho::symtab_command *symtabCmd = nullptr;
+    size_t offset = sizeof(Header);
+    const size_t end = sizeof(Header) + hdr.sizeofcmds;
+    for (uint32_t i = 0; i < hdr.ncmds; ++i) {
+      if (end - offset < sizeof(llvm_macho::load_command))
+        return false;
+      llvm_macho::load_command cmd;
+      memcpy(&cmd, buf.data() + offset, sizeof(cmd));
+      if (cmd.cmdsize < sizeof(cmd) || cmd.cmdsize > end - offset)
+        return false;
+      if (cmd.cmd == llvm_macho::LC_SYMTAB) {
+        if (cmd.cmdsize < sizeof(llvm_macho::symtab_command))
+          return false;
+        symtabCmd = reinterpret_cast<const llvm_macho::symtab_command *>(
+            buf.data() + offset);
+        break;
+      }
+      offset += cmd.cmdsize;
+    }
+    if (!symtabCmd)
+      return false;
+    const uint64_t symEnd = uint64_t(symtabCmd->symoff) +
+                            uint64_t(symtabCmd->nsyms) * sizeof(NList);
+    const uint64_t strEnd =
+        uint64_t(symtabCmd->stroff) + uint64_t(symtabCmd->strsize);
+    if (symEnd > buf.size() || strEnd > buf.size())
+      return false;
+    ArrayRef<NList> nList(
+        reinterpret_cast<const NList *>(buf.data() + symtabCmd->symoff),
+        symtabCmd->nsyms);
+    const char *strtab = buf.data() + symtabCmd->stroff;
+    const uint32_t strsize = symtabCmd->strsize;
+    slots.assign(nList.size(), nullptr);
+    for (size_t i = 0; i < nList.size(); ++i) {
+      const NList &sym = nList[i];
+      if ((sym.n_type & N_STAB) || !(sym.n_type & N_EXT))
+        continue;
+      if (sym.n_strx >= strsize)
+        return false;
+      const size_t room = strsize - sym.n_strx;
+      const size_t length = strnlen(strtab + sym.n_strx, room);
+      if (length == room)
+        return false;
+      slots[i] = symtab->intern(StringRef(strtab + sym.n_strx, length));
+    }
+    return true;
+  }
+};
+} // namespace linker::macho
+
+void macho::beginMemberNameInterning() { MemberNameInterning::begin(); }
+
+void macho::finishMemberNameInterning() { MemberNameInterning::finish(); }
+
+void ArchiveFile::startNameInterning() {
+  if (nameInterningStarted || !MemberNameInterning::isOpen() ||
+      !parallelEnabled() || !compatArch)
+    return;
+  nameInterningStarted = true;
+  Error err = Error::success();
+  for (const object::Archive::Child &c : file->children(err)) {
+    Expected<MemoryBufferRef> mb = c.getMemoryBufferRef();
+    if (!mb) {
+      llvm::consumeError(mb.takeError());
+      continue;
+    }
+    if (identify_magic(mb->getBuffer()) != file_magic::macho_object)
+      continue;
+    auto *member = make<MemberNames>();
+    member->mb = *mb;
+    memberNames[c.getChildOffset()] = member;
+    memberQueue.push_back(member);
+  }
+  // Errors are reported when a member is extracted.
+  llvm::consumeError(std::move(err));
+  if (!memberQueue.empty())
+    MemberNameInterning::start(*this);
+}
+
 ArchiveFile::ArchiveFile(std::unique_ptr<object::Archive> &&f, bool forceHidden)
     : InputFile(ArchiveKind, f->getMemoryBufferRef()), file(std::move(f)),
       forceHidden(forceHidden) {}
@@ -2244,6 +2512,7 @@ void ArchiveFile::addLazySymbols() {
     }
   }
 
+  startNameInterning();
   for (const object::Archive::Symbol &sym : file->symbols())
     symtab->addLazyArchive(sym.getName(), this, sym);
 }
@@ -2287,9 +2556,17 @@ Error ArchiveFile::fetch(const object::Archive::Child &c, StringRef reason) {
     return modTime.takeError();
 
   configureParallelismForMaterializedInput(*mb);
+  // The worker pool may only now exist.
+  startNameInterning();
+  ArrayRef<SymbolNameSlot *> internedNames;
+  if (auto it = memberNames.find(c.getChildOffset()); it != memberNames.end())
+    internedNames = MemberNameInterning::claim(*it->second);
+  ArrayRef<SymbolNameSlot *> &pending = machoLoadState().pendingInternedNames;
+  ArrayRef<SymbolNameSlot *> outerNames = std::exchange(pending, internedNames);
   Expected<InputFile *> file =
       loadArchiveMember(*mb, toTimeT(*modTime), getName(), c.getChildOffset(),
                         forceHidden, compatArch);
+  pending = outerNames;
 
   if (!file)
     return file.takeError();
@@ -2461,3 +2738,4 @@ void macho::extract(InputFile &file, StringRef reason) {
 }
 
 template void ObjFile::parse<LP64>();
+template void ObjFile::parseDeferredRelocations<LP64>();

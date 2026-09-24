@@ -605,7 +605,8 @@ void Symbol::resolve(const Defined &other) {
   // symbol marked override is meant to forcibly replace any other definition
   // of the same name. Run this check before the standard weak/strong logic so
   // that override wins regardless of binding on either side.
-  if (isDefined() && file != other.file) {
+  if (isDefined() && file != other.file &&
+      !elfState().overrideSymbols.empty()) {
     auto overIt = elfState().overrideSymbols.find(getName());
     if (overIt != elfState().overrideSymbols.end()) {
       const InputFile *overrideSource = overIt->second;
@@ -633,8 +634,9 @@ void Symbol::resolve(const LazyObject &other) {
   }
 
   if (!isUndefined()) {
-    // See the comment in resolveUndefined().
-    if (isDefined())
+    // See the comment in resolveUndefined(). The map is only populated for
+    // --warn-backrefs.
+    if (isDefined() && config->warnBackrefs)
       elfState().backwardReferences.erase(this);
     return;
   }

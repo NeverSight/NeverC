@@ -422,8 +422,7 @@ template <class ELFT> static std::string maybeReportDiscarded(Undefined &sym) {
 
   // If the discarded section is a COMDAT.
   StringRef signature = file->getShtGroupSignature(objSections, elfSec);
-  if (const InputFile *prevailing =
-          symtab.comdatGroups.lookup(CachedHashStringRef(signature))) {
+  if (const InputFile *prevailing = symtab.getComdatOwner(signature)) {
     msg += "\n>>> section group signature: " + signature.str() +
            "\n>>> prevailing definition is in " + toString(prevailing);
     if (sym.nonPrevailing) {
@@ -1186,25 +1185,50 @@ template <class ELFT> void elf::scanRelocations() {
   // for -z nocombreloc.
   bool serial = !config->zCombreloc;
   LinkerTaskGroup tg;
+  // Large objects are split into section ranges so that no single file
+  // becomes the tail of the scan.
+  constexpr size_t sectionsPerTask = 512;
   for (ELFFileBase *f : elfState().objectFiles) {
-    auto fn = [f]() {
-      RelocationScanner scanner;
-      for (InputSectionBase *s : f->getSections()) {
-        if (s && s->kind() == SectionBase::Regular && s->isLive() &&
-            (s->flags & SHF_ALLOC))
-          scanner.template scanSection<ELFT>(*s);
-      }
-    };
-    tg.spawn(bindLinkerContext(std::move(fn)), serial);
+    const size_t numSections = f->getSections().size();
+    for (size_t begin = 0; begin < numSections; begin += sectionsPerTask) {
+      const size_t end = std::min(numSections, begin + sectionsPerTask);
+      auto fn = [f, begin, end]() {
+        RelocationScanner scanner;
+        for (InputSectionBase *s : f->getSections().slice(begin, end - begin)) {
+          if (s && s->kind() == SectionBase::Regular && s->isLive() &&
+              (s->flags & SHF_ALLOC))
+            scanner.template scanSection<ELFT>(*s);
+        }
+      };
+      tg.spawn(bindLinkerContext(std::move(fn)), serial);
+    }
   }
 
-  tg.spawn(bindLinkerContext([] {
-    RelocationScanner scanner;
-    for (Partition &part : partitions) {
-      for (EhInputSection *sec : part.ehFrame->sections)
-        scanner.template scanSection<ELFT>(*sec);
+  // Without combreloc the output keeps scan order; .eh_frame is then scanned
+  // as one task, as before.
+  if (serial) {
+    tg.spawn(bindLinkerContext([] {
+      RelocationScanner scanner;
+      for (Partition &part : partitions)
+        for (EhInputSection *sec : part.ehFrame->sections)
+          scanner.template scanSection<ELFT>(*sec);
+    }));
+    return;
+  }
+  constexpr size_t ehSectionsPerTask = 128;
+  for (Partition &part : partitions) {
+    ArrayRef<EhInputSection *> ehSections = part.ehFrame->sections;
+    for (size_t begin = 0; begin < ehSections.size();
+         begin += ehSectionsPerTask) {
+      ArrayRef<EhInputSection *> chunk = ehSections.slice(
+          begin, std::min(ehSectionsPerTask, ehSections.size() - begin));
+      tg.spawn(bindLinkerContext([chunk] {
+        RelocationScanner scanner;
+        for (EhInputSection *sec : chunk)
+          scanner.template scanSection<ELFT>(*sec);
+      }));
     }
-  }));
+  }
 }
 
 namespace {
@@ -1380,14 +1404,45 @@ void elf::postScanRelocations() {
           {R_ADDEND, target->symbolicRel, got->getTlsIndexOff(), 1, dummy});
   }
 
+  // fn() does nothing for a symbol that is not an ifunc, is not tagged and
+  // needs no dynamic relocation, and processing a symbol never gives another
+  // symbol one of these properties. Select the symbols that need work with
+  // the workers, then process them in the usual order.
+  auto mayNeedWork = [](const Symbol &sym) {
+    return sym.isGnuIFunc() || sym.isTagged() || sym.needsDynReloc();
+  };
+  auto selectInOrder = [&](size_t count, auto &&symbolAt) {
+    const size_t tasks =
+        parallelEnabled() ? std::min<size_t>(count, parallelThreadCount() * 4)
+                          : 1;
+    std::vector<SmallVector<Symbol *, 0>> selected(std::max<size_t>(tasks, 1));
+    const size_t chunk = tasks ? (count + tasks - 1) / tasks : 0;
+    parallelFor(0, tasks, [&](size_t t) {
+      for (size_t i = t * chunk, e = std::min(count, i + chunk); i < e; ++i)
+        if (Symbol *sym = symbolAt(i); mayNeedWork(*sym))
+          selected[t].push_back(sym);
+    });
+    return selected;
+  };
+
   assert(symAux.size() == 1);
-  for (Symbol *sym : symtab.getSymbols())
-    fn(*sym);
+  ArrayRef<Symbol *> globals = symtab.getSymbols();
+  for (auto &part :
+       selectInOrder(globals.size(), [&](size_t i) { return globals[i]; }))
+    for (Symbol *sym : part)
+      fn(*sym);
 
   // Local symbols may need the aforementioned non-preemptible ifunc and GOT
   // handling. They don't need regular PLT.
-  for (ELFFileBase *file : elfState().objectFiles)
-    for (Symbol *sym : file->getLocalSymbols())
+  ArrayRef<ELFFileBase *> files = elfState().objectFiles;
+  std::vector<SmallVector<Symbol *, 0>> locals(files.size());
+  parallelFor(0, files.size(), [&](size_t i) {
+    for (Symbol *sym : files[i]->getLocalSymbols())
+      if (mayNeedWork(*sym))
+        locals[i].push_back(sym);
+  });
+  for (SmallVector<Symbol *, 0> &part : locals)
+    for (Symbol *sym : part)
       fn(*sym);
 }
 

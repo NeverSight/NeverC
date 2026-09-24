@@ -1718,6 +1718,84 @@ int main(void) {
   EXPECT_EQ(exec(parallelExe.string(), {}).exitCode, 23);
 }
 
+TEST_F(LinkerTest, ThreadCountOptionKeepsOutputBytesOnEveryFormat) {
+  struct Format {
+    const char *name;
+    const char *target;
+    std::vector<std::string> linkFlags;
+  };
+  const Format formats[] = {
+      {"elf", "--target=x86_64-linux-gnu", {"-Wl,--entry=main"}},
+      {"coff",
+       "--target=x86_64-pc-windows-msvc",
+       {"-Wl,--entry=main", "-Wl,--timestamp=0"}},
+      {"macho", "--target=arm64-apple-macos13", {"-Wl,-e,_main"}},
+  };
+
+  const fs::path mainSource = tmpFile("threads_main.c");
+  const fs::path libSource = tmpFile("threads_lib.c");
+  writeFile(mainSource, R"(
+int lib_value(int);
+int unused_root(int x) { return lib_value(x) * 3; }
+int main(void) { return lib_value(4) == 10 ? 0 : 1; }
+)");
+  std::string lib = "static const char *const names[] = {";
+  for (int i = 0; i < 64; ++i)
+    lib += "\"name " + std::to_string(i) + "\", ";
+  lib += "};\n";
+  for (int i = 0; i < 64; ++i)
+    lib += "int lib_fn" + std::to_string(i) + "(int x) { return x + " +
+           std::to_string(i) + " + names[" + std::to_string(i) + "][0]; }\n";
+  lib += "int lib_value(int x) { return lib_fn0(x) - 'n' + 6; }\n";
+  writeFile(libSource, lib);
+
+  for (const Format &format : formats) {
+    SCOPED_TRACE(format.name);
+    const std::string prefix = std::string("threads_") + format.name;
+    const fs::path mainObject = tmpFile(prefix + "_main.o");
+    const fs::path libObject = tmpFile(prefix + "_lib.o");
+    for (auto [source, object] :
+         {std::pair{mainSource, mainObject}, std::pair{libSource, libObject}}) {
+      CmdResult compile = ncc({format.target, "-fno-lto", "-O1",
+                               "-ffunction-sections", "-fdata-sections", "-c",
+                               source.string(), "-o", object.string()});
+      ASSERT_EQ(compile.exitCode, 0) << compile.err;
+    }
+
+    // Each output gets its own directory: Mach-O signatures embed the output
+    // file name.
+    auto link = [&](const std::string &threads) {
+      const fs::path dir = tmpFile(prefix + "_t" + threads);
+      fs::create_directories(dir);
+      const fs::path response = dir / "link.rsp";
+      writeFile(response, "--threads=" + threads + "\n");
+      std::vector<std::string> args = {format.target, "-nostdlib",
+                                       "-fgc-sections", mainObject.string(),
+                                       libObject.string()};
+      args.insert(args.end(), format.linkFlags.begin(), format.linkFlags.end());
+      args.insert(args.end(),
+                  {"-Wl,@" + response.string(), "-o", (dir / "out").string()});
+      CmdResult result = ncc(args);
+      return std::pair{result, dir / "out"};
+    };
+
+    auto [serial, serialOut] = link("1");
+    ASSERT_EQ(serial.exitCode, 0) << serial.err;
+    auto [parallel, parallelOut] = link("8");
+    ASSERT_EQ(parallel.exitCode, 0) << parallel.err;
+    const std::string serialBytes = readFile(serialOut);
+    EXPECT_FALSE(serialBytes.empty());
+    EXPECT_TRUE(serialBytes == readFile(parallelOut))
+        << "--threads changed the output bytes";
+
+    auto [rejected, rejectedOut] = link("0");
+    EXPECT_NE(rejected.exitCode, 0);
+    EXPECT_NE(rejected.err.find("expected a positive integer"),
+              std::string::npos)
+        << rejected.err;
+  }
+}
+
 TEST_F(LinkerTest, EmitStaticLib) {
   auto dir = tmpFile("eslib");
   fs::create_directories(dir);

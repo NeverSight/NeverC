@@ -781,7 +781,13 @@ void ArgParser::parse(ArrayRef<const char *> argv, opt::InputArgList &args) {
   unsigned missingIndex;
   unsigned missingCount;
 
-  args = ctx.optTable.ParseArgs(argv.slice(1), missingIndex, missingCount);
+  // Expand @file response files with Windows quoting rules, as MSVC-style
+  // build systems pass long link lines through them.
+  SmallVector<const char *, 256> expanded(argv.slice(1));
+  if (!cl::ExpandResponseFiles(saver(), cl::TokenizeWindowsCommandLine,
+                               expanded))
+    error("cannot expand response file");
+  args = ctx.optTable.ParseArgs(expanded, missingIndex, missingCount);
 
   // Save command line, skipping input files.
   ctx.config.argv = {argv[0]};
@@ -804,6 +810,12 @@ void ArgParser::parse(ArrayRef<const char *> argv, opt::InputArgList &args) {
     else
       warn("ignoring unknown argument '" + arg->getAsString(args) +
            "', did you mean '" + nearest + "'");
+  }
+  if (const auto *arg = args.getLastArg(OPT_threads_eq)) {
+    unsigned threads = 0;
+    if (!to_integer(arg->getValue(), threads) || threads == 0)
+      error(arg->getSpelling() + ": expected a positive integer, but got '" +
+            arg->getValue() + "'");
   }
 }
 

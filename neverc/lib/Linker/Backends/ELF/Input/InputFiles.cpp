@@ -25,6 +25,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include <mutex>
 #include <optional>
+#include <thread>
 
 using namespace llvm;
 using namespace llvm::ELF;
@@ -119,8 +120,14 @@ std::optional<MemoryBufferRef> elf::readFile(StringRef path) {
   log(path);
   config->dependencyFiles.insert(llvm::CachedHashString(path));
 
-  auto mbOrErr = MemoryBuffer::getFile(path, /*IsText=*/false,
-                                       /*RequiresNullTerminator=*/false);
+  ErrorOr<std::unique_ptr<MemoryBuffer>> mbOrErr = [&] {
+    auto it = elfState().prefetchedInputs.find(path);
+    if (it != elfState().prefetchedInputs.end() && it->second.buffer)
+      return ErrorOr<std::unique_ptr<MemoryBuffer>>(
+          std::move(it->second.buffer));
+    return MemoryBuffer::getFile(path, /*IsText=*/false,
+                                 /*RequiresNullTerminator=*/false);
+  }();
   if (auto ec = mbOrErr.getError()) {
     error("cannot open " + path + ": " + ec.message());
     return std::nullopt;
@@ -166,6 +173,11 @@ bool isCompatible(InputFile *file) {
 }
 
 template <class ELFT> void doParseFile(InputFile *file) {
+  // Lazy archive members may not be initialized yet.
+  if (file->kind() == InputFile::ObjKind && file->ekind == config->ekind)
+    cast<ObjFile<ELFT>>(file)->awaitInternedNames();
+  else if (auto *elf = dyn_cast<ELFFileBase>(file))
+    elf->ensureInitialized();
   if (!isCompatible(file))
     return;
 
@@ -385,10 +397,77 @@ void ELFFileBase::init() {
   }
 }
 
+bool ELFFileBase::tryInitQuietly() {
+  if (initialized)
+    return true;
+  switch (ekind) {
+  case ELF64LEKind:
+    return initQuietly<ELF64LE>(fileKind);
+  case ELF64BEKind:
+    return initQuietly<ELF64BE>(fileKind);
+  default:
+    return false;
+  }
+}
+
+template <class ELFT> bool ELFFileBase::initQuietly(InputFile::Kind k) {
+  using Elf_Shdr = typename ELFT::Shdr;
+  using Elf_Sym = typename ELFT::Sym;
+
+  Expected<ELFFile<ELFT>> objOrErr = ELFFile<ELFT>::create(mb.getBuffer());
+  if (!objOrErr) {
+    consumeError(objOrErr.takeError());
+    return false;
+  }
+  const ELFFile<ELFT> &obj = *objOrErr;
+  Expected<ArrayRef<Elf_Shdr>> sections = obj.sections();
+  if (!sections) {
+    consumeError(sections.takeError());
+    return false;
+  }
+  ArrayRef<Elf_Sym> eSyms;
+  StringRef strtab;
+  uint32_t global = 0;
+  if (const Elf_Shdr *symtabSec =
+          findSection(*sections, k == SharedKind ? SHT_DYNSYM : SHT_SYMTAB)) {
+    global = symtabSec->sh_info;
+    Expected<ArrayRef<Elf_Sym>> symbols = obj.symbols(symtabSec);
+    if (!symbols) {
+      consumeError(symbols.takeError());
+      return false;
+    }
+    if (global == 0 || global > symbols->size())
+      return false;
+    Expected<StringRef> strtabOrErr =
+        obj.getStringTableForSymtab(*symtabSec, *sections);
+    if (!strtabOrErr) {
+      consumeError(strtabOrErr.takeError());
+      return false;
+    }
+    eSyms = *symbols;
+    strtab = *strtabOrErr;
+  }
+
+  emachine = obj.getHeader().e_machine;
+  osabi = obj.getHeader().e_ident[llvm::ELF::EI_OSABI];
+  abiVersion = obj.getHeader().e_ident[llvm::ELF::EI_ABIVERSION];
+  elfShdrs = sections->data();
+  numELFShdrs = sections->size();
+  if (!eSyms.empty() || global) {
+    firstGlobal = global;
+    elfSyms = reinterpret_cast<const void *>(eSyms.data());
+    numELFSyms = uint32_t(eSyms.size());
+    stringTable = strtab;
+  }
+  initialized = true;
+  return true;
+}
+
 template <class ELFT> void ELFFileBase::init(InputFile::Kind k) {
   using Elf_Shdr = typename ELFT::Shdr;
   using Elf_Sym = typename ELFT::Sym;
 
+  initialized = true;
   // Initialize trivial attributes.
   const ELFFile<ELFT> &obj = getObj<ELFT>();
   emachine = obj.getHeader().e_machine;
@@ -426,6 +505,7 @@ uint32_t ObjFile<ELFT>::getSectionIndex(const Elf_Sym &sym) const {
 }
 
 template <class ELFT> void ObjFile<ELFT>::parse(bool ignoreComdats) {
+  awaitInternedNames();
   object::ELFFile<ELFT> obj = this->getObj();
   // Read a section table. justSymbols is usually false.
   if (this->justSymbols) {
@@ -439,9 +519,43 @@ template <class ELFT> void ObjFile<ELFT>::parse(bool ignoreComdats) {
   ArrayRef<Elf_Shdr> objSections = getELFShdrs<ELFT>();
   StringRef shstrtab = CHECK(obj.getSectionStringTable(objSections), this);
   uint64_t size = objSections.size();
+
+  // When every section parse() would visit is a validated group, only the
+  // COMDAT claims depend on input order. Record them and let
+  // initializeSections(), which runs in parallel, discard the members.
+  if (groupMembers && specialSectionIndices && !config->relocatable &&
+      numSpecialSections == numGroupSignatureSlots) {
+    // groupMembers is only set for files with groups, so deferredGroupKeep is
+    // non-empty and initializeSections() sizes `sections` before use.
+    assert(numGroupSignatureSlots > 0);
+    deferredGroupKeep.resize(numGroupSignatureSlots);
+    for (uint32_t k = 0; k != numGroupSignatureSlots; ++k) {
+      const uint32_t flag = groupMembers[k].front();
+      deferredGroupKeep[k] = (flag & GRP_COMDAT) == 0 || ignoreComdats ||
+                             symtab.claimComdat(groupSignatureSlots[k], this);
+    }
+    finishParse(obj, shstrtab, size);
+    return;
+  }
   sections.resize(size);
-  for (size_t i = 0; i != size; ++i) {
+  // Files that were not interned ahead of time (for example LTO output) get
+  // their group signature table here: parse() runs in input order on one
+  // thread, and initializeSections() later reads the table from workers.
+  if (!groupSignatureSlots) {
+    uint32_t groups = 0;
+    for (const Elf_Shdr &sec : objSections)
+      groups += sec.sh_type == SHT_GROUP;
+    if (groups) {
+      groupSignatureSlots = makeThreadLocalN<SymbolNameSlot *>(groups);
+      std::fill_n(groupSignatureSlots, groups, nullptr);
+      numGroupSignatureSlots = groups;
+    }
+  }
+  uint32_t nextGroupOrdinal = 0;
+  auto parseSectionHeader = [&](size_t i) {
     const Elf_Shdr &sec = objSections[i];
+    const uint32_t groupOrdinal =
+        sec.sh_type == SHT_GROUP ? nextGroupOrdinal++ : 0;
     if (sec.sh_type == SHT_LLVM_DEPENDENT_LIBRARIES && !config->relocatable) {
       StringRef name = check(obj.getSectionName(sec, shstrtab));
       ArrayRef<char> data = CHECK(
@@ -459,7 +573,7 @@ template <class ELFT> void ObjFile<ELFT>::parse(bool ignoreComdats) {
         }
       }
       this->sections[i] = discardedInputSection();
-      continue;
+      return;
     }
 
     // Producing a static binary with MTE globals is not currently supported,
@@ -469,12 +583,13 @@ template <class ELFT> void ObjFile<ELFT>::parse(bool ignoreComdats) {
     if (sec.sh_type == SHT_AARCH64_MEMTAG_GLOBALS_STATIC &&
         !canHaveMemtagGlobals()) {
       this->sections[i] = discardedInputSection();
-      continue;
+      return;
     }
 
     if (sec.sh_type != SHT_GROUP)
-      continue;
-    StringRef signature = getShtGroupSignature(objSections, sec);
+      return;
+    SymbolNameSlot *signature =
+        getGroupSignatureSlot(groupOrdinal, objSections, sec);
     ArrayRef<Elf_Word> entries =
         CHECK(obj.template getSectionContentsAsArray<Elf_Word>(sec), this);
     if (entries.empty())
@@ -484,15 +599,13 @@ template <class ELFT> void ObjFile<ELFT>::parse(bool ignoreComdats) {
     if (flag && flag != GRP_COMDAT)
       fatal(toString(this) + ": unsupported SHT_GROUP format");
 
-    bool keepGroup =
-        (flag & GRP_COMDAT) == 0 || ignoreComdats ||
-        symtab.comdatGroups.try_emplace(CachedHashStringRef(signature), this)
-            .second;
+    bool keepGroup = (flag & GRP_COMDAT) == 0 || ignoreComdats ||
+                     symtab.claimComdat(signature, this);
     if (keepGroup) {
       if (config->relocatable)
         this->sections[i] = createInputSection(
             i, sec, check(obj.getSectionName(sec, shstrtab)));
-      continue;
+      return;
     }
 
     // Otherwise, discard group members.
@@ -502,8 +615,25 @@ template <class ELFT> void ObjFile<ELFT>::parse(bool ignoreComdats) {
               ": invalid section index in group: " + Twine(secIndex));
       this->sections[secIndex] = discardedInputSection();
     }
+  };
+  // Only group, dependent-library and MTE-globals sections need work here.
+  // Interning recorded their indices when it ran for this file.
+  if (specialSectionIndices) {
+    for (uint32_t k = 0; k != numSpecialSections; ++k)
+      parseSectionHeader(specialSectionIndices[k]);
+  } else {
+    for (size_t i = 0; i != size; ++i)
+      parseSectionHeader(i);
   }
 
+  finishParse(obj, shstrtab, size);
+}
+
+// The part of parse() that follows section-header processing.
+template <class ELFT>
+void ObjFile<ELFT>::finishParse(const object::ELFFile<ELFT> &obj,
+                                StringRef shstrtab, uint64_t size) {
+  ArrayRef<Elf_Shdr> objSections = getELFShdrs<ELFT>();
   // LLVM module flags protect profile equality while inputs are still IR.
   // Native objects retain the same opaque value in a dedicated section so an
   // explicit -fno-lto link, or a link mixing native and LTO-produced objects,
@@ -579,7 +709,7 @@ template <class ELFT> void ObjFile<ELFT>::parse(bool ignoreComdats) {
   // Skip LTO-produced objects: their override info has already been
   // recorded via marker symbols during the BitcodeFile parse step, and
   // re-parsing would trigger spurious "marked in multiple files" warnings.
-  if (!builtFromBitcode) {
+  if (!builtFromBitcode && !knownNoOverrideSection) {
     for (size_t i = 0; i != size; ++i) {
       const Elf_Shdr &sec = objSections[i];
       StringRef name = check(obj.getSectionName(sec, shstrtab));
@@ -688,13 +818,27 @@ void ObjFile<ELFT>::initializeSections(bool ignoreComdats,
   ArrayRef<Elf_Shdr> objSections = getELFShdrs<ELFT>();
   StringRef shstrtab = CHECK(obj.getSectionStringTable(objSections), this);
   uint64_t size = objSections.size();
+  // Apply the group discards parse() deferred; see ObjFile::parse().
+  if (!deferredGroupKeep.empty()) {
+    this->sections.resize(size);
+    for (uint32_t k = 0; k != deferredGroupKeep.size(); ++k)
+      if (!deferredGroupKeep[k])
+        for (uint32_t secIndex : groupMembers[k].slice(1))
+          this->sections[secIndex] = discardedInputSection();
+    deferredGroupKeep.clear();
+  }
   SmallVector<ArrayRef<Elf_Word>, 0> selectedGroups;
   InputSectionBase *const discarded = discardedInputSection();
   SmallDenseMap<size_t, SmallVector<size_t, 1>, 4> linkOrderFollowers;
+  uint32_t nextGroupOrdinal = 0;
   for (size_t i = 0; i != size; ++i) {
+    const Elf_Shdr &sec = objSections[i];
+    // Group ordinals count every SHT_GROUP in section order, matching the
+    // interned signature table.
+    const uint32_t groupOrdinal =
+        sec.sh_type == SHT_GROUP ? nextGroupOrdinal++ : 0;
     if (this->sections[i] == discarded)
       continue;
-    const Elf_Shdr &sec = objSections[i];
 
     // SHF_EXCLUDE'ed sections are discarded by the linker. However,
     // if -r is given, we'll let the final link discard such sections.
@@ -725,13 +869,12 @@ void ObjFile<ELFT>::initializeSections(bool ignoreComdats,
     case SHT_GROUP: {
       if (!config->relocatable)
         sections[i] = discardedInputSection();
-      StringRef signature =
-          cantFail(this->getELFSyms<ELFT>()[sec.sh_info].getName(stringTable));
+      SymbolNameSlot *signature =
+          getGroupSignatureSlot(groupOrdinal, objSections, sec);
       ArrayRef<Elf_Word> entries =
           cantFail(obj.template getSectionContentsAsArray<Elf_Word>(sec));
       if ((entries[0] & GRP_COMDAT) == 0 || ignoreComdats ||
-          symtab.comdatGroups.find(CachedHashStringRef(signature))->second ==
-              this)
+          signature->comdatOwner == this)
         selectedGroups.push_back(entries);
       break;
     }
@@ -1064,7 +1207,7 @@ void ObjFile<ELFT>::initializeSymbols(const object::ELFFile<ELFT> &obj) {
   // Some entries have been filled by LazyObjFile.
   for (size_t i = firstGlobal, end = eSyms.size(); i != end; ++i)
     if (!symbols[i])
-      symbols[i] = symtab.insert(CHECK(eSyms[i].getName(stringTable), this));
+      symbols[i] = insertGlobalSymbol(i);
 
   // Perform symbol resolution on non-local symbols.
   SmallVector<unsigned, 32> undefineds;
@@ -1594,10 +1737,8 @@ void createBitcodeSymbol(Symbol *&sym, const std::vector<bool> &keptComdats,
 
 void BitcodeFile::parse() {
   for (std::pair<StringRef, Comdat::SelectionKind> s : obj->getComdatTable()) {
-    keptComdats.push_back(
-        s.second == Comdat::NoDeduplicate ||
-        symtab.comdatGroups.try_emplace(CachedHashStringRef(s.first), this)
-            .second);
+    keptComdats.push_back(s.second == Comdat::NoDeduplicate ||
+                          symtab.claimComdat(s.first, this));
   }
 
   if (numSymbols == 0) {
@@ -1721,15 +1862,174 @@ ELFFileBase *elf::createObjFile(MemoryBufferRef mb, StringRef archiveName,
   default:
     llvm_unreachable("getELFKind");
   }
-  f->init();
+  // Lazy members are initialized on first use, normally by the interning
+  // workers; see ObjFile::awaitInternedNames().
+  if (!lazy)
+    f->init();
   f->lazy = lazy;
   return f;
 }
 
+namespace {
+// Section types that ObjFile::parse() acts on before symbol resolution.
+bool isParseTimeSection(uint32_t type) {
+  return type == SHT_GROUP || type == SHT_LLVM_DEPENDENT_LIBRARIES ||
+         type == SHT_AARCH64_MEMTAG_GLOBALS_STATIC;
+}
+} // namespace
+
+template <class ELFT> void ObjFile<ELFT>::internGlobalSymbolNames() {
+  const ArrayRef<Elf_Sym> eSyms = this->getELFSyms<ELFT>();
+  // Every relocatable input is parsed, lazily or not, and needs a zeroed
+  // symbol array; allocating it here keeps that work off the ordered pass.
+  if (!symbols) {
+    numSymbols = eSyms.size();
+    symbols = std::make_unique<Symbol *[]>(numSymbols);
+  }
+
+  // Record the sections parse() has to look at.
+  ArrayRef<Elf_Shdr> objSections = this->template getELFShdrs<ELFT>();
+  uint32_t special = 0;
+  for (const Elf_Shdr &sec : objSections)
+    special += isParseTimeSection(sec.sh_type);
+  uint32_t *specialIndices = makeThreadLocalN<uint32_t>(special);
+  for (uint32_t i = 0, k = 0; i != objSections.size(); ++i)
+    if (isParseTimeSection(objSections[i].sh_type))
+      specialIndices[k++] = i;
+  specialSectionIndices = specialIndices;
+  numSpecialSections = special;
+
+  const char *strtab = stringTable.data();
+  const size_t strtabSize = stringTable.size();
+  if (firstGlobal < eSyms.size()) {
+    const size_t count = eSyms.size() - firstGlobal;
+    SymbolNameSlot **slots = makeThreadLocalN<SymbolNameSlot *>(count);
+    for (size_t i = 0; i != count; ++i) {
+      slots[i] = nullptr;
+      const uint32_t offset = eSyms[firstGlobal + i].st_name;
+      // Malformed names and versioned names keep the diagnosing slow path.
+      if (offset >= strtabSize)
+        continue;
+      StringRef name(strtab + offset);
+      if (name.find('@') != StringRef::npos)
+        continue;
+      slots[i] = symtab.intern(CachedHashStringRef(name));
+    }
+    globalNameSlots = slots;
+  }
+
+  // COMDAT signatures are symbol names too; intern them in section order.
+  // The same walk establishes whether parse() needs its override-section scan.
+  uint32_t groups = 0;
+  bool mayHaveOverrideSection = true;
+  if (Expected<StringRef> shstrtab =
+          this->getObj().getSectionStringTable(objSections)) {
+    const StringRef overrideName = neverc::OverrideNames::ELFSectionName;
+    mayHaveOverrideSection = false;
+    for (const Elf_Shdr &sec : objSections) {
+      groups += sec.sh_type == SHT_GROUP;
+      if (sec.sh_name >= shstrtab->size() ||
+          shstrtab->substr(sec.sh_name).starts_with(overrideName))
+        mayHaveOverrideSection = true;
+    }
+  } else {
+    consumeError(shstrtab.takeError());
+    for (const Elf_Shdr &sec : objSections)
+      groups += sec.sh_type == SHT_GROUP;
+  }
+  knownNoOverrideSection = !mayHaveOverrideSection;
+  if (!groups)
+    return;
+  SymbolNameSlot **groupSlots = makeThreadLocalN<SymbolNameSlot *>(groups);
+  ArrayRef<uint32_t> *members = makeThreadLocalN<ArrayRef<uint32_t>>(groups);
+  bool membersValid = llvm::endianness::native == ELFT::TargetEndianness;
+  uint32_t ordinal = 0;
+  for (const Elf_Shdr &sec : objSections) {
+    if (sec.sh_type != SHT_GROUP)
+      continue;
+    if (membersValid) {
+      // The same checks as parse(); any failure leaves diagnosis to it.
+      Expected<ArrayRef<Elf_Word>> entries =
+          this->getObj().template getSectionContentsAsArray<Elf_Word>(sec);
+      if (!entries) {
+        consumeError(entries.takeError());
+        membersValid = false;
+      } else if (entries->empty() ||
+                 (entries->front() && entries->front() != GRP_COMDAT) ||
+                 llvm::any_of(entries->slice(1), [&](uint32_t index) {
+                   return index >= objSections.size();
+                 })) {
+        membersValid = false;
+      } else {
+        members[ordinal] = ArrayRef<uint32_t>(
+            reinterpret_cast<const uint32_t *>(entries->data()),
+            entries->size());
+      }
+    }
+    SymbolNameSlot *&slot = groupSlots[ordinal++];
+    slot = nullptr;
+    if (sec.sh_info >= eSyms.size() || eSyms[sec.sh_info].st_name >= strtabSize)
+      continue;
+    slot = symtab.intern(
+        CachedHashStringRef(StringRef(strtab + eSyms[sec.sh_info].st_name)));
+  }
+  groupSignatureSlots = groupSlots;
+  numGroupSignatureSlots = groups;
+  if (membersValid)
+    groupMembers = members;
+}
+
+template <class ELFT> bool ObjFile<ELFT>::tryInternGlobalSymbolNames() {
+  NameInterning expected = NameInterning::Pending;
+  if (!nameInterning.compare_exchange_strong(expected, NameInterning::Running,
+                                             std::memory_order_acquire))
+    return false;
+  // A malformed file is left for awaitInternedNames() to initialize and
+  // diagnose on the resolving thread.
+  if (this->tryInitQuietly())
+    internGlobalSymbolNames();
+  nameInterning.store(NameInterning::Done, std::memory_order_release);
+  return true;
+}
+
+template <class ELFT> void ObjFile<ELFT>::awaitInternedNames() {
+  NameInterning state = nameInterning.load(std::memory_order_acquire);
+  if (state == NameInterning::Pending && !tryInternGlobalSymbolNames())
+    state = NameInterning::Running;
+  if (state == NameInterning::Running)
+    while (nameInterning.load(std::memory_order_acquire) != NameInterning::Done)
+      std::this_thread::yield();
+  this->ensureInitialized();
+}
+
+template <class ELFT>
+SymbolNameSlot *ObjFile<ELFT>::getGroupSignatureSlot(
+    uint32_t groupOrdinal, ArrayRef<Elf_Shdr> sections, const Elf_Shdr &sec) {
+  if (groupOrdinal < numGroupSignatureSlots)
+    if (SymbolNameSlot *slot = groupSignatureSlots[groupOrdinal])
+      return slot;
+  SymbolNameSlot *slot =
+      symtab.intern(CachedHashStringRef(getShtGroupSignature(sections, sec)));
+  if (groupOrdinal < numGroupSignatureSlots)
+    groupSignatureSlots[groupOrdinal] = slot;
+  return slot;
+}
+
+template <class ELFT> Symbol *ObjFile<ELFT>::insertGlobalSymbol(size_t i) {
+  const Elf_Sym &eSym = this->getELFSyms<ELFT>()[i];
+  if (globalNameSlots)
+    if (SymbolNameSlot *slot = globalNameSlots[i - firstGlobal])
+      return symtab.insertInterned(slot, stringTable.data() + eSym.st_name);
+  return symtab.insert(CHECK(eSym.getName(stringTable), this));
+}
+
 template <class ELFT> void ObjFile<ELFT>::parseLazy() {
+  awaitInternedNames();
   const ArrayRef<typename ELFT::Sym> eSyms = this->getELFSyms<ELFT>();
-  numSymbols = eSyms.size();
-  symbols = std::make_unique<Symbol *[]>(numSymbols);
+  if (!symbols) {
+    numSymbols = eSyms.size();
+    symbols = std::make_unique<Symbol *[]>(numSymbols);
+  }
 
   // resolve() may trigger this->extract() if an existing symbol is an undefined
   // symbol. If that happens, this function has served its purpose, and we can
@@ -1737,7 +2037,7 @@ template <class ELFT> void ObjFile<ELFT>::parseLazy() {
   for (size_t i = firstGlobal, end = eSyms.size(); i != end; ++i) {
     if (eSyms[i].st_shndx == SHN_UNDEF)
       continue;
-    symbols[i] = symtab.insert(CHECK(eSyms[i].getName(stringTable), this));
+    symbols[i] = insertGlobalSymbol(i);
     symbols[i]->resolve(LazyObject{*this});
     if (!lazy)
       break;

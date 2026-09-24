@@ -2,6 +2,7 @@
 #include "Linker/ELF/Config.h"
 #include "Linker/ELF/Driver.h"
 #include "llvm/Option/Option.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/TimeProfiler.h"
@@ -39,6 +40,11 @@ opt::InputArgList ELFOptTable::parse(ArrayRef<const char *> argv) {
   unsigned missingIndex;
   unsigned missingCount;
   SmallVector<const char *, 256> vec(argv.data(), argv.data() + argv.size());
+
+  // Expand GNU-style @file response files, as build systems pass very long
+  // link lines through them.
+  if (!cl::ExpandResponseFiles(saver(), cl::TokenizeGNUCommandLine, vec))
+    error("cannot expand response file");
 
   opt::InputArgList args = this->ParseArgs(vec, missingIndex, missingCount);
 

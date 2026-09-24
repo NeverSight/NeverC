@@ -1388,7 +1388,17 @@ namespace linker {
 namespace macho {
 bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
           llvm::raw_ostream &stderrOS, bool exitEarly, bool disableOutput,
-          const LinkerDriverConfig &driverCfg) {
+          const LinkerDriverConfig &callerCfg) {
+  // An explicit --threads= replaces the caller's budget for the whole link,
+  // including the early pool setup that runs before option parsing.
+  std::optional<LinkerDriverConfig> threadOverride;
+  if (unsigned threads = args::findThreadCountArg(
+          argsArr.drop_front(), {"--threads="}, /*windowsQuoting=*/false)) {
+    threadOverride.emplace(callerCfg);
+    threadOverride->threadCount = threads;
+  }
+  const LinkerDriverConfig &driverCfg =
+      threadOverride ? *threadOverride : callerCfg;
   std::optional<linker::crash_recovery_detail::CrashRecoveryTimeTraceOwner>
       TraceProfiler;
   const bool GuardAmbientTimeTrace =
@@ -1441,6 +1451,8 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
     resetOutputSegments();
     resetEmitState();
     InputFile::resetIdCount();
+    finishMemberNameInterning();
+    resetDeferredRelocations();
   };
 
   Common.e.logName = args::getFilenameWithoutExe(argsArr[0]);
@@ -1752,12 +1764,16 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
     TimeTraceScope timeScope("ExecuteLinker");
 
     initLLVM(); // must be run before any call to addFile()
+    beginDeferredRelocations();
+    beginMemberNameInterning();
     createFiles(args, driverCfg.threadCount);
+    finishMemberNameInterning();
     // A tiny direct set may still discover a large auto-linked archive below.
     // Select a parallel budget now when justified, but do not permanently
     // lock an automatic one-thread result until those late inputs are known.
     configureParallelismForMaterializedInputs(driverCfg,
                                               /*FinalizeSerial=*/false);
+    finishDeferredRelocations();
 
     {
       auto reexportHandler = [](const Arg *arg,

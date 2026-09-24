@@ -43,6 +43,14 @@ std::vector<StringRef> getLines(MemoryBufferRef mb);
 
 StringRef getFilenameWithoutExe(StringRef path);
 
+/// Returns the worker-thread budget named by the last argument that starts
+/// with one of \p spellings (for example "--threads="), or 0 when none does or
+/// its value is not a positive integer. Response files are expanded with
+/// Windows or GNU quoting first. Backends call this before creating their
+/// worker pool; the option table still validates and diagnoses the value.
+unsigned findThreadCountArg(ArrayRef<const char *> argv,
+                            ArrayRef<StringRef> spellings, bool windowsQuoting);
+
 } // namespace args
 } // namespace linker
 

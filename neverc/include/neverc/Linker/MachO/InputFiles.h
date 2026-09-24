@@ -5,6 +5,8 @@
 #include "Linker/MachO/Target.h"
 
 #include "Linker/Core/Runtime/Allocator.h"
+#include "Linker/Core/Runtime/LinkerParallel.h"
+#include "Linker/Core/Runtime/NameTable.h"
 #include "Linker/Core/Support/Dwarf.h"
 #include "Linker/Core/Support/LlvmAliases.h"
 #include "llvm/ADT/CachedHashString.h"
@@ -18,6 +20,8 @@
 #include "llvm/Support/Threading.h"
 #include "llvm/TextAPI/TextAPIReader.h"
 
+#include <atomic>
+#include <mutex>
 #include <vector>
 
 namespace llvm {
@@ -35,6 +39,7 @@ namespace macho {
 struct PlatformInfo;
 class ConcatInputSection;
 class Symbol;
+using SymbolNameSlot = NameSlot<Symbol>;
 class Defined;
 class AliasSymbol;
 struct Reloc;
@@ -156,6 +161,8 @@ public:
   ArrayRef<llvm::MachO::data_in_code_entry> getDataInCode() const;
   ArrayRef<uint8_t> getOptimizationHints() const;
   template <class LP> void parse();
+  // Parses the relocations that parse() left for finishDeferredRelocations().
+  template <class LP> void parseDeferredRelocations();
   template <class LP>
   void parseLinkerOptions(llvm::SmallVectorImpl<StringRef> &LinkerOptions);
 
@@ -180,6 +187,13 @@ public:
   llvm::SmallVector<Defined *, 0> localNoDeadStripSymbols;
 
 private:
+  // Slots of this file's external symbol names by symbol index, interned
+  // ahead of parsing by background workers. Empty when not available.
+  ArrayRef<SymbolNameSlot *> internedNames;
+  SymbolNameSlot *internedNameSlot(uint32_t index) const {
+    return index < internedNames.size() ? internedNames[index] : nullptr;
+  }
+
   llvm::once_flag initDwarf;
   llvm::once_flag initCompileUnit;
   std::unique_ptr<llvm::DWARFContext> compileUnitContext;
@@ -200,6 +214,38 @@ private:
   void registerCompactUnwind(Section &compactUnwindSection);
   void registerEhFrames(Section &ehFrameSection);
 };
+
+// While the command-line inputs are loaded, ObjFile::parse() leaves the
+// relocations of ordinary sections unparsed; nothing reads them until loading
+// ends, so finishDeferredRelocations() parses them for all files in parallel.
+// Unwind-info sections are still parsed immediately because their
+// registration depends on which definitions prevail at load time.
+void beginDeferredRelocations();
+void finishDeferredRelocations();
+void resetDeferredRelocations();
+
+// State of loading one link's inputs, owned by its MachOLinkerContext.
+struct MachOLoadState {
+  // Files whose ordinary relocations wait for finishDeferredRelocations().
+  bool deferRelocations = false;
+  std::mutex deferredMutex;
+  std::vector<ObjFile *> deferredFiles;
+  // Background interning of archive members' names.
+  bool interningOpen = false;
+  std::atomic<bool> interningCancelled{false};
+  std::unique_ptr<LinkerTaskGroup> interningWorkers;
+  // The interned names of the archive member being extracted, handed from
+  // ArchiveFile::fetch() to the ObjFile::parse() it triggers.
+  ArrayRef<SymbolNameSlot *> pendingInternedNames;
+};
+MachOLoadState &machoLoadState();
+
+// Archive members' external symbol names are interned by background workers
+// while inputs load (see ArchiveFile::startNameInterning()); the ordered
+// resolution then finds each name's slot without hashing it. finish waits for
+// the workers and must run before the worker pool is reconfigured.
+void beginMemberNameInterning();
+void finishMemberNameInterning();
 
 // command-line -sectcreate file
 class OpaqueFile final : public InputFile {
@@ -291,8 +337,25 @@ public:
   const llvm::object::Archive &getArchive() const { return *file; };
   static bool classof(const InputFile *f) { return f->kind() == ArchiveKind; }
 
+  // Queues this archive's object members for background name interning once
+  // a worker pool is available. Does nothing otherwise, or if already queued.
+  void startNameInterning();
+
+  // Background interning state of one object member.
+  struct MemberNames {
+    enum State : uint8_t { Pending, Running, Done, Skipped };
+    MemoryBufferRef mb;
+    std::atomic<uint8_t> state{Pending};
+    std::vector<SymbolNameSlot *> slots;
+  };
+
 private:
+  friend class MemberNameInterning;
   std::unique_ptr<llvm::object::Archive> file;
+  // Object members queued for interning, and their lookup by child offset.
+  llvm::DenseMap<uint64_t, MemberNames *> memberNames;
+  std::vector<MemberNames *> memberQueue;
+  bool nameInterningStarted = false;
   // Keep track of children fetched from the archive by tracking
   // which address offsets have been fetched already.
   llvm::DenseSet<uint64_t> seen;

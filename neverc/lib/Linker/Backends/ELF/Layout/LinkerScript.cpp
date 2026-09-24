@@ -1,4 +1,5 @@
 #include "Linker/ELF/LinkerScript.h"
+#include "Linker/Core/Runtime/LinkerParallel.h"
 #include "Linker/Core/Runtime/Session.h"
 #include "Linker/Core/Support/Strings.h"
 #include "Linker/ELF/Config.h"
@@ -803,15 +804,137 @@ OutputDesc *addInputSec(StringMap<TinyPtrVector<OutputSection *>> &map,
 // Orphan sections & address assignment
 // ===----------------------------------------------------------------------===
 
+// Without a SECTIONS command, --unique, relocatable output, --emit-relocs or
+// multiple partitions, placing orphans groups the live input sections by
+// output section name: each name gets one output section, created where the
+// name first appears, holding its sections in input order. Do that grouping
+// with the workers. Returns false, having changed nothing, if a relocation
+// section needs the ordered path.
+bool LinkerScript::addPlainOrphansParallel() {
+  ArrayRef<InputSectionBase *> inputs = elfState().inputSections;
+  const size_t count = inputs.size();
+  const size_t chunks = std::max<size_t>(1, parallelThreadCount() * 4);
+  const size_t width = (count + chunks - 1) / chunks;
+  struct Chunk {
+    StringMap<unsigned> index;
+    SmallVector<StringRef, 0> names;
+    SmallVector<SmallVector<InputSectionBase *, 0>, 0> lists;
+    SmallVector<InputSectionBase *, 0> orphans;
+    bool needsOrderedPath = false;
+  };
+  std::vector<Chunk> parts(chunks);
+  parallelFor(0, chunks, [&](size_t c) {
+    Chunk &part = parts[c];
+    for (size_t i = c * width, e = std::min(count, i + width); i < e; ++i) {
+      InputSectionBase *s = inputs[i];
+      if (auto *isec = dyn_cast<InputSection>(s))
+        if (isec->getRelocatedSection()) {
+          part.needsOrderedPath = true;
+          return;
+        }
+      if (!s->isLive() || s->parent)
+        continue;
+      if (s->type == SHT_GROUP || (s->flags & SHF_GROUP) ||
+          ((s->type == SHT_REL || s->type == SHT_RELA) &&
+           !isa<SyntheticSection>(s))) {
+        part.needsOrderedPath = true;
+        return;
+      }
+      part.orphans.push_back(s);
+      StringRef name = getOutputSectionName(s);
+      auto [it, inserted] = part.index.try_emplace(name, part.names.size());
+      if (inserted) {
+        part.names.push_back(name);
+        part.lists.emplace_back();
+      }
+      part.lists[it->second].push_back(s);
+    }
+  });
+  for (const Chunk &part : parts)
+    if (part.needsOrderedPath)
+      return false;
+
+  // Create output sections in order of first appearance, and give each chunk
+  // list its position within its output section.
+  StringMap<unsigned> outputIndex;
+  SmallVector<OutputDesc *, 0> created;
+  SmallVector<size_t, 0> totals;
+  std::vector<SmallVector<std::pair<unsigned, size_t>, 0>> placement(chunks);
+  for (size_t c = 0; c != chunks; ++c) {
+    Chunk &part = parts[c];
+    for (size_t k = 0; k != part.names.size(); ++k) {
+      auto [it, inserted] =
+          outputIndex.try_emplace(part.names[k], created.size());
+      if (inserted) {
+        created.push_back(createOutputSection(part.names[k], "<internal>"));
+        totals.push_back(0);
+      }
+      placement[c].push_back({it->second, totals[it->second]});
+      totals[it->second] += part.lists[k].size();
+    }
+  }
+  SmallVector<InputSectionDescription *, 0> descriptions;
+  for (size_t o = 0; o != created.size(); ++o) {
+    OutputSection &osec = created[o]->osec;
+    auto *isd = make<InputSectionDescription>("");
+    osec.commands.push_back(isd);
+    isd->sectionBases.resize(totals[o]);
+    osec.partition = 1;
+    descriptions.push_back(isd);
+  }
+  parallelFor(0, chunks, [&](size_t c) {
+    Chunk &part = parts[c];
+    for (size_t k = 0; k != part.lists.size(); ++k) {
+      auto [o, offset] = placement[c][k];
+      OutputSection *osec = &created[o]->osec;
+      for (InputSectionBase *s : part.lists[k]) {
+        s->parent = osec;
+        descriptions[o]->sectionBases[offset++] = s;
+      }
+    }
+  });
+  for (Chunk &part : parts)
+    orphanSections.append(part.orphans.begin(), part.orphans.end());
+
+  // Keep just InputSection.
+  llvm::erase_if(elfState().inputSections,
+                 [](InputSectionBase *s) { return !isa<InputSection>(s); });
+  sectionCommands.insert(sectionCommands.begin(), created.begin(),
+                         created.end());
+  return true;
+}
+
 void LinkerScript::addOrphanSections() {
+  if (parallelEnabled() && !hasSectionsCommand && sectionCommands.empty() &&
+      !config->unique && !config->relocatable && !config->emitRelocs &&
+      partitions.size() == 1 && addPlainOrphansParallel())
+    return;
+
   StringMap<TinyPtrVector<OutputSection *>> map;
   SmallVector<OutputDesc *, 0> v;
 
-  auto add = [&](InputSectionBase *s) {
+  // Output names of ordinary input sections depend only on the section
+  // itself, so compute them with the workers. Names of relocation sections
+  // depend on where their target was placed and are computed in order below.
+  ArrayRef<InputSectionBase *> inputs = elfState().inputSections;
+  SmallVector<StringRef, 0> precomputedNames;
+  if (parallelEnabled()) {
+    precomputedNames.resize(inputs.size());
+    parallelFor(0, inputs.size(), [&](size_t i) {
+      InputSectionBase *s = inputs[i];
+      if (auto *isec = dyn_cast<InputSection>(s))
+        if (isec->getRelocatedSection())
+          return;
+      precomputedNames[i] = getOutputSectionName(s);
+    });
+  }
+
+  auto add = [&](InputSectionBase *s, StringRef precomputed = StringRef()) {
     if (s->isLive() && !s->parent) {
       orphanSections.push_back(s);
 
-      StringRef name = getOutputSectionName(s);
+      StringRef name =
+          precomputed.data() ? precomputed : getOutputSectionName(s);
       if (config->unique) {
         v.push_back(createSection(s, name));
       } else if (OutputSection *sec = findByName(sectionCommands, name)) {
@@ -830,7 +953,8 @@ void LinkerScript::addOrphanSections() {
   // to create target sections first. We do not want priority handling
   // for synthetic sections because them are special.
   size_t n = 0;
-  for (InputSectionBase *isec : elfState().inputSections) {
+  for (size_t i = 0, e = elfState().inputSections.size(); i != e; ++i) {
+    InputSectionBase *isec = elfState().inputSections[i];
     if (LLVM_LIKELY(isa<InputSection>(isec)))
       elfState().inputSections[n++] = isec;
 
@@ -841,7 +965,7 @@ void LinkerScript::addOrphanSections() {
       if (InputSectionBase *rel = sec->getRelocatedSection())
         if (auto *relIS = dyn_cast_or_null<InputSectionBase>(rel->parent))
           add(relIS);
-    add(isec);
+    add(isec, precomputedNames.empty() ? StringRef() : precomputedNames[i]);
   }
   // Keep just InputSection.
   elfState().inputSections.resize(n);

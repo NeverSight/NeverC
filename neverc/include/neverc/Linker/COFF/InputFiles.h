@@ -2,6 +2,7 @@
 #define LINKER_COFF_INPUT_FILES_H
 
 #include "Linker/COFF/Config.h"
+#include "Linker/Core/Runtime/NameTable.h"
 #include "Linker/Core/Support/LlvmAliases.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
@@ -11,6 +12,7 @@
 #include "llvm/Object/Archive.h"
 #include "llvm/Object/COFF.h"
 #include "llvm/Support/StringSaver.h"
+#include <atomic>
 #include <memory>
 #include <set>
 #include <vector>
@@ -123,10 +125,29 @@ public:
   // Returns true when a symbol is provided by a short COFF import member.
   bool isImportLibraryMember(const Archive::Symbol &sym) const;
 
+  // Background name interning state of one object member (see
+  // SymbolTable::startMemberNameInterning()).
+  struct MemberNames {
+    enum State : uint8_t { Pending, Running, Done, Skipped };
+    MemoryBufferRef mb;
+    std::atomic<uint8_t> state{Pending};
+    // Per symbol index: the name's slot and its address in the member.
+    std::vector<NameHint<Symbol>> hints;
+  };
+
+  // Returns the interned names of the member at \p offset if a worker has
+  // interned them, waiting for one that is in progress; claims the member
+  // otherwise so no worker starts it.
+  ArrayRef<NameHint<Symbol>> claimInternedNames(uint64_t offset);
+
+  // Object members queued for interning, and their lookup by child offset.
+  std::vector<MemberNames *> internedMembers;
+
 private:
   std::unique_ptr<Archive> file;
   llvm::DenseMap<StringRef, Archive::Symbol> symbols;
   llvm::DenseSet<uint64_t> seen;
+  llvm::DenseMap<uint64_t, MemberNames *> memberNames;
 };
 
 // .obj or .o file. This may be a member of an archive file.
@@ -233,6 +254,12 @@ private:
 
   std::unique_ptr<COFFObjectFile> coffObj;
 
+public:
+  // Slots of this file's external symbol names by symbol index, interned
+  // ahead of parsing by background workers; empty when unavailable.
+  ArrayRef<NameHint<Symbol>> internedNames;
+
+private:
   // List of all chunks defined by this file. This includes both section
   // chunks and non-section chunks for common symbols.
   std::vector<Chunk *> chunks;

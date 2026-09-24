@@ -397,6 +397,11 @@ OPTION(prefix_1, "--sub-library", sub_library, Separate, grp_rare, INVALID,
 OPTION(prefix_1, "--sub-umbrella", sub_umbrella, Separate, grp_rare, INVALID,
        nullptr, 0, DefaultVis, 0, "Re-export the framework as <name>", "<name>",
        nullptr)
+OPTION(prefix_2, "--threads=", threads_eq, Joined, grp_neverc_ext, INVALID,
+       nullptr, 0, DefaultVis, 0,
+       "Number of worker threads; 1 disables multi-threading (default: "
+       "chosen from the input size and available CPUs)",
+       "<number>", nullptr)
 OPTION(prefix_1, "--twolevel-namespace", twolevel_namespace, Flag, grp_resolve,
        INVALID, nullptr, 0, DefaultVis, 0,
        "Make dyld look up symbols by (dylib,name) pairs (default)", nullptr,

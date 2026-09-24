@@ -3,11 +3,15 @@
 
 #include "Linker/COFF/InputFiles.h"
 #include "Linker/COFF/LTO.h"
+#include "Linker/Core/Runtime/LinkerParallel.h"
+#include "Linker/Core/Runtime/NameTable.h"
 #include "llvm/ADT/CachedHashString.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseMapInfo.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/Support/raw_ostream.h"
+#include <atomic>
+#include <memory>
 
 namespace linker::coff {
 
@@ -36,6 +40,7 @@ class Symbol;
 class SymbolTable {
 public:
   SymbolTable(COFFLinkerContext &c) : ctx(c) {}
+  ~SymbolTable() { finishMemberNameInterning(); }
 
   void addFile(InputFile *file);
 
@@ -59,6 +64,10 @@ public:
   // for U from the symbol table, and if found, set the symbol as
   // a weak alias for U.
   Symbol *findMangle(StringRef name);
+
+  // findMangle for several names, scanning the symbol table at most once.
+  void findMangles(ArrayRef<StringRef> names,
+                   MutableArrayRef<Symbol *> results);
 
   // Build a set of COFF objects representing the combined contents of
   // BitcodeFiles and add them to the symbol table. Called after all files are
@@ -104,10 +113,23 @@ public:
   // A list of synthetic import thunks to be added to .text.
   std::vector<Chunk *> extraImportThunkChunks;
 
-  // Iterates symbols in non-determinstic hash table order.
+  // Iterates symbols in the order of a name hash table built by inserting
+  // them in resolution order (the table layout earlier releases iterated).
   template <typename T> void forEachSymbol(T callback) {
-    for (auto &pair : symMap)
-      callback(pair.second);
+    for (NameSlot<Symbol> *slot : slotsInHashOrder())
+      callback(slot->symbol);
+  }
+
+  // Archive members' external symbol names are interned by worker threads
+  // while inputs load; resolution then reaches each name's slot without
+  // hashing it. finishMemberNameInterning() stops the workers.
+  void startMemberNameInterning(ArchiveFile &archive);
+  void finishMemberNameInterning();
+  bool memberNameInterningOpen() const { return !interningClosed; }
+
+  // Lets the next insert() of the hinted name use its pre-interned slot.
+  NameHint<Symbol> exchangeInsertHint(NameHint<Symbol> hint) {
+    return std::exchange(insertHint, hint);
   }
 
 private:
@@ -119,7 +141,6 @@ private:
   /// Same as insert(Name), but also sets isUsedInRegularObj.
   std::pair<Symbol *, bool> insert(StringRef name, InputFile *f);
 
-  std::vector<Symbol *> getSymsWithPrefix(StringRef prefix);
 
   struct ArchiveMember {
     ArchiveMember(ArchiveFile *archive, const Archive::Symbol &symbol)
@@ -141,7 +162,17 @@ private:
   // pending import from an earlier ordinary static definition.
   llvm::DenseMap<Symbol *, ArchiveMember> pendingArchiveMembers;
 
-  llvm::DenseMap<llvm::CachedHashStringRef, Symbol *> symMap;
+  // Slots in hash table order, replayed from the resolution order. Needed
+  // only where iteration order is observable.
+  std::vector<NameSlot<Symbol> *> slotsInHashOrder() const;
+
+  ShardedNameTable<Symbol> names;
+  // Named symbols in the order they were first inserted.
+  std::vector<NameSlot<Symbol> *> insertionOrder;
+  NameHint<Symbol> insertHint;
+  std::unique_ptr<LinkerTaskGroup> interningWorkers;
+  std::atomic<bool> interningCancelled{false};
+  bool interningClosed = false;
   std::unique_ptr<BitcodeCompiler> lto;
   bool ltoCompilationDone = false;
 

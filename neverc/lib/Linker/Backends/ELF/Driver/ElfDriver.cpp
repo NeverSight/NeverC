@@ -285,7 +285,14 @@ LinkerDriver::AddedFileKind LinkerDriver::addFileAndClassify(StringRef path,
     readLinkerScript(mbref);
     return AddedFileKind::NotDeduplicable;
   case file_magic::archive: {
-    auto members = getArchiveMembers(mbref);
+    std::vector<std::pair<MemoryBufferRef, uint64_t>> members;
+    auto prefetched = elfState().prefetchedInputs.find(path);
+    if (prefetched != elfState().prefetchedInputs.end() &&
+        prefetched->second.members &&
+        prefetched->second.bufferStart == mbref.getBufferStart())
+      members = std::move(*prefetched->second.members);
+    else
+      members = getArchiveMembers(mbref);
     if (inWholeArchive) {
       for (const std::pair<MemoryBufferRef, uint64_t> &p : members) {
         if (isBitcode(p.first))
@@ -1336,6 +1343,15 @@ void readConfigs(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
       error(errPrefix + toString(pat.takeError()) + ": " + kv.first);
   }
 
+  config->requestedThreadCount = config->driverCfg->threadCount;
+  if (auto *arg = args.getLastArg(OPT_threads_eq)) {
+    unsigned threads = 0;
+    if (!to_integer(arg->getValue(), threads) || threads == 0)
+      error(arg->getSpelling() + ": expected a positive integer, but got '" +
+            arg->getValue() + "'");
+    else
+      config->requestedThreadCount = threads;
+  }
   config->threadCount = commonContext().parallelThreadCount();
 
   // ltoPartitions is set to 2 by the driver — just enough to enable
@@ -1489,8 +1505,83 @@ bool isFormatBinary(StringRef s) {
 }
 } // namespace
 
+namespace {
+// Maps the command-line input files and indexes the members of regular
+// archives on the worker pool. Loading then walks the files in order as
+// before, but finds them mapped and their pages already faulted in. Anything
+// that fails here is simply loaded (and diagnosed) the ordinary way.
+void prefetchInputFiles(opt::InputArgList &args) {
+  if (!config->remapInputs.empty() || !config->remapInputsWildcards.empty())
+    return;
+  SmallVector<StringRef, 0> paths;
+  for (auto *arg : args.filtered(OPT_INPUT))
+    paths.push_back(arg->getValue());
+  if (paths.size() < 2)
+    return;
+
+  // Mapping and indexing touch every archive, so size the worker budget by
+  // the input files' total size.
+  uint64_t inputBytes = 0;
+  for (StringRef path : paths) {
+    uint64_t size = 0;
+    if (!sys::fs::file_size(path, size))
+      inputBytes += size;
+  }
+  commonContext().configureParallelForInputWorkload(
+      config->requestedThreadCount, inputBytes, paths.size(),
+      LinkThreadPolicy{}, /*FinalizeSerial=*/false);
+  if (!parallelEnabled())
+    return;
+
+  llvm::TimeTraceScope timeScope("Prefetch input files");
+  std::vector<Ctx::PrefetchedInput> inputs(paths.size());
+  parallelFor(0, paths.size(), [&](size_t i) {
+    auto mbOrErr = MemoryBuffer::getFile(paths[i], /*IsText=*/false,
+                                         /*RequiresNullTerminator=*/false);
+    if (!mbOrErr)
+      return;
+    Ctx::PrefetchedInput &input = inputs[i];
+    input.buffer = std::move(*mbOrErr);
+    input.bufferStart = input.buffer->getBufferStart();
+    MemoryBufferRef mbref = input.buffer->getMemBufferRef();
+    if (identify_magic(mbref.getBuffer()) != file_magic::archive)
+      return;
+    Expected<std::unique_ptr<Archive>> archive = Archive::create(mbref);
+    if (!archive) {
+      consumeError(archive.takeError());
+      return;
+    }
+    // Thin archives own their members' buffers; load those in order.
+    if ((*archive)->isThin())
+      return;
+    std::vector<std::pair<MemoryBufferRef, uint64_t>> members;
+    Error err = Error::success();
+    for (const Archive::Child &c : (*archive)->children(err)) {
+      Expected<MemoryBufferRef> member = c.getMemoryBufferRef();
+      if (!member) {
+        consumeError(member.takeError());
+        consumeError(std::move(err));
+        return;
+      }
+      // Loading identifies every member; fault its first page in now.
+      (void)identify_magic(member->getBuffer());
+      members.emplace_back(*member, c.getChildOffset());
+    }
+    if (err) {
+      consumeError(std::move(err));
+      return;
+    }
+    input.members = std::move(members);
+  });
+  for (size_t i = 0; i < paths.size(); ++i)
+    if (inputs[i].buffer)
+      elfState().prefetchedInputs.try_emplace(paths[i], std::move(inputs[i]));
+}
+} // namespace
+
 void LinkerDriver::createFiles(opt::InputArgList &args) {
   llvm::TimeTraceScope timeScope("Load input files");
+  prefetchInputFiles(args);
   // For --{push,pop}-state.
   std::vector<std::tuple<bool, bool, bool>> stack;
 
@@ -1594,6 +1685,8 @@ void LinkerDriver::createFiles(opt::InputArgList &args) {
       break;
     }
   }
+  // Release inputs that were prefetched but never loaded.
+  elfState().prefetchedInputs.clear();
 
   if (files.empty() && !hasInput && errorCount() == 0)
     error("no input files");
@@ -1607,6 +1700,8 @@ void LinkerDriver::inferMachineType() {
   for (InputFile *f : files) {
     if (f->ekind == ELFNoneKind)
       continue;
+    if (auto *elf = dyn_cast<ELFFileBase>(f))
+      elf->ensureInitialized();
     config->ekind = f->ekind;
     config->emachine = f->emachine;
     config->osabi = f->osabi;
@@ -2369,7 +2464,7 @@ void configureParallelismForMaterializedInputs(
           binary.first, binary.second, IncludeBitcode);
 
   LinkThreadPolicy Policy;
-  if (DeferAutomaticForBitcode && driverCfg.threadCount == 0 &&
+  if (DeferAutomaticForBitcode && config->requestedThreadCount == 0 &&
       bitcode.second != 0) {
     ThreadPoolStrategy Strategy = hardware_concurrency();
     unsigned MaximumAutoThreads = std::max(1U, Strategy.compute_thread_count());
@@ -2400,8 +2495,89 @@ void configureParallelismForMaterializedInputs(
   }
 
   commonContext().configureParallelForInputWorkload(
-      driverCfg.threadCount, inputBytes, inputFiles, Policy, FinalizeSerial);
+      config->requestedThreadCount, inputBytes, inputFiles, Policy,
+      FinalizeSerial);
   config->threadCount = commonContext().parallelThreadCount();
+}
+} // namespace
+
+namespace {
+template <class ELFT> void tryInternObjFileSymbolNames(InputFile *file) {
+  cast<ObjFile<ELFT>>(file)->tryInternGlobalSymbolNames();
+}
+
+// Interns the global symbol names of relocatable inputs on worker threads
+// while ordered symbol resolution runs on the calling thread. Workers take
+// files in input order, so resolution, which also walks files in order,
+// rarely has to wait; when it reaches a file nobody has started, it interns
+// that file itself (ObjFile::awaitInternedNames).
+class BackgroundNameInterning {
+public:
+  void start(ArrayRef<InputFile *> inputs);
+  void finish();
+  ~BackgroundNameInterning() { finish(); }
+
+private:
+  SmallVector<InputFile *, 0> objects;
+  std::atomic<size_t> nextObject{0};
+  std::unique_ptr<LinkerTaskGroup> workers;
+};
+
+void BackgroundNameInterning::start(ArrayRef<InputFile *> inputs) {
+  uint64_t inputBytes = 0;
+  for (InputFile *file : inputs) {
+    // Bitcode inputs select their worker budget after LTO; keep that policy.
+    if (isa<BitcodeFile>(file)) {
+      objects.clear();
+      return;
+    }
+    // A machine mismatch is still diagnosed by the ordered parse; interning
+    // names for such a file is harmless.
+    if (file->kind() == InputFile::ObjKind && file->ekind == config->ekind) {
+      objects.push_back(file);
+      inputBytes += file->mb.getBufferSize();
+    }
+  }
+  // Size the worker budget by the relocatable objects whose names are
+  // interned here. That includes archive members that resolution may never
+  // extract: interning still reads every member's symbol table. Shared
+  // objects are excluded because their contents are not interned or copied.
+  commonContext().configureParallelForInputWorkload(
+      config->requestedThreadCount, inputBytes, objects.size(),
+      LinkThreadPolicy{}, /*FinalizeSerial=*/false);
+  if (!parallelEnabled() || objects.empty()) {
+    objects.clear();
+    return;
+  }
+  config->threadCount = commonContext().parallelThreadCount();
+
+  // Archive members are not initialized yet, so size the name table from the
+  // input size: C and C++ objects carry roughly one distinct global name per
+  // kilobyte.
+  {
+    llvm::TimeTraceScope timeScope("Reserve symbol names");
+    symtab.reserveNames(inputBytes / 1024);
+  }
+  symtab.setConcurrentInterning(true);
+  for (InputFile *file : objects)
+    cast<ELFFileBase>(file)->nameInterning.store(
+        ELFFileBase::NameInterning::Pending, std::memory_order_relaxed);
+  workers = std::make_unique<LinkerTaskGroup>();
+  for (unsigned i = 0, e = parallelThreadCount(); i != e; ++i)
+    workers->spawn([this] {
+      for (size_t index = nextObject.fetch_add(1, std::memory_order_relaxed);
+           index < objects.size();
+           index = nextObject.fetch_add(1, std::memory_order_relaxed))
+        dispatchByFormat(tryInternObjFileSymbolNames, objects[index]);
+    });
+}
+
+void BackgroundNameInterning::finish() {
+  if (!workers)
+    return;
+  workers->sync();
+  workers.reset();
+  symtab.setConcurrentInterning(false);
 }
 } // namespace
 
@@ -2449,6 +2625,13 @@ void LinkerDriver::execute(opt::InputArgList &args) {
   for (StringRef name : config->undefined)
     addUnusedUndefined(name)->referenced = true;
 
+  // Symbol resolution below must visit files in order, but hashing and
+  // interning every global name is independent per file. For native links
+  // large enough to use workers, interning runs on workers ahead of the
+  // ordered pass, which then only follows precomputed name slots.
+  BackgroundNameInterning nameInterning;
+  nameInterning.start(files);
+
   // Add all files to the symbol table. This will add almost all
   // symbols that we need to the symbol table. This process might
   // add files to the link, via autolinking, these files are always
@@ -2459,6 +2642,7 @@ void LinkerDriver::execute(opt::InputArgList &args) {
       llvm::TimeTraceScope timeScope("Parse input files", files[i]->getName());
       parseFile(files[i]);
     }
+    nameInterning.finish();
   }
 
   config->hasDynSymTab =
@@ -2502,12 +2686,18 @@ void LinkerDriver::execute(opt::InputArgList &args) {
       /*FinalizeSerial=*/false, /*AdditionalNativeFiles=*/{},
       /*DeferAutomaticForBitcode=*/true);
 
-  parallelForEach(elfState().objectFiles, [](ELFFileBase *file) {
-    prepareSectionsAndLocals(file, /*ignoreComdats=*/false);
-  });
-  parallelForEach(elfState().objectFiles, finalizeObjectFile);
-  parallelForEach(elfState().bitcodeFiles,
-                  [](BitcodeFile *file) { file->postParse(); });
+  {
+    llvm::TimeTraceScope timeScope("Initialize sections");
+    parallelForEach(elfState().objectFiles, [](ELFFileBase *file) {
+      prepareSectionsAndLocals(file, /*ignoreComdats=*/false);
+    });
+  }
+  {
+    llvm::TimeTraceScope timeScope("Finalize object files");
+    parallelForEach(elfState().objectFiles, finalizeObjectFile);
+    parallelForEach(elfState().bitcodeFiles,
+                    [](BitcodeFile *file) { file->postParse(); });
+  }
   for (auto &it : elfState().nonPrevailingSyms) {
     Symbol &sym = *it.first;
     Undefined(sym.file, sym.getName(), sym.binding, sym.stOther, sym.type,

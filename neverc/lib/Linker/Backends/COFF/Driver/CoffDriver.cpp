@@ -55,7 +55,18 @@ namespace linker::coff {
 
 bool link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
           llvm::raw_ostream &stderrOS, bool exitEarly, bool disableOutput,
-          const LinkerDriverConfig &driverCfg) {
+          const LinkerDriverConfig &callerCfg) {
+  // An explicit --threads= replaces the caller's budget for the whole link,
+  // including the early pool setup that runs before option parsing.
+  std::optional<LinkerDriverConfig> threadOverride;
+  if (unsigned threads = args::findThreadCountArg(args.drop_front(),
+                                                  {"--threads=", "-threads="},
+                                                  /*windowsQuoting=*/true)) {
+    threadOverride.emplace(callerCfg);
+    threadOverride->threadCount = threads;
+  }
+  const LinkerDriverConfig &driverCfg =
+      threadOverride ? *threadOverride : callerCfg;
   std::optional<linker::crash_recovery_detail::CrashRecoveryTimeTraceOwner>
       TraceProfiler;
   const bool GuardAmbientTimeTrace =
@@ -131,6 +142,18 @@ MBErrPair readFileSync(StringRef path) {
 } // namespace
 
 namespace {
+LinkThreadPolicy coffThreadPolicy() {
+  // PE hashing and checksum work scale densely once the output is large
+  // enough, so avoid the gradual budget intended for ELF relocation work.
+  LinkThreadPolicy Policy;
+  Policy.MinParallelBytes = 8ULL * 1024ULL * 1024ULL;
+  Policy.BytesPerAdditionalThread = 0;
+  // Hashing/checksum cost follows total output size even when most inputs are
+  // tiny, so the relocation-oriented average-file gate does not apply here.
+  Policy.MinAverageFileBytes = 0;
+  return Policy;
+}
+
 void configureParallelismForMaterializedInputs(
     COFFLinkerContext &ctx, const LinkerDriverConfig &driverCfg,
     ArrayRef<MemoryBufferRef> Resources, bool IncludeBitcode,
@@ -156,18 +179,24 @@ void configureParallelismForMaterializedInputs(
   const auto [InputBytes, InputFiles] = detail::mergeMaterializedInputWorkload(
       Native.first, Native.second, Bitcode.first, Bitcode.second, ResourceBytes,
       ResourceFiles, IncludeBitcode);
-  // PE hashing and checksum work scale densely once the output is large
-  // enough, so avoid the gradual budget intended for ELF relocation work.
-  LinkThreadPolicy Policy;
-  Policy.MinParallelBytes = 8ULL * 1024ULL * 1024ULL;
-  Policy.BytesPerAdditionalThread = 0;
-  // Hashing/checksum cost follows total output size even when most inputs are
-  // tiny, so the relocation-oriented average-file gate does not apply here.
-  Policy.MinAverageFileBytes = 0;
   ctx.configureParallelForInputWorkload(driverCfg.threadCount, InputBytes,
-                                        InputFiles, Policy, FinalizeSerial);
+                                        InputFiles, coffThreadPolicy(),
+                                        FinalizeSerial);
 }
 } // namespace
+
+// Interning archive members' names reads every member, so an archive's size
+// is workload the worker pool can be sized for before any member is loaded.
+void LinkerDriver::configureParallelismForArchive(uint64_t archiveBytes) {
+  if (ctx.parallelConfigured())
+    return;
+  archiveBytesSeen += archiveBytes;
+  const unsigned requested =
+      ctx.config.driverCfg ? ctx.config.driverCfg->threadCount : 0;
+  ctx.configureParallelForInputWorkload(requested, archiveBytesSeen,
+                                        /*InputFiles=*/1, coffThreadPolicy(),
+                                        /*FinalizeSerial=*/false);
+}
 
 // ===----------------------------------------------------------------------===
 // Symbol mangling & buffer management
@@ -189,9 +218,14 @@ llvm::Triple::ArchType LinkerDriver::getArch() {
   }
 }
 
-bool LinkerDriver::findUnderscoreMangle(StringRef sym) {
-  Symbol *s = ctx.symtab.findMangle(mangle(sym));
-  return s && !isa<Undefined>(s);
+// Checks main, wmain, WinMain and wWinMain with one symbol table scan.
+LinkerDriver::EntryCandidates LinkerDriver::findEntryCandidates() {
+  StringRef names[] = {mangle("main"), mangle("wmain"), mangle("WinMain"),
+                       mangle("wWinMain")};
+  Symbol *syms[std::size(names)];
+  ctx.symtab.findMangles(names, syms);
+  auto found = [](Symbol *s) { return s && !isa<Undefined>(s); };
+  return {found(syms[0]), found(syms[1]), found(syms[2]), found(syms[3])};
 }
 
 MemoryBufferRef LinkerDriver::takeBuffer(std::unique_ptr<MemoryBuffer> mb) {
@@ -353,7 +387,11 @@ void LinkerDriver::addArchiveBuffer(MemoryBufferRef mb, StringRef symName,
 
   InputFile *obj;
   if (magic == file_magic::coff_object) {
-    obj = make<ObjFile>(ctx, mb);
+    auto *objFile = make<ObjFile>(ctx, mb);
+    if (parentArchive)
+      objFile->internedNames =
+          parentArchive->claimInternedNames(offsetInArchive);
+    obj = objFile;
   } else if (magic == file_magic::bitcode) {
     obj =
         make<BitcodeFile>(ctx, mb, parentName, offsetInArchive, /*lazy=*/false);
@@ -637,16 +675,17 @@ StringRef LinkerDriver::findDefaultEntry() {
   assert(ctx.config.subsystem != IMAGE_SUBSYSTEM_UNKNOWN &&
          "must handle /subsystem before calling this");
 
+  EntryCandidates candidates = findEntryCandidates();
   if (ctx.config.subsystem == IMAGE_SUBSYSTEM_WINDOWS_GUI) {
-    if (findUnderscoreMangle("wWinMain")) {
-      if (!findUnderscoreMangle("WinMain"))
+    if (candidates.wWinMain) {
+      if (!candidates.winMain)
         return mangle("wWinMainCRTStartup");
       warn("found both wWinMain and WinMain; using latter");
     }
     return mangle("WinMainCRTStartup");
   }
-  if (findUnderscoreMangle("wmain")) {
-    if (!findUnderscoreMangle("main"))
+  if (candidates.wmain) {
+    if (!candidates.main)
       return mangle("wmainCRTStartup");
     warn("found both wmain and main; using latter");
   }
@@ -659,10 +698,11 @@ WindowsSubsystem LinkerDriver::inferSubsystem() {
   // Note that link.exe infers the subsystem from the presence of these
   // functions even if /entry: or /nodefaultlib are passed which causes them
   // to not be called.
-  bool haveMain = findUnderscoreMangle("main");
-  bool haveWMain = findUnderscoreMangle("wmain");
-  bool haveWinMain = findUnderscoreMangle("WinMain");
-  bool haveWWinMain = findUnderscoreMangle("wWinMain");
+  EntryCandidates candidates = findEntryCandidates();
+  bool haveMain = candidates.main;
+  bool haveWMain = candidates.wmain;
+  bool haveWinMain = candidates.winMain;
+  bool haveWWinMain = candidates.wWinMain;
   if (haveMain || haveWMain) {
     if (haveWinMain || haveWWinMain) {
       warn(std::string("found ") + (haveMain ? "main" : "wmain") + " and " +
@@ -1822,6 +1862,8 @@ void LinkerDriver::run(ArrayRef<const char *> argsArr,
       }
     } while (run());
   }
+  // Members extracted from here on resolve their names directly.
+  ctx.symtab.finishMemberNameInterning();
 
   // Check for unresolvable symbols before LTO to avoid wasting codegen time.
   if (!ctx.bitcodeFileInstances.empty() && !config->forceUnresolved)

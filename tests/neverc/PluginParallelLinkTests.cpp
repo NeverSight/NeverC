@@ -1,6 +1,7 @@
 #include "Driver/ELFInputWorkload.h"
 #include "Emit/PEChecksum.h"
 #include "Linker/Core/Driver/Dispatcher.h"
+#include "Linker/Core/Runtime/Allocator.h"
 #include "Linker/Core/Runtime/ContentHashWorkers.h"
 #include "Linker/Core/Runtime/LinkerExecutionContext.h"
 #include "Linker/Core/Runtime/LinkerParallel.h"
@@ -35,6 +36,7 @@
 #include <limits>
 #include <mutex>
 #include <optional>
+#include <random>
 #include <set>
 #include <thread>
 #include <vector>
@@ -473,6 +475,72 @@ TEST(PluginParallelLinkTest,
                 /*InputBytes=*/8 * MiB,
                 /*InputFiles=*/4097, Policy),
             16U);
+}
+
+namespace {
+struct KeyedValue {
+  uint32_t Key;
+  uint32_t Sequence;
+  bool operator==(const KeyedValue &Other) const {
+    return Key == Other.Key && Sequence == Other.Sequence;
+  }
+};
+
+std::vector<KeyedValue> makeTiedValues(size_t Count) {
+  std::mt19937 Random(1234);
+  std::vector<KeyedValue> Values(Count);
+  for (size_t I = 0; I != Count; ++I)
+    Values[I] = {static_cast<uint32_t>(Random() % 97),
+                 static_cast<uint32_t>(I)};
+  return Values;
+}
+} // namespace
+
+TEST(PluginParallelLinkTest, ParallelStableSortIsStableForEveryWorkerCount) {
+  // Large enough to take the merge-sort path; a prime-ish size leaves uneven
+  // chunks and merge pieces.
+  std::vector<KeyedValue> Expected = makeTiedValues(100003);
+  auto ByKey = [](const KeyedValue &A, const KeyedValue &B) {
+    return A.Key < B.Key;
+  };
+  std::vector<KeyedValue> Input = Expected;
+  std::stable_sort(Expected.begin(), Expected.end(), ByKey);
+
+  for (unsigned Threads : {1U, 2U, 3U, 8U}) {
+    CommonLinkerContext Context(neverc::ResourceSessionView{});
+    Context.configureParallel(Threads);
+    std::vector<KeyedValue> Values = Input;
+    parallelStableSort(Values.begin(), Values.end(), ByKey);
+    EXPECT_EQ(Values, Expected) << "threads=" << Threads;
+  }
+}
+
+TEST(PluginParallelLinkTest, ParallelStableSortKeepsSmallInputsSorted) {
+  CommonLinkerContext Context(neverc::ResourceSessionView{});
+  Context.configureParallel(4);
+  std::vector<uint32_t> Values = {5, 3, 9, 1, 1, 0, 7};
+  parallelStableSort(Values.begin(), Values.end(), std::less<>());
+  EXPECT_TRUE(std::is_sorted(Values.begin(), Values.end()));
+}
+
+TEST(PluginParallelLinkTest, WorkerArenasFollowTheActiveContext) {
+  if (llvm::thread::hardware_concurrency() < 2)
+    GTEST_SKIP() << "worker arenas need two available CPUs";
+
+  // Successive contexts may be constructed at the same address; each must
+  // resolve its own worker arenas rather than a cached arena of the previous
+  // context, which has already been destroyed.
+  for (int Round = 0; Round != 3; ++Round) {
+    CommonLinkerContext Context(neverc::ResourceSessionView{});
+    Context.configureParallel(4);
+    constexpr size_t Count = 4096;
+    std::vector<uint64_t *> Cells(Count);
+    parallelFor(0, Count, [&](size_t I) {
+      Cells[I] = makeThreadLocal<uint64_t>(I * 3 + Round);
+    });
+    for (size_t I = 0; I != Count; ++I)
+      ASSERT_EQ(*Cells[I], I * 3 + Round);
+  }
 }
 
 TEST(PluginParallelLinkTest, BuildIdHashKeepsSmallOutputsSerial) {

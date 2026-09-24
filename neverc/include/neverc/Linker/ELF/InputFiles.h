@@ -10,6 +10,7 @@
 #include "llvm/Object/ELF.h"
 #include "llvm/Support/MemoryBufferRef.h"
 #include "llvm/Support/Threading.h"
+#include <atomic>
 
 namespace llvm {
 struct DILineInfo;
@@ -28,6 +29,7 @@ namespace elf {
 
 class InputSection;
 class Symbol;
+struct SymbolNameSlot;
 
 // Opens a given file.
 std::optional<MemoryBufferRef> readFile(StringRef path);
@@ -134,6 +136,15 @@ public:
   static bool classof(const InputFile *f) { return f->isElf(); }
 
   void init();
+  // Run init() unless it already ran. Lazy archive members defer init() so
+  // that it can run on the name-interning workers.
+  void ensureInitialized() {
+    if (!initialized)
+      init();
+  }
+  // Same effect as init() but without diagnostics, for worker threads. Returns
+  // false, leaving the file untouched, if init() would report an error.
+  bool tryInitQuietly();
   template <typename ELFT> llvm::object::ELFFile<ELFT> getObj() const {
     return check(llvm::object::ELFFile<ELFT>::create(mb.getBuffer()));
   }
@@ -162,6 +173,9 @@ public:
     return typename ELFT::SymRange(
         reinterpret_cast<const typename ELFT::Sym *>(elfSyms), numELFSyms);
   }
+  size_t getGlobalELFSymCount() const {
+    return numELFSyms > firstGlobal ? numELFSyms - firstGlobal : 0;
+  }
   template <typename ELFT> typename ELFT::SymRange getGlobalELFSyms() const {
     return getELFSyms<ELFT>().slice(firstGlobal);
   }
@@ -169,6 +183,9 @@ public:
 protected:
   // Initializes this class's member variables.
   template <typename ELFT> void init(InputFile::Kind k);
+  template <typename ELFT> bool initQuietly(InputFile::Kind k);
+
+  bool initialized = false;
 
   StringRef stringTable;
   const void *elfShdrs = nullptr;
@@ -178,6 +195,35 @@ protected:
   uint32_t firstGlobal = 0;
 
 public:
+  // Progress of internGlobalSymbolNames() for this file, which workers may
+  // run while ordered resolution proceeds on the main thread.
+  enum class NameInterning : uint8_t { NotScheduled, Pending, Running, Done };
+  std::atomic<NameInterning> nameInterning{NameInterning::NotScheduled};
+
+  // Interned name slots for the global symbols (indexed from firstGlobal),
+  // filled by internGlobalSymbolNames(). Valid once nameInterning is Done or
+  // was never scheduled. A null array or entry means the name must be
+  // inserted by hashing it.
+  SymbolNameSlot **globalNameSlots = nullptr;
+  // Interned signatures of this file's SHT_GROUP sections, in section order,
+  // filled with globalNameSlots. A null entry is looked up by name instead.
+  SymbolNameSlot **groupSignatureSlots = nullptr;
+  uint32_t numGroupSignatureSlots = 0;
+  // Member lists of this file's SHT_GROUP sections (in section order),
+  // validated by internGlobalSymbolNames(). Null if not validated or if any
+  // group is malformed, in which case parse() takes the diagnosing path.
+  llvm::ArrayRef<uint32_t> *groupMembers = nullptr;
+  // Keep decision per group recorded by parse() when it defers discarding
+  // group members to initializeSections(); empty otherwise.
+  llvm::SmallVector<uint8_t, 0> deferredGroupKeep;
+  // Set by internGlobalSymbolNames() when every section name was readable and
+  // none names the NeverC override section, so parse() can skip that scan.
+  bool knownNoOverrideSection = false;
+  // Indices of the sections parse() must visit (groups, dependent libraries,
+  // MTE globals), in section order, recorded by internGlobalSymbolNames().
+  // Null means parse() visits every section.
+  uint32_t *specialSectionIndices = nullptr;
+  uint32_t numSpecialSections = 0;
   uint32_t andFeatures = 0;
   bool hasCommonSyms = false;
 };
@@ -200,6 +246,17 @@ public:
 
   void parse(bool ignoreComdats = false);
   void parseLazy();
+  // Thread-safe; see ELFFileBase::globalNameSlots.
+  void internGlobalSymbolNames();
+  // Claim and run internGlobalSymbolNames() if it is still pending; returns
+  // false if another thread already claimed it.
+  bool tryInternGlobalSymbolNames();
+  // Make this file's interned names available to the calling thread, doing
+  // the work here if no worker has started it yet.
+  void awaitInternedNames();
+  SymbolNameSlot *getGroupSignatureSlot(uint32_t groupOrdinal,
+                                        ArrayRef<Elf_Shdr> sections,
+                                        const Elf_Shdr &sec);
 
   StringRef getShtGroupSignature(ArrayRef<Elf_Shdr> sections,
                                  const Elf_Shdr &sec);
@@ -251,7 +308,10 @@ private:
   void initializeSections(bool ignoreComdats,
                           const llvm::object::ELFFile<ELFT> &obj);
   void initializeSymbols(const llvm::object::ELFFile<ELFT> &obj);
+  void finishParse(const llvm::object::ELFFile<ELFT> &obj, StringRef shstrtab,
+                   uint64_t size);
   void initializeJustSymbols();
+  Symbol *insertGlobalSymbol(size_t i);
 
   InputSectionBase *getRelocTarget(uint32_t idx, const Elf_Shdr &sec,
                                    uint32_t info);

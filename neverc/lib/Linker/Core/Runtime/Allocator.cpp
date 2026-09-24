@@ -27,6 +27,8 @@ linker::SpecificAllocBase::getOrCreate(const void *tag, size_t size,
     void *storage = Context.bAlloc.Allocate(size, align);
     instance = creator(storage);
     Context.instanceOrder.push_back(instance);
+    Context.instanceSequence.push_back(
+        Context.allocatorSequence.fetch_add(1, std::memory_order_relaxed));
   }
   return instance;
 }

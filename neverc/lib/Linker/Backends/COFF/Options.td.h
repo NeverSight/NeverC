@@ -281,6 +281,11 @@ OPTION(prefix_1, "--test-sign", test_sign, Flag, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0,
        "Attach an Authenticode test signature to the output image", nullptr,
        nullptr)
+OPTION(prefix_1, "--threads=", threads_eq, Joined, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0,
+       "Number of worker threads; 1 disables multi-threading (default: "
+       "chosen from the input size and available CPUs)",
+       "<number>", nullptr)
 OPTION(prefix_1, "--timestamp=", timestamp, Joined, INVALID, INVALID, nullptr,
        0, DefaultVis, 0, "Specify the PE header timestamp", nullptr, nullptr)
 OPTION(prefix_1, "--tsaware", tsaware, Flag, INVALID, INVALID, nullptr, 0,

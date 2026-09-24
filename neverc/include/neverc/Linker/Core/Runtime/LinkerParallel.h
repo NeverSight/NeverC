@@ -7,11 +7,13 @@
 #include "llvm/Support/Parallel.h"
 #include "llvm/Support/ThreadPool.h"
 #include <algorithm>
+#include <atomic>
 #include <functional>
 #include <iterator>
 #include <memory>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace linker {
 
@@ -130,20 +132,33 @@ void parallelForWithContext(size_t Begin, size_t End, Function &&Fn) {
     return;
   }
 
-  auto FunctionOwner =
-      std::make_shared<std::decay_t<Function>>(std::forward<Function>(Fn));
+  // Workers claim small grains of the range from a shared cursor, so items of
+  // very different cost (such as one huge object file among small ones) do
+  // not leave most workers idle behind one statically assigned chunk.
+  struct SharedState {
+    explicit SharedState(Function &&Fn, size_t Begin)
+        : Fn(std::forward<Function>(Fn)), Next(Begin) {}
+    std::decay_t<Function> Fn;
+    std::atomic<size_t> Next;
+  };
+  auto State = std::make_shared<SharedState>(std::forward<Function>(Fn), Begin);
   const size_t ItemCount = End - Begin;
-  const size_t TaskCount =
-      std::min(ItemCount, static_cast<size_t>(parallelThreadCount()) * 4);
-  const size_t TaskSize = (ItemCount + TaskCount - 1) / TaskCount;
+  const size_t Threads = parallelThreadCount();
+  const size_t Grain = std::max<size_t>(1, ItemCount / (Threads * 32));
+  const size_t Workers = std::min(Threads, (ItemCount + Grain - 1) / Grain);
   LinkerTaskGroup Group;
-  for (size_t TaskBegin = Begin; TaskBegin < End; TaskBegin += TaskSize) {
-    const size_t TaskEnd = std::min(End, TaskBegin + TaskSize);
-    Group.spawn([FunctionOwner, TaskBegin, TaskEnd] {
-      for (size_t Index = TaskBegin; Index != TaskEnd; ++Index)
-        std::invoke(*FunctionOwner, Index);
+  for (size_t Worker = 0; Worker != Workers; ++Worker)
+    Group.spawn([State, End, Grain] {
+      for (;;) {
+        const size_t TaskBegin =
+            State->Next.fetch_add(Grain, std::memory_order_relaxed);
+        if (TaskBegin >= End)
+          return;
+        const size_t TaskEnd = std::min(End, TaskBegin + Grain);
+        for (size_t Index = TaskBegin; Index != TaskEnd; ++Index)
+          std::invoke(State->Fn, Index);
+      }
     });
-  }
 }
 
 template <typename Iterator, typename Function>
@@ -159,6 +174,99 @@ template <typename Range, typename Function>
 void parallelForEachWithContext(Range &&Values, Function &&Fn) {
   parallelForEachWithContext(std::begin(Values), std::end(Values),
                              std::forward<Function>(Fn));
+}
+
+/// Stable merge of two adjacent sorted runs into Out. Comparators receive
+/// lvalues, as with std::sort, and ties take the left run first.
+template <typename In, typename Out, typename Comparator>
+void mergeSortedRuns(In Left, In LeftEnd, In Right, In RightEnd, Out Dest,
+                     Comparator &Compare) {
+  while (Left != LeftEnd && Right != RightEnd) {
+    if (Compare(*Right, *Left))
+      *Dest++ = std::move(*Right++);
+    else
+      *Dest++ = std::move(*Left++);
+  }
+  Dest = std::move(Left, LeftEnd, Dest);
+  std::move(Right, RightEnd, Dest);
+}
+
+/// Sort [Begin, End) with the linker workers. Inputs of at least
+/// ParallelSortMinimum elements always use a stable merge sort, run in parallel
+/// when a worker pool exists, so the result never depends on the worker count.
+/// Smaller inputs keep the previous llvm::sort behaviour.
+template <typename Iterator, typename Comparator>
+void parallelStableSortImpl(Iterator Begin, Iterator End, Comparator Compare) {
+  constexpr size_t ParallelSortMinimum = size_t(1) << 15;
+  const size_t Count = static_cast<size_t>(End - Begin);
+  if (Count < ParallelSortMinimum) {
+    llvm::sort(Begin, End, Compare);
+    return;
+  }
+  if (!parallelEnabled()) {
+    std::stable_sort(Begin, End, Compare);
+    return;
+  }
+
+  using Value = typename std::iterator_traits<Iterator>::value_type;
+  // A power-of-two chunk count keeps every merge round pairwise.
+  size_t Chunks = 1;
+  while (Chunks < static_cast<size_t>(parallelThreadCount()) * 2 &&
+         Chunks * 4096 < Count)
+    Chunks *= 2;
+  const size_t Width = (Count + Chunks - 1) / Chunks;
+  parallelForWithContext(0, Chunks, [&](size_t I) {
+    const size_t From = std::min(Count, I * Width);
+    const size_t To = std::min(Count, From + Width);
+    std::stable_sort(Begin + From, Begin + To, Compare);
+  });
+
+  std::vector<Value> Scratch(std::make_move_iterator(Begin),
+                             std::make_move_iterator(End));
+  // Alternate between the scratch buffer and the original range. Each pair
+  // of runs is cut along merge-path diagonals so that every round, including
+  // the last single pair, keeps all workers busy. Ties take the left run
+  // first, which keeps the merge stable.
+  const size_t Pieces = Chunks;
+  bool InScratch = true;
+  for (size_t Run = Width; Run < Count; Run *= 2) {
+    const size_t Pairs = (Count + 2 * Run - 1) / (2 * Run);
+    const size_t PiecesPerPair = std::max<size_t>(1, Pieces / Pairs);
+    auto MergeRound = [&](auto Src, auto Dst) {
+      parallelForWithContext(0, Pairs * PiecesPerPair, [&](size_t Task) {
+        const size_t P = Task / PiecesPerPair, K = Task % PiecesPerPair;
+        const size_t Lo = P * 2 * Run;
+        const size_t Mid = std::min(Count, Lo + Run);
+        const size_t Hi = std::min(Count, Lo + 2 * Run);
+        const size_t LeftSize = Mid - Lo, Total = Hi - Lo;
+        // Number of left-run elements among the first D merged outputs.
+        auto Split = [&](size_t D) {
+          size_t L = D > Hi - Mid ? D - (Hi - Mid) : 0;
+          size_t R = std::min(D, LeftSize);
+          while (L < R) {
+            const size_t M = L + (R - L) / 2;
+            if (Compare(Src[Mid + (D - M - 1)], Src[Lo + M]))
+              R = M;
+            else
+              L = M + 1;
+          }
+          return L;
+        };
+        const size_t D0 = Total * K / PiecesPerPair;
+        const size_t D1 = Total * (K + 1) / PiecesPerPair;
+        const size_t I0 = Split(D0), I1 = Split(D1);
+        mergeSortedRuns(Src + Lo + I0, Src + Lo + I1, Src + Mid + (D0 - I0),
+                        Src + Mid + (D1 - I1), Dst + Lo + D0, Compare);
+      });
+    };
+    if (InScratch)
+      MergeRound(Scratch.begin(), Begin);
+    else
+      MergeRound(Begin, Scratch.begin());
+    InScratch = !InScratch;
+  }
+  if (InScratch)
+    std::move(Scratch.begin(), Scratch.end(), Begin);
 }
 
 template <typename Range> void parallelSortWithContext(Range &&Values) {
@@ -187,6 +295,15 @@ template <typename Iterator, typename Comparator>
 void parallelSortWithContext(Iterator Begin, Iterator End,
                              Comparator &&Compare) {
   llvm::sort(Begin, End, std::forward<Comparator>(Compare));
+}
+
+/// Stable sort using the linker workers. Unlike parallelSort, which keeps
+/// llvm::sort's tie order, equal elements keep their input order, so callers
+/// whose comparator has ties get a different (but worker-count independent)
+/// order than llvm::sort would produce.
+template <typename Iterator, typename Comparator>
+void parallelStableSort(Iterator Begin, Iterator End, Comparator Compare) {
+  parallelStableSortImpl(Begin, End, Compare);
 }
 
 } // namespace linker

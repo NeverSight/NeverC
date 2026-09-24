@@ -7,6 +7,7 @@
 #include "Linker/COFF/Symbols.h"
 #include "Linker/Core/Support/Dwarf.h"
 #include "neverc/Foundation/OverrideNames.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/BinaryFormat/COFF.h"
@@ -79,6 +80,31 @@ ArchiveFile::ArchiveFile(COFFLinkerContext &ctx, MemoryBufferRef m)
 void ArchiveFile::parse() {
   // Parse a MemoryBufferRef as an archive file.
   file = CHECK(Archive::create(mb), this);
+
+  // Let workers intern the members' symbol names while resolution proceeds.
+  if (!file->isThin() && ctx.symtab.memberNameInterningOpen()) {
+    ctx.driver.configureParallelismForArchive(mb.getBufferSize());
+    if (parallelEnabled()) {
+      Error err = Error::success();
+      for (const Archive::Child &c : file->children(err)) {
+        Expected<MemoryBufferRef> member = c.getMemoryBufferRef();
+        if (!member) {
+          consumeError(member.takeError());
+          continue;
+        }
+        if (identify_magic(member->getBuffer()) != file_magic::coff_object)
+          continue;
+        auto *names = make<MemberNames>();
+        names->mb = *member;
+        memberNames[c.getChildOffset()] = names;
+        internedMembers.push_back(names);
+      }
+      // Errors are reported when a member is loaded.
+      consumeError(std::move(err));
+      if (!internedMembers.empty())
+        ctx.symtab.startMemberNameInterning(*this);
+    }
+  }
   constexpr StringLiteral featureOverrideSuffix = "_$fo$";
   constexpr StringLiteral featureOverrideDefaultSuffix = "_$fo_default$";
   const bool useFeatureOverrideDefaults =
@@ -118,6 +144,22 @@ void ArchiveFile::parse() {
     ctx.symtab.addFeatureOverrideDefault(base, this, defaultSym,
                                          marker->second);
   }
+}
+
+ArrayRef<NameHint<Symbol>> ArchiveFile::claimInternedNames(uint64_t offset) {
+  auto it = memberNames.find(offset);
+  if (it == memberNames.end())
+    return {};
+  MemberNames &member = *it->second;
+  uint8_t state = MemberNames::Pending;
+  if (member.state.compare_exchange_strong(state, MemberNames::Skipped,
+                                           std::memory_order_acquire))
+    return {};
+  while (state == MemberNames::Running)
+    state = member.state.load(std::memory_order_acquire);
+  if (state != MemberNames::Done)
+    return {};
+  return member.hints;
 }
 
 const Archive::Symbol *ArchiveFile::findSymbol(StringRef name) const {
@@ -394,9 +436,29 @@ void ObjFile::initializeSymbols() {
   std::vector<const coff_aux_section_definition *> comdatDefs(
       coffObj->getNumberOfSections() + 1);
 
+  // Hands symbol i's pre-interned name slot to the insert its creation does.
+  auto hintFor = [&](uint32_t i) {
+    return i < internedNames.size() ? internedNames[i] : NameHint<Symbol>();
+  };
+  struct HintScope {
+    SymbolTable &symtab;
+    NameHint<Symbol> previous;
+    HintScope(SymbolTable &symtab, NameHint<Symbol> hint)
+        : symtab(symtab), previous(symtab.exchangeInsertHint(hint)) {}
+    ~HintScope() { symtab.exchangeInsertHint(previous); }
+  };
+  auto dropInternedNames = llvm::make_scope_exit([&] { internedNames = {}; });
+#if defined(__GNUC__) || defined(__clang__)
+  // Resolution visits every slot once; overlap the cache misses.
+  for (const NameHint<Symbol> &hint : internedNames)
+    if (hint.slot)
+      __builtin_prefetch(hint.slot);
+#endif
+
   for (uint32_t i = 0; i < numSymbols; ++i) {
     COFFSymbolRef coffSym = check(coffObj->getSymbol(i));
     bool prevailingComdat;
+    HintScope hint(ctx.symtab, hintFor(i));
     if (coffSym.isUndefined()) {
       symbols[i] = createUndefined(coffSym);
     } else if (coffSym.isWeakExternal()) {
@@ -422,6 +484,7 @@ void ObjFile::initializeSymbols() {
 
   for (uint32_t i : pendingIndexes) {
     COFFSymbolRef sym = check(coffObj->getSymbol(i));
+    HintScope hint(ctx.symtab, hintFor(i));
     if (const coff_aux_section_definition *def = sym.getSectionDefinition()) {
       if (def->Selection == IMAGE_COMDAT_SELECT_ASSOCIATIVE)
         readAssociativeDefinition(sym, def);

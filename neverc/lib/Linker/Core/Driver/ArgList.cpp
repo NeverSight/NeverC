@@ -16,7 +16,10 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Option/ArgList.h"
+#include "llvm/Support/Allocator.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/StringSaver.h"
 
 using namespace llvm;
 using namespace linker;
@@ -94,4 +97,31 @@ StringRef linker::args::getFilenameWithoutExe(StringRef path) {
   if (path.ends_with_insensitive(".exe"))
     return sys::path::stem(path);
   return sys::path::filename(path);
+}
+
+unsigned linker::args::findThreadCountArg(ArrayRef<const char *> argv,
+                                          ArrayRef<StringRef> spellings,
+                                          bool windowsQuoting) {
+  SmallVector<const char *, 256> expanded(argv.begin(), argv.end());
+  BumpPtrAllocator alloc;
+  StringSaver scratch(alloc);
+  if (llvm::any_of(argv, [](const char *arg) { return arg && *arg == '@'; }))
+    cl::ExpandResponseFiles(scratch,
+                            windowsQuoting ? cl::TokenizeWindowsCommandLine
+                                           : cl::TokenizeGNUCommandLine,
+                            expanded);
+  unsigned threads = 0;
+  for (const char *arg : expanded) {
+    if (!arg)
+      continue;
+    StringRef text(arg);
+    for (StringRef spelling : spellings) {
+      if (!text.consume_front(spelling))
+        continue;
+      unsigned value = 0;
+      threads = to_integer(text, value) ? value : 0;
+      break;
+    }
+  }
+  return threads;
 }
