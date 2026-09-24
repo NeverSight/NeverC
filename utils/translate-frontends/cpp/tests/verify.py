@@ -29039,6 +29039,11 @@ void assign_vector(std::vector<int>& values,
   values.assign(source.cbegin(), source.cend());
   values.assign({1, 2});
 }
+std::vector<int>::iterator emplace_vector(std::vector<int>& values,
+                                           int& value) {
+  values.emplace(values.cbegin());
+  return values.emplace(values.cend(), value);
+}
 """
     vector_dependencies = None
     for target in sdk_targets:
@@ -29055,7 +29060,7 @@ void assign_vector(std::vector<int>& values,
             vector_dependencies = dependencies
         else:
             assert dependencies == vector_dependencies, target
-        assert len(vector_ir["functions"]) == 10, target
+        assert len(vector_ir["functions"]) == 11, target
     check("v2-vector-runtime-object",
           '#include <vector>\nint f(){std::vector<int> v;return v.size();}',
           "TR0203", profile="cpp-core-v2", sdk=True)

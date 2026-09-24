@@ -51999,6 +51999,72 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorEmplaceRun) {
+  const auto Source = tmpFile("vector-emplace.cpp");
+  const auto Output = tmpFile("vector-emplace.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <vector>
+int main() {
+  {
+    std::vector<int> values{1, 3};
+    values.reserve(8);
+    int *storage = values.data();
+    auto position = values.cbegin();
+    ++position;
+    auto middle = values.emplace(position, 2);
+    if (middle.base() != storage + 1 || values.data() != storage ||
+        values.size() != 3 || values[0] != 1 || values[1] != 2 ||
+        values[2] != 3)
+      return 1;
+    auto tail = values.emplace(values.cend());
+    if (tail.base() != storage + 3 || values.size() != 4 ||
+        values[3] != 0 || values.data() != storage)
+      return 2;
+    const int source = 4;
+    auto front = values.emplace(values.cbegin(), source);
+    if (front.base() != storage || values.size() != 5 ||
+        values[0] != 4 || values[1] != 1 || values[4] != 0)
+      return 3;
+    std::vector<int> tight{9};
+    int previous_allocations = allocations;
+    auto grown = tight.emplace(tight.cbegin(), tight.front());
+    if (allocations != previous_allocations + 1 ||
+        grown.base() != tight.data() || tight.size() != 2 ||
+        tight[0] != 9 || tight[1] != 9)
+      return 4;
+    std::vector<double> fractions;
+    auto first = fractions.emplace(fractions.cbegin(), 1.5);
+    if (first.base() != fractions.data() || fractions.size() != 1 ||
+        fractions[0] != 1.5)
+      return 5;
+    auto zero = fractions.emplace(fractions.cend());
+    if (zero.base() != fractions.data() + 1 || fractions.size() != 2 ||
+        fractions[0] != 1.5 || fractions[1] != 0.0)
+      return 6;
+  }
+  return allocations == releases ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-emplace" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorAssignRun) {
   const auto Source = tmpFile("vector-assign.cpp");
   const auto Output = tmpFile("vector-assign.nc");

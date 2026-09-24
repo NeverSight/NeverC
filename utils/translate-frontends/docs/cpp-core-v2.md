@@ -2294,18 +2294,21 @@ destruction; size, capacity, empty, data, element/front/back access; clear,
 push/pop, zero- or one-argument `emplace_back` with exact element types,
 begin/end, cbegin/cend, rbegin/rend, crbegin/crend and const iteration;
 reserve/resize; lvalue/rvalue, counted-value, pointer and wrapped iterator
-range, and initializer-list `insert`; counted-value, pointer and wrapped
+range, and initializer-list `insert`; zero- or one-argument positional
+`emplace` with exact element types; counted-value, pointer and wrapped
 iterator range, and initializer-list `assign`; single-position and range
-`erase`; and member/free swap. Insert returns a mutable iterator, preserves
-aliased input values, shifts in place when
-capacity permits, and otherwise moves storage through the selected allocator.
+`erase`; and member/free swap. Insert and positional emplace return mutable
+iterators. Single-value insertion and emplace preserve aliased element inputs;
+they shift in place when capacity permits and otherwise move storage through
+the selected allocator.
 Erase shifts surviving arithmetic elements in place and returns the following
 mutable iterator. Assign reuses capacity when possible and replaces storage
 through the selected allocator otherwise. Reserve, insert, and push growth
 preserve existing element values and use the selected allocator, and copy
 construction owns independent storage.
 Host O0/O2 fixtures check capacity reuse, reallocation, aliased fill arguments,
-`emplace_back` value initialization and returned references,
+`emplace_back` value initialization and returned references, positional
+`emplace` return positions and source aliasing,
 forward/reverse iterator access, iterator base/decrement/equality/difference,
 insert return positions, source aliasing, empty ranges, and insertion from a
 distinct vector; assignment from values, ranges, and lists with capacity reuse

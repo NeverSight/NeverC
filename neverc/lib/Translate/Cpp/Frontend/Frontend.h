@@ -922,6 +922,7 @@ enum class UtilityOperation {
   VectorErase,
   VectorInsert,
   VectorInsertRange,
+  VectorEmplace,
   VectorAssignFill,
   VectorAssignRange,
   WrapIteratorDereference,

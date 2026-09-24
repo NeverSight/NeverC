@@ -10257,7 +10257,8 @@ class FunctionLowering {
                                 PointerType, L), L);
     }
     case UtilityOperation::VectorInsert:
-    case UtilityOperation::VectorInsertRange: {
+    case UtilityOperation::VectorInsertRange:
+    case UtilityOperation::VectorEmplace: {
       const auto *Object = MemberObject();
       auto Vector = Object ? VectorFor(Object->getType())
                            : std::optional<UtilityVectorRecord>();
@@ -10290,6 +10291,10 @@ class FunctionLowering {
                L);
         // Capture a source element before shifting or releasing storage.
         Value = snapshot(expression(Call->getArg(Call->getNumArgs() - 1)), L);
+      } else if (Operation == UtilityOperation::VectorEmplace) {
+        assign(Count, quantity(1, SizeType, L), L);
+        if (Call->getNumArgs() == 2)
+          Value = snapshot(expression(Call->getArg(1)), L);
       } else {
         Expression RangeBegin;
         if (Call->getNumArgs() == 2) {
@@ -10351,6 +10356,13 @@ class FunctionLowering {
                       quantity(1, DifferenceType, L), RangePointerType, L),
                L);
         return Current;
+      };
+      auto StoreInsertedValue = [&](Expression Target) {
+        if (Operation == UtilityOperation::VectorEmplace &&
+            Call->getNumArgs() == 1)
+          initializeZero(std::move(Target), Vector->ElementType, L);
+        else
+          assign(std::move(Target), InsertValue(), L);
       };
       auto Member = [&](const char *Name) {
         return Expression{
@@ -10452,7 +10464,7 @@ class FunctionLowering {
           binary("<", json::Object(FillIndex), json::Object(Count), "bool", L),
           Fill, Filled, L);
       label(Fill, L);
-      assign(dereference(json::Object(FillTarget), L), InsertValue(), L);
+      StoreInsertedValue(dereference(json::Object(FillTarget), L));
       assign(FillTarget,
              binary("+", json::Object(FillTarget),
                     quantity(1, DifferenceType, L), PointerType, L),
@@ -10535,7 +10547,7 @@ class FunctionLowering {
           binary("<", json::Object(GrowIndex), json::Object(Count), "bool", L),
           GrowFill, GrowFillDone, L);
       label(GrowFill, L);
-      assign(dereference(json::Object(NewCurrent), L), InsertValue(), L);
+      StoreInsertedValue(dereference(json::Object(NewCurrent), L));
       assign(NewCurrent,
              binary("+", json::Object(NewCurrent),
                     quantity(1, DifferenceType, L), PointerType, L),

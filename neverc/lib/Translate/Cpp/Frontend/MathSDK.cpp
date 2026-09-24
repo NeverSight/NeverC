@@ -16632,7 +16632,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         (!Prototype->isNothrow() && Name != "push_back" &&
          Name != "emplace_back" && Name != "pop_back" && Name != "reserve" &&
          Name != "resize" && Name != "erase" && Name != "insert" &&
-         Name != "assign") ||
+         Name != "emplace" && Name != "assign") ||
         Method->isStatic() || Method->isVariadic() || !Method->hasBody() ||
         Method->getRefQualifier() != RQ_None ||
         Method->getParent()->getCanonicalDecl() !=
@@ -16831,6 +16831,37 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
               Context.hasSameType(Call->getArg(2)->getType(), LastType))
             return UtilityOperation::VectorInsertRange;
         }
+      }
+    }
+    if (!Operator && Name == "emplace" && !Method->isConst() &&
+        !Object->getType().isConstQualified() && Call->isPRValue() &&
+        (Method->getNumParams() == 1 || Method->getNumParams() == 2) &&
+        Context.hasSameType(Call->getType(), Method->getReturnType()) &&
+        Method->getPrimaryTemplate() &&
+        approvedStandardSDKDeclaration(S, SM, Method->getPrimaryTemplate()) &&
+        cstddefOrigin(S, SM, Method->getPrimaryTemplate()->getLocation(),
+                      "libcxx", "__vector/vector.h")) {
+      const auto Result = approvedUtilityWrapIteratorRecord(
+          S, SM, Method->getReturnType()->getAsCXXRecordDecl(), Context);
+      const auto Position = approvedUtilityWrapIteratorRecord(
+          S, SM, Method->getParamDecl(0)->getType()->getAsCXXRecordDecl(),
+          Context);
+      const auto Element = Vector->ElementType;
+      if (Result && Position &&
+          Context.hasSameType(Result->IteratorType, Vector->PointerType) &&
+          Context.hasSameType(Position->IteratorType,
+                              Context.getPointerType(Element.withConst())) &&
+          Context.hasSameType(Method->getParamDecl(0)->getType(),
+                              Call->getArg(0)->getType())) {
+        if (Method->getNumParams() == 1)
+          return UtilityOperation::VectorEmplace;
+        const auto Parameter = Method->getParamDecl(1)->getType();
+        if ((Parameter->isLValueReferenceType() ||
+             Parameter->isRValueReferenceType()) &&
+            Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                           Element) &&
+            Context.hasSameUnqualifiedType(Call->getArg(1)->getType(), Element))
+          return UtilityOperation::VectorEmplace;
       }
     }
     if (!Operator && Name == "assign" && !Method->isConst() &&
