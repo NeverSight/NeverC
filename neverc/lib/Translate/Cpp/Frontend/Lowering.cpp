@@ -9010,6 +9010,8 @@ class FunctionLowering {
     case UtilityOperation::StringEmpty:
     case UtilityOperation::StringData:
     case UtilityOperation::StringSubscript:
+    case UtilityOperation::StringFront:
+    case UtilityOperation::StringBack:
     case UtilityOperation::StringClear:
     case UtilityOperation::StringPushBack:
     case UtilityOperation::StringPopBack:
@@ -9354,14 +9356,21 @@ class FunctionLowering {
       const auto PointerType = type(A.Context.getPointerType(CharacterType), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       auto Data = temporary(PointerType, L);
+      std::optional<Expression> BackSize;
+      if (Operation == UtilityOperation::StringBack)
+        BackSize = temporary(SizeType, L);
       const auto Long = labelName(), Short = labelName(), Done = labelName();
-      branch(binary("!=", binary("&", std::move(First),
-                                  quantity(LongFlag, SizeType, L), SizeType, L),
-                    quantity(0, SizeType, L), "bool", L), Long, Short, L);
+      branch(binary("!=",
+                    binary("&", json::Object(First),
+                           quantity(LongFlag, SizeType, L), SizeType, L),
+                    quantity(0, SizeType, L), "bool", L),
+             Long, Short, L);
       label(Long, L);
       assign(Data, cast(Word(String->AlternateLayout ? "nct_string_word0"
                                                     : "nct_string_word2"),
                         PointerType, L), L);
+      if (BackSize)
+        assign(*BackSize, Word("nct_string_word1"), L);
       if (Operation == UtilityOperation::StringClear)
         assign(Word("nct_string_word1"), quantity(0, SizeType, L), L);
       jump(Done, L);
@@ -9374,6 +9383,18 @@ class FunctionLowering {
                  : binary("+", std::move(ShortPointer),
                           quantity(1, DifferenceType, L), PointerType, L),
              L);
+      if (BackSize)
+        assign(
+            *BackSize,
+            String->AlternateLayout
+                ? binary(">>", json::Object(First),
+                         quantity(
+                             A.Context.getTypeSize(A.Context.getSizeType()) - 8,
+                             SizeType, L),
+                         SizeType, L)
+                : binary("/", json::Object(First), quantity(2, SizeType, L),
+                         SizeType, L),
+            L);
       if (Operation == UtilityOperation::StringClear)
         assign(Word(String->AlternateLayout ? "nct_string_word2"
                                             : "nct_string_word0"),
@@ -9387,6 +9408,16 @@ class FunctionLowering {
       }
       if (Operation == UtilityOperation::StringData)
         return Data;
+      if (Operation == UtilityOperation::StringFront)
+        return dereference(std::move(Data), L);
+      if (Operation == UtilityOperation::StringBack)
+        return dereference(
+            binary("+", std::move(Data),
+                   cast(binary("-", json::Object(*BackSize),
+                               quantity(1, SizeType, L), SizeType, L),
+                        DifferenceType, L),
+                   PointerType, L),
+            L);
       auto Index = cast(std::move(*IndexArgument), DifferenceType, L);
       return dereference(binary("+", std::move(Data), std::move(Index),
                                 PointerType, L), L);

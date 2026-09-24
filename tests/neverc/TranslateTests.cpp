@@ -51832,16 +51832,27 @@ int main() {
       return 1;
     std::string short_text("hello");
     if (short_text.empty() || short_text.length() != 5 ||
-        short_text[0] != 'h' || short_text.c_str()[5] != 0)
+        short_text[0] != 'h' || short_text.c_str()[5] != 0 ||
+        short_text.front() != 'h' || short_text.back() != 'o')
       return 2;
     short_text[1] = 'a';
+    short_text.front() = 'H';
+    short_text.back() = 'O';
     const std::string &short_view = short_text;
-    if (short_view[1] != 'a' || short_view.data()[4] != 'o')
+    if (short_view[1] != 'a' || short_view.data()[4] != 'O' ||
+        short_view.front() != 'H' || short_view.back() != 'O')
       return 3;
     std::string long_text("abcdefghijklmnopqrstuvwxyz");
     if (long_text.size() != 26 || long_text[25] != 'z' ||
-        long_text.c_str()[26] != 0)
+        long_text.c_str()[26] != 0 || long_text.front() != 'a' ||
+        long_text.back() != 'z')
       return 4;
+    long_text.front() = 'A';
+    long_text.back() = 'Z';
+    const std::string &long_view = long_text;
+    if (long_view.front() != 'A' || long_view.back() != 'Z' ||
+        long_view.data()[26] != 0)
+      return 9;
     std::string edge_short("abcdefghijklmnopqrstuv");
     std::string edge_long("abcdefghijklmnopqrstuvw");
     if (edge_short.size() != 22 || edge_short.data()[22] != 0 ||

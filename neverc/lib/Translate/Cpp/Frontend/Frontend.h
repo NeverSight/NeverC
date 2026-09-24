@@ -858,6 +858,8 @@ enum class UtilityOperation {
   StringEmpty,
   StringData,
   StringSubscript,
+  StringFront,
+  StringBack,
   StringClear,
   StringPushBack,
   StringPopBack,

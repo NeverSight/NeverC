@@ -16196,6 +16196,15 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                        ? Context.CharTy.withConst()
                                        : Context.CharTy)))
       return UtilityOperation::StringData;
+    if (!Operator && (Name == "front" || Name == "back") &&
+        !Method->getNumParams() && !Call->getNumArgs() && Call->isLValue() &&
+        Method->getReturnType()->isLValueReferenceType() &&
+        Context.hasSameType(Method->getReturnType()->getPointeeType(),
+                            Method->isConst() ? Context.CharTy.withConst()
+                                              : Context.CharTy) &&
+        Context.hasSameUnqualifiedType(Call->getType(), Context.CharTy))
+      return Name == "front" ? UtilityOperation::StringFront
+                             : UtilityOperation::StringBack;
     if (Operator && Method->getOverloadedOperator() == OO_Subscript &&
         Method->getNumParams() == 1 && Call->getNumArgs() == 2 &&
         Context.hasSameType(Method->getParamDecl(0)->getType(),

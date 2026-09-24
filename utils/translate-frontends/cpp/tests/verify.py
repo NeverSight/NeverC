@@ -29052,6 +29052,8 @@ int main() {
   std::string moved(static_cast<std::string&&>(copied));
   assigned = static_cast<std::string&&>(moved);
   bool intact = empty.empty() && short_text.size() == 5 &&
+         short_text.front() == 'h' && short_text.back() == 'o' &&
+         long_text.front() == 'a' && long_text.back() == 'z' &&
          long_text[25] == 'z' && assigned[25] == 'z' &&
          copied.empty() && moved.empty();
   auto old_capacity = assigned.capacity();
