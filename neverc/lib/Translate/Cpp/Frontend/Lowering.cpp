@@ -9060,7 +9060,9 @@ class FunctionLowering {
                               : std::move(Begin),
                           *Reverse);
     }
-    case UtilityOperation::WrapIteratorNotEqual: {
+    case UtilityOperation::WrapIteratorEqual:
+    case UtilityOperation::WrapIteratorNotEqual:
+    case UtilityOperation::WrapIteratorDifference: {
       const auto *Left = Call->getArg(0);
       const auto *Right = Call->getArg(1);
       auto Iterator = approvedUtilityWrapIteratorRecord(
@@ -9072,11 +9074,33 @@ class FunctionLowering {
           fieldStorage(lvalue(Left), Iterator->Current, L), L);
       auto RightPointer = snapshot(
           fieldStorage(lvalue(Right), Iterator->Current, L), L);
-      return snapshot(binary("!=", std::move(LeftPointer),
-                             std::move(RightPointer), "bool", L), L);
+      const char *Operator =
+          Operation == UtilityOperation::WrapIteratorEqual
+              ? "=="
+          : Operation == UtilityOperation::WrapIteratorNotEqual ? "!=" : "-";
+      return snapshot(binary(Operator, std::move(LeftPointer),
+                             std::move(RightPointer), type(Call->getType(), L),
+                             L),
+                      L);
+    }
+    case UtilityOperation::WrapIteratorBase: {
+      const auto *Object = MemberObject();
+      auto Iterator = Object ? approvedUtilityWrapIteratorRecord(
+                                   A.S, A.Sources,
+                                   Object->getType()->getAsCXXRecordDecl(),
+                                   A.Context)
+                             : std::optional<UtilityWrapIteratorRecord>();
+      if (!Object || !Iterator)
+        reject(L, "wrap iterator base",
+               "The selected std::__wrap_iter layout is unavailable.");
+      auto Receiver = snapshot(address(lvalue(Object), Object->getType(), L), L);
+      return snapshot(fieldStorage(dereference(std::move(Receiver), L),
+                                   Iterator->Current, L),
+                      L);
     }
     case UtilityOperation::WrapIteratorDereference:
-    case UtilityOperation::WrapIteratorPreIncrement: {
+    case UtilityOperation::WrapIteratorPreIncrement:
+    case UtilityOperation::WrapIteratorPreDecrement: {
       const auto *Object = MemberObject();
       auto Iterator = Object ? approvedUtilityWrapIteratorRecord(
                                    A.S, A.Sources,
@@ -9095,7 +9119,10 @@ class FunctionLowering {
             cast(std::move(Pointer),
                  type(A.Context.getPointerType(Call->getType()), L), L), L);
       assign(Pointer,
-             binary("+", json::Object(Pointer),
+             binary(Operation == UtilityOperation::WrapIteratorPreIncrement
+                        ? "+"
+                        : "-",
+                    json::Object(Pointer),
                     quantity(1, type(A.Context.getPointerDiffType(), L), L),
                     type(Iterator->IteratorType, L), L), L);
       return Place;

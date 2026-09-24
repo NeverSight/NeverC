@@ -2222,6 +2222,8 @@ access, mutable and const `front`/`back`, `clear`, `push_back(char)`,
 `pop_back()`, `reserve(size_type)`, both `resize` overloads, and destruction.
 Mutable and const `begin`/`end`, plus `cbegin`/`cend`, produce authenticated
 libc++ `__wrap_iter` values for forward traversal and mutable element access.
+The authenticated wrapper also supports `base()`, prefix decrement, equality,
+inequality and same-type iterator difference, shared with vector iterators.
 The `append(const char*, size_type)`, `append(const char*)`, and
 `append(size_type, char)` overloads and `append(const std::string&)` also lower
 directly and return the receiver reference. Pointer and string append copy
@@ -2282,7 +2284,8 @@ destruction; size, capacity, empty, data, element/front/back access; clear,
 push/pop, begin/end and const iteration; and reserve/resize. Growth preserves
 element values and the selected allocator calls, and copy construction owns
 independent storage. Host O0/O2 fixtures check capacity reuse, reallocation,
-aliased fill arguments and eventual release. Record elements, other allocators,
+aliased fill arguments, iterator base/decrement/equality/difference and
+eventual release. Record elements, other allocators,
 remaining vector methods and throwing allocation or length-error paths remain
 unsupported. Quoted and shadow headers remain rejected.
 

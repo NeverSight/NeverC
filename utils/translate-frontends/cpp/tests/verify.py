@@ -28986,6 +28986,13 @@ static_assert(alignof(std::vector<int>) == alignof(void*));
 std::vector<int>::size_type passthrough(std::vector<int>::size_type n) {
   return n;
 }
+int iterator_access(std::vector<int>& values) {
+  auto first = values.begin();
+  auto last = values.end();
+  if (first == last) return 0;
+  --last;
+  return *last + int(last - first) + (last.base() == values.data());
+}
 """
     vector_dependencies = None
     for target in sdk_targets:
@@ -29002,7 +29009,7 @@ std::vector<int>::size_type passthrough(std::vector<int>::size_type n) {
             vector_dependencies = dependencies
         else:
             assert dependencies == vector_dependencies, target
-        assert len(vector_ir["functions"]) == 1, target
+        assert len(vector_ir["functions"]) == 2, target
     check("v2-vector-runtime-object",
           '#include <vector>\nint f(){std::vector<int> v;return v.size();}',
           "TR0203", profile="cpp-core-v2", sdk=True)
@@ -29137,6 +29144,13 @@ int main() {
   bool mutable_iteration = *cursor == 'c' &&
                            iterated.end() != iterated.begin() &&
                            iterated[0] == 'Q' && iterated[2] == 'd';
+  auto tail_cursor = iterated.end();
+  --tail_cursor;
+  bool iterator_arithmetic = *tail_cursor == 'd' &&
+                             tail_cursor.base() == iterated.data() + 2 &&
+                             iterated.end() - iterated.begin() == 3 &&
+                             !(iterated.begin() == iterated.end()) &&
+                             empty.begin() == empty.end();
   const std::string &const_iterated = iterated;
   int character_sum = 0;
   for (char character : const_iterated) character_sum += character;
@@ -29144,6 +29158,7 @@ int main() {
   bool const_iteration = character_sum == 'Q' + 'c' + 'd' &&
                          *const_cursor == 'Q' &&
                          const_cursor != const_iterated.cend() &&
+                         const_iterated.cend() - const_cursor == 3 &&
                          !(empty.cbegin() != empty.cend());
   std::string long_iterated("abcdefghijklmnopqrstuvwxyz0123456789");
   int long_count = 0;
@@ -29167,6 +29182,7 @@ int main() {
          erase_intact && erased.empty() && compare_intact &&
          cstring_compare_intact && search_intact && set_search_intact &&
          mutable_iteration && const_iteration && long_iteration &&
+         iterator_arithmetic &&
          assigned.capacity() >= requested_capacity
              ? 0 : 1;
 }

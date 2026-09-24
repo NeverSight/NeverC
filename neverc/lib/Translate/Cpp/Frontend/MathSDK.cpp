@@ -15696,13 +15696,18 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   const auto *Function = Call->getDirectCallee();
   const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
   if (const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
-      Operator && Operator->getOperator() == OO_ExclaimEqual &&
+      Operator && (Operator->getOperator() == OO_EqualEqual ||
+                   Operator->getOperator() == OO_ExclaimEqual ||
+                   Operator->getOperator() == OO_Minus) &&
       Operator->getNumArgs() == 2 && Function && !Method &&
-      Function->getOverloadedOperator() == OO_ExclaimEqual &&
+      Function->getOverloadedOperator() == Operator->getOperator() &&
       Function->getNumParams() == 2 && !Function->isVariadic() &&
       Function->hasBody() && Call->isPRValue() &&
-      Call->getType()->isBooleanType() &&
-      Function->getReturnType()->isBooleanType() &&
+      Context.hasSameType(Call->getType(), Function->getReturnType()) &&
+      (Operator->getOperator() == OO_Minus
+           ? Context.hasSameType(Function->getReturnType(),
+                                 Context.getPointerDiffType())
+           : Function->getReturnType()->isBooleanType()) &&
       approvedUtilityReference(S, SM, Call, Function) &&
       approvedStandardSDKDeclaration(S, SM, Function) &&
       cstddefOrigin(S, SM, Function->getLocation(), "libcxx",
@@ -15724,15 +15729,23 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if (Primary && Prototype && Prototype->isNothrow() && Left && Right &&
         Left->Record->getCanonicalDecl() ==
             Right->Record->getCanonicalDecl() &&
-        Arguments && Arguments->size() == 1 &&
+        Arguments && (Arguments->size() == 1 || Arguments->size() == 2) &&
         Arguments->get(0).getKind() == TemplateArgument::Type &&
         Context.hasSameType(Arguments->get(0).getAsType(),
                             Left->IteratorType) &&
+        (Arguments->size() == 1 ||
+         (Arguments->get(1).getKind() == TemplateArgument::Type &&
+          Context.hasSameType(Arguments->get(1).getAsType(),
+                              Left->IteratorType))) &&
         Parameter(0) && Parameter(1) &&
         approvedStandardSDKDeclaration(S, SM, Primary) &&
         cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
                        "__iterator/wrap_iter.h"))
-      return UtilityOperation::WrapIteratorNotEqual;
+      return Operator->getOperator() == OO_EqualEqual
+                 ? UtilityOperation::WrapIteratorEqual
+             : Operator->getOperator() == OO_ExclaimEqual
+                 ? UtilityOperation::WrapIteratorNotEqual
+                 : UtilityOperation::WrapIteratorDifference;
   }
   const auto *OptionalObject = [&]() -> const Expr * {
     const Expr *Object = nullptr;
@@ -16144,14 +16157,19 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       S, SM, Method ? Method->getParent() : nullptr, Context);
   if (Method && Wrapped) {
     const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+    const auto *MemberCall = dyn_cast<CXXMemberCallExpr>(Call);
     const auto *Object = Operator && Operator->getNumArgs()
                              ? Operator->getArg(0)
-                             : nullptr;
+                             : MemberCall
+                                 ? MemberCall->getImplicitObjectArgument()
+                                 : nullptr;
     const auto *Reference = directMethodReference(Call);
     const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
     const auto WrapType = Context.getRecordType(Wrapped->Record);
     if (Reference && Object && Prototype && Prototype->isNothrow() &&
-        Operator->getNumArgs() == 1 && !Method->isStatic() &&
+        (Operator ? Operator->getNumArgs() == 1
+                  : MemberCall && Call->getNumArgs() == 0) &&
+        !Method->isStatic() &&
         !Method->isVariadic() && Method->hasBody() &&
         Method->getNumParams() == 0 && Method->getRefQualifier() == RQ_None &&
         Method->getParent()->getCanonicalDecl() ==
@@ -16161,7 +16179,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
                        "__iterator/wrap_iter.h") &&
         S.owns(SM, Reference->getExprLoc())) {
-      if (Method->getOverloadedOperator() == OO_Star && Method->isConst() &&
+      if (MemberCall && Method->getName() == "base" && Method->isConst() &&
+          Call->isPRValue() &&
+          Context.hasSameType(Method->getReturnType(),
+                              Wrapped->IteratorType) &&
+          Context.hasSameType(Call->getType(), Wrapped->IteratorType))
+        return UtilityOperation::WrapIteratorBase;
+      if (Operator && Method->getOverloadedOperator() == OO_Star &&
+          Method->isConst() &&
           Call->isLValue() &&
           Method->getReturnType()->isLValueReferenceType() &&
           Context.hasSameType(Method->getReturnType()->getPointeeType(),
@@ -16169,14 +16194,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Context.hasSameUnqualifiedType(
               Call->getType(), Wrapped->IteratorType->getPointeeType()))
         return UtilityOperation::WrapIteratorDereference;
-      if (Method->getOverloadedOperator() == OO_PlusPlus &&
+      if (Operator && (Method->getOverloadedOperator() == OO_PlusPlus ||
+                       Method->getOverloadedOperator() == OO_MinusMinus) &&
           !Method->isConst() && !Object->getType().isConstQualified() &&
           Call->isLValue() &&
           Method->getReturnType()->isLValueReferenceType() &&
           Context.hasSameUnqualifiedType(
               Method->getReturnType()->getPointeeType(), WrapType) &&
           Context.hasSameUnqualifiedType(Call->getType(), WrapType))
-        return UtilityOperation::WrapIteratorPreIncrement;
+        return Method->getOverloadedOperator() == OO_PlusPlus
+                   ? UtilityOperation::WrapIteratorPreIncrement
+                   : UtilityOperation::WrapIteratorPreDecrement;
     }
     return std::nullopt;
   }
