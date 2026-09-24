@@ -867,6 +867,7 @@ enum class UtilityOperation {
   StringResize,
   StringAppendPointer,
   StringAppendCString,
+  StringAppendString,
   StringAppendFill,
   StringViewSize,
   VectorSize,

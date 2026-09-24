@@ -29066,9 +29066,13 @@ int main() {
   assigned.resize(3, 'x');
   assigned.resize(1);
   assigned.append(2, 'a').append("bc", 2).append("d");
-  return intact && emptied && assigned.size() == 6 &&
+  const std::string suffix("e");
+  assigned.append(suffix).append(assigned);
+  return intact && emptied && assigned.size() == 14 &&
          assigned[0] == 'x' && assigned[2] == 'a' &&
          assigned[3] == 'b' && assigned[4] == 'c' && assigned[5] == 'd' &&
+         assigned[6] == 'e' && assigned[7] == 'x' &&
+         assigned[13] == 'e' &&
          assigned.capacity() >= requested_capacity
              ? 0 : 1;
 }

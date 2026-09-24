@@ -16169,6 +16169,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Context.hasSameType(FirstParameter, ConstPointer) &&
           Context.hasSameType(Call->getArg(0)->getType(), ConstPointer))
         return UtilityOperation::StringAppendCString;
+      const auto StringType = Context.getRecordType(String->Record);
+      if (Method->getNumParams() == 1 &&
+          FirstParameter->isLValueReferenceType() &&
+          Context.hasSameType(FirstParameter->getPointeeType(),
+                              StringType.withConst()) &&
+          Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
+                                         StringType))
+        return UtilityOperation::StringAppendString;
       if (Method->getNumParams() != 2)
         return std::nullopt;
       const auto SecondParameter = Method->getParamDecl(1)->getType();

@@ -52295,4 +52295,67 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringAppendStringRun) {
+  const auto Source = tmpFile("string-append-string.cpp");
+  const auto Output = tmpFile("string-append-string.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+int main() {
+  {
+    std::string text("A");
+    const std::string short_source("bc");
+    std::string *result = &text.append(short_source).append(text);
+    if (result != &text || text.size() != 6 || text[0] != 'A' ||
+        text[1] != 'b' || text[3] != 'A' || text[5] != 'c' ||
+        text.data()[6] != 0 || allocations != 0)
+      return 1;
+    text.append(std::string("!"));
+    if (text.size() != 7 || text[6] != '!' || allocations != 0)
+      return 2;
+    const std::string long_source("abcdefghijklmnopqrstuvwxyz");
+    text.append(long_source);
+    if (text.size() != 33 || text[7] != 'a' || text[32] != 'z' ||
+        text.data()[33] != 0 || long_source.size() != 26 ||
+        long_source[25] != 'z' || allocations != 2 || releases != 0)
+      return 3;
+    Size old_size = text.size();
+    const char *old_data = text.data();
+    text.append(text);
+    if (text.size() != old_size * 2 || text.data() == old_data ||
+        text.data()[text.size()] != 0 || allocations != 3 || releases != 1)
+      return 4;
+    for (Size i = 0; i < old_size; ++i)
+      if (text[i] != text[i + old_size]) return 5;
+    const char raw[] = {'u', 0, 'v'};
+    const std::string exact(raw, 3);
+    text.append(exact);
+    if (text.size() != old_size * 2 + 3 ||
+        text[old_size * 2] != 'u' || text[old_size * 2 + 1] != 0 ||
+        text[old_size * 2 + 2] != 'v' ||
+        text.data()[text.size()] != 0 || allocations != 3)
+      return 6;
+  }
+  return allocations == 3 && releases == 3 ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-append-string" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 } // namespace
