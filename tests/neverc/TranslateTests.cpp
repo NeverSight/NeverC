@@ -51597,6 +51597,55 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorReverseIteratorRun) {
+  const auto Source = tmpFile("vector-reverse-iterator.cpp");
+  const auto Output = tmpFile("vector-reverse-iterator.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <vector>
+int main() {
+  std::vector<int> values{1, 2, 3};
+  auto reverse = values.rbegin();
+  if (*reverse != 3 || reverse.base() != values.end() ||
+      reverse.operator->() != values.data() + 2)
+    return 1;
+  *reverse = 7;
+  ++reverse;
+  if (*reverse != 2 || reverse[1] != 1 ||
+      values.rend() - values.rbegin() != 3)
+    return 2;
+  const std::vector<int> &constant = values;
+  auto converted = std::vector<int>::const_reverse_iterator(values.rbegin());
+  std::vector<int>::const_reverse_iterator assigned;
+  assigned = values.rbegin();
+  if (*constant.crbegin() != 7 || *converted != 7 || *assigned != 7 ||
+      *(constant.crend() - 1) != 1)
+    return 3;
+  int sum = 0;
+  for (auto cursor = constant.rbegin(); cursor != constant.rend(); ++cursor)
+    sum += *cursor;
+  std::vector<int> empty;
+  return sum == 10 && empty.rbegin() == empty.rend() &&
+         empty.crbegin() == empty.crend() ? 0 : 4;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-reverse-iterator" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorCopyAndMoveConstructionRun) {
   const auto Source = tmpFile("vector-copy-move.cpp");
   const auto Output = tmpFile("vector-copy-move.nc");
@@ -51877,6 +51926,57 @@ int main() {
   for (const std::string &Optimization : {"-O0", "-O2"}) {
     SCOPED_TRACE(Optimization);
     const auto Executable = tmpFile("string-lifetime" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StringReverseIteratorRun) {
+  const auto Source = tmpFile("string-reverse-iterator.cpp");
+  const auto Output = tmpFile("string-reverse-iterator.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <string>
+int main() {
+  std::string short_text("abc");
+  auto reverse = short_text.rbegin();
+  if (*reverse != 'c' || reverse.base() != short_text.end() ||
+      reverse.operator->() != short_text.data() + 2)
+    return 1;
+  *reverse = 'Z';
+  ++reverse;
+  if (*reverse != 'b' || reverse[1] != 'a' ||
+      short_text.rend() - short_text.rbegin() != 3)
+    return 2;
+  const std::string &constant = short_text;
+  auto converted = std::string::const_reverse_iterator(short_text.rbegin());
+  std::string::const_reverse_iterator assigned;
+  assigned = short_text.rbegin();
+  auto factory = std::make_reverse_iterator(short_text.end());
+  if (*constant.crbegin() != 'Z' || *converted != 'Z' ||
+      *assigned != 'Z' || *factory != 'Z' ||
+      *(constant.crend() - 1) != 'a')
+    return 3;
+  const std::string long_text("abcdefghijklmnopqrstuvwxyz0123456789");
+  std::string empty;
+  return *long_text.rbegin() == '9' &&
+         *(long_text.rend() - 1) == 'a' &&
+         empty.rbegin() == empty.rend() &&
+         empty.crbegin() == empty.crend() ? 0 : 4;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-reverse-iterator" + Optimization);
     auto Compile = compileGenerated(Output, Executable, Optimization);
     ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
     auto Run = exec(Executable.string(), {});
