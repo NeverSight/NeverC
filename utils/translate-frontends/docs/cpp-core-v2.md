@@ -2214,9 +2214,18 @@ platform-free. The public header and `__ios/fpos.h`,
 `__string/extern_template_lists.h`, and `__utility/scope_guard.h` retain their
 LLVM 20.1.8 source bytes and catalog hashes. Clang can fold constant
 `std::string` size and alignment queries and `npos`, and resolve its
-`size_type` alias. This is compile-time metadata only: constructing a string
-object, calling its members, or destroying it still requires an authenticated
-direct lowering. Quoted and shadow headers remain rejected.
+`size_type` alias. Authenticated `std::basic_string<char, std::char_traits<char>,
+std::allocator<char>>` objects now have direct lowering for default,
+`const char*`, and pointer-and-length construction; `size`, `length`, `empty`,
+`data`, `c_str`, subscript access, and destruction. The frontend checks the
+pinned libc++ representation before emitting three storage words, including
+the alternate short-string layout selected on Apple arm64. Short strings stay
+inline, while long strings use the selected source allocation and release
+functions. A host O0/O2 fixture exercises both representations, embedded NUL,
+mutable and const access, and lifetime release; all eight supported target
+triples pass frontend translation. Copy/move, modifiers, other character or
+allocator types, and throwing length/allocation paths remain unsupported.
+Quoted and shadow headers remain rejected.
 
 ## Vector header and metadata from `<vector>`
 

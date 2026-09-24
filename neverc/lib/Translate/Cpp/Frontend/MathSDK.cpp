@@ -4222,6 +4222,186 @@ approvedUtilityStringViewRecord(const State &S, const SourceManager &SM,
   return UtilityStringViewRecord{View, Data, Size};
 }
 
+std::optional<UtilityStringRecord>
+approvedUtilityStringRecord(const State &S, const SourceManager &SM,
+                            const CXXRecordDecl *Record,
+                            const ASTContext &Context) {
+  const auto *String = Record ? Record->getDefinition() : nullptr;
+  const auto *Specialization =
+      dyn_cast_or_null<ClassTemplateSpecializationDecl>(String);
+  if (!S.coreV2() || !String || !Specialization ||
+      String->getName() != "basic_string" || String->isInvalidDecl() ||
+      String->isUnion() || String->isDependentContext() ||
+      String->getNumBases() || !String->isStandardLayout() ||
+      Specialization->getSpecializationKind() != TSK_ImplicitInstantiation ||
+      !approvedStandardSDKDeclaration(S, SM, String) ||
+      !cstddefOrigin(S, SM, String->getLocation(), "libcxx", "string"))
+    return std::nullopt;
+  const auto &Arguments = Specialization->getTemplateArgs();
+  if (Arguments.size() != 3 ||
+      Arguments.get(0).getKind() != TemplateArgument::Type ||
+      Arguments.get(1).getKind() != TemplateArgument::Type ||
+      Arguments.get(2).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Arguments.get(0).getAsType(), Context.CharTy))
+    return std::nullopt;
+  const auto *Traits = dyn_cast_or_null<ClassTemplateSpecializationDecl>(
+      Arguments.get(1).getAsType()->getAsCXXRecordDecl());
+  const auto *TraitsDefinition = Traits ? Traits->getDefinition() : nullptr;
+  const auto *TraitsTemplate =
+      Traits ? Traits->getSpecializedTemplate() : nullptr;
+  if (!Traits || !TraitsDefinition || !TraitsTemplate ||
+      Traits->getName() != "char_traits" ||
+      Traits->getSpecializationKind() != TSK_ExplicitSpecialization ||
+      Traits->getTemplateArgs().size() != 1 ||
+      Traits->getTemplateArgs().get(0).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Traits->getTemplateArgs().get(0).getAsType(),
+                           Context.CharTy) ||
+      !approvedStandardSDKDeclaration(S, SM, TraitsDefinition) ||
+      !cstddefOrigin(S, SM, TraitsDefinition->getLocation(), "libcxx",
+                     "__string/char_traits.h"))
+    return std::nullopt;
+  const auto Allocator = approvedUtilityAllocatorRecord(
+      S, SM, Arguments.get(2).getAsType()->getAsCXXRecordDecl(), Context);
+  if (!Allocator ||
+      !Context.hasSameType(Allocator->ElementType, Context.CharTy))
+    return std::nullopt;
+  std::vector<const FieldDecl *> Fields;
+  for (const auto *Field : String->fields())
+    Fields.push_back(Field);
+  if (Fields.size() != 4 || Fields[0]->getName() != "__rep_" ||
+      !Fields[1]->getName().starts_with("__padding1_") ||
+      Fields[2]->getName() != "__alloc_" ||
+      !Fields[3]->getName().starts_with("__padding2_") ||
+      !Context.hasSameType(Fields[2]->getType(),
+                           Arguments.get(2).getAsType()) ||
+      !approvedStandardSDKDeclaration(S, SM, Fields[0]) ||
+      !approvedStandardSDKDeclaration(S, SM, Fields[2]) ||
+      !cstddefOrigin(S, SM, Fields[0]->getLocation(), "libcxx", "string") ||
+      !cstddefOrigin(S, SM, Fields[2]->getLocation(), "libcxx", "string"))
+    return std::nullopt;
+  const auto *Rep = Fields[0]->getType()->getAsCXXRecordDecl();
+  Rep = Rep ? Rep->getDefinition() : nullptr;
+  if (!Rep || !Rep->isUnion() || !Rep->isStandardLayout() ||
+      !approvedStandardSDKDeclaration(S, SM, Rep) ||
+      !cstddefOrigin(S, SM, Rep->getLocation(), "libcxx", "string"))
+    return std::nullopt;
+  std::vector<const FieldDecl *> RepFields;
+  for (const auto *Field : Rep->fields())
+    RepFields.push_back(Field);
+  if (RepFields.size() != 2 || RepFields[0]->getName() != "__s" ||
+      RepFields[1]->getName() != "__l")
+    return std::nullopt;
+  const auto *Short = RepFields[0]->getType()->getAsCXXRecordDecl();
+  const auto *Long = RepFields[1]->getType()->getAsCXXRecordDecl();
+  Short = Short ? Short->getDefinition() : nullptr;
+  Long = Long ? Long->getDefinition() : nullptr;
+  if (!Short || !Long || !Short->isStandardLayout() ||
+      !Long->isStandardLayout() ||
+      !approvedStandardSDKDeclaration(S, SM, Short) ||
+      !approvedStandardSDKDeclaration(S, SM, Long) ||
+      !cstddefOrigin(S, SM, Short->getLocation(), "libcxx", "string") ||
+      !cstddefOrigin(S, SM, Long->getLocation(), "libcxx", "string"))
+    return std::nullopt;
+  auto Member = [&](const CXXRecordDecl *Owner, llvm::StringRef Name)
+      -> std::optional<std::pair<const FieldDecl *, uint64_t>> {
+    const auto &MemberLayout = Context.getASTRecordLayout(Owner);
+    unsigned Index = 0;
+    for (const auto *Field : Owner->fields()) {
+      if (Field->getName() == Name)
+        return std::pair<const FieldDecl *, uint64_t>{
+            Field, MemberLayout.getFieldOffset(Index)};
+      ++Index;
+    }
+    return std::nullopt;
+  };
+  const auto ShortData = Member(Short, "__data_");
+  const auto LongData = Member(Long, "__data_");
+  const auto LongSize = Member(Long, "__size_");
+  const auto *ShortArray = ShortData
+                               ? Context.getAsConstantArrayType(
+                                     ShortData->first->getType())
+                               : nullptr;
+  const auto PointerBits = Context.getTypeSize(Context.getPointerType(Context.CharTy));
+  const auto WordBits = Context.getTypeSize(Context.getSizeType());
+  if (!ShortArray || !LongData || !LongSize ||
+      !Context.hasSameType(ShortArray->getElementType(), Context.CharTy) ||
+      ShortArray->getSize().getZExtValue() != 3 * (WordBits / 8) - 1 ||
+      !Context.hasSameType(LongData->first->getType(),
+                           Context.getPointerType(Context.CharTy)) ||
+      !Context.hasSameType(LongSize->first->getType(), Context.getSizeType()) ||
+      LongSize->second != WordBits)
+    return std::nullopt;
+  const bool AlternateLayout = ShortData->second == 0 && LongData->second == 0;
+  if (!AlternateLayout &&
+      (ShortData->second != 8 || LongData->second != 2 * WordBits))
+    return std::nullopt;
+  const auto &Layout = Context.getASTRecordLayout(String);
+  const auto &RepLayout = Context.getASTRecordLayout(Rep);
+  if (PointerBits != WordBits || (WordBits != 32 && WordBits != 64) ||
+      Layout.getFieldCount() != 4 || Layout.getFieldOffset(0) != 0 ||
+      Layout.getFieldOffset(1) != 0 || Layout.getFieldOffset(2) != 0 ||
+      Layout.getFieldOffset(3) != 0 ||
+      uint64_t(Layout.getSize().getQuantity()) * 8 != 3 * WordBits ||
+      uint64_t(Layout.getAlignment().getQuantity()) * 8 != WordBits ||
+      uint64_t(RepLayout.getSize().getQuantity()) * 8 != 3 * WordBits ||
+      uint64_t(Context.getASTRecordLayout(Short).getSize().getQuantity()) * 8 !=
+          3 * WordBits ||
+      uint64_t(Context.getASTRecordLayout(Long).getSize().getQuantity()) * 8 !=
+          3 * WordBits)
+    return std::nullopt;
+  return UtilityStringRecord{String, Context.getPointerType(Context.CharTy),
+                             3 * (WordBits / 8) - 2, AlternateLayout};
+}
+
+std::optional<UtilityStringConstruction>
+approvedUtilityStringConstruction(const State &S, const SourceManager &SM,
+                                  const CXXConstructExpr *Construction,
+                                  const ASTContext &Context) {
+  if (!Construction || Construction->isTypeDependent() ||
+      Construction->isValueDependent() ||
+      Construction->isInstantiationDependent() ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete)
+    return std::nullopt;
+  const auto String = approvedUtilityStringRecord(
+      S, SM, Construction->getType()->getAsCXXRecordDecl(), Context);
+  const auto *Constructor = Construction->getConstructor();
+  if (!String || !Constructor || Constructor->isVariadic() ||
+      Constructor->getParent()->getCanonicalDecl() !=
+          String->Record->getCanonicalDecl() ||
+      Construction->getNumArgs() != Constructor->getNumParams() ||
+      !Constructor->hasBody() ||
+      !approvedStandardSDKDeclaration(S, SM, Constructor) ||
+      !cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx", "string"))
+    return std::nullopt;
+  if (Constructor->isDefaultConstructor() && !Construction->getNumArgs())
+    return UtilityStringConstruction::Default;
+  const auto ConstPointer = Context.getPointerType(Context.CharTy.withConst());
+  if (Constructor->getNumParams() == 1 &&
+      Context.hasSameType(Constructor->getParamDecl(0)->getType(),
+                          ConstPointer) &&
+      Context.hasSameType(Construction->getArg(0)->getType(), ConstPointer))
+    return UtilityStringConstruction::CString;
+  if (Constructor->getNumParams() == 2 &&
+      Context.hasSameType(Constructor->getParamDecl(0)->getType(),
+                          ConstPointer) &&
+      Context.hasSameType(Construction->getArg(0)->getType(), ConstPointer) &&
+      Context.hasSameType(Constructor->getParamDecl(1)->getType(),
+                          Context.getSizeType()) &&
+      Context.hasSameType(Construction->getArg(1)->getType(),
+                          Context.getSizeType()))
+    return UtilityStringConstruction::PointerLength;
+  return std::nullopt;
+}
+
+bool approvedUtilityStringDestructor(const State &S, const SourceManager &SM,
+                                     const CXXDestructorDecl *Destructor,
+                                     const ASTContext &Context) {
+  return Destructor && !Destructor->isVirtual() && Destructor->hasBody() &&
+         approvedUtilityStringRecord(S, SM, Destructor->getParent(), Context) &&
+         approvedStandardSDKDeclaration(S, SM, Destructor) &&
+         cstddefOrigin(S, SM, Destructor->getLocation(), "libcxx", "string");
+}
+
 std::optional<UtilityVectorRecord>
 approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
                             const CXXRecordDecl *Record,
@@ -15856,6 +16036,64 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Context.hasSameUnqualifiedType(Call->getType(), WrapType))
         return UtilityOperation::WrapIteratorPreIncrement;
     }
+    return std::nullopt;
+  }
+  const auto String = approvedUtilityStringRecord(
+      S, SM, Method ? Method->getParent() : nullptr, Context);
+  if (Method && String) {
+    const auto *Reference = directMethodReference(Call);
+    const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+    const auto *MemberCall = dyn_cast<CXXMemberCallExpr>(Call);
+    const Expr *Object = Operator && Call->getNumArgs() ? Call->getArg(0)
+                         : MemberCall ? MemberCall->getImplicitObjectArgument()
+                                      : nullptr;
+    const unsigned Offset = Operator ? 1 : 0;
+    const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
+    const llvm::StringRef Name = Method->getIdentifier()
+                                     ? Method->getIdentifier()->getName()
+                                     : llvm::StringRef();
+    if (!Reference || !Object || !Prototype || !Prototype->isNothrow() ||
+        Method->isStatic() || Method->isVariadic() || !Method->hasBody() ||
+        Method->getRefQualifier() != RQ_None ||
+        Method->getParent()->getCanonicalDecl() !=
+            String->Record->getCanonicalDecl() ||
+        !Context.hasSameUnqualifiedType(
+            Object->getType(), Context.getRecordType(String->Record)) ||
+        Call->getNumArgs() != Method->getNumParams() + Offset ||
+        !approvedStandardSDKDeclaration(S, SM, Method) ||
+        !cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "string") ||
+        !S.owns(SM, Reference->getExprLoc()))
+      return std::nullopt;
+    if (!Operator && Method->isConst() && !Method->getNumParams() &&
+        Call->isPRValue() &&
+        Context.hasSameType(Call->getType(), Method->getReturnType())) {
+      if ((Name == "size" || Name == "length") &&
+          Context.hasSameType(Method->getReturnType(), Context.getSizeType()))
+        return UtilityOperation::StringSize;
+      if (Name == "empty" && Method->getReturnType()->isBooleanType())
+        return UtilityOperation::StringEmpty;
+    }
+    if (!Operator && (Name == "data" || Name == "c_str") &&
+        !Method->getNumParams() && Call->isPRValue() &&
+        Context.hasSameType(Call->getType(), Method->getReturnType()) &&
+        (Name != "c_str" || Method->isConst()) &&
+        Context.hasSameType(
+            Method->getReturnType(),
+            Context.getPointerType(Method->isConst()
+                                       ? Context.CharTy.withConst()
+                                       : Context.CharTy)))
+      return UtilityOperation::StringData;
+    if (Operator && Method->getOverloadedOperator() == OO_Subscript &&
+        Method->getNumParams() == 1 && Call->getNumArgs() == 2 &&
+        Context.hasSameType(Method->getParamDecl(0)->getType(),
+                            Context.getSizeType()) &&
+        Context.hasSameType(Call->getArg(1)->getType(), Context.getSizeType()) &&
+        Method->getReturnType()->isLValueReferenceType() && Call->isLValue() &&
+        Context.hasSameType(Method->getReturnType()->getPointeeType(),
+                            Method->isConst() ? Context.CharTy.withConst()
+                                              : Context.CharTy) &&
+        Context.hasSameUnqualifiedType(Call->getType(), Context.CharTy))
+      return UtilityOperation::StringSubscript;
     return std::nullopt;
   }
   const auto Vector = approvedUtilityVectorRecord(

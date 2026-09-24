@@ -4637,6 +4637,9 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
       } else if (approvedUtilityStringViewMetadata(S, Sources, D) &&
                  !requireUtilityStringView(D, L, Depth + 1)) {
         return {};
+      } else if (approvedUtilityStringRecord(S, Sources, D, Context) &&
+                 !requireUtilityString(D, L, Depth + 1)) {
+        return {};
       } else if (approvedUtilityVectorRecord(S, Sources, D, Context) &&
                  !requireUtilityVector(D, L, Depth + 1)) {
         return {};
@@ -4793,6 +4796,28 @@ bool Adapter::requireUtilityStringView(const CXXRecordDecl *Record,
     if (type(Field->getType(), Location, false, Depth + 1).empty())
       return false;
   Records.push_back(const_cast<CXXRecordDecl *>(View->Record));
+  return true;
+}
+
+bool Adapter::requireUtilityString(const CXXRecordDecl *Record,
+                                   SourceLocation Location, unsigned Depth) {
+  if (Depth > 64) {
+    reject(Location, "string type", "Nested std::string types exceed the protocol limit.");
+    return false;
+  }
+  const auto String = approvedUtilityStringRecord(S, Sources, Record, Context);
+  if (!String) {
+    reject(Location, "standard library record",
+           "Only the pinned std::string layout is admitted.", "TR0203");
+    return false;
+  }
+  if (!RequiredUtilityStrings.insert(String->Record->getCanonicalDecl()).second)
+    return true;
+  if (type(Context.getSizeType(), Location, false, Depth + 1).empty() ||
+      type(String->PointerType, Location, false, Depth + 1).empty())
+    return false;
+  S.Module["memory_lifetimes"] = true;
+  Records.push_back(const_cast<CXXRecordDecl *>(String->Record));
   return true;
 }
 
@@ -5077,6 +5102,12 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
     } else if (auto Unique = approvedUtilityUniquePtrRecord(S, Sources, R,
                                                            Context)) {
       Args.push_back(zero(Unique->PointerType, L));
+    } else if (auto String = approvedUtilityStringRecord(S, Sources, R,
+                                                        Context)) {
+      for (unsigned I = 0; I != 3; ++I)
+        Args.push_back(zero((String->AlternateLayout ? I == 0 : I == 2)
+                                ? String->PointerType
+                                : Context.getSizeType(), L));
     } else if (auto Vector = approvedUtilityVectorRecord(S, Sources, R,
                                                         Context)) {
       for (unsigned I = 0; I != 3; ++I)
@@ -7887,6 +7918,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
          approvedFunctionalReferenceConstruction(A.S, A.Sources, C,
                                                  A.Context) ||
          approvedUtilityUniquePtrConstruction(A.S, A.Sources, C, A.Context) ||
+         approvedUtilityStringConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityVectorConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityDefaultDeleteConstruction(A.S, A.Sources, C,
                                                   A.Context) ||
@@ -10217,6 +10249,8 @@ public:
                A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityUniquePtrConstruction(A.S, A.Sources, Construction,
                                                 A.Context) ||
+           approvedUtilityStringConstruction(A.S, A.Sources, Construction,
+                                             A.Context) ||
            approvedUtilityDefaultDeleteConstruction(A.S, A.Sources,
                                                     Construction, A.Context) ||
            approvedUtilityAllocatorConstruction(A.S, A.Sources, Construction,
@@ -15366,6 +15400,8 @@ public:
                        A.S, A.Sources, C, A.Context) ||
                    approvedUtilityUniquePtrConstruction(A.S, A.Sources, C,
                                                         A.Context) ||
+                   approvedUtilityStringConstruction(A.S, A.Sources, C,
+                                                     A.Context) ||
                    approvedUtilityVectorConstruction(A.S, A.Sources, C,
                                                      A.Context) ||
                    approvedUtilityDefaultDeleteConstruction(A.S, A.Sources, C,
@@ -15580,6 +15616,8 @@ static void orderCoreV2Records(Adapter &A) {
         approvedUtilityOptionalRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityUniquePtr =
         approvedUtilityUniquePtrRecord(A.S, A.Sources, R, A.Context);
+    const auto UtilityString =
+        approvedUtilityStringRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityVector =
         approvedUtilityVectorRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityDefaultDelete =
@@ -15594,6 +15632,7 @@ static void orderCoreV2Records(Adapter &A) {
                                    UtilityReverse || UtilityTuple ||
                                    UtilityArray ||
                                    UtilityOptional || UtilityUniquePtr ||
+                                   UtilityString ||
                                    UtilityVector ||
                                    UtilityDefaultDelete || UtilityAllocator
                                ? nullptr
@@ -15627,6 +15666,11 @@ static void orderCoreV2Records(Adapter &A) {
     } else if (UtilityUniquePtr) {
       DependencyTypes.emplace_back(UtilityUniquePtr->PointerType,
                                    UtilityUniquePtr->Record->getLocation());
+    } else if (UtilityString) {
+      DependencyTypes.emplace_back(A.Context.getSizeType(),
+                                   UtilityString->Record->getLocation());
+      DependencyTypes.emplace_back(UtilityString->PointerType,
+                                   UtilityString->Record->getLocation());
     } else if (UtilityVector) {
       DependencyTypes.emplace_back(UtilityVector->PointerType,
                                    UtilityVector->Record->getLocation());
@@ -15762,6 +15806,9 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
     const auto UtilityUniquePtr =
         S.coreV2() ? approvedUtilityUniquePtrRecord(S, Sources, R, Context)
                    : std::optional<UtilityUniquePtrRecord>();
+    const auto UtilityString =
+        S.coreV2() ? approvedUtilityStringRecord(S, Sources, R, Context)
+                   : std::optional<UtilityStringRecord>();
     const auto UtilityVector =
         S.coreV2() ? approvedUtilityVectorRecord(S, Sources, R, Context)
                    : std::optional<UtilityVectorRecord>();
@@ -15781,7 +15828,8 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
                                !FunctionalReference && !UtilityReverse &&
                                !UtilityTuple &&
                                !UtilityArray && !UtilityOptional &&
-                               !UtilityUniquePtr && !UtilityVector &&
+                               !UtilityUniquePtr && !UtilityString &&
+                               !UtilityVector &&
                                !UtilityDefaultDelete &&
                                !UtilityAllocator
                            ? emptyBase(R)
@@ -15807,6 +15855,13 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
       Fields.push_back(json::Object{
           {"name", "nct_unique_ptr_pointer"},
           {"type", type(UtilityUniquePtr->PointerType, R->getLocation())}});
+    } else if (UtilityString) {
+      for (unsigned I = 0; I != 3; ++I)
+        Fields.push_back(json::Object{
+            {"name", "nct_string_word" + std::to_string(I)},
+            {"type", type((UtilityString->AlternateLayout ? I == 0 : I == 2)
+                              ? UtilityString->PointerType
+                              : Context.getSizeType(), R->getLocation())}});
     } else if (UtilityVector) {
       for (const char *Name : {"nct_vector_begin", "nct_vector_end",
                                "nct_vector_capacity"})
@@ -15848,8 +15903,10 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> Directives
         if (FunctionalReference->PaddedBase)
           Offsets.push_back(uint64_t(0));
         Offsets.push_back(Layout.getFieldOffset(0));
-      } else if (UtilityVector) {
-        const auto PointerBits = Context.getTypeSize(UtilityVector->PointerType);
+      } else if (UtilityString || UtilityVector) {
+        const auto PointerBits = UtilityString
+                                     ? Context.getTypeSize(Context.getSizeType())
+                                     : Context.getTypeSize(UtilityVector->PointerType);
         for (unsigned I = 0; I != 3; ++I)
           Offsets.push_back(I * PointerBits);
       } else if (FunctionalObject || UtilityUniquePtr ||

@@ -51807,4 +51807,70 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringConstructionAccessAndLifetimeRun) {
+  const auto Source = tmpFile("string-lifetime.cpp");
+  const auto Output = tmpFile("string-lifetime.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) {
+  ++allocations;
+  return malloc(n);
+}
+void operator delete(void *p) noexcept {
+  ++releases;
+  free(p);
+}
+#include <string>
+int main() {
+  {
+    std::string empty;
+    if (!empty.empty() || empty.size() != 0 || empty.data()[0] != 0)
+      return 1;
+    std::string short_text("hello");
+    if (short_text.empty() || short_text.length() != 5 ||
+        short_text[0] != 'h' || short_text.c_str()[5] != 0)
+      return 2;
+    short_text[1] = 'a';
+    const std::string &short_view = short_text;
+    if (short_view[1] != 'a' || short_view.data()[4] != 'o')
+      return 3;
+    std::string long_text("abcdefghijklmnopqrstuvwxyz");
+    if (long_text.size() != 26 || long_text[25] != 'z' ||
+        long_text.c_str()[26] != 0)
+      return 4;
+    std::string edge_short("abcdefghijklmnopqrstuv");
+    std::string edge_long("abcdefghijklmnopqrstuvw");
+    if (edge_short.size() != 22 || edge_short.data()[22] != 0 ||
+        edge_long.size() != 23 || edge_long.data()[23] != 0)
+      return 5;
+    const char raw[] = {'a', 'b', 0, 'c', 'd'};
+    std::string exact(raw, 5);
+    if (exact.size() != 5 || exact[2] != 0 || exact.data()[4] != 'd' ||
+        exact.c_str()[5] != 0)
+      return 6;
+    std::string exact_long("abcdefghijkl\0nopqrstuvwxyz", 26);
+    if (exact_long.size() != 26 || exact_long[12] != 0 ||
+        exact_long[25] != 'z' || exact_long.c_str()[26] != 0)
+      return 7;
+  }
+  return allocations == 3 && releases == 3 ? 0 : 8;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o",
+                                   Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-lifetime" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 } // namespace

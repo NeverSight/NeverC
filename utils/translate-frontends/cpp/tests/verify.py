@@ -29035,6 +29035,38 @@ std::string::size_type passthrough(std::string::size_type n) {
         else:
             assert dependencies == string_dependencies, target
         assert len(string_ir["functions"]) == 1, target
+    string_runtime_source = """\
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <string>
+int main() {
+  std::string empty;
+  std::string short_text("hello");
+  std::string long_text("abcdefghijklmnopqrstuvwxyz");
+  return empty.empty() && short_text.size() == 5 &&
+         long_text[25] == 'z' ? 0 : 1;
+}
+"""
+    for target in sdk_targets:
+        string_ir = check("v2-string-runtime-" + target,
+                          string_runtime_source, profile="cpp-core-v2",
+                          target=target, sdk=True)
+        strings = [record for record in string_ir["records"]
+                   if any(field["name"] == "nct_string_word0"
+                          for field in record["fields"])]
+        assert len(strings) == 1, target
+        fields = strings[0]["fields"]
+        assert [field["name"] for field in fields] == [
+            "nct_string_word0", "nct_string_word1", "nct_string_word2"], target
+        pointer_index = 0 if target == "arm64-apple-macosx15.0.0" else 2
+        assert fields[pointer_index]["type"] in {"ptr:i8", "ptr:u8"}, target
+        assert strings[0]["layout"]["field_offsets_bits"] == [
+            0, string_ir["target"]["pointer_bits"],
+            2 * string_ir["target"]["pointer_bits"]], target
+        assert string_ir.get("memory_lifetimes") is True, target
     check("v2-string-runtime-object",
           '#include <string>\nint f(){std::string s;return s.size();}',
           "TR0203", profile="cpp-core-v2", sdk=True)

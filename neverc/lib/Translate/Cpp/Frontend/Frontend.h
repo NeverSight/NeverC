@@ -853,6 +853,10 @@ enum class UtilityOperation {
   InitializerListEnd,
   InitializerListRBegin,
   InitializerListREnd,
+  StringSize,
+  StringEmpty,
+  StringData,
+  StringSubscript,
   StringViewSize,
   VectorSize,
   VectorCapacity,
@@ -1100,6 +1104,26 @@ struct UtilityStringViewRecord {
   const clang::CXXRecordDecl *Record;
   const clang::FieldDecl *Data, *Size;
 };
+struct UtilityStringRecord {
+  const clang::CXXRecordDecl *Record;
+  clang::QualType PointerType;
+  uint64_t ShortCapacity;
+  bool AlternateLayout;
+};
+std::optional<UtilityStringRecord>
+approvedUtilityStringRecord(const State &S, const clang::SourceManager &SM,
+                            const clang::CXXRecordDecl *Record,
+                            const clang::ASTContext &Context);
+enum class UtilityStringConstruction { Default, CString, PointerLength };
+std::optional<UtilityStringConstruction>
+approvedUtilityStringConstruction(const State &S,
+                                  const clang::SourceManager &SM,
+                                  const clang::CXXConstructExpr *Construction,
+                                  const clang::ASTContext &Context);
+bool approvedUtilityStringDestructor(const State &S,
+                                     const clang::SourceManager &SM,
+                                     const clang::CXXDestructorDecl *Destructor,
+                                     const clang::ASTContext &Context);
 struct UtilityVectorRecord {
   const clang::CXXRecordDecl *Record;
   clang::QualType ElementType, PointerType;
@@ -1444,6 +1468,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredUtilityArrays;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityInitializerLists;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityStringViews;
+  std::set<const clang::CXXRecordDecl *> RequiredUtilityStrings;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityVectors;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityOptionals;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityReverseIterators;
@@ -1490,6 +1515,9 @@ public:
   bool requireUtilityStringView(const clang::CXXRecordDecl *Record,
                                 clang::SourceLocation Location,
                                 unsigned Depth = 0);
+  bool requireUtilityString(const clang::CXXRecordDecl *Record,
+                            clang::SourceLocation Location,
+                            unsigned Depth = 0);
   bool requireUtilityVector(const clang::CXXRecordDecl *Record,
                             clang::SourceLocation Location,
                             unsigned Depth = 0);
