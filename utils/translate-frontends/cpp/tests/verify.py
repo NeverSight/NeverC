@@ -29031,6 +29031,14 @@ int& emplace_back_vector(std::vector<int>& values, int& value) {
   values.emplace_back();
   return values.emplace_back(value);
 }
+void assign_vector(std::vector<int>& values,
+                   const std::vector<int>& source,
+                   const int* first, const int* last, int value) {
+  values.assign(2, value);
+  values.assign(first, last);
+  values.assign(source.cbegin(), source.cend());
+  values.assign({1, 2});
+}
 """
     vector_dependencies = None
     for target in sdk_targets:
@@ -29047,7 +29055,7 @@ int& emplace_back_vector(std::vector<int>& values, int& value) {
             vector_dependencies = dependencies
         else:
             assert dependencies == vector_dependencies, target
-        assert len(vector_ir["functions"]) == 9, target
+        assert len(vector_ir["functions"]) == 10, target
     check("v2-vector-runtime-object",
           '#include <vector>\nint f(){std::vector<int> v;return v.size();}',
           "TR0203", profile="cpp-core-v2", sdk=True)

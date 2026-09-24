@@ -16631,7 +16631,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if (!Reference || !Object || !Prototype ||
         (!Prototype->isNothrow() && Name != "push_back" &&
          Name != "emplace_back" && Name != "pop_back" && Name != "reserve" &&
-         Name != "resize" && Name != "erase" && Name != "insert") ||
+         Name != "resize" && Name != "erase" && Name != "insert" &&
+         Name != "assign") ||
         Method->isStatic() || Method->isVariadic() || !Method->hasBody() ||
         Method->getRefQualifier() != RQ_None ||
         Method->getParent()->getCanonicalDecl() !=
@@ -16830,6 +16831,56 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
               Context.hasSameType(Call->getArg(2)->getType(), LastType))
             return UtilityOperation::VectorInsertRange;
         }
+      }
+    }
+    if (!Operator && Name == "assign" && !Method->isConst() &&
+        !Object->getType().isConstQualified() &&
+        Method->getReturnType()->isVoidType() &&
+        Call->getType()->isVoidType()) {
+      const auto Element = Vector->ElementType;
+      if (Method->getNumParams() == 2 && !Method->getPrimaryTemplate()) {
+        const auto Value = Method->getParamDecl(1)->getType();
+        if (Context.hasSameType(Method->getParamDecl(0)->getType(),
+                                Context.getSizeType()) &&
+            Context.hasSameType(Call->getArg(0)->getType(),
+                                Context.getSizeType()) &&
+            Value->isLValueReferenceType() &&
+            Context.hasSameType(Value->getPointeeType(), Element.withConst()) &&
+            Context.hasSameUnqualifiedType(Call->getArg(1)->getType(), Element))
+          return UtilityOperation::VectorAssignFill;
+      }
+      if (Method->getNumParams() == 1 && !Method->getPrimaryTemplate() &&
+          Context.hasSameType(Method->getParamDecl(0)->getType(),
+                              Call->getArg(0)->getType())) {
+        const auto List = approvedUtilityInitializerListRecord(
+            S, SM, Method->getParamDecl(0)->getType()->getAsCXXRecordDecl(),
+            Context);
+        if (List && Context.hasSameType(List->ElementType, Element))
+          return UtilityOperation::VectorAssignRange;
+      }
+      if (Method->getNumParams() == 2 && Method->getPrimaryTemplate() &&
+          approvedStandardSDKDeclaration(S, SM, Method->getPrimaryTemplate()) &&
+          cstddefOrigin(S, SM, Method->getPrimaryTemplate()->getLocation(),
+                        "libcxx", "__vector/vector.h")) {
+        const auto FirstType = Method->getParamDecl(0)->getType();
+        const auto LastType = Method->getParamDecl(1)->getType();
+        const bool RawPointer =
+            Context.hasSameType(FirstType, Context.getPointerType(Element)) ||
+            Context.hasSameType(FirstType,
+                                Context.getPointerType(Element.withConst()));
+        const auto Wrapped = approvedUtilityWrapIteratorRecord(
+            S, SM, FirstType->getAsCXXRecordDecl(), Context);
+        const bool WrappedPointer =
+            Wrapped &&
+            (Context.hasSameType(Wrapped->IteratorType,
+                                 Context.getPointerType(Element)) ||
+             Context.hasSameType(Wrapped->IteratorType,
+                                 Context.getPointerType(Element.withConst())));
+        if ((RawPointer || WrappedPointer) &&
+            Context.hasSameType(FirstType, LastType) &&
+            Context.hasSameType(Call->getArg(0)->getType(), FirstType) &&
+            Context.hasSameType(Call->getArg(1)->getType(), LastType))
+          return UtilityOperation::VectorAssignRange;
       }
     }
     if (!Operator && Name == "emplace_back" && !Method->isConst() &&

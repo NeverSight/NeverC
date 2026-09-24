@@ -2292,21 +2292,24 @@ integer or floating elements use direct lowering for default, bounded
 count/fill/list, copy and move construction; copy and move assignment;
 destruction; size, capacity, empty, data, element/front/back access; clear,
 push/pop, zero- or one-argument `emplace_back` with exact element types,
-begin/end, cbegin/cend,
-rbegin/rend, crbegin/crend and const
-iteration; reserve/resize; lvalue/rvalue, counted-value, pointer and wrapped
-iterator range, and initializer-list `insert`;
-single-position and range `erase`; and member/free swap. Insert returns a
-mutable iterator, preserves aliased input values, shifts in place when
+begin/end, cbegin/cend, rbegin/rend, crbegin/crend and const iteration;
+reserve/resize; lvalue/rvalue, counted-value, pointer and wrapped iterator
+range, and initializer-list `insert`; counted-value, pointer and wrapped
+iterator range, and initializer-list `assign`; single-position and range
+`erase`; and member/free swap. Insert returns a mutable iterator, preserves
+aliased input values, shifts in place when
 capacity permits, and otherwise moves storage through the selected allocator.
 Erase shifts surviving arithmetic elements in place and returns the following
-mutable iterator. Growth preserves element values and the selected allocator
-calls, and copy construction owns independent storage.
+mutable iterator. Assign reuses capacity when possible and replaces storage
+through the selected allocator otherwise. Reserve, insert, and push growth
+preserve existing element values and use the selected allocator, and copy
+construction owns independent storage.
 Host O0/O2 fixtures check capacity reuse, reallocation, aliased fill arguments,
 `emplace_back` value initialization and returned references,
 forward/reverse iterator access, iterator base/decrement/equality/difference,
 insert return positions, source aliasing, empty ranges, and insertion from a
-distinct vector, erase return positions and empty ranges, swap ownership and
+distinct vector; assignment from values, ranges, and lists with capacity reuse
+and growth; erase return positions and empty ranges; swap ownership and
 eventual release.
 Record elements, other allocators, remaining vector methods and throwing
 allocation or length-error paths remain unsupported. Quoted and shadow headers

@@ -51999,6 +51999,92 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorAssignRun) {
+  const auto Source = tmpFile("vector-assign.cpp");
+  const auto Output = tmpFile("vector-assign.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <vector>
+int main() {
+  {
+    std::vector<int> values{1, 2, 3};
+    values.reserve(8);
+    int *storage = values.data();
+    values.assign(4, values[1]);
+    if (values.data() != storage || values.capacity() != 8 ||
+        values.size() != 4 || values[0] != 2 || values[3] != 2)
+      return 1;
+    values.assign({5, 6});
+    if (values.data() != storage || values.size() != 2 ||
+        values[0] != 5 || values[1] != 6)
+      return 2;
+    int raw[]{7, 8, 9};
+    values.assign(raw, raw + 3);
+    if (values.data() != storage || values.size() != 3 ||
+        values[0] != 7 || values[1] != 8 || values[2] != 9)
+      return 3;
+    const int const_raw[]{10, 11};
+    values.assign(const_raw, const_raw + 2);
+    if (values.data() != storage || values.size() != 2 ||
+        values[0] != 10 || values[1] != 11)
+      return 4;
+    std::vector<int> source{12, 13, 14};
+    values.assign(source.cbegin(), source.cend());
+    if (values.data() != storage || values.size() != 3 ||
+        values[0] != 12 || values[1] != 13 || values[2] != 14)
+      return 5;
+    values.assign(source.begin(), source.end());
+    if (values.data() != storage || values.size() != 3 ||
+        values[0] != 12 || values[2] != 14)
+      return 6;
+    values.assign(0, source[0]);
+    values.assign(raw, raw);
+    values.assign({});
+    if (values.data() != storage || values.capacity() != 8 ||
+        !values.empty())
+      return 7;
+    std::vector<int> tight{1};
+    int previous_allocations = allocations;
+    int previous_releases = releases;
+    tight.assign(4, 2);
+    if (allocations != previous_allocations + 1 ||
+        releases != previous_releases + 1 || tight.capacity() < 4 ||
+        tight.size() != 4 || tight[0] != 2 || tight[3] != 2)
+      return 8;
+    tight.assign({3, 4, 5, 6, 7, 8, 9, 10, 11});
+    if (tight.size() != 9 || tight[0] != 3 || tight[8] != 11)
+      return 9;
+    std::vector<int> fresh;
+    fresh.assign(source.cbegin(), source.cend());
+    if (fresh.size() != 3 || fresh[0] != 12 || fresh[2] != 14)
+      return 10;
+    std::vector<double> fractions;
+    fractions.assign(2, 1.5);
+    if (fractions.size() != 2 || fractions[0] != 1.5 || fractions[1] != 1.5)
+      return 11;
+  }
+  return allocations == releases ? 0 : 12;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-assign" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorCopyAndMoveConstructionRun) {
   const auto Source = tmpFile("vector-copy-move.cpp");
   const auto Output = tmpFile("vector-copy-move.nc");
