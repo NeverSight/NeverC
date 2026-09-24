@@ -210,7 +210,11 @@ approvedSDKIntegerConstant(const State &S, const SourceManager &SM,
       D->getType().isVolatileQualified() ||
       !D->getType()->isIntegralOrEnumerationType())
     return std::nullopt;
-  const auto *Value = D->evaluateValue();
+  const VarDecl *Initializer = nullptr;
+  if (!D->getAnyInitializer(Initializer) ||
+      !approvedStandardSDKDeclaration(S, SM, Initializer))
+    return std::nullopt;
+  const auto *Value = Initializer->evaluateValue();
   return Value && Value->isInt()
              ? std::optional<llvm::APSInt>(Value->getInt())
              : std::nullopt;
@@ -7580,10 +7584,41 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
       return true;
   }
   if (const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function)) {
-    const auto View =
-        approvedUtilityStringViewRecord(S, SM, Method->getParent(), Context);
+    const auto String =
+        approvedUtilityStringRecord(S, SM, Method->getParent(), Context);
     const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
     const auto *Init = selectedDefaultArgument(Default, Context);
+    if (Default && Parameter && Owner && String && Prototype &&
+        Owner->getCanonicalDecl() == Method->getCanonicalDecl() &&
+        Method->getNumParams() == 2 && Index < 2 &&
+        Parameter == Method->getParamDecl(Index) &&
+        Parameter->getFunctionScopeIndex() == Index &&
+        !Method->isStatic() && !Method->isVariadic() &&
+        !Method->isConst() && Method->getIdentifier() &&
+        Method->getName() == "erase" &&
+        Method->getReturnType()->isLValueReferenceType() &&
+        Context.hasSameType(Method->getReturnType()->getPointeeType(),
+                            Context.getRecordType(String->Record)) &&
+        Context.hasSameType(Method->getParamDecl(0)->getType(),
+                            Context.getSizeType()) &&
+        Context.hasSameType(Method->getParamDecl(1)->getType(),
+                            Context.getSizeType()) &&
+        approvedStandardSDKDeclaration(S, SM, Method) &&
+        cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "string") &&
+        S.owns(SM, Default->getExprLoc()) && Init &&
+        Context.hasSameType(Init->getType(), Context.getSizeType()) &&
+        !Init->isTypeDependent() && !Init->isValueDependent() &&
+        !Init->isInstantiationDependent()) {
+      Expr::EvalResult Evaluated;
+      if (Init->EvaluateAsInt(Evaluated, Context) && Evaluated.Val.isInt()) {
+        const auto &Value = Evaluated.Val.getInt();
+        if ((Index == 0 && Value == 0) ||
+            (Index == 1 && Value.isAllOnes()))
+          return true;
+      }
+    }
+    const auto View =
+        approvedUtilityStringViewRecord(S, SM, Method->getParent(), Context);
     if (Default && Parameter && Owner && View && Prototype &&
         Prototype->isNothrow() &&
         Owner->getCanonicalDecl() == Method->getCanonicalDecl() &&
@@ -16125,11 +16160,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if (!Reference || !Object || !Prototype ||
         (!Prototype->isNothrow() && Name != "push_back" && Name != "pop_back" &&
          Name != "reserve" && Name != "resize" && Name != "append" &&
-         Name != "assign" &&
+         Name != "assign" && Name != "erase" &&
          !PlusEqual) ||
         Method->isStatic() || Method->isVariadic() ||
         (!Method->hasBody() && Name != "push_back" && Name != "reserve" &&
-         Name != "resize" && Name != "append" && Name != "assign") ||
+         Name != "resize" && Name != "append" && Name != "assign" &&
+         Name != "erase") ||
         Method->getRefQualifier() != RQ_None ||
         Method->getParent()->getCanonicalDecl() !=
             String->Record->getCanonicalDecl() ||
@@ -16169,6 +16205,24 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Context.hasSameUnqualifiedType(
             Call->getArg(0)->getType(), Context.getRecordType(String->Record)))
       return UtilityOperation::StringMemberSwap;
+    if (!Operator && Name == "erase" && !Method->isConst() &&
+        !Object->getType().isConstQualified() &&
+        Method->getNumParams() == 2 && Call->getNumArgs() == 2 &&
+        Call->isLValue() &&
+        Method->getReturnType()->isLValueReferenceType() &&
+        Context.hasSameType(Method->getReturnType()->getPointeeType(),
+                            Context.getRecordType(String->Record)) &&
+        Context.hasSameType(Call->getType(),
+                            Context.getRecordType(String->Record)) &&
+        Context.hasSameType(Method->getParamDecl(0)->getType(),
+                            Context.getSizeType()) &&
+        Context.hasSameType(Method->getParamDecl(1)->getType(),
+                            Context.getSizeType()) &&
+        Context.hasSameType(Call->getArg(0)->getType(),
+                            Context.getSizeType()) &&
+        Context.hasSameType(Call->getArg(1)->getType(),
+                            Context.getSizeType()))
+      return UtilityOperation::StringErase;
     if (!Operator && Name == "assign" && !Method->isConst() &&
         !Object->getType().isConstQualified() &&
         (Method->getNumParams() == 1 || Method->getNumParams() == 2) &&

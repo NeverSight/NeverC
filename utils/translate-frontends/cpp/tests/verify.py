@@ -29081,6 +29081,12 @@ int main() {
   reassigned.assign(3, 'q');
   reassigned.assign(assigned);
   reassigned.assign(reassigned.data() + 1, 2);
+  std::string erased("abcdef");
+  erased.erase(1, 2);
+  erased.erase(2);
+  bool erase_intact = erased.size() == 2 && erased[0] == 'a' &&
+                      erased[1] == 'd';
+  erased.erase();
   return intact && emptied && assigned.size() == 14 &&
          assigned[0] == 'x' && assigned[2] == 'a' &&
          assigned[3] == 'b' && assigned[4] == 'c' && assigned[5] == 'd' &&
@@ -29091,6 +29097,7 @@ int main() {
          joined[7] == 'e' &&
          reassigned.size() == 2 && reassigned[0] == 'a' &&
          reassigned[1] == 'a' &&
+         erase_intact && erased.empty() &&
          assigned.capacity() >= requested_capacity
              ? 0 : 1;
 }

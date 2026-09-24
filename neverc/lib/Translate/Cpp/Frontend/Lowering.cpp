@@ -9328,7 +9328,8 @@ class FunctionLowering {
     case UtilityOperation::StringAppendCString:
     case UtilityOperation::StringAppendString:
     case UtilityOperation::StringAppendFill:
-    case UtilityOperation::StringAppendCharacter: {
+    case UtilityOperation::StringAppendCharacter:
+    case UtilityOperation::StringErase: {
       const auto *Object = MemberObject();
       auto String = Object ? StringFor(Object->getType())
                            : std::optional<UtilityStringRecord>();
@@ -9478,6 +9479,19 @@ class FunctionLowering {
         CharacterArgument = snapshot(expression(Call->getArg(1)), L);
       if (Operation == UtilityOperation::StringSubscript)
         IndexArgument = snapshot(expression(Call->getArg(1)), L);
+      if (Operation == UtilityOperation::StringErase) {
+        auto EraseArgument = [&](unsigned Index) {
+          const auto *Argument = Call->getArg(Index);
+          if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Argument))
+            Argument = selectedDefaultArgument(Default, A.Context);
+          if (!Argument)
+            reject(L, "string erase",
+                   "The selected erase argument is unavailable.");
+          return snapshot(expression(Argument), L);
+        };
+        RequestedArgument = EraseArgument(0);
+        IndexArgument = EraseArgument(1);
+      }
       auto First = snapshot(Word(String->AlternateLayout
                                      ? "nct_string_word2"
                                      : "nct_string_word0"), L);
@@ -9485,6 +9499,133 @@ class FunctionLowering {
                                 ? uint64_t(1)
                                       << (A.Context.getTypeSize(A.Context.getSizeType()) - 1)
                                 : uint64_t(1);
+      if (Operation == UtilityOperation::StringErase) {
+        const auto PointerType = type(String->PointerType, L);
+        const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+        const char *FlagName = String->AlternateLayout
+                                   ? "nct_string_word2" : "nct_string_word0";
+        const char *PointerName = String->AlternateLayout
+                                      ? "nct_string_word0" : "nct_string_word2";
+        auto Size = temporary(SizeType, L);
+        auto Data = temporary(PointerType, L);
+        auto IsLong = temporary("bool", L);
+        const auto Long = labelName(), Short = labelName(), Ready = labelName();
+        branch(binary("!=",
+                      binary("&", json::Object(First),
+                             quantity(LongFlag, SizeType, L), SizeType, L),
+                      quantity(0, SizeType, L), "bool", L),
+               Long, Short, L);
+        label(Long, L);
+        assign(IsLong, boolean(true, L), L);
+        assign(Size, Word("nct_string_word1"), L);
+        assign(Data, cast(Word(PointerName), PointerType, L), L);
+        jump(Ready, L);
+        label(Short, L);
+        assign(IsLong, boolean(false, L), L);
+        assign(Size,
+               String->AlternateLayout
+                   ? binary(">>", json::Object(First),
+                            quantity(A.Context.getTypeSize(
+                                         A.Context.getSizeType()) - 8,
+                                     SizeType, L), SizeType, L)
+                   : binary("/", json::Object(First),
+                            quantity(2, SizeType, L), SizeType, L), L);
+        auto ShortPointer = cast(cast(json::Object(Receiver), "ptr:void", L),
+                                 PointerType, L);
+        assign(Data,
+               String->AlternateLayout
+                   ? std::move(ShortPointer)
+                   : binary("+", std::move(ShortPointer),
+                            quantity(1, DifferenceType, L), PointerType, L),
+               L);
+        jump(Ready, L);
+        label(Ready, L);
+        const auto Erase = labelName(), Done = labelName();
+        branch(binary("<=", json::Object(*RequestedArgument),
+                      json::Object(Size), "bool", L), Erase, Done, L);
+        label(Erase, L);
+        auto Remaining = temporary(SizeType, L);
+        auto Removed = temporary(SizeType, L);
+        assign(Remaining,
+               binary("-", json::Object(Size),
+                      json::Object(*RequestedArgument), SizeType, L), L);
+        const auto UseCount = labelName(), UseRemaining = labelName(),
+                   CountReady = labelName();
+        branch(binary("<", json::Object(*IndexArgument),
+                      json::Object(Remaining), "bool", L),
+               UseCount, UseRemaining, L);
+        label(UseCount, L);
+        assign(Removed, json::Object(*IndexArgument), L);
+        jump(CountReady, L);
+        label(UseRemaining, L);
+        assign(Removed, json::Object(Remaining), L);
+        jump(CountReady, L);
+        label(CountReady, L);
+        auto NewSize = temporary(SizeType, L);
+        auto TailSize = temporary(SizeType, L);
+        assign(NewSize,
+               binary("-", json::Object(Size), json::Object(Removed),
+                      SizeType, L), L);
+        assign(TailSize,
+               binary("-", json::Object(NewSize),
+                      json::Object(*RequestedArgument), SizeType, L), L);
+        auto Target = temporary(PointerType, L);
+        auto Source = temporary(PointerType, L);
+        auto Count = temporary(SizeType, L);
+        assign(Target,
+               binary("+", json::Object(Data),
+                      cast(json::Object(*RequestedArgument), DifferenceType, L),
+                      PointerType, L), L);
+        assign(Source,
+               binary("+", json::Object(Target),
+                      cast(json::Object(Removed), DifferenceType, L),
+                      PointerType, L), L);
+        assign(Count, quantity(0, SizeType, L), L);
+        const auto Check = labelName(), Move = labelName(), Moved = labelName();
+        jump(Check, L);
+        label(Check, L);
+        branch(binary("<=", json::Object(Count), json::Object(TailSize),
+                      "bool", L), Move, Moved, L);
+        label(Move, L);
+        assign(dereference(json::Object(Target), L),
+               dereference(json::Object(Source), L), L);
+        assign(Target,
+               binary("+", json::Object(Target),
+                      quantity(1, DifferenceType, L), PointerType, L), L);
+        assign(Source,
+               binary("+", json::Object(Source),
+                      quantity(1, DifferenceType, L), PointerType, L), L);
+        assign(Count,
+               binary("+", json::Object(Count), quantity(1, SizeType, L),
+                      SizeType, L), L);
+        jump(Check, L);
+        label(Moved, L);
+        const auto LongSize = labelName(), ShortSize = labelName();
+        branch(json::Object(IsLong), LongSize, ShortSize, L);
+        label(LongSize, L);
+        assign(Word("nct_string_word1"), json::Object(NewSize), L);
+        jump(Done, L);
+        label(ShortSize, L);
+        const auto SizeBits = A.Context.getTypeSize(A.Context.getSizeType());
+        auto Mask = String->AlternateLayout
+                        ? quantity((uint64_t(1) << (SizeBits - 8)) - 1,
+                                   SizeType, L)
+                        : binary("-", quantity(0, SizeType, L),
+                                 quantity(256, SizeType, L), SizeType, L);
+        auto Encoded = String->AlternateLayout
+                           ? binary("<<", json::Object(NewSize),
+                                    quantity(SizeBits - 8, SizeType, L),
+                                    SizeType, L)
+                           : binary("*", json::Object(NewSize),
+                                    quantity(2, SizeType, L), SizeType, L);
+        assign(Word(FlagName),
+               binary("|", binary("&", Word(FlagName), std::move(Mask),
+                                  SizeType, L),
+                      std::move(Encoded), SizeType, L), L);
+        jump(Done, L);
+        label(Done, L);
+        return dereference(json::Object(Receiver), L);
+      }
       if (Operation == UtilityOperation::StringPushBack ||
           CharacterAppend ||
           Operation == UtilityOperation::StringPopBack ||

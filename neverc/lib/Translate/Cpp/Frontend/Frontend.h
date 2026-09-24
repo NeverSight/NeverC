@@ -874,6 +874,7 @@ enum class UtilityOperation {
   StringAssignCString,
   StringAssignString,
   StringAssignFill,
+  StringErase,
   StringMemberSwap,
   StringSwap,
   StringViewSize,

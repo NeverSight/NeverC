@@ -52568,4 +52568,73 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringEraseRun) {
+  const auto Source = tmpFile("string-erase.cpp");
+  const auto Output = tmpFile("string-erase.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int evaluations;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+Size position() { ++evaluations; return 1; }
+int main() {
+  {
+    const char raw[] = {'a', 0, 'b', 'c', 'd', 'e', 'f'};
+    std::string short_text(raw, 7);
+    const char *short_data = short_text.data();
+    std::string *result = &short_text.erase(position(), 2);
+    if (result != &short_text || evaluations != 1 ||
+        short_text.data() != short_data || short_text.size() != 5 ||
+        short_text[0] != 'a' || short_text[1] != 'c' ||
+        short_text[4] != 'f' || short_text.data()[5] != 0 ||
+        allocations != 0)
+      return 1;
+    result = &short_text.erase(2, 0).erase(short_text.size(), 3);
+    if (result != &short_text || short_text.size() != 5 ||
+        short_text[4] != 'f' || short_text.data() != short_data)
+      return 2;
+    short_text.erase(2);
+    if (short_text.size() != 2 || short_text[0] != 'a' ||
+        short_text[1] != 'c' || short_text.data()[2] != 0)
+      return 3;
+    result = &short_text.erase();
+    if (result != &short_text || !short_text.empty() ||
+        short_text.data() != short_data || short_text.data()[0] != 0)
+      return 4;
+    std::string long_text("abcdefghijklmnopqrstuvwxyz");
+    const char *long_data = long_text.data();
+    Size capacity = long_text.capacity();
+    long_text.erase(5, 10);
+    if (long_text.data() != long_data || long_text.capacity() != capacity ||
+        long_text.size() != 16 || long_text[4] != 'e' ||
+        long_text[5] != 'p' || long_text[15] != 'z' ||
+        long_text.data()[16] != 0 || allocations != 1 || releases != 0)
+      return 5;
+    long_text.erase(3, std::string::npos);
+    if (long_text.data() != long_data || long_text.capacity() != capacity ||
+        long_text.size() != 3 || long_text[2] != 'c' ||
+        long_text.data()[3] != 0)
+      return 6;
+  }
+  return allocations == 1 && releases == 1 ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-erase" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 } // namespace
