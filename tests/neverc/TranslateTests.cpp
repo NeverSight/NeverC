@@ -51646,6 +51646,65 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorSwapRun) {
+  const auto Source = tmpFile("vector-swap.cpp");
+  const auto Output = tmpFile("vector-swap.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <vector>
+int main() {
+  {
+    std::vector<int> small{1, 2};
+    std::vector<int> large{3, 4, 5};
+    large.reserve(12);
+    int *small_data = small.data();
+    int *large_data = large.data();
+    Size small_capacity = small.capacity();
+    Size large_capacity = large.capacity();
+    small.swap(large);
+    if (small.data() != large_data || large.data() != small_data ||
+        small.capacity() != large_capacity ||
+        large.capacity() != small_capacity ||
+        small.size() != 3 || large.size() != 2 ||
+        small[2] != 5 || large[0] != 1)
+      return 1;
+    std::swap(small, large);
+    if (small.data() != small_data || large.data() != large_data ||
+        small.size() != 2 || large.size() != 3)
+      return 2;
+    small.swap(small);
+    std::swap(large, large);
+    if (small.data() != small_data || large.data() != large_data ||
+        small[1] != 2 || large[2] != 5)
+      return 3;
+    std::vector<int> empty;
+    empty.swap(small);
+    if (empty.data() != small_data || empty.size() != 2 ||
+        small.data() != nullptr || !small.empty())
+      return 4;
+  }
+  return allocations == releases ? 0 : 5;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-swap" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorCopyAndMoveConstructionRun) {
   const auto Source = tmpFile("vector-copy-move.cpp");
   const auto Output = tmpFile("vector-copy-move.nc");

@@ -10256,6 +10256,44 @@ class FunctionLowering {
       return dereference(binary("+", std::move(Data), std::move(Index),
                                 PointerType, L), L);
     }
+    case UtilityOperation::VectorMemberSwap:
+    case UtilityOperation::VectorSwap: {
+      const Expr *LeftObject = Operation == UtilityOperation::VectorMemberSwap
+                                   ? MemberObject()
+                                   : Call->getArg(0);
+      const Expr *RightObject = Operation == UtilityOperation::VectorMemberSwap
+                                    ? Call->getArg(0)
+                                    : Call->getArg(1);
+      auto LeftVector = LeftObject ? VectorFor(LeftObject->getType())
+                                   : std::optional<UtilityVectorRecord>();
+      auto RightVector = RightObject ? VectorFor(RightObject->getType())
+                                     : std::optional<UtilityVectorRecord>();
+      if (!LeftVector || !RightVector ||
+          LeftVector->Record->getCanonicalDecl() !=
+              RightVector->Record->getCanonicalDecl())
+        reject(L, "vector swap",
+               "The selected std::vector layout is unavailable.");
+      auto LeftAddress =
+          snapshot(address(lvalue(LeftObject), LeftObject->getType(), L), L);
+      auto RightAddress =
+          snapshot(address(lvalue(RightObject), RightObject->getType(), L), L);
+      auto Member = [&](Expression Address, const char *Name) {
+        return Expression{
+            {"kind", "member"},
+            {"type", type(LeftVector->PointerType, L)},
+            {"name", Name},
+            {"args", json::Array{dereference(std::move(Address), L)}},
+            {"loc", A.loc(L)}};
+      };
+      for (const char *Name :
+           {"nct_vector_begin", "nct_vector_end", "nct_vector_capacity"}) {
+        auto OldLeft = snapshot(Member(json::Object(LeftAddress), Name), L);
+        auto OldRight = snapshot(Member(json::Object(RightAddress), Name), L);
+        assign(Member(json::Object(LeftAddress), Name), std::move(OldRight), L);
+        assign(Member(json::Object(RightAddress), Name), std::move(OldLeft), L);
+      }
+      return {};
+    }
     case UtilityOperation::VectorSize:
     case UtilityOperation::VectorCapacity:
     case UtilityOperation::VectorEmpty:

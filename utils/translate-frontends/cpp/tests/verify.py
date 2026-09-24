@@ -29000,6 +29000,10 @@ int iterator_access(std::vector<int>& values) {
          int(values.rend() - reverse) +
          (const_reverse != constant.crend());
 }
+void swap_vectors(std::vector<int>& left, std::vector<int>& right) {
+  left.swap(right);
+  std::swap(left, right);
+}
 """
     vector_dependencies = None
     for target in sdk_targets:
@@ -29016,7 +29020,7 @@ int iterator_access(std::vector<int>& values) {
             vector_dependencies = dependencies
         else:
             assert dependencies == vector_dependencies, target
-        assert len(vector_ir["functions"]) == 2, target
+        assert len(vector_ir["functions"]) == 3, target
     check("v2-vector-runtime-object",
           '#include <vector>\nint f(){std::vector<int> v;return v.size();}',
           "TR0203", profile="cpp-core-v2", sdk=True)

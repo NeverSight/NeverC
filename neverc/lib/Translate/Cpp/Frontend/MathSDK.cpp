@@ -16698,6 +16698,19 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         !Call->getNumArgs() && Method->getReturnType()->isVoidType() &&
         Call->getType()->isVoidType())
       return UtilityOperation::VectorClear;
+    if (!Operator && Name == "swap" && !Method->isConst() &&
+        !Object->getType().isConstQualified() && Prototype->isNothrow() &&
+        Method->getNumParams() == 1 && Call->getNumArgs() == 1 &&
+        Method->getReturnType()->isVoidType() &&
+        Call->getType()->isVoidType()) {
+      const auto Parameter = Method->getParamDecl(0)->getType();
+      const auto VectorType = Context.getRecordType(Vector->Record);
+      if (Parameter->isLValueReferenceType() &&
+          Context.hasSameType(Parameter->getPointeeType(), VectorType) &&
+          Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
+                                         VectorType))
+        return UtilityOperation::VectorMemberSwap;
+    }
     if (!Operator && !Method->isConst() &&
         !Object->getType().isConstQualified() &&
         Method->getReturnType()->isVoidType() &&
@@ -17207,6 +17220,30 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   const llvm::StringRef Name = Function->getIdentifier()
                                    ? Function->getIdentifier()->getName()
                                    : llvm::StringRef();
+  if (Origin->Path == "__vector/swap.h" && Name == "swap" &&
+      Function->isInlined() && Call->getNumArgs() == 2 &&
+      Function->getNumParams() == 2 &&
+      Function->getReturnType()->isVoidType() &&
+      Call->getType()->isVoidType()) {
+    const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
+    const auto Left = approvedUtilityVectorRecord(
+        S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
+    const auto Right = approvedUtilityVectorRecord(
+        S, SM, Call->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
+    if (Prototype && Prototype->isNothrow() && Left && Right &&
+        Left->Record->getCanonicalDecl() == Right->Record->getCanonicalDecl()) {
+      const auto VectorType = Context.getRecordType(Left->Record);
+      for (unsigned I = 0; I != 2; ++I) {
+        const auto Parameter = Function->getParamDecl(I)->getType();
+        if (!Parameter->isLValueReferenceType() ||
+            !Context.hasSameType(Parameter->getPointeeType(), VectorType) ||
+            !Context.hasSameUnqualifiedType(Call->getArg(I)->getType(),
+                                            VectorType))
+          return std::nullopt;
+      }
+      return UtilityOperation::VectorSwap;
+    }
+  }
   if (Origin->Path == "string" && Name == "swap" &&
       Function->isInlined() && Call->getNumArgs() == 2 &&
       Function->getNumParams() == 2 &&

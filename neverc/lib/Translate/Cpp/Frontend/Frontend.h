@@ -907,6 +907,8 @@ enum class UtilityOperation {
   VectorFront,
   VectorBack,
   VectorClear,
+  VectorMemberSwap,
+  VectorSwap,
   VectorPushBack,
   VectorPopBack,
   VectorReserve,
