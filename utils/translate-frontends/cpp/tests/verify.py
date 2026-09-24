@@ -29027,6 +29027,10 @@ std::vector<int>::iterator insert_range(std::vector<int>& values,
   values.insert(values.cend(), source.cbegin(), source.cend());
   return values.insert(values.cbegin(), {1, 2});
 }
+int& emplace_back_vector(std::vector<int>& values, int& value) {
+  values.emplace_back();
+  return values.emplace_back(value);
+}
 """
     vector_dependencies = None
     for target in sdk_targets:
@@ -29043,7 +29047,7 @@ std::vector<int>::iterator insert_range(std::vector<int>& values,
             vector_dependencies = dependencies
         else:
             assert dependencies == vector_dependencies, target
-        assert len(vector_ir["functions"]) == 8, target
+        assert len(vector_ir["functions"]) == 9, target
     check("v2-vector-runtime-object",
           '#include <vector>\nint f(){std::vector<int> v;return v.size();}',
           "TR0203", profile="cpp-core-v2", sdk=True)

@@ -16629,9 +16629,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                      ? Method->getIdentifier()->getName()
                                      : llvm::StringRef();
     if (!Reference || !Object || !Prototype ||
-        (!Prototype->isNothrow() && Name != "push_back" && Name != "pop_back" &&
-         Name != "reserve" && Name != "resize" && Name != "erase" &&
-         Name != "insert") ||
+        (!Prototype->isNothrow() && Name != "push_back" &&
+         Name != "emplace_back" && Name != "pop_back" && Name != "reserve" &&
+         Name != "resize" && Name != "erase" && Name != "insert") ||
         Method->isStatic() || Method->isVariadic() || !Method->hasBody() ||
         Method->getRefQualifier() != RQ_None ||
         Method->getParent()->getCanonicalDecl() !=
@@ -16831,6 +16831,28 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
             return UtilityOperation::VectorInsertRange;
         }
       }
+    }
+    if (!Operator && Name == "emplace_back" && !Method->isConst() &&
+        !Object->getType().isConstQualified() && Call->isLValue() &&
+        Method->getReturnType()->isLValueReferenceType() &&
+        Context.hasSameType(Method->getReturnType()->getPointeeType(),
+                            Vector->ElementType) &&
+        Context.hasSameType(Call->getType(), Vector->ElementType) &&
+        Method->getPrimaryTemplate() &&
+        approvedStandardSDKDeclaration(S, SM, Method->getPrimaryTemplate()) &&
+        cstddefOrigin(S, SM, Method->getPrimaryTemplate()->getLocation(),
+                      "libcxx", "__vector/vector.h") &&
+        Method->getNumParams() <= 1) {
+      if (!Method->getNumParams())
+        return UtilityOperation::VectorEmplaceBack;
+      const auto Parameter = Method->getParamDecl(0)->getType();
+      if ((Parameter->isLValueReferenceType() ||
+           Parameter->isRValueReferenceType()) &&
+          Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                         Vector->ElementType) &&
+          Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
+                                         Vector->ElementType))
+        return UtilityOperation::VectorEmplaceBack;
     }
     if (!Operator && !Method->isConst() &&
         !Object->getType().isConstQualified() &&

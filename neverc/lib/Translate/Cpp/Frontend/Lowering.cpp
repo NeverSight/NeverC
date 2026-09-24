@@ -10861,6 +10861,7 @@ class FunctionLowering {
       return Result;
     }
     case UtilityOperation::VectorPushBack:
+    case UtilityOperation::VectorEmplaceBack:
     case UtilityOperation::VectorPopBack: {
       const auto *Object = MemberObject();
       auto Vector = Object ? VectorFor(Object->getType())
@@ -10888,7 +10889,9 @@ class FunctionLowering {
         return {};
       }
       // The argument may refer to an element invalidated by growth.
-      auto Value = snapshot(expression(Call->getArg(0)), L);
+      std::optional<Expression> Value;
+      if (Call->getNumArgs())
+        Value = snapshot(expression(Call->getArg(0)), L);
       auto Begin = snapshot(Member("nct_vector_begin"), L);
       auto End = snapshot(Member("nct_vector_end"), L);
       auto Capacity = snapshot(Member("nct_vector_capacity"), L);
@@ -10896,7 +10899,11 @@ class FunctionLowering {
       branch(binary("!=", json::Object(End), json::Object(Capacity), "bool", L),
              Append, Grow, L);
       label(Append, L);
-      assign(dereference(json::Object(End), L), json::Object(Value), L);
+      if (Value)
+        assign(dereference(json::Object(End), L), json::Object(*Value), L);
+      else
+        initializeZero(dereference(json::Object(End), L), Vector->ElementType,
+                       L);
       assign(Member("nct_vector_end"),
              binary("+", json::Object(End), quantity(1, DifferenceType, L),
                     PointerType, L), L);
@@ -10959,7 +10966,12 @@ class FunctionLowering {
                     quantity(1, DifferenceType, L), PointerType, L), L);
       jump(Check, L);
       label(Finish, L);
-      assign(dereference(json::Object(NewCurrent), L), json::Object(Value), L);
+      if (Value)
+        assign(dereference(json::Object(NewCurrent), L), json::Object(*Value),
+               L);
+      else
+        initializeZero(dereference(json::Object(NewCurrent), L),
+                       Vector->ElementType, L);
       assign(Member("nct_vector_begin"), json::Object(NewBegin), L);
       assign(Member("nct_vector_end"),
              binary("+", json::Object(NewCurrent),
@@ -10989,6 +11001,11 @@ class FunctionLowering {
                                   {"loc", A.loc(L)}});
       jump(Done, L);
       label(Done, L);
+      if (Operation == UtilityOperation::VectorEmplaceBack)
+        return dereference(binary("-", Member("nct_vector_end"),
+                                  quantity(1, DifferenceType, L), PointerType,
+                                  L),
+                           L);
       return {};
     }
     case UtilityOperation::VectorReserve:

@@ -51554,6 +51554,70 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorEmplaceBackRun) {
+  const auto Source = tmpFile("vector-emplace-back.cpp");
+  const auto Output = tmpFile("vector-emplace-back.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <vector>
+int main() {
+  {
+    std::vector<int> values;
+    int &first = values.emplace_back();
+    if (&first != values.data() || first != 0 || values.size() != 1 ||
+        values.capacity() != 1)
+      return 1;
+    first = 7;
+    int &second = values.emplace_back(values.front());
+    if (&second != values.data() + 1 || second != 7 ||
+        values.size() != 2 || values.capacity() != 2)
+      return 2;
+    int source = 9;
+    int &third = values.emplace_back(source);
+    source = 99;
+    if (&third != values.data() + 2 || third != 9 ||
+        values.size() != 3 || values.capacity() != 4)
+      return 3;
+    int &fourth = values.emplace_back(static_cast<int&&>(values[1]));
+    if (&fourth != values.data() + 3 || fourth != 7 || values.size() != 4)
+      return 4;
+    int &fifth = values.emplace_back();
+    if (&fifth != values.data() + 4 || fifth != 0 ||
+        values.size() != 5 || values.capacity() != 8)
+      return 5;
+    fifth = 11;
+    if (values.back() != 11 || values[0] != 7 || values[1] != 7 ||
+        values[2] != 9 || values[3] != 7)
+      return 6;
+    std::vector<double> fractions;
+    fractions.reserve(2);
+    double &zero = fractions.emplace_back();
+    if (&zero != fractions.data() || zero != 0.0 || fractions.size() != 1 ||
+        fractions.capacity() != 2)
+      return 7;
+  }
+  return allocations == releases ? 0 : 8;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-emplace-back" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorRangeForRun) {
   const auto Source = tmpFile("vector-range-for.cpp");
   const auto Output = tmpFile("vector-range-for.nc");

@@ -2291,7 +2291,9 @@ Authenticated `std::vector<T, std::allocator<T>>` objects with non-boolean
 integer or floating elements use direct lowering for default, bounded
 count/fill/list, copy and move construction; copy and move assignment;
 destruction; size, capacity, empty, data, element/front/back access; clear,
-push/pop, begin/end, cbegin/cend, rbegin/rend, crbegin/crend and const
+push/pop, zero- or one-argument `emplace_back` with exact element types,
+begin/end, cbegin/cend,
+rbegin/rend, crbegin/crend and const
 iteration; reserve/resize; lvalue/rvalue, counted-value, pointer and wrapped
 iterator range, and initializer-list `insert`;
 single-position and range `erase`; and member/free swap. Insert returns a
@@ -2301,6 +2303,7 @@ Erase shifts surviving arithmetic elements in place and returns the following
 mutable iterator. Growth preserves element values and the selected allocator
 calls, and copy construction owns independent storage.
 Host O0/O2 fixtures check capacity reuse, reallocation, aliased fill arguments,
+`emplace_back` value initialization and returned references,
 forward/reverse iterator access, iterator base/decrement/equality/difference,
 insert return positions, source aliasing, empty ranges, and insertion from a
 distinct vector, erase return positions and empty ranges, swap ownership and
