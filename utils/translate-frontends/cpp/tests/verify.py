@@ -29065,10 +29065,10 @@ int main() {
   assigned.reserve(requested_capacity);
   assigned.resize(3, 'x');
   assigned.resize(1);
-  assigned.append(2, 'a').append("bc", 2);
-  return intact && emptied && assigned.size() == 5 &&
+  assigned.append(2, 'a').append("bc", 2).append("d");
+  return intact && emptied && assigned.size() == 6 &&
          assigned[0] == 'x' && assigned[2] == 'a' &&
-         assigned[3] == 'b' && assigned[4] == 'c' &&
+         assigned[3] == 'b' && assigned[4] == 'c' && assigned[5] == 'd' &&
          assigned.capacity() >= requested_capacity
              ? 0 : 1;
 }

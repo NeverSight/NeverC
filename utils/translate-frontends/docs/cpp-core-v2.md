@@ -2220,9 +2220,10 @@ std::allocator<char>>` objects now have direct lowering for default,
 assignment; `size`, `length`, `capacity`, `empty`, `data`, `c_str`, subscript
 access, mutable and const `front`/`back`, `clear`, `push_back(char)`,
 `pop_back()`, `reserve(size_type)`, both `resize` overloads, and destruction.
-The `append(const char*, size_type)` and `append(size_type, char)` overloads
-also lower directly and return the receiver reference. Pointer append copies
-self-referenced source bytes before releasing storage during growth.
+The `append(const char*, size_type)`, `append(const char*)`, and
+`append(size_type, char)` overloads also lower directly and return the receiver
+reference. Pointer append copies self-referenced source bytes before releasing
+storage during growth; the C-string overload scans to the first NUL.
 The frontend checks the pinned libc++ representation before emitting three
 storage words, including the alternate short-string layout selected on Apple
 arm64. Short strings stay inline, while long strings use the selected

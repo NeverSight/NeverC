@@ -16154,14 +16154,23 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Call->getType()->isVoidType())
       return UtilityOperation::StringClear;
     if (!Operator && Name == "append" && !Method->isConst() &&
-        !Object->getType().isConstQualified() && Method->getNumParams() == 2 &&
-        Call->getNumArgs() == 2 && Call->isLValue() &&
+        !Object->getType().isConstQualified() &&
+        (Method->getNumParams() == 1 || Method->getNumParams() == 2) &&
+        Call->getNumArgs() == Method->getNumParams() && Call->isLValue() &&
         Method->getReturnType()->isLValueReferenceType() &&
         Context.hasSameType(Method->getReturnType()->getPointeeType(),
                             Context.getRecordType(String->Record)) &&
         Context.hasSameType(Call->getType(),
                             Context.getRecordType(String->Record))) {
       const auto FirstParameter = Method->getParamDecl(0)->getType();
+      const auto ConstPointer =
+          Context.getPointerType(Context.CharTy.withConst());
+      if (Method->getNumParams() == 1 &&
+          Context.hasSameType(FirstParameter, ConstPointer) &&
+          Context.hasSameType(Call->getArg(0)->getType(), ConstPointer))
+        return UtilityOperation::StringAppendCString;
+      if (Method->getNumParams() != 2)
+        return std::nullopt;
       const auto SecondParameter = Method->getParamDecl(1)->getType();
       if (Context.hasSameType(FirstParameter, Context.getSizeType()) &&
           Context.hasSameType(SecondParameter, Context.CharTy) &&
@@ -16169,9 +16178,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                               Context.getSizeType()) &&
           Context.hasSameType(Call->getArg(1)->getType(), Context.CharTy))
         return UtilityOperation::StringAppendFill;
-      if (Context.hasSameType(
-              FirstParameter,
-              Context.getPointerType(Context.CharTy.withConst())) &&
+      if (Context.hasSameType(FirstParameter, ConstPointer) &&
           Context.hasSameType(SecondParameter, Context.getSizeType()) &&
           Context.hasSameType(Call->getArg(0)->getType(), FirstParameter) &&
           Context.hasSameType(Call->getArg(1)->getType(),

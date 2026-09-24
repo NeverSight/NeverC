@@ -52260,8 +52260,26 @@ int main() {
       return 7;
     for (Size i = 0; i < short_size; ++i)
       if (short_self[i] != short_self[i + short_size]) return 8;
+    std::string cstr("hi");
+    const char embedded[] = {'x', 0, 'y', 0};
+    cstr.append("!").append(embedded).append(cstr.c_str());
+    if (cstr.size() != 8 || cstr[2] != '!' || cstr[3] != 'x' ||
+        cstr[4] != 'h' || cstr[7] != 'x' || cstr.data()[8] != 0 ||
+        allocations != 5)
+      return 9;
+    std::string long_cstr("abcdefghijklmnopqrstuvwxyz");
+    Size long_cstr_size = long_cstr.size();
+    const char *old_cstr = long_cstr.data();
+    long_cstr.append(long_cstr.c_str());
+    if (long_cstr.size() != long_cstr_size * 2 ||
+        long_cstr.data() == old_cstr ||
+        long_cstr.data()[long_cstr.size()] != 0 ||
+        allocations != 7 || releases != 3)
+      return 10;
+    for (Size i = 0; i < long_cstr_size; ++i)
+      if (long_cstr[i] != long_cstr[i + long_cstr_size]) return 11;
   }
-  return allocations == 5 && releases == 5 ? 0 : 9;
+  return allocations == 7 && releases == 7 ? 0 : 12;
 }
 )cpp");
   auto Result =
