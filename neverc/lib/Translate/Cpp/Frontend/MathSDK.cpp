@@ -4341,6 +4341,22 @@ approvedUtilityVectorConstruction(const State &S, const SourceManager &SM,
     return std::nullopt;
   if (Constructor->isDefaultConstructor() && !Construction->getNumArgs())
     return UtilityVectorConstruction::Default;
+  if (Construction->getNumArgs() == 1 &&
+      (Constructor->isCopyConstructor() || Constructor->isMoveConstructor()) &&
+      Context.hasSameUnqualifiedType(Construction->getArg(0)->getType(),
+                                     Construction->getType())) {
+    const auto Parameter = Constructor->getParamDecl(0)->getType();
+    const auto VectorType = Context.getRecordType(Vector->Record);
+    if (Constructor->isCopyConstructor() &&
+        Parameter->isLValueReferenceType() &&
+        Context.hasSameType(Parameter->getPointeeType(),
+                            VectorType.withConst()))
+      return UtilityVectorConstruction::Copy;
+    if (Constructor->isMoveConstructor() &&
+        Parameter->isRValueReferenceType() &&
+        Context.hasSameType(Parameter->getPointeeType(), VectorType))
+      return UtilityVectorConstruction::Move;
+  }
   if (Construction->getNumArgs() == 1) {
     const auto List = approvedUtilityInitializerListRecord(
         S, SM, Constructor->getParamDecl(0)->getType()->getAsCXXRecordDecl(),

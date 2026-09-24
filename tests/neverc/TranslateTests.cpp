@@ -51597,4 +51597,67 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorCopyAndMoveConstructionRun) {
+  const auto Source = tmpFile("vector-copy-move.cpp");
+  const auto Output = tmpFile("vector-copy-move.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <vector>
+std::vector<int> make_values() {
+  std::vector<int> result{7, 8};
+  return result;
+}
+int sum_values(std::vector<int> values) {
+  return values[0] + values[1] + values[2];
+}
+int main() {
+  {
+    std::vector<int> original{1, 2, 3};
+    int *storage = original.data();
+    const std::vector<int> &view = original;
+    std::vector<int> copied(view);
+    if (copied.size() != 3 || copied.capacity() != 3 ||
+        copied.data() == storage || copied[0] != 1 || copied[2] != 3)
+      return 1;
+    original[0] = 9;
+    if (copied[0] != 1 || sum_values(copied) != 6 || copied[2] != 3)
+      return 2;
+    std::vector<int> moved(static_cast<std::vector<int>&&>(original));
+    if (moved.data() != storage || moved.size() != 3 || moved[0] != 9 ||
+        !original.empty() || original.data() != nullptr ||
+        original.capacity() != 0)
+      return 3;
+    std::vector<int> cleared{4, 5};
+    cleared.clear();
+    int before_empty_copy = allocations;
+    std::vector<int> empty_copy(cleared);
+    if (!empty_copy.empty() || empty_copy.data() != nullptr ||
+        empty_copy.capacity() != 0 || allocations != before_empty_copy)
+      return 4;
+    std::vector<int> returned = make_values();
+    if (returned.size() != 2 || returned[0] != 7 || returned[1] != 8)
+      return 5;
+  }
+  return allocations == releases ? 0 : 6;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o",
+                                   Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-copy-move" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 } // namespace
