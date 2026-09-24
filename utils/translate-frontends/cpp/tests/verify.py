@@ -29129,6 +29129,31 @@ int main() {
                            searched_with_nul.find_last_not_of(counted_set,
                                                                 std::string::npos,
                                                                 2) == 3;
+  std::string iterated("abc");
+  for (char &character : iterated) character += 1;
+  auto cursor = iterated.begin();
+  *cursor = 'Q';
+  ++cursor;
+  bool mutable_iteration = *cursor == 'c' &&
+                           iterated.end() != iterated.begin() &&
+                           iterated[0] == 'Q' && iterated[2] == 'd';
+  const std::string &const_iterated = iterated;
+  int character_sum = 0;
+  for (char character : const_iterated) character_sum += character;
+  auto const_cursor = const_iterated.cbegin();
+  bool const_iteration = character_sum == 'Q' + 'c' + 'd' &&
+                         *const_cursor == 'Q' &&
+                         const_cursor != const_iterated.cend() &&
+                         !(empty.cbegin() != empty.cend());
+  std::string long_iterated("abcdefghijklmnopqrstuvwxyz0123456789");
+  int long_count = 0;
+  for (char &character : long_iterated) {
+    if (long_count == 0) character = 'A';
+    ++long_count;
+  }
+  bool long_iteration = long_count == 36 && long_iterated[0] == 'A' &&
+                        long_iterated[35] == '9' &&
+                        !(empty.begin() != empty.end());
   return intact && emptied && assigned.size() == 14 &&
          assigned[0] == 'x' && assigned[2] == 'a' &&
          assigned[3] == 'b' && assigned[4] == 'c' && assigned[5] == 'd' &&
@@ -29141,6 +29166,7 @@ int main() {
          reassigned[1] == 'a' &&
          erase_intact && erased.empty() && compare_intact &&
          cstring_compare_intact && search_intact && set_search_intact &&
+         mutable_iteration && const_iteration && long_iteration &&
          assigned.capacity() >= requested_capacity
              ? 0 : 1;
 }

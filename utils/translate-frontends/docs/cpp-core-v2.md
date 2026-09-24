@@ -2220,6 +2220,8 @@ std::allocator<char>>` objects now have direct lowering for default,
 assignment; `size`, `length`, `capacity`, `empty`, `data`, `c_str`, subscript
 access, mutable and const `front`/`back`, `clear`, `push_back(char)`,
 `pop_back()`, `reserve(size_type)`, both `resize` overloads, and destruction.
+Mutable and const `begin`/`end`, plus `cbegin`/`cend`, produce authenticated
+libc++ `__wrap_iter` values for forward traversal and mutable element access.
 The `append(const char*, size_type)`, `append(const char*)`, and
 `append(size_type, char)` overloads and `append(const std::string&)` also lower
 directly and return the receiver reference. Pointer and string append copy
@@ -2258,6 +2260,7 @@ representations, embedded NUL, mutable and const access, copy and move,
 push/pop, resize/reserve, fill, pointer and string append with self-reference,
 the three `operator+=` overloads, four `assign` overloads, positional erase,
 member/free swap, comparison, forward/reverse and character-set search,
+short and long string iteration with mutable and const iterators,
 clearing, and lifetime release; all eight supported target triples pass
 frontend translation. Other modifiers, character or allocator types, and
 throwing length/allocation paths remain unsupported.

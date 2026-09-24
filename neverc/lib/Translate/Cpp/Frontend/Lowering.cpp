@@ -9407,6 +9407,35 @@ class FunctionLowering {
       }
       return {};
     }
+    case UtilityOperation::StringBegin:
+    case UtilityOperation::StringEnd: {
+      const auto *Object = MemberObject();
+      auto String = Object ? StringFor(Object->getType())
+                           : std::optional<UtilityStringRecord>();
+      auto Iterator = approvedUtilityWrapIteratorRecord(
+          A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+      if (!Object || !String || !Iterator)
+        reject(L, "string iterator",
+               "The selected std::string iterator layout is unavailable.");
+      auto Receiver = snapshot(address(lvalue(Object), Object->getType(), L), L);
+      auto [Data, Size] = ReadStringAt(std::move(Receiver), *String);
+      auto Place = Destination ? std::move(*Destination)
+                               : objectTemporary(Call->getType(), L);
+      Destination.reset();
+      if (Place.getString("type") != type(Call->getType(), L))
+        reject(L, "string iterator",
+               "The iterator destination type differs from the result.");
+      const auto PointerType = type(Iterator->IteratorType, L);
+      auto Pointer = cast(std::move(Data), PointerType, L);
+      if (Operation == UtilityOperation::StringEnd)
+        Pointer = binary("+", std::move(Pointer),
+                         cast(std::move(Size),
+                              type(A.Context.getPointerDiffType(), L), L),
+                         PointerType, L);
+      assign(fieldStorage(json::Object(Place), Iterator->Current, L),
+             std::move(Pointer), L);
+      return Place;
+    }
     case UtilityOperation::StringSize:
     case UtilityOperation::StringCapacity:
     case UtilityOperation::StringEmpty:

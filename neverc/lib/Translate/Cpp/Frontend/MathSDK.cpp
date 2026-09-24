@@ -16495,6 +16495,23 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                        ? Context.CharTy.withConst()
                                        : Context.CharTy)))
       return UtilityOperation::StringData;
+    if (!Operator && !Method->getNumParams() && Call->isPRValue() &&
+        (Name == "begin" || Name == "end" || Name == "cbegin" ||
+         Name == "cend") &&
+        Context.hasSameType(Call->getType(), Method->getReturnType())) {
+      const auto Iterator = approvedUtilityWrapIteratorRecord(
+          S, SM, Method->getReturnType()->getAsCXXRecordDecl(), Context);
+      const bool Const = Method->isConst() || Name == "cbegin" ||
+                         Name == "cend";
+      if (Iterator &&
+          Context.hasSameType(
+              Iterator->IteratorType,
+              Context.getPointerType(Const ? Context.CharTy.withConst()
+                                           : Context.CharTy)))
+        return Name == "begin" || Name == "cbegin"
+                   ? UtilityOperation::StringBegin
+                   : UtilityOperation::StringEnd;
+    }
     if (!Operator && (Name == "front" || Name == "back") &&
         !Method->getNumParams() && !Call->getNumArgs() && Call->isLValue() &&
         Method->getReturnType()->isLValueReferenceType() &&

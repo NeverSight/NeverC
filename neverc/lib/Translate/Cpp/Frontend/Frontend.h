@@ -857,6 +857,8 @@ enum class UtilityOperation {
   StringCapacity,
   StringEmpty,
   StringData,
+  StringBegin,
+  StringEnd,
   StringSubscript,
   StringFront,
   StringBack,
