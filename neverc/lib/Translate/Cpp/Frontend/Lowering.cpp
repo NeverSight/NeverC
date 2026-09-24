@@ -9016,7 +9016,9 @@ class FunctionLowering {
     case UtilityOperation::StringPushBack:
     case UtilityOperation::StringPopBack:
     case UtilityOperation::StringReserve:
-    case UtilityOperation::StringResize: {
+    case UtilityOperation::StringResize:
+    case UtilityOperation::StringAppendPointer:
+    case UtilityOperation::StringAppendFill: {
       const auto *Object = MemberObject();
       auto String = Object ? StringFor(Object->getType())
                            : std::optional<UtilityStringRecord>();
@@ -9038,16 +9040,23 @@ class FunctionLowering {
                           {"loc", A.loc(L)}};
       };
       std::optional<Expression> RequestedArgument, CharacterArgument,
-          IndexArgument;
+          IndexArgument, SourceArgument;
       if (Operation == UtilityOperation::StringPushBack)
         CharacterArgument = snapshot(expression(Call->getArg(0)), L);
       if (Operation == UtilityOperation::StringReserve ||
-          Operation == UtilityOperation::StringResize)
+          Operation == UtilityOperation::StringResize ||
+          Operation == UtilityOperation::StringAppendFill)
         RequestedArgument = snapshot(expression(Call->getArg(0)), L);
+      if (Operation == UtilityOperation::StringAppendPointer) {
+        SourceArgument = snapshot(expression(Call->getArg(0)), L);
+        RequestedArgument = snapshot(expression(Call->getArg(1)), L);
+      }
       if (Operation == UtilityOperation::StringResize)
         CharacterArgument = Call->getNumArgs() == 2
                                 ? snapshot(expression(Call->getArg(1)), L)
                                 : quantity(0, type(A.Context.CharTy, L), L);
+      if (Operation == UtilityOperation::StringAppendFill)
+        CharacterArgument = snapshot(expression(Call->getArg(1)), L);
       if (Operation == UtilityOperation::StringSubscript)
         IndexArgument = snapshot(expression(Call->getArg(1)), L);
       auto First = snapshot(Word(String->AlternateLayout
@@ -9060,7 +9069,9 @@ class FunctionLowering {
       if (Operation == UtilityOperation::StringPushBack ||
           Operation == UtilityOperation::StringPopBack ||
           Operation == UtilityOperation::StringReserve ||
-          Operation == UtilityOperation::StringResize) {
+          Operation == UtilityOperation::StringResize ||
+          Operation == UtilityOperation::StringAppendPointer ||
+          Operation == UtilityOperation::StringAppendFill) {
         const auto PointerType = type(String->PointerType, L);
         const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
         const auto CharacterType = type(A.Context.CharTy, L);
@@ -9107,14 +9118,69 @@ class FunctionLowering {
         auto NewSize = temporary(SizeType, L);
         if (Operation != UtilityOperation::StringPopBack) {
           auto Requested = temporary(SizeType, L);
-          assign(Requested,
-                 Operation == UtilityOperation::StringPushBack
-                     ? binary("+", json::Object(Size), quantity(1, SizeType, L),
-                              SizeType, L)
-                     : json::Object(*RequestedArgument), L);
+          if (Operation == UtilityOperation::StringPushBack)
+            assign(Requested,
+                   binary("+", json::Object(Size), quantity(1, SizeType, L),
+                          SizeType, L),
+                   L);
+          else if (Operation == UtilityOperation::StringAppendPointer ||
+                   Operation == UtilityOperation::StringAppendFill)
+            assign(Requested,
+                   binary("+", json::Object(Size),
+                          json::Object(*RequestedArgument), SizeType, L),
+                   L);
+          else
+            assign(Requested, json::Object(*RequestedArgument), L);
           assign(NewSize,
                  Operation == UtilityOperation::StringReserve
                      ? json::Object(Size) : json::Object(Requested), L);
+          auto CopyAppended = [&](Expression TargetData) {
+            auto SourceCurrent = temporary(
+                type(A.Context.getPointerType(A.Context.CharTy.withConst()), L),
+                L);
+            auto TargetCurrent = temporary(PointerType, L);
+            auto Count = temporary(SizeType, L);
+            assign(SourceCurrent, json::Object(*SourceArgument), L);
+            assign(TargetCurrent,
+                   binary("+", std::move(TargetData),
+                          cast(json::Object(Size), DifferenceType, L),
+                          PointerType, L),
+                   L);
+            assign(Count, quantity(0, SizeType, L), L);
+            const auto Check = labelName(), Copy = labelName(),
+                       Copied = labelName();
+            jump(Check, L);
+            label(Check, L);
+            branch(binary("<", json::Object(Count),
+                          json::Object(*RequestedArgument), "bool", L),
+                   Copy, Copied, L);
+            label(Copy, L);
+            assign(dereference(json::Object(TargetCurrent), L),
+                   dereference(json::Object(SourceCurrent), L), L);
+            assign(SourceCurrent,
+                   binary("+", json::Object(SourceCurrent),
+                          quantity(1, DifferenceType, L),
+                          type(A.Context.getPointerType(
+                                   A.Context.CharTy.withConst()),
+                               L),
+                          L),
+                   L);
+            assign(TargetCurrent,
+                   binary("+", json::Object(TargetCurrent),
+                          quantity(1, DifferenceType, L), PointerType, L),
+                   L);
+            assign(Count,
+                   binary("+", json::Object(Count), quantity(1, SizeType, L),
+                          SizeType, L),
+                   L);
+            jump(Check, L);
+            label(Copied, L);
+          };
+          std::optional<Expression> CopiedDuringGrow;
+          if (Operation == UtilityOperation::StringAppendPointer) {
+            CopiedDuringGrow = temporary("bool", L);
+            assign(*CopiedDuringGrow, boolean(false, L), L);
+          }
           auto DesiredCapacity = temporary(SizeType, L);
           if (Operation == UtilityOperation::StringReserve) {
             assign(DesiredCapacity, json::Object(Requested), L);
@@ -9190,6 +9256,10 @@ class FunctionLowering {
                         SizeType, L), L);
           jump(Check, L);
           label(Copied, L);
+          if (Operation == UtilityOperation::StringAppendPointer) {
+            CopyAppended(json::Object(NewData));
+            assign(*CopiedDuringGrow, boolean(true, L), L);
+          }
           const auto Release = labelName(), Installed = labelName();
           branch(json::Object(IsLong), Release, Installed, L);
           label(Release, L);
@@ -9252,6 +9322,13 @@ class FunctionLowering {
                                       cast(json::Object(Size), DifferenceType, L),
                                       PointerType, L), L),
                    json::Object(*CharacterArgument), L);
+          } else if (Operation == UtilityOperation::StringAppendPointer) {
+            const auto Copy = labelName(), Copied = labelName();
+            branch(json::Object(*CopiedDuringGrow), Copied, Copy, L);
+            label(Copy, L);
+            CopyAppended(json::Object(Data));
+            jump(Copied, L);
+            label(Copied, L);
           } else {
             auto Current = temporary(PointerType, L);
             auto Count = temporary(SizeType, L);
@@ -9311,6 +9388,9 @@ class FunctionLowering {
                                   cast(json::Object(NewSize), DifferenceType, L),
                                   PointerType, L), L),
                quantity(0, CharacterType, L), L);
+        if (Operation == UtilityOperation::StringAppendPointer ||
+            Operation == UtilityOperation::StringAppendFill)
+          return dereference(json::Object(Receiver), L);
         return {};
       }
       if (Operation == UtilityOperation::StringSize ||

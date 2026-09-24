@@ -16121,11 +16121,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                      ? Method->getIdentifier()->getName()
                                      : llvm::StringRef();
     if (!Reference || !Object || !Prototype ||
-        (!Prototype->isNothrow() && Name != "push_back" &&
-         Name != "pop_back" && Name != "reserve" && Name != "resize") ||
+        (!Prototype->isNothrow() && Name != "push_back" && Name != "pop_back" &&
+         Name != "reserve" && Name != "resize" && Name != "append") ||
         Method->isStatic() || Method->isVariadic() ||
         (!Method->hasBody() && Name != "push_back" && Name != "reserve" &&
-         Name != "resize") ||
+         Name != "resize" && Name != "append") ||
         Method->getRefQualifier() != RQ_None ||
         Method->getParent()->getCanonicalDecl() !=
             String->Record->getCanonicalDecl() ||
@@ -16153,6 +16153,31 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         !Call->getNumArgs() && Method->getReturnType()->isVoidType() &&
         Call->getType()->isVoidType())
       return UtilityOperation::StringClear;
+    if (!Operator && Name == "append" && !Method->isConst() &&
+        !Object->getType().isConstQualified() && Method->getNumParams() == 2 &&
+        Call->getNumArgs() == 2 && Call->isLValue() &&
+        Method->getReturnType()->isLValueReferenceType() &&
+        Context.hasSameType(Method->getReturnType()->getPointeeType(),
+                            Context.getRecordType(String->Record)) &&
+        Context.hasSameType(Call->getType(),
+                            Context.getRecordType(String->Record))) {
+      const auto FirstParameter = Method->getParamDecl(0)->getType();
+      const auto SecondParameter = Method->getParamDecl(1)->getType();
+      if (Context.hasSameType(FirstParameter, Context.getSizeType()) &&
+          Context.hasSameType(SecondParameter, Context.CharTy) &&
+          Context.hasSameType(Call->getArg(0)->getType(),
+                              Context.getSizeType()) &&
+          Context.hasSameType(Call->getArg(1)->getType(), Context.CharTy))
+        return UtilityOperation::StringAppendFill;
+      if (Context.hasSameType(
+              FirstParameter,
+              Context.getPointerType(Context.CharTy.withConst())) &&
+          Context.hasSameType(SecondParameter, Context.getSizeType()) &&
+          Context.hasSameType(Call->getArg(0)->getType(), FirstParameter) &&
+          Context.hasSameType(Call->getArg(1)->getType(),
+                              Context.getSizeType()))
+        return UtilityOperation::StringAppendPointer;
+    }
     if (!Operator && !Method->isConst() &&
         !Object->getType().isConstQualified() &&
         Method->getReturnType()->isVoidType() &&

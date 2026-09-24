@@ -29065,8 +29065,11 @@ int main() {
   assigned.reserve(requested_capacity);
   assigned.resize(3, 'x');
   assigned.resize(1);
-  return intact && emptied && assigned.size() == 1 &&
-         assigned[0] == 'x' && assigned.capacity() >= requested_capacity
+  assigned.append(2, 'a').append("bc", 2);
+  return intact && emptied && assigned.size() == 5 &&
+         assigned[0] == 'x' && assigned[2] == 'a' &&
+         assigned[3] == 'b' && assigned[4] == 'c' &&
+         assigned.capacity() >= requested_capacity
              ? 0 : 1;
 }
 """

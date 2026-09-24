@@ -52200,4 +52200,81 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringAppendRun) {
+  const auto Source = tmpFile("string-append.cpp");
+  const auto Output = tmpFile("string-append.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+int main() {
+  {
+    std::string text("ab");
+    text.reserve(40);
+    std::string *result = &text.append(3, 'x');
+    if (result != &text || text.size() != 5 || text[2] != 'x' ||
+        text[4] != 'x' || text.data()[5] != 0 || allocations != 1)
+      return 1;
+    const char raw[] = {'p', 0, 'q'};
+    text.append(raw, 3).append(0, 'z');
+    if (text.size() != 8 || text[5] != 'p' || text[6] != 0 ||
+        text[7] != 'q' || text.data()[8] != 0 || allocations != 1)
+      return 2;
+    const char *inline_copy = text.data();
+    Size old_capacity = text.capacity();
+    text.append(text.data() + 1, 4);
+    if (text.size() != 12 || text.capacity() != old_capacity ||
+        text.data() != inline_copy || text[8] != 'b' || text[9] != 'x' ||
+        text[11] != 'x' || text.data()[12] != 0 || allocations != 1)
+      return 3;
+    Size old_size = text.size();
+    text.append(old_capacity - old_size + 1, text.front());
+    if (text.size() != old_capacity + 1 ||
+        text.capacity() < old_capacity + 1 || text.data() == inline_copy ||
+        text[old_size] != 'a' || text[old_capacity] != 'a' ||
+        text.data()[old_capacity + 1] != 0 ||
+        allocations != 2 || releases != 1)
+      return 4;
+    std::string self("abcdefghijklmnopqrstuvwxyz");
+    Size self_size = self.size();
+    const char *old_self = self.data();
+    self.append(self.data(), self.size());
+    if (self.size() != self_size * 2 || self.data() == old_self ||
+        self.data()[self.size()] != 0 || allocations != 4 || releases != 2)
+      return 5;
+    for (Size i = 0; i < self_size; ++i)
+      if (self[i] != self[i + self_size]) return 6;
+    std::string short_self("abcdefghijklmnopqrstuv");
+    const char *old_short = short_self.data();
+    Size short_size = short_self.size();
+    short_self.append(short_self.data(), short_size);
+    if (short_self.size() != short_size * 2 ||
+        short_self.data() == old_short ||
+        short_self.data()[short_self.size()] != 0 ||
+        allocations != 5 || releases != 2)
+      return 7;
+    for (Size i = 0; i < short_size; ++i)
+      if (short_self[i] != short_self[i + short_size]) return 8;
+  }
+  return allocations == 5 && releases == 5 ? 0 : 9;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-append" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 } // namespace

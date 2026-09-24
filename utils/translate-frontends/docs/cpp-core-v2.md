@@ -2220,19 +2220,22 @@ std::allocator<char>>` objects now have direct lowering for default,
 assignment; `size`, `length`, `capacity`, `empty`, `data`, `c_str`, subscript
 access, mutable and const `front`/`back`, `clear`, `push_back(char)`,
 `pop_back()`, `reserve(size_type)`, both `resize` overloads, and destruction.
+The `append(const char*, size_type)` and `append(size_type, char)` overloads
+also lower directly and return the receiver reference. Pointer append copies
+self-referenced source bytes before releasing storage during growth.
 The frontend checks the pinned libc++ representation before emitting three
 storage words, including the alternate short-string layout selected on Apple
 arm64. Short strings stay inline, while long strings use the selected
 allocation and release functions. Copy construction owns independent storage;
 copy assignment reuses existing capacity when possible. Moves transfer the
 representation and leave the source empty. Clearing, popping, and shrinking
-retain existing capacity and storage. Pushing, resizing, and reserving grow
-storage when needed. Host O0/O2 fixtures exercise both representations,
-embedded NUL, mutable and const access, copy and move, push/pop,
-resize/reserve, clearing, and lifetime release; all eight supported target
-triples pass frontend translation. Other modifiers, character or allocator
-types, and throwing length/allocation paths remain
-unsupported.
+retain existing capacity and storage. Pushing, resizing, reserving, and
+appending grow storage when needed. Host O0/O2 fixtures exercise both
+representations, embedded NUL, mutable and const access, copy and move,
+push/pop, resize/reserve, fill and pointer append with self-reference,
+clearing, and lifetime release; all eight supported target triples pass
+frontend translation. Other modifiers, character or allocator types, and
+throwing length/allocation paths remain unsupported.
 Quoted and shadow headers remain rejected.
 
 ## Vector header and metadata from `<vector>`
