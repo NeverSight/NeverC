@@ -51660,4 +51660,72 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorCopyAndMoveAssignmentRun) {
+  const auto Source = tmpFile("vector-assign.cpp");
+  const auto Output = tmpFile("vector-assign.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <vector>
+int main() {
+  {
+    std::vector<int> source{1, 2};
+    std::vector<int> target{9, 9, 9, 9};
+    int *initial_storage = target.data();
+    const std::vector<int> &view = source;
+    target = view;
+    if (target.data() != initial_storage || target.size() != 2 ||
+        target.capacity() != 4 || target[0] != 1 || target[1] != 2)
+      return 1;
+    std::vector<int> large{3, 4, 5, 6, 7, 8, 9};
+    int *large_storage = large.data();
+    target = large;
+    if (target.data() == initial_storage || target.size() != 7 ||
+        target.capacity() != 8 || target[0] != 3 || target[6] != 9)
+      return 2;
+    target = target;
+    if (target.size() != 7 || target[0] != 3 || target[6] != 9)
+      return 3;
+    target = static_cast<std::vector<int>&&>(large);
+    if (target.data() != large_storage || target.capacity() != 7 ||
+        target.size() != 7 || !large.empty() ||
+        large.data() != nullptr || large.capacity() != 0)
+      return 4;
+    std::vector<int> spare{10, 11, 12};
+    spare.clear();
+    int *spare_storage = spare.data();
+    target = static_cast<std::vector<int>&&>(spare);
+    if (target.data() != spare_storage || !target.empty() ||
+        target.capacity() != 3 || spare.data() != nullptr)
+      return 5;
+    std::vector<int> empty;
+    target = empty;
+    if (target.data() != spare_storage || !target.empty() ||
+        target.capacity() != 3)
+      return 6;
+    target = static_cast<std::vector<int>&&>(target);
+    if (!target.empty() || target.data() != nullptr || target.capacity() != 0)
+      return 7;
+  }
+  return allocations == releases ? 0 : 8;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o",
+                                   Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-assign" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 } // namespace

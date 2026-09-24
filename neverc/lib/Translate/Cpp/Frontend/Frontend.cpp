@@ -14570,6 +14570,10 @@ public:
                   A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call),
                   A.Context)
                   .has_value() ||
+              approvedUtilityVectorAssignment(
+                  A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call),
+                  A.Context)
+                  .has_value() ||
               approvedUtilityOptionalAssignment(
                   A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call),
                   A.Context)
@@ -15002,6 +15006,10 @@ public:
           A.S.coreV2() && approvedUtilityStringViewAssignment(
                               A.S, A.Sources, Operator, A.Context)
                               .has_value();
+      const bool UtilityVectorAssignment =
+          A.S.coreV2() && approvedUtilityVectorAssignment(
+                              A.S, A.Sources, Operator, A.Context)
+                              .has_value();
       const bool UtilityOptionalAssignment =
           A.S.coreV2() &&
           approvedUtilityOptionalAssignment(A.S, A.Sources, Operator, A.Context)
@@ -15037,7 +15045,8 @@ public:
             !FunctionalReferenceAssignment && !UtilityPairAssignment &&
             !UtilityTupleAssignment && !UtilityArrayAssignment &&
             !UtilityInitializerListAssignment && !UtilityStringViewAssignment &&
-            !UtilityOptionalAssignment && !UtilityReverseIteratorAssignment &&
+            !UtilityVectorAssignment && !UtilityOptionalAssignment &&
+            !UtilityReverseIteratorAssignment &&
             !UtilityAllocatorAssignment && !UtilityDefaultDelete &&
             !UtilityUniquePtr && !Ordinary &&
             !(supportedAssignment(Method) &&
@@ -15291,6 +15300,8 @@ public:
       if (A.S.coreV2() && UtilityInitializerListAssignment)
         return true;
       if (A.S.coreV2() && UtilityStringViewAssignment)
+        return true;
+      if (A.S.coreV2() && UtilityVectorAssignment)
         return true;
       if (A.S.coreV2() && UtilityOptionalAssignment)
         return true;

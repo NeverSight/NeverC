@@ -1112,6 +1112,11 @@ approvedUtilityVectorConstruction(const State &S,
                                   const clang::SourceManager &SM,
                                   const clang::CXXConstructExpr *Construction,
                                   const clang::ASTContext &Context);
+enum class UtilityVectorAssignment { Copy, Move };
+std::optional<UtilityVectorAssignment>
+approvedUtilityVectorAssignment(const State &S, const clang::SourceManager &SM,
+                                const clang::CXXOperatorCallExpr *Assignment,
+                                const clang::ASTContext &Context);
 bool approvedUtilityVectorDestructor(const State &S,
                                      const clang::SourceManager &SM,
                                      const clang::CXXDestructorDecl *Destructor,

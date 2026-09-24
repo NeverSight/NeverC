@@ -4395,6 +4395,56 @@ approvedUtilityVectorConstruction(const State &S, const SourceManager &SM,
   return UtilityVectorConstruction::CountValue;
 }
 
+std::optional<UtilityVectorAssignment>
+approvedUtilityVectorAssignment(const State &S, const SourceManager &SM,
+                                const CXXOperatorCallExpr *Assignment,
+                                const ASTContext &Context) {
+  if (!Assignment || Assignment->isTypeDependent() ||
+      Assignment->isValueDependent() ||
+      Assignment->isInstantiationDependent() ||
+      Assignment->getOperator() != OO_Equal || Assignment->getNumArgs() != 2 ||
+      !Assignment->isLValue())
+    return std::nullopt;
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Assignment->getDirectCallee());
+  const auto Vector = approvedUtilityVectorRecord(
+      S, SM, Method ? Method->getParent() : nullptr, Context);
+  const auto *Reference = directMethodReference(Assignment);
+  if (!Method || !Vector || !Reference || Method->isStatic() ||
+      Method->isVariadic() || !Method->hasBody() ||
+      Method->getNumParams() != 1 || Method->getRefQualifier() != RQ_None ||
+      Method->getOverloadedOperator() != OO_Equal ||
+      Method->getParent()->getCanonicalDecl() !=
+          Vector->Record->getCanonicalDecl() ||
+      !approvedStandardSDKDeclaration(S, SM, Method) ||
+      !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
+                     "__vector/vector.h") ||
+      !S.owns(SM, Reference->getExprLoc()))
+    return std::nullopt;
+  const auto VectorType = Context.getRecordType(Vector->Record);
+  const auto Parameter = Method->getParamDecl(0)->getType();
+  const auto Return = Method->getReturnType();
+  if (!Return->isLValueReferenceType() ||
+      !Context.hasSameType(Return->getPointeeType(), VectorType) ||
+      !Context.hasSameUnqualifiedType(Assignment->getType(), VectorType) ||
+      !Context.hasSameUnqualifiedType(Assignment->getArg(0)->getType(),
+                                      VectorType) ||
+      Assignment->getArg(0)->getType().isConstQualified() ||
+      !Context.hasSameUnqualifiedType(Assignment->getArg(1)->getType(),
+                                      VectorType))
+    return std::nullopt;
+  if (Method->isCopyAssignmentOperator() &&
+      Parameter->isLValueReferenceType() &&
+      Context.hasSameType(Parameter->getPointeeType(),
+                          VectorType.withConst()))
+    return UtilityVectorAssignment::Copy;
+  if (Method->isMoveAssignmentOperator() &&
+      Parameter->isRValueReferenceType() &&
+      Context.hasSameType(Parameter->getPointeeType(), VectorType))
+    return UtilityVectorAssignment::Move;
+  return std::nullopt;
+}
+
 bool approvedUtilityVectorDestructor(const State &S, const SourceManager &SM,
                                      const CXXDestructorDecl *Destructor,
                                      const ASTContext &Context) {

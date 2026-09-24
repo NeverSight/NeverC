@@ -10206,6 +10206,176 @@ class FunctionLowering {
         assign(Left, dereference(std::move(RightAddress), L), L);
         return Left;
       }
+      if (auto Assignment = approvedUtilityVectorAssignment(
+              A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call), A.Context)) {
+        if (Destination)
+          reject(L, "vector assignment",
+                 "std::vector assignment cannot initialize a record result.");
+        auto Vector = approvedUtilityVectorRecord(
+            A.S, A.Sources,
+            Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
+        if (!Vector)
+          reject(L, "vector assignment",
+                 "The selected std::vector layout is unavailable.");
+        auto RightAddress = snapshot(
+            address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
+        auto LeftAddress = snapshot(
+            address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
+        auto Left = dereference(json::Object(LeftAddress), L);
+        auto Member = [&](const Expression &Address, const char *Name) {
+          return Expression{{"kind", "member"},
+                            {"type", type(Vector->PointerType, L)},
+                            {"name", Name},
+                            {"args", json::Array{
+                                         dereference(json::Object(Address), L)}},
+                            {"loc", A.loc(L)}};
+        };
+        auto LeftMember = [&](const char *Name) {
+          return Member(LeftAddress, Name);
+        };
+        auto RightMember = [&](const char *Name) {
+          return Member(RightAddress, Name);
+        };
+        const auto PointerType = type(Vector->PointerType, L);
+        const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+        const auto SizeType = type(A.Context.getSizeType(), L);
+        const uint64_t ElementBytes =
+            A.Context.getTypeSizeInChars(Vector->ElementType).getQuantity();
+        auto ElementCount = [&](const Expression &Begin, const Expression &End) {
+          auto Count = temporary(SizeType, L);
+          assign(Count, quantity(0, SizeType, L), L);
+          const auto Measure = labelName(), Done = labelName();
+          branch(cast(json::Object(Begin), "bool", L), Measure, Done, L);
+          label(Measure, L);
+          assign(Count,
+                 cast(binary("-", json::Object(End), json::Object(Begin),
+                             DifferenceType, L), SizeType, L), L);
+          jump(Done, L);
+          label(Done, L);
+          return Count;
+        };
+        auto Release = [&] {
+          auto Begin = snapshot(LeftMember("nct_vector_begin"), L);
+          const auto Deallocate = labelName(), Done = labelName();
+          branch(cast(json::Object(Begin), "bool", L), Deallocate, Done, L);
+          label(Deallocate, L);
+          const auto *Delete =
+              A.allocatorHeapFunction(false, Vector->ElementType, L);
+          json::Array Args;
+          Args.push_back(cast(json::Object(Begin),
+                              type(Delete->getParamDecl(0)->getType(), L), L));
+          if (Delete->getNumParams() == 2) {
+            auto Capacity = snapshot(LeftMember("nct_vector_capacity"), L);
+            auto Count = ElementCount(Begin, Capacity);
+            Args.push_back(cast(
+                binary("*", std::move(Count),
+                       quantity(ElementBytes, SizeType, L), SizeType, L),
+                type(Delete->getParamDecl(1)->getType(), L), L));
+          }
+          chargeCall(Args, L);
+          Body.push_back(json::Object{{"op", "call"},
+                                      {"callee", A.name(Delete)},
+                                      {"args", std::move(Args)},
+                                      {"loc", A.loc(L)}});
+          jump(Done, L);
+          label(Done, L);
+          for (const char *Name : {"nct_vector_begin", "nct_vector_end",
+                                   "nct_vector_capacity"})
+            initializeZero(LeftMember(Name), Vector->PointerType, L);
+        };
+        if (*Assignment == UtilityVectorAssignment::Move) {
+          Release();
+          for (const char *Name : {"nct_vector_begin", "nct_vector_end",
+                                   "nct_vector_capacity"}) {
+            auto Pointer = snapshot(RightMember(Name), L);
+            assign(LeftMember(Name), std::move(Pointer), L);
+            initializeZero(RightMember(Name), Vector->PointerType, L);
+          }
+          return Left;
+        }
+        const auto Same = labelName(), Copy = labelName(), Done = labelName();
+        const auto RightPointerType = type(
+            A.Context.getPointerType(Call->getArg(1)->getType()), L);
+        branch(binary("==", cast(json::Object(LeftAddress), RightPointerType,
+                                 L), json::Object(RightAddress), "bool", L),
+               Same, Copy, L);
+        label(Same, L);
+        jump(Done, L);
+        label(Copy, L);
+        auto SourceBegin = snapshot(RightMember("nct_vector_begin"), L);
+        auto SourceEnd = snapshot(RightMember("nct_vector_end"), L);
+        auto TargetBegin = snapshot(LeftMember("nct_vector_begin"), L);
+        auto TargetCapacity = snapshot(LeftMember("nct_vector_capacity"), L);
+        auto SourceSize = ElementCount(SourceBegin, SourceEnd);
+        auto Capacity = ElementCount(TargetBegin, TargetCapacity);
+        const auto Reuse = labelName(), Grow = labelName(), Fill = labelName();
+        branch(binary("<=", json::Object(SourceSize), json::Object(Capacity),
+                      "bool", L), Reuse, Grow, L);
+        auto NewBegin = temporary(PointerType, L);
+        label(Reuse, L);
+        assign(NewBegin, std::move(TargetBegin), L);
+        jump(Fill, L);
+        label(Grow, L);
+        auto NewCapacity = temporary(SizeType, L);
+        assign(NewCapacity, json::Object(SourceSize), L);
+        const auto Double = labelName(), Allocate = labelName();
+        branch(binary(">", binary("*", json::Object(Capacity),
+                                  quantity(2, SizeType, L), SizeType, L),
+                      json::Object(SourceSize), "bool", L), Double, Allocate,
+               L);
+        label(Double, L);
+        assign(NewCapacity,
+               binary("*", json::Object(Capacity), quantity(2, SizeType, L),
+                      SizeType, L), L);
+        jump(Allocate, L);
+        label(Allocate, L);
+        Release();
+        const auto *New =
+            A.allocatorHeapFunction(true, Vector->ElementType, L);
+        json::Array Args;
+        Args.push_back(binary("*", json::Object(NewCapacity),
+                              quantity(ElementBytes, SizeType, L), SizeType,
+                              L));
+        chargeCall(Args, L);
+        auto Allocation = temporary(type(New->getReturnType(), L), L);
+        Body.push_back(json::Object{{"op", "call"},
+                                    {"callee", A.name(New)},
+                                    {"args", std::move(Args)},
+                                    {"target", json::Object(Allocation)},
+                                    {"loc", A.loc(L)}});
+        assign(NewBegin, cast(std::move(Allocation), PointerType, L), L);
+        assign(LeftMember("nct_vector_begin"), json::Object(NewBegin), L);
+        assign(LeftMember("nct_vector_capacity"),
+               binary("+", json::Object(NewBegin),
+                      cast(json::Object(NewCapacity), DifferenceType, L),
+                      PointerType, L), L);
+        jump(Fill, L);
+        label(Fill, L);
+        auto SourceCurrent = temporary(PointerType, L);
+        auto TargetCurrent = temporary(PointerType, L);
+        assign(SourceCurrent, std::move(SourceBegin), L);
+        assign(TargetCurrent, json::Object(NewBegin), L);
+        const auto Check = labelName(), Advance = labelName(), Finish = labelName();
+        jump(Check, L);
+        label(Check, L);
+        branch(binary("!=", json::Object(SourceCurrent), json::Object(SourceEnd),
+                      "bool", L), Advance, Finish, L);
+        label(Advance, L);
+        assign(dereference(json::Object(TargetCurrent), L),
+               dereference(json::Object(SourceCurrent), L), L);
+        assign(SourceCurrent,
+               binary("+", json::Object(SourceCurrent),
+                      quantity(1, DifferenceType, L), PointerType, L), L);
+        assign(TargetCurrent,
+               binary("+", json::Object(TargetCurrent),
+                      quantity(1, DifferenceType, L), PointerType, L), L);
+        jump(Check, L);
+        label(Finish, L);
+        assign(LeftMember("nct_vector_end"), std::move(TargetCurrent), L);
+        jump(Done, L);
+        label(Done, L);
+        return Left;
+      }
       if (auto Assignment = approvedUtilityOptionalAssignment(
               A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call), A.Context)) {
         if (Destination)
