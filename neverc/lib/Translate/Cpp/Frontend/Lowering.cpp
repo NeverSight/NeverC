@@ -9224,6 +9224,209 @@ class FunctionLowering {
       label(Done, L);
       return {};
     }
+    case UtilityOperation::VectorReserve:
+    case UtilityOperation::VectorResize:
+    case UtilityOperation::VectorResizeFill: {
+      const auto *Object = MemberObject();
+      auto Vector = Object ? VectorFor(Object->getType())
+                           : std::optional<UtilityVectorRecord>();
+      if (!Object || !Vector)
+        reject(L, "vector capacity modifier",
+               "The selected std::vector layout is unavailable.");
+      auto Receiver =
+          snapshot(address(lvalue(Object), Object->getType(), L), L);
+      auto Requested = snapshot(expression(Call->getArg(0)), L);
+      std::optional<Expression> FillValue;
+      if (Operation == UtilityOperation::VectorResizeFill)
+        FillValue = snapshot(expression(Call->getArg(1)), L);
+      auto Member = [&](const char *Name) {
+        return Expression{{"kind", "member"},
+                          {"type", type(Vector->PointerType, L)},
+                          {"name", Name},
+                          {"args", json::Array{
+                                       dereference(json::Object(Receiver), L)}},
+                          {"loc", A.loc(L)}};
+      };
+      const auto PointerType = type(Vector->PointerType, L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto SizeType = type(A.Context.getSizeType(), L);
+      const uint64_t ElementBytes =
+          A.Context.getTypeSizeInChars(Vector->ElementType).getQuantity();
+      auto Begin = snapshot(Member("nct_vector_begin"), L);
+      auto End = snapshot(Member("nct_vector_end"), L);
+      auto CapacityEnd = snapshot(Member("nct_vector_capacity"), L);
+      auto Size = temporary(SizeType, L);
+      auto Capacity = temporary(SizeType, L);
+      assign(Size, quantity(0, SizeType, L), L);
+      assign(Capacity, quantity(0, SizeType, L), L);
+      const auto Measure = labelName(), Measured = labelName();
+      branch(cast(json::Object(Begin), "bool", L), Measure, Measured, L);
+      label(Measure, L);
+      assign(Size,
+             cast(binary("-", json::Object(End), json::Object(Begin),
+                         DifferenceType, L), SizeType, L), L);
+      assign(Capacity,
+             cast(binary("-", json::Object(CapacityEnd), json::Object(Begin),
+                         DifferenceType, L), SizeType, L), L);
+      jump(Measured, L);
+      label(Measured, L);
+      const auto Allocate = labelName(), Fill = labelName(), Done = labelName();
+      auto TargetSize = temporary(SizeType, L);
+      auto NewCapacity = temporary(SizeType, L);
+      auto TargetBegin = temporary(PointerType, L);
+      auto TargetCurrent = temporary(PointerType, L);
+      auto Grew = temporary("bool", L);
+      if (Operation == UtilityOperation::VectorReserve) {
+        const auto Grow = labelName();
+        branch(binary(">", json::Object(Requested), json::Object(Capacity),
+                      "bool", L), Grow, Done, L);
+        label(Grow, L);
+        assign(TargetSize, json::Object(Size), L);
+        assign(NewCapacity, json::Object(Requested), L);
+        jump(Allocate, L);
+      } else {
+        const auto Shrink = labelName(), Expand = labelName();
+        branch(binary("<", json::Object(Requested), json::Object(Size),
+                      "bool", L), Shrink, Expand, L);
+        label(Shrink, L);
+        const auto Zero = labelName(), Nonzero = labelName();
+        branch(binary("==", json::Object(Requested),
+                      quantity(0, SizeType, L), "bool", L), Zero, Nonzero, L);
+        label(Zero, L);
+        assign(Member("nct_vector_end"), json::Object(Begin), L);
+        jump(Done, L);
+        label(Nonzero, L);
+        assign(Member("nct_vector_end"),
+               binary("+", json::Object(Begin),
+                      cast(json::Object(Requested), DifferenceType, L),
+                      PointerType, L), L);
+        jump(Done, L);
+        label(Expand, L);
+        const auto AfterEqual = labelName();
+        branch(binary("==", json::Object(Requested), json::Object(Size),
+                      "bool", L), Done, AfterEqual, L);
+        label(AfterEqual, L);
+        const auto Existing = labelName(), Grow = labelName();
+        branch(binary("<=", json::Object(Requested), json::Object(Capacity),
+                      "bool", L), Existing, Grow, L);
+        label(Existing, L);
+        assign(TargetSize, json::Object(Requested), L);
+        assign(TargetBegin, json::Object(Begin), L);
+        assign(TargetCurrent, json::Object(End), L);
+        assign(Grew, boolean(false, L), L);
+        jump(Fill, L);
+        label(Grow, L);
+        assign(TargetSize, json::Object(Requested), L);
+        assign(NewCapacity, json::Object(Requested), L);
+        const auto Double = labelName(), Recommended = labelName();
+        branch(binary(">", binary("*", json::Object(Capacity),
+                                  quantity(2, SizeType, L), SizeType, L),
+                      json::Object(Requested), "bool", L), Double,
+               Recommended, L);
+        label(Double, L);
+        assign(NewCapacity,
+               binary("*", json::Object(Capacity), quantity(2, SizeType, L),
+                      SizeType, L), L);
+        jump(Recommended, L);
+        label(Recommended, L);
+        jump(Allocate, L);
+      }
+      label(Allocate, L);
+      const auto *New = A.allocatorHeapFunction(true, Vector->ElementType, L);
+      json::Array NewArgs;
+      NewArgs.push_back(binary("*", json::Object(NewCapacity),
+                               quantity(ElementBytes, SizeType, L), SizeType,
+                               L));
+      chargeCall(NewArgs, L);
+      auto Allocation = temporary(type(New->getReturnType(), L), L);
+      Body.push_back(json::Object{{"op", "call"},
+                                  {"callee", A.name(New)},
+                                  {"args", std::move(NewArgs)},
+                                  {"target", json::Object(Allocation)},
+                                  {"loc", A.loc(L)}});
+      assign(TargetBegin, cast(std::move(Allocation), PointerType, L), L);
+      assign(TargetCurrent, json::Object(TargetBegin), L);
+      assign(Grew, boolean(true, L), L);
+      auto SourceCurrent = temporary(PointerType, L);
+      assign(SourceCurrent, json::Object(Begin), L);
+      const auto CopyCheck = labelName(), Copy = labelName();
+      const auto Copied = labelName();
+      jump(CopyCheck, L);
+      label(CopyCheck, L);
+      branch(binary("!=", json::Object(SourceCurrent), json::Object(End),
+                    "bool", L), Copy, Copied, L);
+      label(Copy, L);
+      assign(dereference(json::Object(TargetCurrent), L),
+             dereference(json::Object(SourceCurrent), L), L);
+      assign(SourceCurrent,
+             binary("+", json::Object(SourceCurrent),
+                    quantity(1, DifferenceType, L), PointerType, L), L);
+      assign(TargetCurrent,
+             binary("+", json::Object(TargetCurrent),
+                    quantity(1, DifferenceType, L), PointerType, L), L);
+      jump(CopyCheck, L);
+      label(Copied, L);
+      jump(Fill, L);
+      label(Fill, L);
+      auto TargetEnd = snapshot(binary("+", json::Object(TargetBegin),
+                                       cast(json::Object(TargetSize),
+                                            DifferenceType, L), PointerType,
+                                       L), L);
+      const auto FillCheck = labelName(), Append = labelName();
+      const auto Filled = labelName();
+      jump(FillCheck, L);
+      label(FillCheck, L);
+      branch(binary("!=", json::Object(TargetCurrent), json::Object(TargetEnd),
+                    "bool", L), Append, Filled, L);
+      label(Append, L);
+      if (FillValue)
+        assign(dereference(json::Object(TargetCurrent), L),
+               json::Object(*FillValue), L);
+      else
+        initializeZero(dereference(json::Object(TargetCurrent), L),
+                       Vector->ElementType, L);
+      assign(TargetCurrent,
+             binary("+", json::Object(TargetCurrent),
+                    quantity(1, DifferenceType, L), PointerType, L), L);
+      jump(FillCheck, L);
+      label(Filled, L);
+      const auto Release = labelName(), InPlace = labelName();
+      branch(json::Object(Grew), Release, InPlace, L);
+      label(InPlace, L);
+      assign(Member("nct_vector_end"), json::Object(TargetCurrent), L);
+      jump(Done, L);
+      label(Release, L);
+      const auto FreeOld = labelName(), Commit = labelName();
+      branch(cast(json::Object(Begin), "bool", L), FreeOld, Commit, L);
+      label(FreeOld, L);
+      const auto *Delete =
+          A.allocatorHeapFunction(false, Vector->ElementType, L);
+      json::Array DeleteArgs;
+      DeleteArgs.push_back(cast(json::Object(Begin),
+                                type(Delete->getParamDecl(0)->getType(), L),
+                                L));
+      if (Delete->getNumParams() == 2)
+        DeleteArgs.push_back(cast(
+            binary("*", json::Object(Capacity),
+                   quantity(ElementBytes, SizeType, L), SizeType, L),
+            type(Delete->getParamDecl(1)->getType(), L), L));
+      chargeCall(DeleteArgs, L);
+      Body.push_back(json::Object{{"op", "call"},
+                                  {"callee", A.name(Delete)},
+                                  {"args", std::move(DeleteArgs)},
+                                  {"loc", A.loc(L)}});
+      jump(Commit, L);
+      label(Commit, L);
+      assign(Member("nct_vector_begin"), json::Object(TargetBegin), L);
+      assign(Member("nct_vector_end"), json::Object(TargetCurrent), L);
+      assign(Member("nct_vector_capacity"),
+             binary("+", json::Object(TargetBegin),
+                    cast(json::Object(NewCapacity), DifferenceType, L),
+                    PointerType, L), L);
+      jump(Done, L);
+      label(Done, L);
+      return {};
+    }
     case UtilityOperation::StringViewSize:
     case UtilityOperation::StringViewMaxSize:
     case UtilityOperation::StringViewEmpty:

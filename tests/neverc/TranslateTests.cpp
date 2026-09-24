@@ -51728,4 +51728,83 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorReserveAndResizeRun) {
+  const auto Source = tmpFile("vector-reserve-resize.cpp");
+  const auto Output = tmpFile("vector-reserve-resize.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int count_calls;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+Size count(Size n) { ++count_calls; return n; }
+#include <vector>
+int main() {
+  {
+    std::vector<int> values{4, 5};
+    int *initial = values.data();
+    values.reserve(count(5));
+    if (values.data() == initial || values.capacity() != 5 ||
+        values.size() != 2 || values[0] != 4 || values[1] != 5)
+      return 1;
+    int *reserved = values.data();
+    values.reserve(count(3));
+    if (values.data() != reserved || values.capacity() != 5 ||
+        allocations != 2 || releases != 1)
+      return 2;
+    values.resize(count(4));
+    if (values.data() != reserved || values.size() != 4 ||
+        values[2] != 0 || values[3] != 0)
+      return 3;
+    values[2] = 9;
+    values.resize(count(8), values[2]);
+    if (values.data() == reserved || values.size() != 8 ||
+        values.capacity() != 10 || values[0] != 4 || values[2] != 9 ||
+        values[3] != 0 || values[4] != 9 || values[7] != 9)
+      return 4;
+    values.resize(count(1));
+    if (values.size() != 1 || values.capacity() != 10 || values[0] != 4)
+      return 5;
+    values.resize(count(3), values.front());
+    if (values.size() != 3 || values.capacity() != 10 ||
+        values[0] != 4 || values[1] != 4 || values[2] != 4)
+      return 6;
+    values.reserve(count(12));
+    if (values.size() != 3 || values.capacity() != 12 ||
+        values[0] != 4 || values[2] != 4 || count_calls != 7)
+      return 7;
+    std::vector<int> empty;
+    empty.reserve(0);
+    empty.resize(0);
+    if (!empty.empty() || empty.data() != nullptr || allocations != 4)
+      return 8;
+    empty.resize(2);
+    if (empty.size() != 2 || empty.capacity() != 2 ||
+        empty[0] != 0 || empty[1] != 0)
+      return 9;
+    std::vector<int> reserved_empty;
+    reserved_empty.reserve(3);
+    if (!reserved_empty.empty() || reserved_empty.capacity() != 3 ||
+        reserved_empty.data() == nullptr)
+      return 10;
+  }
+  return allocations == 6 && releases == 6 ? 0 : 11;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o",
+                                   Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-reserve-resize" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 } // namespace

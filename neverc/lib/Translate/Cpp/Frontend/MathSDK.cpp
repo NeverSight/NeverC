@@ -15874,7 +15874,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                      : llvm::StringRef();
     if (!Reference || !Object || !Prototype ||
         (!Prototype->isNothrow() && Name != "push_back" &&
-         Name != "pop_back") ||
+         Name != "pop_back" && Name != "reserve" && Name != "resize") ||
         Method->isStatic() || Method->isVariadic() || !Method->hasBody() ||
         Method->getRefQualifier() != RQ_None ||
         Method->getParent()->getCanonicalDecl() !=
@@ -15955,6 +15955,28 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         !Object->getType().isConstQualified() &&
         Method->getReturnType()->isVoidType() &&
         Call->getType()->isVoidType()) {
+      if (Name == "reserve" && Method->getNumParams() == 1 &&
+          Call->getNumArgs() == 1 &&
+          Context.hasSameType(Method->getParamDecl(0)->getType(),
+                              Context.getSizeType()) &&
+          Context.hasSameType(Call->getArg(0)->getType(), Context.getSizeType()))
+        return UtilityOperation::VectorReserve;
+      if (Name == "resize" &&
+          (Method->getNumParams() == 1 || Method->getNumParams() == 2) &&
+          Call->getNumArgs() == Method->getNumParams() &&
+          Context.hasSameType(Method->getParamDecl(0)->getType(),
+                              Context.getSizeType()) &&
+          Context.hasSameType(Call->getArg(0)->getType(), Context.getSizeType())) {
+        if (Method->getNumParams() == 1)
+          return UtilityOperation::VectorResize;
+        const auto Parameter = Method->getParamDecl(1)->getType();
+        if (Parameter->isLValueReferenceType() &&
+            Context.hasSameType(Parameter->getPointeeType(),
+                                Vector->ElementType.withConst()) &&
+            Context.hasSameUnqualifiedType(Call->getArg(1)->getType(),
+                                           Vector->ElementType))
+          return UtilityOperation::VectorResizeFill;
+      }
       if (Name == "pop_back" && !Method->getNumParams() &&
           !Call->getNumArgs())
         return UtilityOperation::VectorPopBack;

@@ -32,8 +32,9 @@ The `<vector>` parsing closure adds the pinned public libc++ header and its
 `__bit_reference`, `__vector/pmr.h`, and `__vector/vector_bool.h` dependencies.
 Core v2's reduced transitive includes keep its 300-file libc++/resource closure
 identical and platform-free on all eight targets. `std::vector<int>` exposes
-compile-time layout and `size_type` metadata; vector objects and operations
-still require direct lowering.
+compile-time layout and `size_type` metadata. Arithmetic-element vector objects
+and the operations listed in the support matrix have authenticated direct
+lowerings; other vector behavior remains outside that boundary.
 
 Core v2 uses only the catalog's `libcxx` and `resource` roots for its
 compile-time `<type_traits>` and fixed-width `<cstdint>` surfaces. The

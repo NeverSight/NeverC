@@ -2227,9 +2227,16 @@ the `__bit_reference`, `__vector/pmr.h`, and `__vector/vector_bool.h` files
 retain their LLVM 20.1.8 source bytes and catalog hashes. For the default
 allocator specialization, Clang can fold `std::vector<int>` size and alignment
 queries from libc++'s three-pointer layout and resolve its `size_type` alias.
-This is compile-time metadata only: constructing a vector object, calling its
-members, or destroying it still requires an authenticated direct lowering.
-Quoted and shadow headers remain rejected.
+Authenticated `std::vector<T, std::allocator<T>>` objects with non-boolean
+integer or floating elements use direct lowering for default, bounded
+count/fill/list, copy and move construction; copy and move assignment;
+destruction; size, capacity, empty, data, element/front/back access; clear,
+push/pop, begin/end and const iteration; and reserve/resize. Growth preserves
+element values and the selected allocator calls, and copy construction owns
+independent storage. Host O0/O2 fixtures check capacity reuse, reallocation,
+aliased fill arguments and eventual release. Record elements, other allocators,
+remaining vector methods and throwing allocation or length-error paths remain
+unsupported. Quoted and shadow headers remain rejected.
 
 ## Dynamic local static initialization
 
