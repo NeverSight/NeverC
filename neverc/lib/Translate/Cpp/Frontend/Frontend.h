@@ -861,6 +861,8 @@ enum class UtilityOperation {
   StringClear,
   StringPushBack,
   StringPopBack,
+  StringReserve,
+  StringResize,
   StringViewSize,
   VectorSize,
   VectorCapacity,

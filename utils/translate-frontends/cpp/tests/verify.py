@@ -29058,7 +29058,13 @@ int main() {
   assigned.clear();
   assigned.push_back('q');
   assigned.pop_back();
-  return intact && assigned.empty() && assigned.capacity() == old_capacity
+  bool emptied = assigned.empty() && assigned.capacity() == old_capacity;
+  auto requested_capacity = assigned.capacity() + 8;
+  assigned.reserve(requested_capacity);
+  assigned.resize(3, 'x');
+  assigned.resize(1);
+  return intact && emptied && assigned.size() == 1 &&
+         assigned[0] == 'x' && assigned.capacity() >= requested_capacity
              ? 0 : 1;
 }
 """

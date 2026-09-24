@@ -52099,4 +52099,94 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringReserveAndResizeRun) {
+  const auto Source = tmpFile("string-reserve-resize.cpp");
+  const auto Output = tmpFile("string-reserve-resize.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+Size clear_and_request(std::string &s) { s.clear(); return 5; }
+char clear_and_character(std::string &s) { s.clear(); return 'Z'; }
+int main() {
+  {
+    std::string text("abc");
+    Size short_capacity = text.capacity();
+    const char *inline_data = text.data();
+    text.reserve(2);
+    if (text.data() != inline_data || text.capacity() != short_capacity ||
+        allocations != 0) return 1;
+    text.resize(6, 'q');
+    if (text.size() != 6 || text[0] != 'a' || text[2] != 'c' ||
+        text[3] != 'q' || text[5] != 'q' || text.data()[6] != 0)
+      return 2;
+    text.resize(2);
+    if (text.size() != 2 || text[0] != 'a' || text[1] != 'b' ||
+        text.data()[2] != 0 || text.capacity() != short_capacity)
+      return 3;
+    text.resize(5);
+    if (text.size() != 5 || text[2] != 0 || text[3] != 0 ||
+        text[4] != 0 || text.data()[5] != 0) return 4;
+    text.reserve(short_capacity + 1);
+    if (text.size() != 5 || text.capacity() < short_capacity + 1 ||
+        text.data() == inline_data || text[0] != 'a' || text[2] != 0 ||
+        text.data()[5] != 0 || allocations != 1 || releases != 0)
+      return 5;
+    const char *first_heap = text.data();
+    Size first_capacity = text.capacity();
+    text.reserve(1);
+    if (text.data() != first_heap || text.capacity() != first_capacity ||
+        allocations != 1) return 6;
+    Size grown_size = first_capacity + 3;
+    text.resize(grown_size, text[0]);
+    if (text.size() != grown_size || text.capacity() < grown_size ||
+        text.data() == first_heap || text[0] != 'a' || text[2] != 0 ||
+        text[grown_size - 1] != 'a' || text.data()[grown_size] != 0 ||
+        allocations != 2 || releases != 1) return 7;
+    const char *second_heap = text.data();
+    Size second_capacity = text.capacity();
+    text.resize(4);
+    if (text.size() != 4 || text.data() != second_heap ||
+        text.capacity() != second_capacity || text.data()[4] != 0)
+      return 8;
+    text.reserve(second_capacity + 20);
+    if (text.size() != 4 || text.data() == second_heap ||
+        text.capacity() < second_capacity + 20 || text[0] != 'a' ||
+        text[2] != 0 || text.data()[4] != 0 ||
+        allocations != 3 || releases != 2) return 9;
+    const char *third_heap = text.data();
+    text.clear();
+    text.resize(3);
+    if (text.size() != 3 || text.data() != third_heap ||
+        text[0] != 0 || text[2] != 0 || text.data()[3] != 0)
+      return 10;
+    std::string side("abc");
+    side.resize(clear_and_request(side), 'k');
+    if (side.size() != 5 || side[0] != 'k' || side[4] != 'k')
+      return 11;
+    side.push_back(clear_and_character(side));
+    if (side.size() != 1 || side[0] != 'Z' || side.data()[1] != 0)
+      return 12;
+  }
+  return allocations == 3 && releases == 3 ? 0 : 13;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o",
+                                   Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-reserve-resize" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 } // namespace

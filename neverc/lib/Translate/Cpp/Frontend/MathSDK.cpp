@@ -16122,9 +16122,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                      : llvm::StringRef();
     if (!Reference || !Object || !Prototype ||
         (!Prototype->isNothrow() && Name != "push_back" &&
-         Name != "pop_back") ||
+         Name != "pop_back" && Name != "reserve" && Name != "resize") ||
         Method->isStatic() || Method->isVariadic() ||
-        (!Method->hasBody() && Name != "push_back") ||
+        (!Method->hasBody() && Name != "push_back" && Name != "reserve" &&
+         Name != "resize") ||
         Method->getRefQualifier() != RQ_None ||
         Method->getParent()->getCanonicalDecl() !=
             String->Record->getCanonicalDecl() ||
@@ -16165,6 +16166,25 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       if (Name == "pop_back" && !Method->getNumParams() &&
           !Call->getNumArgs())
         return UtilityOperation::StringPopBack;
+      if (Name == "reserve" && Method->getNumParams() == 1 &&
+          Call->getNumArgs() == 1 &&
+          Context.hasSameType(Method->getParamDecl(0)->getType(),
+                              Context.getSizeType()) &&
+          Context.hasSameType(Call->getArg(0)->getType(),
+                              Context.getSizeType()))
+        return UtilityOperation::StringReserve;
+      if (Name == "resize" &&
+          (Method->getNumParams() == 1 || Method->getNumParams() == 2) &&
+          Call->getNumArgs() == Method->getNumParams() &&
+          Context.hasSameType(Method->getParamDecl(0)->getType(),
+                              Context.getSizeType()) &&
+          Context.hasSameType(Call->getArg(0)->getType(),
+                              Context.getSizeType()) &&
+          (Method->getNumParams() == 1 ||
+           (Context.hasSameType(Method->getParamDecl(1)->getType(),
+                                Context.CharTy) &&
+            Context.hasSameType(Call->getArg(1)->getType(), Context.CharTy))))
+        return UtilityOperation::StringResize;
     }
     if (!Operator && (Name == "data" || Name == "c_str") &&
         !Method->getNumParams() && Call->isPRValue() &&

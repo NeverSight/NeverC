@@ -9012,7 +9012,9 @@ class FunctionLowering {
     case UtilityOperation::StringSubscript:
     case UtilityOperation::StringClear:
     case UtilityOperation::StringPushBack:
-    case UtilityOperation::StringPopBack: {
+    case UtilityOperation::StringPopBack:
+    case UtilityOperation::StringReserve:
+    case UtilityOperation::StringResize: {
       const auto *Object = MemberObject();
       auto String = Object ? StringFor(Object->getType())
                            : std::optional<UtilityStringRecord>();
@@ -9033,6 +9035,19 @@ class FunctionLowering {
                           {"args", json::Array{dereference(json::Object(Receiver), L)}},
                           {"loc", A.loc(L)}};
       };
+      std::optional<Expression> RequestedArgument, CharacterArgument,
+          IndexArgument;
+      if (Operation == UtilityOperation::StringPushBack)
+        CharacterArgument = snapshot(expression(Call->getArg(0)), L);
+      if (Operation == UtilityOperation::StringReserve ||
+          Operation == UtilityOperation::StringResize)
+        RequestedArgument = snapshot(expression(Call->getArg(0)), L);
+      if (Operation == UtilityOperation::StringResize)
+        CharacterArgument = Call->getNumArgs() == 2
+                                ? snapshot(expression(Call->getArg(1)), L)
+                                : quantity(0, type(A.Context.CharTy, L), L);
+      if (Operation == UtilityOperation::StringSubscript)
+        IndexArgument = snapshot(expression(Call->getArg(1)), L);
       auto First = snapshot(Word(String->AlternateLayout
                                      ? "nct_string_word2"
                                      : "nct_string_word0"), L);
@@ -9041,7 +9056,9 @@ class FunctionLowering {
                                       << (A.Context.getTypeSize(A.Context.getSizeType()) - 1)
                                 : uint64_t(1);
       if (Operation == UtilityOperation::StringPushBack ||
-          Operation == UtilityOperation::StringPopBack) {
+          Operation == UtilityOperation::StringPopBack ||
+          Operation == UtilityOperation::StringReserve ||
+          Operation == UtilityOperation::StringResize) {
         const auto PointerType = type(String->PointerType, L);
         const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
         const auto CharacterType = type(A.Context.CharTy, L);
@@ -9086,24 +9103,54 @@ class FunctionLowering {
         jump(Ready, L);
         label(Ready, L);
         auto NewSize = temporary(SizeType, L);
-        if (Operation == UtilityOperation::StringPushBack) {
-          auto Character = snapshot(expression(Call->getArg(0)), L);
+        if (Operation != UtilityOperation::StringPopBack) {
+          auto Requested = temporary(SizeType, L);
+          assign(Requested,
+                 Operation == UtilityOperation::StringPushBack
+                     ? binary("+", json::Object(Size), quantity(1, SizeType, L),
+                              SizeType, L)
+                     : json::Object(*RequestedArgument), L);
           assign(NewSize,
-                 binary("+", json::Object(Size), quantity(1, SizeType, L),
-                        SizeType, L), L);
+                 Operation == UtilityOperation::StringReserve
+                     ? json::Object(Size) : json::Object(Requested), L);
+          auto DesiredCapacity = temporary(SizeType, L);
+          if (Operation == UtilityOperation::StringReserve) {
+            assign(DesiredCapacity, json::Object(Requested), L);
+          } else {
+            assign(DesiredCapacity,
+                   binary("*", json::Object(Capacity),
+                          quantity(2, SizeType, L), SizeType, L), L);
+            const auto UseRequested = labelName(), TargetReady = labelName();
+            branch(binary(">", json::Object(Requested),
+                          json::Object(DesiredCapacity), "bool", L),
+                   UseRequested, TargetReady, L);
+            label(UseRequested, L);
+            assign(DesiredCapacity, json::Object(Requested), L);
+            jump(TargetReady, L);
+            label(TargetReady, L);
+          }
           const auto Grow = labelName(), Write = labelName();
-          branch(binary("==", json::Object(Size), json::Object(Capacity),
+          branch(binary(">", json::Object(Requested), json::Object(Capacity),
                         "bool", L), Grow, Write, L);
           label(Grow, L);
           auto AllocationBytes = temporary(SizeType, L);
           assign(AllocationBytes,
-                 binary("*", binary("/", binary("+", binary("*", json::Object(Capacity),
-                                                         quantity(2, SizeType, L),
-                                                         SizeType, L),
+                 binary("*", binary("/", binary("+", json::Object(DesiredCapacity),
                                                  quantity(8, SizeType, L),
                                                  SizeType, L),
                                        quantity(8, SizeType, L), SizeType, L),
                         quantity(8, SizeType, L), SizeType, L), L);
+          const auto Adjust = labelName(), Allocate = labelName();
+          branch(binary("==", json::Object(AllocationBytes),
+                        quantity(String->ShortCapacity + 2, SizeType, L),
+                        "bool", L), Adjust, Allocate, L);
+          label(Adjust, L);
+          assign(AllocationBytes,
+                 binary("+", json::Object(AllocationBytes),
+                        quantity(String->AlternateLayout ? 1 : 2, SizeType, L),
+                        SizeType, L), L);
+          jump(Allocate, L);
+          label(Allocate, L);
           const auto *New = A.allocatorHeapFunction(true, A.Context.CharTy, L);
           json::Array NewArgs;
           NewArgs.push_back(json::Object(AllocationBytes));
@@ -9125,7 +9172,7 @@ class FunctionLowering {
           const auto Check = labelName(), Advance = labelName(), Copied = labelName();
           jump(Check, L);
           label(Check, L);
-          branch(binary("<", json::Object(Count), json::Object(Size),
+          branch(binary("<=", json::Object(Count), json::Object(Size),
                         "bool", L), Advance, Copied, L);
           label(Advance, L);
           assign(dereference(json::Object(TargetCurrent), L),
@@ -9166,10 +9213,13 @@ class FunctionLowering {
           assign(Word(FlagName),
                  binary("|", json::Object(AllocationBytes),
                         quantity(LongFlag, SizeType, L), SizeType, L), L);
+          assign(Word("nct_string_word1"), json::Object(Size), L);
           assign(Data, json::Object(NewData), L);
           assign(IsLong, boolean(true, L), L);
           jump(Write, L);
           label(Write, L);
+          if (Operation == UtilityOperation::StringReserve)
+            return {};
           const auto LongSize = labelName(), ShortSize = labelName(),
                      Sized = labelName();
           branch(json::Object(IsLong), LongSize, ShortSize, L);
@@ -9195,10 +9245,36 @@ class FunctionLowering {
                         std::move(Encoded), SizeType, L), L);
           jump(Sized, L);
           label(Sized, L);
-          assign(dereference(binary("+", json::Object(Data),
-                                    cast(json::Object(Size), DifferenceType, L),
-                                    PointerType, L), L),
-                 std::move(Character), L);
+          if (Operation == UtilityOperation::StringPushBack) {
+            assign(dereference(binary("+", json::Object(Data),
+                                      cast(json::Object(Size), DifferenceType, L),
+                                      PointerType, L), L),
+                   json::Object(*CharacterArgument), L);
+          } else {
+            auto Current = temporary(PointerType, L);
+            auto Count = temporary(SizeType, L);
+            assign(Current,
+                   binary("+", json::Object(Data),
+                          cast(json::Object(Size), DifferenceType, L),
+                          PointerType, L), L);
+            assign(Count, json::Object(Size), L);
+            const auto Check = labelName(), Fill = labelName(), Filled = labelName();
+            jump(Check, L);
+            label(Check, L);
+            branch(binary("<", json::Object(Count), json::Object(NewSize),
+                          "bool", L), Fill, Filled, L);
+            label(Fill, L);
+            assign(dereference(json::Object(Current), L),
+                   json::Object(*CharacterArgument), L);
+            assign(Current,
+                   binary("+", json::Object(Current),
+                          quantity(1, DifferenceType, L), PointerType, L), L);
+            assign(Count,
+                   binary("+", json::Object(Count), quantity(1, SizeType, L),
+                          SizeType, L), L);
+            jump(Check, L);
+            label(Filled, L);
+          }
         } else {
           assign(NewSize,
                  binary("-", json::Object(Size), quantity(1, SizeType, L),
@@ -9311,7 +9387,7 @@ class FunctionLowering {
       }
       if (Operation == UtilityOperation::StringData)
         return Data;
-      auto Index = cast(expression(Call->getArg(1)), DifferenceType, L);
+      auto Index = cast(std::move(*IndexArgument), DifferenceType, L);
       return dereference(binary("+", std::move(Data), std::move(Index),
                                 PointerType, L), L);
     }
