@@ -51497,4 +51497,61 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorPushAndPopRun) {
+  const auto Source = tmpFile("vector-push-pop.cpp");
+  const auto Output = tmpFile("vector-push-pop.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+Size allocated_bytes;
+int allocations;
+int releases;
+void *operator new(Size n) {
+  ++allocations;
+  allocated_bytes += n;
+  return malloc(n);
+}
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <vector>
+int main() {
+  {
+    std::vector<int> values;
+    int source = 10;
+    values.push_back(source);
+    source = 99;
+    if (values.size() != 1 || values.capacity() != 1 || values.front() != 10)
+      return 1;
+    values.push_back(values.front());
+    values.push_back(30);
+    values.push_back(40);
+    if (values.size() != 4 || values.capacity() != 4 ||
+        values[0] != 10 || values[1] != 10 ||
+        values[2] != 30 || values[3] != 40)
+      return 2;
+    values.pop_back();
+    if (values.size() != 3 || values.capacity() != 4 || values.back() != 30)
+      return 3;
+    values.clear();
+    values.push_back(50);
+    if (values.size() != 1 || values.capacity() != 4 ||
+        values.front() != 50 || allocations != 3 || releases != 2)
+      return 4;
+  }
+  return allocations == 3 && releases == 3 && allocated_bytes == 28 ? 0 : 5;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o",
+                                   Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-push-pop" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 } // namespace

@@ -15624,7 +15624,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                       : nullptr;
     const unsigned Offset = Operator ? 1 : 0;
     const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
-    if (!Reference || !Object || !Prototype || !Prototype->isNothrow() ||
+    const llvm::StringRef Name = Method->getIdentifier()
+                                     ? Method->getIdentifier()->getName()
+                                     : llvm::StringRef();
+    if (!Reference || !Object || !Prototype ||
+        (!Prototype->isNothrow() && Name != "push_back" &&
+         Name != "pop_back") ||
         Method->isStatic() || Method->isVariadic() || !Method->hasBody() ||
         Method->getRefQualifier() != RQ_None ||
         Method->getParent()->getCanonicalDecl() !=
@@ -15637,9 +15642,6 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                        "__vector/vector.h") ||
         !S.owns(SM, Reference->getExprLoc()))
       return std::nullopt;
-    const llvm::StringRef Name = Method->getIdentifier()
-                                     ? Method->getIdentifier()->getName()
-                                     : llvm::StringRef();
     if (!Operator && !Method->getNumParams() && Method->isConst() &&
         Call->isPRValue() &&
         Context.hasSameType(Call->getType(), Method->getReturnType())) {
@@ -15687,6 +15689,30 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         !Call->getNumArgs() && Method->getReturnType()->isVoidType() &&
         Call->getType()->isVoidType())
       return UtilityOperation::VectorClear;
+    if (!Operator && !Method->isConst() &&
+        !Object->getType().isConstQualified() &&
+        Method->getReturnType()->isVoidType() &&
+        Call->getType()->isVoidType()) {
+      if (Name == "pop_back" && !Method->getNumParams() &&
+          !Call->getNumArgs())
+        return UtilityOperation::VectorPopBack;
+      if (Name == "push_back" && Method->getNumParams() == 1 &&
+          Call->getNumArgs() == 1) {
+        const auto Parameter = Method->getParamDecl(0)->getType();
+        const bool Copy =
+            Parameter->isLValueReferenceType() &&
+            Context.hasSameType(Parameter->getPointeeType(),
+                                Vector->ElementType.withConst());
+        const bool Move =
+            Parameter->isRValueReferenceType() &&
+            Context.hasSameType(Parameter->getPointeeType(),
+                                Vector->ElementType);
+        if ((Copy || Move) &&
+            Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
+                                           Vector->ElementType))
+          return UtilityOperation::VectorPushBack;
+      }
+    }
     return std::nullopt;
   }
   const auto StringView = approvedUtilityStringViewRecord(

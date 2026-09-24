@@ -862,6 +862,8 @@ enum class UtilityOperation {
   VectorFront,
   VectorBack,
   VectorClear,
+  VectorPushBack,
+  VectorPopBack,
   StringViewMaxSize,
   StringViewEmpty,
   StringViewData,
