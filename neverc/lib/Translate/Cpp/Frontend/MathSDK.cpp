@@ -2020,8 +2020,11 @@ approvedMemoryTemplateMetadata(const State &S, const SourceManager &SM,
       cstddefOrigin(S, SM, CanonicalTemplate->getLocation(), "libcxx",
                     "__memory/unique_ptr.h"))
     return MemoryTemplateMetadata::UniquePtr;
-  if (Name == "allocator" && OneTypeArgument() &&
-      cstddefOrigin(S, SM, Template->getLocation(), "libcxx",
+  const auto *AllocatorDefinition =
+      Template->getTemplatedDecl()->getDefinition();
+  if (Name == "allocator" && OneTypeArgument() && AllocatorDefinition &&
+      approvedStandardSDKDeclaration(S, SM, AllocatorDefinition) &&
+      cstddefOrigin(S, SM, AllocatorDefinition->getLocation(), "libcxx",
                     "__memory/allocator.h") &&
       cstddefOrigin(S, SM, CanonicalTemplate->getLocation(), "libcxx",
                     "__fwd/memory.h")) {
@@ -4217,6 +4220,150 @@ approvedUtilityStringViewRecord(const State &S, const SourceManager &SM,
           Context.getTypeAlign(Pointer))
     return std::nullopt;
   return UtilityStringViewRecord{View, Data, Size};
+}
+
+std::optional<UtilityVectorRecord>
+approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
+                            const CXXRecordDecl *Record,
+                            const ASTContext &Context) {
+  const auto *Vector = Record ? Record->getDefinition() : nullptr;
+  const auto *Specialization =
+      dyn_cast_or_null<ClassTemplateSpecializationDecl>(Vector);
+  if (!S.coreV2() || !Vector || !Specialization ||
+      Vector->getName() != "vector" || Vector->isInvalidDecl() ||
+      Vector->isUnion() || Vector->isDependentContext() ||
+      Vector->getNumBases() || Vector->isDynamicClass() ||
+      !Vector->isStandardLayout() ||
+      Specialization->getSpecializationKind() != TSK_ImplicitInstantiation ||
+      !approvedStandardSDKDeclaration(S, SM, Vector) ||
+      !cstddefOrigin(S, SM, Vector->getLocation(), "libcxx",
+                     "__vector/vector.h"))
+    return std::nullopt;
+  const auto &Arguments = Specialization->getTemplateArgs();
+  if (Arguments.size() != 2 ||
+      Arguments.get(0).getKind() != TemplateArgument::Type ||
+      Arguments.get(1).getKind() != TemplateArgument::Type)
+    return std::nullopt;
+  const auto Element = Arguments.get(0).getAsType();
+  if (Element.isNull() || Element.isConstQualified() ||
+      Element.isVolatileQualified() || Element->isBooleanType() ||
+      !(Element->isIntegerType() || Element->isFloatingType()) ||
+      Element->isIncompleteType())
+    return std::nullopt;
+  const auto Pointer = Context.getPointerType(Element);
+  const auto Allocator = approvedUtilityAllocatorRecord(
+      S, SM, Arguments.get(1).getAsType()->getAsCXXRecordDecl(), Context);
+  if (!Allocator || !Context.hasSameType(Allocator->ElementType, Element))
+    return std::nullopt;
+  std::vector<const FieldDecl *> Fields;
+  for (const auto *Field : Vector->fields())
+    Fields.push_back(Field);
+  if (Fields.size() != 6 || Fields[0]->getName() != "__begin_" ||
+      Fields[1]->getName() != "__end_" ||
+      Fields[2]->getName() != "__cap_" ||
+      Fields[3]->getName() != "__padding1_550_" ||
+      Fields[4]->getName() != "__alloc_" ||
+      Fields[5]->getName() != "__padding2_550_" ||
+      !Context.hasSameType(Fields[0]->getType(), Pointer) ||
+      !Context.hasSameType(Fields[1]->getType(), Pointer) ||
+      !Context.hasSameType(Fields[2]->getType(), Pointer) ||
+      !Context.hasSameType(Fields[4]->getType(),
+                           Arguments.get(1).getAsType()))
+    return std::nullopt;
+  for (unsigned I = 0; I != Fields.size(); ++I) {
+    const auto *Field = Fields[I];
+    if (Field->getAccess() != AS_private || Field->isBitField() ||
+        Field->isMutable() ||
+        ((I != 3 && I != 5) &&
+         (!approvedStandardSDKDeclaration(S, SM, Field) ||
+          !cstddefOrigin(S, SM, Field->getLocation(), "libcxx",
+                         "__vector/vector.h"))))
+      return std::nullopt;
+  }
+  auto Padding = [&](const FieldDecl *Field, QualType Padded) {
+    const auto *Definition = Field->getType()->getAsCXXRecordDecl()
+                                 ? Field->getType()->getAsCXXRecordDecl()->getDefinition()
+                                 : nullptr;
+    const auto *Instance =
+        dyn_cast_or_null<ClassTemplateSpecializationDecl>(Definition);
+    if (!Definition || !Instance ||
+        Definition->getName() != "__compressed_pair_padding" ||
+        !Definition->field_empty() || Definition->getNumBases() ||
+        !Definition->isEmpty() ||
+        !approvedStandardSDKDeclaration(S, SM, Definition) ||
+        !cstddefOrigin(S, SM, Definition->getLocation(), "libcxx",
+                       "__memory/compressed_pair.h"))
+      return false;
+    const auto &Args = Instance->getTemplateArgs();
+    const auto &Layout = Context.getASTRecordLayout(Definition);
+    return Args.size() == 2 && Args.get(0).getKind() == TemplateArgument::Type &&
+           Context.hasSameType(Args.get(0).getAsType(), Padded) &&
+           Layout.getSize().getQuantity() == 1 &&
+           Layout.getAlignment().getQuantity() == 1;
+  };
+  if (!Padding(Fields[3], Pointer) ||
+      !Padding(Fields[5], Fields[4]->getType()))
+    return std::nullopt;
+  const auto &Layout = Context.getASTRecordLayout(Vector);
+  const uint64_t PointerBits = Context.getTypeSize(Pointer);
+  if (Layout.getFieldCount() != 6 || Layout.getFieldOffset(0) != 0 ||
+      Layout.getFieldOffset(1) != PointerBits ||
+      Layout.getFieldOffset(2) != 2 * PointerBits ||
+      Layout.getFieldOffset(3) != 0 ||
+      Layout.getFieldOffset(4) != 0 || Layout.getFieldOffset(5) != 0 ||
+      uint64_t(Layout.getSize().getQuantity()) * 8 != 3 * PointerBits ||
+      uint64_t(Layout.getAlignment().getQuantity()) * 8 !=
+          Context.getTypeAlign(Pointer))
+    return std::nullopt;
+  return UtilityVectorRecord{Vector, Element, Pointer};
+}
+
+std::optional<UtilityVectorConstruction>
+approvedUtilityVectorConstruction(const State &S, const SourceManager &SM,
+                                  const CXXConstructExpr *Construction,
+                                  const ASTContext &Context) {
+  if (!Construction || Construction->isTypeDependent() ||
+      Construction->isValueDependent() ||
+      Construction->isInstantiationDependent() ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete)
+    return std::nullopt;
+  const auto Vector = approvedUtilityVectorRecord(
+      S, SM, Construction->getType()->getAsCXXRecordDecl(), Context);
+  const auto *Constructor = Construction->getConstructor();
+  if (!Vector || !Constructor || Constructor->isVariadic() ||
+      Constructor->getParent()->getCanonicalDecl() !=
+          Vector->Record->getCanonicalDecl() ||
+      Construction->getNumArgs() != Constructor->getNumParams() ||
+      !Constructor->hasBody() ||
+      !approvedStandardSDKDeclaration(S, SM, Constructor) ||
+      !cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx",
+                     "__vector/vector.h"))
+    return std::nullopt;
+  if (Constructor->isDefaultConstructor() && !Construction->getNumArgs())
+    return UtilityVectorConstruction::Default;
+  if (Construction->getNumArgs() != 1 ||
+      !Context.hasSameType(Constructor->getParamDecl(0)->getType(),
+                           Context.getSizeType()) ||
+      !Context.hasSameType(Construction->getArg(0)->getType(),
+                           Context.getSizeType()) ||
+      Construction->getArg(0)->HasSideEffects(Context))
+    return std::nullopt;
+  Expr::EvalResult Evaluated;
+  if (!Construction->getArg(0)->EvaluateAsInt(Evaluated, Context) ||
+      !Evaluated.Val.isInt() ||
+      Evaluated.Val.getInt().getLimitedValue(65537) > 65536)
+    return std::nullopt;
+  return UtilityVectorConstruction::Count;
+}
+
+bool approvedUtilityVectorDestructor(const State &S, const SourceManager &SM,
+                                     const CXXDestructorDecl *Destructor,
+                                     const ASTContext &Context) {
+  return Destructor && !Destructor->isVirtual() && Destructor->hasBody() &&
+         approvedUtilityVectorRecord(S, SM, Destructor->getParent(), Context) &&
+         approvedStandardSDKDeclaration(S, SM, Destructor) &&
+         cstddefOrigin(S, SM, Destructor->getLocation(), "libcxx",
+                        "__vector/vector.h");
 }
 
 std::optional<UtilityStringViewConstruction>
@@ -15441,6 +15588,65 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Context.hasSameType(Call->getType(), Iterator))
       return Name == "begin" ? UtilityOperation::InitializerListBegin
                              : UtilityOperation::InitializerListEnd;
+    return std::nullopt;
+  }
+  const auto Vector = approvedUtilityVectorRecord(
+      S, SM, Method ? Method->getParent() : nullptr, Context);
+  if (Method && Vector) {
+    const auto *Reference = directMethodReference(Call);
+    const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+    const auto *MemberCall = dyn_cast<CXXMemberCallExpr>(Call);
+    const Expr *Object = Operator && Call->getNumArgs() ? Call->getArg(0)
+                         : MemberCall ? MemberCall->getImplicitObjectArgument()
+                                      : nullptr;
+    const unsigned Offset = Operator ? 1 : 0;
+    const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
+    if (!Reference || !Object || !Prototype || !Prototype->isNothrow() ||
+        Method->isStatic() || Method->isVariadic() || !Method->hasBody() ||
+        Method->getRefQualifier() != RQ_None ||
+        Method->getParent()->getCanonicalDecl() !=
+            Vector->Record->getCanonicalDecl() ||
+        !Context.hasSameUnqualifiedType(
+            Object->getType(), Context.getRecordType(Vector->Record)) ||
+        Call->getNumArgs() != Method->getNumParams() + Offset ||
+        !approvedStandardSDKDeclaration(S, SM, Method) ||
+        !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
+                       "__vector/vector.h") ||
+        !S.owns(SM, Reference->getExprLoc()))
+      return std::nullopt;
+    const llvm::StringRef Name = Method->getIdentifier()
+                                     ? Method->getIdentifier()->getName()
+                                     : llvm::StringRef();
+    if (!Operator && !Method->getNumParams() && Method->isConst() &&
+        Call->isPRValue() &&
+        Context.hasSameType(Call->getType(), Method->getReturnType())) {
+      if (Context.hasSameType(Method->getReturnType(), Context.getSizeType())) {
+        if (Name == "size")
+          return UtilityOperation::VectorSize;
+        if (Name == "capacity")
+          return UtilityOperation::VectorCapacity;
+      }
+      if (Name == "empty" && Method->getReturnType()->isBooleanType())
+        return UtilityOperation::VectorEmpty;
+    }
+    if (!Operator && Name == "data" && !Method->getNumParams() &&
+        Call->isPRValue() &&
+        Context.hasSameType(Call->getType(), Method->getReturnType()) &&
+        Context.hasSameType(Method->getReturnType(),
+            Context.getPointerType(Method->isConst()
+                                       ? Vector->ElementType.withConst()
+                                       : Vector->ElementType)))
+      return UtilityOperation::VectorData;
+    if (Operator && Method->getOverloadedOperator() == OO_Subscript &&
+        Call->getNumArgs() == 2 && Method->getNumParams() == 1 &&
+        Context.hasSameType(Method->getParamDecl(0)->getType(),
+                            Context.getSizeType()) &&
+        Context.hasSameType(Call->getArg(1)->getType(), Context.getSizeType()) &&
+        Method->getReturnType()->isLValueReferenceType() && Call->isLValue() &&
+        Context.hasSameUnqualifiedType(
+            Method->getReturnType()->getPointeeType(), Vector->ElementType) &&
+        Context.hasSameUnqualifiedType(Call->getType(), Vector->ElementType))
+      return UtilityOperation::VectorSubscript;
     return std::nullopt;
   }
   const auto StringView = approvedUtilityStringViewRecord(

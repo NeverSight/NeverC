@@ -51339,4 +51339,62 @@ TEST_F(TranslateTest, RelocatingTheInputRootPreservesNormalizedArtifacts) {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorCountConstructionAndLifetimeRun) {
+  const auto Source = tmpFile("vector-count.cpp");
+  const auto Output = tmpFile("vector-count.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+Size allocated_size;
+int allocations;
+int releases;
+void *operator new(Size n) {
+  ++allocations;
+  allocated_size = n;
+  return malloc(n);
+}
+void operator delete(void *p) noexcept {
+  ++releases;
+  free(p);
+}
+#include <vector>
+int main() {
+  {
+    std::vector<int> empty;
+    if (!empty.empty() || empty.size() != 0 || empty.capacity() != 0 ||
+        empty.data() != nullptr)
+      return 1;
+    std::vector<int> zero(0);
+    if (!zero.empty() || zero.data() != nullptr)
+      return 2;
+    std::vector<int> values(3);
+    if (values.size() != 3 || values.capacity() != 3 || values.empty() ||
+        !values.data())
+      return 2;
+    values[0] = 4;
+    values[1] = 5;
+    values[2] = 6;
+    const std::vector<int> &view = values;
+    if (view.size() != 3 || view.data()[2] != 6 || view[1] != 5)
+      return 3;
+    if (values[0] + values[1] + values[2] != 15)
+      return 3;
+  }
+  return allocations == 1 && releases == 1 && allocated_size == 12 ? 0 : 4;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o",
+                                   Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-count" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 } // namespace

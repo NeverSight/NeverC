@@ -1653,6 +1653,11 @@ class FunctionLowering {
           A.S, A.Sources, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(),
           A.Context);
     };
+    auto VectorFor = [&](QualType Type) {
+      return approvedUtilityVectorRecord(
+          A.S, A.Sources, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(),
+          A.Context);
+    };
     auto OptionalFor = [&](QualType Type) {
       return approvedUtilityOptionalRecord(
           A.S, A.Sources, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(),
@@ -8955,6 +8960,56 @@ class FunctionLowering {
                               : std::move(Begin),
                           *Reverse);
     }
+    case UtilityOperation::VectorSize:
+    case UtilityOperation::VectorCapacity:
+    case UtilityOperation::VectorEmpty:
+    case UtilityOperation::VectorData:
+    case UtilityOperation::VectorSubscript: {
+      const auto *Object = MemberObject();
+      auto Vector = Object ? VectorFor(Object->getType())
+                           : std::optional<UtilityVectorRecord>();
+      if (!Object || !Vector)
+        reject(L, "vector access", "The selected std::vector layout is unavailable.");
+      auto Base = lvalue(Object);
+      auto Member = [&](const char *Name) {
+        return Expression{{"kind", "member"},
+                          {"type", type(Vector->PointerType, L)},
+                          {"name", Name},
+                          {"args", json::Array{json::Object(Base)}},
+                          {"loc", A.loc(L)}};
+      };
+      auto Begin = Member("nct_vector_begin");
+      if (Operation == UtilityOperation::VectorData)
+        return cast(std::move(Begin), type(Call->getType(), L), L);
+      if (Operation == UtilityOperation::VectorSubscript) {
+        auto Index = expression(Call->getArg(1));
+        auto Pointer = binary("+", std::move(Begin),
+                              cast(std::move(Index),
+                                   type(A.Context.getPointerDiffType(), L), L),
+                              type(Vector->PointerType, L), L);
+        return dereference(std::move(Pointer), L);
+      }
+      auto End = Member(Operation == UtilityOperation::VectorCapacity
+                            ? "nct_vector_capacity"
+                            : "nct_vector_end");
+      if (Operation == UtilityOperation::VectorEmpty)
+        return snapshot(binary("==", std::move(Begin), std::move(End),
+                               "bool", L), L);
+      const auto SizeType = type(A.Context.getSizeType(), L);
+      auto Result = temporary(SizeType, L);
+      assign(Result, quantity(0, SizeType, L), L);
+      const auto Subtract = labelName(), Done = labelName();
+      branch(cast(json::Object(Begin), "bool", L), Subtract, Done, L);
+      label(Subtract, L);
+      assign(Result,
+             cast(binary("-", std::move(End), std::move(Begin),
+                         type(A.Context.getPointerDiffType(), L), L),
+                  SizeType, L),
+             L);
+      jump(Done, L);
+      label(Done, L);
+      return Result;
+    }
     case UtilityOperation::StringViewSize:
     case UtilityOperation::StringViewMaxSize:
     case UtilityOperation::StringViewEmpty:
@@ -11814,6 +11869,72 @@ class FunctionLowering {
       reject(L, "initializer list construction",
              "Unknown approved std::initializer_list construction.");
     }
+    if (auto Kind = approvedUtilityVectorConstruction(A.S, A.Sources, C,
+                                                     A.Context)) {
+      auto Vector = approvedUtilityVectorRecord(
+          A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context);
+      if (!Vector)
+        reject(L, "vector construction",
+               "The selected std::vector layout is unavailable.");
+      auto Member = [&](const char *Name) {
+        return Expression{{"kind", "member"},
+                          {"type", type(Vector->PointerType, L)},
+                          {"name", Name},
+                          {"args", json::Array{json::Object(Place)}},
+                          {"loc", A.loc(L)}};
+      };
+      for (const char *Name : {"nct_vector_begin", "nct_vector_end",
+                               "nct_vector_capacity"})
+        initializeZero(Member(Name), Vector->PointerType, L);
+      if (*Kind == UtilityVectorConstruction::Default)
+        return;
+      Expr::EvalResult Evaluated;
+      if (!C->getArg(0)->EvaluateAsInt(Evaluated, A.Context) ||
+          !Evaluated.Val.isInt())
+        reject(L, "vector construction", "A checked element count is required.");
+      const uint64_t Count = Evaluated.Val.getInt().getLimitedValue(65537);
+      if (!Count)
+        return;
+      const auto *Function = A.allocatorHeapFunction(true, Vector->ElementType, L);
+      const auto SizeType = type(A.Context.getSizeType(), L);
+      const auto PointerType = type(Vector->PointerType, L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const uint64_t Bytes =
+          Count * A.Context.getTypeSizeInChars(Vector->ElementType).getQuantity();
+      json::Array Args;
+      Args.push_back(quantity(Bytes, SizeType, L));
+      chargeCall(Args, L);
+      auto Allocation = temporary(type(Function->getReturnType(), L), L);
+      Body.push_back(json::Object{{"op", "call"},
+                                  {"callee", A.name(Function)},
+                                  {"args", std::move(Args)},
+                                  {"target", json::Object(Allocation)},
+                                  {"loc", A.loc(L)}});
+      auto Begin = snapshot(cast(std::move(Allocation), PointerType, L), L);
+      auto End = snapshot(binary("+", json::Object(Begin),
+                                 quantity(Count, DifferenceType, L),
+                                 PointerType, L), L);
+      assign(Member("nct_vector_begin"), json::Object(Begin), L);
+      assign(Member("nct_vector_end"), json::Object(End), L);
+      assign(Member("nct_vector_capacity"), std::move(End), L);
+      auto Current = temporary(PointerType, L);
+      assign(Current, std::move(Begin), L);
+      const auto Check = labelName(), Advance = labelName(), Done = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("!=", json::Object(Current),
+                    Member("nct_vector_end"), "bool", L),
+             Advance, Done, L);
+      label(Advance, L);
+      initializeZero(dereference(json::Object(Current), L),
+                     Vector->ElementType, L);
+      assign(Current,
+             binary("+", json::Object(Current),
+                    quantity(1, DifferenceType, L), PointerType, L), L);
+      jump(Check, L);
+      label(Done, L);
+      return;
+    }
     if (auto Kind = approvedUtilityStringViewConstruction(A.S, A.Sources, C,
                                                           A.Context)) {
       auto View = approvedUtilityStringViewRecord(
@@ -12947,13 +13068,20 @@ public:
     const auto *D = DestroyedRecord->getDestructor();
     const bool UniquePtrDestructor =
         approvedUtilityUniquePtrDestructor(A.S, A.Sources, D, A.Context);
+    const bool VectorDestructor =
+        approvedUtilityVectorDestructor(A.S, A.Sources, D, A.Context);
     if (approvedUtilityUniquePtrRecord(A.S, A.Sources, DestroyedRecord,
                                        A.Context) &&
         !UniquePtrDestructor)
       reject(D ? D->getLocation() : DestroyedRecord->getLocation(),
              "unique pointer destructor",
              "The pinned std::unique_ptr destructor definition is required.");
-    if (D && !UniquePtrDestructor && !D->isImplicit() &&
+    if (approvedUtilityVectorRecord(A.S, A.Sources, DestroyedRecord,
+                                    A.Context) && !VectorDestructor)
+      reject(D ? D->getLocation() : DestroyedRecord->getLocation(),
+             "vector destructor",
+             "The pinned std::vector destructor definition is required.");
+    if (D && !UniquePtrDestructor && !VectorDestructor && !D->isImplicit() &&
         !defaultedLifecycle(D)) {
       if (!ordinaryDestructor(D))
         reject(D->getLocation(), "destructor", "An admitted owned destructor definition is required.");
@@ -13033,6 +13161,46 @@ public:
         assign(std::move(Member), A.zero(Unique->PointerType, L), L);
         deallocateUniquePtr(std::move(Pointer), json::Object(*ThisPointer),
                             *Unique, L);
+      } else if (auto Vector = approvedUtilityVectorRecord(
+                     A.S, A.Sources, DestroyedRecord, A.Context)) {
+        auto Member = [&](const char *Name) {
+          return Expression{{"kind", "member"},
+                            {"type", type(Vector->PointerType, L)},
+                            {"name", Name},
+                            {"args", json::Array{dereference(*ThisPointer, L)}},
+                            {"loc", A.loc(L)}};
+        };
+        auto Begin = snapshot(Member("nct_vector_begin"), L);
+        const auto *Deallocate =
+            A.allocatorHeapFunction(false, Vector->ElementType, L);
+        const auto Release = labelName(), Done = labelName();
+        branch(cast(json::Object(Begin), "bool", L), Release, Done, L);
+        label(Release, L);
+        json::Array Args;
+        Args.push_back(cast(json::Object(Begin),
+                            type(Deallocate->getParamDecl(0)->getType(), L),
+                            L));
+        if (Deallocate->getNumParams() == 2) {
+          auto Capacity = snapshot(Member("nct_vector_capacity"), L);
+          auto Count = cast(binary("-", std::move(Capacity),
+                                   json::Object(Begin),
+                                   type(A.Context.getPointerDiffType(), L), L),
+                            type(A.Context.getSizeType(), L), L);
+          const uint64_t ElementBytes =
+              A.Context.getTypeSizeInChars(Vector->ElementType).getQuantity();
+          Args.push_back(cast(
+              binary("*", std::move(Count),
+                     quantity(ElementBytes, type(A.Context.getSizeType(), L), L),
+                     type(A.Context.getSizeType(), L), L),
+              type(Deallocate->getParamDecl(1)->getType(), L), L));
+        }
+        chargeCall(Args, L);
+        Body.push_back(json::Object{{"op", "call"},
+                                    {"callee", A.name(Deallocate)},
+                                    {"args", std::move(Args)},
+                                    {"loc", A.loc(L)}});
+        jump(Done, L);
+        label(Done, L);
       } else {
         destructionMembers();
       }
