@@ -9005,6 +9005,48 @@ class FunctionLowering {
                     type(Iterator->IteratorType, L), L), L);
       return Place;
     }
+    case UtilityOperation::StringMemberSwap:
+    case UtilityOperation::StringSwap: {
+      const Expr *LeftObject = Operation == UtilityOperation::StringMemberSwap
+                                   ? MemberObject()
+                                   : Call->getArg(0);
+      const Expr *RightObject = Operation == UtilityOperation::StringMemberSwap
+                                    ? Call->getArg(0)
+                                    : Call->getArg(1);
+      auto LeftString = LeftObject ? StringFor(LeftObject->getType())
+                                   : std::optional<UtilityStringRecord>();
+      auto RightString = RightObject ? StringFor(RightObject->getType())
+                                     : std::optional<UtilityStringRecord>();
+      if (!LeftString || !RightString ||
+          LeftString->Record->getCanonicalDecl() !=
+              RightString->Record->getCanonicalDecl())
+        reject(L, "string swap",
+               "The selected std::string layout is unavailable.");
+      auto LeftAddress = snapshot(
+          address(lvalue(LeftObject), LeftObject->getType(), L), L);
+      auto RightAddress = snapshot(
+          address(lvalue(RightObject), RightObject->getType(), L), L);
+      auto Word = [&](Expression Address, const char *Name) {
+        const bool PointerWord = LeftString->AlternateLayout
+                                     ? llvm::StringRef(Name) == "nct_string_word0"
+                                     : llvm::StringRef(Name) == "nct_string_word2";
+        return Expression{{"kind", "member"},
+                          {"type",
+                           type(PointerWord ? LeftString->PointerType
+                                            : A.Context.getSizeType(), L)},
+                          {"name", Name},
+                          {"args", json::Array{dereference(std::move(Address), L)}},
+                          {"loc", A.loc(L)}};
+      };
+      for (const char *Name : {"nct_string_word0", "nct_string_word1",
+                               "nct_string_word2"}) {
+        auto OldLeft = snapshot(Word(json::Object(LeftAddress), Name), L);
+        auto OldRight = snapshot(Word(json::Object(RightAddress), Name), L);
+        assign(Word(json::Object(LeftAddress), Name), std::move(OldRight), L);
+        assign(Word(json::Object(RightAddress), Name), std::move(OldLeft), L);
+      }
+      return {};
+    }
     case UtilityOperation::StringSize:
     case UtilityOperation::StringCapacity:
     case UtilityOperation::StringEmpty:

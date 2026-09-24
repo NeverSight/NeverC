@@ -52422,4 +52422,60 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringSwapRun) {
+  const auto Source = tmpFile("string-swap.cpp");
+  const auto Output = tmpFile("string-swap.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+int main() {
+  {
+    std::string short_left("ab");
+    std::string short_right("xy");
+    std::string long_left("abcdefghijklmnopqrstuvwxyz");
+    std::string long_right("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+    if (allocations != 2 || releases != 0) return 1;
+    short_left.swap(short_right);
+    if (short_left.size() != 2 || short_left[0] != 'x' ||
+        short_right.size() != 2 || short_right[0] != 'a')
+      return 2;
+    const char *left_data = long_left.data();
+    const char *right_data = long_right.data();
+    short_left.swap(long_left);
+    if (short_left.data() != left_data || short_left[25] != 'z' ||
+        long_left.size() != 2 || long_left[0] != 'x')
+      return 3;
+    std::swap(short_left, long_right);
+    if (short_left.data() != right_data || short_left[25] != 'Z' ||
+        long_right.data() != left_data || long_right[25] != 'z')
+      return 4;
+    long_right.swap(long_right);
+    short_right.swap(long_left);
+    if (long_right.data() != left_data || long_right[25] != 'z' ||
+        short_right[0] != 'x' || long_left[0] != 'a' ||
+        allocations != 2 || releases != 0)
+      return 5;
+  }
+  return allocations == 2 && releases == 2 ? 0 : 6;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-swap" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 } // namespace

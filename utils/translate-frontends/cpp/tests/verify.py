@@ -29073,6 +29073,9 @@ int main() {
   joined += "c";
   joined += suffix;
   joined += joined;
+  std::string swapped("z");
+  joined.swap(swapped);
+  std::swap(joined, swapped);
   return intact && emptied && assigned.size() == 14 &&
          assigned[0] == 'x' && assigned[2] == 'a' &&
          assigned[3] == 'b' && assigned[4] == 'c' && assigned[5] == 'd' &&

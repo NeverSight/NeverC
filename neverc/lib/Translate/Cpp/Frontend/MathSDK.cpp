@@ -16156,6 +16156,18 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         !Call->getNumArgs() && Method->getReturnType()->isVoidType() &&
         Call->getType()->isVoidType())
       return UtilityOperation::StringClear;
+    if (!Operator && Name == "swap" && !Method->isConst() &&
+        !Object->getType().isConstQualified() &&
+        Method->getNumParams() == 1 && Call->getNumArgs() == 1 &&
+        Method->getReturnType()->isVoidType() &&
+        Call->getType()->isVoidType() &&
+        Method->getParamDecl(0)->getType()->isLValueReferenceType() &&
+        Context.hasSameType(
+            Method->getParamDecl(0)->getType()->getPointeeType(),
+            Context.getRecordType(String->Record)) &&
+        Context.hasSameUnqualifiedType(
+            Call->getArg(0)->getType(), Context.getRecordType(String->Record)))
+      return UtilityOperation::StringMemberSwap;
     if ((!Operator && Name == "append") || PlusEqual) {
       const unsigned Argument = PlusEqual ? 1 : 0;
       if (Method->isConst() || Object->getType().isConstQualified() ||
@@ -16873,6 +16885,31 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   const llvm::StringRef Name = Function->getIdentifier()
                                    ? Function->getIdentifier()->getName()
                                    : llvm::StringRef();
+  if (Origin->Path == "string" && Name == "swap" &&
+      Function->isInlined() && Call->getNumArgs() == 2 &&
+      Function->getNumParams() == 2 &&
+      Function->getReturnType()->isVoidType() &&
+      Call->getType()->isVoidType()) {
+    const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
+    const auto Left = approvedUtilityStringRecord(
+        S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
+    const auto Right = approvedUtilityStringRecord(
+        S, SM, Call->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
+    if (Prototype && Prototype->isNothrow() && Left && Right &&
+        Left->Record->getCanonicalDecl() ==
+            Right->Record->getCanonicalDecl()) {
+      const auto StringType = Context.getRecordType(Left->Record);
+      for (unsigned I = 0; I != 2; ++I) {
+        const auto Parameter = Function->getParamDecl(I)->getType();
+        if (!Parameter->isLValueReferenceType() ||
+            !Context.hasSameType(Parameter->getPointeeType(), StringType) ||
+            !Context.hasSameUnqualifiedType(Call->getArg(I)->getType(),
+                                             StringType))
+          return std::nullopt;
+      }
+      return UtilityOperation::StringSwap;
+    }
+  }
   if (Origin->Path == "string_view" && Call->getNumArgs() == 2 &&
       Function->getNumParams() == 2 && Function->isConstexpr() &&
       Call->isPRValue() && Function->getReturnType()->isBooleanType() &&
