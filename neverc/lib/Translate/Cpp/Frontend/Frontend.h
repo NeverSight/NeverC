@@ -878,6 +878,8 @@ enum class UtilityOperation {
   StringMemberSwap,
   StringSwap,
   StringCompare,
+  StringCompareCString,
+  StringCStringRelation,
   StringEqual,
   StringNotEqual,
   StringLess,

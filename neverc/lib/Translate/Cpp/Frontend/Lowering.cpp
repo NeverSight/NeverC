@@ -10632,6 +10632,8 @@ class FunctionLowering {
       return {};
     }
     case UtilityOperation::StringCompare:
+    case UtilityOperation::StringCompareCString:
+    case UtilityOperation::StringCStringRelation:
     case UtilityOperation::StringEqual:
     case UtilityOperation::StringNotEqual:
     case UtilityOperation::StringLess:
@@ -10647,6 +10649,8 @@ class FunctionLowering {
     case UtilityOperation::StringViewGreaterEqual: {
       const bool StringComparison =
           Operation == UtilityOperation::StringCompare ||
+          Operation == UtilityOperation::StringCompareCString ||
+          Operation == UtilityOperation::StringCStringRelation ||
           Operation == UtilityOperation::StringEqual ||
           Operation == UtilityOperation::StringNotEqual ||
           Operation == UtilityOperation::StringLess ||
@@ -10654,14 +10658,25 @@ class FunctionLowering {
           Operation == UtilityOperation::StringLessEqual ||
           Operation == UtilityOperation::StringGreaterEqual;
       const bool Member = Operation == UtilityOperation::StringCompare ||
+                          Operation == UtilityOperation::StringCompareCString ||
                           Operation == UtilityOperation::StringViewCompare;
       const auto *Object = Member ? MemberObject() : Call->getArg(0);
+      const auto *LeftValue = Object;
+      const auto *RightValue = Call->getArg(Member ? 0 : 1);
+      const bool LeftCString =
+          Operation == UtilityOperation::StringCStringRelation && LeftValue &&
+          LeftValue->getType()->isPointerType();
+      const bool RightCString =
+          Operation == UtilityOperation::StringCompareCString ||
+          (Operation == UtilityOperation::StringCStringRelation &&
+           !LeftCString);
       auto View = Object && !StringComparison
                       ? StringViewFor(Object->getType())
                       : std::optional<UtilityStringViewRecord>();
-      auto String = Object && StringComparison
-                        ? StringFor(Object->getType())
-                        : std::optional<UtilityStringRecord>();
+      auto String =
+          Object && StringComparison
+              ? StringFor((LeftCString ? RightValue : LeftValue)->getType())
+              : std::optional<UtilityStringRecord>();
       if (!Object || (StringComparison ? !String : !View))
         reject(L, "string comparison",
                "The selected std::string layout is unavailable.");
@@ -10733,8 +10748,37 @@ class FunctionLowering {
           return std::pair<Expression, Expression>{std::move(Data),
                                                    std::move(Size)};
         };
-        auto Left = ReadString(Object);
-        auto Right = ReadString(Call->getArg(Member ? 0 : 1));
+        auto ReadCString = [&](const Expr *Value) {
+          auto Data = snapshot(expression(Value), L);
+          auto Cursor = temporary(PointerType, L);
+          auto Size = temporary(SizeType, L);
+          assign(Cursor, json::Object(Data), L);
+          assign(Size, quantity(0, SizeType, L), L);
+          const auto Check = labelName(), Advance = labelName();
+          const auto Ready = labelName();
+          jump(Check, L);
+          label(Check, L);
+          branch(binary("==", dereference(json::Object(Cursor), L),
+                        quantity(0, type(A.Context.CharTy, L), L), "bool", L),
+                 Ready, Advance, L);
+          label(Advance, L);
+          assign(Cursor,
+                 binary("+", json::Object(Cursor),
+                        quantity(1, DifferenceType, L), PointerType, L),
+                 L);
+          assign(Size,
+                 binary("+", json::Object(Size), quantity(1, SizeType, L),
+                        SizeType, L),
+                 L);
+          jump(Check, L);
+          label(Ready, L);
+          return std::pair<Expression, Expression>{std::move(Data),
+                                                   std::move(Size)};
+        };
+        auto Left =
+            LeftCString ? ReadCString(LeftValue) : ReadString(LeftValue);
+        auto Right =
+            RightCString ? ReadCString(RightValue) : ReadString(RightValue);
         LeftData = std::move(Left.first);
         LeftSize = std::move(Left.second);
         RightData = std::move(Right.first);
@@ -10830,6 +10874,32 @@ class FunctionLowering {
         return Result;
       const char *Relation = nullptr;
       switch (Operation) {
+      case UtilityOperation::StringCStringRelation: {
+        const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+        switch (Operator ? Operator->getOperator() : OO_None) {
+        case OO_EqualEqual:
+          Relation = "==";
+          break;
+        case OO_ExclaimEqual:
+          Relation = "!=";
+          break;
+        case OO_Less:
+          Relation = "<";
+          break;
+        case OO_Greater:
+          Relation = ">";
+          break;
+        case OO_LessEqual:
+          Relation = "<=";
+          break;
+        case OO_GreaterEqual:
+          Relation = ">=";
+          break;
+        default:
+          break;
+        }
+        break;
+      }
       case UtilityOperation::StringEqual:
       case UtilityOperation::StringViewEqual:
         Relation = "==";

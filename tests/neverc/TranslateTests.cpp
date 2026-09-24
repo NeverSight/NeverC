@@ -52709,4 +52709,68 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringCStringComparisonRun) {
+  const auto Source = tmpFile("string-cstring-comparison.cpp");
+  const auto Output = tmpFile("string-cstring-comparison.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <string>
+int evaluations;
+const char *value() { ++evaluations; return "abc"; }
+int main() {
+  const std::string text("abc");
+  if (!(text == "abc") || !("abc" == text) ||
+      !(text != "abd") || !("abd" != text) ||
+      !(text < "abd") || !("abb" < text) ||
+      !(text > "abb") || !("abd" > text) ||
+      !(text <= "abc") || !("abc" <= text) ||
+      !(text >= "abc") || !("abc" >= text))
+    return 1;
+  if (text.compare("abc") != 0 || text.compare("ab") <= 0 ||
+      text.compare("abcd") >= 0 ||
+      text == "ab" || "abcd" == text ||
+      text < "abb" || "abd" < text)
+    return 2;
+  if (text.compare(value()) != 0 || evaluations != 1 ||
+      !(text == value()) || evaluations != 2 ||
+      !(value() == text) || evaluations != 3)
+    return 3;
+  const char embedded[] = {'a', 0, 'b'};
+  const std::string with_nul(embedded, 3);
+  if (with_nul == "a" || !(with_nul > "a") ||
+      !("a" < with_nul) || with_nul.compare("a") <= 0)
+    return 4;
+  const char high_byte[] = {char(0x80), 0};
+  const char low_byte[] = {char(0x7f), 0};
+  const std::string high(high_byte);
+  if (!(high > low_byte) || !(low_byte < high) ||
+      high.compare(low_byte) <= 0)
+    return 5;
+  const std::string long_text("abcdefghijklmnopqrstuvwxyz");
+  if (!(long_text == "abcdefghijklmnopqrstuvwxyz") ||
+      !("abcdefghijklmnopqrstuvwxyz" == long_text) ||
+      long_text.compare("abcdefghijklmnopqrstuvwxyz") != 0 ||
+      !(long_text < "abcdefghijklmnopqrstuvwxzz") ||
+      !("abcdefghijklmnopqrstuvwxzz" > long_text))
+    return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-cstring-comparison" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 } // namespace

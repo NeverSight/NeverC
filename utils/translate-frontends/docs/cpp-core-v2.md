@@ -2237,6 +2237,8 @@ Positional `erase(pos, count)` and its default arguments remove bytes in place,
 retain capacity, and return the receiver reference.
 `compare(const std::string&)` and the six string/string relation operators
 compare unsigned bytes lexicographically, then lengths, without allocating.
+`compare(const char*)` and the twelve string/C-string relation overloads scan
+the zero-terminated argument once and use the same byte comparison.
 The frontend checks the pinned libc++ representation before emitting three
 storage words, including the alternate short-string layout selected on Apple
 arm64. Short strings stay inline, while long strings use the selected

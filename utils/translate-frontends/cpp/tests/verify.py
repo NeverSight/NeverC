@@ -29098,6 +29098,13 @@ int main() {
                         compared >= compared_same &&
                         compared.compare(compared_same) == 0 &&
                         compared.compare(compared_later) < 0;
+  bool cstring_compare_intact = compared == "abc" && "abc" == compared &&
+                                compared != "abd" && "abd" != compared &&
+                                compared < "abd" && "abb" < compared &&
+                                compared > "abb" && "abd" > compared &&
+                                compared <= "abc" && "abc" <= compared &&
+                                compared >= "abc" && "abc" >= compared &&
+                                compared.compare("abc") == 0;
   return intact && emptied && assigned.size() == 14 &&
          assigned[0] == 'x' && assigned[2] == 'a' &&
          assigned[3] == 'b' && assigned[4] == 'c' && assigned[5] == 'd' &&
@@ -29109,6 +29116,7 @@ int main() {
          reassigned.size() == 2 && reassigned[0] == 'a' &&
          reassigned[1] == 'a' &&
          erase_intact && erased.empty() && compare_intact &&
+         cstring_compare_intact &&
          assigned.capacity() >= requested_capacity
              ? 0 : 1;
 }
