@@ -29046,8 +29046,14 @@ int main() {
   std::string empty;
   std::string short_text("hello");
   std::string long_text("abcdefghijklmnopqrstuvwxyz");
+  std::string copied(long_text);
+  std::string assigned;
+  assigned = copied;
+  std::string moved(static_cast<std::string&&>(copied));
+  assigned = static_cast<std::string&&>(moved);
   return empty.empty() && short_text.size() == 5 &&
-         long_text[25] == 'z' ? 0 : 1;
+         long_text[25] == 'z' && assigned[25] == 'z' &&
+         copied.empty() && moved.empty() ? 0 : 1;
 }
 """
     for target in sdk_targets:

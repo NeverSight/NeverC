@@ -2216,15 +2216,18 @@ LLVM 20.1.8 source bytes and catalog hashes. Clang can fold constant
 `std::string` size and alignment queries and `npos`, and resolve its
 `size_type` alias. Authenticated `std::basic_string<char, std::char_traits<char>,
 std::allocator<char>>` objects now have direct lowering for default,
-`const char*`, and pointer-and-length construction; `size`, `length`, `empty`,
-`data`, `c_str`, subscript access, and destruction. The frontend checks the
-pinned libc++ representation before emitting three storage words, including
+`const char*`, pointer-and-length, copy and move construction; copy and move
+assignment; `size`, `length`, `empty`, `data`, `c_str`, subscript access, and
+destruction. The frontend checks the pinned libc++ representation before
+emitting three storage words, including
 the alternate short-string layout selected on Apple arm64. Short strings stay
 inline, while long strings use the selected source allocation and release
-functions. A host O0/O2 fixture exercises both representations, embedded NUL,
-mutable and const access, and lifetime release; all eight supported target
-triples pass frontend translation. Copy/move, modifiers, other character or
-allocator types, and throwing length/allocation paths remain unsupported.
+functions. Copy construction owns independent storage; copy assignment reuses
+existing capacity when possible. Moves transfer the representation and leave
+the source empty. Host O0/O2 fixtures exercise both representations, embedded
+NUL, mutable and const access, copy and move, and lifetime release; all eight
+supported target triples pass frontend translation. Modifiers, other character
+or allocator types, and throwing length/allocation paths remain unsupported.
 Quoted and shadow headers remain rejected.
 
 ## Vector header and metadata from `<vector>`

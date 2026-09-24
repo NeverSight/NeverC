@@ -4375,6 +4375,22 @@ approvedUtilityStringConstruction(const State &S, const SourceManager &SM,
     return std::nullopt;
   if (Constructor->isDefaultConstructor() && !Construction->getNumArgs())
     return UtilityStringConstruction::Default;
+  if (Construction->getNumArgs() == 1 &&
+      (Constructor->isCopyConstructor() || Constructor->isMoveConstructor()) &&
+      Context.hasSameUnqualifiedType(Construction->getArg(0)->getType(),
+                                     Construction->getType())) {
+    const auto Parameter = Constructor->getParamDecl(0)->getType();
+    const auto StringType = Context.getRecordType(String->Record);
+    if (Constructor->isCopyConstructor() &&
+        Parameter->isLValueReferenceType() &&
+        Context.hasSameType(Parameter->getPointeeType(),
+                            StringType.withConst()))
+      return UtilityStringConstruction::Copy;
+    if (Constructor->isMoveConstructor() &&
+        Parameter->isRValueReferenceType() &&
+        Context.hasSameType(Parameter->getPointeeType(), StringType))
+      return UtilityStringConstruction::Move;
+  }
   const auto ConstPointer = Context.getPointerType(Context.CharTy.withConst());
   if (Constructor->getNumParams() == 1 &&
       Context.hasSameType(Constructor->getParamDecl(0)->getType(),
@@ -4390,6 +4406,58 @@ approvedUtilityStringConstruction(const State &S, const SourceManager &SM,
       Context.hasSameType(Construction->getArg(1)->getType(),
                           Context.getSizeType()))
     return UtilityStringConstruction::PointerLength;
+  return std::nullopt;
+}
+
+std::optional<UtilityStringAssignment>
+approvedUtilityStringAssignment(const State &S, const SourceManager &SM,
+                                const CXXOperatorCallExpr *Assignment,
+                                const ASTContext &Context) {
+  if (!Assignment || Assignment->isTypeDependent() ||
+      Assignment->isValueDependent() ||
+      Assignment->isInstantiationDependent() ||
+      Assignment->getOperator() != OO_Equal || Assignment->getNumArgs() != 2 ||
+      !Assignment->isLValue())
+    return std::nullopt;
+  const auto *Method =
+      dyn_cast_or_null<CXXMethodDecl>(Assignment->getDirectCallee());
+  const auto String = approvedUtilityStringRecord(
+      S, SM, Method ? Method->getParent() : nullptr, Context);
+  const auto *Reference = directMethodReference(Assignment);
+  // The pinned out-of-line copy assignment can be selected without a
+  // visible instantiated body; its exact declaration is lowered directly.
+  if (!Method || !String || !Reference || Method->isStatic() ||
+      Method->isVariadic() ||
+      (!Method->hasBody() && !Method->isCopyAssignmentOperator()) ||
+      Method->getNumParams() != 1 || Method->getRefQualifier() != RQ_None ||
+      Method->getOverloadedOperator() != OO_Equal ||
+      Method->getParent()->getCanonicalDecl() !=
+          String->Record->getCanonicalDecl() ||
+      !approvedStandardSDKDeclaration(S, SM, Method) ||
+      !cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "string") ||
+      !S.owns(SM, Reference->getExprLoc()))
+    return std::nullopt;
+  const auto StringType = Context.getRecordType(String->Record);
+  const auto Parameter = Method->getParamDecl(0)->getType();
+  const auto Return = Method->getReturnType();
+  if (!Return->isLValueReferenceType() ||
+      !Context.hasSameType(Return->getPointeeType(), StringType) ||
+      !Context.hasSameUnqualifiedType(Assignment->getType(), StringType) ||
+      !Context.hasSameUnqualifiedType(Assignment->getArg(0)->getType(),
+                                      StringType) ||
+      Assignment->getArg(0)->getType().isConstQualified() ||
+      !Context.hasSameUnqualifiedType(Assignment->getArg(1)->getType(),
+                                      StringType))
+    return std::nullopt;
+  if (Method->isCopyAssignmentOperator() &&
+      Parameter->isLValueReferenceType() &&
+      Context.hasSameType(Parameter->getPointeeType(),
+                          StringType.withConst()))
+    return UtilityStringAssignment::Copy;
+  if (Method->isMoveAssignmentOperator() &&
+      Parameter->isRValueReferenceType() &&
+      Context.hasSameType(Parameter->getPointeeType(), StringType))
+    return UtilityStringAssignment::Move;
   return std::nullopt;
 }
 

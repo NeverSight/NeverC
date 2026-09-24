@@ -51873,4 +51873,115 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringCopyAndMoveConstructionRun) {
+  const auto Source = tmpFile("string-copy-move.cpp");
+  const auto Output = tmpFile("string-copy-move.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+int main() {
+  {
+    std::string short_source("hello");
+    const std::string &short_view = short_source;
+    std::string short_copy(short_view);
+    short_copy[0] = 'j';
+    if (short_source[0] != 'h' || short_copy[0] != 'j') return 1;
+    std::string moved_short(static_cast<std::string&&>(short_source));
+    if (moved_short.size() != 5 || moved_short[0] != 'h' ||
+        !short_source.empty() || short_source.data()[0] != 0) return 2;
+    std::string long_source("abcdefghijklmnopqrstuvwxyz");
+    const std::string &long_view = long_source;
+    std::string long_copy(long_view);
+    if (long_copy.size() != 26 || long_copy.data() == long_source.data()) return 3;
+    long_copy[0] = 'Z';
+    if (long_source[0] != 'a' || long_copy[0] != 'Z') return 4;
+    const char *old_data = long_source.data();
+    std::string moved_long(static_cast<std::string&&>(long_source));
+    if (moved_long.data() != old_data || moved_long.size() != 26 ||
+        moved_long[25] != 'z' || !long_source.empty() ||
+        long_source.data()[0] != 0) return 5;
+    if (allocations != 2 || releases != 0) return 6;
+  }
+  return allocations == 2 && releases == 2 ? 0 : 7;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o",
+                                   Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-copy-move" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StringCopyAndMoveAssignmentRun) {
+  const auto Source = tmpFile("string-assign.cpp");
+  const auto Output = tmpFile("string-assign.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+int main() {
+  {
+    std::string short_source("hello");
+    std::string target("world");
+    std::string &result = (target = short_source);
+    if (&result != &target || target.size() != 5 || target[0] != 'h') return 1;
+    target = target;
+    if (target[4] != 'o' || allocations != 0) return 2;
+    std::string long_source("abcdefghijklmnopqrstuvwxyz");
+    target = long_source;
+    if (target.size() != 26 || target.data() == long_source.data() ||
+        target[25] != 'z') return 3;
+    const char *saved = target.data();
+    target = short_source;
+    if (target.data() != saved || target.size() != 5 || target[0] != 'h') return 4;
+    target = long_source;
+    if (target.data() != saved || target.size() != 26 || target[25] != 'z') return 5;
+    std::string larger("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN");
+    target = larger;
+    if (target.size() != 40 || target.data() == larger.data() ||
+        target[39] != 'N') return 6;
+    std::string moved_short("abc");
+    target = static_cast<std::string&&>(moved_short);
+    if (target.size() != 3 || target[2] != 'c' ||
+        !moved_short.empty() || moved_short.data()[0] != 0) return 7;
+    const char *old_long = larger.data();
+    target = static_cast<std::string&&>(larger);
+    if (target.data() != old_long || target.size() != 40 ||
+        !larger.empty() || larger.data()[0] != 0) return 8;
+    target = static_cast<std::string&&>(target);
+    if (target.size() != 40 || target[39] != 'N') return 9;
+  }
+  return allocations == releases ? 0 : 10;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o",
+                                   Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-assign" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 } // namespace

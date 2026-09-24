@@ -1114,12 +1114,24 @@ std::optional<UtilityStringRecord>
 approvedUtilityStringRecord(const State &S, const clang::SourceManager &SM,
                             const clang::CXXRecordDecl *Record,
                             const clang::ASTContext &Context);
-enum class UtilityStringConstruction { Default, CString, PointerLength };
+enum class UtilityStringConstruction {
+  Default,
+  CString,
+  PointerLength,
+  Copy,
+  Move,
+};
 std::optional<UtilityStringConstruction>
 approvedUtilityStringConstruction(const State &S,
                                   const clang::SourceManager &SM,
                                   const clang::CXXConstructExpr *Construction,
                                   const clang::ASTContext &Context);
+enum class UtilityStringAssignment { Copy, Move };
+std::optional<UtilityStringAssignment>
+approvedUtilityStringAssignment(const State &S,
+                                const clang::SourceManager &SM,
+                                const clang::CXXOperatorCallExpr *Assignment,
+                                const clang::ASTContext &Context);
 bool approvedUtilityStringDestructor(const State &S,
                                      const clang::SourceManager &SM,
                                      const clang::CXXDestructorDecl *Destructor,

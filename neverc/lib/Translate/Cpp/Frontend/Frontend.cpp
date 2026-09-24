@@ -14604,6 +14604,10 @@ public:
                   A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call),
                   A.Context)
                   .has_value() ||
+              approvedUtilityStringAssignment(
+                  A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call),
+                  A.Context)
+                  .has_value() ||
               approvedUtilityVectorAssignment(
                   A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call),
                   A.Context)
@@ -15044,6 +15048,10 @@ public:
           A.S.coreV2() && approvedUtilityVectorAssignment(
                               A.S, A.Sources, Operator, A.Context)
                               .has_value();
+      const bool UtilityStringAssignment =
+          A.S.coreV2() && approvedUtilityStringAssignment(
+                              A.S, A.Sources, Operator, A.Context)
+                              .has_value();
       const bool UtilityOptionalAssignment =
           A.S.coreV2() &&
           approvedUtilityOptionalAssignment(A.S, A.Sources, Operator, A.Context)
@@ -15079,7 +15087,8 @@ public:
             !FunctionalReferenceAssignment && !UtilityPairAssignment &&
             !UtilityTupleAssignment && !UtilityArrayAssignment &&
             !UtilityInitializerListAssignment && !UtilityStringViewAssignment &&
-            !UtilityVectorAssignment && !UtilityOptionalAssignment &&
+            !UtilityStringAssignment && !UtilityVectorAssignment &&
+            !UtilityOptionalAssignment &&
             !UtilityReverseIteratorAssignment &&
             !UtilityAllocatorAssignment && !UtilityDefaultDelete &&
             !UtilityUniquePtr && !Ordinary &&
@@ -15334,6 +15343,8 @@ public:
       if (A.S.coreV2() && UtilityInitializerListAssignment)
         return true;
       if (A.S.coreV2() && UtilityStringViewAssignment)
+        return true;
+      if (A.S.coreV2() && UtilityStringAssignment)
         return true;
       if (A.S.coreV2() && UtilityVectorAssignment)
         return true;
