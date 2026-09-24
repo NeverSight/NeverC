@@ -2292,13 +2292,17 @@ integer or floating elements use direct lowering for default, bounded
 count/fill/list, copy and move construction; copy and move assignment;
 destruction; size, capacity, empty, data, element/front/back access; clear,
 push/pop, begin/end, cbegin/cend, rbegin/rend, crbegin/crend and const
-iteration; reserve/resize; single-position and range `erase`; and member/free
-swap. Erase shifts surviving arithmetic elements in place and returns the
-following mutable iterator. Growth preserves element values and the selected
-allocator calls, and copy construction owns independent storage.
+iteration; reserve/resize; lvalue/rvalue and counted-value `insert`;
+single-position and range `erase`; and member/free swap. Insert returns a
+mutable iterator, preserves aliased input values, shifts in place when
+capacity permits, and otherwise moves storage through the selected allocator.
+Erase shifts surviving arithmetic elements in place and returns the following
+mutable iterator. Growth preserves element values and the selected allocator
+calls, and copy construction owns independent storage.
 Host O0/O2 fixtures check capacity reuse, reallocation, aliased fill arguments,
 forward/reverse iterator access, iterator base/decrement/equality/difference,
-erase return positions and empty ranges, swap ownership and eventual release.
+insert return positions and source aliasing, erase return positions and empty
+ranges, swap ownership and eventual release.
 Record elements, other allocators, remaining vector methods and throwing
 allocation or length-error paths remain unsupported. Quoted and shadow headers
 remain rejected.

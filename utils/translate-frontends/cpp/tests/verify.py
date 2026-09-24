@@ -28980,6 +28980,11 @@ int compare_n(const char *left, const char *right, std::size_t count) {
           "TR0201", profile="cpp-core-v2", sdk=True)
 
     vector_metadata_source = """\
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
 #include <vector>
 static_assert(sizeof(std::vector<int>) == 3 * sizeof(void*));
 static_assert(alignof(std::vector<int>) == alignof(void*));
@@ -29010,6 +29015,11 @@ std::vector<int>::iterator erase_vector(std::vector<int>& values) {
   auto after_first = values.erase(values.begin());
   return values.erase(after_first, values.cend());
 }
+std::vector<int>::iterator insert_vector(std::vector<int>& values, int value) {
+  values.insert(values.cbegin(), value);
+  values.insert(values.cend(), static_cast<int&&>(value));
+  return values.insert(values.cbegin(), 2, value);
+}
 """
     vector_dependencies = None
     for target in sdk_targets:
@@ -29026,7 +29036,7 @@ std::vector<int>::iterator erase_vector(std::vector<int>& values) {
             vector_dependencies = dependencies
         else:
             assert dependencies == vector_dependencies, target
-        assert len(vector_ir["functions"]) == 4, target
+        assert len(vector_ir["functions"]) == 7, target
     check("v2-vector-runtime-object",
           '#include <vector>\nint f(){std::vector<int> v;return v.size();}',
           "TR0203", profile="cpp-core-v2", sdk=True)

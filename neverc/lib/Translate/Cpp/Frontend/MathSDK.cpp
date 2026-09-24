@@ -16630,7 +16630,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                      : llvm::StringRef();
     if (!Reference || !Object || !Prototype ||
         (!Prototype->isNothrow() && Name != "push_back" && Name != "pop_back" &&
-         Name != "reserve" && Name != "resize" && Name != "erase") ||
+         Name != "reserve" && Name != "resize" && Name != "erase" &&
+         Name != "insert") ||
         Method->isStatic() || Method->isVariadic() || !Method->hasBody() ||
         Method->getRefQualifier() != RQ_None ||
         Method->getParent()->getCanonicalDecl() !=
@@ -16758,6 +16759,42 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         }
         if (Valid)
           return UtilityOperation::VectorErase;
+      }
+    }
+    if (!Operator && Name == "insert" && !Method->isConst() &&
+        !Object->getType().isConstQualified() && Call->isPRValue() &&
+        (Method->getNumParams() == 2 || Method->getNumParams() == 3) &&
+        Context.hasSameType(Call->getType(), Method->getReturnType())) {
+      const auto Result = approvedUtilityWrapIteratorRecord(
+          S, SM, Method->getReturnType()->getAsCXXRecordDecl(), Context);
+      const auto Position = approvedUtilityWrapIteratorRecord(
+          S, SM, Method->getParamDecl(0)->getType()->getAsCXXRecordDecl(),
+          Context);
+      const auto Element = Vector->ElementType;
+      if (Result && Position &&
+          Context.hasSameType(Result->IteratorType, Vector->PointerType) &&
+          Context.hasSameType(Position->IteratorType,
+                              Context.getPointerType(Element.withConst())) &&
+          Context.hasSameType(Method->getParamDecl(0)->getType(),
+                              Call->getArg(0)->getType())) {
+        const unsigned ValueIndex = Method->getNumParams() - 1;
+        const auto ValueParameter = Method->getParamDecl(ValueIndex)->getType();
+        const bool ValueReference =
+            (ValueParameter->isLValueReferenceType() &&
+             Context.hasSameType(ValueParameter->getPointeeType(),
+                                 Element.withConst())) ||
+            (Method->getNumParams() == 2 &&
+             ValueParameter->isRValueReferenceType() &&
+             Context.hasSameType(ValueParameter->getPointeeType(), Element));
+        if (ValueReference &&
+            Context.hasSameUnqualifiedType(Call->getArg(ValueIndex)->getType(),
+                                           Element) &&
+            (Method->getNumParams() == 2 ||
+             (Context.hasSameType(Method->getParamDecl(1)->getType(),
+                                  Context.getSizeType()) &&
+              Context.hasSameType(Call->getArg(1)->getType(),
+                                  Context.getSizeType()))))
+          return UtilityOperation::VectorInsert;
       }
     }
     if (!Operator && !Method->isConst() &&

@@ -919,6 +919,7 @@ enum class UtilityOperation {
   VectorRBegin,
   VectorREnd,
   VectorErase,
+  VectorInsert,
   WrapIteratorDereference,
   WrapIteratorPreIncrement,
   WrapIteratorPreDecrement,

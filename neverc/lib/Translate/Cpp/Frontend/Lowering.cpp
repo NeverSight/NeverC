@@ -10256,6 +10256,285 @@ class FunctionLowering {
       return dereference(binary("+", std::move(Data), std::move(Index),
                                 PointerType, L), L);
     }
+    case UtilityOperation::VectorInsert: {
+      const auto *Object = MemberObject();
+      auto Vector = Object ? VectorFor(Object->getType())
+                           : std::optional<UtilityVectorRecord>();
+      auto Result = approvedUtilityWrapIteratorRecord(
+          A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+      auto Iterator = approvedUtilityWrapIteratorRecord(
+          A.S, A.Sources, Call->getArg(0)->getType()->getAsCXXRecordDecl(),
+          A.Context);
+      if (!Object || !Vector || !Result || !Iterator)
+        reject(L, "vector insert",
+               "The selected std::vector iterator layout is unavailable.");
+      auto Receiver =
+          snapshot(address(lvalue(Object), Object->getType(), L), L);
+      auto PositionValue = snapshot(expression(Call->getArg(0)), L);
+      auto PositionPointer = snapshot(
+          fieldStorage(std::move(PositionValue), Iterator->Current, L), L);
+      const auto SizeType = type(A.Context.getSizeType(), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto PointerType = type(Vector->PointerType, L);
+      const auto ConstPointerType =
+          type(A.Context.getPointerType(Vector->ElementType.withConst()), L);
+      auto Count = Call->getNumArgs() == 3
+                       ? snapshot(expression(Call->getArg(1)), L)
+                       : snapshot(quantity(1, SizeType, L), L);
+      // Capture a source element before either shifting or releasing storage.
+      auto Value =
+          snapshot(expression(Call->getArg(Call->getNumArgs() - 1)), L);
+      auto Member = [&](const char *Name) {
+        return Expression{
+            {"kind", "member"},
+            {"type", PointerType},
+            {"name", Name},
+            {"args", json::Array{dereference(json::Object(Receiver), L)}},
+            {"loc", A.loc(L)}};
+      };
+      auto Begin = snapshot(Member("nct_vector_begin"), L);
+      auto End = snapshot(Member("nct_vector_end"), L);
+      auto CapacityEnd = snapshot(Member("nct_vector_capacity"), L);
+      auto Size = temporary(SizeType, L);
+      auto Capacity = temporary(SizeType, L);
+      auto Offset = temporary(DifferenceType, L);
+      assign(Size, quantity(0, SizeType, L), L);
+      assign(Capacity, quantity(0, SizeType, L), L);
+      assign(Offset, quantity(0, DifferenceType, L), L);
+      const auto Measure = labelName(), Measured = labelName();
+      branch(cast(json::Object(Begin), "bool", L), Measure, Measured, L);
+      label(Measure, L);
+      assign(Size,
+             cast(binary("-", json::Object(End), json::Object(Begin),
+                         DifferenceType, L),
+                  SizeType, L),
+             L);
+      assign(Capacity,
+             cast(binary("-", json::Object(CapacityEnd), json::Object(Begin),
+                         DifferenceType, L),
+                  SizeType, L),
+             L);
+      assign(Offset,
+             binary("-", json::Object(PositionPointer),
+                    cast(json::Object(Begin), ConstPointerType, L),
+                    DifferenceType, L),
+             L);
+      jump(Measured, L);
+      label(Measured, L);
+      auto Position = temporary(PointerType, L);
+      assign(Position, json::Object(Begin), L);
+      const auto Nonempty = labelName(), Positioned = labelName();
+      branch(cast(json::Object(Begin), "bool", L), Nonempty, Positioned, L);
+      label(Nonempty, L);
+      assign(Position,
+             binary("+", json::Object(Begin), json::Object(Offset), PointerType,
+                    L),
+             L);
+      jump(Positioned, L);
+      label(Positioned, L);
+      const auto InPlace = labelName(), Grow = labelName(), Done = labelName();
+      const auto Nonzero = labelName();
+      branch(binary("==", json::Object(Count), quantity(0, SizeType, L), "bool",
+                    L),
+             Done, Nonzero, L);
+      label(Nonzero, L);
+      auto Needed = snapshot(
+          binary("+", json::Object(Size), json::Object(Count), SizeType, L), L);
+      branch(
+          binary("<=", json::Object(Needed), json::Object(Capacity), "bool", L),
+          InPlace, Grow, L);
+      label(InPlace, L);
+      auto ShiftSource = temporary(PointerType, L);
+      auto ShiftTarget = temporary(PointerType, L);
+      assign(ShiftSource, json::Object(End), L);
+      assign(ShiftTarget,
+             binary("+", json::Object(End),
+                    cast(json::Object(Count), DifferenceType, L), PointerType,
+                    L),
+             L);
+      const auto ShiftCheck = labelName(), Shift = labelName();
+      const auto FillInPlace = labelName();
+      jump(ShiftCheck, L);
+      label(ShiftCheck, L);
+      branch(binary("!=", json::Object(ShiftSource), json::Object(Position),
+                    "bool", L),
+             Shift, FillInPlace, L);
+      label(Shift, L);
+      assign(ShiftSource,
+             binary("-", json::Object(ShiftSource),
+                    quantity(1, DifferenceType, L), PointerType, L),
+             L);
+      assign(ShiftTarget,
+             binary("-", json::Object(ShiftTarget),
+                    quantity(1, DifferenceType, L), PointerType, L),
+             L);
+      assign(dereference(json::Object(ShiftTarget), L),
+             dereference(json::Object(ShiftSource), L), L);
+      jump(ShiftCheck, L);
+      label(FillInPlace, L);
+      auto FillTarget = temporary(PointerType, L);
+      auto FillIndex = temporary(SizeType, L);
+      assign(FillTarget, json::Object(Position), L);
+      assign(FillIndex, quantity(0, SizeType, L), L);
+      const auto FillCheck = labelName(), Fill = labelName();
+      const auto Filled = labelName();
+      jump(FillCheck, L);
+      label(FillCheck, L);
+      branch(
+          binary("<", json::Object(FillIndex), json::Object(Count), "bool", L),
+          Fill, Filled, L);
+      label(Fill, L);
+      assign(dereference(json::Object(FillTarget), L), json::Object(Value), L);
+      assign(FillTarget,
+             binary("+", json::Object(FillTarget),
+                    quantity(1, DifferenceType, L), PointerType, L),
+             L);
+      assign(FillIndex,
+             binary("+", json::Object(FillIndex), quantity(1, SizeType, L),
+                    SizeType, L),
+             L);
+      jump(FillCheck, L);
+      label(Filled, L);
+      assign(Member("nct_vector_end"),
+             binary("+", json::Object(End),
+                    cast(json::Object(Count), DifferenceType, L), PointerType,
+                    L),
+             L);
+      jump(Done, L);
+      label(Grow, L);
+      auto NewCapacity = temporary(SizeType, L);
+      assign(NewCapacity, json::Object(Needed), L);
+      const auto Double = labelName(), Allocate = labelName();
+      branch(binary(">",
+                    binary("*", json::Object(Capacity),
+                           quantity(2, SizeType, L), SizeType, L),
+                    json::Object(Needed), "bool", L),
+             Double, Allocate, L);
+      label(Double, L);
+      assign(NewCapacity,
+             binary("*", json::Object(Capacity), quantity(2, SizeType, L),
+                    SizeType, L),
+             L);
+      jump(Allocate, L);
+      label(Allocate, L);
+      const uint64_t ElementBytes =
+          A.Context.getTypeSizeInChars(Vector->ElementType).getQuantity();
+      const auto *New = A.allocatorHeapFunction(true, Vector->ElementType, L);
+      json::Array NewArgs;
+      NewArgs.push_back(binary("*", json::Object(NewCapacity),
+                               quantity(ElementBytes, SizeType, L), SizeType,
+                               L));
+      chargeCall(NewArgs, L);
+      auto Allocation = temporary(type(New->getReturnType(), L), L);
+      Body.push_back(json::Object{{"op", "call"},
+                                  {"callee", A.name(New)},
+                                  {"args", std::move(NewArgs)},
+                                  {"target", json::Object(Allocation)},
+                                  {"loc", A.loc(L)}});
+      auto NewBegin = snapshot(cast(std::move(Allocation), PointerType, L), L);
+      auto OldCurrent = temporary(PointerType, L);
+      auto NewCurrent = temporary(PointerType, L);
+      assign(OldCurrent, json::Object(Begin), L);
+      assign(NewCurrent, json::Object(NewBegin), L);
+      const auto PrefixCheck = labelName(), PrefixCopy = labelName();
+      const auto PrefixDone = labelName();
+      jump(PrefixCheck, L);
+      label(PrefixCheck, L);
+      branch(binary("!=", json::Object(OldCurrent), json::Object(Position),
+                    "bool", L),
+             PrefixCopy, PrefixDone, L);
+      label(PrefixCopy, L);
+      assign(dereference(json::Object(NewCurrent), L),
+             dereference(json::Object(OldCurrent), L), L);
+      assign(OldCurrent,
+             binary("+", json::Object(OldCurrent),
+                    quantity(1, DifferenceType, L), PointerType, L),
+             L);
+      assign(NewCurrent,
+             binary("+", json::Object(NewCurrent),
+                    quantity(1, DifferenceType, L), PointerType, L),
+             L);
+      jump(PrefixCheck, L);
+      label(PrefixDone, L);
+      assign(Position, json::Object(NewCurrent), L);
+      auto GrowIndex = temporary(SizeType, L);
+      assign(GrowIndex, quantity(0, SizeType, L), L);
+      const auto GrowFillCheck = labelName(), GrowFill = labelName();
+      const auto GrowFillDone = labelName();
+      jump(GrowFillCheck, L);
+      label(GrowFillCheck, L);
+      branch(
+          binary("<", json::Object(GrowIndex), json::Object(Count), "bool", L),
+          GrowFill, GrowFillDone, L);
+      label(GrowFill, L);
+      assign(dereference(json::Object(NewCurrent), L), json::Object(Value), L);
+      assign(NewCurrent,
+             binary("+", json::Object(NewCurrent),
+                    quantity(1, DifferenceType, L), PointerType, L),
+             L);
+      assign(GrowIndex,
+             binary("+", json::Object(GrowIndex), quantity(1, SizeType, L),
+                    SizeType, L),
+             L);
+      jump(GrowFillCheck, L);
+      label(GrowFillDone, L);
+      const auto SuffixCheck = labelName(), SuffixCopy = labelName();
+      const auto SuffixDone = labelName();
+      jump(SuffixCheck, L);
+      label(SuffixCheck, L);
+      branch(
+          binary("!=", json::Object(OldCurrent), json::Object(End), "bool", L),
+          SuffixCopy, SuffixDone, L);
+      label(SuffixCopy, L);
+      assign(dereference(json::Object(NewCurrent), L),
+             dereference(json::Object(OldCurrent), L), L);
+      assign(OldCurrent,
+             binary("+", json::Object(OldCurrent),
+                    quantity(1, DifferenceType, L), PointerType, L),
+             L);
+      assign(NewCurrent,
+             binary("+", json::Object(NewCurrent),
+                    quantity(1, DifferenceType, L), PointerType, L),
+             L);
+      jump(SuffixCheck, L);
+      label(SuffixDone, L);
+      assign(Member("nct_vector_begin"), json::Object(NewBegin), L);
+      assign(Member("nct_vector_end"), json::Object(NewCurrent), L);
+      assign(Member("nct_vector_capacity"),
+             binary("+", json::Object(NewBegin),
+                    cast(json::Object(NewCapacity), DifferenceType, L),
+                    PointerType, L),
+             L);
+      const auto Release = labelName();
+      branch(cast(json::Object(Begin), "bool", L), Release, Done, L);
+      label(Release, L);
+      const auto *Delete =
+          A.allocatorHeapFunction(false, Vector->ElementType, L);
+      json::Array DeleteArgs;
+      DeleteArgs.push_back(cast(
+          json::Object(Begin), type(Delete->getParamDecl(0)->getType(), L), L));
+      if (Delete->getNumParams() == 2)
+        DeleteArgs.push_back(
+            cast(binary("*", json::Object(Capacity),
+                        quantity(ElementBytes, SizeType, L), SizeType, L),
+                 type(Delete->getParamDecl(1)->getType(), L), L));
+      chargeCall(DeleteArgs, L);
+      Body.push_back(json::Object{{"op", "call"},
+                                  {"callee", A.name(Delete)},
+                                  {"args", std::move(DeleteArgs)},
+                                  {"loc", A.loc(L)}});
+      jump(Done, L);
+      label(Done, L);
+      auto Place = Destination ? std::move(*Destination)
+                               : objectTemporary(Call->getType(), L);
+      Destination.reset();
+      if (Place.getString("type") != type(Call->getType(), L))
+        reject(L, "vector insert",
+               "The iterator destination type differs from the result.");
+      assign(fieldStorage(json::Object(Place), Result->Current, L),
+             json::Object(Position), L);
+      return Place;
+    }
     case UtilityOperation::VectorErase: {
       const auto *Object = MemberObject();
       auto Vector = Object ? VectorFor(Object->getType())
