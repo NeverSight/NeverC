@@ -29119,6 +29119,16 @@ int main() {
                        searched_with_nul.find(embedded_pattern, 0, 3) == 1 &&
                        searched_with_nul.rfind(embedded_pattern,
                                                std::string::npos, 3) == 1;
+  const std::string character_set("b");
+  const char counted_set[] = {'x', 0};
+  bool set_search_intact = searched.find_first_of('b') == 1 &&
+                           searched.find_last_of(character_set) == 3 &&
+                           searched.find_first_not_of("a") == 1 &&
+                           searched.find_last_not_of('a') == 3 &&
+                           searched_with_nul.find_first_of(counted_set, 0, 2) == 2 &&
+                           searched_with_nul.find_last_not_of(counted_set,
+                                                                std::string::npos,
+                                                                2) == 3;
   return intact && emptied && assigned.size() == 14 &&
          assigned[0] == 'x' && assigned[2] == 'a' &&
          assigned[3] == 'b' && assigned[4] == 'c' && assigned[5] == 'd' &&
@@ -29130,7 +29140,7 @@ int main() {
          reassigned.size() == 2 && reassigned[0] == 'a' &&
          reassigned[1] == 'a' &&
          erase_intact && erased.empty() && compare_intact &&
-         cstring_compare_intact && search_intact &&
+         cstring_compare_intact && search_intact && set_search_intact &&
          assigned.capacity() >= requested_capacity
              ? 0 : 1;
 }

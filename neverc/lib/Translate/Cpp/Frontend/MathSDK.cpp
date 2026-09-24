@@ -7624,7 +7624,11 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
         Parameter == Method->getParamDecl(1) &&
         Parameter->getFunctionScopeIndex() == 1 && !Method->isStatic() &&
         !Method->isVariadic() && Method->isConst() && Method->getIdentifier() &&
-        (Method->getName() == "find" || Method->getName() == "rfind") &&
+        (Method->getName() == "find" || Method->getName() == "rfind" ||
+         Method->getName() == "find_first_of" ||
+         Method->getName() == "find_last_of" ||
+         Method->getName() == "find_first_not_of" ||
+         Method->getName() == "find_last_not_of") &&
         Context.hasSameType(Method->getReturnType(), Context.getSizeType()) &&
         Context.hasSameType(Parameter->getType(), Context.getSizeType()) &&
         approvedStandardSDKDeclaration(S, SM, Method) &&
@@ -7644,8 +7648,10 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
         Expr::EvalResult Evaluated;
         if (Init->EvaluateAsInt(Evaluated, Context) && Evaluated.Val.isInt()) {
           const auto &Value = Evaluated.Val.getInt();
-          if ((Method->getName() == "find" && Value == 0) ||
-              (Method->getName() == "rfind" && Value.isAllOnes()))
+          const auto Name = Method->getName();
+          const bool Forward = Name == "find" || Name == "find_first_of" ||
+                               Name == "find_first_not_of";
+          if ((Forward && Value == 0) || (!Forward && Value.isAllOnes()))
             return true;
         }
       }
@@ -16198,7 +16204,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         (!Method->hasBody() && Name != "push_back" && Name != "reserve" &&
          Name != "resize" && Name != "append" && Name != "assign" &&
          Name != "erase" && Name != "compare" && Name != "find" &&
-         Name != "rfind") ||
+         Name != "rfind" && Name != "find_first_of" && Name != "find_last_of" &&
+         Name != "find_first_not_of" && Name != "find_last_not_of") ||
         Method->getRefQualifier() != RQ_None ||
         Method->getParent()->getCanonicalDecl() !=
             String->Record->getCanonicalDecl() ||
@@ -16292,6 +16299,50 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                 Context.getSizeType()))))
         return Name == "find" ? UtilityOperation::StringFindSubstring
                               : UtilityOperation::StringRFindSubstring;
+    }
+    if (!Operator &&
+        (Name == "find_first_of" || Name == "find_last_of" ||
+         Name == "find_first_not_of" || Name == "find_last_not_of") &&
+        Method->isConst() && Call->isPRValue() &&
+        Context.hasSameType(Method->getReturnType(), Context.getSizeType()) &&
+        Context.hasSameType(Call->getType(), Context.getSizeType()) &&
+        (Method->getNumParams() == 2 || Method->getNumParams() == 3) &&
+        Context.hasSameType(Method->getParamDecl(1)->getType(),
+                            Context.getSizeType()) &&
+        Context.hasSameType(Call->getArg(1)->getType(),
+                            Context.getSizeType())) {
+      const auto FirstParameter = Method->getParamDecl(0)->getType();
+      const auto FirstArgument = Call->getArg(0)->getType();
+      const auto StringType = Context.getRecordType(String->Record);
+      const auto ConstPointer =
+          Context.getPointerType(Context.CharTy.withConst());
+      const bool Character =
+          Method->getNumParams() == 2 &&
+          Context.hasSameType(FirstParameter, Context.CharTy) &&
+          Context.hasSameType(FirstArgument, Context.CharTy);
+      const bool StringNeedle =
+          Method->getNumParams() == 2 &&
+          FirstParameter->isLValueReferenceType() &&
+          Context.hasSameType(FirstParameter->getPointeeType(),
+                              StringType.withConst()) &&
+          Context.hasSameUnqualifiedType(FirstArgument, StringType);
+      const bool Pointer =
+          Context.hasSameType(FirstParameter, ConstPointer) &&
+          Context.hasSameType(FirstArgument, ConstPointer) &&
+          (Method->getNumParams() == 2 ||
+           (Context.hasSameType(Method->getParamDecl(2)->getType(),
+                                Context.getSizeType()) &&
+            Context.hasSameType(Call->getArg(2)->getType(),
+                                Context.getSizeType())));
+      if (Character || StringNeedle || Pointer) {
+        if (Name == "find_first_of")
+          return UtilityOperation::StringFindFirstOf;
+        if (Name == "find_last_of")
+          return UtilityOperation::StringFindLastOf;
+        if (Name == "find_first_not_of")
+          return UtilityOperation::StringFindFirstNotOf;
+        return UtilityOperation::StringFindLastNotOf;
+      }
     }
     if (!Operator && Name == "erase" && !Method->isConst() &&
         !Object->getType().isConstQualified() &&

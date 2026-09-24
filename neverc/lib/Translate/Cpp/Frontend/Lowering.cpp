@@ -11255,6 +11255,154 @@ class FunctionLowering {
       label(End, L);
       return Result;
     }
+    case UtilityOperation::StringFindFirstOf:
+    case UtilityOperation::StringFindLastOf:
+    case UtilityOperation::StringFindFirstNotOf:
+    case UtilityOperation::StringFindLastNotOf: {
+      const bool Reverse = Operation == UtilityOperation::StringFindLastOf ||
+                           Operation == UtilityOperation::StringFindLastNotOf;
+      const bool Negated =
+          Operation == UtilityOperation::StringFindFirstNotOf ||
+          Operation == UtilityOperation::StringFindLastNotOf;
+      const auto *Object = MemberObject();
+      auto String = Object ? StringFor(Object->getType())
+                           : std::optional<UtilityStringRecord>();
+      if (!Object || !String)
+        reject(L, "string character-set search",
+               "The selected std::string layout is unavailable.");
+      auto ObjectAddress =
+          snapshot(address(lvalue(Object), Object->getType(), L), L);
+      const auto *Pattern = Call->getArg(0);
+      const bool Character =
+          A.Context.hasSameType(Pattern->getType(), A.Context.CharTy);
+      Expression CharacterValue, SetData, SetSize, Position;
+      if (Character) {
+        CharacterValue = snapshot(expression(Pattern), L);
+        Position =
+            snapshot(argument(Call->getArg(1), A.Context.getSizeType()), L);
+      } else if (Pattern->getType()->isPointerType()) {
+        auto Pointer = snapshot(expression(Pattern), L);
+        Position =
+            snapshot(argument(Call->getArg(1), A.Context.getSizeType()), L);
+        if (Call->getNumArgs() == 3) {
+          SetData = std::move(Pointer);
+          SetSize = snapshot(expression(Call->getArg(2)), L);
+        } else {
+          auto Set = ReadCStringAt(std::move(Pointer));
+          SetData = std::move(Set.first);
+          SetSize = std::move(Set.second);
+        }
+      } else {
+        auto SetAddress =
+            snapshot(address(lvalue(Pattern), Pattern->getType(), L), L);
+        Position =
+            snapshot(argument(Call->getArg(1), A.Context.getSizeType()), L);
+        auto Set = ReadStringAt(std::move(SetAddress), *String);
+        SetData = std::move(Set.first);
+        SetSize = std::move(Set.second);
+      }
+      auto Haystack = ReadStringAt(std::move(ObjectAddress), *String);
+      auto Data = std::move(Haystack.first);
+      auto Size = std::move(Haystack.second);
+      const auto SizeType = type(Call->getType(), L);
+      const unsigned Bits = integerBits(SizeType);
+      const uint64_t NotFound = Bits == 64
+                                    ? std::numeric_limits<uint64_t>::max()
+                                    : (uint64_t(1) << Bits) - 1;
+      auto Result = temporary(SizeType, L);
+      assign(Result, quantity(NotFound, SizeType, L), L);
+      auto Membership = temporary("bool", L);
+      const auto CheckSize = labelName(), Clip = labelName();
+      const auto Candidate = labelName(), CheckSet = labelName();
+      const auto CompareSet = labelName(), SetMatch = labelName();
+      const auto AdvanceSet = labelName(), Checked = labelName();
+      const auto Found = labelName(), Advance = labelName();
+      const auto Shift = labelName(), End = labelName();
+      if (Reverse) {
+        branch(binary("==", json::Object(Size), quantity(0, SizeType, L),
+                      "bool", L),
+               End, CheckSize, L);
+        label(CheckSize, L);
+        branch(
+            binary("<", json::Object(Position), json::Object(Size), "bool", L),
+            Candidate, Clip, L);
+        label(Clip, L);
+        assign(Position,
+               binary("-", json::Object(Size), quantity(1, SizeType, L),
+                      SizeType, L),
+               L);
+        jump(Candidate, L);
+      } else {
+        branch(
+            binary("<", json::Object(Position), json::Object(Size), "bool", L),
+            Candidate, End, L);
+      }
+      label(Candidate, L);
+      auto Byte = snapshot(index(json::Object(Data), json::Object(Position),
+                                 type(A.Context.CharTy, L), L),
+                           L);
+      if (Character) {
+        assign(Membership,
+               binary("==", json::Object(Byte), json::Object(CharacterValue),
+                      "bool", L),
+               L);
+        jump(Checked, L);
+      } else {
+        assign(Membership, boolean(false, L), L);
+        auto SetIndex = temporary(SizeType, L);
+        assign(SetIndex, quantity(0, SizeType, L), L);
+        jump(CheckSet, L);
+        label(CheckSet, L);
+        branch(binary("<", json::Object(SetIndex), json::Object(SetSize),
+                      "bool", L),
+               CompareSet, Checked, L);
+        label(CompareSet, L);
+        branch(binary("==", json::Object(Byte),
+                      index(json::Object(SetData), json::Object(SetIndex),
+                            type(A.Context.CharTy, L), L),
+                      "bool", L),
+               SetMatch, AdvanceSet, L);
+        label(SetMatch, L);
+        assign(Membership, boolean(true, L), L);
+        jump(Checked, L);
+        label(AdvanceSet, L);
+        assign(SetIndex,
+               binary("+", json::Object(SetIndex), quantity(1, SizeType, L),
+                      SizeType, L),
+               L);
+        jump(CheckSet, L);
+      }
+      label(Checked, L);
+      branch(binary("==", json::Object(Membership), boolean(!Negated, L),
+                    "bool", L),
+             Found, Advance, L);
+      label(Advance, L);
+      if (Reverse) {
+        branch(binary("==", json::Object(Position), quantity(0, SizeType, L),
+                      "bool", L),
+               End, Shift, L);
+        label(Shift, L);
+        assign(Position,
+               binary("-", json::Object(Position), quantity(1, SizeType, L),
+                      SizeType, L),
+               L);
+      } else {
+        assign(Position,
+               binary("+", json::Object(Position), quantity(1, SizeType, L),
+                      SizeType, L),
+               L);
+        branch(
+            binary("<", json::Object(Position), json::Object(Size), "bool", L),
+            Candidate, End, L);
+      }
+      if (Reverse)
+        jump(Candidate, L);
+      label(Found, L);
+      assign(Result, std::move(Position), L);
+      jump(End, L);
+      label(End, L);
+      return Result;
+    }
     case UtilityOperation::ArraySize:
     case UtilityOperation::ArrayMaxSize:
     case UtilityOperation::ArrayEmpty: {

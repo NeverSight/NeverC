@@ -52861,4 +52861,89 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringCharacterSetSearchRun) {
+  const auto Source = tmpFile("string-set-search.cpp");
+  const auto Output = tmpFile("string-set-search.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <string>
+int evaluations;
+const char *set_pointer() { ++evaluations; return "bc"; }
+Size change(std::string &target) { target.assign("ccab"); return 0; }
+Size change_last(std::string &target) {
+  target.assign("ccab");
+  return std::string::npos;
+}
+int main() {
+  const char raw[] = {'a', 'b', 0, 'c', 'a', 'b', 'a'};
+  const std::string text(raw, 7);
+  if (text.find_first_of('a') != 0 || text.find_first_of('a', 1) != 4 ||
+      text.find_last_of('a') != 6 || text.find_last_of('a', 5) != 4 ||
+      text.find_first_not_of('a') != 1 ||
+      text.find_first_not_of('a', 4) != 5 ||
+      text.find_last_not_of('a') != 5 ||
+      text.find_last_not_of('a', 4) != 3)
+    return 1;
+  const char set_raw[] = {0, 'c'};
+  const std::string set(set_raw, 2);
+  if (text.find_first_of(set) != 2 || text.find_last_of(set) != 3 ||
+      text.find_first_not_of(set) != 0 ||
+      text.find_last_not_of(set) != 6 ||
+      text.find_first_of(set, 3) != 3 ||
+      text.find_last_of(set, 2) != 2)
+    return 2;
+  if (text.find_first_of("bc") != 1 || text.find_last_of("bc") != 5 ||
+      text.find_first_not_of("bc") != 0 ||
+      text.find_last_not_of("bc") != 6 ||
+      text.find_first_of(set_pointer()) != 1 || evaluations != 1)
+    return 3;
+  const char counted[] = {'x', 0, 'c'};
+  if (text.find_first_of(counted, 0, 3) != 2 ||
+      text.find_last_of(counted, std::string::npos, 3) != 3 ||
+      text.find_first_not_of(counted, 2, 3) != 4 ||
+      text.find_last_not_of(counted, 3, 3) != 1)
+    return 4;
+  if (text.find_first_of("") != std::string::npos ||
+      text.find_last_of("") != std::string::npos ||
+      text.find_first_not_of("") != 0 ||
+      text.find_last_not_of("") != 6 ||
+      text.find_first_not_of("", 7) != std::string::npos ||
+      text.find_last_not_of("", 0) != 0)
+    return 5;
+  const std::string empty;
+  if (empty.find_first_of('a') != std::string::npos ||
+      empty.find_last_of("a") != std::string::npos ||
+      empty.find_first_not_of("a") != std::string::npos ||
+      empty.find_last_not_of('a') != std::string::npos)
+    return 6;
+  const std::string long_text("abcdefghijklmnopqrstuvwxyzabc");
+  if (long_text.find_first_of("xyz") != 23 ||
+      long_text.find_last_of("xyz") != 25 ||
+      long_text.find_first_not_of("abcdefghijklmnopqrstuvw") != 23 ||
+      long_text.find_last_not_of("abc") != 25)
+    return 7;
+  std::string changing("ababa");
+  if (changing.find_first_of("a", change(changing)) != 2 ||
+      changing.find_last_not_of("c", change_last(changing)) != 3)
+    return 8;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-set-search" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 } // namespace
