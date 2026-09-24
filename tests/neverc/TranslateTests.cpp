@@ -52361,6 +52361,88 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorMaxSizeAndShrinkRun) {
+  const auto Source = tmpFile("vector-max-size-shrink.cpp");
+  const auto Output = tmpFile("vector-max-size-shrink.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <vector>
+int main() {
+  {
+    const Size difference_maximum = ~Size(0) >> 1;
+    const Size integer_allocator_maximum = ~Size(0) / sizeof(int);
+    const Size double_allocator_maximum = ~Size(0) / sizeof(double);
+    std::vector<int> values{1, 2, 3};
+    const std::vector<int> &constant = values;
+    const Size integer_maximum = integer_allocator_maximum < difference_maximum
+                                     ? integer_allocator_maximum
+                                     : difference_maximum;
+    if (values.max_size() != integer_maximum ||
+        constant.max_size() != integer_maximum)
+      return 1;
+    values.reserve(12);
+    int previous_allocations = allocations;
+    int previous_releases = releases;
+    values.shrink_to_fit();
+    if (values.size() != 3 || values.capacity() != 3 ||
+        values[0] != 1 || values[1] != 2 || values[2] != 3 ||
+        allocations != previous_allocations + 1 ||
+        releases != previous_releases + 1)
+      return 2;
+    previous_allocations = allocations;
+    previous_releases = releases;
+    values.shrink_to_fit();
+    if (values.capacity() != 3 || allocations != previous_allocations ||
+        releases != previous_releases)
+      return 3;
+    values.clear();
+    values.shrink_to_fit();
+    if (!values.empty() || values.capacity() != 0 ||
+        values.data() != nullptr || allocations != previous_allocations ||
+        releases != previous_releases + 1)
+      return 4;
+    std::vector<double> fractions;
+    const Size double_maximum = double_allocator_maximum < difference_maximum
+                                    ? double_allocator_maximum
+                                    : difference_maximum;
+    if (fractions.max_size() != double_maximum)
+      return 5;
+    fractions.reserve(5);
+    fractions.push_back(1.5);
+    fractions.shrink_to_fit();
+    if (fractions.capacity() != 1 || fractions.size() != 1 ||
+        fractions[0] != 1.5)
+      return 6;
+    std::vector<int> empty;
+    previous_allocations = allocations;
+    previous_releases = releases;
+    empty.shrink_to_fit();
+    if (empty.data() != nullptr || empty.capacity() != 0 ||
+        allocations != previous_allocations || releases != previous_releases)
+      return 7;
+  }
+  return allocations == releases ? 0 : 8;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-max-size-shrink" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StringConstructionAccessAndLifetimeRun) {
   const auto Source = tmpFile("string-lifetime.cpp");
   const auto Output = tmpFile("string-lifetime.nc");

@@ -2290,10 +2290,10 @@ queries from libc++'s three-pointer layout and resolve its `size_type` alias.
 Authenticated `std::vector<T, std::allocator<T>>` objects with non-boolean
 integer or floating elements use direct lowering for default, bounded
 count/fill/list, copy and move construction; copy and move assignment;
-destruction; size, capacity, empty, data, element/front/back access; clear,
+destruction; size, capacity, max_size, empty, data, element/front/back access; clear,
 push/pop, zero- or one-argument `emplace_back` with exact element types,
 begin/end, cbegin/cend, rbegin/rend, crbegin/crend and const iteration;
-reserve/resize; lvalue/rvalue, counted-value, pointer and wrapped iterator
+reserve/resize/shrink_to_fit; lvalue/rvalue, counted-value, pointer and wrapped iterator
 range, and initializer-list `insert`; zero- or one-argument positional
 `emplace` with exact element types; counted-value, pointer and wrapped
 iterator range, and initializer-list `assign`; single-position and range
@@ -2307,6 +2307,7 @@ through the selected allocator otherwise. Reserve, insert, and push growth
 preserve existing element values and use the selected allocator, and copy
 construction owns independent storage.
 Host O0/O2 fixtures check capacity reuse, reallocation, aliased fill arguments,
+maximum size, occupied and empty capacity shrinking,
 `emplace_back` value initialization and returned references, positional
 `emplace` return positions and source aliasing,
 forward/reverse iterator access, iterator base/decrement/equality/difference,

@@ -16653,6 +16653,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           return UtilityOperation::VectorSize;
         if (Name == "capacity")
           return UtilityOperation::VectorCapacity;
+        if (Name == "max_size")
+          return UtilityOperation::VectorMaxSize;
       }
       if (Name == "empty" && Method->getReturnType()->isBooleanType())
         return UtilityOperation::VectorEmpty;
@@ -16940,6 +16942,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         !Object->getType().isConstQualified() &&
         Method->getReturnType()->isVoidType() &&
         Call->getType()->isVoidType()) {
+      if (Name == "shrink_to_fit" && !Method->getNumParams() &&
+          !Call->getNumArgs() && Prototype->isNothrow())
+        return UtilityOperation::VectorShrinkToFit;
       if (Name == "reserve" && Method->getNumParams() == 1 &&
           Call->getNumArgs() == 1 &&
           Context.hasSameType(Method->getParamDecl(0)->getType(),
