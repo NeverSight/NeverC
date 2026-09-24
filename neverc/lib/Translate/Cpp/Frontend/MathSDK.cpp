@@ -5912,6 +5912,106 @@ bool approvedUtilityUniquePtrDestructor(const State &S, const SourceManager &SM,
                        "__memory/unique_ptr.h");
 }
 
+bool approvedUtilityWrapIteratorMetadata(const State &S,
+                                         const SourceManager &SM,
+                                         const CXXRecordDecl *Record) {
+  const auto *Specialization =
+      dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
+  const auto *Template =
+      Specialization ? Specialization->getSpecializedTemplate() : nullptr;
+  const auto *Canonical = Template ? Template->getCanonicalDecl() : nullptr;
+  return S.coreV2() && Specialization && Template && Canonical &&
+         Specialization->getName() == "__wrap_iter" &&
+         !Specialization->isUnion() &&
+         !Specialization->isDependentContext() &&
+         Specialization->getTemplateArgs().size() == 1 &&
+         Specialization->getTemplateArgs().get(0).getKind() ==
+             TemplateArgument::Type &&
+         approvedStandardSDKDeclaration(S, SM, Template) &&
+         approvedStandardSDKDeclaration(S, SM, Canonical) &&
+         cstddefOrigin(S, SM, Template->getLocation(), "libcxx",
+                        "__iterator/wrap_iter.h") &&
+         // libc++ forward declares the primary in iterator_traits.h.
+         cstddefOrigin(S, SM, Canonical->getLocation(), "libcxx",
+                        "__iterator/iterator_traits.h");
+}
+
+std::optional<UtilityWrapIteratorRecord>
+approvedUtilityWrapIteratorRecord(const State &S, const SourceManager &SM,
+                                  const CXXRecordDecl *Record,
+                                  const ASTContext &Context) {
+  const auto *Definition = Record ? Record->getDefinition() : nullptr;
+  const auto *Specialization =
+      dyn_cast_or_null<ClassTemplateSpecializationDecl>(Definition);
+  if (!approvedUtilityWrapIteratorMetadata(S, SM, Specialization) ||
+      !Specialization || Specialization->isInvalidDecl() ||
+      Specialization->getSpecializationKind() != TSK_ImplicitInstantiation ||
+      Specialization->getNumBases() || Specialization->getNumVBases() ||
+      Specialization->isDynamicClass() ||
+      !Specialization->isStandardLayout() ||
+      !Specialization->hasTrivialCopyConstructor() ||
+      !Specialization->hasTrivialCopyAssignment() ||
+      !Specialization->hasTrivialDestructor() ||
+      !approvedStandardSDKDeclaration(S, SM, Specialization) ||
+      !cstddefOrigin(S, SM, Specialization->getLocation(), "libcxx",
+                     "__iterator/wrap_iter.h"))
+    return std::nullopt;
+  const auto Iterator = Specialization->getTemplateArgs().get(0).getAsType();
+  auto Fields = Specialization->fields();
+  auto It = Fields.begin();
+  const auto *Current = It == Fields.end() ? nullptr : *It++;
+  if (!utilityObjectPointer(Context, Iterator) || !Current ||
+      It != Fields.end() || Current->getName() != "__i_" ||
+      Current->getAccess() != AS_private || Current->isBitField() ||
+      Current->isMutable() || Current->hasAttrs() ||
+      !Context.hasSameType(Current->getType(), Iterator) ||
+      !approvedStandardSDKDeclaration(S, SM, Current) ||
+      !cstddefOrigin(S, SM, Current->getLocation(), "libcxx",
+                     "__iterator/wrap_iter.h"))
+    return std::nullopt;
+  const auto &Layout = Context.getASTRecordLayout(Specialization);
+  const uint64_t PointerBits = Context.getTypeSize(Iterator);
+  if (Layout.getFieldCount() != 1 || Layout.getFieldOffset(0) != 0 ||
+      uint64_t(Layout.getSize().getQuantity()) * 8 != PointerBits ||
+      uint64_t(Layout.getAlignment().getQuantity()) * 8 !=
+          Context.getTypeAlign(Iterator))
+    return std::nullopt;
+  return UtilityWrapIteratorRecord{Specialization, Current, Iterator};
+}
+
+std::optional<UtilityWrapIteratorConstruction>
+approvedUtilityWrapIteratorConstruction(const State &S,
+                                        const SourceManager &SM,
+                                        const CXXConstructExpr *Construction,
+                                        const ASTContext &Context) {
+  if (!Construction || Construction->isTypeDependent() ||
+      Construction->isValueDependent() ||
+      Construction->isInstantiationDependent() ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete)
+    return std::nullopt;
+  const auto Iterator = approvedUtilityWrapIteratorRecord(
+      S, SM, Construction->getType()->getAsCXXRecordDecl(), Context);
+  const auto *Constructor = Construction->getConstructor();
+  if (!Iterator || !Constructor || Constructor->isVariadic() ||
+      Constructor->getParent()->getCanonicalDecl() !=
+          Iterator->Record->getCanonicalDecl() ||
+      Construction->getNumArgs() != Constructor->getNumParams())
+    return std::nullopt;
+  if (Constructor->isImplicit() && Constructor->isTrivial() &&
+      Constructor->isCopyOrMoveConstructor() &&
+      Construction->getNumArgs() == 1 &&
+      Context.hasSameUnqualifiedType(Construction->getArg(0)->getType(),
+                                     Construction->getType()))
+    return UtilityWrapIteratorConstruction::CopyOrMove;
+  if (Constructor->isDefaultConstructor() &&
+      !Construction->getNumArgs() && Constructor->hasBody() &&
+      approvedStandardSDKDeclaration(S, SM, Constructor) &&
+      cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx",
+                     "__iterator/wrap_iter.h"))
+    return UtilityWrapIteratorConstruction::Default;
+  return std::nullopt;
+}
+
 bool approvedUtilityReverseIteratorMetadata(const State &S,
                                             const SourceManager &SM,
                                             const CXXRecordDecl *Record) {
@@ -15207,6 +15307,45 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return UtilityOperation::FunctionalInvokeUserObject;
   const auto *Function = Call->getDirectCallee();
   const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
+  if (const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+      Operator && Operator->getOperator() == OO_ExclaimEqual &&
+      Operator->getNumArgs() == 2 && Function && !Method &&
+      Function->getOverloadedOperator() == OO_ExclaimEqual &&
+      Function->getNumParams() == 2 && !Function->isVariadic() &&
+      Function->hasBody() && Call->isPRValue() &&
+      Call->getType()->isBooleanType() &&
+      Function->getReturnType()->isBooleanType() &&
+      approvedUtilityReference(S, SM, Call, Function) &&
+      approvedStandardSDKDeclaration(S, SM, Function) &&
+      cstddefOrigin(S, SM, Function->getLocation(), "libcxx",
+                     "__iterator/wrap_iter.h")) {
+    const auto *Primary = Function->getPrimaryTemplate();
+    const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
+    const auto Left = approvedUtilityWrapIteratorRecord(
+        S, SM, Operator->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
+    const auto Right = approvedUtilityWrapIteratorRecord(
+        S, SM, Operator->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
+    const auto *Arguments = Function->getTemplateSpecializationArgs();
+    const auto WrapType = Left ? Context.getRecordType(Left->Record)
+                               : QualType();
+    auto Parameter = [&](unsigned Index) {
+      const auto Type = Function->getParamDecl(Index)->getType();
+      return Type->isLValueReferenceType() &&
+             Context.hasSameType(Type->getPointeeType(), WrapType.withConst());
+    };
+    if (Primary && Prototype && Prototype->isNothrow() && Left && Right &&
+        Left->Record->getCanonicalDecl() ==
+            Right->Record->getCanonicalDecl() &&
+        Arguments && Arguments->size() == 1 &&
+        Arguments->get(0).getKind() == TemplateArgument::Type &&
+        Context.hasSameType(Arguments->get(0).getAsType(),
+                            Left->IteratorType) &&
+        Parameter(0) && Parameter(1) &&
+        approvedStandardSDKDeclaration(S, SM, Primary) &&
+        cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
+                       "__iterator/wrap_iter.h"))
+      return UtilityOperation::WrapIteratorNotEqual;
+  }
   const auto *OptionalObject = [&]() -> const Expr * {
     const Expr *Object = nullptr;
     if (const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call))
@@ -15613,6 +15752,46 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                              : UtilityOperation::InitializerListEnd;
     return std::nullopt;
   }
+  const auto Wrapped = approvedUtilityWrapIteratorRecord(
+      S, SM, Method ? Method->getParent() : nullptr, Context);
+  if (Method && Wrapped) {
+    const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+    const auto *Object = Operator && Operator->getNumArgs()
+                             ? Operator->getArg(0)
+                             : nullptr;
+    const auto *Reference = directMethodReference(Call);
+    const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
+    const auto WrapType = Context.getRecordType(Wrapped->Record);
+    if (Reference && Object && Prototype && Prototype->isNothrow() &&
+        Operator->getNumArgs() == 1 && !Method->isStatic() &&
+        !Method->isVariadic() && Method->hasBody() &&
+        Method->getNumParams() == 0 && Method->getRefQualifier() == RQ_None &&
+        Method->getParent()->getCanonicalDecl() ==
+            Wrapped->Record->getCanonicalDecl() &&
+        Context.hasSameUnqualifiedType(Object->getType(), WrapType) &&
+        approvedStandardSDKDeclaration(S, SM, Method) &&
+        cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
+                       "__iterator/wrap_iter.h") &&
+        S.owns(SM, Reference->getExprLoc())) {
+      if (Method->getOverloadedOperator() == OO_Star && Method->isConst() &&
+          Call->isLValue() &&
+          Method->getReturnType()->isLValueReferenceType() &&
+          Context.hasSameType(Method->getReturnType()->getPointeeType(),
+                              Wrapped->IteratorType->getPointeeType()) &&
+          Context.hasSameUnqualifiedType(
+              Call->getType(), Wrapped->IteratorType->getPointeeType()))
+        return UtilityOperation::WrapIteratorDereference;
+      if (Method->getOverloadedOperator() == OO_PlusPlus &&
+          !Method->isConst() && !Object->getType().isConstQualified() &&
+          Call->isLValue() &&
+          Method->getReturnType()->isLValueReferenceType() &&
+          Context.hasSameUnqualifiedType(
+              Method->getReturnType()->getPointeeType(), WrapType) &&
+          Context.hasSameUnqualifiedType(Call->getType(), WrapType))
+        return UtilityOperation::WrapIteratorPreIncrement;
+    }
+    return std::nullopt;
+  }
   const auto Vector = approvedUtilityVectorRecord(
       S, SM, Method ? Method->getParent() : nullptr, Context);
   if (Method && Vector) {
@@ -15662,6 +15841,23 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                        ? Vector->ElementType.withConst()
                                        : Vector->ElementType)))
       return UtilityOperation::VectorData;
+    if (!Operator && !Method->getNumParams() && Call->isPRValue() &&
+        (Name == "begin" || Name == "end" || Name == "cbegin" ||
+         Name == "cend") &&
+        Context.hasSameType(Call->getType(), Method->getReturnType())) {
+      const auto Iterator = approvedUtilityWrapIteratorRecord(
+          S, SM, Method->getReturnType()->getAsCXXRecordDecl(), Context);
+      const bool Const = Method->isConst() || Name == "cbegin" ||
+                         Name == "cend";
+      if (Iterator &&
+          Context.hasSameType(
+              Iterator->IteratorType,
+              Context.getPointerType(Const ? Vector->ElementType.withConst()
+                                           : Vector->ElementType)))
+        return Name == "begin" || Name == "cbegin"
+                   ? UtilityOperation::VectorBegin
+                   : UtilityOperation::VectorEnd;
+    }
     if (Operator && Method->getOverloadedOperator() == OO_Subscript &&
         Call->getNumArgs() == 2 && Method->getNumParams() == 1 &&
         Context.hasSameType(Method->getParamDecl(0)->getType(),

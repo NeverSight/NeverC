@@ -864,6 +864,11 @@ enum class UtilityOperation {
   VectorClear,
   VectorPushBack,
   VectorPopBack,
+  VectorBegin,
+  VectorEnd,
+  WrapIteratorDereference,
+  WrapIteratorPreIncrement,
+  WrapIteratorNotEqual,
   StringViewMaxSize,
   StringViewEmpty,
   StringViewData,
@@ -1194,6 +1199,25 @@ struct UtilityReverseIteratorRecord {
   const clang::FieldDecl *Legacy, *Current;
   clang::QualType IteratorType;
 };
+struct UtilityWrapIteratorRecord {
+  const clang::CXXRecordDecl *Record;
+  const clang::FieldDecl *Current;
+  clang::QualType IteratorType;
+};
+bool approvedUtilityWrapIteratorMetadata(const State &S,
+                                         const clang::SourceManager &SM,
+                                         const clang::CXXRecordDecl *Record);
+std::optional<UtilityWrapIteratorRecord>
+approvedUtilityWrapIteratorRecord(const State &S,
+                                  const clang::SourceManager &SM,
+                                  const clang::CXXRecordDecl *Record,
+                                  const clang::ASTContext &Context);
+enum class UtilityWrapIteratorConstruction { Default, CopyOrMove };
+std::optional<UtilityWrapIteratorConstruction>
+approvedUtilityWrapIteratorConstruction(const State &S,
+                                        const clang::SourceManager &SM,
+                                        const clang::CXXConstructExpr *Construction,
+                                        const clang::ASTContext &Context);
 bool approvedUtilityReverseIteratorMetadata(const State &S,
                                             const clang::SourceManager &SM,
                                             const clang::CXXRecordDecl *Record);
@@ -1415,6 +1439,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredUtilityVectors;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityOptionals;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityReverseIterators;
+  std::set<const clang::CXXRecordDecl *> RequiredUtilityWrapIterators;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityDefaultDeletes;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityUniquePtrs;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityAllocators;
@@ -1466,6 +1491,9 @@ public:
   bool requireUtilityReverseIterator(const clang::CXXRecordDecl *Record,
                                      clang::SourceLocation Location,
                                      unsigned Depth = 0);
+  bool requireUtilityWrapIterator(const clang::CXXRecordDecl *Record,
+                                  clang::SourceLocation Location,
+                                  unsigned Depth = 0);
   bool requireUtilityDefaultDelete(const clang::CXXRecordDecl *Record,
                                    clang::SourceLocation Location,
                                    unsigned Depth = 0);

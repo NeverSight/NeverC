@@ -2341,6 +2341,13 @@ void Adapter::checkQueryType(QualType T, SourceLocation L,
       checkQueryType(Arguments.get(0).getAsType(), L, AllowIncompleteArrays,
                      AllowIncompleteRecords, Depth + 1);
     } else if (AllowIncompleteRecords &&
+               approvedUtilityWrapIteratorMetadata(
+                   S, Sources, T->getAsCXXRecordDecl())) {
+      const auto *Iterator =
+          dyn_cast<ClassTemplateSpecializationDecl>(T->getAsCXXRecordDecl());
+      checkQueryType(Iterator->getTemplateArgs().get(0).getAsType(), L,
+                     AllowIncompleteArrays, AllowIncompleteRecords, Depth + 1);
+    } else if (AllowIncompleteRecords &&
                approvedMemoryTemplateMetadata(S, Sources,
                                               T->getAsCXXRecordDecl())) {
       const auto *Metadata =
@@ -4639,6 +4646,9 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
       } else if (approvedUtilityReverseIteratorMetadata(S, Sources, D) &&
                  !requireUtilityReverseIterator(D, L, Depth + 1)) {
         return {};
+      } else if (approvedUtilityWrapIteratorMetadata(S, Sources, D) &&
+                 !requireUtilityWrapIterator(D, L, Depth + 1)) {
+        return {};
       }
       return name(D);
     }
@@ -4856,6 +4866,31 @@ bool Adapter::requireUtilityReverseIterator(const CXXRecordDecl *Record,
   for (const auto *Field : {Iterator->Legacy, Iterator->Current})
     if (type(Field->getType(), Location, false, Depth + 1).empty())
       return false;
+  Records.push_back(const_cast<CXXRecordDecl *>(Iterator->Record));
+  return true;
+}
+
+bool Adapter::requireUtilityWrapIterator(const CXXRecordDecl *Record,
+                                         SourceLocation Location,
+                                         unsigned Depth) {
+  if (Depth > 64) {
+    reject(Location, "utility wrap iterator type",
+           "Nested std::__wrap_iter types exceed the protocol limit.");
+    return false;
+  }
+  auto Iterator =
+      approvedUtilityWrapIteratorRecord(S, Sources, Record, Context);
+  if (!Iterator) {
+    reject(Location, "standard library record",
+           "Only the pinned pointer std::__wrap_iter layout is admitted.",
+           "TR0203");
+    return false;
+  }
+  const auto *Canonical = Iterator->Record->getCanonicalDecl();
+  if (!RequiredUtilityWrapIterators.insert(Canonical).second)
+    return true;
+  if (type(Iterator->IteratorType, Location, false, Depth + 1).empty())
+    return false;
   Records.push_back(const_cast<CXXRecordDecl *>(Iterator->Record));
   return true;
 }
@@ -7863,6 +7898,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                                                     A.Context) ||
          approvedUtilityStringViewConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityOptionalConstruction(A.S, A.Sources, C, A.Context) ||
+         approvedUtilityWrapIteratorConstruction(A.S, A.Sources, C,
+                                                A.Context) ||
          approvedUtilityReverseIteratorConstruction(A.S, A.Sources, C,
                                                     A.Context))) {
       for (unsigned I = 0; I < C->getNumArgs() &&
@@ -10191,6 +10228,8 @@ public:
            UtilityOptionalMetadata ||
            approvedUtilityOptionalConstruction(A.S, A.Sources, Construction,
                                                A.Context) ||
+           approvedUtilityWrapIteratorConstruction(A.S, A.Sources,
+                                                  Construction, A.Context) ||
            approvedUtilityReverseIteratorConstruction(A.S, A.Sources,
                                                       Construction, A.Context));
       const bool ApprovedUtilityCall =
@@ -15334,6 +15373,8 @@ public:
                                                          A.Context) ||
                    approvedUtilityOptionalConstruction(A.S, A.Sources, C,
                                                        A.Context) ||
+                   approvedUtilityWrapIteratorConstruction(A.S, A.Sources, C,
+                                                          A.Context) ||
                    approvedUtilityReverseIteratorConstruction(A.S, A.Sources, C,
                                                               A.Context))
           checkConstruction(C, L);

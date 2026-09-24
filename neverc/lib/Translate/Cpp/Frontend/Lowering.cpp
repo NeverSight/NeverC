@@ -8960,6 +8960,46 @@ class FunctionLowering {
                               : std::move(Begin),
                           *Reverse);
     }
+    case UtilityOperation::WrapIteratorNotEqual: {
+      const auto *Left = Call->getArg(0);
+      const auto *Right = Call->getArg(1);
+      auto Iterator = approvedUtilityWrapIteratorRecord(
+          A.S, A.Sources, Left->getType()->getAsCXXRecordDecl(), A.Context);
+      if (!Iterator)
+        reject(L, "wrap iterator comparison",
+               "The selected std::__wrap_iter layout is unavailable.");
+      auto LeftPointer = snapshot(
+          fieldStorage(lvalue(Left), Iterator->Current, L), L);
+      auto RightPointer = snapshot(
+          fieldStorage(lvalue(Right), Iterator->Current, L), L);
+      return snapshot(binary("!=", std::move(LeftPointer),
+                             std::move(RightPointer), "bool", L), L);
+    }
+    case UtilityOperation::WrapIteratorDereference:
+    case UtilityOperation::WrapIteratorPreIncrement: {
+      const auto *Object = MemberObject();
+      auto Iterator = Object ? approvedUtilityWrapIteratorRecord(
+                                   A.S, A.Sources,
+                                   Object->getType()->getAsCXXRecordDecl(),
+                                   A.Context)
+                             : std::optional<UtilityWrapIteratorRecord>();
+      if (!Object || !Iterator)
+        reject(L, "wrap iterator operation",
+               "The selected std::__wrap_iter layout is unavailable.");
+      auto Receiver =
+          snapshot(address(lvalue(Object), Object->getType(), L), L);
+      auto Place = dereference(json::Object(Receiver), L);
+      auto Pointer = fieldStorage(json::Object(Place), Iterator->Current, L);
+      if (Operation == UtilityOperation::WrapIteratorDereference)
+        return dereference(
+            cast(std::move(Pointer),
+                 type(A.Context.getPointerType(Call->getType()), L), L), L);
+      assign(Pointer,
+             binary("+", json::Object(Pointer),
+                    quantity(1, type(A.Context.getPointerDiffType(), L), L),
+                    type(Iterator->IteratorType, L), L), L);
+      return Place;
+    }
     case UtilityOperation::VectorSize:
     case UtilityOperation::VectorCapacity:
     case UtilityOperation::VectorEmpty:
@@ -8967,7 +9007,9 @@ class FunctionLowering {
     case UtilityOperation::VectorSubscript:
     case UtilityOperation::VectorFront:
     case UtilityOperation::VectorBack:
-    case UtilityOperation::VectorClear: {
+    case UtilityOperation::VectorClear:
+    case UtilityOperation::VectorBegin:
+    case UtilityOperation::VectorEnd: {
       const auto *Object = MemberObject();
       auto Vector = Object ? VectorFor(Object->getType())
                            : std::optional<UtilityVectorRecord>();
@@ -8991,6 +9033,26 @@ class FunctionLowering {
       }
       if (Operation == UtilityOperation::VectorData)
         return cast(std::move(Begin), type(Call->getType(), L), L);
+      if (Operation == UtilityOperation::VectorBegin ||
+          Operation == UtilityOperation::VectorEnd) {
+        auto Iterator = approvedUtilityWrapIteratorRecord(
+            A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+        if (!Iterator)
+          reject(L, "vector iterator",
+                 "The selected std::__wrap_iter layout is unavailable.");
+        auto Place = Destination ? std::move(*Destination)
+                                 : objectTemporary(Call->getType(), L);
+        Destination.reset();
+        if (Place.getString("type") != type(Call->getType(), L))
+          reject(L, "vector iterator",
+                 "The iterator destination type differs from the result.");
+        auto Pointer = Operation == UtilityOperation::VectorBegin
+                           ? std::move(Begin)
+                           : Member("nct_vector_end");
+        assign(fieldStorage(json::Object(Place), Iterator->Current, L),
+               cast(std::move(Pointer), type(Iterator->IteratorType, L), L), L);
+        return Place;
+      }
       if (Operation == UtilityOperation::VectorFront ||
           Operation == UtilityOperation::VectorBack) {
         auto Pointer = Operation == UtilityOperation::VectorFront
@@ -12252,6 +12314,21 @@ class FunctionLowering {
       }
       reject(L, "utility optional construction",
              "Unknown approved std::optional construction.");
+    }
+    if (auto Kind = approvedUtilityWrapIteratorConstruction(A.S, A.Sources,
+                                                            C, A.Context)) {
+      auto Iterator = approvedUtilityWrapIteratorRecord(
+          A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context);
+      if (!Iterator)
+        reject(L, "wrap iterator construction",
+               "The selected std::__wrap_iter layout is unavailable.");
+      if (*Kind == UtilityWrapIteratorConstruction::CopyOrMove) {
+        assign(std::move(Place), expression(C->getArg(0)), L);
+      } else {
+        initializeZero(fieldStorage(std::move(Place), Iterator->Current, L),
+                       Iterator->IteratorType, L);
+      }
+      return;
     }
     if (auto Kind = approvedUtilityReverseIteratorConstruction(A.S, A.Sources,
                                                                C, A.Context)) {

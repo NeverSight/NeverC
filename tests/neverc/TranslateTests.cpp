@@ -51554,4 +51554,47 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorRangeForRun) {
+  const auto Source = tmpFile("vector-range-for.cpp");
+  const auto Output = tmpFile("vector-range-for.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <vector>
+int main() {
+  std::vector<int> values{2, 4, 6};
+  for (int &item : values)
+    ++item;
+  const std::vector<int> &view = values;
+  int total = 0;
+  for (int item : view)
+    total += item;
+  std::vector<int> empty;
+  for (int item : empty)
+    total += item;
+  auto cursor = values.cbegin();
+  auto finish = values.cend();
+  int copied = 0;
+  for (; cursor != finish; ++cursor)
+    copied += *cursor;
+  return total == 15 && copied == 15 &&
+         values[0] == 3 && values[2] == 7 ? 0 : 1;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o",
+                                   Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-range-for" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 } // namespace
