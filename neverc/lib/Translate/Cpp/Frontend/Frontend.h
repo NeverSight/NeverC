@@ -920,6 +920,7 @@ enum class UtilityOperation {
   VectorREnd,
   VectorErase,
   VectorInsert,
+  VectorInsertRange,
   WrapIteratorDereference,
   WrapIteratorPreIncrement,
   WrapIteratorPreDecrement,

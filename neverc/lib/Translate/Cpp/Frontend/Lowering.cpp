@@ -10256,7 +10256,8 @@ class FunctionLowering {
       return dereference(binary("+", std::move(Data), std::move(Index),
                                 PointerType, L), L);
     }
-    case UtilityOperation::VectorInsert: {
+    case UtilityOperation::VectorInsert:
+    case UtilityOperation::VectorInsertRange: {
       const auto *Object = MemberObject();
       auto Vector = Object ? VectorFor(Object->getType())
                            : std::optional<UtilityVectorRecord>();
@@ -10278,12 +10279,79 @@ class FunctionLowering {
       const auto PointerType = type(Vector->PointerType, L);
       const auto ConstPointerType =
           type(A.Context.getPointerType(Vector->ElementType.withConst()), L);
-      auto Count = Call->getNumArgs() == 3
-                       ? snapshot(expression(Call->getArg(1)), L)
-                       : snapshot(quantity(1, SizeType, L), L);
-      // Capture a source element before either shifting or releasing storage.
-      auto Value =
-          snapshot(expression(Call->getArg(Call->getNumArgs() - 1)), L);
+      auto Count = temporary(SizeType, L);
+      std::optional<Expression> Value;
+      std::optional<Expression> RangeCurrent;
+      std::string RangePointerType = ConstPointerType;
+      if (Operation == UtilityOperation::VectorInsert) {
+        assign(Count,
+               Call->getNumArgs() == 3 ? expression(Call->getArg(1))
+                                       : quantity(1, SizeType, L),
+               L);
+        // Capture a source element before shifting or releasing storage.
+        Value = snapshot(expression(Call->getArg(Call->getNumArgs() - 1)), L);
+      } else {
+        Expression RangeBegin;
+        if (Call->getNumArgs() == 2) {
+          auto List = approvedUtilityInitializerListRecord(
+              A.S, A.Sources, Call->getArg(1)->getType()->getAsCXXRecordDecl(),
+              A.Context);
+          if (!List)
+            reject(L, "vector range insert",
+                   "The selected initializer-list layout is unavailable.");
+          auto ListValue = snapshot(expression(Call->getArg(1)), L);
+          RangePointerType = type(List->Begin->getType(), L);
+          RangeBegin = snapshot(
+              fieldStorage(json::Object(ListValue), List->Begin, L), L);
+          assign(Count, fieldStorage(std::move(ListValue), List->Size, L), L);
+        } else {
+          const auto SourceType = Call->getArg(1)->getType();
+          auto Wrapped = approvedUtilityWrapIteratorRecord(
+              A.S, A.Sources, SourceType->getAsCXXRecordDecl(), A.Context);
+          Expression RangeEnd;
+          if (Wrapped) {
+            auto FirstValue = snapshot(expression(Call->getArg(1)), L);
+            auto LastValue = snapshot(expression(Call->getArg(2)), L);
+            RangePointerType = type(Wrapped->IteratorType, L);
+            RangeBegin = snapshot(
+                fieldStorage(std::move(FirstValue), Wrapped->Current, L), L);
+            RangeEnd = snapshot(
+                fieldStorage(std::move(LastValue), Wrapped->Current, L), L);
+          } else {
+            RangePointerType = type(SourceType, L);
+            RangeBegin = snapshot(expression(Call->getArg(1)), L);
+            RangeEnd = snapshot(expression(Call->getArg(2)), L);
+          }
+          assign(Count, quantity(0, SizeType, L), L);
+          const auto MeasureRange = labelName(), RangeMeasured = labelName();
+          branch(binary("!=", json::Object(RangeBegin), json::Object(RangeEnd),
+                        "bool", L),
+                 MeasureRange, RangeMeasured, L);
+          label(MeasureRange, L);
+          assign(Count,
+                 cast(binary("-", json::Object(RangeEnd),
+                             json::Object(RangeBegin), DifferenceType, L),
+                      SizeType, L),
+                 L);
+          jump(RangeMeasured, L);
+          label(RangeMeasured, L);
+        }
+        RangeCurrent = temporary(RangePointerType, L);
+        assign(*RangeCurrent, std::move(RangeBegin), L);
+      }
+      auto InsertValue = [&]() -> Expression {
+        if (Value)
+          return json::Object(*Value);
+        if (!RangeCurrent)
+          reject(L, "vector range insert",
+                 "The selected source range is unavailable.");
+        auto Current = snapshot(dereference(json::Object(*RangeCurrent), L), L);
+        assign(*RangeCurrent,
+               binary("+", json::Object(*RangeCurrent),
+                      quantity(1, DifferenceType, L), RangePointerType, L),
+               L);
+        return Current;
+      };
       auto Member = [&](const char *Name) {
         return Expression{
             {"kind", "member"},
@@ -10384,7 +10452,7 @@ class FunctionLowering {
           binary("<", json::Object(FillIndex), json::Object(Count), "bool", L),
           Fill, Filled, L);
       label(Fill, L);
-      assign(dereference(json::Object(FillTarget), L), json::Object(Value), L);
+      assign(dereference(json::Object(FillTarget), L), InsertValue(), L);
       assign(FillTarget,
              binary("+", json::Object(FillTarget),
                     quantity(1, DifferenceType, L), PointerType, L),
@@ -10467,7 +10535,7 @@ class FunctionLowering {
           binary("<", json::Object(GrowIndex), json::Object(Count), "bool", L),
           GrowFill, GrowFillDone, L);
       label(GrowFill, L);
-      assign(dereference(json::Object(NewCurrent), L), json::Object(Value), L);
+      assign(dereference(json::Object(NewCurrent), L), InsertValue(), L);
       assign(NewCurrent,
              binary("+", json::Object(NewCurrent),
                     quantity(1, DifferenceType, L), PointerType, L),

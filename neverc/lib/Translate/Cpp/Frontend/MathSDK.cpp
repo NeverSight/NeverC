@@ -16795,6 +16795,41 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
               Context.hasSameType(Call->getArg(1)->getType(),
                                   Context.getSizeType()))))
           return UtilityOperation::VectorInsert;
+        if (Method->getNumParams() == 2 && !Method->getPrimaryTemplate() &&
+            Context.hasSameType(Method->getParamDecl(1)->getType(),
+                                Call->getArg(1)->getType())) {
+          const auto List = approvedUtilityInitializerListRecord(
+              S, SM, Method->getParamDecl(1)->getType()->getAsCXXRecordDecl(),
+              Context);
+          if (List && Context.hasSameType(List->ElementType, Element))
+            return UtilityOperation::VectorInsertRange;
+        }
+        if (Method->getNumParams() == 3 && Method->getPrimaryTemplate() &&
+            approvedStandardSDKDeclaration(S, SM,
+                                           Method->getPrimaryTemplate()) &&
+            cstddefOrigin(S, SM, Method->getPrimaryTemplate()->getLocation(),
+                          "libcxx", "__vector/vector.h")) {
+          const auto FirstType = Method->getParamDecl(1)->getType();
+          const auto LastType = Method->getParamDecl(2)->getType();
+          const bool RawPointer =
+              Context.hasSameType(FirstType, Context.getPointerType(Element)) ||
+              Context.hasSameType(FirstType,
+                                  Context.getPointerType(Element.withConst()));
+          const auto Wrapped = approvedUtilityWrapIteratorRecord(
+              S, SM, FirstType->getAsCXXRecordDecl(), Context);
+          const bool WrappedPointer =
+              Wrapped &&
+              (Context.hasSameType(Wrapped->IteratorType,
+                                   Context.getPointerType(Element)) ||
+               Context.hasSameType(
+                   Wrapped->IteratorType,
+                   Context.getPointerType(Element.withConst())));
+          if ((RawPointer || WrappedPointer) &&
+              Context.hasSameType(FirstType, LastType) &&
+              Context.hasSameType(Call->getArg(1)->getType(), FirstType) &&
+              Context.hasSameType(Call->getArg(2)->getType(), LastType))
+            return UtilityOperation::VectorInsertRange;
+        }
       }
     }
     if (!Operator && !Method->isConst() &&

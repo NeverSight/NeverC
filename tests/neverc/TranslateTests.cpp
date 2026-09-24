@@ -51848,6 +51848,93 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorRangeInsertRun) {
+  const auto Source = tmpFile("vector-range-insert.cpp");
+  const auto Output = tmpFile("vector-range-insert.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <vector>
+int main() {
+  {
+    std::vector<int> values{1, 4};
+    values.reserve(12);
+    int *storage = values.data();
+    int raw[]{2, 3};
+    auto middle = values.cbegin();
+    ++middle;
+    auto inserted = values.insert(middle, raw, raw + 2);
+    if (inserted.base() != storage + 1 || values.size() != 4 ||
+        values[0] != 1 || values[1] != 2 || values[2] != 3 ||
+        values[3] != 4 || values.data() != storage)
+      return 1;
+    std::vector<int> source{5, 6};
+    auto appended = values.insert(values.cend(), source.cbegin(), source.cend());
+    if (appended.base() != storage + 4 || values.size() != 6 ||
+        values[4] != 5 || values[5] != 6 || source[0] != 5)
+      return 2;
+    auto listed = values.insert(values.cbegin(), {7, 8});
+    if (listed.base() != storage || values.size() != 8 ||
+        values[0] != 7 || values[1] != 8 || values[2] != 1 ||
+        values[7] != 6 || values.data() != storage)
+      return 3;
+    std::initializer_list<int> none;
+    auto unchanged = values.insert(values.cbegin(), none);
+    auto unchanged_end = values.insert(values.cend(), raw, raw);
+    if (unchanged != values.begin() || unchanged_end != values.end() ||
+        values.size() != 8 || values.data() != storage)
+      return 4;
+    std::initializer_list<int> aliases{values[0], values[1]};
+    auto tail = values.insert(values.cend(), aliases);
+    if (tail.base() != storage + 8 || values.size() != 10 ||
+        values[8] != 7 || values[9] != 8)
+      return 5;
+    std::vector<int> tight(2);
+    tight[0] = 1;
+    tight[1] = 5;
+    int extra[]{2, 3, 4};
+    int *old_storage = tight.data();
+    auto position = tight.cbegin();
+    ++position;
+    auto grown = tight.insert(position, extra, extra + 3);
+    if (tight.data() == old_storage || grown.base() != tight.data() + 1 ||
+        tight.size() != 5 || tight[0] != 1 || tight[1] != 2 ||
+        tight[2] != 3 || tight[3] != 4 || tight[4] != 5)
+      return 6;
+    std::vector<int> empty;
+    auto first = empty.insert(empty.cbegin(), {9, 10});
+    if (first != empty.begin() || empty.size() != 2 ||
+        empty[0] != 9 || empty[1] != 10)
+      return 7;
+    std::vector<int> mutable_source{11};
+    std::vector<int> mutable_target;
+    auto mutable_result = mutable_target.insert(
+        mutable_target.cbegin(), mutable_source.begin(), mutable_source.end());
+    if (mutable_result != mutable_target.begin() || mutable_target.size() != 1 ||
+        mutable_target[0] != 11)
+      return 8;
+  }
+  return allocations == releases ? 0 : 9;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-range-insert" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorCopyAndMoveConstructionRun) {
   const auto Source = tmpFile("vector-copy-move.cpp");
   const auto Output = tmpFile("vector-copy-move.nc");
