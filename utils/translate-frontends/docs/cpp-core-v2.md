@@ -2229,6 +2229,10 @@ The `operator+=` overloads for `char`, `const char*`, and `const std::string&`
 reuse those paths and return the receiver reference.
 Member `swap` and `std::swap` exchange the authenticated representation words
 without allocating and preserve each long string's buffer ownership.
+The `assign(const char*)`, `assign(const char*, size_type)`,
+`assign(const std::string&)`, and `assign(size_type, char)` overloads reuse
+capacity when possible and return the receiver reference. Pointer assignment
+copies self-referenced bytes before changing size or releasing old storage.
 The frontend checks the pinned libc++ representation before emitting three
 storage words, including the alternate short-string layout selected on Apple
 arm64. Short strings stay inline, while long strings use the selected
@@ -2239,10 +2243,10 @@ retain existing capacity and storage. Pushing, resizing, reserving, and
 appending grow storage when needed. Host O0/O2 fixtures exercise both
 representations, embedded NUL, mutable and const access, copy and move,
 push/pop, resize/reserve, fill, pointer and string append with self-reference,
-the three `operator+=` overloads, member/free swap, clearing, and lifetime
-release; all eight supported target triples pass frontend translation. Other
-modifiers, character or allocator types, and throwing length/allocation paths
-remain unsupported.
+the three `operator+=` overloads, four `assign` overloads, member/free swap,
+clearing, and lifetime release; all eight supported target triples pass
+frontend translation. Other modifiers, character or allocator types, and
+throwing length/allocation paths remain unsupported.
 Quoted and shadow headers remain rejected.
 
 ## Vector header and metadata from `<vector>`

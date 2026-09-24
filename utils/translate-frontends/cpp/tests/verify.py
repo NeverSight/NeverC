@@ -29076,6 +29076,11 @@ int main() {
   std::string swapped("z");
   joined.swap(swapped);
   std::swap(joined, swapped);
+  std::string reassigned;
+  reassigned.assign("ABC");
+  reassigned.assign(3, 'q');
+  reassigned.assign(assigned);
+  reassigned.assign(reassigned.data() + 1, 2);
   return intact && emptied && assigned.size() == 14 &&
          assigned[0] == 'x' && assigned[2] == 'a' &&
          assigned[3] == 'b' && assigned[4] == 'c' && assigned[5] == 'd' &&
@@ -29084,6 +29089,8 @@ int main() {
          joined.size() == 8 && joined[0] == 'a' &&
          joined[3] == 'e' && joined[4] == 'a' &&
          joined[7] == 'e' &&
+         reassigned.size() == 2 && reassigned[0] == 'a' &&
+         reassigned[1] == 'a' &&
          assigned.capacity() >= requested_capacity
              ? 0 : 1;
 }

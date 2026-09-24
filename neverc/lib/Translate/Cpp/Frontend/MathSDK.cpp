@@ -16125,10 +16125,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if (!Reference || !Object || !Prototype ||
         (!Prototype->isNothrow() && Name != "push_back" && Name != "pop_back" &&
          Name != "reserve" && Name != "resize" && Name != "append" &&
+         Name != "assign" &&
          !PlusEqual) ||
         Method->isStatic() || Method->isVariadic() ||
         (!Method->hasBody() && Name != "push_back" && Name != "reserve" &&
-         Name != "resize" && Name != "append") ||
+         Name != "resize" && Name != "append" && Name != "assign") ||
         Method->getRefQualifier() != RQ_None ||
         Method->getParent()->getCanonicalDecl() !=
             String->Record->getCanonicalDecl() ||
@@ -16168,6 +16169,46 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Context.hasSameUnqualifiedType(
             Call->getArg(0)->getType(), Context.getRecordType(String->Record)))
       return UtilityOperation::StringMemberSwap;
+    if (!Operator && Name == "assign" && !Method->isConst() &&
+        !Object->getType().isConstQualified() &&
+        (Method->getNumParams() == 1 || Method->getNumParams() == 2) &&
+        Call->isLValue() &&
+        Method->getReturnType()->isLValueReferenceType() &&
+        Context.hasSameType(Method->getReturnType()->getPointeeType(),
+                            Context.getRecordType(String->Record)) &&
+        Context.hasSameType(Call->getType(),
+                            Context.getRecordType(String->Record))) {
+      const auto FirstParameter = Method->getParamDecl(0)->getType();
+      const auto ConstPointer =
+          Context.getPointerType(Context.CharTy.withConst());
+      if (Method->getNumParams() == 1 &&
+          Context.hasSameType(FirstParameter, ConstPointer) &&
+          Context.hasSameType(Call->getArg(0)->getType(), ConstPointer))
+        return UtilityOperation::StringAssignCString;
+      const auto StringType = Context.getRecordType(String->Record);
+      if (Method->getNumParams() == 1 &&
+          FirstParameter->isLValueReferenceType() &&
+          Context.hasSameType(FirstParameter->getPointeeType(),
+                              StringType.withConst()) &&
+          Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
+                                         StringType))
+        return UtilityOperation::StringAssignString;
+      if (Method->getNumParams() == 2) {
+        const auto SecondParameter = Method->getParamDecl(1)->getType();
+        if (Context.hasSameType(FirstParameter, ConstPointer) &&
+            Context.hasSameType(SecondParameter, Context.getSizeType()) &&
+            Context.hasSameType(Call->getArg(0)->getType(), ConstPointer) &&
+            Context.hasSameType(Call->getArg(1)->getType(),
+                                Context.getSizeType()))
+          return UtilityOperation::StringAssignPointer;
+        if (Context.hasSameType(FirstParameter, Context.getSizeType()) &&
+            Context.hasSameType(SecondParameter, Context.CharTy) &&
+            Context.hasSameType(Call->getArg(0)->getType(),
+                                Context.getSizeType()) &&
+            Context.hasSameType(Call->getArg(1)->getType(), Context.CharTy))
+          return UtilityOperation::StringAssignFill;
+      }
+    }
     if ((!Operator && Name == "append") || PlusEqual) {
       const unsigned Argument = PlusEqual ? 1 : 0;
       if (Method->isConst() || Object->getType().isConstQualified() ||

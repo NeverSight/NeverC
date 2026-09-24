@@ -52478,4 +52478,94 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringAssignRun) {
+  const auto Source = tmpFile("string-assign.cpp");
+  const auto Output = tmpFile("string-assign.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+int main() {
+  {
+    std::string text("abcdefghijklmnopqrstuv");
+    const char raw[] = {'X', 0, 'Y'};
+    std::string *result = &text.assign(raw, 3);
+    if (result != &text || text.size() != 3 || text[0] != 'X' ||
+        text[1] != 0 || text[2] != 'Y' || text.data()[3] != 0 ||
+        allocations != 0)
+      return 1;
+    std::string short_alias("abcdef");
+    short_alias.assign(short_alias.data() + 2, 3);
+    if (short_alias.size() != 3 || short_alias[0] != 'c' ||
+        short_alias[2] != 'e' || short_alias.data()[3] != 0 ||
+        allocations != 0)
+      return 11;
+    short_alias.assign(5, short_alias.back());
+    if (short_alias.size() != 5 || short_alias[0] != 'e' ||
+        short_alias[4] != 'e' || allocations != 0)
+      return 12;
+    text.reserve(40);
+    const char *heap_data = text.data();
+    result = &text.assign(text.data() + 1, 2);
+    if (result != &text || text.data() != heap_data || text.size() != 2 ||
+        text[0] != 0 || text[1] != 'Y' || text.data()[2] != 0 ||
+        allocations != 1)
+      return 2;
+    text.assign("abcdef");
+    text.assign(text.c_str() + 2);
+    if (text.data() != heap_data || text.size() != 4 ||
+        text[0] != 'c' || text[3] != 'f' || text.data()[4] != 0)
+      return 3;
+    text.assign(text);
+    if (text.data() != heap_data || text.size() != 4 ||
+        text[0] != 'c' || allocations != 1)
+      return 4;
+    const std::string source("abcdefghijklmnopqrstuvwxyz");
+    result = &text.assign(source);
+    if (result != &text || text.data() != heap_data ||
+        text.size() != 26 || text[0] != 'a' || text[25] != 'z' ||
+        source[25] != 'z' || allocations != 2)
+      return 5;
+    text.assign(source.data(), source.size());
+    if (text.data() != heap_data || text.size() != 26 ||
+        text[25] != 'z' || allocations != 2)
+      return 6;
+    result = &text.assign(80, text.front());
+    if (result != &text || text.data() == heap_data ||
+        text.size() != 80 || text[0] != 'a' || text[79] != 'a' ||
+        text.data()[80] != 0 || allocations != 3 || releases != 1)
+      return 7;
+    const char *larger_data = text.data();
+    text.assign(text.data() + 5, 50);
+    if (text.data() != larger_data || text.size() != 50 ||
+        text[0] != 'a' || text[49] != 'a' || text.data()[50] != 0 ||
+        allocations != 3)
+      return 8;
+    std::string copied;
+    copied.assign(text);
+    if (copied.size() != 50 || copied[49] != 'a' ||
+        copied.data() == text.data() || allocations != 4)
+      return 9;
+  }
+  return allocations == 4 && releases == 4 ? 0 : 10;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-assign" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 } // namespace
