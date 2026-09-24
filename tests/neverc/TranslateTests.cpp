@@ -51984,4 +51984,51 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringCapacityAndClearRun) {
+  const auto Source = tmpFile("string-clear.cpp");
+  const auto Output = tmpFile("string-clear.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+int main() {
+  {
+    std::string short_text("hello");
+    const char *short_data = short_text.data();
+    if (short_text.capacity() != sizeof(std::string) - 2) return 1;
+    short_text.clear();
+    if (!short_text.empty() || short_text.size() != 0 ||
+        short_text.data() != short_data || short_text.data()[0] != 0 ||
+        short_text.capacity() != sizeof(std::string) - 2) return 2;
+    std::string long_text("abcdefghijklmnopqrstuvwxyz");
+    const char *long_data = long_text.data();
+    Size long_capacity = long_text.capacity();
+    if (long_capacity < 26 || allocations != 1) return 3;
+    long_text.clear();
+    long_text.clear();
+    if (!long_text.empty() || long_text.size() != 0 ||
+        long_text.data() != long_data || long_text.data()[0] != 0 ||
+        long_text.capacity() != long_capacity || allocations != 1) return 4;
+  }
+  return allocations == 1 && releases == 1 ? 0 : 5;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o",
+                                   Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-clear" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 } // namespace

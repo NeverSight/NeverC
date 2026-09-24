@@ -9006,9 +9006,11 @@ class FunctionLowering {
       return Place;
     }
     case UtilityOperation::StringSize:
+    case UtilityOperation::StringCapacity:
     case UtilityOperation::StringEmpty:
     case UtilityOperation::StringData:
-    case UtilityOperation::StringSubscript: {
+    case UtilityOperation::StringSubscript:
+    case UtilityOperation::StringClear: {
       const auto *Object = MemberObject();
       auto String = Object ? StringFor(Object->getType())
                            : std::optional<UtilityStringRecord>();
@@ -9037,6 +9039,7 @@ class FunctionLowering {
                                       << (A.Context.getTypeSize(A.Context.getSizeType()) - 1)
                                 : uint64_t(1);
       if (Operation == UtilityOperation::StringSize ||
+          Operation == UtilityOperation::StringCapacity ||
           Operation == UtilityOperation::StringEmpty) {
         auto Result = temporary(SizeType, L);
         const auto Long = labelName(), Short = labelName(), Done = labelName();
@@ -9044,11 +9047,19 @@ class FunctionLowering {
                                     quantity(LongFlag, SizeType, L), SizeType, L),
                       quantity(0, SizeType, L), "bool", L), Long, Short, L);
         label(Long, L);
-        assign(Result, Word("nct_string_word1"), L);
+        assign(Result,
+               Operation == UtilityOperation::StringCapacity
+                   ? binary("-", binary("-", json::Object(First),
+                                        quantity(LongFlag, SizeType, L),
+                                        SizeType, L),
+                            quantity(1, SizeType, L), SizeType, L)
+                   : Word("nct_string_word1"), L);
         jump(Done, L);
         label(Short, L);
         assign(Result,
-               String->AlternateLayout
+               Operation == UtilityOperation::StringCapacity
+                   ? quantity(String->ShortCapacity, SizeType, L)
+                   : String->AlternateLayout
                    ? binary(">>", json::Object(First),
                             quantity(A.Context.getTypeSize(A.Context.getSizeType()) - 8,
                                      SizeType, L), SizeType, L)
@@ -9064,7 +9075,9 @@ class FunctionLowering {
       }
       const auto CharacterType = Operation == UtilityOperation::StringData
                                      ? Call->getType()->getPointeeType()
-                                     : Call->getType();
+                                     : Operation == UtilityOperation::StringClear
+                                           ? A.Context.CharTy
+                                           : Call->getType();
       const auto PointerType = type(A.Context.getPointerType(CharacterType), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       auto Data = temporary(PointerType, L);
@@ -9076,6 +9089,8 @@ class FunctionLowering {
       assign(Data, cast(Word(String->AlternateLayout ? "nct_string_word0"
                                                     : "nct_string_word2"),
                         PointerType, L), L);
+      if (Operation == UtilityOperation::StringClear)
+        assign(Word("nct_string_word1"), quantity(0, SizeType, L), L);
       jump(Done, L);
       label(Short, L);
       auto ShortPointer = cast(cast(json::Object(Receiver), "ptr:void", L),
@@ -9086,8 +9101,17 @@ class FunctionLowering {
                  : binary("+", std::move(ShortPointer),
                           quantity(1, DifferenceType, L), PointerType, L),
              L);
+      if (Operation == UtilityOperation::StringClear)
+        assign(Word(String->AlternateLayout ? "nct_string_word2"
+                                            : "nct_string_word0"),
+               quantity(0, SizeType, L), L);
       jump(Done, L);
       label(Done, L);
+      if (Operation == UtilityOperation::StringClear) {
+        assign(dereference(std::move(Data), L),
+               quantity(0, type(A.Context.CharTy, L), L), L);
+        return {};
+      }
       if (Operation == UtilityOperation::StringData)
         return Data;
       auto Index = cast(expression(Call->getArg(1)), DifferenceType, L);

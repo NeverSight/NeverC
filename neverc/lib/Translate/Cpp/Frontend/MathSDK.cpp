@@ -16138,9 +16138,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       if ((Name == "size" || Name == "length") &&
           Context.hasSameType(Method->getReturnType(), Context.getSizeType()))
         return UtilityOperation::StringSize;
+      if (Name == "capacity" &&
+          Context.hasSameType(Method->getReturnType(), Context.getSizeType()))
+        return UtilityOperation::StringCapacity;
       if (Name == "empty" && Method->getReturnType()->isBooleanType())
         return UtilityOperation::StringEmpty;
     }
+    if (!Operator && Name == "clear" && !Method->isConst() &&
+        !Object->getType().isConstQualified() && !Method->getNumParams() &&
+        !Call->getNumArgs() && Method->getReturnType()->isVoidType() &&
+        Call->getType()->isVoidType())
+      return UtilityOperation::StringClear;
     if (!Operator && (Name == "data" || Name == "c_str") &&
         !Method->getNumParams() && Call->isPRValue() &&
         Context.hasSameType(Call->getType(), Method->getReturnType()) &&

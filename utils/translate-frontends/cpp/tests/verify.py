@@ -29051,9 +29051,13 @@ int main() {
   assigned = copied;
   std::string moved(static_cast<std::string&&>(copied));
   assigned = static_cast<std::string&&>(moved);
-  return empty.empty() && short_text.size() == 5 &&
+  bool intact = empty.empty() && short_text.size() == 5 &&
          long_text[25] == 'z' && assigned[25] == 'z' &&
-         copied.empty() && moved.empty() ? 0 : 1;
+         copied.empty() && moved.empty();
+  auto old_capacity = assigned.capacity();
+  assigned.clear();
+  return intact && assigned.empty() && assigned.capacity() == old_capacity
+             ? 0 : 1;
 }
 """
     for target in sdk_targets:
