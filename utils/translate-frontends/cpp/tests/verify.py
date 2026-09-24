@@ -28991,7 +28991,14 @@ int iterator_access(std::vector<int>& values) {
   auto last = values.end();
   if (first == last) return 0;
   --last;
-  return *last + int(last - first) + (last.base() == values.data());
+  auto reverse = values.rbegin();
+  const std::vector<int>& constant = values;
+  auto const_reverse = constant.crbegin();
+  return *last + int(last - first) + (last.base() == values.data()) +
+         *reverse + (reverse.base() == values.end()) +
+         (reverse.operator->() == last.base()) +
+         int(values.rend() - reverse) +
+         (const_reverse != constant.crend());
 }
 """
     vector_dependencies = None
@@ -29169,6 +29176,49 @@ int main() {
   bool long_iteration = long_count == 36 && long_iterated[0] == 'A' &&
                         long_iterated[35] == '9' &&
                         !(empty.begin() != empty.end());
+  std::string reverse_text("abc");
+  auto reverse_cursor = reverse_text.rbegin();
+  bool reverse_start = *reverse_cursor == 'c' &&
+                       reverse_cursor.base() == reverse_text.end() &&
+                       reverse_cursor.operator->() == reverse_text.data() + 2;
+  *reverse_cursor = 'Z';
+  ++reverse_cursor;
+  bool reverse_walk = *reverse_cursor == 'b' &&
+                      reverse_cursor != reverse_text.rend() &&
+                      reverse_text[2] == 'Z';
+  const std::string &reverse_const = reverse_text;
+  auto const_reverse = reverse_const.crbegin();
+  bool reverse_const_intact = *const_reverse == 'Z' &&
+                              const_reverse[1] == 'b' &&
+                              *(const_reverse + 2) == 'a' &&
+                              reverse_const.crend() - const_reverse == 3 &&
+                              empty.rbegin() == empty.rend();
+  std::string::reverse_iterator direct_reverse(reverse_text.end());
+  auto factory_reverse = std::make_reverse_iterator(reverse_text.end());
+  std::string::const_reverse_iterator converted_reverse(reverse_text.rbegin());
+  std::string::const_reverse_iterator assigned_reverse;
+  assigned_reverse = reverse_text.rbegin();
+  auto post_reverse = reverse_text.rbegin();
+  auto old_reverse = post_reverse++;
+  auto offset_reverse = 1 + reverse_const.crbegin();
+  offset_reverse += 1;
+  offset_reverse -= 1;
+  bool reverse_construction = *direct_reverse == 'Z' &&
+                              *factory_reverse == 'Z' &&
+                              *converted_reverse == 'Z' &&
+                              *assigned_reverse == 'Z' &&
+                              *old_reverse == 'Z' && *post_reverse == 'b' &&
+                              *offset_reverse == 'b';
+  auto standard_reverse = reverse_text.rbegin();
+  std::advance(standard_reverse, 1);
+  bool reverse_standard_iterators = *standard_reverse == 'b' &&
+                                    *std::next(standard_reverse) == 'a' &&
+                                    *std::prev(standard_reverse) == 'Z' &&
+                                    std::distance(reverse_text.rbegin(),
+                                                  reverse_text.rend()) == 3;
+  const std::string reverse_long("abcdefghijklmnopqrstuvwxyz0123456789");
+  bool reverse_long_intact = *reverse_long.rbegin() == '9' &&
+                             *(reverse_long.rend() - 1) == 'a';
   return intact && emptied && assigned.size() == 14 &&
          assigned[0] == 'x' && assigned[2] == 'a' &&
          assigned[3] == 'b' && assigned[4] == 'c' && assigned[5] == 'd' &&
@@ -29182,7 +29232,9 @@ int main() {
          erase_intact && erased.empty() && compare_intact &&
          cstring_compare_intact && search_intact && set_search_intact &&
          mutable_iteration && const_iteration && long_iteration &&
-         iterator_arithmetic &&
+         iterator_arithmetic && reverse_start && reverse_walk &&
+         reverse_const_intact && reverse_construction &&
+         reverse_long_intact && reverse_standard_iterators &&
          assigned.capacity() >= requested_capacity
              ? 0 : 1;
 }

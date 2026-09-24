@@ -2088,7 +2088,10 @@ class FunctionLowering {
     };
     auto ReverseCurrent = [&](Expression Base,
                               const UtilityReverseIteratorRecord &Reverse) {
-      return fieldStorage(std::move(Base), Reverse.Current, L);
+      auto Current = fieldStorage(std::move(Base), Reverse.Current, L);
+      return Reverse.WrappedCurrent
+                 ? fieldStorage(std::move(Current), Reverse.WrappedCurrent, L)
+                 : Current;
     };
     auto ReverseValue = [&](Expression Pointer,
                             const UtilityReverseIteratorRecord &Reverse) {
@@ -2101,11 +2104,15 @@ class FunctionLowering {
             L, "reverse iterator result",
             "The destination type differs from the reverse iterator result.");
       auto Value = snapshot(
-          cast(std::move(Pointer), type(Reverse.IteratorType, L), L), L);
-      assign(fieldStorage(json::Object(Place), Reverse.Legacy, L),
-             json::Object(Value), L);
-      assign(fieldStorage(json::Object(Place), Reverse.Current, L),
-             std::move(Value), L);
+          cast(std::move(Pointer), type(Reverse.PointerType, L), L), L);
+      auto MemberPointer = [&](const FieldDecl *Field) {
+        auto Member = fieldStorage(json::Object(Place), Field, L);
+        return Reverse.WrappedCurrent
+                   ? fieldStorage(std::move(Member), Reverse.WrappedCurrent, L)
+                   : Member;
+      };
+      assign(MemberPointer(Reverse.Legacy), json::Object(Value), L);
+      assign(MemberPointer(Reverse.Current), std::move(Value), L);
       return Place;
     };
     auto AllocatorMaximum = [&](const UtilityAllocatorRecord &Allocator,
@@ -8433,7 +8440,7 @@ class FunctionLowering {
         auto Value = snapshot(Current, L);
         assign(Current,
                binary("-", std::move(Value), std::move(Offset),
-                      type(Reverse->IteratorType, L), L),
+                      type(Reverse->PointerType, L), L),
                L);
       } else {
         auto Current = snapshot(Iterator, L);
@@ -8486,7 +8493,7 @@ class FunctionLowering {
         return ReverseValue(
             binary(Operation == UtilityOperation::IteratorNext ? "-" : "+",
                    std::move(Current), std::move(Offset),
-                   type(Reverse->IteratorType, L), L),
+                   type(Reverse->PointerType, L), L),
             *Reverse);
       }
       return snapshot(
@@ -8516,18 +8523,18 @@ class FunctionLowering {
           Native ? Native->getSize().getLimitedValue() : Array->Size;
       if (Array && !Array->Size) {
         lvalue(Source);
-        return ReverseValue(A.zero(Reverse->IteratorType, L), *Reverse);
+        return ReverseValue(A.zero(Reverse->PointerType, L), *Reverse);
       }
       auto Base = lvalue(Source);
       auto Storage = Native ? std::move(Base)
                             : fieldStorage(std::move(Base), Array->Elements, L);
       auto Pointer =
-          decay(std::move(Storage), type(Reverse->IteratorType, L), L);
+          decay(std::move(Storage), type(Reverse->PointerType, L), L);
       if (Operation == UtilityOperation::IteratorRBegin ||
           Operation == UtilityOperation::ArrayRBegin)
         Pointer = binary("+", std::move(Pointer),
                          quantity(Count, type(A.Context.getSizeType(), L), L),
-                         type(Reverse->IteratorType, L), L);
+                         type(Reverse->PointerType, L), L);
       return ReverseValue(std::move(Pointer), *Reverse);
     }
     case UtilityOperation::MakeReverseIterator: {
@@ -8535,7 +8542,12 @@ class FunctionLowering {
       if (!Reverse)
         reject(L, "make reverse iterator",
                "The selected reverse iterator layout is unavailable.");
-      return ReverseValue(expression(Call->getArg(0)), *Reverse);
+      auto Iterator = snapshot(expression(Call->getArg(0)), L);
+      return ReverseValue(
+          Reverse->WrappedCurrent
+              ? fieldStorage(std::move(Iterator), Reverse->WrappedCurrent, L)
+              : std::move(Iterator),
+          *Reverse);
     }
     case UtilityOperation::ReverseBase:
     case UtilityOperation::ReverseDereference:
@@ -8546,13 +8558,24 @@ class FunctionLowering {
       if (!Object || !Reverse)
         reject(L, "reverse iterator access",
                "The selected reverse iterator layout is unavailable.");
+      if (Operation == UtilityOperation::ReverseBase) {
+        auto Current = fieldStorage(lvalue(Object), Reverse->Current, L);
+        if (!Reverse->WrappedCurrent)
+          return snapshot(std::move(Current), L);
+        auto Place = Destination ? std::move(*Destination)
+                                 : objectTemporary(Call->getType(), L);
+        Destination.reset();
+        if (Place.getString("type") != type(Call->getType(), L))
+          reject(L, "reverse iterator base",
+                 "The destination type differs from the base iterator.");
+        assign(Place, std::move(Current), L);
+        return Place;
+      }
       auto Current = snapshot(ReverseCurrent(lvalue(Object), *Reverse), L);
-      if (Operation == UtilityOperation::ReverseBase)
-        return Current;
       auto Previous =
           binary("-", std::move(Current),
                  quantity(1, type(A.Context.getPointerDiffType(), L), L),
-                 type(Reverse->IteratorType, L), L);
+                 type(Reverse->PointerType, L), L);
       if (Operation == UtilityOperation::ReverseArrow)
         return snapshot(std::move(Previous), L);
       return dereference(std::move(Previous), L);
@@ -8588,7 +8611,7 @@ class FunctionLowering {
       assign(Current,
              binary(Increment ? "-" : "+", std::move(Value),
                     quantity(1, type(A.Context.getPointerDiffType(), L), L),
-                    type(Reverse->IteratorType, L), L),
+                    type(Reverse->PointerType, L), L),
              L);
       return Post ? std::move(Result) : std::move(Stored);
     }
@@ -8621,12 +8644,12 @@ class FunctionLowering {
                    quantity(1, type(A.Context.getPointerDiffType(), L), L),
                    type(A.Context.getPointerDiffType(), L), L);
         return dereference(binary("-", std::move(Value), std::move(Position),
-                                  type(Reverse->IteratorType, L), L),
+                                  type(Reverse->PointerType, L), L),
                            L);
       }
       auto Pointer =
           binary(Forward ? "-" : "+", std::move(Value), std::move(Offset),
-                 type(Reverse->IteratorType, L), L);
+                 type(Reverse->PointerType, L), L);
       if (Operation == UtilityOperation::ReverseAddAssign ||
           Operation == UtilityOperation::ReverseSubtractAssign) {
         assign(Current, std::move(Pointer), L);
@@ -8692,7 +8715,7 @@ class FunctionLowering {
       auto Current =
           snapshot(ReverseCurrent(lvalue(Call->getArg(1)), *Reverse), L);
       return ReverseValue(binary("-", std::move(Current), std::move(Offset),
-                                 type(Reverse->IteratorType, L), L),
+                                 type(Reverse->PointerType, L), L),
                           *Reverse);
     }
     case UtilityOperation::OptionalEqual:
@@ -9463,6 +9486,26 @@ class FunctionLowering {
              std::move(Pointer), L);
       return Place;
     }
+    case UtilityOperation::StringRBegin:
+    case UtilityOperation::StringREnd: {
+      const auto *Object = MemberObject();
+      auto String = Object ? StringFor(Object->getType())
+                           : std::optional<UtilityStringRecord>();
+      auto Reverse = ReverseFor(Call->getType());
+      if (!Object || !String || !Reverse || !Reverse->WrappedCurrent)
+        reject(L, "string reverse iterator",
+               "The selected std::string reverse iterator layout is unavailable.");
+      auto Receiver = snapshot(address(lvalue(Object), Object->getType(), L), L);
+      auto [Data, Size] = ReadStringAt(std::move(Receiver), *String);
+      const auto PointerType = type(Reverse->PointerType, L);
+      auto Pointer = cast(std::move(Data), PointerType, L);
+      if (Operation == UtilityOperation::StringRBegin)
+        Pointer = binary("+", std::move(Pointer),
+                         cast(std::move(Size),
+                              type(A.Context.getPointerDiffType(), L), L),
+                         PointerType, L);
+      return ReverseValue(std::move(Pointer), *Reverse);
+    }
     case UtilityOperation::StringSize:
     case UtilityOperation::StringCapacity:
     case UtilityOperation::StringEmpty:
@@ -10222,7 +10265,9 @@ class FunctionLowering {
     case UtilityOperation::VectorBack:
     case UtilityOperation::VectorClear:
     case UtilityOperation::VectorBegin:
-    case UtilityOperation::VectorEnd: {
+    case UtilityOperation::VectorEnd:
+    case UtilityOperation::VectorRBegin:
+    case UtilityOperation::VectorREnd: {
       const auto *Object = MemberObject();
       auto Vector = Object ? VectorFor(Object->getType())
                            : std::optional<UtilityVectorRecord>();
@@ -10265,6 +10310,19 @@ class FunctionLowering {
         assign(fieldStorage(json::Object(Place), Iterator->Current, L),
                cast(std::move(Pointer), type(Iterator->IteratorType, L), L), L);
         return Place;
+      }
+      if (Operation == UtilityOperation::VectorRBegin ||
+          Operation == UtilityOperation::VectorREnd) {
+        auto Reverse = ReverseFor(Call->getType());
+        if (!Reverse || !Reverse->WrappedCurrent)
+          reject(L, "vector reverse iterator",
+                 "The selected std::vector reverse iterator layout is unavailable.");
+        auto Pointer = Operation == UtilityOperation::VectorRBegin
+                           ? Member("nct_vector_end")
+                           : std::move(Begin);
+        return ReverseValue(
+            cast(std::move(Pointer), type(Reverse->PointerType, L), L),
+            *Reverse);
       }
       if (Operation == UtilityOperation::VectorFront ||
           Operation == UtilityOperation::VectorBack) {
@@ -12463,11 +12521,15 @@ class FunctionLowering {
         Expression Converted;
         if (Assignment->Converting) {
           auto Right = dereference(json::Object(RightAddress), L);
-          Converted =
-              snapshot(cast(fieldStorage(std::move(Right),
-                                         Assignment->Source.Current, L),
-                            type(Assignment->Destination.IteratorType, L), L),
-                       L);
+          auto Current =
+              fieldStorage(std::move(Right), Assignment->Source.Current, L);
+          if (Assignment->Source.WrappedCurrent)
+            Current = fieldStorage(std::move(Current),
+                                   Assignment->Source.WrappedCurrent, L);
+          Converted = snapshot(
+              cast(std::move(Current),
+                   type(Assignment->Destination.PointerType, L), L),
+              L);
         }
         auto LeftAddress = snapshot(
             address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
@@ -12475,11 +12537,17 @@ class FunctionLowering {
         if (!Assignment->Converting) {
           assign(Left, dereference(std::move(RightAddress), L), L);
         } else {
-          assign(fieldStorage(json::Object(Left),
-                              Assignment->Destination.Legacy, L),
+          auto MemberPointer = [&](const FieldDecl *Field) {
+            auto Member = fieldStorage(json::Object(Left), Field, L);
+            return Assignment->Destination.WrappedCurrent
+                       ? fieldStorage(std::move(Member),
+                                      Assignment->Destination.WrappedCurrent,
+                                      L)
+                       : Member;
+          };
+          assign(MemberPointer(Assignment->Destination.Legacy),
                  json::Object(Converted), L);
-          assign(fieldStorage(json::Object(Left),
-                              Assignment->Destination.Current, L),
+          assign(MemberPointer(Assignment->Destination.Current),
                  std::move(Converted), L);
         }
         return Left;
@@ -14816,20 +14884,32 @@ class FunctionLowering {
       auto Member = [&](const FieldDecl *Field) {
         return fieldStorage(json::Object(Place), Field, L);
       };
+      auto MemberPointer = [&](const FieldDecl *Field) {
+        auto Stored = Member(Field);
+        return Reverse->WrappedCurrent
+                   ? fieldStorage(std::move(Stored), Reverse->WrappedCurrent, L)
+                   : Stored;
+      };
       auto InitializePointer = [&](Expression Pointer) {
         auto Value = snapshot(
-            cast(std::move(Pointer), type(Reverse->IteratorType, L), L), L);
-        assign(Member(Reverse->Legacy), json::Object(Value), L);
-        assign(Member(Reverse->Current), std::move(Value), L);
+            cast(std::move(Pointer), type(Reverse->PointerType, L), L), L);
+        assign(MemberPointer(Reverse->Legacy), json::Object(Value), L);
+        assign(MemberPointer(Reverse->Current), std::move(Value), L);
       };
       switch (*Kind) {
       case UtilityReverseIteratorConstruction::Default:
-        initializeZero(Member(Reverse->Legacy), Reverse->IteratorType, L);
-        initializeZero(Member(Reverse->Current), Reverse->IteratorType, L);
+        initializeZero(MemberPointer(Reverse->Legacy), Reverse->PointerType, L);
+        initializeZero(MemberPointer(Reverse->Current), Reverse->PointerType,
+                       L);
         return;
-      case UtilityReverseIteratorConstruction::Iterator:
-        InitializePointer(expression(C->getArg(0)));
+      case UtilityReverseIteratorConstruction::Iterator: {
+        auto Iterator = snapshot(expression(C->getArg(0)), L);
+        InitializePointer(
+            Reverse->WrappedCurrent
+                ? fieldStorage(std::move(Iterator), Reverse->WrappedCurrent, L)
+                : std::move(Iterator));
         return;
+      }
       case UtilityReverseIteratorConstruction::CopyOrMove:
         assign(std::move(Place), expression(C->getArg(0)), L);
         return;
@@ -14840,8 +14920,11 @@ class FunctionLowering {
         if (!Source)
           reject(L, "reverse iterator conversion",
                  "The source std::reverse_iterator layout is unavailable.");
+        auto Current = fieldStorage(lvalue(C->getArg(0)), Source->Current, L);
         InitializePointer(
-            fieldStorage(lvalue(C->getArg(0)), Source->Current, L));
+            Source->WrappedCurrent
+                ? fieldStorage(std::move(Current), Source->WrappedCurrent, L)
+                : std::move(Current));
         return;
       }
       }

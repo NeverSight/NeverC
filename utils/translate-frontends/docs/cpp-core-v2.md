@@ -704,6 +704,11 @@ specializations directly lower `advance`, `distance`, `next`, `prev`,
 `make_reverse_iterator`, base access, dereference, arrow, increment, decrement,
 offset, subscript, difference and comparisons. Generated programs use existing
 pointer and control-flow operations and do not link libc++.
+Authenticated `std::string` and `std::vector` `__wrap_iter` values also admit
+their pinned `reverse_iterator` adapter. Its two wrapped pointer fields are
+checked before direct base access, dereference, arrow, movement, offsets,
+subscript, difference or comparison lowering. Raw-pointer reverse iterators
+retain the same path.
 
 The four stream-iterator component headers remain authenticated in the VFS but
 their declarations are disabled until the I/O header closure and runtime
@@ -2224,6 +2229,10 @@ Mutable and const `begin`/`end`, plus `cbegin`/`cend`, produce authenticated
 libc++ `__wrap_iter` values for forward traversal and mutable element access.
 The authenticated wrapper also supports `base()`, prefix decrement, equality,
 inequality and same-type iterator difference, shared with vector iterators.
+Mutable and const `rbegin`/`rend`, plus `crbegin`/`crend`, construct checked
+reverse iterators over those wrappers. Matching and const-converting reverse
+construction and assignment, `make_reverse_iterator`, traversal and indexed
+access use the underlying string storage directly.
 The `append(const char*, size_type)`, `append(const char*)`, and
 `append(size_type, char)` overloads and `append(const std::string&)` also lower
 directly and return the receiver reference. Pointer and string append copy
@@ -2262,7 +2271,7 @@ representations, embedded NUL, mutable and const access, copy and move,
 push/pop, resize/reserve, fill, pointer and string append with self-reference,
 the three `operator+=` overloads, four `assign` overloads, positional erase,
 member/free swap, comparison, forward/reverse and character-set search,
-short and long string iteration with mutable and const iterators,
+short and long string iteration with mutable, const and reverse iterators,
 clearing, and lifetime release; all eight supported target triples pass
 frontend translation. Other modifiers, character or allocator types, and
 throwing length/allocation paths remain unsupported.
@@ -2281,10 +2290,12 @@ Authenticated `std::vector<T, std::allocator<T>>` objects with non-boolean
 integer or floating elements use direct lowering for default, bounded
 count/fill/list, copy and move construction; copy and move assignment;
 destruction; size, capacity, empty, data, element/front/back access; clear,
-push/pop, begin/end and const iteration; and reserve/resize. Growth preserves
-element values and the selected allocator calls, and copy construction owns
+push/pop, begin/end, cbegin/cend, rbegin/rend, crbegin/crend and const
+iteration; and reserve/resize. Growth preserves element values and the selected
+allocator calls, and copy construction owns
 independent storage. Host O0/O2 fixtures check capacity reuse, reallocation,
-aliased fill arguments, iterator base/decrement/equality/difference and
+aliased fill arguments, forward/reverse iterator access,
+iterator base/decrement/equality/difference and
 eventual release. Record elements, other allocators,
 remaining vector methods and throwing allocation or length-error paths remain
 unsupported. Quoted and shadow headers remain rejected.

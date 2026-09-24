@@ -6388,7 +6388,12 @@ approvedUtilityReverseIteratorRecord(const State &S, const SourceManager &SM,
     return std::nullopt;
   const auto &Arguments = Specialization->getTemplateArgs();
   const auto Iterator = Arguments.get(0).getAsType();
-  if (!utilityObjectPointer(Context, Iterator))
+  const auto Wrapped = approvedUtilityWrapIteratorRecord(
+      S, SM, Iterator->getAsCXXRecordDecl(), Context);
+  const auto Pointer = Wrapped ? Wrapped->IteratorType : Iterator;
+  if (!utilityObjectPointer(Context, Pointer) ||
+      Context.getTypeSize(Iterator) != Context.getTypeSize(Pointer) ||
+      Context.getTypeAlign(Iterator) != Context.getTypeAlign(Pointer))
     return std::nullopt;
 
   auto Fields = Specialization->fields();
@@ -6450,7 +6455,7 @@ approvedUtilityReverseIteratorRecord(const State &S, const SourceManager &SM,
 
   const auto &BaseLayout = Context.getASTRecordLayout(BaseSpecialization);
   const auto &Layout = Context.getASTRecordLayout(Specialization);
-  const uint64_t PointerBits = Context.getTypeSize(Iterator);
+  const uint64_t PointerBits = Context.getTypeSize(Pointer);
   if (BaseLayout.getSize().getQuantity() != 1 ||
       BaseLayout.getAlignment().getQuantity() != 1 ||
       Layout.getFieldCount() != 2 || Layout.getFieldOffset(0) != 0 ||
@@ -6461,7 +6466,9 @@ approvedUtilityReverseIteratorRecord(const State &S, const SourceManager &SM,
           Context.getTypeAlign(Iterator))
     return std::nullopt;
   return UtilityReverseIteratorRecord{Specialization, Legacy, Current,
-                                      Iterator};
+                                      Iterator,
+                                      Wrapped ? Wrapped->Current : nullptr,
+                                      Pointer};
 }
 
 std::optional<UtilityReverseIteratorConstruction>
@@ -6516,8 +6523,9 @@ approvedUtilityReverseIteratorConstruction(const State &S,
       !approvedStandardSDKDeclaration(S, SM, Primary) ||
       !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
                      "__iterator/reverse_iterator.h") ||
-      !utilityPointerConversion(Context, Source->IteratorType,
-                                Destination->IteratorType))
+      bool(Source->WrappedCurrent) != bool(Destination->WrappedCurrent) ||
+      !utilityPointerConversion(Context, Source->PointerType,
+                                Destination->PointerType))
     return std::nullopt;
   return UtilityReverseIteratorConstruction::Converting;
 }
@@ -6571,8 +6579,9 @@ approvedUtilityReverseIteratorAssignment(const State &S,
                      "__iterator/reverse_iterator.h") ||
       !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
                      "__iterator/reverse_iterator.h") ||
-      !utilityPointerConversion(Context, Source->IteratorType,
-                                Destination->IteratorType))
+      bool(Source->WrappedCurrent) != bool(Destination->WrappedCurrent) ||
+      !utilityPointerConversion(Context, Source->PointerType,
+                                Destination->PointerType))
     return std::nullopt;
   return UtilityReverseIteratorAssignment{*Destination, *Source, true};
 }
@@ -16540,6 +16549,23 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                    ? UtilityOperation::StringBegin
                    : UtilityOperation::StringEnd;
     }
+    if (!Operator && !Method->getNumParams() && Call->isPRValue() &&
+        (Name == "rbegin" || Name == "rend" || Name == "crbegin" ||
+         Name == "crend") &&
+        Context.hasSameType(Call->getType(), Method->getReturnType())) {
+      const auto Reverse = approvedUtilityReverseIteratorRecord(
+          S, SM, Method->getReturnType()->getAsCXXRecordDecl(), Context);
+      const bool Const = Method->isConst() || Name == "crbegin" ||
+                         Name == "crend";
+      if (Reverse && Reverse->WrappedCurrent &&
+          Context.hasSameType(
+              Reverse->PointerType,
+              Context.getPointerType(Const ? Context.CharTy.withConst()
+                                           : Context.CharTy)))
+        return Name == "rbegin" || Name == "crbegin"
+                   ? UtilityOperation::StringRBegin
+                   : UtilityOperation::StringREnd;
+    }
     if (!Operator && (Name == "front" || Name == "back") &&
         !Method->getNumParams() && !Call->getNumArgs() && Call->isLValue() &&
         Method->getReturnType()->isLValueReferenceType() &&
@@ -16627,6 +16653,23 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         return Name == "begin" || Name == "cbegin"
                    ? UtilityOperation::VectorBegin
                    : UtilityOperation::VectorEnd;
+    }
+    if (!Operator && !Method->getNumParams() && Call->isPRValue() &&
+        (Name == "rbegin" || Name == "rend" || Name == "crbegin" ||
+         Name == "crend") &&
+        Context.hasSameType(Call->getType(), Method->getReturnType())) {
+      const auto Reverse = approvedUtilityReverseIteratorRecord(
+          S, SM, Method->getReturnType()->getAsCXXRecordDecl(), Context);
+      const bool Const = Method->isConst() || Name == "crbegin" ||
+                         Name == "crend";
+      if (Reverse && Reverse->WrappedCurrent &&
+          Context.hasSameType(
+              Reverse->PointerType,
+              Context.getPointerType(Const ? Vector->ElementType.withConst()
+                                           : Vector->ElementType)))
+        return Name == "rbegin" || Name == "crbegin"
+                   ? UtilityOperation::VectorRBegin
+                   : UtilityOperation::VectorREnd;
     }
     if (Operator && Method->getOverloadedOperator() == OO_Subscript &&
         Call->getNumArgs() == 2 && Method->getNumParams() == 1 &&
@@ -17009,14 +17052,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Same(Call->getType(), Reverse->IteratorType))
         return UtilityOperation::ReverseBase;
       if (Method->getOverloadedOperator() == OO_Arrow && Call->isPRValue() &&
-          Same(Method->getReturnType(), Reverse->IteratorType) &&
-          Same(Call->getType(), Reverse->IteratorType))
+          Same(Method->getReturnType(), Reverse->PointerType) &&
+          Same(Call->getType(), Reverse->PointerType))
         return UtilityOperation::ReverseArrow;
     }
     if (!Operator)
       return std::nullopt;
     const auto Kind = Operator->getOperator();
-    const auto Pointee = Reverse->IteratorType->getPointeeType();
+    const auto Pointee = Reverse->PointerType->getPointeeType();
     if (Kind == OO_Star && !Method->getNumParams() && Method->isConst() &&
         Method->getReturnType()->isLValueReferenceType() && Call->isLValue() &&
         Same(Method->getReturnType()->getPointeeType(), Pointee) &&
@@ -17024,8 +17067,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return UtilityOperation::ReverseDereference;
     if (Kind == OO_Arrow && !Method->getNumParams() && Method->isConst() &&
         Call->isPRValue() &&
-        Same(Method->getReturnType(), Reverse->IteratorType) &&
-        Same(Call->getType(), Reverse->IteratorType))
+        Same(Method->getReturnType(), Reverse->PointerType) &&
+        Same(Call->getType(), Reverse->PointerType))
       return UtilityOperation::ReverseArrow;
     if ((Kind == OO_PlusPlus || Kind == OO_MinusMinus) &&
         !Object->getType().isConstQualified()) {
@@ -19664,7 +19707,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Function->getNumParams() == 1 && Call->isPRValue()) {
     const auto Result = ReverseFor(Function->getReturnType());
     auto Parameter = Function->getParamDecl(0)->getType();
-    if (Result && utilityObjectPointer(Context, Parameter) &&
+    if (Result &&
+        (utilityObjectPointer(Context, Parameter) ||
+         Result->WrappedCurrent) &&
         Same(Parameter, Result->IteratorType) &&
         Same(Call->getArg(0)->getType(), Parameter) &&
         Same(Call->getType(), Function->getReturnType()))
@@ -19677,8 +19722,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto Right = ReverseFor(Call->getArg(1)->getType());
     if (Operator && Left && Right && ReverseParameter(0, *Left) &&
         ReverseParameter(1, *Right) &&
-        Context.hasSameUnqualifiedType(Left->IteratorType->getPointeeType(),
-                                       Right->IteratorType->getPointeeType())) {
+        Context.hasSameUnqualifiedType(Left->PointerType->getPointeeType(),
+                                       Right->PointerType->getPointeeType())) {
       if (Call->isPRValue() && Function->getReturnType()->isBooleanType() &&
           Same(Call->getType(), Function->getReturnType())) {
         switch (Operator->getOperator()) {

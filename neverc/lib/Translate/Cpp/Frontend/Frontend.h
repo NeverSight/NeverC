@@ -859,6 +859,8 @@ enum class UtilityOperation {
   StringData,
   StringBegin,
   StringEnd,
+  StringRBegin,
+  StringREnd,
   StringSubscript,
   StringFront,
   StringBack,
@@ -912,6 +914,8 @@ enum class UtilityOperation {
   VectorResizeFill,
   VectorBegin,
   VectorEnd,
+  VectorRBegin,
+  VectorREnd,
   WrapIteratorDereference,
   WrapIteratorPreIncrement,
   WrapIteratorPreDecrement,
@@ -1285,6 +1289,8 @@ struct UtilityReverseIteratorRecord {
   const clang::CXXRecordDecl *Record;
   const clang::FieldDecl *Legacy, *Current;
   clang::QualType IteratorType;
+  const clang::FieldDecl *WrappedCurrent;
+  clang::QualType PointerType;
 };
 struct UtilityWrapIteratorRecord {
   const clang::CXXRecordDecl *Record;
