@@ -4341,7 +4341,20 @@ approvedUtilityVectorConstruction(const State &S, const SourceManager &SM,
     return std::nullopt;
   if (Constructor->isDefaultConstructor() && !Construction->getNumArgs())
     return UtilityVectorConstruction::Default;
-  if (Construction->getNumArgs() != 1 ||
+  if (Construction->getNumArgs() == 1) {
+    const auto List = approvedUtilityInitializerListRecord(
+        S, SM, Constructor->getParamDecl(0)->getType()->getAsCXXRecordDecl(),
+        Context);
+    const auto *Expression =
+        dyn_cast<CXXStdInitializerListExpr>(Construction->getArg(0));
+    if (List && Expression &&
+        Context.hasSameType(List->ElementType, Vector->ElementType) &&
+        Context.hasSameUnqualifiedType(Construction->getArg(0)->getType(),
+                                       Context.getRecordType(List->Record)) &&
+        approvedUtilityInitializerListExpression(S, SM, Expression, Context))
+      return UtilityVectorConstruction::InitializerList;
+  }
+  if ((Construction->getNumArgs() != 1 && Construction->getNumArgs() != 2) ||
       !Context.hasSameType(Constructor->getParamDecl(0)->getType(),
                            Context.getSizeType()) ||
       !Context.hasSameType(Construction->getArg(0)->getType(),
@@ -4353,7 +4366,17 @@ approvedUtilityVectorConstruction(const State &S, const SourceManager &SM,
       !Evaluated.Val.isInt() ||
       Evaluated.Val.getInt().getLimitedValue(65537) > 65536)
     return std::nullopt;
-  return UtilityVectorConstruction::Count;
+  if (Construction->getNumArgs() == 1)
+    return UtilityVectorConstruction::Count;
+  const auto FillType = Constructor->getParamDecl(1)->getType();
+  if (!FillType->isLValueReferenceType() ||
+      !FillType->getPointeeType().isConstQualified() ||
+      !Context.hasSameUnqualifiedType(FillType->getPointeeType(),
+                                       Vector->ElementType) ||
+      !Context.hasSameUnqualifiedType(Construction->getArg(1)->getType(),
+                                       Vector->ElementType))
+    return std::nullopt;
+  return UtilityVectorConstruction::CountValue;
 }
 
 bool approvedUtilityVectorDestructor(const State &S, const SourceManager &SM,
@@ -15647,6 +15670,23 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
             Method->getReturnType()->getPointeeType(), Vector->ElementType) &&
         Context.hasSameUnqualifiedType(Call->getType(), Vector->ElementType))
       return UtilityOperation::VectorSubscript;
+    if (!Operator && !Method->getNumParams() && !Call->getNumArgs() &&
+        Method->getReturnType()->isLValueReferenceType() && Call->isLValue() &&
+        Context.hasSameType(Method->getReturnType()->getPointeeType(),
+                            Method->isConst()
+                                ? Vector->ElementType.withConst()
+                                : Vector->ElementType) &&
+        Context.hasSameUnqualifiedType(Call->getType(), Vector->ElementType)) {
+      if (Name == "front")
+        return UtilityOperation::VectorFront;
+      if (Name == "back")
+        return UtilityOperation::VectorBack;
+    }
+    if (!Operator && Name == "clear" && !Method->isConst() &&
+        !Object->getType().isConstQualified() && !Method->getNumParams() &&
+        !Call->getNumArgs() && Method->getReturnType()->isVoidType() &&
+        Call->getType()->isVoidType())
+      return UtilityOperation::VectorClear;
     return std::nullopt;
   }
   const auto StringView = approvedUtilityStringViewRecord(

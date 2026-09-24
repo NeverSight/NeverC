@@ -8964,13 +8964,19 @@ class FunctionLowering {
     case UtilityOperation::VectorCapacity:
     case UtilityOperation::VectorEmpty:
     case UtilityOperation::VectorData:
-    case UtilityOperation::VectorSubscript: {
+    case UtilityOperation::VectorSubscript:
+    case UtilityOperation::VectorFront:
+    case UtilityOperation::VectorBack:
+    case UtilityOperation::VectorClear: {
       const auto *Object = MemberObject();
       auto Vector = Object ? VectorFor(Object->getType())
                            : std::optional<UtilityVectorRecord>();
       if (!Object || !Vector)
         reject(L, "vector access", "The selected std::vector layout is unavailable.");
       auto Base = lvalue(Object);
+      if (Operation == UtilityOperation::VectorClear)
+        Base = dereference(
+            snapshot(address(std::move(Base), Object->getType(), L), L), L);
       auto Member = [&](const char *Name) {
         return Expression{{"kind", "member"},
                           {"type", type(Vector->PointerType, L)},
@@ -8979,8 +8985,23 @@ class FunctionLowering {
                           {"loc", A.loc(L)}};
       };
       auto Begin = Member("nct_vector_begin");
+      if (Operation == UtilityOperation::VectorClear) {
+        assign(Member("nct_vector_end"), std::move(Begin), L);
+        return {};
+      }
       if (Operation == UtilityOperation::VectorData)
         return cast(std::move(Begin), type(Call->getType(), L), L);
+      if (Operation == UtilityOperation::VectorFront ||
+          Operation == UtilityOperation::VectorBack) {
+        auto Pointer = Operation == UtilityOperation::VectorFront
+                           ? std::move(Begin)
+                           : binary("-", Member("nct_vector_end"),
+                                    quantity(1, type(A.Context.getPointerDiffType(), L), L),
+                                    type(Vector->PointerType, L), L);
+        return dereference(cast(std::move(Pointer),
+                                type(A.Context.getPointerType(Call->getType()),
+                                     L), L), L);
+      }
       if (Operation == UtilityOperation::VectorSubscript) {
         auto Index = expression(Call->getArg(1));
         auto Pointer = binary("+", std::move(Begin),
@@ -11883,16 +11904,32 @@ class FunctionLowering {
                           {"args", json::Array{json::Object(Place)}},
                           {"loc", A.loc(L)}};
       };
+      std::optional<Expression> Fill, Input;
+      std::optional<UtilityInitializerListExpression> List;
+      uint64_t Count = 0;
+      if (*Kind == UtilityVectorConstruction::InitializerList) {
+        const auto *Argument = llvm::cast<CXXStdInitializerListExpr>(C->getArg(0));
+        List = approvedUtilityInitializerListExpression(
+            A.S, A.Sources, Argument, A.Context);
+        if (!List)
+          reject(L, "vector construction",
+                 "The checked initializer list backing is unavailable.");
+        auto Value = expression(Argument);
+        Input = snapshot(fieldStorage(std::move(Value), List->List.Begin, L), L);
+        Count = List->Size;
+      } else if (*Kind != UtilityVectorConstruction::Default) {
+        Expr::EvalResult Evaluated;
+        if (!C->getArg(0)->EvaluateAsInt(Evaluated, A.Context) ||
+            !Evaluated.Val.isInt())
+          reject(L, "vector construction",
+                 "A checked element count is required.");
+        Count = Evaluated.Val.getInt().getLimitedValue(65537);
+        if (*Kind == UtilityVectorConstruction::CountValue)
+          Fill = snapshot(expression(C->getArg(1)), L);
+      }
       for (const char *Name : {"nct_vector_begin", "nct_vector_end",
                                "nct_vector_capacity"})
         initializeZero(Member(Name), Vector->PointerType, L);
-      if (*Kind == UtilityVectorConstruction::Default)
-        return;
-      Expr::EvalResult Evaluated;
-      if (!C->getArg(0)->EvaluateAsInt(Evaluated, A.Context) ||
-          !Evaluated.Val.isInt())
-        reject(L, "vector construction", "A checked element count is required.");
-      const uint64_t Count = Evaluated.Val.getInt().getLimitedValue(65537);
       if (!Count)
         return;
       const auto *Function = A.allocatorHeapFunction(true, Vector->ElementType, L);
@@ -11926,8 +11963,19 @@ class FunctionLowering {
                     Member("nct_vector_end"), "bool", L),
              Advance, Done, L);
       label(Advance, L);
-      initializeZero(dereference(json::Object(Current), L),
-                     Vector->ElementType, L);
+      if (*Kind == UtilityVectorConstruction::Count) {
+        initializeZero(dereference(json::Object(Current), L),
+                       Vector->ElementType, L);
+      } else if (*Kind == UtilityVectorConstruction::CountValue) {
+        assign(dereference(json::Object(Current), L), json::Object(*Fill), L);
+      } else {
+        assign(dereference(json::Object(Current), L),
+               dereference(json::Object(*Input), L), L);
+        assign(*Input,
+               binary("+", json::Object(*Input),
+                      quantity(1, DifferenceType, L),
+                      type(List->List.Begin->getType(), L), L), L);
+      }
       assign(Current,
              binary("+", json::Object(Current),
                     quantity(1, DifferenceType, L), PointerType, L), L);

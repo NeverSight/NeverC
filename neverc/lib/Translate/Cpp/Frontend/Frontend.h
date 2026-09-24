@@ -859,6 +859,9 @@ enum class UtilityOperation {
   VectorEmpty,
   VectorData,
   VectorSubscript,
+  VectorFront,
+  VectorBack,
+  VectorClear,
   StringViewMaxSize,
   StringViewEmpty,
   StringViewData,
@@ -1095,7 +1098,8 @@ std::optional<UtilityVectorRecord>
 approvedUtilityVectorRecord(const State &S, const clang::SourceManager &SM,
                             const clang::CXXRecordDecl *Record,
                             const clang::ASTContext &Context);
-enum class UtilityVectorConstruction { Default, Count };
+enum class UtilityVectorConstruction { Default, Count, CountValue,
+                                       InitializerList };
 std::optional<UtilityVectorConstruction>
 approvedUtilityVectorConstruction(const State &S,
                                   const clang::SourceManager &SM,

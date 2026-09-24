@@ -51397,4 +51397,104 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorInitializerAndFillConstructionRun) {
+  const auto Source = tmpFile("vector-initializers.cpp");
+  const auto Output = tmpFile("vector-initializers.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+Size allocated_bytes;
+int allocations;
+int releases;
+int list_calls;
+int fill_calls;
+void *operator new(Size n) {
+  ++allocations;
+  allocated_bytes += n;
+  return malloc(n);
+}
+void operator delete(void *p) noexcept {
+  ++releases;
+  free(p);
+}
+int next() { return ++list_calls * 2; }
+int fill() { ++fill_calls; return 9; }
+#include <vector>
+int main() {
+  {
+    std::vector<int> listed{next(), next(), next()};
+    std::vector<int> filled(3, fill());
+    std::vector<int> zero(0, fill());
+    if (listed.size() != 3 || listed.capacity() != 3 ||
+        listed[0] != 2 || listed[1] != 4 || listed[2] != 6 ||
+        list_calls != 3)
+      return 1;
+    if (filled.size() != 3 || filled.capacity() != 3 ||
+        filled[0] != 9 || filled[1] != 9 || filled[2] != 9 ||
+        fill_calls != 2)
+      return 2;
+    if (!zero.empty() || zero.data() != nullptr)
+      return 3;
+  }
+  return allocations == 2 && releases == 2 && allocated_bytes == 24 ? 0 : 4;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o",
+                                   Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-initializers" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorFrontBackAndClearRun) {
+  const auto Source = tmpFile("vector-access.cpp");
+  const auto Output = tmpFile("vector-access.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <vector>
+int main() {
+  {
+    std::vector<int> values{4, 5, 6};
+    if (values.front() != 4 || values.back() != 6)
+      return 1;
+    values.front() = 7;
+    values.back() = 8;
+    const std::vector<int> &view = values;
+    if (view.front() != 7 || view.back() != 8 || view[1] != 5)
+      return 2;
+    int *storage = values.data();
+    values.clear();
+    if (!values.empty() || values.size() != 0 || values.capacity() != 3 ||
+        values.data() != storage)
+      return 3;
+  }
+  return allocations == 1 && releases == 1 ? 0 : 4;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o",
+                                   Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-access" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 } // namespace
