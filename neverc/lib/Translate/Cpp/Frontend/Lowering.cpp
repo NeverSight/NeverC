@@ -9020,7 +9020,8 @@ class FunctionLowering {
     case UtilityOperation::StringAppendPointer:
     case UtilityOperation::StringAppendCString:
     case UtilityOperation::StringAppendString:
-    case UtilityOperation::StringAppendFill: {
+    case UtilityOperation::StringAppendFill:
+    case UtilityOperation::StringAppendCharacter: {
       const auto *Object = MemberObject();
       auto String = Object ? StringFor(Object->getType())
                            : std::optional<UtilityStringRecord>();
@@ -9043,12 +9044,16 @@ class FunctionLowering {
       };
       std::optional<Expression> RequestedArgument, CharacterArgument,
           IndexArgument, SourceArgument;
+      const unsigned ArgumentOffset = isa<CXXOperatorCallExpr>(Call) ? 1 : 0;
+      const bool CharacterAppend =
+          Operation == UtilityOperation::StringAppendCharacter;
       const bool PointerAppend =
           Operation == UtilityOperation::StringAppendPointer ||
           Operation == UtilityOperation::StringAppendCString ||
           Operation == UtilityOperation::StringAppendString;
-      if (Operation == UtilityOperation::StringPushBack)
-        CharacterArgument = snapshot(expression(Call->getArg(0)), L);
+      if (Operation == UtilityOperation::StringPushBack || CharacterAppend)
+        CharacterArgument =
+            snapshot(expression(Call->getArg(ArgumentOffset)), L);
       if (Operation == UtilityOperation::StringReserve ||
           Operation == UtilityOperation::StringResize ||
           Operation == UtilityOperation::StringAppendFill)
@@ -9058,7 +9063,8 @@ class FunctionLowering {
         RequestedArgument = snapshot(expression(Call->getArg(1)), L);
       }
       if (Operation == UtilityOperation::StringAppendCString) {
-        SourceArgument = snapshot(expression(Call->getArg(0)), L);
+        SourceArgument =
+            snapshot(expression(Call->getArg(ArgumentOffset)), L);
         const auto ConstPointerType =
             type(A.Context.getPointerType(A.Context.CharTy.withConst()), L);
         const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
@@ -9088,7 +9094,8 @@ class FunctionLowering {
       }
       if (Operation == UtilityOperation::StringAppendString) {
         auto SourceAddress = snapshot(
-            address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
+            address(lvalue(Call->getArg(ArgumentOffset)),
+                    Call->getArg(ArgumentOffset)->getType(), L), L);
         const auto ConstPointerType =
             type(A.Context.getPointerType(A.Context.CharTy.withConst()), L);
         const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
@@ -9172,6 +9179,7 @@ class FunctionLowering {
                                       << (A.Context.getTypeSize(A.Context.getSizeType()) - 1)
                                 : uint64_t(1);
       if (Operation == UtilityOperation::StringPushBack ||
+          CharacterAppend ||
           Operation == UtilityOperation::StringPopBack ||
           Operation == UtilityOperation::StringReserve ||
           Operation == UtilityOperation::StringResize || PointerAppend ||
@@ -9222,7 +9230,7 @@ class FunctionLowering {
         auto NewSize = temporary(SizeType, L);
         if (Operation != UtilityOperation::StringPopBack) {
           auto Requested = temporary(SizeType, L);
-          if (Operation == UtilityOperation::StringPushBack)
+          if (Operation == UtilityOperation::StringPushBack || CharacterAppend)
             assign(Requested,
                    binary("+", json::Object(Size), quantity(1, SizeType, L),
                           SizeType, L),
@@ -9421,7 +9429,7 @@ class FunctionLowering {
                         std::move(Encoded), SizeType, L), L);
           jump(Sized, L);
           label(Sized, L);
-          if (Operation == UtilityOperation::StringPushBack) {
+          if (Operation == UtilityOperation::StringPushBack || CharacterAppend) {
             assign(dereference(binary("+", json::Object(Data),
                                       cast(json::Object(Size), DifferenceType, L),
                                       PointerType, L), L),
@@ -9492,7 +9500,8 @@ class FunctionLowering {
                                   cast(json::Object(NewSize), DifferenceType, L),
                                   PointerType, L), L),
                quantity(0, CharacterType, L), L);
-        if (PointerAppend || Operation == UtilityOperation::StringAppendFill)
+        if (PointerAppend || Operation == UtilityOperation::StringAppendFill ||
+            CharacterAppend)
           return dereference(json::Object(Receiver), L);
         return {};
       }

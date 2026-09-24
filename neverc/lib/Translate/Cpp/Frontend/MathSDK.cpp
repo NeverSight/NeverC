@@ -16120,9 +16120,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const llvm::StringRef Name = Method->getIdentifier()
                                      ? Method->getIdentifier()->getName()
                                      : llvm::StringRef();
+    const bool PlusEqual = Operator &&
+                           Method->getOverloadedOperator() == OO_PlusEqual;
     if (!Reference || !Object || !Prototype ||
         (!Prototype->isNothrow() && Name != "push_back" && Name != "pop_back" &&
-         Name != "reserve" && Name != "resize" && Name != "append") ||
+         Name != "reserve" && Name != "resize" && Name != "append" &&
+         !PlusEqual) ||
         Method->isStatic() || Method->isVariadic() ||
         (!Method->hasBody() && Name != "push_back" && Name != "reserve" &&
          Name != "resize" && Name != "append") ||
@@ -16153,28 +16156,38 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         !Call->getNumArgs() && Method->getReturnType()->isVoidType() &&
         Call->getType()->isVoidType())
       return UtilityOperation::StringClear;
-    if (!Operator && Name == "append" && !Method->isConst() &&
-        !Object->getType().isConstQualified() &&
-        (Method->getNumParams() == 1 || Method->getNumParams() == 2) &&
-        Call->getNumArgs() == Method->getNumParams() && Call->isLValue() &&
-        Method->getReturnType()->isLValueReferenceType() &&
-        Context.hasSameType(Method->getReturnType()->getPointeeType(),
-                            Context.getRecordType(String->Record)) &&
-        Context.hasSameType(Call->getType(),
-                            Context.getRecordType(String->Record))) {
+    if ((!Operator && Name == "append") || PlusEqual) {
+      const unsigned Argument = PlusEqual ? 1 : 0;
+      if (Method->isConst() || Object->getType().isConstQualified() ||
+          (PlusEqual ? Method->getNumParams() != 1
+                     : Method->getNumParams() != 1 &&
+                           Method->getNumParams() != 2) ||
+          Call->getNumArgs() != Method->getNumParams() + Offset ||
+          !Call->isLValue() ||
+          !Method->getReturnType()->isLValueReferenceType() ||
+          !Context.hasSameType(Method->getReturnType()->getPointeeType(),
+                               Context.getRecordType(String->Record)) ||
+          !Context.hasSameType(Call->getType(),
+                               Context.getRecordType(String->Record)))
+        return std::nullopt;
       const auto FirstParameter = Method->getParamDecl(0)->getType();
       const auto ConstPointer =
           Context.getPointerType(Context.CharTy.withConst());
+      if (PlusEqual &&
+          Context.hasSameType(FirstParameter, Context.CharTy) &&
+          Context.hasSameType(Call->getArg(Argument)->getType(),
+                              Context.CharTy))
+        return UtilityOperation::StringAppendCharacter;
       if (Method->getNumParams() == 1 &&
           Context.hasSameType(FirstParameter, ConstPointer) &&
-          Context.hasSameType(Call->getArg(0)->getType(), ConstPointer))
+          Context.hasSameType(Call->getArg(Argument)->getType(), ConstPointer))
         return UtilityOperation::StringAppendCString;
       const auto StringType = Context.getRecordType(String->Record);
       if (Method->getNumParams() == 1 &&
           FirstParameter->isLValueReferenceType() &&
           Context.hasSameType(FirstParameter->getPointeeType(),
                               StringType.withConst()) &&
-          Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
+          Context.hasSameUnqualifiedType(Call->getArg(Argument)->getType(),
                                          StringType))
         return UtilityOperation::StringAppendString;
       if (Method->getNumParams() != 2)

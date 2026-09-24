@@ -52358,4 +52358,68 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringPlusEqualRun) {
+  const auto Source = tmpFile("string-plus-equal.cpp");
+  const auto Output = tmpFile("string-plus-equal.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <string>
+int main() {
+  std::string short_text("abcdefghijklmnopqrstuv");
+  const char *short_data = short_text.data();
+  std::string *result = &(short_text += short_text.front());
+  if (result != &short_text || short_text.size() != 23 ||
+      short_text.data() == short_data || short_text[22] != 'a' ||
+      short_text.data()[23] != 0)
+    return 1;
+  std::string chain("A");
+  const std::string suffix("B");
+  result = &((chain += "xy") += suffix);
+  if (result != &chain || chain.size() != 4 || chain[0] != 'A' ||
+      chain[1] != 'x' || chain[2] != 'y' || chain[3] != 'B')
+    return 2;
+  const char raw[] = {'m', 0, 'n'};
+  const std::string exact(raw, 3);
+  chain += exact;
+  if (chain.size() != 7 || chain[4] != 'm' || chain[5] != 0 ||
+      chain[6] != 'n' || chain.data()[7] != 0)
+    return 3;
+  std::string self("abcdefghijklmnopqrstuvwxyz");
+  Size old_size = self.size();
+  const char *old_data = self.data();
+  self += self;
+  if (self.size() != old_size * 2 || self.data() == old_data ||
+      self.data()[self.size()] != 0)
+    return 4;
+  for (Size i = 0; i < old_size; ++i)
+    if (self[i] != self[i + old_size]) return 5;
+  std::string cstr("abcdefghijklmnopqrstuvwxyz");
+  old_size = cstr.size();
+  old_data = cstr.data();
+  cstr += cstr.c_str();
+  if (cstr.size() != old_size * 2 || cstr.data() == old_data ||
+      cstr.data()[cstr.size()] != 0)
+    return 6;
+  for (Size i = 0; i < old_size; ++i)
+    if (cstr[i] != cstr[i + old_size]) return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-plus-equal" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 } // namespace

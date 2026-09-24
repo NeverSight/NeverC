@@ -2225,6 +2225,8 @@ The `append(const char*, size_type)`, `append(const char*)`, and
 directly and return the receiver reference. Pointer and string append copy
 self-referenced source bytes before releasing storage during growth; the
 C-string overload scans to the first NUL.
+The `operator+=` overloads for `char`, `const char*`, and `const std::string&`
+reuse those paths and return the receiver reference.
 The frontend checks the pinned libc++ representation before emitting three
 storage words, including the alternate short-string layout selected on Apple
 arm64. Short strings stay inline, while long strings use the selected
@@ -2235,8 +2237,9 @@ retain existing capacity and storage. Pushing, resizing, reserving, and
 appending grow storage when needed. Host O0/O2 fixtures exercise both
 representations, embedded NUL, mutable and const access, copy and move,
 push/pop, resize/reserve, fill, pointer and string append with self-reference,
-clearing, and lifetime release; all eight supported target triples pass
-frontend translation. Other modifiers, character or allocator types, and
+the three `operator+=` overloads, clearing, and lifetime release; all eight
+supported target triples pass frontend translation. Other modifiers,
+character or allocator types, and
 throwing length/allocation paths remain unsupported.
 Quoted and shadow headers remain rejected.
 
