@@ -16120,8 +16120,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const llvm::StringRef Name = Method->getIdentifier()
                                      ? Method->getIdentifier()->getName()
                                      : llvm::StringRef();
-    if (!Reference || !Object || !Prototype || !Prototype->isNothrow() ||
-        Method->isStatic() || Method->isVariadic() || !Method->hasBody() ||
+    if (!Reference || !Object || !Prototype ||
+        (!Prototype->isNothrow() && Name != "push_back" &&
+         Name != "pop_back") ||
+        Method->isStatic() || Method->isVariadic() ||
+        (!Method->hasBody() && Name != "push_back") ||
         Method->getRefQualifier() != RQ_None ||
         Method->getParent()->getCanonicalDecl() !=
             String->Record->getCanonicalDecl() ||
@@ -16149,6 +16152,20 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         !Call->getNumArgs() && Method->getReturnType()->isVoidType() &&
         Call->getType()->isVoidType())
       return UtilityOperation::StringClear;
+    if (!Operator && !Method->isConst() &&
+        !Object->getType().isConstQualified() &&
+        Method->getReturnType()->isVoidType() &&
+        Call->getType()->isVoidType()) {
+      if (Name == "push_back" && Method->getNumParams() == 1 &&
+          Call->getNumArgs() == 1 &&
+          Context.hasSameType(Method->getParamDecl(0)->getType(),
+                              Context.CharTy) &&
+          Context.hasSameType(Call->getArg(0)->getType(), Context.CharTy))
+        return UtilityOperation::StringPushBack;
+      if (Name == "pop_back" && !Method->getNumParams() &&
+          !Call->getNumArgs())
+        return UtilityOperation::StringPopBack;
+    }
     if (!Operator && (Name == "data" || Name == "c_str") &&
         !Method->getNumParams() && Call->isPRValue() &&
         Context.hasSameType(Call->getType(), Method->getReturnType()) &&

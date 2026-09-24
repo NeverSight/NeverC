@@ -52031,4 +52031,72 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringPushAndPopRun) {
+  const auto Source = tmpFile("string-push-pop.cpp");
+  const auto Output = tmpFile("string-push-pop.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+int main() {
+  {
+    std::string short_text("ab");
+    short_text.pop_back();
+    if (short_text.size() != 1 || short_text[0] != 'a' ||
+        short_text.data()[1] != 0) return 1;
+    short_text.push_back('c');
+    if (short_text.size() != 2 || short_text[0] != 'a' ||
+        short_text[1] != 'c' || short_text.data()[2] != 0) return 2;
+    std::string text;
+    Size inline_capacity = text.capacity();
+    for (Size i = 0; i < inline_capacity; ++i) text.push_back('a');
+    if (text.size() != inline_capacity || allocations != 0) return 3;
+    text.push_back(text[0]);
+    if (text.size() != inline_capacity + 1 ||
+        text[inline_capacity] != 'a' || allocations != 1) return 4;
+    const char *first_heap = text.data();
+    Size first_capacity = text.capacity();
+    text.pop_back();
+    if (text.size() != inline_capacity || text.data() != first_heap ||
+        text.data()[inline_capacity] != 0 ||
+        text.capacity() != first_capacity) return 5;
+    text.push_back('\0');
+    if (text.size() != inline_capacity + 1 ||
+        text[inline_capacity] != 0 || text.data()[inline_capacity + 1] != 0)
+      return 6;
+    while (text.size() < first_capacity) text.push_back('b');
+    text.push_back(text[0]);
+    if (text.size() != first_capacity + 1 ||
+        text[first_capacity] != 'a' || text.data() == first_heap ||
+        allocations != 2 || releases != 1) return 7;
+    const char *second_heap = text.data();
+    Size second_capacity = text.capacity();
+    text.clear();
+    text.push_back('Z');
+    text.pop_back();
+    if (!text.empty() || text.data() != second_heap ||
+        text.capacity() != second_capacity || text.data()[0] != 0)
+      return 8;
+  }
+  return allocations == 2 && releases == 2 ? 0 : 9;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o",
+                                   Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-push-pop" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 } // namespace

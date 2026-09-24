@@ -29056,6 +29056,8 @@ int main() {
          copied.empty() && moved.empty();
   auto old_capacity = assigned.capacity();
   assigned.clear();
+  assigned.push_back('q');
+  assigned.pop_back();
   return intact && assigned.empty() && assigned.capacity() == old_capacity
              ? 0 : 1;
 }
