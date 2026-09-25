@@ -53625,6 +53625,82 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringSubstringConstructionRun) {
+  const auto Source = tmpFile("string-substring-construction.cpp");
+  const auto Output = tmpFile("string-substring-construction.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+int source_calls;
+int position_calls;
+int count_calls;
+const std::string &source(const std::string &value) {
+  ++source_calls;
+  return value;
+}
+Size position() { ++position_calls; return 1; }
+Size count() { ++count_calls; return 4; }
+int main() {
+  char bytes[]{'?', 'a', 0, 'b', 'c', '?'};
+  {
+    std::string original(bytes, 6);
+    std::string selected(source(original), position(), count());
+    if (source_calls != 1 || position_calls != 1 || count_calls != 1 ||
+        selected.size() != 4 || selected[0] != 'a' || selected[1] != 0 ||
+        selected[3] != 'c' || selected.data()[4] != 0 || allocations != 0)
+      return 1;
+    std::string suffix(original, 2);
+    if (suffix.size() != 4 || suffix[0] != 0 || suffix[3] != '?' ||
+        allocations != 0)
+      return 2;
+    std::string temporary_slice(std::string("pqrst"), 1, 3);
+    if (temporary_slice.size() != 3 || temporary_slice[0] != 'q' ||
+        temporary_slice[2] != 's' || allocations != 0)
+      return 8;
+    std::string long_source("abcdefghijklmnopqrstuvwxyz");
+    int before = allocations;
+    std::string long_slice(long_source, 1, 23);
+    if (long_slice.size() != 23 || long_slice[0] != 'b' ||
+        long_slice[22] != 'x' || long_slice.data()[23] != 0 ||
+        long_slice.data() == long_source.data() || allocations != before + 1)
+      return 3;
+    std::string long_suffix(long_source, 2);
+    if (long_suffix.size() != 24 || long_suffix[0] != 'c' ||
+        long_suffix[23] != 'z' || allocations != before + 2)
+      return 4;
+    long_slice[0] = 'Z';
+    if (long_source[1] != 'b' || long_slice[0] != 'Z')
+      return 5;
+    std::string clamped(long_source, 23, std::string::npos);
+    std::string empty(long_source, long_source.size());
+    if (clamped.size() != 3 || clamped[0] != 'x' ||
+        clamped[2] != 'z' || !empty.empty() || empty.data()[0] != 0 ||
+        allocations != before + 2)
+      return 6;
+  }
+  return allocations == releases ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("string-substring-construction" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedIteratorOffsetsRun) {
   const auto Source = tmpFile("wrapped-iterator-offsets.cpp");
   const auto Output = tmpFile("wrapped-iterator-offsets.nc");

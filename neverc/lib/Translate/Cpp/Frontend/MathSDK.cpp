@@ -4395,6 +4395,47 @@ approvedUtilityStringConstruction(const State &S, const SourceManager &SM,
         Context.hasSameType(Parameter->getPointeeType(), StringType))
       return UtilityStringConstruction::Move;
   }
+  if ((Constructor->getNumParams() == 3 || Constructor->getNumParams() == 4) &&
+      !Constructor->getPrimaryTemplate()) {
+    const unsigned AllocatorIndex = Constructor->getNumParams() - 1;
+    const auto StringType = Context.getRecordType(String->Record);
+    const auto SourceType = Constructor->getParamDecl(0)->getType();
+    const auto AllocatorType =
+        Constructor->getParamDecl(AllocatorIndex)->getType();
+    const auto *Default =
+        dyn_cast<CXXDefaultArgExpr>(Construction->getArg(AllocatorIndex));
+    const auto *DefaultInit = selectedDefaultArgument(Default, Context);
+    const auto *DefaultParameter = Default ? Default->getParam() : nullptr;
+    std::optional<UtilityAllocatorRecord> Allocator;
+    if (AllocatorType->isLValueReferenceType())
+      Allocator = approvedUtilityAllocatorRecord(
+          S, SM, AllocatorType->getPointeeType()->getAsCXXRecordDecl(),
+          Context);
+    if (SourceType->isLValueReferenceType() &&
+        Context.hasSameType(SourceType->getPointeeType(),
+                            StringType.withConst()) &&
+        Context.hasSameType(Construction->getArg(0)->getType(),
+                            StringType.withConst()) &&
+        Context.hasSameType(Constructor->getParamDecl(1)->getType(),
+                            Context.getSizeType()) &&
+        Context.hasSameType(Construction->getArg(1)->getType(),
+                            Context.getSizeType()) &&
+        (AllocatorIndex == 2 ||
+         (Context.hasSameType(Constructor->getParamDecl(2)->getType(),
+                              Context.getSizeType()) &&
+          Context.hasSameType(Construction->getArg(2)->getType(),
+                              Context.getSizeType()))) &&
+        AllocatorType->isLValueReferenceType() && Allocator &&
+        Context.hasSameType(Allocator->ElementType, Context.CharTy) &&
+        Context.hasSameType(
+            AllocatorType->getPointeeType(),
+            Context.getRecordType(Allocator->Record).withConst()) &&
+        Default && DefaultInit && DefaultParameter &&
+        DefaultParameter == Constructor->getParamDecl(AllocatorIndex) &&
+        DefaultParameter->getFunctionScopeIndex() == AllocatorIndex &&
+        cstddefOrigin(S, SM, DefaultInit->getExprLoc(), "libcxx", "string"))
+      return UtilityStringConstruction::Substring;
+  }
   if (Constructor->getNumParams() == 1) {
     const auto Parameter = Constructor->getParamDecl(0)->getType();
     const auto List = approvedUtilityInitializerListRecord(
@@ -7672,6 +7713,44 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
       Parameter ? dyn_cast<FunctionDecl>(Parameter->getDeclContext()) : nullptr;
   if (const auto *Constructor =
           dyn_cast_or_null<CXXConstructorDecl>(Function)) {
+    const auto String =
+        approvedUtilityStringRecord(S, SM, Constructor->getParent(), Context);
+    const auto *StringInit = selectedDefaultArgument(Default, Context);
+    if (Default && Parameter && Owner && String && StringInit &&
+        (Constructor->getNumParams() == 3 ||
+         Constructor->getNumParams() == 4) &&
+        Index == Constructor->getNumParams() - 1 &&
+        Parameter == Constructor->getParamDecl(Index) &&
+        Parameter->getFunctionScopeIndex() == Index &&
+        Owner->getCanonicalDecl() == Constructor->getCanonicalDecl() &&
+        !Constructor->getPrimaryTemplate() && !Constructor->isVariadic() &&
+        Constructor->hasBody() &&
+        approvedStandardSDKDeclaration(S, SM, Constructor) &&
+        cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx", "string") &&
+        cstddefOrigin(S, SM, StringInit->getExprLoc(), "libcxx", "string")) {
+      const auto StringType = Context.getRecordType(String->Record);
+      const auto SourceType = Constructor->getParamDecl(0)->getType();
+      const auto AllocatorType = Parameter->getType();
+      std::optional<UtilityAllocatorRecord> Allocator;
+      if (AllocatorType->isLValueReferenceType())
+        Allocator = approvedUtilityAllocatorRecord(
+            S, SM, AllocatorType->getPointeeType()->getAsCXXRecordDecl(),
+            Context);
+      if (SourceType->isLValueReferenceType() &&
+          Context.hasSameType(SourceType->getPointeeType(),
+                              StringType.withConst()) &&
+          Context.hasSameType(Constructor->getParamDecl(1)->getType(),
+                              Context.getSizeType()) &&
+          (Index == 2 ||
+           Context.hasSameType(Constructor->getParamDecl(2)->getType(),
+                               Context.getSizeType())) &&
+          Allocator &&
+          Context.hasSameType(Allocator->ElementType, Context.CharTy) &&
+          Context.hasSameType(
+              AllocatorType->getPointeeType(),
+              Context.getRecordType(Allocator->Record).withConst()))
+        return true;
+    }
     const auto Deleter = approvedUtilityDefaultDeleteRecord(
         S, SM, Constructor->getParent(), Context);
     const auto *Primary = Constructor->getPrimaryTemplate();

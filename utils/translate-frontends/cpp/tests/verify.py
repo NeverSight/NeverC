@@ -29484,6 +29484,12 @@ int main() {
   bool range_construction_intact =
       range_constructed.size() == 3 && range_constructed[1] == 0 &&
       wrapped_constructed.size() == 3 && wrapped_constructed[2] == 'b';
+  std::string substring_suffix(range_constructed, 1);
+  std::string substring_counted(long_text, 1, 23);
+  bool substring_construction_intact =
+      substring_suffix.size() == 2 && substring_suffix[0] == 0 &&
+      substring_suffix[1] == 'b' && substring_counted.size() == 23 &&
+      substring_counted[0] == 'b' && substring_counted[22] == 'x';
   std::string copied(long_text);
   std::string combined = short_text + long_text;
   std::string prefixed = "!" + long_text;
@@ -29830,6 +29836,7 @@ int main() {
   bool reverse_long_intact = *reverse_long.rbegin() == '9' &&
                              *(reverse_long.rend() - 1) == 'a';
   return intact && fill_intact && range_construction_intact &&
+         substring_construction_intact &&
          maximum_intact && shrink_intact &&
          boundary_intact && emptied &&
          assigned.size() == 14 &&

@@ -17719,7 +17719,8 @@ class FunctionLowering {
       auto Length = temporary(SizeType, L);
       std::optional<Expression> FillCharacter;
       if (*Kind == UtilityStringConstruction::Copy ||
-          *Kind == UtilityStringConstruction::Move) {
+          *Kind == UtilityStringConstruction::Move ||
+          *Kind == UtilityStringConstruction::Substring) {
         auto SourceAddress = snapshot(
             address(lvalue(C->getArg(0)), C->getArg(0)->getType(), L), L);
         auto SourceWord = [&](const char *Name) {
@@ -17803,6 +17804,43 @@ class FunctionLowering {
                L);
         jump(Ready, L);
         label(Ready, L);
+        if (*Kind == UtilityStringConstruction::Substring) {
+          auto Position = snapshot(expression(C->getArg(1)), L);
+          std::optional<Expression> Requested;
+          if (C->getNumArgs() == 4)
+            Requested = snapshot(expression(C->getArg(2)), L);
+          const auto InRange = labelName(), OutOfRange = labelName(),
+                     Positioned = labelName();
+          branch(binary("<=", json::Object(Position), json::Object(Length),
+                        "bool", L),
+                 InRange, OutOfRange, L);
+          label(InRange, L);
+          auto Remaining = snapshot(binary("-", json::Object(Length),
+                                           json::Object(Position), SizeType, L),
+                                    L);
+          if (Requested) {
+            const auto UseRequested = labelName(), UseRemaining = labelName();
+            branch(binary("<", json::Object(*Requested),
+                          json::Object(Remaining), "bool", L),
+                   UseRequested, UseRemaining, L);
+            label(UseRequested, L);
+            assign(Length, json::Object(*Requested), L);
+            jump(Positioned, L);
+            label(UseRemaining, L);
+          }
+          assign(Length, json::Object(Remaining), L);
+          jump(Positioned, L);
+          label(OutOfRange, L);
+          assign(Position, json::Object(Length), L);
+          assign(Length, quantity(0, SizeType, L), L);
+          jump(Positioned, L);
+          label(Positioned, L);
+          assign(Input,
+                 binary("+", json::Object(Input),
+                        cast(json::Object(Position), DifferenceType, L),
+                        ConstPointerType, L),
+                 L);
+        }
       } else if (*Kind == UtilityStringConstruction::Fill) {
         assign(Length, snapshot(expression(C->getArg(0)), L), L);
         FillCharacter = snapshot(expression(C->getArg(1)), L);

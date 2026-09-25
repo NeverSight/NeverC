@@ -1235,6 +1235,7 @@ enum class UtilityStringConstruction {
   InitializerList,
   Copy,
   Move,
+  Substring,
 };
 std::optional<UtilityStringConstruction>
 approvedUtilityStringConstruction(const State &S,
