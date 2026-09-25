@@ -2533,9 +2533,13 @@ template <class ELFT> void OutputWriter<ELFT>::allocateOutputBuffer() {
 
   if (std::unique_ptr<EarlyOutputFile> early =
           std::move(elfOut().earlyOutput)) {
+    // A shared writable mapping keeps the output busy for execution, so it
+    // may only outlive the commit when the caller waits for process exit;
+    // a background exit hands the result over before that.
     Expected<std::unique_ptr<FileOutputBuffer>> bufferOrErr =
         early->finish(fileSize, config->driverCfg &&
-                                         config->driverCfg->releaseStateAtExit);
+                                    config->driverCfg->releaseStateAtExit &&
+                                    !config->driverCfg->backgroundExit);
     if (bufferOrErr) {
       buffer = std::move(*bufferOrErr);
       outputBufferIsFileBacked = true;
