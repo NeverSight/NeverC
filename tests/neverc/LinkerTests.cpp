@@ -2211,6 +2211,52 @@ int main(void) { return 0; }
   EXPECT_TRUE(help.contains("supported targets: elf")) << help.out;
 }
 
+TEST_F(LinkerTest, GnuLtoOptionsReachCodeGeneration) {
+  if (!isLinux())
+    GTEST_SKIP() << "GNU linker options apply to ELF links";
+
+  const fs::path source = tmpFile("gnu_lto.c");
+  const fs::path object = tmpFile("gnu_lto.o");
+  writeFile(source, "int main(void) { return 0; }\n");
+  CmdResult compile = ncc({"-flto", "-O2", "-c", source.string(), "-o",
+                           object.string()});
+  ASSERT_EQ(compile.exitCode, 0) << compile.err;
+  auto link = [&](std::vector<std::string> flags, const fs::path &output) {
+    std::vector<std::string> args = {object.string()};
+    args.insert(args.end(), flags.begin(), flags.end());
+    args.insert(args.end(), {"-o", output.string()});
+    return ncc(args);
+  };
+
+  const fs::path assembly = tmpFile("gnu_lto.s");
+  CmdResult asmLink = link({"-Wl,--lto-emit-asm", "-Wl,--lto-O1"}, assembly);
+  ASSERT_EQ(asmLink.exitCode, 0) << asmLink.err;
+  EXPECT_NE(readFile(assembly).find("main:"), std::string::npos);
+
+  const fs::path bitcode = tmpFile("gnu_lto.bc");
+  CmdResult bcLink = link({"-Wl,--plugin-opt=emit-llvm"}, bitcode);
+  ASSERT_EQ(bcLink.exitCode, 0) << bcLink.err;
+  EXPECT_EQ(readFile(bitcode).rfind("BC\xc0\xde", 0), 0u);
+
+  const fs::path image = tmpFile("gnu_lto");
+  const fs::path saved = tmpFile("gnu_lto_saved.o");
+  CmdResult objLink = link({"-Wl,--lto-obj-path=" + saved.string(),
+                            "-Wl,--lto-partitions=1",
+                            "-Wl,--lto-newpm-passes=default<O1>"},
+                           image);
+  ASSERT_EQ(objLink.exitCode, 0) << objLink.err;
+  EXPECT_EQ(readFile(saved).rfind("\x7f" "ELF", 0), 0u);
+  EXPECT_EQ(exec(image.string(), {}).exitCode, 0);
+
+  CmdResult badPipeline = link({"-Wl,--lto-newpm-passes=bogus"}, image);
+  EXPECT_NE(badPipeline.exitCode, 0);
+  EXPECT_TRUE(badPipeline.stderrContains("--lto-newpm-passes"))
+      << badPipeline.err;
+  CmdResult unknown = link({"-Wl,--plugin-opt=thinlto-index-only"}, image);
+  EXPECT_NE(unknown.exitCode, 0);
+  EXPECT_TRUE(unknown.stderrContains("unknown plugin option")) << unknown.err;
+}
+
 TEST_F(LinkerTest, ThreadCountOptionKeepsOutputBytesOnEveryFormat) {
   struct Format {
     const char *name;

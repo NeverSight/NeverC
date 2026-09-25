@@ -18,9 +18,14 @@
 #include "neverc/Transforms/XorStr/XorStrCleanupPass.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/Analysis/ScalarEvolution.h"
+#include "llvm/Analysis/AliasAnalysis.h"
+#include "llvm/Bitcode/BitcodeWriter.h"
+#include "llvm/Passes/PassBuilder.h"
 #include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/raw_ostream.h"
 #include <mutex>
 #include <optional>
 
@@ -211,6 +216,43 @@ lto::Config linker::createLTOConfig(
 
   c.DisableVerify = true;
   c.DiagHandler = std::move(DiagHandler);
+  // A malformed pipeline would abort the process deep in the backend; report
+  // it as a link error and keep the default pipeline instead.
+  {
+    PassBuilder PB;
+    ModulePassManager MPM;
+    if (!Cfg.ltoOptPipeline.empty()) {
+      if (Error E = PB.parsePassPipeline(MPM, Cfg.ltoOptPipeline))
+        error("--lto-newpm-passes: " + toString(std::move(E)));
+      else
+        c.OptPipeline = Cfg.ltoOptPipeline;
+    }
+    AAManager AA;
+    if (!Cfg.ltoAAPipeline.empty()) {
+      if (Error E = PB.parseAAPipeline(AA, Cfg.ltoAAPipeline))
+        error("--lto-aa-pipeline: " + toString(std::move(E)));
+      else
+        c.AAPipeline = Cfg.ltoAAPipeline;
+    }
+  }
+  c.DebugPassManager = Cfg.ltoDebugPassManager;
+  c.StatsFile = Cfg.ltoStatsFile;
+  c.PassPlugins = Cfg.ltoPassPlugins;
+  if (Cfg.ltoEmitAsm)
+    c.CGFileType = CodeGenFileType::AssemblyFile;
+  if (Cfg.ltoEmitLLVM) {
+    // Code generation stops at the hook, so no object reaches the link.
+    c.PreCodeGenModuleHook = [Output = Cfg.outputFile](unsigned,
+                                                       const Module &M) {
+      std::error_code EC;
+      raw_fd_ostream OS(Output, EC, sys::fs::OF_None);
+      if (EC)
+        error("cannot open " + Output + ": " + EC.message());
+      else
+        WriteBitcodeToFile(M, OS);
+      return false;
+    };
+  }
   c.OptLevel = OptLevel;
   c.CPU = Cfg.cpu;
   if (Cfg.androidKernelModule) {

@@ -170,6 +170,8 @@ OPTION(prefix_3, "--dependent-libraries", dependent_libraries, Flag, INVALID,
 OPTION(prefix_2, "--disable-new-dtags", disable_new_dtags, Flag, INVALID,
        INVALID, nullptr, 0, DefaultVis, 0, "Disable new dynamic tags", nullptr,
        nullptr)
+OPTION(prefix_2, "--disable-verify", disable_verify, Flag, INVALID, INVALID,
+       nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_2, "--discard-all", discard_all, Flag, INVALID, INVALID, nullptr,
        0, DefaultVis, 0, "Delete all local symbols", nullptr, nullptr)
 OPTION(prefix_2, "--discard-locals", discard_locals, Flag, INVALID, INVALID,
@@ -362,8 +364,45 @@ OPTION(prefix_2, "--library=", anonymous_10, Joined, INVALID, library, nullptr,
        0, DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_2, "--library", anonymous_9, Separate, INVALID, library, nullptr,
        0, DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_3, "--load-pass-plugin=", load_pass_plugins_eq, Joined, INVALID,
+       load_pass_plugins, nullptr, 0, DefaultVis, 0,
+       "Load passes from plugin library", nullptr, nullptr)
+OPTION(prefix_3, "--load-pass-plugin", load_pass_plugins, Separate, INVALID,
+       INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_2, "--long-plt", ignored_long_plt, Flag, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(
+    prefix_3, "--lto-aa-pipeline=", lto_aa_pipeline, Joined, INVALID, INVALID,
+    nullptr, 0, DefaultVis, 0,
+    "AA pipeline to run during LTO. Used in conjunction with -lto-newpm-passes",
+    nullptr, nullptr)
+OPTION(prefix_3, "--lto-basic-block-sections=", lto_basic_block_sections,
+       Joined, INVALID, INVALID, nullptr, 0, DefaultVis, 0,
+       "Enable basic block sections for LTO", nullptr, nullptr)
+OPTION(prefix_3, "--lto-CGO", lto_CGO, Joined, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, "Codegen optimization level for LTO", "<cgopt-level>",
+       nullptr)
+OPTION(prefix_3, "--lto-debug-pass-manager", lto_debug_pass_manager, Flag,
+       INVALID, INVALID, nullptr, 0, DefaultVis, 0, "Debug new pass manager",
+       nullptr, nullptr)
+OPTION(prefix_3, "--lto-emit-asm", lto_emit_asm, Flag, INVALID, INVALID,
+       nullptr, 0, DefaultVis, 0, "Emit assembly code", nullptr, nullptr)
+OPTION(prefix_3, "--lto-emit-llvm", lto_emit_llvm, Flag, INVALID, INVALID,
+       nullptr, 0, DefaultVis, 0, "Emit LLVM-IR bitcode", nullptr, nullptr)
+OPTION(prefix_3, "--lto-newpm-passes=", lto_newpm_passes, Joined, INVALID,
+       INVALID, nullptr, 0, DefaultVis, 0, "Passes to run during LTO", nullptr,
+       nullptr)
+OPTION(prefix_3, "--lto-obj-path=", lto_obj_path_eq, Joined, INVALID, INVALID,
+       nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_3, "--lto-O", lto_O, Joined, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, "Optimization level for LTO", "<opt-level>", nullptr)
+OPTION(prefix_3, "--lto-partitions=", lto_partitions, Joined, INVALID, INVALID,
+       nullptr, 0, DefaultVis, 0,
+       "Maximum number of LTO code generation partitions", nullptr, nullptr)
+OPTION(prefix_3, "--lto-unique-basic-block-section-names",
+       lto_unique_basic_block_section_names, Flag, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, "Give unique names to every basic block section for LTO",
+       nullptr, nullptr)
 OPTION(prefix_1, "-L", library_path, JoinedOrSeparate, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0, "Add <dir> to the library search path",
        "<dir>", nullptr)
@@ -372,6 +411,12 @@ OPTION(prefix_1, "-l", library, JoinedOrSeparate, INVALID, INVALID, nullptr, 0,
 OPTION(prefix_2, "--Map=", Map_eq, Joined, INVALID, Map, nullptr, 0, DefaultVis,
        0, "Print a link map to the specified file", nullptr, nullptr)
 OPTION(prefix_2, "--Map", Map, Separate, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_2, "--mllvm=", mllvm_eq, Joined, INVALID, mllvm, nullptr, 0,
+       DefaultVis, 0,
+       "Additional arguments to forward to LLVM's option processing", nullptr,
+       nullptr)
+OPTION(prefix_2, "--mllvm", mllvm, Separate, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_3, "--mmap-output-file", mmap_output_file, Flag, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0, "Mmap the output file for writing (default)",
@@ -461,6 +506,12 @@ OPTION(prefix_3, "--no-gnu-unique", no_gnu_unique, Flag, INVALID, INVALID,
        nullptr, nullptr)
 OPTION(prefix_2, "--no-keep-memory", ignored_no_keep_memory, Flag, INVALID,
        INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(
+    prefix_3, "--no-lto-unique-basic-block-section-names",
+    no_lto_unique_basic_block_section_names, Flag, INVALID, INVALID, nullptr, 0,
+    DefaultVis, 0,
+    "Do not give unique names to every basic block section for LTO (default)",
+    nullptr, nullptr)
 OPTION(prefix_3, "--no-mmap-output-file", no_mmap_output_file, Flag, INVALID,
        INVALID, nullptr, 0, DefaultVis, 0,
        "Do not mmap the output file for writing", nullptr, nullptr)
@@ -549,6 +600,31 @@ OPTION(prefix_3, "--omagic", omagic, Flag, INVALID, INVALID, nullptr, 0,
        "Set the text and data sections to be readable and writable, do not "
        "page align sections, link against static libraries",
        "<magic>", nullptr)
+OPTION(prefix_3, "--opt-remarks-filename", opt_remarks_filename, Separate,
+       INVALID, INVALID, nullptr, 0, DefaultVis, 0,
+       "YAML output file for optimization remarks", nullptr, nullptr)
+OPTION(prefix_3, "--opt-remarks-format", opt_remarks_format, Separate, INVALID,
+       INVALID, nullptr, 0, DefaultVis, 0,
+       "The format used for serializing remarks (default: YAML)", nullptr,
+       nullptr)
+OPTION(prefix_3,
+       "--opt-remarks-hotness-threshold=", opt_remarks_hotness_threshold_eq,
+       Joined, INVALID, opt_remarks_hotness_threshold, nullptr, 0, DefaultVis,
+       0,
+       "Minimum profile count required for an optimization remark to be "
+       "output. Use 'auto' to apply the threshold from profile summary.",
+       "<value>", nullptr)
+OPTION(prefix_3, "--opt-remarks-hotness-threshold",
+       opt_remarks_hotness_threshold, Separate, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, nullptr, "<value>", nullptr)
+OPTION(prefix_3, "--opt-remarks-passes", opt_remarks_passes, Separate, INVALID,
+       INVALID, nullptr, 0, DefaultVis, 0,
+       "Regex for the passes that need to be serialized to the output file",
+       nullptr, nullptr)
+OPTION(prefix_3, "--opt-remarks-with-hotness", opt_remarks_with_hotness, Flag,
+       INVALID, INVALID, nullptr, 0, DefaultVis, 0,
+       "Include hotness information in the optimization remarks file", nullptr,
+       nullptr)
 OPTION(prefix_3, "--optimize-bb-jumps", optimize_bb_jumps, Flag, INVALID,
        INVALID, nullptr, 0, DefaultVis, 0,
        "Remove direct jumps at the end to the next basic block", nullptr,
@@ -590,6 +666,72 @@ OPTION(prefix_2, "--pic-veneer", pic_veneer, Flag, INVALID, INVALID, nullptr, 0,
        nullptr, nullptr)
 OPTION(prefix_2, "--pie", pie, Flag, INVALID, INVALID, nullptr, 0, DefaultVis,
        0, "Create a position independent executable", nullptr, nullptr)
+OPTION(prefix_2,
+       "--plugin-opt=-fresolution=", ignored_plugin_opt_fresolution_eq, Joined,
+       INVALID, INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_2,
+       "--plugin-opt=-pass-through=", ignored_plugin_opt_pass_through_eq,
+       Joined, INVALID, INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr,
+       nullptr)
+OPTION(prefix_2, "--plugin-opt=-", plugin_opt_eq_minus, Joined, INVALID,
+       INVALID, nullptr, 0, DefaultVis, 0,
+       "Specify an LLVM option for compatibility with LLVMgold.so", nullptr,
+       nullptr)
+OPTION(prefix_2, "--plugin-opt=debug-pass-manager", anonymous_221, Flag,
+       INVALID, lto_debug_pass_manager, nullptr, 0, DefaultVis, 0,
+       "Alias for --lto-debug-pass-manager", nullptr, nullptr)
+OPTION(prefix_2, "--plugin-opt=disable-verify", anonymous_222, Flag, INVALID,
+       disable_verify, nullptr, 0, DefaultVis, 0, "Alias for --disable-verify",
+       nullptr, nullptr)
+OPTION(prefix_2, "--plugin-opt=emit-asm", plugin_opt_emit_asm, Flag, INVALID,
+       lto_emit_asm, nullptr, 0, DefaultVis, 0, "Alias for --lto-emit-asm",
+       nullptr, nullptr)
+OPTION(prefix_2, "--plugin-opt=emit-llvm", plugin_opt_emit_llvm, Flag, INVALID,
+       lto_emit_llvm, nullptr, 0, DefaultVis, 0, "Alias for --lto-emit-llvm",
+       nullptr, nullptr)
+OPTION(prefix_2, "--plugin-opt=lto-partitions=", anonymous_223, Joined, INVALID,
+       lto_partitions, nullptr, 0, DefaultVis, 0, "Alias for --lto-partitions",
+       nullptr, nullptr)
+OPTION(prefix_2, "--plugin-opt=mcpu=", plugin_opt_mcpu_eq, Joined, INVALID,
+       INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_2, "--plugin-opt=obj-path=", anonymous_224, Joined, INVALID,
+       lto_obj_path_eq, nullptr, 0, DefaultVis, 0,
+       "Alias for --lto-obj-path=", nullptr, nullptr)
+OPTION(prefix_2, "--plugin-opt=opt-remarks-filename=", anonymous_225, Joined,
+       INVALID, opt_remarks_filename, nullptr, 0, DefaultVis, 0,
+       "Alias for --opt-remarks-filename", nullptr, nullptr)
+OPTION(prefix_2, "--plugin-opt=opt-remarks-format=", anonymous_226, Joined,
+       INVALID, opt_remarks_format, nullptr, 0, DefaultVis, 0,
+       "Alias for --opt-remarks-format", nullptr, nullptr)
+OPTION(prefix_2, "--plugin-opt=opt-remarks-hotness-threshold=", anonymous_227,
+       Joined, INVALID, opt_remarks_hotness_threshold, nullptr, 0, DefaultVis,
+       0, "Alias for --opt-remarks-hotness-threshold", nullptr, nullptr)
+OPTION(prefix_2, "--plugin-opt=opt-remarks-passes=", anonymous_228, Joined,
+       INVALID, opt_remarks_passes, nullptr, 0, DefaultVis, 0,
+       "Alias for --opt-remarks-passes", nullptr, nullptr)
+OPTION(prefix_2, "--plugin-opt=opt-remarks-with-hotness", anonymous_229, Flag,
+       INVALID, opt_remarks_with_hotness, nullptr, 0, DefaultVis, 0,
+       "Alias for --opt-remarks-with-hotness", nullptr, nullptr)
+OPTION(prefix_2, "--plugin-opt=O", anonymous_230, Joined, INVALID, lto_O,
+       nullptr, 0, DefaultVis, 0, "Alias for --lto-O", nullptr, nullptr)
+OPTION(prefix_2, "--plugin-opt=save-temps", anonymous_231, Flag, INVALID,
+       save_temps, nullptr, 0, DefaultVis, 0, "Alias for --save-temps", nullptr,
+       nullptr)
+OPTION(prefix_2, "--plugin-opt=stats-file=", plugin_opt_stats_file, Joined,
+       INVALID, INVALID, nullptr, 0, DefaultVis, 0,
+       "Filename to write LTO statistics to", nullptr, nullptr)
+OPTION(prefix_2, "--plugin-opt=thinlto", ignored_plugin_opt_thinlto, Flag,
+       INVALID, INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_2, "--plugin-opt=time-trace=", anonymous_232, Joined, INVALID,
+       time_trace_eq, nullptr, 0, DefaultVis, 0,
+       "Alias for --time-trace=", nullptr, nullptr)
+OPTION(prefix_2, "--plugin-opt=", plugin_opt_eq, Joined, INVALID, INVALID,
+       nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_2, "--plugin=", plugin_eq, Joined, INVALID, plugin, nullptr, 0,
+       DefaultVis, 0, "Ignored for compatibility with GNU linkers", nullptr,
+       nullptr)
+OPTION(prefix_2, "--plugin", plugin, Separate, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_2, "--pop-state", pop_state, Flag, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0, "Restore the states saved by --push-state", nullptr,
        nullptr)
@@ -664,6 +806,9 @@ OPTION(prefix_1, "-R", anonymous_15, JoinedOrSeparate, INVALID, rpath, nullptr,
        0, DefaultVis, 0, "Alias for --rpath", nullptr, nullptr)
 OPTION(prefix_1, "-r", anonymous_214, Flag, INVALID, relocatable, nullptr, 0,
        DefaultVis, 0, "Alias for --relocatable", nullptr, nullptr)
+OPTION(prefix_2, "--save-temps", save_temps, Flag, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, "Save intermediate LTO compilation results", nullptr,
+       nullptr)
 OPTION(prefix_2, "--script=", script_eq, Joined, INVALID, script, nullptr, 0,
        DefaultVis, 0, "Read linker script", nullptr, nullptr)
 OPTION(prefix_2, "--script", script, Separate, INVALID, INVALID, nullptr, 0,

@@ -88,7 +88,7 @@ void linker::LTOCacheKey::appendConfig(const LinkerDriverConfig &cfg) {
   // files, strip level, build-id, ...) are deliberately excluded; fields
   // that trigger a cache bypass (remarks, save-temps, plugins) never reach
   // this point with interesting values.
-  appendStr(material, "neverc-lto-config-schema-v3");
+  appendStr(material, "neverc-lto-config-schema-v4");
   appendStr(material, cfg.cpu);
   appendU64(material, uint64_t(int64_t(cfg.ltoOptLevel)));
   appendU64(material, uint64_t(int64_t(cfg.ltoCGOLevel)));
@@ -102,6 +102,8 @@ void linker::LTOCacheKey::appendConfig(const LinkerDriverConfig &cfg) {
   appendU64(material, cfg.jmcInstrument);
   appendU64(material, cfg.emulatedTLS);
   appendU64(material, cfg.stackSizeSection);
+  appendStr(material, cfg.ltoOptPipeline);
+  appendStr(material, cfg.ltoAAPipeline);
   // Encode the schema field names and values explicitly. Never hash the struct
   // representation: padding, layout, and addresses are not stable cache
   // material. Keep raw -mllvm argv below as an independent, ordered input so
@@ -181,6 +183,10 @@ bool linker::ltoCacheUsable(const LinkerDriverConfig &cfg) {
   // Features with side effects (extra output files, loaded plugin code)
   // that a cache hit would silently skip.
   if (cfg.saveTemps || cfg.timeTraceEnabled || !cfg.optRemarksFilename.empty())
+    return false;
+  if (cfg.ltoDebugPassManager || !cfg.ltoStatsFile.empty() ||
+      !cfg.ltoPassPlugins.empty() || cfg.ltoEmitAsm || cfg.ltoEmitLLVM ||
+      !cfg.ltoObjPath.empty())
     return false;
   if (!cfg.nevercPluginPaths.empty())
     return false;

@@ -44,8 +44,11 @@ lto::Config createConfig() {
 // ===----------------------------------------------------------------------===
 
 BitcodeCompiler::BitcodeCompiler() {
-  ltoObj = std::make_unique<lto::LTO>(createConfig(),
-                                      config->driverCfg->ltoPartitions);
+  // Assembly and bitcode output come from one module, which the parallel
+  // code generation hooks would split.
+  const LinkerDriverConfig &cfg = *config->driverCfg;
+  ltoObj = std::make_unique<lto::LTO>(
+      createConfig(), cfg.ltoEmitAsm || cfg.ltoEmitLLVM ? 1 : cfg.ltoPartitions);
   cacheUsable = ltoCacheUsable(*config->driverCfg);
 
   if (elfState().bitcodeFiles.empty())
@@ -176,6 +179,18 @@ std::vector<InputFile *> BitcodeCompiler::compile() {
     runLTOWithCache(*ltoObj, cacheKey, cacheUsable, *config->driverCfg,
                     ltoCacheBackendTag, emitAddrsig, buf);
   ltoObj.reset();
+
+  // --lto-emit-asm writes the assembly in place of the output.
+  const LinkerDriverConfig &cfg = *config->driverCfg;
+  if (cfg.ltoEmitAsm || !cfg.ltoObjPath.empty()) {
+    const std::string &base =
+        cfg.ltoEmitAsm ? config->outputFile.str() : cfg.ltoObjPath;
+    for (unsigned i = 0; i != maxTasks; ++i)
+      if (!buf[i].empty())
+        saveBuffer(buf[i], i == 0 ? Twine(base) : base + Twine(i));
+    if (cfg.ltoEmitAsm)
+      return {};
+  }
 
   std::vector<InputFile *> ret;
   for (unsigned i = 0; i != maxTasks; ++i) {

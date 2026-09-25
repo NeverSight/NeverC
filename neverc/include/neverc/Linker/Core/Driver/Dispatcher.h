@@ -235,6 +235,16 @@ struct LinkerDriverConfig {
   // the versioned pure-C API, not this in-process C++ aggregate.
   neverc::ParallelCodeGenTuning parallelCodeGenTuning;
   llvm::NevercPipelineTuningOptions ltoPipelineTuning;
+
+  // LTO settings given as linker options (--lto-*, --plugin-opt=*).
+  std::string ltoOptPipeline;     // --lto-newpm-passes=: replaces -O passes
+  std::string ltoAAPipeline;      // --lto-aa-pipeline=
+  bool ltoDebugPassManager = false;
+  std::string ltoStatsFile;       // --plugin-opt=stats-file=
+  std::vector<std::string> ltoPassPlugins; // --load-pass-plugin=
+  bool ltoEmitAsm = false;  // write the LTO output as assembly, then stop
+  bool ltoEmitLLVM = false; // write the optimized module as bitcode, then stop
+  std::string ltoObjPath;   // also write the LTO objects to this path
 };
 
 using Driver = bool (*)(llvm::ArrayRef<const char *>, llvm::raw_ostream &,

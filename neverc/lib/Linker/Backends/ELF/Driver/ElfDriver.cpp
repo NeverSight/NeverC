@@ -244,6 +244,75 @@ LinkerDriverConfig applyLinkerOptions(opt::InputArgList &args,
     cfg.timeTraceGranularity =
         args::getInteger(args, OPT_time_trace_granularity, 500);
   }
+
+  // LTO code generation.
+  auto level = [&](opt::Arg *arg, int &out) {
+    unsigned v;
+    if (!to_integer(arg->getValue(), v) || v > 3)
+      error(arg->getSpelling() + ": invalid optimization level: " +
+            arg->getValue());
+    else
+      out = int(v);
+  };
+  if (opt::Arg *arg = args.getLastArg(OPT_lto_O))
+    level(arg, cfg.ltoOptLevel);
+  if (opt::Arg *arg = args.getLastArg(OPT_lto_CGO))
+    level(arg, cfg.ltoCGOLevel);
+  if (opt::Arg *arg = args.getLastArg(OPT_plugin_opt_mcpu_eq))
+    cfg.cpu = arg->getValue();
+  // After the driver's options, so that they take precedence.
+  for (opt::Arg *arg : args.filtered(OPT_mllvm, OPT_plugin_opt_eq_minus))
+    cfg.mllvmOpts.push_back(
+        arg->getOption().matches(OPT_plugin_opt_eq_minus)
+            ? "-" + std::string(arg->getValue())
+            : std::string(arg->getValue()));
+  if (opt::Arg *arg = args.getLastArg(OPT_opt_remarks_filename))
+    cfg.optRemarksFilename = arg->getValue();
+  if (opt::Arg *arg = args.getLastArg(OPT_opt_remarks_passes))
+    cfg.optRemarksPasses = arg->getValue();
+  if (opt::Arg *arg = args.getLastArg(OPT_opt_remarks_format))
+    cfg.optRemarksFormat = arg->getValue();
+  if (opt::Arg *arg = args.getLastArg(OPT_opt_remarks_hotness_threshold))
+    cfg.optRemarksHotnessThreshold = arg->getValue();
+  cfg.optRemarksWithHotness =
+      cfg.optRemarksWithHotness || args.hasArg(OPT_opt_remarks_with_hotness);
+  cfg.saveTemps = cfg.saveTemps || args.hasArg(OPT_save_temps);
+  if (opt::Arg *arg = args.getLastArg(OPT_lto_basic_block_sections))
+    cfg.ltoBasicBlockSections = arg->getValue();
+  cfg.ltoUniqueBasicBlockSectionNames =
+      args.hasFlag(OPT_lto_unique_basic_block_section_names,
+                   OPT_no_lto_unique_basic_block_section_names,
+                   cfg.ltoUniqueBasicBlockSectionNames);
+  if (opt::Arg *arg = args.getLastArg(OPT_lto_newpm_passes))
+    cfg.ltoOptPipeline = arg->getValue();
+  if (opt::Arg *arg = args.getLastArg(OPT_lto_aa_pipeline))
+    cfg.ltoAAPipeline = arg->getValue();
+  cfg.ltoDebugPassManager = args.hasArg(OPT_lto_debug_pass_manager);
+  if (opt::Arg *arg = args.getLastArg(OPT_plugin_opt_stats_file))
+    cfg.ltoStatsFile = arg->getValue();
+  for (opt::Arg *arg : args.filtered(OPT_load_pass_plugins))
+    cfg.ltoPassPlugins.push_back(arg->getValue());
+  cfg.ltoEmitAsm = args.hasArg(OPT_lto_emit_asm);
+  cfg.ltoEmitLLVM = args.hasArg(OPT_lto_emit_llvm);
+  if (opt::Arg *arg = args.getLastArg(OPT_lto_obj_path_eq))
+    cfg.ltoObjPath = arg->getValue();
+  // NeverC sizes its code generation partitions from the work in the module;
+  // the option bounds their number, and 1 keeps code generation serial.
+  if (opt::Arg *arg = args.getLastArg(OPT_lto_partitions)) {
+    unsigned n;
+    if (!to_integer(arg->getValue(), n) || n == 0) {
+      error(arg->getSpelling() + ": expected a positive integer, but got '" +
+            arg->getValue() + "'");
+    } else {
+      cfg.parallelCodeGenTuning.CodeGenMaxPartitions = n;
+      cfg.parallelCodeGenTuning.OptMaxPartitions = n;
+      if (n == 1)
+        cfg.ltoPartitions = 1;
+    }
+  }
+  for (opt::Arg *arg : args.filtered(OPT_plugin_opt_eq))
+    error(arg->getSpelling() + ": unknown plugin option '" + arg->getValue() +
+          "'");
   return cfg;
 }
 
@@ -1012,6 +1081,34 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
     case OPT_ignored_warn_once:
     case OPT_ignored_warn_rwx_segments:
     case OPT_ignored_warn_shared_textrel:
+    case OPT_ignored_plugin_opt_fresolution_eq:
+    case OPT_ignored_plugin_opt_pass_through_eq:
+    case OPT_ignored_plugin_opt_thinlto:
+    case OPT_plugin:
+    // LTO settings, which only apply to bitcode inputs; the pipeline
+    // declines those.
+    case OPT_lto_O:
+    case OPT_lto_CGO:
+    case OPT_plugin_opt_mcpu_eq:
+    case OPT_mllvm:
+    case OPT_plugin_opt_eq_minus:
+    case OPT_opt_remarks_filename:
+    case OPT_opt_remarks_passes:
+    case OPT_opt_remarks_format:
+    case OPT_opt_remarks_hotness_threshold:
+    case OPT_opt_remarks_with_hotness:
+    case OPT_save_temps:
+    case OPT_lto_basic_block_sections:
+    case OPT_lto_unique_basic_block_section_names:
+    case OPT_no_lto_unique_basic_block_section_names:
+    case OPT_lto_newpm_passes:
+    case OPT_lto_aa_pipeline:
+    case OPT_lto_debug_pass_manager:
+    case OPT_disable_verify:
+    case OPT_plugin_opt_stats_file:
+    case OPT_load_pass_plugins:
+    case OPT_lto_obj_path_eq:
+    case OPT_lto_partitions:
       break;
     case OPT_no_mmap_output_file:
       req.mmapOutput = false;
@@ -3504,6 +3601,9 @@ void LinkerDriver::execute(opt::InputArgList &args) {
 
   const size_t numObjsBeforeLTO = elfState().objectFiles.size();
   dispatchByFormat(compileBitcodeFiles);
+  // --lto-emit-asm and --lto-emit-llvm write the LTO output and stop.
+  if (config->driverCfg->ltoEmitAsm || config->driverCfg->ltoEmitLLVM)
+    return;
 
   // No-bitcode and empty-codegen links do not pass through the native-output
   // hook above. Finalize their automatic serial decision here; for real LTO
