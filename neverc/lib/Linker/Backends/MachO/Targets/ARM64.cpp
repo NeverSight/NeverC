@@ -621,7 +621,9 @@ void ARM64::applyOptimizationHints(uint8_t *outBuf, const ObjFile &obj) const {
   };
 
   bool hasAdrpAdrp = false;
+  size_t hints = 0, liveHints = 0;
   forEachHint(data, [&](uint64_t kind, ArrayRef<uint64_t> args) {
+    ++hints;
     if (kind == LOH_ARM64_ADRP_ADRP) {
       hasAdrpAdrp = true;
       return;
@@ -629,6 +631,7 @@ void ARM64::applyOptimizationHints(uint8_t *outBuf, const ObjFile &obj) const {
 
     if (!findSection(args[0]))
       return;
+    ++liveHints;
     switch (kind) {
     case LOH_ARM64_ADRP_ADD:
       if (isValidOffset(args[1]))
@@ -660,6 +663,11 @@ void ARM64::applyOptimizationHints(uint8_t *outBuf, const ObjFile &obj) const {
       break;
     }
   });
+
+  if (config->verboseOptimizationHints)
+    message(toString(&obj) + ": " + Twine(hints) +
+            " linker optimization hints, " + Twine(liveHints) +
+            " in code the output keeps");
 
   if (!hasAdrpAdrp)
     return;

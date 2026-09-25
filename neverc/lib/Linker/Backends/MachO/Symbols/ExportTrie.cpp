@@ -1,4 +1,5 @@
 #include "Linker/MachO/ExportTrie.h"
+#include "Linker/MachO/Config.h"
 #include "Linker/MachO/Symbols.h"
 
 #include "Linker/Core/Runtime/Allocator.h"
@@ -60,6 +61,9 @@ struct macho::TrieNode {
   // This will converge to the true offset when updateOffset() is run to a
   // fixpoint.
   size_t offset = 0;
+  // Position in -exported_symbols_order of the first listed symbol at or
+  // below this node.
+  uint32_t rank = UINT32_MAX;
 
   uint32_t getTerminalSize() const;
   // Returns whether the new estimated offset differs from the old one.
@@ -229,6 +233,9 @@ tailcall:
   if (isTerminal) {
     assert(j - i == 1); // no duplicate symbols
     node->info = ExportInfo(*pivotSymbol, imageBase);
+    if (!config->exportedSymbolsOrder.empty())
+      node->rank = config->exportedSymbolsOrder.lookup_or(
+          CachedHashStringRef(pivotSymbol->getName()), UINT32_MAX);
   } else {
     // This is the tail-call-optimized version of the following:
     // sortAndBuild(vec.slice(i, j - i), node, lastPos, pos + 1);
@@ -244,6 +251,23 @@ size_t TrieBuilder::build() {
 
   TrieNode *root = makeNode();
   sortAndBuild(exported, root, 0, 0);
+
+  // -exported_symbols_order puts the paths to the listed symbols first,
+  // both among each node's edges and in the serialized trie.
+  if (!config->exportedSymbolsOrder.empty()) {
+    // Children are created after their parents, so a reverse walk sees
+    // every child first.
+    for (TrieNode *node : llvm::reverse(nodes)) {
+      llvm::stable_sort(node->edges, [](const Edge &a, const Edge &b) {
+        return a.child->rank < b.child->rank;
+      });
+      for (const Edge &edge : node->edges)
+        node->rank = std::min(node->rank, edge.child->rank);
+    }
+    std::stable_sort(
+        nodes.begin() + 1, nodes.end(),
+        [](const TrieNode *a, const TrieNode *b) { return a->rank < b->rank; });
+  }
 
   // Assign each node in the vector an offset in the trie stream, iterating
   // until all uleb128 sizes have stabilized.

@@ -270,6 +270,12 @@ struct Configuration {
   // What a pointer dyld fixes up at an unaligned address does.
   ReadOnlyRelocs unalignedPointers = ReadOnlyRelocs::Warning;
   bool traceSymbolLayout = false;
+  bool forceLoadSwiftLibs = false;
+  bool warnCompactUnwind = false;
+  bool verboseOptimizationHints = false;
+  bool textExec = false;
+  // -exported_symbols_order: each listed name's position.
+  llvm::DenseMap<llvm::CachedHashStringRef, uint32_t> exportedSymbolsOrder;
   WeakReferenceMismatches weakReferenceMismatches =
       WeakReferenceMismatches::NonWeak;
   // Sections -move_to_ro_segment and -move_to_rw_segment send to another

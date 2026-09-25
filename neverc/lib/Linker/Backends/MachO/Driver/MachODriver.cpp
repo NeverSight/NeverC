@@ -48,6 +48,7 @@
 #include "neverc/Foundation/Core/Version.h"
 #include "neverc/Merge/Merger.h"
 #include <algorithm>
+#include <csignal>
 #include <optional>
 #include <set>
 #include <vector>
@@ -585,9 +586,14 @@ void macho::resolveLCLinkerOptions() {
       StringRef arg = LCLinkerOptions[i];
       if (arg.consume_front("-l")) {
         assert(!config->ignoreAutoLinkOptions.contains(arg));
+        // -force_load_swift_libs loads every member of the Swift libraries
+        // objects ask for.
         addLibrary(arg, /*isNeeded=*/false, /*isWeak=*/false,
                    /*isReexport=*/false, /*isHidden=*/false,
-                   /*isExplicit=*/false, LoadType::LCLinkerOption);
+                   /*isExplicit=*/false,
+                   config->forceLoadSwiftLibs && arg.starts_with("swift")
+                       ? LoadType::CommandLineForce
+                       : LoadType::LCLinkerOption);
       } else if (arg == "-framework") {
         StringRef name = LCLinkerOptions[++i];
         assert(!config->ignoreAutoLinkOptions.contains(name));
@@ -829,8 +835,18 @@ void initializeSectionRenameMap() {
       config->sectionRenameMap[{segment_names::data, s}] = {
           segment_names::dataConst, s};
   }
+  // -text_exec moves code to its own __TEXT_EXEC segment.
+  const StringRef codeSegment =
+      config->textExec ? StringRef("__TEXT_EXEC") : segment_names::text;
   config->sectionRenameMap[{segment_names::text, section_names::staticInit}] = {
-      segment_names::text, section_names::text};
+      codeSegment, section_names::text};
+  if (config->textExec) {
+    config->sectionRenameMap[{segment_names::text, section_names::text}] = {
+        codeSegment, section_names::text};
+    config->segmentProtections.push_back({codeSegment,
+                                          VM_PROT_READ | VM_PROT_EXECUTE,
+                                          VM_PROT_READ | VM_PROT_EXECUTE});
+  }
   config->sectionRenameMap[{segment_names::import, section_names::pointers}] = {
       config->dataConst ? segment_names::dataConst : segment_names::data,
       section_names::nonLazySymbolPtr};
@@ -1110,7 +1126,7 @@ void warnIfUnimplementedOption(const Option &opt) {
     break;
   default:
     warn("Option `" + opt.getPrefixedName() +
-         "' is not implemented and has no effect");
+         "' is not supported and has no effect: " + opt.getHelpText());
     break;
   }
 }
@@ -2108,6 +2124,27 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
   config->forceLoadObjC = args.hasArg(OPT_ObjC);
   config->interposable = args.hasArg(OPT_interposable);
   config->traceSymbolLayout = args.hasArg(OPT_trace_symbol_layout);
+  config->forceLoadSwiftLibs = args.hasArg(OPT_force_load_swift_libs);
+  config->warnCompactUnwind = args.hasArg(OPT_warn_compact_unwind);
+  config->verboseOptimizationHints =
+      args.hasArg(OPT_verbose_optimization_hints);
+  config->textExec = args.hasArg(OPT_text_exec);
+#if !defined(_WIN32)
+  // -pause stops the linker until a debugger or SIGCONT resumes it.
+  if (args.hasArg(OPT_pause)) {
+    message("-pause: process " + Twine(sys::Process::getProcessId()) +
+            " stopped; send SIGCONT to continue");
+    raise(SIGSTOP);
+  }
+#endif
+  if (const Arg *arg = args.getLastArg(OPT_exported_symbols_order))
+    if (std::optional<MemoryBufferRef> buffer = readFile(arg->getValue()))
+      for (StringRef line : args::getLines(*buffer)) {
+        line = line.take_until([](char c) { return c == '#'; }).trim();
+        if (!line.empty())
+          config->exportedSymbolsOrder.try_emplace(
+              CachedHashStringRef(line), config->exportedSymbolsOrder.size());
+      }
   if (const Arg *arg = args.getLastArg(OPT_unaligned_pointers)) {
     std::optional<ReadOnlyRelocs> mode =
         StringSwitch<std::optional<ReadOnlyRelocs>>(arg->getValue())
@@ -2508,6 +2545,8 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
                                /*isWeakRef=*/false);
 
     createSyntheticSections();
+    if (config->textExec)
+      in.stubs->segname = "__TEXT_EXEC";
     createSyntheticSymbols();
 
     createAliases();

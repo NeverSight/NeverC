@@ -327,6 +327,14 @@ Symbol *UnwindInfoSectionImpl::canonicalizePersonality(Symbol *personality) {
 // is no source address to make a relative location meaningful.
 void UnwindInfoSectionImpl::relocateCompactUnwind(
     std::vector<CompactUnwindEntry> &cuEntries) {
+  // -warn_compact_unwind names the functions whose unwind information stays
+  // in __eh_frame because it has no compact encoding.
+  if (config->warnCompactUnwind)
+    for (const auto &entry : symbolsVec)
+      if (const Defined *d = entry.second;
+          d->unwindEntry && d->unwindEntry->getName() == section_names::ehFrame)
+        warn("no compact unwind encoding for " + toString(*d) +
+             "; its DWARF unwind information stays in __eh_frame");
   parallelFor(0, symbolsVec.size(), [&](size_t i) {
     CompactUnwindEntry &cu = cuEntries[i];
     const Defined *d = symbolsVec[i].second;

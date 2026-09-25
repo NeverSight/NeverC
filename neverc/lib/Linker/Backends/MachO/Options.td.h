@@ -104,13 +104,15 @@ OPTION(prefix_3, "-add_empty_section", anonymous_301, MultiArg, INVALID,
        "Alias for --add-empty-section", "<segment> <section>", nullptr)
 OPTION(prefix_3, "-add_linker_option", add_linker_option, Flag,
        grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "This option is undocumented in the native linker", nullptr, nullptr)
+       "it is an undocumented option of the native linker", nullptr, nullptr)
 OPTION(prefix_3, "-add_source_version", add_source_version, Flag,
        grp_undocumented, INVALID, nullptr, 0, DefaultVis, 0,
        "Emit an LC_SOURCE_VERSION load command", nullptr, nullptr)
-OPTION(prefix_3, "-add_split_seg_info", add_split_seg_info, Flag,
-       grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "This option is undocumented in the native linker", nullptr, nullptr)
+OPTION(
+    prefix_3, "-add_split_seg_info", add_split_seg_info, Flag, grp_undocumented,
+    INVALID, nullptr, HelpHidden, DefaultVis, 0,
+    "NeverC does not emit split segment information for the dyld shared cache",
+    nullptr, nullptr)
 OPTION(prefix_1, "--adhoc-codesign", adhoc_codesign, Flag, grp_rare, INVALID,
        nullptr, 0, DefaultVis, 0,
        "Write an ad-hoc code signature to the output file (default for arm64 "
@@ -139,7 +141,7 @@ OPTION(prefix_3, "-allow_heap_execute", allow_heap_execute, Flag, grp_rare,
 OPTION(prefix_3, "-allow_simulator_linking_to_macosx_dylibs",
        allow_simulator_linking_to_macosx_dylibs, Flag, grp_undocumented,
        INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "This option is undocumented in the native linker", nullptr, nullptr)
+       "it is an undocumented option of the native linker", nullptr, nullptr)
 OPTION(prefix_3, "-allow_stack_execute", allow_stack_execute, Flag, grp_main,
        INVALID, nullptr, 0, DefaultVis, 0, "Mark stack segment as executable",
        nullptr, nullptr)
@@ -230,7 +232,7 @@ OPTION(prefix_2, "--call-graph-profile-sort", call_graph_profile_sort, Flag,
        "Reorder sections with call graph profile (default)", nullptr, nullptr)
 OPTION(prefix_3, "-classic_linker", classic_linker, Flag, grp_undocumented,
        INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "This option is undocumented in the native linker", nullptr, nullptr)
+       "it is an undocumented option of the native linker", nullptr, nullptr)
 OPTION(prefix_3, "-client_name", client_name, Separate, grp_rare, INVALID,
        nullptr, 0, DefaultVis, 0,
        "Specifies a <name> this client should match with the -allowable_client "
@@ -288,7 +290,7 @@ OPTION(prefix_3, "-dead_strip", dead_strip, Flag, grp_opts, INVALID, nullptr, 0,
        DefaultVis, 0, "Remove unreachable functions and data", nullptr, nullptr)
 OPTION(prefix_3, "-debug_snapshot", debug_snapshot, Flag, grp_undocumented,
        INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "This option is undocumented in the native linker", nullptr, nullptr)
+       "it is an undocumented option of the native linker", nullptr, nullptr)
 OPTION(prefix_3, "-debug_variant", debug_variant, Flag, grp_ignored_silently,
        INVALID, nullptr, HelpHidden, DefaultVis, 0,
        "Do not warn about issues that are only problems for binaries shipping "
@@ -321,8 +323,7 @@ OPTION(prefix_3, "-driverkit_version_min", driverkit_version_min, Separate,
        "Oldest DriverKit version for which linked output is usable",
        "<version>", nullptr)
 OPTION(prefix_3, "-dtrace", dtrace, Separate, grp_content, INVALID, nullptr,
-       HelpHidden, DefaultVis, 0,
-       "Enable DTrace static probes according to declarations in <script>",
+       HelpHidden, DefaultVis, 0, "DTrace static probes are not supported",
        "<script>", nullptr)
 OPTION(prefix_1, "--dyld-env", dyld_env, Separate, grp_rare, INVALID, nullptr,
        0, DefaultVis, 0, "Specifies a LC_DYLD_ENVIRONMENT variable value pair.",
@@ -350,8 +351,8 @@ OPTION(prefix_3, "-dylinker_install_name", dylinker_install_name, Separate,
        grp_dylib, install_name, nullptr, 0, DefaultVis, 0,
        "Alias for -install_name", "<name>", nullptr)
 OPTION(prefix_3, "-dylinker", dylinker, Flag, grp_kind, INVALID, nullptr,
-       HelpHidden, DefaultVis, 0,
-       "Produce a dylinker only used when building dyld", nullptr, nullptr)
+       HelpHidden, DefaultVis, 0, "NeverC does not build dyld", nullptr,
+       nullptr)
 OPTION(prefix_3, "-dynamic", dynamic, Flag, grp_kind, INVALID, nullptr, 0,
        DefaultVis, 0, "Link dynamically (default)", nullptr, nullptr)
 OPTION(prefix_3, "-d", d, Flag, grp_object, INVALID, nullptr, 0, DefaultVis, 0,
@@ -396,8 +397,8 @@ OPTION(prefix_3, "-exported_symbols_list", anonymous_316, Separate, INVALID,
        exported_symbols_list, nullptr, 0, DefaultVis, 0,
        "Alias for --exported-symbols-list", "<file>", nullptr)
 OPTION(prefix_3, "-exported_symbols_order", exported_symbols_order, Separate,
-       grp_opts, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "Specify frequently-used symbols in <file> to optimize symbol exports",
+       grp_opts, INVALID, nullptr, 0, DefaultVis, 0,
+       "Lay out the export trie so the symbols in <file> are found first",
        "<file>", nullptr)
 OPTION(prefix_3, "-exported_symbol", anonymous_317, Separate, INVALID,
        exported_symbol, nullptr, 0, DefaultVis, 0,
@@ -425,7 +426,7 @@ OPTION(prefix_1, "--fixup-chains", fixup_chains, Flag, grp_undocumented,
        nullptr)
 OPTION(prefix_3, "-fixup_chains_section", fixup_chains_section, Flag,
        grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "This option is undocumented in the native linker", nullptr, nullptr)
+       "it is an undocumented option of the native linker", nullptr, nullptr)
 OPTION(prefix_3, "-fixup_chains", anonymous_319, Flag, INVALID, fixup_chains,
        nullptr, 0, DefaultVis, 0, "Alias for --fixup-chains", nullptr, nullptr)
 OPTION(prefix_1, "--flat-namespace", flat_namespace, Flag, grp_resolve, INVALID,
@@ -455,7 +456,7 @@ OPTION(prefix_3, "-force_flat_namespace", force_flat_namespace, Flag, grp_rare,
        "dependent dylibs & bundles",
        nullptr, nullptr)
 OPTION(prefix_3, "-force_load_swift_libs", force_load_swift_libs, Flag,
-       grp_libs, INVALID, nullptr, HelpHidden, DefaultVis, 0,
+       grp_libs, INVALID, nullptr, 0, DefaultVis, 0,
        "Apply -force_load to libraries listed in LC_LINKER_OPTIONS whose names "
        "start with 'swift'",
        nullptr, nullptr)
@@ -463,19 +464,20 @@ OPTION(prefix_3, "-force_load", anonymous_321, Separate, INVALID, force_load,
        nullptr, 0, DefaultVis, 0, "Alias for --force-load", "<path>", nullptr)
 OPTION(prefix_3, "-force_symbol_not_weak", force_symbol_not_weak, Flag,
        grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "This option is undocumented in the native linker", nullptr, nullptr)
+       "it is an undocumented option of the native linker", nullptr, nullptr)
 OPTION(prefix_3, "-force_symbol_weak", force_symbol_weak, Flag,
        grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "This option is undocumented in the native linker", nullptr, nullptr)
+       "it is an undocumented option of the native linker", nullptr, nullptr)
 OPTION(prefix_3, "-force_symbols_coalesce_list", force_symbols_coalesce_list,
        Flag, grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "This option is undocumented in the native linker", nullptr, nullptr)
+       "it is an undocumented option of the native linker", nullptr, nullptr)
 OPTION(prefix_3, "-force_symbols_not_weak_list", force_symbols_not_weak_list,
        Separate, grp_undocumented, INVALID, nullptr, 0, DefaultVis, 0,
-       "This option is undocumented in the native linker", nullptr, nullptr)
+       "Export the definitions listed in <file> as non-weak", "<file>",
+       nullptr)
 OPTION(prefix_3, "-force_symbols_weak_list", force_symbols_weak_list, Separate,
        grp_undocumented, INVALID, nullptr, 0, DefaultVis, 0,
-       "This option is undocumented in the native linker", nullptr, nullptr)
+       "Export the definitions listed in <file> as weak", "<file>", nullptr)
 OPTION(prefix_2, "--fork", fork, Flag, grp_neverc_ext, INVALID, nullptr, 0,
        DefaultVis, 0,
        "Report the result as soon as the output is complete and release "
@@ -587,28 +589,27 @@ OPTION(prefix_3, "-iphoneos_version_min", iphoneos_version_min, Separate,
        grp_version, ios_version_min, nullptr, HelpHidden, DefaultVis, 0,
        "Alias for -ios_version_min", "<version>", nullptr)
 OPTION(prefix_3, "-i", i, Flag, grp_undocumented, INVALID, nullptr, HelpHidden,
-       DefaultVis, 0, "This option is undocumented in the native linker",
+       DefaultVis, 0, "it is an undocumented option of the native linker",
        nullptr, nullptr)
 OPTION(prefix_3, "-keep_dwarf_unwind", keep_dwarf_unwind, Flag,
        grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "This option is undocumented in the native linker", nullptr, nullptr)
+       "__eh_frame keeps only the entries compact unwind cannot express",
+       nullptr, nullptr)
 OPTION(prefix_3, "-keep_private_externs", keep_private_externs, Flag,
        grp_object, INVALID, nullptr, 0, DefaultVis, 0,
        "Keep private external symbols with -r (always done)", nullptr, nullptr)
 OPTION(prefix_3, "-keep_relocs", keep_relocs, Flag, grp_rare, INVALID, nullptr,
-       HelpHidden, DefaultVis, 0,
-       "Retain section-based relocation records in the output, which are "
-       "ignored at runtime by dyld",
+       HelpHidden, DefaultVis, 0, "linked images carry no section relocations",
        nullptr, nullptr)
 OPTION(prefix_3, "-kext_objects_dir", kext_objects_dir, Flag, grp_undocumented,
        INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "This option is undocumented in the native linker", nullptr, nullptr)
+       "kernel extensions are not supported", nullptr, nullptr)
 OPTION(prefix_3, "-kexts_use_stubs", kexts_use_stubs, Flag, grp_undocumented,
        INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "This option is undocumented in the native linker", nullptr, nullptr)
+       "kernel extensions are not supported", nullptr, nullptr)
 OPTION(prefix_3, "-kext", kext, Flag, grp_undocumented, INVALID, nullptr,
-       HelpHidden, DefaultVis, 0,
-       "This option is undocumented in the native linker", nullptr, nullptr)
+       HelpHidden, DefaultVis, 0, "kernel extensions are not supported",
+       nullptr, nullptr)
 OPTION(prefix_3, "-lazy-l", lazy_l, Joined, grp_deprecated, INVALID, nullptr, 0,
        DefaultVis, 0,
        "This option is deprecated and is now an alias for -l<path>.", "<name>",
@@ -824,7 +825,8 @@ OPTION(prefix_3, "-no_compact_linkedit", no_compact_linkedit, Flag,
        "This option is obsolete in the native linker", nullptr, nullptr)
 OPTION(prefix_3, "-no_compact_unwind", no_compact_unwind, Flag,
        grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "This option is undocumented in the native linker", nullptr, nullptr)
+       "objects rely on compact unwind, so __unwind_info is always emitted",
+       nullptr, nullptr)
 OPTION(prefix_3, "-no_data_const", anonymous_334, Flag, INVALID, no_data_const,
        nullptr, 0, DefaultVis, 0, "Alias for --no-data-const", nullptr, nullptr)
 OPTION(prefix_3, "-no_data_in_code_info", anonymous_335, Flag, INVALID,
@@ -868,22 +870,24 @@ OPTION(prefix_3, "-no_inits", no_inits, Flag, grp_rare, INVALID, nullptr, 0,
        DefaultVis, 0, "Fail if the output contains static initializers",
        nullptr, nullptr)
 OPTION(prefix_3, "-no_keep_dwarf_unwind", no_keep_dwarf_unwind, Flag,
-       grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "This option is undocumented in the native linker", nullptr, nullptr)
+       grp_undocumented, INVALID, nullptr, 0, DefaultVis, 0,
+       "Keep only the __eh_frame entries compact unwind cannot express (always "
+       "done)",
+       nullptr, nullptr)
 OPTION(prefix_3, "-no_kext_objects", no_kext_objects, Flag, grp_undocumented,
        INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "This option is undocumented in the native linker", nullptr, nullptr)
+       "kernel extensions are not supported", nullptr, nullptr)
 OPTION(prefix_3, "-no_new_main", no_new_main, Flag, grp_undocumented, INVALID,
        nullptr, HelpHidden, DefaultVis, 0,
-       "This option is undocumented in the native linker", nullptr, nullptr)
+       "executables always start through LC_MAIN", nullptr, nullptr)
 OPTION(prefix_3, "-no_objc_category_merging", no_objc_category_merging, Flag,
-       grp_neverc_ext, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "Do not merge Objective-C categories", nullptr, nullptr)
+       grp_neverc_ext, INVALID, nullptr, 0, DefaultVis, 0,
+       "Do not merge Objective-C categories (always done)", nullptr, nullptr)
 OPTION(prefix_3, "-no_objc_relative_method_lists",
        no_objc_relative_method_lists, Flag, grp_undocumented, INVALID, nullptr,
-       HelpHidden, DefaultVis, 0,
-       "Don't emit relative method lists (use traditional representation)",
-       nullptr, nullptr)
+       0, DefaultVis, 0,
+       "Keep traditional Objective-C method lists (always done)", nullptr,
+       nullptr)
 OPTION(prefix_3, "-no_order_data", no_order_data, Flag, grp_opts, INVALID,
        nullptr, 0, DefaultVis, 0,
        "Disable default reordering of global data accessed at launch time",
@@ -971,34 +975,28 @@ OPTION(prefix_3, "-objc_abi_version", objc_abi_version, Separate,
        nullptr)
 OPTION(prefix_3, "-objc_category_merging", objc_category_merging, Flag,
        grp_neverc_ext, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "Merge Objective-C categories that share the same base class", nullptr,
-       nullptr)
-OPTION(prefix_3, "-objc_gc_compaction", objc_gc_compaction, Flag, grp_rare,
+       "Objective-C optimizations are not supported", nullptr, nullptr)
+OPTION(prefix_3, "-objc_gc_compaction", objc_gc_compaction, Flag, grp_obsolete,
        INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "Mark the Objective-C image as compatible with compacting garbage "
-       "collection",
+       "This option is obsolete: Objective-C garbage collection is gone",
        nullptr, nullptr)
-OPTION(prefix_3, "-objc_gc_only", objc_gc_only, Flag, grp_rare, INVALID,
+OPTION(prefix_3, "-objc_gc_only", objc_gc_only, Flag, grp_obsolete, INVALID,
        nullptr, HelpHidden, DefaultVis, 0,
-       "Verify that all code was compiled with -fobjc-gc-only", nullptr,
-       nullptr)
-OPTION(prefix_3, "-objc_gc", objc_gc, Flag, grp_rare, INVALID, nullptr,
+       "This option is obsolete: Objective-C garbage collection is gone",
+       nullptr, nullptr)
+OPTION(prefix_3, "-objc_gc", objc_gc, Flag, grp_obsolete, INVALID, nullptr,
        HelpHidden, DefaultVis, 0,
-       "Verify that all code was compiled with -fobjc-gc or -fobjc-gc-only",
+       "This option is obsolete: Objective-C garbage collection is gone",
        nullptr, nullptr)
 OPTION(prefix_3, "-objc_relative_method_lists", objc_relative_method_lists,
        Flag, grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "Emit relative method lists (more compact representation)", nullptr,
-       nullptr)
+       "Objective-C optimizations are not supported", nullptr, nullptr)
 OPTION(prefix_3, "-objc_stubs_fast", objc_stubs_fast, Flag, grp_rare, INVALID,
        nullptr, HelpHidden, DefaultVis, 0,
-       "Produce larger stubs for Objective-C method calls with fewer jumps "
-       "(default).",
-       nullptr, nullptr)
+       "Objective-C optimizations are not supported", nullptr, nullptr)
 OPTION(prefix_3, "-objc_stubs_small", objc_stubs_small, Flag, grp_rare, INVALID,
        nullptr, HelpHidden, DefaultVis, 0,
-       "Produce smaller stubs for Objective-C method calls with more jumps.",
-       nullptr, nullptr)
+       "Objective-C optimizations are not supported", nullptr, nullptr)
 OPTION(prefix_3, "-ObjC", ObjC, Flag, grp_libs, INVALID, nullptr, 0, DefaultVis,
        0,
        "Load the static archive members that define Objective-C classes or "
@@ -1041,9 +1039,10 @@ OPTION(
 OPTION(prefix_3, "-pagezero_size", anonymous_347, Separate, INVALID,
        pagezero_size, nullptr, 0, DefaultVis, 0, "Alias for --pagezero-size",
        "<size>", nullptr)
-OPTION(prefix_3, "-pause", pause, Flag, grp_undocumented, INVALID, nullptr,
-       HelpHidden, DefaultVis, 0,
-       "This option is undocumented in the native linker", nullptr, nullptr)
+OPTION(prefix_3, "-pause", pause, Flag, grp_undocumented, INVALID, nullptr, 0,
+       DefaultVis, 0,
+       "Stop the linker until SIGCONT so that a debugger can attach", nullptr,
+       nullptr)
 OPTION(prefix_3, "-pie", pie, Flag, grp_main, INVALID, nullptr, 0, DefaultVis,
        0, "Build a position independent executable (default)", nullptr, nullptr)
 OPTION(
@@ -1063,7 +1062,7 @@ OPTION(prefix_3, "-prebind", prebind, Flag, grp_obsolete, INVALID, nullptr,
        "This option is obsolete in the native linker", nullptr, nullptr)
 OPTION(prefix_3, "-preload", preload, Flag, grp_kind, INVALID, nullptr,
        HelpHidden, DefaultVis, 0,
-       "Produce an unsegmented binary for embedded systems", nullptr, nullptr)
+       "unsegmented -preload output is not supported", nullptr, nullptr)
 OPTION(
     prefix_2, "--print-dylib-search", print_dylib_search, Flag, grp_neverc_ext,
     INVALID, nullptr, 0, DefaultVis, 0,
@@ -1089,10 +1088,9 @@ OPTION(prefix_3, "-read_only_relocs", read_only_relocs, Separate, grp_rare,
        "Handle pointers in __TEXT, which dyld would have to write, according "
        "to <treatment>: warning (default), error, suppress",
        "<treatment>", nullptr)
-OPTION(prefix_3, "-read_only_stubs", read_only_stubs, Flag, grp_rare, INVALID,
-       nullptr, HelpHidden, DefaultVis, 0,
-       "On i386, make the __IMPORT segment of a final linked image read-only",
-       nullptr, nullptr)
+OPTION(prefix_3, "-read_only_stubs", read_only_stubs, Flag, grp_obsolete,
+       INVALID, nullptr, HelpHidden, DefaultVis, 0,
+       "This option is obsolete: it applies to i386", nullptr, nullptr)
 OPTION(prefix_1, "--reexport-framework", reexport_framework, Separate, grp_libs,
        INVALID, nullptr, 0, DefaultVis, 0,
        "Like --framework <name>, but export all symbols of <name> from the "
@@ -1187,8 +1185,7 @@ OPTION(prefix_1, "--sectcreate", sectcreate, MultiArg, grp_content, INVALID,
        "<segment> <section> <file>", nullptr)
 OPTION(prefix_3, "-section_order", section_order, MultiArg, grp_rare, INVALID,
        nullptr, HelpHidden, DefaultVis, 2,
-       "With -preload, specify layout sequence of colon-separated <sections> "
-       "in <segment>",
+       "it only applies to -preload output, which is not supported",
        "<segment> <sections>", nullptr)
 OPTION(prefix_3, "-sectobjectsymbols", sectobjectsymbols, MultiArg,
        grp_obsolete, INVALID, nullptr, HelpHidden, DefaultVis, 2,
@@ -1227,7 +1224,7 @@ OPTION(prefix_3, "-seglinkedit", seglinkedit, Flag, grp_obsolete, INVALID,
        "This option is obsolete in the native linker", nullptr, nullptr)
 OPTION(prefix_3, "-segment_order", segment_order, Separate, grp_rare, INVALID,
        nullptr, HelpHidden, DefaultVis, 0,
-       "With -preload, specify layout sequence of colon-separated <segments>",
+       "it only applies to -preload output, which is not supported",
        "<colon_separated_segment_list>", nullptr)
 OPTION(prefix_1, "--segprot", segprot, MultiArg, grp_rare, INVALID, nullptr, 0,
        DefaultVis, 3,
@@ -1235,17 +1232,19 @@ OPTION(prefix_1, "--segprot", segprot, MultiArg, grp_rare, INVALID, nullptr, 0,
        "as r/w/x/-seg_addr_table path",
        "<segment> <max> <init>", nullptr)
 OPTION(prefix_3, "-segs_read_only_addr", segs_read_only_addr, Separate,
-       grp_rare, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "This option is obsolete", "<address>", nullptr)
+       grp_obsolete, INVALID, nullptr, HelpHidden, DefaultVis, 0,
+       "This option is obsolete: it applies to i386 split-segment dylibs",
+       "<address>", nullptr)
 OPTION(prefix_3, "-segs_read_write_addr", segs_read_write_addr, Separate,
-       grp_rare, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "This option is obsolete", "<address>", nullptr)
+       grp_obsolete, INVALID, nullptr, HelpHidden, DefaultVis, 0,
+       "This option is obsolete: it applies to i386 split-segment dylibs",
+       "<address>", nullptr)
 OPTION(prefix_3, "-setuid_safe", setuid_safe, Flag, grp_rare, INVALID, nullptr,
        0, DefaultVis, 0, "Set the MH_SETUID_SAFE bit in the mach-o header",
        nullptr, nullptr)
 OPTION(prefix_3, "-simulator_support", simulator_support, Flag,
        grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "This option is undocumented in the native linker", nullptr, nullptr)
+       "it is an undocumented option of the native linker", nullptr, nullptr)
 OPTION(prefix_3, "-single_module", single_module, Flag, grp_deprecated, INVALID,
        nullptr, HelpHidden, DefaultVis, 0,
        "Unnecessary option: this is already the default", nullptr, nullptr)
@@ -1257,7 +1256,7 @@ OPTION(prefix_3, "-slow_stubs", slow_stubs, Flag, grp_obsolete, INVALID,
        "This option is obsolete in the native linker", nullptr, nullptr)
 OPTION(prefix_3, "-snapshot_dir", snapshot_dir, Flag, grp_undocumented, INVALID,
        nullptr, HelpHidden, DefaultVis, 0,
-       "This option is undocumented in the native linker", nullptr, nullptr)
+       "it is an undocumented option of the native linker", nullptr, nullptr)
 OPTION(prefix_3, "-Sn", Sn, Flag, grp_obsolete, INVALID, nullptr, HelpHidden,
        DefaultVis, 0, "This option is obsolete in the native linker", nullptr,
        nullptr)
@@ -1310,13 +1309,13 @@ OPTION(prefix_3, "-S", S, Flag, grp_symtab, INVALID, nullptr, 0, DefaultVis, 0,
 OPTION(prefix_3, "-s", s, Flag, grp_obsolete, INVALID, nullptr, HelpHidden,
        DefaultVis, 0, "This option is obsolete in the native linker", nullptr,
        nullptr)
-OPTION(prefix_3, "-text_exec", text_exec, Flag, grp_rare, INVALID, nullptr,
-       HelpHidden, DefaultVis, 0,
+OPTION(prefix_3, "-text_exec", text_exec, Flag, grp_rare, INVALID, nullptr, 0,
+       DefaultVis, 0,
        "Rename __segment TEXT to __TEXT_EXEC for sections __text and __stubs",
        nullptr, nullptr)
 OPTION(prefix_3, "-threaded_starts_section", threaded_starts_section, Flag,
        grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "This option is undocumented in the native linker", nullptr, nullptr)
+       "it is an undocumented option of the native linker", nullptr, nullptr)
 OPTION(prefix_2, "--threads=", threads_eq, Joined, grp_neverc_ext, INVALID,
        nullptr, 0, DefaultVis, 0,
        "Number of worker threads; 1 disables multi-threading (default: "
@@ -1410,8 +1409,9 @@ OPTION(prefix_3, "-verbose_deduplicate", verbose_deduplicate, Flag, grp_rare,
        "code savings",
        nullptr, nullptr)
 OPTION(prefix_3, "-verbose_optimization_hints", verbose_optimization_hints,
-       Flag, grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "This option is undocumented in the native linker", nullptr, nullptr)
+       Flag, grp_undocumented, INVALID, nullptr, 0, DefaultVis, 0,
+       "Report how many linker optimization hints each object has", nullptr,
+       nullptr)
 OPTION(prefix_2, "--verbose", verbose, Flag, grp_neverc_ext, INVALID, nullptr,
        0, DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_3, "-version_details", version_details, Flag, grp_rare, INVALID,
@@ -1441,7 +1441,7 @@ OPTION(prefix_3, "-warn_commons", warn_commons, Flag, grp_rare, INVALID,
        "variable declaration in a header file",
        nullptr, nullptr)
 OPTION(prefix_3, "-warn_compact_unwind", warn_compact_unwind, Flag, grp_rare,
-       INVALID, nullptr, HelpHidden, DefaultVis, 0,
+       INVALID, nullptr, 0, DefaultVis, 0,
        "Warn for each FDE that cannot compact into the __unwind_info section "
        "and must remain in the __eh_frame section",
        nullptr, nullptr)

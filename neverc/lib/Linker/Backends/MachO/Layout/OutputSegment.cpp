@@ -78,8 +78,9 @@ template <typename T, typename F> static auto compareByOrder(F ord) {
 namespace {
 int segmentOrder(OutputSegment *seg) {
   return StringSwitch<int>(seg->name)
-      .Case(segment_names::pageZero, -4)
-      .Case(segment_names::text, -3)
+      .Case(segment_names::pageZero, -5)
+      .Case(segment_names::text, -4)
+      .Case("__TEXT_EXEC", -3)
       .Case(segment_names::dataConst, -2)
       .Case(segment_names::data, -1)
       .Case(segment_names::llvm, std::numeric_limits<int>::max() - 1)
@@ -92,7 +93,7 @@ int segmentOrder(OutputSegment *seg) {
 int sectionOrder(OutputSection *osec) {
   StringRef segname = osec->parent->name;
   // Sections are uniquely identified by their segment + section name.
-  if (segname == segment_names::text) {
+  if (segname == segment_names::text || segname == "__TEXT_EXEC") {
     return StringSwitch<int>(osec->name)
         .Case(section_names::header, -6)
         .Case(section_names::text, -5)

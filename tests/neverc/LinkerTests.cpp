@@ -2993,6 +2993,127 @@ TEST_F(LinkerTest, NativeMachOBindingAndLoadingOptions) {
   EXPECT_TRUE(selfBound);
 }
 
+TEST_F(LinkerTest, NativeMachOLayoutHintsAndUnsupportedOptions) {
+  const std::string target = "--target=arm64-apple-macos13";
+  const fs::path dir = tmpFile("macho_hints_dir");
+  fs::create_directories(dir);
+  const fs::path mainSource = dir / "main.c";
+  const fs::path mainObject = dir / "main.o";
+  const fs::path autolinkSource = dir / "autolink.s";
+  const fs::path autolinkObject = dir / "autolink.o";
+  const fs::path swiftSource = dir / "swift.c";
+  const fs::path swiftObject = dir / "swift.o";
+  const fs::path swiftArchive = dir / "libswiftDemo.a";
+  const fs::path orderFile = dir / "exports.txt";
+  const fs::path library = dir / "libhints.dylib";
+  const fs::path image = dir / "hints";
+  writeFile(mainSource, "int values[4] = {1, 2, 3, 4};\n"
+                        "int aaa_first(void) { return values[1]; }\n"
+                        "int mmm_middle(void) { return values[2]; }\n"
+                        "int zzz_last(void) { return values[3]; }\n"
+                        "int main(void) { return values[0]; }\n");
+  writeFile(autolinkSource, ".linker_option \"-lswiftDemo\"\n");
+  writeFile(swiftSource, "int swift_member = 1;\n");
+  writeFile(orderFile, "_zzz_last\n");
+  for (auto [source, object] : {std::pair{mainSource, mainObject},
+                                std::pair{autolinkSource, autolinkObject},
+                                std::pair{swiftSource, swiftObject}}) {
+    CmdResult compile = ncc({target, "-fno-lto", "-O2", "-c", source.string(),
+                             "-o", object.string()});
+    ASSERT_EQ(compile.exitCode, 0) << compile.err;
+  }
+  ASSERT_EQ(ncc({"--emit-static-lib", swiftObject.string(), "-o",
+                 swiftArchive.string()})
+                .exitCode,
+            0);
+
+  std::string bytes;
+  auto open = [&](const fs::path &path)
+      -> std::unique_ptr<llvm::object::MachOObjectFile> {
+    bytes = readFile(path);
+    auto object = llvm::object::MachOObjectFile::create(
+        llvm::MemoryBufferRef(bytes, path.string()), /*IsLittleEndian=*/true,
+        /*Is64Bits=*/true);
+    EXPECT_TRUE(static_cast<bool>(object))
+        << llvm::toString(object.takeError()).str().str();
+    return object ? std::move(*object) : nullptr;
+  };
+  auto link = [&](std::vector<std::string> flags) {
+    std::vector<std::string> args = {target, "-nostdlib", "-Wl,-e,_main",
+                                     mainObject.string()};
+    args.insert(args.end(), flags.begin(), flags.end());
+    args.insert(args.end(), {"-o", image.string()});
+    return ncc(args);
+  };
+  auto hasSymbol = [&](llvm::StringRef name) {
+    auto macho = open(image);
+    for (const auto &sym : macho->symbols())
+      if (llvm::cantFail(sym.getName()) == name)
+        return true;
+    return false;
+  };
+
+  // -text_exec moves code to an executable __TEXT_EXEC segment.
+  CmdResult textExec = link({"-Wl,-text_exec"});
+  ASSERT_EQ(textExec.exitCode, 0) << textExec.err;
+  {
+    auto macho = open(image);
+    ASSERT_NE(macho, nullptr);
+    bool codeMoved = false;
+    for (const auto &command : macho->load_commands())
+      if (command.C.cmd == llvm::MachO::LC_SEGMENT_64) {
+        auto seg = macho->getSegment64LoadCommand(command);
+        if (llvm::StringRef(seg.segname) == "__TEXT_EXEC")
+          codeMoved = seg.initprot == (llvm::MachO::VM_PROT_READ |
+                                       llvm::MachO::VM_PROT_EXECUTE);
+      }
+    EXPECT_TRUE(codeMoved);
+  }
+
+  CmdResult hints = link({"-Wl,-verbose_optimization_hints"});
+  ASSERT_EQ(hints.exitCode, 0) << hints.err;
+  EXPECT_TRUE(hints.contains("linker optimization hints")) << hints.out;
+
+  // -force_load_swift_libs loads all of a Swift library an object asks for.
+  CmdResult autolink = link({autolinkObject.string(), "-L" + dir.string()});
+  ASSERT_EQ(autolink.exitCode, 0) << autolink.err;
+  EXPECT_FALSE(hasSymbol("_swift_member"));
+  CmdResult forced = link({autolinkObject.string(), "-L" + dir.string(),
+                           "-Wl,-force_load_swift_libs"});
+  ASSERT_EQ(forced.exitCode, 0) << forced.err;
+  EXPECT_TRUE(hasSymbol("_swift_member"));
+
+  // -exported_symbols_order puts the listed symbols first in the trie.
+  CmdResult ordered =
+      ncc({target, "-nostdlib", "-dynamiclib", mainObject.string(),
+           "-Wl,-exported_symbols_order," + orderFile.string(), "-o",
+           library.string()});
+  ASSERT_EQ(ordered.exitCode, 0) << ordered.err;
+  {
+    auto macho = open(library);
+    ASSERT_NE(macho, nullptr);
+    llvm::Error err = llvm::Error::success();
+    std::vector<std::string> names;
+    for (const auto &entry : macho->exports(err))
+      names.push_back(entry.name().str());
+    ASSERT_FALSE(static_cast<bool>(err))
+        << llvm::toString(std::move(err)).str().str();
+    ASSERT_FALSE(names.empty());
+    EXPECT_EQ(names.front(), "_zzz_last");
+  }
+
+  // Options that cannot apply say why.
+  CmdResult unsupported = link({"-Wl,-dtrace,probes.d"});
+  EXPECT_EQ(unsupported.exitCode, 0) << unsupported.err;
+  EXPECT_TRUE(unsupported.stderrContains(
+      "is not supported and has no effect: DTrace static probes"))
+      << unsupported.err;
+  CmdResult obsolete = link({"-Wl,-read_only_stubs"});
+  EXPECT_EQ(obsolete.exitCode, 0) << obsolete.err;
+  EXPECT_TRUE(obsolete.stderrContains("-read_only_stubs' is obsolete"))
+      << obsolete.err;
+}
+
 TEST_F(LinkerTest, MsvcLinkerSpellingsAreNormalized) {
   const std::string target = "--target=x86_64-pc-windows-msvc";
   const fs::path source = tmpFile("msvc_opts.c");
