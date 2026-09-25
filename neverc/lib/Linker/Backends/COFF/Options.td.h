@@ -128,6 +128,11 @@ OPTION(prefix_1, "--force=unresolved", force_unresolved, Flag, INVALID, INVALID,
 OPTION(prefix_1, "--force", force, Flag, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0, "Allow undefined and multiply defined symbols", nullptr,
        nullptr)
+OPTION(prefix_1, "--fork", fork, Flag, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0,
+       "Report the result as soon as the output is complete and release "
+       "memory in the background (default)",
+       nullptr, nullptr)
 OPTION(prefix_1, "--functionpadmin=", functionpadmin_opt, Joined, INVALID,
        INVALID, nullptr, 0, DefaultVis, 0, "Prepares an image for hotpatching",
        nullptr, nullptr)
@@ -215,6 +220,9 @@ OPTION(prefix_1, "--no-dynamicbase", dynamicbase_no, Flag, INVALID, INVALID,
        nullptr)
 OPTION(prefix_1, "--no-fixed", fixed_no, Flag, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0, "Enable base relocations (default)", nullptr, nullptr)
+OPTION(prefix_1, "--no-fork", fork_no, Flag, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, "Exit only after all memory is released", nullptr,
+       nullptr)
 OPTION(prefix_1, "--no-highentropyva", highentropyva_no, Flag, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0, "Disable 64-bit ASLR", nullptr, nullptr)
 OPTION(prefix_1, "--no-incremental", incremental_no, Flag, INVALID, INVALID,

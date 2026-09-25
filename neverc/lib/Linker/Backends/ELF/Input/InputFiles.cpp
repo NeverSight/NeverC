@@ -174,10 +174,21 @@ bool isCompatible(InputFile *file) {
 
 template <class ELFT> void doParseFile(InputFile *file) {
   // Lazy archive members may not be initialized yet.
-  if (file->kind() == InputFile::ObjKind && file->ekind == config->ekind)
+  if (file->kind() == InputFile::ObjKind && file->ekind == config->ekind) {
     cast<ObjFile<ELFT>>(file)->awaitInternedNames();
-  else if (auto *elf = dyn_cast<ELFFileBase>(file))
+  } else if (auto *elf = dyn_cast<ELFFileBase>(file)) {
+    // A shared library may be being prepared by a worker; see
+    // SharedFile::prepareSymbols().
+    if (auto *so = dyn_cast<SharedFile>(file)) {
+      if (!so->tryPrepareSymbols<ELFT>())
+        while (so->nameInterning.load(std::memory_order_acquire) !=
+               ELFFileBase::NameInterning::Done &&
+               so->nameInterning.load(std::memory_order_acquire) !=
+                   ELFFileBase::NameInterning::NotScheduled)
+          std::this_thread::yield();
+    }
     elf->ensureInitialized();
+  }
   if (!isCompatible(file))
     return;
 
@@ -198,6 +209,8 @@ template <class ELFT> void doParseFile(InputFile *file) {
   if (file->kind() == InputFile::ObjKind) {
     elfState().objectFiles.push_back(cast<ELFFileBase>(file));
     cast<ObjFile<ELFT>>(file)->parse();
+    if (elfState().onObjectParsed)
+      elfState().onObjectParsed(cast<ELFFileBase>(file));
   } else if (auto *f = dyn_cast<SharedFile>(file)) {
     f->parse<ELFT>();
   } else if (auto *f = dyn_cast<BitcodeFile>(file)) {
@@ -1471,6 +1484,10 @@ uint64_t getAlignment(ArrayRef<typename ELFT::Shdr> sections,
 // than necessary, but you can easily understand the code if you wrap your
 // head around the data structure described above.
 template <class ELFT> void SharedFile::parse() {
+  if (prepared) {
+    parsePrepared<ELFT>();
+    return;
+  }
   using Elf_Dyn = typename ELFT::Dyn;
   using Elf_Shdr = typename ELFT::Shdr;
   using Elf_Sym = typename ELFT::Sym;
@@ -1638,6 +1655,231 @@ template <class ELFT> void SharedFile::parse() {
     if (s->file == this)
       s->versionId = idx;
   }
+}
+
+// parse() for a prepared file: the same symbol table operations, in the same
+// order, without reading the file again.
+template <class ELFT> void SharedFile::parsePrepared() {
+  PreparedSymbols &p = *prepared;
+  dtNeeded = std::move(p.dtNeeded);
+  soName = p.soName;
+
+  // DSOs are uniquified not by filename but by soname.
+  auto [it, wasInserted] =
+      symtab.soNames.try_emplace(CachedHashStringRef(soName), this);
+  it->second->isNeeded |= isNeeded;
+  if (!wasInserted)
+    return;
+
+  elfState().sharedFiles.push_back(this);
+  verdefs = std::move(p.verdefs);
+
+  ArrayRef<typename ELFT::Sym> syms = this->getGlobalELFSyms<ELFT>();
+  for (const PreparedSymbols::Entry &e : p.entries) {
+    const typename ELFT::Sym &sym = syms[e.symIndex];
+    StringRef name(e.name, e.nameSize);
+    Symbol *s = symtab.insertInterned(e.slot, e.name,
+                                      name.find('@') != StringRef::npos);
+    if (e.undefined) {
+      s->resolve(
+          Undefined{this, name, sym.getBinding(), sym.st_other, sym.getType()});
+      s->exportDynamic = true;
+      if (s->isUndefined() && sym.getBinding() != STB_WEAK &&
+          config->unresolvedSymbolsInShlib != UnresolvedPolicy::Ignore)
+        requiredSymbols.push_back(s);
+      continue;
+    }
+    s->resolve(SharedSymbol{*this, name, sym.getBinding(), sym.st_other,
+                            sym.getType(), sym.st_value, sym.st_size,
+                            e.alignment});
+    if (s->file == this)
+      s->versionId = e.versionId;
+  }
+  prepared.reset();
+}
+
+template <class ELFT> bool SharedFile::prepareSymbols() {
+  using Elf_Dyn = typename ELFT::Dyn;
+  using Elf_Shdr = typename ELFT::Shdr;
+  using Elf_Sym = typename ELFT::Sym;
+  using Elf_Verdef = typename ELFT::Verdef;
+  using Elf_Versym = typename ELFT::Versym;
+  using Elf_Verneed = typename ELFT::Verneed;
+  using Elf_Vernaux = typename ELFT::Vernaux;
+
+  auto result = std::make_unique<PreparedSymbols>();
+  Expected<ELFFile<ELFT>> objOrErr = ELFFile<ELFT>::create(mb.getBuffer());
+  if (!objOrErr) {
+    consumeError(objOrErr.takeError());
+    return false;
+  }
+  const ELFFile<ELFT> &obj = *objOrErr;
+  ArrayRef<Elf_Shdr> sections = getELFShdrs<ELFT>();
+
+  ArrayRef<Elf_Dyn> dynamicTags;
+  const Elf_Shdr *versymSec = nullptr;
+  const Elf_Shdr *verdefSec = nullptr;
+  const Elf_Shdr *verneedSec = nullptr;
+  for (const Elf_Shdr &sec : sections) {
+    switch (sec.sh_type) {
+    default:
+      continue;
+    case SHT_DYNAMIC: {
+      auto tags = obj.template getSectionContentsAsArray<Elf_Dyn>(sec);
+      if (!tags) {
+        consumeError(tags.takeError());
+        return false;
+      }
+      dynamicTags = *tags;
+      break;
+    }
+    case SHT_GNU_versym:
+      versymSec = &sec;
+      break;
+    case SHT_GNU_verdef:
+      verdefSec = &sec;
+      break;
+    case SHT_GNU_verneed:
+      verneedSec = &sec;
+      break;
+    }
+  }
+  if (versymSec && numELFSyms == 0)
+    return false;
+
+  result->soName = soName;
+  for (const Elf_Dyn &dyn : dynamicTags) {
+    if (dyn.d_tag != DT_NEEDED && dyn.d_tag != DT_SONAME)
+      continue;
+    uint64_t val = dyn.getVal();
+    if (val >= this->stringTable.size())
+      return false;
+    if (dyn.d_tag == DT_NEEDED)
+      result->dtNeeded.push_back(this->stringTable.data() + val);
+    else
+      result->soName = this->stringTable.data() + val;
+  }
+
+  result->verdefs = parseVerdefs<ELFT>(obj.base(), verdefSec);
+
+  // Mirrors parseVerneed(), which reports malformed data fatally.
+  std::vector<uint32_t> verneeds;
+  if (verneedSec) {
+    auto dataOrErr = obj.getSectionContents(*verneedSec);
+    if (!dataOrErr) {
+      consumeError(dataOrErr.takeError());
+      return false;
+    }
+    ArrayRef<uint8_t> data = *dataOrErr;
+    const uint8_t *verneedBuf = data.begin();
+    for (unsigned i = 0; i != verneedSec->sh_info; ++i) {
+      if (verneedBuf + sizeof(Elf_Verneed) > data.end())
+        return false;
+      auto *vn = reinterpret_cast<const Elf_Verneed *>(verneedBuf);
+      const uint8_t *vernauxBuf = verneedBuf + vn->vn_aux;
+      for (unsigned j = 0; j != vn->vn_cnt; ++j) {
+        if (vernauxBuf + sizeof(Elf_Vernaux) > data.end())
+          return false;
+        auto *aux = reinterpret_cast<const Elf_Vernaux *>(vernauxBuf);
+        if (aux->vna_name >= this->stringTable.size())
+          return false;
+        uint16_t version = aux->vna_other & VERSYM_VERSION;
+        if (version >= verneeds.size())
+          verneeds.resize(version + 1);
+        verneeds[version] = aux->vna_name;
+        vernauxBuf += aux->vna_next;
+      }
+      verneedBuf += vn->vn_next;
+    }
+  }
+
+  const size_t size = numELFSyms - firstGlobal;
+  std::vector<uint16_t> versyms(size, VER_NDX_GLOBAL);
+  if (versymSec) {
+    auto versymOrErr =
+        obj.template getSectionContentsAsArray<Elf_Versym>(*versymSec);
+    if (!versymOrErr) {
+      consumeError(versymOrErr.takeError());
+      return false;
+    }
+    if (versymOrErr->size() < numELFSyms)
+      return false;
+    ArrayRef<Elf_Versym> versym = versymOrErr->slice(firstGlobal);
+    for (size_t i = 0; i < size; ++i)
+      versyms[i] = versym[i].vs_index;
+  }
+
+  // Names are interned from workers, so versioned names are copied into
+  // worker storage instead of the shared string saver.
+  auto add = [&](StringRef name, uint32_t symIndex, uint16_t versionId,
+                 bool undefined, uint32_t alignment) {
+    result->entries.push_back({symtab.intern(CachedHashStringRef(name)),
+                               name.data(), static_cast<uint32_t>(name.size()),
+                               symIndex, versionId, undefined, alignment});
+  };
+  auto versioned = [](StringRef name, StringRef version) {
+    char *buf = makeThreadLocalN<char>(name.size() + 1 + version.size());
+    memcpy(buf, name.data(), name.size());
+    buf[name.size()] = '@';
+    memcpy(buf + name.size() + 1, version.data(), version.size());
+    return StringRef(buf, name.size() + 1 + version.size());
+  };
+
+  ArrayRef<Elf_Sym> syms = this->getGlobalELFSyms<ELFT>();
+  result->entries.reserve(syms.size());
+  for (size_t i = 0, e = syms.size(); i != e; ++i) {
+    const Elf_Sym &sym = syms[i];
+    Expected<StringRef> nameOrErr = sym.getName(stringTable);
+    if (!nameOrErr) {
+      consumeError(nameOrErr.takeError());
+      return false;
+    }
+    StringRef name = *nameOrErr;
+    // Names with "@@" are inserted under their stem.
+    if (sym.getBinding() == STB_LOCAL || name.contains("@@"))
+      return false;
+
+    const uint16_t ver = versyms[i], idx = ver & ~VERSYM_HIDDEN;
+    if (sym.isUndefined()) {
+      if (ver != VER_NDX_LOCAL && ver != VER_NDX_GLOBAL) {
+        if (idx >= verneeds.size())
+          return false;
+        name = versioned(name, stringTable.data() + verneeds[idx]);
+      }
+      add(name, i, 0, /*undefined=*/true, 0);
+      continue;
+    }
+
+    if (ver == VER_NDX_LOCAL ||
+        (ver != VER_NDX_GLOBAL && idx >= result->verdefs.size()))
+      return false;
+
+    uint32_t alignment = getAlignment<ELFT>(sections, sym);
+    if (ver == idx)
+      add(name, i, ver, /*undefined=*/false, alignment);
+    if (ver == VER_NDX_GLOBAL)
+      continue;
+    StringRef verName =
+        stringTable.data() +
+        reinterpret_cast<const Elf_Verdef *>(result->verdefs[idx])
+            ->getAux()
+            ->vda_name;
+    add(versioned(name, verName), i, idx, /*undefined=*/false, alignment);
+  }
+  prepared = std::move(result);
+  return true;
+}
+
+template <class ELFT> bool SharedFile::tryPrepareSymbols() {
+  NameInterning expected = NameInterning::Pending;
+  if (!nameInterning.compare_exchange_strong(expected, NameInterning::Running,
+                                             std::memory_order_acquire))
+    return false;
+  // A malformed file is left for parse() to diagnose.
+  if (this->tryInitQuietly() && this->ekind == config->ekind)
+    prepareSymbols<ELFT>();
+  nameInterning.store(NameInterning::Done, std::memory_order_release);
+  return true;
 }
 
 namespace {
@@ -2049,3 +2291,5 @@ template class elf::ObjFile<ELF64BE>;
 
 template void SharedFile::parse<ELF64LE>();
 template void SharedFile::parse<ELF64BE>();
+template bool SharedFile::tryPrepareSymbols<ELF64LE>();
+template bool SharedFile::tryPrepareSymbols<ELF64BE>();

@@ -216,6 +216,11 @@ OPTION(prefix_2, "--fini", fini, Separate, INVALID, INVALID, nullptr, 0,
 OPTION(prefix_2, "--fix-cortex-a53-843419", fix_cortex_a53_843419, Flag,
        INVALID, INVALID, nullptr, 0, DefaultVis, 0,
        "Apply fixes for AArch64 Cortex-A53 erratum 843419", nullptr, nullptr)
+OPTION(prefix_3, "--fork", fork, Flag, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0,
+       "Report the result as soon as the output is complete and release "
+       "memory in the background (default)",
+       nullptr, nullptr)
 OPTION(prefix_2, "--format=", format_eq, Joined, INVALID, format, nullptr, 0,
        DefaultVis, 0,
        "Change the input format of the inputs following this option",
@@ -311,6 +316,9 @@ OPTION(prefix_3, "--no-dependent-libraries", no_dependent_libraries, Flag,
 OPTION(prefix_3, "--no-execute-only", no_execute_only, Flag, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0, "Mark executable sections readable (default)",
        nullptr, nullptr)
+OPTION(prefix_3, "--no-fork", no_fork, Flag, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, "Exit only after all memory is released", nullptr,
+       nullptr)
 OPTION(prefix_3, "--no-gdb-index", no_gdb_index, Flag, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0,
        "Do not generate .gdb_index section (default)", nullptr, nullptr)

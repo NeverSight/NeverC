@@ -38,20 +38,21 @@ struct ELFLinkerContext::Impl {
   detail::ELFRelocationState Relocations;
 };
 
-ELFLinkerContext::ELFLinkerContext() : State(std::make_unique<Impl>()) {}
+ELFLinkerContext::ELFLinkerContext() : State(std::make_unique<Impl>()) {
+  backendHotState[HotConfig] = &State->Config;
+  backendHotState[HotSymtab] = &State->Symbols;
+  backendHotState[HotTarget] = &State->Target;
+  backendHotState[HotBackendState] = &State->BackendState;
+  backendHotState[HotDiscardedSection] =
+      static_cast<InputSectionBase *>(&State->DiscardedInputSection);
+  backendHotState[HotSyntheticInputs] = &State->SyntheticInputs;
+}
 ELFLinkerContext::~ELFLinkerContext() { finalizeOwnedState(); }
 
 ELFLinkerContext &elfContext() {
   return static_cast<ELFLinkerContext &>(commonContext());
 }
 
-InputSectionBase *discardedInputSection() {
-  return &elfContext().state().DiscardedInputSection;
-}
-
-ConfigWrapper &elfConfig() { return elfContext().state().Config; }
-Ctx &elfState() { return elfContext().state().BackendState; }
-SymbolTable &elfSymtab() { return elfContext().state().Symbols; }
 SmallVector<SymbolAux, 0> &elfSymbolAux() {
   return elfContext().state().SymbolAuxRecords;
 }
@@ -67,8 +68,6 @@ std::vector<Partition> &elfPartitions() {
 Partition *&elfMainPart() {
   return elfContext().state().MainPartition;
 }
-InStruct &elfIn() { return elfContext().state().SyntheticInputs; }
-const TargetInfo *&elfTarget() { return elfContext().state().Target; }
 ElfSymbolState &elfSym() {
   return elfContext().state().GeneratedSymbols;
 }

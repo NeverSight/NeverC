@@ -124,9 +124,13 @@ void linker::unpinThread(unsigned long Handle,
 #endif
 }
 
+LLVM_THREAD_LOCAL CommonLinkerContext
+    *linker::session_detail::ActiveLinkerContext = nullptr;
+LLVM_THREAD_LOCAL unsigned linker::session_detail::CurrentWorkerSlot = 0;
+using linker::session_detail::ActiveLinkerContext;
+using linker::session_detail::CurrentWorkerSlot;
+
 namespace {
-thread_local CommonLinkerContext *ActiveLinkerContext = nullptr;
-thread_local unsigned CurrentWorkerSlot = 0;
 
 // Every context construction and finalization advances this epoch, so a
 // per-thread cache filled for one context can never be observed by a later
@@ -277,6 +281,20 @@ void CommonLinkerContext::finalizeOwnedState() noexcept {
   WorkerInstanceOrder.clear();
 }
 
+void CommonLinkerContext::abandon() noexcept {
+  assert(ActiveLinkerContext == this &&
+         "linker context abandoned outside its active scope");
+  StateFlags |= FinalizedFlag;
+  if (MainThreadPinned) {
+    unpinThread(PinnedThreadHandle, SavedAffinity);
+    MainThreadPinned = false;
+  }
+  ParallelPool.reset();
+  WorkerCacheEpoch.fetch_add(1, std::memory_order_acq_rel);
+  ActiveLinkerContext = PreviousContext;
+  CurrentWorkerSlot = PreviousWorkerSlot;
+}
+
 void CommonLinkerContext::configureParallel(unsigned RequestedThreads,
                                             unsigned DefaultThreadLimit) {
   // Selection is intentionally monotonic.  Several backends discover inputs
@@ -356,21 +374,6 @@ SpecificAllocBase *CommonLinkerContext::getOrCreateWorkerAllocator(
   WorkerCache.insert(Tag, Result);
   return Result;
 }
-
-CommonLinkerContext &linker::commonContext() {
-  assert(ActiveLinkerContext && "no active linker execution context");
-  return *ActiveLinkerContext;
-}
-
-CommonLinkerContext *linker::currentLinkerContext() noexcept {
-  return ActiveLinkerContext;
-}
-
-unsigned linker::currentLinkerWorkerSlot() noexcept {
-  return CurrentWorkerSlot;
-}
-
-bool linker::hasContext() { return ActiveLinkerContext != nullptr; }
 
 LinkerContextGuard::LinkerContextGuard(CommonLinkerContext &Context,
                                        unsigned WorkerSlot)

@@ -1053,10 +1053,54 @@ void MergeInputSection::splitIntoPieces() {
 }
 
 SectionPiece &MergeInputSection::getSectionPiece(uint64_t offset) {
-  if (content().size() <= offset)
+  const size_t size = content().size();
+  if (size <= offset)
     fatal(toString(this) + ": offset is outside the section");
-  return partition_point(
-      pieces, [=](SectionPiece p) { return p.inputOff <= offset; })[-1];
+  // Find the last piece starting at or before `offset`. Pieces cover the
+  // section in order, so guess its index from the offset (exact for
+  // fixed-size entries), then gallop from the guess instead of bisecting the
+  // whole array, which is dominated by cache misses on large sections.
+  const size_t n = pieces.size();
+  const SectionPiece *p = pieces.data();
+  size_t lo, hi; // p[lo].inputOff <= offset < p[hi].inputOff (hi may be n)
+  size_t guess = std::min<size_t>(n - 1, uint64_t(offset) * n / size);
+  if (p[guess].inputOff <= offset) {
+    lo = guess;
+    size_t step = 1;
+    for (;;) {
+      hi = lo + step;
+      if (hi >= n) {
+        hi = n;
+        break;
+      }
+      if (p[hi].inputOff > offset)
+        break;
+      lo = hi;
+      step *= 2;
+    }
+  } else {
+    hi = guess;
+    size_t step = 1;
+    for (;;) {
+      if (hi <= step) {
+        lo = 0;
+        break;
+      }
+      lo = hi - step;
+      if (p[lo].inputOff <= offset)
+        break;
+      hi = lo;
+      step *= 2;
+    }
+  }
+  while (hi - lo > 1) {
+    const size_t mid = lo + (hi - lo) / 2;
+    if (p[mid].inputOff <= offset)
+      lo = mid;
+    else
+      hi = mid;
+  }
+  return pieces[lo];
 }
 
 // Return the offset in an output section for a given input offset.

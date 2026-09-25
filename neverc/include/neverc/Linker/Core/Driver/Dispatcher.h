@@ -61,6 +61,14 @@ struct LinkerDriverConfig {
   std::shared_ptr<LinkExecutionHooks> executionHooks;
   LinkerExecutionContext *executionContext = nullptr;
 
+  // Set by a driver whose process exits as soon as a successful link returns.
+  // The link then leaves its memory and mappings to process exit instead of
+  // releasing them object by object.
+  bool releaseStateAtExit = false;
+  // Set when that process exit runs after the caller has already been told
+  // the result, so work that only speeds up process exit is skipped.
+  bool backgroundExit = false;
+
   bool saveTemps = false;
   bool timeTraceEnabled = false;
   unsigned timeTraceGranularity = 500;

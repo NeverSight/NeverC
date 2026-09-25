@@ -2503,11 +2503,15 @@ void configureParallelismForMaterializedInputs(
 
 namespace {
 template <class ELFT> void tryInternObjFileSymbolNames(InputFile *file) {
-  cast<ObjFile<ELFT>>(file)->tryInternGlobalSymbolNames();
+  if (auto *so = dyn_cast<SharedFile>(file))
+    so->tryPrepareSymbols<ELFT>();
+  else
+    cast<ObjFile<ELFT>>(file)->tryInternGlobalSymbolNames();
 }
 
-// Interns the global symbol names of relocatable inputs on worker threads
-// while ordered symbol resolution runs on the calling thread. Workers take
+// Interns the global symbol names of relocatable inputs, and prepares the
+// symbols of shared libraries, on worker threads while ordered symbol
+// resolution runs on the calling thread. Workers take
 // files in input order, so resolution, which also walks files in order,
 // rarely has to wait; when it reaches a file nobody has started, it interns
 // that file itself (ObjFile::awaitInternedNames).
@@ -2525,6 +2529,7 @@ private:
 
 void BackgroundNameInterning::start(ArrayRef<InputFile *> inputs) {
   uint64_t inputBytes = 0;
+  size_t numObjects = 0;
   for (InputFile *file : inputs) {
     // Bitcode inputs select their worker budget after LTO; keep that policy.
     if (isa<BitcodeFile>(file)) {
@@ -2536,14 +2541,17 @@ void BackgroundNameInterning::start(ArrayRef<InputFile *> inputs) {
     if (file->kind() == InputFile::ObjKind && file->ekind == config->ekind) {
       objects.push_back(file);
       inputBytes += file->mb.getBufferSize();
+      ++numObjects;
+    } else if (file->kind() == InputFile::SharedKind) {
+      objects.push_back(file);
     }
   }
   // Size the worker budget by the relocatable objects whose names are
   // interned here. That includes archive members that resolution may never
   // extract: interning still reads every member's symbol table. Shared
-  // objects are excluded because their contents are not interned or copied.
+  // objects are excluded because their contents are not copied.
   commonContext().configureParallelForInputWorkload(
-      config->requestedThreadCount, inputBytes, objects.size(),
+      config->requestedThreadCount, inputBytes, numObjects,
       LinkThreadPolicy{}, /*FinalizeSerial=*/false);
   if (!parallelEnabled() || objects.empty()) {
     objects.clear();
@@ -2552,11 +2560,13 @@ void BackgroundNameInterning::start(ArrayRef<InputFile *> inputs) {
   config->threadCount = commonContext().parallelThreadCount();
 
   // Archive members are not initialized yet, so size the name table from the
-  // input size: C and C++ objects carry roughly one distinct global name per
-  // kilobyte.
+  // input size. Large links repeat most names across objects and archive
+  // members, leaving about one distinct global name per 16 kilobytes; a
+  // table sized for more only spreads every lookup over cold memory, and the
+  // shards grow on their own when there are more.
   {
     llvm::TimeTraceScope timeScope("Reserve symbol names");
-    symtab.reserveNames(inputBytes / 1024);
+    symtab.reserveNames(inputBytes / 16384);
   }
   symtab.setConcurrentInterning(true);
   for (InputFile *file : objects)
@@ -2572,12 +2582,82 @@ void BackgroundNameInterning::start(ArrayRef<InputFile *> inputs) {
     });
 }
 
+// Initializes the sections of object files on worker threads as soon as they
+// are parsed: that depends only on the file's own COMDAT claims, which later
+// files cannot change. Files are handed over in batches to keep the cost off
+// the resolving thread; workers pick them up once they are done interning.
+class EarlySectionPreparation {
+public:
+  void start() {
+    if (!parallelEnabled())
+      return;
+    group = std::make_unique<LinkerTaskGroup>();
+    elfState().onObjectParsed = [this](ELFFileBase *file) {
+      pending.push_back(file);
+      if (pending.size() >= batchSize)
+        submit();
+    };
+  }
+  void finish() {
+    if (!group)
+      return;
+    elfState().onObjectParsed = nullptr;
+    submit();
+    group->sync();
+    group.reset();
+  }
+  ~EarlySectionPreparation() { finish(); }
+
+private:
+  void submit() {
+    if (pending.empty())
+      return;
+    group->spawn([files = std::move(pending)] {
+      for (ELFFileBase *file : files)
+        if (!file->sectionsPrepared.exchange(true, std::memory_order_relaxed))
+          prepareSectionsAndLocals(file, /*ignoreComdats=*/false);
+    });
+    pending.clear();
+  }
+  static constexpr size_t batchSize = 32;
+  std::vector<ELFFileBase *> pending;
+  std::unique_ptr<LinkerTaskGroup> group;
+};
+
 void BackgroundNameInterning::finish() {
   if (!workers)
     return;
   workers->sync();
   workers.reset();
   symtab.setConcurrentInterning(false);
+}
+} // namespace
+
+namespace {
+// Creates the output file once the live sections are known, sized from them,
+// so that faulting in its pages overlaps computing the layout. The ELF writer
+// sets its final size.
+void startEarlyOutputFile() {
+  if (config->relocatable || !config->mmapOutputFile || !parallelEnabled() ||
+      elfPluginLinkAdapter())
+    return;
+  llvm::TimeTraceScope timeScope("Start output file");
+  // Synthetic sections (dynamic relocations, the symbol table, ...) add
+  // roughly an eighth to the live input sections of a large link.
+  std::atomic<uint64_t> liveBytes{0};
+  parallelForEach(elfState().objectFiles, [&](ELFFileBase *file) {
+    uint64_t bytes = 0;
+    for (InputSectionBase *s : file->getSections())
+      if (s && s != discardedInputSection() && s->isLive() &&
+          s->type != SHT_NOBITS)
+        bytes += s->content().size();
+    liveBytes.fetch_add(bytes, std::memory_order_relaxed);
+  });
+  const uint64_t estimate =
+      liveBytes.load() + liveBytes.load() / 8 + (4 << 20);
+  elfOut().earlyOutput = EarlyOutputFile::start(
+      config->outputFile, estimate, /*executable=*/true,
+      parallelThreadCount());
 }
 } // namespace
 
@@ -2638,10 +2718,15 @@ void LinkerDriver::execute(opt::InputArgList &args) {
   // appended to the Files vector.
   {
     llvm::TimeTraceScope timeScope("Parse input files");
+    EarlySectionPreparation sectionPreparation;
+    sectionPreparation.start();
     for (size_t i = 0; i < files.size(); ++i) {
       llvm::TimeTraceScope timeScope("Parse input files", files[i]->getName());
       parseFile(files[i]);
     }
+    // Section initialization may intern group signatures, so it finishes
+    // while interning is still thread-safe.
+    sectionPreparation.finish();
     nameInterning.finish();
   }
 
@@ -2689,7 +2774,8 @@ void LinkerDriver::execute(opt::InputArgList &args) {
   {
     llvm::TimeTraceScope timeScope("Initialize sections");
     parallelForEach(elfState().objectFiles, [](ELFFileBase *file) {
-      prepareSectionsAndLocals(file, /*ignoreComdats=*/false);
+      if (!file->sectionsPrepared.exchange(true, std::memory_order_relaxed))
+        prepareSectionsAndLocals(file, /*ignoreComdats=*/false);
     });
   }
   {
@@ -2988,6 +3074,10 @@ void LinkerDriver::execute(opt::InputArgList &args) {
 
   dispatchByFormat(createSyntheticSections, );
   combineEhSections();
+  // Start the scan threads before the output file's pages are faulted in:
+  // creating threads contends for the address space lock that faulting holds.
+  startEarlyRelocationScan();
+  startEarlyOutputFile();
 
   {
     llvm::TimeTraceScope timeScope("Assign sections");

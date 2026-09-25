@@ -1,6 +1,7 @@
 #ifndef LINKER_ELF_SYNTHETIC_SECTIONS_H
 #define LINKER_ELF_SYNTHETIC_SECTIONS_H
 
+#include "Linker/ELF/ELFHotState.h"
 #include "Linker/Core/Runtime/Session.h"
 #include "Linker/ELF/Config.h"
 #include "Linker/ELF/InputSection.h"
@@ -60,8 +61,11 @@ private:
   uint64_t size = 0;
 
   template <class ELFT, class RelTy>
-  void addRecords(EhInputSection *s, llvm::ArrayRef<RelTy> rels);
-  template <class ELFT> void addSectionAux(EhInputSection *s);
+  void addRecords(EhInputSection *s, llvm::ArrayRef<RelTy> rels,
+                  llvm::ArrayRef<uint8_t> liveFdes);
+  template <class ELFT>
+  void addSectionAux(EhInputSection *s, llvm::ArrayRef<uint8_t> liveFdes);
+  template <class ELFT> void finalizeContentsImpl();
   template <class ELFT, class RelTy>
   void forEachFDEWithLSDAOrPersonalityAux(
       EhInputSection &sec, ArrayRef<RelTy> rels,
@@ -196,6 +200,9 @@ class StringTableSection final : public SyntheticSection {
 public:
   StringTableSection(StringRef name, bool dynamic);
   unsigned addString(StringRef s, bool hashIt = true);
+  // Appends each string without deduplication, as addString(s, false) would,
+  // and stores its offset in `offsets`.
+  void addStringsUnhashed(ArrayRef<StringRef> strs, uint64_t *offsets);
   void writeTo(uint8_t *buf) override;
   size_t getSize() const override { return size; }
   bool isDynamic() const { return dynamic; }
@@ -350,12 +357,37 @@ public:
   SmallVector<DynamicReloc, 0> relocs;
 
 protected:
+  // One worker's relocations, stored in fixed-size chunks so that growing it
+  // never copies what is already there.
+  class RelocShard {
+  public:
+    static constexpr size_t chunkSize = 4096;
+    void push_back(const DynamicReloc &reloc) {
+      if (count % chunkSize == 0)
+        chunks.emplace_back(new DynamicReloc[chunkSize]);
+      chunks.back()[count++ % chunkSize] = reloc;
+    }
+    size_t size() const { return count; }
+    bool empty() const { return count == 0; }
+    // Calls fn(data, n) for each chunk, in order.
+    template <class Fn> void forEachChunk(Fn fn) const {
+      for (size_t i = 0; i != chunks.size(); ++i)
+        fn(chunks[i].get(), std::min(chunkSize, count - i * chunkSize));
+    }
+
+  private:
+    SmallVector<std::unique_ptr<DynamicReloc[]>, 0> chunks;
+    size_t count = 0;
+  };
+
   void computeRels();
   // Used when parallel relocation scanning adds relocations. The elements
   // will be moved into relocs by mergeRel().
-  SmallVector<SmallVector<DynamicReloc, 0>, 0> relocsVec;
+  SmallVector<RelocShard, 0> relocsVec;
   size_t numRelativeRelocs = 0; // used by -z combreloc
   bool combreloc;
+  // Set when mergeRels() already placed the relative relocations first.
+  bool partitioned = false;
 };
 
 template <>
@@ -441,6 +473,8 @@ public:
   void finalizeContents() override;
   size_t getSize() const override { return size_t(getNumSymbols()) * entsize; }
   void addSymbol(Symbol *sym);
+  // Equivalent to addSymbol() for each of `syms`, in order.
+  void addSymbols(ArrayRef<Symbol *> syms);
   unsigned getNumSymbols() const { return symbols.size() + 1; }
   size_t getSymbolIndex(Symbol *sym);
   ArrayRef<SymbolTableEntry> getSymbols() const { return symbols; }
@@ -979,7 +1013,7 @@ struct InStruct {
   void reset();
 };
 
-InStruct &elfIn();
+inline InStruct &elfIn() { return elfHotState<InStruct>(HotSyntheticInputs); }
 
 } // namespace linker::elf
 

@@ -820,6 +820,8 @@ bool LinkerScript::addPlainOrphansParallel() {
     SmallVector<StringRef, 0> names;
     SmallVector<SmallVector<InputSectionBase *, 0>, 0> lists;
     SmallVector<InputSectionBase *, 0> orphans;
+    // The chunk's InputSections, which stay in inputSections.
+    SmallVector<InputSectionBase *, 0> kept;
     bool needsOrderedPath = false;
   };
   std::vector<Chunk> parts(chunks);
@@ -827,11 +829,13 @@ bool LinkerScript::addPlainOrphansParallel() {
     Chunk &part = parts[c];
     for (size_t i = c * width, e = std::min(count, i + width); i < e; ++i) {
       InputSectionBase *s = inputs[i];
-      if (auto *isec = dyn_cast<InputSection>(s))
+      if (auto *isec = dyn_cast<InputSection>(s)) {
         if (isec->getRelocatedSection()) {
           part.needsOrderedPath = true;
           return;
         }
+        part.kept.push_back(s);
+      }
       if (!s->isLive() || s->parent)
         continue;
       if (s->type == SHT_GROUP || (s->flags & SHF_GROUP) ||
@@ -896,9 +900,11 @@ bool LinkerScript::addPlainOrphansParallel() {
   for (Chunk &part : parts)
     orphanSections.append(part.orphans.begin(), part.orphans.end());
 
-  // Keep just InputSection.
-  llvm::erase_if(elfState().inputSections,
-                 [](InputSectionBase *s) { return !isa<InputSection>(s); });
+  // Keep just InputSection, as collected by the chunks in input order.
+  SmallVector<InputSectionBase *, 0> &all = elfState().inputSections;
+  all.clear();
+  for (Chunk &part : parts)
+    all.append(part.kept.begin(), part.kept.end());
   sectionCommands.insert(sectionCommands.begin(), created.begin(),
                          created.end());
   return true;
@@ -1160,7 +1166,32 @@ void LinkerScript::assignOffsets(OutputSection *sec) {
     // Handle a single input section description command.
     // It calculates and assigns the offsets for each section and also
     // updates the output section size.
-    for (InputSection *isec : cast<InputSectionDescription>(cmd)->sections) {
+    ArrayRef<InputSection *> sections =
+        cast<InputSectionDescription>(cmd)->sections;
+    // Without memory regions only the section size tracks dot. For large
+    // lists, read every section's alignment and size with the workers, lay
+    // them out from that compact copy, and store the offsets with the workers.
+    if (!state->memRegion && !state->lmaRegion && parallelEnabled() &&
+        sections.size() >= (size_t(1) << 14)) {
+      const size_t n = sections.size();
+      std::unique_ptr<uint64_t[]> sizes(new uint64_t[n]);
+      std::unique_ptr<uint32_t[]> aligns(new uint32_t[n]);
+      parallelFor(0, n, [&](size_t i) {
+        sizes[i] = sections[i]->getSize();
+        aligns[i] = sections[i]->addralign;
+      });
+      const uint64_t start = dot;
+      for (size_t i = 0; i != n; ++i) {
+        dot = alignToPowerOf2(dot, aligns[i]);
+        const uint64_t size = sizes[i];
+        sizes[i] = dot - sec->addr; // Now the section's offset.
+        dot += size;
+      }
+      parallelFor(0, n, [&](size_t i) { sections[i]->outSecOff = sizes[i]; });
+      sec->size += dot - start;
+      continue;
+    }
+    for (InputSection *isec : sections) {
       assert(isec->getParent() == sec);
       const uint64_t pos = dot;
       dot = alignToPowerOf2(dot, isec->addralign);

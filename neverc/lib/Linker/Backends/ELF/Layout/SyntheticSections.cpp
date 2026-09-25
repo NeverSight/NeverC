@@ -200,33 +200,57 @@ Defined *EhFrameSection::isFdeLive(EhSectionPiece &fde, ArrayRef<RelTy> rels) {
 // .eh_frame is a sequence of CIE or FDE records. In general, there
 // is one CIE record per input object file which is followed by
 // a list of FDEs. This function searches an existing CIE or create a new
-// one and associates FDEs to the CIE.
+// one and associates FDEs to the CIE. `liveFdes` holds isFdeLive() for each
+// FDE of the section.
 template <class ELFT, class RelTy>
-void EhFrameSection::addRecords(EhInputSection *sec, ArrayRef<RelTy> rels) {
+void EhFrameSection::addRecords(EhInputSection *sec, ArrayRef<RelTy> rels,
+                                ArrayRef<uint8_t> liveFdes) {
   offsetToCie.clear();
   for (EhSectionPiece &cie : sec->cies)
     offsetToCie[cie.inputOff] = addCie<ELFT>(cie, rels);
-  for (EhSectionPiece &fde : sec->fdes) {
+  for (auto [i, fde] : llvm::enumerate(sec->fdes)) {
     uint32_t id = endian::read32<ELFT::TargetEndianness>(fde.data().data() + 4);
     CieRecord *rec = offsetToCie[fde.inputOff + 4 - id];
     if (!rec)
       fatal(toString(sec) + ": invalid CIE reference");
 
-    if (!isFdeLive<ELFT>(fde, rels))
+    if (!liveFdes[i])
       continue;
     rec->fdes.push_back(&fde);
     numFdes++;
   }
 }
 
-template <class ELFT> void EhFrameSection::addSectionAux(EhInputSection *sec) {
+template <class ELFT>
+void EhFrameSection::addSectionAux(EhInputSection *sec,
+                                   ArrayRef<uint8_t> liveFdes) {
   if (!sec->isLive())
     return;
   const RelsOrRelas<ELFT> rels = sec->template relsOrRelas<ELFT>();
   if (rels.areRelocsRel())
-    addRecords<ELFT>(sec, rels.rels);
+    addRecords<ELFT>(sec, rels.rels, liveFdes);
   else
-    addRecords<ELFT>(sec, rels.relas);
+    addRecords<ELFT>(sec, rels.relas, liveFdes);
+}
+
+template <class ELFT> void EhFrameSection::finalizeContentsImpl() {
+  // Which FDEs describe live functions is independent per section. CIEs are
+  // uniquified and FDEs grouped under them in input order below.
+  std::vector<SmallVector<uint8_t, 0>> liveFdes(sections.size());
+  parallelFor(0, sections.size(), [&](size_t i) {
+    EhInputSection *sec = sections[i];
+    if (!sec->isLive())
+      return;
+    SmallVector<uint8_t, 0> &live = liveFdes[i];
+    live.resize(sec->fdes.size());
+    const RelsOrRelas<ELFT> rels = sec->template relsOrRelas<ELFT>();
+    for (size_t k = 0; k != sec->fdes.size(); ++k)
+      live[k] = rels.areRelocsRel()
+                    ? isFdeLive<ELFT>(sec->fdes[k], rels.rels) != nullptr
+                    : isFdeLive<ELFT>(sec->fdes[k], rels.relas) != nullptr;
+  });
+  for (size_t i = 0; i != sections.size(); ++i)
+    addSectionAux<ELFT>(sections[i], liveFdes[i]);
 }
 
 // Used by ICF before equivalence classes are built. This function is very
@@ -284,32 +308,61 @@ void EhFrameSection::finalizeContents() {
   case ELFNoneKind:
     llvm_unreachable("invalid ekind");
   case ELF64LEKind:
-    for (EhInputSection *sec : sections)
-      addSectionAux<ELF64LE>(sec);
+    finalizeContentsImpl<ELF64LE>();
     break;
   case ELF64BEKind:
-    for (EhInputSection *sec : sections)
-      addSectionAux<ELF64BE>(sec);
+    finalizeContentsImpl<ELF64BE>();
     break;
   }
 
+  // Each record is its CIE followed by its FDEs. FDE offsets and the count of
+  // FDEs with an empty PC range are computed over chunks of FDEs in parallel.
   const bool hasEhFrameHdr = getPartition().ehFrameHdr &&
                              getPartition().ehFrameHdr->getParent();
+  struct FdeChunk {
+    CieRecord *rec;
+    uint8_t enc;
+    size_t begin, end;
+    uint64_t off, size;
+    size_t zeroRange;
+  };
+  constexpr size_t fdesPerChunk = 4096;
+  SmallVector<FdeChunk, 0> chunks;
+  for (CieRecord *rec : cieRecords) {
+    uint8_t enc = hasEhFrameHdr ? getFdeEncoding(rec->cie) : 0;
+    for (size_t b = 0; b < rec->fdes.size(); b += fdesPerChunk)
+      chunks.push_back(
+          {rec, enc, b, std::min(rec->fdes.size(), b + fdesPerChunk), 0, 0, 0});
+  }
+  parallelFor(0, chunks.size(), [&](size_t i) {
+    FdeChunk &c = chunks[i];
+    for (size_t k = c.begin; k != c.end; ++k) {
+      const EhSectionPiece *fde = c.rec->fdes[k];
+      c.size += fde->size;
+      if (hasEhFrameHdr && hasZeroPcRange(*fde, c.enc))
+        ++c.zeroRange;
+    }
+  });
   size_t off = 0;
+  size_t next = 0;
   for (CieRecord *rec : cieRecords) {
     rec->cie->outputOff = off;
     off += rec->cie->size;
-
-    uint8_t enc = hasEhFrameHdr ? getFdeEncoding(rec->cie) : 0;
-    for (EhSectionPiece *fde : rec->fdes) {
-      fde->outputOff = off;
-      off += fde->size;
-      if (hasEhFrameHdr && hasZeroPcRange(*fde, enc)) {
-        assert(numFdes != 0);
-        --numFdes;
-      }
+    for (; next != chunks.size() && chunks[next].rec == rec; ++next) {
+      chunks[next].off = off;
+      off += chunks[next].size;
+      assert(numFdes >= chunks[next].zeroRange);
+      numFdes -= chunks[next].zeroRange;
     }
   }
+  parallelFor(0, chunks.size(), [&](size_t i) {
+    const FdeChunk &c = chunks[i];
+    uint64_t fdeOff = c.off;
+    for (size_t k = c.begin; k != c.end; ++k) {
+      c.rec->fdes[k]->outputOff = fdeOff;
+      fdeOff += c.rec->fdes[k]->size;
+    }
+  });
 
   // The LSB standard does not allow a .eh_frame section with zero
   // Call Frame Information records. glibc unwind-dw2-fde.c
@@ -569,6 +622,19 @@ unsigned StringTableSection::addString(StringRef s, bool hashIt) {
   this->size = this->size + s.size() + 1;
   strings.push_back(s);
   return ret;
+}
+
+void StringTableSection::addStringsUnhashed(ArrayRef<StringRef> strs,
+                                            uint64_t *offsets) {
+  for (size_t i = 0; i != strs.size(); ++i) {
+    if (strs[i].empty()) {
+      offsets[i] = 0;
+      continue;
+    }
+    offsets[i] = size;
+    size += strs[i].size() + 1;
+    strings.push_back(strs[i]);
+  }
 }
 
 void StringTableSection::writeTo(uint8_t *buf) {
@@ -920,47 +986,88 @@ void RelocationBaseSection::addAddendOnlyRelocIfNonPreemptible(
 void RelocationBaseSection::mergeRels() {
   const size_t oldSize = relocs.size();
   size_t newSize = oldSize;
-  for (const auto &v : relocsVec)
+  for (const RelocShard &v : relocsVec)
     newSize += v.size();
+  static_assert(std::is_trivially_default_constructible_v<DynamicReloc> &&
+                std::is_trivially_copyable_v<DynamicReloc>);
+  // The relocations to place, in order: those already in `relocs`, then each
+  // worker's chunks.
+  struct Piece {
+    const DynamicReloc *from;
+    size_t count;
+  };
+  SmallVector<Piece, 0> pieces;
+  constexpr size_t oldPiece = RelocShard::chunkSize;
+  for (size_t i = 0; i < oldSize; i += oldPiece)
+    pieces.push_back({relocs.data() + i, std::min(oldPiece, oldSize - i)});
+  for (const RelocShard &v : relocsVec)
+    v.forEachChunk([&](const DynamicReloc *data, size_t n) {
+      pieces.push_back({data, n});
+    });
+
   if (!parallelEnabled() || newSize - oldSize < (size_t(1) << 16)) {
-    relocs.reserve(newSize);
-    for (const auto &v : relocsVec)
-      llvm::append_range(relocs, v);
+    SmallVector<DynamicReloc, 0> merged;
+    merged.resize_for_overwrite(newSize);
+    size_t offset = 0;
+    for (const Piece &p : pieces) {
+      std::memcpy(merged.data() + offset, p.from, p.count * sizeof(DynamicReloc));
+      offset += p.count;
+    }
+    relocs = std::move(merged);
     relocsVec.clear();
     return;
   }
 
-  // Copy the per-worker vectors into place, in the same order, with the
-  // workers: the copy and the page faults of the new storage are large.
-  static_assert(std::is_trivially_default_constructible_v<DynamicReloc> &&
-                std::is_trivially_copyable_v<DynamicReloc>);
-  relocs.resize_for_overwrite(newSize);
-  constexpr size_t piece = size_t(1) << 14;
-  struct Copy {
-    const DynamicReloc *from;
-    size_t count;
-    DynamicReloc *to;
-  };
-  SmallVector<Copy, 0> copies;
-  size_t offset = oldSize;
-  for (const auto &v : relocsVec) {
-    for (size_t i = 0; i < v.size(); i += piece)
-      copies.push_back({v.data() + i, std::min(piece, v.size() - i),
-                        relocs.data() + offset + i});
-    offset += v.size();
+  // Copy the pieces into place with the workers: the copy and the page
+  // faults of the new storage are large. With -z combreloc, the relative
+  // relocations are placed first here, in order, which is what
+  // partitionRels() would do.
+  std::vector<size_t> relative(pieces.size() + 1), other(pieces.size() + 1);
+  if (combreloc) {
+    const RelType relativeRel = target->relativeRel;
+    parallelFor(0, pieces.size(), [&](size_t i) {
+      size_t n = 0;
+      for (size_t k = 0; k != pieces[i].count; ++k)
+        n += pieces[i].from[k].type == relativeRel;
+      relative[i + 1] = n;
+      other[i + 1] = pieces[i].count - n;
+    });
+  } else {
+    for (size_t i = 0; i != pieces.size(); ++i)
+      other[i + 1] = pieces[i].count;
   }
-  parallelForEach(copies, [](const Copy &c) {
-    std::memcpy(c.to, c.from, c.count * sizeof(DynamicReloc));
+  for (size_t i = 0; i != pieces.size(); ++i) {
+    relative[i + 1] += relative[i];
+    other[i + 1] += other[i];
+  }
+  const size_t numRelative = relative.back();
+  SmallVector<DynamicReloc, 0> merged;
+  merged.resize_for_overwrite(newSize);
+  parallelFor(0, pieces.size(), [&](size_t i) {
+    const Piece &p = pieces[i];
+    DynamicReloc *r = merged.data() + relative[i];
+    DynamicReloc *o = merged.data() + numRelative + other[i];
+    if (!combreloc) {
+      std::memcpy(o, p.from, p.count * sizeof(DynamicReloc));
+      return;
+    }
+    const RelType relativeRel = target->relativeRel;
+    for (size_t k = 0; k != p.count; ++k)
+      *(p.from[k].type == relativeRel ? r++ : o++) = p.from[k];
   });
+  relocs = std::move(merged);
+  if (combreloc) {
+    numRelativeRelocs = numRelative;
+    partitioned = true;
+  }
   // Freeing the per-worker storage is also sizable; do it concurrently.
-  parallelFor(0, relocsVec.size(), [&](size_t i) {
-    SmallVector<DynamicReloc, 0>().swap(relocsVec[i]);
-  });
+  parallelFor(0, relocsVec.size(),
+              [&](size_t i) { relocsVec[i] = RelocShard(); });
   relocsVec.clear();
 }
 
 void RelocationBaseSection::partitionRels() {
-  if (!combreloc)
+  if (!combreloc || partitioned)
     return;
   const RelType relativeRel = target->relativeRel;
   auto isRelative = [=](const DynamicReloc &r) {
@@ -1066,15 +1173,55 @@ RelocationSection<ELFT>::RelocationSection(StringRef name, bool combreloc,
 }
 
 template <class ELFT> void RelocationSection<ELFT>::writeTo(uint8_t *buf) {
-  computeRels();
-  for (const DynamicReloc &rel : relocs) {
-    auto *p = reinterpret_cast<Elf_Rela *>(buf);
+  const size_t entSize = config->isRela ? sizeof(Elf_Rela) : sizeof(Elf_Rel);
+  auto write = [&](size_t slot, const DynamicReloc &rel) {
+    auto *p = reinterpret_cast<Elf_Rela *>(buf + slot * entSize);
     p->r_offset = rel.r_offset;
     p->setSymbolAndType(rel.r_sym, rel.type);
     if (config->isRela)
       p->r_addend = rel.addend;
-    buf += config->isRela ? sizeof(Elf_Rela) : sizeof(Elf_Rel);
+  };
+  const size_t count = relocs.size();
+  if (!combreloc || !parallelEnabled() || count < (size_t(1) << 15)) {
+    computeRels();
+    for (size_t i = 0; i != count; ++i)
+      write(i, relocs[i]);
+    return;
   }
+
+  // Large sets: sort compact (offset, index) keys for the relative group
+  // instead of moving whole records, then write every entry in parallel. The
+  // output is identical to computeRels() followed by the serial loop above,
+  // because relative relocations have distinct offsets.
+  struct Key {
+    uint64_t offset;
+    uint64_t index;
+  };
+  SymbolTableBaseSection *symTab = getPartition().dynSymTab.get();
+  const size_t numRelative = numRelativeRelocs;
+  std::unique_ptr<Key[]> keys(new Key[numRelative]);
+  const size_t chunks = size_t(parallelThreadCount()) * 4;
+  const size_t width = (count + chunks - 1) / chunks;
+  parallelFor(0, chunks, [&](size_t c) {
+    for (size_t i = c * width, e = std::min(count, i + width); i < e; ++i) {
+      relocs[i].computeRaw(symTab);
+      if (i < numRelative)
+        keys[i] = {relocs[i].r_offset, i};
+    }
+  });
+  parallelStableSort(keys.get(), keys.get() + numRelative,
+                     [](const Key &a, const Key &b) {
+                       return a.offset < b.offset;
+                     });
+  llvm::sort(relocs.begin() + numRelative, relocs.end(),
+             [&](auto &a, auto &b) {
+               return std::tie(a.r_sym, a.r_offset) <
+                      std::tie(b.r_sym, b.r_offset);
+             });
+  parallelFor(0, chunks, [&](size_t c) {
+    for (size_t i = c * width, e = std::min(count, i + width); i < e; ++i)
+      write(i, i < numRelative ? relocs[keys[i].index] : relocs[i]);
+  });
 }
 
 RelrBaseSection::RelrBaseSection(unsigned concurrency)
@@ -1511,6 +1658,26 @@ void SymbolTableBaseSection::addSymbol(Symbol *b) {
   // Adding a local symbol to a .dynsym is a bug.
   assert(this->type != SHT_DYNSYM || !b->isLocal());
   symbols.push_back({b, strTabSec.addString(b->getName(), false)});
+}
+
+void SymbolTableBaseSection::addSymbols(ArrayRef<Symbol *> syms) {
+  if (!parallelEnabled() || syms.size() < (size_t(1) << 14)) {
+    for (Symbol *sym : syms)
+      addSymbol(sym);
+    return;
+  }
+  // Reading the names touches every symbol; do that with the workers and
+  // lay out the string table from the compact copy.
+  std::vector<StringRef> names(syms.size());
+  parallelFor(0, syms.size(), [&](size_t i) {
+    assert(this->type != SHT_DYNSYM || !syms[i]->isLocal());
+    names[i] = syms[i]->getName();
+  });
+  std::unique_ptr<uint64_t[]> offsets(new uint64_t[syms.size()]);
+  strTabSec.addStringsUnhashed(names, offsets.get());
+  symbols.reserve(symbols.size() + syms.size());
+  for (size_t i = 0; i != syms.size(); ++i)
+    symbols.push_back({syms[i], offsets[i]});
 }
 
 size_t SymbolTableBaseSection::getSymbolIndex(Symbol *sym) {
@@ -2577,18 +2744,50 @@ void MergeNoTailSection::finalizeContents() {
   const size_t concurrency =
       llvm::bit_floor(std::min<size_t>(config->threadCount, numShards));
 
-  // Add section pieces to the builders.
-  parallelFor(0, concurrency, [&](size_t threadId) {
-    for (MergeInputSection *sec : sections) {
-      for (size_t i = 0, e = sec->pieces.size(); i != e; ++i) {
-        if (!sec->pieces[i].live)
-          continue;
-        size_t shardId = getShardId(sec->pieces[i].hash);
-        if ((shardId & (concurrency - 1)) == threadId)
-          sec->pieces[i].outputOff = shards[shardId].add(sec->getData(i));
+  // Add section pieces to the builders. Each thread owns the shards whose
+  // ids are congruent to it and adds their pieces in section order. With many
+  // sections, first sort the live pieces by owning thread in one parallel
+  // pass, so that each thread reads only its own pieces instead of all.
+  if (concurrency > 1 && sections.size() >= 256) {
+    struct PieceRef {
+      MergeInputSection *sec;
+      size_t index;
+    };
+    const size_t numChunks = std::min<size_t>(sections.size(), concurrency * 8);
+    const size_t width = (sections.size() + numChunks - 1) / numChunks;
+    std::vector<SmallVector<PieceRef, 0>> lists(numChunks * concurrency);
+    parallelFor(0, numChunks, [&](size_t c) {
+      SmallVector<PieceRef, 0> *own = &lists[c * concurrency];
+      for (size_t k = c * width, e = std::min(sections.size(), k + width);
+           k < e; ++k) {
+        MergeInputSection *sec = sections[k];
+        for (size_t i = 0, n = sec->pieces.size(); i != n; ++i)
+          if (sec->pieces[i].live)
+            own[getShardId(sec->pieces[i].hash) & (concurrency - 1)]
+                .push_back({sec, i});
       }
-    }
-  });
+    });
+    parallelFor(0, concurrency, [&](size_t threadId) {
+      for (size_t c = 0; c != numChunks; ++c)
+        for (const PieceRef &ref : lists[c * concurrency + threadId]) {
+          SectionPiece &piece = ref.sec->pieces[ref.index];
+          piece.outputOff = shards[getShardId(piece.hash)].add(
+              ref.sec->getData(ref.index));
+        }
+    });
+  } else {
+    parallelFor(0, concurrency, [&](size_t threadId) {
+      for (MergeInputSection *sec : sections) {
+        for (size_t i = 0, e = sec->pieces.size(); i != e; ++i) {
+          if (!sec->pieces[i].live)
+            continue;
+          size_t shardId = getShardId(sec->pieces[i].hash);
+          if ((shardId & (concurrency - 1)) == threadId)
+            sec->pieces[i].outputOff = shards[shardId].add(sec->getData(i));
+        }
+      }
+    });
+  }
 
   size_t off = 0;
   for (size_t i = 0; i < numShards; ++i) {

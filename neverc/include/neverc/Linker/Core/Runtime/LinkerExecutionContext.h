@@ -39,6 +39,10 @@ public:
     return ResourcePermit.session();
   }
   void destroyBackend();
+  /// Detaches the backend and leaves its memory to process exit; see
+  /// CommonLinkerContext::abandon(). The resource permit is still returned
+  /// when this context is destroyed.
+  void abandonBackend();
 
 private:
   // Declared before Backend so the backend and its worker pool are destroyed

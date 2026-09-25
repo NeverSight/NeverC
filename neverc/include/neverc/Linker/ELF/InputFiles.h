@@ -11,6 +11,8 @@
 #include "llvm/Support/MemoryBufferRef.h"
 #include "llvm/Support/Threading.h"
 #include <atomic>
+#include <memory>
+#include <vector>
 
 namespace llvm {
 struct DILineInfo;
@@ -226,6 +228,9 @@ public:
   uint32_t numSpecialSections = 0;
   uint32_t andFeatures = 0;
   bool hasCommonSyms = false;
+  // Set once a thread has claimed initializing this file's sections, which
+  // may start as soon as the file is parsed.
+  std::atomic<bool> sectionsPrepared{false};
 };
 
 // .o file.
@@ -381,7 +386,36 @@ public:
   // parsed. Only filled for `--no-allow-shlib-undefined`.
   SmallVector<Symbol *, 0> requiredSymbols;
 
+  // What parse() reads from the file, including the interned names of the
+  // symbols it adds, computed without side effects on a worker thread by
+  // prepareSymbols() so that parse() only resolves symbols.
+  struct PreparedSymbols {
+    struct Entry {
+      SymbolNameSlot *slot;
+      const char *name;
+      uint32_t nameSize;
+      // Index among the global symbols of the dynamic symbol table.
+      uint32_t symIndex;
+      // Version id to record when this file provides the symbol.
+      uint16_t versionId;
+      bool undefined;
+      uint32_t alignment;
+    };
+    SmallVector<StringRef, 0> dtNeeded;
+    StringRef soName;
+    SmallVector<const void *, 0> verdefs;
+    std::vector<Entry> entries;
+  };
+  std::unique_ptr<PreparedSymbols> prepared;
+  // Fills `prepared`; returns false, leaving it empty, if parse() would report
+  // a diagnostic for this file. Thread-safe.
+  template <typename ELFT> bool prepareSymbols();
+  // Claims and runs prepareSymbols() if it is still pending; returns false if
+  // another thread already claimed it.
+  template <typename ELFT> bool tryPrepareSymbols();
+
 private:
+  template <typename ELFT> void parsePrepared();
   template <typename ELFT>
   std::vector<uint32_t> parseVerneed(const llvm::object::ELFFile<ELFT> &obj,
                                      const typename ELFT::Shdr *sec);

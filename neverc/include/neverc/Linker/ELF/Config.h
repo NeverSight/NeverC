@@ -1,6 +1,7 @@
 #ifndef LINKER_ELF_CONFIG_H
 #define LINKER_ELF_CONFIG_H
 
+#include "Linker/ELF/ELFHotState.h"
 #include "Linker/Core/Driver/Dispatcher.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
 #include "llvm/ADT/CachedHashString.h"
@@ -10,6 +11,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/BinaryFormat/ELF.h"
+#include <functional>
 #include "llvm/Option/ArgList.h"
 #include "llvm/Support/CodeGen.h"
 #include "llvm/Support/Compiler.h"
@@ -356,7 +358,9 @@ struct ConfigWrapper {
   Config *operator->() { return &c; }
 };
 
-ConfigWrapper &elfConfig();
+inline ConfigWrapper &elfConfig() {
+  return elfHotState<ConfigWrapper>(HotConfig);
+}
 
 struct ConfigAccessor {
   ConfigWrapper &operator->() const { return elfConfig(); }
@@ -388,6 +392,10 @@ struct Ctx {
   llvm::StringMap<PrefetchedInput> prefetchedInputs;
   SmallVector<ELFFileBase *, 0> objectFiles;
   SmallVector<SharedFile *, 0> sharedFiles;
+  // While set, parsing an object file hands it to this callback once its
+  // COMDAT groups are claimed, so that its sections can be initialized while
+  // the remaining files are parsed.
+  std::function<void(ELFFileBase *)> onObjectParsed;
   SmallVector<BinaryFile *, 0> binaryFiles;
   SmallVector<BitcodeFile *, 0> bitcodeFiles;
   SmallVector<BitcodeFile *, 0> lazyBitcodeFiles;
@@ -439,7 +447,7 @@ struct Ctx {
   llvm::raw_fd_ostream openAuxiliaryFile(llvm::StringRef, std::error_code &);
 };
 
-Ctx &elfState();
+inline Ctx &elfState() { return elfHotState<Ctx>(HotBackendState); }
 
 // The first two elements of versionDefinitions represent VER_NDX_LOCAL and
 // VER_NDX_GLOBAL. This helper returns other elements.

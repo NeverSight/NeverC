@@ -1,6 +1,7 @@
 #ifndef LINKER_ELF_SYMBOL_TABLE_H
 #define LINKER_ELF_SYMBOL_TABLE_H
 
+#include "Linker/ELF/ELFHotState.h"
 #include "Linker/ELF/Symbols.h"
 #include "llvm/ADT/CachedHashString.h"
 #include "llvm/ADT/DenseMap.h"
@@ -56,11 +57,12 @@ public:
 
   // Insert the symbol named by a slot that was interned from a name without
   // any '@'. `data` points at the caller's copy of that name.
-  Symbol *insertInterned(SymbolNameSlot *slot, const char *data) {
+  Symbol *insertInterned(SymbolNameSlot *slot, const char *data,
+                         bool hasVersionSuffix = false) {
     if (slot->symbol)
       return slot->symbol;
     return createSymbol(slot, llvm::StringRef(data, slot->size),
-                        /*hasVersionSuffix=*/false);
+                        hasVersionSuffix);
   }
 
   // Size the name table for roughly `expectedNames` distinct names.
@@ -170,7 +172,9 @@ private:
   SmallVector<Symbol *, 0> symVector;
 };
 
-SymbolTable &elfSymtab();
+inline SymbolTable &elfSymtab() {
+  return elfHotState<SymbolTable>(HotSymtab);
+}
 
 } // namespace linker::elf
 

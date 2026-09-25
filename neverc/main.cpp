@@ -51,6 +51,15 @@
 #include <optional>
 #include <set>
 
+#if defined(__linux__)
+#include <cerrno>
+#include <csignal>
+#include <fcntl.h>
+#include <sys/prctl.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
+
 using llvm::ArrayRef;
 using llvm::IntrusiveRefCntPtr;
 using llvm::SmallString;
@@ -210,6 +219,10 @@ void configureDriverCallbacks(Driver &TheDriver) {
         Ok = false;
       }
     }
+    // Releasing a large link's state object by object takes longer than the
+    // process exit that reclaims it anyway.
+    if (Ok && DriverCfg.releaseStateAtExit && !DriverCfg.executionHooks)
+      ExecutionOwner.get().abandonBackend();
     return Ok ? 0 : (Result == 0 ? 1 : Result);
   };
 }
@@ -277,6 +290,148 @@ CompilationResult runCompilation(Driver &TheDriver, Compilation &C) {
   }
   return Result;
 }
+
+// ===----------------------------------------------------------------------===
+// Background process exit for links
+// ===----------------------------------------------------------------------===
+
+// Tearing down a large link (unmapping its inputs and returning its memory)
+// takes a noticeable share of the link time, yet the caller only waits for
+// the result. A process about to link therefore forks: the child does all the
+// work and hands its exit status to the parent as soon as the outputs are
+// complete, and the parent exits with that status while the child exits in
+// the background. `-Wl,--no-fork` keeps everything in one process.
+class BackgroundExit {
+public:
+  // Configures the link jobs of `C` and, when possible, forks. Returns only in
+  // the process that runs the compilation.
+  static void start(Compilation &C);
+  // Called by that process once every output is complete and the result is
+  // `ExitCode`; afterwards the process must exit without further output.
+  static void release(int ExitCode);
+
+private:
+#if defined(__linux__)
+  static bool isSingleThreaded();
+  [[noreturn]] static void waitForChild(pid_t Child, int ResultFd);
+  static inline int ResultFd = -1;
+#endif
+};
+
+void BackgroundExit::start(Compilation &C) {
+  SmallVector<LinkerCommand *, 2> Links;
+  bool Fork = true;
+  for (Command &Job : C.getJobs()) {
+    if (Job.getKind() != Command::CK_LinkerCommand)
+      continue;
+    auto &Link = static_cast<LinkerCommand &>(Job);
+    Links.push_back(&Link);
+    for (const char *Arg : Link.getArguments()) {
+      StringRef Name = StringRef(Arg).ltrim('-');
+      if (Name == "fork")
+        Fork = true;
+      else if (Name == "no-fork")
+        Fork = false;
+    }
+  }
+#ifdef NEVERC_PGO_TRAINING
+  // Profile data is written by the normal exit path.
+  return;
+#endif
+  if (Links.empty() || C.containsError())
+    return;
+  // A successful compilation ends in _exit(), so linker state need not be
+  // released first.
+  for (LinkerCommand *Link : Links)
+    Link->getDriverConfig().releaseStateAtExit = true;
+#if defined(__linux__)
+  // Only the forking thread survives fork(); with other threads running, one
+  // of them might hold a lock the child needs.
+  if (!Fork || !isSingleThreaded())
+    return;
+  int Fds[2];
+  if (::pipe2(Fds, O_CLOEXEC) != 0)
+    return;
+  const pid_t Parent = ::getpid();
+  const pid_t Child = ::fork();
+  if (Child < 0) {
+    ::close(Fds[0]);
+    ::close(Fds[1]);
+    return;
+  }
+  if (Child > 0) {
+    ::close(Fds[1]);
+    waitForChild(Child, Fds[0]);
+  }
+  ::close(Fds[0]);
+  // Do not outlive a parent that is killed before the result is known.
+  ::prctl(PR_SET_PDEATHSIG, SIGKILL);
+  if (::getppid() != Parent)
+    ::_exit(1);
+  ResultFd = Fds[1];
+  for (LinkerCommand *Link : Links)
+    Link->getDriverConfig().backgroundExit = true;
+#else
+  (void)Fork;
+#endif
+}
+
+void BackgroundExit::release(int ExitCode) {
+#if defined(__linux__)
+  if (ResultFd < 0)
+    return;
+  // Callers may wait for the end of the output streams rather than for the
+  // parent alone, so stop holding them before handing over the result.
+  int Null = ::open("/dev/null", O_RDWR | O_CLOEXEC);
+  if (Null >= 0) {
+    ::dup2(Null, STDIN_FILENO);
+    ::dup2(Null, STDOUT_FILENO);
+    ::dup2(Null, STDERR_FILENO);
+    ::close(Null);
+  }
+  ssize_t Written;
+  do
+    Written = ::write(ResultFd, &ExitCode, sizeof(ExitCode));
+  while (Written < 0 && errno == EINTR);
+  ::close(ResultFd);
+  ResultFd = -1;
+#else
+  (void)ExitCode;
+#endif
+}
+
+#if defined(__linux__)
+bool BackgroundExit::isSingleThreaded() {
+  std::error_code EC;
+  unsigned Threads = 0;
+  for (llvm::sys::fs::directory_iterator It("/proc/self/task", EC), End;
+       !EC && It != End; It.increment(EC))
+    if (++Threads > 1)
+      return false;
+  return !EC && Threads == 1;
+}
+
+void BackgroundExit::waitForChild(pid_t Child, int ResultFd) {
+  int ExitCode = 1;
+  ssize_t Read;
+  do
+    Read = ::read(ResultFd, &ExitCode, sizeof(ExitCode));
+  while (Read < 0 && errno == EINTR);
+  if (Read == sizeof(ExitCode))
+    ::_exit(ExitCode);
+  // The child ended without reporting a result; report how it ended.
+  int Status = 0;
+  while (::waitpid(Child, &Status, 0) < 0 && errno == EINTR) {
+  }
+  if (WIFEXITED(Status))
+    ::_exit(WEXITSTATUS(Status));
+  if (WIFSIGNALED(Status)) {
+    ::signal(WTERMSIG(Status), SIG_DFL);
+    ::raise(WTERMSIG(Status));
+  }
+  ::_exit(1);
+}
+#endif
 
 int finishPluginRuntime(Driver &TheDriver,
                         std::unique_ptr<Compilation> &CompilationState,
@@ -425,6 +580,7 @@ int neverc_main(int Argc, char **Argv, const llvm::ToolContext &ToolContext) {
   }
   Driver::ReproLevel ReproLevel = *MaybeReproLevel;
 
+  BackgroundExit::start(*C);
   CompilationResult CR = runCompilation(TheDriver, *C);
 
   if (CR.ExitCode != 0 || CR.IsCrash) {
@@ -456,6 +612,7 @@ int neverc_main(int Argc, char **Argv, const llvm::ToolContext &ToolContext) {
 #ifdef NEVERC_PGO_TRAINING
     return 0;
 #else
+    BackgroundExit::release(0);
     _exit(0);
 #endif
   }

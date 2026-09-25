@@ -5,6 +5,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include <mutex>
+#include <thread>
 #include <vector>
 
 namespace linker::elf {
@@ -33,6 +34,21 @@ struct UndefinedDiag {
 struct ELFRelocationState {
   std::vector<UndefinedDiag> undefs;
   std::mutex mutex;
+  // Threads scanning relocations ahead of the regular scan; see
+  // startEarlyRelocationScan().
+  std::vector<std::thread> earlyScanThreads;
+  // Whether the early scan ran, and the sections it left to the regular scan,
+  // per early scan thread.
+  bool earlyScanned = false;
+  // Symbol visibility was resolved before the early scan for the first
+  // earlySymbolCount symbols; of those, only earlyUndefined may still change.
+  size_t earlySymbolCount = 0;
+  std::vector<Symbol *> earlyUndefined;
+  std::vector<std::vector<InputSectionBase *>> earlyDeferred;
+  ~ELFRelocationState() {
+    for (std::thread &t : earlyScanThreads)
+      t.join();
+  }
 };
 
 ELFRelocationState &elfRelocationState();
@@ -129,6 +145,14 @@ template <class ELFT> void scanRelocations();
 void reportUndefinedSymbols();
 void postScanRelocations();
 void addGotEntry(Symbol &sym);
+// Resolves symbol visibility early and starts scanning the relocations of
+// regular sections on dedicated threads, overlapping the layout steps that
+// precede the regular scan, when the link allows it. The threads are joined
+// by finishEarlyRelocationScan(), which must run before symbols may change
+// again.
+void startEarlyRelocationScan();
+void finishEarlyRelocationScan();
+template <class ELFT> void scanRelocationsEarly();
 
 class ThunkSection;
 class Thunk;

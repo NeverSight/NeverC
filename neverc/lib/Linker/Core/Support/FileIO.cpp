@@ -23,6 +23,7 @@
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/FileOutputBuffer.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/MathExtras.h"
 #include "llvm/Support/TimeProfiler.h"
 #include "llvm/Support/thread.h"
 
@@ -31,6 +32,8 @@
 #include <unistd.h>
 #endif
 #include <condition_variable>
+#include <optional>
+#include <string>
 #include <mutex>
 
 using namespace llvm;
@@ -60,6 +63,17 @@ void linker::prefaultBuffer(uint8_t *buf, size_t size, bool fileBacked) {
   parallelFor(0, numChunks, [&](size_t i) {
     size_t begin = i * chunkSize;
     size_t end = std::min(begin + chunkSize, size);
+#if defined(__linux__)
+    // Populating a range in one call avoids a page fault per page. Kernels
+    // before 5.14 reject the advice; touch the pages instead.
+    constexpr int populateWrite = 23; // MADV_POPULATE_WRITE
+    uintptr_t first = reinterpret_cast<uintptr_t>(buf + begin);
+    uintptr_t aligned = first / pageSize * pageSize;
+    if (::madvise(reinterpret_cast<void *>(aligned),
+                  reinterpret_cast<uintptr_t>(buf + end) - aligned,
+                  populateWrite) == 0)
+      return;
+#endif
     for (size_t off = begin; off < end; off += pageSize)
       buf[off] = 0;
   });
@@ -121,7 +135,7 @@ std::unique_ptr<raw_fd_ostream> linker::openFile(StringRef file) {
 //
 // We spawn a background thread to remove the file; the calling thread
 // returns almost immediately.
-void linker::unlinkAsync(StringRef path) {
+void linker::unlinkAsync(StringRef path, bool keepUntilExit) {
   if (!sys::fs::exists(path) || !sys::fs::is_regular_file(path))
     return;
 
@@ -166,6 +180,10 @@ void linker::unlinkAsync(StringRef path) {
 
   if (ec)
     return;
+  // Releasing a large file's storage takes real CPU time; a process that
+  // exits after the link leaves it to exit, off the link's critical path.
+  if (keepUntilExit)
+    return;
 
   std::mutex m;
   std::condition_variable cv;
@@ -184,5 +202,223 @@ void linker::unlinkAsync(StringRef path) {
   // wait for the helper to signal it is running before returning.
   std::unique_lock<std::mutex> l(m);
   cv.wait(l, [&] { return started; });
+#endif
+}
+
+//===----------------------------------------------------------------------===//
+// Output file created ahead of its final size
+//===----------------------------------------------------------------------===//
+
+#if defined(__linux__)
+#include <pthread.h>
+#include <sched.h>
+#endif
+
+namespace {
+constexpr size_t earlyChunkSize = 2 * 1024 * 1024;
+
+#if defined(__linux__)
+// The buffer finish() returns: an on-disk buffer over the early file's
+// mapping, which may be larger than the output.
+class EarlyOnDiskBuffer final : public FileOutputBuffer {
+public:
+  EarlyOnDiskBuffer(StringRef path, sys::fs::TempFile temp, uint8_t *base,
+                    size_t mapped, size_t size, bool keepMappedAtCommit)
+      : FileOutputBuffer(path), temp(std::move(temp)), base(base),
+        mapped(mapped), size(size), keepMappedAtCommit(keepMappedAtCommit) {}
+  uint8_t *getBufferStart() const override { return base; }
+  uint8_t *getBufferEnd() const override { return base + size; }
+  size_t getBufferSize() const override { return size; }
+  Error commit() override {
+    TimeTraceScope timeScope("Commit buffer to disk");
+    // The shared mapping's pages already belong to the file, so the rename
+    // does not wait for them. Tearing down a large mapping is slow; a process
+    // about to exit leaves that to the kernel.
+    if (keepMappedAtCommit)
+      base = nullptr;
+    else
+      unmap();
+    return temp.keep(FinalPath);
+  }
+  ~EarlyOnDiskBuffer() override {
+    unmap();
+    consumeError(temp.discard());
+  }
+  void discard() override { consumeError(temp.discard()); }
+
+private:
+  void unmap() {
+    if (base)
+      ::munmap(base, mapped);
+    base = nullptr;
+  }
+  sys::fs::TempFile temp;
+  uint8_t *base;
+  size_t mapped;
+  size_t size;
+  bool keepMappedAtCommit;
+};
+
+void populate(uint8_t *begin, uint8_t *end, size_t pageSize) {
+  constexpr int populateWrite = 23; // MADV_POPULATE_WRITE
+  if (::madvise(begin, end - begin, populateWrite) == 0)
+    return;
+  for (uint8_t *p = begin; p < end; p += pageSize)
+    *p = 0;
+}
+#endif
+} // namespace
+
+struct EarlyOutputFile::State {
+  std::string path;
+  std::optional<sys::fs::TempFile> temp;
+  uint8_t *base = nullptr;
+  size_t mapped = 0;
+  size_t pageSize = 4096;
+  size_t numChunks = 0;
+  std::atomic<size_t> nextChunk{0};
+  std::atomic<bool> stop{false};
+  std::unique_ptr<std::atomic<uint8_t>[]> chunkDone;
+  std::vector<std::thread> workers;
+};
+
+EarlyOutputFile::EarlyOutputFile(std::unique_ptr<State> state)
+    : state(std::move(state)) {}
+
+std::unique_ptr<EarlyOutputFile>
+EarlyOutputFile::start(StringRef path, size_t estimatedSize, bool executable,
+                       unsigned threads) {
+#if defined(__linux__)
+  if (path.empty() || path == "-" || estimatedSize == 0 || threads == 0)
+    return nullptr;
+  // Other file types keep FileOutputBuffer's handling.
+  sys::fs::file_status status;
+  sys::fs::status(path, status);
+  if (status.type() != sys::fs::file_type::regular_file &&
+      status.type() != sys::fs::file_type::file_not_found)
+    return nullptr;
+
+  unsigned mode = sys::fs::all_read | sys::fs::all_write;
+  if (executable)
+    mode |= sys::fs::all_exe;
+  Expected<sys::fs::TempFile> temp =
+      sys::fs::TempFile::create(path + ".tmp%%%%%%%", mode);
+  if (!temp) {
+    consumeError(temp.takeError());
+    return nullptr;
+  }
+  auto state = std::make_unique<State>();
+  state->path = path.str();
+  state->temp.emplace(std::move(*temp));
+  long page = ::sysconf(_SC_PAGESIZE);
+  state->pageSize = page > 0 ? size_t(page) : 4096;
+  const size_t size = alignTo(estimatedSize, state->pageSize);
+  if (::ftruncate(state->temp->FD, size) != 0) {
+    consumeError(state->temp->discard());
+    return nullptr;
+  }
+  void *base = ::mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED,
+                      state->temp->FD, 0);
+  if (base == MAP_FAILED) {
+    consumeError(state->temp->discard());
+    return nullptr;
+  }
+  state->base = static_cast<uint8_t *>(base);
+  state->mapped = size;
+  state->numChunks = (size + earlyChunkSize - 1) / earlyChunkSize;
+  state->chunkDone.reset(new std::atomic<uint8_t>[state->numChunks]);
+  for (size_t i = 0; i != state->numChunks; ++i)
+    state->chunkDone[i].store(0, std::memory_order_relaxed);
+
+  State *s = state.get();
+  for (unsigned i = 0; i != threads; ++i)
+    s->workers.emplace_back([s] {
+      // Only use CPUs the link leaves idle.
+      sched_param param{};
+      pthread_setschedparam(pthread_self(), SCHED_IDLE, &param);
+      while (!s->stop.load(std::memory_order_relaxed)) {
+        const size_t i = s->nextChunk.fetch_add(1, std::memory_order_relaxed);
+        if (i >= s->numChunks)
+          return;
+        uint8_t *begin = s->base + i * earlyChunkSize;
+        populate(begin, std::min(begin + earlyChunkSize, s->base + s->mapped),
+                 s->pageSize);
+        s->chunkDone[i].store(1, std::memory_order_release);
+      }
+    });
+  return std::unique_ptr<EarlyOutputFile>(
+      new EarlyOutputFile(std::move(state)));
+#else
+  (void)path;
+  (void)estimatedSize;
+  (void)executable;
+  (void)threads;
+  return nullptr;
+#endif
+}
+
+void EarlyOutputFile::stopWorkers() {
+  state->stop.store(true, std::memory_order_relaxed);
+  for (std::thread &t : state->workers)
+    t.join();
+  state->workers.clear();
+}
+
+EarlyOutputFile::~EarlyOutputFile() {
+  if (!state)
+    return;
+  stopWorkers();
+#if defined(__linux__)
+  if (state->base)
+    ::munmap(state->base, state->mapped);
+  if (state->temp)
+    consumeError(state->temp->discard());
+#endif
+}
+
+Expected<std::unique_ptr<FileOutputBuffer>>
+EarlyOutputFile::finish(size_t size, bool keepMappedAtCommit) {
+#if defined(__linux__)
+  stopWorkers();
+  State &s = *state;
+  if (::ftruncate(s.temp->FD, size) != 0)
+    return errorCodeToError(std::error_code(errno, std::generic_category()));
+  size_t populated = s.mapped;
+  if (size > s.mapped) {
+    void *base = ::mremap(s.base, s.mapped, size, MREMAP_MAYMOVE);
+    if (base == MAP_FAILED)
+      return errorCodeToError(std::error_code(errno, std::generic_category()));
+    s.base = static_cast<uint8_t *>(base);
+    s.mapped = size;
+  }
+
+  // Fault in what the background threads did not get to.
+  SmallVector<std::pair<size_t, size_t>, 0> ranges;
+  for (size_t i = 0; i != s.numChunks; ++i) {
+    const size_t begin = i * earlyChunkSize;
+    if (begin >= size)
+      break;
+    if (!s.chunkDone[i].load(std::memory_order_acquire))
+      ranges.push_back({begin, std::min(begin + earlyChunkSize, size)});
+  }
+  for (size_t begin = populated; begin < size; begin += earlyChunkSize)
+    ranges.push_back({begin, std::min(begin + earlyChunkSize, size)});
+  {
+    TimeTraceScope timeScope("Prefault output file");
+    parallelFor(0, ranges.size(), [&](size_t i) {
+      populate(s.base + ranges[i].first, s.base + ranges[i].second,
+               s.pageSize);
+    });
+  }
+
+  auto buffer = std::make_unique<EarlyOnDiskBuffer>(
+      s.path, std::move(*s.temp), s.base, s.mapped, size, keepMappedAtCommit);
+  s.temp.reset();
+  s.base = nullptr;
+  return std::unique_ptr<FileOutputBuffer>(std::move(buffer));
+#else
+  (void)size;
+  (void)keepMappedAtCommit;
+  llvm_unreachable("EarlyOutputFile is not supported on this host");
 #endif
 }

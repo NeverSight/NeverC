@@ -181,6 +181,11 @@ OPTION(prefix_1, "--flat-namespace", flat_namespace, Flag, grp_resolve, INVALID,
 OPTION(prefix_1, "--force-load", force_load, Separate, grp_libs, INVALID,
        nullptr, 0, DefaultVis, 0,
        "Load all members static archive library at <path>", "<path>", nullptr)
+OPTION(prefix_2, "--fork", fork, Flag, grp_neverc_ext, INVALID, nullptr, 0,
+       DefaultVis, 0,
+       "Report the result as soon as the output is complete and release "
+       "memory in the background (default)",
+       nullptr, nullptr)
 OPTION(prefix_1, "--framework", framework, Separate, grp_libs, INVALID, nullptr,
        0, DefaultVis, 0,
        "Search for <name>.framework/<name> on the framework search path",
@@ -282,6 +287,9 @@ OPTION(prefix_1, "--no-exported-symbols", no_exported_symbols, Flag,
 OPTION(prefix_1, "--no-fixup-chains", no_fixup_chains, Flag, grp_undocumented,
        INVALID, nullptr, 0, DefaultVis, 0,
        "Emit fixup information as classic dyld opcodes", nullptr, nullptr)
+OPTION(prefix_2, "--no-fork", no_fork, Flag, grp_neverc_ext, INVALID,
+       nullptr, 0, DefaultVis, 0, "Exit only after all memory is released",
+       nullptr, nullptr)
 OPTION(prefix_1, "--no-function-starts", no_function_starts, Flag, grp_rare,
        INVALID, nullptr, 0, DefaultVis, 0,
        "Do not create table of function start addresses", nullptr, nullptr)

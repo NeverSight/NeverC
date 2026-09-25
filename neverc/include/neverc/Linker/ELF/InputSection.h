@@ -1,6 +1,7 @@
 #ifndef LINKER_ELF_INPUT_SECTION_H
 #define LINKER_ELF_INPUT_SECTION_H
 
+#include "Linker/ELF/ELFHotState.h"
 #include "Linker/Core/Runtime/Allocator.h"
 #include "Linker/Core/Runtime/Session.h"
 #include "Linker/Core/Support/LlvmAliases.h"
@@ -133,6 +134,10 @@ public:
   // Whether the section needs to be padded with a NOP filler due to
   // deleteFallThruJmpInsn.
   bool nopFiller = false;
+
+  // Set once scanRelocations() has scanned this section, which may happen
+  // ahead of the regular scan; see startEarlyRelocationScan().
+  bool relocsScanned = false;
 
   void drop_back(unsigned num) {
     assert(bytesDropped + num < 256);
@@ -392,7 +397,9 @@ private:
 // metadata before recognizing this identity, so a forged typed pointer is not
 // sufficient. The sentinel has no file or contents and must never reach
 // emission or relocation.
-InputSectionBase *discardedInputSection();
+inline InputSectionBase *discardedInputSection() {
+  return &elfHotState<InputSectionBase>(HotDiscardedSection);
+}
 
 static_assert(sizeof(InputSection) <= 160, "InputSection is too big");
 

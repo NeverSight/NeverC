@@ -1,6 +1,7 @@
 #ifndef LINKER_ELF_TARGET_H
 #define LINKER_ELF_TARGET_H
 
+#include "Linker/ELF/ELFHotState.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
 #include "Linker/ELF/Config.h"
 #include "Linker/ELF/InputSection.h"
@@ -178,7 +179,9 @@ static inline std::string getErrorLocation(const uint8_t *loc) {
 uint64_t getAArch64Page(uint64_t expr);
 void createTaggedSymbols(const SmallVector<ELFFileBase *, 0> &files);
 
-const TargetInfo *&elfTarget();
+inline const TargetInfo *&elfTarget() {
+  return elfHotState<const TargetInfo *>(HotTarget);
+}
 
 struct TargetAccessor {
   const TargetInfo *operator->() const { return elfTarget(); }

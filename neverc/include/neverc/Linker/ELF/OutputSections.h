@@ -1,6 +1,7 @@
 #ifndef LINKER_ELF_OUTPUT_SECTIONS_H
 #define LINKER_ELF_OUTPUT_SECTIONS_H
 
+#include "Linker/Core/Support/FileIO.h"
 #include "Linker/Core/Support/LlvmAliases.h"
 #include "Linker/Core/Runtime/LinkerParallel.h"
 #include "Linker/ELF/InputSection.h"
@@ -66,6 +67,7 @@ public:
 
   void recordSection(InputSectionBase *isec);
   void commitSection(InputSection *isec);
+  void commitSections(ArrayRef<InputSection *> sections);
   void finalizeInputSections();
 
   // The following members are normally only used in linker scripts.
@@ -137,6 +139,9 @@ getInputSections(const OutputSection &os,
 // Output sections owned by one ELF link task. The image emitter initializes
 // them, so don't use them until emission setup is complete.
 struct ElfOutputState {
+  // The output file, created while the layout is computed; see
+  // startEarlyOutputFile().
+  std::unique_ptr<EarlyOutputFile> earlyOutput;
   uint8_t *bufferStart = nullptr;
   PhdrEntry *tlsPhdr = nullptr;
   OutputSection *elfHeader = nullptr;

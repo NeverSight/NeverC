@@ -16,7 +16,9 @@
 #include "Linker/Core/Runtime/Allocator.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
 #include "neverc/Foundation/Core/ProcessResourceBroker.h"
+#include "llvm/Support/Compiler.h"
 #include "llvm/Support/StringSaver.h"
+#include <array>
 #include <atomic>
 #include <cassert>
 #include <cstdint>
@@ -63,6 +65,11 @@ public:
   CommonLinkerContext(const CommonLinkerContext &) = delete;
   CommonLinkerContext &operator=(const CommonLinkerContext &) = delete;
   void finalizeOwnedState() noexcept;
+  /// Stops using this context without releasing what it owns, for a process
+  /// that exits right after the link: joins the workers and restores the
+  /// thread's previous binding, but leaves every arena to process exit. The
+  /// context must not be destroyed afterwards.
+  void abandon() noexcept;
   void configureParallel(unsigned RequestedThreads,
                          unsigned DefaultThreadLimit = 0);
   /// Configure the worker pool from a materialized workload. When
@@ -91,6 +98,10 @@ public:
   SpecificAllocBase *
   getOrCreateWorkerAllocator(const void *Tag, size_t Size, size_t Alignment,
                              SpecificAllocBase *(&Creator)(void *));
+
+  /// The backend's hottest per-link state, cached here by the backend so that
+  /// its accessors read it inline; see e.g. ELFLinkerContext.
+  std::array<void *, 8> backendHotState{};
 
   llvm::BumpPtrAllocator bAlloc;
   llvm::StringSaver saver{bAlloc};
@@ -157,16 +168,34 @@ private:
   unsigned PreviousWorkerSlot = 0;
 };
 
+namespace session_detail {
+// The context bound to this thread and the thread's worker slot. Hot code
+// reads them constantly, so they are plain thread-local variables that the
+// accessors below read inline.
+extern LLVM_THREAD_LOCAL CommonLinkerContext *ActiveLinkerContext;
+extern LLVM_THREAD_LOCAL unsigned CurrentWorkerSlot;
+} // namespace session_detail
+
 // Active task/worker-local context accessor.
-CommonLinkerContext &commonContext();
-CommonLinkerContext *currentLinkerContext() noexcept;
-unsigned currentLinkerWorkerSlot() noexcept;
+inline CommonLinkerContext &commonContext() {
+  assert(session_detail::ActiveLinkerContext &&
+         "no active linker execution context");
+  return *session_detail::ActiveLinkerContext;
+}
+inline CommonLinkerContext *currentLinkerContext() noexcept {
+  return session_detail::ActiveLinkerContext;
+}
+inline unsigned currentLinkerWorkerSlot() noexcept {
+  return session_detail::CurrentWorkerSlot;
+}
 
 template <typename T = CommonLinkerContext> T &context() {
   return static_cast<T &>(commonContext());
 }
 
-bool hasContext();
+inline bool hasContext() {
+  return session_detail::ActiveLinkerContext != nullptr;
+}
 
 inline llvm::StringSaver &saver() { return context().saver; }
 

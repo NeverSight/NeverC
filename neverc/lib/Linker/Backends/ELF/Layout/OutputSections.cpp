@@ -133,6 +133,59 @@ void OutputSection::commitSection(InputSection *isec) {
     entsize = 0;
 }
 
+// Commits many sections at once. Committing only merges the sections' flags,
+// alignments and entry sizes into this section's, so large lists are reduced
+// with the workers; anything that commitSection() would diagnose or that
+// changes the section type takes the ordered path instead.
+void OutputSection::commitSections(ArrayRef<InputSection *> sections) {
+  constexpr size_t minParallel = size_t(1) << 14;
+  if (sections.size() < minParallel || !parallelEnabled()) {
+    for (InputSection *s : sections)
+      commitSection(s);
+    return;
+  }
+  commitSection(sections.front());
+  ArrayRef<InputSection *> rest = sections.drop_front();
+  const uint32_t firstType = type;
+  const uint64_t firstFlags = flags;
+  const uint32_t firstEntsize = entsize;
+  struct Summary {
+    uint64_t flags = 0;
+    uint32_t addralign = 1;
+    bool entsizeDiffers = false;
+    bool ordered = false;
+  };
+  const size_t chunks = size_t(parallelThreadCount()) * 4;
+  const size_t width = (rest.size() + chunks - 1) / chunks;
+  std::vector<Summary> summaries(chunks);
+  parallelFor(0, chunks, [&](size_t c) {
+    Summary &sum = summaries[c];
+    for (size_t i = c * width, e = std::min(rest.size(), i + width); i < e;
+         ++i) {
+      InputSection *s = rest[i];
+      if (s->type != firstType || ((firstFlags ^ s->flags) & SHF_TLS))
+        sum.ordered = true;
+      s->parent = this;
+      sum.flags |= s->flags;
+      sum.addralign = std::max(sum.addralign, s->addralign);
+      sum.entsizeDiffers |= s->entsize != firstEntsize;
+    }
+  });
+  if (llvm::any_of(summaries, [](const Summary &sum) { return sum.ordered; })) {
+    for (InputSection *s : rest)
+      commitSection(s);
+    return;
+  }
+  for (const Summary &sum : summaries) {
+    flags |= sum.flags;
+    addralign = std::max(addralign, sum.addralign);
+    if (sum.entsizeDiffers)
+      entsize = 0;
+  }
+  if (nonAlloc)
+    flags &= ~(uint64_t)SHF_ALLOC;
+}
+
 namespace {
 MergeSyntheticSection *createMergeSynthetic(StringRef name, uint32_t type,
                                             uint64_t flags,
@@ -188,8 +241,7 @@ void OutputSection::finalizeInputSections() {
     isd->sectionBases.clear();
 
     // Some input sections may be removed from the list after ICF.
-    for (InputSection *s : isd->sections)
-      commitSection(s);
+    commitSections(isd->sections);
   }
   // Serial (matching upstream LLD): MergeNoTailSection::finalizeContents()
   // is itself internally parallel (parallelFor over hash shards).  Wrapping
@@ -197,6 +249,9 @@ void OutputSection::finalizeInputSections() {
   // parallelFor is then demoted to serial by the TaskGroup nesting guard,
   // losing the shard parallelism — and contributed to the nested-parallel
   // heap corruption described in ElfDriver's "Merge/finalize input sections".
+  if (mergeSections.empty())
+    return;
+  llvm::TimeTraceScope timeScope("Finalize merge sections", name);
   for (MergeSyntheticSection *ms : mergeSections)
     ms->finalizeContents();
 }

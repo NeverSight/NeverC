@@ -15,4 +15,11 @@ LinkerExecutionContext::~LinkerExecutionContext() { destroyBackend(); }
 
 void LinkerExecutionContext::destroyBackend() { Backend.reset(); }
 
+void LinkerExecutionContext::abandonBackend() {
+  if (!Backend)
+    return;
+  Backend->abandon();
+  (void)Backend.release();
+}
+
 } // namespace linker

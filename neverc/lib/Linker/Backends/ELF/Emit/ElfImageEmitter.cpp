@@ -138,7 +138,7 @@ void releaseInputPageTables() {
 
 template <class ELFT> void elf::writeOutput() {
   OutputWriter<ELFT>().run();
-  if (!errorCount())
+  if (!errorCount() && !config->driverCfg->backgroundExit)
     releaseInputPageTables();
 }
 
@@ -255,6 +255,26 @@ void resolveSymbolVisibility() {
   llvm::TimeTraceScope timeScope("Resolve symbol visibility");
 
   auto symbols = symtab.getSymbols();
+  // After startEarlyRelocationScan(), which resolved visibility already, only
+  // the symbols added since and those then undefined may have changed: the
+  // steps in between only add symbols and define undefined ones.
+  auto &relocState = linker::elf::detail::elfRelocationState();
+  if (relocState.earlyScanned) {
+    std::vector<Symbol *> changed = relocState.earlyUndefined;
+    changed.insert(changed.end(),
+                   symbols.begin() + relocState.earlySymbolCount,
+                   symbols.end());
+    for (Symbol *sym : changed)
+      if (auto *d = dyn_cast<Defined>(sym))
+        if (d->section && !d->section->isLive()) {
+          DenseMap<SectionBase *, size_t> map;
+          demoteDefined(*d, map);
+        }
+    if (config->hasDynSymTab)
+      for (Symbol *sym : changed)
+        sym->isPreemptible = computeIsPreemptible(*sym);
+    return;
+  }
 
   // Phase 1: demote dead/lazy symbols. Each demotion only rewrites its own
   // symbol; the section index of a demoted definition comes from a per-file
@@ -385,7 +405,9 @@ template <class ELFT> void elf::createSyntheticSections() {
 
   StringRef relaDynName = config->isRela ? ".rela.dyn" : ".rel.dyn";
 
-  const unsigned threadCount = commonContext().parallelShardCount();
+  // Relocation scanning may also run on the threads of
+  // startEarlyRelocationScan(), which take the worker slots after the pool's.
+  const unsigned threadCount = 2 * commonContext().parallelShardCount();
   for (Partition &part : partitions) {
     auto add = [&](SyntheticSection &sec) {
       sec.partition = part.getNumber();
@@ -559,6 +581,8 @@ template <class ELFT> void elf::createSyntheticSections() {
 }
 
 template <class ELFT> void OutputWriter<ELFT>::run() {
+  // Symbols change from here on.
+  finishEarlyRelocationScan();
   prepareLayout();
   if (elfPluginLinkAdapter())
     if (Error E = elfPluginLinkAdapter()->advanceTo(
@@ -745,23 +769,43 @@ void demoteAndCopyLocalSymbols() {
   std::vector<SmallVector<Symbol *, 0>> perFileSyms(numFiles);
 
   parallelFor(0, numFiles, [&](size_t i) {
+    ELFFileBase *file = elfState().objectFiles[i];
     DenseMap<SectionBase *, size_t> sectionIndexMap;
-    for (Symbol *b : elfState().objectFiles[i]->getLocalSymbols()) {
+    ArrayRef<Symbol *> locals = file->getLocalSymbols();
+    for (size_t k = 0; k != locals.size(); ++k) {
+      Symbol *b = locals[k];
       assert(b->isLocal() && "should have been caught in initializeSymbols()");
       auto *dr = dyn_cast<Defined>(b);
       if (!dr)
         continue;
-      if (dr->section && !dr->section->isLive())
-        demoteDefined(*dr, sectionIndexMap);
-      else if (in.symTab && includeInSymtab(*b) && shouldKeepInSymtab(*dr))
+      if (dr->section && !dr->section->isLive()) {
+        // The symbol table names the section; only fall back to searching
+        // the sections for extended or reserved indices.
+        const uint32_t shndx =
+            config->ekind == ELF64LEKind
+                ? uint32_t(file->getELFSyms<ELF64LE>()[k + 1].st_shndx)
+                : uint32_t(file->getELFSyms<ELF64BE>()[k + 1].st_shndx);
+        ArrayRef<InputSectionBase *> sections = file->getSections();
+        if (shndx < SHN_LORESERVE && shndx < sections.size() &&
+            sections[shndx] == dr->section)
+          Undefined(dr->file, dr->getName(),
+                    dr->isWeak() ? uint8_t(STB_GLOBAL) : dr->binding,
+                    dr->stOther, dr->type, /*discardedSecIdx=*/shndx)
+              .overwrite(*dr);
+        else
+          demoteDefined(*dr, sectionIndexMap);
+      } else if (in.symTab && includeInSymtab(*b) && shouldKeepInSymtab(*dr)) {
         perFileSyms[i].push_back(b);
+      }
     }
   });
 
-  if (in.symTab)
-    for (size_t i = 0; i < numFiles; ++i)
-      for (Symbol *s : perFileSyms[i])
-        in.symTab->addSymbol(s);
+  if (in.symTab) {
+    SmallVector<Symbol *, 0> locals;
+    for (SmallVector<Symbol *, 0> &syms : perFileSyms)
+      locals.append(syms.begin(), syms.end());
+    in.symTab->addSymbols(locals);
+  }
 }
 
 template <class ELFT> void OutputWriter<ELFT>::addSectionSymbols() {
@@ -1675,9 +1719,15 @@ template <class ELFT> void OutputWriter<ELFT>::prepareLayout() {
 
   {
     llvm::TimeTraceScope timeScope("Scan relocations");
-    scanRelocations<ELFT>();
+    {
+      llvm::TimeTraceScope scanScope("Scan section relocations");
+      scanRelocations<ELFT>();
+    }
     reportUndefinedSymbols();
-    postScanRelocations();
+    {
+      llvm::TimeTraceScope postScope("Allocate GOT and PLT entries");
+      postScanRelocations();
+    }
 
     if (in.plt && in.plt->isNeeded())
       in.plt->addSymbols();
@@ -1734,19 +1784,23 @@ template <class ELFT> void OutputWriter<ELFT>::prepareLayout() {
       membership[i] = InSymtab | (sym->includeInDynsym() ? InDynsym : 0);
     });
 
+    // Symbols go to .symtab in order; the dynamic symbol tables, which are
+    // interleaved with verneed bookkeeping, are filled one by one.
+    if (in.symTab) {
+      SmallVector<Symbol *, 0> selected;
+      for (size_t i = 0, e = symbols.size(); i != e; ++i)
+        if (membership[i])
+          selected.push_back(symbols[i]);
+      in.symTab->addSymbols(selected);
+    }
     for (size_t i = 0, e = symbols.size(); i != e; ++i) {
-      if (!membership[i])
+      if (!(membership[i] & InDynsym))
         continue;
       Symbol *sym = symbols[i];
-      if (in.symTab)
-        in.symTab->addSymbol(sym);
-
-      if (membership[i] & InDynsym) {
-        partitions[sym->partition - 1].dynSymTab->addSymbol(sym);
-        if (auto *file = dyn_cast_or_null<SharedFile>(sym->file))
-          if (file->isNeeded && !sym->isUndefined())
-            addVerneed(sym);
-      }
+      partitions[sym->partition - 1].dynSymTab->addSymbol(sym);
+      if (auto *file = dyn_cast_or_null<SharedFile>(sym->file))
+        if (file->isNeeded && !sym->isUndefined())
+          addVerneed(sym);
     }
 
     // We also need to scan the dynamic relocation tables of the other
@@ -2476,7 +2530,22 @@ template <class ELFT> void OutputWriter<ELFT>::allocateOutputBuffer() {
   // Replacing an existing output releases its pages when the new file is
   // renamed over it at commit time. Drop the old file now, off the critical
   // path, instead.
-  unlinkAsync(config->outputFile);
+  unlinkAsync(config->outputFile,
+              config->driverCfg && config->driverCfg->releaseStateAtExit);
+
+  if (std::unique_ptr<EarlyOutputFile> early =
+          std::move(elfOut().earlyOutput)) {
+    Expected<std::unique_ptr<FileOutputBuffer>> bufferOrErr =
+        early->finish(fileSize, config->driverCfg &&
+                                         config->driverCfg->releaseStateAtExit);
+    if (bufferOrErr) {
+      buffer = std::move(*bufferOrErr);
+      outputBufferIsFileBacked = true;
+      elfOut().bufferStart = buffer->getBufferStart();
+      return;
+    }
+    consumeError(bufferOrErr.takeError());
+  }
 
   Expected<std::unique_ptr<FileOutputBuffer>> bufferOrErr =
       FileOutputBuffer::createWithFileBacking(config->outputFile, fileSize,
@@ -2646,6 +2715,13 @@ template <class ELFT> void OutputWriter<ELFT>::computeContentHash() {
     return;
   }
 
+  llvm::TimeTraceScope timeScope("Compute build ID");
+  // Hashed chunks of a file-backed output are dropped from the page tables so
+  // that unmapping it later is cheap; a process that exits right after the
+  // link leaves the mapping to the kernel instead.
+  const bool releaseChunkPages =
+      outputBufferIsFileBacked &&
+      !(config->driverCfg && config->driverCfg->releaseStateAtExit);
   size_t hashSize = mainPart->buildId->hashSize;
   std::unique_ptr<uint8_t[]> buildId(new uint8_t[hashSize]);
   MutableArrayRef<uint8_t> output(buildId.get(), hashSize);
@@ -2658,7 +2734,7 @@ template <class ELFT> void OutputWriter<ELFT>::computeContentHash() {
         [](uint8_t *dest, ArrayRef<uint8_t> arr) {
           write64le(dest, xxh3_64bits(arr));
         },
-        /*releaseChunkPages=*/outputBufferIsFileBacked);
+        releaseChunkPages);
     break;
   case BuildIdStyle::Md5:
     computeHash(
@@ -2666,7 +2742,7 @@ template <class ELFT> void OutputWriter<ELFT>::computeContentHash() {
         [&](uint8_t *dest, ArrayRef<uint8_t> arr) {
           memcpy(dest, BLAKE3::hash<16>(arr).data(), hashSize);
         },
-        /*releaseChunkPages=*/outputBufferIsFileBacked,
+        releaseChunkPages,
         /*allowTransientWorkers=*/true);
     break;
   case BuildIdStyle::Sha1:
@@ -2675,7 +2751,7 @@ template <class ELFT> void OutputWriter<ELFT>::computeContentHash() {
         [&](uint8_t *dest, ArrayRef<uint8_t> arr) {
           memcpy(dest, BLAKE3::hash<20>(arr).data(), hashSize);
         },
-        /*releaseChunkPages=*/outputBufferIsFileBacked,
+        releaseChunkPages,
         /*allowTransientWorkers=*/true);
     break;
   case BuildIdStyle::Uuid:
@@ -2694,3 +2770,36 @@ template void elf::createSyntheticSections<ELF64BE>();
 
 template void elf::writeOutput<ELF64LE>();
 template void elf::writeOutput<ELF64BE>();
+
+void elf::startEarlyRelocationScan() {
+  // The early scan relies on symbol states that the steps up to the regular
+  // scan leave unchanged, and on scanning order not mattering.
+  if (!parallelEnabled() || !config->zCombreloc || config->relocatable ||
+      config->emitRelocs || config->icf != ICFLevel::None ||
+      partitions.size() != 1 || script->hasSectionsCommand ||
+      !script->sectionCommands.empty() || elfPluginLinkAdapter() ||
+      llvm::any_of(symtab.getSymbols(),
+                   [](const Symbol *sym) { return sym->traced; }))
+    return;
+  // Preemptibility decides how relocations are handled. Computing it now
+  // gives the same result as later for every defined symbol; symbols still
+  // undefined are left to the regular scan.
+  resolveSymbolVisibility();
+  llvm::TimeTraceScope timeScope("Start early relocation scan");
+  auto &state = linker::elf::detail::elfRelocationState();
+  ArrayRef<Symbol *> symbols = symtab.getSymbols();
+  state.earlySymbolCount = symbols.size();
+  for (Symbol *sym : symbols)
+    if (sym->isUndefined())
+      state.earlyUndefined.push_back(sym);
+  switch (config->ekind) {
+  case ELF64LEKind:
+    scanRelocationsEarly<ELF64LE>();
+    break;
+  case ELF64BEKind:
+    scanRelocationsEarly<ELF64BE>();
+    break;
+  default:
+    break;
+  }
+}

@@ -15,6 +15,10 @@
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/Support/Endian.h"
 #include <algorithm>
+#if defined(__linux__)
+#include <pthread.h>
+#include <sched.h>
+#endif
 
 using namespace llvm;
 using namespace llvm::ELF;
@@ -1175,6 +1179,69 @@ template <class ELFT> void RelocationScanner::scanSection(InputSectionBase &s) {
     scan<ELFT>(rels.relas);
 }
 
+template <class ELFT> void elf::scanRelocationsEarly() {
+  // Each thread claims a range of files and scans the eligible sections in
+  // it. A section referencing an undefined symbol is left to the regular
+  // scan: linker-defined symbols may still define it.
+  struct Shared {
+    std::atomic<size_t> next{0};
+  };
+  auto shared = std::make_shared<Shared>();
+  const unsigned threads = parallelThreadCount();
+  auto &state = linker::elf::detail::elfRelocationState();
+  state.earlyScanned = true;
+  state.earlyDeferred.resize(threads);
+  for (unsigned t = 0; t != threads; ++t)
+    state.earlyScanThreads.emplace_back(bindLinkerContext([shared, t] {
+      std::vector<InputSectionBase *> &deferred =
+          linker::elf::detail::elfRelocationState().earlyDeferred[t];
+#if defined(__linux__)
+      // Only use the CPUs the link leaves idle; the steps this overlaps are
+      // on the critical path.
+      sched_param param{};
+      pthread_setschedparam(pthread_self(), SCHED_IDLE, &param);
+#endif
+      ArrayRef<ELFFileBase *> files = elfState().objectFiles;
+      RelocationScanner scanner;
+      for (size_t i = shared->next.fetch_add(1, std::memory_order_relaxed);
+           i < files.size();
+           i = shared->next.fetch_add(1, std::memory_order_relaxed)) {
+        auto *file = cast<ObjFile<ELFT>>(files[i]);
+        for (InputSectionBase *s : file->getSections()) {
+          if (!s || s->kind() != SectionBase::Regular || !s->isLive() ||
+              !(s->flags & SHF_ALLOC))
+            continue;
+          const RelsOrRelas<ELFT> rels = s->template relsOrRelas<ELFT>();
+          auto definedTargets = [&](auto relList) {
+            for (const auto &rel : relList) {
+              const uint32_t symIndex = rel.getSymbol();
+              if (symIndex != 0 && file->getSymbol(symIndex).isUndefined())
+                return false;
+            }
+            return true;
+          };
+          if (rels.areRelocsRel() ? !definedTargets(rels.rels)
+                                  : !definedTargets(rels.relas)) {
+            deferred.push_back(s);
+            continue;
+          }
+          scanner.template scanSection<ELFT>(*s);
+          s->relocsScanned = true;
+        }
+      }
+    }));
+}
+
+void elf::finishEarlyRelocationScan() {
+  auto &state = linker::elf::detail::elfRelocationState();
+  if (state.earlyScanThreads.empty())
+    return;
+  llvm::TimeTraceScope timeScope("Finish early relocation scan");
+  for (std::thread &t : state.earlyScanThreads)
+    t.join();
+  state.earlyScanThreads.clear();
+}
+
 template <class ELFT> void elf::scanRelocations() {
   // Scan all relocations. Each relocation goes through a series of tests to
   // determine if it needs special treatment, such as creating GOT, PLT,
@@ -1185,10 +1252,24 @@ template <class ELFT> void elf::scanRelocations() {
   // for -z nocombreloc.
   bool serial = !config->zCombreloc;
   LinkerTaskGroup tg;
+  // After an early scan, only the sections it left remain, in input order.
+  auto &relocState = linker::elf::detail::elfRelocationState();
+  if (relocState.earlyScanned && !serial) {
+    std::vector<InputSectionBase *> rest;
+    for (auto &list : relocState.earlyDeferred)
+      rest.insert(rest.end(), list.begin(), list.end());
+    tg.spawn(bindLinkerContext([rest = std::move(rest)] {
+      RelocationScanner scanner;
+      for (InputSectionBase *s : rest)
+        scanner.template scanSection<ELFT>(*s);
+    }));
+  }
   // Large objects are split into section ranges so that no single file
   // becomes the tail of the scan.
   constexpr size_t sectionsPerTask = 512;
-  for (ELFFileBase *f : elfState().objectFiles) {
+  for (ELFFileBase *f : relocState.earlyScanned && !serial
+                            ? ArrayRef<ELFFileBase *>()
+                            : ArrayRef<ELFFileBase *>(elfState().objectFiles)) {
     const size_t numSections = f->getSections().size();
     for (size_t begin = 0; begin < numSections; begin += sectionsPerTask) {
       const size_t end = std::min(numSections, begin + sectionsPerTask);
@@ -1196,7 +1277,7 @@ template <class ELFT> void elf::scanRelocations() {
         RelocationScanner scanner;
         for (InputSectionBase *s : f->getSections().slice(begin, end - begin)) {
           if (s && s->kind() == SectionBase::Regular && s->isLive() &&
-              (s->flags & SHF_ALLOC))
+              (s->flags & SHF_ALLOC) && !s->relocsScanned)
             scanner.template scanSection<ELFT>(*s);
         }
       };
@@ -1909,3 +1990,5 @@ bool ThunkCreator::createThunks(uint32_t pass,
 
 template void elf::scanRelocations<ELF64LE>();
 template void elf::scanRelocations<ELF64BE>();
+template void elf::scanRelocationsEarly<ELF64LE>();
+template void elf::scanRelocationsEarly<ELF64BE>();
