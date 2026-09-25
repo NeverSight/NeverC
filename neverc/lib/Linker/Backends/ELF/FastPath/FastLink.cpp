@@ -25,6 +25,7 @@ fastlink::Status fastlink::link(const Request &, std::string &Reason) {
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <array>
 #include <map>
 #include <memory>
 #include <unordered_map>
@@ -241,6 +242,20 @@ Ctx ctx;
 
 inline PlacedSection &placedOf(const ObjectFile *o, uint32_t sec) {
   return ctx.placed[o->secs[sec].placed];
+}
+
+// Runs fn(id, lists) for every name id in parallel, where lists holds the
+// calling worker's K output vectors, then appends each worker's vectors in
+// worker order. Callers order the results themselves.
+template <size_t K, class F>
+void collectNames(std::array<vector<uint32_t> *, K> outs, F fn) {
+  vector<std::array<vector<uint32_t>, K>> local(ctx.pool->size());
+  ctx.pool->forEach(ctx.numNames, [&](size_t id) {
+    fn(uint32_t(id), local[Pool::self()]);
+  });
+  for (auto &w : local)
+    for (size_t k = 0; k < K; ++k)
+      outs[k]->insert(outs[k]->end(), w[k].begin(), w[k].end());
 }
 
 // Fine-grained wall-clock timers, printed with --time.
@@ -1734,6 +1749,71 @@ void assignOffsets(OutputSection *os) {
   os->size = off;
 }
 
+// Output sections with many members are laid out in fixed-size chunks, each
+// starting at its strictest member alignment, so the chunks can be laid out
+// in parallel. The chunk size does not depend on the thread count.
+void assignAllOffsets() {
+  constexpr size_t ChunkMembers = 4096, MinChunked = 4 * ChunkMembers;
+  struct Chunk {
+    OutputSection *os;
+    size_t begin, end;
+    uint64_t size = 0, align = 1, start = 0;
+  };
+  vector<Chunk> chunks;
+  vector<OutputSection *> small;
+  for (OutputSection *os : L.all) {
+    if (os->members.size() < MinChunked) {
+      if (!os->members.empty())
+        small.push_back(os);
+      continue;
+    }
+    for (size_t b = 0; b < os->members.size(); b += ChunkMembers)
+      chunks.push_back({os, b, std::min(os->members.size(), b + ChunkMembers)});
+  }
+  ctx.pool->forEach(small.size() + chunks.size(), [&](size_t i) {
+    if (i < small.size()) {
+      assignOffsets(small[i]);
+      return;
+    }
+    Chunk &c = chunks[i - small.size()];
+    uint64_t off = 0;
+    for (size_t m = c.begin; m < c.end; ++m) {
+      auto [o, sec] = c.os->members[m];
+      const Elf64_Shdr &sh = o->shdrs[sec];
+      uint64_t start = alignTo(off, sh.sh_addralign);
+      PlacedSection &ps = placedOf(o, sec);
+      ps.padBefore = start - off;
+      ps.outOff = start;
+      off = start + sh.sh_size;
+      c.align = std::max<uint64_t>(c.align, sh.sh_addralign);
+    }
+    c.size = off;
+  }, 1);
+  for (size_t i = 0; i < chunks.size(); ++i) {
+    Chunk &c = chunks[i];
+    uint64_t prevEnd =
+        c.begin == 0 ? 0 : chunks[i - 1].start + chunks[i - 1].size;
+    c.start = alignTo(prevEnd, c.align);
+    // The first member's padding covers the gap to the previous chunk.
+    auto [o, sec] = c.os->members[c.begin];
+    placedOf(o, sec).padBefore += c.start - prevEnd;
+    if (c.end == c.os->members.size()) {
+      if (c.start + c.size > UINT32_MAX)
+        fatal("output section " + c.os->name + " exceeds 4 GiB");
+      c.os->size = c.start + c.size;
+    }
+  }
+  ctx.pool->forEach(chunks.size(), [&](size_t i) {
+    const Chunk &c = chunks[i];
+    if (!c.start)
+      return;
+    for (size_t m = c.begin; m < c.end; ++m) {
+      auto [o, sec] = c.os->members[m];
+      placedOf(o, sec).outOff += c.start;
+    }
+  }, 1);
+}
+
 void assignCopies() {
   vector<uint32_t> primaries;
   for (uint32_t id = 0; id < ctx.numNames; ++id)
@@ -1784,35 +1864,38 @@ void buildDynamic() {
   STEP("buildDynamic");
   const uint32_t n = ctx.numNames;
   assignCopies();
+  (void)n;
   vector<uint32_t> got, gotTp, plt;
-  for (uint32_t id = 0; id < n; ++id) {
+  collectNames<5>({&L.exports, &got, &gotTp, &plt, &L.imports},
+                  [](uint32_t id, auto &out) {
     uint16_t f = ctx.flags[id].load(std::memory_order_relaxed);
     const Symbol &s = ctx.syms[id];
     if (s.copied) {
-      L.exports.push_back(id);
+      out[0].push_back(id);
       ctx.shared[s.file]->needed = 1;
-      L.numCopies += s.copyPrimary;
       if (f & NeedsGot)
-        got.push_back(id);
-      continue;
+        out[1].push_back(id);
+      return;
     }
     if (f & NeedsGot)
-      got.push_back(id);
+      out[1].push_back(id);
     if (f & NeedsGotTp)
-      gotTp.push_back(id);
+      out[2].push_back(id);
     if (f & NeedsPlt)
-      plt.push_back(id);
+      out[3].push_back(id);
     if (s.isImport() && (f & NeedsDynsym)) {
-      L.imports.push_back(id);
+      out[4].push_back(id);
       if (s.kind == Symbol::Shared)
         ctx.shared[s.file]->needed = 1;
     }
     if (s.kind == Symbol::Object && (f & SharedRef)) {
       const Elf64_Sym &d = ctx.objects[s.file]->syms[s.index];
       if (ELF64_ST_VISIBILITY(d.st_other) == STV_DEFAULT)
-        L.exports.push_back(id);
+        out[0].push_back(id);
     }
-  }
+  });
+  for (uint32_t id : L.exports)
+    L.numCopies += ctx.syms[id].copyPrimary;
   auto byName = [](uint32_t a, uint32_t b) {
     return ctx.nameStr[a] < ctx.nameStr[b];
   };
@@ -2208,17 +2291,17 @@ void prepareSymtab() {
     o->strBytes = bytes;
   });
   uint64_t str = 1;
-  for (uint32_t id = 0; id < ctx.numNames; ++id) {
+  collectNames<2>({&L.symHead, &L.symTail}, [](uint32_t id, auto &out) {
     const Symbol &s = ctx.syms[id];
     uint16_t f = ctx.flags[id].load(std::memory_order_relaxed);
     if (s.kind == Symbol::Linker)
-      L.symHead.push_back(id);
+      out[0].push_back(id);
     else if (s.kind == Symbol::Shared && (f & (StrongRef | WeakRef)))
-      L.symTail.push_back(id);
+      out[1].push_back(id);
     else if ((s.kind == Symbol::Undefined || s.kind == Symbol::DynUndef) &&
              (f & WeakRef))
-      L.symTail.push_back(id);
-  }
+      out[1].push_back(id);
+  });
   auto byName = [](uint32_t a, uint32_t b) {
     return ctx.nameStr[a] < ctx.nameStr[b];
   };
@@ -2283,10 +2366,7 @@ void layout() {
   prepareSymtab();
   buildDynamic();
   L.dynamic->size = dynamicEntries().size() * sizeof(Elf64_Dyn);
-  ctx.pool->forEach(L.all.size(), [&](size_t i) {
-    if (!L.all[i]->members.empty())
-      assignOffsets(L.all[i]);
-  }, 1);
+  assignAllOffsets();
 
   mark("offsets");
   L.ordered.assign(L.all.begin() + 1, L.all.end());
@@ -3253,32 +3333,36 @@ void writeOutput() {
 
 void checkUndefined() {
   STEP("checkUndefined");
-  string names;
-  size_t count = 0;
-  for (uint32_t id = 0; id < ctx.numNames; ++id) {
+  const bool dynamic = !ctx.opt.dynamicLinker.empty();
+  vector<uint32_t> undefined;
+  collectNames<1>({&undefined}, [&](uint32_t id, auto &out) {
     Symbol &s = ctx.syms[id];
     if (s.kind != Symbol::Undefined)
-      continue;
+      return;
     if (isLinkerDefined(ctx.nameStr[id])) {
       s.kind = Symbol::Linker;
-      continue;
+      return;
     }
-    const uint16_t f = ctx.flags[id].load();
+    const uint16_t f = ctx.flags[id].load(std::memory_order_relaxed);
     // Weak references stay dynamic in a dynamically linked output.
-    if (!(f & StrongRef) && (f & WeakRef) && !(f & HiddenRef) &&
-        !ctx.opt.dynamicLinker.empty()) {
+    if (!(f & StrongRef) && (f & WeakRef) && !(f & HiddenRef) && dynamic) {
       s.kind = Symbol::DynUndef;
       atomicOr(ctx.flags[id], uint16_t(NeedsDynsym));
-      continue;
+      return;
     }
-    if (ctx.flags[id].load() & StrongRef) {
-      if (count++ < 3)
-        names += (names.empty() ? "" : ", ") + string(ctx.nameStr[id]);
-    }
-  }
+    if (f & StrongRef)
+      out[0].push_back(id);
+  });
+  if (undefined.empty())
+    return;
   // The full backend reports undefined symbols with their references.
-  if (count)
-    fatal(std::to_string(count) + " undefined symbols: " + names);
+  std::sort(undefined.begin(), undefined.end(), [](uint32_t a, uint32_t b) {
+    return ctx.nameStr[a] < ctx.nameStr[b];
+  });
+  string names;
+  for (size_t i = 0; i < undefined.size() && i < 3; ++i)
+    names += (i ? ", " : "") + string(ctx.nameStr[undefined[i]]);
+  fatal(std::to_string(undefined.size()) + " undefined symbols: " + names);
 }
 
 void runPipeline() {

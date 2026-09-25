@@ -90,13 +90,23 @@ public:
     {
       std::lock_guard<std::mutex> l(m_);
       job_ = &fn;
-      running_ = n_ - 1;
-      ++gen_;
+      running_.store(n_ - 1, std::memory_order_relaxed);
+      gen_.fetch_add(1, std::memory_order_release);
     }
     cv_.notify_all();
     invoke(fn, 0);
-    std::unique_lock<std::mutex> l(m_);
-    done_.wait(l, [&] { return running_ == 0; });
+    // Phases are short, so wait briefly before sleeping.
+    for (unsigned k = 0; k < SpinLimit; ++k) {
+      if (running_.load(std::memory_order_acquire) == 0)
+        break;
+      pause();
+    }
+    if (running_.load(std::memory_order_acquire) != 0) {
+      std::unique_lock<std::mutex> l(m_);
+      done_.wait(l, [&] {
+        return running_.load(std::memory_order_acquire) == 0;
+      });
+    }
     if (error_) {
       std::exception_ptr e = error_;
       error_ = nullptr;
@@ -131,23 +141,37 @@ public:
   }
 
 private:
+  static void pause() {
+#if defined(__x86_64__) || defined(__i386__)
+    __builtin_ia32_pause();
+#endif
+  }
   void loop(unsigned i) {
     tid_ = i;
     unsigned seen = 0;
     for (;;) {
+      // The next phase usually starts within microseconds.
+      for (unsigned k = 0; k < SpinLimit; ++k) {
+        if (gen_.load(std::memory_order_acquire) != seen)
+          break;
+        pause();
+      }
       const std::function<void(unsigned)> *j;
       {
         std::unique_lock<std::mutex> l(m_);
-        cv_.wait(l, [&] { return stop_ || gen_ != seen; });
+        cv_.wait(l, [&] {
+          return stop_ || gen_.load(std::memory_order_acquire) != seen;
+        });
         if (stop_)
           return;
-        seen = gen_;
+        seen = gen_.load(std::memory_order_acquire);
         j = job_;
       }
       invoke(*j, i);
-      std::lock_guard<std::mutex> l(m_);
-      if (--running_ == 0)
+      if (running_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+        std::lock_guard<std::mutex> l(m_);
         done_.notify_all();
+      }
     }
   }
   void invoke(const std::function<void(unsigned)> &fn, unsigned i) {
@@ -164,8 +188,9 @@ private:
   vector<std::thread> threads_;
   std::mutex m_;
   std::condition_variable cv_, done_;
+  static constexpr unsigned SpinLimit = 2000;
   const std::function<void(unsigned)> *job_ = nullptr;
-  unsigned gen_ = 0, running_ = 0;
+  std::atomic<unsigned> gen_{0}, running_{0};
   bool stop_ = false;
   std::mutex errorLock_;
   std::exception_ptr error_;
