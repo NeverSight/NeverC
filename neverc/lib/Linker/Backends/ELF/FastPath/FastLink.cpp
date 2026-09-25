@@ -64,6 +64,12 @@ struct PlacedSection {
   uint32_t relBase = 0, symBase = 0;
   uint32_t kindBase = 0; // first entry in the relocation kind array
   uint32_t align = 0;    // alignment when raised by folding, else 0
+  // Mergeable sections: the pieces, in a shared array, and the size of the
+  // pieces this section holds in the output.
+  uint32_t pieceBase = 0, numPieces = 0;
+  uint32_t mergedSize = 0;
+  uint16_t mergeGroup = 0;
+  bool merged = false;
   uint32_t icfClass[2] = {0, 0}; // equivalence class, double-buffered
   bool icfCandidate = false;
 };
@@ -103,6 +109,7 @@ struct ObjectFile {
   vector<uint32_t> groupIds;   // per group: signature id
   uint32_t commentSec = 0;
   uint32_t addrsigSec = 0;
+  vector<uint32_t> debugSecs; // .debug_* sections, in index order
   vector<uint32_t> roots; // GC root sections
   SectionState *secs = nullptr;
   std::atomic<uint8_t> live{0};
@@ -234,6 +241,16 @@ struct Ctx {
   std::atomic<uint16_t> *flags = nullptr;
   Symbol *syms = nullptr;
   PlacedSection *placed = nullptr; // indexed by SectionState::placed
+  // Pieces of mergeable sections: input offset, piece id in the group's
+  // table, and output offset in the output section (UINT32_MAX until the
+  // owner's placement is known).
+  struct Piece {
+    uint32_t inOff, id, out;
+  };
+  struct FreeDeleter {
+    void operator()(void *p) const { free(p); }
+  };
+  std::unique_ptr<Piece[], FreeDeleter> pieces;
   uint32_t numPlaced = 0;
   // Per name: the defining object and section, for the GC hot path
   // (file UINT32_MAX when not defined in an object section).
@@ -253,6 +270,15 @@ Ctx ctx;
 inline PlacedSection &placedOf(const ObjectFile *o, uint32_t sec) {
   return ctx.placed[o->secs[sec].placed];
 }
+
+// The bytes an input section occupies in its output section.
+inline uint64_t outputSize(const ObjectFile *o, uint32_t sec,
+                           const PlacedSection &ps) {
+  return ps.merged ? ps.mergedSize : o->shdrs[sec].sh_size;
+}
+
+// The output address of offset `off` of a mergeable section.
+uint64_t mergedAddress(const ObjectFile *o, uint32_t sec, uint64_t off);
 
 // Runs fn(id, lists) for every name id in parallel, where lists holds the
 // calling worker's K output vectors, then appends each worker's vectors in
@@ -594,8 +620,14 @@ void initSections(ObjectFile *o, SectionState *secs, uint32_t *relaOf) {
           break;
         [[fallthrough]];
       default:
-        if (ctx.opt.stripDebug && strncmp(o->secName(i), ".debug", 6) == 0)
+        if (strncmp(o->secName(i), ".debug", 6) == 0) {
+          if (ctx.opt.stripDebug)
+            break;
+          if (sh.sh_flags & SHF_COMPRESSED)
+            fatal(o->name + ": compressed debug section " + o->secName(i));
+          o->debugSecs.push_back(i);
           break;
+        }
         fatal(o->name + ": non-allocated section " + o->secName(i));
       }
     } else if (sh.sh_type == SHT_X86_64_UNWIND ||
@@ -1086,6 +1118,32 @@ void parseEhFrame(ObjectFile *o) {
   std::sort(o->fdeByTarget.begin(), o->fdeByTarget.end());
 }
 
+// Debug sections are kept without keeping what they describe alive. Their
+// relocations are checked here, before any output exists.
+void markDebugLive() {
+  ctx.pool->forEach(ctx.objects.size(), [&](size_t fi) {
+    ObjectFile *o = ctx.objects[fi];
+    for (uint32_t i : o->debugSecs) {
+      uint8_t zero = 0;
+      o->secs[i].live.compare_exchange_strong(zero, 1);
+      auto [rels, n] = o->relas(i);
+      for (size_t k = 0; k < n; ++k)
+        switch (ELF64_R_TYPE(rels[k].r_info)) {
+        case R_X86_64_NONE:
+        case R_X86_64_32:
+        case R_X86_64_64:
+        case R_X86_64_DTPOFF32:
+        case R_X86_64_DTPOFF64:
+          break;
+        default:
+          fatal(o->name + ": unsupported relocation type " +
+                std::to_string(ELF64_R_TYPE(rels[k].r_info)) + " in " +
+                o->secName(i));
+        }
+    }
+  }, 8);
+}
+
 void markLive() {
   STEP("markLive");
   markTime = Clock::now();
@@ -1111,6 +1169,7 @@ void markLive() {
           o->secs[i].live.compare_exchange_strong(zero, 1);
       }
     });
+    markDebugLive();
     return;
   }
   ctx.pool->forEach(ctx.objects.size(), [&](size_t fi) {
@@ -1208,6 +1267,7 @@ void markLive() {
   if (ctx.opt.timing)
     fprintf(stderr, "    rounds %d\n", rounds);
   mark("traverse");
+  markDebugLive();
 }
 
 // ================================================================ phase 4: scan
@@ -1366,7 +1426,7 @@ void scanRelocations() {
     uint64_t n = 0;
     for (uint32_t sec = 1; sec < o->numShdrs; ++sec)
       if (o->secs[sec].osec != 0 && o->secs[sec].live.load() == 1 &&
-          o->relaOf[sec])
+          o->relaOf[sec] && (o->shdrs[sec].sh_flags & SHF_ALLOC))
         n += o->shdrs[o->relaOf[sec]].sh_size / sizeof(Elf64_Rela);
     base[fi + 1] = n;
   }, 16);
@@ -1379,7 +1439,9 @@ void scanRelocations() {
     ObjectFile *o = ctx.objects[fi];
     uint32_t next = base[fi];
     for (uint32_t sec = 1; sec < o->numShdrs; ++sec) {
-      if (o->secs[sec].osec == 0 || o->secs[sec].live.load() != 1)
+      // Debug sections need no dynamic relocations, GOT or PLT entries.
+      if (o->secs[sec].osec == 0 || o->secs[sec].live.load() != 1 ||
+          !(o->shdrs[sec].sh_flags & SHF_ALLOC))
         continue;
       PlacedSection &ss = placedOf(o, sec);
       auto [rels, n] = o->relas(sec);
@@ -1653,8 +1715,11 @@ uint64_t defVA(const ObjectFile *o, uint32_t si) {
   const SectionState &ss = o->secs[s.st_shndx];
   if (ss.osec == 0)
     return 0;
-  const uint64_t va = ctx.placed[ss.placed].va;
-  return ELF64_ST_TYPE(s.st_info) == STT_SECTION ? va : va + s.st_value;
+  const PlacedSection &ps = ctx.placed[ss.placed];
+  if (ps.merged)
+    return mergedAddress(o, s.st_shndx,
+                         ELF64_ST_TYPE(s.st_info) == STT_SECTION ? 0 : s.st_value);
+  return ELF64_ST_TYPE(s.st_info) == STT_SECTION ? ps.va : ps.va + s.st_value;
 }
 
 uint64_t pltVA(uint32_t i) { return L.plt->addr + 16 * (i + 1); }
@@ -1696,6 +1761,9 @@ bool isCIdentifier(const char *n) {
   return true;
 }
 
+// Mergeable sections by file, found while sections are assigned.
+vector<vector<uint32_t>> mergeCandidates;
+
 void assignInputSections() {
   STEP("assignInputSections");
   // Per file: the distinct output sections it feeds, in first-use order.
@@ -1708,16 +1776,24 @@ void assignInputSections() {
     uint32_t global = 0, base = 0;
   };
   vector<vector<Use>> uses(ctx.objects.size());
+  mergeCandidates.assign(ctx.objects.size(), {});
   ctx.pool->forEach(ctx.objects.size(), [&](size_t fi) {
     ObjectFile *o = ctx.objects[fi];
     auto &u = uses[fi];
     uint32_t last = UINT32_MAX;
+    size_t nextDebug = 0;
     for (uint32_t i = 1; i < o->numShdrs; ++i) {
       if (o->secs[i].live.load(std::memory_order_relaxed) != 1)
         continue;
       const Elf64_Shdr &sh = o->shdrs[i];
-      if (!(sh.sh_flags & SHF_ALLOC) || (sh.sh_flags & SHF_EXCLUDE) ||
-          sh.sh_type == SHT_GROUP || i == o->ehSec)
+      if (!(sh.sh_flags & SHF_ALLOC)) {
+        while (nextDebug < o->debugSecs.size() && o->debugSecs[nextDebug] < i)
+          ++nextDebug;
+        if (nextDebug == o->debugSecs.size() || o->debugSecs[nextDebug] != i)
+          continue;
+      }
+      if ((sh.sh_flags & SHF_EXCLUDE) || sh.sh_type == SHT_GROUP ||
+          i == o->ehSec)
         continue;
       string_view in = o->secName(i);
       if (in == ".note.gnu.property")
@@ -1742,7 +1818,10 @@ void assignInputSections() {
         last = k;
       }
       Use &x = u[k];
-      x.flags |= sh.sh_flags & (SHF_ALLOC | SHF_WRITE | SHF_EXECINSTR | SHF_TLS);
+      x.flags |= sh.sh_flags & (SHF_ALLOC | SHF_WRITE | SHF_EXECINSTR | SHF_TLS |
+                                (sh.sh_flags & SHF_ALLOC
+                                     ? 0
+                                     : SHF_MERGE | SHF_STRINGS));
       x.align = std::max<uint64_t>(x.align, sh.sh_addralign);
       x.anyData |= sh.sh_type != SHT_NOBITS;
       ++x.count;
@@ -1760,6 +1839,8 @@ void assignInputSections() {
             type != SHT_PREINIT_ARRAY && type != SHT_NOTE && type != SHT_NOBITS)
           type = SHT_PROGBITS;
         os = newSection(string(x.name), type, x.flags, 1);
+        if (x.flags & SHF_STRINGS)
+          os->entsize = 1;
         counts.resize(L.all.size(), 0);
       } else {
         os = it->second;
@@ -1798,6 +1879,13 @@ void assignInputSections() {
       o->secs[i].osec = x.global;
       o->secs[i].placed = next++;
       L.all[x.global]->members[x.base++] = {o, i};
+      // Merging shrinks allocated data by about a percent at a cost that
+      // is not worth it here; debug strings are merged, as they repeat
+      // across every object.
+      const Elf64_Shdr &sh = o->shdrs[i];
+      if ((sh.sh_flags & SHF_MERGE) && !(sh.sh_flags & SHF_ALLOC) &&
+          sh.sh_entsize && sh.sh_type != SHT_NOBITS)
+        mergeCandidates[fi].push_back(i);
     }
   }, 4);
   for (OutputSection *os : L.all) {
@@ -1820,7 +1908,7 @@ void assignOffsets(OutputSection *os) {
     ps.padBefore = start - off;
     off = start;
     ps.outOff = off;
-    off += sh.sh_size;
+    off += outputSize(o, i, ps);
   }
   if (off > UINT32_MAX)
     fatal("output section " + os->name + " exceeds 4 GiB");
@@ -1921,7 +2009,8 @@ bool eligible(const ObjectFile *o, uint32_t sec) {
       ss.keepUnique.load(std::memory_order_relaxed))
     return false;
   const Elf64_Shdr &sh = o->shdrs[sec];
-  if (!(sh.sh_flags & SHF_ALLOC) || sh.sh_type == SHT_NOBITS || !sh.sh_size)
+  if (!(sh.sh_flags & SHF_ALLOC) || sh.sh_type == SHT_NOBITS || !sh.sh_size ||
+      ctx.placed[ss.placed].merged)
     return false;
   const uint8_t foldable = outputFoldable[ss.osec];
   if (!foldable || ((sh.sh_flags & SHF_WRITE) && foldable != 1))
@@ -2272,6 +2361,236 @@ void run() {
 
 } // namespace icf
 
+// ================================================================ merging
+// Mergeable sections are split into pieces, strings or fixed-size records,
+// and equal pieces of one group (output section, kind, entry size and
+// alignment) share one copy: the piece that comes first by position. Each
+// section holds, in order, the pieces it owns.
+constexpr uint32_t MergeOwner = 1u << 31;
+
+struct MergeGroup {
+  uint64_t numPieces = 0;
+  uint32_t align = 1;
+};
+vector<MergeGroup> mergeGroups;
+// One table for the pieces of all groups, tagged with their group, and by
+// piece id the lowest (placed index, offset) and the owner's output offset.
+std::unique_ptr<NameTable> mergeTable;
+std::atomic<uint64_t> *mergeRank;
+uint32_t *mergeOut;
+
+uint64_t mergedAddress(const ObjectFile *o, uint32_t sec, uint64_t off) {
+  const SectionState &ss = o->secs[sec];
+  const PlacedSection &ps = ctx.placed[ss.placed];
+  const auto *b = ctx.pieces.get() + ps.pieceBase;
+  const auto *e = b + ps.numPieces;
+  // The last piece that starts at or before the offset.
+  const auto *p = std::upper_bound(b, e, off, [](uint64_t v, const auto &q) {
+                    return v < q.inOff;
+                  }) - 1;
+  if (p < b)
+    p = b;
+  return L.all[ss.osec]->addr + p->out + (off - p->inOff);
+}
+
+void mergeSections() {
+  STEP("merge");
+  markTime = Clock::now();
+  // Mergeable sections by file, in position order.
+  struct Item {
+    ObjectFile *file;
+    uint32_t sec;
+  };
+  vector<Item> items;
+  for (size_t fi = 0; fi < ctx.objects.size(); ++fi)
+    for (uint32_t sec : mergeCandidates[fi]) {
+      ObjectFile *o = ctx.objects[fi];
+      if (o->relaOf[sec])
+        fatal(o->name + ": relocations in mergeable section " + o->secName(sec));
+      items.push_back({o, sec});
+    }
+  if (items.empty())
+    return;
+  // Groups, in order of first appearance; there are only a few.
+  struct Key {
+    uint32_t osec;
+    bool strings;
+    uint64_t entsize, align;
+    bool operator==(const Key &k) const {
+      return osec == k.osec && strings == k.strings && entsize == k.entsize &&
+             align == k.align;
+    }
+  };
+  vector<Key> keys;
+  size_t last = 0;
+  for (const Item &it : items) {
+    const Elf64_Shdr &sh = it.file->shdrs[it.sec];
+    const Key key{it.file->secs[it.sec].osec, bool(sh.sh_flags & SHF_STRINGS),
+                  sh.sh_entsize, std::max<uint64_t>(sh.sh_addralign, 1)};
+    if (last >= keys.size() || !(keys[last] == key)) {
+      last = std::find(keys.begin(), keys.end(), key) - keys.begin();
+      if (last == keys.size()) {
+        if (keys.size() == UINT16_MAX)
+          fatal("too many kinds of mergeable sections");
+        keys.push_back(key);
+        mergeGroups.emplace_back();
+        mergeGroups.back().align = uint32_t(key.align);
+      }
+    }
+    PlacedSection &ps = placedOf(it.file, it.sec);
+    ps.merged = true;
+    ps.mergeGroup = uint16_t(last);
+  }
+  // Split into pieces: count, then fill a shared array.
+  vector<uint64_t> base(items.size() + 1, 0);
+  auto split = [](const ObjectFile *o, uint32_t sec, auto &&emit) {
+    const Elf64_Shdr &sh = o->shdrs[sec];
+    const uint8_t *d = o->secData(sec);
+    const uint64_t size = sh.sh_size, es = sh.sh_entsize;
+    if (!(sh.sh_flags & SHF_STRINGS)) {
+      if (size % es)
+        fatal(o->name + ": mergeable section size is not a multiple of its "
+                        "entry size");
+      for (uint64_t off = 0; off < size; off += es)
+        emit(off);
+      return;
+    }
+    for (uint64_t off = 0; off < size;) {
+      uint64_t end = off;
+      if (es == 1) {
+        const void *z = memchr(d + off, 0, size - off);
+        end = z ? static_cast<const uint8_t *>(z) - d : size;
+      } else {
+        while (end + es <= size) {
+          bool zero = true;
+          for (uint64_t b = 0; b < es; ++b)
+            zero &= d[end + b] == 0;
+          if (zero)
+            break;
+          end += es;
+        }
+      }
+      if (end + es > size)
+        fatal(o->name + ": unterminated string in " + o->secName(sec));
+      emit(off);
+      off = end + es;
+    }
+  };
+  ctx.pool->forEach(items.size(), [&](size_t i) {
+    uint64_t n = 0;
+    split(items[i].file, items[i].sec, [&](uint64_t) { ++n; });
+    base[i + 1] = n;
+  }, 4);
+  for (size_t i = 0; i < items.size(); ++i) {
+    PlacedSection &ps = placedOf(items[i].file, items[i].sec);
+    mergeGroups[ps.mergeGroup].numPieces += base[i + 1];
+    base[i + 1] += base[i];
+  }
+  if (base.back() >= UINT32_MAX)
+    fatal("too many mergeable pieces");
+  ctx.pieces.reset(static_cast<Ctx::Piece *>(
+      malloc(std::max<uint64_t>(base.back(), 1) * sizeof(Ctx::Piece))));
+  if (ctx.opt.timing)
+    fprintf(stderr, "    merge sections %zu\n", items.size());
+  if (ctx.opt.timing)
+    for (const MergeGroup &g : mergeGroups)
+      fprintf(stderr, "    merge group align %u pieces %llu\n", g.align,
+              (unsigned long long)g.numPieces);
+  mark("merge split");
+  {
+    // Room for every piece and for the ids workers reserve in blocks.
+    mergeTable = std::make_unique<NameTable>(base.back() + 256 * 64);
+    mark("merge table alloc");
+    mergeTable->prefault(*ctx.pool);
+    mark("merge table prefault");
+    const size_t ids = mergeTable->idLimit();
+    mergeRank = bigArray<std::atomic<uint64_t>>(*ctx.pool, ids);
+    mergeOut = bigArray<uint32_t>(*ctx.pool, ids);
+    mark("merge arrays");
+    ctx.pool->forEach(ids, [&](size_t k) {
+      mergeRank[k].store(UINT64_MAX, std::memory_order_relaxed);
+    });
+  }
+  mark("merge tables");
+  // Intern the pieces; the lowest (placed index, offset) owns each.
+  ctx.pool->forEach(items.size(), [&](size_t i) {
+    ObjectFile *o = items[i].file;
+    const uint32_t sec = items[i].sec;
+    PlacedSection &ps = placedOf(o, sec);
+    ps.pieceBase = base[i];
+    ps.numPieces = base[i + 1] - base[i];
+    auto *p = ctx.pieces.get() + base[i];
+    uint32_t k = 0;
+    split(o, sec, [&](uint64_t off) { p[k++].inOff = uint32_t(off); });
+    const uint8_t *d = o->secData(sec);
+    const uint64_t size = o->shdrs[sec].sh_size;
+    const uint64_t rank0 = uint64_t(o->secs[sec].placed) << 32;
+    for (k = 0; k < ps.numPieces; ++k) {
+      const uint32_t end = k + 1 < ps.numPieces ? p[k + 1].inOff : size;
+      const uint32_t id = mergeTable->intern(
+          reinterpret_cast<const char *>(d + p[k].inOff), end - p[k].inOff,
+          ps.mergeGroup);
+      if (id == UINT32_MAX)
+        fatal("internal error: mergeable piece table is full");
+      p[k].id = id;
+      atomicMin(mergeRank[id], rank0 | p[k].inOff);
+    }
+  }, 4);
+  mark("merge intern");
+  // Each section lays out the pieces it owns.
+  ctx.pool->forEach(items.size(), [&](size_t i) {
+    ObjectFile *o = items[i].file;
+    const uint32_t sec = items[i].sec;
+    PlacedSection &ps = placedOf(o, sec);
+    MergeGroup &g = mergeGroups[ps.mergeGroup];
+    auto *p = ctx.pieces.get() + ps.pieceBase;
+    const uint64_t size = o->shdrs[sec].sh_size;
+    const uint64_t rank0 = uint64_t(o->secs[sec].placed) << 32;
+    uint64_t pos = 0;
+    for (uint32_t k = 0; k < ps.numPieces; ++k) {
+      if (mergeRank[p[k].id].load(std::memory_order_relaxed) != (rank0 | p[k].inOff))
+        continue;
+      const uint32_t end = k + 1 < ps.numPieces ? p[k + 1].inOff : size;
+      pos = alignTo(pos, g.align);
+      p[k].out = uint32_t(pos); // relative until the section is placed
+      p[k].id |= MergeOwner;
+      pos += end - p[k].inOff;
+    }
+    if (pos > UINT32_MAX)
+      fatal("mergeable section too large");
+    ps.mergedSize = uint32_t(pos);
+  }, 4);
+}
+
+// Once sections are placed: every piece's output offset in its output
+// section, the owner's.
+void finalizeMerge() {
+  if (mergeGroups.empty())
+    return;
+  vector<std::pair<ObjectFile *, uint32_t>> items;
+  for (ObjectFile *o : ctx.objects)
+    for (uint32_t sec = 1; sec < o->numShdrs; ++sec)
+      if (o->secs[sec].osec && o->secs[sec].live.load() == 1 &&
+          placedOf(o, sec).merged)
+        items.push_back({o, sec});
+  ctx.pool->forEach(items.size(), [&](size_t i) {
+    PlacedSection &ps = placedOf(items[i].first, items[i].second);
+    auto *p = ctx.pieces.get() + ps.pieceBase;
+    for (uint32_t k = 0; k < ps.numPieces; ++k)
+      if (p[k].id & MergeOwner) {
+        p[k].out += ps.outOff;
+        mergeOut[p[k].id & ~MergeOwner] = p[k].out;
+      }
+  }, 4);
+  ctx.pool->forEach(items.size(), [&](size_t i) {
+    PlacedSection &ps = placedOf(items[i].first, items[i].second);
+    auto *p = ctx.pieces.get() + ps.pieceBase;
+    for (uint32_t k = 0; k < ps.numPieces; ++k)
+      if (!(p[k].id & MergeOwner))
+        p[k].out = mergeOut[p[k].id];
+  }, 4);
+}
+
 // Output sections with many members are laid out in fixed-size chunks, each
 // starting at its strictest member alignment, so the chunks can be laid out
 // in parallel. The chunk size does not depend on the thread count.
@@ -2308,7 +2627,7 @@ void assignAllOffsets() {
       uint64_t start = alignTo(off, al);
       ps.padBefore = start - off;
       ps.outOff = start;
-      off = start + sh.sh_size;
+      off = start + outputSize(o, sec, ps);
       c.align = std::max<uint64_t>(c.align, al);
     }
     c.size = off;
@@ -3082,6 +3401,7 @@ void layout() {
       }
     }
   }, 8);
+  finalizeMerge();
   // Symbol addresses.
   ctx.pool->forEach(ctx.numNames, [&](size_t id) {
     Symbol &s = ctx.syms[id];
@@ -3236,7 +3556,14 @@ void applyRelocs(const ObjectFile *o, const uint8_t *src, const Elf64_Rela *rels
     uint8_t *loc = dst + r.r_offset;
     const uint64_t P = base + r.r_offset;
     const int64_t A = r.r_addend;
-    const uint64_t S = symbolVA(o, si, ri);
+    uint64_t S = symbolVA(o, si, ri);
+    // A section symbol locates the piece with its addend.
+    if (!ri.global && o->syms[si].st_shndx < SHN_LORESERVE &&
+        ELF64_ST_TYPE(o->syms[si].st_info) == STT_SECTION) {
+      const SectionState &ts = o->secs[o->syms[si].st_shndx];
+      if (ts.osec && ctx.placed[ts.placed].merged)
+        S = mergedAddress(o, o->syms[si].st_shndx, A) - A;
+    }
     switch (ri.kind) {
     case K_Pc32:
     case K_Plt32:
@@ -3346,6 +3673,58 @@ void applyRelocs(const ObjectFile *o, const uint8_t *src, const Elf64_Rela *rels
   }
 }
 
+// Relocations in debug sections: addresses of code and data, offsets into
+// other debug sections and offsets of TLS variables. References to discarded
+// code get a tombstone, which location and range lists must not end on.
+void applyDebugRelocs(const ObjectFile *o, uint32_t sec, uint8_t *dst) {
+  auto [rels, n] = o->relas(sec);
+  const char *name = o->secName(sec);
+  const uint64_t tombstone =
+      strcmp(name, ".debug_loc") == 0 || strcmp(name, ".debug_ranges") == 0;
+  for (size_t k = 0; k < n; ++k) {
+    const Elf64_Rela &r = rels[k];
+    const uint32_t type = ELF64_R_TYPE(r.r_info), si = ELF64_R_SYM(r.r_info);
+    if (type == R_X86_64_NONE)
+      continue;
+    const int64_t A = r.r_addend;
+    uint64_t S;
+    bool dead = false;
+    if (si >= o->firstGlobal) {
+      const uint32_t id = o->nameIds[si - o->firstGlobal];
+      const Symbol &s = ctx.syms[id];
+      if (s.kind == Symbol::Object) {
+        auto [file, dsec] = ctx.defTarget[id];
+        dead = file != UINT32_MAX && ctx.objects[file]->secs[dsec].osec == 0;
+      }
+      S = s.isImport() ? 0 : s.va;
+    } else {
+      const Elf64_Sym &ls = o->syms[si];
+      if (ls.st_shndx != SHN_ABS && ls.st_shndx < SHN_LORESERVE &&
+          ls.st_shndx != SHN_UNDEF && o->secs[ls.st_shndx].osec == 0)
+        dead = true;
+      S = defVA(o, si);
+      if (!dead && ELF64_ST_TYPE(ls.st_info) == STT_SECTION &&
+          ctx.placed[o->secs[ls.st_shndx].placed].merged)
+        S = mergedAddress(o, ls.st_shndx, A) - A;
+    }
+    uint8_t *loc = dst + r.r_offset;
+    switch (type) {
+    case R_X86_64_32:
+      w32(loc, dead ? tombstone : S + A);
+      break;
+    case R_X86_64_64:
+      w64(loc, dead ? tombstone : S + A);
+      break;
+    case R_X86_64_DTPOFF32:
+      w32(loc, dead ? tombstone : S + A - L.tlsAddr);
+      break;
+    case R_X86_64_DTPOFF64:
+      w64(loc, dead ? tombstone : S + A - L.tlsAddr);
+      break;
+    }
+  }
+}
+
 void writeInputSection(uint8_t *buf, const OutputSection *os, ObjectFile *o,
                        uint32_t sec) {
   const Elf64_Shdr &sh = o->shdrs[sec];
@@ -3360,7 +3739,27 @@ void writeInputSection(uint8_t *buf, const OutputSection *os, ObjectFile *o,
     return;
   }
   const uint8_t *src = o->secData(sec);
+  if (ss.merged) {
+    // The pieces this section holds, with the padding between them cleared.
+    uint8_t *const osecStart = buf + os->offset;
+    uint64_t cur = ss.outOff;
+    const auto *p = ctx.pieces.get() + ss.pieceBase;
+    for (uint32_t k = 0; k < ss.numPieces; ++k) {
+      if (!(p[k].id & MergeOwner))
+        continue;
+      const uint32_t end = k + 1 < ss.numPieces ? p[k + 1].inOff : sh.sh_size;
+      memset(osecStart + cur, 0, p[k].out - cur);
+      memcpy(osecStart + p[k].out, src + p[k].inOff, end - p[k].inOff);
+      cur = p[k].out + (end - p[k].inOff);
+    }
+    memset(osecStart + cur, 0, ss.outOff + ss.mergedSize - cur);
+    return;
+  }
   memcpy(dst, src, sh.sh_size);
+  if (!(sh.sh_flags & SHF_ALLOC)) {
+    applyDebugRelocs(o, sec, dst);
+    return;
+  }
   auto [rels, n] = o->relas(sec);
   applyRelocs(o, src, rels, n, dst, ss.va, L.relaOut + ss.relBase,
               L.relaOut + ss.symBase, relKinds + ss.kindBase);
@@ -3916,6 +4315,7 @@ void runPipeline() {
   markLive();
   lap();
   assignInputSections();
+  mergeSections();
   if (ctx.opt.icf)
     icf::run();
   scanRelocations();

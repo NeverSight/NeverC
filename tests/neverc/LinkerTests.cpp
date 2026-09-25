@@ -1836,6 +1836,58 @@ int main(void) { return g1(10) + g2(10) + p1(1) + p2(1) == 94 ? 23 : 1; }
             requireELFSymbolAddress(all, "g2"));
 }
 
+TEST_F(LinkerTest, FastPipelineKeepsDebugInformation) {
+  if (!isLinux())
+    GTEST_SKIP() << "the fast ELF pipeline links Linux executables";
+
+  const fs::path mainSource = tmpFile("fast_debug_main.c");
+  const fs::path libSource = tmpFile("fast_debug_lib.c");
+  writeFile(mainSource, R"(
+int used(int);
+static const char *label = "fast debug label";
+int main(void) { return used(label[0]) == 'f' + 1 ? 23 : 1; }
+)");
+  writeFile(libSource, R"(
+static const char *label = "fast debug label";
+int unused(int x) { return x * 9 + label[1]; }
+int used(int x) { return x + 1; }
+)");
+  std::vector<std::string> objects;
+  for (const fs::path &source : {mainSource, libSource}) {
+    const fs::path object = tmpFile(source.stem().string() + ".o");
+    std::vector<std::string> args = baseLinkArgs();
+    args.insert(args.end(), {"-g", "-O1", "-ffunction-sections", "-c",
+                             source.string(), "-o", object.string()});
+    CmdResult compile = ncc(args);
+    ASSERT_EQ(compile.exitCode, 0) << compile.err;
+    objects.push_back(object.string());
+  }
+
+  ScopedEnvironmentVariable report("NEVERC_ELF_FASTLINK_TIME", "1");
+  auto link = [&](const std::string &threads) {
+    const fs::path image = tmpFile("fast_debug_" + threads);
+    std::vector<std::string> args = baseLinkArgs();
+    args.insert(args.end(), {"-g", "-fgc-sections", "-Wl,--threads=" + threads});
+    args.insert(args.end(), objects.begin(), objects.end());
+    args.insert(args.end(), {"-o", image.string()});
+    CmdResult result = ncc(args);
+    EXPECT_EQ(result.exitCode, 0) << result.err;
+    EXPECT_EQ(result.err.find("fast pipeline not used"), std::string::npos)
+        << result.err;
+    EXPECT_EQ(exec(image.string(), {}).exitCode, 23);
+    return readFile(image);
+  };
+
+  const std::string serial = link("1");
+  EXPECT_TRUE(serial == link("8")) << "--threads changed the output bytes";
+  for (const char *name : {".debug_info", ".debug_line", ".debug_str"}) {
+    llvm::Expected<bool> present = hasELFSection(serial, name);
+    ASSERT_TRUE(static_cast<bool>(present))
+        << llvm::toString(present.takeError()).str().str();
+    EXPECT_TRUE(*present) << name;
+  }
+}
+
 TEST_F(LinkerTest, ThreadCountOptionKeepsOutputBytesOnEveryFormat) {
   struct Format {
     const char *name;

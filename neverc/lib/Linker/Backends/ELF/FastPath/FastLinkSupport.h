@@ -295,9 +295,11 @@ public:
         calloc(maxIds_ + size_t(MaxWorkers) * Block, sizeof(Name)));
   }
   // Returns the name's id, or UINT32_MAX once the table is past half full;
-  // callers then retry with a larger table.
-  uint32_t intern(const char *p, size_t n) {
-    const uint64_t h = hashBytes(p, n);
+  // callers then retry with a larger table. Names in different groups are
+  // different.
+  uint32_t intern(const char *p, size_t n, uint32_t group = 0) {
+    const uint64_t h =
+        hashBytes(p, n) ^ (uint64_t(group) * 0x9E3779B97F4A7C15ull);
     const uint64_t tag = h >> 32;
     uint32_t mine = UINT32_MAX;
     for (size_t i = h & mask_;; i = (i + 1) & mask_) {
@@ -307,7 +309,7 @@ public:
           mine = allocId(Pool::self());
           if (mine >= maxIds_)
             return UINT32_MAX;
-          names_[mine] = {p, uint32_t(n)};
+          names_[mine] = {p, uint32_t(n), group};
         }
         if (slots_[i].compare_exchange_strong(cur, (tag << 32) | (mine + 1),
                                               std::memory_order_acq_rel))
@@ -316,7 +318,7 @@ public:
       if ((cur >> 32) == tag) {
         const uint32_t id = uint32_t(cur) - 1;
         const Name &e = names_[id];
-        if (e.len == n && memcmp(e.ptr, p, n) == 0) {
+        if (e.len == n && e.group == group && memcmp(e.ptr, p, n) == 0) {
           if (mine != UINT32_MAX)
             names_[mine] = {};
           return id;
@@ -324,6 +326,7 @@ public:
       }
     }
   }
+
   // Looks a name up without inserting it; returns UINT32_MAX if absent.
   uint32_t find(const char *p, size_t n) const {
     const uint64_t h = hashBytes(p, n);
@@ -346,6 +349,8 @@ public:
   }
   // One past the highest id handed out; ids below it may be unused.
   uint32_t size() const { return next_.load(); }
+  // An upper bound of the ids intern() returns.
+  size_t idLimit() const { return maxIds_; }
   // Fills names[id] for every id; unused ids get empty names.
   void names(vector<string_view> &out) const {
     const uint32_t n = size();
@@ -358,6 +363,7 @@ private:
   struct Name {
     const char *ptr;
     uint32_t len;
+    uint32_t group;
   };
   // Workers take ids in blocks so they rarely touch the shared counter.
   static constexpr unsigned MaxWorkers = 256, Block = 64;
