@@ -1,6 +1,7 @@
 #include "Frontend.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/StmtCXX.h"
+#include "clang/Basic/TargetInfo.h"
 #include "llvm/ADT/ScopeExit.h"
 #include <algorithm>
 #include <limits>
@@ -10113,6 +10114,7 @@ class FunctionLowering {
     }
     case UtilityOperation::StringSize:
     case UtilityOperation::StringCapacity:
+    case UtilityOperation::StringMaxSize:
     case UtilityOperation::StringEmpty:
     case UtilityOperation::StringData:
     case UtilityOperation::StringSubscript:
@@ -10136,6 +10138,16 @@ class FunctionLowering {
         reject(L, "string access", "The selected std::string layout is unavailable.");
       auto Receiver = snapshot(address(lvalue(Object), Object->getType(), L), L);
       const auto SizeType = type(A.Context.getSizeType(), L);
+      if (Operation == UtilityOperation::StringMaxSize) {
+        const unsigned SizeBits = integerBits(SizeType);
+        const uint64_t SizeMaximum = SizeBits == 64
+                                         ? std::numeric_limits<uint64_t>::max()
+                                         : (uint64_t(1) << SizeBits) - 1;
+        const bool UsesLowBit = String->AlternateLayout !=
+                                A.Context.getTargetInfo().isLittleEndian();
+        return quantity((UsesLowBit ? SizeMaximum : SizeMaximum / 2) - 8,
+                        SizeType, L);
+      }
       auto WordType = [&](const char *Name) {
         const bool PointerWord = String->AlternateLayout
                                      ? llvm::StringRef(Name) == "nct_string_word0"

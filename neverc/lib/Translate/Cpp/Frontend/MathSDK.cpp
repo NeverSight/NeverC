@@ -16388,6 +16388,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       if (Name == "capacity" &&
           Context.hasSameType(Method->getReturnType(), Context.getSizeType()))
         return UtilityOperation::StringCapacity;
+      if (Name == "max_size" &&
+          Context.hasSameType(Method->getReturnType(), Context.getSizeType()))
+        return UtilityOperation::StringMaxSize;
       if (Name == "empty" && Method->getReturnType()->isBooleanType())
         return UtilityOperation::StringEmpty;
     }

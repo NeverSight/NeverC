@@ -53638,6 +53638,52 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringMaxSizeRun) {
+  const auto Source = tmpFile("string-max-size.cpp");
+  const auto Output = tmpFile("string-max-size.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <string>
+int calls;
+std::string &touch(std::string &value) {
+  ++calls;
+  return value;
+}
+int main() {
+  std::string short_text("abc");
+  const std::string long_text("abcdefghijklmnopqrstuvwxyz");
+  const Size maximum = static_cast<Size>(-1);
+#if (defined(_LIBCPP_ABI_ALTERNATE_STRING_LAYOUT) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__) || (!defined(_LIBCPP_ABI_ALTERNATE_STRING_LAYOUT) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+  const Size expected = maximum - 8;
+#else
+  const Size expected = maximum / 2 - 8;
+#endif
+  if (touch(short_text).max_size() != expected || calls != 1)
+    return 1;
+  if (long_text.max_size() != expected ||
+      short_text.max_size() != long_text.max_size() ||
+      short_text.max_size() <= short_text.capacity())
+    return 2;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-max-size" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StringPushAndPopRun) {
   const auto Source = tmpFile("string-push-pop.cpp");
   const auto Output = tmpFile("string-push-pop.nc");

@@ -855,6 +855,7 @@ enum class UtilityOperation {
   InitializerListREnd,
   StringSize,
   StringCapacity,
+  StringMaxSize,
   StringEmpty,
   StringData,
   StringBegin,

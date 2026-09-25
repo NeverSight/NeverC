@@ -2289,7 +2289,7 @@ LLVM 20.1.8 source bytes and catalog hashes. Clang can fold constant
 `size_type` alias. Authenticated `std::basic_string<char, std::char_traits<char>,
 std::allocator<char>>` objects now have direct lowering for default,
 `const char*`, pointer-and-length, copy and move construction; copy and move
-assignment; `size`, `length`, `capacity`, `empty`, `data`, `c_str`, subscript
+assignment; `size`, `length`, `capacity`, `max_size`, `empty`, `data`, `c_str`, subscript
 access, mutable and const `front`/`back`, `clear`, `push_back(char)`,
 `pop_back()`, `reserve(size_type)`, both `resize` overloads, and destruction.
 Mutable and const `begin`/`end`, plus `cbegin`/`cend`, produce authenticated
@@ -2352,7 +2352,8 @@ copy assignment reuses existing capacity when possible. Moves transfer the
 representation and leave the source empty. Clearing, popping, and shrinking
 retain existing capacity and storage. Pushing, resizing, reserving, and
 appending grow storage when needed. Host O0/O2 fixtures exercise both
-representations, embedded NUL, mutable and const access, copy and move,
+representations, embedded NUL, mutable and const access, target-specific
+`max_size` values, copy and move,
 push/pop, resize/reserve, fill, pointer and string append with self-reference,
 the three `operator+=` overloads, four `assign` overloads, positional erase,
 four positional `insert` and four positional `replace` overloads, member/free

@@ -29470,6 +29470,8 @@ int main() {
          long_text.front() == 'a' && long_text.back() == 'z' &&
          long_text[25] == 'z' && assigned[25] == 'z' &&
          copied.empty() && moved.empty();
+  bool maximum_intact = empty.max_size() > empty.capacity() &&
+                        empty.max_size() == long_text.max_size();
   auto old_capacity = assigned.capacity();
   assigned.clear();
   assigned.push_back('q');
@@ -29638,7 +29640,7 @@ int main() {
   const std::string reverse_long("abcdefghijklmnopqrstuvwxyz0123456789");
   bool reverse_long_intact = *reverse_long.rbegin() == '9' &&
                              *(reverse_long.rend() - 1) == 'a';
-  return intact && emptied && assigned.size() == 14 &&
+  return intact && maximum_intact && emptied && assigned.size() == 14 &&
          assigned[0] == 'x' && assigned[2] == 'a' &&
          assigned[3] == 'b' && assigned[4] == 'c' && assigned[5] == 'd' &&
          assigned[6] == 'e' && assigned[7] == 'x' &&
