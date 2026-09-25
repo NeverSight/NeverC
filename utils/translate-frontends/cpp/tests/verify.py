@@ -29154,6 +29154,18 @@ void move_strings(std::vector<std::string>& values, std::string&& value) {
   values = static_cast<std::vector<std::string>&&>(moved);
   values.clear();
 }
+void copy_strings(const std::vector<std::string>& source,
+                  std::vector<std::string>& destination) {
+  std::vector<std::string> copy(source);
+  destination = source;
+  destination.push_back(source[0]);
+  destination.emplace_back(source[0]);
+  destination.emplace_back(static_cast<const std::string&&>(source[0]));
+  destination.insert(destination.begin(), source[0]);
+  destination.emplace(destination.begin(), source[0]);
+  destination.emplace(destination.begin(),
+                      static_cast<const std::string&&>(source[0]));
+}
 void move_pointers(std::vector<std::unique_ptr<int>>& values,
                    std::unique_ptr<int>&& value) {
   values.push_back(static_cast<std::unique_ptr<int>&&>(value));
@@ -29197,33 +29209,45 @@ bool operator==(const Entry& left, const Entry& right) {
 }
 int main() { std::vector<Entry> left, right; return left == right; }
 """,
-        "owning-copy": """\
-#include <string>
-int f(const std::vector<std::string>& source) {
-  std::vector<std::string> target(source);
+        "unique-pointer-copy": """\
+#include <memory>
+int f(const std::vector<std::unique_ptr<int>>& source) {
+  std::vector<std::unique_ptr<int>> target(source);
   return target.size();
 }
 """,
-        "owning-copy-assignment": """\
-#include <string>
-void f(std::vector<std::string>& values,
-       const std::vector<std::string>& source) { values = source; }
+        "unique-pointer-copy-assignment": """\
+#include <memory>
+void f(std::vector<std::unique_ptr<int>>& values,
+       const std::vector<std::unique_ptr<int>>& source) { values = source; }
 """,
-        "owning-lvalue-push": """\
-#include <string>
-void f(std::vector<std::string>& values, const std::string& value) {
-  values.push_back(value);
+        "unique-pointer-lvalue-push": """\
+#include <memory>
+void f(std::vector<std::unique_ptr<int>>& values,
+       const std::unique_ptr<int>& value) { values.push_back(value); }
+""",
+        "unique-pointer-lvalue-insert": """\
+#include <memory>
+void f(std::vector<std::unique_ptr<int>>& values,
+       const std::unique_ptr<int>& value) {
+  values.insert(values.begin(), value);
 }
+""",
+        "unique-pointer-lvalue-emplace": """\
+#include <memory>
+void f(std::vector<std::unique_ptr<int>>& values,
+       const std::unique_ptr<int>& value) {
+  values.emplace(values.begin(), value);
+}
+""",
+        "unique-pointer-lvalue-emplace-back": """\
+#include <memory>
+void f(std::vector<std::unique_ptr<int>>& values,
+       const std::unique_ptr<int>& value) { values.emplace_back(value); }
 """,
         "owning-fill": """\
 #include <string>
 void f(const std::string& value) { std::vector<std::string> values(2, value); }
-""",
-        "owning-insert": """\
-#include <string>
-void f(std::vector<std::string>& values, const std::string& value) {
-  values.insert(values.begin(), value);
-}
 """,
         "owning-counted-insert": """\
 #include <string>
@@ -29238,27 +29262,10 @@ void f(std::vector<std::string>& values,
   values.insert(values.begin(), source.begin(), source.end());
 }
 """,
-        "owning-emplace-lvalue": """\
-#include <string>
-void f(std::vector<std::string>& values, const std::string& value) {
-  values.emplace(values.begin(), value);
-}
-""",
-        "owning-emplace-const-rvalue": """\
-#include <string>
-void f(std::vector<std::string>& values, const std::string& value) {
-  values.emplace(values.begin(), static_cast<const std::string&&>(value));
-}
-""",
-        "owning-emplace-back-const-rvalue": """\
-#include <string>
-void f(std::vector<std::string>& values, const std::string& value) {
-  values.emplace_back(static_cast<const std::string&&>(value));
-}
-""",
     }.items():
         check("v2-vector-" + name, vector_record_boundary_preamble + source,
-              "TR0203", profile="cpp-core-v2", sdk=True)
+              "TR0202" if name.startswith("unique-pointer-") else "TR0203",
+              profile="cpp-core-v2", sdk=True)
     check("v2-vector-runtime-object",
           '#include <vector>\nint f(){std::vector<int> v;return v.size();}',
           "TR0203", profile="cpp-core-v2", sdk=True)

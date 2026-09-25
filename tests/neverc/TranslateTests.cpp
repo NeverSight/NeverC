@@ -53214,6 +53214,110 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorOwningCopyRun) {
+  const auto Source = tmpFile("vector-owning-copy.cpp");
+  const auto Output = tmpFile("vector-owning-copy.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+#include <vector>
+int main() {
+  {
+    std::vector<std::string> source;
+    source.reserve(6);
+    source.push_back(std::string("a first long string owns heap storage"));
+    source.push_back(std::string("short"));
+    const char embedded[] = "a third long string \0with a NUL suffix";
+    source.push_back(std::string(embedded, sizeof(embedded) - 1));
+    source[0].reserve(128);
+    std::vector<std::string> copied(source);
+    if (copied.size() != 3 || copied[0] != source[0] ||
+        copied[1] != "short" || copied[2] != source[2] ||
+        copied[2].size() != sizeof(embedded) - 1 ||
+        copied[0].data() == source[0].data()) return 1;
+    source[0][0] = 'X';
+    copied[2][0] = 'Y';
+    if (copied[0][0] != 'a' || source[2][0] != 'a') return 2;
+
+    std::vector<std::string> reused;
+    reused.reserve(6);
+    reused.push_back(std::string("a prior long string must be released"));
+    reused.push_back(std::string("another prior long string must be released"));
+    auto capacity = reused.capacity();
+    reused = source;
+    if (reused.capacity() != capacity || reused.size() != 3 ||
+        reused[0] != source[0] || reused[0].data() == source[0].data())
+      return 3;
+    reused = reused;
+    if (reused.size() != 3 || reused[2] != source[2]) return 4;
+    source.clear();
+    if (reused[0][0] != 'X' || reused[2][0] != 'a') return 5;
+
+    std::vector<std::string> growing;
+    growing.push_back(std::string("the old growing target owns an allocation"));
+    growing = copied;
+    if (growing.size() != 3 || growing[2] != copied[2] ||
+        growing[2].data() == copied[2].data()) return 6;
+    std::vector<std::string> empty;
+    std::vector<std::string> emptyCopy(empty);
+    if (!emptyCopy.empty()) return 7;
+    growing = empty;
+    if (!growing.empty()) return 8;
+
+    std::vector<std::string> appended;
+    appended.reserve(1);
+    appended.push_back(std::string("a long string copied during vector growth"));
+    appended.push_back(appended[0]);
+    if (appended.size() != 2 || appended[0] != appended[1] ||
+        appended[0].data() == appended[1].data()) return 10;
+    appended.emplace_back(appended[0]);
+    const std::string& frozen = appended[0];
+    appended.emplace_back(static_cast<const std::string&&>(frozen));
+    if (appended.size() != 4 || appended[0] != appended[3] ||
+        appended[0].data() == appended[3].data()) return 11;
+
+    std::vector<std::string> positioned;
+    positioned.reserve(4);
+    positioned.push_back(std::string("an original long string stays owned"));
+    positioned.push_back(std::string("tail"));
+    std::string donor("a separate long string stays owned by its donor");
+    auto inside = positioned.insert(positioned.begin() + 1, donor);
+    if (inside != positioned.begin() + 1 || *inside != donor ||
+        (*inside).data() == donor.data()) return 12;
+    auto alias = positioned.insert(positioned.begin(), positioned[0]);
+    if (alias != positioned.begin() || *alias != positioned[1] ||
+        (*alias).data() == positioned[1].data()) return 13;
+    auto placed = positioned.emplace(positioned.begin() + 2, donor);
+    if (placed != positioned.begin() + 2 || *placed != donor ||
+        (*placed).data() == donor.data() || positioned.size() != 5)
+      return 14;
+    auto copiedRvalue = positioned.emplace(
+        positioned.end(), static_cast<const std::string&&>(donor));
+    if (copiedRvalue != positioned.end() - 1 || *copiedRvalue != donor ||
+        (*copiedRvalue).data() == donor.data()) return 15;
+  }
+  return allocations == releases ? 0 : 16;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-owning-copy" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorOwningEraseRun) {
   const auto Source = tmpFile("vector-owning-erase.cpp");
   const auto Output = tmpFile("vector-owning-erase.nc");

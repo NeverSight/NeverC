@@ -2502,19 +2502,22 @@ access, insert/erase, fill/list/range assignment, copy/move, resize and swap.
 The exact pinned `std::string` and admitted `std::unique_ptr<T, D>` records also
 work as owning elements. Default and bounded count construction value-initialize
 them; move construction and assignment transfer vector storage. `push_back(T&&)`,
-`emplace_back()`, and `emplace_back(T&&)` accept exact owning elements; rvalue
-operands must be nonconst. Growth,
+`emplace_back()`, and `emplace_back(T&&)` accept exact owning elements. Growth,
 `reserve`, and `shrink_to_fit` transfer each element and leave the old storage
-empty before release. Single and range `erase` destroy removed elements and
-move survivors into the vacated slots. `clear`, `pop_back`, shrinking `resize`,
-move assignment, and vector destruction destroy removed elements in reverse
-order. Single-rvalue `insert` and positional `emplace` with zero arguments or
+empty before release. Single and range `erase` destroy removed elements and move
+survivors into the vacated slots. `clear`, `pop_back`, shrinking `resize`, move
+assignment, and vector destruction destroy removed elements in reverse order.
+Single-rvalue `insert` and positional `emplace` with zero arguments or
 one nonconst rvalue transfer shifted elements in place or into grown storage
 and return the new position. Owning element fixtures check long string and
 pointer ownership, aliasing moves, insertion, growth, shrinking, move assignment
-and release under O0/O2. Copy, fill, list and range construction or assignment;
-lvalue, counted, list and range insertion; other positional emplacement; and
-vector comparisons remain outside the owning-element boundary. Other
+and release under O0/O2. Exact pinned string elements also support deep-copy
+vector construction and assignment, including self-assignment and capacity reuse.
+Their lvalue and const-rvalue inputs to `push_back`, `emplace_back`, `insert`,
+and positional `emplace` copy before vector storage moves or grows.
+Unique-pointer elements remain noncopyable. Fill, list and range construction
+or assignment; counted, list and range insertion; other positional emplacement;
+and vector comparisons remain outside the owning-element boundary. Other
 nontrivial record elements, other allocators, remaining vector methods, and
 throwing allocation or length-error paths remain unsupported. Quoted and shadow
 headers remain rejected.

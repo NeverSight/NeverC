@@ -11683,9 +11683,17 @@ class FunctionLowering {
         // Capture a source element before shifting or releasing storage.
         if (Vector->OwningElement) {
           Value = temporary(type(Vector->ElementType, L), L);
-          transferVectorElement(json::Object(*Value),
-                                lvalue(Call->getArg(Call->getNumArgs() - 1)),
-                                *Vector, L);
+          const unsigned ValueIndex = Call->getNumArgs() - 1;
+          const auto *Argument = Call->getArg(ValueIndex);
+          const auto Parameter = Call->getDirectCallee()
+                                     ->getParamDecl(ValueIndex)
+                                     ->getType();
+          if (Parameter->isRValueReferenceType())
+            transferVectorElement(json::Object(*Value), lvalue(Argument),
+                                  *Vector, L);
+          else
+            copyVectorStringElement(json::Object(*Value), lvalue(Argument),
+                                    *Vector, L, Argument->getType());
         } else {
           Value = snapshot(expression(Call->getArg(Call->getNumArgs() - 1)), L);
         }
@@ -11694,8 +11702,17 @@ class FunctionLowering {
         if (Call->getNumArgs() == 2) {
           if (Vector->OwningElement) {
             Value = temporary(type(Vector->ElementType, L), L);
-            transferVectorElement(json::Object(*Value), lvalue(Call->getArg(1)),
-                                  *Vector, L);
+            const auto *Argument = Call->getArg(1);
+            const auto Parameter =
+                Call->getDirectCallee()->getParamDecl(1)->getType();
+            if (Parameter->isRValueReferenceType() &&
+                A.Context.hasSameType(Parameter->getPointeeType(),
+                                      Vector->ElementType))
+              transferVectorElement(json::Object(*Value), lvalue(Argument),
+                                    *Vector, L);
+            else
+              copyVectorStringElement(json::Object(*Value), lvalue(Argument),
+                                      *Vector, L, Argument->getType());
           } else {
             Value = snapshot(expression(Call->getArg(1)), L);
           }
@@ -12712,8 +12729,17 @@ class FunctionLowering {
       if (Call->getNumArgs()) {
         if (Vector->OwningElement) {
           Value = temporary(type(Vector->ElementType, L), L);
-          transferVectorElement(json::Object(*Value), lvalue(Call->getArg(0)),
-                                *Vector, L);
+          const auto *Argument = Call->getArg(0);
+          const auto Parameter =
+              Call->getDirectCallee()->getParamDecl(0)->getType();
+          if (Parameter->isRValueReferenceType() &&
+              A.Context.hasSameType(Parameter->getPointeeType(),
+                                    Vector->ElementType))
+            transferVectorElement(json::Object(*Value), lvalue(Argument),
+                                  *Vector, L);
+          else
+            copyVectorStringElement(json::Object(*Value), lvalue(Argument),
+                                    *Vector, L, Argument->getType());
         } else {
           Value = snapshot(expression(Call->getArg(0)), L);
         }
@@ -15940,6 +15966,12 @@ class FunctionLowering {
                       "bool", L), Reuse, Grow, L);
         auto NewBegin = temporary(PointerType, L);
         label(Reuse, L);
+        if (Vector->OwningElement) {
+          auto TargetEnd = snapshot(LeftMember("nct_vector_end"), L);
+          destroyVectorElements(json::Object(TargetBegin), std::move(TargetEnd),
+                                *Vector, L);
+          assign(LeftMember("nct_vector_end"), json::Object(TargetBegin), L);
+        }
         assign(NewBegin, std::move(TargetBegin), L);
         jump(Fill, L);
         label(Grow, L);
@@ -15988,8 +16020,13 @@ class FunctionLowering {
         branch(binary("!=", json::Object(SourceCurrent), json::Object(SourceEnd),
                       "bool", L), Advance, Finish, L);
         label(Advance, L);
-        assign(dereference(json::Object(TargetCurrent), L),
-               dereference(json::Object(SourceCurrent), L), L);
+        if (Vector->OwningElement)
+          copyVectorStringElement(dereference(json::Object(TargetCurrent), L),
+                                  dereference(json::Object(SourceCurrent), L),
+                                  *Vector, L);
+        else
+          assign(dereference(json::Object(TargetCurrent), L),
+                 dereference(json::Object(SourceCurrent), L), L);
         assign(SourceCurrent,
                binary("+", json::Object(SourceCurrent),
                       quantity(1, DifferenceType, L), PointerType, L), L);
@@ -17166,6 +17203,122 @@ class FunctionLowering {
                                 {"args", std::move(Args)},
                                 {"loc", A.loc(L)}});
   }
+  void copyVectorStringElement(Expression To, Expression From,
+                               const UtilityVectorRecord &Vector,
+                               SourceLocation L, QualType SourceType = {}) {
+    auto String = approvedUtilityStringRecord(
+        A.S, A.Sources, Vector.ElementType->getAsCXXRecordDecl(), A.Context);
+    if (!String)
+      reject(L, "vector string copy",
+             "Only the pinned std::string owns copyable vector storage.");
+    const auto SizeType = type(A.Context.getSizeType(), L);
+    const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+    const auto PointerType = type(String->PointerType, L);
+    const auto ConstPointerType =
+        type(A.Context.getPointerType(A.Context.CharTy.withConst()), L);
+    auto Source = snapshot(address(std::move(From),
+                                   SourceType.isNull() ? Vector.ElementType
+                                                       : SourceType,
+                                   L), L);
+    auto Target = snapshot(address(std::move(To), Vector.ElementType, L), L);
+    auto WordType = [&](const char *Name) {
+      const bool PointerWord = String->AlternateLayout
+                                   ? llvm::StringRef(Name) == "nct_string_word0"
+                                   : llvm::StringRef(Name) == "nct_string_word2";
+      return PointerWord ? String->PointerType : A.Context.getSizeType();
+    };
+    auto Word = [&](const Expression &Address, const char *Name) {
+      return Expression{{"kind", "member"},
+                        {"type", type(WordType(Name), L)},
+                        {"name", Name},
+                        {"args", json::Array{dereference(json::Object(Address), L)}},
+                        {"loc", A.loc(L)}};
+    };
+    const char *FlagName =
+        String->AlternateLayout ? "nct_string_word2" : "nct_string_word0";
+    const char *PointerName =
+        String->AlternateLayout ? "nct_string_word0" : "nct_string_word2";
+    const auto LongFlag =
+        String->AlternateLayout
+            ? uint64_t(1)
+                  << (A.Context.getTypeSize(A.Context.getSizeType()) - 1)
+            : uint64_t(1);
+    auto Flag = snapshot(Word(Source, FlagName), L);
+    assign(dereference(json::Object(Target), L),
+           dereference(json::Object(Source), L), L);
+    const auto Long = labelName(), Done = labelName();
+    branch(binary("!=", binary("&", json::Object(Flag),
+                                quantity(LongFlag, SizeType, L), SizeType, L),
+                  quantity(0, SizeType, L), "bool", L),
+           Long, Done, L);
+    label(Long, L);
+    auto Length = snapshot(Word(Source, "nct_string_word1"), L);
+    auto AllocationBytes = temporary(SizeType, L);
+    assign(AllocationBytes,
+           binary("*", binary("/", binary("+", json::Object(Length),
+                                           quantity(8, SizeType, L), SizeType,
+                                           L),
+                                 quantity(8, SizeType, L), SizeType, L),
+                  quantity(8, SizeType, L), SizeType, L),
+           L);
+    const auto Adjust = labelName(), Allocate = labelName();
+    branch(binary("==", json::Object(AllocationBytes),
+                  quantity(String->ShortCapacity + 2, SizeType, L), "bool", L),
+           Adjust, Allocate, L);
+    label(Adjust, L);
+    assign(AllocationBytes,
+           binary("+", json::Object(AllocationBytes),
+                  quantity(String->AlternateLayout ? 1 : 2, SizeType, L),
+                  SizeType, L),
+           L);
+    jump(Allocate, L);
+    label(Allocate, L);
+    const auto *New = A.allocatorHeapFunction(true, A.Context.CharTy, L);
+    json::Array Args;
+    Args.push_back(json::Object(AllocationBytes));
+    chargeCall(Args, L);
+    auto Allocation = temporary(type(New->getReturnType(), L), L);
+    Body.push_back(json::Object{{"op", "call"},
+                                {"callee", A.name(New)},
+                                {"args", std::move(Args)},
+                                {"target", json::Object(Allocation)},
+                                {"loc", A.loc(L)}});
+    auto Data = snapshot(cast(std::move(Allocation), PointerType, L), L);
+    assign(Word(Target, PointerName), json::Object(Data), L);
+    assign(Word(Target, FlagName),
+           binary("|", json::Object(AllocationBytes),
+                  quantity(LongFlag, SizeType, L), SizeType, L),
+           L);
+    auto SourceData = snapshot(cast(Word(Source, PointerName),
+                                    ConstPointerType, L), L);
+    auto SourceCurrent = temporary(ConstPointerType, L);
+    auto TargetCurrent = temporary(PointerType, L);
+    auto Index = temporary(SizeType, L);
+    assign(SourceCurrent, std::move(SourceData), L);
+    assign(TargetCurrent, std::move(Data), L);
+    assign(Index, quantity(0, SizeType, L), L);
+    const auto Check = labelName(), Copy = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("<=", json::Object(Index), json::Object(Length), "bool", L),
+           Copy, Done, L);
+    label(Copy, L);
+    assign(dereference(json::Object(TargetCurrent), L),
+           dereference(json::Object(SourceCurrent), L), L);
+    assign(SourceCurrent,
+           binary("+", json::Object(SourceCurrent),
+                  quantity(1, DifferenceType, L), ConstPointerType, L), L);
+    assign(TargetCurrent,
+           binary("+", json::Object(TargetCurrent),
+                  quantity(1, DifferenceType, L), PointerType, L), L);
+    assign(Index,
+           binary("+", json::Object(Index), quantity(1, SizeType, L),
+                  SizeType, L),
+           L);
+    jump(Check, L);
+    label(Done, L);
+  }
+
   void transferVectorElement(Expression To, Expression From,
                              const UtilityVectorRecord &Vector,
                              SourceLocation L) {
@@ -18361,8 +18514,13 @@ class FunctionLowering {
         branch(binary("!=", json::Object(SourceCurrent), json::Object(OldEnd),
                       "bool", L), Advance, Done, L);
         label(Advance, L);
-        assign(dereference(json::Object(TargetCurrent), L),
-               dereference(json::Object(SourceCurrent), L), L);
+        if (Vector->OwningElement)
+          copyVectorStringElement(dereference(json::Object(TargetCurrent), L),
+                                  dereference(json::Object(SourceCurrent), L),
+                                  *Vector, L);
+        else
+          assign(dereference(json::Object(TargetCurrent), L),
+                 dereference(json::Object(SourceCurrent), L), L);
         assign(SourceCurrent,
                binary("+", json::Object(SourceCurrent),
                       quantity(1, DifferenceType, L), PointerType, L), L);
