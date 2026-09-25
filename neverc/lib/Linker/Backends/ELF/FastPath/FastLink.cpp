@@ -212,6 +212,7 @@ struct Symbol {
   uint32_t gotTp = UINT32_MAX;
   uint32_t tlsGd = UINT32_MAX; // first slot of the general-dynamic TLS pair
   bool copied = false; // shared data copied into the executable
+  bool ifunc = false;  // defined as STT_GNU_IFUNC
   bool copyPrimary = false;
 };
 
@@ -1021,9 +1022,10 @@ void resolve() {
       s.kind = Symbol::Object;
       s.file = (d >> 32) & 0x3fffffff;
       s.index = uint32_t(d);
-      uint16_t shndx = ctx.objects[s.file]->syms[s.index].st_shndx;
-      if (shndx != SHN_UNDEF && shndx < SHN_LORESERVE)
-        ctx.defTarget[id] = {s.file, shndx};
+      const Elf64_Sym &def = ctx.objects[s.file]->syms[s.index];
+      s.ifunc = ELF64_ST_TYPE(def.st_info) == STT_GNU_IFUNC;
+      if (def.st_shndx != SHN_UNDEF && def.st_shndx < SHN_LORESERVE)
+        ctx.defTarget[id] = {s.file, def.st_shndx};
       return;
     }
     d = ctx.shDef[id].load(std::memory_order_relaxed);
@@ -1577,6 +1579,11 @@ void scanRelocations() {
         const Elf64_Rela &r = rels[k];
         RelInfo ri = classify(o, data, r);
         kinds[k] = ri.kind;
+        // Functions selected at load time need IRELATIVE relocations.
+        if (ri.global ? ctx.syms[ri.id].ifunc
+                      : ELF64_ST_TYPE(o->syms[ELF64_R_SYM(r.r_info)].st_info) ==
+                            STT_GNU_IFUNC)
+          fatal(o->name + ": reference to a GNU indirect function");
         if (ri.kind == K_GdToIe || ri.kind == K_GdToLe || ri.kind == K_LdToLe) {
           checkTlsSequence(o, sec, rels, n, k, ri.kind);
           kinds[k + 1] = K_Skip;
