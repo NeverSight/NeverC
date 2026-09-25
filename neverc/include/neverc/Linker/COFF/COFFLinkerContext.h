@@ -9,8 +9,12 @@
 #include "Linker/COFF/SymbolTable.h"
 #include "Linker/Core/Runtime/Session.h"
 #include "Linker/Core/Runtime/Stopwatch.h"
+#include "Linker/Core/Driver/Dispatcher.h"
 #include "llvm/ADT/DenseSet.h"
+#include <functional>
 #include <memory>
+#include <optional>
+#include <string>
 
 namespace linker::coff {
 
@@ -26,6 +30,12 @@ public:
   LinkerDriver driver;
   SymbolTable symtab;
   COFFOptTable optTable;
+
+  // The caller's configuration with the command line's overrides applied,
+  // and the hook that starts a time trace the command line requests.
+  std::optional<LinkerDriverConfig> driverCfg;
+  std::function<bool(const LinkerDriverConfig &)> startTimeTrace;
+  std::string timeTracePath;
 
   std::vector<ObjFile *> objFileInstances;
   std::vector<ImportFile *> importFileInstances;

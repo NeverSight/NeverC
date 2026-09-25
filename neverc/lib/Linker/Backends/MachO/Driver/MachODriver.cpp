@@ -908,13 +908,10 @@ LinkerDriverConfig applyLinkerOptions(InputArgList &args,
     if (arg->getOption().matches(OPT_static) != cfg.staticLink)
       conflict(arg, arg->getOption().matches(OPT_static) ? "-static"
                                                          : "no -static");
-  if (const Arg *arg = args.getLastArg(OPT_pie, OPT_no_pie)) {
-    // arm64 executables are always position independent.
-    if (arg->getOption().matches(OPT_no_pie) && cfg.archName == "arm64")
-      warn("-no_pie ignored for arm64");
-    else
+  // arm64 executables are always position independent; link() warns.
+  if (const Arg *arg = args.getLastArg(OPT_pie, OPT_no_pie))
+    if (arg->getOption().matches(OPT_pie) || cfg.archName != "arm64")
       cfg.pie = arg->getOption().matches(OPT_pie);
-  }
   for (unsigned id :
        {OPT_ios_version_min, OPT_ios_simulator_version_min,
         OPT_maccatalyst_version_min, OPT_tvos_version_min,
@@ -1690,6 +1687,9 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
   Common.e.verbose = driverCfg.verbose;
   Common.e.fatalWarnings = driverCfg.fatalWarnings;
   Common.e.suppressWarnings = driverCfg.suppressWarnings;
+  if (const Arg *arg = args.getLastArg(OPT_pie, OPT_no_pie))
+    if (arg->getOption().matches(OPT_no_pie) && driverCfg.archName == "arm64")
+      warn("-no_pie ignored for arm64");
 
   config = std::make_unique<Configuration>();
   symtab = std::make_unique<SymbolTable>();

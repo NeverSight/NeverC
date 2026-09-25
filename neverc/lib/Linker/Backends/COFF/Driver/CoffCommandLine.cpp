@@ -777,16 +777,90 @@ COFFOptTable::COFFOptTable() : GenericOptTable(infoTable, true) {}
 
 ArgParser::ArgParser(COFFLinkerContext &c) : ctx(c) {}
 
+namespace {
+bool isKnownOption(COFFOptTable &table, StringRef tok) {
+  const char *argv[] = {saver().save(tok).data()};
+  unsigned missingIndex, missingCount;
+  opt::InputArgList args = table.ParseArgs(argv, missingIndex, missingCount);
+  for (const opt::Arg *arg : args)
+    return arg->getOption().getKind() != opt::Option::UnknownClass &&
+           arg->getOption().getKind() != opt::Option::InputClass;
+  return false;
+}
+
+// MSVC tools spell options /name[:value] or -name[:value], case-insensitive;
+// NeverC's table spells them --name[=value], and a value of "no" selects
+// --no-name. Tokens that name no option, such as POSIX paths, are kept.
+StringRef normalizeMsvcOption(COFFOptTable &table, StringRef tok) {
+  if (tok.starts_with("--")) {
+    // The compiler driver renders /name:no as --name=no for most names.
+    auto [name, value] = tok.drop_front(2).split('=');
+    if (value.equals_insensitive("no") && !isKnownOption(table, tok)) {
+      std::string negated = "--no-" + name.lower().str().str();
+      if (isKnownOption(table, negated))
+        return saver().save(negated);
+    }
+    return tok;
+  }
+  if (!(tok.starts_with("/") || tok.starts_with("-")) || tok.size() == 1 ||
+      tok.starts_with("//"))
+    return tok;
+  auto [name, value] = tok.drop_front().split(':');
+  if (name.empty() || name.contains('/'))
+    return tok;
+  const std::string lower = name.lower().str().str();
+  if (value.equals_insensitive("no")) {
+    std::string negated = "--no-" + lower;
+    if (isKnownOption(table, negated))
+      return saver().save(negated);
+  }
+  std::string spelled = "--" + lower;
+  if (tok.contains(':'))
+    spelled += "=" + (lower == "guard" || lower == "driver"
+                          ? value.lower().str().str()
+                          : value.str());
+  if (isKnownOption(table, spelled))
+    return saver().save(spelled);
+  return tok;
+}
+
+// --rsp-quoting must be known before response files are expanded.
+cl::TokenizerCallback getQuotingStyle(ArrayRef<const char *> argv) {
+  cl::TokenizerCallback style = cl::TokenizeWindowsCommandLine;
+  for (StringRef arg : argv) {
+    const std::string folded = arg.lower().str().str();
+    StringRef value = folded;
+    if (!value.consume_front("--rsp-quoting=") &&
+        !value.consume_front("-rsp-quoting=") &&
+        !value.consume_front("/rsp-quoting:"))
+      continue;
+    if (value == "windows")
+      style = cl::TokenizeWindowsCommandLine;
+    else if (value == "posix")
+      style = cl::TokenizeGNUCommandLine;
+    else
+      error("invalid response file quoting: " + value);
+  }
+  return style;
+}
+} // namespace
+
 void ArgParser::parse(ArrayRef<const char *> argv, opt::InputArgList &args) {
   unsigned missingIndex;
   unsigned missingCount;
 
-  // Expand @file response files with Windows quoting rules, as MSVC-style
-  // build systems pass long link lines through them.
+  // Expand @file response files, with Windows quoting rules unless
+  // --rsp-quoting says otherwise, as MSVC-style build systems pass long link
+  // lines through them.
   SmallVector<const char *, 256> expanded(argv.slice(1));
-  if (!cl::ExpandResponseFiles(saver(), cl::TokenizeWindowsCommandLine,
+  if (!cl::ExpandResponseFiles(saver(), getQuotingStyle(argv.slice(1)),
                                expanded))
     error("cannot expand response file");
+  for (const char *&arg : expanded) {
+    StringRef normalized = normalizeMsvcOption(ctx.optTable, arg);
+    if (normalized.data() != arg)
+      arg = normalized.data();
+  }
   args = ctx.optTable.ParseArgs(expanded, missingIndex, missingCount);
 
   // Save command line, skipping input files.
@@ -840,8 +914,10 @@ ParsedDirectives ArgParser::parseDirectives(StringRef s) {
   cl::TokenizeWindowsCommandLineNoCopy(s, saver(), tokens);
   for (StringRef tok : tokens) {
     if (tok.starts_with("/") ||
-        (tok.starts_with("-") && !tok.starts_with("--")))
-      tok = normalizeMsvcDirective(tok);
+        (tok.starts_with("-") && !tok.starts_with("--"))) {
+      StringRef normalized = normalizeMsvcOption(ctx.optTable, tok);
+      tok = normalized != tok ? normalized : normalizeMsvcDirective(tok);
+    }
 
     if (tok.starts_with_insensitive("--export="))
       result.exports.push_back(tok.substr(strlen("--export=")));

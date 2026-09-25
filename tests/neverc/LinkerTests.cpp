@@ -2331,6 +2331,53 @@ TEST_F(LinkerTest, NativeMachOLinkerSpellingsAreAccepted) {
       << kind.err;
 }
 
+TEST_F(LinkerTest, MsvcLinkerSpellingsAreNormalized) {
+  const std::string target = "--target=x86_64-pc-windows-msvc";
+  const fs::path source = tmpFile("msvc_opts.c");
+  const fs::path object = tmpFile("msvc_opts.o");
+  const fs::path image = tmpFile("msvc_opts.exe");
+  writeFile(source, "int main(void) { return 0; }\n");
+  CmdResult compile =
+      ncc({target, "-fno-lto", "-c", source.string(), "-o", object.string()});
+  ASSERT_EQ(compile.exitCode, 0) << compile.err;
+  auto link = [&](std::vector<std::string> flags) {
+    std::vector<std::string> args = {target, "-nostdlib", object.string(),
+                                     "-Wl,--entry=main"};
+    args.insert(args.end(), flags.begin(), flags.end());
+    args.insert(args.end(), {"-o", image.string()});
+    return ncc(args);
+  };
+
+  // /MAP without a name writes next to the output; the -name:value form and
+  // any case are MSVC spellings too.
+  const fs::path defaultMap = tmpFile("msvc_opts.map");
+  const fs::path namedMap = tmpFile("msvc_named.map");
+  fs::remove(defaultMap);
+  CmdResult map = link({"-Wl,/MAP", "-Wl,/nologo", "-Wl,/NXCOMPAT:NO"});
+  ASSERT_EQ(map.exitCode, 0) << map.err;
+  EXPECT_TRUE(fs::exists(defaultMap));
+  CmdResult named = link({"-Wl,-map:" + namedMap.string()});
+  ASSERT_EQ(named.exitCode, 0) << named.err;
+  EXPECT_TRUE(fs::exists(namedMap));
+  EXPECT_FALSE(named.stderrContains("unknown argument")) << named.err;
+
+  // /WX makes the ignored-PDB warning an error, and /WX:NO undoes it.
+  CmdResult strict = link({"-Wl,/WX", "-Wl,/pdb:x.pdb"});
+  EXPECT_NE(strict.exitCode, 0);
+  EXPECT_TRUE(strict.stderrContains("does not write program databases"))
+      << strict.err;
+  CmdResult relaxed = link({"-Wl,/WX", "-Wl,/WX:NO", "-Wl,/pdb:x.pdb"});
+  EXPECT_EQ(relaxed.exitCode, 0) << relaxed.err;
+
+  CmdResult noBuildId = link({"-Wl,/build-id:no", "-Wl,/demangle:no"});
+  EXPECT_EQ(noBuildId.exitCode, 0) << noBuildId.err;
+  EXPECT_FALSE(noBuildId.stderrContains("unknown argument")) << noBuildId.err;
+
+  CmdResult dll = link({"-Wl,/DLL"});
+  EXPECT_NE(dll.exitCode, 0);
+  EXPECT_TRUE(dll.stderrContains("pass -shared to the compiler")) << dll.err;
+}
+
 TEST_F(LinkerTest, ThreadCountOptionKeepsOutputBytesOnEveryFormat) {
   struct Format {
     const char *name;

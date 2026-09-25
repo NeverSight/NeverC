@@ -17,6 +17,7 @@
 #include "Linker/Core/Runtime/Session.h"
 #include "Linker/Core/Runtime/Stopwatch.h"
 #include "Linker/Core/Support/FileIO.h"
+#include "neverc/Foundation/Core/Version.h"
 #include "neverc/Invoke/InMemoryFileStore.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/BinaryFormat/Magic.h"
@@ -104,11 +105,26 @@ bool link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
   if (driverCfg.threadCount != 0)
     ctx.configureParallel(driverCfg.threadCount);
 
+  ctx.startTimeTrace = [&](const LinkerDriverConfig &cfg) {
+    if (TraceProfiler || !cfg.timeTraceEnabled)
+      return true;
+    TraceProfiler.emplace(cfg.timeTraceGranularity,
+                          args.empty() ? "neverc" : args.front());
+    if (llvm::StringRef Error = TraceProfiler->acquisitionError();
+        !Error.empty()) {
+      stderrOS << Error << '\n';
+      return false;
+    }
+    return true;
+  };
   ctx.driver.run(args, driverCfg);
 
-  if (driverCfg.timeTraceEnabled && TraceProfiler &&
+  const LinkerDriverConfig &effective =
+      ctx.driverCfg ? *ctx.driverCfg : driverCfg;
+  if (effective.timeTraceEnabled && TraceProfiler &&
       !ctx.config.outputFile.empty())
-    checkError(TraceProfiler->write(ctx.config.outputFile));
+    checkError(TraceProfiler->neverc::LLVMTimeTraceProfilerOwner::write(
+        ctx.timeTracePath, ctx.config.outputFile));
 
   return errorCount() == 0;
 }
@@ -1100,8 +1116,114 @@ std::unique_ptr<llvm::vfs::FileSystem> getVFS(const opt::InputArgList &args) {
 // Main driver
 // ===----------------------------------------------------------------------===
 
+namespace {
+// Applies the MSVC-style options for settings the neverc driver derives from
+// its own flags; they come later on the command line and override them. The
+// output path and kind must agree with the driver, which chose the runtime
+// libraries and import library for them.
+LinkerDriverConfig applyLinkerOptions(opt::InputArgList &args,
+                                      const LinkerDriverConfig &driverCfg) {
+  LinkerDriverConfig cfg = driverCfg;
+  auto conflict = [&](const opt::Arg *arg, StringRef use) {
+    error(arg->getAsString(args) +
+          " conflicts with the compiler's link settings; pass " + use +
+          " to the compiler instead");
+  };
+  if (const opt::Arg *arg = args.getLastArg(OPT_out)) {
+    if (cfg.outputFile.empty())
+      cfg.outputFile = arg->getValue();
+    else if (arg->getValue() != cfg.outputFile)
+      conflict(arg, "-o");
+  }
+  if (const opt::Arg *arg = args.getLastArg(OPT_dll))
+    if (!cfg.shared)
+      conflict(arg, "-shared");
+  for (unsigned id : {OPT_vctoolsdir, OPT_vctoolsversion, OPT_winsdkdir,
+                      OPT_winsdkversion, OPT_winsysroot, OPT_diasdkdir})
+    if (const opt::Arg *arg = args.getLastArg(id))
+      error(arg->getSpelling() + ": pass this option to the compiler instead");
+  if (const opt::Arg *arg = args.getLastArg(OPT_lib))
+    error(arg->getSpelling() + ": the linker does not create static "
+                               "libraries; use a library archiver");
+  if (const opt::Arg *arg = args.getLastArg(OPT_linkrepro, OPT_reproduce))
+    error(arg->getSpelling() + ": not supported by the NeverC linker");
+  if (args.hasArg(OPT_debug))
+    cfg.debugInfo = true;
+  if (const opt::Arg *arg = args.getLastArg(OPT_map, OPT_map_file)) {
+    if (arg->getOption().matches(OPT_map_file)) {
+      cfg.mapFile = arg->getValue();
+    } else {
+      SmallString<128> path(cfg.outputFile);
+      sys::path::replace_extension(path, "map");
+      cfg.mapFile = std::string(path);
+    }
+  }
+  cfg.fatalWarnings = args.hasFlag(OPT_wx, OPT_no_wx, cfg.fatalWarnings);
+  if (args.hasArg(OPT_errorlimit))
+    cfg.errorLimit = args::getInteger(args, OPT_errorlimit, 20);
+  cfg.verbose = cfg.verbose || args.hasArg(OPT_verbose, OPT_verbose_eq);
+  cfg.repro = cfg.repro || args.hasArg(OPT_brepro);
+  if (const opt::Arg *arg = args.getLastArg(OPT_build_id, OPT_no_build_id)) {
+    if (arg->getOption().matches(OPT_no_build_id))
+      cfg.buildId.clear();
+    else if (cfg.buildId.empty())
+      cfg.buildId = "fast";
+  }
+  cfg.functionPadMin = cfg.functionPadMin || args.hasArg(OPT_functionpadmin);
+  if (const opt::Arg *arg = args.getLastArg(OPT_call_graph_ordering_file))
+    cfg.callGraphOrderingFile = arg->getValue();
+  if (const opt::Arg *arg = args.getLastArg(OPT_call_graph_profile_sort,
+                                            OPT_no_call_graph_profile_sort))
+    cfg.callGraphProfileSort =
+        arg->getOption().matches(OPT_call_graph_profile_sort) ? "cdsort"
+                                                              : "none";
+  if (const opt::Arg *arg = args.getLastArg(OPT_print_symbol_order))
+    cfg.printSymbolOrder = arg->getValue();
+  for (const opt::Arg *arg : args.filtered(OPT_mllvm))
+    cfg.mllvmOpts.push_back(arg->getValue());
+  cfg.demangle = args.hasFlag(OPT_demangle, OPT_no_demangle, cfg.demangle);
+  if (args.hasArg(OPT_time_trace_eq, OPT_time_trace)) {
+    cfg.timeTraceEnabled = true;
+    cfg.timeTraceGranularity =
+        args::getInteger(args, OPT_time_trace_granularity, 500);
+  }
+  return cfg;
+}
+
+// Runs once /WX and friends are in effect.
+void warnIgnoredOptions(opt::InputArgList &args) {
+  if (const opt::Arg *arg = args.getLastArg(OPT_debugtype))
+    warn(arg->getSpelling() + " ignored: NeverC writes DWARF debug information");
+  if (const opt::Arg *arg = args.getLastArg(
+          OPT_pdb, OPT_pdbaltpath, OPT_pdbpagesize, OPT_pdbstripped,
+          OPT_pdbstream, OPT_pdbsourcepath, OPT_pdbcompress, OPT_natvis))
+    warn(arg->getSpelling() + " ignored: NeverC does not write program "
+                              "databases; debug information is DWARF");
+}
+
+void applyColorDiagnostics(opt::InputArgList &args) {
+  const opt::Arg *arg = args.getLastArg(
+      OPT_color_diagnostics, OPT_color_diagnostics_eq, OPT_no_color_diagnostics);
+  if (!arg)
+    return;
+  StringRef mode = arg->getOption().matches(OPT_color_diagnostics) ? "always"
+                   : arg->getOption().matches(OPT_no_color_diagnostics)
+                       ? "never"
+                       : arg->getValue();
+  raw_ostream &os = linker::errs();
+  if (mode == "always")
+    os.enable_colors(true);
+  else if (mode == "never")
+    os.enable_colors(false);
+  else if (mode == "auto")
+    os.enable_colors(os.has_colors());
+  else
+    error("unknown option: --color-diagnostics=" + mode);
+}
+} // namespace
+
 void LinkerDriver::run(ArrayRef<const char *> argsArr,
-                       const LinkerDriverConfig &driverCfg) {
+                       const LinkerDriverConfig &callerCfg) {
   ScopedTimer rootTimer(ctx.rootTimer);
   Configuration *config = &ctx.config;
 
@@ -1113,14 +1235,37 @@ void LinkerDriver::run(ArrayRef<const char *> argsArr,
   InitializeAllAsmParsers();
   InitializeAllAsmPrinters();
 
-  errorHandler().fatalWarnings = driverCfg.fatalWarnings;
-  errorHandler().suppressWarnings = driverCfg.suppressWarnings;
+  errorHandler().fatalWarnings = callerCfg.fatalWarnings;
+  errorHandler().suppressWarnings = callerCfg.suppressWarnings;
 
   linker::crash_recovery_detail::CrashRecoveryLocalOwner<opt::InputArgList>
       ArgsOwner(nullptr);
   opt::InputArgList &args = ArgsOwner.get();
   ArgParser parser(ctx);
   parser.parse(argsArr, args);
+
+  applyColorDiagnostics(args);
+  const LinkerDriverConfig &driverCfg =
+      ctx.driverCfg.emplace(applyLinkerOptions(args, callerCfg));
+  errorHandler().fatalWarnings = driverCfg.fatalWarnings;
+  errorHandler().suppressWarnings = driverCfg.suppressWarnings;
+  errorHandler().errorLimit = driverCfg.errorLimit;
+  ctx.timeTracePath = args.getLastArgValue(OPT_time_trace_eq).str();
+  warnIgnoredOptions(args);
+  if (errorCount())
+    return;
+  if (args.hasArg(OPT_help)) {
+    ctx.optTable.printHelp(
+        linker::outs(), (Twine(argsArr[0]) + " [options] file...").str().c_str(),
+        "NeverC COFF linker", /*ShowHidden=*/false, /*ShowAllAliases=*/true);
+    return;
+  }
+  if (args.hasArg(OPT_print_version)) {
+    message(neverc::getNeverCFullVersion());
+    return;
+  }
+  if (ctx.startTimeTrace && !ctx.startTimeTrace(driverCfg))
+    return;
 
   bool hasPrintArgs = false;
   for (auto arg : args) {
@@ -1158,6 +1303,13 @@ void LinkerDriver::run(ArrayRef<const char *> argsArr,
     searchPaths.emplace_back("");
     for (auto *arg : args.filtered(OPT_libpath))
       searchPaths.push_back(arg->getValue());
+  }
+  if (args.hasArg(OPT_print_search_paths)) {
+    std::string paths = "Library search paths:";
+    for (StringRef path : searchPaths)
+      if (!path.empty())
+        paths += "\n  " + path.str();
+    message(paths);
   }
 
   // --- Diagnostics & force ---
@@ -2014,7 +2166,7 @@ void LinkerDriver::run(ArrayRef<const char *> argsArr,
   writeOutput(ctx);
 
   rootTimer.stop();
-  if (config->driverCfg->timeTraceEnabled)
+  if (config->driverCfg->timeTraceEnabled || args.hasArg(OPT_time))
     ctx.rootTimer.print();
   timeScope.reset();
 }
