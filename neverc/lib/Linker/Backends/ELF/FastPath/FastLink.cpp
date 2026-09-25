@@ -136,6 +136,7 @@ struct SharedFile {
 struct MappedFile {
   const uint8_t *data;
   size_t size;
+  bool fromDisk = false; // a mapping of a file, as opposed to caller memory
 };
 
 const Options *activeOptions; // the running link's options
@@ -158,7 +159,7 @@ MappedFile mapFile(const string &path) {
   close(fd);
   if (p == MAP_FAILED)
     fatal("cannot map " + path);
-  return {static_cast<const uint8_t *>(p), size_t(st.st_size)};
+  return {static_cast<const uint8_t *>(p), size_t(st.st_size), true};
 }
 
 // ================================================================ context
@@ -221,13 +222,14 @@ struct Ctx {
   uint32_t numNames = 0;
   vector<string_view> nameStr;
   // per name
-  std::unique_ptr<std::atomic<uint64_t>[]> provider, objDef, shDef;
-  std::unique_ptr<std::atomic<uint16_t>[]> flags;
-  vector<Symbol> syms;
+  std::atomic<uint64_t> *provider = nullptr, *objDef = nullptr,
+                        *shDef = nullptr;
+  std::atomic<uint16_t> *flags = nullptr;
+  Symbol *syms = nullptr;
   PlacedSection *placed = nullptr; // indexed by SectionState::placed
   // Per name: the defining object and section, for the GC hot path
   // (file UINT32_MAX when not defined in an object section).
-  vector<std::pair<uint32_t, uint32_t>> defTarget;
+  std::pair<uint32_t, uint32_t> *defTarget = nullptr;
   vector<OutputSection *> osecs;
   // dynamic linking state
   vector<uint32_t> gotEntries;   // name ids with a GOT slot
@@ -364,19 +366,48 @@ bool parseLinkerScript(const MappedFile &m, bool asNeeded,
 
 void loadInputs(const vector<InputSpec> &specs) {
   STEP("load");
-  // Expand linker scripts first (they are tiny and few).
+  // Map every input once, expanding linker scripts (they are tiny and few).
   vector<InputSpec> flat;
+  vector<MappedFile> maps;
   for (const InputSpec &s : specs) {
     MappedFile m = mapFile(s.path);
     if (m.size >= 4 && (memcmp(m.data, ELFMAG, 4) == 0 ||
                         memcmp(m.data, "!<ar", 4) == 0)) {
       flat.push_back(s);
+      maps.push_back(m);
       continue;
     }
     vector<InputSpec> sub;
     if (!parseLinkerScript(m, s.asNeeded, sub))
       fatal("unknown file type: " + s.path);
-    flat.insert(flat.end(), sub.begin(), sub.end());
+    for (const InputSpec &x : sub) {
+      flat.push_back(x);
+      maps.push_back(mapFile(x.path));
+    }
+  }
+
+  // Build the page tables of the mappings up front, each 2 MiB block by one
+  // worker. Workers faulting in neighboring pages of one file would contend
+  // for the same page-table lock.
+  if (!getenv("FL_NOPOP")) {
+    constexpr uintptr_t Block = 2 << 20;
+    const uintptr_t page = sysconf(_SC_PAGESIZE);
+    vector<std::pair<uintptr_t, uintptr_t>> blocks;
+    for (const MappedFile &m : maps) {
+      if (!m.fromDisk || !m.size)
+        continue;
+      uintptr_t b = reinterpret_cast<uintptr_t>(m.data);
+      uintptr_t e = (b + m.size + page - 1) & ~(page - 1);
+      for (uintptr_t x = b; x < e;) {
+        uintptr_t next = std::min(e, (x & ~(Block - 1)) + Block);
+        blocks.push_back({x, next});
+        x = next;
+      }
+    }
+    ctx.pool->forEach(blocks.size(), [&](size_t i) {
+      madvise(reinterpret_cast<void *>(blocks[i].first),
+              blocks[i].second - blocks[i].first, 22 /* MADV_POPULATE_READ */);
+    }, 1);
   }
 
   struct Loaded {
@@ -388,7 +419,7 @@ void loadInputs(const vector<InputSpec> &specs) {
       flat.size(),
       [&](size_t i) {
         const InputSpec &s = flat[i];
-        MappedFile m = mapFile(s.path);
+        const MappedFile &m = maps[i];
         if (m.size >= 8 && memcmp(m.data, "!<arch>\n", 8) == 0) {
           size_t off = 8;
           while (off + 60 <= m.size) {
@@ -641,6 +672,7 @@ void resolve() {
   });
   for (size_t expected = total / 8;; expected = total) {
     ctx.names = std::make_unique<NameTable>(std::max<size_t>(expected, 1024));
+    ctx.names->prefault(*ctx.pool);
     std::atomic<bool> ok{true};
     ctx.pool->forEach(no + ns, [&](size_t k) {
       if (!ok.load(std::memory_order_relaxed))
@@ -660,10 +692,11 @@ void resolve() {
   mark("intern");
   ctx.numNames = ctx.names->size();
   const uint32_t n = ctx.numNames;
-  ctx.provider.reset(new std::atomic<uint64_t>[n]);
-  ctx.objDef.reset(new std::atomic<uint64_t>[n]);
-  ctx.shDef.reset(new std::atomic<uint64_t>[n]);
-  ctx.flags.reset(new std::atomic<uint16_t>[n]);
+  Pool &pool = *ctx.pool;
+  ctx.provider = bigArray<std::atomic<uint64_t>>(pool, n);
+  ctx.objDef = bigArray<std::atomic<uint64_t>>(pool, n);
+  ctx.shDef = bigArray<std::atomic<uint64_t>>(pool, n);
+  ctx.flags = bigArray<std::atomic<uint16_t>>(pool, n);
   ctx.pool->forEach(n, [&](size_t i) {
     ctx.provider[i].store(None64, std::memory_order_relaxed);
     ctx.objDef[i].store(None64, std::memory_order_relaxed);
@@ -754,9 +787,8 @@ void resolve() {
     vector<size_t> base(ctx.objects.size() + 1, 0);
     for (size_t i = 0; i < ctx.objects.size(); ++i)
       base[i + 1] = base[i] + ctx.objects[i]->numShdrs;
-    auto *secs = static_cast<SectionState *>(
-        calloc(base.back() + 1, sizeof(SectionState)));
-    auto *relaOf = static_cast<uint32_t *>(calloc(base.back() + 1, 4));
+    auto *secs = bigArray<SectionState>(*ctx.pool, base.back() + 1);
+    auto *relaOf = bigArray<uint32_t>(*ctx.pool, base.back() + 1);
     ctx.pool->forEach(ctx.objects.size(), [&](size_t i) {
       initSections(ctx.objects[i], secs + base[i], relaOf + base[i]);
     }, 4);
@@ -802,10 +834,10 @@ void resolve() {
     }
   }, 4);
 
-  ctx.syms.resize(n);
-  ctx.defTarget.resize(n);
+  ctx.syms = bigArray<Symbol>(*ctx.pool, n);
+  ctx.defTarget = bigArray<std::pair<uint32_t, uint32_t>>(*ctx.pool, n);
   ctx.pool->forEach(n, [&](size_t id) {
-    Symbol &s = ctx.syms[id];
+    Symbol &s = *new (&ctx.syms[id]) Symbol;
     uint64_t d = ctx.objDef[id].load(std::memory_order_relaxed);
     ctx.defTarget[id] = {UINT32_MAX, 0};
     if (d != None64) {
@@ -916,7 +948,7 @@ void selectComdats() {
   if (localSigs)
     sigs = std::make_unique<NameTable>(localSigs.load());
   const size_t numIds = n + localSigs.load();
-  std::unique_ptr<std::atomic<uint32_t>[]> owner(new std::atomic<uint32_t>[numIds]);
+  std::atomic<uint32_t> *owner = bigArray<std::atomic<uint32_t>>(*ctx.pool, numIds);
   ctx.pool->forEach(numIds, [&](size_t i) {
     owner[i].store(UINT32_MAX, std::memory_order_relaxed);
   });
@@ -1704,8 +1736,7 @@ void assignInputSections() {
     for (const Use &x : uses[fi])
       numPlaced += x.count;
   }
-  ctx.placed = static_cast<PlacedSection *>(
-      calloc(numPlaced, sizeof(PlacedSection)));
+  ctx.placed = bigArray<PlacedSection>(*ctx.pool, numPlaced);
   ctx.pool->forEach(ctx.objects.size(), [&](size_t fi) {
     ObjectFile *o = ctx.objects[fi];
     auto &u = uses[fi];
@@ -3274,6 +3305,7 @@ void writeOutput() {
     if (buf == MAP_FAILED)
       fatal("cannot map " + path);
     close(fd);
+    prefault(*ctx.pool, buf, L.fileSize, true);
   } else {
     buf = static_cast<uint8_t *>(malloc(L.fileSize));
     if (!buf)

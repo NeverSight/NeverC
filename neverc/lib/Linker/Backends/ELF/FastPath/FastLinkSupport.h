@@ -9,6 +9,7 @@
 #define LINKER_ELF_FASTPATH_FASTLINKSUPPORT_H
 
 #include <elf.h>
+#include <sys/mman.h>
 
 // Definitions missing from older <elf.h> versions.
 #ifndef SHF_GNU_RETAIN
@@ -198,6 +199,43 @@ private:
   static inline thread_local unsigned tid_ = 0;
 };
 
+// Faults in [p, p + n), each 2 MiB block by one worker: workers faulting in
+// neighboring pages would contend for the lock of the page table they share,
+// and populating a block at once avoids a fault per page.
+inline void prefault(Pool &pool, const void *p, size_t n, bool write) {
+  constexpr uintptr_t Block = 2 << 20;
+  const uintptr_t pageSize = 4096;
+  uintptr_t b = reinterpret_cast<uintptr_t>(p) & ~(pageSize - 1);
+  uintptr_t e = reinterpret_cast<uintptr_t>(p) + n;
+  if (b >= e)
+    return;
+  size_t first = b / Block, last = (e - 1) / Block;
+  pool.forEach(last - first + 1, [&](size_t i) {
+    uintptr_t lo = std::max(b, (first + i) * Block);
+    uintptr_t hi = std::min(e, (first + i + 1) * Block);
+    hi = (hi + pageSize - 1) & ~(pageSize - 1);
+    // MADV_POPULATE_READ and MADV_POPULATE_WRITE, from Linux 5.14.
+    if (madvise(reinterpret_cast<void *>(lo), hi - lo, write ? 23 : 22) == 0)
+      return;
+    for (uintptr_t q = lo; q < hi; q += pageSize) {
+      volatile char *c = reinterpret_cast<volatile char *>(q);
+      char v = *c;
+      if (write)
+        *c = v;
+    }
+  }, 1);
+}
+
+// Zeroed storage for `n` objects of trivially constructible type `T`, faulted
+// in by the pool.
+template <class T> T *bigArray(Pool &pool, size_t n) {
+  T *p = static_cast<T *>(calloc(std::max<size_t>(n, 1), sizeof(T)));
+  if (!p)
+    throw Failure{"out of memory"};
+  prefault(pool, p, n * sizeof(T), true);
+  return p;
+}
+
 // ------------------------------------------------------------ hashing
 // A fast hash for bulk data (build ids): four independent lanes.
 inline uint64_t hashBulk(const uint8_t *p, size_t n) {
@@ -299,6 +337,12 @@ public:
           return uint32_t(cur) - 1;
       }
     }
+  }
+  // Faults the table in with the pool's workers.
+  void prefault(Pool &pool) {
+    fl::prefault(pool, slots_, (mask_ + 1) * sizeof(*slots_), true);
+    fl::prefault(pool, names_, (maxIds_ + size_t(MaxWorkers) * Block) * sizeof(Name),
+                 true);
   }
   // One past the highest id handed out; ids below it may be unused.
   uint32_t size() const { return next_.load(); }
