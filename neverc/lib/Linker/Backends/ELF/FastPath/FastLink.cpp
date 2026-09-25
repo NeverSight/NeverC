@@ -386,6 +386,16 @@ void loadInputs(const vector<InputSpec> &specs) {
     }
   }
 
+  // The worker count follows from the size of the link.
+  uint64_t bytes = 0;
+  for (const MappedFile &m : maps)
+    bytes += m.size;
+  unsigned threads =
+      ctx.opt.selectThreads ? ctx.opt.selectThreads(bytes, maps.size())
+      : ctx.opt.threads     ? ctx.opt.threads
+                            : std::min(16u, std::thread::hardware_concurrency());
+  ctx.pool = std::make_unique<Pool>(std::max(1u, threads));
+
   // Build the page tables of the mappings up front, each 2 MiB block by one
   // worker. Workers faulting in neighboring pages of one file would contend
   // for the same page-table lock.
@@ -1369,6 +1379,14 @@ void scanRelocations() {
         if (ri.kind == K_GdToIe || ri.kind == K_GdToLe || ri.kind == K_LdToLe) {
           checkTlsSequence(o, sec, rels, n, k, ri.kind);
           kinds[k + 1] = K_Skip;
+        } else if (ri.kind == K_IeToLe) {
+          // movq or addq of a RIP-relative GOT entry to a register.
+          const uint64_t off = r.r_offset;
+          if (off < 3 || !(data[off - 3] == 0x48 || data[off - 3] == 0x4c) ||
+              !(data[off - 2] == 0x03 || data[off - 2] == 0x8b) ||
+              (data[off - 1] & 0xc7) != 0x05)
+            fatal(o->name + ": unsupported initial-exec TLS instruction in " +
+                  o->secName(sec));
         }
         const uint32_t id = ri.id;
         switch (ri.kind) {
@@ -2703,7 +2721,7 @@ void relaxIeToLe(uint8_t *loc, const string &where) {
     memcpy(inst, "\x48\xc7", 2);
     inst[2] = 0xc0 | reg;
   } else {
-    fatal(where + ": unsupported initial-exec TLS instruction");
+    fatal(where + ": internal error: unchecked initial-exec TLS instruction");
   }
 }
 
@@ -3403,10 +3421,6 @@ void runPipeline() {
     specs.push_back({in.isLibrary ? findLibrary(ctx.opt.libPaths, in.path)
                                   : in.path,
                      in.wholeArchive, in.asNeeded});
-  unsigned threads =
-      ctx.opt.threads ? ctx.opt.threads
-                      : std::min(16u, std::thread::hardware_concurrency());
-  ctx.pool = std::make_unique<Pool>(threads);
   auto t0 = Clock::now();
   auto t = t0;
   double times[8];

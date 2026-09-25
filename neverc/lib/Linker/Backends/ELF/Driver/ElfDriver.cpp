@@ -813,8 +813,16 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
     break;
   }
   req.discardLocals = config->discard == DiscardPolicy::All;
-  if (auto *arg = args.getLastArg(OPT_threads_eq))
-    to_integer(arg->getValue(), req.threads);
+  // Choose workers as the full backend does for its materialized inputs.
+  req.selectThreads = [requested = config->requestedThreadCount](
+                          unsigned long long bytes, unsigned long long files) {
+    LinkThreadPolicy policy;
+    unsigned available = std::max(1U, hardware_concurrency().compute_thread_count());
+    if (policy.MaxAutoThreads != 0)
+      available = std::min(available, policy.MaxAutoThreads);
+    return selectAdaptiveLinkThreadCount(requested, available, bytes, files,
+                                         policy);
+  };
   req.timing = report;
   req.openFile = [](const std::string &path, const unsigned char *&data,
                     size_t &size) {

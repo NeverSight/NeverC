@@ -50,6 +50,10 @@ struct Request {
                      size_t &Size)>
       openFile;
   unsigned threads = 0; // 0 selects the hardware concurrency, up to 16
+  // Chooses the worker count from the inputs' total size and file count
+  // when set; `threads` is then ignored.
+  std::function<unsigned(unsigned long long Bytes, unsigned long long Files)>
+      selectThreads;
   bool timing = false;  // print phase times to stderr
 };
 
