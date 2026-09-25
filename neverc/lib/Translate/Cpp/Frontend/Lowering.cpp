@@ -9687,6 +9687,10 @@ class FunctionLowering {
     case UtilityOperation::StringInsertCString:
     case UtilityOperation::StringInsertString:
     case UtilityOperation::StringInsertFill:
+    case UtilityOperation::StringInsertIteratorCharacter:
+    case UtilityOperation::StringInsertIteratorFill:
+    case UtilityOperation::StringInsertIteratorRange:
+    case UtilityOperation::StringInsertIteratorList:
     case UtilityOperation::StringReplacePointer:
     case UtilityOperation::StringReplaceCString:
     case UtilityOperation::StringReplaceString:
@@ -9764,17 +9768,78 @@ class FunctionLowering {
           Operation == UtilityOperation::StringReplaceCString ||
           Operation == UtilityOperation::StringReplaceString ||
           Operation == UtilityOperation::StringReplaceFill;
-      const bool Fill = Operation == UtilityOperation::StringInsertFill ||
-                        Operation == UtilityOperation::StringReplaceFill;
+      const bool IteratorInsert =
+          Operation == UtilityOperation::StringInsertIteratorCharacter ||
+          Operation == UtilityOperation::StringInsertIteratorFill ||
+          Operation == UtilityOperation::StringInsertIteratorRange ||
+          Operation == UtilityOperation::StringInsertIteratorList;
+      const bool Fill =
+          Operation == UtilityOperation::StringInsertFill ||
+          Operation == UtilityOperation::StringReplaceFill ||
+          Operation == UtilityOperation::StringInsertIteratorCharacter ||
+          Operation == UtilityOperation::StringInsertIteratorFill;
       const unsigned SourceIndex = Replace ? 2 : 1;
-      auto Position = snapshot(expression(Call->getArg(0)), L);
+      auto Position = temporary(SizeType, L);
+      std::optional<Expression> PositionPointer;
+      if (IteratorInsert) {
+        auto Iterator = approvedUtilityWrapIteratorRecord(
+            A.S, A.Sources, Call->getArg(0)->getType()->getAsCXXRecordDecl(),
+            A.Context);
+        if (!Iterator)
+          reject(L, "string insert",
+                 "The selected position iterator layout is unavailable.");
+        auto Value = snapshot(expression(Call->getArg(0)), L);
+        PositionPointer =
+            snapshot(fieldStorage(std::move(Value), Iterator->Current, L), L);
+      } else {
+        assign(Position, snapshot(expression(Call->getArg(0)), L), L);
+      }
       auto RemovedArgument = Replace ? snapshot(expression(Call->getArg(1)), L)
                                      : quantity(0, SizeType, L);
       auto Inserted = temporary(SizeType, L);
       std::optional<Expression> Source, Character;
-      if (Fill) {
+      if (Operation == UtilityOperation::StringInsertIteratorCharacter) {
+        assign(Inserted, quantity(1, SizeType, L), L);
+        Character = snapshot(expression(Call->getArg(SourceIndex)), L);
+      } else if (Fill) {
         assign(Inserted, snapshot(expression(Call->getArg(SourceIndex)), L), L);
         Character = snapshot(expression(Call->getArg(SourceIndex + 1)), L);
+      } else if (Operation == UtilityOperation::StringInsertIteratorList) {
+        const auto *Argument = Call->getArg(SourceIndex);
+        auto List = approvedUtilityInitializerListRecord(
+            A.S, A.Sources, Argument->getType()->getAsCXXRecordDecl(),
+            A.Context);
+        if (!List)
+          reject(L, "string insert",
+                 "The selected initializer-list layout is unavailable.");
+        auto Value = snapshot(expression(Argument), L);
+        assign(Inserted,
+               snapshot(fieldStorage(json::Object(Value), List->Size, L), L),
+               L);
+        Source = temporary(ConstPointerType, L);
+        assign(*Source,
+               snapshot(fieldStorage(std::move(Value), List->Begin, L), L), L);
+      } else if (Operation == UtilityOperation::StringInsertIteratorRange) {
+        auto RangePointer = [&](unsigned Index) {
+          const auto *Argument = Call->getArg(Index);
+          auto Value = snapshot(expression(Argument), L);
+          auto Iterator = approvedUtilityWrapIteratorRecord(
+              A.S, A.Sources, Argument->getType()->getAsCXXRecordDecl(),
+              A.Context);
+          return Iterator ? snapshot(fieldStorage(std::move(Value),
+                                                  Iterator->Current, L),
+                                     L)
+                          : Value;
+        };
+        auto FirstRange = RangePointer(SourceIndex);
+        auto LastRange = RangePointer(SourceIndex + 1);
+        Source = temporary(ConstPointerType, L);
+        assign(*Source, cast(std::move(FirstRange), ConstPointerType, L), L);
+        assign(Inserted,
+               cast(binary("-", cast(std::move(LastRange), ConstPointerType, L),
+                           json::Object(*Source), DifferenceType, L),
+                    SizeType, L),
+               L);
       } else if (Operation == UtilityOperation::StringInsertString ||
                  Operation == UtilityOperation::StringReplaceString) {
         auto Address =
@@ -9861,6 +9926,17 @@ class FunctionLowering {
              L);
       jump(Ready, L);
       label(Ready, L);
+      std::optional<Expression> FinalData;
+      if (IteratorInsert) {
+        FinalData = temporary(PointerType, L);
+        assign(*FinalData, json::Object(Data), L);
+        assign(Position,
+               cast(binary("-", json::Object(*PositionPointer),
+                           cast(json::Object(Data), ConstPointerType, L),
+                           DifferenceType, L),
+                    SizeType, L),
+               L);
+      }
       const auto Valid = labelName(), Done = labelName();
       branch(
           binary("<=", json::Object(Position), json::Object(Size), "bool", L),
@@ -10023,6 +10099,8 @@ class FunctionLowering {
                     quantity(LongFlag, SizeType, L), SizeType, L),
              L);
       assign(Word("nct_string_word1"), json::Object(NewSize), L);
+      if (FinalData)
+        assign(*FinalData, json::Object(NewData), L);
       jump(Done, L);
       label(Reuse, L);
       auto Alias = temporary("bool", L);
@@ -10147,6 +10225,24 @@ class FunctionLowering {
              L);
       jump(Done, L);
       label(Done, L);
+      if (IteratorInsert) {
+        auto Result = approvedUtilityWrapIteratorRecord(
+            A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+        if (!Result)
+          reject(L, "string insert",
+                 "The selected result iterator layout is unavailable.");
+        auto Place = Destination ? std::move(*Destination)
+                                 : objectTemporary(Call->getType(), L);
+        Destination.reset();
+        if (Place.getString("type") != type(Call->getType(), L))
+          reject(L, "string insert",
+                 "The iterator destination type differs from the result.");
+        assign(
+            fieldStorage(json::Object(Place), Result->Current, L),
+            Add(json::Object(*FinalData), json::Object(Position), PointerType),
+            L);
+        return Place;
+      }
       return dereference(json::Object(Receiver), L);
     }
     case UtilityOperation::StringMemberSwap:
@@ -10458,7 +10554,8 @@ class FunctionLowering {
     case UtilityOperation::StringAppendList:
     case UtilityOperation::StringAppendFill:
     case UtilityOperation::StringAppendCharacter:
-    case UtilityOperation::StringErase: {
+    case UtilityOperation::StringErase:
+    case UtilityOperation::StringEraseIterator: {
       const auto *Object = MemberObject();
       auto String = Object ? StringFor(Object->getType())
                            : std::optional<UtilityStringRecord>();
@@ -10495,6 +10592,7 @@ class FunctionLowering {
       };
       std::optional<Expression> RequestedArgument, CharacterArgument,
           IndexArgument, SourceArgument;
+      std::optional<Expression> EraseFirstPointer, EraseLastPointer;
       const unsigned ArgumentOffset = isa<CXXOperatorCallExpr>(Call) ? 1 : 0;
       const bool CharacterAppend =
           Operation == UtilityOperation::StringAppendCharacter;
@@ -10651,6 +10749,27 @@ class FunctionLowering {
         RequestedArgument = EraseArgument(0);
         IndexArgument = EraseArgument(1);
       }
+      if (Operation == UtilityOperation::StringEraseIterator) {
+        auto ErasePointer = [&](unsigned Index) {
+          const auto *Argument = Call->getArg(Index);
+          auto Iterator = approvedUtilityWrapIteratorRecord(
+              A.S, A.Sources, Argument->getType()->getAsCXXRecordDecl(),
+              A.Context);
+          if (!Iterator)
+            reject(L, "string erase",
+                   "The selected iterator layout is unavailable.");
+          auto Value = snapshot(expression(Argument), L);
+          return snapshot(fieldStorage(std::move(Value), Iterator->Current, L),
+                          L);
+        };
+        EraseFirstPointer = ErasePointer(0);
+        if (Call->getNumArgs() == 2)
+          EraseLastPointer = ErasePointer(1);
+        RequestedArgument = temporary(SizeType, L);
+        IndexArgument = temporary(SizeType, L);
+        if (!EraseLastPointer)
+          assign(*IndexArgument, quantity(1, SizeType, L), L);
+      }
       auto First = snapshot(Word(String->AlternateLayout
                                      ? "nct_string_word2"
                                      : "nct_string_word0"), L);
@@ -10658,7 +10777,8 @@ class FunctionLowering {
                                 ? uint64_t(1)
                                       << (A.Context.getTypeSize(A.Context.getSizeType()) - 1)
                                 : uint64_t(1);
-      if (Operation == UtilityOperation::StringErase) {
+      if (Operation == UtilityOperation::StringErase ||
+          Operation == UtilityOperation::StringEraseIterator) {
         const auto PointerType = type(String->PointerType, L);
         const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
         const char *FlagName = String->AlternateLayout
@@ -10699,6 +10819,23 @@ class FunctionLowering {
                L);
         jump(Ready, L);
         label(Ready, L);
+        if (EraseFirstPointer) {
+          const auto ConstPointerType =
+              type(A.Context.getPointerType(A.Context.CharTy.withConst()), L);
+          assign(*RequestedArgument,
+                 cast(binary("-", json::Object(*EraseFirstPointer),
+                             cast(json::Object(Data), ConstPointerType, L),
+                             DifferenceType, L),
+                      SizeType, L),
+                 L);
+          if (EraseLastPointer)
+            assign(*IndexArgument,
+                   cast(binary("-", json::Object(*EraseLastPointer),
+                               json::Object(*EraseFirstPointer), DifferenceType,
+                               L),
+                        SizeType, L),
+                   L);
+        }
         const auto Erase = labelName(), Done = labelName();
         branch(binary("<=", json::Object(*RequestedArgument),
                       json::Object(Size), "bool", L), Erase, Done, L);
@@ -10783,6 +10920,26 @@ class FunctionLowering {
                       std::move(Encoded), SizeType, L), L);
         jump(Done, L);
         label(Done, L);
+        if (Operation == UtilityOperation::StringEraseIterator) {
+          auto Result = approvedUtilityWrapIteratorRecord(
+              A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+          if (!Result)
+            reject(L, "string erase",
+                   "The selected result iterator layout is unavailable.");
+          auto Place = Destination ? std::move(*Destination)
+                                   : objectTemporary(Call->getType(), L);
+          Destination.reset();
+          if (Place.getString("type") != type(Call->getType(), L))
+            reject(L, "string erase",
+                   "The iterator destination type differs from the result.");
+          assign(
+              fieldStorage(json::Object(Place), Result->Current, L),
+              binary("+", json::Object(Data),
+                     cast(json::Object(*RequestedArgument), DifferenceType, L),
+                     PointerType, L),
+              L);
+          return Place;
+        }
         return dereference(json::Object(Receiver), L);
       }
       if (Operation == UtilityOperation::StringPushBack ||

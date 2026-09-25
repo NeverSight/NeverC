@@ -29582,6 +29582,36 @@ int main() {
   bool erase_intact = erased.size() == 2 && erased[0] == 'a' &&
                       erased[1] == 'd';
   erased.erase();
+  std::string iterator_modified("abcd");
+  auto erased_at = iterator_modified.erase(iterator_modified.cbegin() + 1);
+  bool iterator_modifiers_intact =
+      erased_at.base() == iterator_modified.data() + 1;
+  auto erased_empty = iterator_modified.erase(iterator_modified.cbegin() + 1,
+                                              iterator_modified.cbegin() + 1);
+  iterator_modifiers_intact = iterator_modifiers_intact &&
+      erased_empty.base() == iterator_modified.data() + 1;
+  auto inserted_at = iterator_modified.insert(iterator_modified.cbegin() + 1,
+                                              'b');
+  iterator_modifiers_intact = iterator_modifiers_intact &&
+      inserted_at.base() == iterator_modified.data() + 1;
+  auto filled_at = iterator_modified.insert(iterator_modified.cend(), 2, 'e');
+  iterator_modifiers_intact = iterator_modifiers_intact &&
+      filled_at.base() == iterator_modified.data() + 4;
+  const char suffix_range[] = {'f', 'g'};
+  auto range_at = iterator_modified.insert(iterator_modified.cend(),
+                                           suffix_range, suffix_range + 2);
+  iterator_modifiers_intact = iterator_modifiers_intact &&
+      range_at.base() == iterator_modified.data() + 6;
+  auto wrapped_at = iterator_modified.insert(iterator_modified.cend(),
+                                             iterator_modified.cbegin(),
+                                             iterator_modified.cbegin() + 2);
+  iterator_modifiers_intact = iterator_modifiers_intact &&
+      wrapped_at.base() == iterator_modified.data() + 8;
+  auto listed_at = iterator_modified.insert(iterator_modified.cend(),
+                                            {'x', 0, 'y'});
+  iterator_modifiers_intact = iterator_modifiers_intact &&
+      listed_at.base() == iterator_modified.data() + 10 &&
+      iterator_modified.size() == 13 && iterator_modified[11] == 0;
   std::string spliced("ab");
   spliced.insert(1, "x", 1).insert(0, "!");
   spliced.insert(1, suffix).insert(0, 2, 'q');
@@ -29740,7 +29770,8 @@ int main() {
          joined[7] == 'e' &&
          reassigned.size() == 2 && reassigned[0] == 'a' &&
          reassigned[1] == 'a' &&
-         erase_intact && erased.empty() && splice_intact && growth_intact &&
+         erase_intact && erased.empty() && iterator_modifiers_intact &&
+         splice_intact && growth_intact &&
          concat_intact && rvalue_concat_intact && list_intact &&
          scalar_assignment_intact &&
          substring_intact && compare_intact &&

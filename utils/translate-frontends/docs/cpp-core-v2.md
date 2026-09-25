@@ -2335,6 +2335,9 @@ capacity when possible and return the receiver reference. Pointer assignment
 copies self-referenced bytes before changing size or releasing old storage.
 Positional `erase(pos, count)` and its default arguments remove bytes in place,
 retain capacity, and return the receiver reference.
+The `erase(const_iterator)` and `erase(const_iterator, const_iterator)`
+overloads share that in-place movement and return a mutable iterator to the
+following character or the new end. Empty ranges preserve storage.
 Positional `insert(pos, const char*, count)`, `insert(pos, const char*)`,
 `insert(pos, const std::string&)`, and `insert(pos, count, char)` return the
 receiver reference. The corresponding `replace(pos, count, ...)` overloads
@@ -2342,6 +2345,10 @@ accept counted pointers, C strings, strings, and character fills. Both
 modifiers preserve embedded zero bytes in counted sources, retain storage
 when capacity suffices, and copy self-referenced source bytes before moving
 or releasing the original storage.
+Iterator-position `insert` accepts one character, a counted character fill,
+raw or authenticated wrapped character ranges, and an initializer list. It
+uses the same growth and alias handling and returns a mutable iterator to the
+first inserted character, including the original position for empty input.
 `compare(const std::string&)` and the six string/string relation operators
 compare unsigned bytes lexicographically, then lengths, without allocating.
 `compare(const char*)` and the twelve string/C-string relation overloads scan

@@ -16710,6 +16710,96 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Context.hasSameType(Call->getArg(1)->getType(),
                             Context.getSizeType()))
       return UtilityOperation::StringErase;
+    if (!Operator && Name == "erase" && !Method->isConst() &&
+        !Object->getType().isConstQualified() &&
+        !Method->getPrimaryTemplate() && Call->isPRValue() &&
+        (Method->getNumParams() == 1 || Method->getNumParams() == 2) &&
+        Context.hasSameType(Call->getType(), Method->getReturnType())) {
+      const auto Result = approvedUtilityWrapIteratorRecord(
+          S, SM, Method->getReturnType()->getAsCXXRecordDecl(), Context);
+      if (Result &&
+          Context.hasSameType(Result->IteratorType, String->PointerType)) {
+        bool Valid = true;
+        for (unsigned I = 0; I != Method->getNumParams(); ++I) {
+          const auto Parameter = Method->getParamDecl(I)->getType();
+          const auto Iterator = approvedUtilityWrapIteratorRecord(
+              S, SM, Parameter->getAsCXXRecordDecl(), Context);
+          Valid &= Iterator &&
+                   Context.hasSameType(
+                       Iterator->IteratorType,
+                       Context.getPointerType(Context.CharTy.withConst())) &&
+                   Context.hasSameType(Parameter, Call->getArg(I)->getType());
+        }
+        if (Valid)
+          return UtilityOperation::StringEraseIterator;
+      }
+    }
+    if (!Operator && Name == "insert" && !Method->isConst() &&
+        !Object->getType().isConstQualified() && Call->isPRValue() &&
+        (Method->getNumParams() == 2 || Method->getNumParams() == 3) &&
+        Context.hasSameType(Call->getType(), Method->getReturnType())) {
+      const auto Result = approvedUtilityWrapIteratorRecord(
+          S, SM, Method->getReturnType()->getAsCXXRecordDecl(), Context);
+      const auto Position = approvedUtilityWrapIteratorRecord(
+          S, SM, Method->getParamDecl(0)->getType()->getAsCXXRecordDecl(),
+          Context);
+      if (Result && Position &&
+          Context.hasSameType(Result->IteratorType, String->PointerType) &&
+          Context.hasSameType(
+              Position->IteratorType,
+              Context.getPointerType(Context.CharTy.withConst())) &&
+          Context.hasSameType(Method->getParamDecl(0)->getType(),
+                              Call->getArg(0)->getType())) {
+        if (Method->getNumParams() == 2 && !Method->getPrimaryTemplate()) {
+          const auto Argument = Method->getParamDecl(1)->getType();
+          if (Context.hasSameType(Argument, Call->getArg(1)->getType())) {
+            if (Context.hasSameType(Argument, Context.CharTy))
+              return UtilityOperation::StringInsertIteratorCharacter;
+            const auto List = approvedUtilityInitializerListRecord(
+                S, SM, Argument->getAsCXXRecordDecl(), Context);
+            if (List && Context.hasSameType(List->ElementType, Context.CharTy))
+              return UtilityOperation::StringInsertIteratorList;
+          }
+        }
+        if (Method->getNumParams() == 3) {
+          if (!Method->getPrimaryTemplate() &&
+              Context.hasSameType(Method->getParamDecl(1)->getType(),
+                                  Context.getSizeType()) &&
+              Context.hasSameType(Call->getArg(1)->getType(),
+                                  Context.getSizeType()) &&
+              Context.hasSameType(Method->getParamDecl(2)->getType(),
+                                  Context.CharTy) &&
+              Context.hasSameType(Call->getArg(2)->getType(), Context.CharTy))
+            return UtilityOperation::StringInsertIteratorFill;
+          const auto *Primary = Method->getPrimaryTemplate();
+          if (Primary && approvedStandardSDKDeclaration(S, SM, Primary) &&
+              cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
+                            "string")) {
+            const auto FirstType = Method->getParamDecl(1)->getType();
+            const auto LastType = Method->getParamDecl(2)->getType();
+            const bool RawPointer =
+                Context.hasSameType(FirstType,
+                                    Context.getPointerType(Context.CharTy)) ||
+                Context.hasSameType(FirstType, Context.getPointerType(
+                                                   Context.CharTy.withConst()));
+            const auto Wrapped = approvedUtilityWrapIteratorRecord(
+                S, SM, FirstType->getAsCXXRecordDecl(), Context);
+            const bool WrappedPointer =
+                Wrapped &&
+                (Context.hasSameType(Wrapped->IteratorType,
+                                     Context.getPointerType(Context.CharTy)) ||
+                 Context.hasSameType(
+                     Wrapped->IteratorType,
+                     Context.getPointerType(Context.CharTy.withConst())));
+            if ((RawPointer || WrappedPointer) &&
+                Context.hasSameType(FirstType, LastType) &&
+                Context.hasSameType(Call->getArg(1)->getType(), FirstType) &&
+                Context.hasSameType(Call->getArg(2)->getType(), LastType))
+              return UtilityOperation::StringInsertIteratorRange;
+          }
+        }
+      }
+    }
     if (!Operator && (Name == "insert" || Name == "replace") &&
         !Method->isConst() && !Object->getType().isConstQualified() &&
         Call->isLValue() && Method->getReturnType()->isLValueReferenceType() &&

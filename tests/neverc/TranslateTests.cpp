@@ -55040,6 +55040,166 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringIteratorEraseRun) {
+  const auto Source = tmpFile("string-iterator-erase.cpp");
+  const auto Output = tmpFile("string-iterator-erase.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+int main() {
+  {
+    std::string short_text("abcdef");
+    char *short_data = short_text.data();
+    auto one = short_text.erase(short_text.cbegin() + 1);
+    if (short_text != "acdef" || one.base() != short_data + 1 ||
+        *one != 'c' || short_text.data() != short_data)
+      return 1;
+    auto range = short_text.erase(short_text.cbegin() + 1,
+                                  short_text.cbegin() + 3);
+    if (short_text != "aef" || range.base() != short_data + 1 ||
+        *range != 'e')
+      return 2;
+    auto unchanged = short_text.erase(short_text.cbegin() + 2,
+                                      short_text.cbegin() + 2);
+    if (short_text != "aef" || unchanged.base() != short_data + 2 ||
+        *unchanged != 'f')
+      return 3;
+    auto ending = short_text.erase(short_text.cend() - 1);
+    if (short_text != "ae" || ending != short_text.end())
+      return 4;
+    auto empty_result = short_text.erase(short_text.cbegin(),
+                                         short_text.cend());
+    if (!short_text.empty() || empty_result != short_text.begin() ||
+        short_text.data() != short_data || short_text.data()[0] != 0)
+      return 5;
+    std::string long_text("abcdefghijklmnopqrstuvwxyz0123456789");
+    long_text.reserve(90);
+    char *long_data = long_text.data();
+    Size capacity = long_text.capacity();
+    auto long_range = long_text.erase(long_text.cbegin() + 10,
+                                      long_text.cbegin() + 26);
+    if (long_text != "abcdefghij0123456789" ||
+        long_range.base() != long_data + 10 || *long_range != '0' ||
+        long_text.data() != long_data || long_text.capacity() != capacity)
+      return 6;
+    auto long_one = long_text.erase(long_text.cbegin());
+    if (long_text != "bcdefghij0123456789" ||
+        long_one.base() != long_data || *long_one != 'b')
+      return 7;
+    auto long_empty = long_text.erase(long_text.cbegin(), long_text.cend());
+    if (!long_text.empty() || long_empty != long_text.begin() ||
+        long_text.data() != long_data || long_text.capacity() != capacity)
+      return 8;
+  }
+  return allocations == releases ? 0 : 9;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-iterator-erase" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StringIteratorInsertRun) {
+  const auto Source = tmpFile("string-iterator-insert.cpp");
+  const auto Output = tmpFile("string-iterator-insert.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+int main() {
+  {
+    std::string short_text("ac");
+    char *short_data = short_text.data();
+    auto character = short_text.insert(short_text.cbegin() + 1, 'b');
+    if (short_text != "abc" || character.base() != short_data + 1 ||
+        *character != 'b' || short_text.data() != short_data)
+      return 1;
+    auto filled = short_text.insert(short_text.cbegin() + 1, 2, 'X');
+    if (short_text != "aXXbc" || filled.base() != short_data + 1 ||
+        *filled != 'X')
+      return 2;
+    auto unchanged = short_text.insert(short_text.cbegin() + 2, 0, 'Q');
+    if (short_text != "aXXbc" || unchanged.base() != short_data + 2)
+      return 3;
+    auto listed = short_text.insert(short_text.cend(), {'d', 0, 'e'});
+    if (short_text.size() != 8 || short_text[5] != 'd' ||
+        short_text[6] != 0 || short_text[7] != 'e' ||
+        listed.base() != short_data + 5)
+      return 4;
+    const char raw[] = {'?', 'R', 'S', '?'};
+    auto pointer_range = short_text.insert(short_text.cbegin() + 1,
+                                            raw + 1, raw + 3);
+    if (short_text.size() != 10 || short_text[1] != 'R' ||
+        short_text[2] != 'S' || short_text[8] != 0 ||
+        pointer_range.base() != short_data + 1)
+      return 5;
+    const std::string donor("UV");
+    auto wrapped_range = short_text.insert(short_text.cend(),
+                                            donor.cbegin(), donor.cend());
+    if (short_text.size() != 12 || short_text[10] != 'U' ||
+        short_text[11] != 'V' || wrapped_range.base() != short_data + 10)
+      return 6;
+    std::string overlap("abcd");
+    overlap.reserve(32);
+    char *overlap_data = overlap.data();
+    auto aliased = overlap.insert(overlap.cbegin() + 1,
+                                  overlap.cbegin() + 2, overlap.cend());
+    if (overlap != "acdbcd" || aliased.base() != overlap_data + 1 ||
+        overlap.data() != overlap_data)
+      return 7;
+    std::string grow("abcdefghijklmnopqrstuvwxyz");
+    char *old_data = grow.data();
+    auto grown = grow.insert(grow.cbegin() + 1,
+                             grow.cbegin() + 2, grow.cend());
+    if (grow != "acdefghijklmnopqrstuvwxyzbcdefghijklmnopqrstuvwxyz" ||
+        grown.base() != grow.data() + 1 || grow.data() == old_data)
+      return 8;
+    std::string fill("abc");
+    auto long_fill = fill.insert(fill.cbegin() + 1, 30, 'x');
+    if (fill.size() != 33 || *long_fill != 'x' ||
+        long_fill.base() != fill.data() + 1 || fill[0] != 'a' ||
+        fill[31] != 'b' || fill[32] != 'c')
+      return 9;
+    std::string empty;
+    auto first = empty.insert(empty.cbegin(), {'z'});
+    if (empty != "z" || first != empty.begin())
+      return 10;
+  }
+  return allocations == releases ? 0 : 11;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-iterator-insert" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StringInsertAndReplaceRun) {
   const auto Source = tmpFile("string-insert-replace.cpp");
   const auto Output = tmpFile("string-insert-replace.nc");
