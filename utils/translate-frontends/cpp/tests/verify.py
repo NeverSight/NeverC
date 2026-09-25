@@ -29213,6 +29213,11 @@ int main() {
   spliced.replace(0, 2, "z", 1).replace(1, 1, "?");
   spliced.replace(2, 1, suffix).replace(0, 1, 2, 'r');
   bool splice_intact = spliced == "rr?eaxb";
+  char copied_bytes[] = {'?', '?', '?'};
+  bool substring_intact = spliced.copy(copied_bytes, 2, 1) == 2 &&
+                          copied_bytes[0] == 'r' && copied_bytes[1] == '?' &&
+                          copied_bytes[2] == '?' &&
+                          spliced.substr(1, 3) == "r?e";
   const std::string compared("abc");
   const std::string compared_same("abc");
   const std::string compared_later("abd");
@@ -29344,7 +29349,8 @@ int main() {
          joined[7] == 'e' &&
          reassigned.size() == 2 && reassigned[0] == 'a' &&
          reassigned[1] == 'a' &&
-         erase_intact && erased.empty() && splice_intact && compare_intact &&
+         erase_intact && erased.empty() && splice_intact &&
+         substring_intact && compare_intact &&
          cstring_compare_intact && search_intact && set_search_intact &&
          mutable_iteration && const_iteration && long_iteration &&
          iterator_arithmetic && forward_conversion &&
@@ -29434,6 +29440,12 @@ std::string_view exchange(std::string_view left, std::string_view right) {
 }
 std::string_view::size_type capacity(std::string_view view) {
   return view.max_size();
+}
+std::string_view slice(std::string_view view) {
+  return view.substr(1, 2);
+}
+std::string_view::size_type copy_slice(std::string_view view, char *out) {
+  return view.copy(out, 2, 1);
 }
 int compare(std::string_view left, std::string_view right) {
   return left.compare(right);

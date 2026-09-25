@@ -2208,6 +2208,11 @@ matching byte sequence, while `rfind(char, size_t)` and
 pinned zero or `npos` defaults. Empty patterns and out-of-range positions
 follow libc++'s view-search results. The caller remains responsible for the
 ordinary view lifetime, readable-range and valid-index preconditions.
+`substr(pos, count)` returns another view over the selected byte range, with
+both default arguments and `npos` counts. `copy(char*, count, pos)` writes the
+selected bytes without appending a terminator and returns the copied length.
+Positions within `[0, size()]` and the usual writable destination range remain
+the caller's responsibility; throwing out-of-range paths are not lowered.
 Custom traits, other character types, throwing `at()`, and other string-view
 operations still require separate direct lowerings.
 
@@ -2260,6 +2265,11 @@ or releasing the original storage.
 compare unsigned bytes lexicographically, then lengths, without allocating.
 `compare(const char*)` and the twelve string/C-string relation overloads scan
 the zero-terminated argument once and use the same byte comparison.
+`substr(pos, count)` creates independently owned short or long storage from
+the selected range; `copy(char*, count, pos)` copies bytes without a terminator
+and reports the copied length. Both accept their pinned default arguments and
+clamp counts to the available suffix. Throwing out-of-range paths remain
+outside the direct lowering boundary.
 The `find` and `rfind` overloads for `char`, `const std::string&`,
 `const char*`, and `(const char*, position, count)` search without allocating.
 They honor default positions, `npos`, embedded NUL in counted patterns, and

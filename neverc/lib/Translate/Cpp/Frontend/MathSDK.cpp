@@ -7708,6 +7708,49 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
     }
     const auto View =
         approvedUtilityStringViewRecord(S, SM, Method->getParent(), Context);
+    if (Default && Parameter && Owner && Prototype && (String || View) &&
+        Owner->getCanonicalDecl() == Method->getCanonicalDecl() &&
+        Index < Method->getNumParams() &&
+        Parameter == Method->getParamDecl(Index) &&
+        Parameter->getFunctionScopeIndex() == Index && !Method->isStatic() &&
+        !Method->isVariadic() && Method->isConst() && Method->getIdentifier() &&
+        Context.hasSameType(Parameter->getType(), Context.getSizeType()) &&
+        approvedStandardSDKDeclaration(S, SM, Method) &&
+        cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
+                      String ? "string" : "string_view") &&
+        S.owns(SM, Default->getExprLoc()) && Init &&
+        Context.hasSameType(Init->getType(), Context.getSizeType()) &&
+        !Init->isTypeDependent() && !Init->isValueDependent() &&
+        !Init->isInstantiationDependent()) {
+      const auto Name = Method->getName();
+      const bool Substr =
+          Name == "substr" && Method->getNumParams() == 2 && Index < 2 &&
+          Context.hasSameType(
+              Method->getReturnType(),
+              Context.getRecordType(String ? String->Record : View->Record)) &&
+          Context.hasSameType(Method->getParamDecl(0)->getType(),
+                              Context.getSizeType()) &&
+          Context.hasSameType(Method->getParamDecl(1)->getType(),
+                              Context.getSizeType());
+      const bool Copy =
+          Name == "copy" && Method->getNumParams() == 3 && Index == 2 &&
+          Context.hasSameType(Method->getReturnType(), Context.getSizeType()) &&
+          Context.hasSameType(Method->getParamDecl(0)->getType(),
+                              Context.getPointerType(Context.CharTy)) &&
+          Context.hasSameType(Method->getParamDecl(1)->getType(),
+                              Context.getSizeType()) &&
+          Context.hasSameType(Method->getParamDecl(2)->getType(),
+                              Context.getSizeType());
+      if (Substr || Copy) {
+        Expr::EvalResult Evaluated;
+        if (Init->EvaluateAsInt(Evaluated, Context) && Evaluated.Val.isInt()) {
+          const auto &Value = Evaluated.Val.getInt();
+          if (((Copy || Index == 0) && Value == 0) ||
+              (Substr && Index == 1 && Value.isAllOnes()))
+            return true;
+        }
+      }
+    }
     if (Default && Parameter && Owner && View && Prototype &&
         Prototype->isNothrow() &&
         Owner->getCanonicalDecl() == Method->getCanonicalDecl() &&
@@ -16278,13 +16321,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         (!Prototype->isNothrow() && Name != "push_back" && Name != "pop_back" &&
          Name != "reserve" && Name != "resize" && Name != "append" &&
          Name != "assign" && Name != "erase" && Name != "insert" &&
-         Name != "replace" && !PlusEqual) ||
+         Name != "replace" && Name != "copy" && Name != "substr" &&
+         !PlusEqual) ||
         Method->isStatic() || Method->isVariadic() ||
         (!Method->hasBody() && Name != "push_back" && Name != "reserve" &&
          Name != "resize" && Name != "append" && Name != "assign" &&
          Name != "erase" && Name != "insert" && Name != "replace" &&
-         Name != "compare" && Name != "find" && Name != "rfind" &&
-         Name != "find_first_of" && Name != "find_last_of" &&
+         Name != "copy" && Name != "compare" && Name != "find" &&
+         Name != "rfind" && Name != "find_first_of" && Name != "find_last_of" &&
          Name != "find_first_not_of" && Name != "find_last_not_of") ||
         Method->getRefQualifier() != RQ_None ||
         Method->getParent()->getCanonicalDecl() !=
@@ -16423,6 +16467,36 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           return UtilityOperation::StringFindFirstNotOf;
         return UtilityOperation::StringFindLastNotOf;
       }
+    }
+    if (!Operator && Method->isConst() && Call->isPRValue() &&
+        ((Name == "copy" && Method->getNumParams() == 3) ||
+         (Name == "substr" && Method->getNumParams() == 2)) &&
+        Context.hasSameType(Method->getParamDecl(1)->getType(),
+                            Context.getSizeType()) &&
+        Context.hasSameType(Call->getArg(1)->getType(),
+                            Context.getSizeType())) {
+      if (Name == "copy" &&
+          Context.hasSameType(Method->getReturnType(), Context.getSizeType()) &&
+          Context.hasSameType(Call->getType(), Context.getSizeType()) &&
+          Context.hasSameType(Method->getParamDecl(0)->getType(),
+                              Context.getPointerType(Context.CharTy)) &&
+          Context.hasSameType(Call->getArg(0)->getType(),
+                              Context.getPointerType(Context.CharTy)) &&
+          Context.hasSameType(Method->getParamDecl(2)->getType(),
+                              Context.getSizeType()) &&
+          Context.hasSameType(Call->getArg(2)->getType(),
+                              Context.getSizeType()))
+        return UtilityOperation::StringCopy;
+      if (Name == "substr" &&
+          Context.hasSameType(Method->getReturnType(),
+                              Context.getRecordType(String->Record)) &&
+          Context.hasSameType(Call->getType(),
+                              Context.getRecordType(String->Record)) &&
+          Context.hasSameType(Method->getParamDecl(0)->getType(),
+                              Context.getSizeType()) &&
+          Context.hasSameType(Call->getArg(0)->getType(),
+                              Context.getSizeType()))
+        return UtilityOperation::StringSubstr;
     }
     if (!Operator && Name == "erase" && !Method->isConst() &&
         !Object->getType().isConstQualified() &&
@@ -17089,10 +17163,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const unsigned Offset = Operator ? 1 : 0;
     const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
     const auto ViewType = Context.getRecordType(StringView->Record);
-    if (!Reference || !Object || !Prototype || !Prototype->isNothrow() ||
+    const llvm::StringRef Name = Method->getIdentifier()
+                                     ? Method->getIdentifier()->getName()
+                                     : llvm::StringRef();
+    if (!Reference || !Object || !Prototype ||
+        (!Prototype->isNothrow() && Name != "copy" && Name != "substr") ||
         Method->isStatic() || Method->isVariadic() ||
         Call->getNumArgs() != Method->getNumParams() + Offset ||
-        !Method->isConstexpr() || !Method->hasBody() ||
+        (!Method->isConstexpr() && Name != "copy") || !Method->hasBody() ||
         Method->getRefQualifier() != RQ_None ||
         Method->getParent()->getCanonicalDecl() !=
             StringView->Record->getCanonicalDecl() ||
@@ -17101,9 +17179,6 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         !cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "string_view") ||
         !S.owns(SM, Reference->getExprLoc()))
       return std::nullopt;
-    const llvm::StringRef Name = Method->getIdentifier()
-                                     ? Method->getIdentifier()->getName()
-                                     : llvm::StringRef();
     const auto Pointer = Context.getPointerType(Context.CharTy.withConst());
     if (!Operator && Method->isConst() && !Method->getNumParams() &&
         Call->isPRValue() &&
@@ -17202,6 +17277,32 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           return Name == "find" ? UtilityOperation::StringViewFindView
                                 : UtilityOperation::StringViewRFindView;
       }
+      if (Name == "copy" && Method->getNumParams() == 3 &&
+          Context.hasSameType(Result, Context.getSizeType()) &&
+          Context.hasSameType(Method->getParamDecl(0)->getType(),
+                              Context.getPointerType(Context.CharTy)) &&
+          Context.hasSameType(Call->getArg(0)->getType(),
+                              Context.getPointerType(Context.CharTy)) &&
+          Context.hasSameType(Method->getParamDecl(1)->getType(),
+                              Context.getSizeType()) &&
+          Context.hasSameType(Method->getParamDecl(2)->getType(),
+                              Context.getSizeType()) &&
+          Context.hasSameType(Call->getArg(1)->getType(),
+                              Context.getSizeType()) &&
+          Context.hasSameType(Call->getArg(2)->getType(),
+                              Context.getSizeType()))
+        return UtilityOperation::StringViewCopy;
+      if (Name == "substr" && Method->getNumParams() == 2 &&
+          Context.hasSameType(Result, ViewType) &&
+          Context.hasSameType(Method->getParamDecl(0)->getType(),
+                              Context.getSizeType()) &&
+          Context.hasSameType(Method->getParamDecl(1)->getType(),
+                              Context.getSizeType()) &&
+          Context.hasSameType(Call->getArg(0)->getType(),
+                              Context.getSizeType()) &&
+          Context.hasSameType(Call->getArg(1)->getType(),
+                              Context.getSizeType()))
+        return UtilityOperation::StringViewSubstr;
     }
     return std::nullopt;
   }

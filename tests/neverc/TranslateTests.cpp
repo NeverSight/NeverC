@@ -53695,6 +53695,94 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringAndViewSubstringRun) {
+  const auto Source = tmpFile("string-substring.cpp");
+  const auto Output = tmpFile("string-substring.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <string>
+#include <string_view>
+int evaluations;
+Size position() { ++evaluations; return 2; }
+Size count() { ++evaluations; return 2; }
+int main() {
+  const char raw[] = {'a', 0, 'b', 'c', 'd', 'e'};
+  std::string_view view(raw, 6);
+  std::string_view slice = view.substr(1, 3);
+  if (slice.data() != raw + 1 || slice.size() != 3 ||
+      slice[0] != 0 || slice[1] != 'b' || slice[2] != 'c')
+    return 1;
+  std::string_view tail = view.substr(4);
+  if (tail.size() != 2 || tail[0] != 'd' || tail[1] != 'e') return 2;
+  std::string_view empty = view.substr(view.size());
+  std::string_view blank;
+  if (!empty.empty() || !blank.substr().empty()) return 3;
+  char view_bytes[] = {'?', '?', '?', '?', '?'};
+  if (view.copy(view_bytes, 4, 2) != 4 || view_bytes[0] != 'b' ||
+      view_bytes[1] != 'c' || view_bytes[2] != 'd' ||
+      view_bytes[3] != 'e' || view_bytes[4] != '?')
+    return 4;
+  if (view.copy(view_bytes, 3) != 3 || view_bytes[0] != 'a' ||
+      view_bytes[1] != 0 || view_bytes[2] != 'b' ||
+      view_bytes[3] != 'e')
+    return 5;
+  std::string_view evaluated = view.substr(position(), count());
+  if (evaluations != 2 || evaluated.size() != 2 ||
+      evaluated[0] != 'b' || evaluated[1] != 'c')
+    return 6;
+
+  std::string text(raw, 6);
+  std::string owned = text.substr(1, 3);
+  text[2] = 'X';
+  if (owned.size() != 3 || owned[0] != 0 || owned[1] != 'b' ||
+      owned[2] != 'c' || text[2] != 'X')
+    return 7;
+  char copied[] = {'?', '?', '?', '?', '?'};
+  if (text.copy(copied, 4, 1) != 4 || copied[0] != 0 ||
+      copied[1] != 'X' || copied[2] != 'c' || copied[3] != 'd' ||
+      copied[4] != '?')
+    return 8;
+  if (text.copy(copied, count(), position()) != 2 ||
+      evaluations != 4 || copied[0] != 'X' || copied[1] != 'c')
+    return 9;
+  std::string short_part = text.substr(position(), count());
+  if (evaluations != 6 || short_part.size() != 2 ||
+      short_part[0] != 'X' || short_part[1] != 'c')
+    return 10;
+  if (!text.substr(text.size()).empty()) return 11;
+
+  std::string long_text("abcdefghijklmnopqrstuvwxyz0123456789");
+  std::string long_part = long_text.substr(3, 30);
+  if (long_part.size() != 30 || long_part.data() == long_text.data() + 3 ||
+      long_part.front() != 'd' || long_part.back() != '6' ||
+      long_part.data()[30] != 0)
+    return 12;
+  long_text[3] = 'Z';
+  if (long_part.front() != 'd' || long_text.front() != 'a') return 13;
+  std::string full = long_text.substr();
+  if (full.size() != long_text.size() || full.data() == long_text.data() ||
+      full[3] != 'Z' || full.data()[full.size()] != 0)
+    return 14;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-substring" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StringComparisonRun) {
   const auto Source = tmpFile("string-comparison.cpp");
   const auto Output = tmpFile("string-comparison.nc");
