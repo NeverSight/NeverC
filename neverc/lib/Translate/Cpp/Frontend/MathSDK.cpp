@@ -4652,7 +4652,7 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
   if (Element.isNull() || Element.isConstQualified() ||
       Element.isVolatileQualified() || Element->isBooleanType() ||
       !(Element->isIntegerType() || Element->isFloatingType() ||
-        TrivialSourceRecord) ||
+        Element->isObjectPointerType() || TrivialSourceRecord) ||
       Element->isIncompleteType())
     return std::nullopt;
   const auto Pointer = Context.getPointerType(Element);
@@ -18649,8 +18649,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                     Context.hasSameUnqualifiedType(Call->getArg(I)->getType(),
                                                    VectorType);
       }
-      if (Matching && (Left->ElementType->isIntegerType() ||
-                       Left->ElementType->isFloatingType()))
+      const bool Arithmetic = Left->ElementType->isIntegerType() ||
+                              Left->ElementType->isFloatingType();
+      const bool PointerEquality =
+          Left->ElementType->isObjectPointerType() &&
+          (Operator->getOperator() == OO_EqualEqual ||
+           Operator->getOperator() == OO_ExclaimEqual);
+      if (Matching && (Arithmetic || PointerEquality))
         switch (Operator->getOperator()) {
         case OO_EqualEqual:
         case OO_ExclaimEqual:

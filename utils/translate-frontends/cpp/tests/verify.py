@@ -29092,6 +29092,16 @@ int pointer_record_vector(std::vector<VectorPointer>& values, int& value) {
   values.push_back(VectorPointer{&value, 4});
   return *values[0].pointer + values[0].tag;
 }
+int object_pointer_vector(int& value) {
+  std::vector<int*> values;
+  values.push_back(&value);
+  values.emplace_back();
+  values[1] = values[0];
+  void* address = &value;
+  std::vector<void*> opaque;
+  opaque.push_back(address);
+  return values.size() == 2 && values[1] == &value && opaque[0] == address;
+}
 """
     vector_dependencies = None
     for target in sdk_targets:
@@ -29108,7 +29118,7 @@ int pointer_record_vector(std::vector<VectorPointer>& values, int& value) {
             vector_dependencies = dependencies
         else:
             assert dependencies == vector_dependencies, target
-        assert len(vector_ir["functions"]) == 20, target
+        assert len(vector_ir["functions"]) == 23, target
     vector_record_boundary_preamble = """\
 using Size = decltype(sizeof(0));
 extern "C" void *malloc(Size);
@@ -29139,6 +29149,16 @@ int main() { std::vector<Entry> left, right; return left == right; }
               "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-vector-runtime-object",
           '#include <vector>\nint f(){std::vector<int> v;return v.size();}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-vector-function-pointer",
+          vector_record_boundary_preamble +
+          'void callback() {}\nint f() { std::vector<void (*)()> values; '
+          'values.push_back(&callback); return values.size(); }',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-vector-pointer-order",
+          vector_record_boundary_preamble +
+          'bool f(const std::vector<int*>& left, '
+          'const std::vector<int*>& right) { return left < right; }',
           "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-vector-quoted", '#include "vector"\nint f(){return 0;}',
           "TR0201", profile="cpp-core-v2", sdk=True)

@@ -53007,6 +53007,86 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorObjectPointersRun) {
+  const auto Source = tmpFile("vector-object-pointers.cpp");
+  const auto Output = tmpFile("vector-object-pointers.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <vector>
+struct Node { int value; };
+int main() {
+  int values[4] = {10, 20, 30, 40};
+  Node node{7};
+  {
+    std::vector<int *> pointers;
+    if (!pointers.empty() || pointers.data() != nullptr)
+      return 1;
+    pointers.emplace_back();
+    if (pointers.front() != nullptr)
+      return 2;
+    pointers[0] = &values[0];
+    pointers.push_back(&values[1]);
+    pointers.push_back(&values[2]);
+    pointers.shrink_to_fit();
+    pointers.push_back(pointers[0]);
+    if (pointers.size() != 4 || pointers[3] != &values[0])
+      return 3;
+    pointers.reserve(12);
+    auto inserted = pointers.insert(pointers.cbegin() + 1, &values[3]);
+    if (*inserted != &values[3] || pointers[2] != &values[1])
+      return 4;
+    pointers.erase(pointers.cbegin() + 1);
+    pointers.resize(6);
+    if (pointers[4] != nullptr || pointers[5] != nullptr)
+      return 5;
+    pointers.resize(4);
+    const std::vector<int *> &view = pointers;
+    if (*view.cbegin() != &values[0] || view.back() != &values[0])
+      return 6;
+    std::vector<int *> copy(view);
+    if (copy != view || !(copy == view) || copy.data() == view.data())
+      return 7;
+    std::vector<int *> moved(static_cast<std::vector<int *> &&>(copy));
+    if (!copy.empty() || moved != view)
+      return 8;
+    moved.assign({&values[3], &values[2]});
+    if (moved.size() != 2 || *moved.front() != 40)
+      return 9;
+    std::vector<const int *> constants{&values[0], &values[1]};
+    if (*constants.back() != 20)
+      return 10;
+    std::vector<Node *> nodes;
+    nodes.push_back(&node);
+    if (nodes[0]->value != 7)
+      return 11;
+    void *address = &values[0];
+    std::vector<void *> opaque;
+    opaque.push_back(address);
+    if (opaque[0] != address)
+      return 12;
+  }
+  return allocations == releases ? 0 : 13;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-object-pointers" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorTrivialRecordRun) {
   const auto Source = tmpFile("vector-trivial-record.cpp");
   const auto Output = tmpFile("vector-trivial-record.nc");

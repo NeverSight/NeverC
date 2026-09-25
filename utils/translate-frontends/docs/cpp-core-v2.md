@@ -2454,8 +2454,9 @@ retain their LLVM 20.1.8 source bytes and catalog hashes. For the default
 allocator specialization, Clang can fold `std::vector<int>` size and alignment
 queries from libc++'s three-pointer layout and resolve its `size_type` alias.
 Authenticated `std::vector<T, std::allocator<T>>` objects admit non-boolean
-integer and floating elements, plus source-owned standard-layout records with
-trivial default/copy/move construction, assignment and destruction. They use
+integer and floating elements, object and void pointer elements, plus
+source-owned standard-layout records with trivial default/copy/move
+construction, assignment and destruction. They use
 direct lowering for default, bounded count/fill/list, pointer or wrapped
 iterator range, copy and move
 construction; copy, move and initializer-list assignment; destruction; size,
@@ -2466,8 +2467,10 @@ reserve/resize/shrink_to_fit; lvalue/rvalue, counted-value, pointer and wrapped 
 range, and initializer-list `insert`; zero- or one-argument positional
 `emplace` with exact element types; counted-value, pointer and wrapped
 iterator range, and initializer-list `assign`; single-position and range
-`erase`; member/free swap; and all six vector/vector comparison operators for
-arithmetic elements.
+`erase`; member/free swap; all six vector/vector comparison operators for
+arithmetic elements; and vector equality and inequality for object pointers.
+Function pointer elements and ordered vector comparison for pointer elements
+remain outside this boundary.
 Insert and positional emplace return mutable iterators. Single-value insertion
 and emplace preserve aliased element inputs;
 they shift in place when capacity permits and otherwise move storage through
