@@ -858,6 +858,7 @@ enum class UtilityOperation {
   StringMaxSize,
   StringEmpty,
   StringData,
+  StringToView,
   StringBegin,
   StringEnd,
   StringRBegin,
@@ -1236,6 +1237,8 @@ enum class UtilityStringConstruction {
   Copy,
   Move,
   Substring,
+  View,
+  ViewSubstring,
 };
 std::optional<UtilityStringConstruction>
 approvedUtilityStringConstruction(const State &S,

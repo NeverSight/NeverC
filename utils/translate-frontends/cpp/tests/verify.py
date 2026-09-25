@@ -29470,6 +29470,7 @@ extern "C" void free(void *);
 void *operator new(Size n) { return malloc(n); }
 void operator delete(void *p) noexcept { free(p); }
 #include <string>
+#include <string_view>
 int main() {
   std::string empty;
   std::string short_text("hello");
@@ -29490,6 +29491,13 @@ int main() {
       substring_suffix.size() == 2 && substring_suffix[0] == 0 &&
       substring_suffix[1] == 'b' && substring_counted.size() == 23 &&
       substring_counted[0] == 'b' && substring_counted[22] == 'x';
+  std::string_view borrowed = long_text;
+  std::string view_copy(borrowed);
+  std::string view_slice(borrowed, 1, 23);
+  bool view_interop_intact = borrowed.data() == long_text.data() &&
+                             view_copy.size() == 26 && view_copy[25] == 'z' &&
+                             view_slice.size() == 23 && view_slice[0] == 'b' &&
+                             view_slice[22] == 'x';
   std::string copied(long_text);
   std::string combined = short_text + long_text;
   std::string prefixed = "!" + long_text;
@@ -29836,7 +29844,7 @@ int main() {
   bool reverse_long_intact = *reverse_long.rbegin() == '9' &&
                              *(reverse_long.rend() - 1) == 'a';
   return intact && fill_intact && range_construction_intact &&
-         substring_construction_intact &&
+         substring_construction_intact && view_interop_intact &&
          maximum_intact && shrink_intact &&
          boundary_intact && emptied &&
          assigned.size() == 14 &&

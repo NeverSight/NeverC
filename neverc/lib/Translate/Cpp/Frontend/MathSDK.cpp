@@ -4436,6 +4436,62 @@ approvedUtilityStringConstruction(const State &S, const SourceManager &SM,
         cstddefOrigin(S, SM, DefaultInit->getExprLoc(), "libcxx", "string"))
       return UtilityStringConstruction::Substring;
   }
+  if (const auto *Primary = Constructor->getPrimaryTemplate();
+      Primary &&
+      (Constructor->getNumParams() == 1 || Constructor->getNumParams() == 2 ||
+       Constructor->getNumParams() == 4) &&
+      approvedStandardSDKDeclaration(S, SM, Primary) &&
+      cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "string")) {
+    const auto SourceType = Constructor->getParamDecl(0)->getType();
+    std::optional<UtilityStringViewRecord> View;
+    if (SourceType->isLValueReferenceType())
+      View = approvedUtilityStringViewRecord(
+          S, SM, SourceType->getPointeeType()->getAsCXXRecordDecl(), Context);
+    if (View &&
+        Context.hasSameType(SourceType->getPointeeType(),
+                            Context.getRecordType(View->Record).withConst()) &&
+        Context.hasSameType(Construction->getArg(0)->getType(),
+                            Context.getRecordType(View->Record).withConst())) {
+      const unsigned Count = Constructor->getNumParams();
+      if (Count == 1)
+        return UtilityStringConstruction::View;
+      const unsigned AllocatorIndex = Count - 1;
+      const auto AllocatorType =
+          Constructor->getParamDecl(AllocatorIndex)->getType();
+      std::optional<UtilityAllocatorRecord> Allocator;
+      if (AllocatorType->isLValueReferenceType())
+        Allocator = approvedUtilityAllocatorRecord(
+            S, SM, AllocatorType->getPointeeType()->getAsCXXRecordDecl(),
+            Context);
+      const auto *Default =
+          dyn_cast<CXXDefaultArgExpr>(Construction->getArg(AllocatorIndex));
+      const auto *DefaultInit = selectedDefaultArgument(Default, Context);
+      if (Allocator &&
+          Context.hasSameType(Allocator->ElementType, Context.CharTy) &&
+          Context.hasSameType(
+              AllocatorType->getPointeeType(),
+              Context.getRecordType(Allocator->Record).withConst()) &&
+          Context.hasSameType(Construction->getArg(AllocatorIndex)->getType(),
+                              AllocatorType->getPointeeType()) &&
+          (!Default ||
+           (DefaultInit &&
+            Default->getParam() == Constructor->getParamDecl(AllocatorIndex) &&
+            cstddefOrigin(S, SM, DefaultInit->getExprLoc(), "libcxx",
+                          "string")))) {
+        if (Count == 2)
+          return UtilityStringConstruction::View;
+        if (Context.hasSameType(Constructor->getParamDecl(1)->getType(),
+                                Context.getSizeType()) &&
+            Context.hasSameType(Constructor->getParamDecl(2)->getType(),
+                                Context.getSizeType()) &&
+            Context.hasSameType(Construction->getArg(1)->getType(),
+                                Context.getSizeType()) &&
+            Context.hasSameType(Construction->getArg(2)->getType(),
+                                Context.getSizeType()))
+          return UtilityStringConstruction::ViewSubstring;
+      }
+    }
+  }
   if (Constructor->getNumParams() == 1) {
     const auto Parameter = Constructor->getParamDecl(0)->getType();
     const auto List = approvedUtilityInitializerListRecord(
@@ -7745,6 +7801,43 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
            Context.hasSameType(Constructor->getParamDecl(2)->getType(),
                                Context.getSizeType())) &&
           Allocator &&
+          Context.hasSameType(Allocator->ElementType, Context.CharTy) &&
+          Context.hasSameType(
+              AllocatorType->getPointeeType(),
+              Context.getRecordType(Allocator->Record).withConst()))
+        return true;
+    }
+    const auto *ViewPrimary = Constructor->getPrimaryTemplate();
+    if (Default && Parameter && Owner && String && StringInit && ViewPrimary &&
+        Constructor->getNumParams() == 4 && Index == 3 &&
+        Parameter == Constructor->getParamDecl(3) &&
+        Parameter->getFunctionScopeIndex() == 3 &&
+        Owner->getCanonicalDecl() == Constructor->getCanonicalDecl() &&
+        !Constructor->isVariadic() && Constructor->hasBody() &&
+        approvedStandardSDKDeclaration(S, SM, Constructor) &&
+        approvedStandardSDKDeclaration(S, SM, ViewPrimary) &&
+        cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx", "string") &&
+        cstddefOrigin(S, SM, ViewPrimary->getLocation(), "libcxx", "string") &&
+        cstddefOrigin(S, SM, StringInit->getExprLoc(), "libcxx", "string")) {
+      const auto SourceType = Constructor->getParamDecl(0)->getType();
+      const auto AllocatorType = Parameter->getType();
+      std::optional<UtilityStringViewRecord> View;
+      if (SourceType->isLValueReferenceType())
+        View = approvedUtilityStringViewRecord(
+            S, SM, SourceType->getPointeeType()->getAsCXXRecordDecl(), Context);
+      std::optional<UtilityAllocatorRecord> Allocator;
+      if (AllocatorType->isLValueReferenceType())
+        Allocator = approvedUtilityAllocatorRecord(
+            S, SM, AllocatorType->getPointeeType()->getAsCXXRecordDecl(),
+            Context);
+      if (View && Allocator &&
+          Context.hasSameType(
+              SourceType->getPointeeType(),
+              Context.getRecordType(View->Record).withConst()) &&
+          Context.hasSameType(Constructor->getParamDecl(1)->getType(),
+                              Context.getSizeType()) &&
+          Context.hasSameType(Constructor->getParamDecl(2)->getType(),
+                              Context.getSizeType()) &&
           Context.hasSameType(Allocator->ElementType, Context.CharTy) &&
           Context.hasSameType(
               AllocatorType->getPointeeType(),
@@ -16709,8 +16802,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Call->getNumArgs() != Method->getNumParams() + Offset ||
         !approvedStandardSDKDeclaration(S, SM, Method) ||
         !cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "string") ||
-        !S.owns(SM, Reference->getExprLoc()))
+        (!S.owns(SM, Reference->getExprLoc()) &&
+         !(isa<CXXConversionDecl>(Method) &&
+           Reference->getExprLoc().isInvalid() &&
+           S.owns(SM, Call->getExprLoc()))))
       return std::nullopt;
+    if (!Operator && isa<CXXConversionDecl>(Method) && Method->isConst() &&
+        !Method->getNumParams() && !Call->getNumArgs() && Call->isPRValue() &&
+        Context.hasSameType(Call->getType(), Method->getReturnType()) &&
+        approvedUtilityStringViewRecord(
+            S, SM, Method->getReturnType()->getAsCXXRecordDecl(), Context))
+      return UtilityOperation::StringToView;
     if (!Operator && Method->isConst() && !Method->getNumParams() &&
         Call->isPRValue() &&
         Context.hasSameType(Call->getType(), Method->getReturnType())) {

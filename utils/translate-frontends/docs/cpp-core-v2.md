@@ -2293,8 +2293,8 @@ LLVM 20.1.8 source bytes and catalog hashes. Clang can fold constant
 `size_type` alias. Authenticated `std::basic_string<char, std::char_traits<char>,
 std::allocator<char>>` objects now have direct lowering for default,
 `const char*`, pointer-and-length, raw or wrapped character range,
-count-and-character fill, copy, move, and string-source substring
-construction; copy and move assignment
+count-and-character fill, copy, move, string-source substring, and
+`std::string_view` construction; copy and move assignment
 and assignment from `const char*` or `char`; `size`, `length`,
 `capacity`, `max_size`, `empty`, `data`, `c_str`, subscript
 access, mutable and const `front`/`back`, `clear`, `push_back(char)`,
@@ -2308,6 +2308,12 @@ The two string-source substring constructors select a suffix or a counted
 range from an existing string. They clamp the requested count to the available
 suffix, copy embedded NUL bytes, and allocate independent storage when needed.
 The allocator argument must be the pinned default allocator expression.
+The exact conversion to `std::string_view` borrows the string's current data
+and length, including embedded NUL bytes. A view cannot outlive the string or
+remain in use after a mutation that invalidates its data pointer. Constructors
+from the exact `char` string view copy either the whole view or a selected
+counted range into independent storage. They accept the pinned default or an
+explicit `std::allocator<char>` where the selected overload provides one.
 Mutable and const `begin`/`end`, plus `cbegin`/`cend`, produce authenticated
 libc++ `__wrap_iter` values for forward traversal and mutable element access.
 The authenticated wrapper also supports `base()`, arrow, subscript, prefix and

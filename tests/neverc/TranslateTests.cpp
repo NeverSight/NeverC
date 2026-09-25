@@ -53701,6 +53701,87 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringViewInteropRun) {
+  const auto Source = tmpFile("string-view-interop.cpp");
+  const auto Output = tmpFile("string-view-interop.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+#include <string_view>
+int string_calls;
+int view_calls;
+const std::string &touch(const std::string &source) {
+  ++string_calls;
+  return source;
+}
+std::string_view touch(std::string_view source) {
+  ++view_calls;
+  return source;
+}
+int main() {
+  char bytes[]{'a', 0, 'b', 'c'};
+  {
+    std::string short_source(bytes, 4);
+    std::string_view short_view = touch(short_source);
+    if (string_calls != 1 || short_view.size() != 4 ||
+        short_view.data() != short_source.data() || short_view[1] != 0 ||
+        allocations != 0)
+      return 1;
+    std::string short_copy(touch(short_view));
+    std::string with_allocator(short_view, std::allocator<char>{});
+    if (view_calls != 1 || short_copy.size() != 4 ||
+        short_copy.data() == short_view.data() || short_copy[1] != 0 ||
+        with_allocator.size() != 4 || with_allocator[3] != 'c' ||
+        allocations != 0)
+      return 2;
+    short_source[0] = 'Z';
+    if (short_view[0] != 'Z' || short_copy[0] != 'a')
+      return 3;
+    std::string long_source("abcdefghijklmnopqrstuvwxyz");
+    std::string_view long_view = long_source;
+    int before = allocations;
+    std::string long_copy(long_view);
+    std::string long_slice(long_view, 1, 23);
+    if (long_view.data() != long_source.data() ||
+        long_copy.size() != 26 || long_copy[25] != 'z' ||
+        long_copy.data() == long_view.data() || long_slice.size() != 23 ||
+        long_slice[0] != 'b' || long_slice[22] != 'x' ||
+        allocations != before + 2)
+      return 4;
+    std::string clipped(long_view, 23, std::string::npos);
+    std::string explicit_slice(long_view, 2, 22, std::allocator<char>{});
+    std::string empty(std::string_view{});
+    std::string empty_slice(std::string_view{}, 0, 0);
+    if (clipped.size() != 3 || clipped[0] != 'x' ||
+        clipped[2] != 'z' || explicit_slice.size() != 22 ||
+        explicit_slice[0] != 'c' || explicit_slice[21] != 'x' ||
+        !empty.empty() || empty.data()[0] != 0 ||
+        !empty_slice.empty() || empty_slice.data()[0] != 0 ||
+        allocations != before + 2)
+      return 5;
+  }
+  return allocations == releases ? 0 : 6;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-view-interop" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedIteratorOffsetsRun) {
   const auto Source = tmpFile("wrapped-iterator-offsets.cpp");
   const auto Output = tmpFile("wrapped-iterator-offsets.nc");

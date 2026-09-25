@@ -13490,6 +13490,30 @@ class FunctionLowering {
              quantity(0, type(A.Context.CharTy, L), L), L);
       return Place;
     }
+    case UtilityOperation::StringToView: {
+      const auto *Object = MemberObject();
+      auto String = Object ? StringFor(Object->getType())
+                           : std::optional<UtilityStringRecord>();
+      auto View = approvedUtilityStringViewRecord(
+          A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+      if (!Object || !String || !View)
+        reject(L, "string view conversion",
+               "The selected string or string-view layout is unavailable.");
+      auto Receiver =
+          snapshot(address(lvalue(Object), Object->getType(), L), L);
+      auto [Data, Size] = ReadStringAt(std::move(Receiver), *String);
+      auto Place = Destination ? std::move(*Destination)
+                               : objectTemporary(Call->getType(), L);
+      Destination.reset();
+      if (Place.getString("type") != type(Call->getType(), L))
+        reject(L, "string view conversion",
+               "The conversion destination type differs from the result.");
+      assign(fieldStorage(json::Object(Place), View->Data, L), std::move(Data),
+             L);
+      assign(fieldStorage(json::Object(Place), View->Size, L), std::move(Size),
+             L);
+      return Place;
+    }
     case UtilityOperation::StringSubstr: {
       const auto *Object = MemberObject();
       auto String = Object ? StringFor(Object->getType())
@@ -17804,43 +17828,20 @@ class FunctionLowering {
                L);
         jump(Ready, L);
         label(Ready, L);
-        if (*Kind == UtilityStringConstruction::Substring) {
-          auto Position = snapshot(expression(C->getArg(1)), L);
-          std::optional<Expression> Requested;
-          if (C->getNumArgs() == 4)
-            Requested = snapshot(expression(C->getArg(2)), L);
-          const auto InRange = labelName(), OutOfRange = labelName(),
-                     Positioned = labelName();
-          branch(binary("<=", json::Object(Position), json::Object(Length),
-                        "bool", L),
-                 InRange, OutOfRange, L);
-          label(InRange, L);
-          auto Remaining = snapshot(binary("-", json::Object(Length),
-                                           json::Object(Position), SizeType, L),
-                                    L);
-          if (Requested) {
-            const auto UseRequested = labelName(), UseRemaining = labelName();
-            branch(binary("<", json::Object(*Requested),
-                          json::Object(Remaining), "bool", L),
-                   UseRequested, UseRemaining, L);
-            label(UseRequested, L);
-            assign(Length, json::Object(*Requested), L);
-            jump(Positioned, L);
-            label(UseRemaining, L);
-          }
-          assign(Length, json::Object(Remaining), L);
-          jump(Positioned, L);
-          label(OutOfRange, L);
-          assign(Position, json::Object(Length), L);
-          assign(Length, quantity(0, SizeType, L), L);
-          jump(Positioned, L);
-          label(Positioned, L);
-          assign(Input,
-                 binary("+", json::Object(Input),
-                        cast(json::Object(Position), DifferenceType, L),
-                        ConstPointerType, L),
-                 L);
-        }
+      } else if (*Kind == UtilityStringConstruction::View ||
+                 *Kind == UtilityStringConstruction::ViewSubstring) {
+        auto View = approvedUtilityStringViewRecord(
+            A.S, A.Sources, C->getArg(0)->getType()->getAsCXXRecordDecl(),
+            A.Context);
+        if (!View)
+          reject(L, "string construction",
+                 "The selected std::string_view layout is unavailable.");
+        auto Source = snapshot(expression(C->getArg(0)), L);
+        assign(Input, fieldStorage(json::Object(Source), View->Data, L), L);
+        assign(Length, fieldStorage(std::move(Source), View->Size, L), L);
+        if (C->getNumArgs() == 2 ||
+            (C->getNumArgs() == 4 && !isa<CXXDefaultArgExpr>(C->getArg(3))))
+          snapshot(expression(C->getArg(C->getNumArgs() - 1)), L);
       } else if (*Kind == UtilityStringConstruction::Fill) {
         assign(Length, snapshot(expression(C->getArg(0)), L), L);
         FillCharacter = snapshot(expression(C->getArg(1)), L);
@@ -17904,6 +17905,51 @@ class FunctionLowering {
                       quantity(1, DifferenceType, L), ConstPointerType, L), L);
         jump(Check, L);
         label(Scanned, L);
+      }
+      if (*Kind == UtilityStringConstruction::Substring ||
+          *Kind == UtilityStringConstruction::ViewSubstring) {
+        auto Position = snapshot(expression(C->getArg(1)), L);
+        std::optional<Expression> Requested;
+        if (C->getNumArgs() == 4)
+          Requested = snapshot(expression(C->getArg(2)), L);
+        const auto InRange = labelName(), OutOfRange = labelName(),
+                   Positioned = labelName();
+        branch(binary("<=", json::Object(Position), json::Object(Length),
+                      "bool", L),
+               InRange, OutOfRange, L);
+        label(InRange, L);
+        auto Remaining = snapshot(binary("-", json::Object(Length),
+                                         json::Object(Position), SizeType, L),
+                                  L);
+        if (Requested) {
+          const auto UseRequested = labelName(), UseRemaining = labelName();
+          branch(binary("<", json::Object(*Requested), json::Object(Remaining),
+                        "bool", L),
+                 UseRequested, UseRemaining, L);
+          label(UseRequested, L);
+          assign(Length, json::Object(*Requested), L);
+          jump(Positioned, L);
+          label(UseRemaining, L);
+        }
+        assign(Length, json::Object(Remaining), L);
+        jump(Positioned, L);
+        label(OutOfRange, L);
+        assign(Position, json::Object(Length), L);
+        assign(Length, quantity(0, SizeType, L), L);
+        jump(Positioned, L);
+        label(Positioned, L);
+        const auto Offset = labelName(), Ready = labelName();
+        branch(binary("!=", json::Object(Position), quantity(0, SizeType, L),
+                      "bool", L),
+               Offset, Ready, L);
+        label(Offset, L);
+        assign(Input,
+               binary("+", json::Object(Input),
+                      cast(json::Object(Position), DifferenceType, L),
+                      ConstPointerType, L),
+               L);
+        jump(Ready, L);
+        label(Ready, L);
       }
       for (const char *Name : {"nct_string_word0", "nct_string_word1",
                                "nct_string_word2"})
