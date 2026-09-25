@@ -83,6 +83,7 @@ struct EhPiece {
   uint32_t outOff = 0;
   bool live = false;
   bool inHdr = false; // an FDE listed in .eh_frame_hdr
+  bool unwindsCall = false; // CIE: names a personality routine or an LSDA
 };
 
 struct ObjectFile {
@@ -439,6 +440,7 @@ struct InputSpec {
   string path;
   bool whole = false;
   bool asNeeded = false;
+  bool lazy = false;
 };
 
 string findLibrary(const vector<string> &paths, const string &name) {
@@ -623,6 +625,7 @@ void loadInputs(const vector<InputSpec> &specs) {
         o->data = m.data;
         o->size = m.size;
         o->name = s.path;
+        o->lazy = s.lazy;
         loaded[i].objs.push_back(o);
       },
       1);
@@ -937,6 +940,9 @@ void resolve() {
       if (so->nameIds[k] != UINT32_MAX && so->dynsyms[k].st_shndx == SHN_UNDEF &&
           ELF64_ST_BIND(so->dynsyms[k].st_info) != STB_WEAK)
         extractFor(so->nameIds[k]);
+  for (const string &n : ctx.opt.undefined)
+    if (uint32_t id = ctx.names->find(n.data(), n.size()); id != UINT32_MAX)
+      extractFor(id);
   for (auto &f : found)
     frontier.insert(frontier.end(), f.begin(), f.end()), f.clear();
   while (!frontier.empty()) {
@@ -1187,6 +1193,91 @@ inline uint32_t rd32(const uint8_t *p) {
   return v;
 }
 
+uint64_t readUleb(const uint8_t *&p, const uint8_t *e) {
+  uint64_t v = 0;
+  for (unsigned shift = 0; p < e; shift += 7) {
+    uint8_t b = *p++;
+    if (shift < 64)
+      v |= uint64_t(b & 0x7f) << shift;
+    if (!(b & 0x80))
+      return v;
+  }
+  fatal("truncated .eh_frame CIE");
+}
+
+// Reads the augmentation of a CIE. The pipeline writes .eh_frame_hdr from
+// FDEs whose addresses are 32-bit PC-relative values; any other encoding
+// declines the link.
+void parseCie(const ObjectFile *o, const uint8_t *d, uint32_t size,
+              EhPiece &cie) {
+  const uint8_t *p = d + 8, *e = d + size;
+  auto fail = [&] { fatal(o->name + ": unsupported .eh_frame CIE"); };
+  if (p >= e)
+    fail();
+  const uint8_t version = *p++;
+  const char *aug = reinterpret_cast<const char *>(p);
+  const size_t augLen = strnlen(aug, e - p);
+  if (p + augLen >= e)
+    fail();
+  p += augLen + 1;
+  readUleb(p, e); // code alignment
+  readUleb(p, e); // data alignment (sleb; only skipped)
+  if (version == 1) {
+    if (p >= e)
+      fail();
+    ++p;
+  } else {
+    readUleb(p, e);
+  }
+  if (augLen == 0 || aug[0] != 'z')
+    fail();
+  readUleb(p, e); // augmentation data length
+  bool fdePcrel32 = false;
+  for (size_t i = 1; i < augLen; ++i) {
+    if (p >= e)
+      fail();
+    switch (aug[i]) {
+    case 'R':
+      fdePcrel32 = *p++ == 0x1b; // pcrel | sdata4
+      break;
+    case 'L':
+      cie.unwindsCall = true;
+      ++p;
+      break;
+    case 'P': {
+      cie.unwindsCall = true;
+      const uint8_t enc = *p++;
+      switch (enc & 0x0f) {
+      case 0x00: // absptr
+      case 0x04: // udata8
+      case 0x0c: // sdata8
+        p += 8;
+        break;
+      case 0x02: // udata2
+      case 0x0a: // sdata2
+        p += 2;
+        break;
+      case 0x03: // udata4
+      case 0x0b: // sdata4
+        p += 4;
+        break;
+      default:
+        fail();
+      }
+      break;
+    }
+    case 'S':
+    case 'B':
+    case 'G':
+      break;
+    default:
+      fail();
+    }
+  }
+  if (!fdePcrel32 || p > e)
+    fail();
+}
+
 void parseEhFrame(ObjectFile *o) {
   if (!o->ehSec || o->secs[o->ehSec].live.load() == 2)
     return;
@@ -1220,6 +1311,7 @@ void parseEhFrame(ObjectFile *o) {
     p.cie = UINT32_MAX;
     p.target = 0;
     if (id == 0) {
+      parseCie(o, d + off, p.size, p);
       cies.push_back({uint32_t(off), uint32_t(o->eh.size())});
     } else {
       uint32_t cieOff = off + 4 - id;
@@ -1318,7 +1410,9 @@ void markLive() {
         (ctx.nameStr[id].rfind("__start___libc_", 0) == 0 ||
          ctx.nameStr[id].rfind("__stop___libc_", 0) == 0))
       fatal("reference to " + string(ctx.nameStr[id]));
-  rootName("_start");
+  rootName(ctx.opt.entry.c_str());
+  for (const string &n : ctx.opt.undefined)
+    rootName(n.c_str());
   rootName("_init");
   rootName("_fini");
   // Exported definitions are live.
@@ -2172,7 +2266,7 @@ void markKeepUnique() {
     }
     for (const EhPiece &f : o->eh)
       if (f.cie != UINT32_MAX && f.target &&
-          (f.relEnd - f.relBegin > 1 ||
+          (f.relEnd - f.relBegin > 1 || o->eh[f.cie].unwindsCall ||
            o->eh[f.cie].relEnd > o->eh[f.cie].relBegin))
         o->secs[f.target].keepUnique.store(1, std::memory_order_relaxed);
   }, 4);
@@ -3189,7 +3283,7 @@ vector<Elf64_Dyn> dynamicEntries() {
   if (L.sonameOff)
     add(DT_SONAME, L.sonameOff);
   if (!ctx.opt.rpaths.empty())
-    add(DT_RUNPATH, L.rpathOff);
+    add(ctx.opt.newDtags ? DT_RUNPATH : DT_RPATH, L.rpathOff);
   auto init = L.byName.find(".init_array");
   auto fini = L.byName.find(".fini_array");
   auto pre = L.byName.find(".preinit_array");
@@ -3245,10 +3339,14 @@ vector<Elf64_Dyn> dynamicEntries() {
     add(DT_PLTREL, DT_RELA);
   }
   add(DT_PLTGOT, L.gotPlt->addr);
-  if (uint64_t f = (ctx.opt.zNow ? DF_BIND_NOW : 0) |
+  if (uint64_t f = (ctx.opt.zOrigin ? DF_ORIGIN : 0) |
+                   (ctx.opt.zNow ? DF_BIND_NOW : 0) |
                    (L.staticTls ? DF_STATIC_TLS : 0))
     add(DT_FLAGS, f);
-  uint64_t f1 = (ctx.opt.zNow ? DF_1_NOW : 0) | (ctx.opt.pie ? DF_1_PIE : 0);
+  uint64_t f1 = (ctx.opt.zNow ? DF_1_NOW : 0) |
+                (ctx.opt.zNodelete ? DF_1_NODELETE : 0) |
+                (ctx.opt.zOrigin ? DF_1_ORIGIN : 0) |
+                (ctx.opt.pie ? DF_1_PIE : 0);
   if (f1)
     add(DT_FLAGS_1, f1);
   add(DT_NULL, 0);
@@ -4365,8 +4463,11 @@ void writeHeaders(uint8_t *buf) {
   eh->e_type = ctx.isPic() ? ET_DYN : ET_EXEC;
   eh->e_machine = EM_X86_64;
   eh->e_version = EV_CURRENT;
-  uint32_t id = ctx.names->find("_start", 6);
-  eh->e_entry = id != UINT32_MAX && !ctx.opt.shared ? ctx.syms[id].va : 0;
+  const string &entry = ctx.opt.entry;
+  uint32_t id = ctx.names->find(entry.data(), entry.size());
+  eh->e_entry = id != UINT32_MAX && ctx.syms[id].kind == Symbol::Object
+                    ? ctx.syms[id].va
+                    : 0;
   eh->e_phoff = sizeof(Elf64_Ehdr);
   eh->e_shoff = L.shoff;
   eh->e_ehsize = sizeof(Elf64_Ehdr);
@@ -4574,12 +4675,27 @@ void checkUndefined() {
   fatal(std::to_string(undefined.size()) + " undefined symbols: " + names);
 }
 
+// The full backend diagnoses a missing entry symbol, and -u references to
+// shared library symbols decide which libraries are needed.
+void checkRoots() {
+  const string &entry = ctx.opt.entry;
+  uint32_t id = ctx.names->find(entry.data(), entry.size());
+  Symbol::Kind kind = id == UINT32_MAX ? Symbol::Undefined : ctx.syms[id].kind;
+  if (kind != Symbol::Object && (kind != Symbol::Undefined || !ctx.opt.entryOptional))
+    fatal("entry symbol " + entry);
+  for (const string &n : ctx.opt.undefined) {
+    uint32_t id = ctx.names->find(n.data(), n.size());
+    if (id != UINT32_MAX && ctx.syms[id].kind == Symbol::Shared)
+      fatal("-u " + n + " names a shared library symbol");
+  }
+}
+
 void runPipeline() {
   vector<InputSpec> specs;
   for (const fastlink::Input &in : ctx.opt.inputs)
     specs.push_back({in.isLibrary ? findLibrary(ctx.opt.libPaths, in.path)
                                   : in.path,
-                     in.wholeArchive, in.asNeeded});
+                     in.wholeArchive, in.asNeeded, in.lazy});
   auto t0 = Clock::now();
   auto t = t0;
   double times[8];
@@ -4592,6 +4708,7 @@ void runPipeline() {
   lap();
   resolve();
   checkUndefined();
+  checkRoots();
   applyVersionScript();
   markPreemptible();
   lap();

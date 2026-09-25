@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <map>
+#include <set>
 
 namespace {
 
@@ -168,6 +169,37 @@ readELFDynamicSymbolVersions(llvm::StringRef Bytes) {
   if (Index != Versions->size())
     return llvm::createStringError(llvm::inconvertibleErrorCode(),
                                    "extra dynamic symbol version entry");
+  return Result;
+}
+
+// Returns the image's dynamic tags and the names in its symbol table.
+struct ELFImageSummary {
+  std::map<uint64_t, uint64_t> dynamicTags;
+  std::set<std::string> symbols;
+};
+
+llvm::Expected<ELFImageSummary> readELFImageSummary(llvm::StringRef Bytes) {
+  auto Object = llvm::object::ObjectFile::createObjectFile(
+      llvm::MemoryBufferRef(Bytes, "elf-image-summary"));
+  if (!Object)
+    return Object.takeError();
+  const auto *ELFObject =
+      llvm::dyn_cast<llvm::object::ELF64LEObjectFile>(Object->get());
+  if (!ELFObject)
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "expected an x86-64 ELF image");
+  ELFImageSummary Result;
+  auto Entries = ELFObject->getELFFile().dynamicEntries();
+  if (!Entries)
+    return Entries.takeError();
+  for (const auto &Entry : *Entries)
+    Result.dynamicTags[Entry.getTag()] = Entry.getVal();
+  for (const llvm::object::SymbolRef &Symbol : ELFObject->symbols()) {
+    llvm::Expected<llvm::StringRef> Name = Symbol.getName();
+    if (!Name)
+      return Name.takeError();
+    Result.symbols.insert(Name->str());
+  }
   return Result;
 }
 
@@ -2003,6 +2035,101 @@ V2 { global: b; } V1;
   EXPECT_EQ(versions->at("a"), std::make_pair(std::string("V1"), true));
   EXPECT_EQ(versions->at("b"), std::make_pair(std::string("V2"), true));
   EXPECT_EQ(versions->count("c"), 0u) << "local: * must hide c";
+}
+
+TEST_F(LinkerTest, FastPipelineAppliesInputAndEntryOptions) {
+  if (!isLinux())
+    GTEST_SKIP() << "the fast ELF pipeline links Linux executables";
+
+  struct Source {
+    const char *name;
+    const char *text;
+  };
+  const Source sources[] = {
+      {"fast_opts_main", R"(
+.text
+.globl begin
+.type begin,@function
+begin:
+  call helper
+  movl %eax, %ebx
+  call extra_value
+  leal (%rax,%rbx), %edi
+  movl $60, %eax
+  syscall
+)"},
+      {"fast_opts_helper", R"(
+.text
+.globl helper
+.type helper,@function
+helper:
+  movl $30, %eax
+  ret
+)"},
+      {"fast_opts_unused", R"(
+.text
+.globl unused_marker
+unused_marker:
+  ret
+)"},
+      {"fast_opts_forced", R"(
+.text
+.globl forced_marker
+forced_marker:
+  ret
+)"},
+      {"fast_opts_extra", R"(
+.text
+.globl extra_value
+.type extra_value,@function
+extra_value:
+  movl $12, %eax
+  ret
+)"},
+  };
+  for (const Source &source : sources) {
+    const fs::path path = tmpFile(std::string(source.name) + ".s");
+    writeFile(path, std::string(source.text) +
+                        ".section .note.GNU-stack,\"\",@progbits\n");
+    CmdResult assemble =
+        assembleELFObject(path, tmpFile(std::string(source.name) + ".o"));
+    ASSERT_EQ(assemble.exitCode, 0) << assemble.err;
+  }
+
+  // Objects between --start-lib and --end-lib behave as archive members, and
+  // -Bstatic with -l:file finds the extra object on the search path.
+  ScopedEnvironmentVariable report("NEVERC_ELF_FASTLINK_TIME", "1");
+  const fs::path image = tmpFile("fast_opts_image");
+  std::vector<std::string> args = baseLinkArgs();
+  args.insert(args.end(),
+              {"-nostartfiles", "-fgc-sections", "-Wl,-e,begin",
+               "-Wl,-u,forced_marker",
+               tmpFile("fast_opts_main.o").string(), "-Wl,--start-lib",
+               tmpFile("fast_opts_helper.o").string(),
+               tmpFile("fast_opts_unused.o").string(),
+               tmpFile("fast_opts_forced.o").string(), "-Wl,--end-lib",
+               "-L" + image.parent_path().string(), "-Wl,-Bstatic",
+               "-l:fast_opts_extra.o", "-Wl,-Bdynamic", "-Wl,-z,nodelete",
+               "-Wl,-z,origin", "-Wl,--disable-new-dtags",
+               "-Wl,-rpath,$ORIGIN", "-o", image.string()});
+  CmdResult link = ncc(args);
+  ASSERT_EQ(link.exitCode, 0) << link.err;
+  EXPECT_EQ(link.err.find("fast pipeline not used"), std::string::npos)
+      << link.err;
+  EXPECT_EQ(exec(image.string(), {}).exitCode, 42);
+
+  llvm::Expected<ELFImageSummary> summary =
+      readELFImageSummary(readFile(image));
+  ASSERT_TRUE(static_cast<bool>(summary))
+      << llvm::toString(summary.takeError()).str().str();
+  EXPECT_EQ(summary->symbols.count("forced_marker"), 1u);
+  EXPECT_EQ(summary->symbols.count("unused_marker"), 0u);
+  EXPECT_EQ(summary->dynamicTags.count(llvm::ELF::DT_RPATH), 1u);
+  EXPECT_EQ(summary->dynamicTags.count(llvm::ELF::DT_RUNPATH), 0u);
+  EXPECT_TRUE(summary->dynamicTags[llvm::ELF::DT_FLAGS] & llvm::ELF::DF_ORIGIN);
+  EXPECT_EQ(summary->dynamicTags[llvm::ELF::DT_FLAGS_1] &
+                (llvm::ELF::DF_1_NODELETE | llvm::ELF::DF_1_ORIGIN),
+            uint64_t(llvm::ELF::DF_1_NODELETE | llvm::ELF::DF_1_ORIGIN));
 }
 
 TEST_F(LinkerTest, ThreadCountOptionKeepsOutputBytesOnEveryFormat) {

@@ -25,6 +25,7 @@ struct Input {
   bool isLibrary = false;
   bool wholeArchive = false;
   bool asNeeded = false;
+  bool lazy = false; // an object between --start-lib and --end-lib
 };
 
 struct Request {
@@ -38,6 +39,16 @@ struct Request {
   bool zNow = false;
   bool zRelro = false;
   bool ehFrameHdr = false;
+  bool zNodelete = false;
+  bool zOrigin = false;
+  bool newDtags = true; // DT_RUNPATH rather than DT_RPATH
+  // The entry symbol. A missing optional entry leaves the entry address
+  // zero; a missing required one declines the link.
+  std::string entry = "_start";
+  bool entryOptional = false;
+  // Names to treat as undefined references (-u): they extract archive
+  // members and keep their sections.
+  std::vector<std::string> undefined;
   // Size of the build id to derive from the output, or 0 for none. A
   // non-empty buildIdBytes is written as the build id instead.
   unsigned buildIdSize = 0;

@@ -38,6 +38,7 @@
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/Support/SaveAndRestore.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/LTO/LTO.h"
@@ -723,6 +724,9 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
     case OPT_library:
       req.inputs.push_back({arg->getValue(), true, false, false});
       break;
+    case OPT_entry:
+    case OPT_undefined:
+      break;
     case OPT_library_path:
       req.libPaths.push_back(arg->getValue());
       break;
@@ -731,8 +735,10 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
       break;
     case OPT_z: {
       StringRef v = arg->getValue();
-      if (v != "now" && v != "relro" && v != "noexecstack" && v != "defs" &&
-          v != "undefs")
+      if (v != "now" && v != "lazy" && v != "relro" && v != "norelro" &&
+          v != "noexecstack" && v != "defs" && v != "undefs" &&
+          v != "nodelete" && v != "origin" &&
+          v != "max-page-size=4096" && v != "common-page-size=4096")
         return decline("-z " + v);
       break;
     }
@@ -742,6 +748,14 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
     case OPT_no_whole_archive:
     case OPT_push_state:
     case OPT_pop_state:
+    case OPT_Bstatic:
+    case OPT_Bdynamic:
+    case OPT_start_group:
+    case OPT_end_group:
+    case OPT_start_lib:
+    case OPT_end_lib:
+    case OPT_enable_new_dtags:
+    case OPT_disable_new_dtags:
     case OPT_threads_eq:
     case OPT_fork:
     case OPT_no_fork:
@@ -771,17 +785,43 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
       return decline("option " + arg->getAsString(args));
     }
   }
-  // Positional state, as the full backend applies it.
-  bool asNeeded = false, whole = false;
-  std::vector<std::pair<bool, bool>> stack;
+  // Positional state, as the full backend applies it. Libraries are searched
+  // here so that -Bstatic and -l:file follow the full backend's rules.
+  bool asNeeded = false, whole = false, isStatic = false, inLib = false;
+  std::vector<std::tuple<bool, bool, bool>> stack;
   size_t next = 0;
   for (auto *arg : args) {
     switch (arg->getOption().getID()) {
     case OPT_INPUT:
-    case OPT_library:
-      req.inputs[next].asNeeded = asNeeded;
-      req.inputs[next].wholeArchive = whole;
-      ++next;
+    case OPT_library: {
+      fastlink::Input &input = req.inputs[next++];
+      input.asNeeded = asNeeded;
+      input.wholeArchive = whole;
+      input.lazy = inLib;
+      if (input.isLibrary) {
+        llvm::SaveAndRestore<bool> restore(config->isStatic, isStatic);
+        std::optional<std::string> path = searchLibrary(input.path);
+        if (!path)
+          return decline("unable to find library -l" + input.path);
+        input.path = std::move(*path);
+        input.isLibrary = false;
+      } else if (isStatic) {
+        // The full backend rejects shared objects in a static section.
+        return decline("input after -Bstatic");
+      }
+      break;
+    }
+    case OPT_Bstatic:
+      isStatic = true;
+      break;
+    case OPT_Bdynamic:
+      isStatic = false;
+      break;
+    case OPT_start_lib:
+      inLib = true;
+      break;
+    case OPT_end_lib:
+      inLib = false;
       break;
     case OPT_as_needed:
       asNeeded = true;
@@ -796,12 +836,12 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
       whole = false;
       break;
     case OPT_push_state:
-      stack.emplace_back(asNeeded, whole);
+      stack.emplace_back(asNeeded, whole, isStatic);
       break;
     case OPT_pop_state:
       if (stack.empty())
         return false;
-      std::tie(asNeeded, whole) = stack.back();
+      std::tie(asNeeded, whole, isStatic) = stack.back();
       stack.pop_back();
       break;
     }
@@ -815,6 +855,14 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
   req.zNow = config->zNow;
   req.zRelro = config->zRelro;
   req.ehFrameHdr = config->ehFrameHdr;
+  req.zNodelete = config->zNodelete;
+  req.zOrigin = config->zOrigin;
+  req.newDtags = config->enableNewDtags;
+  // As the full backend, which only warns about a missing default entry in
+  // executables.
+  req.entry = config->entry.empty() ? "_start" : config->entry.str();
+  req.entryOptional = config->entry.empty() && config->shared;
+  req.undefined.assign(config->undefined.begin(), config->undefined.end());
   switch (config->buildId) {
   case BuildIdStyle::Fast:
     req.buildIdSize = 8;
