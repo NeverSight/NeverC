@@ -231,6 +231,23 @@ struct Configuration {
   uint64_t segmentAlign = 0;
   llvm::DenseMap<llvm::StringRef, uint64_t> segmentAddresses;
   SymbolPatterns reexportedSymbols;
+  // -force_symbols_weak_list and -force_symbols_not_weak_list override the
+  // weakness exported definitions carry.
+  SymbolPatterns forceWeakSymbols;
+  SymbolPatterns forceNotWeakSymbols;
+  llvm::DenseMap<llvm::StringRef, uint64_t> segmentPageSizes;
+  bool rootSafe = false;
+  bool setuidSafe = false;
+  bool forceCpuSubtypeAll = false;
+  bool noInits = false;
+  bool noArchWarnings = false;
+  bool verboseDeduplicate = false;
+  bool pageAlignDataAtoms = false;
+  bool noZeroFillSections = false;
+  bool mergeZeroFillSections = false;
+  bool orderFileStatistics = false;
+  bool noOrderData = false;
+  bool warnStabs = false;
 
   llvm::StringRef osoPrefix;
 

@@ -131,8 +131,8 @@ OPTION(prefix_1, "--all-load", all_load, Flag, grp_libs, INVALID, nullptr, 0,
 OPTION(prefix_3, "-all_load", anonymous_303, Flag, INVALID, all_load, nullptr,
        0, DefaultVis, 0, "Alias for --all-load", nullptr, nullptr)
 OPTION(prefix_3, "-allow_dead_duplicates", allow_dead_duplicates, Flag,
-       grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "This option is undocumented in the native linker", nullptr, nullptr)
+       grp_undocumented, INVALID, nullptr, 0, DefaultVis, 0,
+       "Ignore duplicate symbols that dead stripping removes", nullptr, nullptr)
 OPTION(prefix_3, "-allow_heap_execute", allow_heap_execute, Flag, grp_rare,
        INVALID, nullptr, 0, DefaultVis, 0,
        "On i386, allow any page to execute code", nullptr, nullptr)
@@ -143,10 +143,11 @@ OPTION(prefix_3, "-allow_simulator_linking_to_macosx_dylibs",
 OPTION(prefix_3, "-allow_stack_execute", allow_stack_execute, Flag, grp_main,
        INVALID, nullptr, 0, DefaultVis, 0, "Mark stack segment as executable",
        nullptr, nullptr)
-OPTION(prefix_3, "-allow_sub_type_mismatches", allow_sub_type_mismatches, Flag,
-       grp_rare, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "Permit mixing objects compiled for different ARM CPU subtypes", nullptr,
-       nullptr)
+OPTION(
+    prefix_3, "-allow_sub_type_mismatches", allow_sub_type_mismatches, Flag,
+    grp_rare, INVALID, nullptr, 0, DefaultVis, 0,
+    "Permit mixing objects compiled for different CPU subtypes (always done)",
+    nullptr, nullptr)
 OPTION(prefix_3, "-allowable_client", allowable_client, Separate, grp_rare,
        INVALID, nullptr, 0, DefaultVis, 0,
        "Specify <name> of a dylib, framework, or executable that is allowed to "
@@ -308,7 +309,7 @@ OPTION(prefix_3, "-dependent_dr_info", dependent_dr_info, Flag, grp_obsolete,
        INVALID, nullptr, HelpHidden, DefaultVis, 0,
        "This option is obsolete in the native linker", nullptr, nullptr)
 OPTION(prefix_3, "-dirty_data_list", dirty_data_list, Separate, grp_rare,
-       INVALID, nullptr, HelpHidden, DefaultVis, 0,
+       INVALID, nullptr, 0, DefaultVis, 0,
        "Specify data symbols in <path> destined for the __DATA_DIRTY segment",
        "<path>", nullptr)
 OPTION(prefix_3, "-dot", dot, Separate, grp_rare, INVALID, nullptr, HelpHidden,
@@ -444,7 +445,7 @@ OPTION(prefix_1, "--force-load", force_load, Separate, grp_libs, INVALID,
        nullptr, 0, DefaultVis, 0,
        "Load all members static archive library at <path>", "<path>", nullptr)
 OPTION(prefix_3, "-force_cpusubtype_ALL", force_cpusubtype_ALL, Flag, grp_rare,
-       INVALID, nullptr, HelpHidden, DefaultVis, 0,
+       INVALID, nullptr, 0, DefaultVis, 0,
        "Mark binary as runnable on any PowerPC, ignoring any PowerPC cpu "
        "requirements encoded in the object files",
        nullptr, nullptr)
@@ -470,10 +471,10 @@ OPTION(prefix_3, "-force_symbols_coalesce_list", force_symbols_coalesce_list,
        Flag, grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
        "This option is undocumented in the native linker", nullptr, nullptr)
 OPTION(prefix_3, "-force_symbols_not_weak_list", force_symbols_not_weak_list,
-       Separate, grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
+       Separate, grp_undocumented, INVALID, nullptr, 0, DefaultVis, 0,
        "This option is undocumented in the native linker", nullptr, nullptr)
 OPTION(prefix_3, "-force_symbols_weak_list", force_symbols_weak_list, Separate,
-       grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
+       grp_undocumented, INVALID, nullptr, 0, DefaultVis, 0,
        "This option is undocumented in the native linker", nullptr, nullptr)
 OPTION(prefix_2, "--fork", fork, Flag, grp_neverc_ext, INVALID, nullptr, 0,
        DefaultVis, 0,
@@ -688,7 +689,7 @@ OPTION(prefix_3, "-mcpu", mcpu, Separate, grp_rare, INVALID, nullptr, 0,
        DefaultVis, 0, "Processor family target for LTO code generation",
        nullptr, nullptr)
 OPTION(prefix_3, "-merge_zero_fill_sections", merge_zero_fill_sections, Flag,
-       grp_opts, INVALID, nullptr, HelpHidden, DefaultVis, 0,
+       grp_opts, INVALID, nullptr, 0, DefaultVis, 0,
        "Merge all zeroed data into the __zerofill section", nullptr, nullptr)
 OPTION(prefix_3, "-mllvm", mllvm, Separate, grp_rare, INVALID, nullptr, 0,
        DefaultVis, 0, "Options to pass to LLVM", nullptr, nullptr)
@@ -812,7 +813,7 @@ OPTION(prefix_3, "-no_application_extension", anonymous_333, Flag, INVALID,
        no_application_extension, nullptr, 0, DefaultVis, 0,
        "Alias for --no-application-extension", nullptr, nullptr)
 OPTION(prefix_3, "-no_arch_warnings", no_arch_warnings, Flag, grp_rare, INVALID,
-       nullptr, HelpHidden, DefaultVis, 0,
+       nullptr, 0, DefaultVis, 0,
        "Suppresses warnings about inputs whose architecture does not match the "
        "-arch option",
        nullptr, nullptr)
@@ -848,8 +849,8 @@ OPTION(prefix_3, "-no_dtrace_dof", no_dtrace_dof, Flag, grp_rare, INVALID,
        nullptr, 0, DefaultVis, 0, "Disable dtrace-dof processing (default).",
        nullptr, nullptr)
 OPTION(prefix_3, "-no_eh_labels", no_eh_labels, Flag, grp_rare, INVALID,
-       nullptr, HelpHidden, DefaultVis, 0,
-       "In -r mode, suppress .eh labels in the __eh_frame section", nullptr,
+       nullptr, 0, DefaultVis, 0,
+       "Emit no .eh labels on frame entries with -r (always done)", nullptr,
        nullptr)
 OPTION(prefix_3, "-no_encryption", anonymous_336, Flag, INVALID, no_encryption,
        nullptr, 0, DefaultVis, 0, "Alias for --no-encryption", nullptr, nullptr)
@@ -865,9 +866,9 @@ OPTION(prefix_3, "-no_function_starts", anonymous_339, Flag, INVALID,
 OPTION(prefix_3, "-no_implicit_dylibs", anonymous_340, Flag, INVALID,
        no_implicit_dylibs, nullptr, 0, DefaultVis, 0,
        "Alias for --no-implicit-dylibs", nullptr, nullptr)
-OPTION(prefix_3, "-no_inits", no_inits, Flag, grp_rare, INVALID, nullptr,
-       HelpHidden, DefaultVis, 0,
-       "Fail if the output contains static initializers", nullptr, nullptr)
+OPTION(prefix_3, "-no_inits", no_inits, Flag, grp_rare, INVALID, nullptr, 0,
+       DefaultVis, 0, "Fail if the output contains static initializers",
+       nullptr, nullptr)
 OPTION(prefix_3, "-no_keep_dwarf_unwind", no_keep_dwarf_unwind, Flag,
        grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
        "This option is undocumented in the native linker", nullptr, nullptr)
@@ -886,12 +887,12 @@ OPTION(prefix_3, "-no_objc_relative_method_lists",
        "Don't emit relative method lists (use traditional representation)",
        nullptr, nullptr)
 OPTION(prefix_3, "-no_order_data", no_order_data, Flag, grp_opts, INVALID,
-       nullptr, HelpHidden, DefaultVis, 0,
+       nullptr, 0, DefaultVis, 0,
        "Disable default reordering of global data accessed at launch time",
        nullptr, nullptr)
 OPTION(prefix_3, "-no_order_inits", no_order_inits, Flag, grp_opts, INVALID,
-       nullptr, HelpHidden, DefaultVis, 0,
-       "Disable default reordering of initializer and terminator functions",
+       nullptr, 0, DefaultVis, 0,
+       "Leave static initializers in place when ordering (always done)",
        nullptr, nullptr)
 OPTION(prefix_3, "-no_pie", no_pie, Flag, grp_main, INVALID, nullptr, 0,
        DefaultVis, 0, "Do not build a position independent executable", nullptr,
@@ -907,8 +908,8 @@ OPTION(prefix_3, "-no_warn_duplicate_libraries", no_warn_duplicate_libraries,
        "Do not warn if the input contains duplicate library options.", nullptr,
        nullptr)
 OPTION(prefix_3, "-no_warn_inits", no_warn_inits, Flag, grp_rare, INVALID,
-       nullptr, HelpHidden, DefaultVis, 0,
-       "Suppress warnings for static initializers in the output", nullptr,
+       nullptr, 0, DefaultVis, 0,
+       "Do not warn about static initializers (none are warned about)", nullptr,
        nullptr)
 OPTION(prefix_3, "-no_weak_exports", no_weak_exports, Flag, grp_rare, INVALID,
        nullptr, 0, DefaultVis, 0,
@@ -919,7 +920,7 @@ OPTION(prefix_3, "-no_weak_imports", no_weak_imports, Flag, grp_rare, INVALID,
        "Fail if any symbols are weak imports, allowed to be NULL at runtime",
        nullptr, nullptr)
 OPTION(prefix_3, "-no_zero_fill_sections", no_zero_fill_sections, Flag,
-       grp_opts, INVALID, nullptr, HelpHidden, DefaultVis, 0,
+       grp_opts, INVALID, nullptr, 0, DefaultVis, 0,
        "Explicitly store zeroed data in the final image", nullptr, nullptr)
 OPTION(prefix_1, "--noall-load", noall_load, Flag, grp_libs, INVALID, nullptr,
        0, DefaultVis, 0,
@@ -1010,7 +1011,7 @@ OPTION(prefix_1, "--order-file", order_file, Separate, grp_opts, INVALID,
        "Layout functions and data according to specification in <file>",
        "<file>", nullptr)
 OPTION(prefix_3, "-order_file_statistics", order_file_statistics, Flag,
-       grp_introspect, INVALID, nullptr, HelpHidden, DefaultVis, 0,
+       grp_introspect, INVALID, nullptr, 0, DefaultVis, 0,
        "Logs information about -order_file", nullptr, nullptr)
 OPTION(prefix_3, "-order_file", anonymous_345, Separate, INVALID, order_file,
        nullptr, 0, DefaultVis, 0, "Alias for --order-file", "<file>", nullptr)
@@ -1029,7 +1030,7 @@ OPTION(prefix_3, "-O", O, JoinedOrSeparate, INVALID, INVALID, nullptr, 0,
 OPTION(prefix_3, "-o", o, Separate, grp_kind, INVALID, nullptr, 0, DefaultVis,
        0, "The name of the output file (default: `a.out')", "<path>", nullptr)
 OPTION(prefix_3, "-page_align_data_atoms", page_align_data_atoms, Flag,
-       grp_rare, INVALID, nullptr, HelpHidden, DefaultVis, 0,
+       grp_rare, INVALID, nullptr, 0, DefaultVis, 0,
        "Distribute global variables on separate pages so page used/dirty "
        "status can guide creation of an order file to cluster commonly "
        "used/dirty globals",
@@ -1139,9 +1140,9 @@ OPTION(prefix_3, "-reproducible", reproducible, Flag, grp_rare, INVALID,
        "Make the output reproducible by removing timestamps and other "
        "non-deterministic data. This is the default behavior.",
        nullptr, nullptr)
-OPTION(prefix_3, "-root_safe", root_safe, Flag, grp_rare, INVALID, nullptr,
-       HelpHidden, DefaultVis, 0,
-       "Set the MH_ROOT_SAFE bit in the mach-o header", nullptr, nullptr)
+OPTION(prefix_3, "-root_safe", root_safe, Flag, grp_rare, INVALID, nullptr, 0,
+       DefaultVis, 0, "Set the MH_ROOT_SAFE bit in the mach-o header", nullptr,
+       nullptr)
 OPTION(
     prefix_1, "--rpath", rpath, Separate, grp_resolve, INVALID, nullptr, 0,
     DefaultVis, 0,
@@ -1208,7 +1209,7 @@ OPTION(prefix_3, "-seg_addr_table_filename", seg_addr_table_filename, Separate,
        grp_obsolete, INVALID, nullptr, HelpHidden, DefaultVis, 0,
        "This option is obsolete in the native linker", "<path>", nullptr)
 OPTION(prefix_3, "-seg_page_size", seg_page_size, MultiArg, grp_rare, INVALID,
-       nullptr, HelpHidden, DefaultVis, 2,
+       nullptr, 0, DefaultVis, 2,
        "Specifies the page <size> for <segment>. Segment size will be a "
        "multiple of its page size",
        "<segment> <size>", nullptr)
@@ -1242,8 +1243,8 @@ OPTION(prefix_3, "-segs_read_write_addr", segs_read_write_addr, Separate,
        grp_rare, INVALID, nullptr, HelpHidden, DefaultVis, 0,
        "This option is obsolete", "<address>", nullptr)
 OPTION(prefix_3, "-setuid_safe", setuid_safe, Flag, grp_rare, INVALID, nullptr,
-       HelpHidden, DefaultVis, 0,
-       "Set the MH_SETUID_SAFE bit in the mach-o header", nullptr, nullptr)
+       0, DefaultVis, 0, "Set the MH_SETUID_SAFE bit in the mach-o header",
+       nullptr, nullptr)
 OPTION(prefix_3, "-simulator_support", simulator_support, Flag,
        grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
        "This option is undocumented in the native linker", nullptr, nullptr)
@@ -1269,9 +1270,9 @@ OPTION(prefix_3, "-source_version", source_version, Separate, grp_undocumented,
 OPTION(prefix_3, "-Sp", Sp, Flag, grp_obsolete, INVALID, nullptr, HelpHidden,
        DefaultVis, 0, "This option is obsolete in the native linker", nullptr,
        nullptr)
-OPTION(prefix_3, "-stack_addr", stack_addr, Separate, grp_rare, INVALID,
+OPTION(prefix_3, "-stack_addr", stack_addr, Separate, grp_obsolete, INVALID,
        nullptr, HelpHidden, DefaultVis, 0,
-       "Initialize stack pointer to hex <address> rounded to a page boundary",
+       "This option is obsolete: LC_MAIN leaves the stack to the system",
        "<address>", nullptr)
 OPTION(
     prefix_3, "-stack_size", stack_size, Separate, grp_main, INVALID, nullptr,
@@ -1407,7 +1408,7 @@ OPTION(prefix_3, "-u", u, Separate, grp_resolve, INVALID, nullptr, 0,
        "Require that <symbol> be defined for the link to succeed", "<symbol>",
        nullptr)
 OPTION(prefix_3, "-verbose_deduplicate", verbose_deduplicate, Flag, grp_rare,
-       INVALID, nullptr, HelpHidden, DefaultVis, 0,
+       INVALID, nullptr, 0, DefaultVis, 0,
        "Print function names eliminated by deduplication and the total size of "
        "code savings",
        nullptr, nullptr)
@@ -1420,8 +1421,9 @@ OPTION(prefix_3, "-version_details", version_details, Flag, grp_rare, INVALID,
        nullptr, 0, DefaultVis, 0, "Print the linker version in JSON form",
        nullptr, nullptr)
 OPTION(prefix_3, "-version_load_command", version_load_command, Flag,
-       grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "This option is undocumented in the native linker", nullptr, nullptr)
+       grp_undocumented, INVALID, nullptr, 0, DefaultVis, 0,
+       "Emit the minimum OS version load command (always done)", nullptr,
+       nullptr)
 OPTION(prefix_2, "--version", version, Flag, grp_neverc_ext, INVALID, nullptr,
        0, DefaultVis, 0, "Display the version number and exit", nullptr,
        nullptr)
@@ -1446,10 +1448,10 @@ OPTION(prefix_3, "-warn_compact_unwind", warn_compact_unwind, Flag, grp_rare,
        "Warn for each FDE that cannot compact into the __unwind_info section "
        "and must remain in the __eh_frame section",
        nullptr, nullptr)
-OPTION(prefix_3, "-warn_stabs", warn_stabs, Flag, grp_rare, INVALID, nullptr,
-       HelpHidden, DefaultVis, 0,
-       "Warn when bad stab symbols inside a BINCL/EINCL prevent optimization",
-       nullptr, nullptr)
+OPTION(prefix_3, "-warn_stabs", warn_stabs, Flag, grp_rare, INVALID, nullptr, 0,
+       DefaultVis, 0,
+       "Warn when an input's own stabs debug entries are dropped", nullptr,
+       nullptr)
 OPTION(prefix_3, "-warn_weak_exports", warn_weak_exports, Flag, grp_rare,
        INVALID, nullptr, 0, DefaultVis, 0,
        "Warn if the linked image contains weak external symbols", nullptr,

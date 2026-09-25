@@ -31,7 +31,8 @@ struct ExportInfo {
   ExportInfo(const Symbol &sym, uint64_t imageBase)
       : address(sym.getVA() - imageBase) {
     using namespace llvm::MachO;
-    if (sym.isWeakDef())
+    const auto *def = dyn_cast<Defined>(&sym);
+    if (def ? isExportedWeakDef(*def) : sym.isWeakDef())
       flags |= EXPORT_SYMBOL_FLAGS_WEAK_DEFINITION;
     if (sym.isTlv())
       flags |= EXPORT_SYMBOL_FLAGS_KIND_THREAD_LOCAL;

@@ -365,6 +365,10 @@ void ConcatOutputSection::finalizeFlags(InputSection *input) {
 ConcatOutputSection *
 ConcatOutputSection::getOrCreateForInput(const InputSection *isec) {
   NamePair names = maybeRenameSection({isec->getSegName(), isec->getName()});
+  // -merge_zero_fill_sections gathers __DATA's zero-fill sections.
+  if (config->mergeZeroFillSections && names.first == segment_names::data &&
+      sectionType(isec->getFlags()) == S_ZEROFILL)
+    names.second = "__zerofill";
   ConcatOutputSection *&osec = concatOutputSections[names];
   if (!osec) {
     if (isec->getSegName() == segment_names::text &&

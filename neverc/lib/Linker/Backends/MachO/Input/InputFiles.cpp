@@ -163,6 +163,8 @@ bool compatWithTargetArch(const InputFile *file, const Header *hdr) {
   if (hdr->cputype != cpuType) {
     Architecture arch =
         getArchitectureFromCpuType(hdr->cputype, hdr->cpusubtype);
+    if (!config->errorForArchMismatch && config->noArchWarnings)
+      return false;
     auto msg = config->errorForArchMismatch
                    ? static_cast<void (*)(const Twine &)>(error)
                    : warn;
@@ -350,6 +352,17 @@ void ObjFile::parseSections(ArrayRef<SectionHeader> sectionHeaders) {
     ArrayRef<uint8_t> data = {isZeroFill(sec.flags) ? nullptr
                                                     : buf + sec.offset,
                               static_cast<size_t>(sec.size)};
+    // -no_zero_fill_sections gives zero-fill sections file contents.
+    if (config->noZeroFillSections && sectionType(sec.flags) == S_ZEROFILL) {
+      section.flags = (sec.flags & ~SECTION_TYPE) | S_REGULAR;
+      uint8_t *zeros = bAlloc().Allocate<uint8_t>(sec.size);
+      memset(zeros, 0, sec.size);
+      data = {zeros, static_cast<size_t>(sec.size)};
+    }
+    // -page_align_data_atoms puts every data atom on its own page boundary.
+    if (config->pageAlignDataAtoms &&
+        (segname == segment_names::data || segname == segment_names::dataConst))
+      align = std::max<uint32_t>(align, target->getPageSize());
 
     auto splitRecords = [&](size_t recordSize) -> void {
       if (data.empty())
@@ -941,11 +954,20 @@ void ObjFile::parseSymbols(ArrayRef<typename LP::section> sectionHeaders,
     undefineds.reserve(undefinedCount);
   }
 
+  bool warnedStabs = false;
   for (uint32_t i = 0; i < nList.size(); ++i) {
     const NList &sym = nList[i];
 
-    if (sym.n_type & N_STAB)
+    if (sym.n_type & N_STAB) {
+      // The output's debug map is rebuilt from the inputs, so their own
+      // stabs are dropped.
+      if (config->warnStabs && !warnedStabs) {
+        warn(toString(this) + ": stabs debug entries are dropped; the " +
+             "output's debug map points at this object instead");
+        warnedStabs = true;
+      }
       continue;
+    }
 
     if ((sym.n_type & N_TYPE) == N_SECT) {
       Subsections &subsections = sections[sym.n_sect - 1]->subsections;
@@ -1072,6 +1094,11 @@ void ObjFile::parseSymbols(ArrayRef<typename LP::section> sectionHeaders,
       }
       recordLocalNoDeadStrip(symbols[symIndex]);
       nextIsec->align = MinAlign(sectionAlign, sym.n_value);
+      if (config->pageAlignDataAtoms &&
+          (nextIsec->getSegName() == segment_names::data ||
+           nextIsec->getSegName() == segment_names::dataConst))
+        nextIsec->align =
+            std::max<uint32_t>(nextIsec->align, target->getPageSize());
       subsections.push_back({sym.n_value - sectionAddr, nextIsec});
     }
   }

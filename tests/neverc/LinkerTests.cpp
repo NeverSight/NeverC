@@ -2655,6 +2655,155 @@ TEST_F(LinkerTest, NativeMachOLayoutAndResolutionOptions) {
   EXPECT_TRUE(reexported);
 }
 
+TEST_F(LinkerTest, NativeMachOImageShapeOptions) {
+  const std::string target = "--target=arm64-apple-macos13";
+  const fs::path mainSource = tmpFile("macho_shape_main.c");
+  const fs::path mainObject = tmpFile("macho_shape_main.o");
+  const fs::path dupSource = tmpFile("macho_shape_dup.c");
+  const fs::path dupObject = tmpFile("macho_shape_dup.o");
+  const fs::path ctorSource = tmpFile("macho_shape_ctor.c");
+  const fs::path ctorObject = tmpFile("macho_shape_ctor.o");
+  const fs::path x86Object = tmpFile("macho_shape_x86.o");
+  const fs::path orderFile = tmpFile("macho_shape_order.txt");
+  const fs::path weakList = tmpFile("macho_shape_weak.txt");
+  const fs::path library = tmpFile("libmachoshape.dylib");
+  const fs::path image = tmpFile("macho_shape_main");
+  writeFile(mainSource, "int zeroed[1024];\n"
+                        "int first_data = 1;\n"
+                        "int second_data = 2;\n"
+                        "int twin_a(int x) { return x * 3 + 1; }\n"
+                        "int twin_b(int x) { return x * 3 + 1; }\n"
+                        "int dead_dup(void) { return 1; }\n"
+                        "int main(void) { return zeroed[0] + first_data; }\n");
+  writeFile(dupSource, "int dead_dup(void) { return 2; }\n");
+  writeFile(ctorSource,
+            "__attribute__((constructor)) static void ctor(void) {}\n");
+  writeFile(orderFile, "_main\n_not_a_symbol\n");
+  writeFile(weakList, "_twin_a\n");
+  for (auto [source, object] :
+       {std::pair{mainSource, mainObject}, std::pair{dupSource, dupObject},
+        std::pair{ctorSource, ctorObject}}) {
+    CmdResult compile =
+        ncc({target, "-fno-lto", "-fno-common", "-ffunction-sections", "-c",
+             source.string(), "-o", object.string()});
+    ASSERT_EQ(compile.exitCode, 0) << compile.err;
+  }
+  CmdResult compileX86 = ncc({"--target=x86_64-apple-macos13", "-fno-lto", "-c",
+                              dupSource.string(), "-o", x86Object.string()});
+  ASSERT_EQ(compileX86.exitCode, 0) << compileX86.err;
+
+  std::string bytes;
+  auto open = [&](const fs::path &path)
+      -> std::unique_ptr<llvm::object::MachOObjectFile> {
+    bytes = readFile(path);
+    auto object = llvm::object::MachOObjectFile::create(
+        llvm::MemoryBufferRef(bytes, path.string()), /*IsLittleEndian=*/true,
+        /*Is64Bits=*/true);
+    EXPECT_TRUE(static_cast<bool>(object))
+        << llvm::toString(object.takeError()).str().str();
+    return object ? std::move(*object) : nullptr;
+  };
+  auto link = [&](std::vector<std::string> flags) {
+    std::vector<std::string> args = {target, "-nostdlib", "-Wl,-e,_main",
+                                     mainObject.string()};
+    args.insert(args.end(), flags.begin(), flags.end());
+    args.insert(args.end(), {"-o", image.string()});
+    return ncc(args);
+  };
+  auto symbolAddress = [&](llvm::object::MachOObjectFile &macho,
+                           llvm::StringRef name) -> uint64_t {
+    for (const auto &sym : macho.symbols())
+      if (llvm::cantFail(sym.getName()) == name)
+        return llvm::cantFail(sym.getAddress());
+    ADD_FAILURE() << name.str() << " is missing";
+    return 0;
+  };
+
+  CmdResult flags =
+      link({"-Wl,-root_safe", "-Wl,-setuid_safe", "-Wl,-page_align_data_atoms",
+            "-Wl,-seg_page_size,__DATA,0x10000"});
+  ASSERT_EQ(flags.exitCode, 0) << flags.err;
+  EXPECT_FALSE(flags.stderrContains("not implemented")) << flags.err;
+  {
+    auto macho = open(image);
+    ASSERT_NE(macho, nullptr);
+    uint32_t headerFlags = macho->getHeader64().flags;
+    EXPECT_TRUE(headerFlags & llvm::MachO::MH_ROOT_SAFE);
+    EXPECT_TRUE(headerFlags & llvm::MachO::MH_SETUID_SAFE);
+    EXPECT_EQ(symbolAddress(*macho, "_first_data") % 0x4000, 0u);
+    EXPECT_EQ(symbolAddress(*macho, "_second_data") % 0x4000, 0u);
+    for (const auto &command : macho->load_commands())
+      if (command.C.cmd == llvm::MachO::LC_SEGMENT_64) {
+        auto seg = macho->getSegment64LoadCommand(command);
+        if (llvm::StringRef(seg.segname) == "__DATA")
+          EXPECT_EQ(seg.vmsize % 0x10000, 0u);
+      }
+  }
+
+  auto sectionTypes = [&] {
+    std::map<std::string, uint32_t> types;
+    if (auto macho = open(image))
+      for (const auto &section : macho->sections()) {
+        auto s = macho->getSection64(section.getRawDataRefImpl());
+        types[std::string(s.sectname, strnlen(s.sectname, 16))] =
+            s.flags & llvm::MachO::SECTION_TYPE;
+      }
+    return types;
+  };
+  CmdResult merged = link({"-Wl,-merge_zero_fill_sections"});
+  ASSERT_EQ(merged.exitCode, 0) << merged.err;
+  EXPECT_EQ(sectionTypes().count("__zerofill"), 1u);
+  CmdResult filled = link({"-Wl,-no_zero_fill_sections"});
+  ASSERT_EQ(filled.exitCode, 0) << filled.err;
+  for (const auto &[name, type] : sectionTypes())
+    EXPECT_NE(type, llvm::MachO::S_ZEROFILL) << name;
+
+  CmdResult dedup = link({"-Wl,--icf=all", "-Wl,-verbose_deduplicate"});
+  ASSERT_EQ(dedup.exitCode, 0) << dedup.err;
+  EXPECT_TRUE(dedup.contains("folded into")) << dedup.out;
+
+  CmdResult order = link(
+      {"-Wl,-order_file," + orderFile.string(), "-Wl,-order_file_statistics"});
+  ASSERT_EQ(order.exitCode, 0) << order.err;
+  EXPECT_TRUE(order.contains("no symbol '_not_a_symbol'")) << order.out;
+  EXPECT_TRUE(order.contains("2 symbols listed, 1 ordered, 1 not found"))
+      << order.out;
+
+  CmdResult duplicate = link({dupObject.string()});
+  EXPECT_NE(duplicate.exitCode, 0);
+  CmdResult deadDuplicate = link(
+      {dupObject.string(), "-Wl,-dead_strip", "-Wl,-allow_dead_duplicates"});
+  EXPECT_EQ(deadDuplicate.exitCode, 0) << deadDuplicate.err;
+
+  CmdResult inits = link({ctorObject.string(), "-Wl,-no_inits"});
+  EXPECT_NE(inits.exitCode, 0);
+  EXPECT_TRUE(inits.stderrContains("has static initializers")) << inits.err;
+
+  CmdResult arch = link({x86Object.string()});
+  EXPECT_TRUE(arch.stderrContains("incompatible with target architecture"))
+      << arch.err;
+  CmdResult quiet = link({x86Object.string(), "-Wl,-no_arch_warnings"});
+  EXPECT_FALSE(quiet.stderrContains("incompatible with target architecture"))
+      << quiet.err;
+
+  CmdResult weak = ncc({target, "-nostdlib", "-dynamiclib", mainObject.string(),
+                        "-Wl,-force_symbols_weak_list," + weakList.string(),
+                        "-o", library.string()});
+  ASSERT_EQ(weak.exitCode, 0) << weak.err;
+  auto macho = open(library);
+  ASSERT_NE(macho, nullptr);
+  EXPECT_TRUE(macho->getHeader64().flags & llvm::MachO::MH_WEAK_DEFINES);
+  llvm::Error err = llvm::Error::success();
+  std::map<std::string, bool> weakExports;
+  for (const auto &entry : macho->exports(err))
+    weakExports[entry.name().str()] =
+        entry.flags() & llvm::MachO::EXPORT_SYMBOL_FLAGS_WEAK_DEFINITION;
+  ASSERT_FALSE(static_cast<bool>(err))
+      << llvm::toString(std::move(err)).str().str();
+  EXPECT_TRUE(weakExports["_twin_a"]);
+  EXPECT_FALSE(weakExports["_twin_b"]);
+}
+
 TEST_F(LinkerTest, MsvcLinkerSpellingsAreNormalized) {
   const std::string target = "--target=x86_64-pc-windows-msvc";
   const fs::path source = tmpFile("msvc_opts.c");

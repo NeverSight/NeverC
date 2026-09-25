@@ -730,6 +730,19 @@ void OutputWriter::checkNativeOptionConstraints() {
     if (!isa<Defined>(init))
       error("-init: symbol '" + toString(*init) +
             "' is not defined in the image");
+  if (config->noInits) {
+    const ConcatInputSection *init = nullptr;
+    for (const ConcatInputSection *isec : inputSections)
+      if (isec->live &&
+          sectionType(isec->getFlags()) == S_MOD_INIT_FUNC_POINTERS) {
+        init = isec;
+        break;
+      }
+    if (init)
+      error("-no_inits: " + toString(init) + " has static initializers");
+    else if (in.initOffsets->isNeeded())
+      error("-no_inits: the image has static initializers");
+  }
   if (!config->noWeakImports)
     return;
   for (const Symbol *sym : symtab->getSymbols())
@@ -1184,8 +1197,12 @@ void OutputWriter::assignSegmentAddresses() {
     }
     seg->addr = addr;
     layoutSegment(seg);
-    fileOff = alignToPowerOf2(fileOff, pageSize);
-    addr = alignToPowerOf2(addr, pageSize);
+    // -seg_page_size makes the segment's size a multiple of its page size.
+    const uint64_t segPageSize = std::max<uint64_t>(
+        pageSize, config->segmentPageSizes.lookup(seg->name));
+    fileOff =
+        seg->fileOff + alignToPowerOf2(fileOff - seg->fileOff, segPageSize);
+    addr = seg->addr + alignToPowerOf2(addr - seg->addr, segPageSize);
     seg->vmSize = addr - seg->addr;
     seg->fileSize = fileOff - seg->fileOff;
     seg->assignAddressesToStartEndSymbols();

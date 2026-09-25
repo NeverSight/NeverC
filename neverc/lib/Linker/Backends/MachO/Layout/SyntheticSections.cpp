@@ -93,6 +93,7 @@ uint32_t cpuSubtype() {
   uint32_t subtype = target->cpuSubtype;
 
   if (config->outputType == MH_EXECUTE && !config->staticLink &&
+      !config->forceCpuSubtypeAll &&
       target->cpuSubtype == CPU_SUBTYPE_X86_64_ALL &&
       config->platform() == PLATFORM_MACOS &&
       config->platformInfo.target.MinDeployment >= VersionTuple(10, 5))
@@ -142,6 +143,12 @@ void MachHeaderSection::writeTo(uint8_t *buf) const {
 
   if (config->forceFlatNamespace)
     hdr->flags |= MH_FORCE_FLAT;
+
+  if (config->rootSafe)
+    hdr->flags |= MH_ROOT_SAFE;
+
+  if (config->setuidSafe)
+    hdr->flags |= MH_SETUID_SAFE;
 
   if (config->outputType == MH_DYLIB && config->applicationExtension)
     hdr->flags |= MH_APP_EXTENSION_SAFE;
@@ -937,7 +944,7 @@ void ExportSection::finalizeContents() {
           !shouldEmitDefinedSymbolInExportTrie(*defined))
         continue;
       trieBuilder.addSymbol(*defined);
-      if (sym->isWeakDef()) {
+      if (isExportedWeakDef(*defined)) {
         hasWeakSymbol = true;
         if (config->noWeakExports)
           error("weak external symbol '" + toString(*sym) +
@@ -1359,7 +1366,7 @@ template <class LP> void SymtabSectionImpl<LP>::writeTo(uint8_t *buf) const {
         // For the N_SECT symbol type, n_value is the address of the symbol
         nList->n_value = defined->getVA();
       }
-      nList->n_desc |= defined->isExternalWeakDef() ? N_WEAK_DEF : 0;
+      nList->n_desc |= isExportedWeakDef(*defined) ? N_WEAK_DEF : 0;
       nList->n_desc |=
           defined->referencedDynamically ? REFERENCED_DYNAMICALLY : 0;
     } else if (auto *dysym = dyn_cast<DylibSymbol>(entry.sym)) {

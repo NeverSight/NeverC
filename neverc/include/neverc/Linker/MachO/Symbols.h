@@ -379,6 +379,10 @@ inline bool needsBinding(const Symbol *sym) {
 inline bool isPrivateLabel(StringRef name) {
   return name.starts_with("l") || name.starts_with("L");
 }
+// Whether a definition is exported as a weak definition, after
+// -force_symbols_weak_list and -force_symbols_not_weak_list.
+bool isExportedWeakDef(const Defined &sym);
+
 } // namespace macho
 
 std::string toString(const macho::Symbol &);

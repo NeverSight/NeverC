@@ -377,10 +377,18 @@ macho::PriorityBuilder::buildInputSectionPriorities() {
   if (priorities.empty())
     return sectionPriorities;
 
+  DenseSet<StringRef> matched;
   auto addSym = [&](const Defined *sym) {
+    // -no_order_data leaves data where it is; the order file then only
+    // arranges code.
+    if (config->noOrderData && sym->isec &&
+        !(sym->isec->getFlags() & S_ATTR_PURE_INSTRUCTIONS))
+      return;
     std::optional<size_t> symbolPriority = getSymbolPriority(sym);
     if (!symbolPriority)
       return;
+    if (config->orderFileStatistics)
+      matched.insert(sym->getName());
     size_t &priority = sectionPriorities[sym->isec];
     priority = std::max(priority, *symbolPriority);
   };
@@ -390,6 +398,18 @@ macho::PriorityBuilder::buildInputSectionPriorities() {
       for (Symbol *sym : file->symbols)
         if (auto *d = dyn_cast_or_null<Defined>(sym))
           addSym(d);
+  }
+
+  if (config->orderFileStatistics) {
+    size_t missing = 0;
+    for (const auto &entry : priorities)
+      if (!matched.contains(entry.first)) {
+        ++missing;
+        message("order file: no symbol '" + entry.first + "' to order");
+      }
+    message("order file: " + Twine(priorities.size()) + " symbols listed, " +
+            Twine(priorities.size() - missing) + " ordered, " + Twine(missing) +
+            " not found");
   }
 
   return sectionPriorities;

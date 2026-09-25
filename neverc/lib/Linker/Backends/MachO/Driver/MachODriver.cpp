@@ -744,9 +744,15 @@ void replaceCommonSymbols() {
       continue;
 
     ArrayRef<uint8_t> data = {nullptr, static_cast<size_t>(common->size)};
-    auto *section =
-        make<Section>(common->getFile(), segment_names::data,
-                      section_names::common, S_ZEROFILL, /*addr=*/0);
+    uint32_t flags = S_ZEROFILL;
+    if (config->noZeroFillSections) {
+      uint8_t *zeros = bAlloc().Allocate<uint8_t>(common->size);
+      memset(zeros, 0, common->size);
+      data = {zeros, static_cast<size_t>(common->size)};
+      flags = S_REGULAR;
+    }
+    auto *section = make<Section>(common->getFile(), segment_names::data,
+                                  section_names::common, flags, /*addr=*/0);
     auto *isec = make<ConcatInputSection>(*section, data, common->align);
     if (!osec)
       osec = ConcatOutputSection::getOrCreateForInput(isec);
@@ -1910,7 +1916,8 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
   config->icfLevel = getICFFromDriver(driverCfg.icfLevel);
   config->dedupStrings =
       args.hasFlag(OPT_deduplicate_strings, OPT_no_deduplicate_strings, true);
-  config->deadStripDuplicates = args.hasArg(OPT_dead_strip_duplicates);
+  config->deadStripDuplicates =
+      args.hasArg(OPT_dead_strip_duplicates, OPT_allow_dead_duplicates);
   for (auto *arg : args.filtered(OPT_override_eq))
     config->overrideSymbols.try_emplace(arg->getValue(), nullptr);
   config->warnDylibInstallName = args.hasFlag(
@@ -1937,6 +1944,33 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
   config->executablePath = args.getLastArgValue(OPT_executable_path);
   config->initFunction = args.getLastArgValue(OPT_init);
   config->noBranchIslands = args.hasArg(OPT_no_branch_islands);
+  config->rootSafe = args.hasArg(OPT_root_safe);
+  config->setuidSafe = args.hasArg(OPT_setuid_safe);
+  config->forceCpuSubtypeAll = args.hasArg(OPT_force_cpusubtype_ALL);
+  config->noInits = args.hasArg(OPT_no_inits);
+  config->noArchWarnings = args.hasArg(OPT_no_arch_warnings);
+  config->verboseDeduplicate = args.hasArg(OPT_verbose_deduplicate);
+  config->pageAlignDataAtoms = args.hasArg(OPT_page_align_data_atoms);
+  config->noZeroFillSections = args.hasArg(OPT_no_zero_fill_sections);
+  config->mergeZeroFillSections = args.hasArg(OPT_merge_zero_fill_sections);
+  config->orderFileStatistics = args.hasArg(OPT_order_file_statistics);
+  config->noOrderData = args.hasArg(OPT_no_order_data);
+  config->warnStabs = args.hasArg(OPT_warn_stabs);
+  for (const Arg *arg : args.filtered(OPT_force_symbols_weak_list))
+    parseSymbolPatternsFile(arg, config->forceWeakSymbols);
+  for (const Arg *arg : args.filtered(OPT_force_symbols_not_weak_list))
+    parseSymbolPatternsFile(arg, config->forceNotWeakSymbols);
+  for (const Arg *arg : args.filtered(OPT_seg_page_size)) {
+    uint64_t size = 0;
+    StringRef value = arg->getValue(1);
+    value.consume_front_insensitive("0x");
+    if (value.getAsInteger(16, size) || !isPowerOf2_64(size) ||
+        size < target->getPageSize())
+      error(arg->getAsString(args) + ": expected a hex power-of-2 page " +
+            "size of at least 0x" + Twine::utohexstr(target->getPageSize()));
+    else
+      config->segmentPageSizes[arg->getValue(0)] = size;
+  }
   // Linked images always define their tentative definitions; a relocatable
   // output keeps them tentative.
   if (const Arg *arg = args.getLastArg(OPT_d);
@@ -2340,6 +2374,9 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
     StringRef orderFile = args.getLastArgValue(OPT_order_file);
     if (!orderFile.empty())
       priorityBuilder.parseOrderFile(orderFile);
+    // -dirty_data_list groups the data it names after the ordered symbols.
+    for (const Arg *arg : args.filtered(OPT_dirty_data_list))
+      priorityBuilder.parseOrderFile(arg->getValue());
 
     referenceStubBinder();
 

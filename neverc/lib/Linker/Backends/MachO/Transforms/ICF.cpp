@@ -410,8 +410,12 @@ void ICF::run() {
     if (end - begin < 2)
       return;
     ConcatInputSection *beginIsec = icfInputs[begin];
-    for (size_t i = begin + 1; i < end; ++i)
+    for (size_t i = begin + 1; i < end; ++i) {
+      if (config->verboseDeduplicate)
+        message("deduplicate: " + toString(icfInputs[i]) + " folded into " +
+                toString(beginIsec));
       beginIsec->foldIdentical(icfInputs[i]);
+    }
   });
 }
 

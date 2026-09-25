@@ -120,3 +120,15 @@ uint64_t DylibSymbol::getVA() const {
 }
 
 void LazyArchive::fetchArchiveMember() { getFile()->fetch(sym); }
+
+bool macho::isExportedWeakDef(const Defined &sym) {
+  if (!sym.isExternal() || sym.privateExtern)
+    return false;
+  if (!config->forceWeakSymbols.empty() &&
+      config->forceWeakSymbols.match(sym.getName()))
+    return true;
+  if (!config->forceNotWeakSymbols.empty() &&
+      config->forceNotWeakSymbols.match(sym.getName()))
+    return false;
+  return sym.isWeakDef();
+}
