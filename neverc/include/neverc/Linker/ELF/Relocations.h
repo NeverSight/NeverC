@@ -148,8 +148,9 @@ void addGotEntry(Symbol &sym);
 // Resolves symbol visibility early and starts scanning the relocations of
 // regular sections on dedicated threads, overlapping the layout steps that
 // precede the regular scan, when the link allows it. The threads are joined
-// by finishEarlyRelocationScan(), which must run before symbols may change
-// again.
+// by finishEarlyRelocationScan(), which scanRelocations() calls first. Until
+// then, only symbols that were undefined when the early scan started may
+// change.
 void startEarlyRelocationScan();
 void finishEarlyRelocationScan();
 template <class ELFT> void scanRelocationsEarly();

@@ -1243,6 +1243,10 @@ void elf::finishEarlyRelocationScan() {
 }
 
 template <class ELFT> void elf::scanRelocations() {
+  // The early scan may run until now: the steps since it started only define
+  // symbols that were undefined, add symbols, and demote symbols in dead
+  // sections, none of which a section it scans refers to.
+  finishEarlyRelocationScan();
   // Scan all relocations. Each relocation goes through a series of tests to
   // determine if it needs special treatment, such as creating GOT, PLT,
   // copy relocations, etc. Note that relocations for non-alloc sections are

@@ -581,8 +581,6 @@ template <class ELFT> void elf::createSyntheticSections() {
 }
 
 template <class ELFT> void OutputWriter<ELFT>::run() {
-  // Symbols change from here on.
-  finishEarlyRelocationScan();
   prepareLayout();
   if (elfPluginLinkAdapter())
     if (Error E = elfPluginLinkAdapter()->advanceTo(
