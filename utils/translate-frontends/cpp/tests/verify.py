@@ -29233,6 +29233,66 @@ void reverse_string(std::string& value) {
               + ' f(std::vector<Entry>& left,std::vector<Entry>& right){'
               + operation + '}', "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_transfer_source = """\
+#include <algorithm>
+#include <string>
+#include <vector>
+std::vector<long>::iterator copy_values(const std::vector<int>& input,
+                                         std::vector<long>& output) {
+  return std::copy(input.cbegin(), input.cend(), output.begin());
+}
+std::vector<int>::iterator move_values(std::vector<int>& input,
+                                        std::vector<int>& output) {
+  return std::move(input.begin(), input.end(), output.begin());
+}
+std::vector<int>::iterator copy_back(const std::vector<int>& input,
+                                      std::vector<int>& output) {
+  return std::copy_backward(input.cbegin(), input.cend(), output.end());
+}
+std::vector<int>::iterator move_back(std::vector<int>& input,
+                                      std::vector<int>& output) {
+  return std::move_backward(input.begin(), input.end(), output.end());
+}
+std::vector<int>::iterator reverse_values(const std::vector<int>& input,
+                                           std::vector<int>& output) {
+  return std::reverse_copy(input.cbegin(), input.cend(), output.begin());
+}
+std::vector<int>::iterator copy_count(const std::vector<int>& input,
+                                       std::vector<int>& output, int count) {
+  return std::copy_n(input.cbegin(), count, output.begin());
+}
+std::vector<int>::iterator fill_count(std::vector<int>& output, int count) {
+  return std::fill_n(output.begin(), count, 7);
+}
+std::vector<int>::iterator swap_values(std::vector<int>& left,
+                                        std::vector<int>& right) {
+  std::iter_swap(left.begin(), right.begin());
+  return std::swap_ranges(left.begin(), left.end(), right.begin());
+}
+std::string::iterator copy_chars(const std::vector<char>& input,
+                                  std::string& output) {
+  return std::copy(input.cbegin(), input.cend(), output.begin());
+}
+"""
+    wrapped_transfer = check("v2-wrapped-transfer", wrapped_transfer_source,
+                             profile="cpp-core-v2", sdk=True)
+    assert not [node for node in walk(wrapped_transfer["functions"])
+                if node.get("op") in ("call", "mapped_call", "indirect_call")], wrapped_transfer
+    for target in sdk_targets:
+        check("v2-wrapped-transfer-" + target, wrapped_transfer_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    for name, operation in {
+        "copy": "std::copy(left.begin(),left.end(),right.begin());",
+        "copy-n": "std::copy_n(left.begin(),1,right.begin());",
+        "fill-n": "std::fill_n(left.begin(),1,Entry{});",
+        "swap-ranges": "std::swap_ranges(left.begin(),left.end(),right.begin());",
+        "iter-swap": "std::iter_swap(left.begin(),right.begin());",
+    }.items():
+        check("v2-wrapped-transfer-" + name + "-record",
+              '#include <algorithm>\n#include <vector>\nstruct Entry{int value;};'
+              'void f(std::vector<Entry>& left,std::vector<Entry>& right){'
+              + operation + '}', "TR0203", profile="cpp-core-v2", sdk=True)
+
     string_metadata_source = """\
 #include <string>
 static_assert(sizeof(std::string) >= 3 * sizeof(void*));

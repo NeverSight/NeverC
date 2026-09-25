@@ -18423,6 +18423,32 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return Wrapped->IteratorType;
     return std::nullopt;
   };
+  auto AlgorithmTransferRangeParameters = [&](unsigned InputIndex,
+                                              unsigned OutputIndex) {
+    const auto Input = AlgorithmRangePointerParameter(InputIndex);
+    const auto Output = AlgorithmRangePointerParameter(OutputIndex);
+    return Input && Output &&
+           utilityAlgorithmWritableScalarPointer(Context, *Output) &&
+           utilityScalarDirectConversion(Context, (*Input)->getPointeeType(),
+                                         (*Output)->getPointeeType());
+  };
+  auto AlgorithmTransferRangeValueParameter = [&](unsigned ValueIndex,
+                                                  unsigned OutputIndex) {
+    if (ValueIndex >= Function->getNumParams() ||
+        ValueIndex >= Call->getNumArgs())
+      return false;
+    const auto Output = AlgorithmRangePointerParameter(OutputIndex);
+    const auto Value = Function->getParamDecl(ValueIndex)->getType();
+    return Output && Value->isLValueReferenceType() &&
+           Value->getPointeeType().isConstQualified() &&
+           !Value->getPointeeType().isVolatileQualified() &&
+           utilityScalar(Context, Value->getPointeeType()) &&
+           Context.hasSameUnqualifiedType(Call->getArg(ValueIndex)->getType(),
+                                          Value->getPointeeType()) &&
+           utilityAlgorithmWritableScalarPointer(Context, *Output) &&
+           utilityScalarDirectConversion(Context, Value->getPointeeType(),
+                                         (*Output)->getPointeeType());
+  };
   auto AlgorithmTransferParameters = [&](unsigned InputIndex,
                                          unsigned OutputIndex) {
     if (!AlgorithmPointerParameter(InputIndex) ||
@@ -19476,8 +19502,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       (Name == "copy" || Name == "move" || Name == "copy_backward" ||
        Name == "move_backward") &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
-      Call->isPRValue() && AlgorithmPointerParameter(0) &&
-      AlgorithmPointerParameter(1) && AlgorithmTransferParameters(0, 2) &&
+      Call->isPRValue() && AlgorithmRangePointerParameter(0) &&
+      AlgorithmRangePointerParameter(1) &&
+      AlgorithmTransferRangeParameters(0, 2) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
@@ -19501,43 +19528,34 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType())) {
     const auto First = AlgorithmRangePointerParameter(0);
     const auto Last = AlgorithmRangePointerParameter(1);
-    const auto Value = Function->getParamDecl(2)->getType();
-    if (First && Last &&
-        utilityAlgorithmWritableScalarPointer(Context, *First) &&
-        Value->isLValueReferenceType() &&
-        Value->getPointeeType().isConstQualified() &&
-        !Value->getPointeeType().isVolatileQualified() &&
-        utilityScalar(Context, Value->getPointeeType()) &&
-        Context.hasSameUnqualifiedType(Call->getArg(2)->getType(),
-                                       Value->getPointeeType()) &&
-        utilityScalarDirectConversion(Context, Value->getPointeeType(),
-                                      (*First)->getPointeeType()))
+    if (First && Last && AlgorithmTransferRangeValueParameter(2, 0))
       return UtilityOperation::AlgorithmFill;
   }
   if (Origin->Path == "__algorithm/fill_n.h" && Name == "fill_n" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
-      Call->isPRValue() && AlgorithmPointerParameter(0) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(0)->getType()) &&
-      AlgorithmCountParameter(1) && AlgorithmTransferValueParameter(2, 0) &&
+      Call->isPRValue() && AlgorithmRangePointerParameter(0) &&
+      AlgorithmCountParameter(1) &&
+      AlgorithmTransferRangeValueParameter(2, 0) &&
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmFillN;
   if (Origin->Path == "__algorithm/swap_ranges.h" && Name == "swap_ranges" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
-      Call->isPRValue() && AlgorithmPointerParameter(0) &&
-      AlgorithmPointerParameter(1) && AlgorithmPointerParameter(2) &&
+      Call->isPRValue() &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
-                           Function->getParamDecl(2)->getType()) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(0)->getType()) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(2)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
-      Same(Call->getType(), Function->getReturnType()))
-    return UtilityOperation::AlgorithmSwapRanges;
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto First = AlgorithmRangePointerParameter(0);
+    const auto Last = AlgorithmRangePointerParameter(1);
+    const auto Second = AlgorithmRangePointerParameter(2);
+    if (First && Last && Second &&
+        utilityAlgorithmWritableScalarPointer(Context, *First) &&
+        utilityAlgorithmWritableScalarPointer(Context, *Second) &&
+        Context.hasSameUnqualifiedType((*First)->getPointeeType(),
+                                       (*Second)->getPointeeType()))
+      return UtilityOperation::AlgorithmSwapRanges;
+  }
   if (Origin->Path == "__algorithm/reverse.h" && Name == "reverse" &&
       Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
       Same(Function->getParamDecl(0)->getType(),
@@ -19552,8 +19570,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   }
   if (Origin->Path == "__algorithm/reverse_copy.h" && Name == "reverse_copy" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
-      Call->isPRValue() && AlgorithmPointerParameter(0) &&
-      AlgorithmPointerParameter(1) && AlgorithmTransferParameters(0, 2) &&
+      Call->isPRValue() && AlgorithmRangePointerParameter(0) &&
+      AlgorithmRangePointerParameter(1) &&
+      AlgorithmTransferRangeParameters(0, 2) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
@@ -19802,23 +19821,25 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   }
   if (Origin->Path == "__algorithm/copy_n.h" && Name == "copy_n" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
-      Call->isPRValue() && AlgorithmPointerParameter(0) &&
-      AlgorithmCountParameter(1) && AlgorithmTransferParameters(0, 2) &&
+      Call->isPRValue() && AlgorithmRangePointerParameter(0) &&
+      AlgorithmCountParameter(1) &&
+      AlgorithmTransferRangeParameters(0, 2) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmCopyN;
   if (Origin->Path == "__algorithm/iter_swap.h" && Name == "iter_swap" &&
       Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
-      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
-                           Function->getParamDecl(1)->getType()) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(0)->getType()) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(1)->getType()) &&
       Function->getReturnType()->isVoidType() &&
-      Same(Call->getType(), Function->getReturnType()))
-    return UtilityOperation::AlgorithmIterSwap;
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto First = AlgorithmRangePointerParameter(0);
+    const auto Second = AlgorithmRangePointerParameter(1);
+    if (First && Second &&
+        utilityAlgorithmWritableScalarPointer(Context, *First) &&
+        utilityAlgorithmWritableScalarPointer(Context, *Second) &&
+        Context.hasSameUnqualifiedType((*First)->getPointeeType(),
+                                       (*Second)->getPointeeType()))
+      return UtilityOperation::AlgorithmIterSwap;
+  }
   if (Origin->Path == "__algorithm/rotate.h" && Name == "rotate" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
       Call->isPRValue() && AlgorithmPointerParameter(0) &&

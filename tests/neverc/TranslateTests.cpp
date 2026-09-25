@@ -51663,6 +51663,134 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedIteratorTransferRun) {
+  const auto Source = tmpFile("wrapped-iterator-transfer.cpp");
+  const auto Output = tmpFile("wrapped-iterator-transfer.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <string>
+#include <vector>
+int main() {
+  std::vector<int> source{1, 2, 3, 4};
+  std::vector<long> widened(4);
+  int effects = 0;
+  auto copied = std::copy((++effects, source.cbegin()),
+                          (++effects, source.cend()),
+                          (++effects, widened.begin()));
+  if (effects != 3 || copied != widened.end() || widened[0] != 1 ||
+      widened[1] != 2 || widened[2] != 3 || widened[3] != 4)
+    return 1;
+  std::vector<int> moved(4);
+  if (std::move(source.begin(), source.end(), moved.begin()) != moved.end() ||
+      moved[0] != 1 || moved[3] != 4)
+    return 2;
+  std::vector<int> backward(5);
+  auto backward_begin = std::copy_backward(source.cbegin(), source.cend(),
+                                            backward.end());
+  auto expected_begin = backward.begin();
+  ++expected_begin;
+  if (backward_begin != expected_begin || backward[1] != 1 ||
+      backward[2] != 2 || backward[3] != 3 || backward[4] != 4)
+    return 3;
+  std::vector<int> moved_backward(5);
+  auto moved_backward_begin = moved_backward.begin();
+  ++moved_backward_begin;
+  if (std::move_backward(source.begin(), source.end(), moved_backward.end()) !=
+          moved_backward_begin ||
+      moved_backward[1] != 1 || moved_backward[4] != 4)
+    return 4;
+  std::vector<int> reversed(4);
+  if (std::reverse_copy(source.cbegin(), source.cend(), reversed.begin()) !=
+          reversed.end() ||
+      reversed[0] != 4 || reversed[1] != 3 || reversed[2] != 2 ||
+      reversed[3] != 1)
+    return 5;
+  std::vector<int> partial(4);
+  auto after_three = std::copy_n(source.cbegin(), 3, partial.begin());
+  auto third = partial.begin();
+  ++third;
+  ++third;
+  ++third;
+  if (after_three != third || partial[0] != 1 || partial[2] != 3 ||
+      partial[3] != 0)
+    return 6;
+  auto after_two = std::fill_n(partial.begin(), 2, 9);
+  auto second = partial.begin();
+  ++second;
+  ++second;
+  if (after_two != second || partial[0] != 9 || partial[1] != 9 ||
+      partial[2] != 3)
+    return 7;
+  std::vector<int> swapped{5, 6, 7, 8};
+  if (std::swap_ranges(source.begin(), source.end(), swapped.begin()) !=
+          swapped.end() ||
+      source[0] != 5 || source[3] != 8 || swapped[0] != 1 || swapped[3] != 4)
+    return 8;
+  std::iter_swap(source.begin(), swapped.begin());
+  if (source[0] != 1 || swapped[0] != 5)
+    return 9;
+  int raw[4]{};
+  if (std::copy(source.cbegin(), source.cend(), raw) != raw + 4 ||
+      std::copy(raw, raw + 4, partial.begin()) != partial.end() ||
+      partial[1] != 6)
+    return 10;
+  std::string word("abcd");
+  std::vector<char> chars(4);
+  if (std::copy(word.cbegin(), word.cend(), chars.begin()) != chars.end() ||
+      chars[0] != 'a' || chars[3] != 'd' ||
+      std::reverse_copy(word.cbegin(), word.cend(), chars.begin()) !=
+          chars.end() ||
+      chars[0] != 'd' || chars[3] != 'a' ||
+      std::move(chars.begin(), chars.end(), word.begin()) != word.end() ||
+      word[0] != 'd' || word[3] != 'a')
+    return 11;
+  std::vector<int> empty;
+  if (std::copy(empty.begin(), empty.end(), partial.begin()) !=
+          partial.begin() ||
+      std::copy_n(empty.begin(), 0, partial.begin()) != partial.begin() ||
+      std::fill_n(partial.begin(), 0, 5) != partial.begin() ||
+      std::swap_ranges(empty.begin(), empty.end(), partial.begin()) !=
+          partial.begin())
+    return 12;
+  std::vector<int> overlap{1, 2, 3, 4, 5};
+  auto overlap_first = overlap.begin();
+  ++overlap_first;
+  std::copy(overlap_first, overlap.end(), overlap.begin());
+  if (overlap[0] != 2 || overlap[1] != 3 || overlap[2] != 4 ||
+      overlap[3] != 5 || overlap[4] != 5)
+    return 13;
+  std::vector<int> overlap_backward{1, 2, 3, 4, 5};
+  auto overlap_last = overlap_backward.end();
+  --overlap_last;
+  auto overlap_result = std::copy_backward(
+      overlap_backward.begin(), overlap_last, overlap_backward.end());
+  auto overlap_expected = overlap_backward.begin();
+  ++overlap_expected;
+  if (overlap_result != overlap_expected || overlap_backward[0] != 1 ||
+      overlap_backward[1] != 1 || overlap_backward[2] != 2 ||
+      overlap_backward[3] != 3 || overlap_backward[4] != 4)
+    return 14;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o",
+                                   Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapped-iterator-transfer" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorInitializerAndFillConstructionRun) {
   const auto Source = tmpFile("vector-initializers.cpp");
   const auto Output = tmpFile("vector-initializers.nc");

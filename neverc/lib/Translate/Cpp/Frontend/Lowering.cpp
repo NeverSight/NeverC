@@ -2093,6 +2093,23 @@ class FunctionLowering {
                 Wrapped->IteratorType};
       return {std::move(Value), IteratorType};
     };
+    auto AlgorithmIteratorResult = [&](Expression Pointer,
+                                       unsigned OutputIndex) -> Expression {
+      const auto IteratorType = Call->getArg(OutputIndex)->getType();
+      const auto Wrapped = approvedUtilityWrapIteratorRecord(
+          A.S, A.Sources, IteratorType->getAsCXXRecordDecl(), A.Context);
+      if (!Wrapped)
+        return Pointer;
+      auto Place = Destination ? std::move(*Destination)
+                               : objectTemporary(Call->getType(), L);
+      Destination.reset();
+      if (Place.getString("type") != type(Call->getType(), L))
+        reject(L, "algorithm iterator result",
+               "The iterator destination type differs from its result.");
+      assign(fieldStorage(json::Object(Place), Wrapped->Current, L),
+             std::move(Pointer), L);
+      return Place;
+    };
     auto ReverseFor = [&](QualType Type) {
       return approvedUtilityReverseIteratorRecord(
           A.S, A.Sources, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(),
@@ -4218,16 +4235,19 @@ class FunctionLowering {
     case UtilityOperation::MemoryUninitializedMove:
     case UtilityOperation::AlgorithmCopyBackward:
     case UtilityOperation::AlgorithmMoveBackward: {
-      auto Current = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
-      auto Output = snapshot(expression(Call->getArg(2)), L);
+      auto CurrentRange = AlgorithmRangeValue(0);
+      auto LastRange = AlgorithmRangeValue(1);
+      auto OutputRange = AlgorithmRangeValue(2);
+      auto Current = std::move(CurrentRange.first);
+      auto Last = std::move(LastRange.first);
+      auto Output = std::move(OutputRange.first);
       const bool Backward =
           Operation == UtilityOperation::AlgorithmCopyBackward ||
           Operation == UtilityOperation::AlgorithmMoveBackward;
       const auto Check = labelName(), Transfer = labelName(), End = labelName();
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto InputType = type(Call->getArg(0)->getType(), L);
-      const auto OutputType = type(Call->getArg(2)->getType(), L);
+      const auto InputType = type(CurrentRange.second, L);
+      const auto OutputType = type(OutputRange.second, L);
       const bool MemoryConstruction =
           Operation == UtilityOperation::MemoryUninitializedCopy ||
           Operation == UtilityOperation::MemoryUninitializedMove;
@@ -4243,7 +4263,7 @@ class FunctionLowering {
       const auto OutputElementType =
           MemoryConstruction
               ? std::string()
-              : type(Call->getArg(2)->getType()->getPointeeType(), L);
+              : type(OutputRange.second->getPointeeType(), L);
       jump(Check, L);
       label(Check, L);
       branch(binary("!=", Current, Last, "bool", L), Transfer, End, L);
@@ -4278,7 +4298,7 @@ class FunctionLowering {
       }
       jump(Check, L);
       label(End, L);
-      return Output;
+      return AlgorithmIteratorResult(std::move(Output), 2);
     }
     case UtilityOperation::AlgorithmFill:
     case UtilityOperation::AlgorithmFillN:
@@ -4347,16 +4367,21 @@ class FunctionLowering {
       }
       jump(Check, L);
       label(End, L);
-      return Counted ? std::move(Current) : Expression();
+      if (Counted)
+        return AlgorithmIteratorResult(std::move(Current), 0);
+      return {};
     }
     case UtilityOperation::AlgorithmSwapRanges: {
-      auto First = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
-      auto Second = snapshot(expression(Call->getArg(2)), L);
+      auto FirstRange = AlgorithmRangeValue(0);
+      auto LastRange = AlgorithmRangeValue(1);
+      auto SecondRange = AlgorithmRangeValue(2);
+      auto First = std::move(FirstRange.first);
+      auto Last = std::move(LastRange.first);
+      auto Second = std::move(SecondRange.first);
       const auto Check = labelName(), Swap = labelName(), End = labelName();
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto FirstType = type(Call->getArg(0)->getType(), L);
-      const auto SecondType = type(Call->getArg(2)->getType(), L);
+      const auto FirstType = type(FirstRange.second, L);
+      const auto SecondType = type(SecondRange.second, L);
       jump(Check, L);
       label(Check, L);
       branch(binary("!=", First, Last, "bool", L), Swap, End, L);
@@ -4373,7 +4398,7 @@ class FunctionLowering {
              L);
       jump(Check, L);
       label(End, L);
-      return Second;
+      return AlgorithmIteratorResult(std::move(Second), 2);
     }
     case UtilityOperation::AlgorithmReverse: {
       auto FirstRange = AlgorithmRangeValue(0);
@@ -4405,15 +4430,18 @@ class FunctionLowering {
       return {};
     }
     case UtilityOperation::AlgorithmReverseCopy: {
-      auto First = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
-      auto Output = snapshot(expression(Call->getArg(2)), L);
+      auto FirstRange = AlgorithmRangeValue(0);
+      auto LastRange = AlgorithmRangeValue(1);
+      auto OutputRange = AlgorithmRangeValue(2);
+      auto First = std::move(FirstRange.first);
+      auto Last = std::move(LastRange.first);
+      auto Output = std::move(OutputRange.first);
       const auto Check = labelName(), Transfer = labelName(), End = labelName();
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto InputType = type(Call->getArg(0)->getType(), L);
-      const auto OutputType = type(Call->getArg(2)->getType(), L);
+      const auto InputType = type(FirstRange.second, L);
+      const auto OutputType = type(OutputRange.second, L);
       const auto OutputElementType =
-          type(Call->getArg(2)->getType()->getPointeeType(), L);
+          type(OutputRange.second->getPointeeType(), L);
       jump(Check, L);
       label(Check, L);
       branch(binary("!=", First, Last, "bool", L), Transfer, End, L);
@@ -4428,7 +4456,7 @@ class FunctionLowering {
              L);
       jump(Check, L);
       label(End, L);
-      return Output;
+      return AlgorithmIteratorResult(std::move(Output), 2);
     }
     case UtilityOperation::AlgorithmMinElement:
     case UtilityOperation::AlgorithmMaxElement: {
@@ -5198,7 +5226,8 @@ class FunctionLowering {
     case UtilityOperation::AlgorithmCopyN:
     case UtilityOperation::MemoryUninitializedCopyN:
     case UtilityOperation::MemoryUninitializedMoveN: {
-      auto Input = snapshot(expression(Call->getArg(0)), L);
+      auto InputRange = AlgorithmRangeValue(0);
+      auto Input = std::move(InputRange.first);
       auto CountType = Call->getArg(1)->getType();
       if (const auto *Enumeration = CountType->getAs<EnumType>())
         CountType = Enumeration->getDecl()->getPromotionType();
@@ -5207,10 +5236,11 @@ class FunctionLowering {
       const auto CountTypeName = type(CountType, L);
       auto Remaining =
           snapshot(cast(expression(Call->getArg(1)), CountTypeName, L), L);
-      auto Output = snapshot(expression(Call->getArg(2)), L);
+      auto OutputRange = AlgorithmRangeValue(2);
+      auto Output = std::move(OutputRange.first);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto InputType = type(Call->getArg(0)->getType(), L);
-      const auto OutputType = type(Call->getArg(2)->getType(), L);
+      const auto InputType = type(InputRange.second, L);
+      const auto OutputType = type(OutputRange.second, L);
       const bool MemoryConstruction =
           Operation == UtilityOperation::MemoryUninitializedCopyN ||
           Operation == UtilityOperation::MemoryUninitializedMoveN;
@@ -5226,7 +5256,7 @@ class FunctionLowering {
       const auto OutputElementType =
           MemoryConstruction
               ? std::string()
-              : type(Call->getArg(2)->getType()->getPointeeType(), L);
+              : type(OutputRange.second->getPointeeType(), L);
       const auto Check = labelName(), Transfer = labelName();
       const auto End = labelName();
       jump(Check, L);
@@ -5269,11 +5299,11 @@ class FunctionLowering {
         assign(fieldStorage(json::Object(Place), Pair->Second, L), Output, L);
         return Place;
       }
-      return Output;
+      return AlgorithmIteratorResult(std::move(Output), 2);
     }
     case UtilityOperation::AlgorithmIterSwap: {
-      auto Left = snapshot(expression(Call->getArg(0)), L);
-      auto Right = snapshot(expression(Call->getArg(1)), L);
+      auto Left = std::move(AlgorithmRangeValue(0).first);
+      auto Right = std::move(AlgorithmRangeValue(1).first);
       auto LeftValue = snapshot(dereference(Left, L), L);
       auto RightValue = snapshot(dereference(Right, L), L);
       assign(dereference(Left, L), std::move(RightValue), L);

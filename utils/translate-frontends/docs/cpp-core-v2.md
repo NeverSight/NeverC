@@ -1518,6 +1518,17 @@ element;
 accept integral or non-scoped enum counts whose promoted type is at most 64
 bits. Floating counts are outside this boundary.
 
+The exact `copy`, `copy_n`, three-iterator `move`, `copy_backward`,
+`move_backward` and `reverse_copy` forms also accept authenticated
+`std::__wrap_iter<T*>` inputs or outputs, including mixed wrapped and raw
+scalar pointer ranges. `fill_n`, `swap_ranges` and `iter_swap` admit writable
+wrapped iterators under the same value-conversion or same-element rules as
+their raw-pointer forms. Returned output positions retain the original
+iterator type, with the final pointer wrapped back into the pinned iterator
+record when needed. Empty counts and ranges, overlapping forward or backward
+copies, and iterator argument evaluation retain their existing behavior.
+Record elements and nonwritable destinations remain rejected.
+
 The exact default-equality `std::find`, `std::count`, three- and four-iterator
 `std::equal`, `std::adjacent_find`, `std::remove`, `std::remove_copy`,
 `std::replace`, `std::replace_copy`, `std::unique` and `std::unique_copy`
