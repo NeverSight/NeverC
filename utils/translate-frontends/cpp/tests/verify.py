@@ -29131,6 +29131,8 @@ void operator delete(void *p) noexcept { free(p); }
 void default_owners() {
   std::vector<std::string> strings(2);
   std::vector<std::unique_ptr<int>> pointers(2);
+  strings.erase(strings.begin());
+  pointers.erase(pointers.begin(), pointers.end());
   strings.clear();
   pointers.clear();
 }
@@ -29216,10 +29218,6 @@ void f(const std::string& value) { std::vector<std::string> values(2, value); }
 void f(std::vector<std::string>& values, std::string&& value) {
   values.insert(values.begin(), static_cast<std::string&&>(value));
 }
-""",
-        "owning-erase": """\
-#include <string>
-void f(std::vector<std::string>& values) { values.erase(values.begin()); }
 """,
     }.items():
         check("v2-vector-" + name, vector_record_boundary_preamble + source,

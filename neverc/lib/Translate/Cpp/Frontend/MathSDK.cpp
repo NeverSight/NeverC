@@ -17751,8 +17751,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                          VectorType))
         return UtilityOperation::VectorMemberSwap;
     }
-    if (!Vector->OwningElement && !Operator && Name == "erase" &&
-        !Method->isConst() &&
+    if (!Operator && Name == "erase" && !Method->isConst() &&
         !Object->getType().isConstQualified() && Call->isPRValue() &&
         (Method->getNumParams() == 1 || Method->getNumParams() == 2) &&
         Context.hasSameType(Call->getType(), Method->getReturnType())) {

@@ -2504,16 +2504,16 @@ work as owning elements. Default and bounded count construction value-initialize
 them; move construction and assignment transfer vector storage. `push_back(T&&)`,
 `emplace_back()`, and `emplace_back(T&&)` accept exact owning elements. Growth,
 `reserve`, and `shrink_to_fit` transfer each element and leave the old storage
-empty before release. `clear`, `pop_back`, shrinking `resize`, move assignment,
-and vector destruction destroy removed elements in reverse order. Owning
-element fixtures check long string and pointer ownership, aliasing moves,
-growth, shrinking, move assignment and release under O0/O2.
+empty before release. Single and range `erase` destroy removed elements and
+move survivors into the vacated slots. `clear`, `pop_back`, shrinking `resize`,
+move assignment, and vector destruction destroy removed elements in reverse
+order. Owning element fixtures check long string and pointer ownership,
+aliasing moves, growth, shrinking, move assignment and release under O0/O2.
 Copy, fill, list and range construction or assignment, lvalue insertion,
-positional insertion/emplacement, erase, and vector comparisons remain outside
+positional insertion/emplacement and vector comparisons remain outside
 the owning-element boundary. Other nontrivial record elements, other allocators,
-remaining vector methods, and
-throwing allocation or length-error paths remain unsupported. Quoted and
-shadow headers remain rejected.
+remaining vector methods, and throwing allocation or length-error paths remain
+unsupported. Quoted and shadow headers remain rejected.
 
 ## Dynamic local static initialization
 

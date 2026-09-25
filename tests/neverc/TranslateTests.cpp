@@ -53214,6 +53214,66 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorOwningEraseRun) {
+  const auto Source = tmpFile("vector-owning-erase.cpp");
+  const auto Output = tmpFile("vector-owning-erase.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <memory>
+#include <string>
+#include <vector>
+int main() {
+  {
+    std::vector<std::string> values;
+    values.push_back(std::string("a first long string allocation to release"));
+    values.push_back(std::string("a second long string allocation to release"));
+    values.push_back(std::string("a third long string allocation to release"));
+    auto unchanged = values.erase(values.begin(), values.begin());
+    if (unchanged != values.begin() || values.size() != 3) return 1;
+    auto shifted = values.erase(values.begin() + 1);
+    if (shifted != values.begin() + 1 || *shifted !=
+        "a third long string allocation to release") return 2;
+    auto first = values.erase(values.begin(), values.begin() + 1);
+    if (first != values.begin() || values.size() != 1 || *first !=
+        "a third long string allocation to release") return 3;
+    values.erase(values.begin());
+    if (!values.empty()) return 4;
+  }
+  {
+    std::vector<std::unique_ptr<int>> values;
+    values.push_back(std::unique_ptr<int>(new int(1)));
+    values.push_back(std::unique_ptr<int>(new int(2)));
+    values.push_back(std::unique_ptr<int>(new int(3)));
+    values.push_back(std::unique_ptr<int>(new int(4)));
+    auto shifted = values.erase(values.begin() + 1, values.begin() + 3);
+    if (shifted != values.begin() + 1 || values.size() != 2 ||
+        *values[0] != 1 || *values[1] != 4) return 5;
+    values.erase(values.begin());
+    if (values.size() != 1 || *values[0] != 4) return 6;
+    values.clear();
+  }
+  return allocations == releases ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-owning-erase" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorTrivialRecordRun) {
   const auto Source = tmpFile("vector-trivial-record.cpp");
   const auto Output = tmpFile("vector-trivial-record.nc");

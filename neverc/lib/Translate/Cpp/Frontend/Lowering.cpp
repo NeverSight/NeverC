@@ -12302,6 +12302,8 @@ class FunctionLowering {
                       quantity(1, DifferenceType, L), PointerType, L),
                L);
       }
+      destroyVectorElements(json::Object(Position), json::Object(Source),
+                            *Vector, L);
       auto Target = temporary(PointerType, L);
       assign(Target, json::Object(Position), L);
       const auto Check = labelName();
@@ -12310,8 +12312,10 @@ class FunctionLowering {
       branch(binary("!=", json::Object(Source), json::Object(End), "bool", L),
              Copy, Finish, L);
       label(Copy, L);
-      assign(dereference(json::Object(Target), L),
-             dereference(json::Object(Source), L), L);
+      transferVectorElement(dereference(json::Object(Target), L),
+                            dereference(json::Object(Source), L), *Vector, L);
+      if (Vector->OwningElement)
+        destroy(dereference(json::Object(Source), L), Vector->ElementType, L);
       assign(Target,
              binary("+", json::Object(Target), quantity(1, DifferenceType, L),
                     PointerType, L),
