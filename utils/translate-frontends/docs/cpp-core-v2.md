@@ -2339,6 +2339,11 @@ copies self-referenced bytes before changing size or releasing old storage.
 `assign(first, last)` accepts the same raw and wrapped character ranges,
 including empty and self-referenced ranges. It preserves embedded NUL bytes
 and reuses capacity when the result fits.
+The string-source slice overloads of `append`, `assign`, positional `insert`,
+and positional `replace` accept a source offset and count, including the
+default `npos` count. For valid source offsets they copy at most the remaining
+characters, preserve embedded NUL bytes, and handle self-reference with the
+same capacity reuse and growth paths as their whole-string overloads.
 Positional `erase(pos, count)` and its default arguments remove bytes in place,
 retain capacity, and return the receiver reference.
 The `erase(const_iterator)` and `erase(const_iterator, const_iterator)`

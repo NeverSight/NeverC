@@ -1724,6 +1724,58 @@ class FunctionLowering {
       return std::pair<Expression, Expression>{std::move(Data),
                                                std::move(Size)};
     };
+    auto ReadStringSlice = [&](Expression Address,
+                               const UtilityStringRecord &String,
+                               Expression Position, Expression Requested) {
+      auto [Data, Size] = ReadStringAt(std::move(Address), String);
+      const auto SizeType = type(A.Context.getSizeType(), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto ConstPointerType =
+          type(A.Context.getPointerType(A.Context.CharTy.withConst()), L);
+      auto Length = temporary(SizeType, L);
+      const auto InRange = labelName(), OutOfRange = labelName(),
+                 UseCount = labelName(), UseRemaining = labelName(),
+                 Ready = labelName();
+      branch(
+          binary("<=", json::Object(Position), json::Object(Size), "bool", L),
+          InRange, OutOfRange, L);
+      label(InRange, L);
+      auto Remaining = temporary(SizeType, L);
+      assign(
+          Remaining,
+          binary("-", json::Object(Size), json::Object(Position), SizeType, L),
+          L);
+      branch(binary("<", json::Object(Requested), json::Object(Remaining),
+                    "bool", L),
+             UseCount, UseRemaining, L);
+      label(UseCount, L);
+      assign(Length, json::Object(Requested), L);
+      jump(Ready, L);
+      label(UseRemaining, L);
+      assign(Length, json::Object(Remaining), L);
+      jump(Ready, L);
+      label(OutOfRange, L);
+      assign(Position, json::Object(Size), L);
+      assign(Length, quantity(0, SizeType, L), L);
+      jump(Ready, L);
+      label(Ready, L);
+      assign(Data,
+             binary("+", json::Object(Data),
+                    cast(json::Object(Position), DifferenceType, L),
+                    ConstPointerType, L),
+             L);
+      return std::pair<Expression, Expression>{std::move(Data),
+                                               std::move(Length)};
+    };
+    auto StringSliceArgument = [&](unsigned Index) {
+      const auto *Argument = Call->getArg(Index);
+      if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Argument))
+        Argument = selectedDefaultArgument(Default, A.Context);
+      if (!Argument)
+        reject(L, "string slice",
+               "The selected string slice argument is unavailable.");
+      return snapshot(expression(Argument), L);
+    };
     auto ReadCStringAt = [&](Expression Data) {
       const auto SizeType = type(A.Context.getSizeType(), L);
       const auto PointerType =
@@ -9381,6 +9433,7 @@ class FunctionLowering {
     case UtilityOperation::StringAssignPointer:
     case UtilityOperation::StringAssignCString:
     case UtilityOperation::StringAssignString:
+    case UtilityOperation::StringAssignStringSlice:
     case UtilityOperation::StringAssignList:
     case UtilityOperation::StringAssignRange:
     case UtilityOperation::StringAssignFill:
@@ -9472,6 +9525,16 @@ class FunctionLowering {
                L);
         SourceArgument =
             snapshot(fieldStorage(std::move(ListValue), List->Begin, L), L);
+      } else if (Operation == UtilityOperation::StringAssignStringSlice) {
+        auto SourceAddress = snapshot(
+            address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
+        auto Position = StringSliceArgument(1);
+        auto Requested = StringSliceArgument(2);
+        auto [Bytes, Length] =
+            ReadStringSlice(std::move(SourceAddress), *String,
+                            std::move(Position), std::move(Requested));
+        SourceArgument = std::move(Bytes);
+        assign(NewSize, std::move(Length), L);
       } else if (Operation == UtilityOperation::StringAssignString) {
         auto SourceAddress = snapshot(
             address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L),
@@ -9709,6 +9772,7 @@ class FunctionLowering {
     case UtilityOperation::StringInsertPointer:
     case UtilityOperation::StringInsertCString:
     case UtilityOperation::StringInsertString:
+    case UtilityOperation::StringInsertStringSlice:
     case UtilityOperation::StringInsertFill:
     case UtilityOperation::StringInsertIteratorCharacter:
     case UtilityOperation::StringInsertIteratorFill:
@@ -9717,6 +9781,7 @@ class FunctionLowering {
     case UtilityOperation::StringReplacePointer:
     case UtilityOperation::StringReplaceCString:
     case UtilityOperation::StringReplaceString:
+    case UtilityOperation::StringReplaceStringSlice:
     case UtilityOperation::StringReplaceFill:
     case UtilityOperation::StringReplaceIteratorPointer:
     case UtilityOperation::StringReplaceIteratorCString:
@@ -9796,6 +9861,7 @@ class FunctionLowering {
           Operation == UtilityOperation::StringReplacePointer ||
           Operation == UtilityOperation::StringReplaceCString ||
           Operation == UtilityOperation::StringReplaceString ||
+          Operation == UtilityOperation::StringReplaceStringSlice ||
           Operation == UtilityOperation::StringReplaceFill ||
           Operation == UtilityOperation::StringReplaceIteratorPointer ||
           Operation == UtilityOperation::StringReplaceIteratorCString ||
@@ -9894,6 +9960,19 @@ class FunctionLowering {
                            json::Object(*Source), DifferenceType, L),
                     SizeType, L),
                L);
+      } else if (Operation == UtilityOperation::StringInsertStringSlice ||
+                 Operation == UtilityOperation::StringReplaceStringSlice) {
+        const auto *Argument = Call->getArg(SourceIndex);
+        auto Address =
+            snapshot(address(lvalue(Argument), Argument->getType(), L), L);
+        auto Position = StringSliceArgument(SourceIndex + 1);
+        auto Requested = StringSliceArgument(SourceIndex + 2);
+        auto [Bytes, Length] =
+            ReadStringSlice(std::move(Address), *String, std::move(Position),
+                            std::move(Requested));
+        Source = temporary(ConstPointerType, L);
+        assign(*Source, std::move(Bytes), L);
+        assign(Inserted, std::move(Length), L);
       } else if (Operation == UtilityOperation::StringInsertString ||
                  Operation == UtilityOperation::StringReplaceString ||
                  Operation == UtilityOperation::StringReplaceIteratorString) {
@@ -10615,6 +10694,7 @@ class FunctionLowering {
     case UtilityOperation::StringAppendPointer:
     case UtilityOperation::StringAppendCString:
     case UtilityOperation::StringAppendString:
+    case UtilityOperation::StringAppendStringSlice:
     case UtilityOperation::StringAppendList:
     case UtilityOperation::StringAppendRange:
     case UtilityOperation::StringAppendFill:
@@ -10665,6 +10745,7 @@ class FunctionLowering {
           Operation == UtilityOperation::StringAppendPointer ||
           Operation == UtilityOperation::StringAppendCString ||
           Operation == UtilityOperation::StringAppendString ||
+          Operation == UtilityOperation::StringAppendStringSlice ||
           Operation == UtilityOperation::StringAppendList ||
           Operation == UtilityOperation::StringAppendRange;
       if (Operation == UtilityOperation::StringPushBack || CharacterAppend)
@@ -10805,6 +10886,17 @@ class FunctionLowering {
         label(Ready, L);
         RequestedArgument = std::move(SourceSize);
         SourceArgument = std::move(SourceData);
+      }
+      if (Operation == UtilityOperation::StringAppendStringSlice) {
+        auto SourceAddress = snapshot(
+            address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
+        auto Position = StringSliceArgument(1);
+        auto Requested = StringSliceArgument(2);
+        auto [Bytes, Length] =
+            ReadStringSlice(std::move(SourceAddress), *String,
+                            std::move(Position), std::move(Requested));
+        SourceArgument = std::move(Bytes);
+        RequestedArgument = std::move(Length);
       }
       if (Operation == UtilityOperation::StringAppendList) {
         const auto *Argument = Call->getArg(ArgumentOffset);

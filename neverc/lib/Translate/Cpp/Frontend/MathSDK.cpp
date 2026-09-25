@@ -7676,6 +7676,46 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
       }
     }
     if (Default && Parameter && Owner && String && Prototype &&
+        Owner->getCanonicalDecl() == Method->getCanonicalDecl() &&
+        !Method->getPrimaryTemplate() && !Method->isStatic() &&
+        !Method->isVariadic() && !Method->isConst() &&
+        Method->getIdentifier() &&
+        Method->getReturnType()->isLValueReferenceType() &&
+        Context.hasSameType(Method->getReturnType()->getPointeeType(),
+                            Context.getRecordType(String->Record)) &&
+        approvedStandardSDKDeclaration(S, SM, Method) &&
+        cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "string") &&
+        S.owns(SM, Default->getExprLoc()) && Init &&
+        Context.hasSameType(Init->getType(), Context.getSizeType()) &&
+        !Init->isTypeDependent() && !Init->isValueDependent() &&
+        !Init->isInstantiationDependent()) {
+      const auto Name = Method->getName();
+      const unsigned SourceIndex = Name == "append" || Name == "assign" ? 0
+                                   : Name == "insert"                   ? 1
+                                   : Name == "replace"                  ? 2
+                                                                        : 3;
+      if (SourceIndex < 3 && Method->getNumParams() == SourceIndex + 3 &&
+          Index == SourceIndex + 2 &&
+          Parameter == Method->getParamDecl(Index) &&
+          Parameter->getFunctionScopeIndex() == Index &&
+          Context.hasSameType(Parameter->getType(), Context.getSizeType()) &&
+          Context.hasSameType(Method->getParamDecl(SourceIndex + 1)->getType(),
+                              Context.getSizeType())) {
+        const auto Source = Method->getParamDecl(SourceIndex)->getType();
+        bool Shape = Source->isLValueReferenceType() &&
+                     Context.hasSameType(
+                         Source->getPointeeType(),
+                         Context.getRecordType(String->Record).withConst());
+        for (unsigned I = 0; I < SourceIndex; ++I)
+          Shape &= Context.hasSameType(Method->getParamDecl(I)->getType(),
+                                       Context.getSizeType());
+        Expr::EvalResult Evaluated;
+        if (Shape && Init->EvaluateAsInt(Evaluated, Context) &&
+            Evaluated.Val.isInt() && Evaluated.Val.getInt().isAllOnes())
+          return true;
+      }
+    }
+    if (Default && Parameter && Owner && String && Prototype &&
         Prototype->isNothrow() &&
         Owner->getCanonicalDecl() == Method->getCanonicalDecl() &&
         Method->getNumParams() == 2 && Index == 1 &&
@@ -16489,6 +16529,26 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
              Context.hasSameType(Call->getArg(0)->getType(), First) &&
              Context.hasSameType(Call->getArg(1)->getType(), Last);
     };
+    auto StringSlice = [&](unsigned SourceIndex) {
+      if (Method->getPrimaryTemplate() ||
+          Method->getNumParams() != SourceIndex + 3)
+        return false;
+      const auto Source = Method->getParamDecl(SourceIndex)->getType();
+      const auto StringType = Context.getRecordType(String->Record);
+      if (!Source->isLValueReferenceType() ||
+          !Context.hasSameType(Source->getPointeeType(),
+                               StringType.withConst()) ||
+          !Context.hasSameUnqualifiedType(Call->getArg(SourceIndex)->getType(),
+                                          StringType))
+        return false;
+      for (unsigned I = SourceIndex + 1; I != SourceIndex + 3; ++I)
+        if (!Context.hasSameType(Method->getParamDecl(I)->getType(),
+                                 Context.getSizeType()) ||
+            !Context.hasSameType(Call->getArg(I)->getType(),
+                                 Context.getSizeType()))
+          return false;
+      return true;
+    };
     if (!Reference || !Object || !Prototype ||
         (!Prototype->isNothrow() && Name != "push_back" && Name != "pop_back" &&
          Name != "reserve" && Name != "resize" && Name != "append" &&
@@ -16915,7 +16975,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       const bool Replace = Name == "replace";
       const unsigned SourceIndex = Replace ? 2 : 1;
       if ((Method->getNumParams() == SourceIndex + 1 ||
-           Method->getNumParams() == SourceIndex + 2) &&
+           Method->getNumParams() == SourceIndex + 2 ||
+           Method->getNumParams() == SourceIndex + 3) &&
           Context.hasSameType(Method->getParamDecl(0)->getType(),
                               Context.getSizeType()) &&
           Context.hasSameType(Call->getArg(0)->getType(),
@@ -16924,6 +16985,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                             Context.getSizeType()) &&
                         Context.hasSameType(Call->getArg(1)->getType(),
                                             Context.getSizeType())))) {
+        if (StringSlice(SourceIndex))
+          return Replace ? UtilityOperation::StringReplaceStringSlice
+                         : UtilityOperation::StringInsertStringSlice;
         const auto FirstParameter =
             Method->getParamDecl(SourceIndex)->getType();
         const auto FirstArgument = Call->getArg(SourceIndex)->getType();
@@ -16982,9 +17046,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     }
     if (!Operator && Name == "assign" && !Method->isConst() &&
         !Object->getType().isConstQualified() &&
-        (Method->getNumParams() == 1 || Method->getNumParams() == 2) &&
-        Call->isLValue() &&
-        Method->getReturnType()->isLValueReferenceType() &&
+        (Method->getNumParams() == 1 || Method->getNumParams() == 2 ||
+         Method->getNumParams() == 3) &&
+        Call->isLValue() && Method->getReturnType()->isLValueReferenceType() &&
         Context.hasSameType(Method->getReturnType()->getPointeeType(),
                             Context.getRecordType(String->Record)) &&
         Context.hasSameType(Call->getType(),
@@ -17006,6 +17070,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         return UtilityOperation::StringAssignString;
       if (Method->getNumParams() == 1 && ListArgument(0, 0))
         return UtilityOperation::StringAssignList;
+      if (StringSlice(0))
+        return UtilityOperation::StringAssignStringSlice;
       if (Method->getNumParams() == 2) {
         const auto SecondParameter = Method->getParamDecl(1)->getType();
         if (Context.hasSameType(FirstParameter, ConstPointer) &&
@@ -17027,9 +17093,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if ((!Operator && Name == "append") || PlusEqual) {
       const unsigned Argument = PlusEqual ? 1 : 0;
       if (Method->isConst() || Object->getType().isConstQualified() ||
-          (PlusEqual ? Method->getNumParams() != 1
-                     : Method->getNumParams() != 1 &&
-                           Method->getNumParams() != 2) ||
+          (PlusEqual
+               ? Method->getNumParams() != 1
+               : Method->getNumParams() != 1 && Method->getNumParams() != 2 &&
+                     Method->getNumParams() != 3) ||
           Call->getNumArgs() != Method->getNumParams() + Offset ||
           !Call->isLValue() ||
           !Method->getReturnType()->isLValueReferenceType() ||
@@ -17060,6 +17127,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         return UtilityOperation::StringAppendString;
       if (Method->getNumParams() == 1 && ListArgument(0, Argument))
         return UtilityOperation::StringAppendList;
+      if (!PlusEqual && StringSlice(0))
+        return UtilityOperation::StringAppendStringSlice;
       if (Method->getNumParams() != 2)
         return std::nullopt;
       const auto SecondParameter = Method->getParamDecl(1)->getType();

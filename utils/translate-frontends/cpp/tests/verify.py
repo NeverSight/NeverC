@@ -29658,6 +29658,14 @@ int main() {
   range_assigned.assign(range_bytes + 1, range_bytes + 4);
   range_modifiers_intact = range_modifiers_intact &&
       range_assigned.size() == 3 && range_assigned[2] == 'B';
+  const std::string slice_source("ab\\0cdef", 7);
+  std::string sliced("x");
+  sliced.append(slice_source, 1, 3);
+  bool object_slices_intact = sliced.size() == 4 && sliced[2] == 0;
+  sliced.assign(slice_source, 4);
+  sliced.insert(1, slice_source, 1, 2);
+  sliced.replace(1, 2, slice_source, 4);
+  object_slices_intact = object_slices_intact && sliced == "ddefef";
   std::string spliced("ab");
   spliced.insert(1, "x", 1).insert(0, "!");
   spliced.insert(1, suffix).insert(0, 2, 'q');
@@ -29818,6 +29826,7 @@ int main() {
          reassigned[1] == 'a' &&
          erase_intact && erased.empty() && iterator_modifiers_intact &&
          iterator_replace_intact && range_modifiers_intact &&
+         object_slices_intact &&
          splice_intact && growth_intact &&
          concat_intact && rvalue_concat_intact && list_intact &&
          scalar_assignment_intact &&

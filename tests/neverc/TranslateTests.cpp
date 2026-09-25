@@ -55040,6 +55040,134 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringObjectSliceModifiersRun) {
+  const auto Source = tmpFile("string-object-slices.cpp");
+  const auto Output = tmpFile("string-object-slices.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+int main() {
+  {
+    const std::string source("ab\0cdef", 7);
+    std::string appended("X");
+    char *short_data = appended.data();
+    auto &first_append = appended.append(source, 1, 4);
+    if (&first_append != &appended || appended.size() != 5 ||
+        appended[0] != 'X' || appended[1] != 'b' ||
+        appended[2] != 0 || appended[3] != 'c' || appended[4] != 'd' ||
+        appended.data() != short_data)
+      return 1;
+    appended.append(source, 5);
+    if (appended.size() != 7 || appended[5] != 'e' || appended[6] != 'f')
+      return 2;
+    appended.append(source, source.size(), 10);
+    if (appended.size() != 7 || appended.data() != short_data)
+      return 3;
+    std::string alias("abcdefghij");
+    alias.reserve(40);
+    char *alias_data = alias.data();
+    alias.append(alias, 2, 4);
+    if (alias != "abcdefghijcdef" || alias.data() != alias_data)
+      return 4;
+    std::string growth("abcdefghijklmnopqrstuvwxyz");
+    char *old_growth = growth.data();
+    growth.append(growth, 3);
+    if (growth != "abcdefghijklmnopqrstuvwxyzdefghijklmnopqrstuvwxyz" ||
+        growth.data() == old_growth)
+      return 5;
+    std::string assigned("abcdefghijklmnopqrstuvwxyz");
+    assigned.reserve(80);
+    char *assigned_data = assigned.data();
+    Size assigned_capacity = assigned.capacity();
+    auto &first_assign = assigned.assign(source, 1, 4);
+    if (&first_assign != &assigned || assigned.size() != 4 ||
+        assigned[0] != 'b' || assigned[1] != 0 ||
+        assigned[2] != 'c' || assigned[3] != 'd' ||
+        assigned.data() != assigned_data ||
+        assigned.capacity() != assigned_capacity)
+      return 6;
+    assigned.assign(source, 5);
+    if (assigned != "ef" || assigned.data() != assigned_data)
+      return 7;
+    std::string self_assign("abcdef");
+    char *self_data = self_assign.data();
+    self_assign.assign(self_assign, 2, 3);
+    if (self_assign != "cde" || self_assign.data() != self_data)
+      return 8;
+    std::string grow_assign("x");
+    char *old_assign = grow_assign.data();
+    grow_assign.assign(growth, 3);
+    if (grow_assign.size() != growth.size() - 3 ||
+        grow_assign[0] != growth[3] || grow_assign.data() == old_assign)
+      return 9;
+    std::string inserted("ACE");
+    auto &first_insert = inserted.insert(1, source, 1, 4);
+    if (&first_insert != &inserted || inserted.size() != 7 ||
+        inserted[0] != 'A' || inserted[1] != 'b' || inserted[2] != 0 ||
+        inserted[3] != 'c' || inserted[4] != 'd' ||
+        inserted[5] != 'C' || inserted[6] != 'E')
+      return 10;
+    inserted.insert(1, source, 5);
+    if (inserted.size() != 9 || inserted[1] != 'e' || inserted[2] != 'f' ||
+        inserted[4] != 0)
+      return 11;
+    std::string self_insert("abcd");
+    self_insert.reserve(32);
+    char *insert_data = self_insert.data();
+    self_insert.insert(1, self_insert, 2, 2);
+    if (self_insert != "acdbcd" || self_insert.data() != insert_data)
+      return 12;
+    std::string grow_insert("abcdefghijklmnopqrstuvwxyz");
+    char *old_insert = grow_insert.data();
+    grow_insert.insert(1, grow_insert, 2);
+    if (grow_insert != "acdefghijklmnopqrstuvwxyzbcdefghijklmnopqrstuvwxyz" ||
+        grow_insert.data() == old_insert)
+      return 13;
+    std::string replaced("abcdef");
+    auto &first_replace = replaced.replace(1, 3, source, 1, 4);
+    if (&first_replace != &replaced || replaced.size() != 7 ||
+        replaced[0] != 'a' || replaced[1] != 'b' || replaced[2] != 0 ||
+        replaced[3] != 'c' || replaced[4] != 'd' ||
+        replaced[5] != 'e' || replaced[6] != 'f')
+      return 14;
+    replaced.replace(1, 4, source, 5);
+    if (replaced != "aefef")
+      return 15;
+    std::string self_replace("abcdef");
+    self_replace.reserve(32);
+    char *replace_data = self_replace.data();
+    self_replace.replace(1, 2, self_replace, 3, 3);
+    if (self_replace != "adefdef" || self_replace.data() != replace_data)
+      return 16;
+    std::string grow_replace("abcdefghijklmnopqrstuvwxyz");
+    char *old_replace = grow_replace.data();
+    grow_replace.replace(1, 1, grow_replace, 2);
+    if (grow_replace != "acdefghijklmnopqrstuvwxyzcdefghijklmnopqrstuvwxyz" ||
+        grow_replace.data() == old_replace)
+      return 17;
+  }
+  return allocations == releases ? 0 : 18;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-object-slices" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StringRangeAssignAndAppendRun) {
   const auto Source = tmpFile("string-range-modifiers.cpp");
   const auto Output = tmpFile("string-range-modifiers.nc");
