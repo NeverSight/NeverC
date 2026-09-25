@@ -53087,6 +53087,133 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorOwningStringsRun) {
+  const auto Source = tmpFile("vector-owning-strings.cpp");
+  const auto Output = tmpFile("vector-owning-strings.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+#include <vector>
+int main() {
+  {
+    std::string original("the original long string owns a heap allocation");
+    std::vector<std::string> values(2);
+    if (values.size() != 2 || !values[0].empty()) return 1;
+    values[0] = "a second long string with its own allocation";
+    values.push_back(static_cast<std::string&&>(original));
+    if (!original.empty() || values[2] !=
+        "the original long string owns a heap allocation") return 2;
+    values.reserve(8);
+    if (values[0] != "a second long string with its own allocation") return 3;
+    values.emplace_back(static_cast<std::string&&>(values[0]));
+    if (!values[0].empty() || values[3] !=
+        "a second long string with its own allocation") return 4;
+    values.shrink_to_fit();
+    values.push_back(static_cast<std::string&&>(values[2]));
+    if (!values[2].empty() || values[4] !=
+        "the original long string owns a heap allocation") return 5;
+    values.resize(7);
+    if (!values[5].empty() || !values[6].empty()) return 6;
+    values.resize(3);
+    values.pop_back();
+    if (values.size() != 2) return 7;
+    std::vector<std::string> moved(
+        static_cast<std::vector<std::string>&&>(values));
+    if (!values.empty() || moved.size() != 2) return 8;
+    std::vector<std::string> assigned;
+    assigned.emplace_back();
+    assigned[0] = "another owned long string before move assignment";
+    assigned = static_cast<std::vector<std::string>&&>(moved);
+    if (!moved.empty() || assigned.size() != 2) return 9;
+    assigned.clear();
+    if (!assigned.empty()) return 10;
+    assigned.push_back(std::string("a temporary long string owns its allocation"));
+    if (assigned.size() != 1 || assigned[0] !=
+        "a temporary long string owns its allocation") return 12;
+  }
+  return allocations == releases ? 0 : 11;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-owning-strings" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorOwningPointersRun) {
+  const auto Source = tmpFile("vector-owning-pointers.cpp");
+  const auto Output = tmpFile("vector-owning-pointers.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <memory>
+#include <vector>
+int main() {
+  {
+    std::vector<std::unique_ptr<int>> values(2);
+    if (values.size() != 2 || values[0] || values[1]) return 1;
+    std::unique_ptr<int> first(new int(7));
+    values.push_back(static_cast<std::unique_ptr<int>&&>(first));
+    if (first || *values[2] != 7) return 2;
+    values.reserve(8);
+    if (*values[2] != 7) return 3;
+    values.emplace_back();
+    if (values[3]) return 4;
+    values[0] = std::unique_ptr<int>(new int(9));
+    values.shrink_to_fit();
+    values.push_back(static_cast<std::unique_ptr<int>&&>(values[0]));
+    if (values[0] || *values[4] != 9) return 5;
+    values.resize(6);
+    if (values[5]) return 6;
+    values.resize(3);
+    if (values.size() != 3 || *values[2] != 7) return 7;
+    std::vector<std::unique_ptr<int>> moved(
+        static_cast<std::vector<std::unique_ptr<int>>&&>(values));
+    if (!values.empty() || moved.size() != 3) return 8;
+    std::vector<std::unique_ptr<int>> assigned;
+    assigned.emplace_back();
+    assigned[0] = std::unique_ptr<int>(new int(11));
+    assigned = static_cast<std::vector<std::unique_ptr<int>>&&>(moved);
+    if (!moved.empty() || assigned.size() != 3) return 9;
+    assigned.clear();
+    if (!assigned.empty()) return 10;
+    assigned.push_back(std::unique_ptr<int>(new int(13)));
+    if (assigned.size() != 1 || *assigned[0] != 13) return 12;
+  }
+  return allocations == releases ? 0 : 11;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-owning-pointers" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorTrivialRecordRun) {
   const auto Source = tmpFile("vector-trivial-record.cpp");
   const auto Output = tmpFile("vector-trivial-record.nc");

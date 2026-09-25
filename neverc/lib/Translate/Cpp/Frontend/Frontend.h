@@ -1266,6 +1266,7 @@ bool approvedUtilityStringDestructor(const State &S,
 struct UtilityVectorRecord {
   const clang::CXXRecordDecl *Record;
   clang::QualType ElementType, PointerType;
+  bool OwningElement;
 };
 std::optional<UtilityVectorRecord>
 approvedUtilityVectorRecord(const State &S, const clang::SourceManager &SM,

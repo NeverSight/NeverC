@@ -4649,10 +4649,15 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
       ElementRecord->hasTrivialCopyAssignment() &&
       ElementRecord->hasTrivialMoveAssignment() &&
       ElementRecord->hasTrivialDestructor();
+  const bool OwningElement =
+      ElementRecord &&
+      (approvedUtilityStringRecord(S, SM, ElementRecord, Context) ||
+       approvedUtilityUniquePtrRecord(S, SM, ElementRecord, Context));
   if (Element.isNull() || Element.isConstQualified() ||
       Element.isVolatileQualified() || Element->isBooleanType() ||
       !(Element->isIntegerType() || Element->isFloatingType() ||
-        Element->isObjectPointerType() || TrivialSourceRecord) ||
+        Element->isObjectPointerType() || TrivialSourceRecord ||
+        OwningElement) ||
       Element->isIncompleteType())
     return std::nullopt;
   const auto Pointer = Context.getPointerType(Element);
@@ -4720,7 +4725,7 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
       uint64_t(Layout.getAlignment().getQuantity()) * 8 !=
           Context.getTypeAlign(Pointer))
     return std::nullopt;
-  return UtilityVectorRecord{Vector, Element, Pointer};
+  return UtilityVectorRecord{Vector, Element, Pointer, OwningElement};
 }
 
 std::optional<UtilityVectorConstruction>
@@ -4752,7 +4757,7 @@ approvedUtilityVectorConstruction(const State &S, const SourceManager &SM,
                                      Construction->getType())) {
     const auto Parameter = Constructor->getParamDecl(0)->getType();
     const auto VectorType = Context.getRecordType(Vector->Record);
-    if (Constructor->isCopyConstructor() &&
+    if (!Vector->OwningElement && Constructor->isCopyConstructor() &&
         Parameter->isLValueReferenceType() &&
         Context.hasSameType(Parameter->getPointeeType(),
                             VectorType.withConst()))
@@ -4768,7 +4773,7 @@ approvedUtilityVectorConstruction(const State &S, const SourceManager &SM,
         Context);
     const auto *Expression =
         dyn_cast<CXXStdInitializerListExpr>(Construction->getArg(0));
-    if (List && Expression &&
+    if (!Vector->OwningElement && List && Expression &&
         Context.hasSameType(List->ElementType, Vector->ElementType) &&
         Context.hasSameUnqualifiedType(Construction->getArg(0)->getType(),
                                        Context.getRecordType(List->Record)) &&
@@ -4795,7 +4800,7 @@ approvedUtilityVectorConstruction(const State &S, const SourceManager &SM,
                              Context.getPointerType(Element)) ||
          Context.hasSameType(Wrapped->IteratorType,
                              Context.getPointerType(Element.withConst())));
-    if ((RawPointer || WrappedPointer) &&
+    if (!Vector->OwningElement && (RawPointer || WrappedPointer) &&
         Context.hasSameType(FirstType, LastType) &&
         Context.hasSameType(Construction->getArg(0)->getType(), FirstType) &&
         Context.hasSameType(Construction->getArg(1)->getType(), LastType))
@@ -4815,6 +4820,8 @@ approvedUtilityVectorConstruction(const State &S, const SourceManager &SM,
     return std::nullopt;
   if (Construction->getNumArgs() == 1)
     return UtilityVectorConstruction::Count;
+  if (Vector->OwningElement)
+    return std::nullopt;
   const auto FillType = Constructor->getParamDecl(1)->getType();
   if (!FillType->isLValueReferenceType() ||
       !FillType->getPointeeType().isConstQualified() ||
@@ -4864,10 +4871,9 @@ approvedUtilityVectorAssignment(const State &S, const SourceManager &SM,
       !Context.hasSameUnqualifiedType(Assignment->getArg(1)->getType(),
                                       VectorType))
     return std::nullopt;
-  if (Method->isCopyAssignmentOperator() &&
+  if (!Vector->OwningElement && Method->isCopyAssignmentOperator() &&
       Parameter->isLValueReferenceType() &&
-      Context.hasSameType(Parameter->getPointeeType(),
-                          VectorType.withConst()))
+      Context.hasSameType(Parameter->getPointeeType(), VectorType.withConst()))
     return UtilityVectorAssignment::Copy;
   if (Method->isMoveAssignmentOperator() &&
       Parameter->isRValueReferenceType() &&
@@ -17745,7 +17751,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                          VectorType))
         return UtilityOperation::VectorMemberSwap;
     }
-    if (!Operator && Name == "erase" && !Method->isConst() &&
+    if (!Vector->OwningElement && !Operator && Name == "erase" &&
+        !Method->isConst() &&
         !Object->getType().isConstQualified() && Call->isPRValue() &&
         (Method->getNumParams() == 1 || Method->getNumParams() == 2) &&
         Context.hasSameType(Call->getType(), Method->getReturnType())) {
@@ -17768,7 +17775,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           return UtilityOperation::VectorErase;
       }
     }
-    if (!Operator && Name == "insert" && !Method->isConst() &&
+    if (!Vector->OwningElement && !Operator && Name == "insert" &&
+        !Method->isConst() &&
         !Object->getType().isConstQualified() && Call->isPRValue() &&
         (Method->getNumParams() == 2 || Method->getNumParams() == 3) &&
         Context.hasSameType(Call->getType(), Method->getReturnType())) {
@@ -17839,8 +17847,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         }
       }
     }
-    if (!Operator && Name == "emplace" && !Method->isConst() &&
-        !Object->getType().isConstQualified() && Call->isPRValue() &&
+    if (!Vector->OwningElement && !Operator && Name == "emplace" &&
+        !Method->isConst() && !Object->getType().isConstQualified() &&
+        Call->isPRValue() &&
         (Method->getNumParams() == 1 || Method->getNumParams() == 2) &&
         Context.hasSameType(Call->getType(), Method->getReturnType()) &&
         Method->getPrimaryTemplate() &&
@@ -17870,8 +17879,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           return UtilityOperation::VectorEmplace;
       }
     }
-    if (Operator && Method->getOverloadedOperator() == OO_Equal &&
-        !Method->isConst() && !Object->getType().isConstQualified() &&
+    if (!Vector->OwningElement && Operator &&
+        Method->getOverloadedOperator() == OO_Equal && !Method->isConst() &&
+        !Object->getType().isConstQualified() &&
         !Method->getPrimaryTemplate() && Method->getNumParams() == 1 &&
         Call->isLValue() && Method->getReturnType()->isLValueReferenceType()) {
       const auto VectorType = Context.getRecordType(Vector->Record);
@@ -17885,8 +17895,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Context.hasSameUnqualifiedType(Call->getType(), VectorType))
         return UtilityOperation::VectorAssignList;
     }
-    if (!Operator && Name == "assign" && !Method->isConst() &&
-        !Object->getType().isConstQualified() &&
+    if (!Vector->OwningElement && !Operator && Name == "assign" &&
+        !Method->isConst() && !Object->getType().isConstQualified() &&
         Method->getReturnType()->isVoidType() &&
         Call->getType()->isVoidType()) {
       const auto Element = Vector->ElementType;
@@ -17949,7 +17959,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       if (!Method->getNumParams())
         return UtilityOperation::VectorEmplaceBack;
       const auto Parameter = Method->getParamDecl(0)->getType();
-      if ((Parameter->isLValueReferenceType() ||
+      if (((!Vector->OwningElement && Parameter->isLValueReferenceType()) ||
            Parameter->isRValueReferenceType()) &&
           Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
                                          Vector->ElementType) &&
@@ -17979,7 +17989,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         if (Method->getNumParams() == 1)
           return UtilityOperation::VectorResize;
         const auto Parameter = Method->getParamDecl(1)->getType();
-        if (Parameter->isLValueReferenceType() &&
+        if (!Vector->OwningElement && Parameter->isLValueReferenceType() &&
             Context.hasSameType(Parameter->getPointeeType(),
                                 Vector->ElementType.withConst()) &&
             Context.hasSameUnqualifiedType(Call->getArg(1)->getType(),
@@ -18000,7 +18010,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
             Parameter->isRValueReferenceType() &&
             Context.hasSameType(Parameter->getPointeeType(),
                                 Vector->ElementType);
-        if ((Copy || Move) &&
+        if (((!Vector->OwningElement && Copy) || Move) &&
             Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
                                            Vector->ElementType))
           return UtilityOperation::VectorPushBack;

@@ -29119,6 +29119,51 @@ int object_pointer_vector(int& value) {
         else:
             assert dependencies == vector_dependencies, target
         assert len(vector_ir["functions"]) == 23, target
+    vector_owning_source = """\
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <memory>
+#include <string>
+#include <vector>
+void default_owners() {
+  std::vector<std::string> strings(2);
+  std::vector<std::unique_ptr<int>> pointers(2);
+  strings.clear();
+  pointers.clear();
+}
+void move_strings(std::vector<std::string>& values, std::string&& value) {
+  values.push_back(static_cast<std::string&&>(value));
+  values.emplace_back();
+  values.emplace_back(static_cast<std::string&&>(values[0]));
+  values.reserve(8);
+  values.shrink_to_fit();
+  values.resize(2);
+  values.pop_back();
+  std::vector<std::string> moved(static_cast<std::vector<std::string>&&>(values));
+  values = static_cast<std::vector<std::string>&&>(moved);
+  values.clear();
+}
+void move_pointers(std::vector<std::unique_ptr<int>>& values,
+                   std::unique_ptr<int>&& value) {
+  values.push_back(static_cast<std::unique_ptr<int>&&>(value));
+  values.emplace_back();
+  values.emplace_back(static_cast<std::unique_ptr<int>&&>(values[0]));
+  values.reserve(8);
+  values.shrink_to_fit();
+  values.resize(2);
+  values.pop_back();
+  std::vector<std::unique_ptr<int>> moved(
+      static_cast<std::vector<std::unique_ptr<int>>&&>(values));
+  values = static_cast<std::vector<std::unique_ptr<int>>&&>(moved);
+  values.clear();
+}
+"""
+    for target in sdk_targets:
+        check("v2-vector-owning-" + target, vector_owning_source,
+              profile="cpp-core-v2", target=target, sdk=True)
     vector_record_boundary_preamble = """\
 using Size = decltype(sizeof(0));
 extern "C" void *malloc(Size);
@@ -29143,6 +29188,38 @@ bool operator==(const Entry& left, const Entry& right) {
   return left.value == right.value;
 }
 int main() { std::vector<Entry> left, right; return left == right; }
+""",
+        "owning-copy": """\
+#include <string>
+int f(const std::vector<std::string>& source) {
+  std::vector<std::string> target(source);
+  return target.size();
+}
+""",
+        "owning-copy-assignment": """\
+#include <string>
+void f(std::vector<std::string>& values,
+       const std::vector<std::string>& source) { values = source; }
+""",
+        "owning-lvalue-push": """\
+#include <string>
+void f(std::vector<std::string>& values, const std::string& value) {
+  values.push_back(value);
+}
+""",
+        "owning-fill": """\
+#include <string>
+void f(const std::string& value) { std::vector<std::string> values(2, value); }
+""",
+        "owning-insert": """\
+#include <string>
+void f(std::vector<std::string>& values, std::string&& value) {
+  values.insert(values.begin(), static_cast<std::string&&>(value));
+}
+""",
+        "owning-erase": """\
+#include <string>
+void f(std::vector<std::string>& values) { values.erase(values.begin()); }
 """,
     }.items():
         check("v2-vector-" + name, vector_record_boundary_preamble + source,
