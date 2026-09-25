@@ -271,6 +271,23 @@ inline PlacedSection &placedOf(const ObjectFile *o, uint32_t sec) {
   return ctx.placed[o->secs[sec].placed];
 }
 
+// Whether a name's definition goes to .dynsym: those shared libraries
+// refer to, or all with --export-dynamic, unless their visibility is
+// restricted.
+inline bool isExported(uint32_t id) {
+  const Symbol &s = ctx.syms[id];
+  if (s.kind != Symbol::Object)
+    return false;
+  const uint16_t f = ctx.flags[id].load(std::memory_order_relaxed);
+  if (!(f & SharedRef) && !ctx.opt.exportDynamic)
+    return false;
+  if (f & HiddenRef)
+    return false;
+  const int vis =
+      ELF64_ST_VISIBILITY(ctx.objects[s.file]->syms[s.index].st_other);
+  return vis == STV_DEFAULT || vis == STV_PROTECTED;
+}
+
 // The bytes an input section occupies in its output section.
 inline uint64_t outputSize(const ObjectFile *o, uint32_t sec,
                            const PlacedSection &ps) {
@@ -1197,13 +1214,13 @@ void markLive() {
   rootName("_start");
   rootName("_init");
   rootName("_fini");
-  // Definitions shared libraries refer to are exported, hence live.
-  for (uint32_t id = 0; id < ctx.numNames; ++id)
-    if ((ctx.flags[id].load() & SharedRef) &&
-        ctx.syms[id].kind == Symbol::Object) {
+  // Exported definitions are live.
+  ctx.pool->forEach(ctx.numNames, [&](size_t id) {
+    if (isExported(uint32_t(id))) {
       ObjectFile *d = ctx.objects[ctx.syms[id].file];
-      push(d, d->syms[ctx.syms[id].index].st_shndx, 0);
+      push(d, d->syms[ctx.syms[id].index].st_shndx, Pool::self());
     }
+  });
 
   // Parallel traversal in rounds. Each task also follows a bounded number of
   // the sections it discovers right away, which keeps the rounds few.
@@ -1950,9 +1967,7 @@ void markAddressSignificant(ObjectFile *o, uint32_t sec, bool codeToo) {
 void markKeepUnique() {
   const bool safe = ctx.opt.icf == 1;
   ctx.pool->forEach(ctx.numNames, [&](size_t id) {
-    const Symbol &s = ctx.syms[id];
-    if (s.kind != Symbol::Object ||
-        !(ctx.flags[id].load(std::memory_order_relaxed) & SharedRef))
+    if (!isExported(uint32_t(id)))
       return;
     auto [file, sec] = ctx.defTarget[id];
     if (file != UINT32_MAX)
@@ -2731,11 +2746,8 @@ void buildDynamic() {
       if (s.kind == Symbol::Shared)
         ctx.shared[s.file]->needed = 1;
     }
-    if (s.kind == Symbol::Object && (f & SharedRef)) {
-      const Elf64_Sym &d = ctx.objects[s.file]->syms[s.index];
-      if (ELF64_ST_VISIBILITY(d.st_other) == STV_DEFAULT)
-        out[0].push_back(id);
-    }
+    if (isExported(id))
+      out[0].push_back(id);
   });
   for (uint32_t id : L.exports)
     L.numCopies += ctx.syms[id].copyPrimary;

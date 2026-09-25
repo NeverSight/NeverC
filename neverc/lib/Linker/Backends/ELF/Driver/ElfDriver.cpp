@@ -685,7 +685,6 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
       {config->relocatable, "-r"},
       {config->shared, "-shared"},
       {config->isStatic, "static link"},
-      {config->exportDynamic, "--export-dynamic"},
       {config->noDynamicLinker, "--no-dynamic-linker"},
       {config->emitRelocs, "--emit-relocs"},
       {config->trace, "--trace"},
@@ -742,6 +741,22 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
     case OPT_threads_eq:
     case OPT_fork:
     case OPT_no_fork:
+    // Only shared libraries bind symbols differently.
+    case OPT_Bsymbolic:
+    case OPT_Bsymbolic_functions:
+    case OPT_Bsymbolic_non_weak:
+    case OPT_Bsymbolic_non_weak_functions:
+    case OPT_Bno_symbolic:
+    // Read from the configuration or without effect on these links.
+    case OPT_discard_all:
+    case OPT_discard_locals:
+    case OPT_discard_none:
+    case OPT_allow_shlib_undefined:
+    case OPT_no_allow_shlib_undefined:
+    case OPT_no_undefined:
+    case OPT_warn_common:
+    case OPT_undefined_version:
+    case OPT_no_undefined_version:
       break;
     case OPT_no_mmap_output_file:
       req.mmapOutput = false;
@@ -814,6 +829,7 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
   }
   req.discardLocals = config->discard == DiscardPolicy::All;
   req.stripSymbols = config->strip == StripPolicy::All;
+  req.exportDynamic = config->exportDynamic;
   req.stripDebug = config->strip != StripPolicy::None;
   req.icf = config->icf == ICFLevel::Safe  ? 1
             : config->icf == ICFLevel::All ? 2
