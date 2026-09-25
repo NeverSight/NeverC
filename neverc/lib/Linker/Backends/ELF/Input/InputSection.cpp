@@ -1,4 +1,5 @@
 #include "Linker/ELF/InputSection.h"
+#include "Linker/Core/Support/Strings.h"
 #include "Linker/Core/Runtime/Session.h"
 #include "Linker/ELF/Config.h"
 #include "Linker/ELF/InputFiles.h"
@@ -66,6 +67,11 @@ InputSectionBase::InputSectionBase(InputFile *file, uint64_t flags,
   if (!isPowerOf2_64(v))
     fatal(toString(this) + ": sh_addralign is not a power of 2");
   this->addralign = v;
+
+  reservedName = name == ".init" || name == ".fini" ||
+                 name.starts_with(".init_array") || name == ".jcr" ||
+                 name.starts_with(".ctors") || name.starts_with(".dtors");
+  cIdentifierName = isValidCIdentifier(name);
 
   // If SHF_COMPRESSED is set, parse the header. The legacy .zdebug format is no
   // longer supported.

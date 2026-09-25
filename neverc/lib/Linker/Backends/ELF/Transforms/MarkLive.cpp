@@ -266,9 +266,7 @@ bool isReserved(InputSectionBase *sec) {
     // Support SHT_PROGBITS .init_array (https://golang.org/issue/50295) and
     // .init_array.N (https://github.com/rust-lang/rust/issues/92181) for a
     // while.
-    StringRef s = sec->name;
-    return s == ".init" || s == ".fini" || s.starts_with(".init_array") ||
-           s == ".jcr" || s.starts_with(".ctors") || s.starts_with(".dtors");
+    return sec->reservedName;
   }
 }
 } // namespace
@@ -432,8 +430,8 @@ template <class ELFT> bool MarkLive<ELFT>::collectMainRootsParallel() {
       }
       if (isReserved(sec)) {
         enqueueParallel(sec, 0, task.stack);
-      } else if ((!config->zStartStopGC || sec->name.starts_with("__libc_")) &&
-                 isValidCIdentifier(sec->name)) {
+      } else if (sec->cIdentifierName &&
+                 (!config->zStartStopGC || sec->name.starts_with("__libc_"))) {
         cNamed[t].push_back(sec);
       }
     }
@@ -535,8 +533,8 @@ template <class ELFT> void MarkLive<ELFT>::run() {
     // script KEEP command.
     if (isReserved(sec) || script->shouldKeep(sec)) {
       enqueue(sec, 0);
-    } else if ((!config->zStartStopGC || sec->name.starts_with("__libc_")) &&
-               isValidCIdentifier(sec->name)) {
+    } else if (sec->cIdentifierName &&
+               (!config->zStartStopGC || sec->name.starts_with("__libc_"))) {
       // As a workaround for glibc libc.a before 2.34
       // (https://sourceware.org/PR27492), retain __libc_atexit and similar
       // sections regardless of zStartStopGC.
@@ -791,7 +789,7 @@ template <class ELFT> void MarkLive<ELFT>::moveToMain() {
           markSymbol(s);
 
   for (InputSectionBase *sec : elfState().inputSections) {
-    if (!sec->isLive() || !isValidCIdentifier(sec->name))
+    if (!sec->isLive() || !sec->cIdentifierName)
       continue;
     if (symtab.find(("__start_" + sec->name).str()) ||
         symtab.find(("__stop_" + sec->name).str()))

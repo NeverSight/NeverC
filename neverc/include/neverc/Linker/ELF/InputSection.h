@@ -139,6 +139,13 @@ public:
   // ahead of the regular scan; see startEarlyRelocationScan().
   bool relocsScanned = false;
 
+  // Properties of the name that garbage collection asks about every section,
+  // computed while the name is at hand: whether it names a section that is
+  // always retained (.init, .ctors, ...) and whether it is a C identifier,
+  // which makes __start_/__stop_ symbols refer to it.
+  bool reservedName = false;
+  bool cIdentifierName = false;
+
   void drop_back(unsigned num) {
     assert(bytesDropped + num < 256);
     bytesDropped += num;
