@@ -2129,6 +2129,11 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
   config->verboseOptimizationHints =
       args.hasArg(OPT_verbose_optimization_hints);
   config->textExec = args.hasArg(OPT_text_exec);
+  config->noNewMain = args.hasArg(OPT_no_new_main);
+  if (config->noNewMain && config->outputType != MH_EXECUTE)
+    error("-no_new_main: only valid when linking a main executable");
+  config->keepDwarfUnwind =
+      args.hasFlag(OPT_keep_dwarf_unwind, OPT_no_keep_dwarf_unwind, false);
 #if !defined(_WIN32)
   // -pause stops the linker until a debugger or SIGCONT resumes it.
   if (args.hasArg(OPT_pause)) {

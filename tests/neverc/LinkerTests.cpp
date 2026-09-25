@@ -2991,6 +2991,22 @@ TEST_F(LinkerTest, NativeMachOBindingAndLoadingOptions) {
   ASSERT_FALSE(static_cast<bool>(err))
       << llvm::toString(std::move(err)).str().str();
   EXPECT_TRUE(selfBound);
+
+  // With chained fixups the import names the image itself as well.
+  CmdResult chained =
+      ncc({target, "-nostdlib", "-dynamiclib", libObject.string(),
+           "-Wl,-interposable", "-o", library.string()});
+  ASSERT_EQ(chained.exitCode, 0) << chained.err;
+  auto chainedImage = open(library);
+  ASSERT_NE(chainedImage, nullptr);
+  llvm::Error chainedErr = llvm::Error::success();
+  bool chainedSelf = false;
+  for (const auto &entry : chainedImage->fixupTable(chainedErr))
+    if (entry.symbolName() == "_lib_fn")
+      chainedSelf = entry.ordinal() == llvm::MachO::BIND_SPECIAL_DYLIB_SELF;
+  ASSERT_FALSE(static_cast<bool>(chainedErr))
+      << llvm::toString(std::move(chainedErr)).str().str();
+  EXPECT_TRUE(chainedSelf);
 }
 
 TEST_F(LinkerTest, NativeMachOLayoutHintsAndUnsupportedOptions) {
@@ -3100,6 +3116,68 @@ TEST_F(LinkerTest, NativeMachOLayoutHintsAndUnsupportedOptions) {
         << llvm::toString(std::move(err)).str().str();
     ASSERT_FALSE(names.empty());
     EXPECT_EQ(names.front(), "_zzz_last");
+  }
+
+  // -keep_dwarf_unwind keeps the FDE of a function compact unwind also
+  // covers, including through dead stripping.
+  const fs::path unwindSource = dir / "unwind.s";
+  const fs::path unwindObject = dir / "unwind.o";
+  writeFile(unwindSource, R"(
+.section __TEXT,__text,regular,pure_instructions
+.globl _main
+.p2align 2
+_main:
+  .cfi_startproc
+  stp x29, x30, [sp, #-16]!
+  .cfi_def_cfa_offset 16
+  .cfi_escape 0x2e, 0x10
+  mov w0, #0
+  ldp x29, x30, [sp], #16
+  ret
+  .cfi_endproc
+.section __LD,__compact_unwind,regular,debug
+.p2align 3
+.quad _main
+.long 24
+.long 0x02000000
+.quad 0
+.quad 0
+.subsections_via_symbols
+)");
+  CmdResult assembleUnwind =
+      ncc({target, "-c", unwindSource.string(), "-o", unwindObject.string()});
+  ASSERT_EQ(assembleUnwind.exitCode, 0) << assembleUnwind.err;
+  auto ehFrameSize = [&](std::vector<std::string> flags) -> uint64_t {
+    std::vector<std::string> args = {target, "-nostdlib", "-Wl,-e,_main",
+                                     unwindObject.string()};
+    args.insert(args.end(), flags.begin(), flags.end());
+    args.insert(args.end(), {"-o", image.string()});
+    CmdResult result = ncc(args);
+    EXPECT_EQ(result.exitCode, 0) << result.err;
+    auto macho = open(image);
+    if (macho)
+      for (const auto &section : macho->sections())
+        if (llvm::cantFail(section.getName()) == "__eh_frame")
+          return section.getSize();
+    return 0;
+  };
+  const uint64_t pruned = ehFrameSize({});
+  EXPECT_GT(ehFrameSize({"-Wl,-keep_dwarf_unwind"}), pruned);
+  EXPECT_GT(ehFrameSize({"-Wl,-keep_dwarf_unwind", "-Wl,-dead_strip"}), pruned);
+
+  // -no_new_main starts the program through LC_UNIXTHREAD.
+  CmdResult unixThread = link({"-Wl,-no_new_main"});
+  ASSERT_EQ(unixThread.exitCode, 0) << unixThread.err;
+  {
+    auto macho = open(image);
+    ASSERT_NE(macho, nullptr);
+    bool thread = false, main = false;
+    for (const auto &command : macho->load_commands()) {
+      thread |= command.C.cmd == llvm::MachO::LC_UNIXTHREAD;
+      main |= command.C.cmd == llvm::MachO::LC_MAIN;
+    }
+    EXPECT_TRUE(thread);
+    EXPECT_FALSE(main);
   }
 
   // Options that cannot apply say why.

@@ -1738,8 +1738,15 @@ void ObjFile::registerEhFrames(Section &ehFrameSection) {
       funcSym = findSymbolAtAddress(sections, funcAddr);
       ehRelocator.makePcRel(funcAddrOff, funcSym, target->p2WordSize);
     }
+    // -keep_dwarf_unwind keeps the FDE of a function that also has a compact
+    // unwind entry; it lives while the function does.
+    const bool keepBesideCompact =
+        config->keepDwarfUnwind && funcSym && funcSym->getFile() == this &&
+        funcSym->unwindEntry &&
+        funcSym->unwindEntry->getName() == section_names::compactUnwind;
     // The symbol has been coalesced, or already has a compact unwind entry.
-    if (!funcSym || funcSym->getFile() != this || funcSym->unwindEntry) {
+    if (!keepBesideCompact &&
+        (!funcSym || funcSym->getFile() != this || funcSym->unwindEntry)) {
       // We must prune unused FDEs for correctness, so we cannot rely on
       // -dead_strip being enabled.
       isec->live = false;
@@ -1758,7 +1765,10 @@ void ObjFile::registerEhFrames(Section &ehFrameSection) {
     }
 
     fdes[isec] = {funcLength, cie.personalitySymbol, lsdaIsec};
-    funcSym->unwindEntry = isec;
+    if (keepBesideCompact)
+      keptDwarfUnwind[funcSym] = isec;
+    else
+      funcSym->unwindEntry = isec;
     ehRelocator.commit();
   }
 

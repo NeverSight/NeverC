@@ -183,6 +183,8 @@ public:
   std::vector<DebugSection> debugSections;
   std::vector<CallGraphEntry> callGraph;
   llvm::DenseMap<ConcatInputSection *, FDE> fdes;
+  // FDEs -keep_dwarf_unwind keeps beside compact unwind entries.
+  llvm::DenseMap<const Defined *, ConcatInputSection *> keptDwarfUnwind;
   std::vector<AliasSymbol *> aliases;
   llvm::SmallVector<Defined *, 0> localNoDeadStripSymbols;
 

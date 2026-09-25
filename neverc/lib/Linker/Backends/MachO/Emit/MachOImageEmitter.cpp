@@ -372,6 +372,30 @@ class LCMain final : public LoadCommand {
   }
 };
 
+// -no_new_main starts the program through a thread state whose program
+// counter is the entry point, the form that predates LC_MAIN.
+class LCUnixThread final : public LoadCommand {
+  bool isArm64() const { return config->arch() == AK_arm64; }
+  // Thread state size in 32-bit words: arm_thread_state64_t (x0-x28, fp, lr,
+  // sp, pc, cpsr and padding) or x86_thread_state64_t (16 general registers,
+  // rip, rflags, cs, fs, gs).
+  uint32_t stateWords() const { return isArm64() ? 68 : 42; }
+
+  uint32_t getSize() const override { return 16 + 4 * stateWords(); }
+
+  void writeTo(uint8_t *buf) const override {
+    memset(buf, 0, getSize());
+    auto *words = reinterpret_cast<uint32_t *>(buf);
+    words[0] = LC_UNIXTHREAD;
+    words[1] = getSize();
+    words[2] = isArm64() ? 6 /*ARM_THREAD_STATE64*/ : 4 /*x86_THREAD_STATE64*/;
+    words[3] = stateWords();
+    const uint64_t pc = config->entry->getVA();
+    // pc follows x0-x28, fp, lr and sp; rip follows the 16 registers.
+    memcpy(buf + 16 + 8 * (isArm64() ? 32 : 16), &pc, sizeof(pc));
+  }
+};
+
 class LCSymtab final : public LoadCommand {
 public:
   LCSymtab(SymtabSection *symtabSection, StringTableSection *stringTableSection)
@@ -994,8 +1018,12 @@ template <class LP> void OutputWriter::assembleLoadCommands() {
   if (config->sourceVersion)
     in.header->addLoadCommand(make<LCSourceVersion>(*config->sourceVersion));
 
-  if (config->outputType == MH_EXECUTE)
-    in.header->addLoadCommand(make<LCMain>());
+  if (config->outputType == MH_EXECUTE) {
+    if (config->noNewMain)
+      in.header->addLoadCommand(make<LCUnixThread>());
+    else
+      in.header->addLoadCommand(make<LCMain>());
+  }
   if (config->initSymbol)
     in.header->addLoadCommand(make<LCRoutines>(config->initSymbol));
 

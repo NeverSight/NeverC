@@ -274,6 +274,8 @@ struct Configuration {
   bool warnCompactUnwind = false;
   bool verboseOptimizationHints = false;
   bool textExec = false;
+  bool keepDwarfUnwind = false;
+  bool noNewMain = false;
   // -exported_symbols_order: each listed name's position.
   llvm::DenseMap<llvm::CachedHashStringRef, uint32_t> exportedSymbolsOrder;
   WeakReferenceMismatches weakReferenceMismatches =

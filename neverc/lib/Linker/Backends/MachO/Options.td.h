@@ -591,10 +591,11 @@ OPTION(prefix_3, "-iphoneos_version_min", iphoneos_version_min, Separate,
 OPTION(prefix_3, "-i", i, Flag, grp_undocumented, INVALID, nullptr, HelpHidden,
        DefaultVis, 0, "it is an undocumented option of the native linker",
        nullptr, nullptr)
-OPTION(prefix_3, "-keep_dwarf_unwind", keep_dwarf_unwind, Flag,
-       grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "__eh_frame keeps only the entries compact unwind cannot express",
-       nullptr, nullptr)
+OPTION(
+    prefix_3, "-keep_dwarf_unwind", keep_dwarf_unwind, Flag, grp_undocumented,
+    INVALID, nullptr, 0, DefaultVis, 0,
+    "Keep the __eh_frame entries of functions that compact unwind also covers",
+    nullptr, nullptr)
 OPTION(prefix_3, "-keep_private_externs", keep_private_externs, Flag,
        grp_object, INVALID, nullptr, 0, DefaultVis, 0,
        "Keep private external symbols with -r (always done)", nullptr, nullptr)
@@ -869,17 +870,19 @@ OPTION(prefix_3, "-no_implicit_dylibs", anonymous_340, Flag, INVALID,
 OPTION(prefix_3, "-no_inits", no_inits, Flag, grp_rare, INVALID, nullptr, 0,
        DefaultVis, 0, "Fail if the output contains static initializers",
        nullptr, nullptr)
-OPTION(prefix_3, "-no_keep_dwarf_unwind", no_keep_dwarf_unwind, Flag,
-       grp_undocumented, INVALID, nullptr, 0, DefaultVis, 0,
-       "Keep only the __eh_frame entries compact unwind cannot express (always "
-       "done)",
-       nullptr, nullptr)
+OPTION(
+    prefix_3, "-no_keep_dwarf_unwind", no_keep_dwarf_unwind, Flag,
+    grp_undocumented, INVALID, nullptr, 0, DefaultVis, 0,
+    "Keep only the __eh_frame entries compact unwind cannot express (default)",
+    nullptr, nullptr)
 OPTION(prefix_3, "-no_kext_objects", no_kext_objects, Flag, grp_undocumented,
        INVALID, nullptr, HelpHidden, DefaultVis, 0,
        "kernel extensions are not supported", nullptr, nullptr)
 OPTION(prefix_3, "-no_new_main", no_new_main, Flag, grp_undocumented, INVALID,
-       nullptr, HelpHidden, DefaultVis, 0,
-       "executables always start through LC_MAIN", nullptr, nullptr)
+       nullptr, 0, DefaultVis, 0,
+       "Start an executable through LC_UNIXTHREAD at the entry point instead "
+       "of LC_MAIN",
+       nullptr, nullptr)
 OPTION(prefix_3, "-no_objc_category_merging", no_objc_category_merging, Flag,
        grp_neverc_ext, INVALID, nullptr, 0, DefaultVis, 0,
        "Do not merge Objective-C categories (always done)", nullptr, nullptr)

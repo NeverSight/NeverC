@@ -345,7 +345,7 @@ void macho::addNonLazyBindingEntries(const Symbol *sym,
       in.weakBinding->addEntry(sym, isec, offset, addend);
   } else if (const auto *defined = dyn_cast<Defined>(sym)) {
     in.rebase->addEntry(isec, offset);
-    if (defined->isExternalWeakDef())
+    if (isExportedWeakDef(*defined))
       in.weakBinding->addEntry(sym, isec, offset, addend);
     else if (defined->interposable)
       in.binding->addEntry(sym, isec, offset, addend);
@@ -757,7 +757,7 @@ void addBindingsForStub(Symbol *sym) {
       in.lazyBinding->addEntry(dysym);
     }
   } else if (auto *defined = dyn_cast<Defined>(sym)) {
-    if (defined->isExternalWeakDef()) {
+    if (isExportedWeakDef(*defined)) {
       in.rebase->addEntry(in.lazyPointers->isec,
                           sym->stubsIndex * target->wordSize);
       in.weakBinding->addEntry(sym, in.lazyPointers->isec,
@@ -925,7 +925,7 @@ bool shouldEmitDefinedSymbolInExportTrie(const Defined &defined) {
   if (config->exportDynamic || config->hasExplicitExports ||
       config->namespaceKind == NamespaceKind::flat || defined.interposable)
     return true;
-  return defined.referencedDynamically || defined.isExternalWeakDef();
+  return defined.referencedDynamically || isExportedWeakDef(defined);
 }
 
 bool shouldEmitDefinedSymbolInSymtab(const Defined &defined) {
@@ -1618,7 +1618,9 @@ void CodeSignatureSection::writeTo(uint8_t *buf) const {
   codeDirectory->teamOffset = 0;
   codeDirectory->spare3 = 0;
   codeDirectory->codeLimit64 = 0;
-  OutputSegment *textSeg = getOrCreateOutputSegment(segment_names::text);
+  // With -text_exec, the executable code is in __TEXT_EXEC.
+  OutputSegment *textSeg = getOrCreateOutputSegment(
+      config->textExec ? StringRef("__TEXT_EXEC") : segment_names::text);
   write64be(&codeDirectory->execSegBase, textSeg->fileOff);
   write64be(&codeDirectory->execSegLimit, textSeg->fileSize);
   write64be(&codeDirectory->execSegFlags,
@@ -1918,7 +1920,7 @@ bool needsWeakBind(const Symbol &sym) {
   if (auto *dysym = dyn_cast<DylibSymbol>(&sym))
     return dysym->isWeakDef();
   if (auto *defined = dyn_cast<Defined>(&sym))
-    return defined->isExternalWeakDef();
+    return isExportedWeakDef(*defined);
   return false;
 }
 } // namespace

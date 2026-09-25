@@ -373,11 +373,15 @@ T *replaceSymbol(Symbol *s, ArgT &&...arg) {
 }
 
 // Can a symbol's address only be resolved at runtime?
+// Whether a definition is exported as a weak definition, after
+// -force_symbols_weak_list and -force_symbols_not_weak_list.
+bool isExportedWeakDef(const Defined &sym);
+
 inline bool needsBinding(const Symbol *sym) {
   if (isa<DylibSymbol>(sym))
     return true;
   if (const auto *defined = dyn_cast<Defined>(sym))
-    return defined->isExternalWeakDef() || defined->interposable;
+    return defined->interposable || isExportedWeakDef(*defined);
   return false;
 }
 
@@ -386,10 +390,6 @@ inline bool needsBinding(const Symbol *sym) {
 inline bool isPrivateLabel(StringRef name) {
   return name.starts_with("l") || name.starts_with("L");
 }
-// Whether a definition is exported as a weak definition, after
-// -force_symbols_weak_list and -force_symbols_not_weak_list.
-bool isExportedWeakDef(const Defined &sym);
-
 } // namespace macho
 
 std::string toString(const macho::Symbol &);

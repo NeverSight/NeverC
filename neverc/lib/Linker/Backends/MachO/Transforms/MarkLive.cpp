@@ -125,6 +125,10 @@ void MarkLiveImpl<RecordWhyLive>::addSym(
       enqueue(d->isec, d->value, prev);
     if (d->unwindEntry)
       enqueue(d->unwindEntry, 0, prev);
+    if (config->keepDwarfUnwind)
+      if (auto *file = dyn_cast_or_null<ObjFile>(d->getFile()))
+        if (ConcatInputSection *fde = file->keptDwarfUnwind.lookup(d))
+          enqueue(fde, 0, prev);
   }
 }
 
