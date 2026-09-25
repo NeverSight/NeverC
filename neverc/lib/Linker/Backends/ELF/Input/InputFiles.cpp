@@ -2091,6 +2091,17 @@ void BinaryFile::parse() {
                                       nullptr});
 }
 
+ELFFileBase *elf::createLazyObjFileFromWorker(MemoryBufferRef mb,
+                                              StringRef archiveName) {
+  ELFFileBase *f;
+  if (mb.getBuffer()[EI_DATA] == ELFDATA2LSB)
+    f = makeThreadLocal<ObjFile<ELF64LE>>(ELF64LEKind, mb, archiveName);
+  else
+    f = makeThreadLocal<ObjFile<ELF64BE>>(ELF64BEKind, mb, archiveName);
+  f->lazy = true;
+  return f;
+}
+
 ELFFileBase *elf::createObjFile(MemoryBufferRef mb, StringRef archiveName,
                                 bool lazy) {
   ELFFileBase *f;

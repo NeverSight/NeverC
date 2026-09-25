@@ -388,6 +388,9 @@ struct Ctx {
     std::unique_ptr<MemoryBuffer> buffer;
     const char *bufferStart = nullptr;
     std::optional<std::vector<std::pair<MemoryBufferRef, uint64_t>>> members;
+    // The lazy object files of `members`, created ahead when every member is
+    // an ELF relocatable object; their group ids are set when they are added.
+    std::vector<ELFFileBase *> lazyObjects;
   };
   llvm::StringMap<PrefetchedInput> prefetchedInputs;
   SmallVector<ELFFileBase *, 0> objectFiles;

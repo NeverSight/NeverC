@@ -289,13 +289,16 @@ LinkerDriver::AddedFileKind LinkerDriver::addFileAndClassify(StringRef path,
     return AddedFileKind::NotDeduplicable;
   case file_magic::archive: {
     std::vector<std::pair<MemoryBufferRef, uint64_t>> members;
+    std::vector<ELFFileBase *> lazyObjects;
     auto prefetched = elfState().prefetchedInputs.find(path);
     if (prefetched != elfState().prefetchedInputs.end() &&
         prefetched->second.members &&
-        prefetched->second.bufferStart == mbref.getBufferStart())
+        prefetched->second.bufferStart == mbref.getBufferStart()) {
       members = std::move(*prefetched->second.members);
-    else
+      lazyObjects = std::move(prefetched->second.lazyObjects);
+    } else {
       members = getArchiveMembers(mbref);
+    }
     if (inWholeArchive) {
       for (const std::pair<MemoryBufferRef, uint64_t> &p : members) {
         if (isBitcode(p.first))
@@ -323,6 +326,14 @@ LinkerDriver::AddedFileKind LinkerDriver::addFileAndClassify(StringRef path,
     bool canDeduplicate = true;
     bool saved = elfInputFileIsInGroup();
     elfInputFileIsInGroup() = true;
+    // Members created ahead only need the group id they would have taken.
+    if (!lazyObjects.empty() && lazyObjects.size() == members.size()) {
+      for (ELFFileBase *f : lazyObjects) {
+        f->groupId = elfNextGroupId();
+        files.push_back(f);
+      }
+      members.clear();
+    }
     for (const std::pair<MemoryBufferRef, uint64_t> &p : members) {
       auto magic = identify_magic(p.first.getBuffer());
       if (magic == file_magic::elf_relocatable) {
@@ -1538,6 +1549,11 @@ void prefetchInputFiles(opt::InputArgList &args) {
 
   llvm::TimeTraceScope timeScope("Prefetch input files");
   std::vector<Ctx::PrefetchedInput> inputs(paths.size());
+  // Archive members are created as lazy object files here. A new input file
+  // takes a group id from the shared counter and advances it unless it is in
+  // a group; claim group mode so that workers leave the counter alone.
+  const bool savedInGroup = elfInputFileIsInGroup();
+  elfInputFileIsInGroup() = true;
   parallelFor(0, paths.size(), [&](size_t i) {
     auto mbOrErr = MemoryBuffer::getFile(paths[i], /*IsText=*/false,
                                          /*RequiresNullTerminator=*/false);
@@ -1574,8 +1590,24 @@ void prefetchInputFiles(opt::InputArgList &args) {
       consumeError(std::move(err));
       return;
     }
+    // Only well-formed 64-bit ELF relocatable members are created ahead, as
+    // addFile() would create them.
+    const bool allObjects = llvm::all_of(members, [](const auto &m) {
+      StringRef buf = m.first.getBuffer();
+      return identify_magic(buf) == file_magic::elf_relocatable &&
+             buf.size() >= sizeof(ELF64LE::Ehdr) &&
+             buf[EI_CLASS] == ELFCLASS64 &&
+             (buf[EI_DATA] == ELFDATA2LSB || buf[EI_DATA] == ELFDATA2MSB);
+    });
+    if (allObjects) {
+      input.lazyObjects.reserve(members.size());
+      for (const auto &m : members)
+        input.lazyObjects.push_back(
+            createLazyObjFileFromWorker(m.first, paths[i]));
+    }
     input.members = std::move(members);
   });
+  elfInputFileIsInGroup() = savedInGroup;
   for (size_t i = 0; i < paths.size(); ++i)
     if (inputs[i].buffer)
       elfState().prefetchedInputs.try_emplace(paths[i], std::move(inputs[i]));

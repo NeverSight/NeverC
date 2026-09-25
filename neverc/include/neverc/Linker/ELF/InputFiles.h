@@ -430,6 +430,10 @@ public:
 
 ELFFileBase *createObjFile(MemoryBufferRef mb, StringRef archiveName = "",
                            bool lazy = false);
+// Like createObjFile(mb, archiveName, /*lazy=*/true), from any thread, for a
+// buffer known to hold a valid 64-bit ELF header. The caller sets groupId.
+ELFFileBase *createLazyObjFileFromWorker(MemoryBufferRef mb,
+                                         StringRef archiveName);
 
 } // namespace elf
 } // namespace linker
