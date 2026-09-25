@@ -1230,6 +1230,7 @@ enum class UtilityStringConstruction {
   Default,
   CString,
   PointerLength,
+  Fill,
   InitializerList,
   Copy,
   Move,

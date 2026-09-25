@@ -4418,6 +4418,15 @@ approvedUtilityStringConstruction(const State &S, const SourceManager &SM,
       Context.hasSameType(Construction->getArg(1)->getType(),
                           Context.getSizeType()))
     return UtilityStringConstruction::PointerLength;
+  if (Constructor->getNumParams() == 2 && !Constructor->getPrimaryTemplate() &&
+      Context.hasSameType(Constructor->getParamDecl(0)->getType(),
+                          Context.getSizeType()) &&
+      Context.hasSameType(Construction->getArg(0)->getType(),
+                          Context.getSizeType()) &&
+      Context.hasSameType(Constructor->getParamDecl(1)->getType(),
+                          Context.CharTy) &&
+      Context.hasSameType(Construction->getArg(1)->getType(), Context.CharTy))
+    return UtilityStringConstruction::Fill;
   return std::nullopt;
 }
 

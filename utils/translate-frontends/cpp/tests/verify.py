@@ -29468,6 +29468,9 @@ int main() {
   std::string empty;
   std::string short_text("hello");
   std::string long_text("abcdefghijklmnopqrstuvwxyz");
+  std::string filled(3, 'q');
+  bool fill_intact = filled.size() == 3 && filled[0] == 'q' &&
+                     filled[2] == 'q' && filled.data()[3] == 0;
   std::string copied(long_text);
   std::string combined = short_text + long_text;
   std::string prefixed = "!" + long_text;
@@ -29813,7 +29816,8 @@ int main() {
   const std::string reverse_long("abcdefghijklmnopqrstuvwxyz0123456789");
   bool reverse_long_intact = *reverse_long.rbegin() == '9' &&
                              *(reverse_long.rend() - 1) == 'a';
-  return intact && maximum_intact && shrink_intact && boundary_intact && emptied &&
+  return intact && fill_intact && maximum_intact && shrink_intact &&
+         boundary_intact && emptied &&
          assigned.size() == 14 &&
          assigned[0] == 'x' && assigned[2] == 'a' &&
          assigned[3] == 'b' && assigned[4] == 'c' && assigned[5] == 'd' &&

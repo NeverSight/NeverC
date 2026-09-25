@@ -17717,6 +17717,7 @@ class FunctionLowering {
       }
       auto Input = temporary(ConstPointerType, L);
       auto Length = temporary(SizeType, L);
+      std::optional<Expression> FillCharacter;
       if (*Kind == UtilityStringConstruction::Copy ||
           *Kind == UtilityStringConstruction::Move) {
         auto SourceAddress = snapshot(
@@ -17802,6 +17803,9 @@ class FunctionLowering {
                             L), L);
         jump(Ready, L);
         label(Ready, L);
+      } else if (*Kind == UtilityStringConstruction::Fill) {
+        assign(Length, snapshot(expression(C->getArg(0)), L), L);
+        FillCharacter = snapshot(expression(C->getArg(1)), L);
       } else if (*Kind == UtilityStringConstruction::PointerLength) {
         assign(Input, expression(C->getArg(0)), L);
         assign(Length, expression(C->getArg(1)), L);
@@ -17914,23 +17918,30 @@ class FunctionLowering {
       auto SourceCurrent = temporary(ConstPointerType, L);
       auto TargetCurrent = temporary(PointerType, L);
       auto Count = temporary(SizeType, L);
-      assign(SourceCurrent, std::move(Input), L);
+      if (!FillCharacter)
+        assign(SourceCurrent, std::move(Input), L);
       assign(TargetCurrent, json::Object(Data), L);
       assign(Count, quantity(0, SizeType, L), L);
-      const auto CopyCheck = labelName(), Advance = labelName(), Finish = labelName();
+      const auto CopyCheck = labelName(), Advance = labelName(),
+                 Finish = labelName();
       jump(CopyCheck, L);
       label(CopyCheck, L);
       branch(binary("<", json::Object(Count), json::Object(Length), "bool", L),
              Advance, Finish, L);
       label(Advance, L);
       assign(dereference(json::Object(TargetCurrent), L),
-             dereference(json::Object(SourceCurrent), L), L);
-      assign(SourceCurrent,
-             binary("+", json::Object(SourceCurrent),
-                    quantity(1, DifferenceType, L), ConstPointerType, L), L);
+             FillCharacter ? json::Object(*FillCharacter)
+                           : dereference(json::Object(SourceCurrent), L),
+             L);
+      if (!FillCharacter)
+        assign(SourceCurrent,
+               binary("+", json::Object(SourceCurrent),
+                      quantity(1, DifferenceType, L), ConstPointerType, L),
+               L);
       assign(TargetCurrent,
              binary("+", json::Object(TargetCurrent),
-                    quantity(1, DifferenceType, L), PointerType, L), L);
+                    quantity(1, DifferenceType, L), PointerType, L),
+             L);
       assign(Count,
              binary("+", json::Object(Count), quantity(1, SizeType, L),
                     SizeType, L), L);

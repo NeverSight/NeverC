@@ -53429,6 +53429,70 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringFillConstructionRun) {
+  const auto Source = tmpFile("string-fill-construction.cpp");
+  const auto Output = tmpFile("string-fill-construction.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+int count_calls;
+int character_calls;
+Size three() { ++count_calls; return 3; }
+char zero() { ++character_calls; return 0; }
+int main() {
+  {
+    Size count = 0;
+    std::string empty(count, 'x');
+    if (!empty.empty() || empty.data()[0] != 0 || allocations != 0)
+      return 1;
+    std::string short_text(4, 'a');
+    if (short_text.size() != 4 || short_text[0] != 'a' ||
+        short_text[3] != 'a' || short_text.data()[4] != 0 ||
+        allocations != 0)
+      return 2;
+    std::string boundary(22, 'b');
+    if (boundary.size() != 22 || boundary[0] != 'b' ||
+        boundary[21] != 'b' || boundary.data()[22] != 0 ||
+        allocations != 0)
+      return 3;
+    std::string long_text(23, 'c');
+    if (long_text.size() != 23 || long_text[0] != 'c' ||
+        long_text[22] != 'c' || long_text.data()[23] != 0 ||
+        allocations != 1)
+      return 4;
+    std::string longer(40, 'd');
+    if (longer.size() != 40 || longer[0] != 'd' ||
+        longer[39] != 'd' || longer.data()[40] != 0 ||
+        allocations != 2)
+      return 5;
+    std::string embedded(three(), zero());
+    if (count_calls != 1 || character_calls != 1 ||
+        embedded.size() != 3 || embedded[0] != 0 ||
+        embedded[2] != 0 || embedded.data()[3] != 0)
+      return 6;
+  }
+  return allocations == releases ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-fill-construction" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedIteratorOffsetsRun) {
   const auto Source = tmpFile("wrapped-iterator-offsets.cpp");
   const auto Output = tmpFile("wrapped-iterator-offsets.nc");
