@@ -1,6 +1,7 @@
 #include "NeverCTestFixture.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/Object/ELFObjectFile.h"
+#include "llvm/Object/MachO.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/Error.h"
@@ -2255,6 +2256,79 @@ TEST_F(LinkerTest, GnuLtoOptionsReachCodeGeneration) {
   CmdResult unknown = link({"-Wl,--plugin-opt=thinlto-index-only"}, image);
   EXPECT_NE(unknown.exitCode, 0);
   EXPECT_TRUE(unknown.stderrContains("unknown plugin option")) << unknown.err;
+}
+
+TEST_F(LinkerTest, NativeMachOLinkerSpellingsAreAccepted) {
+  const std::string target = "--target=arm64-apple-macos13";
+  const fs::path libSource = tmpFile("native_macho_lib.c");
+  const fs::path libObject = tmpFile("native_macho_lib.o");
+  const fs::path library = tmpFile("libnativemacho.dylib");
+  const fs::path mainSource = tmpFile("native_macho_main.c");
+  const fs::path mainObject = tmpFile("native_macho_main.o");
+  const fs::path image = tmpFile("native_macho_main");
+  writeFile(libSource, "int lib_fn(void) { return 7; }\n"
+                       "int unused_fn(void) { return 1; }\n");
+  writeFile(mainSource, "int lib_fn(void);\n"
+                        "int main(void) { return lib_fn(); }\n");
+  for (auto [source, object] : {std::pair{libSource, libObject},
+                                std::pair{mainSource, mainObject}}) {
+    CmdResult compile = ncc({target, "-fno-lto", "-ffunction-sections", "-c",
+                             source.string(), "-o", object.string()});
+    ASSERT_EQ(compile.exitCode, 0) << compile.err;
+  }
+
+  // The driver itself passes the native -dylib_install_name and version
+  // spellings for these flags.
+  CmdResult dylib = ncc({target, "-nostdlib", "-dynamiclib", "-install_name",
+                         "@rpath/libnativemacho.dylib", "-current_version",
+                         "1.2", libObject.string(), "-o", library.string()});
+  ASSERT_EQ(dylib.exitCode, 0) << dylib.err;
+
+  auto loadCommands = [&](const fs::path &path) {
+    std::vector<uint32_t> commands;
+    const std::string bytes = readFile(path);
+    auto object = llvm::object::ObjectFile::createObjectFile(
+        llvm::MemoryBufferRef(bytes, path.string()));
+    EXPECT_TRUE(static_cast<bool>(object))
+        << llvm::toString(object.takeError()).str().str();
+    if (!object)
+      return commands;
+    auto *macho = llvm::dyn_cast<llvm::object::MachOObjectFile>(object->get());
+    EXPECT_NE(macho, nullptr);
+    if (macho)
+      for (const auto &command : macho->load_commands())
+        commands.push_back(command.C.cmd);
+    return commands;
+  };
+  auto linkMain = [&](std::vector<std::string> flags) {
+    std::vector<std::string> args = {target, "-nostdlib", "-Wl,-e,_main",
+                                     mainObject.string()};
+    args.insert(args.end(), flags.begin(), flags.end());
+    args.insert(args.end(), {"-o", image.string()});
+    return ncc(args);
+  };
+
+  CmdResult upward =
+      linkMain({"-Wl,-headerpad_max_install_names", "-Wl,-search_paths_first",
+                "-Wl,-dead_strip", "-Wl,-upward_library," + library.string()});
+  ASSERT_EQ(upward.exitCode, 0) << upward.err;
+  std::vector<uint32_t> commands = loadCommands(image);
+  EXPECT_NE(llvm::find(commands, llvm::MachO::LC_LOAD_UPWARD_DYLIB),
+            commands.end());
+
+  CmdResult obsolete = linkMain({"-Wl,-sectorder,__TEXT,__text,order.txt",
+                                 "-Wl," + library.string()});
+  EXPECT_EQ(obsolete.exitCode, 0) << obsolete.err;
+  EXPECT_TRUE(obsolete.stderrContains("-sectorder' is obsolete"))
+      << obsolete.err;
+
+  CmdResult ios = linkMain({"-Wl,-ios_version_min,13.0"});
+  EXPECT_NE(ios.exitCode, 0);
+  EXPECT_TRUE(ios.stderrContains("only macOS targets are supported")) << ios.err;
+  CmdResult kind = linkMain({"-Wl,-dylib"});
+  EXPECT_NE(kind.exitCode, 0);
+  EXPECT_TRUE(kind.stderrContains("pass -dynamiclib to the compiler"))
+      << kind.err;
 }
 
 TEST_F(LinkerTest, ThreadCountOptionKeepsOutputBytesOnEveryFormat) {

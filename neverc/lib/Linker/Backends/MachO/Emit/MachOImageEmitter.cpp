@@ -886,7 +886,8 @@ template <class LP> void OutputWriter::assembleLoadCommands() {
     LoadCommandType lcType =
         dylibFile->forceWeakImport || dylibFile->refState == RefState::Weak
             ? LC_LOAD_WEAK_DYLIB
-            : LC_LOAD_DYLIB;
+        : dylibFile->upward ? LC_LOAD_UPWARD_DYLIB
+                            : LC_LOAD_DYLIB;
     in.header->addLoadCommand(make<LCDylib>(lcType, dylibFile->installName,
                                             dylibFile->compatibilityVersion,
                                             dylibFile->currentVersion));

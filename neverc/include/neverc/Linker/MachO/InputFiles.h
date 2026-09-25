@@ -291,6 +291,7 @@ public:
   bool reexport = false;
   bool forceNeeded = false;
   bool forceWeakImport = false;
+  bool upward = false; // loaded with LC_LOAD_UPWARD_DYLIB
   bool deadStrippable = false;
 
 private:

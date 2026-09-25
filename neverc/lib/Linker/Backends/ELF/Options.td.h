@@ -675,8 +675,7 @@ OPTION(prefix_2,
        nullptr)
 OPTION(prefix_2, "--plugin-opt=-", plugin_opt_eq_minus, Joined, INVALID,
        INVALID, nullptr, 0, DefaultVis, 0,
-       "Specify an LLVM option for compatibility with LLVMgold.so", nullptr,
-       nullptr)
+       "Pass an LLVM option to LTO code generation", nullptr, nullptr)
 OPTION(prefix_2, "--plugin-opt=debug-pass-manager", anonymous_221, Flag,
        INVALID, lto_debug_pass_manager, nullptr, 0, DefaultVis, 0,
        "Alias for --lto-debug-pass-manager", nullptr, nullptr)

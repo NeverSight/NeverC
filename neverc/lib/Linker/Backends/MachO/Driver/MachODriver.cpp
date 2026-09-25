@@ -39,6 +39,7 @@
 #include "llvm/Support/TimeProfiler.h"
 #include "llvm/TextAPI/PackedVersion.h"
 
+#include "neverc/Foundation/Core/Version.h"
 #include "neverc/Merge/Merger.h"
 #include <algorithm>
 #include <optional>
@@ -181,10 +182,13 @@ getSearchPaths(unsigned optionCode, InputArgList &args,
 }
 
 std::vector<StringRef>
-getSystemLibraryRoots(const LinkerDriverConfig &driverCfg) {
+getSystemLibraryRoots(const InputArgList &args,
+                      const LinkerDriverConfig &driverCfg) {
   std::vector<StringRef> roots;
   if (!driverCfg.sysroot.empty())
     roots.push_back(saver().save(driverCfg.sysroot));
+  for (const Arg *arg : args.filtered(OPT_syslibroot))
+    roots.push_back(arg->getValue());
   // NOTE: the final `-syslibroot` being `/` will ignore all roots
   if (!roots.empty() && roots.back() == "/")
     roots.clear();
@@ -357,11 +361,14 @@ InputFile *addFile(StringRef path, LoadType loadType, bool isLazy = false,
 }
 
 void addLibrary(StringRef name, bool isNeeded, bool isWeak, bool isReexport,
-                bool isHidden, bool isExplicit, LoadType loadType) {
+                bool isHidden, bool isExplicit, LoadType loadType,
+                bool isUpward = false) {
   if (std::optional<StringRef> path = findLibrary(name)) {
     if (auto *dylibFile = dyn_cast_or_null<DylibFile>(
             addFile(*path, loadType, /*isLazy=*/false, isExplicit,
                     /*isBundleLoader=*/false, isHidden))) {
+      if (isUpward)
+        dylibFile->upward = true;
       if (isNeeded)
         dylibFile->forceNeeded = true;
       if (isWeak)
@@ -382,7 +389,7 @@ void addLibrary(StringRef name, bool isNeeded, bool isWeak, bool isReexport,
 }
 
 void addFramework(StringRef name, bool isNeeded, bool isWeak, bool isReexport,
-                  bool isExplicit, LoadType loadType) {
+                  bool isExplicit, LoadType loadType, bool isUpward = false) {
   if (std::optional<StringRef> path = findFramework(name)) {
     if (loadedObjectFrameworks.contains(*path))
       return;
@@ -390,6 +397,8 @@ void addFramework(StringRef name, bool isNeeded, bool isWeak, bool isReexport,
     InputFile *file =
         addFile(*path, loadType, /*isLazy=*/false, isExplicit, false);
     if (auto *dylibFile = dyn_cast_or_null<DylibFile>(file)) {
+      if (isUpward)
+        dylibFile->upward = true;
       if (isNeeded)
         dylibFile->forceNeeded = true;
       if (isWeak)
@@ -860,6 +869,158 @@ UndefinedSymbolTreatment getUndefinedSymbolTreatment(const ArgList &args) {
   return treatment;
 }
 
+// Applies the native linker options for settings the neverc driver derives
+// from its own flags; they come later on the command line and override them.
+// The output kind, architecture and output path must agree with the driver,
+// which chose the startup files, target and post-link steps for them.
+LinkerDriverConfig applyLinkerOptions(InputArgList &args,
+                                      const LinkerDriverConfig &driverCfg) {
+  LinkerDriverConfig cfg = driverCfg;
+  auto conflict = [&](const Arg *arg, StringRef use) {
+    error(arg->getAsString(args) +
+          " conflicts with the compiler's link settings; pass " + use +
+          " to the compiler instead");
+  };
+  if (const Arg *arg = args.getLastArg(OPT_o))
+    if (arg->getValue() != cfg.outputFile)
+      conflict(arg, "-o");
+  if (const Arg *arg = args.getLastArg(OPT_arch)) {
+    if (cfg.archName.empty())
+      cfg.archName = arg->getValue();
+    else if (arg->getValue() != cfg.archName)
+      conflict(arg, "-arch");
+  }
+  if (const Arg *arg =
+          args.getLastArg(OPT_dylib, OPT_bundle, OPT_execute, OPT_r)) {
+    const unsigned id = arg->getOption().getID();
+    const bool agrees =
+        id == OPT_dylib    ? cfg.shared
+        : id == OPT_bundle ? cfg.bundle
+        : id == OPT_r      ? cfg.relocatable
+                           : !cfg.shared && !cfg.bundle && !cfg.relocatable;
+    if (!agrees)
+      conflict(arg, id == OPT_dylib    ? "-dynamiclib"
+                    : id == OPT_bundle ? "-bundle"
+                    : id == OPT_r      ? "-r"
+                                       : "no output kind option");
+  }
+  if (const Arg *arg = args.getLastArg(OPT_static, OPT_dynamic))
+    if (arg->getOption().matches(OPT_static) != cfg.staticLink)
+      conflict(arg, arg->getOption().matches(OPT_static) ? "-static"
+                                                         : "no -static");
+  if (const Arg *arg = args.getLastArg(OPT_pie, OPT_no_pie)) {
+    // arm64 executables are always position independent.
+    if (arg->getOption().matches(OPT_no_pie) && cfg.archName == "arm64")
+      warn("-no_pie ignored for arm64");
+    else
+      cfg.pie = arg->getOption().matches(OPT_pie);
+  }
+  for (unsigned id :
+       {OPT_ios_version_min, OPT_ios_simulator_version_min,
+        OPT_maccatalyst_version_min, OPT_tvos_version_min,
+        OPT_watchos_version_min, OPT_bridgeos_version_min,
+        OPT_driverkit_version_min})
+    if (const Arg *arg = args.getLastArg(id))
+      error(arg->getSpelling() + ": only macOS targets are supported");
+  if (const Arg *arg = args.getLastArg(OPT_platform_version)) {
+    cfg.platformName = arg->getValue(0);
+    cfg.platformMinVersion = arg->getValue(1);
+    cfg.platformSdkVersion = arg->getValue(2);
+  }
+  if (const Arg *arg = args.getLastArg(OPT_macos_version_min)) {
+    cfg.platformName = "macos";
+    cfg.platformMinVersion = arg->getValue();
+  }
+  if (const Arg *arg = args.getLastArg(OPT_sdk_version))
+    cfg.platformSdkVersion = arg->getValue();
+
+  if (args.hasArg(OPT_dead_strip))
+    cfg.gcSections = true;
+  if (const Arg *arg = args.getLastArg(OPT_map))
+    cfg.mapFile = arg->getValue();
+  if (args.hasArg(OPT_S) && cfg.stripMode == StripMode::None)
+    cfg.stripMode = StripMode::DebugInfo;
+  cfg.traceFiles = cfg.traceFiles || args.hasArg(OPT_t);
+  cfg.verbose = cfg.verbose || args.hasArg(OPT_verbose);
+  cfg.suppressWarnings = cfg.suppressWarnings || args.hasArg(OPT_w);
+  cfg.fatalWarnings = cfg.fatalWarnings || args.hasArg(OPT_fatal_warnings);
+  if (args.hasArg(OPT_error_limit_eq))
+    cfg.errorLimit = args::getInteger(args, OPT_error_limit_eq, 20);
+  if (args.hasArg(OPT_O))
+    cfg.linkerOptLevel = args::getInteger(args, OPT_O, 1);
+  if (const Arg *arg = args.getLastArg(OPT_icf_eq)) {
+    StringRef level = arg->getValue();
+    if (level == "none")
+      cfg.icfLevel = 0;
+    else if (level == "safe")
+      cfg.icfLevel = 1;
+    else if (level == "all")
+      cfg.icfLevel = 2;
+    else
+      error("unsupported --icf=" + level + "; use none, safe or all");
+  }
+  if (const Arg *arg = args.getLastArg(OPT_call_graph_profile_sort,
+                                       OPT_no_call_graph_profile_sort))
+    cfg.callGraphProfileSort =
+        arg->getOption().matches(OPT_call_graph_profile_sort) ? "cdsort"
+                                                              : "none";
+  if (const Arg *arg = args.getLastArg(OPT_print_symbol_order_eq))
+    cfg.printSymbolOrder = arg->getValue();
+  cfg.repro = cfg.repro || args.hasArg(OPT_reproducible);
+  cfg.saveTemps = cfg.saveTemps || args.hasArg(OPT_save_temps);
+  if (args.hasArg(OPT_time_trace_eq)) {
+    cfg.timeTraceEnabled = true;
+    cfg.timeTraceGranularity =
+        args::getInteger(args, OPT_time_trace_granularity_eq, 500);
+  }
+
+  // LTO code generation.
+  auto level = [&](const Arg *arg, int &out) {
+    unsigned v;
+    if (!to_integer(arg->getValue(), v) || v > 3)
+      error(arg->getSpelling() + ": invalid optimization level: " +
+            arg->getValue());
+    else
+      out = int(v);
+  };
+  if (const Arg *arg = args.getLastArg(OPT_lto_O))
+    level(arg, cfg.ltoOptLevel);
+  if (const Arg *arg = args.getLastArg(OPT_lto_CGO))
+    level(arg, cfg.ltoCGOLevel);
+  if (const Arg *arg = args.getLastArg(OPT_mcpu))
+    cfg.cpu = arg->getValue();
+  for (const Arg *arg : args.filtered(OPT_mllvm))
+    cfg.mllvmOpts.push_back(arg->getValue());
+  if (const Arg *arg = args.getLastArg(OPT_lto_newpm_passes))
+    cfg.ltoOptPipeline = arg->getValue();
+  cfg.ltoDebugPassManager =
+      cfg.ltoDebugPassManager || args.hasArg(OPT_lto_debug_pass_manager);
+  for (const Arg *arg : args.filtered(OPT_load_pass_plugins))
+    cfg.ltoPassPlugins.push_back(arg->getValue());
+  return cfg;
+}
+
+void applyColorDiagnostics(const InputArgList &args) {
+  const Arg *arg = args.getLastArg(OPT_color_diagnostics,
+                                   OPT_color_diagnostics_eq,
+                                   OPT_no_color_diagnostics);
+  if (!arg)
+    return;
+  StringRef mode = arg->getOption().matches(OPT_color_diagnostics) ? "always"
+                   : arg->getOption().matches(OPT_no_color_diagnostics)
+                       ? "never"
+                       : arg->getValue();
+  raw_ostream &os = linker::errs();
+  if (mode == "always")
+    os.enable_colors(true);
+  else if (mode == "never")
+    os.enable_colors(false);
+  else if (mode == "auto")
+    os.enable_colors(os.has_colors());
+  else
+    error("unknown option: --color-diagnostics=" + mode);
+}
+
 ICFLevel getICFFromDriver(int driverLevel) {
   if (driverLevel >= 2)
     return ICFLevel::all;
@@ -868,17 +1029,34 @@ ICFLevel getICFFromDriver(int driverLevel) {
   return ICFLevel::none;
 }
 
-void warnIfDeprecatedOption(const Option &) {}
+void warnIfDeprecatedOption(const Option &opt) {
+  if (!opt.getGroup().isValid() ||
+      opt.getGroup().getID() != OPT_grp_deprecated)
+    return;
+  warn("Option `" + opt.getPrefixedName() + "' is deprecated: " +
+       opt.getHelpText());
+}
 
+// Native linker options NeverC accepts for compatibility without
+// implementing them.
 void warnIfUnimplementedOption(const Option &opt) {
   if (!opt.getGroup().isValid() || !opt.hasFlag(DriverFlag::HelpHidden))
     return;
-  if (opt.getGroup().getID() == OPT_grp_undocumented)
+  switch (opt.getGroup().getID()) {
+  case OPT_grp_ignored_silently:
+    break;
+  case OPT_grp_ignored:
+    warn("Option `" + opt.getPrefixedName() + "' is ignored");
+    break;
+  case OPT_grp_obsolete:
     warn("Option `" + opt.getPrefixedName() +
-         "' is undocumented. Should the linker implement it?");
-  else
+         "' is obsolete and has no effect");
+    break;
+  default:
     warn("Option `" + opt.getPrefixedName() +
-         "' is not yet implemented. Stay tuned...");
+         "' is not implemented and has no effect");
+    break;
+  }
 }
 
 uint32_t parseDylibVersion(const ArgList &args, unsigned id) {
@@ -1142,6 +1320,33 @@ void createFiles(const InputArgList &args, unsigned RequestedThreads) {
                    opt.getID() == OPT_reexport_framework, /*isExplicit=*/true,
                    LoadType::CommandLine);
       break;
+    // Upward dependencies are loaded with LC_LOAD_UPWARD_DYLIB, which breaks
+    // initializer-order cycles between libraries.
+    case OPT_upward_l:
+      addLibrary(arg->getValue(), false, false, false, false,
+                 /*isExplicit=*/true, LoadType::CommandLine, /*isUpward=*/true);
+      break;
+    case OPT_upward_framework:
+      addFramework(arg->getValue(), false, false, false, /*isExplicit=*/true,
+                   LoadType::CommandLine, /*isUpward=*/true);
+      break;
+    case OPT_upward_library:
+      if (auto *dylibFile = dyn_cast_or_null<DylibFile>(
+              addFile(rerootPath(arg->getValue()), LoadType::CommandLine)))
+        dylibFile->upward = true;
+      break;
+    // Lazy loading is deprecated; these link as ordinary dependencies.
+    case OPT_lazy_l:
+      addLibrary(arg->getValue(), false, false, false, false,
+                 /*isExplicit=*/true, LoadType::CommandLine);
+      break;
+    case OPT_lazy_framework:
+      addFramework(arg->getValue(), false, false, false, /*isExplicit=*/true,
+                   LoadType::CommandLine);
+      break;
+    case OPT_lazy_library:
+      addFile(rerootPath(arg->getValue()), LoadType::CommandLine);
+      break;
     case OPT_start_lib:
       if (isLazy)
         error("nested --start-lib");
@@ -1397,36 +1602,20 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
     threadOverride.emplace(callerCfg);
     threadOverride->threadCount = threads;
   }
-  const LinkerDriverConfig &driverCfg =
+  const LinkerDriverConfig &baseCfg =
       threadOverride ? *threadOverride : callerCfg;
+  // Declared first: crash recovery must not unwind it before the backend.
   std::optional<linker::crash_recovery_detail::CrashRecoveryTimeTraceOwner>
       TraceProfiler;
-  const bool GuardAmbientTimeTrace =
-      !driverCfg.timeTraceEnabled &&
-      llvm::CrashRecoveryContext::GetCurrent() &&
-      llvm::timeTraceProfilerEnabled();
-  if (driverCfg.timeTraceEnabled || GuardAmbientTimeTrace)
-    TraceProfiler.emplace(driverCfg.timeTraceGranularity,
-                          argsArr.empty() ? "neverc" : argsArr.front());
-  if (llvm::StringRef Error = TraceProfiler ? TraceProfiler->acquisitionError()
-                                            : llvm::StringRef();
-      !Error.empty()) {
-    stderrOS << Error << '\n';
-    return false;
-  }
-  auto WriteTrace = [&](llvm::StringRef OutputFile) {
-    if (driverCfg.timeTraceEnabled && TraceProfiler)
-      checkError(TraceProfiler->write(OutputFile));
-  };
   linker::crash_recovery_detail::CrashRecoveryLocalOwner<LinkerExecutionContext>
-      ExecutionOwner(driverCfg.executionContext);
+      ExecutionOwner(baseCfg.executionContext);
   LinkerExecutionContext &Execution = ExecutionOwner.get();
   MachOLinkerContext &Backend = Execution.createBackend<MachOLinkerContext>();
   llvm::CrashRecoveryContextCleanupRegistrar<
       LinkerExecutionContext,
       linker::crash_recovery_detail::CrashRecoveryDestroyBackendCleanup<
           LinkerExecutionContext>>
-      CrashBackend(driverCfg.executionContext ? &Execution : nullptr);
+      CrashBackend(baseCfg.executionContext ? &Execution : nullptr);
   CommonLinkerContext &Common = Backend;
 
   Common.e.initialize(stdoutOS, stderrOS, exitEarly, disableOutput);
@@ -1459,6 +1648,41 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
 
   MachOOptTable parser;
   InputArgList args = parser.parse(argsArr.slice(1));
+  applyColorDiagnostics(args);
+  const LinkerDriverConfig driverCfg = applyLinkerOptions(args, baseCfg);
+  if (errorCount())
+    return false;
+
+  if (args.hasArg(OPT_help) || args.hasArg(OPT_help_hidden)) {
+    parser.printHelp(linker::outs(),
+                     (Twine(argsArr[0]) + " [options] file...").str().c_str(),
+                     "NeverC Mach-O linker", args.hasArg(OPT_help_hidden),
+                     /*ShowAllAliases=*/true);
+    return true;
+  }
+  if (args.hasArg(OPT_version)) {
+    message(neverc::getNeverCFullVersion());
+    return true;
+  }
+
+  const bool GuardAmbientTimeTrace =
+      !driverCfg.timeTraceEnabled &&
+      llvm::CrashRecoveryContext::GetCurrent() &&
+      llvm::timeTraceProfilerEnabled();
+  if (driverCfg.timeTraceEnabled || GuardAmbientTimeTrace)
+    TraceProfiler.emplace(driverCfg.timeTraceGranularity,
+                          argsArr.empty() ? "neverc" : argsArr.front());
+  if (llvm::StringRef Error = TraceProfiler ? TraceProfiler->acquisitionError()
+                                            : llvm::StringRef();
+      !Error.empty()) {
+    stderrOS << Error << '\n';
+    return false;
+  }
+  auto WriteTrace = [&](llvm::StringRef OutputFile) {
+    if (driverCfg.timeTraceEnabled && TraceProfiler)
+      checkError(TraceProfiler->neverc::LLVMTimeTraceProfilerOwner::write(
+          args.getLastArgValue(OPT_time_trace_eq), OutputFile));
+  };
 
   Common.e.errorLimitExceededMsg = "too many errors emitted, stopping now "
                                    "(use -ferror-limit=0 to see all errors)";
@@ -1514,7 +1738,7 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
 
   config->deadStrip = driverCfg.gcSections;
 
-  config->systemLibraryRoots = getSystemLibraryRoots(driverCfg);
+  config->systemLibraryRoots = getSystemLibraryRoots(args, driverCfg);
 
   for (const Arg *arg : args.filtered(OPT_u)) {
     config->explicitUndefineds.push_back(symtab->addUndefined(
@@ -1536,7 +1760,8 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
   config->headerPad = args::getHex(args, OPT_headerpad, /*Default=*/32);
   config->headerPadMaxInstallNames =
       args.hasArg(OPT_headerpad_max_install_names);
-  config->printDylibSearch = driverCfg.verbose;
+  config->printDylibSearch =
+      driverCfg.verbose || args.hasArg(OPT_print_dylib_search);
   config->printEachFile = driverCfg.traceFiles;
   config->printWhyLoad = args.hasArg(OPT_why_load);
   config->omitDebugInfo = driverCfg.stripsDebugInfo();
@@ -1649,6 +1874,19 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
       getLibrarySearchPaths(args, config->systemLibraryRoots);
   config->frameworkSearchPaths =
       getFrameworkSearchPaths(args, config->systemLibraryRoots);
+  if (args.hasArg(OPT_v)) {
+    message(neverc::getNeverCFullVersion(), linker::errs());
+    message(StringRef("Library search paths:") +
+                (config->librarySearchPaths.empty()
+                     ? ""
+                     : "\n\t" + join(config->librarySearchPaths, "\n\t")),
+            linker::errs());
+    message(StringRef("Framework search paths:") +
+                (config->frameworkSearchPaths.empty()
+                     ? ""
+                     : "\n\t" + join(config->frameworkSearchPaths, "\n\t")),
+            linker::errs());
+  }
   if (const Arg *arg =
           args.getLastArg(OPT_search_paths_first, OPT_search_dylibs_first))
     config->searchDylibsFirst =
