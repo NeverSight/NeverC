@@ -2249,6 +2249,13 @@ capacity when possible and return the receiver reference. Pointer assignment
 copies self-referenced bytes before changing size or releasing old storage.
 Positional `erase(pos, count)` and its default arguments remove bytes in place,
 retain capacity, and return the receiver reference.
+Positional `insert(pos, const char*, count)`, `insert(pos, const char*)`,
+`insert(pos, const std::string&)`, and `insert(pos, count, char)` return the
+receiver reference. The corresponding `replace(pos, count, ...)` overloads
+accept counted pointers, C strings, strings, and character fills. Both
+modifiers preserve embedded zero bytes in counted sources, retain storage
+when capacity suffices, and copy self-referenced source bytes before moving
+or releasing the original storage.
 `compare(const std::string&)` and the six string/string relation operators
 compare unsigned bytes lexicographically, then lengths, without allocating.
 `compare(const char*)` and the twelve string/C-string relation overloads scan
@@ -2271,7 +2278,8 @@ appending grow storage when needed. Host O0/O2 fixtures exercise both
 representations, embedded NUL, mutable and const access, copy and move,
 push/pop, resize/reserve, fill, pointer and string append with self-reference,
 the three `operator+=` overloads, four `assign` overloads, positional erase,
-member/free swap, comparison, forward/reverse and character-set search,
+four positional `insert` and four positional `replace` overloads, member/free
+swap, comparison, forward/reverse and character-set search,
 short and long string iteration with mutable, const and reverse iterators,
 clearing, and lifetime release; all eight supported target triples pass
 frontend translation. Other modifiers, character or allocator types, and

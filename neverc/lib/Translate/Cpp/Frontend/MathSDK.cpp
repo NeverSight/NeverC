@@ -16277,12 +16277,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if (!Reference || !Object || !Prototype ||
         (!Prototype->isNothrow() && Name != "push_back" && Name != "pop_back" &&
          Name != "reserve" && Name != "resize" && Name != "append" &&
-         Name != "assign" && Name != "erase" && !PlusEqual) ||
+         Name != "assign" && Name != "erase" && Name != "insert" &&
+         Name != "replace" && !PlusEqual) ||
         Method->isStatic() || Method->isVariadic() ||
         (!Method->hasBody() && Name != "push_back" && Name != "reserve" &&
          Name != "resize" && Name != "append" && Name != "assign" &&
-         Name != "erase" && Name != "compare" && Name != "find" &&
-         Name != "rfind" && Name != "find_first_of" && Name != "find_last_of" &&
+         Name != "erase" && Name != "insert" && Name != "replace" &&
+         Name != "compare" && Name != "find" && Name != "rfind" &&
+         Name != "find_first_of" && Name != "find_last_of" &&
          Name != "find_first_not_of" && Name != "find_last_not_of") ||
         Method->getRefQualifier() != RQ_None ||
         Method->getParent()->getCanonicalDecl() !=
@@ -16440,6 +16442,61 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Context.hasSameType(Call->getArg(1)->getType(),
                             Context.getSizeType()))
       return UtilityOperation::StringErase;
+    if (!Operator && (Name == "insert" || Name == "replace") &&
+        !Method->isConst() && !Object->getType().isConstQualified() &&
+        Call->isLValue() && Method->getReturnType()->isLValueReferenceType() &&
+        Context.hasSameType(Method->getReturnType()->getPointeeType(),
+                            Context.getRecordType(String->Record)) &&
+        Context.hasSameType(Call->getType(),
+                            Context.getRecordType(String->Record))) {
+      const bool Replace = Name == "replace";
+      const unsigned SourceIndex = Replace ? 2 : 1;
+      if ((Method->getNumParams() == SourceIndex + 1 ||
+           Method->getNumParams() == SourceIndex + 2) &&
+          Context.hasSameType(Method->getParamDecl(0)->getType(),
+                              Context.getSizeType()) &&
+          Context.hasSameType(Call->getArg(0)->getType(),
+                              Context.getSizeType()) &&
+          (!Replace || (Context.hasSameType(Method->getParamDecl(1)->getType(),
+                                            Context.getSizeType()) &&
+                        Context.hasSameType(Call->getArg(1)->getType(),
+                                            Context.getSizeType())))) {
+        const auto FirstParameter =
+            Method->getParamDecl(SourceIndex)->getType();
+        const auto FirstArgument = Call->getArg(SourceIndex)->getType();
+        const auto ConstPointer =
+            Context.getPointerType(Context.CharTy.withConst());
+        const auto StringType = Context.getRecordType(String->Record);
+        if (Method->getNumParams() == SourceIndex + 1) {
+          if (Context.hasSameType(FirstParameter, ConstPointer) &&
+              Context.hasSameType(FirstArgument, ConstPointer))
+            return Replace ? UtilityOperation::StringReplaceCString
+                           : UtilityOperation::StringInsertCString;
+          if (FirstParameter->isLValueReferenceType() &&
+              Context.hasSameType(FirstParameter->getPointeeType(),
+                                  StringType.withConst()) &&
+              Context.hasSameUnqualifiedType(FirstArgument, StringType))
+            return Replace ? UtilityOperation::StringReplaceString
+                           : UtilityOperation::StringInsertString;
+        } else {
+          const auto SecondParameter =
+              Method->getParamDecl(SourceIndex + 1)->getType();
+          const auto SecondArgument = Call->getArg(SourceIndex + 1)->getType();
+          if (Context.hasSameType(FirstParameter, ConstPointer) &&
+              Context.hasSameType(FirstArgument, ConstPointer) &&
+              Context.hasSameType(SecondParameter, Context.getSizeType()) &&
+              Context.hasSameType(SecondArgument, Context.getSizeType()))
+            return Replace ? UtilityOperation::StringReplacePointer
+                           : UtilityOperation::StringInsertPointer;
+          if (Context.hasSameType(FirstParameter, Context.getSizeType()) &&
+              Context.hasSameType(FirstArgument, Context.getSizeType()) &&
+              Context.hasSameType(SecondParameter, Context.CharTy) &&
+              Context.hasSameType(SecondArgument, Context.CharTy))
+            return Replace ? UtilityOperation::StringReplaceFill
+                           : UtilityOperation::StringInsertFill;
+        }
+      }
+    }
     if (!Operator && Name == "assign" && !Method->isConst() &&
         !Object->getType().isConstQualified() &&
         (Method->getNumParams() == 1 || Method->getNumParams() == 2) &&

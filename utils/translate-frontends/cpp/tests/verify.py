@@ -29207,6 +29207,12 @@ int main() {
   bool erase_intact = erased.size() == 2 && erased[0] == 'a' &&
                       erased[1] == 'd';
   erased.erase();
+  std::string spliced("ab");
+  spliced.insert(1, "x", 1).insert(0, "!");
+  spliced.insert(1, suffix).insert(0, 2, 'q');
+  spliced.replace(0, 2, "z", 1).replace(1, 1, "?");
+  spliced.replace(2, 1, suffix).replace(0, 1, 2, 'r');
+  bool splice_intact = spliced == "rr?eaxb";
   const std::string compared("abc");
   const std::string compared_same("abc");
   const std::string compared_later("abd");
@@ -29338,7 +29344,7 @@ int main() {
          joined[7] == 'e' &&
          reassigned.size() == 2 && reassigned[0] == 'a' &&
          reassigned[1] == 'a' &&
-         erase_intact && erased.empty() && compare_intact &&
+         erase_intact && erased.empty() && splice_intact && compare_intact &&
          cstring_compare_intact && search_intact && set_search_intact &&
          mutable_iteration && const_iteration && long_iteration &&
          iterator_arithmetic && forward_conversion &&

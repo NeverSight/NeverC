@@ -53594,6 +53594,107 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringInsertAndReplaceRun) {
+  const auto Source = tmpFile("string-insert-replace.cpp");
+  const auto Output = tmpFile("string-insert-replace.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <string>
+int evaluations;
+Size position() { ++evaluations; return 2; }
+bool same(const std::string &s, const char *bytes, Size n) {
+  if (s.size() != n || s.data()[n] != 0) return false;
+  for (Size i = 0; i < n; ++i)
+    if (s[i] != bytes[i]) return false;
+  return true;
+}
+int main() {
+  std::string short_text("abcd");
+  const char *short_data = short_text.data();
+  std::string *result = &short_text.insert(position(), "XY", 2);
+  if (result != &short_text || evaluations != 1 ||
+      short_text.data() != short_data || short_text != "abXYcd")
+    return 1;
+  result = &short_text.insert(0, 2, '!').insert(short_text.size(), "Z");
+  if (result != &short_text || short_text.data() != short_data ||
+      short_text != "!!abXYcdZ")
+    return 2;
+  std::string source("12");
+  short_text.insert(3, source);
+  if (short_text != "!!a12bXYcdZ" || source != "12") return 3;
+  short_text.insert(0, short_text);
+  if (short_text != "!!a12bXYcdZ!!a12bXYcdZ" ||
+      short_text.data() != short_data)
+    return 4;
+
+  std::string alias("abcdef");
+  alias.reserve(50);
+  const char *alias_data = alias.data();
+  alias.insert(2, alias.data() + 1, 4);
+  if (alias != "abbcdecdef" || alias.data() != alias_data) return 5;
+  alias.replace(1, 3, alias.data() + 2, 4);
+  if (alias != "abcdedecdef" || alias.data() != alias_data) return 6;
+  alias.replace(2, 4, alias.data() + 1, 2);
+  if (alias != "abbcecdef" || alias.data() != alias_data) return 7;
+  std::string cstring_alias("abc");
+  const char *cstring_data = cstring_alias.data();
+  cstring_alias.insert(1, cstring_alias.c_str());
+  if (cstring_alias != "aabcbc" || cstring_alias.data() != cstring_data)
+    return 17;
+  cstring_alias.replace(0, 2, cstring_alias.c_str() + 2);
+  if (cstring_alias != "bcbcbcbc" || cstring_alias.data() != cstring_data)
+    return 18;
+
+  std::string long_text("abcdefghijklmnopqrstuvwxyz");
+  const char *long_data = long_text.data();
+  long_text.insert(10, long_text);
+  if (long_text.size() != 52 || long_text.data() == long_data ||
+      long_text.data()[52] != 0)
+    return 8;
+  for (Size i = 0; i < 26; ++i)
+    if (long_text[10 + i] != "abcdefghijklmnopqrstuvwxyz"[i]) return 9;
+  long_text.replace(5, 2, long_text);
+  if (long_text.size() != 102 || long_text.data()[102] != 0)
+    return 10;
+
+  std::string changed("abcdef");
+  changed.replace(2, 2, "XY");
+  if (changed != "abXYef") return 11;
+  const char raw[] = {'m', 0, 'n'};
+  result = &changed.replace(1, 2, raw, 3);
+  const char expected[] = {'a', 'm', 0, 'n', 'Y', 'e', 'f'};
+  if (result != &changed || !same(changed, expected, 7)) return 12;
+  changed.replace(2, 2, 4, 'q');
+  const char filled[] = {'a', 'm', 'q', 'q', 'q', 'q', 'Y', 'e', 'f'};
+  if (!same(changed, filled, 9)) return 13;
+  changed.replace(0, 1, source);
+  const char replaced[] = {'1', '2', 'm', 'q', 'q', 'q', 'q', 'Y', 'e', 'f'};
+  if (!same(changed, replaced, 10)) return 14;
+  changed.replace(changed.size(), 0, "!");
+  if (changed.back() != '!' || changed.data()[changed.size()] != 0)
+    return 15;
+  changed.insert(changed.size(), "", 0).replace(0, 0, "", 0);
+  if (changed.size() != 11) return 16;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-insert-replace" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StringComparisonRun) {
   const auto Source = tmpFile("string-comparison.cpp");
   const auto Output = tmpFile("string-comparison.nc");
