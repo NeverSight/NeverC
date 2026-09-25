@@ -40,18 +40,25 @@ constexpr uint32_t SHT_LLVM_ADDRSIG_ = 0x6fff4c03;
 constexpr uint32_t SHT_LLVM_CALL_GRAPH_PROFILE_ = 0x6fff4c09;
 
 // ================================================================ inputs
+// Per input section; kept small, since every section of every object in the
+// link has one.
 struct SectionState {
-  std::atomic<uint8_t> live{0};
-  uint32_t osec = UINT32_MAX; // output section index
-  uint64_t outOff = 0;        // offset inside the output section
+  std::atomic<uint8_t> live{0}; // 1 live, 2 discarded with its COMDAT group
+  uint32_t osec = 0;      // output section index, 0 when not in the output
+  uint32_t groupNext = 0; // next member of the section's group, cyclic
+  uint32_t placed = 0;    // index of the PlacedSection, when in the output
+};
+
+// Per input section that is part of the output.
+struct PlacedSection {
+  uint64_t va = 0;        // output address, after layout
+  uint32_t outOff = 0;    // offset inside the output section
+  uint32_t padBefore = 0; // alignment padding preceding the section
   // Dynamic relocations against the contents: counts from scanning, then
   // the first slot of each kind in .rela.dyn.
   uint32_t numRel = 0, numSym = 0;
   uint32_t relBase = 0, symBase = 0;
-  uint32_t padBefore = 0; // alignment padding preceding the section
-  uint32_t kindBase = 0;  // first entry in the relocation kind array
-  uint32_t groupNext = 0; // next member of the section's group, cyclic
-  uint64_t va = 0;        // output address, after layout
+  uint32_t kindBase = 0; // first entry in the relocation kind array
 };
 
 struct EhPiece {
@@ -166,6 +173,7 @@ enum SymFlag : uint16_t {
   NeedsCopy = 256,    // shared data copied into the executable
   HiddenRef = 512,    // referenced with non-default visibility
   StrongDef = 1024,   // has a global (non-weak) definition
+  DupCandidate = 2048, // has more than one global definition
 };
 
 constexpr uint64_t None64 = ~0ull;
@@ -215,9 +223,7 @@ struct Ctx {
   std::unique_ptr<std::atomic<uint64_t>[]> provider, objDef, shDef;
   std::unique_ptr<std::atomic<uint16_t>[]> flags;
   vector<Symbol> syms;
-  // Names with more than one global definition, checked after COMDAT
-  // selection.
-  vector<uint32_t> dupCandidates;
+  PlacedSection *placed = nullptr; // indexed by SectionState::placed
   // Per name: the defining object and section, for the GC hot path
   // (file UINT32_MAX when not defined in an object section).
   vector<std::pair<uint32_t, uint32_t>> defTarget;
@@ -232,7 +238,10 @@ struct Ctx {
 };
 
 Ctx ctx;
-std::mutex dupLock; // guards ctx.dupCandidates
+
+inline PlacedSection &placedOf(const ObjectFile *o, uint32_t sec) {
+  return ctx.placed[o->secs[sec].placed];
+}
 
 // Fine-grained wall-clock timers, printed with --time.
 struct StepTimer {
@@ -493,7 +502,6 @@ void initSections(ObjectFile *o, SectionState *secs, uint32_t *relaOf) {
   o->relaOf = relaOf;
   o->secs = secs;
   for (uint32_t i = 0; i < o->numShdrs; ++i) {
-    secs[i].osec = UINT32_MAX;
     const Elf64_Shdr &sh = o->shdrs[i];
     if (sh.sh_type == SHT_RELA && sh.sh_info < o->numShdrs) {
       o->relaOf[sh.sh_info] = i;
@@ -757,11 +765,11 @@ void resolve() {
         }
         uint64_t cls = ELF64_ST_BIND(s.st_info) == STB_WEAK ? 1 : 0;
         atomicMin(ctx.objDef[id], (cls << 62) | (uint64_t(i) << 32) | k);
-        if (!cls && s.st_shndx != SHN_COMMON &&
-            (ctx.flags[id].fetch_or(StrongDef, std::memory_order_relaxed) &
-             StrongDef)) {
-          std::lock_guard<std::mutex> l(dupLock);
-          ctx.dupCandidates.push_back(id);
+        if (!cls && s.st_shndx != SHN_COMMON) {
+          std::atomic<uint16_t> &f = ctx.flags[id];
+          if ((f.load(std::memory_order_relaxed) & StrongDef) ||
+              (f.fetch_or(StrongDef, std::memory_order_relaxed) & StrongDef))
+            atomicOr(f, uint16_t(DupCandidate));
         }
       }
     } else {
@@ -812,57 +820,61 @@ void resolve() {
 // Two global definitions of a name are an error unless all but one sit in
 // discarded COMDAT groups; the full backend reports it.
 void checkDuplicates() {
-  if (ctx.dupCandidates.empty())
-    return;
-  std::sort(ctx.dupCandidates.begin(), ctx.dupCandidates.end());
-  auto isCandidate = [](uint32_t id) {
-    return std::binary_search(ctx.dupCandidates.begin(),
-                              ctx.dupCandidates.end(), id);
-  };
-  std::unordered_map<uint32_t, int> live;
-  for (ObjectFile *o : ctx.objects)
+  STEP("duplicates");
+  vector<vector<uint32_t>> found(ctx.pool->size());
+  ctx.pool->forEach(ctx.objects.size(), [&](size_t fi) {
+    ObjectFile *o = ctx.objects[fi];
+    auto &out = found[Pool::self()];
     for (uint32_t k = o->firstGlobal; k < o->numSyms; ++k) {
       const Elf64_Sym &s = o->syms[k];
-      uint32_t id = o->nameIds[k - o->firstGlobal];
       if (s.st_shndx == SHN_UNDEF || s.st_shndx == SHN_COMMON ||
-          ELF64_ST_BIND(s.st_info) == STB_WEAK || !isCandidate(id))
+          ELF64_ST_BIND(s.st_info) == STB_WEAK)
+        continue;
+      uint32_t id = o->nameIds[k - o->firstGlobal];
+      if (!(ctx.flags[id].load(std::memory_order_relaxed) & DupCandidate))
         continue;
       if (s.st_shndx < SHN_LORESERVE && o->secs[s.st_shndx].live.load() == 2)
         continue;
-      if (++live[id] > 1)
-        fatal("duplicate symbol: " + string(ctx.nameStr[id]));
+      out.push_back(id);
     }
+  }, 8);
+  vector<uint32_t> all;
+  for (auto &v : found)
+    all.insert(all.end(), v.begin(), v.end());
+  std::sort(all.begin(), all.end());
+  auto dup = std::adjacent_find(all.begin(), all.end());
+  if (dup != all.end())
+    fatal("duplicate symbol: " + string(ctx.nameStr[*dup]));
 }
 
-void linkGroupMembers(ObjectFile *o) {
-  for (uint32_t g : o->groups) {
-    auto *words = reinterpret_cast<const uint32_t *>(o->secData(g));
-    size_t count = o->shdrs[g].sh_size / 4;
-    uint32_t first = 0, prev = 0;
-    for (size_t k = 1; k < count; ++k) {
-      uint32_t m = words[k];
-      if (m == 0 || m >= o->numShdrs)
-        continue;
-      if (!first)
-        first = m;
-      else
-        o->secs[prev].groupNext = m;
-      prev = m;
-    }
-    if (prev && prev != first)
-      o->secs[prev].groupNext = first;
+// Links the members of a kept group cyclically; a group is live or dead as
+// a whole.
+void linkGroupMembers(ObjectFile *o, uint32_t group) {
+  auto *words = reinterpret_cast<const uint32_t *>(o->secData(group));
+  size_t count = o->shdrs[group].sh_size / 4;
+  uint32_t first = 0, prev = 0;
+  for (size_t k = 1; k < count; ++k) {
+    uint32_t m = words[k];
+    if (m == 0 || m >= o->numShdrs)
+      continue;
+    if (!first)
+      first = m;
+    else
+      o->secs[prev].groupNext = m;
+    prev = m;
   }
+  if (prev && prev != first)
+    o->secs[prev].groupNext = first;
 }
 
 void selectComdats() {
   STEP("comdat");
-  ctx.pool->forEach(ctx.objects.size(),
-                    [&](size_t fi) { linkGroupMembers(ctx.objects[fi]); }, 8);
   size_t total = 0;
   for (ObjectFile *o : ctx.objects)
     total += o->groups.size();
   if (!total)
     return;
+  // Group ids: UINT32_MAX for a group that is not a COMDAT.
   // Group signatures get dense ids: a global signature symbol reuses its
   // name id, other signatures are interned after them. The first object by
   // position owns each group.
@@ -910,8 +922,10 @@ void selectComdats() {
     ObjectFile *o = ctx.objects[fi];
     for (size_t g = 0; g < o->groups.size(); ++g) {
       uint32_t id = o->groupIds[g];
-      if (id == UINT32_MAX || owner[id].load(std::memory_order_relaxed) == fi)
+      if (id == UINT32_MAX || owner[id].load(std::memory_order_relaxed) == fi) {
+        linkGroupMembers(o, o->groups[g]);
         continue;
+      }
       // Discard members: mark them dead forever (live = 2).
       const Elf64_Shdr &sh = o->shdrs[o->groups[g]];
       auto *words = reinterpret_cast<const uint32_t *>(o->secData(o->groups[g]));
@@ -1280,7 +1294,7 @@ void scanRelocations() {
     ObjectFile *o = ctx.objects[fi];
     uint64_t n = 0;
     for (uint32_t sec = 1; sec < o->numShdrs; ++sec)
-      if (o->secs[sec].osec != UINT32_MAX && o->relaOf[sec])
+      if (o->secs[sec].osec != 0 && o->relaOf[sec])
         n += o->shdrs[o->relaOf[sec]].sh_size / sizeof(Elf64_Rela);
     base[fi + 1] = n;
   }, 16);
@@ -1293,9 +1307,9 @@ void scanRelocations() {
     ObjectFile *o = ctx.objects[fi];
     uint32_t next = base[fi];
     for (uint32_t sec = 1; sec < o->numShdrs; ++sec) {
-      SectionState &ss = o->secs[sec];
-      if (ss.osec == UINT32_MAX)
+      if (o->secs[sec].osec == 0)
         continue;
+      PlacedSection &ss = placedOf(o, sec);
       auto [rels, n] = o->relas(sec);
       const uint8_t *data = o->secData(sec);
       ss.kindBase = next;
@@ -1557,9 +1571,10 @@ uint64_t defVA(const ObjectFile *o, uint32_t si) {
   if (s.st_shndx == SHN_UNDEF || s.st_shndx >= SHN_LORESERVE)
     return 0;
   const SectionState &ss = o->secs[s.st_shndx];
-  if (ss.osec == UINT32_MAX)
+  if (ss.osec == 0)
     return 0;
-  return ELF64_ST_TYPE(s.st_info) == STT_SECTION ? ss.va : ss.va + s.st_value;
+  const uint64_t va = ctx.placed[ss.placed].va;
+  return ELF64_ST_TYPE(s.st_info) == STT_SECTION ? va : va + s.st_value;
 }
 
 uint64_t pltVA(uint32_t i) { return L.plt->addr + 16 * (i + 1); }
@@ -1638,7 +1653,7 @@ void assignInputSections() {
       x.align = std::max<uint64_t>(x.align, sh.sh_addralign);
       x.anyData |= sh.sh_type != SHT_NOBITS;
       ++x.count;
-      o->secs[i].osec = k; // local index for now
+      o->secs[i].osec = k + 1; // local index for now
     }
   }, 4);
   vector<uint32_t> counts;
@@ -1666,17 +1681,29 @@ void assignInputSections() {
     }
   for (OutputSection *os : L.all)
     os->members.resize(counts[os->index]);
+  // PlacedSection indices, by file position; 0 stays unused.
+  vector<uint32_t> placedBase(ctx.objects.size());
+  uint32_t numPlaced = 1;
+  for (size_t fi = 0; fi < uses.size(); ++fi) {
+    placedBase[fi] = numPlaced;
+    for (const Use &x : uses[fi])
+      numPlaced += x.count;
+  }
+  ctx.placed = static_cast<PlacedSection *>(
+      calloc(numPlaced, sizeof(PlacedSection)));
   ctx.pool->forEach(ctx.objects.size(), [&](size_t fi) {
     ObjectFile *o = ctx.objects[fi];
     auto &u = uses[fi];
     if (u.empty())
       return;
+    uint32_t next = placedBase[fi];
     for (uint32_t i = 1; i < o->numShdrs; ++i) {
       uint32_t k = o->secs[i].osec;
-      if (k == UINT32_MAX)
+      if (k == 0)
         continue;
-      Use &x = u[k];
+      Use &x = u[k - 1];
       o->secs[i].osec = x.global;
+      o->secs[i].placed = next++;
       L.all[x.global]->members[x.base++] = {o, i};
     }
   }, 4);
@@ -1696,11 +1723,14 @@ void assignOffsets(OutputSection *os) {
   for (auto [o, i] : os->members) {
     const Elf64_Shdr &sh = o->shdrs[i];
     uint64_t start = alignTo(off, sh.sh_addralign);
-    o->secs[i].padBefore = start - off;
+    PlacedSection &ps = placedOf(o, i);
+    ps.padBefore = start - off;
     off = start;
-    o->secs[i].outOff = off;
+    ps.outOff = off;
     off += sh.sh_size;
   }
+  if (off > UINT32_MAX)
+    fatal("output section " + os->name + " exceeds 4 GiB");
   os->size = off;
 }
 
@@ -1934,10 +1964,11 @@ void buildDynamic() {
     vector<uint64_t> rel(ctx.objects.size()), sym(ctx.objects.size());
     ctx.pool->forEach(ctx.objects.size(), [&](size_t fi) {
       const ObjectFile *o = ctx.objects[fi];
-      for (uint32_t i = 1; i < o->numShdrs; ++i) {
-        rel[fi] += o->secs[i].numRel;
-        sym[fi] += o->secs[i].numSym;
-      }
+      for (uint32_t i = 1; i < o->numShdrs; ++i)
+        if (o->secs[i].osec) {
+          rel[fi] += placedOf(o, i).numRel;
+          sym[fi] += placedOf(o, i).numSym;
+        }
     });
     for (size_t fi = 0; fi < rel.size(); ++fi) {
       L.numSecRel += rel[fi];
@@ -2087,7 +2118,7 @@ void layoutEhFrame() {
       return;
     for (EhPiece &p : o->eh)
       if (p.cie != UINT32_MAX && p.target &&
-          o->secs[p.target].osec != UINT32_MAX) {
+          o->secs[p.target].osec != 0) {
         p.live = true;
         o->eh[p.cie].live = true;
         ++o->numLiveFdes;
@@ -2140,7 +2171,7 @@ SymOut classifyLocal(const ObjectFile *o, uint32_t k) {
     return SymOut::Local;
   if (s.st_shndx == SHN_UNDEF || s.st_shndx >= SHN_LORESERVE)
     return SymOut::Skip;
-  return o->secs[s.st_shndx].osec != UINT32_MAX ? SymOut::Local : SymOut::Skip;
+  return o->secs[s.st_shndx].osec != 0 ? SymOut::Local : SymOut::Skip;
 }
 
 SymOut classifyGlobal(const ObjectFile *o, uint32_t fi, uint32_t k) {
@@ -2151,7 +2182,7 @@ SymOut classifyGlobal(const ObjectFile *o, uint32_t fi, uint32_t k) {
   if (g.kind != Symbol::Object || g.file != fi || g.index != k)
     return SymOut::Skip;
   if (s.st_shndx != SHN_ABS &&
-      (s.st_shndx >= SHN_LORESERVE || o->secs[s.st_shndx].osec == UINT32_MAX))
+      (s.st_shndx >= SHN_LORESERVE || o->secs[s.st_shndx].osec == 0))
     return SymOut::Skip;
   int vis = ELF64_ST_VISIBILITY(s.st_other);
   return vis == STV_HIDDEN || vis == STV_INTERNAL ? SymOut::Local
@@ -2258,7 +2289,7 @@ void layout() {
   }, 1);
 
   mark("offsets");
-  L.ordered = L.all;
+  L.ordered.assign(L.all.begin() + 1, L.all.end());
   std::stable_sort(L.ordered.begin(), L.ordered.end(),
                    [](const OutputSection *a, const OutputSection *b) {
                      return rankOf(a) < rankOf(b);
@@ -2439,9 +2470,11 @@ void layout() {
   ctx.pool->forEach(ctx.objects.size(), [&](size_t fi) {
     ObjectFile *o = ctx.objects[fi];
     for (uint32_t i = 1; i < o->numShdrs; ++i) {
-      SectionState &ss = o->secs[i];
-      if (ss.osec != UINT32_MAX)
-        ss.va = L.all[ss.osec]->addr + ss.outOff;
+      const SectionState &ss = o->secs[i];
+      if (ss.osec != 0) {
+        PlacedSection &ps = ctx.placed[ss.placed];
+        ps.va = L.all[ss.osec]->addr + ps.outOff;
+      }
     }
   }, 8);
   // Symbol addresses.
@@ -2504,7 +2537,7 @@ void layout() {
   uint32_t rel = 0, sym = L.numRelative + L.numGotSym;
   for (OutputSection *os : L.ordered)
     for (auto [o, i] : os->members) {
-      SectionState &ss = o->secs[i];
+      PlacedSection &ss = placedOf(o, i);
       ss.relBase = rel;
       ss.symBase = sym;
       rel += ss.numRel;
@@ -2713,7 +2746,7 @@ void writeInputSection(uint8_t *buf, const OutputSection *os, ObjectFile *o,
   const Elf64_Shdr &sh = o->shdrs[sec];
   if (os->type == SHT_NOBITS)
     return;
-  const SectionState &ss = o->secs[sec];
+  const PlacedSection &ss = placedOf(o, sec);
   uint8_t *dst = buf + os->offset + ss.outOff;
   // The output file may hold stale bytes; clear what nothing else writes.
   memset(dst - ss.padBefore, 0, ss.padBefore);
@@ -3296,6 +3329,7 @@ void runPipeline() {
 fastlink::Status fastlink::link(const Request &Req, std::string &Reason) {
   ctx = Ctx();
   L = Layout();
+  L.all.push_back(new OutputSection); // index 0: not in the output
   relKinds = nullptr;
   ctx.opt = Req;
   activeOptions = &ctx.opt;

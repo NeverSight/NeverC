@@ -214,74 +214,81 @@ inline uint64_t hashBytes(const char *p, size_t n) {
   return h;
 }
 
-// Lock-free insert-only table from names to dense ids.
+// Lock-free insert-only table from names to dense ids. A slot holds a hash
+// tag and an id, published with a single compare-and-swap once the id's name
+// is stored, so readers never wait for a writer. Ids of names that lost an
+// insertion race stay unused.
 class NameTable {
 public:
   explicit NameTable(size_t expected) {
-    size_t cap = 1024;
+    size_t cap = size_t(1) << 16;
     while (cap < expected * 2)
       cap <<= 1;
     mask_ = cap - 1;
-    entries_ = static_cast<Entry *>(calloc(cap, sizeof(Entry)));
+    maxIds_ = cap / 2;
+    slots_ = static_cast<std::atomic<uint64_t> *>(
+        calloc(cap, sizeof(std::atomic<uint64_t>)));
+    names_ = static_cast<Name *>(
+        calloc(maxIds_ + size_t(MaxWorkers) * Block, sizeof(Name)));
   }
+  // Returns the name's id, or UINT32_MAX once the table is past half full;
+  // callers then retry with a larger table.
   uint32_t intern(const char *p, size_t n) {
-    const uint64_t h = hashBytes(p, n) | 2;
-    const unsigned worker = Pool::self();
+    const uint64_t h = hashBytes(p, n);
+    const uint64_t tag = h >> 32;
+    uint32_t mine = UINT32_MAX;
     for (size_t i = h & mask_;; i = (i + 1) & mask_) {
-      Entry &e = entries_[i];
-      uint64_t cur = e.hash.load(std::memory_order_acquire);
+      uint64_t cur = slots_[i].load(std::memory_order_acquire);
       if (cur == 0) {
-        uint64_t expect = 0;
-        if (e.hash.compare_exchange_strong(expect, 1,
-                                           std::memory_order_acq_rel)) {
-          e.ptr = p;
-          e.len = static_cast<uint32_t>(n);
-          e.id = allocId(worker);
-          e.hash.store(h, std::memory_order_release);
-          // Past half full the table reports failure; callers retry with
-          // a larger table.
-          if (e.id >= mask_ / 2)
+        if (mine == UINT32_MAX) {
+          mine = allocId(Pool::self());
+          if (mine >= maxIds_)
             return UINT32_MAX;
-          return e.id;
+          names_[mine] = {p, uint32_t(n)};
         }
-        cur = expect;
+        if (slots_[i].compare_exchange_strong(cur, (tag << 32) | (mine + 1),
+                                              std::memory_order_acq_rel))
+          return mine;
       }
-      while (cur == 1)
-        cur = e.hash.load(std::memory_order_acquire);
-      if (cur == h && e.len == n && memcmp(e.ptr, p, n) == 0)
-        return e.id;
+      if ((cur >> 32) == tag) {
+        const uint32_t id = uint32_t(cur) - 1;
+        const Name &e = names_[id];
+        if (e.len == n && memcmp(e.ptr, p, n) == 0) {
+          if (mine != UINT32_MAX)
+            names_[mine] = {};
+          return id;
+        }
+      }
     }
   }
   // Looks a name up without inserting it; returns UINT32_MAX if absent.
   uint32_t find(const char *p, size_t n) const {
-    const uint64_t h = hashBytes(p, n) | 2;
+    const uint64_t h = hashBytes(p, n);
     for (size_t i = h & mask_;; i = (i + 1) & mask_) {
-      const Entry &e = entries_[i];
-      uint64_t cur = e.hash.load(std::memory_order_acquire);
+      uint64_t cur = slots_[i].load(std::memory_order_acquire);
       if (cur == 0)
         return UINT32_MAX;
-      if (cur == h && e.len == n && memcmp(e.ptr, p, n) == 0)
-        return e.id;
+      if ((cur >> 32) == (h >> 32)) {
+        const Name &e = names_[uint32_t(cur) - 1];
+        if (e.len == n && memcmp(e.ptr, p, n) == 0)
+          return uint32_t(cur) - 1;
+      }
     }
   }
   // One past the highest id handed out; ids below it may be unused.
   uint32_t size() const { return next_.load(); }
-  // Fills names[id] for every entry.
+  // Fills names[id] for every id; unused ids get empty names.
   void names(vector<string_view> &out) const {
-    out.assign(size(), string_view());
-    for (size_t i = 0; i <= mask_; ++i) {
-      const Entry &e = entries_[i];
-      if (e.hash.load(std::memory_order_relaxed) > 1 && e.id < out.size())
-        out[e.id] = string_view(e.ptr, e.len);
-    }
+    const uint32_t n = size();
+    out.resize(n);
+    for (uint32_t id = 0; id < n; ++id)
+      out[id] = string_view(names_[id].ptr ? names_[id].ptr : "", names_[id].len);
   }
 
 private:
-  struct Entry {
-    std::atomic<uint64_t> hash;
+  struct Name {
     const char *ptr;
     uint32_t len;
-    uint32_t id;
   };
   // Workers take ids in blocks so they rarely touch the shared counter.
   static constexpr unsigned MaxWorkers = 256, Block = 64;
@@ -298,8 +305,9 @@ private:
   struct alignas(64) Cursor {
     uint32_t next = 0, end = 0;
   };
-  Entry *entries_;
-  size_t mask_;
+  std::atomic<uint64_t> *slots_;
+  Name *names_;
+  size_t mask_, maxIds_;
   std::atomic<uint32_t> next_{0};
   Cursor cursors_[MaxWorkers];
 };
