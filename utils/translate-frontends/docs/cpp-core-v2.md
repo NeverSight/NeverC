@@ -2518,10 +2518,12 @@ and positional `emplace` copy before vector storage moves or grows.
 Bounded fill construction, `resize(count, value)`, `assign(count, value)`, and
 counted `insert` also deep-copy string elements. Host fixtures cover values
 referenced from the same vector for resize, counted insertion, and assignment
-with capacity reuse. Unique-pointer elements remain noncopyable. List and range
-construction or assignment; list and range insertion; other positional
-emplacement; and vector comparisons remain outside the owning-element boundary.
-Other
+with capacity reuse. Initializer-list and raw-pointer or pinned wrapped-iterator
+ranges also deep-copy string elements for construction, assignment and insertion.
+Host fixtures cover list-backed temporary destruction, destination capacity
+reuse and growth, empty ranges, and independent string allocations.
+Unique-pointer elements remain noncopyable. Other positional emplacement and
+vector comparisons remain outside the owning-element boundary. Other
 nontrivial record elements, other allocators, remaining vector methods, and
 throwing allocation or length-error paths remain unsupported. Quoted and shadow
 headers remain rejected.

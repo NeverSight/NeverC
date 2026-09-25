@@ -11674,6 +11674,7 @@ class FunctionLowering {
       auto Count = temporary(SizeType, L);
       std::optional<Expression> Value;
       std::optional<Expression> RangeCurrent;
+      QualType RangeElementType;
       std::string RangePointerType = ConstPointerType;
       if (Operation == UtilityOperation::VectorInsert) {
         assign(Count,
@@ -11740,6 +11741,7 @@ class FunctionLowering {
                    "The selected initializer-list layout is unavailable.");
           auto ListValue = snapshot(expression(Call->getArg(1)), L);
           RangePointerType = type(List->Begin->getType(), L);
+          RangeElementType = Vector->ElementType.withConst();
           RangeBegin = snapshot(
               fieldStorage(json::Object(ListValue), List->Begin, L), L);
           assign(Count, fieldStorage(std::move(ListValue), List->Size, L), L);
@@ -11752,12 +11754,14 @@ class FunctionLowering {
             auto FirstValue = snapshot(expression(Call->getArg(1)), L);
             auto LastValue = snapshot(expression(Call->getArg(2)), L);
             RangePointerType = type(Wrapped->IteratorType, L);
+            RangeElementType = Wrapped->IteratorType->getPointeeType();
             RangeBegin = snapshot(
                 fieldStorage(std::move(FirstValue), Wrapped->Current, L), L);
             RangeEnd = snapshot(
                 fieldStorage(std::move(LastValue), Wrapped->Current, L), L);
           } else {
             RangePointerType = type(SourceType, L);
+            RangeElementType = SourceType->getPointeeType();
             RangeBegin = snapshot(expression(Call->getArg(1)), L);
             RangeEnd = snapshot(expression(Call->getArg(2)), L);
           }
@@ -11796,7 +11800,17 @@ class FunctionLowering {
             Call->getNumArgs() == 1)
           initializeZero(std::move(Target), Vector->ElementType, L);
         else if (Vector->OwningElement) {
-          if (Operation == UtilityOperation::VectorInsert &&
+          if (Operation == UtilityOperation::VectorInsertRange) {
+            auto Source = snapshot(json::Object(*RangeCurrent), L);
+            assign(*RangeCurrent,
+                   binary("+", json::Object(*RangeCurrent),
+                          quantity(1, DifferenceType, L), RangePointerType,
+                          L),
+                   L);
+            copyVectorStringElement(std::move(Target),
+                                    dereference(std::move(Source), L), *Vector,
+                                    L, RangeElementType);
+          } else if (Operation == UtilityOperation::VectorInsert &&
               Call->getNumArgs() == 3)
             copyVectorStringElement(std::move(Target), json::Object(*Value),
                                     *Vector, L);
@@ -12101,6 +12115,7 @@ class FunctionLowering {
       std::optional<Expression> Value;
       std::optional<Expression> FillAddress;
       std::optional<Expression> RangeCurrent;
+      QualType RangeElementType;
       std::string RangePointerType = ConstPointerType;
       if (Operation == UtilityOperation::VectorAssignFill) {
         assign(Count, expression(Call->getArg(0)), L);
@@ -12138,6 +12153,7 @@ class FunctionLowering {
                                ? json::Object(*OperatorListValue)
                                : snapshot(expression(ListArgument), L);
           RangePointerType = type(List->Begin->getType(), L);
+          RangeElementType = Vector->ElementType.withConst();
           RangeBegin = snapshot(
               fieldStorage(json::Object(ListValue), List->Begin, L), L);
           assign(Count, fieldStorage(std::move(ListValue), List->Size, L), L);
@@ -12150,12 +12166,14 @@ class FunctionLowering {
             auto FirstValue = snapshot(expression(Call->getArg(0)), L);
             auto LastValue = snapshot(expression(Call->getArg(1)), L);
             RangePointerType = type(Wrapped->IteratorType, L);
+            RangeElementType = Wrapped->IteratorType->getPointeeType();
             RangeBegin = snapshot(
                 fieldStorage(std::move(FirstValue), Wrapped->Current, L), L);
             RangeEnd = snapshot(
                 fieldStorage(std::move(LastValue), Wrapped->Current, L), L);
           } else {
             RangePointerType = type(SourceType, L);
+            RangeElementType = SourceType->getPointeeType();
             RangeBegin = snapshot(expression(Call->getArg(0)), L);
             RangeEnd = snapshot(expression(Call->getArg(1)), L);
           }
@@ -12188,6 +12206,24 @@ class FunctionLowering {
                       quantity(1, DifferenceType, L), RangePointerType, L),
                L);
         return Current;
+      };
+      auto CopyOwnedValue = [&](Expression Target) {
+        if (Value) {
+          copyVectorStringElement(std::move(Target), json::Object(*Value),
+                                  *Vector, L);
+          return;
+        }
+        if (!RangeCurrent || RangeElementType.isNull())
+          reject(L, "vector assign",
+                 "The selected owning source range is unavailable.");
+        auto Source = snapshot(json::Object(*RangeCurrent), L);
+        assign(*RangeCurrent,
+               binary("+", json::Object(*RangeCurrent),
+                      quantity(1, DifferenceType, L), RangePointerType, L),
+               L);
+        copyVectorStringElement(std::move(Target),
+                                dereference(std::move(Source), L), *Vector, L,
+                                RangeElementType);
       };
       auto Member = [&](const char *Name) {
         return Expression{
@@ -12234,8 +12270,7 @@ class FunctionLowering {
              ReuseFill, ReuseDone, L);
       label(ReuseFill, L);
       if (Vector->OwningElement)
-        copyVectorStringElement(dereference(json::Object(Current), L),
-                                json::Object(*Value), *Vector, L);
+        CopyOwnedValue(dereference(json::Object(Current), L));
       else
         assign(dereference(json::Object(Current), L), NextValue(), L);
       assign(Current,
@@ -12277,8 +12312,7 @@ class FunctionLowering {
           GrowFill, GrowDone, L);
       label(GrowFill, L);
       if (Vector->OwningElement)
-        copyVectorStringElement(dereference(json::Object(NewCurrent), L),
-                                json::Object(*Value), *Vector, L);
+        CopyOwnedValue(dereference(json::Object(NewCurrent), L));
       else
         assign(dereference(json::Object(NewCurrent), L), NextValue(), L);
       assign(NewCurrent,
@@ -18613,6 +18647,7 @@ class FunctionLowering {
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       std::optional<Expression> Fill, Input, RangeCount;
       std::optional<QualType> InputType;
+      QualType InputElementType;
       std::optional<UtilityInitializerListExpression> List;
       uint64_t Count = 0;
       if (*Kind == UtilityVectorConstruction::InitializerList) {
@@ -18626,6 +18661,7 @@ class FunctionLowering {
         auto Value = expression(Argument);
         Input =
             snapshot(fieldStorage(std::move(Value), List->List.Begin, L), L);
+        InputElementType = Vector->ElementType.withConst();
         Count = List->Size;
       } else if (*Kind == UtilityVectorConstruction::Range) {
         const auto FirstType = C->getArg(0)->getType();
@@ -18636,12 +18672,14 @@ class FunctionLowering {
           auto First = snapshot(expression(C->getArg(0)), L);
           auto Last = snapshot(expression(C->getArg(1)), L);
           InputType = Wrapped->IteratorType;
+          InputElementType = Wrapped->IteratorType->getPointeeType();
           Input =
               snapshot(fieldStorage(std::move(First), Wrapped->Current, L), L);
           RangeEnd =
               snapshot(fieldStorage(std::move(Last), Wrapped->Current, L), L);
         } else {
           InputType = FirstType;
+          InputElementType = FirstType->getPointeeType();
           Input = snapshot(expression(C->getArg(0)), L);
           RangeEnd = snapshot(expression(C->getArg(1)), L);
         }
@@ -18733,8 +18771,13 @@ class FunctionLowering {
         else
           assign(dereference(json::Object(Current), L), json::Object(*Fill), L);
       } else {
-        assign(dereference(json::Object(Current), L),
-               dereference(json::Object(*Input), L), L);
+        if (Vector->OwningElement)
+          copyVectorStringElement(dereference(json::Object(Current), L),
+                                  dereference(json::Object(*Input), L),
+                                  *Vector, L, InputElementType);
+        else
+          assign(dereference(json::Object(Current), L),
+                 dereference(json::Object(*Input), L), L);
         assign(*Input,
                binary("+", json::Object(*Input), quantity(1, DifferenceType, L),
                       type(InputType ? *InputType : List->List.Begin->getType(),

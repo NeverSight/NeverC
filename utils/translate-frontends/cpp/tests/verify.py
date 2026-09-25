@@ -29158,10 +29158,21 @@ void copy_strings(const std::vector<std::string>& source,
                   std::vector<std::string>& destination) {
   std::vector<std::string> copy(source);
   std::vector<std::string> filled(2, source[0]);
+  std::vector<std::string> listed{source[0], source[0]};
+  std::vector<std::string> ranged(source.cbegin(), source.cend());
+  std::vector<std::string> raw(source.data(), source.data() + source.size());
   destination = source;
   destination.resize(5, source[0]);
   destination.assign(3, source[0]);
+  destination.assign({source[0], source[0]});
+  destination = {source[0]};
+  destination.assign(source.cbegin(), source.cend());
+  destination.assign(source.data(), source.data() + source.size());
   destination.insert(destination.begin(), 2, source[0]);
+  destination.insert(destination.cbegin(), {source[0]});
+  destination.insert(destination.cend(), source.cbegin(), source.cend());
+  destination.insert(destination.cend(), source.data(),
+                     source.data() + source.size());
   destination.push_back(source[0]);
   destination.emplace_back(source[0]);
   destination.emplace_back(static_cast<const std::string&&>(source[0]));
@@ -29272,10 +29283,30 @@ void f(std::vector<std::unique_ptr<int>>& values,
   values.insert(values.begin(), 2, value);
 }
 """,
-        "owning-range-insert": """\
-#include <string>
-void f(std::vector<std::string>& values,
-       const std::vector<std::string>& source) {
+        "unique-pointer-list-construct": """\
+#include <memory>
+void f(std::unique_ptr<int>& value) {
+  std::vector<std::unique_ptr<int>> values{
+      static_cast<std::unique_ptr<int>&&>(value)};
+}
+""",
+        "unique-pointer-range-construct": """\
+#include <memory>
+void f(const std::vector<std::unique_ptr<int>>& source) {
+  std::vector<std::unique_ptr<int>> values(source.begin(), source.end());
+}
+""",
+        "unique-pointer-range-assign": """\
+#include <memory>
+void f(std::vector<std::unique_ptr<int>>& values,
+       const std::vector<std::unique_ptr<int>>& source) {
+  values.assign(source.begin(), source.end());
+}
+""",
+        "unique-pointer-range-insert": """\
+#include <memory>
+void f(std::vector<std::unique_ptr<int>>& values,
+       const std::vector<std::unique_ptr<int>>& source) {
   values.insert(values.begin(), source.begin(), source.end());
 }
 """,

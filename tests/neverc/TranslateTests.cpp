@@ -53290,6 +53290,94 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorOwningRangesRun) {
+  const auto Source = tmpFile("vector-owning-ranges.cpp");
+  const auto Output = tmpFile("vector-owning-ranges.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+#include <vector>
+int main() {
+  {
+    std::string first("a long first string with separate heap storage");
+    std::string second("another long string with separate heap storage");
+    std::vector<std::string> listed{first, second};
+    if (listed.size() != 2 || listed[0] != first || listed[1] != second ||
+        listed[0].data() == first.data() ||
+        listed[0].data() == listed[1].data()) return 1;
+    std::vector<std::string> ranged(listed.cbegin(), listed.cend());
+    std::vector<std::string> raw(listed.data(), listed.data() + 2);
+    if (ranged.size() != 2 || raw.size() != 2 || ranged[0] != first ||
+        raw[1] != second || ranged[0].data() == listed[0].data() ||
+        raw[1].data() == listed[1].data()) return 2;
+    std::vector<std::string> values(1, first);
+    values.reserve(12);
+    auto storage = values.data();
+    values.assign({second, first});
+    if (values.data() != storage || values.size() != 2 ||
+        values[0] != second || values[1] != first ||
+        values[0].data() == second.data()) return 3;
+    values = {values[1], values[0]};
+    if (values.data() != storage || values[0] != first ||
+        values[1] != second || values[0].data() == first.data()) return 4;
+    values.assign(ranged.cbegin(), ranged.cend());
+    if (values.data() != storage || values.size() != 2 ||
+        values[0] != first || values[1] != second ||
+        values[0].data() == ranged[0].data()) return 5;
+    values.assign(listed.data(), listed.data() + 2);
+    if (values.data() != storage || values[0] != first ||
+        values[1] != second || values[1].data() == listed[1].data()) return 6;
+    auto listInsert = values.insert(values.cbegin() + 1, {second, first});
+    if (listInsert != values.begin() + 1 || values.data() != storage ||
+        values.size() != 4 || values[1] != second || values[2] != first ||
+        values[1].data() == second.data()) return 7;
+    auto pointerInsert = values.insert(values.cend(), listed.data(),
+                                       listed.data() + 2);
+    if (pointerInsert != values.begin() + 4 || values.data() != storage ||
+        values.size() != 6 || values[4] != first || values[5] != second ||
+        values[4].data() == listed[0].data()) return 8;
+    std::initializer_list<std::string> none;
+    auto unchanged = values.insert(values.cbegin(), none);
+    if (unchanged != values.begin() || values.size() != 6) return 9;
+    values.assign({});
+    if (!values.empty() || values.data() != storage) return 10;
+    std::vector<std::string> tight{first, second};
+    auto old = tight.data();
+    auto grown = tight.insert(tight.cbegin() + 1,
+                              ranged.cbegin(), ranged.cend());
+    if (grown != tight.begin() + 1 || tight.data() == old ||
+        tight.size() != 4 || tight[0] != first || tight[1] != first ||
+        tight[2] != second || tight[3] != second ||
+        tight[1].data() == ranged[0].data()) return 11;
+    std::vector<std::string> fresh;
+    fresh.assign(ranged.cbegin(), ranged.cend());
+    if (fresh.size() != 2 || fresh[0] != first || fresh[1] != second) return 12;
+    auto endInsert = fresh.insert(fresh.cend(), {first});
+    if (endInsert != fresh.begin() + 2 || fresh.size() != 3 ||
+        fresh[2] != first || fresh[2].data() == first.data()) return 13;
+  }
+  return allocations == releases ? 0 : 14;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-owning-ranges" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorOwningCopyRun) {
   const auto Source = tmpFile("vector-owning-copy.cpp");
   const auto Output = tmpFile("vector-owning-copy.nc");

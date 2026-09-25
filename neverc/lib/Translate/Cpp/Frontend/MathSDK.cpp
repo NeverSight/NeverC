@@ -4749,6 +4749,8 @@ approvedUtilityVectorConstruction(const State &S, const SourceManager &SM,
       !cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx",
                      "__vector/vector.h"))
     return std::nullopt;
+  const bool CopyableString = approvedUtilityStringRecord(
+      S, SM, Vector->ElementType->getAsCXXRecordDecl(), Context).has_value();
   if (Constructor->isDefaultConstructor() && !Construction->getNumArgs())
     return UtilityVectorConstruction::Default;
   if (Construction->getNumArgs() == 1 &&
@@ -4776,7 +4778,7 @@ approvedUtilityVectorConstruction(const State &S, const SourceManager &SM,
         Context);
     const auto *Expression =
         dyn_cast<CXXStdInitializerListExpr>(Construction->getArg(0));
-    if (!Vector->OwningElement && List && Expression &&
+    if ((!Vector->OwningElement || CopyableString) && List && Expression &&
         Context.hasSameType(List->ElementType, Vector->ElementType) &&
         Context.hasSameUnqualifiedType(Construction->getArg(0)->getType(),
                                        Context.getRecordType(List->Record)) &&
@@ -4803,7 +4805,8 @@ approvedUtilityVectorConstruction(const State &S, const SourceManager &SM,
                              Context.getPointerType(Element)) ||
          Context.hasSameType(Wrapped->IteratorType,
                              Context.getPointerType(Element.withConst())));
-    if (!Vector->OwningElement && (RawPointer || WrappedPointer) &&
+    if ((!Vector->OwningElement || CopyableString) &&
+        (RawPointer || WrappedPointer) &&
         Context.hasSameType(FirstType, LastType) &&
         Context.hasSameType(Construction->getArg(0)->getType(), FirstType) &&
         Context.hasSameType(Construction->getArg(1)->getType(), LastType))
@@ -4823,9 +4826,7 @@ approvedUtilityVectorConstruction(const State &S, const SourceManager &SM,
     return std::nullopt;
   if (Construction->getNumArgs() == 1)
     return UtilityVectorConstruction::Count;
-  if (Vector->OwningElement &&
-      !approvedUtilityStringRecord(
-          S, SM, Vector->ElementType->getAsCXXRecordDecl(), Context))
+  if (Vector->OwningElement && !CopyableString)
     return std::nullopt;
   const auto FillType = Constructor->getParamDecl(1)->getType();
   if (!FillType->isLValueReferenceType() ||
@@ -17821,7 +17822,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
               Context.hasSameType(Call->getArg(1)->getType(),
                                   Context.getSizeType()))))
           return UtilityOperation::VectorInsert;
-        if (!Vector->OwningElement && Method->getNumParams() == 2 &&
+        if ((!Vector->OwningElement || CopyableString) &&
+            Method->getNumParams() == 2 &&
             !Method->getPrimaryTemplate() &&
             Context.hasSameType(Method->getParamDecl(1)->getType(),
                                 Call->getArg(1)->getType())) {
@@ -17831,7 +17833,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           if (List && Context.hasSameType(List->ElementType, Element))
             return UtilityOperation::VectorInsertRange;
         }
-        if (!Vector->OwningElement && Method->getNumParams() == 3 &&
+        if ((!Vector->OwningElement || CopyableString) &&
+            Method->getNumParams() == 3 &&
             Method->getPrimaryTemplate() &&
             approvedStandardSDKDeclaration(S, SM,
                                            Method->getPrimaryTemplate()) &&
@@ -17896,7 +17899,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           return UtilityOperation::VectorEmplace;
       }
     }
-    if (!Vector->OwningElement && Operator &&
+    if ((!Vector->OwningElement || CopyableString) && Operator &&
         Method->getOverloadedOperator() == OO_Equal && !Method->isConst() &&
         !Object->getType().isConstQualified() &&
         !Method->getPrimaryTemplate() && Method->getNumParams() == 1 &&
@@ -17929,7 +17932,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
             Context.hasSameUnqualifiedType(Call->getArg(1)->getType(), Element))
           return UtilityOperation::VectorAssignFill;
       }
-      if (!Vector->OwningElement && Method->getNumParams() == 1 &&
+      if ((!Vector->OwningElement || CopyableString) &&
+          Method->getNumParams() == 1 &&
           !Method->getPrimaryTemplate() &&
           Context.hasSameType(Method->getParamDecl(0)->getType(),
                               Call->getArg(0)->getType())) {
@@ -17939,7 +17943,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         if (List && Context.hasSameType(List->ElementType, Element))
           return UtilityOperation::VectorAssignRange;
       }
-      if (!Vector->OwningElement && Method->getNumParams() == 2 &&
+      if ((!Vector->OwningElement || CopyableString) &&
+          Method->getNumParams() == 2 &&
           Method->getPrimaryTemplate() &&
           approvedStandardSDKDeclaration(S, SM, Method->getPrimaryTemplate()) &&
           cstddefOrigin(S, SM, Method->getPrimaryTemplate()->getLocation(),
