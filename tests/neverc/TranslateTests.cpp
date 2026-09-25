@@ -51820,6 +51820,94 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedIteratorMismatchRun) {
+  const auto Source = tmpFile("wrapped-iterator-mismatch.cpp");
+  const auto Output = tmpFile("wrapped-iterator-mismatch.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <string>
+#include <vector>
+bool same_number(int left, long right) { return left == right; }
+int main() {
+  std::vector<int> first{1, 2, 3, 4};
+  std::vector<long> second{1, 2, 8, 4};
+  auto expected_first = first.cbegin();
+  auto expected_second = second.begin();
+  ++expected_first;
+  ++expected_first;
+  ++expected_second;
+  ++expected_second;
+  int effects = 0;
+  auto mismatch = std::mismatch((++effects, first.cbegin()),
+                                 (++effects, first.cend()),
+                                 (++effects, second.begin()),
+                                 (++effects, second.end()));
+  if (effects != 4 || mismatch.first != expected_first ||
+      mismatch.second != expected_second || *mismatch.first != 3 ||
+      *mismatch.second != 8)
+    return 1;
+  auto predicate_mismatch = std::mismatch(
+      first.cbegin(), first.cend(), second.begin(), second.end(), same_number);
+  if (predicate_mismatch.first != expected_first ||
+      predicate_mismatch.second != expected_second)
+    return 2;
+  auto unbounded = std::mismatch(first.cbegin(), first.cend(), second.begin(),
+                                 same_number);
+  if (unbounded.first != expected_first ||
+      unbounded.second != expected_second)
+    return 3;
+  int raw[4]{1, 2, 3, 4};
+  auto mixed = std::mismatch(first.cbegin(), first.cend(), raw);
+  if (mixed.first != first.cend() || mixed.second != raw + 4)
+    return 4;
+  auto reverse_mixed = std::mismatch(raw, raw + 4, first.cbegin(),
+                                     first.cend());
+  if (reverse_mixed.first != raw + 4 ||
+      reverse_mixed.second != first.cend())
+    return 5;
+  auto short_end = second.begin();
+  ++short_end;
+  auto short_result = std::mismatch(first.cbegin(), first.cend(),
+                                    second.begin(), short_end);
+  auto first_after_one = first.cbegin();
+  ++first_after_one;
+  if (short_result.first != first_after_one ||
+      short_result.second != short_end)
+    return 6;
+  std::vector<int> empty;
+  auto empty_result = std::mismatch(empty.begin(), empty.end(), second.begin(),
+                                    second.end());
+  if (empty_result.first != empty.end() ||
+      empty_result.second != second.begin())
+    return 7;
+  std::string left("abca");
+  std::string right("abda");
+  auto letters = std::mismatch(left.begin(), left.end(), right.cbegin(),
+                                right.cend());
+  if (*letters.first != 'c' || *letters.second != 'd')
+    return 8;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o",
+                                   Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapped-iterator-mismatch" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedIteratorTransferRun) {
   const auto Source = tmpFile("wrapped-iterator-transfer.cpp");
   const auto Output = tmpFile("wrapped-iterator-transfer.nc");

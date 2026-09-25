@@ -29318,6 +29318,51 @@ std::string::iterator letter(std::string& value) {
               + result_type + ' f(std::vector<Entry>& values){'
               + operation + '}', "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_mismatch_source = """\
+#include <algorithm>
+#include <string>
+#include <utility>
+#include <vector>
+bool same_number(int left, long right) { return left == right; }
+std::pair<std::vector<int>::const_iterator, std::vector<long>::iterator>
+bounded_mismatch(const std::vector<int>& first, std::vector<long>& second) {
+  return std::mismatch(first.cbegin(), first.cend(), second.begin(),
+                       second.end());
+}
+std::pair<std::vector<int>::const_iterator, std::vector<long>::iterator>
+predicate_mismatch(const std::vector<int>& first, std::vector<long>& second) {
+  return std::mismatch(first.cbegin(), first.cend(), second.begin(),
+                       same_number);
+}
+std::pair<std::vector<int>::const_iterator, int*>
+mixed_mismatch(const std::vector<int>& first, int* second) {
+  return std::mismatch(first.cbegin(), first.cend(), second);
+}
+std::pair<int*, std::vector<int>::const_iterator>
+reverse_mismatch(int* first, int* last, const std::vector<int>& second) {
+  return std::mismatch(first, last, second.cbegin(), second.cend());
+}
+std::pair<std::string::iterator, std::string::const_iterator>
+letter_mismatch(std::string& first, const std::string& second) {
+  return std::mismatch(first.begin(), first.end(), second.cbegin(),
+                       second.cend());
+}
+"""
+    wrapped_mismatch = check("v2-wrapped-mismatch", wrapped_mismatch_source,
+                             profile="cpp-core-v2", sdk=True)
+    assert not [node for node in walk(wrapped_mismatch["functions"])
+                if node.get("op") in ("call", "mapped_call")], wrapped_mismatch
+    for target in sdk_targets:
+        check("v2-wrapped-mismatch-" + target, wrapped_mismatch_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-mismatch-record",
+          '#include <algorithm>\n#include <utility>\n#include <vector>\n'
+          'struct Entry{int value;};'
+          'bool operator==(Entry a,Entry b){return a.value==b.value;}'
+          'auto f(std::vector<Entry>& values){'
+          'return std::mismatch(values.begin(),values.end(),values.begin());}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrapped_transfer_source = """\
 #include <algorithm>
 #include <string>

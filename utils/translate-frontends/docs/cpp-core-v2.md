@@ -1559,6 +1559,12 @@ ranges on either side, including a wrapped range compared with a raw scalar
 pointer range. Default equality retains the checked common scalar type and
 source-enum operator restrictions. The four- and five-argument function-pointer
 predicate forms retain their checked by-value scalar parameter conversions.
+The three- and four-iterator `std::mismatch` forms admit the same independent
+wrapped or raw scalar ranges, including heterogeneous elements. The bounded
+form stops at either end; the unbounded form follows the first range. Its
+checked function-pointer predicate forms keep one callback value and direct
+scalar parameter conversions. The returned authenticated `std::pair` contains
+each input's own iterator type and wraps the two final pointers independently.
 `std::fill` and `std::reverse` accept writable wrapped scalar ranges, including
 mutable vector and string iterators, while preserving the existing value
 conversion, single evaluation, and empty-range behavior. Const iterators and

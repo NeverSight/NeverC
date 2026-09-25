@@ -19869,33 +19869,51 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (Origin->Path == "__algorithm/mismatch.h" && Name == "mismatch" &&
       Call->getNumArgs() >= 3 && Call->getNumArgs() <= 5 &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
-      AlgorithmPointerParameter(2) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
+    const auto First = AlgorithmRangePointerParameter(0);
+    const auto Last = AlgorithmRangePointerParameter(1);
+    const auto Second = AlgorithmRangePointerParameter(2);
     auto Pair = approvedUtilityPairRecord(
         S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);
-    if (Pair &&
+    if (First && Last && Second && Pair &&
         Same(Pair->First->getType(), Function->getParamDecl(0)->getType()) &&
         Same(Pair->Second->getType(), Function->getParamDecl(2)->getType())) {
-      const bool DefaultElements = AlgorithmEqualityPointerParameter(0) &&
-                                   AlgorithmEqualityPointerParameter(1) &&
-                                   AlgorithmEqualityParameters(0, 2);
+      const auto FirstElement = (*First)->getPointeeType();
+      const auto SecondElement = (*Second)->getPointeeType();
+      const bool DefaultElements =
+          utilityAlgorithmEqualityPointer(Context, *First) &&
+          utilityAlgorithmEqualityPointer(Context, *Second) &&
+          !utilityEnumHasSourceOperator(S, SM, Context, FirstElement,
+                                        OO_EqualEqual) &&
+          !utilityEnumHasSourceOperator(S, SM, Context, SecondElement,
+                                        OO_EqualEqual) &&
+          utilityScalarComparisonType(Context, FirstElement, SecondElement,
+                                      false).has_value();
+      auto Predicate = [&](unsigned Index) {
+        const auto *Prototype = AlgorithmCallbackPrototype(Index);
+        return Prototype && Prototype->getNumParams() == 2 &&
+               Prototype->getReturnType()->isBooleanType() &&
+               utilityScalarDirectConversion(Context, FirstElement,
+                                             Prototype->getParamType(0)) &&
+               utilityScalarDirectConversion(Context, SecondElement,
+                                             Prototype->getParamType(1));
+      };
       if (Call->getNumArgs() == 3 && DefaultElements)
         return UtilityOperation::AlgorithmMismatch;
       if (Call->getNumArgs() == 4) {
-        if (DefaultElements && AlgorithmEqualityPointerParameter(3) &&
+        if (DefaultElements && AlgorithmRangePointerParameter(3) &&
             Same(Function->getParamDecl(2)->getType(),
                  Function->getParamDecl(3)->getType()))
           return UtilityOperation::AlgorithmMismatch;
-        if (AlgorithmBinaryPredicateParameter(3, 0, 2))
+        if (Predicate(3))
           return UtilityOperation::AlgorithmMismatch;
       }
-      if (Call->getNumArgs() == 5 && AlgorithmPointerParameter(3) &&
+      if (Call->getNumArgs() == 5 && AlgorithmRangePointerParameter(3) &&
           Same(Function->getParamDecl(2)->getType(),
                Function->getParamDecl(3)->getType()) &&
-          AlgorithmBinaryPredicateParameter(4, 0, 2))
+          Predicate(4))
         return UtilityOperation::AlgorithmMismatch;
     }
   }

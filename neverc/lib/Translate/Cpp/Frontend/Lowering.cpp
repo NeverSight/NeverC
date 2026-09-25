@@ -5179,9 +5179,12 @@ class FunctionLowering {
       return Candidate;
     }
     case UtilityOperation::AlgorithmMismatch: {
-      auto First = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
-      auto Second = snapshot(expression(Call->getArg(2)), L);
+      auto FirstRange = AlgorithmRangeValue(0);
+      auto LastRange = AlgorithmRangeValue(1);
+      auto SecondRange = AlgorithmRangeValue(2);
+      auto First = std::move(FirstRange.first);
+      auto Last = std::move(LastRange.first);
+      auto Second = std::move(SecondRange.first);
       std::optional<Expression> SecondLast;
       std::optional<unsigned> PredicateIndex;
       if (Call->getNumArgs() == 4 &&
@@ -5191,13 +5194,13 @@ class FunctionLowering {
         PredicateIndex = 4;
       if ((Call->getNumArgs() == 4 && !PredicateIndex) ||
           Call->getNumArgs() == 5)
-        SecondLast = snapshot(expression(Call->getArg(3)), L);
+        SecondLast = std::move(AlgorithmRangeValue(3).first);
       std::optional<Expression> Predicate;
       if (PredicateIndex)
         Predicate = snapshot(expression(Call->getArg(*PredicateIndex)), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto FirstType = type(Call->getArg(0)->getType(), L);
-      const auto SecondType = type(Call->getArg(2)->getType(), L);
+      const auto FirstType = type(FirstRange.second, L);
+      const auto SecondType = type(SecondRange.second, L);
       const auto CheckFirst = labelName(), CheckSecond = labelName();
       const auto Compare = labelName(), Advance = labelName();
       const auto End = labelName();
@@ -5215,8 +5218,11 @@ class FunctionLowering {
                                        Call->getArg(*PredicateIndex)->getType(),
                                        dereference(json::Object(First), L),
                                        dereference(json::Object(Second), L), L)
-                 : AlgorithmEqual(dereference(First, L), 0,
-                                  dereference(Second, L), 2),
+                 : CompareUtilityValues(
+                       "==", dereference(First, L),
+                       FirstRange.second->getPointeeType(),
+                       dereference(Second, L),
+                       SecondRange.second->getPointeeType()),
              Advance, End, L);
       label(Advance, L);
       assign(First,
@@ -5237,8 +5243,10 @@ class FunctionLowering {
       if (Place.getString("type") != type(Call->getType(), L))
         reject(L, "algorithm mismatch",
                "The std::mismatch destination type differs from its result.");
-      assign(fieldStorage(json::Object(Place), Pair->First, L), First, L);
-      assign(fieldStorage(json::Object(Place), Pair->Second, L), Second, L);
+      assign(AlgorithmPairIteratorField(json::Object(Place), Pair->First, 0),
+             First, L);
+      assign(AlgorithmPairIteratorField(json::Object(Place), Pair->Second, 2),
+             Second, L);
       return Place;
     }
     case UtilityOperation::AlgorithmCopyN:
