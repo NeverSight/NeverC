@@ -29129,6 +29129,34 @@ int main() { std::vector<Entry> left, right; return left == right; }
     check("v2-vector-quoted", '#include "vector"\nint f(){return 0;}',
           "TR0201", profile="cpp-core-v2", sdk=True)
 
+    vector_algorithm_sort_source = """\
+#include <algorithm>
+#include <functional>
+#include <vector>
+bool descending(int left, int right) { return left > right; }
+void sort_vector(std::vector<int>& values) {
+  std::sort(values.begin(), values.end());
+  auto first = values.begin();
+  ++first;
+  std::sort(first, values.end(), descending);
+  std::sort(values.begin(), values.end(), std::greater<int>{});
+}
+"""
+    vector_algorithm_sort = check("v2-vector-algorithm-sort",
+                                  vector_algorithm_sort_source,
+                                  profile="cpp-core-v2", sdk=True)
+    assert not [node for node in walk(vector_algorithm_sort["functions"])
+                if node.get("op") in ("call", "mapped_call")], vector_algorithm_sort
+    for target in sdk_targets:
+        check("v2-vector-algorithm-sort-" + target,
+              vector_algorithm_sort_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-vector-algorithm-sort-record",
+          '#include <algorithm>\n#include <vector>\nstruct Entry{int value;};'
+          'bool operator<(Entry left, Entry right){return left.value<right.value;}'
+          'void f(std::vector<Entry>& values){std::sort(values.begin(),values.end());}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     string_metadata_source = """\
 #include <string>
 static_assert(sizeof(std::string) >= 3 * sizeof(void*));

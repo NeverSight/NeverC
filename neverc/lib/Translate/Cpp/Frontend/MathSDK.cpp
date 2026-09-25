@@ -19969,17 +19969,48 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (Origin->Path == "__algorithm/sort.h" && Name == "sort" &&
       (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
       Function->getNumParams() == Call->getNumArgs() &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(0)->getType()) &&
       Function->getReturnType()->isVoidType() &&
-      Same(Call->getType(), Function->getReturnType()) &&
-      ((Call->getNumArgs() == 2 && AlgorithmOrderedPointerParameter(0)) ||
-       (Call->getNumArgs() == 3 &&
-        AlgorithmBinaryComparisonParameter(2, 0, 0))))
-    return UtilityOperation::AlgorithmSort;
+      Same(Call->getType(), Function->getReturnType())) {
+    const bool Raw =
+        AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1);
+    const auto Iterator = Function->getParamDecl(0)->getType();
+    const auto Wrapped = Raw ? std::optional<UtilityWrapIteratorRecord>()
+                             : approvedUtilityWrapIteratorRecord(
+                                   S, SM, Iterator->getAsCXXRecordDecl(),
+                                   Context);
+    const bool WrappedRange =
+        Wrapped && Same(Call->getArg(0)->getType(), Iterator) &&
+        Same(Call->getArg(1)->getType(), Iterator);
+    const auto Pointer = WrappedRange ? Wrapped->IteratorType : Iterator;
+    if ((Raw || WrappedRange) &&
+        utilityAlgorithmWritableScalarPointer(Context, Pointer)) {
+      const auto Element = Pointer->getPointeeType();
+      bool Comparison = false;
+      if (Call->getNumArgs() == 2) {
+        Comparison = utilityScalarComparisonType(Context, Element, Element,
+                                                 true).has_value() &&
+                     !utilityEnumHasSourceOperator(S, SM, Context, Element,
+                                                   OO_Less);
+      } else if (Raw) {
+        Comparison = AlgorithmBinaryComparisonParameter(2, 0, 0);
+      } else {
+        const auto *Callback = AlgorithmCallbackPrototype(2);
+        Comparison =
+            (Callback && Callback->getNumParams() == 2 &&
+             Callback->getReturnType()->isBooleanType() &&
+             utilityScalarDirectConversion(Context, Element,
+                                           Callback->getParamType(0)) &&
+             utilityScalarDirectConversion(Context, Element,
+                                           Callback->getParamType(1))) ||
+            approvedRangeAlgorithmComparator(S, SM, Call, 2, Element,
+                                             Element, Context).has_value();
+      }
+      if (Comparison)
+        return UtilityOperation::AlgorithmSort;
+    }
+  }
   if (Origin->Path == "__algorithm/stable_sort.h" && Name == "stable_sort" &&
       (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
       Function->getNumParams() == Call->getNumArgs() &&

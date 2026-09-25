@@ -6200,12 +6200,24 @@ class FunctionLowering {
       return {};
     }
     case UtilityOperation::AlgorithmSort: {
-      auto First = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
+      const auto IteratorType = Call->getArg(0)->getType();
+      const auto Wrapped = approvedUtilityWrapIteratorRecord(
+          A.S, A.Sources, IteratorType->getAsCXXRecordDecl(), A.Context);
+      const auto PointerQualType = Wrapped ? Wrapped->IteratorType : IteratorType;
+      auto FirstValue = snapshot(expression(Call->getArg(0)), L);
+      auto LastValue = snapshot(expression(Call->getArg(1)), L);
+      auto First = Wrapped
+                       ? snapshot(fieldStorage(std::move(FirstValue),
+                                               Wrapped->Current, L), L)
+                       : std::move(FirstValue);
+      auto Last = Wrapped
+                      ? snapshot(fieldStorage(std::move(LastValue),
+                                              Wrapped->Current, L), L)
+                      : std::move(LastValue);
       std::optional<Expression> Comparator;
       std::optional<FunctionalOperationInfo> SDKComparator;
       if (Call->getNumArgs() == 3) {
-        const auto Element = Call->getArg(0)->getType()->getPointeeType();
+        const auto Element = PointerQualType->getPointeeType();
         SDKComparator = captureRangeSDKComparator(Call, 2, Element, Element);
         if (!SDKComparator)
           Comparator = snapshot(expression(Call->getArg(2)), L);
@@ -6213,7 +6225,7 @@ class FunctionLowering {
       const auto ComparatorType =
           Comparator ? Call->getArg(2)->getType() : QualType{};
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto PointerType = type(PointerQualType, L);
       auto Length = snapshot(binary("-", Last, First, DifferenceType, L), L);
       makeHeap(json::Object(First), json::Object(Length), PointerType,
                DifferenceType, L, Comparator, ComparatorType, SDKComparator);

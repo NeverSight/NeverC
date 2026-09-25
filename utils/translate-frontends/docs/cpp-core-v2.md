@@ -1800,6 +1800,13 @@ complexity and terminates directly on ranges of equivalent values. An empty
 selected prefix leaves `partial_sort` unchanged; an empty output returns the
 original output pointer.
 
+`std::sort` also accepts authenticated `std::__wrap_iter<T*>` ranges for the
+same writable scalar element and comparison boundary. This includes mutable
+`std::vector<T>` iterators. The iterator arguments are evaluated once, then
+their pinned pointer fields feed the same heap sorting lowering. Default,
+checked function-pointer, and authenticated standard comparison-object
+overloads are admitted; const iterators and record elements remain rejected.
+
 The corresponding comparator overloads accept the same checked scalar
 function-pointer boundary. `sort`, `partial_sort` and `nth_element` require a
 writable same-element range; `partial_sort_copy` accepts a read-only input and

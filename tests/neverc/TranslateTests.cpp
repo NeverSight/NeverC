@@ -51472,6 +51472,57 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorAlgorithmSortRun) {
+  const auto Source = tmpFile("vector-algorithm-sort.cpp");
+  const auto Output = tmpFile("vector-algorithm-sort.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <functional>
+#include <vector>
+bool descending(int left, int right) { return left > right; }
+int main() {
+  std::vector<int> values{8, 2, 5, 2, 9, 1};
+  int effects = 0;
+  std::sort((++effects, values.begin()), (++effects, values.end()));
+  if (effects != 2 || values[0] != 1 || values[1] != 2 ||
+      values[2] != 2 || values[3] != 5 || values[4] != 8 ||
+      values[5] != 9)
+    return 1;
+  auto first = values.begin();
+  auto last = values.end();
+  ++first;
+  --last;
+  std::sort(first, last, descending);
+  if (values[0] != 1 || values[1] != 8 || values[2] != 5 ||
+      values[3] != 2 || values[4] != 2 || values[5] != 9)
+    return 2;
+  std::sort(values.begin(), values.end(), std::greater<int>{});
+  if (values[0] != 9 || values[1] != 8 || values[2] != 5 ||
+      values[3] != 2 || values[4] != 2 || values[5] != 1)
+    return 3;
+  std::vector<int> empty;
+  std::sort(empty.begin(), empty.end());
+  return empty.empty() ? 0 : 4;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o",
+                                   Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-algorithm-sort" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorInitializerAndFillConstructionRun) {
   const auto Source = tmpFile("vector-initializers.cpp");
   const auto Output = tmpFile("vector-initializers.nc");
