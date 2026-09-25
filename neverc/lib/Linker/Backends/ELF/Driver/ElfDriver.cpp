@@ -683,7 +683,10 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
     return decline("driver configuration");
   const std::pair<bool, const char *> unsupported[] = {
       {config->relocatable, "-r"},
-      {config->shared, "-shared"},
+      {config->unresolvedSymbols == UnresolvedPolicy::Warn ||
+           (!config->shared &&
+            config->unresolvedSymbols == UnresolvedPolicy::Ignore),
+       "unresolved symbol policy"},
       {config->isStatic, "static link"},
       {config->noDynamicLinker, "--no-dynamic-linker"},
       {config->emitRelocs, "--emit-relocs"},
@@ -728,7 +731,8 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
       break;
     case OPT_z: {
       StringRef v = arg->getValue();
-      if (v != "now" && v != "relro" && v != "noexecstack")
+      if (v != "now" && v != "relro" && v != "noexecstack" && v != "defs" &&
+          v != "undefs")
         return decline("-z " + v);
       break;
     }
@@ -757,6 +761,7 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
     case OPT_warn_common:
     case OPT_undefined_version:
     case OPT_no_undefined_version:
+    case OPT_soname:
       break;
     case OPT_no_mmap_output_file:
       req.mmapOutput = false;
@@ -830,6 +835,26 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
   req.discardLocals = config->discard == DiscardPolicy::All;
   req.stripSymbols = config->strip == StripPolicy::All;
   req.exportDynamic = config->exportDynamic;
+  req.shared = config->shared;
+  req.soname = config->soName.str();
+  switch (config->bsymbolic) {
+  case BsymbolicKind::None:
+    req.bsymbolic = 0;
+    break;
+  case BsymbolicKind::All:
+    req.bsymbolic = 1;
+    break;
+  case BsymbolicKind::Functions:
+    req.bsymbolic = 2;
+    break;
+  case BsymbolicKind::NonWeak:
+    req.bsymbolic = 3;
+    break;
+  case BsymbolicKind::NonWeakFunctions:
+    req.bsymbolic = 4;
+    break;
+  }
+  req.allowUndefined = config->unresolvedSymbols == UnresolvedPolicy::Ignore;
   req.stripDebug = config->strip != StripPolicy::None;
   req.icf = config->icf == ICFLevel::Safe  ? 1
             : config->icf == ICFLevel::All ? 2

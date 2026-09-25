@@ -1888,6 +1888,76 @@ int used(int x) { return x + 1; }
   }
 }
 
+TEST_F(LinkerTest, FastPipelineLinksPreemptibleSharedLibraries) {
+  if (!isLinux())
+    GTEST_SKIP() << "the fast ELF pipeline links Linux executables";
+
+  const fs::path libSource = tmpFile("fast_shared_lib.s");
+  const fs::path libObject = tmpFile("fast_shared_lib.o");
+  const fs::path library = tmpFile("libfastshared.so");
+  writeFile(libSource, R"(
+.text
+.globl helper
+.type helper,@function
+helper:
+  leal 1(%rdi), %eax
+  ret
+.size helper, .-helper
+
+.globl lib_value
+.type lib_value,@function
+lib_value:
+  pushq %rbx
+  movq counter@GOTPCREL(%rip), %rax
+  movl (%rax), %edi
+  call helper@PLT
+  popq %rbx
+  ret
+.size lib_value, .-lib_value
+
+.data
+.globl counter
+.type counter,@object
+counter:
+  .long 41
+.size counter, 4
+.section .note.GNU-stack,"",@progbits
+)");
+  CmdResult assemble = assembleELFObject(libSource, libObject);
+  ASSERT_EQ(assemble.exitCode, 0) << assemble.err;
+
+  ScopedEnvironmentVariable report("NEVERC_ELF_FASTLINK_TIME", "1");
+  auto linkLibrary = [&](const std::string &threads) {
+    std::vector<std::string> args = baseLinkArgs();
+    args.insert(args.end(), {"-shared", "-Wl,-soname,libfastshared.so",
+                             "-Wl,--threads=" + threads, libObject.string(),
+                             "-o", library.string()});
+    CmdResult result = ncc(args);
+    EXPECT_EQ(result.exitCode, 0) << result.err;
+    EXPECT_EQ(result.err.find("fast pipeline not used"), std::string::npos)
+        << result.err;
+    return readFile(library);
+  };
+  const std::string serial = linkLibrary("1");
+  EXPECT_TRUE(serial == linkLibrary("8")) << "--threads changed the output";
+
+  // The executable's helper preempts the library's own.
+  const fs::path mainSource = tmpFile("fast_shared_main.c");
+  const fs::path image = tmpFile("fast_shared_main");
+  writeFile(mainSource, R"(
+int lib_value(void);
+int helper(int x) { return x + 100; }
+int main(void) { return lib_value() == 141 ? 23 : 1; }
+)");
+  std::vector<std::string> args = baseLinkArgs();
+  args.insert(args.end(), {mainSource.string(), library.string(),
+                           "-Wl,-rpath," + library.parent_path().string(),
+                           "-o", image.string()});
+  CmdResult link = ncc(args);
+  ASSERT_EQ(link.exitCode, 0) << link.err;
+  EXPECT_EQ(exec(image.string(), {}).exitCode, 23);
+}
+
 TEST_F(LinkerTest, ThreadCountOptionKeepsOutputBytesOnEveryFormat) {
   struct Format {
     const char *name;

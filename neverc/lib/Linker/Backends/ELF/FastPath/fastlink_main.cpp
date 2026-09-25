@@ -86,6 +86,17 @@ fastlink::Request parseArgs(int argc, char **argv) {
       req.ehFrameHdr = true;
     else if (a == "--build-id" || a == "--build-id=sha1" || a == "--build-id=tree")
       req.buildIdSize = 20;
+    else if (a == "-shared" || a == "--shared") {
+      req.shared = true;
+      req.allowUndefined = true;
+    } else if (a == "-soname" || a == "-h" || a.rfind("--soname", 0) == 0)
+      req.soname = value(i, a, a.rfind("--", 0) == 0 ? "--soname" : a);
+    else if (a == "-Bsymbolic" || a == "--Bsymbolic")
+      req.bsymbolic = 1;
+    else if (a == "-Bsymbolic-functions" || a == "--Bsymbolic-functions")
+      req.bsymbolic = 2;
+    else if (a == "--no-undefined")
+      req.allowUndefined = false;
     else if (a == "-E" || a == "--export-dynamic")
       req.exportDynamic = true;
     else if (a == "-s" || a == "--strip-all")
@@ -114,6 +125,8 @@ fastlink::Request parseArgs(int argc, char **argv) {
       string z = args[++i];
       if (z == "now")
         req.zNow = true;
+      else if (z == "defs")
+        req.allowUndefined = false;
       else if (z == "relro")
         req.zRelro = true;
     } else if (a == "-dynamic-linker" || a.rfind("--dynamic-linker", 0) == 0)

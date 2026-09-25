@@ -81,6 +81,7 @@ struct EhPiece {
   uint32_t target; // FDE: the section it describes, or 0
   uint32_t outOff = 0;
   bool live = false;
+  bool inHdr = false; // an FDE listed in .eh_frame_hdr
 };
 
 struct ObjectFile {
@@ -180,7 +181,7 @@ MappedFile mapFile(const string &path) {
 enum SymFlag : uint16_t {
   StrongRef = 1,
   WeakRef = 2,
-  SharedRef = 4, // referenced by a needed shared library
+  SharedRef = 4, // named by a shared library
   NeedsGot = 8,
   NeedsPlt = 16,
   NeedsDynsym = 32,
@@ -190,6 +191,8 @@ enum SymFlag : uint16_t {
   HiddenRef = 512,    // referenced with non-default visibility
   StrongDef = 1024,   // has a global (non-weak) definition
   DupCandidate = 2048, // has more than one global definition
+  Preemptible = 4096,  // bound by the dynamic loader
+  NeedsTlsGd = 8192,   // needs a general-dynamic TLS GOT pair
 };
 
 constexpr uint64_t None64 = ~0ull;
@@ -206,6 +209,7 @@ struct Symbol {
   uint64_t copyOff = 0;
   uint32_t got = UINT32_MAX, plt = UINT32_MAX, dynsym = 0;
   uint32_t gotTp = UINT32_MAX;
+  uint32_t tlsGd = UINT32_MAX; // first slot of the general-dynamic TLS pair
   bool copied = false; // shared data copied into the executable
   bool copyPrimary = false;
 };
@@ -262,10 +266,11 @@ struct Ctx {
   vector<uint32_t> pltEntries;   // name ids with a PLT stub
   vector<uint32_t> dynsyms;      // name ids in .dynsym order (after null)
   vector<string> needed;
-  bool isPic() const { return opt.pie; }
+  bool isPic() const { return opt.pie || opt.shared; }
 };
 
 Ctx ctx;
+std::atomic<bool> needsTlsLd{false}; // the module's TLS GOT pair is used
 
 inline PlacedSection &placedOf(const ObjectFile *o, uint32_t sec) {
   return ctx.placed[o->secs[sec].placed];
@@ -279,13 +284,50 @@ inline bool isExported(uint32_t id) {
   if (s.kind != Symbol::Object)
     return false;
   const uint16_t f = ctx.flags[id].load(std::memory_order_relaxed);
-  if (!(f & SharedRef) && !ctx.opt.exportDynamic)
+  if (!(f & SharedRef) && !ctx.opt.exportDynamic && !ctx.opt.shared)
     return false;
   if (f & HiddenRef)
     return false;
   const int vis =
       ELF64_ST_VISIBILITY(ctx.objects[s.file]->syms[s.index].st_other);
   return vis == STV_DEFAULT || vis == STV_PROTECTED;
+}
+
+// Marks the names the dynamic loader binds: imports, and in a shared
+// library the exported definitions of default visibility that -Bsymbolic
+// does not bind locally.
+void markPreemptible() {
+  ctx.pool->forEach(ctx.numNames, [&](size_t id) {
+    const Symbol &s = ctx.syms[id];
+    bool p = s.isImport();
+    if (!p && ctx.opt.shared && isExported(uint32_t(id))) {
+      const Elf64_Sym &d = ctx.objects[s.file]->syms[s.index];
+      const bool func = ELF64_ST_TYPE(d.st_info) == STT_FUNC ||
+                        ELF64_ST_TYPE(d.st_info) == STT_GNU_IFUNC;
+      const bool weak = ELF64_ST_BIND(d.st_info) == STB_WEAK;
+      switch (ctx.opt.bsymbolic) {
+      case 0:
+        p = ELF64_ST_VISIBILITY(d.st_other) == STV_DEFAULT;
+        break;
+      case 2:
+        p = !func;
+        break;
+      case 3:
+        p = weak;
+        break;
+      case 4:
+        p = !func || weak;
+        break;
+      }
+      p = p && ELF64_ST_VISIBILITY(d.st_other) == STV_DEFAULT;
+    }
+    if (p)
+      atomicOr(ctx.flags[id], uint16_t(Preemptible));
+  });
+}
+
+inline bool isPreemptible(uint32_t id) {
+  return ctx.flags[id].load(std::memory_order_relaxed) & Preemptible;
 }
 
 // The bytes an input section occupies in its output section.
@@ -897,9 +939,10 @@ void resolve() {
         uint32_t id = so->nameIds[k];
         if (id == UINT32_MAX)
           continue;
-        if (so->dynsyms[k].st_shndx == SHN_UNDEF)
-          atomicOr(ctx.flags[id], uint16_t(SharedRef));
-        else
+        // A definition an executable shares a name with a shared library
+        // is exported, so that it takes precedence over the library's.
+        atomicOr(ctx.flags[id], uint16_t(SharedRef));
+        if (so->dynsyms[k].st_shndx != SHN_UNDEF)
           atomicMin(ctx.shDef[id],
                     (uint64_t(i - ctx.objects.size()) << 32) | k);
       }
@@ -1310,6 +1353,8 @@ enum Kind : uint8_t {
   K_LdToLe,
   K_DtpOff32,
   K_DtpOff64,
+  K_TlsGd, // shared library: general-dynamic GOT pair
+  K_TlsLd, // shared library: the module's GOT pair
 };
 
 struct RelInfo {
@@ -1328,7 +1373,7 @@ RelInfo classify(const ObjectFile *o, const uint8_t *secData,
   bool undef = false;
   if (ri.global) {
     ri.id = o->nameIds[si - o->firstGlobal];
-    ri.imp = ctx.syms[ri.id].isImport();
+    ri.imp = isPreemptible(ri.id);
     undef = ctx.syms[ri.id].kind == Symbol::Undefined;
   }
   switch (type) {
@@ -1363,7 +1408,7 @@ RelInfo classify(const ObjectFile *o, const uint8_t *secData,
     return ri;
   }
   case R_X86_64_GOTTPOFF:
-    ri.kind = ri.imp ? K_GotTpPc : K_IeToLe;
+    ri.kind = ri.imp || ctx.opt.shared ? K_GotTpPc : K_IeToLe;
     return ri;
   case R_X86_64_TPOFF32:
     ri.kind = K_TpOff32;
@@ -1388,10 +1433,10 @@ RelInfo classify(const ObjectFile *o, const uint8_t *secData,
     ri.kind = K_GotPc32;
     return ri;
   case R_X86_64_TLSGD:
-    ri.kind = ri.imp ? K_GdToIe : K_GdToLe;
+    ri.kind = ctx.opt.shared ? K_TlsGd : ri.imp ? K_GdToIe : K_GdToLe;
     return ri;
   case R_X86_64_TLSLD:
-    ri.kind = K_LdToLe;
+    ri.kind = ctx.opt.shared ? K_TlsLd : K_LdToLe;
     return ri;
   case R_X86_64_DTPOFF32:
     ri.kind = K_DtpOff32;
@@ -1488,6 +1533,9 @@ void scanRelocations() {
         case K_Pc64:
           if (ri.imp) {
             const Symbol &s = ctx.syms[id];
+            if (ctx.opt.shared)
+              fatal(o->name + ": PC-relative reference to preemptible " +
+                    string(ctx.nameStr[id]) + "; recompile with -fPIC");
             if (s.kind != Symbol::Shared)
               fatal(o->name + ": PC-relative reference to undefined weak " +
                     string(ctx.nameStr[id]));
@@ -1510,10 +1558,26 @@ void scanRelocations() {
           atomicOr(ctx.flags[id], uint16_t(NeedsGot | (ri.imp ? NeedsDynsym : 0)));
           break;
         case K_GotTpPc:
+          if (ctx.opt.shared) {
+            if (!ri.global)
+              fatal(o->name + ": initial-exec TLS reference to a local symbol");
+            atomicOr(ctx.flags[id],
+                     uint16_t(NeedsGotTp | (ri.imp ? NeedsDynsym : 0)));
+            break;
+          }
           if (ctx.syms[id].kind != Symbol::Shared)
             fatal(o->name + ": TLS reference to undefined weak " +
                   string(ctx.nameStr[id]));
           atomicOr(ctx.flags[id], uint16_t(NeedsGotTp | NeedsDynsym));
+          break;
+        case K_TlsGd:
+          if (!ri.global)
+            fatal(o->name + ": general-dynamic TLS reference to a local symbol");
+          atomicOr(ctx.flags[id],
+                   uint16_t(NeedsTlsGd | (ri.imp ? NeedsDynsym : 0)));
+          break;
+        case K_TlsLd:
+          needsTlsLd.store(true, std::memory_order_relaxed);
           break;
         case K_GdToIe:
           if (ctx.syms[id].kind != Symbol::Shared)
@@ -1545,6 +1609,8 @@ void scanRelocations() {
         case K_Abs32:
         case K_TpOff32:
         case K_GotOff64:
+          if (ri.kind == K_TpOff32 && ctx.opt.shared)
+            fatal(o->name + ": local-exec TLS in a shared library");
           if (ri.imp && ri.kind == K_Abs32 && !ctx.isPic())
             atomicOr(ctx.flags[id], uint16_t(NeedsCopy | NeedsDynsym));
           else if (ri.imp)
@@ -1707,7 +1773,10 @@ struct Layout {
   uint32_t numFdes = 0;
   uint32_t numCopies = 0;
   uint64_t shstrtabOff = 0;
-  vector<uint32_t> gotIds, gotTpIds, gotPltIds;
+  vector<uint32_t> gotIds, gotTpIds, gotPltIds, tlsGdIds;
+  uint32_t tlsLdSlot = UINT32_MAX;
+  bool staticTls = false;
+  uint32_t sonameOff = 0;
 };
 Layout L;
 
@@ -2059,7 +2128,7 @@ RelTarget relTarget(ObjectFile *o, uint32_t si) {
   if (si >= o->firstGlobal) {
     t.id = o->nameIds[si - o->firstGlobal];
     const Symbol &s = ctx.syms[t.id];
-    if (s.kind != Symbol::Object) {
+    if (s.kind != Symbol::Object || isPreemptible(t.id)) {
       t.kind = RelTarget::Name;
       return t;
     }
@@ -2730,8 +2799,8 @@ void buildDynamic() {
   const uint32_t n = ctx.numNames;
   assignCopies();
   (void)n;
-  vector<uint32_t> got, gotTp, plt;
-  collectNames<5>({&L.exports, &got, &gotTp, &plt, &L.imports},
+  vector<uint32_t> got, gotTp, plt, tlsGd;
+  collectNames<6>({&L.exports, &got, &gotTp, &plt, &L.imports, &tlsGd},
                   [](uint32_t id, auto &out) {
     uint16_t f = ctx.flags[id].load(std::memory_order_relaxed);
     const Symbol &s = ctx.syms[id];
@@ -2748,6 +2817,8 @@ void buildDynamic() {
       out[2].push_back(id);
     if (f & NeedsPlt)
       out[3].push_back(id);
+    if (f & NeedsTlsGd)
+      out[5].push_back(id);
     if (s.isImport() && (f & NeedsDynsym)) {
       out[4].push_back(id);
       if (s.kind == Symbol::Shared)
@@ -2764,12 +2835,21 @@ void buildDynamic() {
   std::sort(got.begin(), got.end(), byName);
   std::sort(gotTp.begin(), gotTp.end(), byName);
   std::sort(plt.begin(), plt.end(), byName);
+  std::sort(tlsGd.begin(), tlsGd.end(), byName);
   std::sort(L.imports.begin(), L.imports.end(), byName);
   uint32_t slot = 0;
   for (uint32_t id : got)
     ctx.syms[id].got = slot++;
   for (uint32_t id : gotTp)
     ctx.syms[id].gotTp = slot++;
+  for (uint32_t id : tlsGd) {
+    ctx.syms[id].tlsGd = slot;
+    slot += 2;
+  }
+  if (needsTlsLd.load()) {
+    L.tlsLdSlot = slot;
+    slot += 2;
+  }
   for (uint32_t i = 0; i < plt.size(); ++i)
     ctx.syms[plt[i]].plt = i;
 
@@ -2823,6 +2903,8 @@ void buildDynamic() {
       L.neededLibs.push_back(so);
       L.neededOff.push_back(addStr(so->soname));
     }
+  if (ctx.opt.shared && !ctx.opt.soname.empty())
+    L.sonameOff = addStr(ctx.opt.soname);
   if (!ctx.opt.rpaths.empty()) {
     string r;
     for (const string &p : ctx.opt.rpaths)
@@ -2922,12 +3004,16 @@ void buildDynamic() {
   }
   for (uint32_t id : got) {
     Symbol::Kind k = ctx.syms[id].kind;
-    if (ctx.syms[id].isImport())
+    if (isPreemptible(id))
       ++L.numGotSym;
     else if (ctx.isPic() && k != Symbol::Undefined)
       ++L.numGotRel;
   }
   L.numGotSym += gotTp.size() + L.numCopies;
+  for (uint32_t id : tlsGd)
+    L.numGotSym += isPreemptible(id) ? 2 : 1;
+  L.numGotSym += needsTlsLd.load() ? 1 : 0;
+  L.staticTls = ctx.opt.shared && !gotTp.empty();
   L.numRelative = L.numSecRel + L.numGotRel;
 
   // Synthetic sections.
@@ -2983,6 +3069,7 @@ void buildDynamic() {
   L.gotPltIds = std::move(plt);
   L.gotIds = std::move(got);
   L.gotTpIds = std::move(gotTp);
+  L.tlsGdIds = std::move(tlsGd);
 }
 
 vector<Elf64_Dyn> dynamicEntries() {
@@ -2995,6 +3082,8 @@ vector<Elf64_Dyn> dynamicEntries() {
   };
   for (uint32_t off : L.neededOff)
     add(DT_NEEDED, off);
+  if (L.sonameOff)
+    add(DT_SONAME, L.sonameOff);
   if (!ctx.opt.rpaths.empty())
     add(DT_RUNPATH, L.rpathOff);
   auto init = L.byName.find(".init_array");
@@ -3032,7 +3121,8 @@ vector<Elf64_Dyn> dynamicEntries() {
   add(DT_SYMTAB, L.dynsym->addr);
   add(DT_STRSZ, L.dynstr->size);
   add(DT_SYMENT, sizeof(Elf64_Sym));
-  add(DT_DEBUG, 0);
+  if (!ctx.opt.shared)
+    add(DT_DEBUG, 0);
   if (L.relaDyn) {
     add(DT_RELA, L.relaDyn->addr);
     add(DT_RELASZ, L.relaDyn->size);
@@ -3046,8 +3136,9 @@ vector<Elf64_Dyn> dynamicEntries() {
     add(DT_PLTREL, DT_RELA);
   }
   add(DT_PLTGOT, L.gotPlt->addr);
-  if (ctx.opt.zNow)
-    add(DT_FLAGS, DF_BIND_NOW);
+  if (uint64_t f = (ctx.opt.zNow ? DF_BIND_NOW : 0) |
+                   (L.staticTls ? DF_STATIC_TLS : 0))
+    add(DT_FLAGS, f);
   uint64_t f1 = (ctx.opt.zNow ? DF_1_NOW : 0) | (ctx.opt.pie ? DF_1_PIE : 0);
   if (f1)
     add(DT_FLAGS_1, f1);
@@ -3061,12 +3152,16 @@ void layoutEhFrame() {
     ObjectFile *o = ctx.objects[fi];
     if (o->eh.empty())
       return;
+    const uint8_t *d = o->secData(o->ehSec);
     for (EhPiece &p : o->eh)
       if (p.cie != UINT32_MAX && p.target &&
           o->secs[p.target].osec != 0 && o->secs[p.target].live.load() == 1) {
         p.live = true;
         o->eh[p.cie].live = true;
-        ++o->numLiveFdes;
+        // An FDE for no code stays in .eh_frame, but the search table must
+        // not return it for the address that follows.
+        p.inHdr = p.size >= 16 && rd32(d + p.off + 12) != 0;
+        o->numLiveFdes += p.inHdr;
       }
     uint32_t off = 0;
     for (EhPiece &p : o->eh)
@@ -3087,7 +3182,7 @@ void layoutEhFrame() {
   if (!total)
     return;
   L.ehFrame = newSection(".eh_frame", SHT_PROGBITS, SHF_ALLOC, 8);
-  L.ehFrame->size = total;
+  L.ehFrame->size = total + 4; // and a zero terminator
   L.numFdes = fdes;
   if (ctx.opt.ehFrameHdr) {
     L.ehHdr = newSection(".eh_frame_hdr", SHT_PROGBITS, SHF_ALLOC, 4);
@@ -3256,7 +3351,7 @@ void layout() {
   size_t phnum = (dyn ? 2 : 0) + classes[0] + classes[1] + classes[2] +
                  classes[3] + 1 /*DYNAMIC*/ + (relro ? 1 : 0) + 1 /*STACK*/ +
                  (hasTls ? 1 : 0) + notes + (L.ehHdr ? 1 : 0);
-  L.base = ctx.opt.pie ? 0 : 0x400000;
+  L.base = ctx.isPic() ? 0 : 0x400000;
   const uint64_t page = 4096;
   const uint64_t hdrSize = sizeof(Elf64_Ehdr) + phnum * sizeof(Elf64_Phdr);
 
@@ -3500,8 +3595,11 @@ uint64_t symbolVA(const ObjectFile *o, uint32_t si, const RelInfo &ri) {
   if (!ri.global)
     return defVA(o, si);
   const Symbol &s = ctx.syms[ri.id];
+  // Calls to symbols the dynamic loader binds go through the PLT.
+  if (ri.imp && !s.copied && s.plt != UINT32_MAX)
+    return pltVA(s.plt);
   if (s.isImport() && !s.copied)
-    return s.plt != UINT32_MAX ? pltVA(s.plt) : 0;
+    return 0;
   return s.va;
 }
 
@@ -3564,7 +3662,7 @@ void applyRelocs(const ObjectFile *o, const uint8_t *src, const Elf64_Rela *rels
       ri.global = si >= o->firstGlobal;
       if (ri.global) {
         ri.id = o->nameIds[si - o->firstGlobal];
-        ri.imp = ctx.syms[ri.id].isImport();
+        ri.imp = isPreemptible(ri.id);
       }
     } else {
       ri = classify(o, src, r);
@@ -3681,10 +3779,16 @@ void applyRelocs(const ObjectFile *o, const uint8_t *src, const Elf64_Rela *rels
       break;
     }
     case K_DtpOff32:
-      w32(loc, tpoff(S) + A);
+      w32(loc, (ctx.opt.shared ? S - L.tlsAddr : tpoff(S)) + A);
       break;
     case K_DtpOff64:
-      w64(loc, tpoff(S) + A);
+      w64(loc, (ctx.opt.shared ? S - L.tlsAddr : tpoff(S)) + A);
+      break;
+    case K_TlsGd:
+      w32(loc, gotVA(ctx.syms[ri.id].tlsGd) + A - P);
+      break;
+    case K_TlsLd:
+      w32(loc, gotVA(L.tlsLdSlot) + A - P);
       break;
     case K_Skip:
       break;
@@ -3790,6 +3894,8 @@ void writeSynthetic(uint8_t *buf) {
   if (L.interp)
     memcpy(buf + L.interp->offset, ctx.opt.dynamicLinker.c_str(),
            L.interp->size);
+  if (L.ehFrame)
+    w32(buf + L.ehFrame->offset + L.ehFrame->size - 4, 0);
   if (L.buildId) {
     uint8_t *p = buf + L.buildId->offset;
     w32(p, 4);
@@ -3844,7 +3950,8 @@ void writeSynthetic(uint8_t *buf) {
       e.st_name = L.nameDynstr[i];
       e.st_info = os.st_info;
       e.st_other = os.st_other;
-      e.st_value = s.va;
+      // TLS symbols' values are offsets in the TLS segment.
+      e.st_value = ELF64_ST_TYPE(os.st_info) == STT_TLS ? s.va - L.tlsAddr : s.va;
       e.st_size = os.st_size;
       if (os.st_shndx == SHN_ABS)
         e.st_shndx = SHN_ABS;
@@ -3896,8 +4003,8 @@ void writeSynthetic(uint8_t *buf) {
     for (uint32_t id : L.gotIds) {
       const Symbol &s = ctx.syms[id];
       uint64_t slotVA = gotVA(s.got);
-      if (s.isImport()) {
-        w64(g + 8 * s.got, s.copied ? s.va : 0);
+      if (isPreemptible(id)) {
+        w64(g + 8 * s.got, s.copied || !s.isImport() ? s.va : 0);
         *symbolic++ = rela(slotVA, s.dynsym, R_X86_64_GLOB_DAT, 0);
       } else if (s.kind == Symbol::Undefined) {
         w64(g + 8 * s.got, 0);
@@ -3910,7 +4017,32 @@ void writeSynthetic(uint8_t *buf) {
     for (uint32_t id : L.gotTpIds) {
       const Symbol &s = ctx.syms[id];
       w64(g + 8 * s.gotTp, 0);
-      *symbolic++ = rela(gotVA(s.gotTp), s.dynsym, R_X86_64_TPOFF64, 0);
+      if (isPreemptible(id))
+        *symbolic++ = rela(gotVA(s.gotTp), s.dynsym, R_X86_64_TPOFF64, 0);
+      else
+        *symbolic++ =
+            rela(gotVA(s.gotTp), 0, R_X86_64_TPOFF64, s.va - L.tlsAddr);
+    }
+    // General-dynamic pairs: module and offset; the module's own pair has
+    // offset 0.
+    for (uint32_t id : L.tlsGdIds) {
+      const Symbol &s = ctx.syms[id];
+      const uint64_t va = gotVA(s.tlsGd);
+      if (isPreemptible(id)) {
+        w64(g + 8 * s.tlsGd, 0);
+        w64(g + 8 * (s.tlsGd + 1), 0);
+        *symbolic++ = rela(va, s.dynsym, R_X86_64_DTPMOD64, 0);
+        *symbolic++ = rela(va + 8, s.dynsym, R_X86_64_DTPOFF64, 0);
+      } else {
+        w64(g + 8 * s.tlsGd, 0);
+        w64(g + 8 * (s.tlsGd + 1), s.va - L.tlsAddr);
+        *symbolic++ = rela(va, 0, R_X86_64_DTPMOD64, 0);
+      }
+    }
+    if (L.tlsLdSlot != UINT32_MAX) {
+      w64(g + 8 * L.tlsLdSlot, 0);
+      w64(g + 8 * (L.tlsLdSlot + 1), 0);
+      *symbolic++ = rela(gotVA(L.tlsLdSlot), 0, R_X86_64_DTPMOD64, 0);
     }
   }
   for (uint32_t id : L.exports) {
@@ -3988,7 +4120,7 @@ void writeEhFrameHdr(uint8_t *buf) {
     (void)n;
     uint32_t j = o->fdeBase;
     for (const EhPiece &p : o->eh) {
-      if (!p.live || p.cie == UINT32_MAX)
+      if (!p.inHdr)
         continue;
       const Elf64_Rela &r = rels[p.relBegin];
       RelInfo ri = classify(o, nullptr, r);
@@ -4102,11 +4234,11 @@ void writeHeaders(uint8_t *buf) {
   eh->e_ident[EI_CLASS] = ELFCLASS64;
   eh->e_ident[EI_DATA] = ELFDATA2LSB;
   eh->e_ident[EI_VERSION] = EV_CURRENT;
-  eh->e_type = ctx.opt.pie ? ET_DYN : ET_EXEC;
+  eh->e_type = ctx.isPic() ? ET_DYN : ET_EXEC;
   eh->e_machine = EM_X86_64;
   eh->e_version = EV_CURRENT;
   uint32_t id = ctx.names->find("_start", 6);
-  eh->e_entry = id != UINT32_MAX ? ctx.syms[id].va : 0;
+  eh->e_entry = id != UINT32_MAX && !ctx.opt.shared ? ctx.syms[id].va : 0;
   eh->e_phoff = sizeof(Elf64_Ehdr);
   eh->e_shoff = L.shoff;
   eh->e_ehsize = sizeof(Elf64_Ehdr);
@@ -4289,8 +4421,11 @@ void checkUndefined() {
       return;
     }
     const uint16_t f = ctx.flags[id].load(std::memory_order_relaxed);
-    // Weak references stay dynamic in a dynamically linked output.
-    if (!(f & StrongRef) && (f & WeakRef) && !(f & HiddenRef) && dynamic) {
+    // Weak references stay dynamic in a dynamically linked output, and so
+    // do all references a shared library leaves to the dynamic loader.
+    if (!(f & HiddenRef) && (dynamic || ctx.opt.shared) &&
+        (f & (StrongRef | WeakRef)) &&
+        (!(f & StrongRef) || ctx.opt.allowUndefined)) {
       s.kind = Symbol::DynUndef;
       atomicOr(ctx.flags[id], uint16_t(NeedsDynsym));
       return;
@@ -4328,6 +4463,7 @@ void runPipeline() {
   lap();
   resolve();
   checkUndefined();
+  markPreemptible();
   lap();
   selectComdats();
   checkDuplicates();
@@ -4356,6 +4492,7 @@ void runPipeline() {
 
 fastlink::Status fastlink::link(const Request &Req, std::string &Reason) {
   ctx = Ctx();
+  needsTlsLd = false;
   L = Layout();
   L.all.push_back(new OutputSection); // index 0: not in the output
   relKinds = nullptr;

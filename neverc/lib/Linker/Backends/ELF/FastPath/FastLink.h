@@ -46,6 +46,13 @@ struct Request {
   bool mmapOutput = true;     // write the output through a shared mapping
   bool stripSymbols = false;  // omit .symtab and .strtab
   bool exportDynamic = false; // export every global definition
+  // Shared library output: the soname, which definitions stay preemptible
+  // (-Bsymbolic: 0 all, 1 none, 2 data only, 3 weak ones, 4 weak data) and
+  // whether undefined symbols are left to the dynamic loader.
+  bool shared = false;
+  std::string soname;
+  unsigned bsymbolic = 0;
+  bool allowUndefined = false;
   bool stripDebug = false;    // omit the inputs' debug sections
   // Identical code folding: 0 none, 1 sections whose address is not taken,
   // 2 all code and the data whose address is not taken.
