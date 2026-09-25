@@ -1521,10 +1521,9 @@ void StringTableSection::finalizeContents() {
 
 void StringTableSection::writeTo(uint8_t *buf) const {
   buf[0] = ' ';
-  parallelFor(0, strings.size(), [&](size_t i) {
+  for (size_t i = 0, e = strings.size(); i < e; ++i)
     if (owners[i])
       memcpy(buf + offsets[i], strings[i].data(), strings[i].size());
-  });
 }
 
 static_assert((CodeSignatureSection::blobHeadersSize % 8) == 0);

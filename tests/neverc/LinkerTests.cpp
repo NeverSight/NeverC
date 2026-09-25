@@ -2519,6 +2519,13 @@ TEST_F(LinkerTest, NativeMachOOptionsChangeTheOutput) {
   CmdResult allowed =
       linkMain({library.string(), "-Wl,-client_name,machoclient"});
   EXPECT_EQ(allowed.exitCode, 0) << allowed.err;
+  // Without -client_name, an executable's client name is its file name.
+  CmdResult named =
+      linkDylib({"-Wl,-umbrella,Umbrella",
+                 "-Wl,-allowable_client," + image.filename().string()});
+  ASSERT_EQ(named.exitCode, 0) << named.err;
+  CmdResult byName = linkMain({library.string()});
+  EXPECT_EQ(byName.exitCode, 0) << byName.err;
 
   CmdResult flat = linkMain({"-Wl,-force_flat_namespace"});
   ASSERT_EQ(flat.exitCode, 0) << flat.err;

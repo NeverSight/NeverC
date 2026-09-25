@@ -1271,16 +1271,18 @@ std::optional<uint64_t> parseSourceVersion(StringRef str) {
 }
 
 // The name a dylib's LC_SUB_CLIENT list must hold for this output to link to
-// it directly: -client_name, or the output's framework or library name.
+// it directly: -client_name, the output's name, or for a dylib its library
+// name without the "lib" prefix and any variant suffix.
 StringRef clientNameForOutput() {
   if (!config->clientName.empty())
     return config->clientName;
+  if (config->outputType != MH_DYLIB)
+    return sys::path::filename(config->finalOutput);
   StringRef name =
-      sys::path::filename(config->outputType == MH_DYLIB ? config->installName
-                                                         : config->finalOutput);
-  name = name.take_until([](char c) { return c == '.' || c == '_'; });
-  if (config->outputType == MH_DYLIB && name.starts_with("lib"))
-    name = name.drop_front(3);
+      sys::path::filename(config->installName).take_until([](char c) {
+        return c == '.' || c == '_';
+      });
+  name.consume_front("lib");
   return name;
 }
 
