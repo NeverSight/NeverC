@@ -44,6 +44,9 @@ struct Request {
   std::vector<unsigned char> buildIdBytes;
   bool discardLocals = false; // omit the inputs' local symbols from .symtab
   bool mmapOutput = true;     // write the output through a shared mapping
+  // Identical code folding: 0 none, 1 sections whose address is not taken,
+  // 2 all code and the data whose address is not taken.
+  unsigned icf = 0;
   // Supplies the contents of inputs that are not files on disk; returns false
   // for paths it does not know. The bytes must outlive the link.
   std::function<bool(const std::string &Path, const unsigned char *&Data,

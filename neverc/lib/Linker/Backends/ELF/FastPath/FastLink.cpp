@@ -44,7 +44,10 @@ constexpr uint32_t SHT_LLVM_CALL_GRAPH_PROFILE_ = 0x6fff4c09;
 // Per input section; kept small, since every section of every object in the
 // link has one.
 struct SectionState {
-  std::atomic<uint8_t> live{0}; // 1 live, 2 discarded with its COMDAT group
+  // 1 live, 2 discarded with its COMDAT group, 3 folded into an identical
+  // section, whose placement it shares.
+  std::atomic<uint8_t> live{0};
+  std::atomic<uint8_t> keepUnique{0}; // its address must stay distinct
   uint32_t osec = 0;      // output section index, 0 when not in the output
   uint32_t groupNext = 0; // next member of the section's group, cyclic
   uint32_t placed = 0;    // index of the PlacedSection, when in the output
@@ -60,6 +63,9 @@ struct PlacedSection {
   uint32_t numRel = 0, numSym = 0;
   uint32_t relBase = 0, symBase = 0;
   uint32_t kindBase = 0; // first entry in the relocation kind array
+  uint32_t align = 0;    // alignment when raised by folding, else 0
+  uint32_t icfClass[2] = {0, 0}; // equivalence class, double-buffered
+  bool icfCandidate = false;
 };
 
 struct EhPiece {
@@ -96,6 +102,7 @@ struct ObjectFile {
   vector<uint32_t> groups;     // SHT_GROUP sections
   vector<uint32_t> groupIds;   // per group: signature id
   uint32_t commentSec = 0;
+  uint32_t addrsigSec = 0;
   vector<uint32_t> roots; // GC root sections
   SectionState *secs = nullptr;
   std::atomic<uint8_t> live{0};
@@ -227,6 +234,7 @@ struct Ctx {
   std::atomic<uint16_t> *flags = nullptr;
   Symbol *syms = nullptr;
   PlacedSection *placed = nullptr; // indexed by SectionState::placed
+  uint32_t numPlaced = 0;
   // Per name: the defining object and section, for the GC hot path
   // (file UINT32_MAX when not defined in an object section).
   std::pair<uint32_t, uint32_t> *defTarget = nullptr;
@@ -571,7 +579,10 @@ void initSections(ObjectFile *o, SectionState *secs, uint32_t *relaOf) {
       switch (sh.sh_type) {
       case SHT_SYMTAB:
       case SHT_STRTAB:
+        break;
       case SHT_LLVM_ADDRSIG_:
+        o->addrsigSec = i;
+        break;
       case SHT_LLVM_CALL_GRAPH_PROFILE_:
         break;
       case SHT_PROGBITS:
@@ -1313,6 +1324,7 @@ RelInfo classify(const ObjectFile *o, const uint8_t *secData,
   fatal(o->name + ": unsupported relocation type " + std::to_string(type));
 }
 
+
 uint8_t *relKinds; // classify() results, reused when writing
 
 // General- and local-dynamic TLS sequences are rewritten in place, which is
@@ -1351,7 +1363,8 @@ void scanRelocations() {
     ObjectFile *o = ctx.objects[fi];
     uint64_t n = 0;
     for (uint32_t sec = 1; sec < o->numShdrs; ++sec)
-      if (o->secs[sec].osec != 0 && o->relaOf[sec])
+      if (o->secs[sec].osec != 0 && o->secs[sec].live.load() == 1 &&
+          o->relaOf[sec])
         n += o->shdrs[o->relaOf[sec]].sh_size / sizeof(Elf64_Rela);
     base[fi + 1] = n;
   }, 16);
@@ -1364,7 +1377,7 @@ void scanRelocations() {
     ObjectFile *o = ctx.objects[fi];
     uint32_t next = base[fi];
     for (uint32_t sec = 1; sec < o->numShdrs; ++sec) {
-      if (o->secs[sec].osec == 0)
+      if (o->secs[sec].osec == 0 || o->secs[sec].live.load() != 1)
         continue;
       PlacedSection &ss = placedOf(o, sec);
       auto [rels, n] = o->relas(sec);
@@ -1672,6 +1685,15 @@ bool isLinkerDefined(string_view n) {
   return false;
 }
 
+bool isCIdentifier(const char *n) {
+  if (!*n || isdigit((unsigned char)*n))
+    return false;
+  for (; *n; ++n)
+    if (!(isalnum((unsigned char)*n) || *n == '_'))
+      return false;
+  return true;
+}
+
 void assignInputSections() {
   STEP("assignInputSections");
   // Per file: the distinct output sections it feeds, in first-use order.
@@ -1698,6 +1720,10 @@ void assignInputSections() {
       string_view in = o->secName(i);
       if (in == ".note.gnu.property")
         continue;
+      // __start_/__stop_ symbols may enumerate sections with C identifier
+      // names, which therefore keep distinct addresses.
+      if (in[0] != '.' && isCIdentifier(in.data()))
+        o->secs[i].keepUnique.store(1, std::memory_order_relaxed);
       string_view name = outputName(in);
       uint32_t k;
       if (last != UINT32_MAX && u[last].name == name) {
@@ -1755,6 +1781,7 @@ void assignInputSections() {
       numPlaced += x.count;
   }
   ctx.placed = bigArray<PlacedSection>(*ctx.pool, numPlaced);
+  ctx.numPlaced = numPlaced;
   ctx.pool->forEach(ctx.objects.size(), [&](size_t fi) {
     ObjectFile *o = ctx.objects[fi];
     auto &u = uses[fi];
@@ -1786,8 +1813,8 @@ void assignOffsets(OutputSection *os) {
   uint64_t off = 0;
   for (auto [o, i] : os->members) {
     const Elf64_Shdr &sh = o->shdrs[i];
-    uint64_t start = alignTo(off, sh.sh_addralign);
     PlacedSection &ps = placedOf(o, i);
+    uint64_t start = alignTo(off, ps.align ? ps.align : sh.sh_addralign);
     ps.padBefore = start - off;
     off = start;
     ps.outOff = off;
@@ -1797,6 +1824,451 @@ void assignOffsets(OutputSection *os) {
     fatal("output section " + os->name + " exceeds 4 GiB");
   os->size = off;
 }
+
+// ================================================================ ICF
+// Identical code folding with the full backend's semantics: sections with
+// equal contents, equal output sections and equivalent relocations are folded
+// into one, found by refining equivalence classes until they are stable.
+namespace icf {
+
+struct Candidate {
+  ObjectFile *file;
+  uint32_t sec;
+  uint32_t placed;
+  uint64_t hash;
+};
+
+// Per candidate, the placed sections its relocations refer to, in relocation
+// order, with 0 for targets that are not sections; filled by run().
+vector<uint32_t> targetPlaced;
+vector<uint64_t> targetBase; // by placed index
+
+void markAddressSignificant(ObjectFile *o, uint32_t sec, bool codeToo) {
+  if (!o || !sec || sec >= o->numShdrs)
+    return;
+  if (!codeToo && (o->shdrs[sec].sh_flags & SHF_EXECINSTR))
+    return;
+  // Popular sections are marked by many workers; read before writing.
+  std::atomic<uint8_t> &k = o->secs[sec].keepUnique;
+  if (!k.load(std::memory_order_relaxed))
+    k.store(1, std::memory_order_relaxed);
+}
+
+// Sections whose address must stay distinct: those of address-significant
+// symbols, of exported symbols, and code whose unwind information names an
+// LSDA or a personality routine.
+void markKeepUnique() {
+  const bool safe = ctx.opt.icf == 1;
+  ctx.pool->forEach(ctx.numNames, [&](size_t id) {
+    const Symbol &s = ctx.syms[id];
+    if (s.kind != Symbol::Object ||
+        !(ctx.flags[id].load(std::memory_order_relaxed) & SharedRef))
+      return;
+    auto [file, sec] = ctx.defTarget[id];
+    if (file != UINT32_MAX)
+      markAddressSignificant(ctx.objects[file], sec, safe);
+  });
+  ctx.pool->forEach(ctx.objects.size(), [&](size_t fi) {
+    ObjectFile *o = ctx.objects[fi];
+    auto markSymbol = [&](uint32_t si) {
+      if (si == 0 || si >= o->numSyms)
+        return;
+      Target t = symbolSection(o, si);
+      markAddressSignificant(t.file, t.sec, safe);
+    };
+    if (o->addrsigSec) {
+      const uint8_t *p = o->secData(o->addrsigSec);
+      const uint8_t *e = p + o->shdrs[o->addrsigSec].sh_size;
+      while (p < e) {
+        uint64_t v = 0;
+        unsigned shift = 0;
+        while (p < e) {
+          uint8_t b = *p++;
+          v |= uint64_t(b & 0x7f) << shift;
+          shift += 7;
+          if (!(b & 0x80))
+            break;
+        }
+        markSymbol(uint32_t(v));
+      }
+    } else {
+      // Without an address-significance table every symbol may have its
+      // address taken: that covers every section of this file that a symbol
+      // names, and the definitions its references resolve to.
+      for (uint32_t i = 1; i < o->numShdrs; ++i)
+        markAddressSignificant(o, i, safe);
+      for (uint32_t k = o->firstGlobal; k < o->numSyms; ++k)
+        if (o->syms[k].st_shndx == SHN_UNDEF)
+          markSymbol(k);
+    }
+    for (const EhPiece &f : o->eh)
+      if (f.cie != UINT32_MAX && f.target &&
+          (f.relEnd - f.relBegin > 1 ||
+           o->eh[f.cie].relEnd > o->eh[f.cie].relBegin))
+        o->secs[f.target].keepUnique.store(1, std::memory_order_relaxed);
+  }, 4);
+}
+
+// Per output section: 1 if its members may be folded, 2 if only its
+// read-only members may be.
+vector<uint8_t> outputFoldable;
+
+bool eligible(const ObjectFile *o, uint32_t sec) {
+  const SectionState &ss = o->secs[sec];
+  if (ss.osec == 0 || ss.live.load(std::memory_order_relaxed) != 1 ||
+      ss.keepUnique.load(std::memory_order_relaxed))
+    return false;
+  const Elf64_Shdr &sh = o->shdrs[sec];
+  if (!(sh.sh_flags & SHF_ALLOC) || sh.sh_type == SHT_NOBITS || !sh.sh_size)
+    return false;
+  const uint8_t foldable = outputFoldable[ss.osec];
+  if (!foldable || ((sh.sh_flags & SHF_WRITE) && foldable != 1))
+    return false;
+  // Sections with C identifier names are marked when they are assigned to
+  // output sections.
+  return true;
+}
+
+// What a relocation refers to, for comparisons: the same global name, or a
+// defined location (section or absolute value).
+struct RelTarget {
+  enum Kind : uint8_t { Name, Section, Absolute, Other } kind;
+  uint32_t id = 0;              // Name
+  ObjectFile *file = nullptr;   // Section
+  uint32_t sec = 0;             // Section
+  uint64_t value = 0;           // Section offset or absolute value
+};
+
+RelTarget relTarget(ObjectFile *o, uint32_t si) {
+  RelTarget t{RelTarget::Other};
+  const Elf64_Sym *sym;
+  ObjectFile *def = o;
+  if (si >= o->firstGlobal) {
+    t.id = o->nameIds[si - o->firstGlobal];
+    const Symbol &s = ctx.syms[t.id];
+    if (s.kind != Symbol::Object) {
+      t.kind = RelTarget::Name;
+      return t;
+    }
+    def = ctx.objects[s.file];
+    sym = &def->syms[s.index];
+  } else {
+    sym = &o->syms[si];
+  }
+  if (sym->st_shndx == SHN_ABS) {
+    t.kind = RelTarget::Absolute;
+    t.value = sym->st_value;
+  } else if (sym->st_shndx != SHN_UNDEF && sym->st_shndx < SHN_LORESERVE &&
+             def->secs[sym->st_shndx].osec != 0) {
+    t.kind = RelTarget::Section;
+    t.file = def;
+    t.sec = sym->st_shndx;
+    t.value = ELF64_ST_TYPE(sym->st_info) == STT_SECTION ? 0 : sym->st_value;
+  }
+  return t;
+}
+
+bool sameSymbol(ObjectFile *a, uint32_t sa, ObjectFile *b, uint32_t sb) {
+  const bool ga = sa >= a->firstGlobal, gb = sb >= b->firstGlobal;
+  if (ga && gb)
+    return a->nameIds[sa - a->firstGlobal] == b->nameIds[sb - b->firstGlobal];
+  return !ga && !gb && a == b && sa == sb;
+}
+
+bool equalsConstant(const Candidate &a, const Candidate &b) {
+  const Elf64_Shdr &ha = a.file->shdrs[a.sec], &hb = b.file->shdrs[b.sec];
+  if (ha.sh_flags != hb.sh_flags || ha.sh_size != hb.sh_size ||
+      a.file->secs[a.sec].osec != b.file->secs[b.sec].osec ||
+      memcmp(a.file->secData(a.sec), b.file->secData(b.sec), ha.sh_size))
+    return false;
+  auto [ra, na] = a.file->relas(a.sec);
+  auto [rb, nb] = b.file->relas(b.sec);
+  if (na != nb)
+    return false;
+  for (size_t k = 0; k < na; ++k) {
+    if (ra[k].r_offset != rb[k].r_offset ||
+        ELF64_R_TYPE(ra[k].r_info) != ELF64_R_TYPE(rb[k].r_info))
+      return false;
+    const uint32_t sa = ELF64_R_SYM(ra[k].r_info), sb = ELF64_R_SYM(rb[k].r_info);
+    const int64_t aa = ra[k].r_addend, ab = rb[k].r_addend;
+    if (sameSymbol(a.file, sa, b.file, sb)) {
+      if (aa != ab)
+        return false;
+      continue;
+    }
+    RelTarget ta = relTarget(a.file, sa), tb = relTarget(b.file, sb);
+    if (ta.kind != tb.kind || ta.kind == RelTarget::Name ||
+        ta.kind == RelTarget::Other)
+      return false;
+    if (ta.value + aa != tb.value + ab)
+      return false;
+  }
+  return true;
+}
+
+
+uint32_t classOfPlaced(uint32_t placed, int slot) {
+  if (placed == 0)
+    return 0;
+  const PlacedSection &ps = ctx.placed[placed];
+  // Sections outside the candidates are only equal to themselves.
+  return ps.icfCandidate ? ps.icfClass[slot] : (1u << 31) | placed;
+}
+
+bool equalsVariable(const Candidate &a, const Candidate &b, int cur) {
+  auto [ra, n] = a.file->relas(a.sec);
+  (void)ra;
+  const uint32_t *ta = targetPlaced.data() + targetBase[a.placed];
+  const uint32_t *tb = targetPlaced.data() + targetBase[b.placed];
+  for (size_t k = 0; k < n; ++k) {
+    if (ta[k] == tb[k])
+      continue;
+    // equalsConstant made both refer to sections, or to the same symbol.
+    const uint32_t ca = classOfPlaced(ta[k], cur);
+    if (ca == 0 || ca != classOfPlaced(tb[k], cur))
+      return false;
+  }
+  return true;
+}
+
+void run() {
+  STEP("icf");
+  markTime = Clock::now();
+  markKeepUnique();
+  // Writable data may not be shared; .data.rel.ro is only written by the
+  // dynamic loader. .init and .fini run as a whole.
+  outputFoldable.assign(L.all.size(), 2);
+  for (const OutputSection *os : L.all)
+    if (os->name == ".init" || os->name == ".fini")
+      outputFoldable[os->index] = 0;
+    else if (os->name == ".data.rel.ro")
+      outputFoldable[os->index] = 1;
+  mark("icf keepUnique");
+  // Candidates in position order.
+  vector<vector<Candidate>> perFile(ctx.objects.size());
+  ctx.pool->forEach(ctx.objects.size(), [&](size_t fi) {
+    ObjectFile *o = ctx.objects[fi];
+    for (uint32_t sec = 1; sec < o->numShdrs; ++sec) {
+      if (!eligible(o, sec))
+        continue;
+      const Elf64_Shdr &sh = o->shdrs[sec];
+      auto [rels, n] = o->relas(sec);
+      // The ends of the contents make a selective hash; groups compare the
+      // whole contents.
+      const uint8_t *d = o->secData(sec);
+      uint64_t h = (sh.sh_size <= 128
+                        ? hashBulk(d, sh.sh_size)
+                        : hashBulk(d, 64) ^ (hashBulk(d + sh.sh_size - 64, 64) *
+                                             0x9E3779B97F4A7C15ull)) ^
+                   (sh.sh_size * 0xff51afd7ed558ccdull) ^
+                   (sh.sh_flags * 0x9E3779B97F4A7C15ull) ^
+                   (uint64_t(o->secs[sec].osec) << 40) ^ (uint64_t(n) << 20);
+      for (size_t k = 0; k < n; ++k)
+        h = (h ^ (rels[k].r_offset * 0xff51afd7ed558ccdull) ^
+             ELF64_R_TYPE(rels[k].r_info)) *
+            0xc4ceb9fe1a85ec53ull;
+      const uint32_t placed = o->secs[sec].placed;
+      ctx.placed[placed].icfCandidate = true;
+      perFile[fi].push_back({o, sec, placed, h});
+    }
+  }, 4);
+  vector<Candidate> cand;
+  for (auto &v : perFile)
+    cand.insert(cand.end(), v.begin(), v.end());
+  if (cand.size() < 2)
+    return;
+  mark("icf candidates");
+  // Sort by hash, then position, in parallel: bucket by the hash's top bits.
+  {
+    constexpr unsigned Bits = 10;
+    vector<vector<uint32_t>> counts(ctx.pool->size(),
+                                    vector<uint32_t>(1u << Bits, 0));
+    const size_t chunk = (cand.size() + 63) / 64;
+    vector<vector<uint32_t>> chunkCounts(64, vector<uint32_t>(1u << Bits, 0));
+    ctx.pool->forEach(64, [&](size_t c) {
+      for (size_t i = c * chunk; i < std::min(cand.size(), (c + 1) * chunk); ++i)
+        ++chunkCounts[c][cand[i].hash >> (64 - Bits)];
+    }, 1);
+    vector<size_t> bucketStart((1u << Bits) + 1, 0);
+    for (unsigned b = 0; b < (1u << Bits); ++b) {
+      size_t sum = 0;
+      for (size_t c = 0; c < 64; ++c)
+        sum += chunkCounts[c][b];
+      bucketStart[b + 1] = bucketStart[b] + sum;
+    }
+    vector<vector<size_t>> chunkPos(64, vector<size_t>(1u << Bits));
+    for (unsigned b = 0; b < (1u << Bits); ++b) {
+      size_t p = bucketStart[b];
+      for (size_t c = 0; c < 64; ++c) {
+        chunkPos[c][b] = p;
+        p += chunkCounts[c][b];
+      }
+    }
+    vector<Candidate> sorted(cand.size());
+    ctx.pool->forEach(64, [&](size_t c) {
+      for (size_t i = c * chunk; i < std::min(cand.size(), (c + 1) * chunk); ++i)
+        sorted[chunkPos[c][cand[i].hash >> (64 - Bits)]++] = cand[i];
+    }, 1);
+    ctx.pool->forEach(1u << Bits, [&](size_t b) {
+      std::sort(sorted.begin() + bucketStart[b], sorted.begin() + bucketStart[b + 1],
+                [](const Candidate &x, const Candidate &y) {
+                  if (x.hash != y.hash)
+                    return x.hash < y.hash;
+                  if (x.file->pos != y.file->pos)
+                    return x.file->pos < y.file->pos;
+                  return x.sec < y.sec;
+                });
+    }, 4);
+    cand.swap(sorted);
+  }
+
+  // Splits [b, e) into runs equal to their first member, in place and in a
+  // stable order. A run's class is its end index plus one, so a run that
+  // does not split keeps its class. Runs of several members are reported for
+  // the next round; a single member's class is final and set in both slots.
+  vector<vector<Candidate>> scratch(ctx.pool->size());
+  vector<vector<std::pair<uint32_t, uint32_t>>> found(ctx.pool->size());
+  std::atomic<bool> split{false};
+  auto segregate = [&](size_t b, size_t e, auto &&equal, int next) {
+    auto &rest = scratch[Pool::self()];
+    auto &runs = found[Pool::self()];
+    while (b < e) {
+      rest.clear();
+      size_t m = b + 1;
+      for (size_t i = b + 1; i < e; ++i) {
+        if (equal(cand[b], cand[i]))
+          cand[m++] = cand[i];
+        else
+          rest.push_back(cand[i]);
+      }
+      std::copy(rest.begin(), rest.end(), cand.begin() + m);
+      const uint32_t cls = uint32_t(m + 1);
+      if (m - b == 1) {
+        PlacedSection &ps = ctx.placed[cand[b].placed];
+        ps.icfClass[0] = ps.icfClass[1] = cls;
+      } else {
+        for (size_t i = b; i < m; ++i)
+          ctx.placed[cand[i].placed].icfClass[next] = cls;
+        runs.push_back({uint32_t(b), uint32_t(m)});
+      }
+      if (m != e)
+        split.store(true, std::memory_order_relaxed);
+      b = m;
+    }
+  };
+  auto takeRuns = [&](vector<std::pair<size_t, size_t>> &out) {
+    out.clear();
+    for (auto &v : found) {
+      out.insert(out.end(), v.begin(), v.end());
+      v.clear();
+    }
+  };
+  // Groups of equal hashes, then of equal constant parts.
+  vector<std::pair<size_t, size_t>> groups;
+  for (size_t b = 0; b < cand.size();) {
+    size_t e = b + 1;
+    while (e < cand.size() && cand[e].hash == cand[b].hash)
+      ++e;
+    groups.push_back({b, e});
+    b = e;
+  }
+  mark("icf sort");
+  ctx.pool->forEach(groups.size(), [&](size_t g) {
+    segregate(groups[g].first, groups[g].second, equalsConstant, 0);
+  }, 16);
+  mark("icf constant");
+  // Relocation targets of the members of the groups that remain.
+  {
+    vector<std::pair<size_t, size_t>> runs;
+    for (auto &v : found)
+      runs.insert(runs.end(), v.begin(), v.end());
+    vector<uint64_t> offs(runs.size() + 1, 0);
+    for (size_t g = 0; g < runs.size(); ++g) {
+      uint64_t n = 0;
+      for (size_t i = runs[g].first; i < runs[g].second; ++i)
+        n += cand[i].file->relas(cand[i].sec).second;
+      offs[g + 1] = offs[g] + n;
+    }
+    targetPlaced.assign(offs.back() + 1, 0);
+    targetBase.assign(ctx.numPlaced, 0);
+    ctx.pool->forEach(runs.size(), [&](size_t g) {
+      uint64_t o = offs[g];
+      for (size_t i = runs[g].first; i < runs[g].second; ++i) {
+        const Candidate &c = cand[i];
+        targetBase[c.placed] = o;
+        auto [rels, n] = c.file->relas(c.sec);
+        for (size_t k = 0; k < n; ++k) {
+          RelTarget t = relTarget(c.file, ELF64_R_SYM(rels[k].r_info));
+          if (t.kind == RelTarget::Section)
+            targetPlaced[o + k] = t.file->secs[t.sec].placed;
+        }
+        o += n;
+      }
+    }, 8);
+  }
+  mark("icf targets");
+  // Refine the groups of several members by relocation targets until no
+  // group splits.
+  int cur = 0;
+  for (int round = 0;; ++round) {
+    takeRuns(groups);
+    split = false;
+    const int next = cur ^ 1;
+    ctx.pool->forEach(groups.size(), [&](size_t g) {
+      segregate(groups[g].first, groups[g].second,
+                [&](const Candidate &x, const Candidate &y) {
+                  return equalsVariable(x, y, cur);
+                },
+                next);
+    }, 8);
+    cur = next;
+    if (ctx.opt.timing)
+      fprintf(stderr, "    icf round %d groups %zu\n", round, groups.size());
+    if (!split.load())
+      break;
+    if (round > 100)
+      fatal("identical code folding does not converge");
+  }
+  mark("icf refine");
+  // Fold each class into its first member, the earliest by position: the
+  // runs of the last round are the classes of several members.
+  vector<std::pair<size_t, size_t>> classes;
+  takeRuns(classes);
+  std::atomic<size_t> folded{0};
+  ctx.pool->forEach(classes.size(), [&](size_t g) {
+    auto [b, e] = classes[g];
+    const Candidate &leader = cand[b];
+    PlacedSection &lp = ctx.placed[leader.placed];
+    uint64_t align = leader.file->shdrs[leader.sec].sh_addralign;
+    for (size_t i = b + 1; i < e; ++i) {
+      const Candidate &c = cand[i];
+      align = std::max<uint64_t>(align, c.file->shdrs[c.sec].sh_addralign);
+      SectionState &ss = c.file->secs[c.sec];
+      ss.live.store(3, std::memory_order_relaxed);
+      ss.placed = leader.placed;
+    }
+    if (align > leader.file->shdrs[leader.sec].sh_addralign)
+      lp.align = align;
+    folded += e - b - 1;
+  }, 16);
+  if (ctx.opt.timing)
+    fprintf(stderr, "    icf: %zu candidates, %zu folded\n", cand.size(),
+            folded.load());
+  if (!folded.load())
+    return;
+  // Drop the folded sections from their output sections.
+  ctx.pool->forEach(L.all.size(), [&](size_t i) {
+    auto &m = L.all[i]->members;
+    m.erase(std::remove_if(m.begin(), m.end(),
+                           [](const auto &x) {
+                             return x.first->secs[x.second].live.load(
+                                        std::memory_order_relaxed) == 3;
+                           }),
+            m.end());
+  }, 1);
+}
+
+} // namespace icf
 
 // Output sections with many members are laid out in fixed-size chunks, each
 // starting at its strictest member alignment, so the chunks can be laid out
@@ -1829,12 +2301,13 @@ void assignAllOffsets() {
     for (size_t m = c.begin; m < c.end; ++m) {
       auto [o, sec] = c.os->members[m];
       const Elf64_Shdr &sh = o->shdrs[sec];
-      uint64_t start = alignTo(off, sh.sh_addralign);
       PlacedSection &ps = placedOf(o, sec);
+      const uint64_t al = ps.align ? ps.align : sh.sh_addralign;
+      uint64_t start = alignTo(off, al);
       ps.padBefore = start - off;
       ps.outOff = start;
       off = start + sh.sh_size;
-      c.align = std::max<uint64_t>(c.align, sh.sh_addralign);
+      c.align = std::max<uint64_t>(c.align, al);
     }
     c.size = off;
   }, 1);
@@ -2097,7 +2570,7 @@ void buildDynamic() {
     ctx.pool->forEach(ctx.objects.size(), [&](size_t fi) {
       const ObjectFile *o = ctx.objects[fi];
       for (uint32_t i = 1; i < o->numShdrs; ++i)
-        if (o->secs[i].osec) {
+        if (o->secs[i].osec && o->secs[i].live.load() == 1) {
           rel[fi] += placedOf(o, i).numRel;
           sym[fi] += placedOf(o, i).numSym;
         }
@@ -2250,7 +2723,7 @@ void layoutEhFrame() {
       return;
     for (EhPiece &p : o->eh)
       if (p.cie != UINT32_MAX && p.target &&
-          o->secs[p.target].osec != 0) {
+          o->secs[p.target].osec != 0 && o->secs[p.target].live.load() == 1) {
         p.live = true;
         o->eh[p.cie].live = true;
         ++o->numLiveFdes;
@@ -2600,7 +3073,7 @@ void layout() {
     ObjectFile *o = ctx.objects[fi];
     for (uint32_t i = 1; i < o->numShdrs; ++i) {
       const SectionState &ss = o->secs[i];
-      if (ss.osec != 0) {
+      if (ss.osec != 0 && ss.live.load(std::memory_order_relaxed) == 1) {
         PlacedSection &ps = ctx.placed[ss.placed];
         ps.va = L.all[ss.osec]->addr + ps.outOff;
       }
@@ -3439,6 +3912,8 @@ void runPipeline() {
   markLive();
   lap();
   assignInputSections();
+  if (ctx.opt.icf)
+    icf::run();
   scanRelocations();
   lap();
   layout();

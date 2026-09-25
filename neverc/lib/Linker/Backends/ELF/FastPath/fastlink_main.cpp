@@ -86,6 +86,12 @@ fastlink::Request parseArgs(int argc, char **argv) {
       req.ehFrameHdr = true;
     else if (a == "--build-id" || a == "--build-id=sha1" || a == "--build-id=tree")
       req.buildIdSize = 20;
+    else if (a == "--icf=safe")
+      req.icf = 1;
+    else if (a == "--icf=all")
+      req.icf = 2;
+    else if (a == "--icf=none")
+      req.icf = 0;
     else if (a == "--build-id=fast")
       req.buildIdSize = 8;
     else if (a == "--build-id=md5")

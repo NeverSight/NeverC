@@ -691,7 +691,8 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
       {config->trace, "--trace"},
       {config->printGcSections || config->printIcfSections, "section report"},
       {config->sysvHash || !config->gnuHash, "hash style"},
-      {config->icf != ICFLevel::None, "--icf"},
+      {config->icf != ICFLevel::None && config->ignoreDataAddressEquality,
+       "--ignore-data-address-equality"},
       {config->discard == DiscardPolicy::None, "--discard-none"},
       {config->strip != StripPolicy::None, "--strip"},
       {!config->mapFile.empty(), "map file"},
@@ -813,6 +814,9 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
     break;
   }
   req.discardLocals = config->discard == DiscardPolicy::All;
+  req.icf = config->icf == ICFLevel::Safe  ? 1
+            : config->icf == ICFLevel::All ? 2
+                                           : 0;
   // Choose workers as the full backend does for its materialized inputs.
   req.selectThreads = [requested = config->requestedThreadCount](
                           unsigned long long bytes, unsigned long long files) {

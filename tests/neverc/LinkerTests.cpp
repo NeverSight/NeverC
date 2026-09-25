@@ -1785,6 +1785,57 @@ int lib_step(int x) { ++counter; return x + 4; }
   EXPECT_EQ(exec(fullExe.string(), {}).exitCode, 23);
 }
 
+TEST_F(LinkerTest, FastPipelineFoldsIdenticalCode) {
+  if (!isLinux())
+    GTEST_SKIP() << "the fast ELF pipeline links Linux executables";
+
+  const fs::path source = tmpFile("fast_icf.c");
+  const fs::path object = tmpFile("fast_icf.o");
+  writeFile(source, R"(
+__attribute__((noinline)) int f1(int x) { return x * 3 + 1; }
+__attribute__((noinline)) int f2(int x) { return x * 3 + 1; }
+__attribute__((noinline)) int g1(int x) { return x * 5 - 7; }
+__attribute__((noinline)) int g2(int x) { return x * 5 - 7; }
+int (*volatile p1)(int) = f1;
+int (*volatile p2)(int) = f2;
+int main(void) { return g1(10) + g2(10) + p1(1) + p2(1) == 94 ? 23 : 1; }
+)");
+  std::vector<std::string> compile = baseLinkArgs();
+  compile.insert(compile.end(), {"-O1", "-ffunction-sections", "-c",
+                                 source.string(), "-o", object.string()});
+  CmdResult compiled = ncc(compile);
+  ASSERT_EQ(compiled.exitCode, 0) << compiled.err;
+
+  ScopedEnvironmentVariable report("NEVERC_ELF_FASTLINK_TIME", "1");
+  auto link = [&](const std::string &mode, const std::string &threads) {
+    const fs::path image = tmpFile("fast_icf_" + mode + "_" + threads);
+    std::vector<std::string> args = baseLinkArgs();
+    args.insert(args.end(), {"-ficf=" + mode, "-Wl,--threads=" + threads,
+                             object.string(), "-o", image.string()});
+    CmdResult result = ncc(args);
+    EXPECT_EQ(result.exitCode, 0) << result.err;
+    EXPECT_EQ(result.err.find("fast pipeline not used"), std::string::npos)
+        << result.err;
+    EXPECT_EQ(exec(image.string(), {}).exitCode, 23);
+    return readFile(image);
+  };
+
+  // Safe folding leaves functions whose address is taken distinct.
+  const std::string safe = link("safe", "1");
+  EXPECT_TRUE(safe == link("safe", "8"));
+  EXPECT_EQ(requireELFSymbolAddress(safe, "g1"),
+            requireELFSymbolAddress(safe, "g2"));
+  EXPECT_NE(requireELFSymbolAddress(safe, "f1"),
+            requireELFSymbolAddress(safe, "f2"));
+
+  const std::string all = link("all", "1");
+  EXPECT_TRUE(all == link("all", "8"));
+  EXPECT_EQ(requireELFSymbolAddress(all, "f1"),
+            requireELFSymbolAddress(all, "f2"));
+  EXPECT_EQ(requireELFSymbolAddress(all, "g1"),
+            requireELFSymbolAddress(all, "g2"));
+}
+
 TEST_F(LinkerTest, ThreadCountOptionKeepsOutputBytesOnEveryFormat) {
   struct Format {
     const char *name;
