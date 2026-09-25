@@ -108,7 +108,9 @@ def fetch_bytes(url, opener=None):
                 raise
             if attempt + 1 < FETCH_RETRIES:
                 time.sleep(1.5 * (attempt + 1))
-    raise WatchError(f"failed to fetch AOSP text after {FETCH_RETRIES} tries") from last_error
+    raise WatchError(
+        f"failed to fetch AOSP text after {FETCH_RETRIES} tries: {url}"
+    ) from last_error
 
 
 def fetch_googlesource_text(branch, path, opener=None):
@@ -643,7 +645,13 @@ def format_markdown_report(report):
             ),
         )
         if layout:
-            lines.extend(["### NeverC-read fields changed", *layout, ""])
+            lines.extend([
+                "### NeverC-read source declarations changed",
+                "Header indices include fields behind CONFIG_* guards; check the "
+                "target build's config and measured byte offsets before changing a layout.",
+                *layout,
+                "",
+            ])
         elif _has_identity_updates(report["changes"]) and _layout_was_probed(report):
             lines.extend(
                 [
@@ -749,7 +757,12 @@ def build_discord_payload(report):
     if layout:
         if len(layout) > 12:
             layout = layout[:12] + [f"... +{len(layout) - 12} more"]
-        sections.append("**NeverC-read fields changed**\n" + "\n".join(layout))
+        sections.append(
+            "**NeverC-read source declarations changed**\n"
+            "Header indices include CONFIG_* guarded fields. Verify the target "
+            "build's config and byte offsets before changing a layout.\n"
+            + "\n".join(layout)
+        )
     elif _has_identity_updates(changes) and _layout_was_probed(report):
         sections.append(
             "**NeverC-read fields**\n"
@@ -829,23 +842,35 @@ def should_notify(report, force_notify):
     return bool(force_notify or report["has_updates"] or report["errors"])
 
 
+def is_transient_probe_error(error):
+    cause = error.__cause__ if isinstance(error, WatchError) else error
+    if isinstance(cause, urllib.error.HTTPError):
+        return cause.code == 429 or cause.code >= 500
+    return isinstance(cause, (urllib.error.URLError, TimeoutError, OSError))
+
+
 def probe_all(families, opener=None, ls_remote=None):
     records = []
     errors = []
     header_cache = {}
     for family in families:
-        try:
-            records.append(
-                probe_family(family, opener=opener, header_cache=header_cache)
-            )
-        except Exception as error:  # noqa: BLE001 — keep other families
-            errors.append(
-                {
-                    "kernel_name": family["kernel_name"],
-                    "legacy_id": family["legacy_id"],
-                    "message": str(error),
-                }
-            )
+        for attempt in range(2):
+            try:
+                records.append(
+                    probe_family(family, opener=opener, header_cache=header_cache)
+                )
+                break
+            except Exception as error:  # noqa: BLE001 — keep other families
+                if attempt == 0 and is_transient_probe_error(error):
+                    continue
+                errors.append(
+                    {
+                        "kernel_name": family["kernel_name"],
+                        "legacy_id": family["legacy_id"],
+                        "message": str(error),
+                    }
+                )
+                break
     try:
         known_branches = list_gki_branches(ls_remote=ls_remote)
     except WatchError as error:
