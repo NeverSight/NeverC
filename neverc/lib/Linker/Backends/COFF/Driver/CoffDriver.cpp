@@ -521,6 +521,12 @@ void LinkerDriver::parseDirectives(InputFile *file) {
     case OPT_incl:
       addUndefined(arg->getValue());
       break;
+    case OPT_inferasanlibs:
+    case OPT_inferasanlibs_no:
+      if (!ctx.config.inferAsanLibsSet)
+        ctx.config.inferAsanLibs =
+            arg->getOption().getID() == OPT_inferasanlibs;
+      break;
     case OPT_manifestdependency:
       ctx.config.manifestDependencies.insert(arg->getValue());
       break;
@@ -553,8 +559,6 @@ void LinkerDriver::parseDirectives(InputFile *file) {
       break;
     }
     case OPT_guardsym:
-    case OPT_inferasanlibs:
-    case OPT_inferasanlibs_no:
       break;
     case OPT_align:
       parseNumbers(arg->getValue(), &ctx.config.align);
@@ -1701,8 +1705,10 @@ void LinkerDriver::run(ArrayRef<const char *> argsArr,
       !config->dll && args.hasFlag(OPT_tsaware, OPT_tsaware_no, true);
   config->callGraphProfileSort = (driverCfg.callGraphProfileSort != "none");
 
-  if (args.hasFlag(OPT_inferasanlibs, OPT_inferasanlibs_no, false))
-    warn("ignoring '--inferasanlibs', this flag is not supported");
+  config->inferAsanLibsSet =
+      args.hasArg(OPT_inferasanlibs, OPT_inferasanlibs_no);
+  config->inferAsanLibs =
+      args.hasFlag(OPT_inferasanlibs, OPT_inferasanlibs_no, false);
 
   if (config->enclave) {
     if (auto *arg = args.getLastArg(OPT_incremental, OPT_incremental_no);
@@ -1821,6 +1827,36 @@ void LinkerDriver::run(ArrayRef<const char *> argsArr,
   run();
   if (errorCount())
     return;
+
+  // /INFERASANLIBS: instrumented objects get the AddressSanitizer runtime
+  // that matches the C runtime they use.
+  if (config->inferAsanLibs && !config->noDefaultLibAll) {
+    Symbol *asanInit = ctx.symtab.find(mangle("__asan_init"));
+    if (asanInit && isa<Undefined>(asanInit)) {
+      StringRef arch = config->machine == IMAGE_FILE_MACHINE_I386 ? "i386"
+                       : config->machine == ARM64                 ? "aarch64"
+                                                                  : "x86_64";
+      const bool dynamicCrt =
+          visitedLibs.count("msvcrt.lib") || visitedLibs.count("msvcrtd.lib") ||
+          visitedLibs.count("msvcrt") || visitedLibs.count("msvcrtd");
+      SmallVector<std::string, 2> libs;
+      if (dynamicCrt) {
+        libs.push_back(("clang_rt.asan_dynamic-" + arch + ".lib").str());
+        libs.push_back(
+            ("clang_rt.asan_dynamic_runtime_thunk-" + arch + ".lib").str());
+      } else if (config->dll) {
+        libs.push_back(("clang_rt.asan_dll_thunk-" + arch + ".lib").str());
+      } else {
+        libs.push_back(("clang_rt.asan-" + arch + ".lib").str());
+      }
+      for (const std::string &lib : libs)
+        if (std::optional<StringRef> path = findLibIfNew(saver().save(lib)))
+          enqueuePath(*path, false, false);
+      run();
+      if (errorCount())
+        return;
+    }
+  }
 
   // --- Post-input adjustments ---
 

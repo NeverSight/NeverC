@@ -225,8 +225,9 @@ OPTION(prefix_1, "--incremental", incremental, Flag, INVALID, INVALID, nullptr,
        "Keep original import library if contents are unchanged", nullptr,
        nullptr)
 OPTION(prefix_1, "--inferasanlibs", inferasanlibs, Flag, INVALID, INVALID,
-       nullptr, 0, DefaultVis, 0, "Unused, generates a warning", nullptr,
-       nullptr)
+       nullptr, 0, DefaultVis, 0,
+       "Add the AddressSanitizer runtime that instrumented objects need",
+       nullptr, nullptr)
 OPTION(prefix_1, "--integritycheck", integritycheck, Flag, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0, "Set FORCE_INTEGRITY bit in PE header",
        nullptr, nullptr)

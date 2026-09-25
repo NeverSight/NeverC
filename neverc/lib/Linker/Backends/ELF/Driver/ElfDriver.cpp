@@ -2261,10 +2261,6 @@ void readConfigs(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
   if (config->splitStackAdjustSize < 0)
     error("--split-stack-adjust-size: size must be >= 0");
 
-  if (args.hasArg(OPT_Ttext_segment))
-    error("-Ttext-segment is not supported. Use --image-base if you "
-          "intend to set the base address");
-
   // Parse ELF{32,64}{LE,BE} and CPU type from driver-supplied emulation.
   if (!driverCfg.emulation.empty()) {
     StringRef s = saver().save(driverCfg.emulation);
@@ -2691,18 +2687,22 @@ namespace {
 std::optional<uint64_t> getImageBase(opt::InputArgList &args) {
   // Because we are using "Config->maxPageSize" here, this function has to be
   // called after the variable is initialized.
-  auto *arg = args.getLastArg(OPT_image_base);
+  // -Ttext-segment places the first segment, which holds the headers and so
+  // starts the image.
+  auto *arg = args.getLastArg(OPT_image_base, OPT_Ttext_segment);
   if (!arg)
     return std::nullopt;
 
   StringRef s = arg->getValue();
+  StringRef name = arg->getOption().matches(OPT_image_base) ? "--image-base"
+                                                            : "-Ttext-segment";
   uint64_t v;
   if (!to_integer(s, v)) {
-    error("--image-base: number expected, but got " + s);
+    error(name + ": number expected, but got " + s);
     return 0;
   }
   if ((v % config->maxPageSize) != 0)
-    warn("--image-base: address isn't multiple of page size: " + s);
+    warn(name + ": address isn't multiple of page size: " + s);
   return v;
 }
 } // namespace

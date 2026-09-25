@@ -209,6 +209,11 @@ struct Configuration {
   bool dynamicBase = true;
   bool allowBind = true;
   bool cetCompat = false;
+  // /INFERASANLIBS: add the AddressSanitizer runtime that instrumented
+  // objects need.
+  bool inferAsanLibs = false;
+  // Whether the command line chose, which directives do not override.
+  bool inferAsanLibsSet = false;
   bool nxCompat = true;
   bool allowIsolation = true;
   bool terminalServerAware = true;

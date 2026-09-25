@@ -3524,6 +3524,29 @@ pick:
   CmdResult alloc = linkDebug({"-Wl,--compress-sections=.text=zlib"}, compressed);
   EXPECT_NE(alloc.exitCode, 0);
   EXPECT_TRUE(alloc.stderrContains("SHF_ALLOC")) << alloc.err;
+
+  // -Ttext-segment places the first segment, and so the image, as
+  // --image-base does.
+  const fs::path based = tmpFile("pad_based");
+  CmdResult textSegment =
+      linkDebug({"-no-pie", "-Wl,-Ttext-segment=0x10000000"}, based);
+  ASSERT_EQ(textSegment.exitCode, 0) << textSegment.err;
+  EXPECT_EQ(exec(based.string(), {}).exitCode, 3);
+  auto basedObject = llvm::object::ObjectFile::createObjectFile(
+      llvm::MemoryBufferRef(readFile(based), "based"));
+  ASSERT_TRUE(static_cast<bool>(basedObject));
+  auto *elf =
+      llvm::dyn_cast<llvm::object::ELF64LEObjectFile>(basedObject->get());
+  ASSERT_NE(elf, nullptr);
+  auto phdrs = elf->getELFFile().program_headers();
+  ASSERT_TRUE(static_cast<bool>(phdrs));
+  uint64_t firstLoad = 0;
+  for (const auto &phdr : *phdrs)
+    if (phdr.p_type == llvm::ELF::PT_LOAD) {
+      firstLoad = phdr.p_vaddr;
+      break;
+    }
+  EXPECT_EQ(firstLoad, 0x10000000u);
 }
 
 TEST_F(LinkerTest, DebugNamesMergesNameIndexes) {
@@ -3689,6 +3712,60 @@ main:
   CmdResult link = ncc(args);
   ASSERT_EQ(link.exitCode, 0) << link.err;
   EXPECT_EQ(exec(image.string(), {}).exitCode, 2);
+}
+
+TEST_F(LinkerTest, MsvcInferAsanLibs) {
+  const std::string target = "--target=x86_64-pc-windows-msvc";
+  const fs::path dir = tmpFile("msvc_asan_dir");
+  fs::create_directories(dir);
+  const fs::path mainSource = dir / "main.c";
+  const fs::path mainObject = dir / "main.o";
+  const fs::path directiveSource = dir / "directive.c";
+  const fs::path directiveObject = dir / "directive.o";
+  const fs::path runtimeSource = dir / "runtime.c";
+  const fs::path runtimeObject = dir / "runtime.o";
+  const fs::path image = dir / "main.exe";
+  writeFile(mainSource, "void __asan_init(void);\n"
+                        "int main(void) { __asan_init(); return 0; }\n");
+  writeFile(directiveSource, "#pragma comment(linker, \"/INFERASANLIBS\")\n"
+                             "void __asan_init(void);\n"
+                             "int main(void) { __asan_init(); return 0; }\n");
+  writeFile(runtimeSource, "void __asan_init(void) {}\n");
+  for (auto [source, object] : {std::pair{mainSource, mainObject},
+                                std::pair{directiveSource, directiveObject},
+                                std::pair{runtimeSource, runtimeObject}}) {
+    CmdResult compile =
+        ncc({target, "-fno-lto", "-c", source.string(), "-o", object.string()});
+    ASSERT_EQ(compile.exitCode, 0) << compile.err;
+  }
+  // The static C runtime pairs with the static AddressSanitizer runtime.
+  ASSERT_EQ(ncc({"--emit-static-lib", runtimeObject.string(), "-o",
+                 (dir / "clang_rt.asan-x86_64.lib").string()})
+                .exitCode,
+            0);
+  auto link = [&](const fs::path &object, std::vector<std::string> flags) {
+    std::vector<std::string> args = {target, object.string(),
+                                     "-Wl,--entry=main",
+                                     "-Wl,/libpath:" + dir.string()};
+    args.insert(args.end(), flags.begin(), flags.end());
+    args.insert(args.end(), {"-o", image.string()});
+    return ncc(args);
+  };
+
+  CmdResult missing = link(mainObject, {});
+  EXPECT_NE(missing.exitCode, 0);
+  EXPECT_TRUE(missing.stderrContains("undefined symbol: __asan_init"))
+      << missing.err;
+  CmdResult inferred = link(mainObject, {"-Wl,/INFERASANLIBS"});
+  EXPECT_EQ(inferred.exitCode, 0) << inferred.err;
+  EXPECT_FALSE(inferred.stderrContains("not supported")) << inferred.err;
+  CmdResult directive = link(directiveObject, {});
+  EXPECT_EQ(directive.exitCode, 0) << directive.err;
+  // The command line wins over an object's directive.
+  CmdResult disabled = link(directiveObject, {"-Wl,/INFERASANLIBS:NO"});
+  EXPECT_NE(disabled.exitCode, 0);
+  EXPECT_TRUE(disabled.stderrContains("undefined symbol: __asan_init"))
+      << disabled.err;
 }
 
 TEST_F(LinkerTest, MsvcStubAndIncludeGlob) {
