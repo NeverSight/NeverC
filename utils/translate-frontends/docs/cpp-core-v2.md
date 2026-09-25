@@ -2287,23 +2287,25 @@ the `__bit_reference`, `__vector/pmr.h`, and `__vector/vector_bool.h` files
 retain their LLVM 20.1.8 source bytes and catalog hashes. For the default
 allocator specialization, Clang can fold `std::vector<int>` size and alignment
 queries from libc++'s three-pointer layout and resolve its `size_type` alias.
-Authenticated `std::vector<T, std::allocator<T>>` objects with non-boolean
-integer or floating elements use direct lowering for default, bounded
-count/fill/list, copy and move construction; copy, move and initializer-list
-assignment; destruction; size, capacity, max_size, empty, data,
-element/front/back access; clear,
-push/pop, zero- or one-argument `emplace_back` with exact element types,
+Authenticated `std::vector<T, std::allocator<T>>` objects admit non-boolean
+integer and floating elements, plus source-owned standard-layout records with
+trivial default/copy/move construction, assignment and destruction. They use
+direct lowering for default, bounded count/fill/list, copy and move
+construction; copy, move and initializer-list assignment; destruction; size,
+capacity, max_size, empty, data, element/front/back access; clear, push/pop;
+zero- or one-argument `emplace_back` with exact element types;
 begin/end, cbegin/cend, rbegin/rend, crbegin/crend and const iteration;
 reserve/resize/shrink_to_fit; lvalue/rvalue, counted-value, pointer and wrapped iterator
 range, and initializer-list `insert`; zero- or one-argument positional
 `emplace` with exact element types; counted-value, pointer and wrapped
 iterator range, and initializer-list `assign`; single-position and range
-`erase`; member/free swap; and all six vector/vector comparison operators.
-Insert and positional emplace return mutable
-iterators. Single-value insertion and emplace preserve aliased element inputs;
+`erase`; member/free swap; and all six vector/vector comparison operators for
+arithmetic elements.
+Insert and positional emplace return mutable iterators. Single-value insertion
+and emplace preserve aliased element inputs;
 they shift in place when capacity permits and otherwise move storage through
 the selected allocator.
-Erase shifts surviving arithmetic elements in place and returns the following
+Erase shifts surviving elements in place and returns the following
 mutable iterator. Assign reuses capacity when possible and replaces storage
 through the selected allocator otherwise. Reserve, insert, and push growth
 preserve existing element values and use the selected allocator, and copy
@@ -2320,9 +2322,11 @@ operand evaluation order; erase return positions and empty ranges; swap
 ownership and eventual release. Comparison fixtures cover equality,
 lexicographic ordering, empty and prefix ranges, signed and floating elements,
 single evaluation of operands, and the pinned NaN behavior.
-Record elements, other allocators, remaining vector methods and throwing
-allocation or length-error paths remain unsupported. Quoted and shadow headers
-remain rejected.
+Trivial-record fixtures cover construction, growth with an aliased source,
+access, insert/erase, fill/list/range assignment, copy/move, resize and swap.
+Nontrivial record elements, other allocators, remaining vector methods, and
+throwing allocation or length-error paths remain unsupported. Quoted and
+shadow headers remain rejected.
 
 ## Dynamic local static initialization
 

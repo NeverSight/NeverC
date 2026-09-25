@@ -29057,6 +29057,27 @@ bool compare_vectors(const std::vector<int>& left,
   return left == right || left != right || left < right || left > right ||
          left <= right || left >= right;
 }
+struct VectorEntry { int key; int value; };
+int record_vector(std::vector<VectorEntry>& values) {
+  values.push_back(VectorEntry{1, 2});
+  values.emplace_back();
+  return values[0].key + values.back().value;
+}
+struct VectorNested { VectorEntry first; VectorEntry second; };
+int nested_record_vector(std::vector<VectorNested>& values) {
+  values.push_back(VectorNested{{1, 2}, {3, 4}});
+  return values[0].second.value;
+}
+template<class T> struct VectorBox { T value; };
+int template_record_vector(std::vector<VectorBox<int>>& values) {
+  values.push_back(VectorBox<int>{3});
+  return values[0].value;
+}
+struct VectorPointer { int* pointer; int tag; };
+int pointer_record_vector(std::vector<VectorPointer>& values, int& value) {
+  values.push_back(VectorPointer{&value, 4});
+  return *values[0].pointer + values[0].tag;
+}
 """
     vector_dependencies = None
     for target in sdk_targets:
@@ -29073,7 +29094,35 @@ bool compare_vectors(const std::vector<int>& left,
             vector_dependencies = dependencies
         else:
             assert dependencies == vector_dependencies, target
-        assert len(vector_ir["functions"]) == 14, target
+        assert len(vector_ir["functions"]) == 18, target
+    vector_record_boundary_preamble = """\
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <vector>
+"""
+    for name, source in {
+        "nontrivial-record": """\
+struct Stateful { int value; ~Stateful() {} };
+int main() { std::vector<Stateful> values; return values.size(); }
+""",
+        "deleted-copy-record": """\
+struct DeletedCopy { int value; DeletedCopy() = default;
+  DeletedCopy(const DeletedCopy&) = delete; };
+int main() { std::vector<DeletedCopy> values; return values.size(); }
+""",
+        "record-comparison": """\
+struct Entry { int value; };
+bool operator==(const Entry& left, const Entry& right) {
+  return left.value == right.value;
+}
+int main() { std::vector<Entry> left, right; return left == right; }
+""",
+    }.items():
+        check("v2-vector-" + name, vector_record_boundary_preamble + source,
+              "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-vector-runtime-object",
           '#include <vector>\nint f(){std::vector<int> v;return v.size();}',
           "TR0203", profile="cpp-core-v2", sdk=True)

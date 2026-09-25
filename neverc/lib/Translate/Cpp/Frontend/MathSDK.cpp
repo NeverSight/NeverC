@@ -4497,9 +4497,24 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
       Arguments.get(1).getKind() != TemplateArgument::Type)
     return std::nullopt;
   const auto Element = Arguments.get(0).getAsType();
+  const auto *ElementRecord =
+      Element.isNull() ? nullptr : Element->getAsCXXRecordDecl();
+  ElementRecord = ElementRecord ? ElementRecord->getDefinition() : nullptr;
+  const bool TrivialSourceRecord =
+      ElementRecord && !ElementRecord->isInvalidDecl() &&
+      !ElementRecord->isUnion() && !ElementRecord->isDependentContext() &&
+      S.owns(SM, ElementRecord->getLocation()) &&
+      ElementRecord->isStandardLayout() && ElementRecord->isTrivial() &&
+      ElementRecord->hasTrivialDefaultConstructor() &&
+      ElementRecord->hasTrivialCopyConstructor() &&
+      ElementRecord->hasTrivialMoveConstructor() &&
+      ElementRecord->hasTrivialCopyAssignment() &&
+      ElementRecord->hasTrivialMoveAssignment() &&
+      ElementRecord->hasTrivialDestructor();
   if (Element.isNull() || Element.isConstQualified() ||
       Element.isVolatileQualified() || Element->isBooleanType() ||
-      !(Element->isIntegerType() || Element->isFloatingType()) ||
+      !(Element->isIntegerType() || Element->isFloatingType() ||
+        TrivialSourceRecord) ||
       Element->isIncompleteType())
     return std::nullopt;
   const auto Pointer = Context.getPointerType(Element);
@@ -17512,7 +17527,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                     Context.hasSameUnqualifiedType(Call->getArg(I)->getType(),
                                                    VectorType);
       }
-      if (Matching)
+      if (Matching && (Left->ElementType->isIntegerType() ||
+                       Left->ElementType->isFloatingType()))
         switch (Operator->getOperator()) {
         case OO_EqualEqual:
         case OO_ExclaimEqual:

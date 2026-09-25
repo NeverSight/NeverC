@@ -52304,6 +52304,123 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorTrivialRecordRun) {
+  const auto Source = tmpFile("vector-trivial-record.cpp");
+  const auto Output = tmpFile("vector-trivial-record.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <vector>
+struct Entry { int key; int value; };
+struct Nested { Entry first; Entry second; };
+int main() {
+  {
+    std::vector<Entry> values{Entry{1, 10}, Entry{2, 20}};
+    values.reserve(8);
+    Entry *storage = values.data();
+    values.push_back(Entry{3, 30});
+    Entry &zero = values.emplace_back();
+    Entry &fifth = values.emplace_back(Entry{5, 50});
+    if (values.data() != storage || values.size() != 5 ||
+        zero.key != 0 || zero.value != 0 ||
+        &fifth != &values[4] || fifth.key != 5 || fifth.value != 50)
+      return 1;
+    auto inserted = values.insert(values.cbegin(), Entry{0, 0});
+    if (inserted != values.begin() || values.front().key != 0)
+      return 2;
+    auto erased = values.erase(values.cbegin());
+    if (erased != values.begin() || values.data() != storage ||
+        values.size() != 5 ||
+        values.front().key != 1 || values.back().key != 5)
+      return 2;
+    values.insert(values.cbegin(), values[1]);
+    if (values.size() != 6 || values[0].key != 2 ||
+        values[1].key != 1 || values[2].key != 2)
+      return 3;
+    values.assign(3, Entry{7, 70});
+    values.assign({Entry{8, 80}, Entry{9, 90}});
+    values = {Entry{10, 100}, Entry{11, 110}};
+    if (values.data() != storage || values.size() != 2 ||
+        values[0].key != 10 || values[1].value != 110)
+      return 4;
+    Entry source[2] = {{12, 120}, {13, 130}};
+    values.assign(source, source + 2);
+    values.insert(values.cend(), source, source + 2);
+    if (values.size() != 4 || values[0].key != 12 ||
+        values[1].value != 130 || values[2].key != 12 ||
+        values[3].value != 130)
+      return 5;
+    std::vector<Entry> copied(values);
+    if (copied.data() == values.data() || copied.size() != 4 ||
+        copied[0].key != 12 || copied[3].value != 130)
+      return 6;
+    std::vector<Entry> moved(static_cast<std::vector<Entry> &&>(copied));
+    if (!copied.empty() || moved.size() != 4 || moved[1].key != 13)
+      return 7;
+    values.clear();
+    values.resize(2);
+    values.resize(3, Entry{14, 140});
+    if (values.data() != storage || values.size() != 3 ||
+        values[0].key != 0 || values[1].value != 0 ||
+        values[2].key != 14 || values[2].value != 140)
+      return 8;
+    values.swap(moved);
+    if (moved.data() != storage || values.size() != 4 ||
+        moved.size() != 3 || values[0].key != 12 || moved[2].key != 14)
+      return 9;
+    std::vector<Entry> growth;
+    growth.reserve(1);
+    growth.push_back(Entry{15, 150});
+    Entry *original = growth.data();
+    growth.push_back(growth[0]);
+    if (growth.data() == original || growth.size() != 2 ||
+        growth[0].key != 15 || growth[1].value != 150)
+      return 10;
+    std::vector<Nested> composites;
+    composites.reserve(1);
+    composites.push_back(Nested{{16, 160}, {17, 170}});
+    composites.push_back(composites[0]);
+    if (composites.size() != 2 || composites[0].first.key != 16 ||
+        composites[1].second.value != 170)
+      return 11;
+    std::vector<Entry> assigned;
+    assigned.reserve(8);
+    Entry *assigned_storage = assigned.data();
+    assigned = values;
+    if (assigned.data() != assigned_storage || assigned.size() != 4 ||
+        assigned[0].key != 12 || assigned[3].value != 130)
+      return 12;
+    std::vector<Entry> transferred;
+    transferred = static_cast<std::vector<Entry> &&>(assigned);
+    if (!assigned.empty() || transferred.size() != 4 ||
+        transferred[1].key != 13)
+      return 13;
+    transferred.shrink_to_fit();
+    if (transferred.capacity() != transferred.size() ||
+        transferred[2].value != 120)
+      return 14;
+  }
+  return allocations == releases ? 0 : 15;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-trivial-record" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorCopyAndMoveConstructionRun) {
   const auto Source = tmpFile("vector-copy-move.cpp");
   const auto Output = tmpFile("vector-copy-move.nc");
