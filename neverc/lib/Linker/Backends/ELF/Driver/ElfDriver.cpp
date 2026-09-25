@@ -33,6 +33,7 @@
 #include "neverc/Foundation/AndroidKernelReleasePublisher.h"
 #include "neverc/Foundation/Core/OutputCoordinator.h"
 #include "neverc/Foundation/Core/OutputTransaction.h"
+#include "neverc/Foundation/Core/Version.h"
 #include "neverc/Invoke/InMemoryFileStore.h"
 #include "neverc/Merge/Merger.h"
 #include "llvm/ADT/ScopeExit.h"
@@ -134,39 +135,156 @@ llvm::raw_fd_ostream Ctx::openAuxiliaryFile(llvm::StringRef filename,
   return {filename, ec, flags};
 }
 
+namespace {
+// Applies the options GNU linkers take for settings the neverc driver derives
+// from its own flags. Such options follow the driver's choices on a GNU
+// command line, so they override them. The output kind must agree with the
+// driver's, which picked the startup files and libraries for it.
+LinkerDriverConfig applyLinkerOptions(opt::InputArgList &args,
+                                      const LinkerDriverConfig &driverCfg) {
+  LinkerDriverConfig cfg = driverCfg;
+  auto conflict = [&](const opt::Arg *arg, StringRef use) {
+    error(arg->getAsString(args) +
+          " conflicts with the compiler's link settings; pass " + use +
+          " to the compiler instead");
+  };
+  if (opt::Arg *arg = args.getLastArg(OPT_o))
+    if (arg->getValue() != cfg.outputFile)
+      conflict(arg, "-o");
+  if (opt::Arg *arg = args.getLastArg(OPT_shared))
+    if (!cfg.shared)
+      conflict(arg, "-shared");
+  if (opt::Arg *arg = args.getLastArg(OPT_pie, OPT_no_pie)) {
+    const bool pie = arg->getOption().matches(OPT_pie);
+    if (pie != cfg.pie)
+      conflict(arg, pie ? "-pie" : "-no-pie");
+  }
+  if (opt::Arg *arg = args.getLastArg(OPT_relocatable))
+    if (!cfg.relocatable)
+      conflict(arg, "-r");
+  if (opt::Arg *arg = args.getLastArg(OPT_m)) {
+    if (cfg.emulation.empty())
+      cfg.emulation = arg->getValue();
+    else if (arg->getValue() != cfg.emulation)
+      conflict(arg, "--target");
+  }
+  if (opt::Arg *arg = args.getLastArg(OPT_eb, OPT_el)) {
+    const int endianness = arg->getOption().matches(OPT_el) ? 1 : 2;
+    if (cfg.endianness == 0)
+      cfg.endianness = endianness;
+    else if (endianness != cfg.endianness)
+      conflict(arg, "--target");
+  }
+  if (opt::Arg *arg = args.getLastArg(OPT_sysroot)) {
+    if (cfg.sysroot.empty())
+      cfg.sysroot = arg->getValue();
+    else if (arg->getValue() != cfg.sysroot)
+      conflict(arg, "--sysroot");
+  }
+
+  cfg.gcSections =
+      args.hasFlag(OPT_gc_sections, OPT_no_gc_sections, cfg.gcSections);
+  if (opt::Arg *arg = args.getLastArg(OPT_icf_all, OPT_icf_safe, OPT_icf_none))
+    cfg.icfLevel = arg->getOption().matches(OPT_icf_all)    ? 2
+                   : arg->getOption().matches(OPT_icf_safe) ? 1
+                                                             : 0;
+  if (opt::Arg *arg = args.getLastArg(OPT_build_id))
+    cfg.buildId = arg->getValue();
+  if (opt::Arg *arg = args.getLastArg(OPT_hash_style)) {
+    StringRef style = arg->getValue();
+    if (style != "sysv" && style != "gnu" && style != "both")
+      error("unknown --hash-style: " + style);
+    cfg.hashStyle = style.str();
+  }
+  if (args.hasArg(OPT_O))
+    cfg.linkerOptLevel = args::getInteger(args, OPT_O, 1);
+  if (opt::Arg *arg = args.getLastArg(OPT_Map, OPT_print_map))
+    cfg.mapFile =
+        arg->getOption().matches(OPT_print_map) ? "-" : arg->getValue();
+  if (opt::Arg *arg = args.getLastArg(OPT_compress_debug_sections))
+    cfg.compressDebugSections = arg->getValue();
+  if (args.hasArg(OPT_strip_all))
+    cfg.stripMode = StripMode::All;
+  else if (args.hasArg(OPT_strip_debug) && cfg.stripMode == StripMode::None)
+    cfg.stripMode = StripMode::DebugInfo;
+  cfg.exportDynamic =
+      args.hasFlag(OPT_export_dynamic, OPT_no_export_dynamic, cfg.exportDynamic);
+  cfg.ehFrameHdr =
+      args.hasFlag(OPT_eh_frame_hdr, OPT_no_eh_frame_hdr, cfg.ehFrameHdr);
+  cfg.printGCSections = args.hasFlag(OPT_print_gc_sections,
+                                     OPT_no_print_gc_sections,
+                                     cfg.printGCSections);
+  cfg.printICFSections = args.hasFlag(OPT_print_icf_sections,
+                                      OPT_no_print_icf_sections,
+                                      cfg.printICFSections);
+  cfg.traceFiles = cfg.traceFiles || args.hasArg(OPT_trace);
+  cfg.verbose = cfg.verbose || args.hasArg(OPT_verbose);
+  cfg.suppressWarnings = cfg.suppressWarnings || args.hasArg(OPT_no_warnings);
+  cfg.fatalWarnings = args.hasFlag(OPT_fatal_warnings, OPT_no_fatal_warnings,
+                                   cfg.fatalWarnings) &&
+                      !args.hasArg(OPT_no_warnings);
+  if (args.hasArg(OPT_error_limit))
+    cfg.errorLimit = args::getInteger(args, OPT_error_limit, 20);
+  cfg.demangle = args.hasFlag(OPT_demangle, OPT_no_demangle, cfg.demangle);
+  if (opt::Arg *arg =
+          args.getLastArg(OPT_dynamic_linker, OPT_no_dynamic_linker)) {
+    cfg.noDynamicLinker = arg->getOption().matches(OPT_no_dynamic_linker);
+    if (!cfg.noDynamicLinker)
+      cfg.dynamicLinker = arg->getValue();
+  }
+  if (opt::Arg *arg = args.getLastArg(OPT_call_graph_ordering_file))
+    cfg.callGraphOrderingFile = arg->getValue();
+  if (opt::Arg *arg = args.getLastArg(OPT_call_graph_profile_sort))
+    cfg.callGraphProfileSort = arg->getValue();
+  if (opt::Arg *arg = args.getLastArg(OPT_print_symbol_order))
+    cfg.printSymbolOrder = arg->getValue();
+  cfg.nostdlib = cfg.nostdlib || args.hasArg(OPT_nostdlib);
+  if (args.hasArg(OPT_time_trace_eq)) {
+    cfg.timeTraceEnabled = true;
+    cfg.timeTraceGranularity =
+        args::getInteger(args, OPT_time_trace_granularity, 500);
+  }
+  return cfg;
+}
+
+void applyColorDiagnostics(opt::InputArgList &args) {
+  opt::Arg *arg = args.getLastArg(OPT_color_diagnostics);
+  if (!arg)
+    return;
+  StringRef mode = arg->getValue();
+  raw_ostream &os = linker::errs();
+  if (mode == "always")
+    os.enable_colors(true);
+  else if (mode == "never")
+    os.enable_colors(false);
+  else if (mode == "auto")
+    os.enable_colors(os.has_colors());
+  else
+    error("unknown option: --color-diagnostics=" + mode);
+}
+} // namespace
+
 namespace linker {
 namespace elf {
 bool link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
           llvm::raw_ostream &stderrOS, bool exitEarly, bool disableOutput,
-          const LinkerDriverConfig &driverCfg) {
+          const LinkerDriverConfig &callerCfg) {
+  // Declared first: crash recovery must not unwind it before the backend.
   std::optional<linker::crash_recovery_detail::CrashRecoveryTimeTraceOwner>
       TraceProfiler;
-  const bool GuardAmbientTimeTrace =
-      !driverCfg.timeTraceEnabled &&
-      llvm::CrashRecoveryContext::GetCurrent() &&
-      llvm::timeTraceProfilerEnabled();
-  if (driverCfg.timeTraceEnabled || GuardAmbientTimeTrace)
-    TraceProfiler.emplace(driverCfg.timeTraceGranularity,
-                          args.empty() ? "neverc" : args.front());
-  if (llvm::StringRef Error = TraceProfiler ? TraceProfiler->acquisitionError()
-                                            : llvm::StringRef();
-      !Error.empty()) {
-    stderrOS << Error << '\n';
-    return false;
-  }
   linker::crash_recovery_detail::CrashRecoveryLocalOwner<LinkerExecutionContext>
-      ExecutionOwner(driverCfg.executionContext);
+      ExecutionOwner(callerCfg.executionContext);
   LinkerExecutionContext &Execution = ExecutionOwner.get();
   ELFLinkerContext &Backend = Execution.createBackend<ELFLinkerContext>();
   llvm::CrashRecoveryContextCleanupRegistrar<
       LinkerExecutionContext,
       linker::crash_recovery_detail::CrashRecoveryDestroyBackendCleanup<
           LinkerExecutionContext>>
-      CrashBackend(driverCfg.executionContext ? &Execution : nullptr);
+      CrashBackend(callerCfg.executionContext ? &Execution : nullptr);
   CommonLinkerContext &Common = Backend;
 
   Common.e.initialize(stdoutOS, stderrOS, exitEarly, disableOutput);
-  Common.e.errorLimit = driverCfg.errorLimit;
+  Common.e.errorLimit = callerCfg.errorLimit;
   Common.e.cleanupCallback = []() {
     elfState().reset();
     symtab = SymbolTable();
@@ -195,11 +313,52 @@ bool link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
 
   config->progName = args[0];
 
-  elfState().driver.run(args, driverCfg);
+  ELFOptTable parser;
+  opt::InputArgList parsedArgs = parser.parse(args.slice(1));
+  applyColorDiagnostics(parsedArgs);
+  const LinkerDriverConfig driverCfg =
+      applyLinkerOptions(parsedArgs, callerCfg);
+  Common.e.errorLimit = driverCfg.errorLimit;
+  if (errorCount())
+    return false;
+
+  // -help, -v and --version print and stop as GNU linkers do. Libtool
+  // recognizes a GNU-compatible linker by these messages.
+  if (parsedArgs.hasArg(OPT_help)) {
+    parser.printHelp(linker::outs(),
+                     (config->progName + " [options] file...").str().c_str(),
+                     "NeverC linker", /*ShowHidden=*/false,
+                     /*ShowAllAliases=*/true);
+    linker::outs() << "\n"
+                   << config->progName << ": supported targets: elf\n";
+    return true;
+  }
+  if (parsedArgs.hasArg(OPT_v) || parsedArgs.hasArg(OPT_version))
+    message(neverc::getNeverCFullVersion() + " (compatible with GNU linkers)");
+  if (parsedArgs.hasArg(OPT_version) ||
+      (parsedArgs.hasArg(OPT_v) && !parsedArgs.hasArg(OPT_INPUT)))
+    return true;
+
+  const bool GuardAmbientTimeTrace =
+      !driverCfg.timeTraceEnabled &&
+      llvm::CrashRecoveryContext::GetCurrent() &&
+      llvm::timeTraceProfilerEnabled();
+  if (driverCfg.timeTraceEnabled || GuardAmbientTimeTrace)
+    TraceProfiler.emplace(driverCfg.timeTraceGranularity,
+                          args.empty() ? "neverc" : args.front());
+  if (llvm::StringRef Error = TraceProfiler ? TraceProfiler->acquisitionError()
+                                            : llvm::StringRef();
+      !Error.empty()) {
+    stderrOS << Error << '\n';
+    return false;
+  }
+
+  elfState().driver.run(parsedArgs, driverCfg);
 
   if (driverCfg.timeTraceEnabled && TraceProfiler &&
       !config->outputFile.empty())
-    checkError(TraceProfiler->write(config->outputFile));
+    checkError(TraceProfiler->neverc::LLVMTimeTraceProfilerOwner::write(
+        parsedArgs.getLastArgValue(OPT_time_trace_eq), config->outputFile));
 
   return errorCount() == 0;
 }
@@ -695,6 +854,7 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
       {config->emitRelocs, "--emit-relocs"},
       {config->trace, "--trace"},
       {config->printGcSections || config->printIcfSections, "section report"},
+      {!config->printSymbolOrder.empty(), "--print-symbol-order"},
       {config->sysvHash || !config->gnuHash, "hash style"},
       {config->icf != ICFLevel::None && config->ignoreDataAddressEquality,
        "--ignore-data-address-equality"},
@@ -759,6 +919,7 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
     case OPT_enable_new_dtags:
     case OPT_disable_new_dtags:
     case OPT_threads_eq:
+    case OPT_threads:
     case OPT_fork:
     case OPT_no_fork:
     // Only shared libraries bind symbols differently.
@@ -779,6 +940,78 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
     case OPT_no_undefined_version:
     case OPT_soname:
     case OPT_version_script:
+    // Settings read from the configuration above; the checks there decline
+    // the values the pipeline does not implement.
+    case OPT_gc_sections:
+    case OPT_no_gc_sections:
+    case OPT_icf_all:
+    case OPT_icf_safe:
+    case OPT_icf_none:
+    case OPT_build_id:
+    case OPT_hash_style:
+    case OPT_O:
+    case OPT_Map:
+    case OPT_print_map:
+    case OPT_compress_debug_sections:
+    case OPT_strip_all:
+    case OPT_strip_debug:
+    case OPT_export_dynamic:
+    case OPT_no_export_dynamic:
+    case OPT_eh_frame_hdr:
+    case OPT_no_eh_frame_hdr:
+    case OPT_print_gc_sections:
+    case OPT_no_print_gc_sections:
+    case OPT_print_icf_sections:
+    case OPT_no_print_icf_sections:
+    case OPT_trace:
+    case OPT_verbose:
+    case OPT_fatal_warnings:
+    case OPT_no_fatal_warnings:
+    case OPT_no_warnings:
+    case OPT_error_limit:
+    case OPT_demangle:
+    case OPT_no_demangle:
+    case OPT_dynamic_linker:
+    case OPT_no_dynamic_linker:
+    case OPT_color_diagnostics:
+    case OPT_call_graph_ordering_file:
+    case OPT_call_graph_profile_sort:
+    case OPT_print_symbol_order:
+    case OPT_nostdlib:
+    case OPT_time_trace_eq:
+    case OPT_time_trace_granularity:
+    // Output kind and target options agree with the driver's settings.
+    case OPT_o:
+    case OPT_shared:
+    case OPT_pie:
+    case OPT_no_pie:
+    case OPT_relocatable:
+    case OPT_m:
+    case OPT_eb:
+    case OPT_el:
+    case OPT_sysroot:
+    // Accepted without effect, as GNU linkers do on these targets.
+    case OPT_ignored_d:
+    case OPT_ignored_g:
+    case OPT_ignored_G:
+    case OPT_ignored_hash_size_eq:
+    case OPT_ignored_long_plt:
+    case OPT_ignored_no_add_needed:
+    case OPT_ignored_no_copy_dt_needed_entries:
+    case OPT_ignored_no_ctors_in_init_array:
+    case OPT_ignored_no_keep_memory:
+    case OPT_ignored_no_warn_execstack:
+    case OPT_ignored_no_warn_rwx_segments:
+    case OPT_ignored_reduce_memory_overheads:
+    case OPT_ignored_rpath_link:
+    case OPT_ignored_rpath_link_eq:
+    case OPT_ignored_secure_plt:
+    case OPT_ignored_sort_common:
+    case OPT_ignored_stats:
+    case OPT_ignored_warn_execstack:
+    case OPT_ignored_warn_once:
+    case OPT_ignored_warn_rwx_segments:
+    case OPT_ignored_warn_shared_textrel:
       break;
     case OPT_no_mmap_output_file:
       req.mmapOutput = false;
@@ -968,11 +1201,8 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
 }
 } // namespace
 
-void LinkerDriver::run(ArrayRef<const char *> argsArr,
+void LinkerDriver::run(opt::InputArgList &args,
                        const LinkerDriverConfig &driverCfg) {
-  ELFOptTable parser;
-  opt::InputArgList args = parser.parse(argsArr.slice(1));
-
   errorHandler().fatalWarnings = driverCfg.fatalWarnings;
   errorHandler().suppressWarnings = driverCfg.suppressWarnings;
   checkZOptions(args);
@@ -1670,7 +1900,7 @@ void readConfigs(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
   }
 
   config->requestedThreadCount = config->driverCfg->threadCount;
-  if (auto *arg = args.getLastArg(OPT_threads_eq)) {
+  if (auto *arg = args.getLastArg(OPT_threads_eq, OPT_threads)) {
     unsigned threads = 0;
     if (!to_integer(arg->getValue(), threads) || threads == 0)
       error(arg->getSpelling() + ": expected a positive integer, but got '" +

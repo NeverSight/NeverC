@@ -98,7 +98,7 @@ struct VersionDefinition {
 
 class LinkerDriver {
 public:
-  void run(ArrayRef<const char *> args, const LinkerDriverConfig &driverCfg);
+  void run(llvm::opt::InputArgList &args, const LinkerDriverConfig &driverCfg);
   void addFile(StringRef path, bool withLOption);
   void addLibrary(StringRef name);
 

@@ -2139,6 +2139,78 @@ extra_value:
             uint64_t(llvm::ELF::DF_1_NODELETE | llvm::ELF::DF_1_ORIGIN));
 }
 
+TEST_F(LinkerTest, GnuLinkerOptionsOverrideDriverDefaults) {
+  if (!isLinux())
+    GTEST_SKIP() << "GNU linker options apply to ELF links";
+
+  const fs::path source = tmpFile("gnu_opts.c");
+  const fs::path object = tmpFile("gnu_opts.o");
+  const fs::path image = tmpFile("gnu_opts");
+  writeFile(source, R"(
+int unused_function(void) { return 3; }
+int main(void) { return 0; }
+)");
+  CmdResult compile = ncc({"-fno-lto", "-O0", "-ffunction-sections", "-c",
+                           source.string(), "-o", object.string()});
+  ASSERT_EQ(compile.exitCode, 0) << compile.err;
+
+  ScopedEnvironmentVariable report("NEVERC_ELF_FASTLINK_TIME", "1");
+  auto link = [&](std::vector<std::string> flags) {
+    std::vector<std::string> args = baseLinkArgs();
+    args.push_back(object.string());
+    args.insert(args.end(), flags.begin(), flags.end());
+    args.insert(args.end(), {"-o", image.string()});
+    return ncc(args);
+  };
+  auto symbols = [&] {
+    llvm::Expected<ELFImageSummary> summary =
+        readELFImageSummary(readFile(image));
+    EXPECT_TRUE(static_cast<bool>(summary))
+        << llvm::toString(summary.takeError()).str().str();
+    return summary ? summary->symbols : std::set<std::string>();
+  };
+
+  // The distribution flag sets of common Linux systems link on the fast
+  // pipeline, and --gc-sections takes effect although the driver's -O0
+  // leaves collection off.
+  CmdResult gc = link({"-Wl,-O1", "-Wl,--sort-common", "-Wl,--as-needed",
+                       "-Wl,-z,relro", "-Wl,-z,now", "-Wl,--gc-sections",
+                       "-Wl,--hash-style=gnu", "-Wl,--color-diagnostics",
+                       "-Wl,--no-warn-rwx-segments", "-Wl,--build-id=sha1"});
+  ASSERT_EQ(gc.exitCode, 0) << gc.err;
+  EXPECT_EQ(gc.err.find("fast pipeline not used"), std::string::npos) << gc.err;
+  EXPECT_EQ(symbols().count("unused_function"), 0u);
+  llvm::Expected<std::string> buildId = findELFBuildId(readFile(image));
+  ASSERT_TRUE(static_cast<bool>(buildId))
+      << llvm::toString(buildId.takeError()).str().str();
+  EXPECT_EQ(buildId->size(), 20u);
+
+  CmdResult kept = link({"-Wl,--gc-sections", "-Wl,--no-gc-sections"});
+  ASSERT_EQ(kept.exitCode, 0) << kept.err;
+  EXPECT_EQ(symbols().count("unused_function"), 1u);
+
+  CmdResult sysv = link({"-Wl,--hash-style=sysv", "-Wl,-s"});
+  ASSERT_EQ(sysv.exitCode, 0) << sysv.err;
+  llvm::Expected<bool> hash = hasELFSection(readFile(image), ".hash");
+  ASSERT_TRUE(static_cast<bool>(hash))
+      << llvm::toString(hash.takeError()).str().str();
+  EXPECT_TRUE(*hash);
+  EXPECT_TRUE(symbols().empty()) << "-s must strip the symbol table";
+
+  // Options that choose the output kind must agree with the driver, which
+  // picked the startup files.
+  CmdResult shared = link({"-Wl,-shared"});
+  EXPECT_NE(shared.exitCode, 0);
+  EXPECT_TRUE(shared.stderrContains("pass -shared to the compiler")) << shared.err;
+
+  CmdResult version = link({"-Wl,--version"});
+  EXPECT_EQ(version.exitCode, 0) << version.err;
+  EXPECT_TRUE(version.contains("compatible with GNU linkers")) << version.out;
+  CmdResult help = link({"-Wl,--help"});
+  EXPECT_EQ(help.exitCode, 0) << help.err;
+  EXPECT_TRUE(help.contains("supported targets: elf")) << help.out;
+}
+
 TEST_F(LinkerTest, ThreadCountOptionKeepsOutputBytesOnEveryFormat) {
   struct Format {
     const char *name;

@@ -86,6 +86,8 @@ OPTION(prefix_2, "--Bno-symbolic", Bno_symbolic, Flag, INVALID, INVALID,
        "Don't bind default visibility defined symbols locally for -shared "
        "(default)",
        nullptr, nullptr)
+OPTION(prefix_2, "--Bshareable", anonymous_200, Flag, INVALID, shared, nullptr,
+       0, DefaultVis, 0, "Alias for --shared", nullptr, nullptr)
 OPTION(prefix_2, "--Bstatic", Bstatic, Flag, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0, "Do not link against shared libraries", nullptr, nullptr)
 OPTION(prefix_2, "--Bsymbolic-functions", Bsymbolic_functions, Flag, INVALID,
@@ -105,8 +107,26 @@ OPTION(prefix_2, "--Bsymbolic", Bsymbolic, Flag, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0,
        "Bind default visibility defined symbols locally for -shared", nullptr,
        nullptr)
+OPTION(prefix_2, "--build-id=", build_id, Joined, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, "Generate build ID note",
+       "[fast,md5,sha1,uuid,0x<hexstring>]", nullptr)
+OPTION(prefix_2, "--build-id", anonymous_201, Flag, INVALID, build_id, "sha1\0",
+       0, DefaultVis, 0, "Alias for --build-id=sha1", nullptr, nullptr)
 OPTION(prefix_1, "-b", anonymous_8, Separate, INVALID, format, nullptr, 0,
        DefaultVis, 0, "Alias for --format", nullptr, nullptr)
+OPTION(prefix_2, "--call-graph-ordering-file=", call_graph_ordering_file_eq,
+       Joined, INVALID, call_graph_ordering_file, nullptr, 0, DefaultVis, 0,
+       "Layout sections to optimize the given callgraph", nullptr, nullptr)
+OPTION(prefix_2, "--call-graph-ordering-file", call_graph_ordering_file,
+       Separate, INVALID, INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr,
+       nullptr)
+OPTION(prefix_3, "--call-graph-profile-sort=", call_graph_profile_sort, Joined,
+       INVALID, INVALID, nullptr, 0, DefaultVis, 0,
+       "Reorder input sections with call graph profile using the specified "
+       "algorithm (default: cdsort)",
+       "[none,hfsort,cdsort]", "none,hfsort,cdsort")
+OPTION(prefix_2, "--call_shared", anonymous_202, Flag, INVALID, Bdynamic,
+       nullptr, 0, DefaultVis, 0, "Alias for --Bdynamic", nullptr, nullptr)
 OPTION(prefix_3, "--check-dynamic-relocations", check_dynamic_relocations, Flag,
        INVALID, INVALID, nullptr, HelpHidden, DefaultVis, 0,
        "Perform additional validation of the written dynamic relocations",
@@ -114,6 +134,19 @@ OPTION(prefix_3, "--check-dynamic-relocations", check_dynamic_relocations, Flag,
 OPTION(prefix_2, "--check-sections", check_sections, Flag, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0,
        "Check section addresses for overlaps (default)", nullptr, nullptr)
+OPTION(prefix_3, "--color-diagnostics=", color_diagnostics, Joined, INVALID,
+       INVALID, nullptr, 0, DefaultVis, 0,
+       "Use colors in diagnostics (default: auto)", "[auto,always,never]",
+       nullptr)
+OPTION(prefix_3, "--color-diagnostics", anonymous_203, Flag, INVALID,
+       color_diagnostics, "always\0", 0, DefaultVis, 0,
+       "Alias for --color-diagnostics=always", nullptr, nullptr)
+OPTION(prefix_2, "--compress-debug-sections=", compress_debug_sections_eq,
+       Joined, INVALID, compress_debug_sections, nullptr, 0, DefaultVis, 0,
+       "Compress DWARF debug sections", "[none,zlib,zstd]", nullptr)
+OPTION(prefix_2, "--compress-debug-sections", compress_debug_sections, Separate,
+       INVALID, INVALID, nullptr, 0, DefaultVis, 0, nullptr, "[none,zlib,zstd]",
+       nullptr)
 OPTION(prefix_3, "--cref", cref, Flag, INVALID, INVALID, nullptr, 0, DefaultVis,
        0,
        "Output cross reference table. If a map file is specified, print to the "
@@ -123,6 +156,8 @@ OPTION(prefix_2, "--defsym=", defsym_eq, Joined, INVALID, defsym, nullptr, 0,
        DefaultVis, 0, "Define a symbol alias", "<symbol>=<value>", nullptr)
 OPTION(prefix_2, "--defsym", defsym, Separate, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0, nullptr, "<symbol>=<value>", nullptr)
+OPTION(prefix_2, "--demangle", demangle, Flag, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, "Demangle symbol names (default)", nullptr, nullptr)
 OPTION(prefix_3, "--dependency-file=", dependency_file_eq, Joined, INVALID,
        dependency_file, nullptr, 0, DefaultVis, 0, "Write a dependency file",
        "<file>", nullptr)
@@ -143,6 +178,13 @@ OPTION(prefix_2, "--discard-locals", discard_locals, Flag, INVALID, INVALID,
 OPTION(prefix_2, "--discard-none", discard_none, Flag, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0, "Keep all symbols in the symbol table",
        nullptr, nullptr)
+OPTION(prefix_2, "--dn", anonymous_204, Flag, INVALID, Bstatic, nullptr, 0,
+       DefaultVis, 0, "Alias for --Bstatic", nullptr, nullptr)
+OPTION(prefix_2, "--dynamic-linker=", dynamic_linker_eq, Joined, INVALID,
+       dynamic_linker, nullptr, 0, DefaultVis, 0, "Which dynamic linker to use",
+       nullptr, nullptr)
+OPTION(prefix_2, "--dynamic-linker", dynamic_linker, Separate, INVALID, INVALID,
+       nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(
     prefix_2, "--dynamic-list=", dynamic_list_eq, Joined, INVALID, dynamic_list,
     nullptr, 0, DefaultVis, 0,
@@ -151,6 +193,19 @@ OPTION(
     "<file>", nullptr)
 OPTION(prefix_2, "--dynamic-list", dynamic_list, Separate, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0, nullptr, "<file>", nullptr)
+OPTION(prefix_2, "--dy", anonymous_205, Flag, INVALID, Bdynamic, nullptr, 0,
+       DefaultVis, 0, "Alias for --Bdynamic", nullptr, nullptr)
+OPTION(prefix_1, "-d", ignored_d, Flag, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_2, "--EB", eb, Flag, INVALID, INVALID, nullptr, 0, DefaultVis, 0,
+       "Select the big-endian format in OUTPUT_FORMAT", nullptr, nullptr)
+OPTION(prefix_2, "--eh-frame-hdr", eh_frame_hdr, Flag, INVALID, INVALID,
+       nullptr, 0, DefaultVis, 0,
+       "Request creation of .eh_frame_hdr section and PT_GNU_EH_FRAME segment "
+       "header",
+       nullptr, nullptr)
+OPTION(prefix_2, "--EL", el, Flag, INVALID, INVALID, nullptr, 0, DefaultVis, 0,
+       "Select the little-endian format in OUTPUT_FORMAT", nullptr, nullptr)
 OPTION(prefix_2, "--emit-relocs", emit_relocs, Flag, INVALID, INVALID, nullptr,
        0, DefaultVis, 0, "Generate relocations in output", nullptr, nullptr)
 OPTION(prefix_2, "--enable-new-dtags", enable_new_dtags, Flag, INVALID, INVALID,
@@ -174,6 +229,12 @@ OPTION(prefix_3, "--error-handling-script=", error_handling_script_eq, Joined,
        "Specify an error handling script", nullptr, nullptr)
 OPTION(prefix_3, "--error-handling-script", error_handling_script, Separate,
        INVALID, INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_3, "--error-limit=", error_limit_eq, Joined, INVALID, error_limit,
+       nullptr, 0, DefaultVis, 0,
+       "Maximum number of errors to emit before stopping (0 = no limit)",
+       nullptr, nullptr)
+OPTION(prefix_3, "--error-limit", error_limit, Separate, INVALID, INVALID,
+       nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_2, "--error-unresolved-symbols", error_unresolved_symbols, Flag,
        INVALID, INVALID, nullptr, 0, DefaultVis, 0,
        "Report unresolved symbols as errors", nullptr, nullptr)
@@ -202,8 +263,15 @@ OPTION(
     "glob", nullptr)
 OPTION(prefix_3, "--export-dynamic-symbol", export_dynamic_symbol, Separate,
        INVALID, INVALID, nullptr, 0, DefaultVis, 0, nullptr, "glob", nullptr)
+OPTION(prefix_2, "--export-dynamic", export_dynamic, Flag, INVALID, INVALID,
+       nullptr, 0, DefaultVis, 0, "Put symbols in the dynamic symbol table",
+       nullptr, nullptr)
+OPTION(prefix_1, "-E", anonymous_206, Flag, INVALID, export_dynamic, nullptr, 0,
+       DefaultVis, 0, "Alias for --export-dynamic", nullptr, nullptr)
 OPTION(prefix_1, "-e", anonymous_6, JoinedOrSeparate, INVALID, entry, nullptr,
        0, DefaultVis, 0, "Alias for --entry", nullptr, nullptr)
+OPTION(prefix_2, "--fatal-warnings", fatal_warnings, Flag, INVALID, INVALID,
+       nullptr, 0, DefaultVis, 0, "Treat warnings as errors", nullptr, nullptr)
 OPTION(prefix_2, "--filter=", filter_eq, Joined, INVALID, filter, nullptr, 0,
        DefaultVis, 0, "Set DT_FILTER field to the specified name", nullptr,
        nullptr)
@@ -231,13 +299,36 @@ OPTION(prefix_1, "-F", anonymous_7, Separate, INVALID, filter, nullptr, 0,
        DefaultVis, 0, "Alias for --filter", nullptr, nullptr)
 OPTION(prefix_1, "-f", anonymous_0, Separate, INVALID, auxiliary, nullptr, 0,
        DefaultVis, 0, "Alias for --auxiliary", nullptr, nullptr)
+OPTION(prefix_2, "--gc-sections", gc_sections, Flag, INVALID, INVALID, nullptr,
+       0, DefaultVis, 0, "Enable garbage collection of unused sections",
+       nullptr, nullptr)
 OPTION(prefix_3, "--gdb-index", gdb_index, Flag, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0, "Generate .gdb_index section", nullptr, nullptr)
 OPTION(prefix_3, "--gnu-unique", gnu_unique, Flag, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0, "Enable STB_GNU_UNIQUE symbol binding (default)", nullptr,
        nullptr)
+OPTION(prefix_1, "-G", ignored_G, JoinedOrSeparate, INVALID, INVALID, nullptr,
+       0, DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_1, "-g", ignored_g, Flag, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_2, "--hash-size=", ignored_hash_size_eq, Joined, INVALID, INVALID,
+       nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_2, "--hash-style=", hash_style_eq, Joined, INVALID, hash_style,
+       nullptr, 0, DefaultVis, 0, "Specify hash style (sysv, gnu or both)",
+       nullptr, nullptr)
+OPTION(prefix_2, "--hash-style", hash_style, Separate, INVALID, INVALID,
+       nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_2, "--help", help, Flag, INVALID, INVALID, nullptr, 0, DefaultVis,
+       0, "Print option help", nullptr, nullptr)
 OPTION(prefix_1, "-h", anonymous_17, JoinedOrSeparate, INVALID, soname, nullptr,
        0, DefaultVis, 0, "Alias for --soname", nullptr, nullptr)
+OPTION(prefix_2, "--icf=all", icf_all, Flag, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, "Enable identical code folding", nullptr, nullptr)
+OPTION(prefix_2, "--icf=none", icf_none, Flag, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, "Disable identical code folding (default)", nullptr,
+       nullptr)
+OPTION(prefix_2, "--icf=safe", icf_safe, Flag, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, "Enable safe identical code folding", nullptr, nullptr)
 OPTION(prefix_3, "--ignore-data-address-equality", ignore_data_address_equality,
        Flag, INVALID, INVALID, nullptr, 0, DefaultVis, 0,
        "Allow the linker to break address equality of data", nullptr, nullptr)
@@ -271,18 +362,30 @@ OPTION(prefix_2, "--library=", anonymous_10, Joined, INVALID, library, nullptr,
        0, DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_2, "--library", anonymous_9, Separate, INVALID, library, nullptr,
        0, DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_2, "--long-plt", ignored_long_plt, Flag, INVALID, INVALID,
+       nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_1, "-L", library_path, JoinedOrSeparate, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0, "Add <dir> to the library search path",
        "<dir>", nullptr)
 OPTION(prefix_1, "-l", library, JoinedOrSeparate, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0, "Search for library <libname>", "<libname>", nullptr)
+OPTION(prefix_2, "--Map=", Map_eq, Joined, INVALID, Map, nullptr, 0, DefaultVis,
+       0, "Print a link map to the specified file", nullptr, nullptr)
+OPTION(prefix_2, "--Map", Map, Separate, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_3, "--mmap-output-file", mmap_output_file, Flag, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0, "Mmap the output file for writing (default)",
        nullptr, nullptr)
+OPTION(prefix_1, "-M", anonymous_207, Flag, INVALID, print_map, nullptr, 0,
+       DefaultVis, 0, "Alias for --print-map", nullptr, nullptr)
+OPTION(prefix_1, "-m", m, JoinedOrSeparate, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, "Set target emulation", nullptr, nullptr)
 OPTION(prefix_2, "--nmagic", nmagic, Flag, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0,
        "Do not page align sections, link against static libraries.", "<magic>",
        nullptr)
+OPTION(prefix_3, "--no-add-needed", ignored_no_add_needed, Flag, INVALID,
+       INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_2, "--no-allow-multiple-definition", no_allow_multiple_definition,
        Flag, INVALID, INVALID, nullptr, 0, DefaultVis, 0,
        "Do not allow multiple definitions (default)", nullptr, nullptr)
@@ -302,6 +405,9 @@ OPTION(prefix_3, "--no-apply-dynamic-relocs", no_apply_dynamic_relocs, Flag,
 OPTION(prefix_2, "--no-as-needed", no_as_needed, Flag, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0,
        "Always set DT_NEEDED for shared libraries (default)", nullptr, nullptr)
+OPTION(prefix_3, "--no-call-graph-profile-sort", anonymous_208, Flag, INVALID,
+       call_graph_profile_sort, "none\0", HelpHidden, DefaultVis, 0, nullptr,
+       nullptr, nullptr)
 OPTION(
     prefix_3, "--no-check-dynamic-relocations", no_check_dynamic_relocations,
     Flag, INVALID, INVALID, nullptr, HelpHidden, DefaultVis, 0,
@@ -310,14 +416,42 @@ OPTION(
 OPTION(prefix_2, "--no-check-sections", no_check_sections, Flag, INVALID,
        INVALID, nullptr, 0, DefaultVis, 0,
        "Do not check section addresses for overlaps", nullptr, nullptr)
+OPTION(prefix_3, "--no-color-diagnostics", anonymous_209, Flag, INVALID,
+       color_diagnostics, "never\0", 0, DefaultVis, 0,
+       "Alias for --color-diagnostics=never", nullptr, nullptr)
+OPTION(prefix_2, "--no-copy-dt-needed-entries",
+       ignored_no_copy_dt_needed_entries, Flag, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_2, "--no-ctors-in-init-array", ignored_no_ctors_in_init_array,
+       Flag, INVALID, INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr,
+       nullptr)
+OPTION(prefix_2, "--no-demangle", no_demangle, Flag, INVALID, INVALID, nullptr,
+       0, DefaultVis, 0, "Do not demangle symbol names", nullptr, nullptr)
 OPTION(prefix_3, "--no-dependent-libraries", no_dependent_libraries, Flag,
        INVALID, INVALID, nullptr, 0, DefaultVis, 0,
        "Ignore dependent library specifiers from input files", nullptr, nullptr)
+OPTION(prefix_2, "--no-dynamic-linker", no_dynamic_linker, Flag, INVALID,
+       INVALID, nullptr, 0, DefaultVis, 0, "Inhibit output of .interp section",
+       nullptr, nullptr)
+OPTION(prefix_2, "--no-eh-frame-hdr", no_eh_frame_hdr, Flag, INVALID, INVALID,
+       nullptr, 0, DefaultVis, 0, "Do not create .eh_frame_hdr section",
+       nullptr, nullptr)
 OPTION(prefix_3, "--no-execute-only", no_execute_only, Flag, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0, "Mark executable sections readable (default)",
        nullptr, nullptr)
+OPTION(prefix_2, "--no-export-dynamic", no_export_dynamic, Flag, INVALID,
+       INVALID, nullptr, 0, DefaultVis, 0,
+       "Do not put symbols in the dynamic symbol table (default)", nullptr,
+       nullptr)
+OPTION(prefix_2, "--no-fatal-warnings", no_fatal_warnings, Flag, INVALID,
+       INVALID, nullptr, 0, DefaultVis, 0,
+       "Do not treat warnings as errors (default)", nullptr, nullptr)
 OPTION(prefix_3, "--no-fork", no_fork, Flag, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0, "Exit only after all memory is released", nullptr,
+       nullptr)
+OPTION(prefix_2, "--no-gc-sections", no_gc_sections, Flag, INVALID, INVALID,
+       nullptr, 0, DefaultVis, 0,
+       "Disable garbage collection of unused sections (default)", nullptr,
        nullptr)
 OPTION(prefix_3, "--no-gdb-index", no_gdb_index, Flag, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0,
@@ -325,6 +459,8 @@ OPTION(prefix_3, "--no-gdb-index", no_gdb_index, Flag, INVALID, INVALID,
 OPTION(prefix_3, "--no-gnu-unique", no_gnu_unique, Flag, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0, "Disable STB_GNU_UNIQUE symbol binding",
        nullptr, nullptr)
+OPTION(prefix_2, "--no-keep-memory", ignored_no_keep_memory, Flag, INVALID,
+       INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_3, "--no-mmap-output-file", no_mmap_output_file, Flag, INVALID,
        INVALID, nullptr, 0, DefaultVis, 0,
        "Do not mmap the output file for writing", nullptr, nullptr)
@@ -340,6 +476,16 @@ OPTION(prefix_3, "--no-optimize-bb-jumps", no_optimize_bb_jumps, Flag, INVALID,
        "Do not remove any direct jumps at the end to the next basic block "
        "(default)",
        nullptr, nullptr)
+OPTION(prefix_2, "--no-pie", no_pie, Flag, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0,
+       "Do not create a position independent executable (default)", nullptr,
+       nullptr)
+OPTION(prefix_2, "--no-print-gc-sections", no_print_gc_sections, Flag, INVALID,
+       INVALID, nullptr, 0, DefaultVis, 0,
+       "Do not list removed unused sections (default)", nullptr, nullptr)
+OPTION(prefix_2, "--no-print-icf-sections", no_print_icf_sections, Flag,
+       INVALID, INVALID, nullptr, 0, DefaultVis, 0,
+       "Do not list identical folded sections (default)", nullptr, nullptr)
 OPTION(prefix_3, "--no-relax", no_relax, Flag, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0, "Disable target-specific relaxations", nullptr, nullptr)
 OPTION(prefix_3, "--no-rosegment", no_rosegment, Flag, INVALID, INVALID,
@@ -365,10 +511,17 @@ OPTION(prefix_3, "--no-warn-backrefs", no_warn_backrefs, Flag, INVALID, INVALID,
 OPTION(prefix_2, "--no-warn-common", no_warn_common, Flag, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0,
        "Do not warn about duplicate common symbols (default)", nullptr, nullptr)
+OPTION(prefix_2, "--no-warn-execstack", ignored_no_warn_execstack, Flag,
+       INVALID, INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_2, "--no-warn-rwx-segments", ignored_no_warn_rwx_segments, Flag,
+       INVALID, INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_3, "--no-warn-symbol-ordering", no_warn_symbol_ordering, Flag,
        INVALID, INVALID, nullptr, 0, DefaultVis, 0,
        "Do not warn about problems with the symbol ordering file", nullptr,
        nullptr)
+OPTION(prefix_3, "--no-warnings", no_warnings, Flag, INVALID, INVALID, nullptr,
+       0, DefaultVis, 0, "Suppress warnings and cancel --fatal-warnings",
+       nullptr, nullptr)
 OPTION(prefix_2, "--no-whole-archive", no_whole_archive, Flag, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0,
        "Do not force load of all members in a static library (default)",
@@ -377,6 +530,11 @@ OPTION(prefix_2, "--noinhibit-exec", noinhibit_exec, Flag, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0,
        "Retain the executable output file whenever it is still usable", nullptr,
        nullptr)
+OPTION(prefix_2, "--non_shared", anonymous_210, Flag, INVALID, Bstatic, nullptr,
+       0, DefaultVis, 0, "Alias for --Bstatic", nullptr, nullptr)
+OPTION(prefix_2, "--nostdlib", nostdlib, Flag, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, "Only search directories specified on the command line",
+       nullptr, nullptr)
 OPTION(prefix_1, "-N", anonymous_14, Flag, INVALID, omagic, nullptr, 0,
        DefaultVis, 0, "Alias for --omagic", nullptr, nullptr)
 OPTION(prefix_1, "-n", anonymous_13, Flag, INVALID, nmagic, nullptr, 0,
@@ -401,12 +559,20 @@ OPTION(prefix_2, "--orphan-handling=", orphan_handling_eq, Joined, INVALID,
        nullptr, nullptr)
 OPTION(prefix_2, "--orphan-handling", orphan_handling, Separate, INVALID,
        INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_3, "--output=", anonymous_211, Joined, INVALID, o, nullptr, 0,
+       DefaultVis, 0, "Alias for -o", nullptr, nullptr)
+OPTION(prefix_3, "--output", anonymous_212, Separate, INVALID, o, nullptr, 0,
+       DefaultVis, 0, "Alias for -o", nullptr, nullptr)
 OPTION(prefix_2, "--override=", override_eq, Joined, INVALID, override, nullptr,
        0, DefaultVis, 0,
        "Allow symbol to override any other definition without error",
        "<symbol>", nullptr)
 OPTION(prefix_2, "--override", override, Separate, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0, nullptr, "<symbol>", nullptr)
+OPTION(prefix_1, "-O", O, JoinedOrSeparate, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, "Optimize output file size", nullptr, nullptr)
+OPTION(prefix_1, "-o", o, JoinedOrSeparate, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, "Path to file to write output", "<path>", nullptr)
 OPTION(prefix_3, "--pack-dyn-relocs=", pack_dyn_relocs_eq, Joined, INVALID,
        pack_dyn_relocs, nullptr, 0, DefaultVis, 0,
        "Pack dynamic relocations in the given format",
@@ -417,9 +583,13 @@ OPTION(prefix_3, "--pack-dyn-relocs", pack_dyn_relocs, Separate, INVALID,
 OPTION(prefix_3, "--package-metadata=", package_metadata, Joined, INVALID,
        INVALID, nullptr, 0, DefaultVis, 0, "Emit package metadata note",
        nullptr, nullptr)
+OPTION(prefix_2, "--pic-executable", anonymous_213, Flag, INVALID, pie, nullptr,
+       0, DefaultVis, 0, "Alias for --pie", nullptr, nullptr)
 OPTION(prefix_2, "--pic-veneer", pic_veneer, Flag, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0, "Always generate position independent thunks (veneers)",
        nullptr, nullptr)
+OPTION(prefix_2, "--pie", pie, Flag, INVALID, INVALID, nullptr, 0, DefaultVis,
+       0, "Create a position independent executable", nullptr, nullptr)
 OPTION(prefix_2, "--pop-state", pop_state, Flag, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0, "Restore the states saved by --push-state", nullptr,
        nullptr)
@@ -428,19 +598,40 @@ OPTION(prefix_2, "--print-archive-stats=", print_archive_stats, Joined, INVALID,
        "Write archive usage statistics to the specified file. Print the "
        "numbers of members and extracted members for each archive",
        nullptr, nullptr)
+OPTION(prefix_2, "--print-gc-sections", print_gc_sections, Flag, INVALID,
+       INVALID, nullptr, 0, DefaultVis, 0, "List removed unused sections",
+       nullptr, nullptr)
+OPTION(prefix_2, "--print-icf-sections", print_icf_sections, Flag, INVALID,
+       INVALID, nullptr, 0, DefaultVis, 0, "List identical folded sections",
+       nullptr, nullptr)
+OPTION(prefix_2, "--print-map", print_map, Flag, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, "Print a link map to the standard output", nullptr,
+       nullptr)
 OPTION(prefix_2, "--print-memory-usage", print_memory_usage, Flag, INVALID,
        INVALID, nullptr, 0, DefaultVis, 0, "Report target memory usage",
        nullptr, nullptr)
+OPTION(prefix_2, "--print-symbol-order=", print_symbol_order_eq, Joined,
+       INVALID, print_symbol_order, nullptr, 0, DefaultVis, 0,
+       "Print a symbol order specified by --call-graph-ordering-file into the "
+       "specified file",
+       nullptr, nullptr)
+OPTION(prefix_2, "--print-symbol-order", print_symbol_order, Separate, INVALID,
+       INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_2, "--push-state", push_state, Flag, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0,
        "Save the current state of --as-needed, -static and --whole-archive",
        nullptr, nullptr)
 OPTION(prefix_1, "-q", anonymous_4, Flag, INVALID, emit_relocs, nullptr, 0,
        DefaultVis, 0, "Alias for --emit-relocs", nullptr, nullptr)
+OPTION(prefix_2, "--reduce-memory-overheads", ignored_reduce_memory_overheads,
+       Flag, INVALID, INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr,
+       nullptr)
 OPTION(prefix_3, "--relax", relax, Flag, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0,
        "Enable target-specific relaxations if supported (default)", nullptr,
        nullptr)
+OPTION(prefix_2, "--relocatable", relocatable, Flag, INVALID, INVALID, nullptr,
+       0, DefaultVis, 0, "Create relocatable object file", nullptr, nullptr)
 OPTION(prefix_3, "--remap-inputs-file=", remap_inputs_file, Joined, INVALID,
        INVALID, nullptr, 0, DefaultVis, 0,
        "Each line contains 'from-glob=to-file'. An input file matching "
@@ -461,12 +652,18 @@ OPTION(prefix_3, "--rosegment", rosegment, Flag, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0,
        "Put read-only non-executable sections in their own segment (default)",
        nullptr, nullptr)
+OPTION(prefix_2, "--rpath-link=", ignored_rpath_link_eq, Joined, INVALID,
+       INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_2, "--rpath-link", ignored_rpath_link, Separate, INVALID, INVALID,
+       nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_2, "--rpath=", rpath_eq, Joined, INVALID, rpath, nullptr, 0,
        DefaultVis, 0, "Add a DT_RUNPATH to the output", nullptr, nullptr)
 OPTION(prefix_2, "--rpath", rpath, Separate, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_1, "-R", anonymous_15, JoinedOrSeparate, INVALID, rpath, nullptr,
        0, DefaultVis, 0, "Alias for --rpath", nullptr, nullptr)
+OPTION(prefix_1, "-r", anonymous_214, Flag, INVALID, relocatable, nullptr, 0,
+       DefaultVis, 0, "Alias for --relocatable", nullptr, nullptr)
 OPTION(prefix_2, "--script=", script_eq, Joined, INVALID, script, nullptr, 0,
        DefaultVis, 0, "Read linker script", nullptr, nullptr)
 OPTION(prefix_2, "--script", script, Separate, INVALID, INVALID, nullptr, 0,
@@ -476,6 +673,10 @@ OPTION(prefix_2, "--section-start=", section_start_eq, Joined, INVALID,
        "<address>", nullptr)
 OPTION(prefix_2, "--section-start", section_start, Separate, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0, nullptr, "<address>", nullptr)
+OPTION(prefix_2, "--secure-plt", ignored_secure_plt, Flag, INVALID, INVALID,
+       nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_2, "--shared", shared, Flag, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, "Build a shared object", nullptr, nullptr)
 OPTION(prefix_3, "--shuffle-sections=", shuffle_sections_eq, Joined, INVALID,
        shuffle_sections, nullptr, 0, DefaultVis, 0,
        "Shuffle matched sections using the given seed before mapping them to "
@@ -489,6 +690,8 @@ OPTION(prefix_2, "--soname=", soname_eq, Joined, INVALID, soname, nullptr, 0,
        DefaultVis, 0, "Set DT_SONAME", nullptr, nullptr)
 OPTION(prefix_2, "--soname", soname, Separate, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_2, "--sort-common", ignored_sort_common, Flag, INVALID, INVALID,
+       nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_2, "--sort-section=", sort_section_eq, Joined, INVALID,
        sort_section, nullptr, 0, DefaultVis, 0,
        "Specifies sections sorting rule when linkerscript is used", nullptr,
@@ -513,6 +716,13 @@ OPTION(prefix_2, "--start-lib", start_lib, Flag, INVALID, INVALID, nullptr, 0,
        nullptr, nullptr)
 OPTION(prefix_2, "--static", anonymous_1, Flag, INVALID, Bstatic, nullptr, 0,
        DefaultVis, 0, "Alias for --Bstatic", nullptr, nullptr)
+OPTION(prefix_2, "--stats", ignored_stats, Flag, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_2, "--strip-all", strip_all, Flag, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, "Strip all symbols. Implies --strip-debug", nullptr,
+       nullptr)
+OPTION(prefix_2, "--strip-debug", strip_debug, Flag, INVALID, INVALID, nullptr,
+       0, DefaultVis, 0, "Strip debugging information", nullptr, nullptr)
 OPTION(prefix_3, "--symbol-ordering-file=", symbol_ordering_file_eq, Joined,
        INVALID, symbol_ordering_file, nullptr, 0, DefaultVis, 0,
        "Layout sections to place symbols in the order specified by symbol "
@@ -520,6 +730,14 @@ OPTION(prefix_3, "--symbol-ordering-file=", symbol_ordering_file_eq, Joined,
        nullptr, nullptr)
 OPTION(prefix_3, "--symbol-ordering-file", symbol_ordering_file, Separate,
        INVALID, INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_2, "--sysroot=", sysroot_eq, Joined, INVALID, sysroot, nullptr, 0,
+       DefaultVis, 0, "Set the system root", nullptr, nullptr)
+OPTION(prefix_2, "--sysroot", sysroot, Separate, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_1, "-S", anonymous_215, Flag, INVALID, strip_debug, nullptr, 0,
+       DefaultVis, 0, "Alias for --strip-debug", nullptr, nullptr)
+OPTION(prefix_1, "-s", anonymous_216, Flag, INVALID, strip_all, nullptr, 0,
+       DefaultVis, 0, "Alias for --strip-all", nullptr, nullptr)
 OPTION(prefix_2, "--Tbss=", Tbss_eq, Joined, INVALID, Tbss, nullptr, 0,
        DefaultVis, 0, "Same as --section-start with .bss as the sectionname",
        nullptr, nullptr)
@@ -535,11 +753,27 @@ OPTION(prefix_3, "--threads=", threads_eq, Joined, INVALID, INVALID, nullptr, 0,
        "Number of worker threads; 1 disables multi-threading (default: "
        "chosen from the input size and available CPUs)",
        "<number>", nullptr)
+OPTION(prefix_3, "--threads", threads, Separate, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_3, "--time-trace-granularity=", time_trace_granularity_eq, Joined,
+       INVALID, time_trace_granularity, nullptr, 0, DefaultVis, 0,
+       "Minimum time granularity (in microseconds) traced by time profiler",
+       nullptr, nullptr)
+OPTION(prefix_3, "--time-trace-granularity", time_trace_granularity, Separate,
+       INVALID, INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_3, "--time-trace=", time_trace_eq, Joined, INVALID, INVALID,
+       nullptr, 0, DefaultVis, 0, "Record time trace to <file>", "<file>",
+       nullptr)
+OPTION(prefix_3, "--time-trace", anonymous_217, Flag, INVALID, time_trace_eq,
+       nullptr, 0, DefaultVis, 0, "Record time trace to file next to output",
+       nullptr, nullptr)
 OPTION(prefix_2, "--trace-symbol=", trace_symbol_eq, Joined, INVALID,
        trace_symbol, nullptr, 0, DefaultVis, 0, "Trace references to symbols",
        nullptr, nullptr)
 OPTION(prefix_2, "--trace-symbol", trace_symbol, Separate, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_2, "--trace", trace, Flag, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, "Print the names of the input files", nullptr, nullptr)
 OPTION(prefix_4, "-Ttext-segment=", anonymous_19, Joined, INVALID,
        Ttext_segment, nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_4, "-Ttext-segment", Ttext_segment, Separate, INVALID, INVALID,
@@ -551,6 +785,8 @@ OPTION(prefix_2, "--Ttext", Ttext, Separate, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_1, "-T", anonymous_16, JoinedOrSeparate, INVALID, script, nullptr,
        0, DefaultVis, 0, "Alias for --script", nullptr, nullptr)
+OPTION(prefix_1, "-t", anonymous_218, Flag, INVALID, trace, nullptr, 0,
+       DefaultVis, 0, "Alias for --trace", nullptr, nullptr)
 OPTION(prefix_3, "--undefined-glob=", undefined_glob_eq, Joined, INVALID,
        undefined_glob, nullptr, 0, DefaultVis, 0,
        "Force undefined symbol during linking", "<pattern>", nullptr)
@@ -581,11 +817,19 @@ OPTION(prefix_3, "--use-android-relr-tags", use_android_relr_tags, Flag,
        nullptr, nullptr)
 OPTION(prefix_1, "-u", anonymous_21, JoinedOrSeparate, INVALID, undefined,
        nullptr, 0, DefaultVis, 0, "Alias for --undefined", nullptr, nullptr)
+OPTION(prefix_2, "--verbose", verbose, Flag, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, "Verbose mode", nullptr, nullptr)
 OPTION(prefix_2, "--version-script=", version_script_eq, Joined, INVALID,
        version_script, nullptr, 0, DefaultVis, 0, "Read a version script",
        nullptr, nullptr)
 OPTION(prefix_2, "--version-script", version_script, Separate, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_2, "--version", version, Flag, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, "Display the version number and exit", nullptr, nullptr)
+OPTION(prefix_1, "-V", anonymous_219, Flag, INVALID, v, nullptr, 0, DefaultVis,
+       0, "Alias for -v", nullptr, nullptr)
+OPTION(prefix_1, "-v", v, Flag, INVALID, INVALID, nullptr, 0, DefaultVis, 0,
+       "Display the version number", nullptr, nullptr)
 OPTION(prefix_3, "--warn-backrefs-exclude=", warn_backrefs_exclude_eq, Joined,
        INVALID, warn_backrefs_exclude, nullptr, 0, DefaultVis, 0,
        "Glob describing an archive (or an object file within --start-lib) "
@@ -600,6 +844,14 @@ OPTION(prefix_3, "--warn-backrefs", warn_backrefs, Flag, INVALID, INVALID,
 OPTION(prefix_2, "--warn-common", warn_common, Flag, INVALID, INVALID, nullptr,
        0, DefaultVis, 0, "Warn about duplicate common symbols", nullptr,
        nullptr)
+OPTION(prefix_2, "--warn-execstack", ignored_warn_execstack, Flag, INVALID,
+       INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_2, "--warn-once", ignored_warn_once, Flag, INVALID, INVALID,
+       nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_2, "--warn-rwx-segments", ignored_warn_rwx_segments, Flag,
+       INVALID, INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_2, "--warn-shared-textrel", ignored_warn_shared_textrel, Flag,
+       INVALID, INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_3, "--warn-symbol-ordering", warn_symbol_ordering, Flag, INVALID,
        INVALID, nullptr, 0, DefaultVis, 0,
        "Warn about problems with the symbol ordering file (default)", nullptr,
@@ -621,6 +873,8 @@ OPTION(prefix_2, "--wrap=", wrap_eq, Joined, INVALID, wrap, nullptr, 0,
        "<symbol>", nullptr)
 OPTION(prefix_2, "--wrap", wrap, Separate, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0, nullptr, "<symbol>", nullptr)
+OPTION(prefix_1, "-w", anonymous_220, Flag, INVALID, no_warnings, nullptr, 0,
+       DefaultVis, 0, "Alias for --no-warnings", nullptr, nullptr)
 OPTION(prefix_1, "-X", anonymous_3, Flag, INVALID, discard_locals, nullptr, 0,
        DefaultVis, 0, "Alias for --discard-locals", nullptr, nullptr)
 OPTION(prefix_1, "-x", anonymous_2, Flag, INVALID, discard_all, nullptr, 0,
