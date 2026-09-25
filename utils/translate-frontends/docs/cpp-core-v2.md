@@ -1747,6 +1747,16 @@ in upper bounds, and both directions in searches and equal ranges. The object
 argument is evaluated once and comparisons lower directly, including when the
 range and value have different admitted arithmetic types.
 
+These exact `min_element`, `max_element`, `lower_bound`, `upper_bound`,
+`binary_search`, `is_sorted` and `is_sorted_until` forms also admit
+authenticated scalar `std::__wrap_iter<T*>` ranges, including mutable and
+const vector and string iterators. The `is_heap` and `is_heap_until` query
+forms admit the same ranges. Default ordering, checked function-pointer
+comparators and the admitted standard comparison objects retain their existing
+element, value and callback restrictions. Each endpoint is evaluated once;
+iterator-returning queries reconstruct the pinned wrapped iterator from the
+selected pointer, including on empty ranges.
+
 The exact two-argument `std::min` and `std::max`, three-argument `std::clamp`,
 two-argument `std::minmax` and two-iterator `std::minmax_element` templates use
 the same built-in arithmetic, enum or complete object-pointer ordering boundary.

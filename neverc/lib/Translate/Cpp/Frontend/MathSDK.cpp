@@ -18935,6 +18935,83 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                             Reversed ? Element : Value, Context)
         .has_value();
   };
+  auto AlgorithmOrderedRangeParameter = [&](unsigned Index) {
+    const auto Pointer = AlgorithmRangePointerParameter(Index);
+    if (!Pointer)
+      return false;
+    const auto Element = (*Pointer)->getPointeeType().getUnqualifiedType();
+    return utilityScalarComparisonType(Context, Element, Element, true)
+               .has_value() &&
+           !utilityEnumHasSourceOperator(S, SM, Context, Element, OO_Less);
+  };
+  auto AlgorithmRangeComparisonParameter = [&](unsigned PredicateIndex,
+                                               unsigned IteratorIndex) {
+    const auto Pointer = AlgorithmRangePointerParameter(IteratorIndex);
+    if (!Pointer)
+      return false;
+    const auto Element = (*Pointer)->getPointeeType();
+    const auto *Prototype = AlgorithmCallbackPrototype(PredicateIndex);
+    if (Prototype && Prototype->getNumParams() == 2 &&
+        Prototype->getReturnType()->isBooleanType() &&
+        utilityScalarDirectConversion(Context, Element,
+                                      Prototype->getParamType(0)) &&
+        utilityScalarDirectConversion(Context, Element,
+                                      Prototype->getParamType(1)))
+      return true;
+    return approvedRangeAlgorithmComparator(S, SM, Call, PredicateIndex,
+                                            Element, Element, Context)
+        .has_value();
+  };
+  auto AlgorithmRangeValueParameter = [&](unsigned ValueIndex,
+                                          unsigned IteratorIndex) {
+    if (ValueIndex >= Function->getNumParams() ||
+        ValueIndex >= Call->getNumArgs())
+      return false;
+    const auto Pointer = AlgorithmRangePointerParameter(IteratorIndex);
+    const auto Value = Function->getParamDecl(ValueIndex)->getType();
+    return Pointer && Value->isLValueReferenceType() &&
+           Value->getPointeeType().isConstQualified() &&
+           !Value->getPointeeType().isVolatileQualified() &&
+           utilityScalar(Context, Value->getPointeeType()) &&
+           Context.hasSameUnqualifiedType(Call->getArg(ValueIndex)->getType(),
+                                          Value->getPointeeType());
+  };
+  auto AlgorithmOrderedRangeValueParameter = [&](unsigned ValueIndex,
+                                                 unsigned IteratorIndex) {
+    if (!AlgorithmRangeValueParameter(ValueIndex, IteratorIndex))
+      return false;
+    const auto Element =
+        (*AlgorithmRangePointerParameter(IteratorIndex))->getPointeeType();
+    const auto Value =
+        Function->getParamDecl(ValueIndex)->getType()->getPointeeType();
+    return utilityScalarComparisonType(Context, Element, Value, false)
+               .has_value() &&
+           utilityScalarComparisonType(Context, Element, Value, true)
+               .has_value();
+  };
+  auto AlgorithmRangeComparisonValueParameter =
+      [&](unsigned PredicateIndex, unsigned IteratorIndex,
+          unsigned ValueIndex, bool Reversed) {
+        if (!AlgorithmRangeValueParameter(ValueIndex, IteratorIndex))
+          return false;
+        const auto Element =
+            (*AlgorithmRangePointerParameter(IteratorIndex))->getPointeeType();
+        const auto Value =
+            Function->getParamDecl(ValueIndex)->getType()->getPointeeType();
+        const auto Left = Reversed ? Value : Element;
+        const auto Right = Reversed ? Element : Value;
+        const auto *Prototype = AlgorithmCallbackPrototype(PredicateIndex);
+        if (Prototype && Prototype->getNumParams() == 2 &&
+            Prototype->getReturnType()->isBooleanType() &&
+            utilityScalarDirectConversion(Context, Left,
+                                          Prototype->getParamType(0)) &&
+            utilityScalarDirectConversion(Context, Right,
+                                          Prototype->getParamType(1)))
+          return true;
+        return approvedRangeAlgorithmComparator(S, SM, Call, PredicateIndex,
+                                                Left, Right, Context)
+            .has_value();
+      };
   auto AlgorithmBinaryPredicateReferenceParameter =
       [&](unsigned PredicateIndex, unsigned ReferenceIndex) {
         if (!AlgorithmReferenceParameter(ReferenceIndex))
@@ -19583,14 +19660,15 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Name == "max_element")) &&
       (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      AlgorithmRangePointerParameter(0) &&
+      AlgorithmRangePointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
-    if (!((Call->getNumArgs() == 2 && AlgorithmOrderedPointerParameter(0)) ||
+    if (!((Call->getNumArgs() == 2 && AlgorithmOrderedRangeParameter(0)) ||
           (Call->getNumArgs() == 3 &&
-           AlgorithmBinaryComparisonParameter(2, 0, 0))))
+           AlgorithmRangeComparisonParameter(2, 0))))
       return std::nullopt;
     return Name == "min_element" ? UtilityOperation::AlgorithmMinElement
                                  : UtilityOperation::AlgorithmMaxElement;
@@ -19601,20 +19679,21 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Name == "binary_search")) &&
       (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      AlgorithmRangePointerParameter(0) &&
+      AlgorithmRangePointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      AlgorithmScalarValueParameter(2, 0) &&
+      AlgorithmRangeValueParameter(2, 0) &&
       Same(Call->getType(), Function->getReturnType())) {
     const bool Default = Call->getNumArgs() == 3;
     const bool ForwardComparator =
         Call->getNumArgs() == 4 &&
-        AlgorithmBinaryComparisonValueParameter(3, 0, 2, false);
+        AlgorithmRangeComparisonValueParameter(3, 0, 2, false);
     const bool ReverseComparator =
         Call->getNumArgs() == 4 &&
-        AlgorithmBinaryComparisonValueParameter(3, 0, 2, true);
-    if (!((Default && AlgorithmOrderedPointerParameter(0) &&
-           AlgorithmOrderedValueParameter(2, 0)) ||
+        AlgorithmRangeComparisonValueParameter(3, 0, 2, true);
+    if (!((Default && AlgorithmOrderedRangeParameter(0) &&
+           AlgorithmOrderedRangeValueParameter(2, 0)) ||
           (Name == "lower_bound" && ForwardComparator) ||
           (Name == "upper_bound" && ReverseComparator) ||
           (Name == "binary_search" && ForwardComparator && ReverseComparator)))
@@ -19633,13 +19712,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Name == "is_sorted_until")) &&
       (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      AlgorithmRangePointerParameter(0) &&
+      AlgorithmRangePointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
-    if (!((Call->getNumArgs() == 2 && AlgorithmOrderedPointerParameter(0)) ||
+    if (!((Call->getNumArgs() == 2 && AlgorithmOrderedRangeParameter(0)) ||
           (Call->getNumArgs() == 3 &&
-           AlgorithmBinaryComparisonParameter(2, 0, 0))))
+           AlgorithmRangeComparisonParameter(2, 0))))
       return std::nullopt;
     if (Name == "is_sorted" && Function->getReturnType()->isBooleanType())
       return UtilityOperation::AlgorithmIsSorted;
@@ -20017,13 +20097,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (HeapQueryAlgorithm &&
       (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      AlgorithmRangePointerParameter(0) &&
+      AlgorithmRangePointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Call->getType(), Function->getReturnType()) &&
-      ((Call->getNumArgs() == 2 && AlgorithmOrderedPointerParameter(0)) ||
+      ((Call->getNumArgs() == 2 && AlgorithmOrderedRangeParameter(0)) ||
        (Call->getNumArgs() == 3 &&
-        AlgorithmBinaryComparisonParameter(2, 0, 0)))) {
+        AlgorithmRangeComparisonParameter(2, 0)))) {
     if (Name == "is_heap" && Function->getReturnType()->isBooleanType())
       return UtilityOperation::AlgorithmIsHeap;
     if (Name == "is_heap_until" &&

@@ -29233,6 +29233,70 @@ void reverse_string(std::string& value) {
               + ' f(std::vector<Entry>& left,std::vector<Entry>& right){'
               + operation + '}', "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_ordered_query_source = """\
+#include <algorithm>
+#include <functional>
+#include <string>
+#include <vector>
+bool descending_int(int left, int right) { return left > right; }
+std::vector<int>::iterator minimum(std::vector<int>& values) {
+  return std::min_element(values.begin(), values.end());
+}
+std::vector<int>::iterator maximum(std::vector<int>& values) {
+  return std::max_element(values.begin(), values.end(), descending_int);
+}
+std::vector<int>::const_iterator lower(const std::vector<int>& values,
+                                        short needle) {
+  return std::lower_bound(values.cbegin(), values.cend(), needle);
+}
+std::vector<int>::iterator upper(std::vector<int>& values, int needle) {
+  return std::upper_bound(values.begin(), values.end(), needle,
+                          std::greater<int>{});
+}
+bool present(const std::vector<int>& values, int needle) {
+  return std::binary_search(values.cbegin(), values.cend(), needle,
+                            std::less<int>{});
+}
+bool sorted(const std::vector<int>& values) {
+  return std::is_sorted(values.cbegin(), values.cend());
+}
+std::vector<int>::iterator sorted_until(std::vector<int>& values) {
+  return std::is_sorted_until(values.begin(), values.end(), descending_int);
+}
+bool heap(const std::vector<int>& values) {
+  return std::is_heap(values.cbegin(), values.cend());
+}
+std::vector<int>::iterator heap_until(std::vector<int>& values) {
+  return std::is_heap_until(values.begin(), values.end(),
+                            std::greater<int>{});
+}
+std::string::iterator letter(std::string& value) {
+  return std::lower_bound(value.begin(), value.end(), 'c');
+}
+"""
+    wrapped_ordered_query = check("v2-wrapped-ordered-query",
+                                  wrapped_ordered_query_source,
+                                  profile="cpp-core-v2", sdk=True)
+    assert not [node for node in walk(wrapped_ordered_query["functions"])
+                if node.get("op") in ("call", "mapped_call")], wrapped_ordered_query
+    for target in sdk_targets:
+        check("v2-wrapped-ordered-query-" + target,
+              wrapped_ordered_query_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    for name, operation in {
+        "min-element": "return std::min_element(values.begin(),values.end());",
+        "lower-bound": "return std::lower_bound(values.begin(),values.end(),Entry{});",
+        "is-sorted": "return std::is_sorted(values.begin(),values.end());",
+        "is-heap": "return std::is_heap(values.begin(),values.end());",
+    }.items():
+        result_type = "std::vector<Entry>::iterator" if name in (
+            "min-element", "lower-bound") else "bool"
+        check("v2-wrapped-ordered-query-" + name + "-record",
+              '#include <algorithm>\n#include <vector>\nstruct Entry{int value;};'
+              'bool operator<(Entry a,Entry b){return a.value<b.value;}'
+              + result_type + ' f(std::vector<Entry>& values){'
+              + operation + '}', "TR0203", profile="cpp-core-v2", sdk=True)
+
     wrapped_transfer_source = """\
 #include <algorithm>
 #include <string>

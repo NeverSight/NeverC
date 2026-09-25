@@ -4461,12 +4461,14 @@ class FunctionLowering {
     case UtilityOperation::AlgorithmMinElement:
     case UtilityOperation::AlgorithmMaxElement: {
       const bool Minimum = Operation == UtilityOperation::AlgorithmMinElement;
-      auto Candidate = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto FirstRange = AlgorithmRangeValue(0);
+      auto LastRange = AlgorithmRangeValue(1);
+      auto Candidate = std::move(FirstRange.first);
+      auto Last = std::move(LastRange.first);
       std::optional<Expression> Comparator;
       std::optional<FunctionalOperationInfo> SDKComparator;
       if (Call->getNumArgs() == 3) {
-        const auto Element = Call->getArg(0)->getType()->getPointeeType();
+        const auto Element = FirstRange.second->getPointeeType();
         SDKComparator = captureRangeSDKComparator(Call, 2, Element, Element);
         if (!SDKComparator)
           Comparator = snapshot(expression(Call->getArg(2)), L);
@@ -4486,7 +4488,7 @@ class FunctionLowering {
       const auto Compare = labelName(), Select = labelName();
       const auto Next = labelName(), End = labelName();
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto PointerType = type(FirstRange.second, L);
       branch(binary("!=", Candidate, Last, "bool", L), Initialize, End, L);
       label(Initialize, L);
       assign(Current,
@@ -4512,22 +4514,24 @@ class FunctionLowering {
           L);
       jump(Check, L);
       label(End, L);
-      return Candidate;
+      return AlgorithmIteratorResult(std::move(Candidate), 0);
     }
     case UtilityOperation::AlgorithmLowerBound:
     case UtilityOperation::AlgorithmUpperBound:
     case UtilityOperation::AlgorithmBinarySearch: {
       const bool Upper = Operation == UtilityOperation::AlgorithmUpperBound;
       const bool Search = Operation == UtilityOperation::AlgorithmBinarySearch;
-      auto First = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto FirstRange = AlgorithmRangeValue(0);
+      auto LastRange = AlgorithmRangeValue(1);
+      auto First = std::move(FirstRange.first);
+      auto Last = std::move(LastRange.first);
       auto ValueAddress = snapshot(
           address(lvalue(Call->getArg(2)), Call->getArg(2)->getType(), L), L);
       std::optional<Expression> Comparator;
       std::optional<FunctionalOperationInfo> SDKForward;
       std::optional<FunctionalOperationInfo> SDKReverse;
       if (Call->getNumArgs() == 4) {
-        const auto Element = Call->getArg(0)->getType()->getPointeeType();
+        const auto Element = FirstRange.second->getPointeeType();
         const auto Value = Call->getArg(2)->getType();
         if (Upper) {
           SDKReverse = captureRangeSDKComparator(Call, 3, Value, Element);
@@ -4547,7 +4551,7 @@ class FunctionLowering {
       std::optional<std::string> DefaultComparisonType;
       if (!Comparator && !SDKForward && !SDKReverse) {
         auto Common = utilityScalarComparisonType(
-            A.Context, Call->getArg(0)->getType()->getPointeeType(),
+            A.Context, FirstRange.second->getPointeeType(),
             Call->getArg(2)->getType(), true);
         if (!Common)
           reject(L, "ordered algorithm query",
@@ -4568,7 +4572,7 @@ class FunctionLowering {
                       L);
       };
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto PointerType = type(FirstRange.second, L);
       auto Length = temporary(DifferenceType, L);
       auto Half = temporary(DifferenceType, L);
       auto Middle = temporary(PointerType, L);
@@ -4607,7 +4611,7 @@ class FunctionLowering {
       jump(Check, L);
       label(Found, L);
       if (!Search)
-        return First;
+        return AlgorithmIteratorResult(std::move(First), 0);
       auto Result = temporary("bool", L);
       const auto Compare = labelName(), Present = labelName();
       const auto Absent = labelName(), End = labelName();
@@ -4629,12 +4633,14 @@ class FunctionLowering {
     case UtilityOperation::AlgorithmIsSortedUntil: {
       const bool BooleanResult =
           Operation == UtilityOperation::AlgorithmIsSorted;
-      auto Previous = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto FirstRange = AlgorithmRangeValue(0);
+      auto LastRange = AlgorithmRangeValue(1);
+      auto Previous = std::move(FirstRange.first);
+      auto Last = std::move(LastRange.first);
       std::optional<Expression> Comparator;
       std::optional<FunctionalOperationInfo> SDKComparator;
       if (Call->getNumArgs() == 3) {
-        const auto Element = Call->getArg(0)->getType()->getPointeeType();
+        const auto Element = FirstRange.second->getPointeeType();
         SDKComparator = captureRangeSDKComparator(Call, 2, Element, Element);
         if (!SDKComparator)
           Comparator = snapshot(expression(Call->getArg(2)), L);
@@ -4651,7 +4657,7 @@ class FunctionLowering {
       };
       auto Current = snapshot(json::Object(Previous), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto PointerType = type(FirstRange.second, L);
       const auto Initialize = labelName(), Check = labelName();
       const auto Compare = labelName(), Next = labelName();
       const auto Unsorted = labelName(), Sorted = labelName();
@@ -4688,7 +4694,8 @@ class FunctionLowering {
         assign(*Result, boolean(true, L), L);
       jump(End, L);
       label(End, L);
-      return Result ? std::move(*Result) : std::move(Current);
+      return Result ? std::move(*Result)
+                    : AlgorithmIteratorResult(std::move(Current), 0);
     }
     case UtilityOperation::AlgorithmAdjacentFind: {
       auto First = snapshot(expression(Call->getArg(0)), L);
@@ -6095,12 +6102,14 @@ class FunctionLowering {
     case UtilityOperation::AlgorithmIsHeap:
     case UtilityOperation::AlgorithmIsHeapUntil: {
       const bool BooleanResult = Operation == UtilityOperation::AlgorithmIsHeap;
-      auto First = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto FirstRange = AlgorithmRangeValue(0);
+      auto LastRange = AlgorithmRangeValue(1);
+      auto First = std::move(FirstRange.first);
+      auto Last = std::move(LastRange.first);
       std::optional<Expression> Comparator;
       std::optional<FunctionalOperationInfo> SDKComparator;
       if (Call->getNumArgs() == 3) {
-        const auto Element = Call->getArg(0)->getType()->getPointeeType();
+        const auto Element = FirstRange.second->getPointeeType();
         SDKComparator = captureRangeSDKComparator(Call, 2, Element, Element);
         if (!SDKComparator)
           Comparator = snapshot(expression(Call->getArg(2)), L);
@@ -6116,7 +6125,7 @@ class FunctionLowering {
         return binary("<", std::move(Left), std::move(Right), "bool", L);
       };
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto PointerType = type(FirstRange.second, L);
       auto Length = snapshot(binary("-", Last, First, DifferenceType, L), L);
       auto Child = temporary(DifferenceType, L);
       auto Parent = temporary(DifferenceType, L);
@@ -6156,7 +6165,8 @@ class FunctionLowering {
       assign(Result, BooleanResult ? boolean(true, L) : Last, L);
       jump(End, L);
       label(End, L);
-      return Result;
+      return BooleanResult ? std::move(Result)
+                           : AlgorithmIteratorResult(std::move(Result), 0);
     }
     case UtilityOperation::AlgorithmMakeHeap: {
       auto First = snapshot(expression(Call->getArg(0)), L);

@@ -51663,6 +51663,115 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedIteratorOrderedQueriesRun) {
+  const auto Source = tmpFile("wrapped-iterator-ordered-queries.cpp");
+  const auto Output = tmpFile("wrapped-iterator-ordered-queries.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <functional>
+#include <string>
+#include <vector>
+bool descending(int left, int right) { return left > right; }
+int main() {
+  std::vector<int> values{2, 4, 4, 7, 9};
+  int effects = 0;
+  auto minimum = std::min_element((++effects, values.begin()),
+                                  (++effects, values.end()));
+  if (effects != 2 || minimum != values.begin() || *minimum != 2 ||
+      *std::max_element(values.cbegin(), values.cend()) != 9)
+    return 1;
+  if (*std::min_element(values.begin(), values.end(), descending) != 9 ||
+      *std::max_element(values.begin(), values.end(), std::greater<int>{}) != 2)
+    return 2;
+  short needle = 4;
+  auto lower = std::lower_bound(values.cbegin(), values.cend(), needle);
+  auto upper = std::upper_bound(values.cbegin(), values.cend(), needle);
+  auto expected_lower = values.cbegin();
+  ++expected_lower;
+  auto expected_upper = expected_lower;
+  ++expected_upper;
+  ++expected_upper;
+  if (lower != expected_lower || upper != expected_upper ||
+      !std::binary_search(values.cbegin(), values.cend(), needle) ||
+      std::binary_search(values.cbegin(), values.cend(), 5))
+    return 3;
+  if (!std::is_sorted(values.cbegin(), values.cend()) ||
+      std::is_sorted_until(values.begin(), values.end()) != values.end())
+    return 4;
+  std::vector<int> descending_values{9, 7, 7, 4, 2};
+  if (*std::lower_bound(descending_values.begin(), descending_values.end(), 7,
+                        descending) != 7 ||
+      *std::upper_bound(descending_values.begin(), descending_values.end(), 7,
+                        std::greater<int>{}) != 4 ||
+      !std::binary_search(descending_values.begin(), descending_values.end(), 7,
+                          std::greater<int>{}) ||
+      !std::is_sorted(descending_values.begin(), descending_values.end(),
+                      descending) ||
+      std::is_sorted_until(descending_values.begin(), descending_values.end(),
+                           std::greater<int>{}) != descending_values.end())
+    return 5;
+  auto inversion = values.begin();
+  ++inversion;
+  ++inversion;
+  values[2] = 1;
+  if (std::is_sorted(values.begin(), values.end()) ||
+      std::is_sorted_until(values.begin(), values.end()) != inversion)
+    return 6;
+  std::vector<int> heap{9, 7, 8, 4, 5};
+  if (!std::is_heap(heap.cbegin(), heap.cend()) ||
+      std::is_heap_until(heap.begin(), heap.end()) != heap.end())
+    return 7;
+  auto heap_violation = heap.begin();
+  ++heap_violation;
+  ++heap_violation;
+  heap[2] = 10;
+  if (std::is_heap(heap.begin(), heap.end()) ||
+      std::is_heap_until(heap.begin(), heap.end()) != heap_violation)
+    return 8;
+  std::vector<int> min_heap{1, 3, 2, 7, 4};
+  if (!std::is_heap(min_heap.begin(), min_heap.end(), descending) ||
+      std::is_heap_until(min_heap.begin(), min_heap.end(),
+                         std::greater<int>{}) != min_heap.end())
+    return 9;
+  std::string word("abbd");
+  if (*std::min_element(word.cbegin(), word.cend()) != 'a' ||
+      *std::lower_bound(word.begin(), word.end(), 'b') != 'b' ||
+      !std::binary_search(word.begin(), word.end(), 'd') ||
+      !std::is_sorted(word.begin(), word.end()))
+    return 10;
+  std::vector<int> empty;
+  if (std::min_element(empty.begin(), empty.end()) != empty.end() ||
+      std::max_element(empty.begin(), empty.end()) != empty.end() ||
+      std::lower_bound(empty.begin(), empty.end(), 1) != empty.end() ||
+      std::upper_bound(empty.begin(), empty.end(), 1) != empty.end() ||
+      std::binary_search(empty.begin(), empty.end(), 1) ||
+      !std::is_sorted(empty.begin(), empty.end()) ||
+      std::is_sorted_until(empty.begin(), empty.end()) != empty.end() ||
+      !std::is_heap(empty.begin(), empty.end()) ||
+      std::is_heap_until(empty.begin(), empty.end()) != empty.end())
+    return 11;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o",
+                                   Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapped-iterator-ordered-queries" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedIteratorTransferRun) {
   const auto Source = tmpFile("wrapped-iterator-transfer.cpp");
   const auto Output = tmpFile("wrapped-iterator-transfer.nc");
