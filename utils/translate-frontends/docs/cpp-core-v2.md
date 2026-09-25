@@ -2310,6 +2310,10 @@ self-referenced source bytes before releasing storage during growth; the
 C-string overload scans to the first NUL.
 The `operator+=` overloads for `char`, `const char*`, and `const std::string&`
 reuse those paths and return the receiver reference.
+The one-argument pinned `initializer_list<char>` constructor and the list
+overloads of `assign`, `operator=`, `append`, and `operator+=` copy every listed
+byte, including embedded NUL characters. Assignment retains reusable capacity;
+append grows with the same capacity recommendation as counted pointer append.
 The five `operator+` overloads taking only const string references, C strings
 or characters create an independent result with the pinned capacity
 recommendation. The seven overloads with an rvalue string append or prepend
@@ -2374,7 +2378,7 @@ reserving, and appending grow storage when needed. Host O0/O2 fixtures
 exercise both representations, embedded NUL, mutable and const access,
 target-specific `max_size` values, copy and move, push/pop,
 resize/reserve/shrink-to-fit, fill, pointer and string append with self-reference,
-the three `operator+=` overloads, all twelve `operator+` forms, four `assign`
+the four `operator+=` overloads, all twelve `operator+` forms, five `assign`
 overloads, positional erase,
 four positional `insert` and four positional `replace` overloads, member/free
 swap, comparison, forward/reverse and character-set search,

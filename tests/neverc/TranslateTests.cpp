@@ -54562,6 +54562,114 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringInitializerListRun) {
+  const auto Source = tmpFile("string-initializer-list.cpp");
+  const auto Output = tmpFile("string-initializer-list.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <initializer_list>
+#include <string>
+int order;
+char next() { order = order * 10 + 1; return 'X'; }
+std::string &select(std::string &text) {
+  order = order * 10 + 2;
+  return text;
+}
+int main() {
+  {
+    std::string empty(std::initializer_list<char>{});
+    std::string short_text{'a', 0, 'b'};
+    std::initializer_list<char> bytes = {'x', 0, 'y'};
+    std::string named(bytes);
+    if (!empty.empty() || short_text.size() != 3 || short_text[1] != 0 ||
+        short_text.data()[3] != 0 || named.size() != 3 || named[1] != 0 ||
+        allocations != 0)
+      return 1;
+    std::initializer_list<char> alphabet = {
+        'a','b','c','d','e','f','g','h','i','j','k','l','m',
+        'n','o','p','q','r','s','t','u','v','w','x','y','z'};
+    std::string long_text(alphabet);
+    if (long_text.size() != 26 || long_text[25] != 'z' || allocations != 1)
+      return 2;
+    std::string assigned_long;
+    int before_growth = allocations;
+    assigned_long.assign(alphabet);
+    if (assigned_long.size() != 26 || assigned_long[25] != 'z' ||
+        allocations != before_growth + 1)
+      return 12;
+    std::string boundary("abcdefghijklmnopqrstuv");
+    Size short_capacity = boundary.capacity();
+    before_growth = allocations;
+    boundary.append({'W'});
+    Size expected_capacity = ((2 * short_capacity + 8) / 8) * 8 - 1;
+    if (boundary.size() != 23 || boundary.capacity() != expected_capacity ||
+        boundary[22] != 'W' || allocations != before_growth + 1)
+      return 13;
+    long_text.reserve(80);
+    const char *data = long_text.data();
+    Size capacity = long_text.capacity();
+    int before = allocations;
+    std::string *result = &long_text.append({'!', 0, '?'});
+    if (result != &long_text || long_text.size() != 29 ||
+        long_text[26] != '!' || long_text[27] != 0 || long_text[28] != '?' ||
+        long_text.data()[29] != 0 || long_text.data() != data ||
+        long_text.capacity() != capacity || allocations != before)
+      return 3;
+    result = &(long_text += {'Q', 'R'});
+    if (result != &long_text || long_text.size() != 31 ||
+        long_text[29] != 'Q' || long_text[30] != 'R' ||
+        long_text.data() != data || allocations != before)
+      return 4;
+    result = &long_text.assign(bytes);
+    if (result != &long_text || long_text.size() != 3 ||
+        long_text[0] != 'x' || long_text[1] != 0 || long_text[2] != 'y' ||
+        long_text.data() != data || long_text.capacity() != capacity)
+      return 5;
+    result = &(long_text = {'m', 0, 'n'});
+    if (result != &long_text || long_text.size() != 3 ||
+        long_text[0] != 'm' || long_text[1] != 0 || long_text[2] != 'n' ||
+        long_text.data() != data || allocations != before)
+      return 6;
+    order = 0;
+    select(long_text) = {next()};
+    if (order != 12 || long_text.size() != 1 || long_text[0] != 'X')
+      return 7;
+    order = 0;
+    select(long_text) += {next()};
+    if (order != 12 || long_text.size() != 2 || long_text[1] != 'X')
+      return 8;
+    order = 0;
+    select(long_text).append({next()});
+    if (order != 21 || long_text.size() != 3 || long_text[2] != 'X')
+      return 9;
+    long_text.append({});
+    long_text.assign({});
+    if (!long_text.empty() || long_text.data() != data ||
+        long_text.capacity() != capacity || allocations != before)
+      return 10;
+  }
+  return allocations == releases ? 0 : 11;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-initializer-list" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StringSwapRun) {
   const auto Source = tmpFile("string-swap.cpp");
   const auto Output = tmpFile("string-swap.nc");

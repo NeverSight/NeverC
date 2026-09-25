@@ -4395,6 +4395,14 @@ approvedUtilityStringConstruction(const State &S, const SourceManager &SM,
         Context.hasSameType(Parameter->getPointeeType(), StringType))
       return UtilityStringConstruction::Move;
   }
+  if (Constructor->getNumParams() == 1) {
+    const auto Parameter = Constructor->getParamDecl(0)->getType();
+    const auto List = approvedUtilityInitializerListRecord(
+        S, SM, Parameter->getAsCXXRecordDecl(), Context);
+    if (List && Context.hasSameType(List->ElementType, Context.CharTy) &&
+        Context.hasSameType(Parameter, Construction->getArg(0)->getType()))
+      return UtilityStringConstruction::InitializerList;
+  }
   const auto ConstPointer = Context.getPointerType(Context.CharTy.withConst());
   if (Constructor->getNumParams() == 1 &&
       Context.hasSameType(Constructor->getParamDecl(0)->getType(),
@@ -16358,6 +16366,15 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                            Method->getOverloadedOperator() == OO_PlusEqual;
     const bool AssignmentOperator =
         (Operator || MemberCall) && Method->getOverloadedOperator() == OO_Equal;
+    auto ListArgument = [&](unsigned ParameterIndex, unsigned ArgumentIndex) {
+      const auto Parameter = Method->getParamDecl(ParameterIndex)->getType();
+      const auto List = approvedUtilityInitializerListRecord(
+          S, SM, Parameter->getAsCXXRecordDecl(), Context);
+      return !Method->getPrimaryTemplate() && List &&
+             Context.hasSameType(List->ElementType, Context.CharTy) &&
+             Context.hasSameType(Parameter,
+                                 Call->getArg(ArgumentIndex)->getType());
+    };
     if (!Reference || !Object || !Prototype ||
         (!Prototype->isNothrow() && Name != "push_back" && Name != "pop_back" &&
          Name != "reserve" && Name != "resize" && Name != "append" &&
@@ -16676,6 +16693,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       if (Context.hasSameType(Parameter, Context.CharTy) &&
           Context.hasSameType(Argument, Context.CharTy))
         return UtilityOperation::StringAssignOperatorCharacter;
+      if (ListArgument(0, Offset))
+        return UtilityOperation::StringAssignOperatorList;
     }
     if (!Operator && Name == "assign" && !Method->isConst() &&
         !Object->getType().isConstQualified() &&
@@ -16701,6 +16720,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
                                          StringType))
         return UtilityOperation::StringAssignString;
+      if (Method->getNumParams() == 1 && ListArgument(0, 0))
+        return UtilityOperation::StringAssignList;
       if (Method->getNumParams() == 2) {
         const auto SecondParameter = Method->getParamDecl(1)->getType();
         if (Context.hasSameType(FirstParameter, ConstPointer) &&
@@ -16751,6 +16772,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Context.hasSameUnqualifiedType(Call->getArg(Argument)->getType(),
                                          StringType))
         return UtilityOperation::StringAppendString;
+      if (Method->getNumParams() == 1 && ListArgument(0, Argument))
+        return UtilityOperation::StringAppendList;
       if (Method->getNumParams() != 2)
         return std::nullopt;
       const auto SecondParameter = Method->getParamDecl(1)->getType();

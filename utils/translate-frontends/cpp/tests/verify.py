@@ -29487,6 +29487,15 @@ int main() {
       moved_prepend.capacity() == prepend_capacity &&
       moved_prepend.size() == 27 && moved_prepend[0] == '!' &&
       prepend_source.empty();
+  std::string listed{'a', 0, 'b'};
+  listed.append({'c'});
+  listed += {'d'};
+  bool list_intact = listed.size() == 5 && listed[1] == 0 &&
+                     listed[4] == 'd';
+  listed.assign({'x', 0, 'y'});
+  list_intact = list_intact && listed.size() == 3 && listed[1] == 0;
+  listed = {'z'};
+  list_intact = list_intact && listed == "z";
   std::string assigned;
   assigned = copied;
   std::string scalar_assigned;
@@ -29714,7 +29723,7 @@ int main() {
          reassigned.size() == 2 && reassigned[0] == 'a' &&
          reassigned[1] == 'a' &&
          erase_intact && erased.empty() && splice_intact && growth_intact &&
-         concat_intact && rvalue_concat_intact &&
+         concat_intact && rvalue_concat_intact && list_intact &&
          scalar_assignment_intact &&
          substring_intact && compare_intact &&
          cstring_compare_intact && positional_compare_intact &&

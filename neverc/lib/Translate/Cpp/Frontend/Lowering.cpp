@@ -9293,9 +9293,11 @@ class FunctionLowering {
     case UtilityOperation::StringAssignPointer:
     case UtilityOperation::StringAssignCString:
     case UtilityOperation::StringAssignString:
+    case UtilityOperation::StringAssignList:
     case UtilityOperation::StringAssignFill:
     case UtilityOperation::StringAssignOperatorCString:
-    case UtilityOperation::StringAssignOperatorCharacter: {
+    case UtilityOperation::StringAssignOperatorCharacter:
+    case UtilityOperation::StringAssignOperatorList: {
       const auto *Object = MemberObject();
       auto String = Object ? StringFor(Object->getType())
                            : std::optional<UtilityStringRecord>();
@@ -9304,7 +9306,8 @@ class FunctionLowering {
                "The selected std::string layout is unavailable.");
       const bool AssignmentOperator =
           Operation == UtilityOperation::StringAssignOperatorCString ||
-          Operation == UtilityOperation::StringAssignOperatorCharacter;
+          Operation == UtilityOperation::StringAssignOperatorCharacter ||
+          Operation == UtilityOperation::StringAssignOperatorList;
       const unsigned SourceIndex =
           AssignmentOperator && isa<CXXOperatorCallExpr>(Call) ? 1 : 0;
       std::optional<Expression> EarlySource;
@@ -9365,6 +9368,21 @@ class FunctionLowering {
                         : snapshot(expression(Call->getArg(
                                        CharacterAssignment ? SourceIndex : 1)),
                                    L);
+      } else if (Operation == UtilityOperation::StringAssignList ||
+                 Operation == UtilityOperation::StringAssignOperatorList) {
+        const auto *Argument = Call->getArg(SourceIndex);
+        auto List = approvedUtilityInitializerListRecord(
+            A.S, A.Sources, Argument->getType()->getAsCXXRecordDecl(),
+            A.Context);
+        if (!List)
+          reject(L, "string assign",
+                 "The selected initializer-list layout is unavailable.");
+        auto ListValue = EarlySource ? std::move(*EarlySource)
+                                     : snapshot(expression(Argument), L);
+        assign(NewSize, fieldStorage(json::Object(ListValue), List->Size, L),
+               L);
+        SourceArgument =
+            snapshot(fieldStorage(std::move(ListValue), List->Begin, L), L);
       } else if (Operation == UtilityOperation::StringAssignString) {
         auto SourceAddress = snapshot(
             address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L),
@@ -10349,6 +10367,7 @@ class FunctionLowering {
     case UtilityOperation::StringAppendPointer:
     case UtilityOperation::StringAppendCString:
     case UtilityOperation::StringAppendString:
+    case UtilityOperation::StringAppendList:
     case UtilityOperation::StringAppendFill:
     case UtilityOperation::StringAppendCharacter:
     case UtilityOperation::StringErase: {
@@ -10357,6 +10376,10 @@ class FunctionLowering {
                            : std::optional<UtilityStringRecord>();
       if (!Object || !String)
         reject(L, "string access", "The selected std::string layout is unavailable.");
+      std::optional<Expression> EarlyList;
+      if (Operation == UtilityOperation::StringAppendList &&
+          isa<CXXOperatorCallExpr>(Call))
+        EarlyList = snapshot(expression(Call->getArg(1)), L);
       auto Receiver = snapshot(address(lvalue(Object), Object->getType(), L), L);
       const auto SizeType = type(A.Context.getSizeType(), L);
       if (Operation == UtilityOperation::StringMaxSize) {
@@ -10390,7 +10413,8 @@ class FunctionLowering {
       const bool PointerAppend =
           Operation == UtilityOperation::StringAppendPointer ||
           Operation == UtilityOperation::StringAppendCString ||
-          Operation == UtilityOperation::StringAppendString;
+          Operation == UtilityOperation::StringAppendString ||
+          Operation == UtilityOperation::StringAppendList;
       if (Operation == UtilityOperation::StringPushBack || CharacterAppend)
         CharacterArgument =
             snapshot(expression(Call->getArg(ArgumentOffset)), L);
@@ -10502,6 +10526,21 @@ class FunctionLowering {
         label(Ready, L);
         RequestedArgument = std::move(SourceSize);
         SourceArgument = std::move(SourceData);
+      }
+      if (Operation == UtilityOperation::StringAppendList) {
+        const auto *Argument = Call->getArg(ArgumentOffset);
+        auto List = approvedUtilityInitializerListRecord(
+            A.S, A.Sources, Argument->getType()->getAsCXXRecordDecl(),
+            A.Context);
+        if (!List)
+          reject(L, "string append",
+                 "The selected initializer-list layout is unavailable.");
+        auto ListValue = EarlyList ? std::move(*EarlyList)
+                                   : snapshot(expression(Argument), L);
+        RequestedArgument =
+            snapshot(fieldStorage(json::Object(ListValue), List->Size, L), L);
+        SourceArgument =
+            snapshot(fieldStorage(std::move(ListValue), List->Begin, L), L);
       }
       if (Operation == UtilityOperation::StringResize)
         CharacterArgument = Call->getNumArgs() == 2
@@ -17336,6 +17375,16 @@ class FunctionLowering {
       } else if (*Kind == UtilityStringConstruction::PointerLength) {
         assign(Input, expression(C->getArg(0)), L);
         assign(Length, expression(C->getArg(1)), L);
+      } else if (*Kind == UtilityStringConstruction::InitializerList) {
+        auto List = approvedUtilityInitializerListRecord(
+            A.S, A.Sources, C->getArg(0)->getType()->getAsCXXRecordDecl(),
+            A.Context);
+        if (!List)
+          reject(L, "string construction",
+                 "The selected initializer-list layout is unavailable.");
+        auto ListValue = snapshot(expression(C->getArg(0)), L);
+        assign(Input, fieldStorage(json::Object(ListValue), List->Begin, L), L);
+        assign(Length, fieldStorage(std::move(ListValue), List->Size, L), L);
       } else {
         assign(Input, expression(C->getArg(0)), L);
         assign(Length, quantity(0, SizeType, L), L);
