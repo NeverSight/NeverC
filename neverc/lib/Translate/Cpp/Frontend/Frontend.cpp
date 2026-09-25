@@ -4830,7 +4830,8 @@ bool Adapter::requireUtilityVector(const CXXRecordDecl *Record,
   const auto Vector = approvedUtilityVectorRecord(S, Sources, Record, Context);
   if (!Vector) {
     reject(Location, "standard library record",
-           "Only the pinned arithmetic std::vector layout is admitted.",
+           "Only the pinned arithmetic or trivial source-record "
+           "std::vector layout is admitted.",
            "TR0203");
     return false;
   }

@@ -4395,6 +4395,14 @@ approvedUtilityStringConstruction(const State &S, const SourceManager &SM,
         Context.hasSameType(Parameter->getPointeeType(), StringType))
       return UtilityStringConstruction::Move;
   }
+  if (Constructor->getNumParams() == 1) {
+    const auto Parameter = Constructor->getParamDecl(0)->getType();
+    const auto List = approvedUtilityInitializerListRecord(
+        S, SM, Parameter->getAsCXXRecordDecl(), Context);
+    if (List && Context.hasSameType(List->ElementType, Context.CharTy) &&
+        Context.hasSameType(Parameter, Construction->getArg(0)->getType()))
+      return UtilityStringConstruction::InitializerList;
+  }
   const auto ConstPointer = Context.getPointerType(Context.CharTy.withConst());
   if (Constructor->getNumParams() == 1 &&
       Context.hasSameType(Constructor->getParamDecl(0)->getType(),
@@ -4497,9 +4505,24 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
       Arguments.get(1).getKind() != TemplateArgument::Type)
     return std::nullopt;
   const auto Element = Arguments.get(0).getAsType();
+  const auto *ElementRecord =
+      Element.isNull() ? nullptr : Element->getAsCXXRecordDecl();
+  ElementRecord = ElementRecord ? ElementRecord->getDefinition() : nullptr;
+  const bool TrivialSourceRecord =
+      ElementRecord && !ElementRecord->isInvalidDecl() &&
+      !ElementRecord->isUnion() && !ElementRecord->isDependentContext() &&
+      S.owns(SM, ElementRecord->getLocation()) &&
+      ElementRecord->isStandardLayout() && ElementRecord->isTrivial() &&
+      ElementRecord->hasTrivialDefaultConstructor() &&
+      ElementRecord->hasTrivialCopyConstructor() &&
+      ElementRecord->hasTrivialMoveConstructor() &&
+      ElementRecord->hasTrivialCopyAssignment() &&
+      ElementRecord->hasTrivialMoveAssignment() &&
+      ElementRecord->hasTrivialDestructor();
   if (Element.isNull() || Element.isConstQualified() ||
       Element.isVolatileQualified() || Element->isBooleanType() ||
-      !(Element->isIntegerType() || Element->isFloatingType()) ||
+      !(Element->isIntegerType() || Element->isFloatingType() ||
+        TrivialSourceRecord) ||
       Element->isIncompleteType())
     return std::nullopt;
   const auto Pointer = Context.getPointerType(Element);
@@ -6327,6 +6350,32 @@ approvedUtilityWrapIteratorConstruction(const State &S,
       cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx",
                      "__iterator/wrap_iter.h"))
     return UtilityWrapIteratorConstruction::Default;
+  const auto *Primary = Constructor->getPrimaryTemplate();
+  const auto Source =
+      Construction->getNumArgs() == 1
+          ? approvedUtilityWrapIteratorRecord(
+                S, SM, Construction->getArg(0)->getType()->getAsCXXRecordDecl(),
+                Context)
+          : std::nullopt;
+  if (Primary && Source && Constructor->hasBody() &&
+      approvedStandardSDKDeclaration(S, SM, Constructor) &&
+      approvedStandardSDKDeclaration(S, SM, Primary) &&
+      cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx",
+                    "__iterator/wrap_iter.h") &&
+      cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
+                    "__iterator/wrap_iter.h")) {
+    const auto Parameter = Constructor->getParamDecl(0)->getType();
+    if (Parameter->isLValueReferenceType() &&
+        Parameter->getPointeeType().isConstQualified() &&
+        Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                       Context.getRecordType(Source->Record)) &&
+        Context.hasSameUnqualifiedType(
+            Source->IteratorType->getPointeeType(),
+            Iterator->IteratorType->getPointeeType()) &&
+        utilityPointerConversion(Context, Source->IteratorType,
+                                 Iterator->IteratorType))
+      return UtilityWrapIteratorConstruction::Converting;
+  }
   return std::nullopt;
 }
 
@@ -6388,7 +6437,12 @@ approvedUtilityReverseIteratorRecord(const State &S, const SourceManager &SM,
     return std::nullopt;
   const auto &Arguments = Specialization->getTemplateArgs();
   const auto Iterator = Arguments.get(0).getAsType();
-  if (!utilityObjectPointer(Context, Iterator))
+  const auto Wrapped = approvedUtilityWrapIteratorRecord(
+      S, SM, Iterator->getAsCXXRecordDecl(), Context);
+  const auto Pointer = Wrapped ? Wrapped->IteratorType : Iterator;
+  if (!utilityObjectPointer(Context, Pointer) ||
+      Context.getTypeSize(Iterator) != Context.getTypeSize(Pointer) ||
+      Context.getTypeAlign(Iterator) != Context.getTypeAlign(Pointer))
     return std::nullopt;
 
   auto Fields = Specialization->fields();
@@ -6450,7 +6504,7 @@ approvedUtilityReverseIteratorRecord(const State &S, const SourceManager &SM,
 
   const auto &BaseLayout = Context.getASTRecordLayout(BaseSpecialization);
   const auto &Layout = Context.getASTRecordLayout(Specialization);
-  const uint64_t PointerBits = Context.getTypeSize(Iterator);
+  const uint64_t PointerBits = Context.getTypeSize(Pointer);
   if (BaseLayout.getSize().getQuantity() != 1 ||
       BaseLayout.getAlignment().getQuantity() != 1 ||
       Layout.getFieldCount() != 2 || Layout.getFieldOffset(0) != 0 ||
@@ -6461,7 +6515,9 @@ approvedUtilityReverseIteratorRecord(const State &S, const SourceManager &SM,
           Context.getTypeAlign(Iterator))
     return std::nullopt;
   return UtilityReverseIteratorRecord{Specialization, Legacy, Current,
-                                      Iterator};
+                                      Iterator,
+                                      Wrapped ? Wrapped->Current : nullptr,
+                                      Pointer};
 }
 
 std::optional<UtilityReverseIteratorConstruction>
@@ -6516,8 +6572,9 @@ approvedUtilityReverseIteratorConstruction(const State &S,
       !approvedStandardSDKDeclaration(S, SM, Primary) ||
       !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
                      "__iterator/reverse_iterator.h") ||
-      !utilityPointerConversion(Context, Source->IteratorType,
-                                Destination->IteratorType))
+      bool(Source->WrappedCurrent) != bool(Destination->WrappedCurrent) ||
+      !utilityPointerConversion(Context, Source->PointerType,
+                                Destination->PointerType))
     return std::nullopt;
   return UtilityReverseIteratorConstruction::Converting;
 }
@@ -6571,8 +6628,9 @@ approvedUtilityReverseIteratorAssignment(const State &S,
                      "__iterator/reverse_iterator.h") ||
       !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
                      "__iterator/reverse_iterator.h") ||
-      !utilityPointerConversion(Context, Source->IteratorType,
-                                Destination->IteratorType))
+      bool(Source->WrappedCurrent) != bool(Destination->WrappedCurrent) ||
+      !utilityPointerConversion(Context, Source->PointerType,
+                                Destination->PointerType))
     return std::nullopt;
   return UtilityReverseIteratorAssignment{*Destination, *Source, true};
 }
@@ -7617,8 +7675,120 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
           return true;
       }
     }
+    if (Default && Parameter && Owner && String && Prototype &&
+        Prototype->isNothrow() &&
+        Owner->getCanonicalDecl() == Method->getCanonicalDecl() &&
+        Method->getNumParams() == 2 && Index == 1 &&
+        Parameter == Method->getParamDecl(1) &&
+        Parameter->getFunctionScopeIndex() == 1 && !Method->isStatic() &&
+        !Method->isVariadic() && Method->isConst() && Method->getIdentifier() &&
+        (Method->getName() == "find" || Method->getName() == "rfind" ||
+         Method->getName() == "find_first_of" ||
+         Method->getName() == "find_last_of" ||
+         Method->getName() == "find_first_not_of" ||
+         Method->getName() == "find_last_not_of") &&
+        Context.hasSameType(Method->getReturnType(), Context.getSizeType()) &&
+        Context.hasSameType(Parameter->getType(), Context.getSizeType()) &&
+        approvedStandardSDKDeclaration(S, SM, Method) &&
+        cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "string") &&
+        S.owns(SM, Default->getExprLoc()) && Init &&
+        Context.hasSameType(Init->getType(), Context.getSizeType()) &&
+        !Init->isTypeDependent() && !Init->isValueDependent() &&
+        !Init->isInstantiationDependent()) {
+      const auto First = Method->getParamDecl(0)->getType();
+      const auto StringType = Context.getRecordType(String->Record);
+      const bool StringParameter =
+          First->isLValueReferenceType() &&
+          Context.hasSameType(First->getPointeeType(), StringType.withConst());
+      if (Context.hasSameType(First, Context.CharTy) || StringParameter ||
+          Context.hasSameType(
+              First, Context.getPointerType(Context.CharTy.withConst()))) {
+        Expr::EvalResult Evaluated;
+        if (Init->EvaluateAsInt(Evaluated, Context) && Evaluated.Val.isInt()) {
+          const auto &Value = Evaluated.Val.getInt();
+          const auto Name = Method->getName();
+          const bool Forward = Name == "find" || Name == "find_first_of" ||
+                               Name == "find_first_not_of";
+          if ((Forward && Value == 0) || (!Forward && Value.isAllOnes()))
+            return true;
+        }
+      }
+    }
+    if (Default && Parameter && Owner && String && Prototype &&
+        Owner->getCanonicalDecl() == Method->getCanonicalDecl() &&
+        Method->getNumParams() == 5 && Index == 4 &&
+        Parameter == Method->getParamDecl(4) &&
+        Parameter->getFunctionScopeIndex() == 4 && !Method->isStatic() &&
+        !Method->isVariadic() && Method->isConst() && Method->getIdentifier() &&
+        Method->getName() == "compare" &&
+        Context.hasSameType(Method->getReturnType(), Context.IntTy) &&
+        Context.hasSameType(Parameter->getType(), Context.getSizeType()) &&
+        Context.hasSameType(Method->getParamDecl(0)->getType(),
+                            Context.getSizeType()) &&
+        Context.hasSameType(Method->getParamDecl(1)->getType(),
+                            Context.getSizeType()) &&
+        Method->getParamDecl(2)->getType()->isLValueReferenceType() &&
+        Context.hasSameType(
+            Method->getParamDecl(2)->getType()->getPointeeType(),
+            Context.getRecordType(String->Record).withConst()) &&
+        Context.hasSameType(Method->getParamDecl(3)->getType(),
+                            Context.getSizeType()) &&
+        approvedStandardSDKDeclaration(S, SM, Method) &&
+        cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "string") &&
+        S.owns(SM, Default->getExprLoc()) && Init &&
+        Context.hasSameType(Init->getType(), Context.getSizeType()) &&
+        !Init->isTypeDependent() && !Init->isValueDependent() &&
+        !Init->isInstantiationDependent()) {
+      Expr::EvalResult Evaluated;
+      if (Init->EvaluateAsInt(Evaluated, Context) && Evaluated.Val.isInt() &&
+          Evaluated.Val.getInt().isAllOnes())
+        return true;
+    }
     const auto View =
         approvedUtilityStringViewRecord(S, SM, Method->getParent(), Context);
+    if (Default && Parameter && Owner && Prototype && (String || View) &&
+        Owner->getCanonicalDecl() == Method->getCanonicalDecl() &&
+        Index < Method->getNumParams() &&
+        Parameter == Method->getParamDecl(Index) &&
+        Parameter->getFunctionScopeIndex() == Index && !Method->isStatic() &&
+        !Method->isVariadic() && Method->isConst() && Method->getIdentifier() &&
+        Context.hasSameType(Parameter->getType(), Context.getSizeType()) &&
+        approvedStandardSDKDeclaration(S, SM, Method) &&
+        cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
+                      String ? "string" : "string_view") &&
+        S.owns(SM, Default->getExprLoc()) && Init &&
+        Context.hasSameType(Init->getType(), Context.getSizeType()) &&
+        !Init->isTypeDependent() && !Init->isValueDependent() &&
+        !Init->isInstantiationDependent()) {
+      const auto Name = Method->getName();
+      const bool Substr =
+          Name == "substr" && Method->getNumParams() == 2 && Index < 2 &&
+          Context.hasSameType(
+              Method->getReturnType(),
+              Context.getRecordType(String ? String->Record : View->Record)) &&
+          Context.hasSameType(Method->getParamDecl(0)->getType(),
+                              Context.getSizeType()) &&
+          Context.hasSameType(Method->getParamDecl(1)->getType(),
+                              Context.getSizeType());
+      const bool Copy =
+          Name == "copy" && Method->getNumParams() == 3 && Index == 2 &&
+          Context.hasSameType(Method->getReturnType(), Context.getSizeType()) &&
+          Context.hasSameType(Method->getParamDecl(0)->getType(),
+                              Context.getPointerType(Context.CharTy)) &&
+          Context.hasSameType(Method->getParamDecl(1)->getType(),
+                              Context.getSizeType()) &&
+          Context.hasSameType(Method->getParamDecl(2)->getType(),
+                              Context.getSizeType());
+      if (Substr || Copy) {
+        Expr::EvalResult Evaluated;
+        if (Init->EvaluateAsInt(Evaluated, Context) && Evaluated.Val.isInt()) {
+          const auto &Value = Evaluated.Val.getInt();
+          if (((Copy || Index == 0) && Value == 0) ||
+              (Substr && Index == 1 && Value.isAllOnes()))
+            return true;
+        }
+      }
+    }
     if (Default && Parameter && Owner && View && Prototype &&
         Prototype->isNothrow() &&
         Owner->getCanonicalDecl() == Method->getCanonicalDecl() &&
@@ -7626,12 +7796,19 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
         Parameter->getFunctionScopeIndex() == 1 && Index == 1 &&
         !Method->isStatic() && !Method->isVariadic() && Method->isConst() &&
         Method->isConstexpr() && Method->hasBody() && Method->getIdentifier() &&
-        (Method->getName() == "find" || Method->getName() == "rfind") &&
+        (Method->getName() == "find" || Method->getName() == "rfind" ||
+         Method->getName() == "find_first_of" ||
+         Method->getName() == "find_last_of" ||
+         Method->getName() == "find_first_not_of" ||
+         Method->getName() == "find_last_not_of") &&
         Context.hasSameType(Method->getReturnType(), Context.getSizeType()) &&
         (Context.hasSameType(Method->getParamDecl(0)->getType(),
                              Context.CharTy) ||
          Context.hasSameUnqualifiedType(Method->getParamDecl(0)->getType(),
-                                        Context.getRecordType(View->Record))) &&
+                                        Context.getRecordType(View->Record)) ||
+         Context.hasSameType(
+             Method->getParamDecl(0)->getType(),
+             Context.getPointerType(Context.CharTy.withConst()))) &&
         Context.hasSameType(Parameter->getType(), Context.getSizeType()) &&
         approvedStandardSDKDeclaration(S, SM, Method) &&
         cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "string_view") &&
@@ -7642,8 +7819,10 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
       Expr::EvalResult Evaluated;
       if (Init->EvaluateAsInt(Evaluated, Context) && Evaluated.Val.isInt()) {
         const auto &Value = Evaluated.Val.getInt();
-        if ((Method->getName() == "find" && Value == 0) ||
-            (Method->getName() == "rfind" && Value.isAllOnes()))
+        const auto Name = Method->getName();
+        const bool Forward = Name == "find" || Name == "find_first_of" ||
+                             Name == "find_first_not_of";
+        if ((Forward && Value == 0) || (!Forward && Value.isAllOnes()))
           return true;
       }
     }
@@ -15657,13 +15836,55 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   const auto *Function = Call->getDirectCallee();
   const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
   if (const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
-      Operator && Operator->getOperator() == OO_ExclaimEqual &&
+      Operator && Operator->getOperator() == OO_Plus &&
       Operator->getNumArgs() == 2 && Function && !Method &&
-      Function->getOverloadedOperator() == OO_ExclaimEqual &&
+      Function->getOverloadedOperator() == OO_Plus &&
       Function->getNumParams() == 2 && !Function->isVariadic() &&
       Function->hasBody() && Call->isPRValue() &&
-      Call->getType()->isBooleanType() &&
-      Function->getReturnType()->isBooleanType() &&
+      approvedUtilityReference(S, SM, Call, Function) &&
+      approvedStandardSDKDeclaration(S, SM, Function) &&
+      cstddefOrigin(S, SM, Function->getLocation(), "libcxx",
+                    "__iterator/wrap_iter.h")) {
+    const auto Iterator = approvedUtilityWrapIteratorRecord(
+        S, SM, Operator->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
+    const auto *Primary = Function->getPrimaryTemplate();
+    const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
+    const auto *Arguments = Function->getTemplateSpecializationArgs();
+    if (Iterator && Primary && Prototype && Prototype->isNothrow() &&
+        Arguments && Arguments->size() == 1 &&
+        Arguments->get(0).getKind() == TemplateArgument::Type &&
+        Context.hasSameType(Arguments->get(0).getAsType(),
+                            Iterator->IteratorType) &&
+        Context.hasSameType(Function->getParamDecl(0)->getType(),
+                            Context.getPointerDiffType()) &&
+        Context.hasSameType(Operator->getArg(0)->getType(),
+                            Context.getPointerDiffType()) &&
+        Context.hasSameType(Function->getParamDecl(1)->getType(),
+                            Context.getRecordType(Iterator->Record)) &&
+        Context.hasSameUnqualifiedType(
+            Operator->getArg(1)->getType(),
+            Context.getRecordType(Iterator->Record)) &&
+        Context.hasSameType(Function->getReturnType(),
+                            Context.getRecordType(Iterator->Record)) &&
+        Context.hasSameType(Call->getType(), Function->getReturnType()) &&
+        approvedStandardSDKDeclaration(S, SM, Primary) &&
+        cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
+                      "__iterator/wrap_iter.h"))
+      return UtilityOperation::WrapIteratorOffsetLeft;
+  }
+  if (const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+      Operator && (Operator->getOperator() == OO_EqualEqual ||
+                   Operator->getOperator() == OO_ExclaimEqual ||
+                   Operator->getOperator() == OO_Minus) &&
+      Operator->getNumArgs() == 2 && Function && !Method &&
+      Function->getOverloadedOperator() == Operator->getOperator() &&
+      Function->getNumParams() == 2 && !Function->isVariadic() &&
+      Function->hasBody() && Call->isPRValue() &&
+      Context.hasSameType(Call->getType(), Function->getReturnType()) &&
+      (Operator->getOperator() == OO_Minus
+           ? Context.hasSameType(Function->getReturnType(),
+                                 Context.getPointerDiffType())
+           : Function->getReturnType()->isBooleanType()) &&
       approvedUtilityReference(S, SM, Call, Function) &&
       approvedStandardSDKDeclaration(S, SM, Function) &&
       cstddefOrigin(S, SM, Function->getLocation(), "libcxx",
@@ -15685,15 +15906,23 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if (Primary && Prototype && Prototype->isNothrow() && Left && Right &&
         Left->Record->getCanonicalDecl() ==
             Right->Record->getCanonicalDecl() &&
-        Arguments && Arguments->size() == 1 &&
+        Arguments && (Arguments->size() == 1 || Arguments->size() == 2) &&
         Arguments->get(0).getKind() == TemplateArgument::Type &&
         Context.hasSameType(Arguments->get(0).getAsType(),
                             Left->IteratorType) &&
+        (Arguments->size() == 1 ||
+         (Arguments->get(1).getKind() == TemplateArgument::Type &&
+          Context.hasSameType(Arguments->get(1).getAsType(),
+                              Left->IteratorType))) &&
         Parameter(0) && Parameter(1) &&
         approvedStandardSDKDeclaration(S, SM, Primary) &&
         cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
                        "__iterator/wrap_iter.h"))
-      return UtilityOperation::WrapIteratorNotEqual;
+      return Operator->getOperator() == OO_EqualEqual
+                 ? UtilityOperation::WrapIteratorEqual
+             : Operator->getOperator() == OO_ExclaimEqual
+                 ? UtilityOperation::WrapIteratorNotEqual
+                 : UtilityOperation::WrapIteratorDifference;
   }
   const auto *OptionalObject = [&]() -> const Expr * {
     const Expr *Object = nullptr;
@@ -16105,39 +16334,106 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       S, SM, Method ? Method->getParent() : nullptr, Context);
   if (Method && Wrapped) {
     const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+    const auto *MemberCall = dyn_cast<CXXMemberCallExpr>(Call);
     const auto *Object = Operator && Operator->getNumArgs()
                              ? Operator->getArg(0)
-                             : nullptr;
+                             : MemberCall
+                                 ? MemberCall->getImplicitObjectArgument()
+                                 : nullptr;
     const auto *Reference = directMethodReference(Call);
     const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
     const auto WrapType = Context.getRecordType(Wrapped->Record);
     if (Reference && Object && Prototype && Prototype->isNothrow() &&
-        Operator->getNumArgs() == 1 && !Method->isStatic() &&
-        !Method->isVariadic() && Method->hasBody() &&
-        Method->getNumParams() == 0 && Method->getRefQualifier() == RQ_None &&
+        (Operator
+             ? Operator->getNumArgs() == Method->getNumParams() + 1
+             : MemberCall && Call->getNumArgs() == Method->getNumParams()) &&
+        !Method->isStatic() && !Method->isVariadic() && Method->hasBody() &&
+        Method->getNumParams() <= 1 && Method->getRefQualifier() == RQ_None &&
         Method->getParent()->getCanonicalDecl() ==
             Wrapped->Record->getCanonicalDecl() &&
         Context.hasSameUnqualifiedType(Object->getType(), WrapType) &&
         approvedStandardSDKDeclaration(S, SM, Method) &&
         cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
-                       "__iterator/wrap_iter.h") &&
+                      "__iterator/wrap_iter.h") &&
         S.owns(SM, Reference->getExprLoc())) {
-      if (Method->getOverloadedOperator() == OO_Star && Method->isConst() &&
-          Call->isLValue() &&
+      if (MemberCall && Method->getIdentifier() &&
+          Method->getIdentifier()->getName() == "base" && Method->isConst() &&
+          !Method->getNumParams() && Call->isPRValue() &&
+          Context.hasSameType(Method->getReturnType(), Wrapped->IteratorType) &&
+          Context.hasSameType(Call->getType(), Wrapped->IteratorType))
+        return UtilityOperation::WrapIteratorBase;
+      if (Operator && Method->getOverloadedOperator() == OO_Star &&
+          Method->isConst() && !Method->getNumParams() && Call->isLValue() &&
           Method->getReturnType()->isLValueReferenceType() &&
           Context.hasSameType(Method->getReturnType()->getPointeeType(),
                               Wrapped->IteratorType->getPointeeType()) &&
           Context.hasSameUnqualifiedType(
               Call->getType(), Wrapped->IteratorType->getPointeeType()))
         return UtilityOperation::WrapIteratorDereference;
-      if (Method->getOverloadedOperator() == OO_PlusPlus &&
-          !Method->isConst() && !Object->getType().isConstQualified() &&
-          Call->isLValue() &&
+      if ((Operator || MemberCall) &&
+          Method->getOverloadedOperator() == OO_Arrow && Method->isConst() &&
+          !Method->getNumParams() && Call->isPRValue() &&
+          Context.hasSameType(Method->getReturnType(), Wrapped->IteratorType) &&
+          Context.hasSameType(Call->getType(), Wrapped->IteratorType))
+        return UtilityOperation::WrapIteratorArrow;
+      if (Operator &&
+          (Method->getOverloadedOperator() == OO_PlusPlus ||
+           Method->getOverloadedOperator() == OO_MinusMinus) &&
+          !Method->getNumParams() && !Method->isConst() &&
+          !Object->getType().isConstQualified() && Call->isLValue() &&
           Method->getReturnType()->isLValueReferenceType() &&
           Context.hasSameUnqualifiedType(
               Method->getReturnType()->getPointeeType(), WrapType) &&
           Context.hasSameUnqualifiedType(Call->getType(), WrapType))
-        return UtilityOperation::WrapIteratorPreIncrement;
+        return Method->getOverloadedOperator() == OO_PlusPlus
+                   ? UtilityOperation::WrapIteratorPreIncrement
+                   : UtilityOperation::WrapIteratorPreDecrement;
+      if (Operator && Method->getNumParams() == 1 &&
+          Context.hasSameType(Method->getParamDecl(0)->getType(),
+                              Context.IntTy) &&
+          Context.hasSameType(Call->getArg(1)->getType(), Context.IntTy) &&
+          (Method->getOverloadedOperator() == OO_PlusPlus ||
+           Method->getOverloadedOperator() == OO_MinusMinus) &&
+          !Method->isConst() && !Object->getType().isConstQualified() &&
+          Call->isPRValue() &&
+          Context.hasSameType(Method->getReturnType(), WrapType) &&
+          Context.hasSameType(Call->getType(), WrapType))
+        return Method->getOverloadedOperator() == OO_PlusPlus
+                   ? UtilityOperation::WrapIteratorPostIncrement
+                   : UtilityOperation::WrapIteratorPostDecrement;
+      if (Operator && Method->getNumParams() == 1 &&
+          Context.hasSameType(Method->getParamDecl(0)->getType(),
+                              Context.getPointerDiffType()) &&
+          Context.hasSameType(Call->getArg(1)->getType(),
+                              Context.getPointerDiffType())) {
+        if (Method->getOverloadedOperator() == OO_Subscript &&
+            Method->isConst() && Call->isLValue() &&
+            Method->getReturnType()->isLValueReferenceType() &&
+            Context.hasSameType(Method->getReturnType()->getPointeeType(),
+                                Wrapped->IteratorType->getPointeeType()) &&
+            Context.hasSameUnqualifiedType(
+                Call->getType(), Wrapped->IteratorType->getPointeeType()))
+          return UtilityOperation::WrapIteratorSubscript;
+        if (Method->isConst() && Call->isPRValue() &&
+            Context.hasSameType(Method->getReturnType(), WrapType) &&
+            Context.hasSameType(Call->getType(), WrapType)) {
+          if (Method->getOverloadedOperator() == OO_Plus)
+            return UtilityOperation::WrapIteratorAddOffset;
+          if (Method->getOverloadedOperator() == OO_Minus)
+            return UtilityOperation::WrapIteratorSubtractOffset;
+        }
+        if (!Method->isConst() && !Object->getType().isConstQualified() &&
+            Call->isLValue() &&
+            Method->getReturnType()->isLValueReferenceType() &&
+            Context.hasSameType(Method->getReturnType()->getPointeeType(),
+                                WrapType) &&
+            Context.hasSameUnqualifiedType(Call->getType(), WrapType)) {
+          if (Method->getOverloadedOperator() == OO_PlusEqual)
+            return UtilityOperation::WrapIteratorAddAssign;
+          if (Method->getOverloadedOperator() == OO_MinusEqual)
+            return UtilityOperation::WrapIteratorSubtractAssign;
+        }
+      }
     }
     return std::nullopt;
   }
@@ -16157,15 +16453,56 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                      : llvm::StringRef();
     const bool PlusEqual = Operator &&
                            Method->getOverloadedOperator() == OO_PlusEqual;
+    const bool AssignmentOperator =
+        (Operator || MemberCall) && Method->getOverloadedOperator() == OO_Equal;
+    auto ListArgument = [&](unsigned ParameterIndex, unsigned ArgumentIndex) {
+      const auto Parameter = Method->getParamDecl(ParameterIndex)->getType();
+      const auto List = approvedUtilityInitializerListRecord(
+          S, SM, Parameter->getAsCXXRecordDecl(), Context);
+      return !Method->getPrimaryTemplate() && List &&
+             Context.hasSameType(List->ElementType, Context.CharTy) &&
+             Context.hasSameType(Parameter,
+                                 Call->getArg(ArgumentIndex)->getType());
+    };
+    auto CharacterRange = [&]() {
+      const auto *Primary = Method->getPrimaryTemplate();
+      if (Method->getNumParams() != 2 || !Primary ||
+          !approvedStandardSDKDeclaration(S, SM, Primary) ||
+          !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "string"))
+        return false;
+      const auto First = Method->getParamDecl(0)->getType();
+      const auto Last = Method->getParamDecl(1)->getType();
+      const auto ConstPointer =
+          Context.getPointerType(Context.CharTy.withConst());
+      const bool RawPointer =
+          Context.hasSameType(First, Context.getPointerType(Context.CharTy)) ||
+          Context.hasSameType(First, ConstPointer);
+      const auto Wrapped = approvedUtilityWrapIteratorRecord(
+          S, SM, First->getAsCXXRecordDecl(), Context);
+      const bool WrappedPointer =
+          Wrapped &&
+          (Context.hasSameType(Wrapped->IteratorType,
+                               Context.getPointerType(Context.CharTy)) ||
+           Context.hasSameType(Wrapped->IteratorType, ConstPointer));
+      return (RawPointer || WrappedPointer) &&
+             Context.hasSameType(First, Last) &&
+             Context.hasSameType(Call->getArg(0)->getType(), First) &&
+             Context.hasSameType(Call->getArg(1)->getType(), Last);
+    };
     if (!Reference || !Object || !Prototype ||
         (!Prototype->isNothrow() && Name != "push_back" && Name != "pop_back" &&
          Name != "reserve" && Name != "resize" && Name != "append" &&
-         Name != "assign" && Name != "erase" &&
-         !PlusEqual) ||
+         Name != "assign" && Name != "erase" && Name != "insert" &&
+         Name != "replace" && Name != "copy" && Name != "substr" &&
+         Name != "compare" && !PlusEqual && !AssignmentOperator) ||
         Method->isStatic() || Method->isVariadic() ||
         (!Method->hasBody() && Name != "push_back" && Name != "reserve" &&
          Name != "resize" && Name != "append" && Name != "assign" &&
-         Name != "erase" && Name != "compare") ||
+         Name != "erase" && Name != "insert" && Name != "replace" &&
+         Name != "copy" && Name != "compare" && Name != "find" &&
+         Name != "rfind" && Name != "find_first_of" && Name != "find_last_of" &&
+         Name != "find_first_not_of" && Name != "find_last_not_of" &&
+         !AssignmentOperator) ||
         Method->getRefQualifier() != RQ_None ||
         Method->getParent()->getCanonicalDecl() !=
             String->Record->getCanonicalDecl() ||
@@ -16185,6 +16522,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       if (Name == "capacity" &&
           Context.hasSameType(Method->getReturnType(), Context.getSizeType()))
         return UtilityOperation::StringCapacity;
+      if (Name == "max_size" &&
+          Context.hasSameType(Method->getReturnType(), Context.getSizeType()))
+        return UtilityOperation::StringMaxSize;
       if (Name == "empty" && Method->getReturnType()->isBooleanType())
         return UtilityOperation::StringEmpty;
     }
@@ -16224,6 +16564,159 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Context.hasSameType(Call->getArg(0)->getType(), ConstPointer))
         return UtilityOperation::StringCompareCString;
     }
+    if (!Operator && Name == "compare" && Method->isConst() &&
+        Call->isPRValue() &&
+        Context.hasSameType(Method->getReturnType(), Context.IntTy) &&
+        Context.hasSameType(Call->getType(), Context.IntTy) &&
+        (Method->getNumParams() == 3 || Method->getNumParams() == 4 ||
+         Method->getNumParams() == 5) &&
+        Context.hasSameType(Method->getParamDecl(0)->getType(),
+                            Context.getSizeType()) &&
+        Context.hasSameType(Method->getParamDecl(1)->getType(),
+                            Context.getSizeType()) &&
+        Context.hasSameType(Call->getArg(0)->getType(),
+                            Context.getSizeType()) &&
+        Context.hasSameType(Call->getArg(1)->getType(),
+                            Context.getSizeType())) {
+      const auto Parameter = Method->getParamDecl(2)->getType();
+      const auto Argument = Call->getArg(2)->getType();
+      const auto StringType = Context.getRecordType(String->Record);
+      const bool StringArgument =
+          Parameter->isLValueReferenceType() &&
+          Context.hasSameType(Parameter->getPointeeType(),
+                              StringType.withConst()) &&
+          Context.hasSameUnqualifiedType(Argument, StringType);
+      const auto Pointer = Context.getPointerType(Context.CharTy.withConst());
+      const bool CStringArgument = Context.hasSameType(Parameter, Pointer) &&
+                                   Context.hasSameType(Argument, Pointer);
+      if (((Method->getNumParams() == 3) &&
+           (StringArgument || CStringArgument)) ||
+          ((Method->getNumParams() == 4) && CStringArgument &&
+           Context.hasSameType(Method->getParamDecl(3)->getType(),
+                               Context.getSizeType()) &&
+           Context.hasSameType(Call->getArg(3)->getType(),
+                               Context.getSizeType())) ||
+          ((Method->getNumParams() == 5) && StringArgument &&
+           Context.hasSameType(Method->getParamDecl(3)->getType(),
+                               Context.getSizeType()) &&
+           Context.hasSameType(Method->getParamDecl(4)->getType(),
+                               Context.getSizeType()) &&
+           Context.hasSameType(Call->getArg(3)->getType(),
+                               Context.getSizeType()) &&
+           Context.hasSameType(Call->getArg(4)->getType(),
+                               Context.getSizeType())))
+        return UtilityOperation::StringCompareSlice;
+    }
+    if (!Operator && (Name == "find" || Name == "rfind") && Method->isConst() &&
+        Call->isPRValue() &&
+        Context.hasSameType(Method->getReturnType(), Context.getSizeType()) &&
+        Context.hasSameType(Call->getType(), Context.getSizeType()) &&
+        (Method->getNumParams() == 2 || Method->getNumParams() == 3) &&
+        Context.hasSameType(Method->getParamDecl(1)->getType(),
+                            Context.getSizeType()) &&
+        Context.hasSameType(Call->getArg(1)->getType(),
+                            Context.getSizeType())) {
+      const auto FirstParameter = Method->getParamDecl(0)->getType();
+      const auto FirstArgument = Call->getArg(0)->getType();
+      if (Method->getNumParams() == 2 &&
+          Context.hasSameType(FirstParameter, Context.CharTy) &&
+          Context.hasSameType(FirstArgument, Context.CharTy))
+        return Name == "find" ? UtilityOperation::StringFindCharacter
+                              : UtilityOperation::StringRFindCharacter;
+      const auto StringType = Context.getRecordType(String->Record);
+      if (Method->getNumParams() == 2 &&
+          FirstParameter->isLValueReferenceType() &&
+          Context.hasSameType(FirstParameter->getPointeeType(),
+                              StringType.withConst()) &&
+          Context.hasSameUnqualifiedType(FirstArgument, StringType))
+        return Name == "find" ? UtilityOperation::StringFindSubstring
+                              : UtilityOperation::StringRFindSubstring;
+      const auto ConstPointer =
+          Context.getPointerType(Context.CharTy.withConst());
+      if (Context.hasSameType(FirstParameter, ConstPointer) &&
+          Context.hasSameType(FirstArgument, ConstPointer) &&
+          (Method->getNumParams() == 2 ||
+           (Context.hasSameType(Method->getParamDecl(2)->getType(),
+                                Context.getSizeType()) &&
+            Context.hasSameType(Call->getArg(2)->getType(),
+                                Context.getSizeType()))))
+        return Name == "find" ? UtilityOperation::StringFindSubstring
+                              : UtilityOperation::StringRFindSubstring;
+    }
+    if (!Operator &&
+        (Name == "find_first_of" || Name == "find_last_of" ||
+         Name == "find_first_not_of" || Name == "find_last_not_of") &&
+        Method->isConst() && Call->isPRValue() &&
+        Context.hasSameType(Method->getReturnType(), Context.getSizeType()) &&
+        Context.hasSameType(Call->getType(), Context.getSizeType()) &&
+        (Method->getNumParams() == 2 || Method->getNumParams() == 3) &&
+        Context.hasSameType(Method->getParamDecl(1)->getType(),
+                            Context.getSizeType()) &&
+        Context.hasSameType(Call->getArg(1)->getType(),
+                            Context.getSizeType())) {
+      const auto FirstParameter = Method->getParamDecl(0)->getType();
+      const auto FirstArgument = Call->getArg(0)->getType();
+      const auto StringType = Context.getRecordType(String->Record);
+      const auto ConstPointer =
+          Context.getPointerType(Context.CharTy.withConst());
+      const bool Character =
+          Method->getNumParams() == 2 &&
+          Context.hasSameType(FirstParameter, Context.CharTy) &&
+          Context.hasSameType(FirstArgument, Context.CharTy);
+      const bool StringNeedle =
+          Method->getNumParams() == 2 &&
+          FirstParameter->isLValueReferenceType() &&
+          Context.hasSameType(FirstParameter->getPointeeType(),
+                              StringType.withConst()) &&
+          Context.hasSameUnqualifiedType(FirstArgument, StringType);
+      const bool Pointer =
+          Context.hasSameType(FirstParameter, ConstPointer) &&
+          Context.hasSameType(FirstArgument, ConstPointer) &&
+          (Method->getNumParams() == 2 ||
+           (Context.hasSameType(Method->getParamDecl(2)->getType(),
+                                Context.getSizeType()) &&
+            Context.hasSameType(Call->getArg(2)->getType(),
+                                Context.getSizeType())));
+      if (Character || StringNeedle || Pointer) {
+        if (Name == "find_first_of")
+          return UtilityOperation::StringFindFirstOf;
+        if (Name == "find_last_of")
+          return UtilityOperation::StringFindLastOf;
+        if (Name == "find_first_not_of")
+          return UtilityOperation::StringFindFirstNotOf;
+        return UtilityOperation::StringFindLastNotOf;
+      }
+    }
+    if (!Operator && Method->isConst() && Call->isPRValue() &&
+        ((Name == "copy" && Method->getNumParams() == 3) ||
+         (Name == "substr" && Method->getNumParams() == 2)) &&
+        Context.hasSameType(Method->getParamDecl(1)->getType(),
+                            Context.getSizeType()) &&
+        Context.hasSameType(Call->getArg(1)->getType(),
+                            Context.getSizeType())) {
+      if (Name == "copy" &&
+          Context.hasSameType(Method->getReturnType(), Context.getSizeType()) &&
+          Context.hasSameType(Call->getType(), Context.getSizeType()) &&
+          Context.hasSameType(Method->getParamDecl(0)->getType(),
+                              Context.getPointerType(Context.CharTy)) &&
+          Context.hasSameType(Call->getArg(0)->getType(),
+                              Context.getPointerType(Context.CharTy)) &&
+          Context.hasSameType(Method->getParamDecl(2)->getType(),
+                              Context.getSizeType()) &&
+          Context.hasSameType(Call->getArg(2)->getType(),
+                              Context.getSizeType()))
+        return UtilityOperation::StringCopy;
+      if (Name == "substr" &&
+          Context.hasSameType(Method->getReturnType(),
+                              Context.getRecordType(String->Record)) &&
+          Context.hasSameType(Call->getType(),
+                              Context.getRecordType(String->Record)) &&
+          Context.hasSameType(Method->getParamDecl(0)->getType(),
+                              Context.getSizeType()) &&
+          Context.hasSameType(Call->getArg(0)->getType(),
+                              Context.getSizeType()))
+        return UtilityOperation::StringSubstr;
+    }
     if (!Operator && Name == "erase" && !Method->isConst() &&
         !Object->getType().isConstQualified() &&
         Method->getNumParams() == 2 && Call->getNumArgs() == 2 &&
@@ -16242,6 +16735,251 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Context.hasSameType(Call->getArg(1)->getType(),
                             Context.getSizeType()))
       return UtilityOperation::StringErase;
+    if (!Operator && Name == "erase" && !Method->isConst() &&
+        !Object->getType().isConstQualified() &&
+        !Method->getPrimaryTemplate() && Call->isPRValue() &&
+        (Method->getNumParams() == 1 || Method->getNumParams() == 2) &&
+        Context.hasSameType(Call->getType(), Method->getReturnType())) {
+      const auto Result = approvedUtilityWrapIteratorRecord(
+          S, SM, Method->getReturnType()->getAsCXXRecordDecl(), Context);
+      if (Result &&
+          Context.hasSameType(Result->IteratorType, String->PointerType)) {
+        bool Valid = true;
+        for (unsigned I = 0; I != Method->getNumParams(); ++I) {
+          const auto Parameter = Method->getParamDecl(I)->getType();
+          const auto Iterator = approvedUtilityWrapIteratorRecord(
+              S, SM, Parameter->getAsCXXRecordDecl(), Context);
+          Valid &= Iterator &&
+                   Context.hasSameType(
+                       Iterator->IteratorType,
+                       Context.getPointerType(Context.CharTy.withConst())) &&
+                   Context.hasSameType(Parameter, Call->getArg(I)->getType());
+        }
+        if (Valid)
+          return UtilityOperation::StringEraseIterator;
+      }
+    }
+    if (!Operator && Name == "insert" && !Method->isConst() &&
+        !Object->getType().isConstQualified() && Call->isPRValue() &&
+        (Method->getNumParams() == 2 || Method->getNumParams() == 3) &&
+        Context.hasSameType(Call->getType(), Method->getReturnType())) {
+      const auto Result = approvedUtilityWrapIteratorRecord(
+          S, SM, Method->getReturnType()->getAsCXXRecordDecl(), Context);
+      const auto Position = approvedUtilityWrapIteratorRecord(
+          S, SM, Method->getParamDecl(0)->getType()->getAsCXXRecordDecl(),
+          Context);
+      if (Result && Position &&
+          Context.hasSameType(Result->IteratorType, String->PointerType) &&
+          Context.hasSameType(
+              Position->IteratorType,
+              Context.getPointerType(Context.CharTy.withConst())) &&
+          Context.hasSameType(Method->getParamDecl(0)->getType(),
+                              Call->getArg(0)->getType())) {
+        if (Method->getNumParams() == 2 && !Method->getPrimaryTemplate()) {
+          const auto Argument = Method->getParamDecl(1)->getType();
+          if (Context.hasSameType(Argument, Call->getArg(1)->getType())) {
+            if (Context.hasSameType(Argument, Context.CharTy))
+              return UtilityOperation::StringInsertIteratorCharacter;
+            const auto List = approvedUtilityInitializerListRecord(
+                S, SM, Argument->getAsCXXRecordDecl(), Context);
+            if (List && Context.hasSameType(List->ElementType, Context.CharTy))
+              return UtilityOperation::StringInsertIteratorList;
+          }
+        }
+        if (Method->getNumParams() == 3) {
+          if (!Method->getPrimaryTemplate() &&
+              Context.hasSameType(Method->getParamDecl(1)->getType(),
+                                  Context.getSizeType()) &&
+              Context.hasSameType(Call->getArg(1)->getType(),
+                                  Context.getSizeType()) &&
+              Context.hasSameType(Method->getParamDecl(2)->getType(),
+                                  Context.CharTy) &&
+              Context.hasSameType(Call->getArg(2)->getType(), Context.CharTy))
+            return UtilityOperation::StringInsertIteratorFill;
+          const auto *Primary = Method->getPrimaryTemplate();
+          if (Primary && approvedStandardSDKDeclaration(S, SM, Primary) &&
+              cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
+                            "string")) {
+            const auto FirstType = Method->getParamDecl(1)->getType();
+            const auto LastType = Method->getParamDecl(2)->getType();
+            const bool RawPointer =
+                Context.hasSameType(FirstType,
+                                    Context.getPointerType(Context.CharTy)) ||
+                Context.hasSameType(FirstType, Context.getPointerType(
+                                                   Context.CharTy.withConst()));
+            const auto Wrapped = approvedUtilityWrapIteratorRecord(
+                S, SM, FirstType->getAsCXXRecordDecl(), Context);
+            const bool WrappedPointer =
+                Wrapped &&
+                (Context.hasSameType(Wrapped->IteratorType,
+                                     Context.getPointerType(Context.CharTy)) ||
+                 Context.hasSameType(
+                     Wrapped->IteratorType,
+                     Context.getPointerType(Context.CharTy.withConst())));
+            if ((RawPointer || WrappedPointer) &&
+                Context.hasSameType(FirstType, LastType) &&
+                Context.hasSameType(Call->getArg(1)->getType(), FirstType) &&
+                Context.hasSameType(Call->getArg(2)->getType(), LastType))
+              return UtilityOperation::StringInsertIteratorRange;
+          }
+        }
+      }
+    }
+    if (!Operator && Name == "replace" && !Method->isConst() &&
+        !Object->getType().isConstQualified() && Call->isLValue() &&
+        Method->getReturnType()->isLValueReferenceType() &&
+        Context.hasSameType(Method->getReturnType()->getPointeeType(),
+                            Context.getRecordType(String->Record)) &&
+        Context.hasSameType(Call->getType(),
+                            Context.getRecordType(String->Record)) &&
+        (Method->getNumParams() == 3 || Method->getNumParams() == 4)) {
+      bool Positions = true;
+      for (unsigned I = 0; I != 2; ++I) {
+        const auto Parameter = Method->getParamDecl(I)->getType();
+        const auto Iterator = approvedUtilityWrapIteratorRecord(
+            S, SM, Parameter->getAsCXXRecordDecl(), Context);
+        Positions &= Iterator &&
+                     Context.hasSameType(
+                         Iterator->IteratorType,
+                         Context.getPointerType(Context.CharTy.withConst())) &&
+                     Context.hasSameType(Parameter, Call->getArg(I)->getType());
+      }
+      if (Positions) {
+        const auto Source = Method->getParamDecl(2)->getType();
+        const auto Argument = Call->getArg(2)->getType();
+        const auto ConstPointer =
+            Context.getPointerType(Context.CharTy.withConst());
+        if (Method->getNumParams() == 3 && !Method->getPrimaryTemplate()) {
+          if (Source->isLValueReferenceType() &&
+              Context.hasSameType(
+                  Source->getPointeeType(),
+                  Context.getRecordType(String->Record).withConst()) &&
+              Context.hasSameUnqualifiedType(
+                  Argument, Context.getRecordType(String->Record)))
+            return UtilityOperation::StringReplaceIteratorString;
+          if (Context.hasSameType(Source, ConstPointer) &&
+              Context.hasSameType(Argument, ConstPointer))
+            return UtilityOperation::StringReplaceIteratorCString;
+          const auto List = approvedUtilityInitializerListRecord(
+              S, SM, Source->getAsCXXRecordDecl(), Context);
+          if (List && Context.hasSameType(List->ElementType, Context.CharTy) &&
+              Context.hasSameType(Source, Argument))
+            return UtilityOperation::StringReplaceIteratorList;
+        }
+        if (Method->getNumParams() == 4) {
+          const auto Last = Method->getParamDecl(3)->getType();
+          const auto LastArgument = Call->getArg(3)->getType();
+          if (!Method->getPrimaryTemplate()) {
+            if (Context.hasSameType(Source, ConstPointer) &&
+                Context.hasSameType(Argument, ConstPointer) &&
+                Context.hasSameType(Last, Context.getSizeType()) &&
+                Context.hasSameType(LastArgument, Context.getSizeType()))
+              return UtilityOperation::StringReplaceIteratorPointer;
+            if (Context.hasSameType(Source, Context.getSizeType()) &&
+                Context.hasSameType(Argument, Context.getSizeType()) &&
+                Context.hasSameType(Last, Context.CharTy) &&
+                Context.hasSameType(LastArgument, Context.CharTy))
+              return UtilityOperation::StringReplaceIteratorFill;
+          }
+          const auto *Primary = Method->getPrimaryTemplate();
+          if (Primary && approvedStandardSDKDeclaration(S, SM, Primary) &&
+              cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
+                            "string")) {
+            const bool RawPointer =
+                Context.hasSameType(Source,
+                                    Context.getPointerType(Context.CharTy)) ||
+                Context.hasSameType(Source, ConstPointer);
+            const auto Wrapped = approvedUtilityWrapIteratorRecord(
+                S, SM, Source->getAsCXXRecordDecl(), Context);
+            const bool WrappedPointer =
+                Wrapped &&
+                (Context.hasSameType(Wrapped->IteratorType,
+                                     Context.getPointerType(Context.CharTy)) ||
+                 Context.hasSameType(Wrapped->IteratorType, ConstPointer));
+            if ((RawPointer || WrappedPointer) &&
+                Context.hasSameType(Source, Last) &&
+                Context.hasSameType(Source, Argument) &&
+                Context.hasSameType(Last, LastArgument))
+              return UtilityOperation::StringReplaceIteratorRange;
+          }
+        }
+      }
+    }
+    if (!Operator && (Name == "insert" || Name == "replace") &&
+        !Method->isConst() && !Object->getType().isConstQualified() &&
+        Call->isLValue() && Method->getReturnType()->isLValueReferenceType() &&
+        Context.hasSameType(Method->getReturnType()->getPointeeType(),
+                            Context.getRecordType(String->Record)) &&
+        Context.hasSameType(Call->getType(),
+                            Context.getRecordType(String->Record))) {
+      const bool Replace = Name == "replace";
+      const unsigned SourceIndex = Replace ? 2 : 1;
+      if ((Method->getNumParams() == SourceIndex + 1 ||
+           Method->getNumParams() == SourceIndex + 2) &&
+          Context.hasSameType(Method->getParamDecl(0)->getType(),
+                              Context.getSizeType()) &&
+          Context.hasSameType(Call->getArg(0)->getType(),
+                              Context.getSizeType()) &&
+          (!Replace || (Context.hasSameType(Method->getParamDecl(1)->getType(),
+                                            Context.getSizeType()) &&
+                        Context.hasSameType(Call->getArg(1)->getType(),
+                                            Context.getSizeType())))) {
+        const auto FirstParameter =
+            Method->getParamDecl(SourceIndex)->getType();
+        const auto FirstArgument = Call->getArg(SourceIndex)->getType();
+        const auto ConstPointer =
+            Context.getPointerType(Context.CharTy.withConst());
+        const auto StringType = Context.getRecordType(String->Record);
+        if (Method->getNumParams() == SourceIndex + 1) {
+          if (Context.hasSameType(FirstParameter, ConstPointer) &&
+              Context.hasSameType(FirstArgument, ConstPointer))
+            return Replace ? UtilityOperation::StringReplaceCString
+                           : UtilityOperation::StringInsertCString;
+          if (FirstParameter->isLValueReferenceType() &&
+              Context.hasSameType(FirstParameter->getPointeeType(),
+                                  StringType.withConst()) &&
+              Context.hasSameUnqualifiedType(FirstArgument, StringType))
+            return Replace ? UtilityOperation::StringReplaceString
+                           : UtilityOperation::StringInsertString;
+        } else {
+          const auto SecondParameter =
+              Method->getParamDecl(SourceIndex + 1)->getType();
+          const auto SecondArgument = Call->getArg(SourceIndex + 1)->getType();
+          if (Context.hasSameType(FirstParameter, ConstPointer) &&
+              Context.hasSameType(FirstArgument, ConstPointer) &&
+              Context.hasSameType(SecondParameter, Context.getSizeType()) &&
+              Context.hasSameType(SecondArgument, Context.getSizeType()))
+            return Replace ? UtilityOperation::StringReplacePointer
+                           : UtilityOperation::StringInsertPointer;
+          if (Context.hasSameType(FirstParameter, Context.getSizeType()) &&
+              Context.hasSameType(FirstArgument, Context.getSizeType()) &&
+              Context.hasSameType(SecondParameter, Context.CharTy) &&
+              Context.hasSameType(SecondArgument, Context.CharTy))
+            return Replace ? UtilityOperation::StringReplaceFill
+                           : UtilityOperation::StringInsertFill;
+        }
+      }
+    }
+    if (AssignmentOperator && !Method->isConst() &&
+        !Object->getType().isConstQualified() && Method->getNumParams() == 1 &&
+        Call->isLValue() && Method->getReturnType()->isLValueReferenceType() &&
+        Context.hasSameType(Method->getReturnType()->getPointeeType(),
+                            Context.getRecordType(String->Record)) &&
+        Context.hasSameType(Call->getType(),
+                            Context.getRecordType(String->Record))) {
+      const auto Parameter = Method->getParamDecl(0)->getType();
+      const auto Argument = Call->getArg(Offset)->getType();
+      const auto ConstPointer =
+          Context.getPointerType(Context.CharTy.withConst());
+      if (Context.hasSameType(Parameter, ConstPointer) &&
+          Context.hasSameType(Argument, ConstPointer))
+        return UtilityOperation::StringAssignOperatorCString;
+      if (Context.hasSameType(Parameter, Context.CharTy) &&
+          Context.hasSameType(Argument, Context.CharTy))
+        return UtilityOperation::StringAssignOperatorCharacter;
+      if (ListArgument(0, Offset))
+        return UtilityOperation::StringAssignOperatorList;
+    }
     if (!Operator && Name == "assign" && !Method->isConst() &&
         !Object->getType().isConstQualified() &&
         (Method->getNumParams() == 1 || Method->getNumParams() == 2) &&
@@ -16266,6 +17004,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
                                          StringType))
         return UtilityOperation::StringAssignString;
+      if (Method->getNumParams() == 1 && ListArgument(0, 0))
+        return UtilityOperation::StringAssignList;
       if (Method->getNumParams() == 2) {
         const auto SecondParameter = Method->getParamDecl(1)->getType();
         if (Context.hasSameType(FirstParameter, ConstPointer) &&
@@ -16280,6 +17020,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                 Context.getSizeType()) &&
             Context.hasSameType(Call->getArg(1)->getType(), Context.CharTy))
           return UtilityOperation::StringAssignFill;
+        if (CharacterRange())
+          return UtilityOperation::StringAssignRange;
       }
     }
     if ((!Operator && Name == "append") || PlusEqual) {
@@ -16316,6 +17058,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Context.hasSameUnqualifiedType(Call->getArg(Argument)->getType(),
                                          StringType))
         return UtilityOperation::StringAppendString;
+      if (Method->getNumParams() == 1 && ListArgument(0, Argument))
+        return UtilityOperation::StringAppendList;
       if (Method->getNumParams() != 2)
         return std::nullopt;
       const auto SecondParameter = Method->getParamDecl(1)->getType();
@@ -16331,6 +17075,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Context.hasSameType(Call->getArg(1)->getType(),
                               Context.getSizeType()))
         return UtilityOperation::StringAppendPointer;
+      if (!PlusEqual && CharacterRange())
+        return UtilityOperation::StringAppendRange;
     }
     if (!Operator && !Method->isConst() &&
         !Object->getType().isConstQualified() &&
@@ -16345,6 +17091,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       if (Name == "pop_back" && !Method->getNumParams() &&
           !Call->getNumArgs())
         return UtilityOperation::StringPopBack;
+      if ((Name == "shrink_to_fit" || Name == "reserve") &&
+          !Method->getNumParams() && !Call->getNumArgs())
+        return UtilityOperation::StringShrinkToFit;
       if (Name == "reserve" && Method->getNumParams() == 1 &&
           Call->getNumArgs() == 1 &&
           Context.hasSameType(Method->getParamDecl(0)->getType(),
@@ -16375,6 +17124,40 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                        ? Context.CharTy.withConst()
                                        : Context.CharTy)))
       return UtilityOperation::StringData;
+    if (!Operator && !Method->getNumParams() && Call->isPRValue() &&
+        (Name == "begin" || Name == "end" || Name == "cbegin" ||
+         Name == "cend") &&
+        Context.hasSameType(Call->getType(), Method->getReturnType())) {
+      const auto Iterator = approvedUtilityWrapIteratorRecord(
+          S, SM, Method->getReturnType()->getAsCXXRecordDecl(), Context);
+      const bool Const = Method->isConst() || Name == "cbegin" ||
+                         Name == "cend";
+      if (Iterator &&
+          Context.hasSameType(
+              Iterator->IteratorType,
+              Context.getPointerType(Const ? Context.CharTy.withConst()
+                                           : Context.CharTy)))
+        return Name == "begin" || Name == "cbegin"
+                   ? UtilityOperation::StringBegin
+                   : UtilityOperation::StringEnd;
+    }
+    if (!Operator && !Method->getNumParams() && Call->isPRValue() &&
+        (Name == "rbegin" || Name == "rend" || Name == "crbegin" ||
+         Name == "crend") &&
+        Context.hasSameType(Call->getType(), Method->getReturnType())) {
+      const auto Reverse = approvedUtilityReverseIteratorRecord(
+          S, SM, Method->getReturnType()->getAsCXXRecordDecl(), Context);
+      const bool Const = Method->isConst() || Name == "crbegin" ||
+                         Name == "crend";
+      if (Reverse && Reverse->WrappedCurrent &&
+          Context.hasSameType(
+              Reverse->PointerType,
+              Context.getPointerType(Const ? Context.CharTy.withConst()
+                                           : Context.CharTy)))
+        return Name == "rbegin" || Name == "crbegin"
+                   ? UtilityOperation::StringRBegin
+                   : UtilityOperation::StringREnd;
+    }
     if (!Operator && (Name == "front" || Name == "back") &&
         !Method->getNumParams() && !Call->getNumArgs() && Call->isLValue() &&
         Method->getReturnType()->isLValueReferenceType() &&
@@ -16413,7 +17196,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                      : llvm::StringRef();
     if (!Reference || !Object || !Prototype ||
         (!Prototype->isNothrow() && Name != "push_back" &&
-         Name != "pop_back" && Name != "reserve" && Name != "resize") ||
+         Name != "emplace_back" && Name != "pop_back" && Name != "reserve" &&
+         Name != "resize" && Name != "erase" && Name != "insert" &&
+         Name != "emplace" && Name != "assign" &&
+         !(Operator && Method->getOverloadedOperator() == OO_Equal)) ||
         Method->isStatic() || Method->isVariadic() || !Method->hasBody() ||
         Method->getRefQualifier() != RQ_None ||
         Method->getParent()->getCanonicalDecl() !=
@@ -16434,6 +17220,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           return UtilityOperation::VectorSize;
         if (Name == "capacity")
           return UtilityOperation::VectorCapacity;
+        if (Name == "max_size")
+          return UtilityOperation::VectorMaxSize;
       }
       if (Name == "empty" && Method->getReturnType()->isBooleanType())
         return UtilityOperation::VectorEmpty;
@@ -16463,6 +17251,23 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                    ? UtilityOperation::VectorBegin
                    : UtilityOperation::VectorEnd;
     }
+    if (!Operator && !Method->getNumParams() && Call->isPRValue() &&
+        (Name == "rbegin" || Name == "rend" || Name == "crbegin" ||
+         Name == "crend") &&
+        Context.hasSameType(Call->getType(), Method->getReturnType())) {
+      const auto Reverse = approvedUtilityReverseIteratorRecord(
+          S, SM, Method->getReturnType()->getAsCXXRecordDecl(), Context);
+      const bool Const = Method->isConst() || Name == "crbegin" ||
+                         Name == "crend";
+      if (Reverse && Reverse->WrappedCurrent &&
+          Context.hasSameType(
+              Reverse->PointerType,
+              Context.getPointerType(Const ? Vector->ElementType.withConst()
+                                           : Vector->ElementType)))
+        return Name == "rbegin" || Name == "crbegin"
+                   ? UtilityOperation::VectorRBegin
+                   : UtilityOperation::VectorREnd;
+    }
     if (Operator && Method->getOverloadedOperator() == OO_Subscript &&
         Call->getNumArgs() == 2 && Method->getNumParams() == 1 &&
         Context.hasSameType(Method->getParamDecl(0)->getType(),
@@ -16490,10 +17295,238 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         !Call->getNumArgs() && Method->getReturnType()->isVoidType() &&
         Call->getType()->isVoidType())
       return UtilityOperation::VectorClear;
+    if (!Operator && Name == "swap" && !Method->isConst() &&
+        !Object->getType().isConstQualified() && Prototype->isNothrow() &&
+        Method->getNumParams() == 1 && Call->getNumArgs() == 1 &&
+        Method->getReturnType()->isVoidType() &&
+        Call->getType()->isVoidType()) {
+      const auto Parameter = Method->getParamDecl(0)->getType();
+      const auto VectorType = Context.getRecordType(Vector->Record);
+      if (Parameter->isLValueReferenceType() &&
+          Context.hasSameType(Parameter->getPointeeType(), VectorType) &&
+          Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
+                                         VectorType))
+        return UtilityOperation::VectorMemberSwap;
+    }
+    if (!Operator && Name == "erase" && !Method->isConst() &&
+        !Object->getType().isConstQualified() && Call->isPRValue() &&
+        (Method->getNumParams() == 1 || Method->getNumParams() == 2) &&
+        Context.hasSameType(Call->getType(), Method->getReturnType())) {
+      const auto Result = approvedUtilityWrapIteratorRecord(
+          S, SM, Method->getReturnType()->getAsCXXRecordDecl(), Context);
+      if (Result &&
+          Context.hasSameType(Result->IteratorType, Vector->PointerType)) {
+        bool Valid = true;
+        for (unsigned I = 0; I != Method->getNumParams(); ++I) {
+          const auto Parameter = Method->getParamDecl(I)->getType();
+          const auto Iterator = approvedUtilityWrapIteratorRecord(
+              S, SM, Parameter->getAsCXXRecordDecl(), Context);
+          Valid &= Iterator &&
+                   Context.hasSameType(Iterator->IteratorType,
+                                       Context.getPointerType(
+                                           Vector->ElementType.withConst())) &&
+                   Context.hasSameType(Parameter, Call->getArg(I)->getType());
+        }
+        if (Valid)
+          return UtilityOperation::VectorErase;
+      }
+    }
+    if (!Operator && Name == "insert" && !Method->isConst() &&
+        !Object->getType().isConstQualified() && Call->isPRValue() &&
+        (Method->getNumParams() == 2 || Method->getNumParams() == 3) &&
+        Context.hasSameType(Call->getType(), Method->getReturnType())) {
+      const auto Result = approvedUtilityWrapIteratorRecord(
+          S, SM, Method->getReturnType()->getAsCXXRecordDecl(), Context);
+      const auto Position = approvedUtilityWrapIteratorRecord(
+          S, SM, Method->getParamDecl(0)->getType()->getAsCXXRecordDecl(),
+          Context);
+      const auto Element = Vector->ElementType;
+      if (Result && Position &&
+          Context.hasSameType(Result->IteratorType, Vector->PointerType) &&
+          Context.hasSameType(Position->IteratorType,
+                              Context.getPointerType(Element.withConst())) &&
+          Context.hasSameType(Method->getParamDecl(0)->getType(),
+                              Call->getArg(0)->getType())) {
+        const unsigned ValueIndex = Method->getNumParams() - 1;
+        const auto ValueParameter = Method->getParamDecl(ValueIndex)->getType();
+        const bool ValueReference =
+            (ValueParameter->isLValueReferenceType() &&
+             Context.hasSameType(ValueParameter->getPointeeType(),
+                                 Element.withConst())) ||
+            (Method->getNumParams() == 2 &&
+             ValueParameter->isRValueReferenceType() &&
+             Context.hasSameType(ValueParameter->getPointeeType(), Element));
+        if (ValueReference &&
+            Context.hasSameUnqualifiedType(Call->getArg(ValueIndex)->getType(),
+                                           Element) &&
+            (Method->getNumParams() == 2 ||
+             (Context.hasSameType(Method->getParamDecl(1)->getType(),
+                                  Context.getSizeType()) &&
+              Context.hasSameType(Call->getArg(1)->getType(),
+                                  Context.getSizeType()))))
+          return UtilityOperation::VectorInsert;
+        if (Method->getNumParams() == 2 && !Method->getPrimaryTemplate() &&
+            Context.hasSameType(Method->getParamDecl(1)->getType(),
+                                Call->getArg(1)->getType())) {
+          const auto List = approvedUtilityInitializerListRecord(
+              S, SM, Method->getParamDecl(1)->getType()->getAsCXXRecordDecl(),
+              Context);
+          if (List && Context.hasSameType(List->ElementType, Element))
+            return UtilityOperation::VectorInsertRange;
+        }
+        if (Method->getNumParams() == 3 && Method->getPrimaryTemplate() &&
+            approvedStandardSDKDeclaration(S, SM,
+                                           Method->getPrimaryTemplate()) &&
+            cstddefOrigin(S, SM, Method->getPrimaryTemplate()->getLocation(),
+                          "libcxx", "__vector/vector.h")) {
+          const auto FirstType = Method->getParamDecl(1)->getType();
+          const auto LastType = Method->getParamDecl(2)->getType();
+          const bool RawPointer =
+              Context.hasSameType(FirstType, Context.getPointerType(Element)) ||
+              Context.hasSameType(FirstType,
+                                  Context.getPointerType(Element.withConst()));
+          const auto Wrapped = approvedUtilityWrapIteratorRecord(
+              S, SM, FirstType->getAsCXXRecordDecl(), Context);
+          const bool WrappedPointer =
+              Wrapped &&
+              (Context.hasSameType(Wrapped->IteratorType,
+                                   Context.getPointerType(Element)) ||
+               Context.hasSameType(
+                   Wrapped->IteratorType,
+                   Context.getPointerType(Element.withConst())));
+          if ((RawPointer || WrappedPointer) &&
+              Context.hasSameType(FirstType, LastType) &&
+              Context.hasSameType(Call->getArg(1)->getType(), FirstType) &&
+              Context.hasSameType(Call->getArg(2)->getType(), LastType))
+            return UtilityOperation::VectorInsertRange;
+        }
+      }
+    }
+    if (!Operator && Name == "emplace" && !Method->isConst() &&
+        !Object->getType().isConstQualified() && Call->isPRValue() &&
+        (Method->getNumParams() == 1 || Method->getNumParams() == 2) &&
+        Context.hasSameType(Call->getType(), Method->getReturnType()) &&
+        Method->getPrimaryTemplate() &&
+        approvedStandardSDKDeclaration(S, SM, Method->getPrimaryTemplate()) &&
+        cstddefOrigin(S, SM, Method->getPrimaryTemplate()->getLocation(),
+                      "libcxx", "__vector/vector.h")) {
+      const auto Result = approvedUtilityWrapIteratorRecord(
+          S, SM, Method->getReturnType()->getAsCXXRecordDecl(), Context);
+      const auto Position = approvedUtilityWrapIteratorRecord(
+          S, SM, Method->getParamDecl(0)->getType()->getAsCXXRecordDecl(),
+          Context);
+      const auto Element = Vector->ElementType;
+      if (Result && Position &&
+          Context.hasSameType(Result->IteratorType, Vector->PointerType) &&
+          Context.hasSameType(Position->IteratorType,
+                              Context.getPointerType(Element.withConst())) &&
+          Context.hasSameType(Method->getParamDecl(0)->getType(),
+                              Call->getArg(0)->getType())) {
+        if (Method->getNumParams() == 1)
+          return UtilityOperation::VectorEmplace;
+        const auto Parameter = Method->getParamDecl(1)->getType();
+        if ((Parameter->isLValueReferenceType() ||
+             Parameter->isRValueReferenceType()) &&
+            Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                           Element) &&
+            Context.hasSameUnqualifiedType(Call->getArg(1)->getType(), Element))
+          return UtilityOperation::VectorEmplace;
+      }
+    }
+    if (Operator && Method->getOverloadedOperator() == OO_Equal &&
+        !Method->isConst() && !Object->getType().isConstQualified() &&
+        !Method->getPrimaryTemplate() && Method->getNumParams() == 1 &&
+        Call->isLValue() && Method->getReturnType()->isLValueReferenceType()) {
+      const auto VectorType = Context.getRecordType(Vector->Record);
+      const auto Parameter = Method->getParamDecl(0)->getType();
+      const auto List = approvedUtilityInitializerListRecord(
+          S, SM, Parameter->getAsCXXRecordDecl(), Context);
+      if (List && Context.hasSameType(List->ElementType, Vector->ElementType) &&
+          Context.hasSameType(Parameter, Call->getArg(1)->getType()) &&
+          Context.hasSameType(Method->getReturnType()->getPointeeType(),
+                              VectorType) &&
+          Context.hasSameUnqualifiedType(Call->getType(), VectorType))
+        return UtilityOperation::VectorAssignList;
+    }
+    if (!Operator && Name == "assign" && !Method->isConst() &&
+        !Object->getType().isConstQualified() &&
+        Method->getReturnType()->isVoidType() &&
+        Call->getType()->isVoidType()) {
+      const auto Element = Vector->ElementType;
+      if (Method->getNumParams() == 2 && !Method->getPrimaryTemplate()) {
+        const auto Value = Method->getParamDecl(1)->getType();
+        if (Context.hasSameType(Method->getParamDecl(0)->getType(),
+                                Context.getSizeType()) &&
+            Context.hasSameType(Call->getArg(0)->getType(),
+                                Context.getSizeType()) &&
+            Value->isLValueReferenceType() &&
+            Context.hasSameType(Value->getPointeeType(), Element.withConst()) &&
+            Context.hasSameUnqualifiedType(Call->getArg(1)->getType(), Element))
+          return UtilityOperation::VectorAssignFill;
+      }
+      if (Method->getNumParams() == 1 && !Method->getPrimaryTemplate() &&
+          Context.hasSameType(Method->getParamDecl(0)->getType(),
+                              Call->getArg(0)->getType())) {
+        const auto List = approvedUtilityInitializerListRecord(
+            S, SM, Method->getParamDecl(0)->getType()->getAsCXXRecordDecl(),
+            Context);
+        if (List && Context.hasSameType(List->ElementType, Element))
+          return UtilityOperation::VectorAssignRange;
+      }
+      if (Method->getNumParams() == 2 && Method->getPrimaryTemplate() &&
+          approvedStandardSDKDeclaration(S, SM, Method->getPrimaryTemplate()) &&
+          cstddefOrigin(S, SM, Method->getPrimaryTemplate()->getLocation(),
+                        "libcxx", "__vector/vector.h")) {
+        const auto FirstType = Method->getParamDecl(0)->getType();
+        const auto LastType = Method->getParamDecl(1)->getType();
+        const bool RawPointer =
+            Context.hasSameType(FirstType, Context.getPointerType(Element)) ||
+            Context.hasSameType(FirstType,
+                                Context.getPointerType(Element.withConst()));
+        const auto Wrapped = approvedUtilityWrapIteratorRecord(
+            S, SM, FirstType->getAsCXXRecordDecl(), Context);
+        const bool WrappedPointer =
+            Wrapped &&
+            (Context.hasSameType(Wrapped->IteratorType,
+                                 Context.getPointerType(Element)) ||
+             Context.hasSameType(Wrapped->IteratorType,
+                                 Context.getPointerType(Element.withConst())));
+        if ((RawPointer || WrappedPointer) &&
+            Context.hasSameType(FirstType, LastType) &&
+            Context.hasSameType(Call->getArg(0)->getType(), FirstType) &&
+            Context.hasSameType(Call->getArg(1)->getType(), LastType))
+          return UtilityOperation::VectorAssignRange;
+      }
+    }
+    if (!Operator && Name == "emplace_back" && !Method->isConst() &&
+        !Object->getType().isConstQualified() && Call->isLValue() &&
+        Method->getReturnType()->isLValueReferenceType() &&
+        Context.hasSameType(Method->getReturnType()->getPointeeType(),
+                            Vector->ElementType) &&
+        Context.hasSameType(Call->getType(), Vector->ElementType) &&
+        Method->getPrimaryTemplate() &&
+        approvedStandardSDKDeclaration(S, SM, Method->getPrimaryTemplate()) &&
+        cstddefOrigin(S, SM, Method->getPrimaryTemplate()->getLocation(),
+                      "libcxx", "__vector/vector.h") &&
+        Method->getNumParams() <= 1) {
+      if (!Method->getNumParams())
+        return UtilityOperation::VectorEmplaceBack;
+      const auto Parameter = Method->getParamDecl(0)->getType();
+      if ((Parameter->isLValueReferenceType() ||
+           Parameter->isRValueReferenceType()) &&
+          Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
+                                         Vector->ElementType) &&
+          Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
+                                         Vector->ElementType))
+        return UtilityOperation::VectorEmplaceBack;
+    }
     if (!Operator && !Method->isConst() &&
         !Object->getType().isConstQualified() &&
         Method->getReturnType()->isVoidType() &&
         Call->getType()->isVoidType()) {
+      if (Name == "shrink_to_fit" && !Method->getNumParams() &&
+          !Call->getNumArgs() && Prototype->isNothrow())
+        return UtilityOperation::VectorShrinkToFit;
       if (Name == "reserve" && Method->getNumParams() == 1 &&
           Call->getNumArgs() == 1 &&
           Context.hasSameType(Method->getParamDecl(0)->getType(),
@@ -16550,10 +17583,15 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const unsigned Offset = Operator ? 1 : 0;
     const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
     const auto ViewType = Context.getRecordType(StringView->Record);
-    if (!Reference || !Object || !Prototype || !Prototype->isNothrow() ||
+    const llvm::StringRef Name = Method->getIdentifier()
+                                     ? Method->getIdentifier()->getName()
+                                     : llvm::StringRef();
+    if (!Reference || !Object || !Prototype ||
+        (!Prototype->isNothrow() && Name != "copy" && Name != "substr" &&
+         Name != "compare") ||
         Method->isStatic() || Method->isVariadic() ||
         Call->getNumArgs() != Method->getNumParams() + Offset ||
-        !Method->isConstexpr() || !Method->hasBody() ||
+        (!Method->isConstexpr() && Name != "copy") || !Method->hasBody() ||
         Method->getRefQualifier() != RQ_None ||
         Method->getParent()->getCanonicalDecl() !=
             StringView->Record->getCanonicalDecl() ||
@@ -16562,9 +17600,6 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         !cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "string_view") ||
         !S.owns(SM, Reference->getExprLoc()))
       return std::nullopt;
-    const llvm::StringRef Name = Method->getIdentifier()
-                                     ? Method->getIdentifier()->getName()
-                                     : llvm::StringRef();
     const auto Pointer = Context.getPointerType(Context.CharTy.withConst());
     if (!Operator && Method->isConst() && !Method->getNumParams() &&
         Call->isPRValue() &&
@@ -16644,25 +17679,118 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                          ViewType) &&
           Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), ViewType))
         return UtilityOperation::StringViewCompare;
-      if ((Name == "find" || Name == "rfind") && Method->getNumParams() == 2 &&
-          Call->getNumArgs() == 2 &&
-          Context.hasSameType(Method->getReturnType(), Context.getSizeType()) &&
+      if (Name == "compare" && Context.hasSameType(Result, Context.IntTy)) {
+        const auto Count = Method->getNumParams();
+        if (Count == 1 &&
+            Context.hasSameType(Method->getParamDecl(0)->getType(), Pointer) &&
+            Context.hasSameType(Call->getArg(0)->getType(), Pointer))
+          return UtilityOperation::StringViewCompareSlice;
+        if ((Count == 3 || Count == 4 || Count == 5) &&
+            Context.hasSameType(Method->getParamDecl(0)->getType(),
+                                Context.getSizeType()) &&
+            Context.hasSameType(Method->getParamDecl(1)->getType(),
+                                Context.getSizeType()) &&
+            Context.hasSameType(Call->getArg(0)->getType(),
+                                Context.getSizeType()) &&
+            Context.hasSameType(Call->getArg(1)->getType(),
+                                Context.getSizeType())) {
+          const auto Parameter = Method->getParamDecl(2)->getType();
+          const auto Argument = Call->getArg(2)->getType();
+          const bool ViewArgument =
+              Context.hasSameUnqualifiedType(Parameter, ViewType) &&
+              Context.hasSameUnqualifiedType(Argument, ViewType);
+          const bool CStringArgument =
+              Context.hasSameType(Parameter, Pointer) &&
+              Context.hasSameType(Argument, Pointer);
+          if ((Count == 3 && (ViewArgument || CStringArgument)) ||
+              (Count == 4 && CStringArgument &&
+               Context.hasSameType(Method->getParamDecl(3)->getType(),
+                                   Context.getSizeType()) &&
+               Context.hasSameType(Call->getArg(3)->getType(),
+                                   Context.getSizeType())) ||
+              (Count == 5 && ViewArgument &&
+               Context.hasSameType(Method->getParamDecl(3)->getType(),
+                                   Context.getSizeType()) &&
+               Context.hasSameType(Method->getParamDecl(4)->getType(),
+                                   Context.getSizeType()) &&
+               Context.hasSameType(Call->getArg(3)->getType(),
+                                   Context.getSizeType()) &&
+               Context.hasSameType(Call->getArg(4)->getType(),
+                                   Context.getSizeType())))
+            return UtilityOperation::StringViewCompareSlice;
+        }
+      }
+      const bool Search = Name == "find" || Name == "rfind" ||
+                          Name == "find_first_of" || Name == "find_last_of" ||
+                          Name == "find_first_not_of" ||
+                          Name == "find_last_not_of";
+      if (Search &&
+          (Method->getNumParams() == 2 || Method->getNumParams() == 3) &&
+          Context.hasSameType(Result, Context.getSizeType()) &&
           Context.hasSameType(Method->getParamDecl(1)->getType(),
                               Context.getSizeType()) &&
           Context.hasSameType(Call->getArg(1)->getType(),
                               Context.getSizeType())) {
-        if (Context.hasSameType(Method->getParamDecl(0)->getType(),
-                                Context.CharTy) &&
-            Context.hasSameType(Call->getArg(0)->getType(), Context.CharTy))
-          return Name == "find" ? UtilityOperation::StringViewFindCharacter
-                                : UtilityOperation::StringViewRFindCharacter;
-        if (Context.hasSameUnqualifiedType(Method->getParamDecl(0)->getType(),
-                                           ViewType) &&
-            Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
-                                           ViewType))
-          return Name == "find" ? UtilityOperation::StringViewFindView
-                                : UtilityOperation::StringViewRFindView;
+        const auto Parameter = Method->getParamDecl(0)->getType();
+        const auto Argument = Call->getArg(0)->getType();
+        const bool Character = Method->getNumParams() == 2 &&
+                               Context.hasSameType(Parameter, Context.CharTy) &&
+                               Context.hasSameType(Argument, Context.CharTy);
+        const bool View = Method->getNumParams() == 2 &&
+                          Context.hasSameUnqualifiedType(Parameter, ViewType) &&
+                          Context.hasSameUnqualifiedType(Argument, ViewType);
+        const bool Pointer =
+            Context.hasSameType(Parameter, Context.getPointerType(
+                                               Context.CharTy.withConst())) &&
+            Context.hasSameType(
+                Argument, Context.getPointerType(Context.CharTy.withConst())) &&
+            (Method->getNumParams() == 2 ||
+             (Context.hasSameType(Method->getParamDecl(2)->getType(),
+                                  Context.getSizeType()) &&
+              Context.hasSameType(Call->getArg(2)->getType(),
+                                  Context.getSizeType())));
+        if (Character || View || Pointer) {
+          if (Name == "find")
+            return Character ? UtilityOperation::StringViewFindCharacter
+                             : UtilityOperation::StringViewFindView;
+          if (Name == "rfind")
+            return Character ? UtilityOperation::StringViewRFindCharacter
+                             : UtilityOperation::StringViewRFindView;
+          if (Name == "find_first_of")
+            return UtilityOperation::StringViewFindFirstOf;
+          if (Name == "find_last_of")
+            return UtilityOperation::StringViewFindLastOf;
+          if (Name == "find_first_not_of")
+            return UtilityOperation::StringViewFindFirstNotOf;
+          return UtilityOperation::StringViewFindLastNotOf;
+        }
       }
+      if (Name == "copy" && Method->getNumParams() == 3 &&
+          Context.hasSameType(Result, Context.getSizeType()) &&
+          Context.hasSameType(Method->getParamDecl(0)->getType(),
+                              Context.getPointerType(Context.CharTy)) &&
+          Context.hasSameType(Call->getArg(0)->getType(),
+                              Context.getPointerType(Context.CharTy)) &&
+          Context.hasSameType(Method->getParamDecl(1)->getType(),
+                              Context.getSizeType()) &&
+          Context.hasSameType(Method->getParamDecl(2)->getType(),
+                              Context.getSizeType()) &&
+          Context.hasSameType(Call->getArg(1)->getType(),
+                              Context.getSizeType()) &&
+          Context.hasSameType(Call->getArg(2)->getType(),
+                              Context.getSizeType()))
+        return UtilityOperation::StringViewCopy;
+      if (Name == "substr" && Method->getNumParams() == 2 &&
+          Context.hasSameType(Result, ViewType) &&
+          Context.hasSameType(Method->getParamDecl(0)->getType(),
+                              Context.getSizeType()) &&
+          Context.hasSameType(Method->getParamDecl(1)->getType(),
+                              Context.getSizeType()) &&
+          Context.hasSameType(Call->getArg(0)->getType(),
+                              Context.getSizeType()) &&
+          Context.hasSameType(Call->getArg(1)->getType(),
+                              Context.getSizeType()))
+        return UtilityOperation::StringViewSubstr;
     }
     return std::nullopt;
   }
@@ -16844,14 +17972,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Same(Call->getType(), Reverse->IteratorType))
         return UtilityOperation::ReverseBase;
       if (Method->getOverloadedOperator() == OO_Arrow && Call->isPRValue() &&
-          Same(Method->getReturnType(), Reverse->IteratorType) &&
-          Same(Call->getType(), Reverse->IteratorType))
+          Same(Method->getReturnType(), Reverse->PointerType) &&
+          Same(Call->getType(), Reverse->PointerType))
         return UtilityOperation::ReverseArrow;
     }
     if (!Operator)
       return std::nullopt;
     const auto Kind = Operator->getOperator();
-    const auto Pointee = Reverse->IteratorType->getPointeeType();
+    const auto Pointee = Reverse->PointerType->getPointeeType();
     if (Kind == OO_Star && !Method->getNumParams() && Method->isConst() &&
         Method->getReturnType()->isLValueReferenceType() && Call->isLValue() &&
         Same(Method->getReturnType()->getPointeeType(), Pointee) &&
@@ -16859,8 +17987,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return UtilityOperation::ReverseDereference;
     if (Kind == OO_Arrow && !Method->getNumParams() && Method->isConst() &&
         Call->isPRValue() &&
-        Same(Method->getReturnType(), Reverse->IteratorType) &&
-        Same(Call->getType(), Reverse->IteratorType))
+        Same(Method->getReturnType(), Reverse->PointerType) &&
+        Same(Call->getType(), Reverse->PointerType))
       return UtilityOperation::ReverseArrow;
     if ((Kind == OO_PlusPlus || Kind == OO_MinusMinus) &&
         !Object->getType().isConstQualified()) {
@@ -16999,6 +18127,106 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   const llvm::StringRef Name = Function->getIdentifier()
                                    ? Function->getIdentifier()->getName()
                                    : llvm::StringRef();
+  if (Origin->Path == "string" && Function->isOverloadedOperator() &&
+      Function->getOverloadedOperator() == OO_Plus && Call->getNumArgs() == 2 &&
+      Function->getNumParams() == 2 && Call->isPRValue() &&
+      (!isa<CXXOperatorCallExpr>(Call) ||
+       cast<CXXOperatorCallExpr>(Call)->getOperator() == OO_Plus)) {
+    const auto String = approvedUtilityStringRecord(
+        S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
+    if (String) {
+      const auto StringType = Context.getRecordType(String->Record);
+      const auto ConstPointer =
+          Context.getPointerType(Context.CharTy.withConst());
+      auto Kind = [&](unsigned Index) {
+        const auto Parameter = Function->getParamDecl(Index)->getType();
+        const auto Argument = Call->getArg(Index)->getType();
+        if (Parameter->isLValueReferenceType() &&
+            Context.hasSameType(Parameter->getPointeeType(),
+                                StringType.withConst()) &&
+            Context.hasSameUnqualifiedType(Argument, StringType))
+          return 1;
+        if (Parameter->isRValueReferenceType() &&
+            Context.hasSameType(Parameter->getPointeeType(), StringType) &&
+            Context.hasSameUnqualifiedType(Argument, StringType))
+          return 4;
+        if (Context.hasSameType(Parameter, ConstPointer) &&
+            Context.hasSameType(Argument, ConstPointer))
+          return 2;
+        if (Context.hasSameType(Parameter, Context.CharTy) &&
+            Context.hasSameType(Argument, Context.CharTy))
+          return 3;
+        return 0;
+      };
+      const int Left = Kind(0), Right = Kind(1);
+      if (Context.hasSameType(Function->getReturnType(), StringType) &&
+          Context.hasSameType(Call->getType(), StringType) &&
+          (((Left == 1 || Left == 4) && Right >= 1) ||
+           ((Right == 1 || Right == 4) && Left >= 2)))
+        return UtilityOperation::StringConcat;
+    }
+  }
+  if (Origin->Path == "__vector/swap.h" && Name == "swap" &&
+      Function->isInlined() && Call->getNumArgs() == 2 &&
+      Function->getNumParams() == 2 &&
+      Function->getReturnType()->isVoidType() &&
+      Call->getType()->isVoidType()) {
+    const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
+    const auto Left = approvedUtilityVectorRecord(
+        S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
+    const auto Right = approvedUtilityVectorRecord(
+        S, SM, Call->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
+    if (Prototype && Prototype->isNothrow() && Left && Right &&
+        Left->Record->getCanonicalDecl() == Right->Record->getCanonicalDecl()) {
+      const auto VectorType = Context.getRecordType(Left->Record);
+      for (unsigned I = 0; I != 2; ++I) {
+        const auto Parameter = Function->getParamDecl(I)->getType();
+        if (!Parameter->isLValueReferenceType() ||
+            !Context.hasSameType(Parameter->getPointeeType(), VectorType) ||
+            !Context.hasSameUnqualifiedType(Call->getArg(I)->getType(),
+                                            VectorType))
+          return std::nullopt;
+      }
+      return UtilityOperation::VectorSwap;
+    }
+  }
+  if (Origin->Path == "__vector/comparison.h" && Function->isInlined() &&
+      Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
+      Call->isPRValue() && Function->getReturnType()->isBooleanType() &&
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+    const auto Left = approvedUtilityVectorRecord(
+        S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
+    const auto Right = approvedUtilityVectorRecord(
+        S, SM, Call->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
+    if (Operator && Left && Right && Function->isOverloadedOperator() &&
+        Function->getOverloadedOperator() == Operator->getOperator() &&
+        Left->Record->getCanonicalDecl() == Right->Record->getCanonicalDecl()) {
+      const auto VectorType = Context.getRecordType(Left->Record);
+      bool Matching = true;
+      for (unsigned I = 0; I != 2; ++I) {
+        const auto Parameter = Function->getParamDecl(I)->getType();
+        Matching &= Parameter->isLValueReferenceType() &&
+                    Context.hasSameType(Parameter->getPointeeType(),
+                                        VectorType.withConst()) &&
+                    Context.hasSameUnqualifiedType(Call->getArg(I)->getType(),
+                                                   VectorType);
+      }
+      if (Matching && (Left->ElementType->isIntegerType() ||
+                       Left->ElementType->isFloatingType()))
+        switch (Operator->getOperator()) {
+        case OO_EqualEqual:
+        case OO_ExclaimEqual:
+        case OO_Less:
+        case OO_Greater:
+        case OO_LessEqual:
+        case OO_GreaterEqual:
+          return UtilityOperation::VectorRelation;
+        default:
+          break;
+        }
+    }
+  }
   if (Origin->Path == "string" && Name == "swap" &&
       Function->isInlined() && Call->getNumArgs() == 2 &&
       Function->getNumParams() == 2 &&
@@ -17557,6 +18785,47 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return utilityAlgorithmScalarPointer(Context, Parameter) &&
            Same(Call->getArg(Index)->getType(), Parameter);
   };
+  auto AlgorithmRangePointerParameter = [&](unsigned Index)
+      -> std::optional<QualType> {
+    if (Index >= Function->getNumParams() || Index >= Call->getNumArgs())
+      return std::nullopt;
+    const auto Parameter = Function->getParamDecl(Index)->getType();
+    if (!Same(Call->getArg(Index)->getType(), Parameter))
+      return std::nullopt;
+    if (utilityAlgorithmScalarPointer(Context, Parameter))
+      return Parameter;
+    const auto Wrapped = approvedUtilityWrapIteratorRecord(
+        S, SM, Parameter->getAsCXXRecordDecl(), Context);
+    if (Wrapped && utilityAlgorithmScalarPointer(Context, Wrapped->IteratorType))
+      return Wrapped->IteratorType;
+    return std::nullopt;
+  };
+  auto AlgorithmTransferRangeParameters = [&](unsigned InputIndex,
+                                              unsigned OutputIndex) {
+    const auto Input = AlgorithmRangePointerParameter(InputIndex);
+    const auto Output = AlgorithmRangePointerParameter(OutputIndex);
+    return Input && Output &&
+           utilityAlgorithmWritableScalarPointer(Context, *Output) &&
+           utilityScalarDirectConversion(Context, (*Input)->getPointeeType(),
+                                         (*Output)->getPointeeType());
+  };
+  auto AlgorithmTransferRangeValueParameter = [&](unsigned ValueIndex,
+                                                  unsigned OutputIndex) {
+    if (ValueIndex >= Function->getNumParams() ||
+        ValueIndex >= Call->getNumArgs())
+      return false;
+    const auto Output = AlgorithmRangePointerParameter(OutputIndex);
+    const auto Value = Function->getParamDecl(ValueIndex)->getType();
+    return Output && Value->isLValueReferenceType() &&
+           Value->getPointeeType().isConstQualified() &&
+           !Value->getPointeeType().isVolatileQualified() &&
+           utilityScalar(Context, Value->getPointeeType()) &&
+           Context.hasSameUnqualifiedType(Call->getArg(ValueIndex)->getType(),
+                                          Value->getPointeeType()) &&
+           utilityAlgorithmWritableScalarPointer(Context, *Output) &&
+           utilityScalarDirectConversion(Context, Value->getPointeeType(),
+                                         (*Output)->getPointeeType());
+  };
   auto AlgorithmTransferParameters = [&](unsigned InputIndex,
                                          unsigned OutputIndex) {
     if (!AlgorithmPointerParameter(InputIndex) ||
@@ -18043,6 +19312,83 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                             Reversed ? Element : Value, Context)
         .has_value();
   };
+  auto AlgorithmOrderedRangeParameter = [&](unsigned Index) {
+    const auto Pointer = AlgorithmRangePointerParameter(Index);
+    if (!Pointer)
+      return false;
+    const auto Element = (*Pointer)->getPointeeType().getUnqualifiedType();
+    return utilityScalarComparisonType(Context, Element, Element, true)
+               .has_value() &&
+           !utilityEnumHasSourceOperator(S, SM, Context, Element, OO_Less);
+  };
+  auto AlgorithmRangeComparisonParameter = [&](unsigned PredicateIndex,
+                                               unsigned IteratorIndex) {
+    const auto Pointer = AlgorithmRangePointerParameter(IteratorIndex);
+    if (!Pointer)
+      return false;
+    const auto Element = (*Pointer)->getPointeeType();
+    const auto *Prototype = AlgorithmCallbackPrototype(PredicateIndex);
+    if (Prototype && Prototype->getNumParams() == 2 &&
+        Prototype->getReturnType()->isBooleanType() &&
+        utilityScalarDirectConversion(Context, Element,
+                                      Prototype->getParamType(0)) &&
+        utilityScalarDirectConversion(Context, Element,
+                                      Prototype->getParamType(1)))
+      return true;
+    return approvedRangeAlgorithmComparator(S, SM, Call, PredicateIndex,
+                                            Element, Element, Context)
+        .has_value();
+  };
+  auto AlgorithmRangeValueParameter = [&](unsigned ValueIndex,
+                                          unsigned IteratorIndex) {
+    if (ValueIndex >= Function->getNumParams() ||
+        ValueIndex >= Call->getNumArgs())
+      return false;
+    const auto Pointer = AlgorithmRangePointerParameter(IteratorIndex);
+    const auto Value = Function->getParamDecl(ValueIndex)->getType();
+    return Pointer && Value->isLValueReferenceType() &&
+           Value->getPointeeType().isConstQualified() &&
+           !Value->getPointeeType().isVolatileQualified() &&
+           utilityScalar(Context, Value->getPointeeType()) &&
+           Context.hasSameUnqualifiedType(Call->getArg(ValueIndex)->getType(),
+                                          Value->getPointeeType());
+  };
+  auto AlgorithmOrderedRangeValueParameter = [&](unsigned ValueIndex,
+                                                 unsigned IteratorIndex) {
+    if (!AlgorithmRangeValueParameter(ValueIndex, IteratorIndex))
+      return false;
+    const auto Element =
+        (*AlgorithmRangePointerParameter(IteratorIndex))->getPointeeType();
+    const auto Value =
+        Function->getParamDecl(ValueIndex)->getType()->getPointeeType();
+    return utilityScalarComparisonType(Context, Element, Value, false)
+               .has_value() &&
+           utilityScalarComparisonType(Context, Element, Value, true)
+               .has_value();
+  };
+  auto AlgorithmRangeComparisonValueParameter =
+      [&](unsigned PredicateIndex, unsigned IteratorIndex,
+          unsigned ValueIndex, bool Reversed) {
+        if (!AlgorithmRangeValueParameter(ValueIndex, IteratorIndex))
+          return false;
+        const auto Element =
+            (*AlgorithmRangePointerParameter(IteratorIndex))->getPointeeType();
+        const auto Value =
+            Function->getParamDecl(ValueIndex)->getType()->getPointeeType();
+        const auto Left = Reversed ? Value : Element;
+        const auto Right = Reversed ? Element : Value;
+        const auto *Prototype = AlgorithmCallbackPrototype(PredicateIndex);
+        if (Prototype && Prototype->getNumParams() == 2 &&
+            Prototype->getReturnType()->isBooleanType() &&
+            utilityScalarDirectConversion(Context, Left,
+                                          Prototype->getParamType(0)) &&
+            utilityScalarDirectConversion(Context, Right,
+                                          Prototype->getParamType(1)))
+          return true;
+        return approvedRangeAlgorithmComparator(S, SM, Call, PredicateIndex,
+                                                Left, Right, Context)
+            .has_value();
+      };
   auto AlgorithmBinaryPredicateReferenceParameter =
       [&](unsigned PredicateIndex, unsigned ReferenceIndex) {
         if (!AlgorithmReferenceParameter(ReferenceIndex))
@@ -18517,12 +19863,34 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
        Origin->Path == "__algorithm/count.h") &&
       (Name == "find" || Name == "count") && Call->getNumArgs() == 3 &&
       Function->getNumParams() == 3 && Call->isPRValue() &&
-      AlgorithmEqualityPointerParameter(0) &&
-      AlgorithmEqualityPointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType())) {
     auto Iterator = Function->getParamDecl(0)->getType();
-    if (AlgorithmEqualityValueParameter(2, 0)) {
+    const bool Raw = AlgorithmEqualityPointerParameter(0) &&
+                     AlgorithmEqualityPointerParameter(1);
+    const auto Wrapped = Raw ? std::optional<UtilityWrapIteratorRecord>()
+                             : approvedUtilityWrapIteratorRecord(
+                                   S, SM, Iterator->getAsCXXRecordDecl(),
+                                   Context);
+    const bool WrappedRange =
+        Wrapped && Same(Call->getArg(0)->getType(), Iterator) &&
+        Same(Call->getArg(1)->getType(), Iterator) &&
+        utilityAlgorithmEqualityPointer(Context, Wrapped->IteratorType) &&
+        !utilityEnumHasSourceOperator(
+            S, SM, Context, Wrapped->IteratorType->getPointeeType(),
+            OO_EqualEqual);
+    const auto Pointer = WrappedRange ? Wrapped->IteratorType : Iterator;
+    const auto Value = Function->getParamDecl(2)->getType();
+    const bool WrappedValue =
+        WrappedRange && Value->isLValueReferenceType() &&
+        Value->getPointeeType().isConstQualified() &&
+        !Value->getPointeeType().isVolatileQualified() &&
+        utilityScalar(Context, Value->getPointeeType()) &&
+        Context.hasSameUnqualifiedType(Call->getArg(2)->getType(),
+                                       Value->getPointeeType()) &&
+        utilityScalarComparisonType(Context, Pointer->getPointeeType(),
+                                    Value->getPointeeType(), false).has_value();
+    if ((Raw && AlgorithmEqualityValueParameter(2, 0)) || WrappedValue) {
       if (Name == "find" && Origin->Path == "__algorithm/find.h" &&
           Same(Function->getReturnType(), Iterator) &&
           Same(Call->getType(), Function->getReturnType()))
@@ -18538,28 +19906,48 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
       Function->getReturnType()->isBooleanType() &&
       Same(Call->getType(), Function->getReturnType()) &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
-      AlgorithmPointerParameter(2) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType())) {
-    const bool DefaultElements = AlgorithmEqualityPointerParameter(0) &&
-                                 AlgorithmEqualityPointerParameter(1) &&
-                                 AlgorithmEqualityParameters(0, 2);
-    if (Call->getNumArgs() == 3 && DefaultElements)
-      return UtilityOperation::AlgorithmEqual;
-    if (Call->getNumArgs() == 4) {
-      if (DefaultElements && AlgorithmEqualityPointerParameter(3) &&
-          Same(Function->getParamDecl(2)->getType(),
-               Function->getParamDecl(3)->getType()))
+    const auto First = AlgorithmRangePointerParameter(0);
+    const auto Last = AlgorithmRangePointerParameter(1);
+    const auto Second = AlgorithmRangePointerParameter(2);
+    if (First && Last && Second) {
+      const auto FirstElement = (*First)->getPointeeType();
+      const auto SecondElement = (*Second)->getPointeeType();
+      const bool DefaultElements =
+          utilityAlgorithmEqualityPointer(Context, *First) &&
+          utilityAlgorithmEqualityPointer(Context, *Second) &&
+          !utilityEnumHasSourceOperator(S, SM, Context, FirstElement,
+                                        OO_EqualEqual) &&
+          !utilityEnumHasSourceOperator(S, SM, Context, SecondElement,
+                                        OO_EqualEqual) &&
+          utilityScalarComparisonType(Context, FirstElement, SecondElement,
+                                      false).has_value();
+      auto Predicate = [&](unsigned Index) {
+        const auto *Prototype = AlgorithmCallbackPrototype(Index);
+        return Prototype && Prototype->getNumParams() == 2 &&
+               Prototype->getReturnType()->isBooleanType() &&
+               utilityScalarDirectConversion(Context, FirstElement,
+                                             Prototype->getParamType(0)) &&
+               utilityScalarDirectConversion(Context, SecondElement,
+                                             Prototype->getParamType(1));
+      };
+      if (Call->getNumArgs() == 3 && DefaultElements)
         return UtilityOperation::AlgorithmEqual;
-      if (AlgorithmBinaryPredicateParameter(3, 0, 2))
+      if (Call->getNumArgs() == 4) {
+        const auto SecondLast = AlgorithmRangePointerParameter(3);
+        if (DefaultElements && SecondLast &&
+            Same(Function->getParamDecl(2)->getType(),
+                 Function->getParamDecl(3)->getType()))
+          return UtilityOperation::AlgorithmEqual;
+        if (Predicate(3))
+          return UtilityOperation::AlgorithmEqual;
+      }
+      if (Call->getNumArgs() == 5 && AlgorithmRangePointerParameter(3) &&
+          Same(Function->getParamDecl(2)->getType(),
+               Function->getParamDecl(3)->getType()) && Predicate(4))
         return UtilityOperation::AlgorithmEqual;
     }
-    if (Call->getNumArgs() == 5 && AlgorithmPointerParameter(3) &&
-        Same(Function->getParamDecl(2)->getType(),
-             Function->getParamDecl(3)->getType()) &&
-        AlgorithmBinaryPredicateParameter(4, 0, 2))
-      return UtilityOperation::AlgorithmEqual;
   }
   if ((Origin->Path == "__algorithm/copy.h" ||
        Origin->Path == "__algorithm/move.h" ||
@@ -18568,8 +19956,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       (Name == "copy" || Name == "move" || Name == "copy_backward" ||
        Name == "move_backward") &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
-      Call->isPRValue() && AlgorithmPointerParameter(0) &&
-      AlgorithmPointerParameter(1) && AlgorithmTransferParameters(0, 2) &&
+      Call->isPRValue() && AlgorithmRangePointerParameter(0) &&
+      AlgorithmRangePointerParameter(1) &&
+      AlgorithmTransferRangeParameters(0, 2) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
@@ -18587,53 +19976,57 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   }
   if (Origin->Path == "__algorithm/fill.h" && Name == "fill" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(0)->getType()) &&
-      AlgorithmTransferValueParameter(2, 0) &&
       Function->getReturnType()->isVoidType() &&
-      Same(Call->getType(), Function->getReturnType()))
-    return UtilityOperation::AlgorithmFill;
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto First = AlgorithmRangePointerParameter(0);
+    const auto Last = AlgorithmRangePointerParameter(1);
+    if (First && Last && AlgorithmTransferRangeValueParameter(2, 0))
+      return UtilityOperation::AlgorithmFill;
+  }
   if (Origin->Path == "__algorithm/fill_n.h" && Name == "fill_n" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
-      Call->isPRValue() && AlgorithmPointerParameter(0) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(0)->getType()) &&
-      AlgorithmCountParameter(1) && AlgorithmTransferValueParameter(2, 0) &&
+      Call->isPRValue() && AlgorithmRangePointerParameter(0) &&
+      AlgorithmCountParameter(1) &&
+      AlgorithmTransferRangeValueParameter(2, 0) &&
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmFillN;
   if (Origin->Path == "__algorithm/swap_ranges.h" && Name == "swap_ranges" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
-      Call->isPRValue() && AlgorithmPointerParameter(0) &&
-      AlgorithmPointerParameter(1) && AlgorithmPointerParameter(2) &&
+      Call->isPRValue() &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
-                           Function->getParamDecl(2)->getType()) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(0)->getType()) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(2)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
-      Same(Call->getType(), Function->getReturnType()))
-    return UtilityOperation::AlgorithmSwapRanges;
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto First = AlgorithmRangePointerParameter(0);
+    const auto Last = AlgorithmRangePointerParameter(1);
+    const auto Second = AlgorithmRangePointerParameter(2);
+    if (First && Last && Second &&
+        utilityAlgorithmWritableScalarPointer(Context, *First) &&
+        utilityAlgorithmWritableScalarPointer(Context, *Second) &&
+        Context.hasSameUnqualifiedType((*First)->getPointeeType(),
+                                       (*Second)->getPointeeType()))
+      return UtilityOperation::AlgorithmSwapRanges;
+  }
   if (Origin->Path == "__algorithm/reverse.h" && Name == "reverse" &&
       Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(0)->getType()) &&
       Function->getReturnType()->isVoidType() &&
-      Same(Call->getType(), Function->getReturnType()))
-    return UtilityOperation::AlgorithmReverse;
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto First = AlgorithmRangePointerParameter(0);
+    const auto Last = AlgorithmRangePointerParameter(1);
+    if (First && Last &&
+        utilityAlgorithmWritableScalarPointer(Context, *First))
+      return UtilityOperation::AlgorithmReverse;
+  }
   if (Origin->Path == "__algorithm/reverse_copy.h" && Name == "reverse_copy" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
-      Call->isPRValue() && AlgorithmPointerParameter(0) &&
-      AlgorithmPointerParameter(1) && AlgorithmTransferParameters(0, 2) &&
+      Call->isPRValue() && AlgorithmRangePointerParameter(0) &&
+      AlgorithmRangePointerParameter(1) &&
+      AlgorithmTransferRangeParameters(0, 2) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
@@ -18644,14 +20037,15 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Name == "max_element")) &&
       (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      AlgorithmRangePointerParameter(0) &&
+      AlgorithmRangePointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Function->getReturnType(), Function->getParamDecl(0)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
-    if (!((Call->getNumArgs() == 2 && AlgorithmOrderedPointerParameter(0)) ||
+    if (!((Call->getNumArgs() == 2 && AlgorithmOrderedRangeParameter(0)) ||
           (Call->getNumArgs() == 3 &&
-           AlgorithmBinaryComparisonParameter(2, 0, 0))))
+           AlgorithmRangeComparisonParameter(2, 0))))
       return std::nullopt;
     return Name == "min_element" ? UtilityOperation::AlgorithmMinElement
                                  : UtilityOperation::AlgorithmMaxElement;
@@ -18662,20 +20056,21 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Name == "binary_search")) &&
       (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      AlgorithmRangePointerParameter(0) &&
+      AlgorithmRangePointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      AlgorithmScalarValueParameter(2, 0) &&
+      AlgorithmRangeValueParameter(2, 0) &&
       Same(Call->getType(), Function->getReturnType())) {
     const bool Default = Call->getNumArgs() == 3;
     const bool ForwardComparator =
         Call->getNumArgs() == 4 &&
-        AlgorithmBinaryComparisonValueParameter(3, 0, 2, false);
+        AlgorithmRangeComparisonValueParameter(3, 0, 2, false);
     const bool ReverseComparator =
         Call->getNumArgs() == 4 &&
-        AlgorithmBinaryComparisonValueParameter(3, 0, 2, true);
-    if (!((Default && AlgorithmOrderedPointerParameter(0) &&
-           AlgorithmOrderedValueParameter(2, 0)) ||
+        AlgorithmRangeComparisonValueParameter(3, 0, 2, true);
+    if (!((Default && AlgorithmOrderedRangeParameter(0) &&
+           AlgorithmOrderedRangeValueParameter(2, 0)) ||
           (Name == "lower_bound" && ForwardComparator) ||
           (Name == "upper_bound" && ReverseComparator) ||
           (Name == "binary_search" && ForwardComparator && ReverseComparator)))
@@ -18694,13 +20089,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Name == "is_sorted_until")) &&
       (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      AlgorithmRangePointerParameter(0) &&
+      AlgorithmRangePointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
-    if (!((Call->getNumArgs() == 2 && AlgorithmOrderedPointerParameter(0)) ||
+    if (!((Call->getNumArgs() == 2 && AlgorithmOrderedRangeParameter(0)) ||
           (Call->getNumArgs() == 3 &&
-           AlgorithmBinaryComparisonParameter(2, 0, 0))))
+           AlgorithmRangeComparisonParameter(2, 0))))
       return std::nullopt;
     if (Name == "is_sorted" && Function->getReturnType()->isBooleanType())
       return UtilityOperation::AlgorithmIsSorted;
@@ -18850,55 +20246,75 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (Origin->Path == "__algorithm/mismatch.h" && Name == "mismatch" &&
       Call->getNumArgs() >= 3 && Call->getNumArgs() <= 5 &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
-      AlgorithmPointerParameter(2) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Call->getType(), Function->getReturnType())) {
+    const auto First = AlgorithmRangePointerParameter(0);
+    const auto Last = AlgorithmRangePointerParameter(1);
+    const auto Second = AlgorithmRangePointerParameter(2);
     auto Pair = approvedUtilityPairRecord(
         S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);
-    if (Pair &&
+    if (First && Last && Second && Pair &&
         Same(Pair->First->getType(), Function->getParamDecl(0)->getType()) &&
         Same(Pair->Second->getType(), Function->getParamDecl(2)->getType())) {
-      const bool DefaultElements = AlgorithmEqualityPointerParameter(0) &&
-                                   AlgorithmEqualityPointerParameter(1) &&
-                                   AlgorithmEqualityParameters(0, 2);
+      const auto FirstElement = (*First)->getPointeeType();
+      const auto SecondElement = (*Second)->getPointeeType();
+      const bool DefaultElements =
+          utilityAlgorithmEqualityPointer(Context, *First) &&
+          utilityAlgorithmEqualityPointer(Context, *Second) &&
+          !utilityEnumHasSourceOperator(S, SM, Context, FirstElement,
+                                        OO_EqualEqual) &&
+          !utilityEnumHasSourceOperator(S, SM, Context, SecondElement,
+                                        OO_EqualEqual) &&
+          utilityScalarComparisonType(Context, FirstElement, SecondElement,
+                                      false).has_value();
+      auto Predicate = [&](unsigned Index) {
+        const auto *Prototype = AlgorithmCallbackPrototype(Index);
+        return Prototype && Prototype->getNumParams() == 2 &&
+               Prototype->getReturnType()->isBooleanType() &&
+               utilityScalarDirectConversion(Context, FirstElement,
+                                             Prototype->getParamType(0)) &&
+               utilityScalarDirectConversion(Context, SecondElement,
+                                             Prototype->getParamType(1));
+      };
       if (Call->getNumArgs() == 3 && DefaultElements)
         return UtilityOperation::AlgorithmMismatch;
       if (Call->getNumArgs() == 4) {
-        if (DefaultElements && AlgorithmEqualityPointerParameter(3) &&
+        if (DefaultElements && AlgorithmRangePointerParameter(3) &&
             Same(Function->getParamDecl(2)->getType(),
                  Function->getParamDecl(3)->getType()))
           return UtilityOperation::AlgorithmMismatch;
-        if (AlgorithmBinaryPredicateParameter(3, 0, 2))
+        if (Predicate(3))
           return UtilityOperation::AlgorithmMismatch;
       }
-      if (Call->getNumArgs() == 5 && AlgorithmPointerParameter(3) &&
+      if (Call->getNumArgs() == 5 && AlgorithmRangePointerParameter(3) &&
           Same(Function->getParamDecl(2)->getType(),
                Function->getParamDecl(3)->getType()) &&
-          AlgorithmBinaryPredicateParameter(4, 0, 2))
+          Predicate(4))
         return UtilityOperation::AlgorithmMismatch;
     }
   }
   if (Origin->Path == "__algorithm/copy_n.h" && Name == "copy_n" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
-      Call->isPRValue() && AlgorithmPointerParameter(0) &&
-      AlgorithmCountParameter(1) && AlgorithmTransferParameters(0, 2) &&
+      Call->isPRValue() && AlgorithmRangePointerParameter(0) &&
+      AlgorithmCountParameter(1) &&
+      AlgorithmTransferRangeParameters(0, 2) &&
       Same(Function->getReturnType(), Function->getParamDecl(2)->getType()) &&
       Same(Call->getType(), Function->getReturnType()))
     return UtilityOperation::AlgorithmCopyN;
   if (Origin->Path == "__algorithm/iter_swap.h" && Name == "iter_swap" &&
       Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
-      SameAlgorithmElement(Function->getParamDecl(0)->getType(),
-                           Function->getParamDecl(1)->getType()) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(0)->getType()) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(1)->getType()) &&
       Function->getReturnType()->isVoidType() &&
-      Same(Call->getType(), Function->getReturnType()))
-    return UtilityOperation::AlgorithmIterSwap;
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto First = AlgorithmRangePointerParameter(0);
+    const auto Second = AlgorithmRangePointerParameter(1);
+    if (First && Second &&
+        utilityAlgorithmWritableScalarPointer(Context, *First) &&
+        utilityAlgorithmWritableScalarPointer(Context, *Second) &&
+        Context.hasSameUnqualifiedType((*First)->getPointeeType(),
+                                       (*Second)->getPointeeType()))
+      return UtilityOperation::AlgorithmIterSwap;
+  }
   if (Origin->Path == "__algorithm/rotate.h" && Name == "rotate" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
       Call->isPRValue() && AlgorithmPointerParameter(0) &&
@@ -18927,16 +20343,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (Origin->Path == "__algorithm/equal_range.h" && Name == "equal_range" &&
       (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      AlgorithmRangePointerParameter(0) &&
+      AlgorithmRangePointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      AlgorithmScalarValueParameter(2, 0) &&
+      AlgorithmRangeValueParameter(2, 0) &&
       Same(Call->getType(), Function->getReturnType())) {
-    if (!((Call->getNumArgs() == 3 && AlgorithmOrderedPointerParameter(0) &&
-           AlgorithmOrderedValueParameter(2, 0)) ||
+    if (!((Call->getNumArgs() == 3 && AlgorithmOrderedRangeParameter(0) &&
+           AlgorithmOrderedRangeValueParameter(2, 0)) ||
           (Call->getNumArgs() == 4 &&
-           AlgorithmBinaryComparisonValueParameter(3, 0, 2, false) &&
-           AlgorithmBinaryComparisonValueParameter(3, 0, 2, true))))
+           AlgorithmRangeComparisonValueParameter(3, 0, 2, false) &&
+           AlgorithmRangeComparisonValueParameter(3, 0, 2, true))))
       return std::nullopt;
     auto Pair = approvedUtilityPairRecord(
         S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);
@@ -19055,13 +20472,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Name == "minmax_element" &&
       (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      AlgorithmRangePointerParameter(0) &&
+      AlgorithmRangePointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Call->getType(), Function->getReturnType()) &&
-      ((Call->getNumArgs() == 2 && AlgorithmOrderedPointerParameter(0)) ||
+      ((Call->getNumArgs() == 2 && AlgorithmOrderedRangeParameter(0)) ||
        (Call->getNumArgs() == 3 &&
-        AlgorithmBinaryComparisonParameter(2, 0, 0)))) {
+        AlgorithmRangeComparisonParameter(2, 0)))) {
     auto Pair = approvedUtilityPairRecord(
         S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);
     if (Pair &&
@@ -19076,13 +20494,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (HeapQueryAlgorithm &&
       (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      AlgorithmRangePointerParameter(0) &&
+      AlgorithmRangePointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Call->getType(), Function->getReturnType()) &&
-      ((Call->getNumArgs() == 2 && AlgorithmOrderedPointerParameter(0)) ||
+      ((Call->getNumArgs() == 2 && AlgorithmOrderedRangeParameter(0)) ||
        (Call->getNumArgs() == 3 &&
-        AlgorithmBinaryComparisonParameter(2, 0, 0)))) {
+        AlgorithmRangeComparisonParameter(2, 0)))) {
     if (Name == "is_heap" && Function->getReturnType()->isBooleanType())
       return UtilityOperation::AlgorithmIsHeap;
     if (Name == "is_heap_until" &&
@@ -19118,17 +20537,48 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (Origin->Path == "__algorithm/sort.h" && Name == "sort" &&
       (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
       Function->getNumParams() == Call->getNumArgs() &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(0)->getType()) &&
       Function->getReturnType()->isVoidType() &&
-      Same(Call->getType(), Function->getReturnType()) &&
-      ((Call->getNumArgs() == 2 && AlgorithmOrderedPointerParameter(0)) ||
-       (Call->getNumArgs() == 3 &&
-        AlgorithmBinaryComparisonParameter(2, 0, 0))))
-    return UtilityOperation::AlgorithmSort;
+      Same(Call->getType(), Function->getReturnType())) {
+    const bool Raw =
+        AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1);
+    const auto Iterator = Function->getParamDecl(0)->getType();
+    const auto Wrapped = Raw ? std::optional<UtilityWrapIteratorRecord>()
+                             : approvedUtilityWrapIteratorRecord(
+                                   S, SM, Iterator->getAsCXXRecordDecl(),
+                                   Context);
+    const bool WrappedRange =
+        Wrapped && Same(Call->getArg(0)->getType(), Iterator) &&
+        Same(Call->getArg(1)->getType(), Iterator);
+    const auto Pointer = WrappedRange ? Wrapped->IteratorType : Iterator;
+    if ((Raw || WrappedRange) &&
+        utilityAlgorithmWritableScalarPointer(Context, Pointer)) {
+      const auto Element = Pointer->getPointeeType();
+      bool Comparison = false;
+      if (Call->getNumArgs() == 2) {
+        Comparison = utilityScalarComparisonType(Context, Element, Element,
+                                                 true).has_value() &&
+                     !utilityEnumHasSourceOperator(S, SM, Context, Element,
+                                                   OO_Less);
+      } else if (Raw) {
+        Comparison = AlgorithmBinaryComparisonParameter(2, 0, 0);
+      } else {
+        const auto *Callback = AlgorithmCallbackPrototype(2);
+        Comparison =
+            (Callback && Callback->getNumParams() == 2 &&
+             Callback->getReturnType()->isBooleanType() &&
+             utilityScalarDirectConversion(Context, Element,
+                                           Callback->getParamType(0)) &&
+             utilityScalarDirectConversion(Context, Element,
+                                           Callback->getParamType(1))) ||
+            approvedRangeAlgorithmComparator(S, SM, Call, 2, Element,
+                                             Element, Context).has_value();
+      }
+      if (Comparison)
+        return UtilityOperation::AlgorithmSort;
+    }
+  }
   if (Origin->Path == "__algorithm/stable_sort.h" && Name == "stable_sort" &&
       (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
       Function->getNumParams() == Call->getNumArgs() &&
@@ -19499,7 +20949,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Function->getNumParams() == 1 && Call->isPRValue()) {
     const auto Result = ReverseFor(Function->getReturnType());
     auto Parameter = Function->getParamDecl(0)->getType();
-    if (Result && utilityObjectPointer(Context, Parameter) &&
+    if (Result &&
+        (utilityObjectPointer(Context, Parameter) ||
+         Result->WrappedCurrent) &&
         Same(Parameter, Result->IteratorType) &&
         Same(Call->getArg(0)->getType(), Parameter) &&
         Same(Call->getType(), Function->getReturnType()))
@@ -19512,8 +20964,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto Right = ReverseFor(Call->getArg(1)->getType());
     if (Operator && Left && Right && ReverseParameter(0, *Left) &&
         ReverseParameter(1, *Right) &&
-        Context.hasSameUnqualifiedType(Left->IteratorType->getPointeeType(),
-                                       Right->IteratorType->getPointeeType())) {
+        Context.hasSameUnqualifiedType(Left->PointerType->getPointeeType(),
+                                       Right->PointerType->getPointeeType())) {
       if (Call->isPRValue() && Function->getReturnType()->isBooleanType() &&
           Same(Call->getType(), Function->getReturnType())) {
         switch (Operator->getOperator()) {

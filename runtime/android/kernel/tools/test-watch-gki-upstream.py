@@ -253,6 +253,32 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(record["live"]["linux_release"], "6.12.90")
         self.assertIsNone(record["kminext"])
 
+    def test_transient_family_failure_is_retried_before_reporting_error(self):
+        temporary = urllib.error.URLError("connection reset")
+        failed_fetch = watch.WatchError("failed to fetch AOSP text")
+        failed_fetch.__cause__ = temporary
+        expected = live_record()
+        with mock.patch.object(
+            watch, "probe_family", side_effect=[failed_fetch, expected]
+        ) as probe:
+            records, errors, _ = watch.probe_all(
+                [family()], ls_remote="aaa refs/heads/android16-6.12\n"
+            )
+        self.assertEqual(records, [expected])
+        self.assertEqual(errors, [])
+        self.assertEqual(probe.call_count, 2)
+
+    def test_parse_failure_is_not_retried(self):
+        with mock.patch.object(
+            watch, "probe_family", side_effect=watch.WatchError("bad Makefile")
+        ) as probe:
+            records, errors, _ = watch.probe_all(
+                [family()], ls_remote="aaa refs/heads/android16-6.12\n"
+            )
+        self.assertEqual(records, [])
+        self.assertEqual(errors[0]["message"], "bad Makefile")
+        self.assertEqual(probe.call_count, 1)
+
 
 class DiffTests(unittest.TestCase):
     def test_first_run_compares_to_catalog_and_skips_historical_branches(self):
@@ -573,7 +599,8 @@ class DiscordTests(unittest.TestCase):
         )
         payload = watch.build_discord_payload(report)
         description = payload["embeds"][0]["description"]
-        self.assertIn("NeverC-read fields changed", description)
+        self.assertIn("NeverC-read source declarations changed", description)
+        self.assertIn("CONFIG_* guarded fields", description)
         self.assertIn("task_struct.comm", description)
         self.assertEqual(payload["embeds"][0]["color"], 0xC0392B)
 

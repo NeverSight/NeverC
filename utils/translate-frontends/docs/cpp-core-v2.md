@@ -704,6 +704,15 @@ specializations directly lower `advance`, `distance`, `next`, `prev`,
 `make_reverse_iterator`, base access, dereference, arrow, increment, decrement,
 offset, subscript, difference and comparisons. Generated programs use existing
 pointer and control-flow operations and do not link libc++.
+Authenticated `std::string` and `std::vector` `__wrap_iter` values also admit
+their pinned `reverse_iterator` adapter. Its two wrapped pointer fields are
+checked before direct base access, dereference, arrow, movement, offsets,
+subscript, difference or comparison lowering. Raw-pointer reverse iterators
+retain the same path.
+The authenticated forward wrappers directly lower arrow, subscript, prefix and
+postfix increment/decrement, member and left-hand offsets, and compound offset
+assignment. The result of postfix movement retains the old pointer, while
+compound assignment returns the mutated iterator by reference.
 
 The four stream-iterator component headers remain authenticated in the VFS but
 their declarations are disabled until the I/O header closure and runtime
@@ -1513,6 +1522,17 @@ element;
 accept integral or non-scoped enum counts whose promoted type is at most 64
 bits. Floating counts are outside this boundary.
 
+The exact `copy`, `copy_n`, three-iterator `move`, `copy_backward`,
+`move_backward` and `reverse_copy` forms also accept authenticated
+`std::__wrap_iter<T*>` inputs or outputs, including mixed wrapped and raw
+scalar pointer ranges. `fill_n`, `swap_ranges` and `iter_swap` admit writable
+wrapped iterators under the same value-conversion or same-element rules as
+their raw-pointer forms. Returned output positions retain the original
+iterator type, with the final pointer wrapped back into the pinned iterator
+record when needed. Empty counts and ranges, overlapping forward or backward
+copies, and iterator argument evaluation retain their existing behavior.
+Record elements and nonwritable destinations remain rejected.
+
 The exact default-equality `std::find`, `std::count`, three- and four-iterator
 `std::equal`, `std::adjacent_find`, `std::remove`, `std::remove_copy`,
 `std::replace`, `std::replace_copy`, `std::unique` and `std::unique_copy`
@@ -1530,6 +1550,29 @@ Value references remain live through the loop, including when they alias an
 element that an earlier iteration changes. Enum elements use built-in equality
 only when no source `operator==` accepts that enum; such overloads remain
 rejected instead of being silently bypassed.
+
+`std::find` and `std::count` also accept authenticated `std::__wrap_iter<T*>`
+ranges, including mutable and const iterators from admitted scalar `std::vector`
+and `std::string` objects. The same scalar equality and heterogeneous value
+checks apply. Each iterator is evaluated once; `find` returns a wrapper around
+the matching pointer or end pointer, and `count` returns the target pointer
+difference type. Record elements remain rejected.
+
+The three- and four-iterator `std::equal` overloads also accept those wrapped
+ranges on either side, including a wrapped range compared with a raw scalar
+pointer range. Default equality retains the checked common scalar type and
+source-enum operator restrictions. The four- and five-argument function-pointer
+predicate forms retain their checked by-value scalar parameter conversions.
+The three- and four-iterator `std::mismatch` forms admit the same independent
+wrapped or raw scalar ranges, including heterogeneous elements. The bounded
+form stops at either end; the unbounded form follows the first range. Its
+checked function-pointer predicate forms keep one callback value and direct
+scalar parameter conversions. The returned authenticated `std::pair` contains
+each input's own iterator type and wraps the two final pointers independently.
+`std::fill` and `std::reverse` accept writable wrapped scalar ranges, including
+mutable vector and string iterators, while preserving the existing value
+conversion, single evaluation, and empty-range behavior. Const iterators and
+record elements remain outside these mutation operations.
 
 The exact binary-predicate overloads of `std::adjacent_find`, three- and
 four-iterator `std::equal`, three- and four-iterator `std::mismatch`, and three-
@@ -1714,6 +1757,19 @@ in upper bounds, and both directions in searches and equal ranges. The object
 argument is evaluated once and comparisons lower directly, including when the
 range and value have different admitted arithmetic types.
 
+These exact `min_element`, `max_element`, `minmax_element`, `lower_bound`,
+`upper_bound`, `equal_range`, `binary_search`, `is_sorted` and
+`is_sorted_until` forms also admit
+authenticated scalar `std::__wrap_iter<T*>` ranges, including mutable and
+const vector and string iterators. The `is_heap` and `is_heap_until` query
+forms admit the same ranges. Default ordering, checked function-pointer
+comparators and the admitted standard comparison objects retain their existing
+element, value and callback restrictions. Each endpoint is evaluated once;
+iterator-returning queries reconstruct the pinned wrapped iterator from the
+selected pointer, including on empty ranges. `equal_range` and
+`minmax_element` construct an authenticated `std::pair` containing two such
+iterators.
+
 The exact two-argument `std::min` and `std::max`, three-argument `std::clamp`,
 two-argument `std::minmax` and two-iterator `std::minmax_element` templates use
 the same built-in arithmetic, enum or complete object-pointer ordering boundary.
@@ -1794,6 +1850,13 @@ partition around a retained scalar pivot, provides average linear comparison
 complexity and terminates directly on ranges of equivalent values. An empty
 selected prefix leaves `partial_sort` unchanged; an empty output returns the
 original output pointer.
+
+`std::sort` also accepts authenticated `std::__wrap_iter<T*>` ranges for the
+same writable scalar element and comparison boundary. This includes mutable
+`std::vector<T>` iterators. The iterator arguments are evaluated once, then
+their pinned pointer fields feed the same heap sorting lowering. Default,
+checked function-pointer, and authenticated standard comparison-object
+overloads are admitted; const iterators and record elements remain rejected.
 
 The corresponding comparator overloads accept the same checked scalar
 function-pointer boundary. `sort`, `partial_sort` and `nth_element` require a
@@ -2196,6 +2259,9 @@ receiver and argument is evaluated once. `rbegin()`, `crbegin()`, `rend()` and
 compares unsigned character values lexicographically, including embedded zero
 bytes. The six free `==`, `!=`, `<`, `>`, `<=` and `>=` operators use the same
 ordering and accept the pinned view's ordinary implicit pointer construction.
+The remaining non-template `compare` overloads accept a C string or selected
+ranges of either view, including a counted pointer range. They clamp requested
+range lengths and use the same unsigned-byte ordering without allocating.
 `find(char, size_t)` and its zero-position default return the first
 matching offset or `npos`. `find(string_view, size_t)` searches for the first
 matching byte sequence, while `rfind(char, size_t)` and
@@ -2203,6 +2269,16 @@ matching byte sequence, while `rfind(char, size_t)` and
 pinned zero or `npos` defaults. Empty patterns and out-of-range positions
 follow libc++'s view-search results. The caller remains responsible for the
 ordinary view lifetime, readable-range and valid-index preconditions.
+Both directional searches also accept zero-terminated and counted `const char*`
+patterns. `find_first_of`, `find_last_of`, `find_first_not_of` and
+`find_last_not_of` accept character, view, zero-terminated and counted pointer
+sets. Their default positions, empty sets, embedded zero bytes in counted
+patterns and reverse clipping follow the pinned view-search semantics.
+`substr(pos, count)` returns another view over the selected byte range, with
+both default arguments and `npos` counts. `copy(char*, count, pos)` writes the
+selected bytes without appending a terminator and returns the copied length.
+Positions within `[0, size()]` and the usual writable destination range remain
+the caller's responsibility; throwing out-of-range paths are not lowered.
 Custom traits, other character types, throwing `at()`, and other string-view
 operations still require separate direct lowerings.
 
@@ -2217,42 +2293,121 @@ LLVM 20.1.8 source bytes and catalog hashes. Clang can fold constant
 `size_type` alias. Authenticated `std::basic_string<char, std::char_traits<char>,
 std::allocator<char>>` objects now have direct lowering for default,
 `const char*`, pointer-and-length, copy and move construction; copy and move
-assignment; `size`, `length`, `capacity`, `empty`, `data`, `c_str`, subscript
+assignment and assignment from `const char*` or `char`; `size`, `length`,
+`capacity`, `max_size`, `empty`, `data`, `c_str`, subscript
 access, mutable and const `front`/`back`, `clear`, `push_back(char)`,
-`pop_back()`, `reserve(size_type)`, both `resize` overloads, and destruction.
+`pop_back()`, `reserve(size_type)`, `shrink_to_fit()` and its C++17
+`reserve()` alias, both `resize` overloads, and destruction.
+Mutable and const `begin`/`end`, plus `cbegin`/`cend`, produce authenticated
+libc++ `__wrap_iter` values for forward traversal and mutable element access.
+The authenticated wrapper also supports `base()`, arrow, subscript, prefix and
+postfix increment/decrement, both offset orders, compound offset assignment,
+equality, inequality, same-type iterator difference and mutable-to-const
+construction, shared with vector iterators.
+Mutable and const `rbegin`/`rend`, plus `crbegin`/`crend`, construct checked
+reverse iterators over those wrappers. Matching and const-converting reverse
+construction and assignment, `make_reverse_iterator`, traversal and indexed
+access use the underlying string storage directly.
 The `append(const char*, size_type)`, `append(const char*)`, and
 `append(size_type, char)` overloads and `append(const std::string&)` also lower
 directly and return the receiver reference. Pointer and string append copy
 self-referenced source bytes before releasing storage during growth; the
 C-string overload scans to the first NUL.
+`append(first, last)` accepts matching raw character pointers or authenticated
+wrapped character iterators. It preserves embedded NUL bytes, supports empty
+and self-referenced ranges, and returns the receiver reference.
 The `operator+=` overloads for `char`, `const char*`, and `const std::string&`
 reuse those paths and return the receiver reference.
+The one-argument pinned `initializer_list<char>` constructor and the list
+overloads of `assign`, `operator=`, `append`, and `operator+=` copy every listed
+byte, including embedded NUL characters. Assignment retains reusable capacity;
+append grows with the same capacity recommendation as counted pointer append.
+The five `operator+` overloads taking only const string references, C strings
+or characters create an independent result with the pinned capacity
+recommendation. The seven overloads with an rvalue string append or prepend
+into that operand, reuse its capacity when possible, and move its storage into
+the result. If both rvalue strings are distinct objects, the left operand
+supplies the result storage and the right remains intact. Self-referenced
+operands retain their original bytes across in-place changes and growth.
+Counted string operands preserve embedded NUL bytes.
 Member `swap` and `std::swap` exchange the authenticated representation words
 without allocating and preserve each long string's buffer ownership.
 The `assign(const char*)`, `assign(const char*, size_type)`,
 `assign(const std::string&)`, and `assign(size_type, char)` overloads reuse
 capacity when possible and return the receiver reference. Pointer assignment
 copies self-referenced bytes before changing size or releasing old storage.
+`assign(first, last)` accepts the same raw and wrapped character ranges,
+including empty and self-referenced ranges. It preserves embedded NUL bytes
+and reuses capacity when the result fits.
 Positional `erase(pos, count)` and its default arguments remove bytes in place,
 retain capacity, and return the receiver reference.
+The `erase(const_iterator)` and `erase(const_iterator, const_iterator)`
+overloads share that in-place movement and return a mutable iterator to the
+following character or the new end. Empty ranges preserve storage.
+Positional `insert(pos, const char*, count)`, `insert(pos, const char*)`,
+`insert(pos, const std::string&)`, and `insert(pos, count, char)` return the
+receiver reference. The corresponding `replace(pos, count, ...)` overloads
+accept counted pointers, C strings, strings, and character fills. Both
+modifiers preserve embedded zero bytes in counted sources, retain storage
+when capacity suffices, and copy self-referenced source bytes before moving
+or releasing the original storage.
+Iterator-position `insert` accepts one character, a counted character fill,
+raw or authenticated wrapped character ranges, and an initializer list. It
+uses the same growth and alias handling and returns a mutable iterator to the
+first inserted character, including the original position for empty input.
+Iterator-range `replace` accepts a string, a C string, a counted pointer,
+a character fill, raw or authenticated wrapped character ranges, and an
+initializer list. It shares positional replacement's capacity reuse, growth,
+and self-reference handling and returns the receiver reference.
 `compare(const std::string&)` and the six string/string relation operators
 compare unsigned bytes lexicographically, then lengths, without allocating.
 `compare(const char*)` and the twelve string/C-string relation overloads scan
 the zero-terminated argument once and use the same byte comparison.
+Positional `compare` overloads select a range from the receiver and compare it
+with a whole or selected string range, a C string, or a counted pointer range.
+The second string range accepts the pinned default `npos` length. They reuse
+the unsigned-byte comparison without allocating.
+`substr(pos, count)` creates independently owned short or long storage from
+the selected range; `copy(char*, count, pos)` copies bytes without a terminator
+and reports the copied length. Both accept their pinned default arguments and
+clamp counts to the available suffix. Positional comparison also clamps range
+lengths. Throwing out-of-range paths remain outside the direct lowering
+boundary.
+The `find` and `rfind` overloads for `char`, `const std::string&`,
+`const char*`, and `(const char*, position, count)` search without allocating.
+They honor default positions, `npos`, embedded NUL in counted patterns, and
+the standard empty-pattern bounds.
+The same four pattern forms are supported by `find_first_of`, `find_last_of`,
+`find_first_not_of`, and `find_last_not_of`, including default positions and
+empty character sets.
 The frontend checks the pinned libc++ representation before emitting three
 storage words, including the alternate short-string layout selected on Apple
 arm64. Short strings stay inline, while long strings use the selected
 allocation and release functions. Copy construction owns independent storage;
-copy assignment reuses existing capacity when possible. Moves transfer the
-representation and leave the source empty. Clearing, popping, and shrinking
-retain existing capacity and storage. Pushing, resizing, reserving, and
-appending grow storage when needed. Host O0/O2 fixtures exercise both
-representations, embedded NUL, mutable and const access, copy and move,
-push/pop, resize/reserve, fill, pointer and string append with self-reference,
-the three `operator+=` overloads, four `assign` overloads, positional erase,
-member/free swap, comparison, clearing, and lifetime release; all eight
-supported target triples pass frontend translation. Other modifiers, character
-or allocator types, and throwing length/allocation paths remain unsupported.
+copy assignment reuses existing capacity when possible and follows the pinned
+libc++ recommendation of the larger of the new size and twice the old capacity
+when it grows. Moves transfer the representation and leave the source empty.
+Pointer and character assignment reuse the corresponding `assign` storage paths.
+Operator syntax evaluates the right operand before the receiver; explicit
+member calls evaluate the receiver first.
+Clearing, popping, and reducing the size through `resize` retain existing
+capacity and storage.
+`shrink_to_fit()` follows the pinned libc++ capacity recommendation, copying
+long strings into smaller storage or back to the inline representation.
+The 23-character boundary also uses the selected layout's allocation
+adjustment during construction and substring creation. Pushing, resizing,
+reserving, and appending grow storage when needed. Host O0/O2 fixtures
+exercise both representations, embedded NUL, mutable and const access,
+target-specific `max_size` values, copy and move, push/pop,
+resize/reserve/shrink-to-fit, fill, pointer and string append with self-reference,
+the four `operator+=` overloads, all twelve `operator+` forms, five `assign`
+overloads, positional erase,
+four positional `insert` and four positional `replace` overloads, member/free
+swap, comparison, forward/reverse and character-set search,
+short and long string iteration with mutable, const and reverse iterators,
+clearing, and lifetime release; all eight supported target triples pass
+frontend translation. Other modifiers, character or allocator types, and
+throwing length/allocation paths remain unsupported.
 Quoted and shadow headers remain rejected.
 
 ## Vector header and metadata from `<vector>`
@@ -2264,16 +2419,47 @@ the `__bit_reference`, `__vector/pmr.h`, and `__vector/vector_bool.h` files
 retain their LLVM 20.1.8 source bytes and catalog hashes. For the default
 allocator specialization, Clang can fold `std::vector<int>` size and alignment
 queries from libc++'s three-pointer layout and resolve its `size_type` alias.
-Authenticated `std::vector<T, std::allocator<T>>` objects with non-boolean
-integer or floating elements use direct lowering for default, bounded
-count/fill/list, copy and move construction; copy and move assignment;
-destruction; size, capacity, empty, data, element/front/back access; clear,
-push/pop, begin/end and const iteration; and reserve/resize. Growth preserves
-element values and the selected allocator calls, and copy construction owns
-independent storage. Host O0/O2 fixtures check capacity reuse, reallocation,
-aliased fill arguments and eventual release. Record elements, other allocators,
-remaining vector methods and throwing allocation or length-error paths remain
-unsupported. Quoted and shadow headers remain rejected.
+Authenticated `std::vector<T, std::allocator<T>>` objects admit non-boolean
+integer and floating elements, plus source-owned standard-layout records with
+trivial default/copy/move construction, assignment and destruction. They use
+direct lowering for default, bounded count/fill/list, copy and move
+construction; copy, move and initializer-list assignment; destruction; size,
+capacity, max_size, empty, data, element/front/back access; clear, push/pop;
+zero- or one-argument `emplace_back` with exact element types;
+begin/end, cbegin/cend, rbegin/rend, crbegin/crend and const iteration;
+reserve/resize/shrink_to_fit; lvalue/rvalue, counted-value, pointer and wrapped iterator
+range, and initializer-list `insert`; zero- or one-argument positional
+`emplace` with exact element types; counted-value, pointer and wrapped
+iterator range, and initializer-list `assign`; single-position and range
+`erase`; member/free swap; and all six vector/vector comparison operators for
+arithmetic elements.
+Insert and positional emplace return mutable iterators. Single-value insertion
+and emplace preserve aliased element inputs;
+they shift in place when capacity permits and otherwise move storage through
+the selected allocator.
+Erase shifts surviving elements in place and returns the following
+mutable iterator. Assign reuses capacity when possible and replaces storage
+through the selected allocator otherwise. Reserve, insert, and push growth
+preserve existing element values and use the selected allocator, and copy
+construction owns independent storage.
+Host O0/O2 fixtures check capacity reuse, reallocation, aliased fill arguments,
+maximum size, occupied and empty capacity shrinking,
+`emplace_back` value initialization and returned references, positional
+`emplace` return positions and source aliasing,
+forward/reverse iterator access, iterator base/arrow/subscript, prefix and
+postfix movement, offsets, compound offsets, equality and difference,
+insert return positions, source aliasing, empty ranges, and insertion from a
+distinct vector; assignment from values, ranges, and lists with capacity reuse
+and growth, plus initializer-list assignment's returned reference and right
+operand evaluation order; erase return positions and empty ranges; swap
+ownership and eventual release. Comparison fixtures cover equality,
+lexicographic ordering, empty and prefix ranges, signed and floating elements,
+single evaluation of operands, and the pinned NaN behavior.
+Trivial-record fixtures cover construction, growth with an aliased source,
+access, insert/erase, fill/list/range assignment, copy/move, resize and swap.
+Nontrivial record elements, other allocators, remaining vector methods, and
+throwing allocation or length-error paths remain unsupported. Quoted and
+shadow headers remain rejected.
 
 ## Dynamic local static initialization
 

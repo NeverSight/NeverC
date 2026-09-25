@@ -180,6 +180,14 @@ The two GKI workflows have deliberately different jobs:
   NeverC-read struct-field shift, or a new `androidN-M.m` branch, and posts
   Discord via `GKI_WATCH_DISCORD_WEBHOOK_URL`.
 
+The watch fingerprints source headers before `CONFIG_*` preprocessing. A field
+index change is a reason to inspect the target build, not a measured byte-offset
+change. For example, the 5.10 branches added `task_struct.kcov_saved_*` members
+behind `CONFIG_KCOV`; these do not enter a stock GKI layout with KCOV disabled,
+but a KCOV-enabled build needs a separately certified profile. The catalog records
+verified build artifacts, so a newer upstream branch tip alone is insufficient
+to advance its pinned patch or regenerate module offsets.
+
 The consumer checks each asset's name, byte size, and SHA-256 before safe
 extraction; regenerates all 55 checked BTF/DWARF layouts from `vmlinux`; checks
 every packaged config and `Module.symvers` occurrence; and independently derives

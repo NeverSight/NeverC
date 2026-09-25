@@ -15076,6 +15076,81 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringViewSearchOverloadsRun) {
+  const auto Source = tmpFile("string-view-search-overloads.cpp");
+  const auto Output = tmpFile("string-view-search-overloads.nc");
+  writeFile(Source, R"cpp(
+#include <string_view>
+int evaluations;
+const char *pattern() { ++evaluations; return "a"; }
+std::string_view& touch(std::string_view& view) {
+  ++evaluations;
+  return view;
+}
+int main() {
+  const char raw[] = {'a', 0, 'b', 'a', 0, 'c'};
+  std::string_view view(raw, 6);
+  std::string_view set(raw + 1, 2);
+  std::string_view empty;
+  const char counted[] = {0, 'c', 'x'};
+  if (view.find("a") != 0 || view.rfind("a") != 3 ||
+      view.find(raw + 1, 0, 2) != 1 ||
+      view.rfind(raw + 1, std::string_view::npos, 2) != 1 ||
+      view.find("", 6) != 6 || view.rfind("") != 6 ||
+      view.find("a", 4) != std::string_view::npos)
+    return 1;
+  if (view.find_first_of('a') != 0 || view.find_last_of('a') != 3 ||
+      view.find_first_not_of('a') != 1 ||
+      view.find_last_not_of('a') != 5 ||
+      view.find_first_of('a', 4) != std::string_view::npos ||
+      view.find_last_of('a', 2) != 0)
+    return 2;
+  if (view.find_first_of(set) != 1 || view.find_last_of(set) != 4 ||
+      view.find_first_not_of(set) != 0 ||
+      view.find_last_not_of(set) != 5 ||
+      view.find_first_of(set, 2) != 2 ||
+      view.find_last_of(set, 2) != 2)
+    return 3;
+  if (view.find_first_of("ac") != 0 || view.find_last_of("ac") != 5 ||
+      view.find_first_not_of("ac") != 1 ||
+      view.find_last_not_of("ac") != 4 ||
+      view.find_first_of("ac", 4) != 5 ||
+      view.find_last_not_of("ac", 2) != 2)
+    return 4;
+  if (view.find_first_of(counted, 0, 2) != 1 ||
+      view.find_last_of(counted, std::string_view::npos, 2) != 5 ||
+      view.find_first_not_of(counted, 1, 2) != 2 ||
+      view.find_last_not_of(counted, std::string_view::npos, 2) != 3)
+    return 5;
+  if (view.find_first_of(empty) != std::string_view::npos ||
+      view.find_last_of(empty) != std::string_view::npos ||
+      view.find_first_not_of(empty) != 0 ||
+      view.find_last_not_of(empty) != 5 ||
+      empty.find_first_of('a') != std::string_view::npos ||
+      empty.find_last_not_of('a') != std::string_view::npos)
+    return 6;
+  if (touch(view).find(pattern()) != 0 || evaluations != 2 ||
+      touch(view).find_first_of(pattern()) != 0 || evaluations != 4 ||
+      touch(view).find_last_not_of(std::string_view("a")) != 5 ||
+      evaluations != 5)
+    return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("string-view-search-overloads" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StringViewRelationsRunAtBothOptimizations) {
   const auto Source = tmpFile("string-view-relations.cpp");
   const auto Output = tmpFile("string-view-relations.nc");
@@ -51397,6 +51472,570 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorAlgorithmSortRun) {
+  const auto Source = tmpFile("vector-algorithm-sort.cpp");
+  const auto Output = tmpFile("vector-algorithm-sort.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <functional>
+#include <vector>
+bool descending(int left, int right) { return left > right; }
+int main() {
+  std::vector<int> values{8, 2, 5, 2, 9, 1};
+  int effects = 0;
+  std::sort((++effects, values.begin()), (++effects, values.end()));
+  if (effects != 2 || values[0] != 1 || values[1] != 2 ||
+      values[2] != 2 || values[3] != 5 || values[4] != 8 ||
+      values[5] != 9)
+    return 1;
+  auto first = values.begin();
+  auto last = values.end();
+  ++first;
+  --last;
+  std::sort(first, last, descending);
+  if (values[0] != 1 || values[1] != 8 || values[2] != 5 ||
+      values[3] != 2 || values[4] != 2 || values[5] != 9)
+    return 2;
+  std::sort(values.begin(), values.end(), std::greater<int>{});
+  if (values[0] != 9 || values[1] != 8 || values[2] != 5 ||
+      values[3] != 2 || values[4] != 2 || values[5] != 1)
+    return 3;
+  std::vector<int> empty;
+  std::sort(empty.begin(), empty.end());
+  return empty.empty() ? 0 : 4;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o",
+                                   Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-algorithm-sort" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrappedIteratorFindAndCountRun) {
+  const auto Source = tmpFile("wrapped-iterator-find-count.cpp");
+  const auto Output = tmpFile("wrapped-iterator-find-count.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <string>
+#include <vector>
+int main() {
+  std::vector<int> values{1, 2, 3, 2, 5, 2};
+  const std::vector<int> &view = values;
+  short needle = 2;
+  int effects = 0;
+  auto found = std::find((++effects, view.cbegin()),
+                         (++effects, view.cend()), (++effects, needle));
+  auto expected = view.cbegin();
+  ++expected;
+  if (effects != 3 || found != expected || *found != 2 ||
+      std::find(values.begin(), values.end(), 9) != values.end())
+    return 1;
+  if (std::count(view.cbegin(), view.cend(), needle) != 3 ||
+      std::count(values.begin(), values.begin(), 2) != 0)
+    return 2;
+  std::vector<int> empty;
+  if (std::find(empty.begin(), empty.end(), 1) != empty.end() ||
+      std::count(empty.cbegin(), empty.cend(), 1) != 0)
+    return 3;
+  std::string word("abca");
+  auto letter = std::find(word.begin(), word.end(), 'c');
+  if (letter == word.end() || *letter != 'c' ||
+      std::count(word.cbegin(), word.cend(), 'a') != 2)
+    return 4;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o",
+                                   Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapped-iterator-find-count" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrappedIteratorEqualFillAndReverseRun) {
+  const auto Source = tmpFile("wrapped-iterator-equal-fill-reverse.cpp");
+  const auto Output = tmpFile("wrapped-iterator-equal-fill-reverse.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <string>
+#include <vector>
+int comparisons;
+bool same(int left, long right) {
+  ++comparisons;
+  return left == right;
+}
+int main() {
+  std::vector<int> first{1, 2, 3, 4};
+  std::vector<long> second{1, 2, 3, 4};
+  int raw[4]{1, 2, 3, 4};
+  if (!std::equal(first.cbegin(), first.cend(), second.cbegin()) ||
+      !std::equal(first.cbegin(), first.cend(), second.cbegin(),
+                  second.cend()) ||
+      !std::equal(first.begin(), first.end(), raw))
+    return 1;
+  comparisons = 0;
+  if (!std::equal(first.begin(), first.end(), second.begin(), same) ||
+      comparisons != 4)
+    return 2;
+  comparisons = 0;
+  if (!std::equal(first.begin(), first.end(), second.begin(),
+                  second.end(), same) || comparisons != 4)
+    return 3;
+  second[2] = 9;
+  comparisons = 0;
+  if (std::equal(first.cbegin(), first.cend(), second.cbegin(), same) ||
+      comparisons != 3)
+    return 4;
+  second[2] = 3;
+  auto short_end = second.cend();
+  --short_end;
+  if (std::equal(first.cbegin(), first.cend(), second.cbegin(), short_end))
+    return 5;
+  std::vector<int> empty;
+  if (!std::equal(empty.begin(), empty.end(), first.begin()))
+    return 6;
+  short replacement = 7;
+  int effects = 0;
+  std::fill((++effects, first.begin()), (++effects, first.end()),
+            (++effects, replacement));
+  if (effects != 3 || first[0] != 7 || first[1] != 7 ||
+      first[2] != 7 || first[3] != 7)
+    return 7;
+  std::reverse(first.begin(), first.end());
+  std::reverse(empty.begin(), empty.end());
+  std::vector<int> order{1, 2, 3, 4, 5};
+  std::reverse(order.begin(), order.end());
+  if (order[0] != 5 || order[1] != 4 || order[2] != 3 ||
+      order[3] != 2 || order[4] != 1)
+    return 8;
+  std::string word("abcd");
+  std::reverse(word.begin(), word.end());
+  if (word[0] != 'd' || word[3] != 'a')
+    return 9;
+  auto middle = word.begin();
+  ++middle;
+  std::fill(word.begin(), middle, 'x');
+  const char expected[4]{'x', 'c', 'b', 'a'};
+  if (!std::equal(word.cbegin(), word.cend(), expected))
+    return 10;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o",
+                                   Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapped-iterator-equal-fill-reverse" +
+                                    Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrappedIteratorOrderedQueriesRun) {
+  const auto Source = tmpFile("wrapped-iterator-ordered-queries.cpp");
+  const auto Output = tmpFile("wrapped-iterator-ordered-queries.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <functional>
+#include <string>
+#include <vector>
+bool descending(int left, int right) { return left > right; }
+int main() {
+  std::vector<int> values{2, 4, 4, 7, 9};
+  int effects = 0;
+  auto minimum = std::min_element((++effects, values.begin()),
+                                  (++effects, values.end()));
+  if (effects != 2 || minimum != values.begin() || *minimum != 2 ||
+      *std::max_element(values.cbegin(), values.cend()) != 9)
+    return 1;
+  if (*std::min_element(values.begin(), values.end(), descending) != 9 ||
+      *std::max_element(values.begin(), values.end(), std::greater<int>{}) != 2)
+    return 2;
+  short needle = 4;
+  auto lower = std::lower_bound(values.cbegin(), values.cend(), needle);
+  auto upper = std::upper_bound(values.cbegin(), values.cend(), needle);
+  auto expected_lower = values.cbegin();
+  ++expected_lower;
+  auto expected_upper = expected_lower;
+  ++expected_upper;
+  ++expected_upper;
+  if (lower != expected_lower || upper != expected_upper ||
+      !std::binary_search(values.cbegin(), values.cend(), needle) ||
+      std::binary_search(values.cbegin(), values.cend(), 5))
+    return 3;
+  auto bounds = std::equal_range(values.cbegin(), values.cend(), needle);
+  if (bounds.first != expected_lower || bounds.second != expected_upper)
+    return 12;
+  auto extrema = std::minmax_element(values.cbegin(), values.cend());
+  auto last_value = values.cend();
+  --last_value;
+  if (extrema.first != values.cbegin() || extrema.second != last_value)
+    return 13;
+  if (!std::is_sorted(values.cbegin(), values.cend()) ||
+      std::is_sorted_until(values.begin(), values.end()) != values.end())
+    return 4;
+  std::vector<int> descending_values{9, 7, 7, 4, 2};
+  if (*std::lower_bound(descending_values.begin(), descending_values.end(), 7,
+                        descending) != 7 ||
+      *std::upper_bound(descending_values.begin(), descending_values.end(), 7,
+                        std::greater<int>{}) != 4 ||
+      !std::binary_search(descending_values.begin(), descending_values.end(), 7,
+                          std::greater<int>{}) ||
+      !std::is_sorted(descending_values.begin(), descending_values.end(),
+                      descending) ||
+      std::is_sorted_until(descending_values.begin(), descending_values.end(),
+                           std::greater<int>{}) != descending_values.end())
+    return 5;
+  auto descending_bounds = std::equal_range(
+      descending_values.begin(), descending_values.end(), 7,
+      std::greater<int>{});
+  auto descending_extrema = std::minmax_element(
+      descending_values.begin(), descending_values.end(), descending);
+  auto first_seven = descending_values.begin();
+  ++first_seven;
+  auto after_sevens = first_seven;
+  ++after_sevens;
+  ++after_sevens;
+  auto last_descending = descending_values.end();
+  --last_descending;
+  if (descending_bounds.first != first_seven ||
+      descending_bounds.second != after_sevens ||
+      descending_extrema.first != descending_values.begin() ||
+      descending_extrema.second != last_descending)
+    return 14;
+  auto inversion = values.begin();
+  ++inversion;
+  ++inversion;
+  values[2] = 1;
+  if (std::is_sorted(values.begin(), values.end()) ||
+      std::is_sorted_until(values.begin(), values.end()) != inversion)
+    return 6;
+  std::vector<int> heap{9, 7, 8, 4, 5};
+  if (!std::is_heap(heap.cbegin(), heap.cend()) ||
+      std::is_heap_until(heap.begin(), heap.end()) != heap.end())
+    return 7;
+  auto heap_violation = heap.begin();
+  ++heap_violation;
+  ++heap_violation;
+  heap[2] = 10;
+  if (std::is_heap(heap.begin(), heap.end()) ||
+      std::is_heap_until(heap.begin(), heap.end()) != heap_violation)
+    return 8;
+  std::vector<int> min_heap{1, 3, 2, 7, 4};
+  if (!std::is_heap(min_heap.begin(), min_heap.end(), descending) ||
+      std::is_heap_until(min_heap.begin(), min_heap.end(),
+                         std::greater<int>{}) != min_heap.end())
+    return 9;
+  std::string word("abbd");
+  if (*std::min_element(word.cbegin(), word.cend()) != 'a' ||
+      *std::lower_bound(word.begin(), word.end(), 'b') != 'b' ||
+      !std::binary_search(word.begin(), word.end(), 'd') ||
+      !std::is_sorted(word.begin(), word.end()))
+    return 10;
+  auto letters = std::equal_range(word.begin(), word.end(), 'b');
+  auto second_letter = word.begin();
+  ++second_letter;
+  auto fourth_letter = word.end();
+  --fourth_letter;
+  if (letters.first != second_letter || letters.second != fourth_letter)
+    return 15;
+  std::vector<int> empty;
+  if (std::min_element(empty.begin(), empty.end()) != empty.end() ||
+      std::max_element(empty.begin(), empty.end()) != empty.end() ||
+      std::lower_bound(empty.begin(), empty.end(), 1) != empty.end() ||
+      std::upper_bound(empty.begin(), empty.end(), 1) != empty.end() ||
+      std::binary_search(empty.begin(), empty.end(), 1) ||
+      !std::is_sorted(empty.begin(), empty.end()) ||
+      std::is_sorted_until(empty.begin(), empty.end()) != empty.end() ||
+      !std::is_heap(empty.begin(), empty.end()) ||
+      std::is_heap_until(empty.begin(), empty.end()) != empty.end())
+    return 11;
+  auto empty_bounds = std::equal_range(empty.begin(), empty.end(), 1);
+  auto empty_extrema = std::minmax_element(empty.begin(), empty.end());
+  if (empty_bounds.first != empty.end() ||
+      empty_bounds.second != empty.end() ||
+      empty_extrema.first != empty.end() ||
+      empty_extrema.second != empty.end())
+    return 16;
+  std::vector<int> ties{4, 1, 1, 4};
+  auto tied_extrema = std::minmax_element(ties.begin(), ties.end());
+  auto first_minimum = ties.begin();
+  ++first_minimum;
+  auto last_maximum = ties.end();
+  --last_maximum;
+  if (tied_extrema.first != first_minimum ||
+      tied_extrema.second != last_maximum)
+    return 17;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o",
+                                   Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapped-iterator-ordered-queries" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrappedIteratorMismatchRun) {
+  const auto Source = tmpFile("wrapped-iterator-mismatch.cpp");
+  const auto Output = tmpFile("wrapped-iterator-mismatch.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <string>
+#include <vector>
+bool same_number(int left, long right) { return left == right; }
+int main() {
+  std::vector<int> first{1, 2, 3, 4};
+  std::vector<long> second{1, 2, 8, 4};
+  auto expected_first = first.cbegin();
+  auto expected_second = second.begin();
+  ++expected_first;
+  ++expected_first;
+  ++expected_second;
+  ++expected_second;
+  int effects = 0;
+  auto mismatch = std::mismatch((++effects, first.cbegin()),
+                                 (++effects, first.cend()),
+                                 (++effects, second.begin()),
+                                 (++effects, second.end()));
+  if (effects != 4 || mismatch.first != expected_first ||
+      mismatch.second != expected_second || *mismatch.first != 3 ||
+      *mismatch.second != 8)
+    return 1;
+  auto predicate_mismatch = std::mismatch(
+      first.cbegin(), first.cend(), second.begin(), second.end(), same_number);
+  if (predicate_mismatch.first != expected_first ||
+      predicate_mismatch.second != expected_second)
+    return 2;
+  auto unbounded = std::mismatch(first.cbegin(), first.cend(), second.begin(),
+                                 same_number);
+  if (unbounded.first != expected_first ||
+      unbounded.second != expected_second)
+    return 3;
+  int raw[4]{1, 2, 3, 4};
+  auto mixed = std::mismatch(first.cbegin(), first.cend(), raw);
+  if (mixed.first != first.cend() || mixed.second != raw + 4)
+    return 4;
+  auto reverse_mixed = std::mismatch(raw, raw + 4, first.cbegin(),
+                                     first.cend());
+  if (reverse_mixed.first != raw + 4 ||
+      reverse_mixed.second != first.cend())
+    return 5;
+  auto short_end = second.begin();
+  ++short_end;
+  auto short_result = std::mismatch(first.cbegin(), first.cend(),
+                                    second.begin(), short_end);
+  auto first_after_one = first.cbegin();
+  ++first_after_one;
+  if (short_result.first != first_after_one ||
+      short_result.second != short_end)
+    return 6;
+  std::vector<int> empty;
+  auto empty_result = std::mismatch(empty.begin(), empty.end(), second.begin(),
+                                    second.end());
+  if (empty_result.first != empty.end() ||
+      empty_result.second != second.begin())
+    return 7;
+  std::string left("abca");
+  std::string right("abda");
+  auto letters = std::mismatch(left.begin(), left.end(), right.cbegin(),
+                                right.cend());
+  if (*letters.first != 'c' || *letters.second != 'd')
+    return 8;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o",
+                                   Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("wrapped-iterator-mismatch" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrappedIteratorTransferRun) {
+  const auto Source = tmpFile("wrapped-iterator-transfer.cpp");
+  const auto Output = tmpFile("wrapped-iterator-transfer.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <string>
+#include <vector>
+int main() {
+  std::vector<int> source{1, 2, 3, 4};
+  std::vector<long> widened(4);
+  int effects = 0;
+  auto copied = std::copy((++effects, source.cbegin()),
+                          (++effects, source.cend()),
+                          (++effects, widened.begin()));
+  if (effects != 3 || copied != widened.end() || widened[0] != 1 ||
+      widened[1] != 2 || widened[2] != 3 || widened[3] != 4)
+    return 1;
+  std::vector<int> moved(4);
+  if (std::move(source.begin(), source.end(), moved.begin()) != moved.end() ||
+      moved[0] != 1 || moved[3] != 4)
+    return 2;
+  std::vector<int> backward(5);
+  auto backward_begin = std::copy_backward(source.cbegin(), source.cend(),
+                                            backward.end());
+  auto expected_begin = backward.begin();
+  ++expected_begin;
+  if (backward_begin != expected_begin || backward[1] != 1 ||
+      backward[2] != 2 || backward[3] != 3 || backward[4] != 4)
+    return 3;
+  std::vector<int> moved_backward(5);
+  auto moved_backward_begin = moved_backward.begin();
+  ++moved_backward_begin;
+  if (std::move_backward(source.begin(), source.end(), moved_backward.end()) !=
+          moved_backward_begin ||
+      moved_backward[1] != 1 || moved_backward[4] != 4)
+    return 4;
+  std::vector<int> reversed(4);
+  if (std::reverse_copy(source.cbegin(), source.cend(), reversed.begin()) !=
+          reversed.end() ||
+      reversed[0] != 4 || reversed[1] != 3 || reversed[2] != 2 ||
+      reversed[3] != 1)
+    return 5;
+  std::vector<int> partial(4);
+  auto after_three = std::copy_n(source.cbegin(), 3, partial.begin());
+  auto third = partial.begin();
+  ++third;
+  ++third;
+  ++third;
+  if (after_three != third || partial[0] != 1 || partial[2] != 3 ||
+      partial[3] != 0)
+    return 6;
+  auto after_two = std::fill_n(partial.begin(), 2, 9);
+  auto second = partial.begin();
+  ++second;
+  ++second;
+  if (after_two != second || partial[0] != 9 || partial[1] != 9 ||
+      partial[2] != 3)
+    return 7;
+  std::vector<int> swapped{5, 6, 7, 8};
+  if (std::swap_ranges(source.begin(), source.end(), swapped.begin()) !=
+          swapped.end() ||
+      source[0] != 5 || source[3] != 8 || swapped[0] != 1 || swapped[3] != 4)
+    return 8;
+  std::iter_swap(source.begin(), swapped.begin());
+  if (source[0] != 1 || swapped[0] != 5)
+    return 9;
+  int raw[4]{};
+  if (std::copy(source.cbegin(), source.cend(), raw) != raw + 4 ||
+      std::copy(raw, raw + 4, partial.begin()) != partial.end() ||
+      partial[1] != 6)
+    return 10;
+  std::string word("abcd");
+  std::vector<char> chars(4);
+  if (std::copy(word.cbegin(), word.cend(), chars.begin()) != chars.end() ||
+      chars[0] != 'a' || chars[3] != 'd' ||
+      std::reverse_copy(word.cbegin(), word.cend(), chars.begin()) !=
+          chars.end() ||
+      chars[0] != 'd' || chars[3] != 'a' ||
+      std::move(chars.begin(), chars.end(), word.begin()) != word.end() ||
+      word[0] != 'd' || word[3] != 'a')
+    return 11;
+  std::vector<int> empty;
+  if (std::copy(empty.begin(), empty.end(), partial.begin()) !=
+          partial.begin() ||
+      std::copy_n(empty.begin(), 0, partial.begin()) != partial.begin() ||
+      std::fill_n(partial.begin(), 0, 5) != partial.begin() ||
+      std::swap_ranges(empty.begin(), empty.end(), partial.begin()) !=
+          partial.begin())
+    return 12;
+  std::vector<int> overlap{1, 2, 3, 4, 5};
+  auto overlap_first = overlap.begin();
+  ++overlap_first;
+  std::copy(overlap_first, overlap.end(), overlap.begin());
+  if (overlap[0] != 2 || overlap[1] != 3 || overlap[2] != 4 ||
+      overlap[3] != 5 || overlap[4] != 5)
+    return 13;
+  std::vector<int> overlap_backward{1, 2, 3, 4, 5};
+  auto overlap_last = overlap_backward.end();
+  --overlap_last;
+  auto overlap_result = std::copy_backward(
+      overlap_backward.begin(), overlap_last, overlap_backward.end());
+  auto overlap_expected = overlap_backward.begin();
+  ++overlap_expected;
+  if (overlap_result != overlap_expected || overlap_backward[0] != 1 ||
+      overlap_backward[1] != 1 || overlap_backward[2] != 2 ||
+      overlap_backward[3] != 3 || overlap_backward[4] != 4)
+    return 14;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o",
+                                   Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapped-iterator-transfer" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorInitializerAndFillConstructionRun) {
   const auto Source = tmpFile("vector-initializers.cpp");
   const auto Output = tmpFile("vector-initializers.nc");
@@ -51554,6 +52193,70 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorEmplaceBackRun) {
+  const auto Source = tmpFile("vector-emplace-back.cpp");
+  const auto Output = tmpFile("vector-emplace-back.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <vector>
+int main() {
+  {
+    std::vector<int> values;
+    int &first = values.emplace_back();
+    if (&first != values.data() || first != 0 || values.size() != 1 ||
+        values.capacity() != 1)
+      return 1;
+    first = 7;
+    int &second = values.emplace_back(values.front());
+    if (&second != values.data() + 1 || second != 7 ||
+        values.size() != 2 || values.capacity() != 2)
+      return 2;
+    int source = 9;
+    int &third = values.emplace_back(source);
+    source = 99;
+    if (&third != values.data() + 2 || third != 9 ||
+        values.size() != 3 || values.capacity() != 4)
+      return 3;
+    int &fourth = values.emplace_back(static_cast<int&&>(values[1]));
+    if (&fourth != values.data() + 3 || fourth != 7 || values.size() != 4)
+      return 4;
+    int &fifth = values.emplace_back();
+    if (&fifth != values.data() + 4 || fifth != 0 ||
+        values.size() != 5 || values.capacity() != 8)
+      return 5;
+    fifth = 11;
+    if (values.back() != 11 || values[0] != 7 || values[1] != 7 ||
+        values[2] != 9 || values[3] != 7)
+      return 6;
+    std::vector<double> fractions;
+    fractions.reserve(2);
+    double &zero = fractions.emplace_back();
+    if (&zero != fractions.data() || zero != 0.0 || fractions.size() != 1 ||
+        fractions.capacity() != 2)
+      return 7;
+  }
+  return allocations == releases ? 0 : 8;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-emplace-back" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorRangeForRun) {
   const auto Source = tmpFile("vector-range-for.cpp");
   const auto Output = tmpFile("vector-range-for.nc");
@@ -51590,6 +52293,766 @@ int main() {
   for (const std::string &Optimization : {"-O0", "-O2"}) {
     SCOPED_TRACE(Optimization);
     const auto Executable = tmpFile("vector-range-for" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorReverseIteratorRun) {
+  const auto Source = tmpFile("vector-reverse-iterator.cpp");
+  const auto Output = tmpFile("vector-reverse-iterator.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <vector>
+int main() {
+  std::vector<int> values{1, 2, 3};
+  auto reverse = values.rbegin();
+  if (*reverse != 3 || reverse.base() != values.end() ||
+      reverse.operator->() != values.data() + 2)
+    return 1;
+  *reverse = 7;
+  ++reverse;
+  if (*reverse != 2 || reverse[1] != 1 ||
+      values.rend() - values.rbegin() != 3)
+    return 2;
+  const std::vector<int> &constant = values;
+  auto converted = std::vector<int>::const_reverse_iterator(values.rbegin());
+  std::vector<int>::const_reverse_iterator assigned;
+  assigned = values.rbegin();
+  if (*constant.crbegin() != 7 || *converted != 7 || *assigned != 7 ||
+      *(constant.crend() - 1) != 1)
+    return 3;
+  int sum = 0;
+  for (auto cursor = constant.rbegin(); cursor != constant.rend(); ++cursor)
+    sum += *cursor;
+  std::vector<int> empty;
+  return sum == 10 && empty.rbegin() == empty.rend() &&
+         empty.crbegin() == empty.crend() ? 0 : 4;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-reverse-iterator" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorSwapRun) {
+  const auto Source = tmpFile("vector-swap.cpp");
+  const auto Output = tmpFile("vector-swap.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <vector>
+int main() {
+  {
+    std::vector<int> small{1, 2};
+    std::vector<int> large{3, 4, 5};
+    large.reserve(12);
+    int *small_data = small.data();
+    int *large_data = large.data();
+    Size small_capacity = small.capacity();
+    Size large_capacity = large.capacity();
+    small.swap(large);
+    if (small.data() != large_data || large.data() != small_data ||
+        small.capacity() != large_capacity ||
+        large.capacity() != small_capacity ||
+        small.size() != 3 || large.size() != 2 ||
+        small[2] != 5 || large[0] != 1)
+      return 1;
+    std::swap(small, large);
+    if (small.data() != small_data || large.data() != large_data ||
+        small.size() != 2 || large.size() != 3)
+      return 2;
+    small.swap(small);
+    std::swap(large, large);
+    if (small.data() != small_data || large.data() != large_data ||
+        small[1] != 2 || large[2] != 5)
+      return 3;
+    std::vector<int> empty;
+    empty.swap(small);
+    if (empty.data() != small_data || empty.size() != 2 ||
+        small.data() != nullptr || !small.empty())
+      return 4;
+  }
+  return allocations == releases ? 0 : 5;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-swap" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorEraseRun) {
+  const auto Source = tmpFile("vector-erase.cpp");
+  const auto Output = tmpFile("vector-erase.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <vector>
+int main() {
+  {
+    std::vector<int> values{1, 2, 3, 4, 5};
+    int *storage = values.data();
+    Size capacity = values.capacity();
+    auto after_first = values.erase(values.begin());
+    if (after_first.base() != storage || *after_first != 2 ||
+        values.size() != 4 || values[3] != 5)
+      return 1;
+    auto first = values.cbegin();
+    ++first;
+    auto last = values.cend();
+    --last;
+    auto after_range = values.erase(first, last);
+    if (after_range.base() != storage + 1 || *after_range != 5 ||
+        values.size() != 2 || values[0] != 2 || values[1] != 5)
+      return 2;
+    auto no_change = values.erase(values.cbegin(), values.cbegin());
+    if (no_change.base() != storage || values.size() != 2 ||
+        values.data() != storage || values.capacity() != capacity)
+      return 3;
+    auto removed_last = values.erase(--values.cend());
+    if (removed_last != values.end() || values.size() != 1 ||
+        values[0] != 2)
+      return 4;
+    std::vector<int> empty;
+    auto empty_result = empty.erase(empty.cbegin(), empty.cend());
+    if (empty_result != empty.end() || !empty.empty())
+      return 5;
+  }
+  return allocations == releases ? 0 : 6;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-erase" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorInsertRun) {
+  const auto Source = tmpFile("vector-insert.cpp");
+  const auto Output = tmpFile("vector-insert.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <vector>
+int main() {
+  {
+    std::vector<int> values{1, 2, 3};
+    values.reserve(12);
+    int *storage = values.data();
+    Size capacity = values.capacity();
+    auto first = values.insert(values.cbegin(), 7);
+    if (first.base() != storage || *first != 7 || values.size() != 4 ||
+        values[1] != 1 || values[3] != 3)
+      return 1;
+    auto middle = values.cbegin();
+    ++middle;
+    ++middle;
+    auto aliased = values.insert(middle, values[3]);
+    if (aliased.base() != storage + 2 || *aliased != 3 ||
+        values.size() != 5 || values[3] != 2 || values[4] != 3)
+      return 2;
+    int moved = 9;
+    auto last = values.insert(values.cend(), static_cast<int&&>(moved));
+    if (*last != 9 || last.base() != storage + 5 || values.size() != 6 ||
+        values.data() != storage || values.capacity() != capacity)
+      return 3;
+    auto range = values.cbegin();
+    ++range;
+    auto filled = values.insert(range, 2, values.back());
+    if (filled.base() != storage + 1 || *filled != 9 ||
+        values.size() != 8 || values[0] != 7 || values[1] != 9 ||
+        values[2] != 9 || values[3] != 1 || values[7] != 9)
+      return 4;
+    auto unchanged = values.insert(values.cbegin(), 0, values.back());
+    if (unchanged != values.begin() || values.size() != 8 ||
+        values.data() != storage || values.capacity() != capacity)
+      return 5;
+    std::vector<int> tight(3);
+    tight[0] = 1;
+    tight[1] = 2;
+    tight[2] = 3;
+    int *old_storage = tight.data();
+    auto position = tight.cbegin();
+    ++position;
+    auto grown = tight.insert(position, 2, tight[2]);
+    if (tight.data() == old_storage || grown.base() != tight.data() + 1 ||
+        tight.size() != 5 || tight[0] != 1 || tight[1] != 3 ||
+        tight[2] != 3 || tight[3] != 2 || tight[4] != 3)
+      return 6;
+    std::vector<int> empty;
+    auto no_growth = empty.insert(empty.cbegin(), 0, 7);
+    if (no_growth != empty.end() || empty.data() != nullptr)
+      return 7;
+    auto inserted = empty.insert(empty.cend(), 8);
+    if (inserted != empty.begin() || empty.size() != 1 || empty[0] != 8)
+      return 8;
+    std::vector<double> wide(2, 1.25);
+    auto wide_inserted = wide.insert(wide.cend(), 2.5);
+    if (*wide_inserted != 2.5 || wide.size() != 3 || wide[1] != 1.25)
+      return 9;
+  }
+  return allocations == releases ? 0 : 10;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-insert" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorRangeInsertRun) {
+  const auto Source = tmpFile("vector-range-insert.cpp");
+  const auto Output = tmpFile("vector-range-insert.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <vector>
+int main() {
+  {
+    std::vector<int> values{1, 4};
+    values.reserve(12);
+    int *storage = values.data();
+    int raw[]{2, 3};
+    auto middle = values.cbegin();
+    ++middle;
+    auto inserted = values.insert(middle, raw, raw + 2);
+    if (inserted.base() != storage + 1 || values.size() != 4 ||
+        values[0] != 1 || values[1] != 2 || values[2] != 3 ||
+        values[3] != 4 || values.data() != storage)
+      return 1;
+    std::vector<int> source{5, 6};
+    auto appended = values.insert(values.cend(), source.cbegin(), source.cend());
+    if (appended.base() != storage + 4 || values.size() != 6 ||
+        values[4] != 5 || values[5] != 6 || source[0] != 5)
+      return 2;
+    auto listed = values.insert(values.cbegin(), {7, 8});
+    if (listed.base() != storage || values.size() != 8 ||
+        values[0] != 7 || values[1] != 8 || values[2] != 1 ||
+        values[7] != 6 || values.data() != storage)
+      return 3;
+    std::initializer_list<int> none;
+    auto unchanged = values.insert(values.cbegin(), none);
+    auto unchanged_end = values.insert(values.cend(), raw, raw);
+    if (unchanged != values.begin() || unchanged_end != values.end() ||
+        values.size() != 8 || values.data() != storage)
+      return 4;
+    std::initializer_list<int> aliases{values[0], values[1]};
+    auto tail = values.insert(values.cend(), aliases);
+    if (tail.base() != storage + 8 || values.size() != 10 ||
+        values[8] != 7 || values[9] != 8)
+      return 5;
+    std::vector<int> tight(2);
+    tight[0] = 1;
+    tight[1] = 5;
+    int extra[]{2, 3, 4};
+    int *old_storage = tight.data();
+    auto position = tight.cbegin();
+    ++position;
+    auto grown = tight.insert(position, extra, extra + 3);
+    if (tight.data() == old_storage || grown.base() != tight.data() + 1 ||
+        tight.size() != 5 || tight[0] != 1 || tight[1] != 2 ||
+        tight[2] != 3 || tight[3] != 4 || tight[4] != 5)
+      return 6;
+    std::vector<int> empty;
+    auto first = empty.insert(empty.cbegin(), {9, 10});
+    if (first != empty.begin() || empty.size() != 2 ||
+        empty[0] != 9 || empty[1] != 10)
+      return 7;
+    std::vector<int> mutable_source{11};
+    std::vector<int> mutable_target;
+    auto mutable_result = mutable_target.insert(
+        mutable_target.cbegin(), mutable_source.begin(), mutable_source.end());
+    if (mutable_result != mutable_target.begin() || mutable_target.size() != 1 ||
+        mutable_target[0] != 11)
+      return 8;
+  }
+  return allocations == releases ? 0 : 9;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-range-insert" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorEmplaceRun) {
+  const auto Source = tmpFile("vector-emplace.cpp");
+  const auto Output = tmpFile("vector-emplace.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <vector>
+int main() {
+  {
+    std::vector<int> values{1, 3};
+    values.reserve(8);
+    int *storage = values.data();
+    auto position = values.cbegin();
+    ++position;
+    auto middle = values.emplace(position, 2);
+    if (middle.base() != storage + 1 || values.data() != storage ||
+        values.size() != 3 || values[0] != 1 || values[1] != 2 ||
+        values[2] != 3)
+      return 1;
+    auto tail = values.emplace(values.cend());
+    if (tail.base() != storage + 3 || values.size() != 4 ||
+        values[3] != 0 || values.data() != storage)
+      return 2;
+    const int source = 4;
+    auto front = values.emplace(values.cbegin(), source);
+    if (front.base() != storage || values.size() != 5 ||
+        values[0] != 4 || values[1] != 1 || values[4] != 0)
+      return 3;
+    std::vector<int> tight{9};
+    int previous_allocations = allocations;
+    auto grown = tight.emplace(tight.cbegin(), tight.front());
+    if (allocations != previous_allocations + 1 ||
+        grown.base() != tight.data() || tight.size() != 2 ||
+        tight[0] != 9 || tight[1] != 9)
+      return 4;
+    std::vector<double> fractions;
+    auto first = fractions.emplace(fractions.cbegin(), 1.5);
+    if (first.base() != fractions.data() || fractions.size() != 1 ||
+        fractions[0] != 1.5)
+      return 5;
+    auto zero = fractions.emplace(fractions.cend());
+    if (zero.base() != fractions.data() + 1 || fractions.size() != 2 ||
+        fractions[0] != 1.5 || fractions[1] != 0.0)
+      return 6;
+  }
+  return allocations == releases ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-emplace" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorAssignRun) {
+  const auto Source = tmpFile("vector-assign.cpp");
+  const auto Output = tmpFile("vector-assign.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <vector>
+int main() {
+  {
+    std::vector<int> values{1, 2, 3};
+    values.reserve(8);
+    int *storage = values.data();
+    values.assign(4, values[1]);
+    if (values.data() != storage || values.capacity() != 8 ||
+        values.size() != 4 || values[0] != 2 || values[3] != 2)
+      return 1;
+    values.assign({5, 6});
+    if (values.data() != storage || values.size() != 2 ||
+        values[0] != 5 || values[1] != 6)
+      return 2;
+    int raw[]{7, 8, 9};
+    values.assign(raw, raw + 3);
+    if (values.data() != storage || values.size() != 3 ||
+        values[0] != 7 || values[1] != 8 || values[2] != 9)
+      return 3;
+    const int const_raw[]{10, 11};
+    values.assign(const_raw, const_raw + 2);
+    if (values.data() != storage || values.size() != 2 ||
+        values[0] != 10 || values[1] != 11)
+      return 4;
+    std::vector<int> source{12, 13, 14};
+    values.assign(source.cbegin(), source.cend());
+    if (values.data() != storage || values.size() != 3 ||
+        values[0] != 12 || values[1] != 13 || values[2] != 14)
+      return 5;
+    values.assign(source.begin(), source.end());
+    if (values.data() != storage || values.size() != 3 ||
+        values[0] != 12 || values[2] != 14)
+      return 6;
+    values.assign(0, source[0]);
+    values.assign(raw, raw);
+    values.assign({});
+    if (values.data() != storage || values.capacity() != 8 ||
+        !values.empty())
+      return 7;
+    std::vector<int> tight{1};
+    int previous_allocations = allocations;
+    int previous_releases = releases;
+    tight.assign(4, 2);
+    if (allocations != previous_allocations + 1 ||
+        releases != previous_releases + 1 || tight.capacity() < 4 ||
+        tight.size() != 4 || tight[0] != 2 || tight[3] != 2)
+      return 8;
+    tight.assign({3, 4, 5, 6, 7, 8, 9, 10, 11});
+    if (tight.size() != 9 || tight[0] != 3 || tight[8] != 11)
+      return 9;
+    std::vector<int> fresh;
+    fresh.assign(source.cbegin(), source.cend());
+    if (fresh.size() != 3 || fresh[0] != 12 || fresh[2] != 14)
+      return 10;
+    std::vector<double> fractions;
+    fractions.assign(2, 1.5);
+    if (fractions.size() != 2 || fractions[0] != 1.5 || fractions[1] != 1.5)
+      return 11;
+  }
+  return allocations == releases ? 0 : 12;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-assign" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorInitializerAssignmentRun) {
+  const auto Source = tmpFile("vector-initializer-assignment.cpp");
+  const auto Output = tmpFile("vector-initializer-assignment.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int left_calls;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <vector>
+std::vector<int> &left(std::vector<int> &value) {
+  ++left_calls;
+  return value;
+}
+int right() { return left_calls == 0 ? 7 : 8; }
+int main() {
+  {
+    std::vector<int> values{1, 2};
+    values.reserve(8);
+    int *storage = values.data();
+    std::vector<int> &same = (values = {3, 4, 5});
+    if (&same != &values || values.data() != storage ||
+        values.capacity() != 8 || values.size() != 3 ||
+        values[0] != 3 || values[1] != 4 || values[2] != 5)
+      return 1;
+    std::vector<int> &cleared = (values = {});
+    if (&cleared != &values || values.data() != storage ||
+        values.capacity() != 8 || !values.empty())
+      return 2;
+    int previous_allocations = allocations;
+    int previous_releases = releases;
+    values = {7, 8, 9, 10, 11, 12, 13, 14, 15};
+    if (allocations != previous_allocations + 1 ||
+        releases != previous_releases + 1 || values.size() != 9 ||
+        values[0] != 7 || values[8] != 15)
+      return 3;
+    int *grown_storage = values.data();
+    values = {values[0], values[1]};
+    if (values.data() != grown_storage || values.size() != 2 ||
+        values[0] != 7 || values[1] != 8)
+      return 4;
+    left(values) = {right()};
+    if (left_calls != 1 || values.size() != 1 || values[0] != 7)
+      return 5;
+    std::vector<int> fresh;
+    std::vector<int> &assigned = (fresh = {1, 2});
+    assigned = {3, 4};
+    if (&assigned != &fresh || fresh.size() != 2 ||
+        fresh[0] != 3 || fresh[1] != 4)
+      return 6;
+    std::vector<double> fractions;
+    fractions = {1.5, 2.5};
+    if (fractions.size() != 2 || fractions[0] != 1.5 ||
+        fractions[1] != 2.5)
+      return 7;
+  }
+  return allocations == releases ? 0 : 8;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("vector-initializer-assignment" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorRelationsRun) {
+  const auto Source = tmpFile("vector-relations.cpp");
+  const auto Output = tmpFile("vector-relations.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int observations;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <vector>
+bool relations(const std::vector<int> &left, const std::vector<int> &right,
+               bool equal, bool different, bool less, bool greater,
+               bool less_equal, bool greater_equal) {
+  return (left == right) == equal && (left != right) == different &&
+         (left < right) == less && (left > right) == greater &&
+         (left <= right) == less_equal &&
+         (left >= right) == greater_equal;
+}
+const std::vector<int> &observe(const std::vector<int> &value) {
+  ++observations;
+  return value;
+}
+int main() {
+  {
+    std::vector<int> empty;
+    std::vector<int> prefix{1, 2};
+    std::vector<int> longer{1, 2, 3};
+    std::vector<int> equal{1, 2};
+    std::vector<int> changed{1, 4};
+    std::vector<int> negative{-1};
+    if (!relations(empty, empty, true, false, false, false, true, true) ||
+        !relations(empty, prefix, false, true, true, false, true, false) ||
+        !relations(prefix, empty, false, true, false, true, false, true))
+      return 1;
+    if (!relations(prefix, longer, false, true, true, false, true, false) ||
+        !relations(longer, prefix, false, true, false, true, false, true) ||
+        !relations(prefix, equal, true, false, false, false, true, true))
+      return 2;
+    if (!relations(changed, prefix, false, true, false, true, false, true) ||
+        !relations(negative, prefix, false, true, true, false, true, false))
+      return 3;
+    int before = allocations;
+    if (!(observe(prefix) < observe(longer)) || observations != 2 ||
+        allocations != before)
+      return 4;
+    if (!(std::vector<int>{1, 2} < std::vector<int>{1, 3}) ||
+        std::vector<int>{1, 2} == std::vector<int>{1, 3})
+      return 5;
+    double zero = 0.0;
+    double nan = zero / zero;
+    std::vector<double> floating_left{nan, 1.0};
+    std::vector<double> floating_right{2.0, 0.0};
+    if (floating_left == floating_left || !(floating_left != floating_left) ||
+        floating_left < floating_right || !(floating_left > floating_right) ||
+        floating_left <= floating_right ||
+        !(floating_left >= floating_right))
+      return 6;
+  }
+  return allocations == releases ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-relations" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorTrivialRecordRun) {
+  const auto Source = tmpFile("vector-trivial-record.cpp");
+  const auto Output = tmpFile("vector-trivial-record.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <vector>
+struct Entry { int key; int value; };
+struct Nested { Entry first; Entry second; };
+int main() {
+  {
+    std::vector<Entry> values{Entry{1, 10}, Entry{2, 20}};
+    values.reserve(8);
+    Entry *storage = values.data();
+    values.push_back(Entry{3, 30});
+    Entry &zero = values.emplace_back();
+    Entry &fifth = values.emplace_back(Entry{5, 50});
+    if (values.data() != storage || values.size() != 5 ||
+        zero.key != 0 || zero.value != 0 ||
+        &fifth != &values[4] || fifth.key != 5 || fifth.value != 50)
+      return 1;
+    auto inserted = values.insert(values.cbegin(), Entry{0, 0});
+    if (inserted != values.begin() || values.front().key != 0)
+      return 2;
+    auto erased = values.erase(values.cbegin());
+    if (erased != values.begin() || values.data() != storage ||
+        values.size() != 5 ||
+        values.front().key != 1 || values.back().key != 5)
+      return 2;
+    values.insert(values.cbegin(), values[1]);
+    if (values.size() != 6 || values[0].key != 2 ||
+        values[1].key != 1 || values[2].key != 2)
+      return 3;
+    values.assign(3, Entry{7, 70});
+    values.assign({Entry{8, 80}, Entry{9, 90}});
+    values = {Entry{10, 100}, Entry{11, 110}};
+    if (values.data() != storage || values.size() != 2 ||
+        values[0].key != 10 || values[1].value != 110)
+      return 4;
+    Entry source[2] = {{12, 120}, {13, 130}};
+    values.assign(source, source + 2);
+    values.insert(values.cend(), source, source + 2);
+    if (values.size() != 4 || values[0].key != 12 ||
+        values[1].value != 130 || values[2].key != 12 ||
+        values[3].value != 130)
+      return 5;
+    std::vector<Entry> copied(values);
+    if (copied.data() == values.data() || copied.size() != 4 ||
+        copied[0].key != 12 || copied[3].value != 130)
+      return 6;
+    std::vector<Entry> moved(static_cast<std::vector<Entry> &&>(copied));
+    if (!copied.empty() || moved.size() != 4 || moved[1].key != 13)
+      return 7;
+    values.clear();
+    values.resize(2);
+    values.resize(3, Entry{14, 140});
+    if (values.data() != storage || values.size() != 3 ||
+        values[0].key != 0 || values[1].value != 0 ||
+        values[2].key != 14 || values[2].value != 140)
+      return 8;
+    values.swap(moved);
+    if (moved.data() != storage || values.size() != 4 ||
+        moved.size() != 3 || values[0].key != 12 || moved[2].key != 14)
+      return 9;
+    std::vector<Entry> growth;
+    growth.reserve(1);
+    growth.push_back(Entry{15, 150});
+    Entry *original = growth.data();
+    growth.push_back(growth[0]);
+    if (growth.data() == original || growth.size() != 2 ||
+        growth[0].key != 15 || growth[1].value != 150)
+      return 10;
+    std::vector<Nested> composites;
+    composites.reserve(1);
+    composites.push_back(Nested{{16, 160}, {17, 170}});
+    composites.push_back(composites[0]);
+    if (composites.size() != 2 || composites[0].first.key != 16 ||
+        composites[1].second.value != 170)
+      return 11;
+    std::vector<Entry> assigned;
+    assigned.reserve(8);
+    Entry *assigned_storage = assigned.data();
+    assigned = values;
+    if (assigned.data() != assigned_storage || assigned.size() != 4 ||
+        assigned[0].key != 12 || assigned[3].value != 130)
+      return 12;
+    std::vector<Entry> transferred;
+    transferred = static_cast<std::vector<Entry> &&>(assigned);
+    if (!assigned.empty() || transferred.size() != 4 ||
+        transferred[1].key != 13)
+      return 13;
+    transferred.shrink_to_fit();
+    if (transferred.capacity() != transferred.size() ||
+        transferred[2].value != 120)
+      return 14;
+  }
+  return allocations == releases ? 0 : 15;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-trivial-record" + Optimization);
     auto Compile = compileGenerated(Output, Executable, Optimization);
     ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
     auto Run = exec(Executable.string(), {});
@@ -51807,6 +53270,88 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorMaxSizeAndShrinkRun) {
+  const auto Source = tmpFile("vector-max-size-shrink.cpp");
+  const auto Output = tmpFile("vector-max-size-shrink.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <vector>
+int main() {
+  {
+    const Size difference_maximum = ~Size(0) >> 1;
+    const Size integer_allocator_maximum = ~Size(0) / sizeof(int);
+    const Size double_allocator_maximum = ~Size(0) / sizeof(double);
+    std::vector<int> values{1, 2, 3};
+    const std::vector<int> &constant = values;
+    const Size integer_maximum = integer_allocator_maximum < difference_maximum
+                                     ? integer_allocator_maximum
+                                     : difference_maximum;
+    if (values.max_size() != integer_maximum ||
+        constant.max_size() != integer_maximum)
+      return 1;
+    values.reserve(12);
+    int previous_allocations = allocations;
+    int previous_releases = releases;
+    values.shrink_to_fit();
+    if (values.size() != 3 || values.capacity() != 3 ||
+        values[0] != 1 || values[1] != 2 || values[2] != 3 ||
+        allocations != previous_allocations + 1 ||
+        releases != previous_releases + 1)
+      return 2;
+    previous_allocations = allocations;
+    previous_releases = releases;
+    values.shrink_to_fit();
+    if (values.capacity() != 3 || allocations != previous_allocations ||
+        releases != previous_releases)
+      return 3;
+    values.clear();
+    values.shrink_to_fit();
+    if (!values.empty() || values.capacity() != 0 ||
+        values.data() != nullptr || allocations != previous_allocations ||
+        releases != previous_releases + 1)
+      return 4;
+    std::vector<double> fractions;
+    const Size double_maximum = double_allocator_maximum < difference_maximum
+                                    ? double_allocator_maximum
+                                    : difference_maximum;
+    if (fractions.max_size() != double_maximum)
+      return 5;
+    fractions.reserve(5);
+    fractions.push_back(1.5);
+    fractions.shrink_to_fit();
+    if (fractions.capacity() != 1 || fractions.size() != 1 ||
+        fractions[0] != 1.5)
+      return 6;
+    std::vector<int> empty;
+    previous_allocations = allocations;
+    previous_releases = releases;
+    empty.shrink_to_fit();
+    if (empty.data() != nullptr || empty.capacity() != 0 ||
+        allocations != previous_allocations || releases != previous_releases)
+      return 7;
+  }
+  return allocations == releases ? 0 : 8;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-max-size-shrink" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StringConstructionAccessAndLifetimeRun) {
   const auto Source = tmpFile("string-lifetime.cpp");
   const auto Output = tmpFile("string-lifetime.nc");
@@ -51877,6 +53422,133 @@ int main() {
   for (const std::string &Optimization : {"-O0", "-O2"}) {
     SCOPED_TRACE(Optimization);
     const auto Executable = tmpFile("string-lifetime" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2WrappedIteratorOffsetsRun) {
+  const auto Source = tmpFile("wrapped-iterator-offsets.cpp");
+  const auto Output = tmpFile("wrapped-iterator-offsets.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <string>
+#include <vector>
+struct Box { int value; };
+int main() {
+  std::string text("abcdef");
+  auto cursor = text.begin();
+  if (cursor.operator->() != text.data() || cursor[2] != 'c' ||
+      *(cursor + 2) != 'c' || *(2 + cursor) != 'c')
+    return 1;
+  auto middle = cursor + 2;
+  if (*(middle - 1) != 'b' || middle[-1] != 'b')
+    return 2;
+  auto before_increment = middle++;
+  auto before_decrement = middle--;
+  if (*before_increment != 'c' || *before_decrement != 'd' ||
+      *middle != 'c')
+    return 3;
+  auto &added = (middle += 2);
+  if (&added != &middle || *middle != 'e')
+    return 4;
+  auto &subtracted = (middle -= 1);
+  if (&subtracted != &middle || *middle != 'd')
+    return 5;
+  const std::string &constant_text = text;
+  auto constant_cursor = constant_text.cbegin() + 1;
+  if (*constant_cursor != 'b' || constant_cursor[2] != 'd' ||
+      *(2 + constant_cursor) != 'd' ||
+      constant_cursor.operator->() != constant_text.data() + 1)
+    return 6;
+  std::vector<int> values{10, 20, 30, 40};
+  auto vector_cursor = values.begin();
+  if (vector_cursor.operator->() != values.data() ||
+      vector_cursor[2] != 30 || *(1 + vector_cursor) != 20)
+    return 7;
+  auto vector_middle = vector_cursor + 2;
+  if (*(vector_middle - 1) != 20 || *vector_middle++ != 30 ||
+      *vector_middle-- != 40 || *vector_middle != 30)
+    return 8;
+  vector_middle += 1;
+  vector_middle -= 2;
+  if (*vector_middle != 20)
+    return 9;
+  const std::vector<int> &constant_values = values;
+  auto constant_vector_cursor = constant_values.cbegin() + 1;
+  if (constant_vector_cursor[2] != 40 ||
+      *(constant_values.cend() - 1) != 40)
+    return 10;
+  std::vector<Box> boxes{{7}, {9}};
+  auto box_cursor = boxes.begin();
+  if (box_cursor->value != 7 || (box_cursor + 1)->value != 9)
+    return 11;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapped-iterator-offsets" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StringReverseIteratorRun) {
+  const auto Source = tmpFile("string-reverse-iterator.cpp");
+  const auto Output = tmpFile("string-reverse-iterator.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <string>
+int main() {
+  std::string short_text("abc");
+  auto reverse = short_text.rbegin();
+  if (*reverse != 'c' || reverse.base() != short_text.end() ||
+      reverse.operator->() != short_text.data() + 2)
+    return 1;
+  *reverse = 'Z';
+  ++reverse;
+  if (*reverse != 'b' || reverse[1] != 'a' ||
+      short_text.rend() - short_text.rbegin() != 3)
+    return 2;
+  const std::string &constant = short_text;
+  auto converted = std::string::const_reverse_iterator(short_text.rbegin());
+  std::string::const_reverse_iterator assigned;
+  assigned = short_text.rbegin();
+  auto factory = std::make_reverse_iterator(short_text.end());
+  if (*constant.crbegin() != 'Z' || *converted != 'Z' ||
+      *assigned != 'Z' || *factory != 'Z' ||
+      *(constant.crend() - 1) != 'a')
+    return 3;
+  const std::string long_text("abcdefghijklmnopqrstuvwxyz0123456789");
+  std::string empty;
+  return *long_text.rbegin() == '9' &&
+         *(long_text.rend() - 1) == 'a' &&
+         empty.rbegin() == empty.rend() &&
+         empty.crbegin() == empty.crend() ? 0 : 4;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-reverse-iterator" + Optimization);
     auto Compile = compileGenerated(Output, Executable, Optimization);
     ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
     auto Run = exec(Executable.string(), {});
@@ -51995,6 +53667,77 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringCopyAssignmentGrowthRun) {
+  const auto Source = tmpFile("string-copy-assignment-growth.cpp");
+  const auto Output = tmpFile("string-copy-assignment-growth.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+int main() {
+  {
+    std::string source23("abcdefghijklmnopqrstuvw");
+    std::string target;
+    Size requested = 2 * target.capacity();
+    if (requested < source23.size()) requested = source23.size();
+    target = source23;
+    Size expected = ((requested + 8) / 8) * 8 - 1;
+#if (defined(_LIBCPP_ABI_ALTERNATE_STRING_LAYOUT) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__) || (!defined(_LIBCPP_ABI_ALTERNATE_STRING_LAYOUT) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+    const Size endian_factor = 2;
+#else
+    const Size endian_factor = 1;
+#endif
+    if (expected == sizeof(std::string) - 1) expected += endian_factor;
+    if (target.capacity() != expected || target != source23 ||
+        target.data() == source23.data() || target.data()[23] != 0)
+      return 1;
+    const char *first_data = target.data();
+    int before_allocations = allocations;
+    target = source23;
+    if (target.data() != first_data || allocations != before_allocations)
+      return 2;
+
+    std::string source62("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
+    requested = 2 * target.capacity();
+    if (requested < source62.size()) requested = source62.size();
+    target = source62;
+    expected = ((requested + 8) / 8) * 8 - 1;
+    if (expected == sizeof(std::string) - 1) expected += endian_factor;
+    if (target.capacity() != expected || target != source62 ||
+        target.data() == source62.data() || target.data() == first_data ||
+        target.size() != 62 || target.data()[62] != 0)
+      return 3;
+    before_allocations = allocations;
+    const char *second_data = target.data();
+    target = target;
+    if (target.data() != second_data || allocations != before_allocations ||
+        target[61] != '9')
+      return 4;
+    target[0] = '?';
+    if (source62[0] != 'a' || target[0] != '?') return 5;
+  }
+  return allocations == releases ? 0 : 6;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("string-copy-assignment-growth" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StringCapacityAndClearRun) {
   const auto Source = tmpFile("string-clear.cpp");
   const auto Output = tmpFile("string-clear.nc");
@@ -52035,6 +53778,167 @@ int main() {
   for (const std::string &Optimization : {"-O0", "-O2"}) {
     SCOPED_TRACE(Optimization);
     const auto Executable = tmpFile("string-clear" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StringMaxSizeRun) {
+  const auto Source = tmpFile("string-max-size.cpp");
+  const auto Output = tmpFile("string-max-size.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <string>
+int calls;
+std::string &touch(std::string &value) {
+  ++calls;
+  return value;
+}
+int main() {
+  std::string short_text("abc");
+  const std::string long_text("abcdefghijklmnopqrstuvwxyz");
+  const Size maximum = static_cast<Size>(-1);
+#if (defined(_LIBCPP_ABI_ALTERNATE_STRING_LAYOUT) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__) || (!defined(_LIBCPP_ABI_ALTERNATE_STRING_LAYOUT) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+  const Size expected = maximum - 8;
+#else
+  const Size expected = maximum / 2 - 8;
+#endif
+  if (touch(short_text).max_size() != expected || calls != 1)
+    return 1;
+  if (long_text.max_size() != expected ||
+      short_text.max_size() != long_text.max_size() ||
+      short_text.max_size() <= short_text.capacity())
+    return 2;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-max-size" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StringShrinkToFitRun) {
+  const auto Source = tmpFile("string-shrink-to-fit.cpp");
+  const auto Output = tmpFile("string-shrink-to-fit.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int calls;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+std::string &touch(std::string &value) { ++calls; return value; }
+int main() {
+  {
+    std::string short_text("abc");
+    const char *short_data = short_text.data();
+    short_text.shrink_to_fit();
+    if (short_text.data() != short_data || short_text.capacity() !=
+        sizeof(std::string) - 2 || allocations != 0 || releases != 0)
+      return 1;
+
+    std::string long_text("abcdefghijklmnopqrstuvwxyz0123456789");
+    const Size initial_capacity = long_text.capacity();
+    long_text.reserve(80);
+    const char *reserved_data = long_text.data();
+    int before_allocations = allocations;
+    int before_releases = releases;
+    touch(long_text).shrink_to_fit();
+    if (calls != 1 || long_text.capacity() != initial_capacity ||
+        long_text.data() == reserved_data || long_text.size() != 36 ||
+        long_text[0] != 'a' || long_text[35] != '9' ||
+        long_text.c_str()[36] != 0 ||
+        allocations != before_allocations + 1 ||
+        releases != before_releases + 1)
+      return 2;
+    const char *shrunk_data = long_text.data();
+    long_text.shrink_to_fit();
+    if (long_text.data() != shrunk_data ||
+        allocations != before_allocations + 1 ||
+        releases != before_releases + 1)
+      return 3;
+    long_text.resize(5);
+    long_text.shrink_to_fit();
+    if (long_text != "abcde" || long_text.data() == shrunk_data ||
+        long_text.capacity() != sizeof(std::string) - 2 ||
+        long_text.data()[5] != 0 || allocations != before_allocations + 1 ||
+        releases != before_releases + 2)
+      return 4;
+
+    std::string empty;
+    empty.reserve(64);
+    before_allocations = allocations;
+    before_releases = releases;
+    empty.shrink_to_fit();
+    if (!empty.empty() || empty.capacity() != sizeof(std::string) - 2 ||
+        empty.data()[0] != 0 || allocations != before_allocations ||
+        releases != before_releases + 1)
+      return 5;
+
+    std::string boundary("abcdefghijklmnopqrstuvw");
+    const Size boundary_capacity = boundary.capacity();
+    Size expected_boundary_capacity = ((Size(23) + 8) / 8) * 8 - 1;
+#if (defined(_LIBCPP_ABI_ALTERNATE_STRING_LAYOUT) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__) || (!defined(_LIBCPP_ABI_ALTERNATE_STRING_LAYOUT) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+    const Size endian_factor = 2;
+#else
+    const Size endian_factor = 1;
+#endif
+    if (expected_boundary_capacity == sizeof(std::string) - 1)
+      expected_boundary_capacity += endian_factor;
+    if (boundary_capacity != expected_boundary_capacity)
+      return 6;
+    boundary.reserve(90);
+    boundary.shrink_to_fit();
+    if (boundary.size() != 23 ||
+        boundary.capacity() != expected_boundary_capacity ||
+        boundary[22] != 'w' || boundary.data()[23] != 0)
+      return 7;
+    boundary.reserve(100);
+    boundary.reserve();
+    if (boundary.capacity() != boundary_capacity || boundary[0] != 'a' ||
+        boundary[22] != 'w')
+      return 8;
+    std::string sliced_source("?abcdefghijklmnopqrstuvw!");
+    std::string sliced = sliced_source.substr(1, 23);
+    if (sliced.capacity() != expected_boundary_capacity || sliced != boundary)
+      return 9;
+    std::string assigned;
+    assigned = boundary;
+    Size assignment_request = 2 * (sizeof(std::string) - 2);
+    if (assignment_request < boundary.size())
+      assignment_request = boundary.size();
+    Size expected_assignment = ((assignment_request + 8) / 8) * 8 - 1;
+    if (expected_assignment == sizeof(std::string) - 1)
+      expected_assignment += endian_factor;
+    if (assigned.capacity() != expected_assignment || assigned != boundary)
+      return 10;
+  }
+  return allocations == releases ? 0 : 11;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-shrink-to-fit" + Optimization);
     auto Compile = compileGenerated(Output, Executable, Optimization);
     ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
     auto Run = exec(Executable.string(), {});
@@ -52422,6 +54326,426 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringConcatLvalueRun) {
+  const auto Source = tmpFile("string-concat-lvalue.cpp");
+  const auto Output = tmpFile("string-concat-lvalue.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+int main() {
+  {
+    const char raw[] = {'a', 0, 'b'};
+    const std::string left(raw, 3);
+    const std::string right("XY");
+    std::string both = left + right;
+    if (both.size() != 5 || both[0] != 'a' || both[1] != 0 ||
+        both[2] != 'b' || both[3] != 'X' || both[4] != 'Y' ||
+        both.data()[5] != 0 || allocations != 0)
+      return 1;
+    std::string pointer_left = "pre" + left;
+    std::string character_left = '?' + left;
+    std::string pointer_right = left + "post";
+    std::string character_right = left + '!';
+    if (pointer_left.size() != 6 || pointer_left[3] != 'a' ||
+        pointer_left[4] != 0 || pointer_left[5] != 'b' ||
+        character_left.size() != 4 || character_left[0] != '?' ||
+        character_left[2] != 0 || pointer_right.size() != 7 ||
+        pointer_right[1] != 0 || pointer_right[6] != 't' ||
+        character_right.size() != 4 || character_right[1] != 0 ||
+        character_right[3] != '!' || allocations != 0)
+      return 2;
+    std::string explicit_call = std::operator+(left, right);
+    if (explicit_call != both || allocations != 0) return 3;
+
+    const std::string long_left("abcdefghijklmnopqrstuvwxyz");
+    const std::string long_right("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+    const char *left_data = long_left.data();
+    const char *right_data = long_right.data();
+    std::string joined = long_left + long_right;
+    const Size expected_capacity = ((Size(52) + 8) / 8) * 8 - 1;
+    if (joined.size() != 52 || joined.capacity() != expected_capacity ||
+        joined[0] != 'a' || joined[25] != 'z' || joined[26] != 'A' ||
+        joined[51] != 'Z' || joined.data()[52] != 0 ||
+        joined.data() == left_data || joined.data() == right_data ||
+        allocations != 3)
+      return 4;
+    joined[0] = '?';
+    if (long_left[0] != 'a' || long_right[0] != 'A') return 5;
+    std::string prefix = "!" + long_right;
+    std::string suffix = long_left + "!";
+    std::string character_prefix = '!' + long_right;
+    std::string character_suffix = long_left + '!';
+    if (prefix.size() != 27 || prefix[0] != '!' || prefix[26] != 'Z' ||
+        suffix.size() != 27 || suffix[0] != 'a' || suffix[26] != '!' ||
+        character_prefix != prefix || character_suffix != suffix)
+      return 6;
+
+    const std::string boundary_source("abcdefghijklmnopqrstuv");
+    std::string boundary = boundary_source + '!';
+    Size expected_boundary = ((Size(23) + 8) / 8) * 8 - 1;
+#if (defined(_LIBCPP_ABI_ALTERNATE_STRING_LAYOUT) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__) || (!defined(_LIBCPP_ABI_ALTERNATE_STRING_LAYOUT) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+    const Size endian_factor = 2;
+#else
+    const Size endian_factor = 1;
+#endif
+    if (expected_boundary == sizeof(std::string) - 1)
+      expected_boundary += endian_factor;
+    if (boundary.size() != 23 || boundary.capacity() != expected_boundary ||
+        boundary[22] != '!' || boundary.data()[23] != 0)
+      return 7;
+  }
+  return allocations == releases ? 0 : 8;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-concat-lvalue" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StringConcatRvalueRun) {
+  const auto Source = tmpFile("string-concat-rvalue.cpp");
+  const auto Output = tmpFile("string-concat-rvalue.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+int main() {
+  const std::string head("PQ");
+  const std::string tail("XY");
+  {
+    std::string source("abcdefghijklmnopqrstuvwxyz");
+    source.reserve(80);
+    const char *data = source.data();
+    Size capacity = source.capacity();
+    int before = allocations;
+    std::string result = static_cast<std::string &&>(source) + tail;
+    if (result != "abcdefghijklmnopqrstuvwxyzXY" || result.data() != data ||
+        result.capacity() != capacity || !source.empty() ||
+        allocations != before)
+      return 1;
+  }
+  {
+    std::string source("abcdefghijklmnopqrstuvwxyz");
+    source.reserve(80);
+    const char *data = source.data();
+    Size capacity = source.capacity();
+    int before = allocations;
+    std::string result = head + static_cast<std::string &&>(source);
+    if (result != "PQabcdefghijklmnopqrstuvwxyz" || result.data() != data ||
+        result.capacity() != capacity || !source.empty() ||
+        allocations != before)
+      return 2;
+  }
+  {
+    std::string source("abcdefghijklmnopqrstuvwxyz");
+    std::string other("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+    source.reserve(80);
+    const char *data = source.data();
+    Size capacity = source.capacity();
+    int before = allocations;
+    std::string result = static_cast<std::string &&>(source) +
+                         static_cast<std::string &&>(other);
+    if (result.size() != 52 || result[0] != 'a' || result[25] != 'z' ||
+        result[26] != 'A' || result[51] != 'Z' || result.data() != data ||
+        result.capacity() != capacity || !source.empty() ||
+        other.size() != 26 || other[0] != 'A' || allocations != before)
+      return 3;
+  }
+  {
+    std::string source("abcdefghijklmnopqrstuvwxyz");
+    source.reserve(80);
+    const char *data = source.data();
+    int before = allocations;
+    std::string result = "PQ" + static_cast<std::string &&>(source);
+    if (result != "PQabcdefghijklmnopqrstuvwxyz" || result.data() != data ||
+        !source.empty() || allocations != before)
+      return 4;
+  }
+  {
+    std::string source("abcdefghijklmnopqrstuvwxyz");
+    source.reserve(80);
+    const char *data = source.data();
+    int before = allocations;
+    std::string result = 'Q' + static_cast<std::string &&>(source);
+    if (result != "Qabcdefghijklmnopqrstuvwxyz" || result.data() != data ||
+        !source.empty() || allocations != before)
+      return 5;
+  }
+  {
+    std::string source("abcdefghijklmnopqrstuvwxyz");
+    source.reserve(80);
+    const char *data = source.data();
+    int before = allocations;
+    std::string result = static_cast<std::string &&>(source) + "PQ";
+    if (result != "abcdefghijklmnopqrstuvwxyzPQ" || result.data() != data ||
+        !source.empty() || allocations != before)
+      return 6;
+  }
+  {
+    std::string source("abcdefghijklmnopqrstuvwxyz");
+    source.reserve(80);
+    const char *data = source.data();
+    int before = allocations;
+    std::string result = static_cast<std::string &&>(source) + 'Q';
+    if (result != "abcdefghijklmnopqrstuvwxyzQ" || result.data() != data ||
+        !source.empty() || allocations != before)
+      return 7;
+  }
+  {
+    std::string source("abcdefghijklmnopqrstuvwxyz");
+    const std::string suffix("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+    const char *old_data = source.data();
+    Size old_capacity = source.capacity();
+    int before = allocations, freed = releases;
+    std::string result = static_cast<std::string &&>(source) + suffix;
+    Size desired = 2 * old_capacity;
+    if (desired < result.size()) desired = result.size();
+    Size expected_capacity = ((desired + 8) / 8) * 8 - 1;
+    if (result.size() != 52 || result.data() == old_data ||
+        result.capacity() != expected_capacity || !source.empty() ||
+        allocations != before + 1 || releases != freed + 1)
+      return 8;
+  }
+  {
+    std::string source("ab");
+    int before = allocations;
+    std::string result = static_cast<std::string &&>(source) + 'c';
+    if (result != "abc" || !source.empty() || allocations != before)
+      return 9;
+  }
+  {
+    std::string source("ab");
+    int before = allocations;
+    std::string result = '!' + static_cast<std::string &&>(source);
+    if (result != "!ab" || !source.empty() || allocations != before)
+      return 19;
+  }
+  {
+    std::string source("abcdefghijklmnopqrstuv");
+    Size short_capacity = source.capacity();
+    int before = allocations;
+    std::string result = static_cast<std::string &&>(source) + 'w';
+    Size expected_capacity = ((2 * short_capacity + 8) / 8) * 8 - 1;
+    if (result.size() != 23 || result.capacity() != expected_capacity ||
+        result[22] != 'w' || !source.empty() || allocations != before + 1)
+      return 16;
+  }
+  {
+    std::string source("abcdefghijklmnopqrstuv");
+    Size short_capacity = source.capacity();
+    int before = allocations;
+    std::string result = 'w' + static_cast<std::string &&>(source);
+    Size expected_capacity = ((2 * short_capacity + 8) / 8) * 8 - 1;
+    if (result.size() != 23 || result.capacity() != expected_capacity ||
+        result[0] != 'w' || result[22] != 'v' || !source.empty() ||
+        allocations != before + 1)
+      return 17;
+  }
+  {
+    const char raw[] = {'X', 0, 'Y'};
+    const std::string suffix(raw, 3);
+    std::string source("ab");
+    std::string result = static_cast<std::string &&>(source) + suffix;
+    if (result.size() != 5 || result[2] != 'X' || result[3] != 0 ||
+        result[4] != 'Y' || !source.empty())
+      return 10;
+  }
+  {
+    std::string source("abcdefghijklmnopqrstuvwxyz");
+    source.reserve(80);
+    const char *data = source.data();
+    int before = allocations;
+    std::string result = source + static_cast<std::string &&>(source);
+    if (result.size() != 52 || result.data() != data || result[0] != 'a' ||
+        result[25] != 'z' || result[26] != 'a' || result[51] != 'z' ||
+        !source.empty() || allocations != before)
+      return 11;
+  }
+  {
+    std::string source("abcdefghijklmnopqrstuvwxyz");
+    source.reserve(80);
+    const char *data = source.data();
+    int before = allocations;
+    std::string result = source.c_str() + static_cast<std::string &&>(source);
+    if (result.size() != 52 || result.data() != data || result[26] != 'a' ||
+        result[51] != 'z' || !source.empty() || allocations != before)
+      return 12;
+  }
+  {
+    std::string source("abcdefghijklmnopqrstuvwxyz");
+    source.reserve(80);
+    const char *data = source.data();
+    int before = allocations;
+    std::string result = (source.c_str() + 3) +
+                         static_cast<std::string &&>(source);
+    if (result.size() != 49 || result.data() != data || result[0] != 'd' ||
+        result[22] != 'z' || result[23] != 'a' || result[48] != 'z' ||
+        !source.empty() || allocations != before)
+      return 18;
+  }
+  {
+    std::string source("abcdefghijklmnopqrstuvwxyz");
+    source.reserve(80);
+    const char *data = source.data();
+    int before = allocations;
+    std::string result = static_cast<std::string &&>(source) + source;
+    if (result.size() != 52 || result.data() != data || result[26] != 'a' ||
+        result[51] != 'z' || !source.empty() || allocations != before)
+      return 13;
+  }
+  {
+    std::string source("abcdefghijklmnopqrstuvwxyz");
+    source.reserve(80);
+    const char *data = source.data();
+    int before = allocations;
+    std::string result = static_cast<std::string &&>(source) + source.c_str();
+    if (result.size() != 52 || result.data() != data || result[26] != 'a' ||
+        result[51] != 'z' || !source.empty() || allocations != before)
+      return 14;
+  }
+  return allocations == releases ? 0 : 15;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-concat-rvalue" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StringInitializerListRun) {
+  const auto Source = tmpFile("string-initializer-list.cpp");
+  const auto Output = tmpFile("string-initializer-list.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <initializer_list>
+#include <string>
+int order;
+char next() { order = order * 10 + 1; return 'X'; }
+std::string &select(std::string &text) {
+  order = order * 10 + 2;
+  return text;
+}
+int main() {
+  {
+    std::string empty(std::initializer_list<char>{});
+    std::string short_text{'a', 0, 'b'};
+    std::initializer_list<char> bytes = {'x', 0, 'y'};
+    std::string named(bytes);
+    if (!empty.empty() || short_text.size() != 3 || short_text[1] != 0 ||
+        short_text.data()[3] != 0 || named.size() != 3 || named[1] != 0 ||
+        allocations != 0)
+      return 1;
+    std::initializer_list<char> alphabet = {
+        'a','b','c','d','e','f','g','h','i','j','k','l','m',
+        'n','o','p','q','r','s','t','u','v','w','x','y','z'};
+    std::string long_text(alphabet);
+    if (long_text.size() != 26 || long_text[25] != 'z' || allocations != 1)
+      return 2;
+    std::string assigned_long;
+    int before_growth = allocations;
+    assigned_long.assign(alphabet);
+    if (assigned_long.size() != 26 || assigned_long[25] != 'z' ||
+        allocations != before_growth + 1)
+      return 12;
+    std::string boundary("abcdefghijklmnopqrstuv");
+    Size short_capacity = boundary.capacity();
+    before_growth = allocations;
+    boundary.append({'W'});
+    Size expected_capacity = ((2 * short_capacity + 8) / 8) * 8 - 1;
+    if (boundary.size() != 23 || boundary.capacity() != expected_capacity ||
+        boundary[22] != 'W' || allocations != before_growth + 1)
+      return 13;
+    long_text.reserve(80);
+    const char *data = long_text.data();
+    Size capacity = long_text.capacity();
+    int before = allocations;
+    std::string *result = &long_text.append({'!', 0, '?'});
+    if (result != &long_text || long_text.size() != 29 ||
+        long_text[26] != '!' || long_text[27] != 0 || long_text[28] != '?' ||
+        long_text.data()[29] != 0 || long_text.data() != data ||
+        long_text.capacity() != capacity || allocations != before)
+      return 3;
+    result = &(long_text += {'Q', 'R'});
+    if (result != &long_text || long_text.size() != 31 ||
+        long_text[29] != 'Q' || long_text[30] != 'R' ||
+        long_text.data() != data || allocations != before)
+      return 4;
+    result = &long_text.assign(bytes);
+    if (result != &long_text || long_text.size() != 3 ||
+        long_text[0] != 'x' || long_text[1] != 0 || long_text[2] != 'y' ||
+        long_text.data() != data || long_text.capacity() != capacity)
+      return 5;
+    result = &(long_text = {'m', 0, 'n'});
+    if (result != &long_text || long_text.size() != 3 ||
+        long_text[0] != 'm' || long_text[1] != 0 || long_text[2] != 'n' ||
+        long_text.data() != data || allocations != before)
+      return 6;
+    order = 0;
+    select(long_text) = {next()};
+    if (order != 12 || long_text.size() != 1 || long_text[0] != 'X')
+      return 7;
+    order = 0;
+    select(long_text) += {next()};
+    if (order != 12 || long_text.size() != 2 || long_text[1] != 'X')
+      return 8;
+    order = 0;
+    select(long_text).append({next()});
+    if (order != 21 || long_text.size() != 3 || long_text[2] != 'X')
+      return 9;
+    long_text.append({});
+    long_text.assign({});
+    if (!long_text.empty() || long_text.data() != data ||
+        long_text.capacity() != capacity || allocations != before)
+      return 10;
+  }
+  return allocations == releases ? 0 : 11;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-initializer-list" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StringSwapRun) {
   const auto Source = tmpFile("string-swap.cpp");
   const auto Output = tmpFile("string-swap.nc");
@@ -52568,6 +54892,85 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringPointerAndCharacterAssignmentRun) {
+  const auto Source = tmpFile("string-pointer-character-assignment.cpp");
+  const auto Output = tmpFile("string-pointer-character-assignment.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int order;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+std::string &left(std::string &value) { order = order * 10 + 1; return value; }
+const char *pointer_right() { order = order * 10 + 2; return "xy"; }
+char character_right() { order = order * 10 + 2; return 'Q'; }
+int main() {
+  {
+    std::string short_text("abcdef");
+    const char *short_data = short_text.data();
+    std::string &result = (short_text = short_text.c_str() + 2);
+    if (&result != &short_text || short_text != "cdef" ||
+        short_text.data() != short_data || allocations != 0)
+      return 1;
+    result = short_text.back();
+    if (short_text.size() != 1 || short_text[0] != 'f' ||
+        short_text.data()[1] != 0 || short_text.data() != short_data)
+      return 2;
+    short_text = '\0';
+    if (short_text.size() != 1 || short_text[0] != 0 ||
+        short_text.data()[1] != 0 || allocations != 0)
+      return 3;
+    order = 0;
+    left(short_text) = pointer_right();
+    if (order != 21 || short_text != "xy") return 4;
+    order = 0;
+    left(short_text).operator=(pointer_right());
+    if (order != 12 || short_text != "xy") return 5;
+    order = 0;
+    left(short_text) = character_right();
+    if (order != 21 || short_text != "Q") return 6;
+    order = 0;
+    left(short_text).operator=(character_right());
+    if (order != 12 || short_text != "Q") return 7;
+
+    std::string long_text("abcdefghijklmnopqrstuvwxyz");
+    const char *long_data = long_text.data();
+    Size long_capacity = long_text.capacity();
+    long_text = "hello";
+    if (long_text != "hello" || long_text.data() != long_data ||
+        long_text.capacity() != long_capacity || allocations != 1)
+      return 8;
+    long_text = 'Z';
+    if (long_text.size() != 1 || long_text[0] != 'Z' ||
+        long_text.data() != long_data || long_text.capacity() != long_capacity)
+      return 9;
+    long_text = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    if (long_text.size() != 62 || long_text[61] != '9' ||
+        long_text.data()[62] != 0 || long_text.data() == long_data ||
+        long_text.capacity() < 62 || allocations != 2 || releases != 1)
+      return 10;
+  }
+  return allocations == releases ? 0 : 11;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("string-pointer-character-assignment" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StringEraseRun) {
   const auto Source = tmpFile("string-erase.cpp");
   const auto Output = tmpFile("string-erase.nc");
@@ -52637,6 +55040,627 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringRangeAssignAndAppendRun) {
+  const auto Source = tmpFile("string-range-modifiers.cpp");
+  const auto Output = tmpFile("string-range-modifiers.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+int main() {
+  {
+    char raw[] = {'?', 'A', 0, 'B', '?'};
+    std::string appended("hi");
+    char *short_data = appended.data();
+    auto &raw_result = appended.append(raw + 1, raw + 4);
+    if (&raw_result != &appended || appended.size() != 5 ||
+        appended[2] != 'A' || appended[3] != 0 || appended[4] != 'B' ||
+        appended.data() != short_data)
+      return 1;
+    auto &empty_result = appended.append(raw + 1, raw + 1);
+    if (&empty_result != &appended || appended.size() != 5 ||
+        appended.data() != short_data)
+      return 2;
+    const std::string donor("xy");
+    appended.append(donor.cbegin(), donor.cend());
+    if (appended.size() != 7 || appended[5] != 'x' || appended[6] != 'y')
+      return 3;
+    appended.append(appended.cbegin() + 2, appended.cbegin() + 5);
+    if (appended.size() != 10 || appended[7] != 'A' ||
+        appended[8] != 0 || appended[9] != 'B' ||
+        appended.data() != short_data)
+      return 4;
+    appended.append(appended.begin(), appended.begin() + 1);
+    if (appended.size() != 11 || appended[10] != 'h')
+      return 5;
+    std::string reserved("abc");
+    reserved.reserve(64);
+    char *reserved_data = reserved.data();
+    Size reserved_capacity = reserved.capacity();
+    reserved.append(reserved.cbegin(), reserved.cend());
+    if (reserved != "abcabc" || reserved.data() != reserved_data ||
+        reserved.capacity() != reserved_capacity)
+      return 6;
+    std::string growth("abcdefghijklmnopqrstuvwxyz");
+    char *old_growth_data = growth.data();
+    growth.append(growth.cbegin() + 1, growth.cend());
+    if (growth != "abcdefghijklmnopqrstuvwxyzbcdefghijklmnopqrstuvwxyz" ||
+        growth.data() == old_growth_data)
+      return 7;
+    std::string assigned("abcdefghijklmnopqrstuvwx");
+    char *assigned_data = assigned.data();
+    auto &raw_assign = assigned.assign(raw + 1, raw + 4);
+    if (&raw_assign != &assigned || assigned.size() != 3 ||
+        assigned[0] != 'A' || assigned[1] != 0 || assigned[2] != 'B' ||
+        assigned.data() != assigned_data)
+      return 8;
+    assigned.assign(donor.cbegin(), donor.cend());
+    if (assigned != "xy" || assigned.data() != assigned_data)
+      return 9;
+    assigned.assign(raw + 1, raw + 1);
+    if (!assigned.empty() || assigned.data() != assigned_data ||
+        assigned.data()[0] != 0)
+      return 10;
+    std::string self("abcdef");
+    char *self_data = self.data();
+    self.assign(self.cbegin() + 2, self.cend() - 1);
+    if (self != "cde" || self.data() != self_data || self.data()[3] != 0)
+      return 11;
+    std::string long_self("abcdefghijklmnopqrstuvwxyz0123456789");
+    long_self.reserve(90);
+    char *long_data = long_self.data();
+    Size long_capacity = long_self.capacity();
+    long_self.assign(long_self.cbegin() + 10, long_self.cbegin() + 26);
+    if (long_self != "klmnopqrstuvwxyz" || long_self.data() != long_data ||
+        long_self.capacity() != long_capacity)
+      return 12;
+    std::string grow_assign("small");
+    char *old_assign_data = grow_assign.data();
+    grow_assign.assign(growth.cbegin(), growth.cend());
+    if (grow_assign != growth || grow_assign.data() == old_assign_data)
+      return 13;
+  }
+  return allocations == releases ? 0 : 14;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-range-modifiers" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StringIteratorEraseRun) {
+  const auto Source = tmpFile("string-iterator-erase.cpp");
+  const auto Output = tmpFile("string-iterator-erase.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+int main() {
+  {
+    std::string short_text("abcdef");
+    char *short_data = short_text.data();
+    auto one = short_text.erase(short_text.cbegin() + 1);
+    if (short_text != "acdef" || one.base() != short_data + 1 ||
+        *one != 'c' || short_text.data() != short_data)
+      return 1;
+    auto range = short_text.erase(short_text.cbegin() + 1,
+                                  short_text.cbegin() + 3);
+    if (short_text != "aef" || range.base() != short_data + 1 ||
+        *range != 'e')
+      return 2;
+    auto unchanged = short_text.erase(short_text.cbegin() + 2,
+                                      short_text.cbegin() + 2);
+    if (short_text != "aef" || unchanged.base() != short_data + 2 ||
+        *unchanged != 'f')
+      return 3;
+    auto ending = short_text.erase(short_text.cend() - 1);
+    if (short_text != "ae" || ending != short_text.end())
+      return 4;
+    auto empty_result = short_text.erase(short_text.cbegin(),
+                                         short_text.cend());
+    if (!short_text.empty() || empty_result != short_text.begin() ||
+        short_text.data() != short_data || short_text.data()[0] != 0)
+      return 5;
+    std::string long_text("abcdefghijklmnopqrstuvwxyz0123456789");
+    long_text.reserve(90);
+    char *long_data = long_text.data();
+    Size capacity = long_text.capacity();
+    auto long_range = long_text.erase(long_text.cbegin() + 10,
+                                      long_text.cbegin() + 26);
+    if (long_text != "abcdefghij0123456789" ||
+        long_range.base() != long_data + 10 || *long_range != '0' ||
+        long_text.data() != long_data || long_text.capacity() != capacity)
+      return 6;
+    auto long_one = long_text.erase(long_text.cbegin());
+    if (long_text != "bcdefghij0123456789" ||
+        long_one.base() != long_data || *long_one != 'b')
+      return 7;
+    auto long_empty = long_text.erase(long_text.cbegin(), long_text.cend());
+    if (!long_text.empty() || long_empty != long_text.begin() ||
+        long_text.data() != long_data || long_text.capacity() != capacity)
+      return 8;
+  }
+  return allocations == releases ? 0 : 9;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-iterator-erase" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StringIteratorInsertRun) {
+  const auto Source = tmpFile("string-iterator-insert.cpp");
+  const auto Output = tmpFile("string-iterator-insert.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+int main() {
+  {
+    std::string short_text("ac");
+    char *short_data = short_text.data();
+    auto character = short_text.insert(short_text.cbegin() + 1, 'b');
+    if (short_text != "abc" || character.base() != short_data + 1 ||
+        *character != 'b' || short_text.data() != short_data)
+      return 1;
+    auto filled = short_text.insert(short_text.cbegin() + 1, 2, 'X');
+    if (short_text != "aXXbc" || filled.base() != short_data + 1 ||
+        *filled != 'X')
+      return 2;
+    auto unchanged = short_text.insert(short_text.cbegin() + 2, 0, 'Q');
+    if (short_text != "aXXbc" || unchanged.base() != short_data + 2)
+      return 3;
+    auto listed = short_text.insert(short_text.cend(), {'d', 0, 'e'});
+    if (short_text.size() != 8 || short_text[5] != 'd' ||
+        short_text[6] != 0 || short_text[7] != 'e' ||
+        listed.base() != short_data + 5)
+      return 4;
+    const char raw[] = {'?', 'R', 'S', '?'};
+    auto pointer_range = short_text.insert(short_text.cbegin() + 1,
+                                            raw + 1, raw + 3);
+    if (short_text.size() != 10 || short_text[1] != 'R' ||
+        short_text[2] != 'S' || short_text[8] != 0 ||
+        pointer_range.base() != short_data + 1)
+      return 5;
+    const std::string donor("UV");
+    auto wrapped_range = short_text.insert(short_text.cend(),
+                                            donor.cbegin(), donor.cend());
+    if (short_text.size() != 12 || short_text[10] != 'U' ||
+        short_text[11] != 'V' || wrapped_range.base() != short_data + 10)
+      return 6;
+    std::string overlap("abcd");
+    overlap.reserve(32);
+    char *overlap_data = overlap.data();
+    auto aliased = overlap.insert(overlap.cbegin() + 1,
+                                  overlap.cbegin() + 2, overlap.cend());
+    if (overlap != "acdbcd" || aliased.base() != overlap_data + 1 ||
+        overlap.data() != overlap_data)
+      return 7;
+    std::string grow("abcdefghijklmnopqrstuvwxyz");
+    char *old_data = grow.data();
+    auto grown = grow.insert(grow.cbegin() + 1,
+                             grow.cbegin() + 2, grow.cend());
+    if (grow != "acdefghijklmnopqrstuvwxyzbcdefghijklmnopqrstuvwxyz" ||
+        grown.base() != grow.data() + 1 || grow.data() == old_data)
+      return 8;
+    std::string fill("abc");
+    auto long_fill = fill.insert(fill.cbegin() + 1, 30, 'x');
+    if (fill.size() != 33 || *long_fill != 'x' ||
+        long_fill.base() != fill.data() + 1 || fill[0] != 'a' ||
+        fill[31] != 'b' || fill[32] != 'c')
+      return 9;
+    std::string empty;
+    auto first = empty.insert(empty.cbegin(), {'z'});
+    if (empty != "z" || first != empty.begin())
+      return 10;
+  }
+  return allocations == releases ? 0 : 11;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-iterator-insert" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StringIteratorReplaceRun) {
+  const auto Source = tmpFile("string-iterator-replace.cpp");
+  const auto Output = tmpFile("string-iterator-replace.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+int main() {
+  {
+    std::string text("abcdef");
+    char *short_data = text.data();
+    auto &by_string = text.replace(text.cbegin() + 1, text.cbegin() + 4,
+                                   std::string("XY"));
+    if (&by_string != &text || text != "aXYef" || text.data() != short_data)
+      return 1;
+    const char counted[] = {'Q', 0, 'R'};
+    auto &by_count = text.replace(text.cbegin() + 1, text.cbegin() + 3,
+                                  counted, 3);
+    if (&by_count != &text || text.size() != 6 || text[1] != 'Q' ||
+        text[2] != 0 || text[3] != 'R' || text[4] != 'e')
+      return 2;
+    std::string cstring("abcd");
+    cstring.replace(cstring.cbegin() + 1, cstring.cbegin() + 3, "ZZ");
+    if (cstring != "aZZd")
+      return 3;
+    std::string fill("abcd");
+    fill.replace(fill.cbegin() + 1, fill.cbegin() + 3, 3, 'X');
+    if (fill != "aXXXd")
+      return 4;
+    std::string listed("abcd");
+    listed.replace(listed.cbegin() + 1, listed.cbegin() + 3, {'X', 0, 'Y'});
+    if (listed.size() != 5 || listed[0] != 'a' || listed[1] != 'X' ||
+        listed[2] != 0 || listed[3] != 'Y' || listed[4] != 'd')
+      return 5;
+    const char raw[] = {'U', 'V'};
+    std::string ranged("abcd");
+    ranged.replace(ranged.cbegin() + 1, ranged.cbegin() + 3,
+                   raw, raw + 2);
+    if (ranged != "aUVd")
+      return 6;
+    const std::string donor("PQ");
+    ranged.replace(ranged.cbegin() + 1, ranged.cbegin() + 3,
+                   donor.cbegin(), donor.cend());
+    if (ranged != "aPQd")
+      return 7;
+    std::string overlap("abcdef");
+    overlap.reserve(32);
+    char *overlap_data = overlap.data();
+    overlap.replace(overlap.cbegin() + 1, overlap.cbegin() + 3,
+                    overlap.cbegin() + 3, overlap.cend());
+    if (overlap != "adefdef" || overlap.data() != overlap_data)
+      return 8;
+    std::string grow("abcdefghijklmnopqrstuvwxyz");
+    char *old_data = grow.data();
+    grow.replace(grow.cbegin() + 1, grow.cbegin() + 2,
+                 grow.cbegin() + 2, grow.cend());
+    if (grow != "acdefghijklmnopqrstuvwxyzcdefghijklmnopqrstuvwxyz" ||
+        grow.data() == old_data)
+      return 9;
+    std::string empty("abc");
+    auto &inserted = empty.replace(empty.cbegin() + 1,
+                                   empty.cbegin() + 1, {'X'});
+    if (&inserted != &empty || empty != "aXbc")
+      return 10;
+    std::string long_text("abcdefghijklmnopqrstuvwxyz0123456789");
+    long_text.reserve(90);
+    char *long_data = long_text.data();
+    Size capacity = long_text.capacity();
+    long_text.replace(long_text.cbegin() + 10,
+                      long_text.cbegin() + 26, std::string("ZZ"));
+    if (long_text != "abcdefghijZZ0123456789" ||
+        long_text.data() != long_data || long_text.capacity() != capacity)
+      return 11;
+  }
+  return allocations == releases ? 0 : 12;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-iterator-replace" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StringInsertAndReplaceRun) {
+  const auto Source = tmpFile("string-insert-replace.cpp");
+  const auto Output = tmpFile("string-insert-replace.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <string>
+int evaluations;
+Size position() { ++evaluations; return 2; }
+bool same(const std::string &s, const char *bytes, Size n) {
+  if (s.size() != n || s.data()[n] != 0) return false;
+  for (Size i = 0; i < n; ++i)
+    if (s[i] != bytes[i]) return false;
+  return true;
+}
+int main() {
+  std::string short_text("abcd");
+  const char *short_data = short_text.data();
+  std::string *result = &short_text.insert(position(), "XY", 2);
+  if (result != &short_text || evaluations != 1 ||
+      short_text.data() != short_data || short_text != "abXYcd")
+    return 1;
+  result = &short_text.insert(0, 2, '!').insert(short_text.size(), "Z");
+  if (result != &short_text || short_text.data() != short_data ||
+      short_text != "!!abXYcdZ")
+    return 2;
+  std::string source("12");
+  short_text.insert(3, source);
+  if (short_text != "!!a12bXYcdZ" || source != "12") return 3;
+  short_text.insert(0, short_text);
+  if (short_text != "!!a12bXYcdZ!!a12bXYcdZ" ||
+      short_text.data() != short_data)
+    return 4;
+
+  std::string alias("abcdef");
+  alias.reserve(50);
+  const char *alias_data = alias.data();
+  alias.insert(2, alias.data() + 1, 4);
+  if (alias != "abbcdecdef" || alias.data() != alias_data) return 5;
+  alias.replace(1, 3, alias.data() + 2, 4);
+  if (alias != "abcdedecdef" || alias.data() != alias_data) return 6;
+  alias.replace(2, 4, alias.data() + 1, 2);
+  if (alias != "abbcecdef" || alias.data() != alias_data) return 7;
+  std::string cstring_alias("abc");
+  const char *cstring_data = cstring_alias.data();
+  cstring_alias.insert(1, cstring_alias.c_str());
+  if (cstring_alias != "aabcbc" || cstring_alias.data() != cstring_data)
+    return 17;
+  cstring_alias.replace(0, 2, cstring_alias.c_str() + 2);
+  if (cstring_alias != "bcbcbcbc" || cstring_alias.data() != cstring_data)
+    return 18;
+
+  std::string long_text("abcdefghijklmnopqrstuvwxyz");
+  const char *long_data = long_text.data();
+  long_text.insert(10, long_text);
+  if (long_text.size() != 52 || long_text.data() == long_data ||
+      long_text.data()[52] != 0)
+    return 8;
+  for (Size i = 0; i < 26; ++i)
+    if (long_text[10 + i] != "abcdefghijklmnopqrstuvwxyz"[i]) return 9;
+  long_text.replace(5, 2, long_text);
+  if (long_text.size() != 102 || long_text.data()[102] != 0)
+    return 10;
+
+  std::string changed("abcdef");
+  changed.replace(2, 2, "XY");
+  if (changed != "abXYef") return 11;
+  const char raw[] = {'m', 0, 'n'};
+  result = &changed.replace(1, 2, raw, 3);
+  const char expected[] = {'a', 'm', 0, 'n', 'Y', 'e', 'f'};
+  if (result != &changed || !same(changed, expected, 7)) return 12;
+  changed.replace(2, 2, 4, 'q');
+  const char filled[] = {'a', 'm', 'q', 'q', 'q', 'q', 'Y', 'e', 'f'};
+  if (!same(changed, filled, 9)) return 13;
+  changed.replace(0, 1, source);
+  const char replaced[] = {'1', '2', 'm', 'q', 'q', 'q', 'q', 'Y', 'e', 'f'};
+  if (!same(changed, replaced, 10)) return 14;
+  changed.replace(changed.size(), 0, "!");
+  if (changed.back() != '!' || changed.data()[changed.size()] != 0)
+    return 15;
+  changed.insert(changed.size(), "", 0).replace(0, 0, "", 0);
+  if (changed.size() != 11) return 16;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-insert-replace" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StringAndViewSubstringRun) {
+  const auto Source = tmpFile("string-substring.cpp");
+  const auto Output = tmpFile("string-substring.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <string>
+#include <string_view>
+int evaluations;
+Size position() { ++evaluations; return 2; }
+Size count() { ++evaluations; return 2; }
+int main() {
+  const char raw[] = {'a', 0, 'b', 'c', 'd', 'e'};
+  std::string_view view(raw, 6);
+  std::string_view slice = view.substr(1, 3);
+  if (slice.data() != raw + 1 || slice.size() != 3 ||
+      slice[0] != 0 || slice[1] != 'b' || slice[2] != 'c')
+    return 1;
+  std::string_view tail = view.substr(4);
+  if (tail.size() != 2 || tail[0] != 'd' || tail[1] != 'e') return 2;
+  std::string_view empty = view.substr(view.size());
+  std::string_view blank;
+  if (!empty.empty() || !blank.substr().empty()) return 3;
+  char view_bytes[] = {'?', '?', '?', '?', '?'};
+  if (view.copy(view_bytes, 4, 2) != 4 || view_bytes[0] != 'b' ||
+      view_bytes[1] != 'c' || view_bytes[2] != 'd' ||
+      view_bytes[3] != 'e' || view_bytes[4] != '?')
+    return 4;
+  if (view.copy(view_bytes, 3) != 3 || view_bytes[0] != 'a' ||
+      view_bytes[1] != 0 || view_bytes[2] != 'b' ||
+      view_bytes[3] != 'e')
+    return 5;
+  std::string_view evaluated = view.substr(position(), count());
+  if (evaluations != 2 || evaluated.size() != 2 ||
+      evaluated[0] != 'b' || evaluated[1] != 'c')
+    return 6;
+
+  std::string text(raw, 6);
+  std::string owned = text.substr(1, 3);
+  text[2] = 'X';
+  if (owned.size() != 3 || owned[0] != 0 || owned[1] != 'b' ||
+      owned[2] != 'c' || text[2] != 'X')
+    return 7;
+  char copied[] = {'?', '?', '?', '?', '?'};
+  if (text.copy(copied, 4, 1) != 4 || copied[0] != 0 ||
+      copied[1] != 'X' || copied[2] != 'c' || copied[3] != 'd' ||
+      copied[4] != '?')
+    return 8;
+  if (text.copy(copied, count(), position()) != 2 ||
+      evaluations != 4 || copied[0] != 'X' || copied[1] != 'c')
+    return 9;
+  std::string short_part = text.substr(position(), count());
+  if (evaluations != 6 || short_part.size() != 2 ||
+      short_part[0] != 'X' || short_part[1] != 'c')
+    return 10;
+  if (!text.substr(text.size()).empty()) return 11;
+
+  std::string long_text("abcdefghijklmnopqrstuvwxyz0123456789");
+  std::string long_part = long_text.substr(3, 30);
+  if (long_part.size() != 30 || long_part.data() == long_text.data() + 3 ||
+      long_part.front() != 'd' || long_part.back() != '6' ||
+      long_part.data()[30] != 0)
+    return 12;
+  long_text[3] = 'Z';
+  if (long_part.front() != 'd' || long_text.front() != 'a') return 13;
+  std::string full = long_text.substr();
+  if (full.size() != long_text.size() || full.data() == long_text.data() ||
+      full[3] != 'Z' || full.data()[full.size()] != 0)
+    return 14;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-substring" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StringAndViewPositionalComparisonRun) {
+  const auto Source = tmpFile("string-positional-compare.cpp");
+  const auto Output = tmpFile("string-positional-compare.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <string>
+#include <string_view>
+int evaluations;
+Size position() { ++evaluations; return 1; }
+Size count() { ++evaluations; return 3; }
+const char *pattern(const char *p) { ++evaluations; return p; }
+int main() {
+  const char raw[] = {'a', 0, 'b', 'c', 'd'};
+  std::string_view view(raw, 5);
+  std::string_view middle(raw + 1, 3);
+  if (view.compare("a") <= 0 || view.compare(0, 1, "a") != 0 ||
+      view.compare(1, 3, middle) != 0 ||
+      view.compare(1, 3, view, 1, 3) != 0 ||
+      view.compare(1, 2, middle, 0, 3) >= 0 ||
+      view.compare(1, 3, raw + 1, 3) != 0 ||
+      view.compare(1, 3, raw + 1) <= 0 ||
+      view.compare(4, 99, "d") != 0 || view.compare(5, 2, "") != 0)
+    return 1;
+  if (view.compare(position(), count(), pattern(raw + 1), 3) != 0 ||
+      evaluations != 3)
+    return 2;
+
+  std::string text(raw, 5);
+  std::string other(raw + 1, 3);
+  if (text.compare(1, 3, other) != 0 ||
+      text.compare(1, 4, text, 1) != 0 ||
+      text.compare(1, 2, other, 0, 3) >= 0 ||
+      text.compare(0, 1, "a") != 0 ||
+      text.compare(1, 3, raw + 1, 3) != 0 ||
+      text.compare(1, 3, raw + 1) <= 0 ||
+      text.compare(4, 99, "d") != 0 ||
+      text.compare(5, 1, "") != 0)
+    return 3;
+  if (text.compare(position(), count(), pattern(raw + 1), 3) != 0 ||
+      evaluations != 6)
+    return 4;
+  const char high[] = {static_cast<char>(0x80)};
+  const char low[] = {'z'};
+  if (std::string_view(high, 1).compare(0, 1, low, 1) <= 0 ||
+      std::string(high, 1).compare(0, 1, low, 1) <= 0)
+    return 5;
+  std::string long_text("abcdefghijklmnopqrstuvwxyz0123456789");
+  std::string long_suffix("defghijklmnopqrstuvwxyz0123456789");
+  std::string_view long_view(long_text.data(), long_text.size());
+  std::string_view suffix_view(long_suffix.data(), long_suffix.size());
+  if (long_text.compare(3, 99, long_suffix) != 0 ||
+      long_text.compare(3, 99, long_text, 3) != 0 ||
+      long_text.compare(3, 5, "defghxxx", 5) != 0 ||
+      long_view.compare(3, 99, suffix_view) != 0 ||
+      long_view.compare(3, 5, "defghxxx", 5) != 0)
+    return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-positional-compare" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StringComparisonRun) {
   const auto Source = tmpFile("string-comparison.cpp");
   const auto Output = tmpFile("string-comparison.nc");
@@ -52647,6 +55671,10 @@ extern "C" void free(void *);
 void *operator new(Size n) { return malloc(n); }
 void operator delete(void *p) noexcept { free(p); }
 #include <string>
+const std::string &overwrite(std::string &target) {
+  target.assign("ac");
+  return target;
+}
 int main() {
   const std::string empty;
   const std::string empty_again;
@@ -52693,6 +55721,9 @@ int main() {
       long_later.compare(long_left) <= 0 ||
       !(prefix < long_left) || !(long_left > prefix))
     return 6;
+  std::string changing("ab");
+  if (changing.compare(overwrite(changing)) != 0 || changing != "ac")
+    return 7;
   return 0;
 }
 )cpp");
@@ -52721,6 +55752,10 @@ void operator delete(void *p) noexcept { free(p); }
 #include <string>
 int evaluations;
 const char *value() { ++evaluations; return "abc"; }
+const char *overwrite_c(std::string &target) {
+  target.assign("ac");
+  return "ac";
+}
 int main() {
   const std::string text("abc");
   if (!(text == "abc") || !("abc" == text) ||
@@ -52757,6 +55792,12 @@ int main() {
       !(long_text < "abcdefghijklmnopqrstuvwxzz") ||
       !("abcdefghijklmnopqrstuvwxzz" > long_text))
     return 6;
+  std::string changing("ab");
+  if (changing.compare(overwrite_c(changing)) != 0 || changing != "ac")
+    return 7;
+  changing.assign("ab");
+  if (!(changing == overwrite_c(changing)))
+    return 8;
   return 0;
 }
 )cpp");
@@ -52766,6 +55807,162 @@ int main() {
   for (const std::string &Optimization : {"-O0", "-O2"}) {
     SCOPED_TRACE(Optimization);
     const auto Executable = tmpFile("string-cstring-comparison" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StringFindAndRFindRun) {
+  const auto Source = tmpFile("string-find.cpp");
+  const auto Output = tmpFile("string-find.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <string>
+int evaluations;
+const char *pattern() { ++evaluations; return "aba"; }
+Size change(std::string &target) { target.assign("cccaba"); return 0; }
+int main() {
+  const std::string text("ababa");
+  const std::string needle("aba");
+  if (text.find('a') != 0 || text.find('a', 1) != 2 ||
+      text.find('z') != std::string::npos ||
+      text.rfind('a') != 4 || text.rfind('a', 3) != 2 ||
+      text.rfind('z') != std::string::npos ||
+      text.rfind('a', 0) != 0)
+    return 1;
+  if (text.find(needle) != 0 || text.find(needle, 1) != 2 ||
+      text.rfind(needle) != 2 || text.rfind(needle, 1) != 0 ||
+      text.find(std::string("zz")) != std::string::npos)
+    return 2;
+  if (text.find("aba") != 0 || text.find("aba", 1) != 2 ||
+      text.rfind("aba") != 2 || text.rfind("aba", 1) != 0 ||
+      text.find("zz") != std::string::npos ||
+      text.find(pattern()) != 0 || evaluations != 1)
+    return 3;
+  const char embedded[] = {'b', 0, 'a', 0};
+  const char raw[] = {'a', 'b', 0, 'a', 'b', 'a'};
+  const std::string with_nul(raw, 6);
+  if (with_nul.find(embedded, 0, 3) != 1 ||
+      with_nul.rfind(embedded, std::string::npos, 3) != 1 ||
+      with_nul.find(embedded) != 1 || with_nul.rfind(embedded) != 4 ||
+      with_nul.find(embedded, 2, 3) != std::string::npos)
+    return 4;
+  if (text.find("", text.size()) != text.size() ||
+      text.find("", text.size() + 1) != std::string::npos ||
+      text.rfind("") != text.size() ||
+      text.rfind("", 1) != 1 ||
+      text.find("abc", 0, 0) != 0 ||
+      text.rfind("abc", 2, 0) != 2)
+    return 5;
+  const std::string long_text("abcdefghijklmnopqrstuvwxyzabc");
+  if (long_text.find("abc") != 0 || long_text.find("abc", 1) != 26 ||
+      long_text.rfind("abc") != 26 || long_text.rfind('a') != 26 ||
+      long_text.find(std::string("xyz")) != 23 ||
+      long_text.rfind(std::string("xyz")) != 23)
+    return 6;
+  std::string changing("ababa");
+  if (changing.find("aba", change(changing)) != 3)
+    return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-find" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StringCharacterSetSearchRun) {
+  const auto Source = tmpFile("string-set-search.cpp");
+  const auto Output = tmpFile("string-set-search.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <string>
+int evaluations;
+const char *set_pointer() { ++evaluations; return "bc"; }
+Size change(std::string &target) { target.assign("ccab"); return 0; }
+Size change_last(std::string &target) {
+  target.assign("ccab");
+  return std::string::npos;
+}
+int main() {
+  const char raw[] = {'a', 'b', 0, 'c', 'a', 'b', 'a'};
+  const std::string text(raw, 7);
+  if (text.find_first_of('a') != 0 || text.find_first_of('a', 1) != 4 ||
+      text.find_last_of('a') != 6 || text.find_last_of('a', 5) != 4 ||
+      text.find_first_not_of('a') != 1 ||
+      text.find_first_not_of('a', 4) != 5 ||
+      text.find_last_not_of('a') != 5 ||
+      text.find_last_not_of('a', 4) != 3)
+    return 1;
+  const char set_raw[] = {0, 'c'};
+  const std::string set(set_raw, 2);
+  if (text.find_first_of(set) != 2 || text.find_last_of(set) != 3 ||
+      text.find_first_not_of(set) != 0 ||
+      text.find_last_not_of(set) != 6 ||
+      text.find_first_of(set, 3) != 3 ||
+      text.find_last_of(set, 2) != 2)
+    return 2;
+  if (text.find_first_of("bc") != 1 || text.find_last_of("bc") != 5 ||
+      text.find_first_not_of("bc") != 0 ||
+      text.find_last_not_of("bc") != 6 ||
+      text.find_first_of(set_pointer()) != 1 || evaluations != 1)
+    return 3;
+  const char counted[] = {'x', 0, 'c'};
+  if (text.find_first_of(counted, 0, 3) != 2 ||
+      text.find_last_of(counted, std::string::npos, 3) != 3 ||
+      text.find_first_not_of(counted, 2, 3) != 4 ||
+      text.find_last_not_of(counted, 3, 3) != 1)
+    return 4;
+  if (text.find_first_of("") != std::string::npos ||
+      text.find_last_of("") != std::string::npos ||
+      text.find_first_not_of("") != 0 ||
+      text.find_last_not_of("") != 6 ||
+      text.find_first_not_of("", 7) != std::string::npos ||
+      text.find_last_not_of("", 0) != 0)
+    return 5;
+  const std::string empty;
+  if (empty.find_first_of('a') != std::string::npos ||
+      empty.find_last_of("a") != std::string::npos ||
+      empty.find_first_not_of("a") != std::string::npos ||
+      empty.find_last_not_of('a') != std::string::npos)
+    return 6;
+  const std::string long_text("abcdefghijklmnopqrstuvwxyzabc");
+  if (long_text.find_first_of("xyz") != 23 ||
+      long_text.find_last_of("xyz") != 25 ||
+      long_text.find_first_not_of("abcdefghijklmnopqrstuvw") != 23 ||
+      long_text.find_last_not_of("abc") != 25)
+    return 7;
+  std::string changing("ababa");
+  if (changing.find_first_of("a", change(changing)) != 2 ||
+      changing.find_last_not_of("c", change_last(changing)) != 3)
+    return 8;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-set-search" + Optimization);
     auto Compile = compileGenerated(Output, Executable, Optimization);
     ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
     auto Run = exec(Executable.string(), {});

@@ -28980,11 +28980,111 @@ int compare_n(const char *left, const char *right, std::size_t count) {
           "TR0201", profile="cpp-core-v2", sdk=True)
 
     vector_metadata_source = """\
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
 #include <vector>
 static_assert(sizeof(std::vector<int>) == 3 * sizeof(void*));
 static_assert(alignof(std::vector<int>) == alignof(void*));
 std::vector<int>::size_type passthrough(std::vector<int>::size_type n) {
   return n;
+}
+int iterator_access(std::vector<int>& values) {
+  auto first = values.begin();
+  auto last = values.end();
+  if (values.size() < 3) return 0;
+  --last;
+  auto shifted = first + 1;
+  auto previous = shifted++;
+  shifted--;
+  shifted += 1;
+  shifted -= 1;
+  auto offset_left = 2 + first;
+  auto reverse = values.rbegin();
+  const std::vector<int>& constant = values;
+  auto const_reverse = constant.crbegin();
+  return *last + int(last - first) + (last.base() == values.data()) +
+         *previous + shifted[1] + *(offset_left - 1) +
+         (shifted.operator->() == values.data() + 1) +
+         *reverse + (reverse.base() == values.end()) +
+         (reverse.operator->() == last.base()) +
+         int(values.rend() - reverse) +
+         (const_reverse != constant.crend());
+}
+void swap_vectors(std::vector<int>& left, std::vector<int>& right) {
+  left.swap(right);
+  std::swap(left, right);
+}
+std::vector<int>::iterator erase_vector(std::vector<int>& values) {
+  if (values.empty())
+    return values.erase(values.cbegin(), values.cend());
+  auto after_first = values.erase(values.begin());
+  return values.erase(after_first, values.cend());
+}
+std::vector<int>::iterator insert_vector(std::vector<int>& values, int value) {
+  values.insert(values.cbegin(), value);
+  values.insert(values.cend(), static_cast<int&&>(value));
+  return values.insert(values.cbegin(), 2, value);
+}
+std::vector<int>::iterator insert_range(std::vector<int>& values,
+                                        const std::vector<int>& source,
+                                        const int* first, const int* last) {
+  values.insert(values.cbegin(), first, last);
+  values.insert(values.cend(), source.cbegin(), source.cend());
+  return values.insert(values.cbegin(), {1, 2});
+}
+int& emplace_back_vector(std::vector<int>& values, int& value) {
+  values.emplace_back();
+  return values.emplace_back(value);
+}
+void assign_vector(std::vector<int>& values,
+                   const std::vector<int>& source,
+                   const int* first, const int* last, int value) {
+  values.assign(2, value);
+  values.assign(first, last);
+  values.assign(source.cbegin(), source.cend());
+  values.assign({1, 2});
+}
+std::vector<int>::iterator emplace_vector(std::vector<int>& values,
+                                           int& value) {
+  values.emplace(values.cbegin());
+  return values.emplace(values.cend(), value);
+}
+std::vector<int>::size_type shrink_vector(std::vector<int>& values,
+                                           const std::vector<int>& source) {
+  values.shrink_to_fit();
+  return source.max_size();
+}
+std::vector<int>& assign_list_vector(std::vector<int>& values) {
+  return values = {1, 2};
+}
+bool compare_vectors(const std::vector<int>& left,
+                     const std::vector<int>& right) {
+  return left == right || left != right || left < right || left > right ||
+         left <= right || left >= right;
+}
+struct VectorEntry { int key; int value; };
+int record_vector(std::vector<VectorEntry>& values) {
+  values.push_back(VectorEntry{1, 2});
+  values.emplace_back();
+  return values.begin()->key + values.back().value;
+}
+struct VectorNested { VectorEntry first; VectorEntry second; };
+int nested_record_vector(std::vector<VectorNested>& values) {
+  values.push_back(VectorNested{{1, 2}, {3, 4}});
+  return values[0].second.value;
+}
+template<class T> struct VectorBox { T value; };
+int template_record_vector(std::vector<VectorBox<int>>& values) {
+  values.push_back(VectorBox<int>{3});
+  return values[0].value;
+}
+struct VectorPointer { int* pointer; int tag; };
+int pointer_record_vector(std::vector<VectorPointer>& values, int& value) {
+  values.push_back(VectorPointer{&value, 4});
+  return *values[0].pointer + values[0].tag;
 }
 """
     vector_dependencies = None
@@ -29002,12 +29102,334 @@ std::vector<int>::size_type passthrough(std::vector<int>::size_type n) {
             vector_dependencies = dependencies
         else:
             assert dependencies == vector_dependencies, target
-        assert len(vector_ir["functions"]) == 1, target
+        assert len(vector_ir["functions"]) == 18, target
+    vector_record_boundary_preamble = """\
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <vector>
+"""
+    for name, source in {
+        "nontrivial-record": """\
+struct Stateful { int value; ~Stateful() {} };
+int main() { std::vector<Stateful> values; return values.size(); }
+""",
+        "deleted-copy-record": """\
+struct DeletedCopy { int value; DeletedCopy() = default;
+  DeletedCopy(const DeletedCopy&) = delete; };
+int main() { std::vector<DeletedCopy> values; return values.size(); }
+""",
+        "record-comparison": """\
+struct Entry { int value; };
+bool operator==(const Entry& left, const Entry& right) {
+  return left.value == right.value;
+}
+int main() { std::vector<Entry> left, right; return left == right; }
+""",
+    }.items():
+        check("v2-vector-" + name, vector_record_boundary_preamble + source,
+              "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-vector-runtime-object",
           '#include <vector>\nint f(){std::vector<int> v;return v.size();}',
           "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-vector-quoted", '#include "vector"\nint f(){return 0;}',
           "TR0201", profile="cpp-core-v2", sdk=True)
+
+    vector_algorithm_sort_source = """\
+#include <algorithm>
+#include <functional>
+#include <vector>
+bool descending(int left, int right) { return left > right; }
+void sort_vector(std::vector<int>& values) {
+  std::sort(values.begin(), values.end());
+  auto first = values.begin();
+  ++first;
+  std::sort(first, values.end(), descending);
+  std::sort(values.begin(), values.end(), std::greater<int>{});
+}
+"""
+    vector_algorithm_sort = check("v2-vector-algorithm-sort",
+                                  vector_algorithm_sort_source,
+                                  profile="cpp-core-v2", sdk=True)
+    assert not [node for node in walk(vector_algorithm_sort["functions"])
+                if node.get("op") in ("call", "mapped_call")], vector_algorithm_sort
+    for target in sdk_targets:
+        check("v2-vector-algorithm-sort-" + target,
+              vector_algorithm_sort_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-vector-algorithm-sort-record",
+          '#include <algorithm>\n#include <vector>\nstruct Entry{int value;};'
+          'bool operator<(Entry left, Entry right){return left.value<right.value;}'
+          'void f(std::vector<Entry>& values){std::sort(values.begin(),values.end());}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
+    wrapped_find_count_source = """\
+#include <algorithm>
+#include <string>
+#include <vector>
+std::vector<int>::const_iterator find_vector(const std::vector<int>& values,
+                                              short needle) {
+  return std::find(values.cbegin(), values.cend(), needle);
+}
+int count_vector(const std::vector<int>& values, short needle) {
+  return static_cast<int>(std::count(values.cbegin(), values.cend(), needle));
+}
+std::string::iterator find_string(std::string& value, char needle) {
+  return std::find(value.begin(), value.end(), needle);
+}
+"""
+    wrapped_find_count = check("v2-wrapped-find-count",
+                               wrapped_find_count_source,
+                               profile="cpp-core-v2", sdk=True)
+    assert not [node for node in walk(wrapped_find_count["functions"])
+                if node.get("op") in ("call", "mapped_call", "indirect_call")], wrapped_find_count
+    for target in sdk_targets:
+        check("v2-wrapped-find-count-" + target,
+              wrapped_find_count_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-wrapped-find-record",
+          '#include <algorithm>\n#include <vector>\nstruct Entry{int value;};'
+          'bool operator==(Entry left, Entry right){return left.value==right.value;}'
+          'void f(std::vector<Entry>& values, Entry needle){'
+          'std::find(values.begin(),values.end(),needle);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
+    wrapped_equal_fill_reverse_source = """\
+#include <algorithm>
+#include <string>
+#include <vector>
+bool same(int left, long right) { return left == right; }
+bool equal_vectors(const std::vector<int>& left,
+                   const std::vector<long>& right) {
+  return std::equal(left.cbegin(), left.cend(), right.cbegin(), right.cend()) &&
+         std::equal(left.cbegin(), left.cend(), right.cbegin(), same);
+}
+bool equal_raw(const std::vector<int>& left, const int *right) {
+  return std::equal(left.cbegin(), left.cend(), right);
+}
+void fill_vector(std::vector<int>& values, short value) {
+  std::fill(values.begin(), values.end(), value);
+}
+void reverse_vector(std::vector<int>& values) {
+  std::reverse(values.begin(), values.end());
+}
+void reverse_string(std::string& value) {
+  std::reverse(value.begin(), value.end());
+  std::fill(value.begin(), value.end(), 'x');
+}
+"""
+    wrapped_equal_fill_reverse = check("v2-wrapped-equal-fill-reverse",
+                                       wrapped_equal_fill_reverse_source,
+                                       profile="cpp-core-v2", sdk=True)
+    assert not [node for node in walk(wrapped_equal_fill_reverse["functions"])
+                if node.get("op") in ("call", "mapped_call")], wrapped_equal_fill_reverse
+    for target in sdk_targets:
+        check("v2-wrapped-equal-fill-reverse-" + target,
+              wrapped_equal_fill_reverse_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    for name, operation in {
+        "equal": "return std::equal(left.begin(),left.end(),right.begin());",
+        "fill": "std::fill(left.begin(),left.end(),Entry{});",
+        "reverse": "std::reverse(left.begin(),left.end());",
+    }.items():
+        check("v2-wrapped-" + name + "-record",
+              '#include <algorithm>\n#include <vector>\nstruct Entry{int value;};'
+              'bool operator==(Entry a,Entry b){return a.value==b.value;}'
+              + ('bool' if name == 'equal' else 'void')
+              + ' f(std::vector<Entry>& left,std::vector<Entry>& right){'
+              + operation + '}', "TR0203", profile="cpp-core-v2", sdk=True)
+
+    wrapped_ordered_query_source = """\
+#include <algorithm>
+#include <functional>
+#include <string>
+#include <utility>
+#include <vector>
+bool descending_int(int left, int right) { return left > right; }
+std::vector<int>::iterator minimum(std::vector<int>& values) {
+  return std::min_element(values.begin(), values.end());
+}
+std::vector<int>::iterator maximum(std::vector<int>& values) {
+  return std::max_element(values.begin(), values.end(), descending_int);
+}
+std::vector<int>::const_iterator lower(const std::vector<int>& values,
+                                        short needle) {
+  return std::lower_bound(values.cbegin(), values.cend(), needle);
+}
+std::vector<int>::iterator upper(std::vector<int>& values, int needle) {
+  return std::upper_bound(values.begin(), values.end(), needle,
+                          std::greater<int>{});
+}
+std::pair<std::vector<int>::const_iterator,
+          std::vector<int>::const_iterator>
+bounds(const std::vector<int>& values, short needle) {
+  return std::equal_range(values.cbegin(), values.cend(), needle);
+}
+std::pair<std::vector<int>::iterator, std::vector<int>::iterator>
+reverse_bounds(std::vector<int>& values, int needle) {
+  return std::equal_range(values.begin(), values.end(), needle,
+                          std::greater<int>{});
+}
+bool present(const std::vector<int>& values, int needle) {
+  return std::binary_search(values.cbegin(), values.cend(), needle,
+                            std::less<int>{});
+}
+bool sorted(const std::vector<int>& values) {
+  return std::is_sorted(values.cbegin(), values.cend());
+}
+std::vector<int>::iterator sorted_until(std::vector<int>& values) {
+  return std::is_sorted_until(values.begin(), values.end(), descending_int);
+}
+bool heap(const std::vector<int>& values) {
+  return std::is_heap(values.cbegin(), values.cend());
+}
+std::vector<int>::iterator heap_until(std::vector<int>& values) {
+  return std::is_heap_until(values.begin(), values.end(),
+                            std::greater<int>{});
+}
+std::pair<std::vector<int>::iterator, std::vector<int>::iterator>
+extrema(std::vector<int>& values) {
+  return std::minmax_element(values.begin(), values.end(), descending_int);
+}
+std::string::iterator letter(std::string& value) {
+  return std::lower_bound(value.begin(), value.end(), 'c');
+}
+"""
+    wrapped_ordered_query = check("v2-wrapped-ordered-query",
+                                  wrapped_ordered_query_source,
+                                  profile="cpp-core-v2", sdk=True)
+    assert not [node for node in walk(wrapped_ordered_query["functions"])
+                if node.get("op") in ("call", "mapped_call")], wrapped_ordered_query
+    for target in sdk_targets:
+        check("v2-wrapped-ordered-query-" + target,
+              wrapped_ordered_query_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    for name, operation in {
+        "min-element": "return std::min_element(values.begin(),values.end());",
+        "minmax-element": "return std::minmax_element(values.begin(),values.end());",
+        "lower-bound": "return std::lower_bound(values.begin(),values.end(),Entry{});",
+        "equal-range": "return std::equal_range(values.begin(),values.end(),Entry{});",
+        "is-sorted": "return std::is_sorted(values.begin(),values.end());",
+        "is-heap": "return std::is_heap(values.begin(),values.end());",
+    }.items():
+        result_type = ("std::pair<std::vector<Entry>::iterator,"
+                       "std::vector<Entry>::iterator>" if name in (
+                           "minmax-element", "equal-range") else
+                       "std::vector<Entry>::iterator" if name in (
+                           "min-element", "lower-bound") else "bool")
+        check("v2-wrapped-ordered-query-" + name + "-record",
+              '#include <algorithm>\n#include <utility>\n#include <vector>\n'
+              'struct Entry{int value;};'
+              'bool operator<(Entry a,Entry b){return a.value<b.value;}'
+              + result_type + ' f(std::vector<Entry>& values){'
+              + operation + '}', "TR0203", profile="cpp-core-v2", sdk=True)
+
+    wrapped_mismatch_source = """\
+#include <algorithm>
+#include <string>
+#include <utility>
+#include <vector>
+bool same_number(int left, long right) { return left == right; }
+std::pair<std::vector<int>::const_iterator, std::vector<long>::iterator>
+bounded_mismatch(const std::vector<int>& first, std::vector<long>& second) {
+  return std::mismatch(first.cbegin(), first.cend(), second.begin(),
+                       second.end());
+}
+std::pair<std::vector<int>::const_iterator, std::vector<long>::iterator>
+predicate_mismatch(const std::vector<int>& first, std::vector<long>& second) {
+  return std::mismatch(first.cbegin(), first.cend(), second.begin(),
+                       same_number);
+}
+std::pair<std::vector<int>::const_iterator, int*>
+mixed_mismatch(const std::vector<int>& first, int* second) {
+  return std::mismatch(first.cbegin(), first.cend(), second);
+}
+std::pair<int*, std::vector<int>::const_iterator>
+reverse_mismatch(int* first, int* last, const std::vector<int>& second) {
+  return std::mismatch(first, last, second.cbegin(), second.cend());
+}
+std::pair<std::string::iterator, std::string::const_iterator>
+letter_mismatch(std::string& first, const std::string& second) {
+  return std::mismatch(first.begin(), first.end(), second.cbegin(),
+                       second.cend());
+}
+"""
+    wrapped_mismatch = check("v2-wrapped-mismatch", wrapped_mismatch_source,
+                             profile="cpp-core-v2", sdk=True)
+    assert not [node for node in walk(wrapped_mismatch["functions"])
+                if node.get("op") in ("call", "mapped_call")], wrapped_mismatch
+    for target in sdk_targets:
+        check("v2-wrapped-mismatch-" + target, wrapped_mismatch_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    check("v2-wrapped-mismatch-record",
+          '#include <algorithm>\n#include <utility>\n#include <vector>\n'
+          'struct Entry{int value;};'
+          'bool operator==(Entry a,Entry b){return a.value==b.value;}'
+          'auto f(std::vector<Entry>& values){'
+          'return std::mismatch(values.begin(),values.end(),values.begin());}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
+    wrapped_transfer_source = """\
+#include <algorithm>
+#include <string>
+#include <vector>
+std::vector<long>::iterator copy_values(const std::vector<int>& input,
+                                         std::vector<long>& output) {
+  return std::copy(input.cbegin(), input.cend(), output.begin());
+}
+std::vector<int>::iterator move_values(std::vector<int>& input,
+                                        std::vector<int>& output) {
+  return std::move(input.begin(), input.end(), output.begin());
+}
+std::vector<int>::iterator copy_back(const std::vector<int>& input,
+                                      std::vector<int>& output) {
+  return std::copy_backward(input.cbegin(), input.cend(), output.end());
+}
+std::vector<int>::iterator move_back(std::vector<int>& input,
+                                      std::vector<int>& output) {
+  return std::move_backward(input.begin(), input.end(), output.end());
+}
+std::vector<int>::iterator reverse_values(const std::vector<int>& input,
+                                           std::vector<int>& output) {
+  return std::reverse_copy(input.cbegin(), input.cend(), output.begin());
+}
+std::vector<int>::iterator copy_count(const std::vector<int>& input,
+                                       std::vector<int>& output, int count) {
+  return std::copy_n(input.cbegin(), count, output.begin());
+}
+std::vector<int>::iterator fill_count(std::vector<int>& output, int count) {
+  return std::fill_n(output.begin(), count, 7);
+}
+std::vector<int>::iterator swap_values(std::vector<int>& left,
+                                        std::vector<int>& right) {
+  std::iter_swap(left.begin(), right.begin());
+  return std::swap_ranges(left.begin(), left.end(), right.begin());
+}
+std::string::iterator copy_chars(const std::vector<char>& input,
+                                  std::string& output) {
+  return std::copy(input.cbegin(), input.cend(), output.begin());
+}
+"""
+    wrapped_transfer = check("v2-wrapped-transfer", wrapped_transfer_source,
+                             profile="cpp-core-v2", sdk=True)
+    assert not [node for node in walk(wrapped_transfer["functions"])
+                if node.get("op") in ("call", "mapped_call", "indirect_call")], wrapped_transfer
+    for target in sdk_targets:
+        check("v2-wrapped-transfer-" + target, wrapped_transfer_source,
+              profile="cpp-core-v2", target=target, sdk=True)
+    for name, operation in {
+        "copy": "std::copy(left.begin(),left.end(),right.begin());",
+        "copy-n": "std::copy_n(left.begin(),1,right.begin());",
+        "fill-n": "std::fill_n(left.begin(),1,Entry{});",
+        "swap-ranges": "std::swap_ranges(left.begin(),left.end(),right.begin());",
+        "iter-swap": "std::iter_swap(left.begin(),right.begin());",
+    }.items():
+        check("v2-wrapped-transfer-" + name + "-record",
+              '#include <algorithm>\n#include <vector>\nstruct Entry{int value;};'
+              'void f(std::vector<Entry>& left,std::vector<Entry>& right){'
+              + operation + '}', "TR0203", profile="cpp-core-v2", sdk=True)
 
     string_metadata_source = """\
 #include <string>
@@ -29047,8 +29469,48 @@ int main() {
   std::string short_text("hello");
   std::string long_text("abcdefghijklmnopqrstuvwxyz");
   std::string copied(long_text);
+  std::string combined = short_text + long_text;
+  std::string prefixed = "!" + long_text;
+  std::string suffixed = long_text + '!';
+  bool concat_intact = combined.size() == 31 && combined[0] == 'h' &&
+                       combined[30] == 'z' && prefixed[0] == '!' &&
+                       suffixed[26] == '!';
+  std::string append_source("abcdefghijklmnopqrstuvwxyz");
+  append_source.reserve(80);
+  const char *append_data = append_source.data();
+  auto append_capacity = append_source.capacity();
+  std::string moved_append =
+      static_cast<std::string &&>(append_source) + "!";
+  std::string prepend_source("abcdefghijklmnopqrstuvwxyz");
+  prepend_source.reserve(80);
+  const char *prepend_data = prepend_source.data();
+  auto prepend_capacity = prepend_source.capacity();
+  std::string moved_prepend =
+      "!" + static_cast<std::string &&>(prepend_source);
+  bool rvalue_concat_intact =
+      moved_append.data() == append_data &&
+      moved_append.capacity() == append_capacity &&
+      moved_append.size() == 27 && moved_append[26] == '!' &&
+      append_source.empty() && moved_prepend.data() == prepend_data &&
+      moved_prepend.capacity() == prepend_capacity &&
+      moved_prepend.size() == 27 && moved_prepend[0] == '!' &&
+      prepend_source.empty();
+  std::string listed{'a', 0, 'b'};
+  listed.append({'c'});
+  listed += {'d'};
+  bool list_intact = listed.size() == 5 && listed[1] == 0 &&
+                     listed[4] == 'd';
+  listed.assign({'x', 0, 'y'});
+  list_intact = list_intact && listed.size() == 3 && listed[1] == 0;
+  listed = {'z'};
+  list_intact = list_intact && listed == "z";
   std::string assigned;
   assigned = copied;
+  std::string scalar_assigned;
+  scalar_assigned = "abc";
+  scalar_assigned = 'Z';
+  scalar_assigned.operator=("xy");
+  bool scalar_assignment_intact = scalar_assigned == "xy";
   std::string moved(static_cast<std::string&&>(copied));
   assigned = static_cast<std::string&&>(moved);
   bool intact = empty.empty() && short_text.size() == 5 &&
@@ -29056,6 +29518,39 @@ int main() {
          long_text.front() == 'a' && long_text.back() == 'z' &&
          long_text[25] == 'z' && assigned[25] == 'z' &&
          copied.empty() && moved.empty();
+  bool maximum_intact = empty.max_size() > empty.capacity() &&
+                        empty.max_size() == long_text.max_size();
+  std::string shrinkable("abcdefghijklmnopqrstuvwxyz");
+  auto minimum_capacity = shrinkable.capacity();
+  shrinkable.reserve(80);
+  shrinkable.shrink_to_fit();
+  bool shrink_intact = shrinkable.capacity() == minimum_capacity &&
+                       shrinkable.size() == 26 && shrinkable[25] == 'z';
+  shrinkable.resize(2);
+  shrinkable.reserve();
+  shrink_intact = shrink_intact && shrinkable == "ab" &&
+                  shrinkable.capacity() == sizeof(std::string) - 2;
+  std::string boundary("abcdefghijklmnopqrstuvw");
+  std::string boundary_source("?abcdefghijklmnopqrstuvw!");
+  std::string boundary_slice = boundary_source.substr(1, 23);
+  bool boundary_intact = boundary_slice == boundary;
+  boundary.reserve(90);
+  boundary.shrink_to_fit();
+  boundary_intact = boundary_intact && boundary == boundary_slice;
+  std::string growth_target;
+  auto growth_request = 2 * growth_target.capacity();
+  if (growth_request < boundary.size()) growth_request = boundary.size();
+  growth_target = boundary;
+  auto growth_capacity = ((growth_request + 8) / 8) * 8 - 1;
+#if (defined(_LIBCPP_ABI_ALTERNATE_STRING_LAYOUT) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__) || (!defined(_LIBCPP_ABI_ALTERNATE_STRING_LAYOUT) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+  const Size growth_endian_factor = 2;
+#else
+  const Size growth_endian_factor = 1;
+#endif
+  if (growth_capacity == sizeof(std::string) - 1)
+    growth_capacity += growth_endian_factor;
+  bool growth_intact = growth_target.capacity() == growth_capacity &&
+                       growth_target == boundary;
   auto old_capacity = assigned.capacity();
   assigned.clear();
   assigned.push_back('q');
@@ -29087,6 +29582,93 @@ int main() {
   bool erase_intact = erased.size() == 2 && erased[0] == 'a' &&
                       erased[1] == 'd';
   erased.erase();
+  std::string iterator_modified("abcd");
+  auto erased_at = iterator_modified.erase(iterator_modified.cbegin() + 1);
+  bool iterator_modifiers_intact =
+      erased_at.base() == iterator_modified.data() + 1;
+  auto erased_empty = iterator_modified.erase(iterator_modified.cbegin() + 1,
+                                              iterator_modified.cbegin() + 1);
+  iterator_modifiers_intact = iterator_modifiers_intact &&
+      erased_empty.base() == iterator_modified.data() + 1;
+  auto inserted_at = iterator_modified.insert(iterator_modified.cbegin() + 1,
+                                              'b');
+  iterator_modifiers_intact = iterator_modifiers_intact &&
+      inserted_at.base() == iterator_modified.data() + 1;
+  auto filled_at = iterator_modified.insert(iterator_modified.cend(), 2, 'e');
+  iterator_modifiers_intact = iterator_modifiers_intact &&
+      filled_at.base() == iterator_modified.data() + 4;
+  const char suffix_range[] = {'f', 'g'};
+  auto range_at = iterator_modified.insert(iterator_modified.cend(),
+                                           suffix_range, suffix_range + 2);
+  iterator_modifiers_intact = iterator_modifiers_intact &&
+      range_at.base() == iterator_modified.data() + 6;
+  auto wrapped_at = iterator_modified.insert(iterator_modified.cend(),
+                                             iterator_modified.cbegin(),
+                                             iterator_modified.cbegin() + 2);
+  iterator_modifiers_intact = iterator_modifiers_intact &&
+      wrapped_at.base() == iterator_modified.data() + 8;
+  auto listed_at = iterator_modified.insert(iterator_modified.cend(),
+                                            {'x', 0, 'y'});
+  iterator_modifiers_intact = iterator_modifiers_intact &&
+      listed_at.base() == iterator_modified.data() + 10 &&
+      iterator_modified.size() == 13 && iterator_modified[11] == 0;
+  std::string iterator_replaced("abcd");
+  const char replacement[] = {'X', 0, 'Y'};
+  auto &counted_replace = iterator_replaced.replace(
+      iterator_replaced.cbegin() + 1, iterator_replaced.cbegin() + 3,
+      replacement, 3);
+  bool iterator_replace_intact = &counted_replace == &iterator_replaced &&
+      iterator_replaced.size() == 5 && iterator_replaced[2] == 0;
+  iterator_replaced.replace(iterator_replaced.cbegin() + 1,
+                            iterator_replaced.cbegin() + 4, "Q");
+  iterator_replaced.replace(iterator_replaced.cbegin() + 1,
+                            iterator_replaced.cbegin() + 2, 2, 'R');
+  iterator_replaced.replace(iterator_replaced.cbegin() + 1,
+                            iterator_replaced.cbegin() + 3,
+                            std::string("ST"));
+  iterator_replaced.replace(iterator_replaced.cbegin() + 1,
+                            iterator_replaced.cbegin() + 3,
+                            replacement, replacement + 3);
+  iterator_replaced.replace(iterator_replaced.cbegin() + 1,
+                            iterator_replaced.cbegin() + 4,
+                            iterator_replaced.cbegin(),
+                            iterator_replaced.cbegin() + 1);
+  iterator_replaced.replace(iterator_replaced.cbegin() + 1,
+                            iterator_replaced.cbegin() + 2, {'Z', 0});
+  iterator_replace_intact = iterator_replace_intact &&
+      iterator_replaced.size() == 4 && iterator_replaced[0] == 'a' &&
+      iterator_replaced[1] == 'Z' && iterator_replaced[2] == 0 &&
+      iterator_replaced[3] == 'd';
+  char range_bytes[] = {'?', 'A', 0, 'B', '?'};
+  std::string range_appended("hi");
+  auto &range_append_result = range_appended.append(range_bytes + 1,
+                                                    range_bytes + 4);
+  range_appended.append(range_appended.cbegin(),
+                        range_appended.cbegin() + 2);
+  bool range_modifiers_intact = &range_append_result == &range_appended &&
+      range_appended.size() == 7 && range_appended[2] == 'A' &&
+      range_appended[3] == 0 && range_appended[4] == 'B' &&
+      range_appended[5] == 'h';
+  std::string range_assigned("initial");
+  auto &range_assign_result = range_assigned.assign(
+      range_appended.cbegin() + 2, range_appended.cend());
+  range_modifiers_intact = range_modifiers_intact &&
+      &range_assign_result == &range_assigned &&
+      range_assigned.size() == 5 && range_assigned[1] == 0;
+  range_assigned.assign(range_bytes + 1, range_bytes + 4);
+  range_modifiers_intact = range_modifiers_intact &&
+      range_assigned.size() == 3 && range_assigned[2] == 'B';
+  std::string spliced("ab");
+  spliced.insert(1, "x", 1).insert(0, "!");
+  spliced.insert(1, suffix).insert(0, 2, 'q');
+  spliced.replace(0, 2, "z", 1).replace(1, 1, "?");
+  spliced.replace(2, 1, suffix).replace(0, 1, 2, 'r');
+  bool splice_intact = spliced == "rr?eaxb";
+  char copied_bytes[] = {'?', '?', '?'};
+  bool substring_intact = spliced.copy(copied_bytes, 2, 1) == 2 &&
+                          copied_bytes[0] == 'r' && copied_bytes[1] == '?' &&
+                          copied_bytes[2] == '?' &&
+                          spliced.substr(1, 3) == "r?e";
   const std::string compared("abc");
   const std::string compared_same("abc");
   const std::string compared_later("abd");
@@ -29105,7 +29687,126 @@ int main() {
                                 compared <= "abc" && "abc" <= compared &&
                                 compared >= "abc" && "abc" >= compared &&
                                 compared.compare("abc") == 0;
-  return intact && emptied && assigned.size() == 14 &&
+  bool positional_compare_intact =
+      compared.compare(1, 2, compared_same) > 0 &&
+      compared.compare(1, 2, compared_same, 1) == 0 &&
+      compared.compare(1, 2, "bc") == 0 &&
+      compared.compare(1, 2, "bcd", 2) == 0;
+  const std::string searched("ababa");
+  const std::string pattern("aba");
+  const char embedded_pattern[] = {'b', 0, 'a'};
+  const char embedded_text[] = {'a', 'b', 0, 'a'};
+  const std::string searched_with_nul(embedded_text, 4);
+  bool search_intact = searched.find('a') == 0 &&
+                       searched.rfind('a') == 4 &&
+                       searched.find(pattern, 1) == 2 &&
+                       searched.rfind(pattern) == 2 &&
+                       searched.find("aba", 1) == 2 &&
+                       searched.rfind("aba", 1) == 0 &&
+                       searched_with_nul.find(embedded_pattern, 0, 3) == 1 &&
+                       searched_with_nul.rfind(embedded_pattern,
+                                               std::string::npos, 3) == 1;
+  const std::string character_set("b");
+  const char counted_set[] = {'x', 0};
+  bool set_search_intact = searched.find_first_of('b') == 1 &&
+                           searched.find_last_of(character_set) == 3 &&
+                           searched.find_first_not_of("a") == 1 &&
+                           searched.find_last_not_of('a') == 3 &&
+                           searched_with_nul.find_first_of(counted_set, 0, 2) == 2 &&
+                           searched_with_nul.find_last_not_of(counted_set,
+                                                                std::string::npos,
+                                                                2) == 3;
+  std::string iterated("abc");
+  for (char &character : iterated) character += 1;
+  auto cursor = iterated.begin();
+  *cursor = 'Q';
+  ++cursor;
+  bool mutable_iteration = *cursor == 'c' &&
+                           iterated.end() != iterated.begin() &&
+                           iterated[0] == 'Q' && iterated[2] == 'd';
+  auto tail_cursor = iterated.end();
+  --tail_cursor;
+  bool iterator_arithmetic = *tail_cursor == 'd' &&
+                             tail_cursor.base() == iterated.data() + 2 &&
+                             iterated.end() - iterated.begin() == 3 &&
+                             !(iterated.begin() == iterated.end()) &&
+                             empty.begin() == empty.end();
+  auto shifted_cursor = iterated.begin() + 1;
+  auto old_cursor = shifted_cursor++;
+  shifted_cursor--;
+  shifted_cursor += 1;
+  shifted_cursor -= 1;
+  bool iterator_offsets = *old_cursor == 'c' &&
+                          shifted_cursor[1] == 'd' &&
+                          *(2 + iterated.begin()) == 'd' &&
+                          *(shifted_cursor - 1) == 'Q' &&
+                          shifted_cursor.operator->() == iterated.data() + 1;
+  const std::string &const_iterated = iterated;
+  int character_sum = 0;
+  for (char character : const_iterated) character_sum += character;
+  auto const_cursor = const_iterated.cbegin();
+  bool const_iteration = character_sum == 'Q' + 'c' + 'd' &&
+                         *const_cursor == 'Q' &&
+                         const_cursor != const_iterated.cend() &&
+                         const_iterated.cend() - const_cursor == 3 &&
+                         !(empty.cbegin() != empty.cend());
+  std::string long_iterated("abcdefghijklmnopqrstuvwxyz0123456789");
+  int long_count = 0;
+  for (char &character : long_iterated) {
+    if (long_count == 0) character = 'A';
+    ++long_count;
+  }
+  bool long_iteration = long_count == 36 && long_iterated[0] == 'A' &&
+                        long_iterated[35] == '9' &&
+                        !(empty.begin() != empty.end());
+  std::string reverse_text("abc");
+  auto reverse_cursor = reverse_text.rbegin();
+  bool reverse_start = *reverse_cursor == 'c' &&
+                       reverse_cursor.base() == reverse_text.end() &&
+                       reverse_cursor.operator->() == reverse_text.data() + 2;
+  *reverse_cursor = 'Z';
+  ++reverse_cursor;
+  bool reverse_walk = *reverse_cursor == 'b' &&
+                      reverse_cursor != reverse_text.rend() &&
+                      reverse_text[2] == 'Z';
+  const std::string &reverse_const = reverse_text;
+  std::string::const_iterator converted_forward(reverse_text.begin());
+  bool forward_conversion = *converted_forward == 'a' &&
+                            converted_forward.base() == reverse_const.data();
+  auto const_reverse = reverse_const.crbegin();
+  bool reverse_const_intact = *const_reverse == 'Z' &&
+                              const_reverse[1] == 'b' &&
+                              *(const_reverse + 2) == 'a' &&
+                              reverse_const.crend() - const_reverse == 3 &&
+                              empty.rbegin() == empty.rend();
+  std::string::reverse_iterator direct_reverse(reverse_text.end());
+  auto factory_reverse = std::make_reverse_iterator(reverse_text.end());
+  std::string::const_reverse_iterator converted_reverse(reverse_text.rbegin());
+  std::string::const_reverse_iterator assigned_reverse;
+  assigned_reverse = reverse_text.rbegin();
+  auto post_reverse = reverse_text.rbegin();
+  auto old_reverse = post_reverse++;
+  auto offset_reverse = 1 + reverse_const.crbegin();
+  offset_reverse += 1;
+  offset_reverse -= 1;
+  bool reverse_construction = *direct_reverse == 'Z' &&
+                              *factory_reverse == 'Z' &&
+                              *converted_reverse == 'Z' &&
+                              *assigned_reverse == 'Z' &&
+                              *old_reverse == 'Z' && *post_reverse == 'b' &&
+                              *offset_reverse == 'b';
+  auto standard_reverse = reverse_text.rbegin();
+  std::advance(standard_reverse, 1);
+  bool reverse_standard_iterators = *standard_reverse == 'b' &&
+                                    *std::next(standard_reverse) == 'a' &&
+                                    *std::prev(standard_reverse) == 'Z' &&
+                                    std::distance(reverse_text.rbegin(),
+                                                  reverse_text.rend()) == 3;
+  const std::string reverse_long("abcdefghijklmnopqrstuvwxyz0123456789");
+  bool reverse_long_intact = *reverse_long.rbegin() == '9' &&
+                             *(reverse_long.rend() - 1) == 'a';
+  return intact && maximum_intact && shrink_intact && boundary_intact && emptied &&
+         assigned.size() == 14 &&
          assigned[0] == 'x' && assigned[2] == 'a' &&
          assigned[3] == 'b' && assigned[4] == 'c' && assigned[5] == 'd' &&
          assigned[6] == 'e' && assigned[7] == 'x' &&
@@ -29115,8 +29816,19 @@ int main() {
          joined[7] == 'e' &&
          reassigned.size() == 2 && reassigned[0] == 'a' &&
          reassigned[1] == 'a' &&
-         erase_intact && erased.empty() && compare_intact &&
-         cstring_compare_intact &&
+         erase_intact && erased.empty() && iterator_modifiers_intact &&
+         iterator_replace_intact && range_modifiers_intact &&
+         splice_intact && growth_intact &&
+         concat_intact && rvalue_concat_intact && list_intact &&
+         scalar_assignment_intact &&
+         substring_intact && compare_intact &&
+         cstring_compare_intact && positional_compare_intact &&
+         search_intact && set_search_intact &&
+         mutable_iteration && const_iteration && long_iteration &&
+         iterator_arithmetic && iterator_offsets && forward_conversion &&
+         reverse_start && reverse_walk &&
+         reverse_const_intact && reverse_construction &&
+         reverse_long_intact && reverse_standard_iterators &&
          assigned.capacity() >= requested_capacity
              ? 0 : 1;
 }
@@ -29201,8 +29913,26 @@ std::string_view exchange(std::string_view left, std::string_view right) {
 std::string_view::size_type capacity(std::string_view view) {
   return view.max_size();
 }
+std::string_view slice(std::string_view view) {
+  return view.substr(1, 2);
+}
+std::string_view::size_type copy_slice(std::string_view view, char *out) {
+  return view.copy(out, 2, 1);
+}
 int compare(std::string_view left, std::string_view right) {
   return left.compare(right);
+}
+int compare_pointer(std::string_view left, const char *right) {
+  return left.compare(right);
+}
+int compare_slice(std::string_view left, std::string_view right) {
+  return left.compare(1, 2, right);
+}
+int compare_both_slices(std::string_view left, std::string_view right) {
+  return left.compare(1, 2, right, 1, 2);
+}
+int compare_counted(std::string_view left, const char *right) {
+  return left.compare(1, 2, right, 2);
 }
 bool relations(std::string_view left, std::string_view right) {
   return left == right || left != right || left < right ||
@@ -29228,6 +29958,14 @@ std::string_view::size_type find_view_default(std::string_view view,
                                              std::string_view needle) {
   return view.find(needle);
 }
+std::string_view::size_type find_pointer(std::string_view view,
+                                         const char *needle) {
+  return view.find(needle);
+}
+std::string_view::size_type find_counted(std::string_view view,
+                                         const char *needle) {
+  return view.find(needle, 1, 2);
+}
 std::string_view::size_type reverse_find(std::string_view view, char needle,
                                          std::string_view::size_type pos) {
   return view.rfind(needle, pos);
@@ -29245,6 +29983,28 @@ std::string_view::size_type reverse_find_view_default(
     std::string_view view, std::string_view needle) {
   return view.rfind(needle);
 }
+std::string_view::size_type reverse_find_pointer(std::string_view view,
+                                                 const char *needle) {
+  return view.rfind(needle);
+}
+std::string_view::size_type reverse_find_counted(std::string_view view,
+                                                 const char *needle) {
+  return view.rfind(needle, std::string_view::npos, 2);
+}
+std::string_view::size_type first_of(std::string_view view,
+                                      std::string_view set) {
+  return view.find_first_of(set);
+}
+std::string_view::size_type last_of(std::string_view view, const char *set) {
+  return view.find_last_of(set);
+}
+std::string_view::size_type first_not_of(std::string_view view, char value) {
+  return view.find_first_not_of(value);
+}
+std::string_view::size_type last_not_of(std::string_view view,
+                                        const char *set) {
+  return view.find_last_not_of(set, std::string_view::npos, 2);
+}
 char reverse_first(std::string_view view) {
   return view.rbegin() != view.rend() ? *view.crbegin() : 0;
 }
@@ -29257,12 +30017,6 @@ char reverse_first(std::string_view view) {
           "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-string-view-unlowered-member",
           '#include <string_view>\nint f(){std::string_view view("a",1);return view.at(0);}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
-    check("v2-string-view-unlowered-find-pointer",
-          '#include <string_view>\nstd::string_view::size_type f(std::string_view view){return view.find("a",0);}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
-    check("v2-string-view-unlowered-rfind-pointer",
-          '#include <string_view>\nstd::string_view::size_type f(std::string_view view){return view.rfind("a",0);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-string-view-quoted", '#include "string_view"\nint f(){return 0;}',
           "TR0201", profile="cpp-core-v2", sdk=True)
