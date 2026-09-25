@@ -20,6 +20,7 @@ fastlink::Status fastlink::link(const Request &, std::string &Reason) {
 #include "FastLinkSupport.h"
 
 #include <cerrno>
+#include <fnmatch.h>
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -244,6 +245,7 @@ struct Ctx {
                         *shDef = nullptr;
   std::atomic<uint16_t> *flags = nullptr;
   Symbol *syms = nullptr;
+  uint16_t *versionIds = nullptr; // by name, with a version script
   PlacedSection *placed = nullptr; // indexed by SectionState::placed
   // Pieces of mergeable sections: input offset, piece id in the group's
   // table, and output offset in the output section (UINT32_MAX until the
@@ -286,11 +288,71 @@ inline bool isExported(uint32_t id) {
   const uint16_t f = ctx.flags[id].load(std::memory_order_relaxed);
   if (!(f & SharedRef) && !ctx.opt.exportDynamic && !ctx.opt.shared)
     return false;
-  if (f & HiddenRef)
+  if ((f & HiddenRef) || (ctx.versionIds && ctx.versionIds[id] == 0))
     return false;
   const int vis =
       ELF64_ST_VISIBILITY(ctx.objects[s.file]->syms[s.index].st_other);
   return vis == STV_DEFAULT || vis == STV_PROTECTED;
+}
+
+// Assigns version script nodes to definitions: exact names first, then glob
+// patterns with later nodes taking precedence, "*" last. Unassigned
+// definitions get the global version.
+void applyVersionScript() {
+  const auto &nodes = ctx.opt.versions;
+  if (nodes.empty())
+    return;
+  bool any = false;
+  for (const auto &n : nodes)
+    any |= !n.global.empty() || !n.local.empty();
+  if (!any)
+    return;
+  ctx.versionIds = bigArray<uint16_t>(*ctx.pool, ctx.numNames);
+  vector<uint8_t> assigned(ctx.numNames, 0);
+  auto exact = [&](const fastlink::Request::VersionPattern &p, uint16_t id) {
+    const uint32_t name = ctx.names->find(p.name.data(), p.name.size());
+    if (name == UINT32_MAX || ctx.syms[name].kind != Symbol::Object) {
+      if (!ctx.opt.undefinedVersion)
+        fatal("version script names undefined symbol " + p.name);
+      return;
+    }
+    if (assigned[name] && ctx.versionIds[name] != id)
+      fatal("version script assigns " + p.name + " twice");
+    assigned[name] = 1;
+    ctx.versionIds[name] = id;
+  };
+  for (size_t v = 0; v < nodes.size(); ++v) {
+    for (const auto &p : nodes[v].global)
+      if (!p.wildcard)
+        exact(p, uint16_t(v));
+    for (const auto &p : nodes[v].local)
+      if (!p.wildcard)
+        exact(p, 0);
+  }
+  // Glob patterns in precedence order.
+  vector<std::pair<const string *, uint16_t>> globs;
+  for (int star = 0; star < 2; ++star)
+    for (size_t v = nodes.size(); v-- > 0;) {
+      for (const auto &p : nodes[v].global)
+        if (p.wildcard && (p.name == "*") == bool(star))
+          globs.push_back({&p.name, uint16_t(v)});
+      for (const auto &p : nodes[v].local)
+        if (p.wildcard && (p.name == "*") == bool(star))
+          globs.push_back({&p.name, 0});
+    }
+  ctx.pool->forEach(ctx.numNames, [&](size_t id) {
+    if (assigned[id])
+      return;
+    ctx.versionIds[id] = 1;
+    if (ctx.syms[id].kind != Symbol::Object)
+      return;
+    const string name(ctx.nameStr[id]);
+    for (auto [pattern, v] : globs)
+      if (fnmatch(pattern->c_str(), name.c_str(), 0) == 0) {
+        ctx.versionIds[id] = v;
+        return;
+      }
+  });
 }
 
 // Marks the names the dynamic loader binds: imports, and in a shared
@@ -1670,10 +1732,11 @@ int rankOf(const OutputSection *s) {
       return 0;
     if (s->type == SHT_NOTE)
       return 1;
-    static const char *const synth[] = {".dynsym", ".gnu.version",
-                                        ".gnu.version_r", ".gnu.hash",
-                                        ".dynstr", ".rela.dyn", ".rela.plt"};
-    for (int i = 0; i < 7; ++i)
+    static const char *const synth[] = {".dynsym",   ".gnu.version",
+                                        ".gnu.version_d", ".gnu.version_r",
+                                        ".gnu.hash", ".dynstr",
+                                        ".rela.dyn", ".rela.plt"};
+    for (int i = 0; i < 8; ++i)
       if (n == synth[i])
         return 2 + i;
     if (n == ".eh_frame_hdr")
@@ -1712,6 +1775,18 @@ uint32_t initPriority(string_view n) {
     v = v * 10 + (c - '0');
   }
   return v;
+}
+
+uint32_t elfHash(string_view s) {
+  uint32_t h = 0;
+  for (unsigned char c : s) {
+    h = (h << 4) + c;
+    uint32_t g = h & 0xf0000000;
+    if (g)
+      h ^= g >> 24;
+    h &= ~g;
+  }
+  return h;
 }
 
 uint32_t gnuHash(string_view s) {
@@ -1762,6 +1837,12 @@ struct Layout {
     vector<Aux> aux;
   };
   vector<Verneed> verneeds;
+  // .gnu.version_d entries: the base version, then the named ones.
+  struct Verdef {
+    uint32_t hash, name;
+  };
+  vector<Verdef> verdefs;
+  OutputSection *verdef = nullptr;
   vector<uint16_t> versyms;
   OutputSection *versym = nullptr, *verneed = nullptr;
   OutputSection *ehFrame = nullptr, *ehHdr = nullptr;
@@ -2920,11 +3001,30 @@ void buildDynamic() {
   // Symbol versions: each import binds to the version its library defines.
   L.versyms.assign(1 + L.imports.size() + L.exports.size(), 1);
   L.versyms[0] = 0;
+  // Definitions carry their version script node; named nodes are defined
+  // in .gnu.version_d after the base version, the file itself.
+  if (ctx.versionIds) {
+    for (size_t i = 0; i < L.exports.size(); ++i)
+      L.versyms[1 + L.imports.size() + i] = ctx.versionIds[L.exports[i]];
+    if (ctx.opt.versions.size() > 2) {
+      string base = ctx.opt.soname;
+      if (base.empty()) {
+        size_t slash = ctx.opt.output.rfind('/');
+        base = slash == string::npos ? ctx.opt.output
+                                     : ctx.opt.output.substr(slash + 1);
+      }
+      L.verdefs.push_back({elfHash(base), addStr(base)});
+      for (size_t v = 2; v < ctx.opt.versions.size(); ++v)
+        L.verdefs.push_back({elfHash(ctx.opt.versions[v].name),
+                             addStr(ctx.opt.versions[v].name)});
+    }
+  }
   {
     std::unordered_map<const SharedFile *, vector<const char *>> verNames;
     std::map<std::pair<uint32_t, string_view>, uint16_t> assigned; // (lib pos, ver)
     vector<std::pair<SharedFile *, vector<std::pair<string_view, uint16_t>>>> libs;
-    uint16_t next = 2;
+    // Needed versions are numbered after the defined ones.
+    uint16_t next = uint16_t(std::max<size_t>(2, L.verdefs.size() + 1));
     for (size_t i = 0; i < L.imports.size(); ++i) {
       const Symbol &sym = ctx.syms[L.imports[i]];
       if (sym.kind != Symbol::Shared)
@@ -2971,17 +3071,8 @@ void buildDynamic() {
         if (L.neededLibs[k] == so)
           file = L.neededOff[k];
       Layout::Verneed vn{file, {}};
-      for (auto &[name, idx] : vers) {
-        uint32_t h = 0;
-        for (unsigned char c : name) {
-          h = (h << 4) + c;
-          uint32_t g = h & 0xf0000000;
-          if (g)
-            h ^= g >> 24;
-          h &= ~g;
-        }
-        vn.aux.push_back({h, idx, addStr(name)});
-      }
+      for (auto &[name, idx] : vers)
+        vn.aux.push_back({elfHash(name), idx, addStr(name)});
       L.verneeds.push_back(std::move(vn));
     }
   }
@@ -3035,10 +3126,16 @@ void buildDynamic() {
   L.gnuHashSec->size = 16 + 8 + 4 * L.gnuBuckets + 4 * L.exports.size();
   L.dynstr = newSection(".dynstr", SHT_STRTAB, A, 1);
   L.dynstr->size = L.dynstrData.size();
-  if (!L.verneeds.empty()) {
+  if (!L.verneeds.empty() || !L.verdefs.empty()) {
     L.versym = newSection(".gnu.version", SHT_GNU_versym, A, 2);
     L.versym->size = 2 * L.versyms.size();
     L.versym->entsize = 2;
+  }
+  if (!L.verdefs.empty()) {
+    L.verdef = newSection(".gnu.version_d", SHT_GNU_verdef, A, 4);
+    L.verdef->size = 28 * L.verdefs.size();
+  }
+  if (!L.verneeds.empty()) {
     L.verneed = newSection(".gnu.version_r", SHT_GNU_verneed, A, 8);
     size_t n = 0;
     for (auto &v : L.verneeds)
@@ -3111,8 +3208,13 @@ vector<Elf64_Dyn> dynamicEntries() {
     add(DT_INIT, v - 1);
   if (uint64_t v = symVAOf("_fini"))
     add(DT_FINI, v - 1);
-  if (L.versym) {
+  if (L.versym)
     add(DT_VERSYM, L.versym->addr);
+  if (L.verdef) {
+    add(DT_VERDEF, L.verdef->addr);
+    add(DT_VERDEFNUM, L.verdefs.size());
+  }
+  if (L.verneed) {
     add(DT_VERNEED, L.verneed->addr);
     add(DT_VERNEEDNUM, L.verneeds.size());
   }
@@ -3225,6 +3327,8 @@ SymOut classifyGlobal(const ObjectFile *o, uint32_t fi, uint32_t k) {
       (s.st_shndx >= SHN_LORESERVE || o->secs[s.st_shndx].osec == 0))
     return SymOut::Skip;
   int vis = ELF64_ST_VISIBILITY(s.st_other);
+  if (ctx.versionIds && ctx.versionIds[o->nameIds[k - o->firstGlobal]] == 0)
+    return SymOut::Local;
   return vis == STV_HIDDEN || vis == STV_INTERNAL ? SymOut::Local
                                                   : SymOut::Global;
 }
@@ -3960,8 +4064,25 @@ void writeSynthetic(uint8_t *buf) {
       ++i;
     }
   }
-  if (L.versym) {
+  if (L.verdef) {
+    uint8_t *p = buf + L.verdef->offset;
+    for (size_t i = 0; i < L.verdefs.size(); ++i, p += 28) {
+      auto *vd = reinterpret_cast<Elf64_Verdef *>(p);
+      vd->vd_version = 1;
+      vd->vd_flags = i == 0 ? VER_FLG_BASE : 0;
+      vd->vd_ndx = uint16_t(i + 1);
+      vd->vd_cnt = 1;
+      vd->vd_hash = L.verdefs[i].hash;
+      vd->vd_aux = 20;
+      vd->vd_next = i + 1 < L.verdefs.size() ? 28 : 0;
+      auto *aux = reinterpret_cast<Elf64_Verdaux *>(p + 20);
+      aux->vda_name = L.verdefs[i].name;
+      aux->vda_next = 0;
+    }
+  }
+  if (L.versym)
     memcpy(buf + L.versym->offset, L.versyms.data(), 2 * L.versyms.size());
+  if (L.verneed) {
     uint8_t *p = buf + L.verneed->offset;
     for (size_t i = 0; i < L.verneeds.size(); ++i) {
       const auto &v = L.verneeds[i];
@@ -4274,6 +4395,7 @@ void writeHeaders(uint8_t *buf) {
   link(L.gnuHashSec, L.dynsym, 0);
   link(L.versym, L.dynsym, 0);
   link(L.verneed, L.dynstr, L.verneeds.size());
+  link(L.verdef, L.dynstr, L.verdefs.size());
   link(L.dynamic, L.dynstr, 0);
   link(L.relaDyn, L.dynsym, 0);
   link(L.relaPlt, L.dynsym, L.gotPlt->shndx);
@@ -4463,6 +4585,7 @@ void runPipeline() {
   lap();
   resolve();
   checkUndefined();
+  applyVersionScript();
   markPreemptible();
   lap();
   selectComdats();

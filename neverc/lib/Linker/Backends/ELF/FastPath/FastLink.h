@@ -53,6 +53,18 @@ struct Request {
   std::string soname;
   unsigned bsymbolic = 0;
   bool allowUndefined = false;
+  // Version script nodes by version index: 0 is local, 1 global, later
+  // entries the named versions. Patterns may contain glob characters.
+  struct VersionPattern {
+    std::string name;
+    bool wildcard = false;
+  };
+  struct VersionNode {
+    std::string name;
+    std::vector<VersionPattern> global, local;
+  };
+  std::vector<VersionNode> versions;
+  bool undefinedVersion = false; // patterns may name undefined symbols
   bool stripDebug = false;    // omit the inputs' debug sections
   // Identical code folding: 0 none, 1 sections whose address is not taken,
   // 2 all code and the data whose address is not taken.

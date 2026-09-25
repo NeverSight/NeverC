@@ -762,6 +762,7 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
     case OPT_undefined_version:
     case OPT_no_undefined_version:
     case OPT_soname:
+    case OPT_version_script:
       break;
     case OPT_no_mmap_output_file:
       req.mmapOutput = false;
@@ -855,6 +856,23 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
     break;
   }
   req.allowUndefined = config->unresolvedSymbols == UnresolvedPolicy::Ignore;
+  // Version script nodes, parsed by readConfigs(), by version index.
+  req.undefinedVersion = config->undefinedVersion;
+  if (config->versionDefinitions.size() > 2 ||
+      !config->versionDefinitions[VER_NDX_LOCAL].nonLocalPatterns.empty() ||
+      !config->versionDefinitions[VER_NDX_GLOBAL].nonLocalPatterns.empty()) {
+    req.versions.resize(config->versionDefinitions.size());
+    for (const VersionDefinition &v : config->versionDefinitions) {
+      if (v.id >= req.versions.size())
+        return decline("version index");
+      fastlink::Request::VersionNode &node = req.versions[v.id];
+      node.name = v.name.str();
+      for (const SymbolVersion &p : v.nonLocalPatterns)
+        node.global.push_back({p.name.str(), p.hasWildcard});
+      for (const SymbolVersion &p : v.localPatterns)
+        node.local.push_back({p.name.str(), p.hasWildcard});
+    }
+  }
   req.stripDebug = config->strip != StripPolicy::None;
   req.icf = config->icf == ICFLevel::Safe  ? 1
             : config->icf == ICFLevel::All ? 2

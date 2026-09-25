@@ -1958,6 +1958,53 @@ int main(void) { return lib_value() == 141 ? 23 : 1; }
   EXPECT_EQ(exec(image.string(), {}).exitCode, 23);
 }
 
+TEST_F(LinkerTest, FastPipelineAppliesVersionScripts) {
+  if (!isLinux())
+    GTEST_SKIP() << "the fast ELF pipeline links Linux executables";
+
+  const fs::path source = tmpFile("fast_versions.s");
+  const fs::path object = tmpFile("fast_versions.o");
+  const fs::path script = tmpFile("fast_versions.map");
+  const fs::path library = tmpFile("libfastversions.so");
+  writeFile(source, R"(
+.text
+.globl a, b, c
+.type a,@function
+.type b,@function
+.type c,@function
+a:
+  ret
+b:
+  ret
+c:
+  ret
+.section .note.GNU-stack,"",@progbits
+)");
+  writeFile(script, R"(
+V1 { global: a; local: *; };
+V2 { global: b; } V1;
+)");
+  CmdResult assemble = assembleELFObject(source, object);
+  ASSERT_EQ(assemble.exitCode, 0) << assemble.err;
+
+  ScopedEnvironmentVariable report("NEVERC_ELF_FASTLINK_TIME", "1");
+  std::vector<std::string> args = baseLinkArgs();
+  args.insert(args.end(), {"-shared", "-Wl,--version-script=" + script.string(),
+                           object.string(), "-o", library.string()});
+  CmdResult link = ncc(args);
+  ASSERT_EQ(link.exitCode, 0) << link.err;
+  EXPECT_EQ(link.err.find("fast pipeline not used"), std::string::npos)
+      << link.err;
+
+  llvm::Expected<ELFDynamicSymbolVersions> versions =
+      readELFDynamicSymbolVersions(readFile(library));
+  ASSERT_TRUE(static_cast<bool>(versions))
+      << llvm::toString(versions.takeError()).str().str();
+  EXPECT_EQ(versions->at("a"), std::make_pair(std::string("V1"), true));
+  EXPECT_EQ(versions->at("b"), std::make_pair(std::string("V2"), true));
+  EXPECT_EQ(versions->count("c"), 0u) << "local: * must hide c";
+}
+
 TEST_F(LinkerTest, ThreadCountOptionKeepsOutputBytesOnEveryFormat) {
   struct Format {
     const char *name;
