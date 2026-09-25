@@ -18408,6 +18408,21 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return utilityAlgorithmScalarPointer(Context, Parameter) &&
            Same(Call->getArg(Index)->getType(), Parameter);
   };
+  auto AlgorithmRangePointerParameter = [&](unsigned Index)
+      -> std::optional<QualType> {
+    if (Index >= Function->getNumParams() || Index >= Call->getNumArgs())
+      return std::nullopt;
+    const auto Parameter = Function->getParamDecl(Index)->getType();
+    if (!Same(Call->getArg(Index)->getType(), Parameter))
+      return std::nullopt;
+    if (utilityAlgorithmScalarPointer(Context, Parameter))
+      return Parameter;
+    const auto Wrapped = approvedUtilityWrapIteratorRecord(
+        S, SM, Parameter->getAsCXXRecordDecl(), Context);
+    if (Wrapped && utilityAlgorithmScalarPointer(Context, Wrapped->IteratorType))
+      return Wrapped->IteratorType;
+    return std::nullopt;
+  };
   auto AlgorithmTransferParameters = [&](unsigned InputIndex,
                                          unsigned OutputIndex) {
     if (!AlgorithmPointerParameter(InputIndex) ||
@@ -19411,28 +19426,48 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
       Function->getReturnType()->isBooleanType() &&
       Same(Call->getType(), Function->getReturnType()) &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
-      AlgorithmPointerParameter(2) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType())) {
-    const bool DefaultElements = AlgorithmEqualityPointerParameter(0) &&
-                                 AlgorithmEqualityPointerParameter(1) &&
-                                 AlgorithmEqualityParameters(0, 2);
-    if (Call->getNumArgs() == 3 && DefaultElements)
-      return UtilityOperation::AlgorithmEqual;
-    if (Call->getNumArgs() == 4) {
-      if (DefaultElements && AlgorithmEqualityPointerParameter(3) &&
-          Same(Function->getParamDecl(2)->getType(),
-               Function->getParamDecl(3)->getType()))
+    const auto First = AlgorithmRangePointerParameter(0);
+    const auto Last = AlgorithmRangePointerParameter(1);
+    const auto Second = AlgorithmRangePointerParameter(2);
+    if (First && Last && Second) {
+      const auto FirstElement = (*First)->getPointeeType();
+      const auto SecondElement = (*Second)->getPointeeType();
+      const bool DefaultElements =
+          utilityAlgorithmEqualityPointer(Context, *First) &&
+          utilityAlgorithmEqualityPointer(Context, *Second) &&
+          !utilityEnumHasSourceOperator(S, SM, Context, FirstElement,
+                                        OO_EqualEqual) &&
+          !utilityEnumHasSourceOperator(S, SM, Context, SecondElement,
+                                        OO_EqualEqual) &&
+          utilityScalarComparisonType(Context, FirstElement, SecondElement,
+                                      false).has_value();
+      auto Predicate = [&](unsigned Index) {
+        const auto *Prototype = AlgorithmCallbackPrototype(Index);
+        return Prototype && Prototype->getNumParams() == 2 &&
+               Prototype->getReturnType()->isBooleanType() &&
+               utilityScalarDirectConversion(Context, FirstElement,
+                                             Prototype->getParamType(0)) &&
+               utilityScalarDirectConversion(Context, SecondElement,
+                                             Prototype->getParamType(1));
+      };
+      if (Call->getNumArgs() == 3 && DefaultElements)
         return UtilityOperation::AlgorithmEqual;
-      if (AlgorithmBinaryPredicateParameter(3, 0, 2))
+      if (Call->getNumArgs() == 4) {
+        const auto SecondLast = AlgorithmRangePointerParameter(3);
+        if (DefaultElements && SecondLast &&
+            Same(Function->getParamDecl(2)->getType(),
+                 Function->getParamDecl(3)->getType()))
+          return UtilityOperation::AlgorithmEqual;
+        if (Predicate(3))
+          return UtilityOperation::AlgorithmEqual;
+      }
+      if (Call->getNumArgs() == 5 && AlgorithmRangePointerParameter(3) &&
+          Same(Function->getParamDecl(2)->getType(),
+               Function->getParamDecl(3)->getType()) && Predicate(4))
         return UtilityOperation::AlgorithmEqual;
     }
-    if (Call->getNumArgs() == 5 && AlgorithmPointerParameter(3) &&
-        Same(Function->getParamDecl(2)->getType(),
-             Function->getParamDecl(3)->getType()) &&
-        AlgorithmBinaryPredicateParameter(4, 0, 2))
-      return UtilityOperation::AlgorithmEqual;
   }
   if ((Origin->Path == "__algorithm/copy.h" ||
        Origin->Path == "__algorithm/move.h" ||
@@ -19460,15 +19495,25 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   }
   if (Origin->Path == "__algorithm/fill.h" && Name == "fill" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(0)->getType()) &&
-      AlgorithmTransferValueParameter(2, 0) &&
       Function->getReturnType()->isVoidType() &&
-      Same(Call->getType(), Function->getReturnType()))
-    return UtilityOperation::AlgorithmFill;
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto First = AlgorithmRangePointerParameter(0);
+    const auto Last = AlgorithmRangePointerParameter(1);
+    const auto Value = Function->getParamDecl(2)->getType();
+    if (First && Last &&
+        utilityAlgorithmWritableScalarPointer(Context, *First) &&
+        Value->isLValueReferenceType() &&
+        Value->getPointeeType().isConstQualified() &&
+        !Value->getPointeeType().isVolatileQualified() &&
+        utilityScalar(Context, Value->getPointeeType()) &&
+        Context.hasSameUnqualifiedType(Call->getArg(2)->getType(),
+                                       Value->getPointeeType()) &&
+        utilityScalarDirectConversion(Context, Value->getPointeeType(),
+                                      (*First)->getPointeeType()))
+      return UtilityOperation::AlgorithmFill;
+  }
   if (Origin->Path == "__algorithm/fill_n.h" && Name == "fill_n" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
       Call->isPRValue() && AlgorithmPointerParameter(0) &&
@@ -19495,14 +19540,16 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return UtilityOperation::AlgorithmSwapRanges;
   if (Origin->Path == "__algorithm/reverse.h" && Name == "reverse" &&
       Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      utilityAlgorithmWritableScalarPointer(
-          Context, Function->getParamDecl(0)->getType()) &&
       Function->getReturnType()->isVoidType() &&
-      Same(Call->getType(), Function->getReturnType()))
-    return UtilityOperation::AlgorithmReverse;
+      Same(Call->getType(), Function->getReturnType())) {
+    const auto First = AlgorithmRangePointerParameter(0);
+    const auto Last = AlgorithmRangePointerParameter(1);
+    if (First && Last &&
+        utilityAlgorithmWritableScalarPointer(Context, *First))
+      return UtilityOperation::AlgorithmReverse;
+  }
   if (Origin->Path == "__algorithm/reverse_copy.h" && Name == "reverse_copy" &&
       Call->getNumArgs() == 3 && Function->getNumParams() == 3 &&
       Call->isPRValue() && AlgorithmPointerParameter(0) &&

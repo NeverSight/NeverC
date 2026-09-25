@@ -51575,6 +51575,94 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedIteratorEqualFillAndReverseRun) {
+  const auto Source = tmpFile("wrapped-iterator-equal-fill-reverse.cpp");
+  const auto Output = tmpFile("wrapped-iterator-equal-fill-reverse.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <string>
+#include <vector>
+int comparisons;
+bool same(int left, long right) {
+  ++comparisons;
+  return left == right;
+}
+int main() {
+  std::vector<int> first{1, 2, 3, 4};
+  std::vector<long> second{1, 2, 3, 4};
+  int raw[4]{1, 2, 3, 4};
+  if (!std::equal(first.cbegin(), first.cend(), second.cbegin()) ||
+      !std::equal(first.cbegin(), first.cend(), second.cbegin(),
+                  second.cend()) ||
+      !std::equal(first.begin(), first.end(), raw))
+    return 1;
+  comparisons = 0;
+  if (!std::equal(first.begin(), first.end(), second.begin(), same) ||
+      comparisons != 4)
+    return 2;
+  comparisons = 0;
+  if (!std::equal(first.begin(), first.end(), second.begin(),
+                  second.end(), same) || comparisons != 4)
+    return 3;
+  second[2] = 9;
+  comparisons = 0;
+  if (std::equal(first.cbegin(), first.cend(), second.cbegin(), same) ||
+      comparisons != 3)
+    return 4;
+  second[2] = 3;
+  auto short_end = second.cend();
+  --short_end;
+  if (std::equal(first.cbegin(), first.cend(), second.cbegin(), short_end))
+    return 5;
+  std::vector<int> empty;
+  if (!std::equal(empty.begin(), empty.end(), first.begin()))
+    return 6;
+  short replacement = 7;
+  int effects = 0;
+  std::fill((++effects, first.begin()), (++effects, first.end()),
+            (++effects, replacement));
+  if (effects != 3 || first[0] != 7 || first[1] != 7 ||
+      first[2] != 7 || first[3] != 7)
+    return 7;
+  std::reverse(first.begin(), first.end());
+  std::reverse(empty.begin(), empty.end());
+  std::vector<int> order{1, 2, 3, 4, 5};
+  std::reverse(order.begin(), order.end());
+  if (order[0] != 5 || order[1] != 4 || order[2] != 3 ||
+      order[3] != 2 || order[4] != 1)
+    return 8;
+  std::string word("abcd");
+  std::reverse(word.begin(), word.end());
+  if (word[0] != 'd' || word[3] != 'a')
+    return 9;
+  auto middle = word.begin();
+  ++middle;
+  std::fill(word.begin(), middle, 'x');
+  const char expected[4]{'x', 'c', 'b', 'a'};
+  if (!std::equal(word.cbegin(), word.cend(), expected))
+    return 10;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o",
+                                   Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapped-iterator-equal-fill-reverse" +
+                                    Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorInitializerAndFillConstructionRun) {
   const auto Source = tmpFile("vector-initializers.cpp");
   const auto Output = tmpFile("vector-initializers.nc");

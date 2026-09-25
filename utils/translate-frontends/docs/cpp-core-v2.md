@@ -1543,6 +1543,16 @@ checks apply. Each iterator is evaluated once; `find` returns a wrapper around
 the matching pointer or end pointer, and `count` returns the target pointer
 difference type. Record elements remain rejected.
 
+The three- and four-iterator `std::equal` overloads also accept those wrapped
+ranges on either side, including a wrapped range compared with a raw scalar
+pointer range. Default equality retains the checked common scalar type and
+source-enum operator restrictions. The four- and five-argument function-pointer
+predicate forms retain their checked by-value scalar parameter conversions.
+`std::fill` and `std::reverse` accept writable wrapped scalar ranges, including
+mutable vector and string iterators, while preserving the existing value
+conversion, single evaluation, and empty-range behavior. Const iterators and
+record elements remain outside these mutation operations.
+
 The exact binary-predicate overloads of `std::adjacent_find`, three- and
 four-iterator `std::equal`, three- and four-iterator `std::mismatch`, and three-
 and four-iterator `std::is_permutation`, plus `std::unique`,

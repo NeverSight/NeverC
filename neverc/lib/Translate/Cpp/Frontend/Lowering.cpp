@@ -2081,6 +2081,18 @@ class FunctionLowering {
           "==", Left, Call->getArg(LeftIndex)->getType()->getPointeeType(),
           Right, Call->getArg(RightIndex)->getType()->getPointeeType());
     };
+    auto AlgorithmRangeValue = [&](unsigned Index)
+        -> std::pair<Expression, QualType> {
+      const auto IteratorType = Call->getArg(Index)->getType();
+      const auto Wrapped = approvedUtilityWrapIteratorRecord(
+          A.S, A.Sources, IteratorType->getAsCXXRecordDecl(), A.Context);
+      auto Value = snapshot(expression(Call->getArg(Index)), L);
+      if (Wrapped)
+        return {snapshot(fieldStorage(std::move(Value), Wrapped->Current, L),
+                         L),
+                Wrapped->IteratorType};
+      return {std::move(Value), IteratorType};
+    };
     auto ReverseFor = [&](QualType Type) {
       return approvedUtilityReverseIteratorRecord(
           A.S, A.Sources, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(),
@@ -4128,9 +4140,14 @@ class FunctionLowering {
       return Result;
     }
     case UtilityOperation::AlgorithmEqual: {
-      auto First = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
-      auto Second = snapshot(expression(Call->getArg(2)), L);
+      auto FirstRange = AlgorithmRangeValue(0);
+      auto LastRange = AlgorithmRangeValue(1);
+      auto SecondRange = AlgorithmRangeValue(2);
+      auto First = std::move(FirstRange.first);
+      auto Last = std::move(LastRange.first);
+      auto Second = std::move(SecondRange.first);
+      const auto FirstPointerType = type(FirstRange.second, L);
+      const auto SecondPointerType = type(SecondRange.second, L);
       std::optional<Expression> SecondLast;
       std::optional<unsigned> PredicateIndex;
       if (Call->getNumArgs() == 4 &&
@@ -4140,7 +4157,7 @@ class FunctionLowering {
         PredicateIndex = 4;
       if ((Call->getNumArgs() == 4 && !PredicateIndex) ||
           Call->getNumArgs() == 5)
-        SecondLast = snapshot(expression(Call->getArg(3)), L);
+        SecondLast = std::move(AlgorithmRangeValue(3).first);
       std::optional<Expression> Predicate;
       if (PredicateIndex)
         Predicate = snapshot(expression(Call->getArg(*PredicateIndex)), L);
@@ -4164,19 +4181,22 @@ class FunctionLowering {
                                        Call->getArg(*PredicateIndex)->getType(),
                                        dereference(json::Object(First), L),
                                        dereference(json::Object(Second), L), L)
-                 : AlgorithmEqual(dereference(First, L), 0,
-                                  dereference(Second, L), 2),
+                 : CompareUtilityValues(
+                       "==", dereference(First, L),
+                       FirstRange.second->getPointeeType(),
+                       dereference(Second, L),
+                       SecondRange.second->getPointeeType()),
              Next, False, L);
       label(Next, L);
       assign(First,
              binary("+", First,
                     quantity(1, type(A.Context.getPointerDiffType(), L), L),
-                    type(Call->getArg(0)->getType(), L), L),
+                    FirstPointerType, L),
              L);
       assign(Second,
              binary("+", Second,
                     quantity(1, type(A.Context.getPointerDiffType(), L), L),
-                    type(Call->getArg(2)->getType(), L), L),
+                    SecondPointerType, L),
              L);
       jump(Check, L);
       label(False, L);
@@ -4267,8 +4287,11 @@ class FunctionLowering {
       const bool Counted =
           Operation == UtilityOperation::AlgorithmFillN ||
           Operation == UtilityOperation::MemoryUninitializedFillN;
-      auto Current = snapshot(expression(Call->getArg(0)), L);
-      auto BoundaryType = Call->getArg(1)->getType();
+      auto CurrentRange = AlgorithmRangeValue(0);
+      auto Current = std::move(CurrentRange.first);
+      const auto PointerQualType = CurrentRange.second;
+      auto BoundaryType =
+          Counted ? Call->getArg(1)->getType() : PointerQualType;
       if (Counted) {
         if (const auto *Enumeration = BoundaryType->getAs<EnumType>())
           BoundaryType = Enumeration->getDecl()->getPromotionType();
@@ -4276,16 +4299,16 @@ class FunctionLowering {
           BoundaryType = A.Context.getPromotedIntegerType(BoundaryType);
       }
       const auto BoundaryTypeName = type(BoundaryType, L);
-      auto Boundary = snapshot(
-          Counted ? cast(expression(Call->getArg(1)), BoundaryTypeName, L)
-                  : expression(Call->getArg(1)),
-          L);
+      auto Boundary = Counted
+                          ? snapshot(cast(expression(Call->getArg(1)),
+                                          BoundaryTypeName, L), L)
+                          : std::move(AlgorithmRangeValue(1).first);
       auto ValueAddress = snapshot(
           address(lvalue(Call->getArg(2)), Call->getArg(2)->getType(), L), L);
       const auto Check = labelName(), Store = labelName(), End = labelName();
-      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto PointerType = type(PointerQualType, L);
       const auto OutputElementType =
-          type(Call->getArg(0)->getType()->getPointeeType(), L);
+          type(PointerQualType->getPointeeType(), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const bool MemoryConstruction =
           Operation == UtilityOperation::MemoryUninitializedFill ||
@@ -4353,12 +4376,14 @@ class FunctionLowering {
       return Second;
     }
     case UtilityOperation::AlgorithmReverse: {
-      auto First = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto FirstRange = AlgorithmRangeValue(0);
+      auto LastRange = AlgorithmRangeValue(1);
+      auto First = std::move(FirstRange.first);
+      auto Last = std::move(LastRange.first);
       const auto Check = labelName(), Decrement = labelName();
       const auto Swap = labelName(), End = labelName();
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto PointerType = type(FirstRange.second, L);
       jump(Check, L);
       label(Check, L);
       branch(binary("!=", First, Last, "bool", L), Decrement, End, L);

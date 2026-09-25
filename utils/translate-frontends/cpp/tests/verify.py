@@ -29188,6 +29188,51 @@ std::string::iterator find_string(std::string& value, char needle) {
           'std::find(values.begin(),values.end(),needle);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_equal_fill_reverse_source = """\
+#include <algorithm>
+#include <string>
+#include <vector>
+bool same(int left, long right) { return left == right; }
+bool equal_vectors(const std::vector<int>& left,
+                   const std::vector<long>& right) {
+  return std::equal(left.cbegin(), left.cend(), right.cbegin(), right.cend()) &&
+         std::equal(left.cbegin(), left.cend(), right.cbegin(), same);
+}
+bool equal_raw(const std::vector<int>& left, const int *right) {
+  return std::equal(left.cbegin(), left.cend(), right);
+}
+void fill_vector(std::vector<int>& values, short value) {
+  std::fill(values.begin(), values.end(), value);
+}
+void reverse_vector(std::vector<int>& values) {
+  std::reverse(values.begin(), values.end());
+}
+void reverse_string(std::string& value) {
+  std::reverse(value.begin(), value.end());
+  std::fill(value.begin(), value.end(), 'x');
+}
+"""
+    wrapped_equal_fill_reverse = check("v2-wrapped-equal-fill-reverse",
+                                       wrapped_equal_fill_reverse_source,
+                                       profile="cpp-core-v2", sdk=True)
+    assert not [node for node in walk(wrapped_equal_fill_reverse["functions"])
+                if node.get("op") in ("call", "mapped_call")], wrapped_equal_fill_reverse
+    for target in sdk_targets:
+        check("v2-wrapped-equal-fill-reverse-" + target,
+              wrapped_equal_fill_reverse_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    for name, operation in {
+        "equal": "return std::equal(left.begin(),left.end(),right.begin());",
+        "fill": "std::fill(left.begin(),left.end(),Entry{});",
+        "reverse": "std::reverse(left.begin(),left.end());",
+    }.items():
+        check("v2-wrapped-" + name + "-record",
+              '#include <algorithm>\n#include <vector>\nstruct Entry{int value;};'
+              'bool operator==(Entry a,Entry b){return a.value==b.value;}'
+              + ('bool' if name == 'equal' else 'void')
+              + ' f(std::vector<Entry>& left,std::vector<Entry>& right){'
+              + operation + '}', "TR0203", profile="cpp-core-v2", sdk=True)
+
     string_metadata_source = """\
 #include <string>
 static_assert(sizeof(std::string) >= 3 * sizeof(void*));
