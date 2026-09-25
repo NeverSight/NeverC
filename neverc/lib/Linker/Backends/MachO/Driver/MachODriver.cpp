@@ -1231,6 +1231,84 @@ bool SymbolPatterns::match(StringRef symbolName) const {
 
 namespace {
 
+// -alias_list: each line names a symbol and the alias to create for it.
+void parseAliasList(const Arg *arg) {
+  StringRef path = arg->getValue();
+  std::optional<MemoryBufferRef> buffer = readFile(path);
+  if (!buffer)
+    return;
+  for (StringRef line : args::getLines(*buffer)) {
+    line = line.take_until([](char c) { return c == '#'; }).trim();
+    if (line.empty())
+      continue;
+    auto [name, alias] = getToken(line);
+    alias = alias.trim();
+    if (alias.empty() || alias.find_first_of(" \t") != StringRef::npos) {
+      error(path + ": malformed alias line '" + line +
+            "', expected '<symbol> <alias>'");
+      continue;
+    }
+    config->aliasedSymbols.push_back({name, alias});
+  }
+}
+
+// Parses A[.B[.C[.D[.E]]]] with A < 2^24 and the rest < 2^10, the packing
+// LC_SOURCE_VERSION uses.
+std::optional<uint64_t> parseSourceVersion(StringRef str) {
+  SmallVector<StringRef, 5> parts;
+  str.split(parts, '.');
+  if (parts.size() > 5)
+    return std::nullopt;
+  uint64_t version = 0;
+  for (size_t i = 0; i < 5; ++i) {
+    uint64_t part = 0;
+    if (i < parts.size() && (parts[i].getAsInteger(10, part) ||
+                             part >= (i == 0 ? 1u << 24 : 1u << 10)))
+      return std::nullopt;
+    version = i == 0 ? part : (version << 10) | part;
+  }
+  return version;
+}
+
+// The name a dylib's LC_SUB_CLIENT list must hold for this output to link to
+// it directly: -client_name, or the output's framework or library name.
+StringRef clientNameForOutput() {
+  if (!config->clientName.empty())
+    return config->clientName;
+  StringRef name =
+      sys::path::filename(config->outputType == MH_DYLIB ? config->installName
+                                                         : config->finalOutput);
+  name = name.take_until([](char c) { return c == '.' || c == '_'; });
+  if (config->outputType == MH_DYLIB && name.starts_with("lib"))
+    name = name.drop_front(3);
+  return name;
+}
+
+// A dylib that is part of an umbrella may only be linked directly by the
+// umbrella itself, its other sub-frameworks, and the clients it lists.
+void checkDirectDylibClients() {
+  StringRef ourName =
+      config->outputType == MH_DYLIB
+          ? sys::path::stem(config->installName).take_until([](char c) {
+              return c == '.' || c == '_';
+            })
+          : StringRef();
+  StringRef client = clientNameForOutput();
+  for (InputFile *file : inputFiles) {
+    auto *dylib = dyn_cast<DylibFile>(file);
+    if (!dylib || !dylib->isExplicitlyLinked() || dylib->parentUmbrella.empty())
+      continue;
+    StringRef parent = dylib->parentUmbrella;
+    if (parent == ourName || parent == config->umbrella ||
+        is_contained(dylib->allowableClients, client))
+      continue;
+    error("cannot link directly with '" + toString(dylib) +
+          "': it is part of the umbrella '" + parent + "' and '" + client +
+          "' is not one of its allowed clients; link against the umbrella "
+          "or pass -client_name");
+  }
+}
+
 void parseSymbolPatternsFile(const Arg *arg, SymbolPatterns &symbolPatterns) {
   StringRef path = arg->getValue();
   std::optional<MemoryBufferRef> buffer = readFile(path);
@@ -1836,11 +1914,98 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
   config->strictAutoLink = args.hasArg(OPT_strict_auto_link);
   config->driverCfg = &driverCfg;
   config->generateUuid = !args.hasArg(OPT_no_uuid);
+  config->randomUuid = args.hasArg(OPT_random_uuid);
+  config->dedupSymbolStrings = !args.hasArg(OPT_no_deduplicate_symbol_strings);
+  config->whatsLoaded = args.hasArg(OPT_whatsloaded);
+  config->noWeakImports = args.hasArg(OPT_no_weak_imports);
+  config->noWeakExports = args.hasArg(OPT_no_weak_exports);
+  config->warnWeakExports = args.hasArg(OPT_warn_weak_exports);
+  config->bindAtLoad = args.hasArg(OPT_bind_at_load);
+  config->clientName = args.getLastArgValue(OPT_client_name);
+  config->executablePath = args.getLastArgValue(OPT_executable_path);
+  config->initFunction = args.getLastArgValue(OPT_init);
+  if (!config->initFunction.empty() && config->outputType != MH_DYLIB)
+    error("-init: only valid with -dylib");
+
+  if (const Arg *arg = args.getLastArg(OPT_stack_size)) {
+    if (config->outputType != MH_EXECUTE)
+      error("-stack_size: only valid when linking a main executable");
+    config->stackSize = args::getHex(args, OPT_stack_size, 0);
+    if (!isAligned(Align(target->getPageSize()), config->stackSize))
+      error(arg->getAsString(args) + ": stack size must be a multiple of " +
+            "the page size (0x" + Twine::utohexstr(target->getPageSize()) +
+            ")");
+  }
+  if (const Arg *arg = args.getLastArg(OPT_allow_stack_execute)) {
+    if (config->outputType != MH_EXECUTE)
+      error(arg->getAsString(args) +
+            ": only valid when linking a main executable");
+    config->allowStackExecute = true;
+  }
+  if (const Arg *arg = args.getLastArg(OPT_force_flat_namespace)) {
+    if (config->outputType != MH_EXECUTE)
+      error(arg->getAsString(args) +
+            ": only valid when linking a main executable");
+    config->forceFlatNamespace = true;
+  }
+  if (const Arg *arg = args.getLastArg(OPT_image_base)) {
+    config->imageBase = args::getHex(args, OPT_image_base, 0);
+    if (!isAligned(Align(target->getPageSize()), *config->imageBase))
+      error(arg->getAsString(args) + ": address must be a multiple of the " +
+            "page size (0x" + Twine::utohexstr(target->getPageSize()) + ")");
+    // An executable's first segment follows __PAGEZERO.
+    if (config->outputType == MH_EXECUTE) {
+      if (!args.hasArg(OPT_pagezero_size))
+        target->pageZeroSize = *config->imageBase;
+      else if (target->pageZeroSize != *config->imageBase)
+        error(arg->getAsString(args) + ": an executable's image base is the " +
+              "end of __PAGEZERO, which -pagezero_size sets differently");
+    }
+  }
+  for (const Arg *arg : args.filtered(OPT_allowable_client)) {
+    if (config->outputType != MH_DYLIB)
+      error(arg->getAsString(args) + ": only valid with -dylib");
+    config->allowableClients.push_back(arg->getValue());
+  }
+  for (const Arg *arg : args.filtered(OPT_dylib_file)) {
+    auto [installPath, currentPath] = StringRef(arg->getValue()).split(':');
+    if (installPath.empty() || currentPath.empty())
+      error(arg->getAsString(args) +
+            ": expected <install_path>:<current_path>");
+    else
+      config->dylibFiles[installPath] = currentPath;
+  }
+  if (const Arg *arg = args.getLastArg(
+          OPT_add_source_version, OPT_no_source_version, OPT_source_version))
+    if (!arg->getOption().matches(OPT_no_source_version)) {
+      config->sourceVersion = 0;
+      if (const Arg *v = args.getLastArg(OPT_source_version)) {
+        config->sourceVersion = parseSourceVersion(v->getValue());
+        if (!config->sourceVersion)
+          error(v->getAsString(args) + ": malformed version, expected " +
+                "A[.B[.C[.D[.E]]]]");
+      }
+    }
+  {
+    const bool warnDuplicates = args.hasFlag(OPT_warn_duplicate_rpath,
+                                             OPT_no_warn_duplicate_rpath, true);
+    llvm::StringSet<> seen;
+    llvm::erase_if(config->runtimePaths, [&](StringRef path) {
+      if (seen.insert(path).second)
+        return false;
+      if (warnDuplicates)
+        warn("duplicate -rpath '" + path +
+             "' ignored [--warn-duplicate-rpath]");
+      return true;
+    });
+  }
 
   for (const Arg *arg : args.filtered(OPT_alias)) {
     config->aliasedSymbols.push_back(
         std::make_pair(arg->getValue(0), arg->getValue(1)));
   }
+  for (const Arg *arg : args.filtered(OPT_alias_list))
+    parseAliasList(arg);
 
   config->zeroModTime = driverCfg.repro;
 
@@ -1873,6 +2038,10 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
     config->namespaceKind = arg->getOption().getID() == OPT_twolevel_namespace
                                 ? NamespaceKind::twolevel
                                 : NamespaceKind::flat;
+
+  // -force_flat_namespace makes this image flat as well as its dependents.
+  if (config->forceFlatNamespace)
+    config->namespaceKind = NamespaceKind::flat;
 
   config->undefinedSymbolTreatment = getUndefinedSymbolTreatment(args);
 
@@ -2041,6 +2210,12 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
       for (const Arg *arg : args.filtered(OPT_sub_library))
         reexportHandler(arg, extensions);
     }
+    checkDirectDylibClients();
+
+    if (!config->initFunction.empty())
+      config->initSymbol =
+          symtab->addUndefined(config->initFunction, /*file=*/nullptr,
+                               /*isWeakRef=*/false);
 
     createSyntheticSections();
     createSyntheticSymbols();
@@ -2110,6 +2285,11 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
       StringRef sectName = arg->getValue(1);
       inputFiles.insert(make<OpaqueFile>(MemoryBufferRef(), segName, sectName));
     }
+
+    if (config->whatsLoaded)
+      for (const InputFile *file : inputFiles)
+        if (isa<ObjFile>(file) && !file->lazy)
+          message(toString(file));
 
     gatherInputSections();
     if (config->callGraphProfileSort)

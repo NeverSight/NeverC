@@ -16,6 +16,7 @@
 #include "llvm/TextAPI/Target.h"
 
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -192,6 +193,26 @@ struct Configuration {
   SymbolPatterns localSymbolPatterns;
   bool zeroModTime = true;
   bool generateUuid = true;
+  bool randomUuid = false;
+
+  // Native options that set load commands and header flags.
+  uint64_t stackSize = 0;
+  std::optional<uint64_t> imageBase;
+  std::optional<uint64_t> sourceVersion;
+  llvm::StringRef initFunction;
+  Symbol *initSymbol = nullptr;
+  llvm::StringRef clientName;
+  llvm::StringRef executablePath;
+  std::vector<llvm::StringRef> allowableClients;
+  llvm::DenseMap<llvm::StringRef, llvm::StringRef> dylibFiles;
+  bool allowStackExecute = false;
+  bool bindAtLoad = false;
+  bool forceFlatNamespace = false;
+  bool noWeakImports = false;
+  bool noWeakExports = false;
+  bool warnWeakExports = false;
+  bool whatsLoaded = false;
+  bool dedupSymbolStrings = true;
 
   llvm::StringRef osoPrefix;
 

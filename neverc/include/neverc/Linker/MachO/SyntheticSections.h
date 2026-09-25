@@ -389,8 +389,15 @@ private:
 class StringTableSection final : public LinkEditSection {
 public:
   StringTableSection();
-  // Returns the start offset of the added string.
+  // Returns a handle for the added string; offsetOf() turns it into the
+  // string's offset once finalizeContents() has laid the table out.
   uint32_t addString(StringRef);
+  // Lays out the strings, sharing one copy of each unless
+  // -no-deduplicate-symbol-strings.
+  void finalizeContents() override;
+  uint32_t offsetOf(uint32_t handle) const {
+    return handle < firstHandle ? handle : offsets[handle - firstHandle];
+  }
   uint64_t getRawSize() const override { return size; }
   void writeTo(uint8_t *buf) const override;
 
@@ -399,8 +406,13 @@ public:
 private:
   // ld64 emits string tables which start with a space and a zero byte. We
   // match its behavior here since some tools depend on it.
-  // Consequently, the empty string will be at index 1, not zero.
-  std::vector<StringRef> strings{" "};
+  // Consequently, the empty string will be at index 1, not zero. Handles
+  // below firstHandle are these fixed offsets.
+  static constexpr uint32_t firstHandle = 2;
+  std::vector<StringRef> strings;
+  std::vector<uint32_t> offsets;
+  // Whether strings[i] is written, or shares an earlier copy.
+  std::vector<bool> owners;
   size_t size = 2;
 };
 

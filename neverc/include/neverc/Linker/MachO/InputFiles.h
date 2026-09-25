@@ -283,6 +283,10 @@ public:
   DylibFile *exportingFile = nullptr;
   DylibFile *umbrella;
   SmallVector<StringRef, 2> rpaths;
+  // The umbrella this dylib is a sub-framework of, and the clients it allows
+  // to link to it directly.
+  StringRef parentUmbrella;
+  SmallVector<StringRef, 0> allowableClients;
   uint32_t compatibilityVersion = 0;
   uint32_t currentVersion = 0;
   int64_t ordinal = 0; // Ordinal numbering starts from 1, so 0 is a sentinel

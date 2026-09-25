@@ -106,8 +106,8 @@ OPTION(prefix_3, "-add_linker_option", add_linker_option, Flag,
        grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
        "This option is undocumented in the native linker", nullptr, nullptr)
 OPTION(prefix_3, "-add_source_version", add_source_version, Flag,
-       grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "This option is undocumented in the native linker", nullptr, nullptr)
+       grp_undocumented, INVALID, nullptr, 0, DefaultVis, 0,
+       "Emit an LC_SOURCE_VERSION load command", nullptr, nullptr)
 OPTION(prefix_3, "-add_split_seg_info", add_split_seg_info, Flag,
        grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
        "This option is undocumented in the native linker", nullptr, nullptr)
@@ -120,8 +120,8 @@ OPTION(prefix_3, "-adhoc_codesign", anonymous_302, Flag, INVALID,
        adhoc_codesign, nullptr, 0, DefaultVis, 0, "Alias for --adhoc-codesign",
        nullptr, nullptr)
 OPTION(prefix_3, "-alias_list", alias_list, Separate, grp_resolve, INVALID,
-       nullptr, HelpHidden, DefaultVis, 0,
-       "Create symbol aliases specified in <file>", "<file>", nullptr)
+       nullptr, 0, DefaultVis, 0, "Create symbol aliases specified in <file>",
+       "<file>", nullptr)
 OPTION(prefix_1, "--alias", alias, MultiArg, grp_resolve, INVALID, nullptr, 0,
        DefaultVis, 2, "Create a symbol alias with default global visibility",
        "<symbol_name> <alternate_name>", nullptr)
@@ -134,21 +134,21 @@ OPTION(prefix_3, "-allow_dead_duplicates", allow_dead_duplicates, Flag,
        grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
        "This option is undocumented in the native linker", nullptr, nullptr)
 OPTION(prefix_3, "-allow_heap_execute", allow_heap_execute, Flag, grp_rare,
-       INVALID, nullptr, HelpHidden, DefaultVis, 0,
+       INVALID, nullptr, 0, DefaultVis, 0,
        "On i386, allow any page to execute code", nullptr, nullptr)
 OPTION(prefix_3, "-allow_simulator_linking_to_macosx_dylibs",
        allow_simulator_linking_to_macosx_dylibs, Flag, grp_undocumented,
        INVALID, nullptr, HelpHidden, DefaultVis, 0,
        "This option is undocumented in the native linker", nullptr, nullptr)
 OPTION(prefix_3, "-allow_stack_execute", allow_stack_execute, Flag, grp_main,
-       INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "Mark stack segment as executable", nullptr, nullptr)
+       INVALID, nullptr, 0, DefaultVis, 0, "Mark stack segment as executable",
+       nullptr, nullptr)
 OPTION(prefix_3, "-allow_sub_type_mismatches", allow_sub_type_mismatches, Flag,
        grp_rare, INVALID, nullptr, HelpHidden, DefaultVis, 0,
        "Permit mixing objects compiled for different ARM CPU subtypes", nullptr,
        nullptr)
 OPTION(prefix_3, "-allowable_client", allowable_client, Separate, grp_rare,
-       INVALID, nullptr, HelpHidden, DefaultVis, 0,
+       INVALID, nullptr, 0, DefaultVis, 0,
        "Specify <name> of a dylib, framework, or executable that is allowed to "
        "link to this dylib",
        "<name>", nullptr)
@@ -181,7 +181,7 @@ OPTION(prefix_3, "-A", A, Separate, grp_obsolete, INVALID, nullptr, HelpHidden,
        DefaultVis, 0, "This option is obsolete in the native linker",
        "<basefile>", nullptr)
 OPTION(prefix_3, "-bind_at_load", bind_at_load, Flag, grp_rare, INVALID,
-       nullptr, HelpHidden, DefaultVis, 0,
+       nullptr, 0, DefaultVis, 0,
        "Tell dyld to bind all symbols at load time, rather than lazily",
        nullptr, nullptr)
 OPTION(prefix_3, "-bitcode_bundle", bitcode_bundle, Flag, grp_obsolete, INVALID,
@@ -231,7 +231,7 @@ OPTION(prefix_3, "-classic_linker", classic_linker, Flag, grp_undocumented,
        INVALID, nullptr, HelpHidden, DefaultVis, 0,
        "This option is undocumented in the native linker", nullptr, nullptr)
 OPTION(prefix_3, "-client_name", client_name, Separate, grp_rare, INVALID,
-       nullptr, HelpHidden, DefaultVis, 0,
+       nullptr, 0, DefaultVis, 0,
        "Specifies a <name> this client should match with the -allowable_client "
        "<name> in an explicitly linked dylib",
        "<name>", nullptr)
@@ -337,7 +337,7 @@ OPTION(prefix_3, "-dylib_current_version", dylib_current_version, Separate,
        grp_dylib, current_version, nullptr, HelpHidden, DefaultVis, 0,
        "Alias for -current_version", "<version>", nullptr)
 OPTION(prefix_3, "-dylib_file", dylib_file, Separate, grp_rare, INVALID,
-       nullptr, HelpHidden, DefaultVis, 0,
+       nullptr, 0, DefaultVis, 0,
        "Specify <current_path> as different from where a dylib normally "
        "resides at <install_path>",
        "<install_path:current_path>", nullptr)
@@ -370,9 +370,10 @@ OPTION(prefix_2, "--error-limit=", error_limit_eq, Joined, grp_neverc_ext,
        INVALID, nullptr, 0, DefaultVis, 0,
        "Maximum number of errors to print before exiting (default: 20)",
        nullptr, nullptr)
-OPTION(prefix_3, "-executable_path", executable_path, Flag, grp_undocumented,
-       INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "This option is undocumented in the native linker", nullptr, nullptr)
+OPTION(prefix_3, "-executable_path", executable_path, Separate,
+       grp_undocumented, INVALID, nullptr, 0, DefaultVis, 0,
+       "Resolve @executable_path in dependent dylibs against <path>", "<path>",
+       nullptr)
 OPTION(prefix_3, "-execute", execute, Flag, grp_kind, INVALID, nullptr, 0,
        DefaultVis, 0, "Produce a main executable (default)", nullptr, nullptr)
 OPTION(prefix_1, "--export-dynamic", export_dynamic, Flag, grp_main, INVALID,
@@ -449,7 +450,7 @@ OPTION(prefix_3, "-force_cpusubtype_ALL", force_cpusubtype_ALL, Flag, grp_rare,
        "requirements encoded in the object files",
        nullptr, nullptr)
 OPTION(prefix_3, "-force_flat_namespace", force_flat_namespace, Flag, grp_rare,
-       INVALID, nullptr, HelpHidden, DefaultVis, 0,
+       INVALID, nullptr, 0, DefaultVis, 0,
        "Tell dyld to use a flat namespace on this executable and all its "
        "dependent dylibs & bundles",
        nullptr, nullptr)
@@ -547,7 +548,7 @@ OPTION(prefix_3, "-ignore_optimization_hints", anonymous_325, Flag, INVALID,
        ignore_optimization_hints, nullptr, 0, DefaultVis, 0,
        "Alias for --ignore-optimization-hints", nullptr, nullptr)
 OPTION(prefix_3, "-image_base", image_base, Separate, grp_opts, INVALID,
-       nullptr, HelpHidden, DefaultVis, 0,
+       nullptr, 0, DefaultVis, 0,
        "Preferred hex load address for a dylib or bundle.", "<address>",
        nullptr)
 OPTION(prefix_1, "--init-offsets", init_offsets, Flag, grp_undocumented,
@@ -555,9 +556,9 @@ OPTION(prefix_1, "--init-offsets", init_offsets, Flag, grp_undocumented,
        "Store __TEXT segment offsets of static initializers", nullptr, nullptr)
 OPTION(prefix_3, "-init_offsets", anonymous_326, Flag, INVALID, init_offsets,
        nullptr, 0, DefaultVis, 0, "Alias for --init-offsets", nullptr, nullptr)
-OPTION(prefix_3, "-init", init, Separate, grp_rare, INVALID, nullptr,
-       HelpHidden, DefaultVis, 0,
-       "Run <symbol> as the first initializer in a dylib", "<symbol>", nullptr)
+OPTION(prefix_3, "-init", init, Separate, grp_rare, INVALID, nullptr, 0,
+       DefaultVis, 0, "Run <symbol> as the first initializer in a dylib",
+       "<symbol>", nullptr)
 OPTION(prefix_1, "--install-name", install_name, Separate, grp_dylib, INVALID,
        nullptr, 0, DefaultVis, 0, "Set an internal install path in a dylib",
        "<name>", nullptr)
@@ -768,8 +769,8 @@ OPTION(prefix_2, "--no-deduplicate-strings", no_deduplicate_strings, Flag,
        "performance benefit.",
        nullptr, nullptr)
 OPTION(prefix_3, "-no-deduplicate-symbol-strings",
-       no_deduplicate_symbol_strings, Flag, grp_rare, INVALID, nullptr,
-       HelpHidden, DefaultVis, 0,
+       no_deduplicate_symbol_strings, Flag, grp_rare, INVALID, nullptr, 0,
+       DefaultVis, 0,
        "Do not deduplicate strings in the symbol string table. Might result in "
        "larger binaries but slightly faster link times.",
        nullptr, nullptr)
@@ -798,7 +799,7 @@ OPTION(prefix_1, "--no-uuid", no_uuid, Flag, grp_rare, INVALID, nullptr, 0,
        DefaultVis, 0, "Do not generate the LC_UUID load command", nullptr,
        nullptr)
 OPTION(prefix_2, "--no-warn-duplicate-rpath", no_warn_duplicate_rpath, Flag,
-       grp_neverc_ext, INVALID, nullptr, HelpHidden, DefaultVis, 0,
+       grp_neverc_ext, INVALID, nullptr, 0, DefaultVis, 0,
        "Do not warn if the same -rpath is specified multiple times", nullptr,
        nullptr)
 OPTION(prefix_2, "--no-warn-dylib-install-name", no_warn_dylib_install_name,
@@ -897,8 +898,9 @@ OPTION(prefix_3, "-no_pie", no_pie, Flag, grp_main, INVALID, nullptr, 0,
        DefaultVis, 0, "Do not build a position independent executable", nullptr,
        nullptr)
 OPTION(prefix_3, "-no_source_version", no_source_version, Flag,
-       grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "This option is undocumented in the native linker", nullptr, nullptr)
+       grp_undocumented, INVALID, nullptr, 0, DefaultVis, 0,
+       "Do not emit an LC_SOURCE_VERSION load command (default)", nullptr,
+       nullptr)
 OPTION(prefix_3, "-no_uuid", anonymous_341, Flag, INVALID, no_uuid, nullptr, 0,
        DefaultVis, 0, "Alias for --no-uuid", nullptr, nullptr)
 OPTION(prefix_3, "-no_warn_duplicate_libraries", no_warn_duplicate_libraries,
@@ -910,11 +912,11 @@ OPTION(prefix_3, "-no_warn_inits", no_warn_inits, Flag, grp_rare, INVALID,
        "Suppress warnings for static initializers in the output", nullptr,
        nullptr)
 OPTION(prefix_3, "-no_weak_exports", no_weak_exports, Flag, grp_rare, INVALID,
-       nullptr, HelpHidden, DefaultVis, 0,
+       nullptr, 0, DefaultVis, 0,
        "Fail if the linked image contains weak external symbols", nullptr,
        nullptr)
 OPTION(prefix_3, "-no_weak_imports", no_weak_imports, Flag, grp_rare, INVALID,
-       nullptr, HelpHidden, DefaultVis, 0,
+       nullptr, 0, DefaultVis, 0,
        "Fail if any symbols are weak imports, allowed to be NULL at runtime",
        nullptr, nullptr)
 OPTION(prefix_3, "-no_zero_fill_sections", no_zero_fill_sections, Flag,
@@ -1081,8 +1083,9 @@ OPTION(prefix_3, "-private_bundle", private_bundle, Flag, grp_obsolete, INVALID,
        nullptr, HelpHidden, DefaultVis, 0,
        "This option is obsolete in the native linker", nullptr, nullptr)
 OPTION(prefix_3, "-random_uuid", random_uuid, Flag, grp_undocumented, INVALID,
-       nullptr, HelpHidden, DefaultVis, 0,
-       "This option is undocumented in the native linker", nullptr, nullptr)
+       nullptr, 0, DefaultVis, 0,
+       "Use a random LC_UUID instead of one derived from the output", nullptr,
+       nullptr)
 OPTION(prefix_3, "-read_only_relocs", read_only_relocs, Separate, grp_rare,
        INVALID, nullptr, HelpHidden, DefaultVis, 0,
        "Handle relocations that modify read-only pages according to "
@@ -1260,9 +1263,10 @@ OPTION(prefix_3, "-snapshot_dir", snapshot_dir, Flag, grp_undocumented, INVALID,
 OPTION(prefix_3, "-Sn", Sn, Flag, grp_obsolete, INVALID, nullptr, HelpHidden,
        DefaultVis, 0, "This option is obsolete in the native linker", nullptr,
        nullptr)
-OPTION(prefix_3, "-source_version", source_version, Flag, grp_undocumented,
-       INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "This option is undocumented in the native linker", nullptr, nullptr)
+OPTION(prefix_3, "-source_version", source_version, Separate, grp_undocumented,
+       INVALID, nullptr, 0, DefaultVis, 0,
+       "Record <version> (A.B.C.D.E) in an LC_SOURCE_VERSION load command",
+       "<version>", nullptr)
 OPTION(prefix_3, "-Sp", Sp, Flag, grp_obsolete, INVALID, nullptr, HelpHidden,
        DefaultVis, 0, "This option is obsolete in the native linker", nullptr,
        nullptr)
@@ -1272,7 +1276,7 @@ OPTION(prefix_3, "-stack_addr", stack_addr, Separate, grp_rare, INVALID,
        "<address>", nullptr)
 OPTION(
     prefix_3, "-stack_size", stack_size, Separate, grp_main, INVALID, nullptr,
-    HelpHidden, DefaultVis, 0,
+    0, DefaultVis, 0,
     "Maximum hex stack size for the main thread in a program. (default is 8MB)",
     "<size>", nullptr)
 OPTION(prefix_2, "--start-lib", start_lib, Flag, INVALID, INVALID, nullptr, 0,
@@ -1426,7 +1430,7 @@ OPTION(prefix_3, "-v", v, Flag, grp_rare, INVALID, nullptr, 0, DefaultVis, 0,
        "Print the linker version and search paths in addition to linking",
        nullptr, nullptr)
 OPTION(prefix_2, "--warn-duplicate-rpath", warn_duplicate_rpath, Flag,
-       grp_neverc_ext, INVALID, nullptr, HelpHidden, DefaultVis, 0,
+       grp_neverc_ext, INVALID, nullptr, 0, DefaultVis, 0,
        "Warn if the same -rpath is specified multiple times (default)", nullptr,
        nullptr)
 OPTION(prefix_2, "--warn-dylib-install-name", warn_dylib_install_name, Flag,
@@ -1448,7 +1452,7 @@ OPTION(prefix_3, "-warn_stabs", warn_stabs, Flag, grp_rare, INVALID, nullptr,
        "Warn when bad stab symbols inside a BINCL/EINCL prevent optimization",
        nullptr, nullptr)
 OPTION(prefix_3, "-warn_weak_exports", warn_weak_exports, Flag, grp_rare,
-       INVALID, nullptr, HelpHidden, DefaultVis, 0,
+       INVALID, nullptr, 0, DefaultVis, 0,
        "Warn if the linked image contains weak external symbols", nullptr,
        nullptr)
 OPTION(prefix_3, "-watchos_version_min", watchos_version_min, Separate,
@@ -1480,8 +1484,8 @@ OPTION(prefix_3, "-weak_reference_mismatches", weak_reference_mismatches,
        "<treatment> as weak, non-weak, or error (default is non-weak)",
        "<treatment>", nullptr)
 OPTION(prefix_3, "-whatsloaded", whatsloaded, Flag, grp_introspect, INVALID,
-       nullptr, HelpHidden, DefaultVis, 0,
-       "Logs only the object files the linker loads", nullptr, nullptr)
+       nullptr, 0, DefaultVis, 0, "Logs only the object files the linker loads",
+       nullptr, nullptr)
 OPTION(prefix_1, "--why-live", why_live, Separate, grp_introspect, INVALID,
        nullptr, 0, DefaultVis, 0,
        "Log a chain of references to <symbol>, for use with --dead-strip",

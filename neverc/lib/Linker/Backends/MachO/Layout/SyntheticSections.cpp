@@ -134,6 +134,15 @@ void MachHeaderSection::writeTo(uint8_t *buf) const {
   if (config->outputType == MH_EXECUTE && config->isPic)
     hdr->flags |= MH_PIE;
 
+  if (config->allowStackExecute)
+    hdr->flags |= MH_ALLOW_STACK_EXECUTION;
+
+  if (config->bindAtLoad)
+    hdr->flags |= MH_BINDATLOAD;
+
+  if (config->forceFlatNamespace)
+    hdr->flags |= MH_FORCE_FLAT;
+
   if (config->outputType == MH_DYLIB && config->applicationExtension)
     hdr->flags |= MH_APP_EXTENSION_SAFE;
 
@@ -928,7 +937,14 @@ void ExportSection::finalizeContents() {
           !shouldEmitDefinedSymbolInExportTrie(*defined))
         continue;
       trieBuilder.addSymbol(*defined);
-      hasWeakSymbol = hasWeakSymbol || sym->isWeakDef();
+      if (sym->isWeakDef()) {
+        hasWeakSymbol = true;
+        if (config->noWeakExports)
+          error("weak external symbol '" + toString(*sym) +
+                "' is not allowed with -no_weak_exports");
+        else if (config->warnWeakExports)
+          warn("weak external symbol '" + toString(*sym) + "' is exported");
+      }
     } else if (auto *dysym = dyn_cast<DylibSymbol>(sym)) {
       if (dysym->shouldReexport)
         trieBuilder.addSymbol(*dysym);
@@ -1283,6 +1299,7 @@ void SymtabSection::finalizeContents() {
        concat<SymtabEntry>(localSymbols, externalSymbols, undefinedSymbols)) {
     entry.sym->symtabIndex = symtabIndex++;
   }
+  stringTableSection.finalizeContents();
 }
 
 uint32_t SymtabSection::getNumSymbols() const {
@@ -1307,7 +1324,7 @@ template <class LP> void SymtabSectionImpl<LP>::writeTo(uint8_t *buf) const {
   // Emit the stabs entries before the "real" symbols. We cannot emit them
   // after as that would render Symbol::symtabIndex inaccurate.
   for (const StabsEntry &entry : stabs) {
-    nList->n_strx = entry.strx;
+    nList->n_strx = stringTableSection.offsetOf(entry.strx);
     nList->n_type = entry.type;
     nList->n_sect = entry.sect;
     nList->n_desc = entry.desc;
@@ -1317,7 +1334,7 @@ template <class LP> void SymtabSectionImpl<LP>::writeTo(uint8_t *buf) const {
 
   for (const SymtabEntry &entry : concat<const SymtabEntry>(
            localSymbols, externalSymbols, undefinedSymbols)) {
-    nList->n_strx = entry.strx;
+    nList->n_strx = stringTableSection.offsetOf(entry.strx);
     if (auto *defined = dyn_cast<Defined>(entry.sym)) {
       uint8_t scope = 0;
       if (defined->privateExtern) {
@@ -1446,18 +1463,68 @@ StringTableSection::StringTableSection()
     : LinkEditSection(segment_names::linkEdit, section_names::stringTable) {}
 
 uint32_t StringTableSection::addString(StringRef str) {
-  uint32_t strx = size;
   strings.push_back(str);
-  size += str.size() + 1; // account for null terminator
-  return strx;
+  return firstHandle + strings.size() - 1;
+}
+
+void StringTableSection::finalizeContents() {
+  TimeTraceScope timeScope("Finalize string table");
+  const size_t n = strings.size();
+  offsets.resize(n);
+  owners.assign(n, true);
+  if (!config->dedupSymbolStrings) {
+    for (size_t i = 0; i < n; ++i) {
+      offsets[i] = size;
+      size += strings[i].size() + 1;
+    }
+    return;
+  }
+
+  // Find each string's first occurrence: hash in parallel chunks, bucket the
+  // handles by hash into shards, and resolve each shard on its own. Buckets
+  // keep handle order, so the first handle seen for a string is its first
+  // occurrence.
+  constexpr size_t numShards = 64, chunkSize = 1 << 14;
+  const size_t numChunks = (n + chunkSize - 1) / chunkSize;
+  std::vector<uint64_t> hashes(n);
+  std::vector<std::array<SmallVector<uint32_t, 0>, numShards>> buckets(
+      numChunks);
+  parallelFor(0, numChunks, [&](size_t c) {
+    for (size_t i = c * chunkSize, e = std::min(n, i + chunkSize); i < e; ++i) {
+      hashes[i] = xxh3_64bits(strings[i]);
+      buckets[c][hashes[i] >> 58].push_back(i);
+    }
+  });
+  std::vector<uint32_t> first(n);
+  parallelFor(0, numShards, [&](size_t s) {
+    size_t count = 0;
+    for (auto &chunk : buckets)
+      count += chunk[s].size();
+    DenseMap<CachedHashStringRef, uint32_t> seen(count);
+    for (auto &chunk : buckets)
+      for (uint32_t i : chunk[s]) {
+        auto [it, inserted] = seen.try_emplace(
+            CachedHashStringRef(strings[i], uint32_t(hashes[i])), i);
+        first[i] = it->second;
+      }
+  });
+  for (size_t i = 0; i < n; ++i) {
+    if (first[i] != i) {
+      owners[i] = false;
+      offsets[i] = offsets[first[i]];
+      continue;
+    }
+    offsets[i] = size;
+    size += strings[i].size() + 1;
+  }
 }
 
 void StringTableSection::writeTo(uint8_t *buf) const {
-  uint32_t off = 0;
-  for (StringRef str : strings) {
-    memcpy(buf + off, str.data(), str.size());
-    off += str.size() + 1; // account for null terminator
-  }
+  buf[0] = ' ';
+  parallelFor(0, strings.size(), [&](size_t i) {
+    if (owners[i])
+      memcpy(buf + offsets[i], strings[i].data(), strings[i].size());
+  });
 }
 
 static_assert((CodeSignatureSection::blobHeadersSize % 8) == 0);

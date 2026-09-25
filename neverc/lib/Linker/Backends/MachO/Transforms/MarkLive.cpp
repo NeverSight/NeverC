@@ -289,6 +289,8 @@ void markLive() {
   // Add GC roots.
   if (config->entry)
     marker->addSym(config->entry);
+  if (config->initSymbol)
+    marker->addSym(config->initSymbol);
   ArrayRef<Symbol *> symbols = symtab->getSymbols();
   bool hasExportedSymbols = !config->exportedSymbols.empty();
   bool externsAreRoots =

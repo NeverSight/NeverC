@@ -29,6 +29,7 @@
 
 #include <algorithm>
 #include <future>
+#include <random>
 #if defined(__unix__) || defined(__APPLE__)
 #include <unistd.h>
 #endif
@@ -52,6 +53,7 @@ public:
 
   void resolveSpecialSymbols();
   void scanRelocations();
+  void checkNativeOptionConstraints();
   void computeSymbolLayout();
   template <class LP> void buildOutputLayout();
   template <class LP> void assembleLoadCommands();
@@ -156,6 +158,72 @@ public:
 
 private:
   const StringRef umbrella;
+};
+
+class LCSubClient final : public LoadCommand {
+public:
+  explicit LCSubClient(StringRef client) : client(client) {}
+
+  uint32_t getSize() const override {
+    return alignToPowerOf2(sizeof(llvm_macho::sub_client_command) +
+                               client.size() + 1,
+                           target->wordSize);
+  }
+
+  void writeTo(uint8_t *buf) const override {
+    auto *c = reinterpret_cast<llvm_macho::sub_client_command *>(buf);
+    buf += sizeof(llvm_macho::sub_client_command);
+
+    c->cmd = LC_SUB_CLIENT;
+    c->cmdsize = getSize();
+    c->client = sizeof(llvm_macho::sub_client_command);
+
+    memcpy(buf, client.data(), client.size());
+    buf[client.size()] = '\0';
+  }
+
+private:
+  const StringRef client;
+};
+
+class LCSourceVersion final : public LoadCommand {
+public:
+  explicit LCSourceVersion(uint64_t version) : version(version) {}
+
+  uint32_t getSize() const override {
+    return sizeof(llvm_macho::source_version_command);
+  }
+
+  void writeTo(uint8_t *buf) const override {
+    auto *c = reinterpret_cast<llvm_macho::source_version_command *>(buf);
+    c->cmd = LC_SOURCE_VERSION;
+    c->cmdsize = getSize();
+    c->version = version;
+  }
+
+private:
+  uint64_t version;
+};
+
+// The -init routine dyld runs before the dylib's other initializers.
+class LCRoutines final : public LoadCommand {
+public:
+  explicit LCRoutines(Symbol *sym) : sym(sym) {}
+
+  uint32_t getSize() const override {
+    return sizeof(llvm_macho::routines_command_64);
+  }
+
+  void writeTo(uint8_t *buf) const override {
+    auto *c = reinterpret_cast<llvm_macho::routines_command_64 *>(buf);
+    memset(c, 0, sizeof(*c));
+    c->cmd = LC_ROUTINES_64;
+    c->cmdsize = getSize();
+    c->init_address = sym->getVA();
+  }
+
+private:
+  Symbol *sym;
 };
 
 class LCFunctionStarts final : public LoadCommand {
@@ -300,7 +368,7 @@ class LCMain final : public LoadCommand {
     else
       c->entryoff = config->entry->getVA() - in.header->addr;
 
-    c->stacksize = 0;
+    c->stacksize = config->stackSize;
   }
 };
 
@@ -509,6 +577,17 @@ public:
     uuidBuf = c->uuid;
   }
 
+  void writeRandomUuid() const {
+    std::random_device rd;
+    for (size_t i = 0; i < 16; i += 4) {
+      uint32_t word = rd();
+      memcpy(uuidBuf + i, &word, 4);
+    }
+    // RFC 4122 v4: random version, standard variant.
+    uuidBuf[6] = (uuidBuf[6] & 0x0f) | 0x40;
+    uuidBuf[8] = (uuidBuf[8] & 0x3f) | 0x80;
+  }
+
   void writeUuid(uint64_t digest) const {
     static_assert(sizeof(llvm_macho::uuid_command::uuid) == 16);
     memcpy(uuidBuf, "NCC\xa1UU1D", 8);
@@ -643,6 +722,23 @@ void prepareSymbolRelocation(Symbol *sym, const InputSection *isec,
   }
 }
 } // namespace
+
+// -init needs a definition in the image, and -no_weak_imports rejects imports
+// that may be missing at run time.
+void OutputWriter::checkNativeOptionConstraints() {
+  if (Symbol *init = config->initSymbol)
+    if (!isa<Defined>(init))
+      error("-init: symbol '" + toString(*init) +
+            "' is not defined in the image");
+  if (!config->noWeakImports)
+    return;
+  for (const Symbol *sym : symtab->getSymbols())
+    if (const auto *dysym = dyn_cast<DylibSymbol>(sym))
+      if (dysym->isReferenced() && dysym->isWeakRef())
+        error("weak import of '" + toString(*dysym) + "' from " +
+              toString(dysym->getFile()) +
+              " is not allowed with -no_weak_imports");
+}
 
 void OutputWriter::scanRelocations() {
   TimeTraceScope timeScope("Scan relocations");
@@ -816,6 +912,8 @@ template <class LP> void OutputWriter::assembleLoadCommands() {
   in.header->addLoadCommand(make<LCDysymtab>(symtabSec, indirectSec));
   if (!config->umbrella.empty())
     in.header->addLoadCommand(make<LCSubFramework>(config->umbrella));
+  for (StringRef client : config->allowableClients)
+    in.header->addLoadCommand(make<LCSubClient>(client));
   if (config->emitEncryptionInfo)
     in.header->addLoadCommand(make<LCEncryptionInfo<LP>>());
   for (StringRef path : config->runtimePaths)
@@ -846,8 +944,13 @@ template <class LP> void OutputWriter::assembleLoadCommands() {
   else
     in.header->addLoadCommand(make<LCMinVersion>(config->platformInfo));
 
+  if (config->sourceVersion)
+    in.header->addLoadCommand(make<LCSourceVersion>(*config->sourceVersion));
+
   if (config->outputType == MH_EXECUTE)
     in.header->addLoadCommand(make<LCMain>());
+  if (config->initSymbol)
+    in.header->addLoadCommand(make<LCRoutines>(config->initSymbol));
 
   int64_t dylibOrdinal = 1;
   DenseMap<StringRef, int64_t> ordinalForInstallName;
@@ -1163,6 +1266,10 @@ void OutputWriter::applyARM64Hints() {
 }
 
 void OutputWriter::computeContentHash() {
+  if (config->randomUuid) {
+    uuidCmd->writeRandomUuid();
+    return;
+  }
   TimeTraceScope timeScope("Content hash");
 
   // XXH3 chunks are cheap enough that an existing pool pays off as soon as
@@ -1276,6 +1383,7 @@ template <class LP> void OutputWriter::run() {
 
   computeSymbolLayout();
   scanRelocations();
+  checkNativeOptionConstraints();
   if (in.initOffsets->isNeeded())
     in.initOffsets->setUp();
 
@@ -1291,6 +1399,8 @@ template <class LP> void OutputWriter::run() {
   buildOutputLayout<LP>();
   sortSegmentsAndSections();
   assembleLoadCommands<LP>();
+  if (config->imageBase && config->outputType != MH_EXECUTE)
+    addr = *config->imageBase;
   assignSegmentAddresses();
 
   // Phase 3: finalize and emit. Map file runs concurrently with LINKEDIT.

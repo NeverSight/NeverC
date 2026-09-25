@@ -1803,6 +1803,11 @@ DylibFile *loadDylib(StringRef path, DylibFile *umbrella) {
 namespace {
 DylibFile *findDylib(StringRef path, DylibFile *umbrella,
                      const InterfaceFile *currentTopLevelTapi) {
+  // -dylib_file names where a dylib that is not at its install name lives.
+  if (StringRef mapped = config->dylibFiles.lookup(path); !mapped.empty())
+    if (std::optional<StringRef> dylibPath = resolveDylibPath(mapped))
+      return loadDylib(*dylibPath, umbrella);
+
   // Search order:
   // 1. Install name basename in -F / -L directories.
   {
@@ -1834,11 +1839,15 @@ DylibFile *findDylib(StringRef path, DylibFile *umbrella,
 
   // Replace @executable_path, @loader_path, @rpath prefixes in install name.
   SmallString<128> newPath;
-  if (config->outputType == llvm_macho::MH_EXECUTE &&
+  if ((config->outputType == llvm_macho::MH_EXECUTE ||
+       !config->executablePath.empty()) &&
       path.consume_front("@executable_path/")) {
-    // -executable_path override is not implemented; the prefix always
-    // resolves against the output binary's directory.
-    path::append(newPath, path::parent_path(config->outputFile), path);
+    // The prefix resolves against the directory of the main executable:
+    // -executable_path names it, or it is the output itself.
+    StringRef exe = config->executablePath.empty() ? config->outputFile
+                                                   : config->executablePath;
+    path::append(newPath, fs::is_directory(exe) ? exe : path::parent_path(exe),
+                 path);
     path = newPath;
   } else if (path.consume_front("@loader_path/")) {
     fs::real_path(umbrella->getName(), newPath);
@@ -1954,6 +1963,14 @@ DylibFile::DylibFile(MemoryBufferRef mb, DylibFile *umbrella,
     StringRef rpath{reinterpret_cast<const char *>(cmd) + cmd->path};
     rpaths.push_back(rpath);
   }
+  if (const auto *cmd = findCommand<llvm_macho::sub_framework_command>(
+          hdr, llvm_macho::LC_SUB_FRAMEWORK))
+    parentUmbrella =
+        StringRef(reinterpret_cast<const char *>(cmd) + cmd->umbrella);
+  for (auto *cmd : findCommands<llvm_macho::sub_client_command>(
+           hdr, llvm_macho::LC_SUB_CLIENT))
+    allowableClients.push_back(
+        StringRef(reinterpret_cast<const char *>(cmd) + cmd->client));
 
   exportingFile = isImplicitlyLinked(installName) ? this : this->umbrella;
 
@@ -2101,6 +2118,15 @@ DylibFile::DylibFile(const InterfaceFile &interface, DylibFile *umbrella,
   }
 
   checkAppExtensionSafety(interface.isApplicationExtensionSafe());
+
+  for (const auto &[target, name] : interface.umbrellas())
+    if (target.Arch == config->arch()) {
+      parentUmbrella = saver().save(name);
+      break;
+    }
+  for (const auto &client : interface.allowableClients())
+    if (client.hasTarget(config->platformInfo.target))
+      allowableClients.push_back(saver().save(client.getInstallName()));
 
   exportingFile = isImplicitlyLinked(installName) ? this : umbrella;
   auto addSymbol = [&](const llvm::MachO::Symbol &symbol,

@@ -2331,6 +2331,206 @@ TEST_F(LinkerTest, NativeMachOLinkerSpellingsAreAccepted) {
       << kind.err;
 }
 
+TEST_F(LinkerTest, NativeMachOOptionsChangeTheOutput) {
+  const std::string target = "--target=arm64-apple-macos13";
+  const fs::path libSource = tmpFile("macho_opts_lib.c");
+  const fs::path libObject = tmpFile("macho_opts_lib.o");
+  const fs::path library = tmpFile("libmachoopts.dylib");
+  const fs::path mainSource = tmpFile("macho_opts_main.c");
+  const fs::path mainObject = tmpFile("macho_opts_main.o");
+  const fs::path helperSource = tmpFile("macho_opts_helper.c");
+  const fs::path helperObject = tmpFile("macho_opts_helper.o");
+  const fs::path aliases = tmpFile("macho_opts_aliases.txt");
+  const fs::path image = tmpFile("macho_opts_main");
+  writeFile(libSource,
+            "void lib_init(void) {}\n"
+            "__attribute__((weak)) int lib_weak(void) { return 2; }\n"
+            "int lib_fn(void) { return 7; }\n");
+  writeFile(mainSource, "__attribute__((noinline, used)) static int "
+                        "helper(void) { return 1; }\n"
+                        "int other(void);\n"
+                        "int main(void) { return helper() + other(); }\n");
+  writeFile(helperSource, "__attribute__((noinline, used)) static int "
+                          "helper(void) { return 2; }\n"
+                          "int other(void) { return helper(); }\n");
+  writeFile(aliases, "# symbol alias\n_main _main_alias\n");
+  for (auto [source, object] :
+       {std::pair{libSource, libObject}, std::pair{mainSource, mainObject},
+        std::pair{helperSource, helperObject}}) {
+    CmdResult compile = ncc({target, "-fno-lto", "-g", "-c", source.string(),
+                             "-o", object.string()});
+    ASSERT_EQ(compile.exitCode, 0) << compile.err;
+  }
+
+  std::string bytes;
+  auto open = [&](const fs::path &path)
+      -> std::unique_ptr<llvm::object::MachOObjectFile> {
+    bytes = readFile(path);
+    auto object = llvm::object::MachOObjectFile::create(
+        llvm::MemoryBufferRef(bytes, path.string()), /*IsLittleEndian=*/true,
+        /*Is64Bits=*/true);
+    EXPECT_TRUE(static_cast<bool>(object))
+        << llvm::toString(object.takeError()).str().str();
+    return object ? std::move(*object) : nullptr;
+  };
+  auto linkDylib = [&](std::vector<std::string> flags) {
+    std::vector<std::string> args = {target, "-nostdlib", "-dynamiclib",
+                                     libObject.string()};
+    args.insert(args.end(), flags.begin(), flags.end());
+    args.insert(args.end(), {"-o", library.string()});
+    return ncc(args);
+  };
+  auto linkMain = [&](std::vector<std::string> flags) {
+    std::vector<std::string> args = {
+        target,         "-nostdlib",         "-g",
+        "-Wl,-e,_main", mainObject.string(), helperObject.string()};
+    args.insert(args.end(), flags.begin(), flags.end());
+    args.insert(args.end(), {"-o", image.string()});
+    return ncc(args);
+  };
+
+  CmdResult dylib =
+      linkDylib({"-Wl,-allowable_client,machoclient", "-Wl,-init,_lib_init",
+                 "-Wl,-image_base,0x20000000", "-Wl,-source_version,1.2.3"});
+  ASSERT_EQ(dylib.exitCode, 0) << dylib.err;
+  {
+    auto macho = open(library);
+    ASSERT_NE(macho, nullptr);
+    bool subClient = false, routines = false, sourceVersion = false;
+    uint64_t textAddr = 0, initAddr = 0, libInit = 0;
+    for (const auto &command : macho->load_commands()) {
+      switch (command.C.cmd) {
+      case llvm::MachO::LC_SUB_CLIENT: {
+        auto c = macho->getSubClientCommand(command);
+        subClient = llvm::StringRef(command.Ptr + c.client) == "machoclient";
+        break;
+      }
+      case llvm::MachO::LC_ROUTINES_64:
+        routines = true;
+        initAddr = macho->getRoutinesCommand64(command).init_address;
+        break;
+      case llvm::MachO::LC_SOURCE_VERSION:
+        sourceVersion = macho->getSourceVersionCommand(command).version ==
+                        ((1ull << 40) | (2ull << 30) | (3ull << 20));
+        break;
+      case llvm::MachO::LC_SEGMENT_64: {
+        auto seg = macho->getSegment64LoadCommand(command);
+        if (llvm::StringRef(seg.segname) == "__TEXT")
+          textAddr = seg.vmaddr;
+        break;
+      }
+      }
+    }
+    for (const auto &sym : macho->symbols())
+      if (llvm::cantFail(sym.getName()) == "_lib_init")
+        libInit = llvm::cantFail(sym.getAddress());
+    EXPECT_TRUE(subClient);
+    EXPECT_TRUE(routines);
+    EXPECT_TRUE(sourceVersion);
+    EXPECT_EQ(textAddr, 0x20000000u);
+    EXPECT_NE(libInit, 0u);
+    EXPECT_EQ(initAddr, libInit);
+  }
+
+  CmdResult weak = linkDylib({"-Wl,-no_weak_exports"});
+  EXPECT_NE(weak.exitCode, 0);
+  EXPECT_TRUE(weak.stderrContains("'lib_weak' is not allowed")) << weak.err;
+  CmdResult warnWeak = linkDylib({"-Wl,-warn_weak_exports"});
+  EXPECT_EQ(warnWeak.exitCode, 0) << warnWeak.err;
+  EXPECT_TRUE(warnWeak.stderrContains("'lib_weak' is exported"))
+      << warnWeak.err;
+  CmdResult badInit = linkDylib({"-Wl,-init,_missing"});
+  EXPECT_NE(badInit.exitCode, 0);
+  EXPECT_TRUE(badInit.stderrContains("-init: symbol")) << badInit.err;
+
+  CmdResult main =
+      linkMain({"-Wl,-stack_size,0x100000", "-Wl,-allow_stack_execute",
+                "-Wl,-bind_at_load", "-Wl,-rpath,/opt/a", "-Wl,-rpath,/opt/a",
+                "-Wl,-whatsloaded", "-Wl,-alias_list," + aliases.string()});
+  ASSERT_EQ(main.exitCode, 0) << main.err;
+  EXPECT_FALSE(main.stderrContains("not implemented")) << main.err;
+  EXPECT_TRUE(main.stderrContains("duplicate -rpath '/opt/a'")) << main.err;
+  EXPECT_TRUE(main.contains(mainObject.filename().string()) ||
+              main.stderrContains(mainObject.filename().string()))
+      << main.out << main.err;
+  uint32_t strsize = 0;
+  llvm::ArrayRef<uint8_t> uuid;
+  std::vector<uint8_t> firstUuid;
+  {
+    auto macho = open(image);
+    ASSERT_NE(macho, nullptr);
+    uint32_t flags = macho->getHeader64().flags;
+    EXPECT_TRUE(flags & llvm::MachO::MH_ALLOW_STACK_EXECUTION);
+    EXPECT_TRUE(flags & llvm::MachO::MH_BINDATLOAD);
+    unsigned rpaths = 0;
+    for (const auto &command : macho->load_commands()) {
+      if (command.C.cmd == llvm::MachO::LC_MAIN)
+        EXPECT_EQ(macho->getEntryPointCommand(command).stacksize, 0x100000u);
+      rpaths += command.C.cmd == llvm::MachO::LC_RPATH;
+    }
+    EXPECT_EQ(rpaths, 1u);
+    bool alias = false;
+    for (const auto &sym : macho->symbols())
+      alias |= llvm::cantFail(sym.getName()) == "_main_alias";
+    EXPECT_TRUE(alias);
+    strsize = macho->getSymtabLoadCommand().strsize;
+    uuid = macho->getUuid();
+    firstUuid.assign(uuid.begin(), uuid.end());
+  }
+
+  // The debug map names both static helpers; they share one string unless
+  // asked not to.
+  CmdResult deduplicated = linkMain({});
+  ASSERT_EQ(deduplicated.exitCode, 0) << deduplicated.err;
+  {
+    auto macho = open(image);
+    ASSERT_NE(macho, nullptr);
+    strsize = macho->getSymtabLoadCommand().strsize;
+  }
+  CmdResult undeduplicated = linkMain({"-Wl,-no-deduplicate-symbol-strings"});
+  ASSERT_EQ(undeduplicated.exitCode, 0) << undeduplicated.err;
+  {
+    auto macho = open(image);
+    ASSERT_NE(macho, nullptr);
+    EXPECT_GT(macho->getSymtabLoadCommand().strsize, strsize);
+  }
+
+  for (int i = 0; i < 2; ++i) {
+    CmdResult random = linkMain({"-Wl,-random_uuid"});
+    ASSERT_EQ(random.exitCode, 0) << random.err;
+    auto macho = open(image);
+    ASSERT_NE(macho, nullptr);
+    uuid = macho->getUuid();
+    EXPECT_NE(std::vector<uint8_t>(uuid.begin(), uuid.end()), firstUuid);
+    firstUuid.assign(uuid.begin(), uuid.end());
+  }
+
+  CmdResult stack = linkMain({"-Wl,-stack_size,0x1001"});
+  EXPECT_NE(stack.exitCode, 0);
+  EXPECT_TRUE(stack.stderrContains("multiple of the page size")) << stack.err;
+
+  // A sub-framework of an umbrella only admits the clients it lists.
+  CmdResult sub = linkDylib(
+      {"-Wl,-umbrella,Umbrella", "-Wl,-allowable_client,machoclient"});
+  ASSERT_EQ(sub.exitCode, 0) << sub.err;
+  CmdResult direct = linkMain({library.string()});
+  EXPECT_NE(direct.exitCode, 0);
+  EXPECT_TRUE(direct.stderrContains("cannot link directly with")) << direct.err;
+  CmdResult allowed =
+      linkMain({library.string(), "-Wl,-client_name,machoclient"});
+  EXPECT_EQ(allowed.exitCode, 0) << allowed.err;
+
+  CmdResult flat = linkMain({"-Wl,-force_flat_namespace"});
+  ASSERT_EQ(flat.exitCode, 0) << flat.err;
+  {
+    auto macho = open(image);
+    ASSERT_NE(macho, nullptr);
+    uint32_t flags = macho->getHeader64().flags;
+    EXPECT_TRUE(flags & llvm::MachO::MH_FORCE_FLAT);
+    EXPECT_FALSE(flags & llvm::MachO::MH_TWOLEVEL);
+  }
+}
+
 TEST_F(LinkerTest, MsvcLinkerSpellingsAreNormalized) {
   const std::string target = "--target=x86_64-pc-windows-msvc";
   const fs::path source = tmpFile("msvc_opts.c");
