@@ -2314,6 +2314,13 @@ remain in use after a mutation that invalidates its data pointer. Constructors
 from the exact `char` string view copy either the whole view or a selected
 counted range into independent storage. They accept the pinned default or an
 explicit `std::allocator<char>` where the selected overload provides one.
+The exact C++17 view overloads of `append`, `assign`, `operator+=`, positional
+`insert`, and positional `replace` read the view once. Their slice overloads
+clip a selected count to the remaining view bytes and authenticate the pinned
+`npos` default. The existing modifier paths copy overlapping receiver bytes
+before they can be overwritten or released. Source and destination positions
+must satisfy the standard in-range preconditions; throwing paths remain outside
+this direct lowering.
 Mutable and const `begin`/`end`, plus `cbegin`/`cend`, produce authenticated
 libc++ `__wrap_iter` values for forward traversal and mutable element access.
 The authenticated wrapper also supports `base()`, arrow, subscript, prefix and

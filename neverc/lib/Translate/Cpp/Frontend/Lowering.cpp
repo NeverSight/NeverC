@@ -1724,10 +1724,8 @@ class FunctionLowering {
       return std::pair<Expression, Expression>{std::move(Data),
                                                std::move(Size)};
     };
-    auto ReadStringSlice = [&](Expression Address,
-                               const UtilityStringRecord &String,
-                               Expression Position, Expression Requested) {
-      auto [Data, Size] = ReadStringAt(std::move(Address), String);
+    auto SliceStringBytes = [&](Expression Data, Expression Size,
+                                Expression Position, Expression Requested) {
       const auto SizeType = type(A.Context.getSizeType(), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       const auto ConstPointerType =
@@ -1759,13 +1757,40 @@ class FunctionLowering {
       assign(Length, quantity(0, SizeType, L), L);
       jump(Ready, L);
       label(Ready, L);
+      const auto Offset = labelName(), Positioned = labelName();
+      branch(binary("!=", json::Object(Position), quantity(0, SizeType, L),
+                    "bool", L),
+             Offset, Positioned, L);
+      label(Offset, L);
       assign(Data,
              binary("+", json::Object(Data),
                     cast(json::Object(Position), DifferenceType, L),
                     ConstPointerType, L),
              L);
+      jump(Positioned, L);
+      label(Positioned, L);
       return std::pair<Expression, Expression>{std::move(Data),
                                                std::move(Length)};
+    };
+    auto ReadStringSlice = [&](Expression Address,
+                               const UtilityStringRecord &String,
+                               Expression Position, Expression Requested) {
+      auto [Data, Size] = ReadStringAt(std::move(Address), String);
+      return SliceStringBytes(std::move(Data), std::move(Size),
+                              std::move(Position), std::move(Requested));
+    };
+    auto ReadStringViewAt = [&](unsigned Index) {
+      const auto *Argument = Call->getArg(Index);
+      const auto View = approvedUtilityStringViewRecord(
+          A.S, A.Sources, Argument->getType()->getAsCXXRecordDecl(), A.Context);
+      if (!View)
+        reject(L, "string view source",
+               "The selected std::string_view layout is unavailable.");
+      auto Value = snapshot(expression(Argument), L);
+      auto Data = snapshot(fieldStorage(json::Object(Value), View->Data, L), L);
+      auto Size = snapshot(fieldStorage(std::move(Value), View->Size, L), L);
+      return std::pair<Expression, Expression>{std::move(Data),
+                                               std::move(Size)};
     };
     auto StringSliceArgument = [&](unsigned Index) {
       const auto *Argument = Call->getArg(Index);
@@ -9434,6 +9459,8 @@ class FunctionLowering {
     case UtilityOperation::StringAssignCString:
     case UtilityOperation::StringAssignString:
     case UtilityOperation::StringAssignStringSlice:
+    case UtilityOperation::StringAssignView:
+    case UtilityOperation::StringAssignViewSlice:
     case UtilityOperation::StringAssignList:
     case UtilityOperation::StringAssignRange:
     case UtilityOperation::StringAssignFill:
@@ -9533,6 +9560,20 @@ class FunctionLowering {
         auto [Bytes, Length] =
             ReadStringSlice(std::move(SourceAddress), *String,
                             std::move(Position), std::move(Requested));
+        SourceArgument = std::move(Bytes);
+        assign(NewSize, std::move(Length), L);
+      } else if (Operation == UtilityOperation::StringAssignView ||
+                 Operation == UtilityOperation::StringAssignViewSlice) {
+        auto [Bytes, Length] = ReadStringViewAt(0);
+        if (Operation == UtilityOperation::StringAssignViewSlice) {
+          auto Position = StringSliceArgument(1);
+          auto Requested = StringSliceArgument(2);
+          auto Sliced =
+              SliceStringBytes(std::move(Bytes), std::move(Length),
+                               std::move(Position), std::move(Requested));
+          Bytes = std::move(Sliced.first);
+          Length = std::move(Sliced.second);
+        }
         SourceArgument = std::move(Bytes);
         assign(NewSize, std::move(Length), L);
       } else if (Operation == UtilityOperation::StringAssignString) {
@@ -9773,6 +9814,8 @@ class FunctionLowering {
     case UtilityOperation::StringInsertCString:
     case UtilityOperation::StringInsertString:
     case UtilityOperation::StringInsertStringSlice:
+    case UtilityOperation::StringInsertView:
+    case UtilityOperation::StringInsertViewSlice:
     case UtilityOperation::StringInsertFill:
     case UtilityOperation::StringInsertIteratorCharacter:
     case UtilityOperation::StringInsertIteratorFill:
@@ -9782,6 +9825,8 @@ class FunctionLowering {
     case UtilityOperation::StringReplaceCString:
     case UtilityOperation::StringReplaceString:
     case UtilityOperation::StringReplaceStringSlice:
+    case UtilityOperation::StringReplaceView:
+    case UtilityOperation::StringReplaceViewSlice:
     case UtilityOperation::StringReplaceFill:
     case UtilityOperation::StringReplaceIteratorPointer:
     case UtilityOperation::StringReplaceIteratorCString:
@@ -9862,6 +9907,8 @@ class FunctionLowering {
           Operation == UtilityOperation::StringReplaceCString ||
           Operation == UtilityOperation::StringReplaceString ||
           Operation == UtilityOperation::StringReplaceStringSlice ||
+          Operation == UtilityOperation::StringReplaceView ||
+          Operation == UtilityOperation::StringReplaceViewSlice ||
           Operation == UtilityOperation::StringReplaceFill ||
           Operation == UtilityOperation::StringReplaceIteratorPointer ||
           Operation == UtilityOperation::StringReplaceIteratorCString ||
@@ -9970,6 +10017,24 @@ class FunctionLowering {
         auto [Bytes, Length] =
             ReadStringSlice(std::move(Address), *String, std::move(Position),
                             std::move(Requested));
+        Source = temporary(ConstPointerType, L);
+        assign(*Source, std::move(Bytes), L);
+        assign(Inserted, std::move(Length), L);
+      } else if (Operation == UtilityOperation::StringInsertView ||
+                 Operation == UtilityOperation::StringInsertViewSlice ||
+                 Operation == UtilityOperation::StringReplaceView ||
+                 Operation == UtilityOperation::StringReplaceViewSlice) {
+        auto [Bytes, Length] = ReadStringViewAt(SourceIndex);
+        if (Operation == UtilityOperation::StringInsertViewSlice ||
+            Operation == UtilityOperation::StringReplaceViewSlice) {
+          auto ViewPosition = StringSliceArgument(SourceIndex + 1);
+          auto Requested = StringSliceArgument(SourceIndex + 2);
+          auto Sliced =
+              SliceStringBytes(std::move(Bytes), std::move(Length),
+                               std::move(ViewPosition), std::move(Requested));
+          Bytes = std::move(Sliced.first);
+          Length = std::move(Sliced.second);
+        }
         Source = temporary(ConstPointerType, L);
         assign(*Source, std::move(Bytes), L);
         assign(Inserted, std::move(Length), L);
@@ -10695,6 +10760,8 @@ class FunctionLowering {
     case UtilityOperation::StringAppendCString:
     case UtilityOperation::StringAppendString:
     case UtilityOperation::StringAppendStringSlice:
+    case UtilityOperation::StringAppendView:
+    case UtilityOperation::StringAppendViewSlice:
     case UtilityOperation::StringAppendList:
     case UtilityOperation::StringAppendRange:
     case UtilityOperation::StringAppendFill:
@@ -10746,6 +10813,8 @@ class FunctionLowering {
           Operation == UtilityOperation::StringAppendCString ||
           Operation == UtilityOperation::StringAppendString ||
           Operation == UtilityOperation::StringAppendStringSlice ||
+          Operation == UtilityOperation::StringAppendView ||
+          Operation == UtilityOperation::StringAppendViewSlice ||
           Operation == UtilityOperation::StringAppendList ||
           Operation == UtilityOperation::StringAppendRange;
       if (Operation == UtilityOperation::StringPushBack || CharacterAppend)
@@ -10895,6 +10964,21 @@ class FunctionLowering {
         auto [Bytes, Length] =
             ReadStringSlice(std::move(SourceAddress), *String,
                             std::move(Position), std::move(Requested));
+        SourceArgument = std::move(Bytes);
+        RequestedArgument = std::move(Length);
+      }
+      if (Operation == UtilityOperation::StringAppendView ||
+          Operation == UtilityOperation::StringAppendViewSlice) {
+        auto [Bytes, Length] = ReadStringViewAt(ArgumentOffset);
+        if (Operation == UtilityOperation::StringAppendViewSlice) {
+          auto Position = StringSliceArgument(1);
+          auto Requested = StringSliceArgument(2);
+          auto Sliced =
+              SliceStringBytes(std::move(Bytes), std::move(Length),
+                               std::move(Position), std::move(Requested));
+          Bytes = std::move(Sliced.first);
+          Length = std::move(Sliced.second);
+        }
         SourceArgument = std::move(Bytes);
         RequestedArgument = std::move(Length);
       }

@@ -29498,6 +29498,18 @@ int main() {
                              view_copy.size() == 26 && view_copy[25] == 'z' &&
                              view_slice.size() == 23 && view_slice[0] == 'b' &&
                              view_slice[22] == 'x';
+  std::string_view digits("0123456789");
+  std::string view_modified("a");
+  view_modified.append(digits);
+  view_modified.assign(digits, 2, 3);
+  view_modified.insert(1, digits, 5, 2);
+  view_modified.replace(1, 2, digits, 7, 2);
+  view_modified += digits;
+  bool view_modifiers_intact = view_modified.size() == 15 &&
+                               view_modified[0] == '2' &&
+                               view_modified[4] == '4' &&
+                               view_modified[5] == '0' &&
+                               view_modified[14] == '9';
   std::string copied(long_text);
   std::string combined = short_text + long_text;
   std::string prefixed = "!" + long_text;
@@ -29845,6 +29857,7 @@ int main() {
                              *(reverse_long.rend() - 1) == 'a';
   return intact && fill_intact && range_construction_intact &&
          substring_construction_intact && view_interop_intact &&
+         view_modifiers_intact &&
          maximum_intact && shrink_intact &&
          boundary_intact && emptied &&
          assigned.size() == 14 &&

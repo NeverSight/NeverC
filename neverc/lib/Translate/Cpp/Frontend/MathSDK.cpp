@@ -7946,6 +7946,54 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
           return true;
       }
     }
+    const auto *ViewPrimary = Method->getPrimaryTemplate();
+    if (Default && Parameter && Owner && String && Prototype && ViewPrimary &&
+        Owner->getCanonicalDecl() == Method->getCanonicalDecl() &&
+        !Method->isStatic() && !Method->isVariadic() && !Method->isConst() &&
+        Method->getIdentifier() &&
+        Method->getReturnType()->isLValueReferenceType() &&
+        Context.hasSameType(Method->getReturnType()->getPointeeType(),
+                            Context.getRecordType(String->Record)) &&
+        approvedStandardSDKDeclaration(S, SM, Method) &&
+        approvedStandardSDKDeclaration(S, SM, ViewPrimary) &&
+        cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "string") &&
+        cstddefOrigin(S, SM, ViewPrimary->getLocation(), "libcxx", "string") &&
+        S.owns(SM, Default->getExprLoc()) && Init &&
+        Context.hasSameType(Init->getType(), Context.getSizeType()) &&
+        !Init->isTypeDependent() && !Init->isValueDependent() &&
+        !Init->isInstantiationDependent()) {
+      const auto Name = Method->getName();
+      const unsigned SourceIndex = Name == "append" || Name == "assign" ? 0
+                                   : Name == "insert"                   ? 1
+                                   : Name == "replace"                  ? 2
+                                                                        : 3;
+      if (SourceIndex < 3 && Method->getNumParams() == SourceIndex + 3 &&
+          Index == SourceIndex + 2 &&
+          Parameter == Method->getParamDecl(Index) &&
+          Parameter->getFunctionScopeIndex() == Index &&
+          Context.hasSameType(Parameter->getType(), Context.getSizeType()) &&
+          Context.hasSameType(Method->getParamDecl(SourceIndex + 1)->getType(),
+                              Context.getSizeType())) {
+        const auto Source = Method->getParamDecl(SourceIndex)->getType();
+        const auto View =
+            Source->isLValueReferenceType()
+                ? approvedUtilityStringViewRecord(
+                      S, SM, Source->getPointeeType()->getAsCXXRecordDecl(),
+                      Context)
+                : std::optional<UtilityStringViewRecord>();
+        bool Shape =
+            View && Context.hasSameType(
+                        Source->getPointeeType(),
+                        Context.getRecordType(View->Record).withConst());
+        for (unsigned I = 0; I < SourceIndex; ++I)
+          Shape &= Context.hasSameType(Method->getParamDecl(I)->getType(),
+                                       Context.getSizeType());
+        Expr::EvalResult Evaluated;
+        if (Shape && Init->EvaluateAsInt(Evaluated, Context) &&
+            Evaluated.Val.isInt() && Evaluated.Val.getInt().isAllOnes())
+          return true;
+      }
+    }
     if (Default && Parameter && Owner && String && Prototype &&
         Prototype->isNothrow() &&
         Owner->getCanonicalDecl() == Method->getCanonicalDecl() &&
@@ -16780,6 +16828,37 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           return false;
       return true;
     };
+    auto ViewSource = [&](unsigned SourceIndex, unsigned ArgumentIndex,
+                          bool Slice) {
+      const auto *Primary = Method->getPrimaryTemplate();
+      if (!Primary || Method->getNumParams() != SourceIndex + (Slice ? 3 : 1) ||
+          !approvedStandardSDKDeclaration(S, SM, Primary) ||
+          !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "string"))
+        return false;
+      const auto Source = Method->getParamDecl(SourceIndex)->getType();
+      if (!Source->isLValueReferenceType())
+        return false;
+      const auto View = approvedUtilityStringViewRecord(
+          S, SM, Source->getPointeeType()->getAsCXXRecordDecl(), Context);
+      if (!View ||
+          !Context.hasSameType(
+              Source->getPointeeType(),
+              Context.getRecordType(View->Record).withConst()) ||
+          !Context.hasSameUnqualifiedType(
+              Call->getArg(ArgumentIndex)->getType(),
+              Context.getRecordType(View->Record)))
+        return false;
+      if (!Slice)
+        return true;
+      for (unsigned I = SourceIndex + 1; I != SourceIndex + 3; ++I)
+        if (!Context.hasSameType(Method->getParamDecl(I)->getType(),
+                                 Context.getSizeType()) ||
+            !Context.hasSameType(
+                Call->getArg(ArgumentIndex + I - SourceIndex)->getType(),
+                Context.getSizeType()))
+          return false;
+      return true;
+    };
     if (!Reference || !Object || !Prototype ||
         (!Prototype->isNothrow() && Name != "push_back" && Name != "pop_back" &&
          Name != "reserve" && Name != "resize" && Name != "append" &&
@@ -17228,6 +17307,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         if (StringSlice(SourceIndex))
           return Replace ? UtilityOperation::StringReplaceStringSlice
                          : UtilityOperation::StringInsertStringSlice;
+        if (ViewSource(SourceIndex, SourceIndex, true))
+          return Replace ? UtilityOperation::StringReplaceViewSlice
+                         : UtilityOperation::StringInsertViewSlice;
         const auto FirstParameter =
             Method->getParamDecl(SourceIndex)->getType();
         const auto FirstArgument = Call->getArg(SourceIndex)->getType();
@@ -17235,6 +17317,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
             Context.getPointerType(Context.CharTy.withConst());
         const auto StringType = Context.getRecordType(String->Record);
         if (Method->getNumParams() == SourceIndex + 1) {
+          if (ViewSource(SourceIndex, SourceIndex, false))
+            return Replace ? UtilityOperation::StringReplaceView
+                           : UtilityOperation::StringInsertView;
           if (Context.hasSameType(FirstParameter, ConstPointer) &&
               Context.hasSameType(FirstArgument, ConstPointer))
             return Replace ? UtilityOperation::StringReplaceCString
@@ -17310,8 +17395,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         return UtilityOperation::StringAssignString;
       if (Method->getNumParams() == 1 && ListArgument(0, 0))
         return UtilityOperation::StringAssignList;
+      if (ViewSource(0, 0, false))
+        return UtilityOperation::StringAssignView;
       if (StringSlice(0))
         return UtilityOperation::StringAssignStringSlice;
+      if (ViewSource(0, 0, true))
+        return UtilityOperation::StringAssignViewSlice;
       if (Method->getNumParams() == 2) {
         const auto SecondParameter = Method->getParamDecl(1)->getType();
         if (Context.hasSameType(FirstParameter, ConstPointer) &&
@@ -17367,8 +17456,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         return UtilityOperation::StringAppendString;
       if (Method->getNumParams() == 1 && ListArgument(0, Argument))
         return UtilityOperation::StringAppendList;
+      if (ViewSource(0, Argument, false))
+        return UtilityOperation::StringAppendView;
       if (!PlusEqual && StringSlice(0))
         return UtilityOperation::StringAppendStringSlice;
+      if (!PlusEqual && ViewSource(0, 0, true))
+        return UtilityOperation::StringAppendViewSlice;
       if (Method->getNumParams() != 2)
         return std::nullopt;
       const auto SecondParameter = Method->getParamDecl(1)->getType();

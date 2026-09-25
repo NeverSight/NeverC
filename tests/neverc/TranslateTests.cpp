@@ -53782,6 +53782,102 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringViewModifiersRun) {
+  const auto Source = tmpFile("string-view-modifiers.cpp");
+  const auto Output = tmpFile("string-view-modifiers.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+#include <string_view>
+int view_calls;
+std::string_view touch_view(std::string_view value) {
+  ++view_calls;
+  return value;
+}
+int main() {
+  {
+    std::string grown("abcdefghijklmnop");
+    std::string_view alias(grown.data() + 4, 8);
+    grown.append(touch_view(alias));
+    if (view_calls != 1 || grown.size() != 24 || grown[0] != 'a' ||
+        grown[16] != 'e' || grown[23] != 'l')
+      return 1;
+    std::string assigned("abcdefghijklmnopqrstuvwxyz");
+    std::string_view inside(assigned.data() + 4, 8);
+    assigned.assign(touch_view(inside));
+    if (view_calls != 2 || assigned != "efghijkl")
+      return 2;
+    char embedded[]{'C', 0, 'D'};
+    std::string plus("AB");
+    plus += touch_view(std::string_view(embedded, 3));
+    if (view_calls != 3 || plus.size() != 5 || plus[0] != 'A' ||
+        plus[2] != 'C' || plus[3] != 0 || plus[4] != 'D')
+      return 3;
+    std::string inserted("0123456789");
+    std::string_view insert_alias(inserted.data() + 2, 4);
+    inserted.insert(1, touch_view(insert_alias));
+    if (view_calls != 4 || inserted != "02345123456789")
+      return 4;
+    std::string replaced("abcdefghijklmnopqrstuvwx");
+    std::string_view replace_alias(replaced.data() + 5, 6);
+    replaced.replace(2, 4, touch_view(replace_alias));
+    if (view_calls != 5 || replaced.size() != 26 || replaced[0] != 'a' ||
+        replaced[2] != 'f' || replaced[7] != 'k' ||
+        replaced[8] != 'g' || replaced[25] != 'x')
+      return 5;
+    std::string_view digits("0123456789");
+    std::string sliced("base");
+    sliced.append(digits, 2, 3);
+    if (sliced != "base234")
+      return 6;
+    sliced.assign(digits, 5);
+    if (sliced != "56789")
+      return 7;
+    sliced.insert(2, digits, 1, 3);
+    if (sliced != "56123789")
+      return 8;
+    sliced.replace(1, 4, digits, 6, 2);
+    if (sliced != "567789")
+      return 9;
+    sliced.append(digits, 9);
+    sliced.insert(0, digits, 8);
+    sliced.replace(0, 2, digits, 9);
+    if (sliced != "95677899")
+      return 10;
+    std::string empty("x");
+    empty.assign(std::string_view{});
+    empty.append(std::string_view{});
+    empty.insert(0, std::string_view{});
+    empty.replace(0, 0, std::string_view{});
+    empty.append(std::string_view{}, 0);
+    empty.assign(std::string_view{}, 0, 0);
+    empty.insert(0, std::string_view{}, 0);
+    empty.replace(0, 0, std::string_view{}, 0, 0);
+    if (!empty.empty())
+      return 11;
+  }
+  return allocations == releases ? 0 : 12;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-view-modifiers" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedIteratorOffsetsRun) {
   const auto Source = tmpFile("wrapped-iterator-offsets.cpp");
   const auto Output = tmpFile("wrapped-iterator-offsets.nc");
