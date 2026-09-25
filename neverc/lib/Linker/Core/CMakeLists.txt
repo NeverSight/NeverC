@@ -42,7 +42,8 @@ set(linker_core_runtime
 set(linker_core_support
   Support/Dwarf.cpp
   Support/FileIO.cpp
-  Support/Strings.cpp)
+  Support/Strings.cpp
+  Support/TarArchive.cpp)
 
 source_group("Driver"  FILES ${linker_core_driver})
 source_group("Runtime" FILES ${linker_core_runtime})

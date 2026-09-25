@@ -41,9 +41,28 @@ opt::InputArgList ELFOptTable::parse(ArrayRef<const char *> argv) {
   unsigned missingCount;
   SmallVector<const char *, 256> vec(argv.data(), argv.data() + argv.size());
 
-  // Expand GNU-style @file response files, as build systems pass very long
-  // link lines through them.
-  if (!cl::ExpandResponseFiles(saver(), cl::TokenizeGNUCommandLine, vec))
+  // Expand @file response files, as build systems pass very long link lines
+  // through them: GNU quoting unless --rsp-quoting, which must appear
+  // outside of them, selects Windows quoting.
+  cl::TokenizerCallback quoting = cl::TokenizeGNUCommandLine;
+  for (size_t i = 0; i < vec.size(); ++i) {
+    StringRef arg = vec[i], value;
+    if (arg.consume_front("--rsp-quoting=") ||
+        arg.consume_front("-rsp-quoting="))
+      value = arg;
+    else if ((arg == "--rsp-quoting" || arg == "-rsp-quoting") &&
+             i + 1 < vec.size())
+      value = vec[i + 1];
+    else
+      continue;
+    if (value == "windows")
+      quoting = cl::TokenizeWindowsCommandLine;
+    else if (value == "posix")
+      quoting = cl::TokenizeGNUCommandLine;
+    else
+      error("invalid response file quoting: " + value);
+  }
+  if (!cl::ExpandResponseFiles(saver(), quoting, vec))
     error("cannot expand response file");
 
   opt::InputArgList args = this->ParseArgs(vec, missingIndex, missingCount);

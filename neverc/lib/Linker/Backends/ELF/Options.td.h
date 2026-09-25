@@ -81,6 +81,9 @@ OPTION(prefix_2, "--auxiliary", auxiliary, Separate, INVALID, INVALID, nullptr,
 OPTION(prefix_2, "--Bdynamic", Bdynamic, Flag, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0, "Link against shared libraries (default)", nullptr,
        nullptr)
+OPTION(prefix_2, "--be8", be8, Flag, INVALID, INVALID, nullptr, 0, DefaultVis,
+       0, "write a Big Endian ELF file using BE8 format (AArch32 only)",
+       nullptr, nullptr)
 OPTION(prefix_2, "--Bno-symbolic", Bno_symbolic, Flag, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0,
        "Don't bind default visibility defined symbols locally for -shared "
@@ -134,6 +137,12 @@ OPTION(prefix_3, "--check-dynamic-relocations", check_dynamic_relocations, Flag,
 OPTION(prefix_2, "--check-sections", check_sections, Flag, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0,
        "Check section addresses for overlaps (default)", nullptr, nullptr)
+OPTION(prefix_3, "--chroot", chroot, Separate, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_3, "--cmse-implib", cmse_implib, Flag, INVALID, INVALID, nullptr,
+       0, DefaultVis, 0,
+       "Make the output library to be a CMSE secure code import library",
+       nullptr, nullptr)
 OPTION(prefix_3, "--color-diagnostics=", color_diagnostics, Joined, INVALID,
        INVALID, nullptr, 0, DefaultVis, 0,
        "Use colors in diagnostics (default: auto)", "[auto,always,never]",
@@ -147,11 +156,30 @@ OPTION(prefix_2, "--compress-debug-sections=", compress_debug_sections_eq,
 OPTION(prefix_2, "--compress-debug-sections", compress_debug_sections, Separate,
        INVALID, INVALID, nullptr, 0, DefaultVis, 0, nullptr, "[none,zlib,zstd]",
        nullptr)
+OPTION(prefix_3, "--compress-sections=", compress_sections_eq, Joined, INVALID,
+       compress_sections, nullptr, 0, DefaultVis, 0,
+       "Compress output sections that match the glob and do not have the "
+       "SHF_ALLOC flag. The sections remain uncompressed if compressed content "
+       "would be larger. The compression level is <level> (if specified) or a "
+       "default speed-focused level",
+       "<section-glob>={none,zlib,zstd}[:level]", nullptr)
+OPTION(prefix_3, "--compress-sections", compress_sections, Separate, INVALID,
+       INVALID, nullptr, 0, DefaultVis, 0, nullptr,
+       "<section-glob>={none,zlib,zstd}[:level]", nullptr)
 OPTION(prefix_3, "--cref", cref, Flag, INVALID, INVALID, nullptr, 0, DefaultVis,
        0,
        "Output cross reference table. If a map file is specified, print to the "
        "map file",
        nullptr, nullptr)
+OPTION(prefix_3, "--debug-names", debug_names, Flag, INVALID, INVALID, nullptr,
+       0, DefaultVis, 0, "Generate a merged .debug_names section", nullptr,
+       nullptr)
+OPTION(prefix_3, "--default-script=", default_script_eq, Joined, INVALID,
+       default_script, nullptr, 0, DefaultVis, 0,
+       "In the absence of --script, read this default linker script", nullptr,
+       nullptr)
+OPTION(prefix_3, "--default-script", default_script, Separate, INVALID, INVALID,
+       nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_2, "--defsym=", defsym_eq, Joined, INVALID, defsym, nullptr, 0,
        DefaultVis, 0, "Define a symbol alias", "<symbol>=<value>", nullptr)
 OPTION(prefix_2, "--defsym", defsym, Separate, INVALID, INVALID, nullptr, 0,
@@ -182,6 +210,9 @@ OPTION(prefix_2, "--discard-none", discard_none, Flag, INVALID, INVALID,
        nullptr, nullptr)
 OPTION(prefix_2, "--dn", anonymous_204, Flag, INVALID, Bstatic, nullptr, 0,
        DefaultVis, 0, "Alias for --Bstatic", nullptr, nullptr)
+OPTION(prefix_1, "-dT", anonymous_233, Separate, INVALID, default_script,
+       nullptr, 0, DefaultVis, 0, "Alias for --default-script", nullptr,
+       nullptr)
 OPTION(prefix_2, "--dynamic-linker=", dynamic_linker_eq, Joined, INVALID,
        dynamic_linker, nullptr, 0, DefaultVis, 0, "Which dynamic linker to use",
        nullptr, nullptr)
@@ -213,6 +244,12 @@ OPTION(prefix_2, "--emit-relocs", emit_relocs, Flag, INVALID, INVALID, nullptr,
 OPTION(prefix_2, "--enable-new-dtags", enable_new_dtags, Flag, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0, "Enable new dynamic tags (default)", nullptr,
        nullptr)
+OPTION(prefix_3, "--enable-non-contiguous-regions",
+       enable_non_contiguous_regions, Flag, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0,
+       "Spill input sections to later matching output sections to avoid memory "
+       "region overflow",
+       nullptr, nullptr)
 OPTION(prefix_2, "--end-group", end_group, Flag, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0,
        "Ignored for compatibility with GNU unless you pass --warn-backrefs",
@@ -272,6 +309,11 @@ OPTION(prefix_1, "-E", anonymous_206, Flag, INVALID, export_dynamic, nullptr, 0,
        DefaultVis, 0, "Alias for --export-dynamic", nullptr, nullptr)
 OPTION(prefix_1, "-e", anonymous_6, JoinedOrSeparate, INVALID, entry, nullptr,
        0, DefaultVis, 0, "Alias for --entry", nullptr, nullptr)
+OPTION(prefix_3, "--fat-lto-objects", fat_lto_objects, Flag, INVALID, INVALID,
+       nullptr, 0, DefaultVis, 0,
+       "Use the .llvm.lto section, which contains LLVM bitcode, in fat LTO "
+       "object files to perform LTO.",
+       nullptr, nullptr)
 OPTION(prefix_2, "--fatal-warnings", fatal_warnings, Flag, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0, "Treat warnings as errors", nullptr, nullptr)
 OPTION(prefix_2, "--filter=", filter_eq, Joined, INVALID, filter, nullptr, 0,
@@ -286,6 +328,15 @@ OPTION(prefix_2, "--fini", fini, Separate, INVALID, INVALID, nullptr, 0,
 OPTION(prefix_2, "--fix-cortex-a53-843419", fix_cortex_a53_843419, Flag,
        INVALID, INVALID, nullptr, 0, DefaultVis, 0,
        "Apply fixes for AArch64 Cortex-A53 erratum 843419", nullptr, nullptr)
+OPTION(prefix_2, "--fix-cortex-a8", fix_cortex_a8, Flag, INVALID, INVALID,
+       nullptr, 0, DefaultVis, 0,
+       "Apply fixes for ARM Cortex-A8 erratum 657417", nullptr, nullptr)
+OPTION(prefix_3, "--force-group-allocation", force_group_allocation, Flag,
+       INVALID, INVALID, nullptr, 0, DefaultVis, 0,
+       "Only meaningful for -r. Section groups are discarded. If two section "
+       "group members are placed to the same output section, combine their "
+       "relocations as well",
+       nullptr, nullptr)
 OPTION(prefix_3, "--fork", fork, Flag, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0,
        "Report the result as soon as the output is complete and release "
@@ -297,6 +348,11 @@ OPTION(prefix_2, "--format=", format_eq, Joined, INVALID, format, nullptr, 0,
        "[default,elf,binary]", nullptr)
 OPTION(prefix_2, "--format", format, Separate, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0, nullptr, "[default,elf,binary]", nullptr)
+OPTION(prefix_3, "--fortran-common", fortran_common, Flag, INVALID, INVALID,
+       nullptr, 0, DefaultVis, 0,
+       "Search archive members for definitions to override COMMON symbols "
+       "(default)",
+       nullptr, nullptr)
 OPTION(prefix_1, "-F", anonymous_7, Separate, INVALID, filter, nullptr, 0,
        DefaultVis, 0, "Alias for --filter", nullptr, nullptr)
 OPTION(prefix_1, "-f", anonymous_0, Separate, INVALID, auxiliary, nullptr, 0,
@@ -342,6 +398,14 @@ OPTION(prefix_3, "--image-base=", image_base_eq, Joined, INVALID, image_base,
        nullptr, 0, DefaultVis, 0, "Set the base address", nullptr, nullptr)
 OPTION(prefix_3, "--image-base", image_base, Separate, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_3, "--in-implib=", in_implib_eq, Joined, INVALID, in_implib,
+       nullptr, 0, DefaultVis, 0,
+       "Read an existing CMSE secure code import library and preserve entry "
+       "function addresses in the resulting new CMSE secure code import "
+       "library (optional when creating a CMSE secure image)",
+       "<file>", nullptr)
+OPTION(prefix_3, "--in-implib", in_implib, Separate, INVALID, INVALID, nullptr,
+       0, DefaultVis, 0, nullptr, "<file>", nullptr)
 OPTION(prefix_2, "--init=", init_eq, Joined, INVALID, init, nullptr, 0,
        DefaultVis, 0, "Specify an initializer function", "<symbol>", nullptr)
 OPTION(prefix_2, "--init", init, Separate, INVALID, INVALID, nullptr, 0,
@@ -412,6 +476,14 @@ OPTION(prefix_2, "--Map=", Map_eq, Joined, INVALID, Map, nullptr, 0, DefaultVis,
        0, "Print a link map to the specified file", nullptr, nullptr)
 OPTION(prefix_2, "--Map", Map, Separate, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_2, "--merge-exidx-entries", merge_exidx_entries, Flag, INVALID,
+       INVALID, nullptr, 0, DefaultVis, 0,
+       "Enable merging .ARM.exidx entries (default)", nullptr, nullptr)
+OPTION(prefix_2, "--mips-got-size=", mips_got_size_eq, Joined, INVALID,
+       mips_got_size, nullptr, HelpHidden, DefaultVis, 0,
+       "Max size of a single MIPS GOT. 0x10000 by default.", nullptr, nullptr)
+OPTION(prefix_2, "--mips-got-size", mips_got_size, Separate, INVALID, INVALID,
+       nullptr, HelpHidden, DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_2, "--mllvm=", mllvm_eq, Joined, INVALID, mllvm, nullptr, 0,
        DefaultVis, 0,
        "Additional arguments to forward to LLVM's option processing", nullptr,
@@ -470,6 +542,10 @@ OPTION(prefix_2, "--no-copy-dt-needed-entries",
 OPTION(prefix_2, "--no-ctors-in-init-array", ignored_no_ctors_in_init_array,
        Flag, INVALID, INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr,
        nullptr)
+OPTION(prefix_3, "--no-debug-names", no_debug_names, Flag, INVALID, INVALID,
+       nullptr, 0, DefaultVis, 0,
+       "Do not generate a merged .debug_names section (default)", nullptr,
+       nullptr)
 OPTION(prefix_2, "--no-demangle", no_demangle, Flag, INVALID, INVALID, nullptr,
        0, DefaultVis, 0, "Do not demangle symbol names", nullptr, nullptr)
 OPTION(prefix_3, "--no-dependent-libraries", no_dependent_libraries, Flag,
@@ -488,12 +564,21 @@ OPTION(prefix_2, "--no-export-dynamic", no_export_dynamic, Flag, INVALID,
        INVALID, nullptr, 0, DefaultVis, 0,
        "Do not put symbols in the dynamic symbol table (default)", nullptr,
        nullptr)
+OPTION(prefix_3, "--no-fat-lto-objects", no_fat_lto_objects, Flag, INVALID,
+       INVALID, nullptr, 0, DefaultVis, 0,
+       "Ignore the .llvm.lto section in relocatable object files (default).",
+       nullptr, nullptr)
 OPTION(prefix_2, "--no-fatal-warnings", no_fatal_warnings, Flag, INVALID,
        INVALID, nullptr, 0, DefaultVis, 0,
        "Do not treat warnings as errors (default)", nullptr, nullptr)
 OPTION(prefix_3, "--no-fork", no_fork, Flag, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0, "Exit only after all memory is released", nullptr,
        nullptr)
+OPTION(
+    prefix_3, "--no-fortran-common", no_fortran_common, Flag, INVALID, INVALID,
+    nullptr, 0, DefaultVis, 0,
+    "Do not search archive members for definitions to override COMMON symbols",
+    nullptr, nullptr)
 OPTION(prefix_2, "--no-gc-sections", no_gc_sections, Flag, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0,
        "Disable garbage collection of unused sections (default)", nullptr,
@@ -512,6 +597,9 @@ OPTION(
     DefaultVis, 0,
     "Do not give unique names to every basic block section for LTO (default)",
     nullptr, nullptr)
+OPTION(prefix_2, "--no-merge-exidx-entries", no_merge_exidx_entries, Flag,
+       INVALID, INVALID, nullptr, 0, DefaultVis, 0,
+       "Disable merging .ARM.exidx entries", nullptr, nullptr)
 OPTION(prefix_3, "--no-mmap-output-file", no_mmap_output_file, Flag, INVALID,
        INVALID, nullptr, 0, DefaultVis, 0,
        "Do not mmap the output file for writing", nullptr, nullptr)
@@ -527,22 +615,34 @@ OPTION(prefix_3, "--no-optimize-bb-jumps", no_optimize_bb_jumps, Flag, INVALID,
        "Do not remove any direct jumps at the end to the next basic block "
        "(default)",
        nullptr, nullptr)
+OPTION(prefix_3, "--no-pcrel-optimize", no_pcrel_optimize, Flag, INVALID,
+       INVALID, nullptr, 0, DefaultVis, 0,
+       "(PowerPC64) Disable PC-relative optimizations", nullptr, nullptr)
 OPTION(prefix_2, "--no-pie", no_pie, Flag, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0,
        "Do not create a position independent executable (default)", nullptr,
        nullptr)
+OPTION(prefix_3, "--no-power10-stubs", no_power10_stubs, Flag, INVALID,
+       power10_stubs_eq, "no\0", 0, DefaultVis, 0,
+       "Alias for --power10-stubs=no", nullptr, nullptr)
 OPTION(prefix_2, "--no-print-gc-sections", no_print_gc_sections, Flag, INVALID,
        INVALID, nullptr, 0, DefaultVis, 0,
        "Do not list removed unused sections (default)", nullptr, nullptr)
 OPTION(prefix_2, "--no-print-icf-sections", no_print_icf_sections, Flag,
        INVALID, INVALID, nullptr, 0, DefaultVis, 0,
        "Do not list identical folded sections (default)", nullptr, nullptr)
+OPTION(prefix_3, "--no-relax-gp", no_relax_gp, Flag, INVALID, INVALID, nullptr,
+       0, DefaultVis, 0, "Disable global pointer relaxation (default)", nullptr,
+       nullptr)
 OPTION(prefix_3, "--no-relax", no_relax, Flag, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0, "Disable target-specific relaxations", nullptr, nullptr)
 OPTION(prefix_3, "--no-rosegment", no_rosegment, Flag, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0,
        "Do not put read-only non-executable sections in their own segment",
        nullptr, nullptr)
+OPTION(prefix_3, "--no-toc-optimize", no_toc_optimize, Flag, INVALID, INVALID,
+       nullptr, 0, DefaultVis, 0,
+       "(PowerPC64) Disable TOC related optimizations", nullptr, nullptr)
 OPTION(prefix_2, "--no-undefined-version", no_undefined_version, Flag, INVALID,
        INVALID, nullptr, 0, DefaultVis, 0,
        "Report version scripts that refer undefined symbols", nullptr, nullptr)
@@ -564,6 +664,13 @@ OPTION(prefix_2, "--no-warn-common", no_warn_common, Flag, INVALID, INVALID,
        "Do not warn about duplicate common symbols (default)", nullptr, nullptr)
 OPTION(prefix_2, "--no-warn-execstack", ignored_no_warn_execstack, Flag,
        INVALID, INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_3, "--no-warn-ifunc-textrel", no_warn_ifunc_textrel, Flag,
+       INVALID, INVALID, nullptr, 0, DefaultVis, 0,
+       "Do not warn about using ifunc symbols with text relocations (default)",
+       nullptr, nullptr)
+OPTION(prefix_2, "--no-warn-mismatch", no_warn_mismatch, Flag, INVALID, INVALID,
+       nullptr, 0, DefaultVis, 0,
+       "Suppress errors for certain unknown seciton types", nullptr, nullptr)
 OPTION(prefix_2, "--no-warn-rwx-segments", ignored_no_warn_rwx_segments, Flag,
        INVALID, INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_3, "--no-warn-symbol-ordering", no_warn_symbol_ordering, Flag,
@@ -635,6 +742,13 @@ OPTION(prefix_2, "--orphan-handling=", orphan_handling_eq, Joined, INVALID,
        nullptr, nullptr)
 OPTION(prefix_2, "--orphan-handling", orphan_handling, Separate, INVALID,
        INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_3, "--out-implib=", out_implib_eq, Joined, INVALID, out_implib,
+       nullptr, 0, DefaultVis, 0,
+       "Output the CMSE secure code import library to <file> (required when "
+       "creating a CMSE secure image)",
+       "<file>", nullptr)
+OPTION(prefix_3, "--out-implib", out_implib, Separate, INVALID, INVALID,
+       nullptr, 0, DefaultVis, 0, nullptr, "<file>", nullptr)
 OPTION(prefix_3, "--output=", anonymous_211, Joined, INVALID, o, nullptr, 0,
        DefaultVis, 0, "Alias for -o", nullptr, nullptr)
 OPTION(prefix_3, "--output", anonymous_212, Separate, INVALID, o, nullptr, 0,
@@ -659,6 +773,10 @@ OPTION(prefix_3, "--pack-dyn-relocs", pack_dyn_relocs, Separate, INVALID,
 OPTION(prefix_3, "--package-metadata=", package_metadata, Joined, INVALID,
        INVALID, nullptr, 0, DefaultVis, 0, "Emit package metadata note",
        nullptr, nullptr)
+OPTION(prefix_3, "--pcrel-optimize", pcrel_optimize, Flag, INVALID, INVALID,
+       nullptr, 0, DefaultVis, 0,
+       "(PowerPC64) Enable PC-relative optimizations (default)", nullptr,
+       nullptr)
 OPTION(prefix_2, "--pic-executable", anonymous_213, Flag, INVALID, pie, nullptr,
        0, DefaultVis, 0, "Alias for --pie", nullptr, nullptr)
 OPTION(prefix_2, "--pic-veneer", pic_veneer, Flag, INVALID, INVALID, nullptr, 0,
@@ -734,6 +852,15 @@ OPTION(prefix_2, "--plugin", plugin, Separate, INVALID, INVALID, nullptr, 0,
 OPTION(prefix_2, "--pop-state", pop_state, Flag, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0, "Restore the states saved by --push-state", nullptr,
        nullptr)
+OPTION(prefix_3, "--power10-stubs=", power10_stubs_eq, Joined, INVALID, INVALID,
+       nullptr, 0, DefaultVis, 0,
+       "Whether to use Power10 instructions in call stubs for "
+       "R_PPC64_REL24_NOTOC and TOC/NOTOC interworking (yes (default): use; "
+       "no: don't use). \\\"auto\\\" is currently the same as \\\"yes\\\"",
+       "<mode>", nullptr)
+OPTION(prefix_3, "--power10-stubs", power10_stubs, Flag, INVALID,
+       power10_stubs_eq, "yes\0", 0, DefaultVis, 0,
+       "Alias for --power10-stubs=auto", nullptr, nullptr)
 OPTION(prefix_2, "--print-archive-stats=", print_archive_stats, Joined, INVALID,
        INVALID, nullptr, 0, DefaultVis, 0,
        "Write archive usage statistics to the specified file. Print the "
@@ -764,9 +891,16 @@ OPTION(prefix_2, "--push-state", push_state, Flag, INVALID, INVALID, nullptr, 0,
        nullptr, nullptr)
 OPTION(prefix_1, "-q", anonymous_4, Flag, INVALID, emit_relocs, nullptr, 0,
        DefaultVis, 0, "Alias for --emit-relocs", nullptr, nullptr)
+OPTION(prefix_3, "--randomize-section-padding=", randomize_section_padding,
+       Joined, INVALID, INVALID, nullptr, 0, DefaultVis, 0,
+       "Randomly insert padding between input sections and at the start of "
+       "each segment using given seed",
+       nullptr, nullptr)
 OPTION(prefix_2, "--reduce-memory-overheads", ignored_reduce_memory_overheads,
        Flag, INVALID, INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr,
        nullptr)
+OPTION(prefix_3, "--relax-gp", relax_gp, Flag, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, "Enable global pointer relaxation", nullptr, nullptr)
 OPTION(prefix_3, "--relax", relax, Flag, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0,
        "Enable target-specific relaxations if supported (default)", nullptr,
@@ -784,6 +918,12 @@ OPTION(prefix_3, "--remap-inputs=", remap_inputs_eq, Joined, INVALID,
        "<from-glob>=<to-file>", nullptr)
 OPTION(prefix_3, "--remap-inputs", remap_inputs, Separate, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0, nullptr, "<from-glob>=<to-file>", nullptr)
+OPTION(prefix_3, "--reproduce=", reproduce_eq, Joined, INVALID, reproduce,
+       nullptr, 0, DefaultVis, 0,
+       "Write tar file containing inputs and command to reproduce link",
+       nullptr, nullptr)
+OPTION(prefix_3, "--reproduce", reproduce, Separate, INVALID, INVALID, nullptr,
+       0, DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_2, "--retain-symbols-file=", retain_symbols_file_eq, Joined,
        INVALID, retain_symbols_file, nullptr, 0, DefaultVis, 0,
        "Retain only the symbols listed in the file", "<file>", nullptr)
@@ -801,6 +941,11 @@ OPTION(prefix_2, "--rpath=", rpath_eq, Joined, INVALID, rpath, nullptr, 0,
        DefaultVis, 0, "Add a DT_RUNPATH to the output", nullptr, nullptr)
 OPTION(prefix_2, "--rpath", rpath, Separate, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_3, "--rsp-quoting=", rsp_quoting_eq, Joined, INVALID, rsp_quoting,
+       nullptr, 0, DefaultVis, 0, "Quoting style for response files",
+       "[posix,windows]", nullptr)
+OPTION(prefix_3, "--rsp-quoting", rsp_quoting, Separate, INVALID, INVALID,
+       nullptr, 0, DefaultVis, 0, nullptr, "[posix,windows]", nullptr)
 OPTION(prefix_1, "-R", anonymous_15, JoinedOrSeparate, INVALID, rpath, nullptr,
        0, DefaultVis, 0, "Alias for --rpath", nullptr, nullptr)
 OPTION(prefix_1, "-r", anonymous_214, Flag, INVALID, relocatable, nullptr, 0,
@@ -882,6 +1027,19 @@ OPTION(prefix_1, "-S", anonymous_215, Flag, INVALID, strip_debug, nullptr, 0,
        DefaultVis, 0, "Alias for --strip-debug", nullptr, nullptr)
 OPTION(prefix_1, "-s", anonymous_216, Flag, INVALID, strip_all, nullptr, 0,
        DefaultVis, 0, "Alias for --strip-all", nullptr, nullptr)
+OPTION(prefix_2, "--target1-abs", target1_abs, Flag, INVALID, INVALID, nullptr,
+       0, DefaultVis, 0, "Interpret R_ARM_TARGET1 as R_ARM_ABS32 (default)",
+       nullptr, nullptr)
+OPTION(prefix_2, "--target1-rel", target1_rel, Flag, INVALID, INVALID, nullptr,
+       0, DefaultVis, 0, "Interpret R_ARM_TARGET1 as R_ARM_REL32", nullptr,
+       nullptr)
+OPTION(prefix_2, "--target2=", target2_eq, Joined, INVALID, target2, nullptr, 0,
+       DefaultVis, 0,
+       "Interpret R_ARM_TARGET2 as <type>, where <type> is one of rel, abs, or "
+       "got-rel",
+       "<type>", nullptr)
+OPTION(prefix_2, "--target2", target2, Separate, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, nullptr, "<type>", nullptr)
 OPTION(prefix_2, "--Tbss=", Tbss_eq, Joined, INVALID, Tbss, nullptr, 0,
        DefaultVis, 0, "Same as --section-start with .bss as the sectionname",
        nullptr, nullptr)
@@ -911,6 +1069,10 @@ OPTION(prefix_3, "--time-trace=", time_trace_eq, Joined, INVALID, INVALID,
 OPTION(prefix_3, "--time-trace", anonymous_217, Flag, INVALID, time_trace_eq,
        nullptr, 0, DefaultVis, 0, "Record time trace to file next to output",
        nullptr, nullptr)
+OPTION(prefix_3, "--toc-optimize", toc_optimize, Flag, INVALID, INVALID,
+       nullptr, 0, DefaultVis, 0,
+       "(PowerPC64) Enable TOC related optimizations (default)", nullptr,
+       nullptr)
 OPTION(prefix_2, "--trace-symbol=", trace_symbol_eq, Joined, INVALID,
        trace_symbol, nullptr, 0, DefaultVis, 0, "Trace references to symbols",
        nullptr, nullptr)
@@ -970,6 +1132,9 @@ OPTION(prefix_2, "--version-script", version_script, Separate, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_2, "--version", version, Flag, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0, "Display the version number and exit", nullptr, nullptr)
+OPTION(prefix_3, "--vs-diagnostics", visual_studio_diagnostics_format, Flag,
+       INVALID, INVALID, nullptr, 0, DefaultVis, 0,
+       "Format diagnostics for Visual Studio compatibility", nullptr, nullptr)
 OPTION(prefix_1, "-V", anonymous_219, Flag, INVALID, v, nullptr, 0, DefaultVis,
        0, "Alias for -v", nullptr, nullptr)
 OPTION(prefix_1, "-v", v, Flag, INVALID, INVALID, nullptr, 0, DefaultVis, 0,
@@ -990,6 +1155,9 @@ OPTION(prefix_2, "--warn-common", warn_common, Flag, INVALID, INVALID, nullptr,
        nullptr)
 OPTION(prefix_2, "--warn-execstack", ignored_warn_execstack, Flag, INVALID,
        INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_3, "--warn-ifunc-textrel", warn_ifunc_textrel, Flag, INVALID,
+       INVALID, nullptr, 0, DefaultVis, 0,
+       "Warn about using ifunc symbols with text relocations", nullptr, nullptr)
 OPTION(prefix_2, "--warn-once", ignored_warn_once, Flag, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_2, "--warn-rwx-segments", ignored_warn_rwx_segments, Flag,

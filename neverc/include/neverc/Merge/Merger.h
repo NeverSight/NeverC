@@ -107,6 +107,14 @@ struct Options {
   /// still merge same-named inputs but ignore this canonicalization.
   bool mergeSections = false;
 
+  /// Resolve COMDAT section groups as a final link does (ELF, for
+  /// --force-group-allocation): the first group of each signature is kept
+  /// with its members as ordinary sections, later ones are discarded, and
+  /// global symbols they defined become references to the kept copies.
+  /// Without it an input with a section group is refused, as groups cannot
+  /// survive section merging.
+  bool resolveGroups = false;
+
   /// Emulate the small part of the Android kernel module linker script that
   /// is a loader ABI rather than ordinary section folding.  The final ET_REL
   /// object receives an allocated (possibly empty) `__versions` section and a

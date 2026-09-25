@@ -38,6 +38,7 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSet.h"
+#include "llvm/Support/Endian.h"
 #include "llvm/Object/ELFObjectFile.h"
 #include "llvm/Support/Compression.h"
 #include "llvm/Support/Error.h"
@@ -285,6 +286,12 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     DenseMap<unsigned, unsigned> SymMap;
     DenseMap<unsigned, uint64_t> SecOff;
     DenseSet<unsigned> DroppedSecs;
+    // Members of discarded COMDAT groups (also in DroppedSecs).
+    DenseSet<unsigned> GroupDroppedSecs;
+    // .eh_frame without the FDEs of discarded groups: contents by section
+    // index and relocations by relocation section index.
+    DenseMap<unsigned, SmallVector<uint8_t, 0>> ContentOverride;
+    DenseMap<unsigned, SmallVector<Rela, 0>> RelaOverride;
     unsigned ReleaseSymbolStringTable = std::numeric_limits<unsigned>::max();
     unsigned ReleaseSectionStringTable = std::numeric_limits<unsigned>::max();
   };
@@ -372,6 +379,7 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     return true;
   };
 
+  StringSet<> ClaimedGroups; // COMDAT signatures with a kept group
   for (unsigned p = 0; p < Buffers.size(); ++p) {
     if (Buffers[p].empty())
       continue;
@@ -858,6 +866,131 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
         if (RS.sh_info < Secs.size())
           SectionHasRelocTarget.insert(RS.sh_info);
 
+    // COMDAT groups resolve like a final link: the first input with a
+    // signature keeps its members, which merge as ordinary sections.
+    if (Opts.resolveGroups) {
+      for (unsigned i = 1; i < Secs.size(); ++i) {
+        const Shdr &G = Secs[i];
+        if (G.sh_type != SHT_GROUP)
+          continue;
+        auto Entries = EF.template getSectionContentsAsArray<Word>(G);
+        if (!Entries || Entries->empty() || G.sh_info >= InputSyms.size() ||
+            InputSyms[G.sh_info].st_name >= SymStr.size()) {
+          if (!Entries)
+            consumeError(Entries.takeError());
+          errs() << "neverc: relocatable merge: malformed section group\n";
+          return false;
+        }
+        if (!((*Entries)[0] & GRP_COMDAT))
+          continue;
+        const char *Signature = SymStr.data() + InputSyms[G.sh_info].st_name;
+        StringRef Name(Signature, strnlen(Signature, SymStr.size() -
+                                                         InputSyms[G.sh_info]
+                                                             .st_name));
+        if (ClaimedGroups.insert(Name).second)
+          continue;
+        for (Word Member : Entries->drop_front()) {
+          if (Member == 0 || Member >= Secs.size()) {
+            errs() << "neverc: relocatable merge: section group member "
+                      "index out of range\n";
+            return false;
+          }
+          PM.DroppedSecs.insert(Member);
+          PM.GroupDroppedSecs.insert(Member);
+        }
+      }
+
+      // The FDEs describing discarded code go with it. Later FDEs' CIE
+      // pointers are relative, and relocations shift with the records.
+      if (!PM.GroupDroppedSecs.empty()) {
+        for (unsigned RI = 1; RI < Secs.size(); ++RI) {
+          const Shdr &RS = Secs[RI];
+          if (RS.sh_type != SHT_RELA || RS.sh_info == 0 ||
+              RS.sh_info >= Secs.size())
+            continue;
+          const unsigned EI = RS.sh_info;
+          auto EName = EF.getSectionName(Secs[EI]);
+          if (!EName) {
+            consumeError(EName.takeError());
+            return false;
+          }
+          if (*EName != ".eh_frame")
+            continue;
+          auto Data = EF.getSectionContents(Secs[EI]);
+          auto Relas = EF.relas(RS);
+          if (!Data || !Relas) {
+            if (!Data)
+              consumeError(Data.takeError());
+            if (!Relas)
+              consumeError(Relas.takeError());
+            return false;
+          }
+          SmallVector<Rela, 0> Sorted(Relas->begin(), Relas->end());
+          llvm::stable_sort(Sorted, [](const Rela &A, const Rela &B) {
+            return A.r_offset < B.r_offset;
+          });
+          auto DiscardedTarget = [&](const Rela &R) {
+            const unsigned SymIdx = R.getSymbol();
+            return SymIdx < InputSymbolSections.size() &&
+                   InputSymbolSections[SymIdx] &&
+                   PM.GroupDroppedSecs.contains(*InputSymbolSections[SymIdx]);
+          };
+          ArrayRef<uint8_t> In = *Data;
+          SmallVector<uint8_t, 0> Out;
+          SmallVector<Rela, 0> OutRelas;
+          DenseMap<uint64_t, uint64_t> NewPos; // kept record: old -> new
+          size_t RelIt = 0;
+          for (uint64_t Off = 0; Off + 4 <= In.size();) {
+            const uint32_t Len = support::endian::read32le(In.data() + Off);
+            const uint64_t End = Off + 4 + uint64_t(Len);
+            if (Len == 0xffffffff || End > In.size()) {
+              errs() << "neverc: relocatable merge: unsupported .eh_frame "
+                        "record\n";
+              return false;
+            }
+            const size_t FirstRel = RelIt;
+            while (RelIt < Sorted.size() && Sorted[RelIt].r_offset < End)
+              ++RelIt;
+            bool Keep = true;
+            uint64_t CiePos = 0;
+            const bool IsFde =
+                Len >= 8 && support::endian::read32le(In.data() + Off + 4) != 0;
+            if (IsFde) {
+              CiePos = Off + 4 - support::endian::read32le(In.data() + Off + 4);
+              for (size_t K = FirstRel; K < RelIt; ++K)
+                if (Sorted[K].r_offset == Off + 8 && DiscardedTarget(Sorted[K]))
+                  Keep = false;
+            }
+            if (Keep) {
+              const uint64_t Pos = Out.size();
+              NewPos[Off] = Pos;
+              Out.append(In.begin() + Off, In.begin() + End);
+              if (IsFde) {
+                auto Cie = NewPos.find(CiePos);
+                if (Cie == NewPos.end()) {
+                  errs() << "neverc: relocatable merge: .eh_frame FDE "
+                            "precedes its CIE\n";
+                  return false;
+                }
+                support::endian::write32le(Out.data() + Pos + 4,
+                                           uint32_t(Pos + 4 - Cie->second));
+              }
+              for (size_t K = FirstRel; K < RelIt; ++K) {
+                Rela R = Sorted[K];
+                R.r_offset = R.r_offset - Off + Pos;
+                OutRelas.push_back(R);
+              }
+            }
+            Off = End;
+            if (Len == 0)
+              break;
+          }
+          PM.ContentOverride[EI] = std::move(Out);
+          PM.RelaOverride[RI] = std::move(OutRelas);
+        }
+      }
+    }
+
     // ----- Phase 1: Merge sections -----
     // Skip metadata sections that are regenerated in the output.
     // SHT_GROUP is skipped because neverc is pure C — no COMDAT.
@@ -876,10 +1009,15 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       // silently drop the group and risk merging members that should have been
       // deduplicated into a single copy.
       if (S.sh_type == SHT_GROUP) {
+        if (Opts.resolveGroups)
+          continue;
         errs() << "neverc: relocatable merge does not support SHT_GROUP "
-                  "(COMDAT) sections; refusing to merge\n";
+                  "(COMDAT) sections; refusing to merge (-Wl,--force-group-"
+                  "allocation resolves them as a final link does)\n";
         return false;
       }
+      if (PM.GroupDroppedSecs.contains(i))
+        continue;
       // A malformed sh_name (offset outside the section-header string table)
       // makes getSectionName return an Expected error.  The prior
       // `NameOrErr ? *NameOrErr : ""` consulted the value but never *consumed*
@@ -1150,7 +1288,10 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
           MaterializedZeroFill += S.sh_size;
           MS.Data.resize(NewSize, 0);
         } else {
-          auto D = EF.getSectionContents(S);
+          auto D = PM.ContentOverride.count(i)
+                       ? Expected<ArrayRef<uint8_t>>(ArrayRef<uint8_t>(
+                             PM.ContentOverride[i]))
+                       : EF.getSectionContents(S);
           if (!D) {
             // We have already committed this input's PartOffset.  Silently
             // skipping its bytes would shift every later section and alias this
@@ -1234,8 +1375,19 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
         // Remap section index and adjust value.
         if (OutputSection) {
           const uint32_t InputSection = *OutputSection;
-          if (PM.DroppedSecs.contains(InputSection))
+          // A global a discarded group defined refers to the kept copy.
+          if (PM.GroupDroppedSecs.contains(InputSection) &&
+              Syms[i].getBinding() != STB_LOCAL) {
+            OutS.st_shndx = SHN_UNDEF;
+            OutS.st_value = 0;
+            OutS.st_size = 0;
+            OutputSection.reset();
+          } else if (PM.DroppedSecs.contains(InputSection)) {
             continue;
+          }
+        }
+        if (OutputSection) {
+          const uint32_t InputSection = *OutputSection;
           auto It = PM.SecMap.find(InputSection);
           if (It != PM.SecMap.end()) {
             OutputSection = It->second;
@@ -1344,6 +1496,9 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       const Sym &Target = RelocSyms[SymIdx];
       if (InputSymbolSections[SymIdx]) {
         const uint32_t InputSection = *InputSymbolSections[SymIdx];
+        if (PM.GroupDroppedSecs.contains(InputSection) &&
+            Target.getBinding() != STB_LOCAL)
+          return false;
         if (PM.DroppedSecs.contains(InputSection))
           return true;
         auto OutputSection = PM.SecMap.find(InputSection);
@@ -1375,7 +1530,10 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
         dataOff = OffIt->second;
 
       if (Secs[i].sh_type == SHT_RELA) {
-        auto R = EF.relas(Secs[i]);
+        auto R = PM.RelaOverride.count(i)
+                     ? Expected<ArrayRef<Rela>>(
+                           ArrayRef<Rela>(PM.RelaOverride[i]))
+                     : EF.relas(Secs[i]);
         if (!R) {
           // Silently dropping a relocation section would leave its
           // cross-references unrelocated in the output — a miscompile that
@@ -1383,7 +1541,17 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
           consumeError(R.takeError());
           return false;
         }
+        const bool RelocatesNonAlloc =
+            !(Secs[Secs[i].sh_info].sh_flags & SHF_ALLOC);
         for (const Rela &Re : *R) {
+          // Debug and other non-allocated data lose their references to
+          // discarded group members, as a final link writes a tombstone.
+          const unsigned SymIdx = Re.getSymbol();
+          if (RelocatesNonAlloc && SymIdx < InputSymbolSections.size() &&
+              InputSymbolSections[SymIdx] &&
+              PM.GroupDroppedSecs.contains(*InputSymbolSections[SymIdx]) &&
+              RelocSyms[SymIdx].getBinding() == STB_LOCAL)
+            continue;
           if (ReferencesDroppedSymbol(Re.getSymbol())) {
             errs() << "neverc: relocatable merge: retained section has a "
                       "relocation to a discarded input section or symbol\n";

@@ -20,6 +20,7 @@
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/raw_ostream.h"
+#include <regex>
 
 using namespace llvm;
 using namespace linker;
@@ -145,7 +146,24 @@ void linker::checkError(Error e) {
                   [&](ErrorInfoBase &eib) { error(eib.message()); });
 }
 
+// In Visual Studio mode a diagnostic whose explanation names a source
+// location is reported at that location, the first "file:line" found after
+// a "referenced by" or "defined at" line, as "file(line)"; an undefined or
+// duplicate symbol without line information is reported at its file.
 std::string linker::ErrorHandler::getLocation(const Twine &msg) {
+  if (!vsDiagnostics)
+    return std::string(logName);
+  const std::string text = msg.str();
+  static const std::regex withLine(
+      R"(\n>>> (?:referenced by|defined at) (?:.+\()?([^\s()]+):(\d+)\)?)");
+  static const std::regex fileOnly(
+      R"(^(?:undefined (?:\S+ )?symbol|duplicate symbol):.*\n>>> )"
+      R"((?:referenced by|defined in) ([^\s:]+))");
+  std::smatch m;
+  if (std::regex_search(text, m, withLine))
+    return m.str(1) + "(" + m.str(2) + ")";
+  if (std::regex_search(text, m, fileOnly))
+    return m.str(1);
   return std::string(logName);
 }
 
@@ -197,6 +215,20 @@ void linker::ErrorHandler::warn(const Twine &msg) {
 }
 
 void linker::ErrorHandler::error(const Twine &msg) {
+  // Visual Studio reports one location per diagnostic, so a duplicate symbol
+  // defined at two locations becomes two errors.
+  if (vsDiagnostics) {
+    static const std::regex twoDefinitions(
+        R"(^(duplicate symbol: [^\n]*)(\n>>> defined at \S+:\d+[^\n]*\n>>>[^\n]*))"
+        R"((\n>>> defined at \S+:\d+[^\n]*\n>>>[^\n]*)$)");
+    const std::string text = msg.str();
+    std::smatch m;
+    if (std::regex_match(text, m, twoDefinitions)) {
+      error(m.str(1) + m.str(2));
+      error(m.str(1) + m.str(3));
+      return;
+    }
+  }
   bool exit = false;
   {
     std::lock_guard<std::mutex> lock(mu);

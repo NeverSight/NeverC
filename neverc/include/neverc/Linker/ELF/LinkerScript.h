@@ -8,6 +8,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/MapVector.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Compiler.h"
 #include <cstddef>
@@ -350,6 +351,9 @@ public:
   bool seenDataAlign = false;
   bool seenRelroEnd = false;
   bool errorOnMissingSection = false;
+  // Missing symbols already reported: addresses are assigned in several
+  // passes, each evaluating the same expressions.
+  llvm::StringSet<> reportedMissingSymbols;
   std::string backwardDotErr;
 
   // List of section patterns specified with KEEP commands. They will

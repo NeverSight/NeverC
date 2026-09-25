@@ -873,6 +873,13 @@ void RelocationScanner::processAux(RelExpr expr, RelType type, uint64_t offset,
     std::lock_guard<std::mutex> lock(
         linker::elf::detail::elfRelocationState().mutex);
     sym.exportDynamic = true;
+    // A dynamic relocation in a read-only section is a text relocation; the
+    // loader of glibc 2.28 and earlier applies IRELATIVE-like relocations
+    // there before making text writable.
+    if (config->warnIfuncTextrel && !(sec->flags & SHF_WRITE))
+      warn(sec->getLocation(offset) + ": text relocation against the " +
+           "indirect function " + toString(sym) +
+           "; the output may fail to load with glibc 2.28 and earlier");
     mainPart->relaDyn->addSymbolReloc(type, *sec, offset, sym, addend, type);
     return;
   }

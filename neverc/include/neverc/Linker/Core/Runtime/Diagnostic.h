@@ -49,6 +49,9 @@ public:
   bool suppressWarnings = false;
   bool verbose = false;
   bool disableOutput = false;
+  // Visual Studio style: diagnostics about a source location start with
+  // "file(line)" instead of the program name.
+  bool vsDiagnostics = false;
   std::function<void()> cleanupCallback;
 
   void error(const Twine &msg);

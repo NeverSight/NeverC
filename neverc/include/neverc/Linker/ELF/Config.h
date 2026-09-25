@@ -4,6 +4,7 @@
 #include "Linker/ELF/ELFHotState.h"
 #include "Linker/Core/Driver/Dispatcher.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
+#include "Linker/Core/Support/TarArchive.h"
 #include "llvm/ADT/CachedHashString.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SetVector.h"
@@ -24,6 +25,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -161,6 +163,23 @@ struct Config {
   llvm::StringRef callGraphOrderingFile;
   llvm::StringRef soName;
   llvm::StringRef sysroot;
+  // --chroot: prefixed to the absolute paths of files the link reads.
+  llvm::StringRef chroot;
+  // Non-allocated output sections matching a --compress-sections glob are
+  // compressed with the given type and level (0 for the type's default).
+  llvm::SmallVector<
+      std::tuple<llvm::GlobPattern, llvm::DebugCompressionType, unsigned>, 0>
+      compressSections;
+  // --randomize-section-padding: the seed of the padding placed before
+  // input sections.
+  std::optional<uint64_t> randomizeSectionPadding;
+  bool rejectMismatch = true;      // error on unknown section types
+  bool warnIfuncTextrel = false;   // --warn-ifunc-textrel
+  bool fortranCommon = false;      // archive definitions override commons
+  bool fatLTOObjects = false;      // link .llvm.lto bitcode of fat objects
+  bool resolveGroups = true;       // resolve section groups (-r keeps them)
+  bool debugNames = false;         // --debug-names
+  bool enableNonContiguousRegions = false;
   llvm::StringRef whyExtract;
   StringRef zBtiReport = "none";
   StringRef zCetReport = "none";
@@ -382,6 +401,8 @@ struct DuplicateSymbol {
 struct Ctx {
   LinkerDriver driver;
   SmallVector<std::unique_ptr<MemoryBuffer>> memoryBuffers;
+  // --reproduce: the archive of every file the link reads.
+  std::unique_ptr<TarArchive> tar;
   // Command-line inputs mapped, and archives indexed, by worker threads ahead
   // of the ordered file loading; readFile() and archive loading consume them.
   struct PrefetchedInput {

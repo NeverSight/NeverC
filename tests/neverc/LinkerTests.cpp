@@ -2493,6 +2493,152 @@ int main(void) {
   }
 }
 
+TEST_F(LinkerTest, GnuLinkerFeatureOptions) {
+  if (!isLinux())
+    GTEST_SKIP() << "GNU linker options apply to ELF links";
+
+  const fs::path source = tmpFile("gnu_feature.c");
+  const fs::path object = tmpFile("gnu_feature.o");
+  const fs::path image = tmpFile("gnu_feature");
+  writeFile(source, "extern char value[];\n"
+                    "int main(void) { return (int)(long)value; }\n");
+  CmdResult compile =
+      ncc({"-fno-lto", "-c", source.string(), "-o", object.string()});
+  ASSERT_EQ(compile.exitCode, 0) << compile.err;
+  auto link = [&](std::vector<std::string> flags) {
+    std::vector<std::string> args = baseLinkArgs();
+    args.push_back(object.string());
+    args.insert(args.end(), flags.begin(), flags.end());
+    args.insert(args.end(), {"-o", image.string()});
+    return ncc(args);
+  };
+
+  // A default script applies without -T.
+  const fs::path script = tmpFile("gnu_feature.lds");
+  writeFile(script, "value = 7;\n");
+  CmdResult defaults = link({"-Wl,--default-script=" + script.string()});
+  ASSERT_EQ(defaults.exitCode, 0) << defaults.err;
+  EXPECT_EQ(exec(image.string(), {}).exitCode, 7);
+
+  // Windows quoting keeps the quoted option whole.
+  const fs::path response = tmpFile("gnu_feature.rsp");
+  writeFile(response, "\"--defsym=value=5\"\n");
+  CmdResult quoted =
+      link({"-Wl,--rsp-quoting=windows", "-Wl,@" + response.string()});
+  ASSERT_EQ(quoted.exitCode, 0) << quoted.err;
+  EXPECT_EQ(exec(image.string(), {}).exitCode, 5);
+
+  // --reproduce archives the inputs and a response file.
+  const fs::path archive = tmpFile("gnu_feature.tar");
+  CmdResult repro =
+      link({"-Wl,--defsym=value=4", "-Wl,--reproduce=" + archive.string()});
+  ASSERT_EQ(repro.exitCode, 0) << repro.err;
+  const std::string tar = readFile(archive);
+  EXPECT_NE(tar.find("gnu_feature/response.txt"), std::string::npos);
+  EXPECT_NE(tar.find("--defsym=value=4"), std::string::npos);
+  EXPECT_NE(tar.find("--chroot ."), std::string::npos);
+
+  // A missing script symbol is reported once, at its line in VS mode.
+  CmdResult missing = link({"-Wl,--defsym=value=nosuch"});
+  EXPECT_NE(missing.exitCode, 0);
+  size_t first = missing.err.find("symbol not found: nosuch");
+  ASSERT_NE(first, std::string::npos) << missing.err;
+  EXPECT_EQ(missing.err.find("symbol not found: nosuch", first + 1),
+            std::string::npos)
+      << missing.err;
+
+  CmdResult arm = link({"-Wl,--defsym=value=0", "-Wl,--be8"});
+  EXPECT_NE(arm.exitCode, 0);
+  EXPECT_TRUE(arm.stderrContains("only supported on ARM targets")) << arm.err;
+  CmdResult tunes = link({"-Wl,--defsym=value=0", "-Wl,--no-toc-optimize",
+                          "-Wl,--target2=rel"});
+  EXPECT_EQ(tunes.exitCode, 0) << tunes.err;
+
+  // Unknown section types are errors unless --no-warn-mismatch.
+  const fs::path oddSource = tmpFile("gnu_feature_odd.s");
+  const fs::path oddObject = tmpFile("gnu_feature_odd.o");
+  writeFile(oddSource, ".section .odd,\"\",@0x5\n.byte 1\n"
+                       ".section .note.GNU-stack,\"\",@progbits\n");
+  CmdResult assemble = assembleELFObject(oddSource, oddObject);
+  ASSERT_EQ(assemble.exitCode, 0) << assemble.err;
+  CmdResult odd = link({"-Wl,--defsym=value=0", oddObject.string()});
+  EXPECT_NE(odd.exitCode, 0);
+  EXPECT_TRUE(odd.stderrContains("unknown section type 0x5")) << odd.err;
+  CmdResult accepted = link({"-Wl,--defsym=value=0", oddObject.string(),
+                             "-Wl,--no-warn-mismatch"});
+  EXPECT_EQ(accepted.exitCode, 0) << accepted.err;
+}
+
+TEST_F(LinkerTest, RelocatableLinkResolvesGroupsOnRequest) {
+  if (!isLinux())
+    GTEST_SKIP() << "GNU linker options apply to ELF links";
+
+  // Two objects carry the same COMDAT function; each also has an FDE for it.
+  const std::string group = R"(
+.section .text.shared,"axG",@progbits,shared,comdat
+.weak shared
+.type shared,@function
+shared:
+  .cfi_startproc
+  movl $1, %eax
+  ret
+  .cfi_endproc
+)";
+  const fs::path first = tmpFile("group_first.s");
+  const fs::path second = tmpFile("group_second.s");
+  writeFile(first, group + R"(
+.text
+.globl one
+.type one,@function
+one:
+  .cfi_startproc
+  call shared
+  ret
+  .cfi_endproc
+.section .note.GNU-stack,"",@progbits
+)");
+  writeFile(second, group + R"(
+.text
+.globl main
+.type main,@function
+main:
+  .cfi_startproc
+  call one
+  addl $1, %eax
+  ret
+  .cfi_endproc
+.section .note.GNU-stack,"",@progbits
+)");
+  std::vector<std::string> objects;
+  for (const fs::path &path : {first, second}) {
+    fs::path object = path;
+    object.replace_extension(".o");
+    CmdResult assemble = assembleELFObject(path, object);
+    ASSERT_EQ(assemble.exitCode, 0) << assemble.err;
+    objects.push_back(object.string());
+  }
+
+  const fs::path merged = tmpFile("group_merged.o");
+  CmdResult refused = ncc({"-r", objects[0], objects[1], "-o", merged.string()});
+  EXPECT_NE(refused.exitCode, 0);
+  EXPECT_TRUE(refused.stderrContains("--force-group-allocation")) << refused.err;
+
+  CmdResult resolved = ncc({"-r", "-Wl,--force-group-allocation", objects[0],
+                            objects[1], "-o", merged.string()});
+  ASSERT_EQ(resolved.exitCode, 0) << resolved.err;
+  llvm::Expected<bool> groups = hasELFSection(readFile(merged), ".group");
+  ASSERT_TRUE(static_cast<bool>(groups))
+      << llvm::toString(groups.takeError()).str().str();
+  EXPECT_FALSE(*groups);
+
+  const fs::path image = tmpFile("group_image");
+  std::vector<std::string> args = baseLinkArgs();
+  args.insert(args.end(), {merged.string(), "-o", image.string()});
+  CmdResult link = ncc(args);
+  ASSERT_EQ(link.exitCode, 0) << link.err;
+  EXPECT_EQ(exec(image.string(), {}).exitCode, 2);
+}
+
 TEST_F(LinkerTest, ThreadCountOptionKeepsOutputBytesOnEveryFormat) {
   struct Format {
     const char *name;

@@ -35,6 +35,7 @@ struct SymbolNameSlot;
 
 // Opens a given file.
 std::optional<MemoryBufferRef> readFile(StringRef path);
+bool isKnownSectionType(uint32_t type, uint64_t flags);
 
 // Add symbols in File to the symbol table.
 void parseFile(InputFile *file);

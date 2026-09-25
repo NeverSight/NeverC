@@ -117,6 +117,7 @@ void Ctx::reset() {
   whyExtractRecords.clear();
   backwardReferences.clear();
   auxiliaryFiles.clear();
+  tar.reset();
   hasSympart.store(false, std::memory_order_relaxed);
   hasTlsIe.store(false, std::memory_order_relaxed);
   needsTlsLd.store(false, std::memory_order_relaxed);
@@ -316,6 +317,105 @@ LinkerDriverConfig applyLinkerOptions(opt::InputArgList &args,
   return cfg;
 }
 
+// A response file that repeats the link from a --reproduce archive: input
+// paths refer to the archive's copies, which --chroot makes absolute paths
+// find, outputs are written to the current directory, and the settings the
+// driver derived from compiler flags are spelled as linker options.
+std::string createReproduceResponse(opt::InputArgList &args,
+                                    const LinkerDriverConfig &cfg) {
+  std::string out;
+  raw_string_ostream os(out);
+  auto quote = [](StringRef s) {
+    return s.contains(' ') ? ("\"" + s + "\"").str() : s.str();
+  };
+  auto rewrite = [](StringRef path) {
+    return fs::exists(path) ? pathRelativeToRoot(path) : path.str();
+  };
+  os << "--chroot .\n";
+  auto spelling = [](const opt::Arg *arg) {
+    return (arg->getSpelling() +
+            (arg->getOption().getRenderStyle() ==
+                     opt::Option::RenderSeparateStyle
+                 ? " "
+                 : ""))
+        .str();
+  };
+  for (opt::Arg *arg : args) {
+    switch (arg->getOption().getID()) {
+    case OPT_reproduce:
+      break;
+    case OPT_INPUT:
+      os << quote(rewrite(arg->getValue())) << "\n";
+      break;
+    case OPT_o:
+    case OPT_Map:
+    case OPT_dependency_file:
+    case OPT_print_archive_stats:
+    case OPT_why_extract:
+      os << spelling(arg) << quote(path::filename(arg->getValue())) << "\n";
+      break;
+    case OPT_call_graph_ordering_file:
+    case OPT_default_script:
+    case OPT_dynamic_list:
+    case OPT_export_dynamic_symbol_list:
+    case OPT_just_symbols:
+    case OPT_library_path:
+    case OPT_remap_inputs_file:
+    case OPT_retain_symbols_file:
+    case OPT_script:
+    case OPT_symbol_ordering_file:
+    case OPT_sysroot:
+    case OPT_version_script:
+      os << spelling(arg) << quote(rewrite(arg->getValue())) << "\n";
+      break;
+    default:
+      os << arg->getAsString(args) << "\n";
+    }
+  }
+  os << (cfg.gcSections ? "--gc-sections\n" : "--no-gc-sections\n");
+  os << (cfg.icfLevel >= 2   ? "--icf=all\n"
+         : cfg.icfLevel == 1 ? "--icf=safe\n"
+                             : "--icf=none\n");
+  if (cfg.linkerOptLevel >= 0)
+    os << "-O" << cfg.linkerOptLevel << "\n";
+  os << "--build-id=" << (cfg.buildId.empty() ? "none" : cfg.buildId) << "\n";
+  if (!cfg.hashStyle.empty())
+    os << "--hash-style=" << cfg.hashStyle << "\n";
+  os << (cfg.ehFrameHdr ? "--eh-frame-hdr\n" : "--no-eh-frame-hdr\n");
+  if (cfg.exportDynamic)
+    os << "--export-dynamic\n";
+  if (cfg.stripsSymbols())
+    os << "--strip-all\n";
+  else if (cfg.stripsDebugInfo())
+    os << "--strip-debug\n";
+  if (cfg.noDynamicLinker)
+    os << "--no-dynamic-linker\n";
+  else if (!cfg.dynamicLinker.empty())
+    os << "--dynamic-linker=" << quote(cfg.dynamicLinker) << "\n";
+  if (!cfg.compressDebugSections.empty())
+    os << "--compress-debug-sections=" << cfg.compressDebugSections << "\n";
+  if (!cfg.mapFile.empty() && cfg.mapFile != "-")
+    os << "-Map=" << quote(path::filename(cfg.mapFile)) << "\n";
+  return out;
+}
+
+// The compiler flags that choose what the driver links; they cannot be
+// linker options, as the driver picks startup files for them.
+std::string createReproduceDriverFlags(const LinkerDriverConfig &cfg) {
+  std::string out = "-o " + path::filename(cfg.outputFile).str();
+  if (!cfg.emulation.empty())
+    out += " (emulation " + cfg.emulation + ")";
+  if (cfg.shared)
+    out += " -shared";
+  if (cfg.relocatable)
+    out += " -r";
+  if (cfg.staticLink)
+    out += cfg.pie ? " -static-pie" : " -static";
+  else if (!cfg.shared && !cfg.relocatable)
+    out += cfg.pie ? " -pie" : " -no-pie";
+  return out + "\n";
+}
+
 void applyColorDiagnostics(opt::InputArgList &args) {
   opt::Arg *arg = args.getLastArg(OPT_color_diagnostics);
   if (!arg)
@@ -385,11 +485,32 @@ bool link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
   ELFOptTable parser;
   opt::InputArgList parsedArgs = parser.parse(args.slice(1));
   applyColorDiagnostics(parsedArgs);
+  Common.e.vsDiagnostics =
+      parsedArgs.hasArg(OPT_visual_studio_diagnostics_format);
   const LinkerDriverConfig driverCfg =
       applyLinkerOptions(parsedArgs, callerCfg);
   Common.e.errorLimit = driverCfg.errorLimit;
   if (errorCount())
     return false;
+
+  // --reproduce archives every file the link reads with a response file
+  // that repeats it.
+  if (opt::Arg *arg = parsedArgs.getLastArg(OPT_reproduce)) {
+    StringRef path = arg->getValue();
+    if (Expected<std::unique_ptr<TarArchive>> tar =
+            TarArchive::create(path, path::stem(path))) {
+      elfState().tar = std::move(*tar);
+      elfState().tar->append("response.txt",
+                             createReproduceResponse(parsedArgs, driverCfg));
+      elfState().tar->append("version.txt",
+                             neverc::getNeverCFullVersion() + "\n");
+      elfState().tar->append("driver.txt",
+                             createReproduceDriverFlags(driverCfg));
+    } else {
+      error("--reproduce: " + toString(tar.takeError()));
+      return false;
+    }
+  }
 
   // -help, -v and --version print and stop as GNU linkers do. Libtool
   // recognizes a GNU-compatible linker by these messages.
@@ -1920,6 +2041,66 @@ void readConfigs(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
   config->zStartStopVisibility = getZStartStopVisibility(args);
   config->zText = getZFlag(args, "text", "notext", true);
   config->zWxneeded = hasZOption(args, "wxneeded");
+
+  config->chroot = args.getLastArgValue(OPT_chroot);
+  config->rejectMismatch = !args.hasArg(OPT_no_warn_mismatch);
+  config->warnIfuncTextrel =
+      args.hasFlag(OPT_warn_ifunc_textrel, OPT_no_warn_ifunc_textrel, false);
+  config->fortranCommon =
+      args.hasFlag(OPT_fortran_common, OPT_no_fortran_common, false);
+  config->fatLTOObjects =
+      args.hasFlag(OPT_fat_lto_objects, OPT_no_fat_lto_objects, false);
+  // -r keeps section groups for the final link unless told to resolve them.
+  config->resolveGroups =
+      !driverCfg.relocatable || args.hasArg(OPT_force_group_allocation);
+  config->debugNames = args.hasFlag(OPT_debug_names, OPT_no_debug_names, false);
+  config->enableNonContiguousRegions =
+      args.hasArg(OPT_enable_non_contiguous_regions);
+  if (args.hasArg(OPT_randomize_section_padding))
+    config->randomizeSectionPadding =
+        args::getInteger(args, OPT_randomize_section_padding, 0);
+  for (opt::Arg *arg : args.filtered(OPT_compress_sections)) {
+    // <section-glob>=[none|zlib|zstd][:level]
+    auto [glob, spec] = StringRef(arg->getValue()).rsplit('=');
+    auto [type, levelText] = spec.split(':');
+    DebugCompressionType kind = StringSwitch<DebugCompressionType>(type)
+                                    .Case("none", DebugCompressionType::None)
+                                    .Case("zlib", DebugCompressionType::Zlib)
+                                    .Case("zstd", DebugCompressionType::Zstd)
+                                    .Default(DebugCompressionType(-1));
+    unsigned level = 0;
+    if (glob.empty() || kind == DebugCompressionType(-1) ||
+        (!levelText.empty() && !to_integer(levelText, level))) {
+      error(arg->getSpelling() + ": expected <section-glob>=[none|zlib|zstd]"
+                                 "[:level], but got '" +
+            arg->getValue() + "'");
+      continue;
+    }
+    if (kind != DebugCompressionType::None)
+      if (const char *reason = compression::getReasonIfUnsupported(
+              compression::formatFor(kind)))
+        error(arg->getSpelling() + ": " + reason);
+    if (Expected<GlobPattern> pat = GlobPattern::create(glob))
+      config->compressSections.emplace_back(std::move(*pat), kind, level);
+    else
+      error(arg->getSpelling() + ": " + toString(pat.takeError()));
+  }
+
+  // Options of targets NeverC does not link; those that only tune such
+  // targets are accepted, as elsewhere, and these select their features.
+  static const std::pair<unsigned, const char *> otherTargetOptions[] = {
+      {OPT_be8, "--be8 is only supported on ARM targets"},
+      {OPT_fix_cortex_a8, "--fix-cortex-a8 is only supported on ARM targets"},
+      {OPT_cmse_implib, "--cmse-implib is only supported on ARM targets"},
+      {OPT_in_implib, "--in-implib is only supported on ARM targets"},
+      {OPT_out_implib, "--out-implib is only supported on ARM targets"},
+      {OPT_toc_optimize, "--toc-optimize is only supported on PowerPC64 targets"},
+      {OPT_pcrel_optimize,
+       "--pcrel-optimize is only supported on PowerPC64 targets"},
+      {OPT_relax_gp, "--relax-gp is only supported on RISC-V targets"}};
+  for (auto [id, message] : otherTargetOptions)
+    if (args.hasArg(id))
+      error(message);
   setUnresolvedSymbolPolicy(args);
 
   if (driverCfg.endianness == 1)
@@ -2263,7 +2444,8 @@ void LinkerDriver::createFiles(opt::InputArgList &args) {
 
   // Iterate over argv to process input files and positional arguments.
   elfInputFileIsInGroup() = false;
-  bool hasInput = false;
+  bool hasInput = false, hasScript = false;
+  std::optional<MemoryBufferRef> defaultScript;
   for (auto *arg : args) {
     switch (arg->getOption().getID()) {
     case OPT_library:
@@ -2285,9 +2467,17 @@ void LinkerDriver::createFiles(opt::InputArgList &args) {
       break;
     }
     case OPT_script:
+    case OPT_default_script:
       if (std::optional<std::string> path = searchScript(arg->getValue())) {
-        if (std::optional<MemoryBufferRef> mb = readFile(*path))
-          readLinkerScript(*mb);
+        if (std::optional<MemoryBufferRef> mb = readFile(*path)) {
+          // A default script applies only without -T.
+          if (arg->getOption().matches(OPT_default_script)) {
+            defaultScript = mb;
+          } else {
+            readLinkerScript(*mb);
+            hasScript = true;
+          }
+        }
         break;
       }
       error(Twine("cannot find linker script ") + arg->getValue());
@@ -2364,6 +2554,8 @@ void LinkerDriver::createFiles(opt::InputArgList &args) {
   // Release inputs that were prefetched but never loaded.
   elfState().prefetchedInputs.clear();
 
+  if (defaultScript && !hasScript)
+    readLinkerScript(*defaultScript);
   if (files.empty() && !hasInput && errorCount() == 0)
     error("no input files");
 }
@@ -3641,6 +3833,7 @@ void LinkerDriver::execute(opt::InputArgList &args) {
     neverc::merge::Options mergeOpts;
     neverc::AndroidKernelReleaseSymbolMap releaseSymbolMap;
     mergeOpts.pureC = true;
+    mergeOpts.resolveGroups = config->resolveGroups;
     // Generic ET_REL objects are not valid strip-all products.  The driver
     // admits strip intent only for a delivered Android `.ko`, whose merger
     // keeps the loader-required symbol table and relocations while applying a

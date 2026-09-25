@@ -1557,7 +1557,9 @@ ExprValue LinkerScript::getSymbolValue(StringRef name, const Twine &loc) {
         return {nullptr, false, 0, loc};
   }
 
-  error(loc + ": symbol not found: " + name);
+  std::string msg = (loc + ": symbol not found: " + name).str();
+  if (reportedMissingSymbols.insert(msg).second)
+    error(msg);
   return 0;
 }
 

@@ -85,7 +85,7 @@ InputSectionBase::InputSectionBase(InputFile *file, uint64_t flags,
 namespace {
 uint64_t getFlags(uint64_t flags) {
   flags &= ~(uint64_t)SHF_INFO_LINK;
-  if (!config->relocatable)
+  if (config->resolveGroups)
     flags &= ~(uint64_t)SHF_GROUP;
   return flags;
 }

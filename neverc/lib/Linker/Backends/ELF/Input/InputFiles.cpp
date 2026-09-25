@@ -91,8 +91,11 @@ InputFile::InputFile(Kind k, MemoryBufferRef m)
 std::optional<MemoryBufferRef> elf::readFile(StringRef path) {
   // Fast path: in-memory bitcode from the integrated compiler pipeline.
   // Skip remap, logging, TimeTrace, and dependency tracking entirely.
-  if (auto mb = neverc::InMemoryFileStore::instance().tryGet(path))
+  if (auto mb = neverc::InMemoryFileStore::instance().tryGet(path)) {
+    if (elfState().tar)
+      elfState().tar->append(pathRelativeToRoot(path), mb->getBuffer());
     return *mb;
+  }
 
   llvm::TimeTraceScope timeScope("Load input files", path);
 
@@ -116,6 +119,10 @@ std::optional<MemoryBufferRef> elf::readFile(StringRef path) {
       path = "NUL";
 #endif
   }
+  // --chroot makes absolute paths relative to a new root, as a reproduce
+  // archive's response file requests.
+  if (!config->chroot.empty() && path.starts_with("/"))
+    path = saver().save(config->chroot + path);
 
   log(path);
   config->dependencyFiles.insert(llvm::CachedHashString(path));
@@ -135,8 +142,31 @@ std::optional<MemoryBufferRef> elf::readFile(StringRef path) {
 
   MemoryBufferRef mbref = (*mbOrErr)->getMemBufferRef();
   elfState().memoryBuffers.push_back(std::move(*mbOrErr)); // take MB ownership
+  if (elfState().tar)
+    elfState().tar->append(pathRelativeToRoot(path), mbref.getBuffer());
 
   return mbref;
+}
+
+// Section types an object file may carry: the generic ones the linker
+// knows, operating-system-specific ones that conform to the generic
+// processing, any processor-specific one, and non-allocated user types.
+// --no-warn-mismatch accepts the others.
+bool elf::isKnownSectionType(uint32_t type, uint64_t flags) {
+  switch (type) {
+  case SHT_PROGBITS:
+  case SHT_NOTE:
+  case SHT_NOBITS:
+  case SHT_INIT_ARRAY:
+  case SHT_FINI_ARRAY:
+  case SHT_PREINIT_ARRAY:
+    return true;
+  }
+  if (type >= SHT_LOOS && type <= SHT_HIOS)
+    return !(flags & SHF_OS_NONCONFORMING);
+  if (type >= SHT_LOPROC && type <= SHT_HIPROC)
+    return true;
+  return type >= SHT_LOUSER && !(flags & SHF_ALLOC);
 }
 
 // All input object files must be for the same architecture
@@ -536,7 +566,7 @@ template <class ELFT> void ObjFile<ELFT>::parse(bool ignoreComdats) {
   // When every section parse() would visit is a validated group, only the
   // COMDAT claims depend on input order. Record them and let
   // initializeSections(), which runs in parallel, discard the members.
-  if (groupMembers && specialSectionIndices && !config->relocatable &&
+  if (groupMembers && specialSectionIndices && config->resolveGroups &&
       numSpecialSections == numGroupSignatureSlots) {
     // groupMembers is only set for files with groups, so deferredGroupKeep is
     // non-empty and initializeSections() sizes `sections` before use.
@@ -615,7 +645,7 @@ template <class ELFT> void ObjFile<ELFT>::parse(bool ignoreComdats) {
     bool keepGroup = (flag & GRP_COMDAT) == 0 || ignoreComdats ||
                      symtab.claimComdat(signature, this);
     if (keepGroup) {
-      if (config->relocatable)
+      if (!config->resolveGroups)
         this->sections[i] = createInputSection(
             i, sec, check(obj.getSectionName(sec, shstrtab)));
       return;
@@ -880,7 +910,7 @@ void ObjFile<ELFT>::initializeSections(bool ignoreComdats,
 
     switch (sec.sh_type) {
     case SHT_GROUP: {
-      if (!config->relocatable)
+      if (config->resolveGroups)
         sections[i] = discardedInputSection();
       SymbolNameSlot *signature =
           getGroupSignatureSlot(groupOrdinal, objSections, sec);
@@ -906,6 +936,11 @@ void ObjFile<ELFT>::initializeSections(bool ignoreComdats,
     default:
       this->sections[i] =
           createInputSection(i, sec, check(obj.getSectionName(sec, shstrtab)));
+      if (config->rejectMismatch && !isKnownSectionType(sec.sh_type,
+                                                        sec.sh_flags))
+        error(toString(this) + ":(" +
+              check(obj.getSectionName(sec, shstrtab)) +
+              "): unknown section type 0x" + utohexstr(sec.sh_type));
     }
 
     // Relocation sections use sh_link for the symbol table and sh_info for the
