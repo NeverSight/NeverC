@@ -51523,6 +51523,58 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedIteratorFindAndCountRun) {
+  const auto Source = tmpFile("wrapped-iterator-find-count.cpp");
+  const auto Output = tmpFile("wrapped-iterator-find-count.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <algorithm>
+#include <string>
+#include <vector>
+int main() {
+  std::vector<int> values{1, 2, 3, 2, 5, 2};
+  const std::vector<int> &view = values;
+  short needle = 2;
+  int effects = 0;
+  auto found = std::find((++effects, view.cbegin()),
+                         (++effects, view.cend()), (++effects, needle));
+  auto expected = view.cbegin();
+  ++expected;
+  if (effects != 3 || found != expected || *found != 2 ||
+      std::find(values.begin(), values.end(), 9) != values.end())
+    return 1;
+  if (std::count(view.cbegin(), view.cend(), needle) != 3 ||
+      std::count(values.begin(), values.begin(), 2) != 0)
+    return 2;
+  std::vector<int> empty;
+  if (std::find(empty.begin(), empty.end(), 1) != empty.end() ||
+      std::count(empty.cbegin(), empty.cend(), 1) != 0)
+    return 3;
+  std::string word("abca");
+  auto letter = std::find(word.begin(), word.end(), 'c');
+  if (letter == word.end() || *letter != 'c' ||
+      std::count(word.cbegin(), word.cend(), 'a') != 2)
+    return 4;
+  return 0;
+}
+)cpp");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o",
+                                   Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapped-iterator-find-count" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorInitializerAndFillConstructionRun) {
   const auto Source = tmpFile("vector-initializers.cpp");
   const auto Output = tmpFile("vector-initializers.nc");

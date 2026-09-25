@@ -1536,6 +1536,13 @@ element that an earlier iteration changes. Enum elements use built-in equality
 only when no source `operator==` accepts that enum; such overloads remain
 rejected instead of being silently bypassed.
 
+`std::find` and `std::count` also accept authenticated `std::__wrap_iter<T*>`
+ranges, including mutable and const iterators from admitted scalar `std::vector`
+and `std::string` objects. The same scalar equality and heterogeneous value
+checks apply. Each iterator is evaluated once; `find` returns a wrapper around
+the matching pointer or end pointer, and `count` returns the target pointer
+difference type. Record elements remain rejected.
+
 The exact binary-predicate overloads of `std::adjacent_find`, three- and
 four-iterator `std::equal`, three- and four-iterator `std::mismatch`, and three-
 and four-iterator `std::is_permutation`, plus `std::unique`,

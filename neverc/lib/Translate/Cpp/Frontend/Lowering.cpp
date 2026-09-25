@@ -4022,12 +4022,24 @@ class FunctionLowering {
       // Function arguments are all bound before the algorithm body. Choose
       // the permitted left-to-right C++17 order, retaining the value referent
       // so an lvalue argument keeps its ordinary reference identity.
-      auto Current = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
+      const auto IteratorType = Call->getArg(0)->getType();
+      const auto Wrapped = approvedUtilityWrapIteratorRecord(
+          A.S, A.Sources, IteratorType->getAsCXXRecordDecl(), A.Context);
+      const auto PointerQualType = Wrapped ? Wrapped->IteratorType : IteratorType;
+      auto FirstValue = snapshot(expression(Call->getArg(0)), L);
+      auto LastValue = snapshot(expression(Call->getArg(1)), L);
+      auto Current = Wrapped
+                         ? snapshot(fieldStorage(std::move(FirstValue),
+                                                 Wrapped->Current, L), L)
+                         : std::move(FirstValue);
+      auto Last = Wrapped
+                      ? snapshot(fieldStorage(std::move(LastValue),
+                                              Wrapped->Current, L), L)
+                      : std::move(LastValue);
       auto ValueAddress = snapshot(
           address(lvalue(Call->getArg(2)), Call->getArg(2)->getType(), L), L);
       auto Common = utilityScalarComparisonType(
-          A.Context, Call->getArg(0)->getType()->getPointeeType(),
+          A.Context, PointerQualType->getPointeeType(),
           Call->getArg(2)->getType(), false);
       if (!Common)
         reject(L, "algorithm find",
@@ -4047,19 +4059,42 @@ class FunctionLowering {
       assign(Current,
              binary("+", Current,
                     quantity(1, type(A.Context.getPointerDiffType(), L), L),
-                    type(Call->getType(), L), L),
+                    type(PointerQualType, L), L),
              L);
       jump(Check, L);
       label(End, L);
+      if (Wrapped) {
+        auto Place = Destination ? std::move(*Destination)
+                                 : objectTemporary(Call->getType(), L);
+        Destination.reset();
+        if (Place.getString("type") != type(Call->getType(), L))
+          reject(L, "algorithm find",
+                 "The iterator destination type differs from its result.");
+        assign(fieldStorage(json::Object(Place), Wrapped->Current, L),
+               std::move(Current), L);
+        return Place;
+      }
       return Current;
     }
     case UtilityOperation::AlgorithmCount: {
-      auto Current = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
+      const auto IteratorType = Call->getArg(0)->getType();
+      const auto Wrapped = approvedUtilityWrapIteratorRecord(
+          A.S, A.Sources, IteratorType->getAsCXXRecordDecl(), A.Context);
+      const auto PointerQualType = Wrapped ? Wrapped->IteratorType : IteratorType;
+      auto FirstValue = snapshot(expression(Call->getArg(0)), L);
+      auto LastValue = snapshot(expression(Call->getArg(1)), L);
+      auto Current = Wrapped
+                         ? snapshot(fieldStorage(std::move(FirstValue),
+                                                 Wrapped->Current, L), L)
+                         : std::move(FirstValue);
+      auto Last = Wrapped
+                      ? snapshot(fieldStorage(std::move(LastValue),
+                                              Wrapped->Current, L), L)
+                      : std::move(LastValue);
       auto ValueAddress = snapshot(
           address(lvalue(Call->getArg(2)), Call->getArg(2)->getType(), L), L);
       auto Common = utilityScalarComparisonType(
-          A.Context, Call->getArg(0)->getType()->getPointeeType(),
+          A.Context, PointerQualType->getPointeeType(),
           Call->getArg(2)->getType(), false);
       if (!Common)
         reject(L, "algorithm count",
@@ -4086,7 +4121,7 @@ class FunctionLowering {
       assign(Current,
              binary("+", Current,
                     quantity(1, type(A.Context.getPointerDiffType(), L), L),
-                    type(Call->getArg(0)->getType(), L), L),
+                    type(PointerQualType, L), L),
              L);
       jump(Check, L);
       label(End, L);

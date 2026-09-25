@@ -29157,6 +29157,37 @@ void sort_vector(std::vector<int>& values) {
           'void f(std::vector<Entry>& values){std::sort(values.begin(),values.end());}',
           "TR0203", profile="cpp-core-v2", sdk=True)
 
+    wrapped_find_count_source = """\
+#include <algorithm>
+#include <string>
+#include <vector>
+std::vector<int>::const_iterator find_vector(const std::vector<int>& values,
+                                              short needle) {
+  return std::find(values.cbegin(), values.cend(), needle);
+}
+int count_vector(const std::vector<int>& values, short needle) {
+  return static_cast<int>(std::count(values.cbegin(), values.cend(), needle));
+}
+std::string::iterator find_string(std::string& value, char needle) {
+  return std::find(value.begin(), value.end(), needle);
+}
+"""
+    wrapped_find_count = check("v2-wrapped-find-count",
+                               wrapped_find_count_source,
+                               profile="cpp-core-v2", sdk=True)
+    assert not [node for node in walk(wrapped_find_count["functions"])
+                if node.get("op") in ("call", "mapped_call", "indirect_call")], wrapped_find_count
+    for target in sdk_targets:
+        check("v2-wrapped-find-count-" + target,
+              wrapped_find_count_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-wrapped-find-record",
+          '#include <algorithm>\n#include <vector>\nstruct Entry{int value;};'
+          'bool operator==(Entry left, Entry right){return left.value==right.value;}'
+          'void f(std::vector<Entry>& values, Entry needle){'
+          'std::find(values.begin(),values.end(),needle);}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+
     string_metadata_source = """\
 #include <string>
 static_assert(sizeof(std::string) >= 3 * sizeof(void*));
