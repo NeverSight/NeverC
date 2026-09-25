@@ -53214,6 +53214,82 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorOwningFillRun) {
+  const auto Source = tmpFile("vector-owning-fill.cpp");
+  const auto Output = tmpFile("vector-owning-fill.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+#include <vector>
+int main() {
+  {
+    std::string donor("a long fill value owns its separate allocation");
+    std::vector<std::string> values(3, donor);
+    if (values.size() != 3 || values[0] != donor ||
+        values[0].data() == donor.data() ||
+        values[0].data() == values[1].data()) return 1;
+    values.reserve(6);
+    values.resize(5, values[0]);
+    if (values.size() != 5 || values[4] != donor ||
+        values[4].data() == values[0].data()) return 2;
+    values.resize(9, values[1]);
+    if (values.size() != 9 || values[8] != donor ||
+        values[8].data() == values[1].data()) return 3;
+    values.resize(2, donor);
+    if (values.size() != 2 || values[1] != donor) return 4;
+    values.assign(4, values[0]);
+    if (values.size() != 4 || values[3] != donor ||
+        values[3].data() == values[0].data()) return 5;
+    auto wanted = values.capacity() + 2;
+    values.assign(wanted, donor);
+    if (values.size() != wanted || values[0] != donor ||
+        values[0].data() == values[1].data()) return 6;
+    auto inserted = values.insert(values.begin() + 1, 2, values[0]);
+    if (inserted != values.begin() + 1 || values.size() != wanted + 2 ||
+        *inserted != donor || (*inserted).data() == values[0].data())
+      return 7;
+    values.reserve(values.size() + 5);
+    auto more = values.insert(values.begin() + 2, 3, donor);
+    if (more != values.begin() + 2 || values.size() != wanted + 5 ||
+        *more != donor || (*more).data() == donor.data()) return 8;
+    auto inPlace = values.insert(values.begin() + 1, 2, values[3]);
+    if (inPlace != values.begin() + 1 || values.size() != wanted + 7 ||
+        *inPlace != donor || (*inPlace).data() == values[5].data())
+      return 9;
+    auto unchanged = values.insert(values.begin(), 0, donor);
+    if (unchanged != values.begin() || values.size() != wanted + 7)
+      return 10;
+    values.assign(0, donor);
+    if (!values.empty() || donor.empty()) return 11;
+    std::vector<std::string> none(0, donor);
+    if (!none.empty()) return 12;
+    std::string shortValue("short");
+    std::vector<std::string> small(2, shortValue);
+    if (small.size() != 2 || small[0] != "short" || small[1] != "short")
+      return 13;
+  }
+  return allocations == releases ? 0 : 14;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-owning-fill" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorOwningCopyRun) {
   const auto Source = tmpFile("vector-owning-copy.cpp");
   const auto Output = tmpFile("vector-owning-copy.nc");

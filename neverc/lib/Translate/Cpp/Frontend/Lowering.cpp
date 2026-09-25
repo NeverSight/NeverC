@@ -11683,17 +11683,29 @@ class FunctionLowering {
         // Capture a source element before shifting or releasing storage.
         if (Vector->OwningElement) {
           Value = temporary(type(Vector->ElementType, L), L);
+          initializeZero(json::Object(*Value), Vector->ElementType, L);
           const unsigned ValueIndex = Call->getNumArgs() - 1;
           const auto *Argument = Call->getArg(ValueIndex);
           const auto Parameter = Call->getDirectCallee()
                                      ->getParamDecl(ValueIndex)
                                      ->getType();
+          auto SourceAddress = snapshot(
+              address(lvalue(Argument), Argument->getType(), L), L);
+          const auto Capture = labelName(), Captured = labelName();
+          branch(binary("!=", json::Object(Count), quantity(0, SizeType, L),
+                        "bool", L), Capture, Captured, L);
+          label(Capture, L);
           if (Parameter->isRValueReferenceType())
-            transferVectorElement(json::Object(*Value), lvalue(Argument),
+            transferVectorElement(json::Object(*Value),
+                                  dereference(json::Object(SourceAddress), L),
                                   *Vector, L);
           else
-            copyVectorStringElement(json::Object(*Value), lvalue(Argument),
-                                    *Vector, L, Argument->getType());
+            copyVectorStringElement(
+                json::Object(*Value),
+                dereference(json::Object(SourceAddress), L), *Vector, L,
+                Argument->getType());
+          jump(Captured, L);
+          label(Captured, L);
         } else {
           Value = snapshot(expression(Call->getArg(Call->getNumArgs() - 1)), L);
         }
@@ -11783,10 +11795,15 @@ class FunctionLowering {
         if (Operation == UtilityOperation::VectorEmplace &&
             Call->getNumArgs() == 1)
           initializeZero(std::move(Target), Vector->ElementType, L);
-        else if (Vector->OwningElement)
-          transferVectorElement(std::move(Target), json::Object(*Value),
-                                *Vector, L);
-        else
+        else if (Vector->OwningElement) {
+          if (Operation == UtilityOperation::VectorInsert &&
+              Call->getNumArgs() == 3)
+            copyVectorStringElement(std::move(Target), json::Object(*Value),
+                                    *Vector, L);
+          else
+            transferVectorElement(std::move(Target), json::Object(*Value),
+                                  *Vector, L);
+        } else
           assign(std::move(Target), InsertValue(), L);
       };
       auto Member = [&](const char *Name) {
@@ -12042,6 +12059,8 @@ class FunctionLowering {
                                   {"loc", A.loc(L)}});
       jump(Done, L);
       label(Done, L);
+      if (Vector->OwningElement && Value)
+        destroy(json::Object(*Value), Vector->ElementType, L);
       auto Place = Destination ? std::move(*Destination)
                                : objectTemporary(Call->getType(), L);
       Destination.reset();
@@ -12080,12 +12099,29 @@ class FunctionLowering {
           A.Context.getTypeSizeInChars(Vector->ElementType).getQuantity();
       auto Count = temporary(SizeType, L);
       std::optional<Expression> Value;
+      std::optional<Expression> FillAddress;
       std::optional<Expression> RangeCurrent;
       std::string RangePointerType = ConstPointerType;
       if (Operation == UtilityOperation::VectorAssignFill) {
         assign(Count, expression(Call->getArg(0)), L);
         // Capture an element that may reside in storage replaced by assign.
-        Value = snapshot(expression(Call->getArg(1)), L);
+        if (Vector->OwningElement) {
+          FillAddress = snapshot(address(lvalue(Call->getArg(1)),
+                                         Call->getArg(1)->getType(), L), L);
+          Value = temporary(type(Vector->ElementType, L), L);
+          initializeZero(json::Object(*Value), Vector->ElementType, L);
+          const auto Capture = labelName(), Captured = labelName();
+          branch(binary("!=", json::Object(Count), quantity(0, SizeType, L),
+                        "bool", L), Capture, Captured, L);
+          label(Capture, L);
+          copyVectorStringElement(json::Object(*Value),
+                                  dereference(json::Object(*FillAddress), L),
+                                  *Vector, L, Call->getArg(1)->getType());
+          jump(Captured, L);
+          label(Captured, L);
+        } else {
+          Value = snapshot(expression(Call->getArg(1)), L);
+        }
       } else {
         Expression RangeBegin;
         if (Operation == UtilityOperation::VectorAssignList ||
@@ -12180,6 +12216,12 @@ class FunctionLowering {
           binary("<=", json::Object(Count), json::Object(Capacity), "bool", L),
           Reuse, Grow, L);
       label(Reuse, L);
+      if (Vector->OwningElement) {
+        auto OldEnd = snapshot(Member("nct_vector_end"), L);
+        destroyVectorElements(json::Object(Begin), std::move(OldEnd), *Vector,
+                              L);
+        assign(Member("nct_vector_end"), json::Object(Begin), L);
+      }
       auto Current = temporary(PointerType, L);
       assign(Current, json::Object(Begin), L);
       auto Index = temporary(SizeType, L);
@@ -12191,7 +12233,11 @@ class FunctionLowering {
       branch(binary("<", json::Object(Index), json::Object(Count), "bool", L),
              ReuseFill, ReuseDone, L);
       label(ReuseFill, L);
-      assign(dereference(json::Object(Current), L), NextValue(), L);
+      if (Vector->OwningElement)
+        copyVectorStringElement(dereference(json::Object(Current), L),
+                                json::Object(*Value), *Vector, L);
+      else
+        assign(dereference(json::Object(Current), L), NextValue(), L);
       assign(Current,
              binary("+", json::Object(Current), quantity(1, DifferenceType, L),
                     PointerType, L),
@@ -12230,7 +12276,11 @@ class FunctionLowering {
           binary("<", json::Object(GrowIndex), json::Object(Count), "bool", L),
           GrowFill, GrowDone, L);
       label(GrowFill, L);
-      assign(dereference(json::Object(NewCurrent), L), NextValue(), L);
+      if (Vector->OwningElement)
+        copyVectorStringElement(dereference(json::Object(NewCurrent), L),
+                                json::Object(*Value), *Vector, L);
+      else
+        assign(dereference(json::Object(NewCurrent), L), NextValue(), L);
       assign(NewCurrent,
              binary("+", json::Object(NewCurrent),
                     quantity(1, DifferenceType, L), PointerType, L),
@@ -12244,6 +12294,11 @@ class FunctionLowering {
       const auto Release = labelName(), Commit = labelName();
       branch(cast(json::Object(Begin), "bool", L), Release, Commit, L);
       label(Release, L);
+      if (Vector->OwningElement) {
+        auto OldEnd = snapshot(Member("nct_vector_end"), L);
+        destroyVectorElements(json::Object(Begin), std::move(OldEnd), *Vector,
+                              L);
+      }
       const auto *Delete =
           A.allocatorHeapFunction(false, Vector->ElementType, L);
       json::Array DeleteArgs;
@@ -12266,6 +12321,8 @@ class FunctionLowering {
       assign(Member("nct_vector_capacity"), json::Object(NewCurrent), L);
       jump(Done, L);
       label(Done, L);
+      if (FillAddress)
+        destroy(json::Object(*Value), Vector->ElementType, L);
       if (Operation == UtilityOperation::VectorAssignList)
         return dereference(json::Object(Receiver), L);
       return {};
@@ -13004,8 +13061,17 @@ class FunctionLowering {
           snapshot(address(lvalue(Object), Object->getType(), L), L);
       auto Requested = snapshot(expression(Call->getArg(0)), L);
       std::optional<Expression> FillValue;
-      if (Operation == UtilityOperation::VectorResizeFill)
-        FillValue = snapshot(expression(Call->getArg(1)), L);
+      std::optional<Expression> FillAddress;
+      if (Operation == UtilityOperation::VectorResizeFill) {
+        if (Vector->OwningElement) {
+          FillAddress = snapshot(address(lvalue(Call->getArg(1)),
+                                         Call->getArg(1)->getType(), L), L);
+          FillValue = temporary(type(Vector->ElementType, L), L);
+          initializeZero(json::Object(*FillValue), Vector->ElementType, L);
+        } else {
+          FillValue = snapshot(expression(Call->getArg(1)), L);
+        }
+      }
       auto Member = [&](const char *Name) {
         return Expression{{"kind", "member"},
                           {"type", type(Vector->PointerType, L)},
@@ -13079,6 +13145,10 @@ class FunctionLowering {
         branch(binary("==", json::Object(Requested), json::Object(Size),
                       "bool", L), Done, AfterEqual, L);
         label(AfterEqual, L);
+        if (FillAddress)
+          copyVectorStringElement(json::Object(*FillValue),
+                                  dereference(json::Object(*FillAddress), L),
+                                  *Vector, L, Call->getArg(1)->getType());
         const auto Existing = labelName(), Grow = labelName();
         branch(binary("<=", json::Object(Requested), json::Object(Capacity),
                       "bool", L), Existing, Grow, L);
@@ -13156,12 +13226,17 @@ class FunctionLowering {
       branch(binary("!=", json::Object(TargetCurrent), json::Object(TargetEnd),
                     "bool", L), Append, Filled, L);
       label(Append, L);
-      if (FillValue)
-        assign(dereference(json::Object(TargetCurrent), L),
-               json::Object(*FillValue), L);
-      else
+      if (FillValue) {
+        if (Vector->OwningElement)
+          copyVectorStringElement(dereference(json::Object(TargetCurrent), L),
+                                  json::Object(*FillValue), *Vector, L);
+        else
+          assign(dereference(json::Object(TargetCurrent), L),
+                 json::Object(*FillValue), L);
+      } else {
         initializeZero(dereference(json::Object(TargetCurrent), L),
                        Vector->ElementType, L);
+      }
       assign(TargetCurrent,
              binary("+", json::Object(TargetCurrent),
                     quantity(1, DifferenceType, L), PointerType, L), L);
@@ -13202,6 +13277,8 @@ class FunctionLowering {
                     PointerType, L), L);
       jump(Done, L);
       label(Done, L);
+      if (FillAddress)
+        destroy(json::Object(*FillValue), Vector->ElementType, L);
       return {};
     }
     case UtilityOperation::StringConcat: {
@@ -18589,8 +18666,13 @@ class FunctionLowering {
           reject(L, "vector construction",
                  "A checked element count is required.");
         Count = Evaluated.Val.getInt().getLimitedValue(65537);
-        if (*Kind == UtilityVectorConstruction::CountValue)
-          Fill = snapshot(expression(C->getArg(1)), L);
+        if (*Kind == UtilityVectorConstruction::CountValue) {
+          if (Vector->OwningElement)
+            Fill = snapshot(address(lvalue(C->getArg(1)),
+                                    C->getArg(1)->getType(), L), L);
+          else
+            Fill = snapshot(expression(C->getArg(1)), L);
+        }
       }
       for (const char *Name :
            {"nct_vector_begin", "nct_vector_end", "nct_vector_capacity"})
@@ -18644,7 +18726,12 @@ class FunctionLowering {
         initializeZero(dereference(json::Object(Current), L),
                        Vector->ElementType, L);
       } else if (*Kind == UtilityVectorConstruction::CountValue) {
-        assign(dereference(json::Object(Current), L), json::Object(*Fill), L);
+        if (Vector->OwningElement)
+          copyVectorStringElement(dereference(json::Object(Current), L),
+                                  dereference(json::Object(*Fill), L), *Vector,
+                                  L, C->getArg(1)->getType());
+        else
+          assign(dereference(json::Object(Current), L), json::Object(*Fill), L);
       } else {
         assign(dereference(json::Object(Current), L),
                dereference(json::Object(*Input), L), L);

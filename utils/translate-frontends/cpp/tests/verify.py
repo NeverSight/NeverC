@@ -29157,7 +29157,11 @@ void move_strings(std::vector<std::string>& values, std::string&& value) {
 void copy_strings(const std::vector<std::string>& source,
                   std::vector<std::string>& destination) {
   std::vector<std::string> copy(source);
+  std::vector<std::string> filled(2, source[0]);
   destination = source;
+  destination.resize(5, source[0]);
+  destination.assign(3, source[0]);
+  destination.insert(destination.begin(), 2, source[0]);
   destination.push_back(source[0]);
   destination.emplace_back(source[0]);
   destination.emplace_back(static_cast<const std::string&&>(source[0]));
@@ -29245,13 +29249,26 @@ void f(std::vector<std::unique_ptr<int>>& values,
 void f(std::vector<std::unique_ptr<int>>& values,
        const std::unique_ptr<int>& value) { values.emplace_back(value); }
 """,
-        "owning-fill": """\
-#include <string>
-void f(const std::string& value) { std::vector<std::string> values(2, value); }
+        "unique-pointer-fill": """\
+#include <memory>
+void f(const std::unique_ptr<int>& value) {
+  std::vector<std::unique_ptr<int>> values(2, value);
+}
 """,
-        "owning-counted-insert": """\
-#include <string>
-void f(std::vector<std::string>& values, const std::string& value) {
+        "unique-pointer-resize-fill": """\
+#include <memory>
+void f(std::vector<std::unique_ptr<int>>& values,
+       const std::unique_ptr<int>& value) { values.resize(2, value); }
+""",
+        "unique-pointer-assign-fill": """\
+#include <memory>
+void f(std::vector<std::unique_ptr<int>>& values,
+       const std::unique_ptr<int>& value) { values.assign(2, value); }
+""",
+        "unique-pointer-counted-insert": """\
+#include <memory>
+void f(std::vector<std::unique_ptr<int>>& values,
+       const std::unique_ptr<int>& value) {
   values.insert(values.begin(), 2, value);
 }
 """,

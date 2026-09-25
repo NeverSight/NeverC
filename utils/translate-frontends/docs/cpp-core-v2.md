@@ -2515,9 +2515,13 @@ and release under O0/O2. Exact pinned string elements also support deep-copy
 vector construction and assignment, including self-assignment and capacity reuse.
 Their lvalue and const-rvalue inputs to `push_back`, `emplace_back`, `insert`,
 and positional `emplace` copy before vector storage moves or grows.
-Unique-pointer elements remain noncopyable. Fill, list and range construction
-or assignment; counted, list and range insertion; other positional emplacement;
-and vector comparisons remain outside the owning-element boundary. Other
+Bounded fill construction, `resize(count, value)`, `assign(count, value)`, and
+counted `insert` also deep-copy string elements. Host fixtures cover values
+referenced from the same vector for resize, counted insertion, and assignment
+with capacity reuse. Unique-pointer elements remain noncopyable. List and range
+construction or assignment; list and range insertion; other positional
+emplacement; and vector comparisons remain outside the owning-element boundary.
+Other
 nontrivial record elements, other allocators, remaining vector methods, and
 throwing allocation or length-error paths remain unsupported. Quoted and shadow
 headers remain rejected.
