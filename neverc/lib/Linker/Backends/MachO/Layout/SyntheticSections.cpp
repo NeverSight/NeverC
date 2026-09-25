@@ -121,7 +121,8 @@ void MachHeaderSection::writeTo(uint8_t *buf) const {
   hdr->filetype = config->outputType;
   hdr->ncmds = loadCommands.size();
   hdr->sizeofcmds = sizeOfCmds;
-  hdr->flags = MH_DYLDLINK;
+  // A preloaded image is not linked by dyld.
+  hdr->flags = config->outputType == MH_PRELOAD ? 0 : MH_DYLDLINK;
 
   if (config->namespaceKind == NamespaceKind::twolevel)
     hdr->flags |= MH_NOUNDEFS | MH_TWOLEVEL;
@@ -1889,6 +1890,12 @@ void macho::createSyntheticSymbols() {
     break;
   case MH_DYLINKER:
     addHeaderSymbol("__mh_dylinker_header");
+    break;
+  case MH_PRELOAD:
+    addHeaderSymbol("__mh_preload_header");
+    break;
+  case MH_KEXT_BUNDLE:
+    addHeaderSymbol("__mh_kext_header");
     break;
   case MH_OBJECT:
     addHeaderSymbol("__mh_object_header");

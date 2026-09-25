@@ -76,7 +76,25 @@ template <typename T, typename F> static auto compareByOrder(F ord) {
 }
 
 namespace {
+// Position of name in a -segment_order or -section_order list, before every
+// unlisted name.
+std::optional<int> listedOrder(ArrayRef<StringRef> list, StringRef name) {
+  auto it = llvm::find(list, name);
+  if (it == list.end())
+    return std::nullopt;
+  return std::numeric_limits<int>::min() / 2 + int(it - list.begin());
+}
+
 int segmentOrder(OutputSegment *seg) {
+  // __TEXT starts with the header, so it stays first, and __LINKEDIT last.
+  if (!config->segmentOrder.empty()) {
+    if (seg->name == segment_names::text)
+      return std::numeric_limits<int>::min();
+    if (seg->name != segment_names::linkEdit)
+      if (std::optional<int> listed =
+              listedOrder(config->segmentOrder, seg->name))
+        return *listed;
+  }
   return StringSwitch<int>(seg->name)
       .Case(segment_names::pageZero, -5)
       .Case(segment_names::text, -4)
@@ -92,6 +110,15 @@ int segmentOrder(OutputSegment *seg) {
 
 int sectionOrder(OutputSection *osec) {
   StringRef segname = osec->parent->name;
+  // The header starts the image.
+  if (segname == segment_names::text && osec->name == section_names::header)
+    return std::numeric_limits<int>::min();
+  if (!config->sectionOrder.empty() && osec->name != section_names::header &&
+      !isZeroFill(osec->flags))
+    if (auto it = config->sectionOrder.find(segname);
+        it != config->sectionOrder.end())
+      if (std::optional<int> listed = listedOrder(it->second, osec->name))
+        return *listed;
   // Sections are uniquely identified by their segment + section name.
   if (segname == segment_names::text || segname == "__TEXT_EXEC") {
     return StringSwitch<int>(osec->name)

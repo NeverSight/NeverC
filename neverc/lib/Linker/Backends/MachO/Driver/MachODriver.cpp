@@ -1966,6 +1966,21 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
   config = std::make_unique<Configuration>();
   symtab = std::make_unique<SymbolTable>();
   config->outputType = getOutputType(driverCfg);
+  // -dylinker, -preload and -kext choose image kinds the compiler driver
+  // does not: they start from its executable or bundle output.
+  if (const Arg *arg = args.getLastArg(OPT_dylinker, OPT_preload, OPT_kext)) {
+    const HeaderFileType kind =
+        arg->getOption().matches(OPT_dylinker)  ? MH_DYLINKER
+        : arg->getOption().matches(OPT_preload) ? MH_PRELOAD
+                                                : MH_KEXT_BUNDLE;
+    const bool fromBundle = config->outputType == MH_BUNDLE;
+    if (config->outputType != MH_EXECUTE &&
+        !(kind == MH_KEXT_BUNDLE && fromBundle))
+      error(arg->getAsString(args) + ": link an executable" +
+            (kind == MH_KEXT_BUNDLE ? " or a bundle" : "") +
+            " with the compiler driver to produce this kind of image");
+    config->outputType = kind;
+  }
   target = createTargetInfo(driverCfg);
   depTracker = std::make_unique<DependencyTracker>(
       args.getLastArgValue(OPT_dependency_info));
@@ -1975,6 +1990,9 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
     return false;
   }
 
+  // Only a main executable is loaded above a __PAGEZERO.
+  if (config->outputType != MH_EXECUTE && !args.hasArg(OPT_pagezero_size))
+    target->pageZeroSize = 0;
   if (args.hasArg(OPT_pagezero_size)) {
     uint64_t pagezeroSize = args::getHex(args, OPT_pagezero_size, 0);
 
@@ -2006,6 +2024,8 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
 
   config->isPic = config->outputType == MH_DYLIB ||
                   config->outputType == MH_BUNDLE ||
+                  config->outputType == MH_DYLINKER ||
+                  config->outputType == MH_KEXT_BUNDLE ||
                   (config->outputType == MH_EXECUTE && pie);
 
   config->deadStrip = driverCfg.gcSections;
@@ -2130,6 +2150,22 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
       args.hasArg(OPT_verbose_optimization_hints);
   config->textExec = args.hasArg(OPT_text_exec);
   config->noNewMain = args.hasArg(OPT_no_new_main);
+  config->noCompactUnwind = args.hasArg(OPT_no_compact_unwind);
+  if (const Arg *arg = args.getLastArg(OPT_segment_order)) {
+    if (config->outputType != MH_PRELOAD)
+      error(arg->getAsString(args) + ": only valid with -preload");
+    SmallVector<StringRef> segments;
+    StringRef(arg->getValue()).split(segments, ':', -1, false);
+    config->segmentOrder.assign(segments.begin(), segments.end());
+  }
+  for (const Arg *arg : args.filtered(OPT_section_order)) {
+    if (config->outputType != MH_PRELOAD)
+      error(arg->getAsString(args) + ": only valid with -preload");
+    SmallVector<StringRef> sections;
+    StringRef(arg->getValue(1)).split(sections, ':', -1, false);
+    auto &order = config->sectionOrder[arg->getValue(0)];
+    order.assign(sections.begin(), sections.end());
+  }
   if (config->noNewMain && config->outputType != MH_EXECUTE)
     error("-no_new_main: only valid when linking a main executable");
   config->keepDwarfUnwind =
@@ -2375,10 +2411,23 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
   if (config->forceFlatNamespace)
     config->namespaceKind = NamespaceKind::flat;
 
+  // A kext's references to the kernel are bound when the kernel loads it.
+  if (config->outputType == MH_KEXT_BUNDLE) {
+    if (!args.hasArg(OPT_flat_namespace, OPT_twolevel_namespace))
+      config->namespaceKind = NamespaceKind::flat;
+  }
   config->undefinedSymbolTreatment = getUndefinedSymbolTreatment(args);
+  if (config->outputType == MH_KEXT_BUNDLE && !args.hasArg(OPT_undefined))
+    config->undefinedSymbolTreatment = UndefinedSymbolTreatment::dynamic_lookup;
 
   if (config->outputType == MH_EXECUTE)
     config->entry = symtab->addUndefined(args.getLastArgValue(OPT_e, "_main"),
+                                         /*file=*/nullptr,
+                                         /*isWeakRef=*/false);
+  // dyld and preloaded images start at their entry point directly.
+  else if (config->outputType == MH_DYLINKER ||
+           config->outputType == MH_PRELOAD)
+    config->entry = symtab->addUndefined(args.getLastArgValue(OPT_e, "start"),
                                          /*file=*/nullptr,
                                          /*isWeakRef=*/false);
 

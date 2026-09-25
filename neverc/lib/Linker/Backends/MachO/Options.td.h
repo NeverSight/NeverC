@@ -350,9 +350,11 @@ OPTION(prefix_3, "-dylib", dylib, Flag, grp_kind, INVALID, nullptr, 0,
 OPTION(prefix_3, "-dylinker_install_name", dylinker_install_name, Separate,
        grp_dylib, install_name, nullptr, 0, DefaultVis, 0,
        "Alias for -install_name", "<name>", nullptr)
-OPTION(prefix_3, "-dylinker", dylinker, Flag, grp_kind, INVALID, nullptr,
-       HelpHidden, DefaultVis, 0, "NeverC does not build dyld", nullptr,
-       nullptr)
+OPTION(prefix_3, "-dylinker", dylinker, Flag, grp_kind, INVALID, nullptr, 0,
+       DefaultVis, 0,
+       "Produce a dynamic linker image (MH_DYLINKER) that starts at the entry "
+       "point",
+       nullptr, nullptr)
 OPTION(prefix_3, "-dynamic", dynamic, Flag, grp_kind, INVALID, nullptr, 0,
        DefaultVis, 0, "Link dynamically (default)", nullptr, nullptr)
 OPTION(prefix_3, "-d", d, Flag, grp_object, INVALID, nullptr, 0, DefaultVis, 0,
@@ -606,10 +608,13 @@ OPTION(prefix_3, "-kext_objects_dir", kext_objects_dir, Flag, grp_undocumented,
        INVALID, nullptr, HelpHidden, DefaultVis, 0,
        "kernel extensions are not supported", nullptr, nullptr)
 OPTION(prefix_3, "-kexts_use_stubs", kexts_use_stubs, Flag, grp_undocumented,
-       INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "kernel extensions are not supported", nullptr, nullptr)
-OPTION(prefix_3, "-kext", kext, Flag, grp_undocumented, INVALID, nullptr,
-       HelpHidden, DefaultVis, 0, "kernel extensions are not supported",
+       INVALID, nullptr, 0, DefaultVis, 0,
+       "Call through stubs from kernel extensions (always done)", nullptr,
+       nullptr)
+OPTION(prefix_3, "-kext", kext, Flag, grp_undocumented, INVALID, nullptr, 0,
+       DefaultVis, 0,
+       "Produce a kernel extension (MH_KEXT_BUNDLE) whose references the "
+       "kernel binds",
        nullptr, nullptr)
 OPTION(prefix_3, "-lazy-l", lazy_l, Joined, grp_deprecated, INVALID, nullptr, 0,
        DefaultVis, 0,
@@ -825,9 +830,9 @@ OPTION(prefix_3, "-no_compact_linkedit", no_compact_linkedit, Flag,
        grp_obsolete, INVALID, nullptr, HelpHidden, DefaultVis, 0,
        "This option is obsolete in the native linker", nullptr, nullptr)
 OPTION(prefix_3, "-no_compact_unwind", no_compact_unwind, Flag,
-       grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "objects rely on compact unwind, so __unwind_info is always emitted",
-       nullptr, nullptr)
+       grp_undocumented, INVALID, nullptr, 0, DefaultVis, 0,
+       "Do not emit __unwind_info; unwinding relies on __eh_frame", nullptr,
+       nullptr)
 OPTION(prefix_3, "-no_data_const", anonymous_334, Flag, INVALID, no_data_const,
        nullptr, 0, DefaultVis, 0, "Alias for --no-data-const", nullptr, nullptr)
 OPTION(prefix_3, "-no_data_in_code_info", anonymous_335, Flag, INVALID,
@@ -1063,9 +1068,10 @@ OPTION(prefix_3, "-prebind_allow_overlap", prebind_allow_overlap, Flag,
 OPTION(prefix_3, "-prebind", prebind, Flag, grp_obsolete, INVALID, nullptr,
        HelpHidden, DefaultVis, 0,
        "This option is obsolete in the native linker", nullptr, nullptr)
-OPTION(prefix_3, "-preload", preload, Flag, grp_kind, INVALID, nullptr,
-       HelpHidden, DefaultVis, 0,
-       "unsegmented -preload output is not supported", nullptr, nullptr)
+OPTION(prefix_3, "-preload", preload, Flag, grp_kind, INVALID, nullptr, 0,
+       DefaultVis, 0,
+       "Produce an image that is loaded without dyld (MH_PRELOAD)", nullptr,
+       nullptr)
 OPTION(
     prefix_2, "--print-dylib-search", print_dylib_search, Flag, grp_neverc_ext,
     INVALID, nullptr, 0, DefaultVis, 0,
@@ -1187,8 +1193,9 @@ OPTION(prefix_1, "--sectcreate", sectcreate, MultiArg, grp_content, INVALID,
        "Create <section> in <segment> from the contents of <file>",
        "<segment> <section> <file>", nullptr)
 OPTION(prefix_3, "-section_order", section_order, MultiArg, grp_rare, INVALID,
-       nullptr, HelpHidden, DefaultVis, 2,
-       "it only applies to -preload output, which is not supported",
+       nullptr, 0, DefaultVis, 2,
+       "With -preload, lay out the colon-separated <sections> of <segment> in "
+       "that order",
        "<segment> <sections>", nullptr)
 OPTION(prefix_3, "-sectobjectsymbols", sectobjectsymbols, MultiArg,
        grp_obsolete, INVALID, nullptr, HelpHidden, DefaultVis, 2,
@@ -1226,8 +1233,8 @@ OPTION(prefix_3, "-seglinkedit", seglinkedit, Flag, grp_obsolete, INVALID,
        nullptr, HelpHidden, DefaultVis, 0,
        "This option is obsolete in the native linker", nullptr, nullptr)
 OPTION(prefix_3, "-segment_order", segment_order, Separate, grp_rare, INVALID,
-       nullptr, HelpHidden, DefaultVis, 0,
-       "it only applies to -preload output, which is not supported",
+       nullptr, 0, DefaultVis, 0,
+       "With -preload, lay out the colon-separated <segments> in that order",
        "<colon_separated_segment_list>", nullptr)
 OPTION(prefix_1, "--segprot", segprot, MultiArg, grp_rare, INVALID, nullptr, 0,
        DefaultVis, 3,

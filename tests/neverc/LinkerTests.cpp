@@ -3192,6 +3192,144 @@ _main:
       << obsolete.err;
 }
 
+TEST_F(LinkerTest, NativeMachOImageKinds) {
+  const std::string target = "--target=arm64-apple-macos13";
+  const fs::path dir = tmpFile("macho_kinds_dir");
+  fs::create_directories(dir);
+  const fs::path source = dir / "image.c";
+  const fs::path object = dir / "image.o";
+  const fs::path dylibSource = dir / "lib.c";
+  const fs::path dylibObject = dir / "lib.o";
+  const fs::path dylib = dir / "liblib.dylib";
+  const fs::path userSource = dir / "user.c";
+  const fs::path userObject = dir / "user.o";
+  const fs::path image = dir / "image";
+  writeFile(source, "int counter = 1;\n"
+                    "const int limit = 2;\n"
+                    "int start(void) { return counter + limit; }\n");
+  writeFile(dylibSource, "int lib_value(void) { return 3; }\n");
+  writeFile(userSource, "int lib_value(void);\n"
+                        "int start(void) { return lib_value(); }\n");
+  for (auto [src, obj] :
+       {std::pair{source, object}, std::pair{dylibSource, dylibObject},
+        std::pair{userSource, userObject}}) {
+    CmdResult compile =
+        ncc({target, "-fno-lto", "-c", src.string(), "-o", obj.string()});
+    ASSERT_EQ(compile.exitCode, 0) << compile.err;
+  }
+  ASSERT_EQ(ncc({target, "-nostdlib", "-dynamiclib", dylibObject.string(), "-o",
+                 dylib.string()})
+                .exitCode,
+            0);
+
+  std::string bytes;
+  auto open = [&]() -> std::unique_ptr<llvm::object::MachOObjectFile> {
+    bytes = readFile(image);
+    auto file = llvm::object::MachOObjectFile::create(
+        llvm::MemoryBufferRef(bytes, image.string()), /*IsLittleEndian=*/true,
+        /*Is64Bits=*/true);
+    EXPECT_TRUE(static_cast<bool>(file))
+        << llvm::toString(file.takeError()).str().str();
+    return file ? std::move(*file) : nullptr;
+  };
+  auto link = [&](std::vector<std::string> flags) {
+    std::vector<std::string> args = {target, "-nostdlib", object.string()};
+    args.insert(args.end(), flags.begin(), flags.end());
+    args.insert(args.end(), {"-o", image.string()});
+    return ncc(args);
+  };
+  auto commands = [&](llvm::object::MachOObjectFile &macho) {
+    std::set<uint32_t> cmds;
+    for (const auto &command : macho.load_commands())
+      cmds.insert(command.C.cmd);
+    return cmds;
+  };
+
+  // -preload: no dyld, no __PAGEZERO, started through a thread state.
+  CmdResult preload = link({"-Wl,-preload", "-Wl,-e,_start"});
+  ASSERT_EQ(preload.exitCode, 0) << preload.err;
+  EXPECT_FALSE(preload.stderrContains("not supported")) << preload.err;
+  {
+    auto macho = open();
+    ASSERT_NE(macho, nullptr);
+    EXPECT_EQ(macho->getHeader64().filetype, llvm::MachO::MH_PRELOAD);
+    EXPECT_FALSE(macho->getHeader64().flags & llvm::MachO::MH_DYLDLINK);
+    std::set<uint32_t> cmds = commands(*macho);
+    EXPECT_TRUE(cmds.count(llvm::MachO::LC_UNIXTHREAD));
+    EXPECT_FALSE(cmds.count(llvm::MachO::LC_LOAD_DYLINKER));
+    for (const auto &command : macho->load_commands())
+      if (command.C.cmd == llvm::MachO::LC_SEGMENT_64)
+        EXPECT_NE(
+            llvm::StringRef(macho->getSegment64LoadCommand(command).segname),
+            "__PAGEZERO");
+  }
+  CmdResult importing =
+      ncc({target, "-nostdlib", userObject.string(), dylib.string(),
+           "-Wl,-preload", "-Wl,-e,_start", "-o", image.string()});
+  EXPECT_NE(importing.exitCode, 0);
+  EXPECT_TRUE(importing.stderrContains("cannot be imported by a -preload"))
+      << importing.err;
+
+  // -section_order lays out a -preload image's sections as listed.
+  CmdResult ordered =
+      link({"-Wl,-preload", "-Wl,-e,_start", "-Wl,-segment_order,__DATA:__TEXT",
+            "-Wl,-section_order,__TEXT,__const:__text"});
+  ASSERT_EQ(ordered.exitCode, 0) << ordered.err;
+  {
+    auto macho = open();
+    ASSERT_NE(macho, nullptr);
+    uint64_t constAddr = 0, textAddr = 0;
+    for (const auto &section : macho->sections()) {
+      llvm::StringRef name = llvm::cantFail(section.getName());
+      if (name == "__const")
+        constAddr = section.getAddress();
+      if (name == "__text")
+        textAddr = section.getAddress();
+    }
+    EXPECT_LT(constAddr, textAddr);
+  }
+  CmdResult misplaced = link({"-Wl,-segment_order,__DATA:__TEXT"});
+  EXPECT_NE(misplaced.exitCode, 0);
+  EXPECT_TRUE(misplaced.stderrContains("only valid with -preload"))
+      << misplaced.err;
+
+  // -dylinker: names itself with LC_ID_DYLINKER.
+  CmdResult dylinker = link({"-Wl,-dylinker", "-Wl,-e,_start"});
+  ASSERT_EQ(dylinker.exitCode, 0) << dylinker.err;
+  {
+    auto macho = open();
+    ASSERT_NE(macho, nullptr);
+    EXPECT_EQ(macho->getHeader64().filetype, llvm::MachO::MH_DYLINKER);
+    std::set<uint32_t> cmds = commands(*macho);
+    EXPECT_TRUE(cmds.count(llvm::MachO::LC_ID_DYLINKER));
+    EXPECT_TRUE(cmds.count(llvm::MachO::LC_UNIXTHREAD));
+  }
+
+  // -kext: a bundle-like image whose kernel references stay unbound.
+  CmdResult kext = ncc({target, "-nostdlib", "-bundle", userObject.string(),
+                        "-Wl,-kext", "-o", image.string()});
+  ASSERT_EQ(kext.exitCode, 0) << kext.err;
+  {
+    auto macho = open();
+    ASSERT_NE(macho, nullptr);
+    EXPECT_EQ(macho->getHeader64().filetype, llvm::MachO::MH_KEXT_BUNDLE);
+    EXPECT_FALSE(macho->getHeader64().flags & llvm::MachO::MH_TWOLEVEL);
+  }
+
+  // -no_compact_unwind leaves out __unwind_info.
+  auto hasUnwindInfo = [&] {
+    auto macho = open();
+    for (const auto &section : macho->sections())
+      if (llvm::cantFail(section.getName()) == "__unwind_info")
+        return true;
+    return false;
+  };
+  ASSERT_EQ(link({"-Wl,-e,_start"}).exitCode, 0);
+  EXPECT_TRUE(hasUnwindInfo());
+  ASSERT_EQ(link({"-Wl,-e,_start", "-Wl,-no_compact_unwind"}).exitCode, 0);
+  EXPECT_FALSE(hasUnwindInfo());
+}
+
 TEST_F(LinkerTest, MsvcLinkerSpellingsAreNormalized) {
   const std::string target = "--target=x86_64-pc-windows-msvc";
   const fs::path source = tmpFile("msvc_opts.c");

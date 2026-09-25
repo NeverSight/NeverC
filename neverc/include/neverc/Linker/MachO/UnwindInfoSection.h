@@ -11,7 +11,10 @@ class UnwindInfoSection : public SyntheticSection {
 public:
   // If all functions are free of unwind info, we can omit the unwind info
   // section entirely.
-  bool isNeeded() const override { return !allEntriesAreOmitted; }
+  // -no_compact_unwind leaves unwinding to the __eh_frame entries.
+  bool isNeeded() const override {
+    return !allEntriesAreOmitted && !config->noCompactUnwind;
+  }
   void addSymbol(const Defined *);
   virtual void prepare() = 0;
 

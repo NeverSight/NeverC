@@ -458,6 +458,31 @@ private:
   uint32_t currentVersion;
 };
 
+// Names dyld itself, as an MH_DYLINKER image.
+class LCIdDylinker final : public LoadCommand {
+public:
+  explicit LCIdDylinker(StringRef path) : path(path) {}
+
+  uint32_t getSize() const override {
+    return alignToPowerOf2(sizeof(llvm_macho::dylinker_command) + path.size() +
+                               1,
+                           target->wordSize);
+  }
+
+  void writeTo(uint8_t *buf) const override {
+    auto *c = reinterpret_cast<llvm_macho::dylinker_command *>(buf);
+    buf += sizeof(llvm_macho::dylinker_command);
+    c->cmd = LC_ID_DYLINKER;
+    c->cmdsize = getSize();
+    c->name = sizeof(llvm_macho::dylinker_command);
+    memcpy(buf, path.data(), path.size());
+    buf[path.size()] = '\0';
+  }
+
+private:
+  StringRef path;
+};
+
 class LCLoadDylinker final : public LoadCommand {
 public:
   uint32_t getSize() const override {
@@ -799,6 +824,15 @@ void OutputWriter::checkNativeOptionConstraints() {
     else if (in.initOffsets->isNeeded())
       error("-no_inits: the image has static initializers");
   }
+  // Nothing binds a preloaded image or dyld to a dylib.
+  if (config->outputType == MH_PRELOAD || config->outputType == MH_DYLINKER)
+    for (const Symbol *sym : symtab->getSymbols())
+      if (const auto *dysym = dyn_cast<DylibSymbol>(sym))
+        if (dysym->isReferenced())
+          error("'" + toString(*dysym) + "' from " +
+                toString(dysym->getFile()) + " cannot be imported by " +
+                (config->outputType == MH_PRELOAD ? "a -preload image"
+                                                  : "a -dylinker image"));
   if (!config->noWeakImports)
     return;
   for (const Symbol *sym : symtab->getSymbols())
@@ -999,7 +1033,14 @@ template <class LP> void OutputWriter::assembleLoadCommands() {
                                             config->dylibCompatibilityVersion,
                                             config->dylibCurrentVersion));
     break;
+  case MH_DYLINKER:
+    in.header->addLoadCommand(make<LCIdDylinker>(
+        config->installName.empty() ? StringRef("/usr/lib/dyld")
+                                    : config->installName));
+    break;
   case MH_BUNDLE:
+  case MH_KEXT_BUNDLE:
+  case MH_PRELOAD:
     break;
   default:
     llvm_unreachable("unhandled output file type");
@@ -1023,6 +1064,9 @@ template <class LP> void OutputWriter::assembleLoadCommands() {
       in.header->addLoadCommand(make<LCUnixThread>());
     else
       in.header->addLoadCommand(make<LCMain>());
+  } else if (config->outputType == MH_DYLINKER ||
+             config->outputType == MH_PRELOAD) {
+    in.header->addLoadCommand(make<LCUnixThread>());
   }
   if (config->initSymbol)
     in.header->addLoadCommand(make<LCRoutines>(config->initSymbol));
@@ -1170,6 +1214,9 @@ template <class LP> void OutputWriter::buildOutputLayout() {
     break;
   case MH_DYLIB:
   case MH_BUNDLE:
+  case MH_DYLINKER:
+  case MH_PRELOAD:
+  case MH_KEXT_BUNDLE:
     break;
   default:
     llvm_unreachable("unhandled output file type");

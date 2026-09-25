@@ -276,6 +276,10 @@ struct Configuration {
   bool textExec = false;
   bool keepDwarfUnwind = false;
   bool noNewMain = false;
+  bool noCompactUnwind = false;
+  // -segment_order and -section_order for -preload images.
+  std::vector<llvm::StringRef> segmentOrder;
+  llvm::DenseMap<llvm::StringRef, std::vector<llvm::StringRef>> sectionOrder;
   // -exported_symbols_order: each listed name's position.
   llvm::DenseMap<llvm::CachedHashStringRef, uint32_t> exportedSymbolsOrder;
   WeakReferenceMismatches weakReferenceMismatches =
