@@ -16356,19 +16356,22 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                      : llvm::StringRef();
     const bool PlusEqual = Operator &&
                            Method->getOverloadedOperator() == OO_PlusEqual;
+    const bool AssignmentOperator =
+        (Operator || MemberCall) && Method->getOverloadedOperator() == OO_Equal;
     if (!Reference || !Object || !Prototype ||
         (!Prototype->isNothrow() && Name != "push_back" && Name != "pop_back" &&
          Name != "reserve" && Name != "resize" && Name != "append" &&
          Name != "assign" && Name != "erase" && Name != "insert" &&
          Name != "replace" && Name != "copy" && Name != "substr" &&
-         Name != "compare" && !PlusEqual) ||
+         Name != "compare" && !PlusEqual && !AssignmentOperator) ||
         Method->isStatic() || Method->isVariadic() ||
         (!Method->hasBody() && Name != "push_back" && Name != "reserve" &&
          Name != "resize" && Name != "append" && Name != "assign" &&
          Name != "erase" && Name != "insert" && Name != "replace" &&
          Name != "copy" && Name != "compare" && Name != "find" &&
          Name != "rfind" && Name != "find_first_of" && Name != "find_last_of" &&
-         Name != "find_first_not_of" && Name != "find_last_not_of") ||
+         Name != "find_first_not_of" && Name != "find_last_not_of" &&
+         !AssignmentOperator) ||
         Method->getRefQualifier() != RQ_None ||
         Method->getParent()->getCanonicalDecl() !=
             String->Record->getCanonicalDecl() ||
@@ -16655,6 +16658,24 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                            : UtilityOperation::StringInsertFill;
         }
       }
+    }
+    if (AssignmentOperator && !Method->isConst() &&
+        !Object->getType().isConstQualified() && Method->getNumParams() == 1 &&
+        Call->isLValue() && Method->getReturnType()->isLValueReferenceType() &&
+        Context.hasSameType(Method->getReturnType()->getPointeeType(),
+                            Context.getRecordType(String->Record)) &&
+        Context.hasSameType(Call->getType(),
+                            Context.getRecordType(String->Record))) {
+      const auto Parameter = Method->getParamDecl(0)->getType();
+      const auto Argument = Call->getArg(Offset)->getType();
+      const auto ConstPointer =
+          Context.getPointerType(Context.CharTy.withConst());
+      if (Context.hasSameType(Parameter, ConstPointer) &&
+          Context.hasSameType(Argument, ConstPointer))
+        return UtilityOperation::StringAssignOperatorCString;
+      if (Context.hasSameType(Parameter, Context.CharTy) &&
+          Context.hasSameType(Argument, Context.CharTy))
+        return UtilityOperation::StringAssignOperatorCharacter;
     }
     if (!Operator && Name == "assign" && !Method->isConst() &&
         !Object->getType().isConstQualified() &&

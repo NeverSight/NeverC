@@ -29463,6 +29463,11 @@ int main() {
   std::string copied(long_text);
   std::string assigned;
   assigned = copied;
+  std::string scalar_assigned;
+  scalar_assigned = "abc";
+  scalar_assigned = 'Z';
+  scalar_assigned.operator=("xy");
+  bool scalar_assignment_intact = scalar_assigned == "xy";
   std::string moved(static_cast<std::string&&>(copied));
   assigned = static_cast<std::string&&>(moved);
   bool intact = empty.empty() && short_text.size() == 5 &&
@@ -29683,6 +29688,7 @@ int main() {
          reassigned.size() == 2 && reassigned[0] == 'a' &&
          reassigned[1] == 'a' &&
          erase_intact && erased.empty() && splice_intact && growth_intact &&
+         scalar_assignment_intact &&
          substring_intact && compare_intact &&
          cstring_compare_intact && positional_compare_intact &&
          search_intact && set_search_intact &&

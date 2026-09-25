@@ -880,6 +880,8 @@ enum class UtilityOperation {
   StringAssignCString,
   StringAssignString,
   StringAssignFill,
+  StringAssignOperatorCString,
+  StringAssignOperatorCharacter,
   StringErase,
   StringInsertPointer,
   StringInsertCString,

@@ -9293,13 +9293,23 @@ class FunctionLowering {
     case UtilityOperation::StringAssignPointer:
     case UtilityOperation::StringAssignCString:
     case UtilityOperation::StringAssignString:
-    case UtilityOperation::StringAssignFill: {
+    case UtilityOperation::StringAssignFill:
+    case UtilityOperation::StringAssignOperatorCString:
+    case UtilityOperation::StringAssignOperatorCharacter: {
       const auto *Object = MemberObject();
       auto String = Object ? StringFor(Object->getType())
                            : std::optional<UtilityStringRecord>();
       if (!Object || !String)
         reject(L, "string assign",
                "The selected std::string layout is unavailable.");
+      const bool AssignmentOperator =
+          Operation == UtilityOperation::StringAssignOperatorCString ||
+          Operation == UtilityOperation::StringAssignOperatorCharacter;
+      const unsigned SourceIndex =
+          AssignmentOperator && isa<CXXOperatorCallExpr>(Call) ? 1 : 0;
+      std::optional<Expression> EarlySource;
+      if (AssignmentOperator && SourceIndex)
+        EarlySource = snapshot(expression(Call->getArg(SourceIndex)), L);
       auto Receiver = snapshot(address(lvalue(Object), Object->getType(), L), L);
       const auto SizeType = type(A.Context.getSizeType(), L);
       const auto PointerType = type(String->PointerType, L);
@@ -9339,12 +9349,22 @@ class FunctionLowering {
                              quantity(LongFlag, SizeType, L), SizeType, L),
                       quantity(0, SizeType, L), "bool", L);
       };
-      const bool Fill = Operation == UtilityOperation::StringAssignFill;
+      const bool CharacterAssignment =
+          Operation == UtilityOperation::StringAssignOperatorCharacter;
+      const bool Fill = Operation == UtilityOperation::StringAssignFill ||
+                        CharacterAssignment;
       auto NewSize = temporary(SizeType, L);
       std::optional<Expression> SourceArgument, CharacterArgument;
       if (Fill) {
-        assign(NewSize, snapshot(expression(Call->getArg(0)), L), L);
-        CharacterArgument = snapshot(expression(Call->getArg(1)), L);
+        assign(NewSize,
+               CharacterAssignment ? quantity(1, SizeType, L)
+                                   : snapshot(expression(Call->getArg(0)), L),
+               L);
+        CharacterArgument =
+            EarlySource ? std::move(*EarlySource)
+                        : snapshot(expression(Call->getArg(
+                                       CharacterAssignment ? SourceIndex : 1)),
+                                   L);
       } else if (Operation == UtilityOperation::StringAssignString) {
         auto SourceAddress = snapshot(
             address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L),
@@ -9373,7 +9393,9 @@ class FunctionLowering {
         label(Ready, L);
         SourceArgument = std::move(SourceData);
       } else {
-        SourceArgument = snapshot(expression(Call->getArg(0)), L);
+        SourceArgument =
+            EarlySource ? std::move(*EarlySource)
+                        : snapshot(expression(Call->getArg(SourceIndex)), L);
         if (Operation == UtilityOperation::StringAssignPointer) {
           assign(NewSize, snapshot(expression(Call->getArg(1)), L), L);
         } else {

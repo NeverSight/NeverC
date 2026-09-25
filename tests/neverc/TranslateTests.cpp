@@ -54396,6 +54396,85 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringPointerAndCharacterAssignmentRun) {
+  const auto Source = tmpFile("string-pointer-character-assignment.cpp");
+  const auto Output = tmpFile("string-pointer-character-assignment.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int order;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+std::string &left(std::string &value) { order = order * 10 + 1; return value; }
+const char *pointer_right() { order = order * 10 + 2; return "xy"; }
+char character_right() { order = order * 10 + 2; return 'Q'; }
+int main() {
+  {
+    std::string short_text("abcdef");
+    const char *short_data = short_text.data();
+    std::string &result = (short_text = short_text.c_str() + 2);
+    if (&result != &short_text || short_text != "cdef" ||
+        short_text.data() != short_data || allocations != 0)
+      return 1;
+    result = short_text.back();
+    if (short_text.size() != 1 || short_text[0] != 'f' ||
+        short_text.data()[1] != 0 || short_text.data() != short_data)
+      return 2;
+    short_text = '\0';
+    if (short_text.size() != 1 || short_text[0] != 0 ||
+        short_text.data()[1] != 0 || allocations != 0)
+      return 3;
+    order = 0;
+    left(short_text) = pointer_right();
+    if (order != 21 || short_text != "xy") return 4;
+    order = 0;
+    left(short_text).operator=(pointer_right());
+    if (order != 12 || short_text != "xy") return 5;
+    order = 0;
+    left(short_text) = character_right();
+    if (order != 21 || short_text != "Q") return 6;
+    order = 0;
+    left(short_text).operator=(character_right());
+    if (order != 12 || short_text != "Q") return 7;
+
+    std::string long_text("abcdefghijklmnopqrstuvwxyz");
+    const char *long_data = long_text.data();
+    Size long_capacity = long_text.capacity();
+    long_text = "hello";
+    if (long_text != "hello" || long_text.data() != long_data ||
+        long_text.capacity() != long_capacity || allocations != 1)
+      return 8;
+    long_text = 'Z';
+    if (long_text.size() != 1 || long_text[0] != 'Z' ||
+        long_text.data() != long_data || long_text.capacity() != long_capacity)
+      return 9;
+    long_text = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    if (long_text.size() != 62 || long_text[61] != '9' ||
+        long_text.data()[62] != 0 || long_text.data() == long_data ||
+        long_text.capacity() < 62 || allocations != 2 || releases != 1)
+      return 10;
+  }
+  return allocations == releases ? 0 : 11;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("string-pointer-character-assignment" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StringEraseRun) {
   const auto Source = tmpFile("string-erase.cpp");
   const auto Output = tmpFile("string-erase.nc");
