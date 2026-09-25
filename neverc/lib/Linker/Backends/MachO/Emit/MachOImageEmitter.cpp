@@ -701,6 +701,35 @@ void OutputWriter::resolveSpecialSymbols() {
 }
 
 namespace {
+// A pointer in __TEXT of an image dyld slides would need dyld to write
+// read-only code.
+void checkReadOnlyReloc(const InputSection *isec, uint64_t offset) {
+  if (config->readOnlyRelocs == ReadOnlyRelocs::Suppress || !config->isPic ||
+      config->staticLink || isec->getSegName() != segment_names::text)
+    return;
+  std::string msg = "relocation in read-only section " + toString(isec) +
+                    " at offset 0x" + utohexstr(offset) +
+                    "; pass -read_only_relocs suppress to allow it";
+  if (config->readOnlyRelocs == ReadOnlyRelocs::Error)
+    error(msg);
+  else
+    warn(msg);
+}
+
+// dyld fixes up pointers at word-aligned addresses.
+void checkUnalignedPointer(const InputSection *isec,
+                           const linker::macho::Reloc &r) {
+  if (config->unalignedPointers == ReadOnlyRelocs::Suppress || r.length != 3 ||
+      (r.offset % target->wordSize == 0 && isec->align % target->wordSize == 0))
+    return;
+  std::string msg = "pointer at offset 0x" + utohexstr(r.offset) + " in " +
+                    toString(isec) + " is not word-aligned";
+  if (config->unalignedPointers == ReadOnlyRelocs::Error)
+    error(msg);
+  else
+    warn(msg);
+}
+
 void prepareSymbolRelocation(Symbol *sym, const InputSection *isec,
                              const linker::macho::Reloc &r) {
   assert(sym->isLive());
@@ -717,8 +746,11 @@ void prepareSymbolRelocation(Symbol *sym, const InputSection *isec,
       in.tlvPointers->addEntry(sym);
   } else if (relocAttrs.hasAttr(RelocAttrBits::UNSIGNED)) {
     // TLV section refs are section-relative offsets, no rebase needed.
-    if (!(isThreadLocalVariables(isec->getFlags()) && isa<Defined>(sym)))
+    if (!(isThreadLocalVariables(isec->getFlags()) && isa<Defined>(sym))) {
+      checkReadOnlyReloc(isec, r.offset);
+      checkUnalignedPointer(isec, r);
       addNonLazyBindingEntries(sym, isec, r.offset, r.addend);
+    }
   }
 }
 } // namespace
@@ -811,6 +843,8 @@ void OutputWriter::scanRelocations() {
           prepareSymbolRelocation(sym, isec, r);
       } else {
         if (!r.pcrel) {
+          checkReadOnlyReloc(isec, r.offset);
+          checkUnalignedPointer(isec, r);
           if (config->emitChainedFixups)
             in.chainedFixups->addRebase(isec, r.offset);
           else

@@ -101,6 +101,22 @@ enum class CommonsTreatment {
   Error,
 };
 
+// How a symbol referenced both weakly and strongly is imported
+// (-weak_reference_mismatches).
+enum class WeakReferenceMismatches {
+  NonWeak,
+  Weak,
+  Error,
+};
+
+// What a relocation that needs dyld to write read-only code does
+// (-read_only_relocs).
+enum class ReadOnlyRelocs {
+  Error,
+  Warning,
+  Suppress,
+};
+
 enum class SymtabPresence {
   All,
   None,
@@ -248,6 +264,18 @@ struct Configuration {
   bool orderFileStatistics = false;
   bool noOrderData = false;
   bool warnStabs = false;
+  bool forceLoadObjC = false;
+  bool interposable = false;
+  ReadOnlyRelocs readOnlyRelocs = ReadOnlyRelocs::Warning;
+  // What a pointer dyld fixes up at an unaligned address does.
+  ReadOnlyRelocs unalignedPointers = ReadOnlyRelocs::Warning;
+  bool traceSymbolLayout = false;
+  WeakReferenceMismatches weakReferenceMismatches =
+      WeakReferenceMismatches::NonWeak;
+  // Sections -move_to_ro_segment and -move_to_rw_segment send to another
+  // segment.
+  llvm::DenseMap<const InputSection *, llvm::StringRef> movedSections;
+  SymbolPatterns interposableSymbols;
 
   llvm::StringRef osoPrefix;
 

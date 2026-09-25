@@ -25,12 +25,14 @@
 #include "Linker/Core/Runtime/Session.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/BinaryFormat/MachO.h"
 #include "llvm/BinaryFormat/Magic.h"
 #include "llvm/LTO/LTO.h"
 #include "llvm/Object/Archive.h"
+#include "llvm/Object/MachO.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -47,6 +49,7 @@
 #include "neverc/Merge/Merger.h"
 #include <algorithm>
 #include <optional>
+#include <set>
 #include <vector>
 
 // MachOContextAccess defines short accessor macros such as `in`. Keep every
@@ -258,6 +261,30 @@ enum class LoadType {
   LCLinkerOption,   // Library was passed via LC_LINKER_OPTIONS
 };
 
+// Whether a member object has Objective-C class or category lists.
+bool hasObjCSection(MemoryBufferRef mb) {
+  if (identify_magic(mb.getBuffer()) != file_magic::macho_object)
+    return false;
+  Expected<std::unique_ptr<object::MachOObjectFile>> obj =
+      object::MachOObjectFile::create(mb, /*IsLittleEndian=*/true,
+                                      /*Is64Bits=*/true);
+  if (!obj) {
+    consumeError(obj.takeError());
+    return false;
+  }
+  for (const object::SectionRef &sec : (*obj)->sections()) {
+    Expected<StringRef> name = sec.getName();
+    if (!name) {
+      consumeError(name.takeError());
+      continue;
+    }
+    if (*name == "__objc_classlist" || *name == "__objc_catlist" ||
+        *name == "__objc_nlclslist" || *name == "__objc_nlcatlist")
+      return true;
+  }
+  return false;
+}
+
 InputFile *addFile(StringRef path, LoadType loadType, bool isLazy = false,
                    bool isExplicit = true, bool isBundleLoader = false,
                    bool isForceHidden = false) {
@@ -322,6 +349,27 @@ InputFile *addFile(StringRef path, LoadType loadType, bool isLazy = false,
           error(toString(file) +
                 ": Archive::children failed: " + toString(std::move(e)));
       }
+    } else if (config->forceLoadObjC) {
+      // -ObjC loads the members that define Objective-C classes or
+      // categories, which nothing may reference by name.
+      for (const object::Archive::Symbol &sym : file->getArchive().symbols())
+        if (sym.getName().starts_with("_OBJC_CLASS_$_"))
+          file->fetch(sym);
+      Error e = Error::success();
+      for (const object::Archive::Child &c : file->getArchive().children(e)) {
+        Expected<MemoryBufferRef> mb = c.getMemoryBufferRef();
+        if (!mb) {
+          consumeError(mb.takeError());
+          continue;
+        }
+        if (hasObjCSection(*mb))
+          if (Error err = file->fetch(c, "-ObjC"))
+            error(toString(file) + ": -ObjC failed to load archive member: " +
+                  toString(std::move(err)));
+      }
+      if (e)
+        error(toString(file) +
+              ": Archive::children failed: " + toString(std::move(e)));
     }
 
     file->addLazySymbols();
@@ -1004,6 +1052,7 @@ LinkerDriverConfig applyLinkerOptions(InputArgList &args,
       cfg.ltoDebugPassManager || args.hasArg(OPT_lto_debug_pass_manager);
   for (const Arg *arg : args.filtered(OPT_load_pass_plugins))
     cfg.ltoPassPlugins.push_back(arg->getValue());
+  cfg.ltoCodeGenOnly = cfg.ltoCodeGenOnly || args.hasArg(OPT_flto_codegen_only);
   return cfg;
 }
 
@@ -1336,6 +1385,99 @@ void parseSymbolPatternsFile(const Arg *arg, SymbolPatterns &symbolPatterns) {
   }
 }
 
+// -dot writes which symbols each live symbol's section refers to, as a
+// Graphviz graph.
+void writeDependencyGraph(StringRef path) {
+  std::error_code ec;
+  raw_fd_ostream os(path, ec, sys::fs::OF_Text);
+  if (ec) {
+    error("-dot: cannot open " + path + ": " + ec.message());
+    return;
+  }
+  auto quote = [](StringRef s) {
+    std::string out = "\"";
+    for (char c : s) {
+      if (c == '"' || c == '\\')
+        out += '\\';
+      out += c;
+    }
+    return out + "\"";
+  };
+  os << "digraph dependencies {\n";
+  for (const InputFile *file : inputFiles) {
+    if (!isa<ObjFile>(file))
+      continue;
+    for (const Symbol *sym : file->symbols) {
+      const auto *defined = dyn_cast_or_null<Defined>(sym);
+      if (!defined || !defined->isLive() || !defined->isec ||
+          defined->value != 0)
+        continue;
+      const auto *isec = dyn_cast<ConcatInputSection>(defined->isec);
+      if (!isec || !isec->live)
+        continue;
+      SetVector<std::string, SmallVector<std::string, 8>, std::set<std::string>>
+          targets;
+      for (const Reloc &r : isec->relocs) {
+        if (const auto *target = r.referent.dyn_cast<Symbol *>())
+          targets.insert(toString(*target));
+        else if (const auto *target = r.referent.dyn_cast<InputSection *>())
+          targets.insert(toString(target));
+      }
+      for (const std::string &target : targets)
+        os << "  " << quote(toString(*defined)) << " -> " << quote(target)
+           << ";\n";
+    }
+  }
+  os << "}\n";
+}
+
+// -move_to_ro_segment and -move_to_rw_segment send the listed code or
+// read-only data, or writable data, to another segment.
+void moveSymbolsToSegments(const InputArgList &args) {
+  for (const Arg *arg :
+       args.filtered(OPT_move_to_ro_segment, OPT_move_to_rw_segment)) {
+    const bool readOnly = arg->getOption().matches(OPT_move_to_ro_segment);
+    StringRef segment = arg->getValue(0);
+    SymbolPatterns patterns;
+    std::optional<MemoryBufferRef> buffer = readFile(arg->getValue(1));
+    if (!buffer)
+      continue;
+    for (StringRef line : args::getLines(*buffer)) {
+      line = line.take_until([](char c) { return c == '#'; }).trim();
+      if (!line.empty())
+        patterns.insert(line);
+    }
+    if (readOnly && llvm::none_of(config->segmentProtections,
+                                  [&](const SegmentProtection &p) {
+                                    return p.name == segment;
+                                  }))
+      config->segmentProtections.push_back({segment,
+                                            VM_PROT_READ | VM_PROT_EXECUTE,
+                                            VM_PROT_READ | VM_PROT_EXECUTE});
+    for (const InputFile *file : inputFiles) {
+      if (!isa<ObjFile>(file))
+        continue;
+      for (Symbol *sym : file->symbols) {
+        auto *defined = dyn_cast_or_null<Defined>(sym);
+        if (!defined || !defined->isec ||
+            !isa<ConcatInputSection>(defined->isec) ||
+            !patterns.match(defined->getName()))
+          continue;
+        const bool fromReadOnly =
+            defined->isec->getSegName() == segment_names::text;
+        if (fromReadOnly != readOnly)
+          continue;
+        config->movedSections[defined->isec] = segment;
+        if (config->traceSymbolLayout)
+          message(Twine(arg->getSpelling()) + ": " + toString(*defined) +
+                  " moves from " + defined->isec->getSegName() + "," +
+                  defined->isec->getName() + " to " + segment + "," +
+                  defined->isec->getName());
+      }
+    }
+  }
+}
+
 void handleSymbolPatterns(InputArgList &args, SymbolPatterns &symbolPatterns,
                           unsigned singleOptionCode,
                           unsigned listFileOptionCode) {
@@ -1519,6 +1661,13 @@ void gatherInputSections() {
       case GatheredInputAction::Kind::Concat: {
         auto *isec = cast<ConcatInputSection>(action.isec);
         isec->outSecOff = inputOrder++;
+        if (!config->movedSections.empty() &&
+            config->movedSections.count(isec)) {
+          isec->parent = ConcatOutputSection::getOrCreateForInput(isec);
+          inputSections.push_back(isec);
+          currentConcatSection = nullptr;
+          break;
+        }
         if (action.sourceSection != currentConcatSection) {
           currentConcatSection = action.sourceSection;
           osec = ConcatOutputSection::getOrCreateForInput(isec);
@@ -1956,6 +2105,47 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
   config->orderFileStatistics = args.hasArg(OPT_order_file_statistics);
   config->noOrderData = args.hasArg(OPT_no_order_data);
   config->warnStabs = args.hasArg(OPT_warn_stabs);
+  config->forceLoadObjC = args.hasArg(OPT_ObjC);
+  config->interposable = args.hasArg(OPT_interposable);
+  config->traceSymbolLayout = args.hasArg(OPT_trace_symbol_layout);
+  if (const Arg *arg = args.getLastArg(OPT_unaligned_pointers)) {
+    std::optional<ReadOnlyRelocs> mode =
+        StringSwitch<std::optional<ReadOnlyRelocs>>(arg->getValue())
+            .Case("error", ReadOnlyRelocs::Error)
+            .Case("warning", ReadOnlyRelocs::Warning)
+            .Case("suppress", ReadOnlyRelocs::Suppress)
+            .Default(std::nullopt);
+    if (mode)
+      config->unalignedPointers = *mode;
+    else
+      error(arg->getAsString(args) + ": expected error, warning or suppress");
+  }
+  if (const Arg *arg = args.getLastArg(OPT_weak_reference_mismatches)) {
+    std::optional<WeakReferenceMismatches> mode =
+        StringSwitch<std::optional<WeakReferenceMismatches>>(arg->getValue())
+            .Case("non-weak", WeakReferenceMismatches::NonWeak)
+            .Case("weak", WeakReferenceMismatches::Weak)
+            .Case("error", WeakReferenceMismatches::Error)
+            .Default(std::nullopt);
+    if (mode)
+      config->weakReferenceMismatches = *mode;
+    else
+      error(arg->getAsString(args) + ": expected error, weak or non-weak");
+  }
+  if (const Arg *arg = args.getLastArg(OPT_read_only_relocs)) {
+    std::optional<ReadOnlyRelocs> mode =
+        StringSwitch<std::optional<ReadOnlyRelocs>>(arg->getValue())
+            .Case("error", ReadOnlyRelocs::Error)
+            .Case("warning", ReadOnlyRelocs::Warning)
+            .Case("suppress", ReadOnlyRelocs::Suppress)
+            .Default(std::nullopt);
+    if (mode)
+      config->readOnlyRelocs = *mode;
+    else
+      error(arg->getAsString(args) + ": expected error, warning or suppress");
+  }
+  for (const Arg *arg : args.filtered(OPT_interposable_list))
+    parseSymbolPatternsFile(arg, config->interposableSymbols);
   for (const Arg *arg : args.filtered(OPT_force_symbols_weak_list))
     parseSymbolPatternsFile(arg, config->forceWeakSymbols);
   for (const Arg *arg : args.filtered(OPT_force_symbols_not_weak_list))
@@ -2400,12 +2590,15 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
         if (isa<ObjFile>(file) && !file->lazy)
           message(toString(file));
 
+    moveSymbolsToSegments(args);
     gatherInputSections();
     if (config->callGraphProfileSort)
       priorityBuilder.extractCallGraphProfile();
 
     if (config->deadStrip)
       markLive();
+    if (const Arg *arg = args.getLastArg(OPT_dot))
+      writeDependencyGraph(arg->getValue());
 
     foldIdenticalLiterals();
     if (config->icfLevel != ICFLevel::none) {

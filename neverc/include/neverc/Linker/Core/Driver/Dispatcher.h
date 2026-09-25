@@ -245,6 +245,7 @@ struct LinkerDriverConfig {
   bool ltoEmitAsm = false;  // write the LTO output as assembly, then stop
   bool ltoEmitLLVM = false; // write the optimized module as bitcode, then stop
   std::string ltoObjPath;   // also write the LTO objects to this path
+  bool ltoCodeGenOnly = false; // generate code without optimizing the IR
 };
 
 using Driver = bool (*)(llvm::ArrayRef<const char *>, llvm::raw_ostream &,

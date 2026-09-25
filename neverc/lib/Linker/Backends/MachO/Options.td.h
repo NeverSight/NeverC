@@ -312,10 +312,9 @@ OPTION(prefix_3, "-dirty_data_list", dirty_data_list, Separate, grp_rare,
        INVALID, nullptr, 0, DefaultVis, 0,
        "Specify data symbols in <path> destined for the __DATA_DIRTY segment",
        "<path>", nullptr)
-OPTION(prefix_3, "-dot", dot, Separate, grp_rare, INVALID, nullptr, HelpHidden,
+OPTION(prefix_3, "-dot", dot, Separate, grp_rare, INVALID, nullptr, 0,
        DefaultVis, 0,
-       "Write a graph of symbol dependencies to <path> as a .dot file viewable "
-       "with GraphViz",
+       "Write the symbol references of live code to <path> as a Graphviz graph",
        "<path>", nullptr)
 OPTION(prefix_3, "-driverkit_version_min", driverkit_version_min, Separate,
        grp_version, INVALID, nullptr, 0, DefaultVis, 0,
@@ -439,8 +438,9 @@ OPTION(prefix_3, "-flat_namespace", anonymous_320, Flag, INVALID,
        flat_namespace, nullptr, 0, DefaultVis, 0, "Alias for --flat-namespace",
        nullptr, nullptr)
 OPTION(prefix_3, "-flto-codegen-only", flto_codegen_only, Flag,
-       grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "This option is undocumented in the native linker", nullptr, nullptr)
+       grp_undocumented, INVALID, nullptr, 0, DefaultVis, 0,
+       "Generate code for LTO inputs without optimizing their IR", nullptr,
+       nullptr)
 OPTION(prefix_1, "--force-load", force_load, Separate, grp_libs, INVALID,
        nullptr, 0, DefaultVis, 0,
        "Load all members static archive library at <path>", "<path>", nullptr)
@@ -566,10 +566,10 @@ OPTION(prefix_3, "-install_name", anonymous_327, Separate, INVALID,
        install_name, nullptr, 0, DefaultVis, 0, "Alias for --install-name",
        "<name>", nullptr)
 OPTION(prefix_3, "-interposable_list", interposable_list, Separate, grp_rare,
-       INVALID, nullptr, HelpHidden, DefaultVis, 0,
+       INVALID, nullptr, 0, DefaultVis, 0,
        "Access global symbols listed in <path> indirectly", "<path>", nullptr)
 OPTION(prefix_3, "-interposable", interposable, Flag, grp_rare, INVALID,
-       nullptr, HelpHidden, DefaultVis, 0,
+       nullptr, 0, DefaultVis, 0,
        "Indirects access to all to exported symbols in a dylib", nullptr,
        nullptr)
 OPTION(prefix_3, "-ios_simulator_version_min", ios_simulator_version_min,
@@ -593,10 +593,8 @@ OPTION(prefix_3, "-keep_dwarf_unwind", keep_dwarf_unwind, Flag,
        grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
        "This option is undocumented in the native linker", nullptr, nullptr)
 OPTION(prefix_3, "-keep_private_externs", keep_private_externs, Flag,
-       grp_object, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "Do not convert private external symbols to static symbols (only valid "
-       "with -r)",
-       nullptr, nullptr)
+       grp_object, INVALID, nullptr, 0, DefaultVis, 0,
+       "Keep private external symbols with -r (always done)", nullptr, nullptr)
 OPTION(prefix_3, "-keep_relocs", keep_relocs, Flag, grp_rare, INVALID, nullptr,
        HelpHidden, DefaultVis, 0,
        "Retain section-based relocation records in the output, which are "
@@ -694,11 +692,11 @@ OPTION(prefix_3, "-merge_zero_fill_sections", merge_zero_fill_sections, Flag,
 OPTION(prefix_3, "-mllvm", mllvm, Separate, grp_rare, INVALID, nullptr, 0,
        DefaultVis, 0, "Options to pass to LLVM", nullptr, nullptr)
 OPTION(prefix_3, "-move_to_ro_segment", move_to_ro_segment, MultiArg, grp_rare,
-       INVALID, nullptr, HelpHidden, DefaultVis, 2,
+       INVALID, nullptr, 0, DefaultVis, 2,
        "Move code symbols listed in <path> to another <segment>",
        "<segment> <path>", nullptr)
 OPTION(prefix_3, "-move_to_rw_segment", move_to_rw_segment, MultiArg, grp_rare,
-       INVALID, nullptr, HelpHidden, DefaultVis, 2,
+       INVALID, nullptr, 0, DefaultVis, 2,
        "Move data symbols listed in <path> to another <segment>",
        "<segment> <path>", nullptr)
 OPTION(prefix_3, "-multi_module", multi_module, Flag, grp_rare, interposable,
@@ -964,8 +962,8 @@ OPTION(prefix_3, "-noseglinkedit", noseglinkedit, Flag, grp_obsolete, INVALID,
        nullptr, HelpHidden, DefaultVis, 0,
        "This option is obsolete in the native linker", nullptr, nullptr)
 OPTION(prefix_3, "-not_for_dyld_shared_cache", not_for_dyld_shared_cache, Flag,
-       grp_rare, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "Prevent system dylibs from being placed into the dylib shared cache",
+       grp_rare, INVALID, nullptr, 0, DefaultVis, 0,
+       "Omit the dyld shared cache information from a dylib (always done)",
        nullptr, nullptr)
 OPTION(prefix_3, "-objc_abi_version", objc_abi_version, Separate,
        grp_ignored_silently, INVALID, nullptr, HelpHidden, DefaultVis, 0,
@@ -1001,10 +999,10 @@ OPTION(prefix_3, "-objc_stubs_small", objc_stubs_small, Flag, grp_rare, INVALID,
        nullptr, HelpHidden, DefaultVis, 0,
        "Produce smaller stubs for Objective-C method calls with more jumps.",
        nullptr, nullptr)
-OPTION(prefix_3, "-ObjC", ObjC, Flag, grp_libs, INVALID, nullptr, HelpHidden,
-       DefaultVis, 0,
-       "Load all members of static archives that are an Objective-C class or "
-       "category.",
+OPTION(prefix_3, "-ObjC", ObjC, Flag, grp_libs, INVALID, nullptr, 0, DefaultVis,
+       0,
+       "Load the static archive members that define Objective-C classes or "
+       "categories",
        nullptr, nullptr)
 OPTION(prefix_1, "--order-file", order_file, Separate, grp_opts, INVALID,
        nullptr, 0, DefaultVis, 0,
@@ -1087,9 +1085,9 @@ OPTION(prefix_3, "-random_uuid", random_uuid, Flag, grp_undocumented, INVALID,
        "Use a random LC_UUID instead of one derived from the output", nullptr,
        nullptr)
 OPTION(prefix_3, "-read_only_relocs", read_only_relocs, Separate, grp_rare,
-       INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "Handle relocations that modify read-only pages according to "
-       "<treatment> of warning, error, or suppress (i.e., allow)",
+       INVALID, nullptr, 0, DefaultVis, 0,
+       "Handle pointers in __TEXT, which dyld would have to write, according "
+       "to <treatment>: warning (default), error, suppress",
        "<treatment>", nullptr)
 OPTION(prefix_3, "-read_only_stubs", read_only_stubs, Flag, grp_rare, INVALID,
        nullptr, HelpHidden, DefaultVis, 0,
@@ -1335,7 +1333,7 @@ OPTION(prefix_2, "--time-trace", anonymous_356, Flag, grp_neverc_ext,
        time_trace_eq, nullptr, 0, DefaultVis, 0,
        "Record time trace to file next to output", nullptr, nullptr)
 OPTION(prefix_3, "-trace_symbol_layout", trace_symbol_layout, Flag, grp_rare,
-       INVALID, nullptr, HelpHidden, DefaultVis, 0,
+       INVALID, nullptr, 0, DefaultVis, 0,
        "Show where and why symbols move, as specified by -move_to_ro_segment, "
        "-move_to_rw_segment, -rename_section, and -rename_segment",
        nullptr, nullptr)
@@ -1364,10 +1362,9 @@ OPTION(prefix_1, "--umbrella", umbrella, Separate, grp_rare, INVALID, nullptr,
        "Re-export this dylib through the umbrella framework <name>", "<name>",
        nullptr)
 OPTION(prefix_3, "-unaligned_pointers", unaligned_pointers, Separate, grp_rare,
-       INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "Handle unaligned pointers in __DATA segments according to <treatment>: "
-       "warning, error, or suppress (default for arm64e is error, otherwise "
-       "suppress)",
+       INVALID, nullptr, 0, DefaultVis, 0,
+       "Handle pointers at unaligned addresses according to <treatment>: "
+       "warning (default), error, suppress",
        "<treatment>", nullptr)
 OPTION(prefix_1, "--undefined", undefined, Separate, grp_resolve, INVALID,
        nullptr, 0, DefaultVis, 0,
@@ -1480,7 +1477,7 @@ OPTION(prefix_3, "-weak_library", anonymous_361, Separate, INVALID,
        weak_library, nullptr, 0, DefaultVis, 0, "Alias for --weak-library",
        "<path>", nullptr)
 OPTION(prefix_3, "-weak_reference_mismatches", weak_reference_mismatches,
-       Separate, grp_rare, INVALID, nullptr, HelpHidden, DefaultVis, 0,
+       Separate, grp_rare, INVALID, nullptr, 0, DefaultVis, 0,
        "Resolve symbol imports of conflicting weakness according to "
        "<treatment> as weak, non-weak, or error (default is non-weak)",
        "<treatment>", nullptr)

@@ -2804,6 +2804,195 @@ TEST_F(LinkerTest, NativeMachOImageShapeOptions) {
   EXPECT_FALSE(weakExports["_twin_b"]);
 }
 
+TEST_F(LinkerTest, NativeMachOBindingAndLoadingOptions) {
+  const std::string target = "--target=arm64-apple-macos13";
+  auto compile = [&](const std::string &name, const std::string &source,
+                     std::vector<std::string> flags = {}) {
+    const fs::path src = tmpFile(name + ".c");
+    const fs::path obj = tmpFile(name + ".o");
+    writeFile(src, source);
+    std::vector<std::string> args = {target,       "-fno-lto", "-c",
+                                     src.string(), "-o",       obj.string()};
+    args.insert(args.end(), flags.begin(), flags.end());
+    CmdResult result = ncc(args);
+    EXPECT_EQ(result.exitCode, 0) << result.err;
+    return obj;
+  };
+  const fs::path mainObject =
+      compile("macho_bind_main", "int moved_data = 3;\n"
+                                 "int helper(void) { return moved_data; }\n"
+                                 "int main(void) { return helper(); }\n");
+  const fs::path objcObject = compile(
+      "macho_bind_objc",
+      "__attribute__((used, section(\"__DATA,__objc_classlist\"))) static "
+      "void *entry = 0;\n"
+      "int objc_marker = 1;\n");
+  const fs::path libObject =
+      compile("macho_bind_lib", "int lib_fn(void) { return 7; }\n"
+                                "int call_it(void) { return lib_fn(); }\n"
+                                "int shared_value = 1;\n");
+  const fs::path weakUser =
+      compile("macho_bind_weak",
+              "extern int shared_value __attribute__((weak_import));\n"
+              "int weak_use(void) { return &shared_value != 0; }\n");
+  const fs::path strongUser = compile(
+      "macho_bind_strong", "extern int shared_value;\n"
+                           "int strong_use(void) { return shared_value; }\n");
+  const fs::path textPointer =
+      compile("macho_bind_textptr",
+              "int pointee;\n"
+              "__attribute__((used, section(\"__TEXT,__ptrs\"))) int *const "
+              "text_ptr = &pointee;\n");
+  const fs::path packedPointer =
+      compile("macho_bind_packed",
+              "int target_int;\n"
+              "struct __attribute__((packed)) { char c; int *p; } packed = {0, "
+              "&target_int};\n");
+  const fs::path archive = tmpFile("libmachobindobjc.a");
+  const fs::path library = tmpFile("libmachobind.dylib");
+  const fs::path moveList = tmpFile("macho_bind_move.txt");
+  const fs::path dot = tmpFile("macho_bind.dot");
+  const fs::path image = tmpFile("macho_bind_main");
+  writeFile(moveList, "_moved_data\n");
+  ASSERT_EQ(
+      ncc({"--emit-static-lib", objcObject.string(), "-o", archive.string()})
+          .exitCode,
+      0);
+  ASSERT_EQ(ncc({target, "-nostdlib", "-dynamiclib", libObject.string(), "-o",
+                 library.string()})
+                .exitCode,
+            0);
+
+  std::string bytes;
+  auto open = [&](const fs::path &path)
+      -> std::unique_ptr<llvm::object::MachOObjectFile> {
+    bytes = readFile(path);
+    auto object = llvm::object::MachOObjectFile::create(
+        llvm::MemoryBufferRef(bytes, path.string()), /*IsLittleEndian=*/true,
+        /*Is64Bits=*/true);
+    EXPECT_TRUE(static_cast<bool>(object))
+        << llvm::toString(object.takeError()).str().str();
+    return object ? std::move(*object) : nullptr;
+  };
+  auto link = [&](std::vector<std::string> flags) {
+    std::vector<std::string> args = {target, "-nostdlib", "-Wl,-e,_main",
+                                     mainObject.string()};
+    args.insert(args.end(), flags.begin(), flags.end());
+    args.insert(args.end(), {"-o", image.string()});
+    return ncc(args);
+  };
+  auto hasSymbol = [&](llvm::StringRef name) {
+    auto macho = open(image);
+    for (const auto &sym : macho->symbols())
+      if (llvm::cantFail(sym.getName()) == name)
+        return true;
+    return false;
+  };
+
+  // -ObjC loads the member with an Objective-C class list.
+  CmdResult plain = link({archive.string()});
+  ASSERT_EQ(plain.exitCode, 0) << plain.err;
+  EXPECT_FALSE(hasSymbol("_objc_marker"));
+  CmdResult objc = link({archive.string(), "-Wl,-ObjC"});
+  ASSERT_EQ(objc.exitCode, 0) << objc.err;
+  EXPECT_TRUE(hasSymbol("_objc_marker"));
+
+  // -move_to_rw_segment moves the listed data, and -trace_symbol_layout
+  // reports it.
+  CmdResult moved =
+      link({"-Wl,-move_to_rw_segment,__MOVED," + moveList.string(),
+            "-Wl,-trace_symbol_layout", "-Wl,-dot," + dot.string()});
+  ASSERT_EQ(moved.exitCode, 0) << moved.err;
+  EXPECT_TRUE(moved.contains("_moved_data moves from __DATA,__data to "
+                             "__MOVED,__data") ||
+              moved.contains("moved_data moves from __DATA,__data to "
+                             "__MOVED,__data"))
+      << moved.out;
+  {
+    auto macho = open(image);
+    ASSERT_NE(macho, nullptr);
+    bool found = false;
+    for (const auto &section : macho->sections()) {
+      auto s = macho->getSection64(section.getRawDataRefImpl());
+      if (llvm::StringRef(s.segname, strnlen(s.segname, 16)) == "__MOVED")
+        found = true;
+    }
+    EXPECT_TRUE(found);
+  }
+  const std::string graph = readFile(dot);
+  EXPECT_NE(graph.find("digraph dependencies"), std::string::npos) << graph;
+  EXPECT_NE(graph.find("helper\" -> \""), std::string::npos) << graph;
+
+  // A pointer in __TEXT of a PIE needs dyld to write code.
+  CmdResult textRel = link({textPointer.string()});
+  EXPECT_EQ(textRel.exitCode, 0) << textRel.err;
+  EXPECT_TRUE(textRel.stderrContains("relocation in read-only section"))
+      << textRel.err;
+  CmdResult textRelError =
+      link({textPointer.string(), "-Wl,-read_only_relocs,error"});
+  EXPECT_NE(textRelError.exitCode, 0);
+  CmdResult allowed =
+      link({textPointer.string(), "-Wl,-read_only_relocs,suppress"});
+  EXPECT_EQ(allowed.exitCode, 0) << allowed.err;
+  EXPECT_FALSE(allowed.stderrContains("relocation in read-only section"))
+      << allowed.err;
+
+  CmdResult packed = link({packedPointer.string()});
+  EXPECT_EQ(packed.exitCode, 0) << packed.err;
+  EXPECT_TRUE(packed.stderrContains("is not word-aligned")) << packed.err;
+  CmdResult packedError =
+      link({packedPointer.string(), "-Wl,-unaligned_pointers,error"});
+  EXPECT_NE(packedError.exitCode, 0);
+
+  // Mixed weak and strong references import as non-weak unless asked.
+  auto weakRef = [&](std::vector<std::string> flags) {
+    flags.insert(flags.end(),
+                 {weakUser.string(), strongUser.string(), library.string()});
+    CmdResult result = link(flags);
+    EXPECT_EQ(result.exitCode, 0) << result.err;
+    auto macho = open(image);
+    for (const auto &sym : macho->symbols())
+      if (llvm::cantFail(sym.getName()) == "_shared_value")
+        return bool(
+            macho->getSymbol64TableEntry(sym.getRawDataRefImpl()).n_desc &
+            llvm::MachO::N_WEAK_REF);
+    ADD_FAILURE() << "_shared_value is missing";
+    return false;
+  };
+  EXPECT_FALSE(weakRef({}));
+  EXPECT_TRUE(weakRef({"-Wl,-weak_reference_mismatches,weak"}));
+  CmdResult mismatch =
+      link({"-Wl,-weak_reference_mismatches,error", weakUser.string(),
+            strongUser.string(), library.string()});
+  EXPECT_NE(mismatch.exitCode, 0);
+  EXPECT_TRUE(mismatch.stderrContains("referenced both weakly and strongly"))
+      << mismatch.err;
+
+  // An interposable definition is bound to the image itself.
+  CmdResult interposable =
+      ncc({target, "-nostdlib", "-dynamiclib", libObject.string(),
+           "-Wl,-interposable", "-Wl,-no_fixup_chains",
+           "-Wl,-U,dyld_stub_binder", "-o", library.string()});
+  ASSERT_EQ(interposable.exitCode, 0) << interposable.err;
+  auto macho = open(library);
+  ASSERT_NE(macho, nullptr);
+  llvm::Error err = llvm::Error::success();
+  bool selfBound = false;
+  // -flto-codegen-only still links bitcode, without optimizing it.
+  const fs::path ltoObject = compile(
+      "macho_bind_lto", "int lto_value(void) { return 5; }\n", {"-flto"});
+  CmdResult codegenOnly = link({ltoObject.string(), "-Wl,-flto-codegen-only"});
+  EXPECT_EQ(codegenOnly.exitCode, 0) << codegenOnly.err;
+
+  // The call goes through a lazily bound stub.
+  for (const auto &entry : macho->lazyBindTable(err))
+    if (entry.symbolName() == "_lib_fn")
+      selfBound = entry.ordinal() == llvm::MachO::BIND_SPECIAL_DYLIB_SELF;
+  ASSERT_FALSE(static_cast<bool>(err))
+      << llvm::toString(std::move(err)).str().str();
+  EXPECT_TRUE(selfBound);
+}
+
 TEST_F(LinkerTest, MsvcLinkerSpellingsAreNormalized) {
   const std::string target = "--target=x86_64-pc-windows-msvc";
   const fs::path source = tmpFile("msvc_opts.c");

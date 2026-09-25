@@ -186,7 +186,7 @@ bool linker::ltoCacheUsable(const LinkerDriverConfig &cfg) {
     return false;
   if (cfg.ltoDebugPassManager || !cfg.ltoStatsFile.empty() ||
       !cfg.ltoPassPlugins.empty() || cfg.ltoEmitAsm || cfg.ltoEmitLLVM ||
-      !cfg.ltoObjPath.empty())
+      !cfg.ltoObjPath.empty() || cfg.ltoCodeGenOnly)
     return false;
   if (!cfg.nevercPluginPaths.empty())
     return false;

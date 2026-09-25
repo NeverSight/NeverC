@@ -236,6 +236,7 @@ lto::Config linker::createLTOConfig(
     }
   }
   c.DebugPassManager = Cfg.ltoDebugPassManager;
+  c.CodeGenOnly = Cfg.ltoCodeGenOnly;
   c.StatsFile = Cfg.ltoStatsFile;
   c.PassPlugins = Cfg.ltoPassPlugins;
   if (Cfg.ltoEmitAsm)

@@ -277,6 +277,13 @@ public:
     refState = std::max(refState, newState);
   }
 
+  // A reference that -weak_reference_mismatches weak resolves to weak.
+  void setRefState(RefState newState) {
+    assert(refState > RefState::Unreferenced &&
+           newState > RefState::Unreferenced);
+    refState = newState;
+  }
+
   void unreference() {
     // dynamic_lookup symbols have no file.
     if (refState > RefState::Unreferenced && file) {

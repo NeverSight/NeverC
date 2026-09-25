@@ -263,9 +263,13 @@ Defined *SymbolTable::addDefined(StringRef name, InputFile *file,
     // of a name conflict, we fall through to the replaceSymbol() call below.
   }
 
-  bool interposable = config->namespaceKind == NamespaceKind::flat &&
-                      config->outputType != MachO::MH_EXECUTE &&
-                      !isPrivateExtern;
+  // Flat namespace dylibs, -interposable and -interposable_list make
+  // exported definitions interposable: uses in the image are bound.
+  bool interposable =
+      config->outputType != MachO::MH_EXECUTE && !isPrivateExtern &&
+      (config->namespaceKind == NamespaceKind::flat || config->interposable ||
+       (!config->interposableSymbols.empty() &&
+        config->interposableSymbols.match(name)));
   Defined *defined = replaceSymbol<Defined>(
       s, name, file, isec, value, size, isWeakDef, /*isExternal=*/true,
       isPrivateExtern, /*includeInSymtab=*/true, isReferencedDynamically,
@@ -288,6 +292,26 @@ Symbol *SymbolTable::addUndefined(StringRef name, InputFile *file,
 
   RefState refState = isWeakRef ? RefState::Weak : RefState::Strong;
 
+  // A symbol referenced both weakly and strongly is imported as
+  // -weak_reference_mismatches says: non-weak, weak, or not at all.
+  auto merge = [&](RefState existing) {
+    if (existing == RefState::Unreferenced || existing == refState)
+      return std::max(existing, refState);
+    switch (config->weakReferenceMismatches) {
+    case WeakReferenceMismatches::NonWeak:
+      break;
+    case WeakReferenceMismatches::Weak:
+      return RefState::Weak;
+    case WeakReferenceMismatches::Error:
+      error("'" + name + "' is referenced both weakly and strongly, the " +
+            "last time in " +
+            (file ? toString(file) : std::string("the command line")) +
+            " [-weak_reference_mismatches error]");
+      break;
+    }
+    return RefState::Strong;
+  };
+
   if (wasInserted)
     replaceSymbol<Undefined>(s, name, file, refState,
                              /*wasBitcodeSymbol=*/false);
@@ -295,10 +319,14 @@ Symbol *SymbolTable::addUndefined(StringRef name, InputFile *file,
     lazy->fetchArchiveMember();
   else if (isa<LazyObject>(s))
     extract(*s->getFile(), s->getName());
-  else if (auto *dynsym = dyn_cast<DylibSymbol>(s))
-    dynsym->reference(refState);
-  else if (auto *undefined = dyn_cast<Undefined>(s))
-    undefined->refState = std::max(undefined->refState, refState);
+  else if (auto *dynsym = dyn_cast<DylibSymbol>(s)) {
+    RefState merged = merge(dynsym->getRefState());
+    if (dynsym->getRefState() == RefState::Unreferenced)
+      dynsym->reference(merged);
+    else
+      dynsym->setRefState(merged);
+  } else if (auto *undefined = dyn_cast<Undefined>(s))
+    undefined->refState = merge(undefined->refState);
   return s;
 }
 

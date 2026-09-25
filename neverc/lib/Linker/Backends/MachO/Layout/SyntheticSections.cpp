@@ -579,7 +579,11 @@ int16_t ordinalForSymbol(const Symbol &sym) {
   if (const auto *dysym = dyn_cast<DylibSymbol>(&sym))
     return ordinalForDylibSymbol(*dysym);
   assert(cast<Defined>(&sym)->interposable);
-  return BIND_SPECIAL_DYLIB_FLAT_LOOKUP;
+  // In a two-level namespace, an interposable definition binds to the image
+  // itself, where dyld can interpose it.
+  return config->namespaceKind == NamespaceKind::flat
+             ? BIND_SPECIAL_DYLIB_FLAT_LOOKUP
+             : BIND_SPECIAL_DYLIB_SELF;
 }
 
 void encodeDylibOrdinal(int16_t ordinal, raw_svector_ostream &os) {
