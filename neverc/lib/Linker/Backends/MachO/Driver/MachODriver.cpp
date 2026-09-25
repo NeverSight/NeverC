@@ -1604,6 +1604,21 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
   // Declared first: crash recovery must not unwind it before the backend.
   std::optional<linker::crash_recovery_detail::CrashRecoveryTimeTraceOwner>
       TraceProfiler;
+  // A trace the caller asked for is acquired before any backend state exists,
+  // so a link refused for a busy profiler leaves nothing behind; --time-trace
+  // on the command line starts it after parsing.
+  const bool GuardAmbientTimeTrace = !baseCfg.timeTraceEnabled &&
+                                     llvm::CrashRecoveryContext::GetCurrent() &&
+                                     llvm::timeTraceProfilerEnabled();
+  if (baseCfg.timeTraceEnabled || GuardAmbientTimeTrace)
+    TraceProfiler.emplace(baseCfg.timeTraceGranularity,
+                          argsArr.empty() ? "neverc" : argsArr.front());
+  if (llvm::StringRef Error =
+          TraceProfiler ? TraceProfiler->acquisitionError() : llvm::StringRef();
+      !Error.empty()) {
+    stderrOS << Error << '\n';
+    return false;
+  }
   linker::crash_recovery_detail::CrashRecoveryLocalOwner<LinkerExecutionContext>
       ExecutionOwner(baseCfg.executionContext);
   LinkerExecutionContext &Execution = ExecutionOwner.get();
@@ -1662,18 +1677,14 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
     return true;
   }
 
-  const bool GuardAmbientTimeTrace =
-      !driverCfg.timeTraceEnabled &&
-      llvm::CrashRecoveryContext::GetCurrent() &&
-      llvm::timeTraceProfilerEnabled();
-  if (driverCfg.timeTraceEnabled || GuardAmbientTimeTrace)
+  if (driverCfg.timeTraceEnabled && !TraceProfiler) {
     TraceProfiler.emplace(driverCfg.timeTraceGranularity,
                           argsArr.empty() ? "neverc" : argsArr.front());
-  if (llvm::StringRef Error = TraceProfiler ? TraceProfiler->acquisitionError()
-                                            : llvm::StringRef();
-      !Error.empty()) {
-    stderrOS << Error << '\n';
-    return false;
+    if (llvm::StringRef Error = TraceProfiler->acquisitionError();
+        !Error.empty()) {
+      stderrOS << Error << '\n';
+      return false;
+    }
   }
   auto WriteTrace = [&](llvm::StringRef OutputFile) {
     if (driverCfg.timeTraceEnabled && TraceProfiler)

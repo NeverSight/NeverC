@@ -441,6 +441,21 @@ bool link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
   // Declared first: crash recovery must not unwind it before the backend.
   std::optional<linker::crash_recovery_detail::CrashRecoveryTimeTraceOwner>
       TraceProfiler;
+  // A trace the caller asked for is acquired before any backend state exists,
+  // so a link refused for a busy profiler leaves nothing behind; --time-trace
+  // on the command line starts it after parsing.
+  const bool GuardAmbientTimeTrace = !callerCfg.timeTraceEnabled &&
+                                     llvm::CrashRecoveryContext::GetCurrent() &&
+                                     llvm::timeTraceProfilerEnabled();
+  if (callerCfg.timeTraceEnabled || GuardAmbientTimeTrace)
+    TraceProfiler.emplace(callerCfg.timeTraceGranularity,
+                          args.empty() ? "neverc" : args.front());
+  if (llvm::StringRef Error =
+          TraceProfiler ? TraceProfiler->acquisitionError() : llvm::StringRef();
+      !Error.empty()) {
+    stderrOS << Error << '\n';
+    return false;
+  }
   linker::crash_recovery_detail::CrashRecoveryLocalOwner<LinkerExecutionContext>
       ExecutionOwner(callerCfg.executionContext);
   LinkerExecutionContext &Execution = ExecutionOwner.get();
@@ -529,18 +544,14 @@ bool link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
       (parsedArgs.hasArg(OPT_v) && !parsedArgs.hasArg(OPT_INPUT)))
     return true;
 
-  const bool GuardAmbientTimeTrace =
-      !driverCfg.timeTraceEnabled &&
-      llvm::CrashRecoveryContext::GetCurrent() &&
-      llvm::timeTraceProfilerEnabled();
-  if (driverCfg.timeTraceEnabled || GuardAmbientTimeTrace)
+  if (driverCfg.timeTraceEnabled && !TraceProfiler) {
     TraceProfiler.emplace(driverCfg.timeTraceGranularity,
                           args.empty() ? "neverc" : args.front());
-  if (llvm::StringRef Error = TraceProfiler ? TraceProfiler->acquisitionError()
-                                            : llvm::StringRef();
-      !Error.empty()) {
-    stderrOS << Error << '\n';
-    return false;
+    if (llvm::StringRef Error = TraceProfiler->acquisitionError();
+        !Error.empty()) {
+      stderrOS << Error << '\n';
+      return false;
+    }
   }
 
   elfState().driver.run(parsedArgs, driverCfg);
@@ -1068,11 +1079,21 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
     return decline("state is released after the link");
   if (const char *env = getenv("NEVERC_ELF_FASTLINK"); env && *env == '0')
     return false;
-  if (driverCfg.executionHooks || driverCfg.pluginSession ||
-      driverCfg.pluginTask || !driverCfg.nevercPluginPaths.empty() ||
-      driverCfg.timeTraceEnabled || errorHandler().verbose ||
+  if (driverCfg.timeTraceEnabled || errorHandler().verbose ||
       !driverCfg.sysroot.empty())
     return decline("driver configuration");
+  // A plugin session leaves the link to the builtin linker unless one of its
+  // plugins binds a link phase, which needs the full backend's link graph.
+  if (driverCfg.pluginTask) {
+    auto phases =
+        neverc::plugin::LinkPhasePipeline::create(*driverCfg.pluginTask);
+    if (!phases) {
+      consumeError(phases.takeError());
+      return decline("plugin link phases");
+    }
+    if ((*phases)->requiresNativeProjection())
+      return decline("plugin link phases");
+  }
   const std::pair<bool, const char *> unsupported[] = {
       {config->relocatable, "-r"},
       {config->unresolvedSymbols == UnresolvedPolicy::Warn ||
