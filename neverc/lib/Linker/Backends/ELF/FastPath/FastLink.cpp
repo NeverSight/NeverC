@@ -63,6 +63,9 @@ struct PlacedSection {
   // the first slot of each kind in .rela.dyn.
   uint32_t numRel = 0, numSym = 0;
   uint32_t relBase = 0, symBase = 0;
+  // Relative relocations packed into .relr.dyn, and an upper bound of the
+  // words they encode to on their own.
+  uint32_t numRelr = 0, relrWords = 0;
   uint32_t kindBase = 0; // first entry in the relocation kind array
   uint32_t align = 0;    // alignment when raised by folding, else 0
   // Mergeable sections: the pieces, in a shared array, and the size of the
@@ -1596,6 +1599,40 @@ bool isAbsolute(const ObjectFile *o, uint32_t si, const RelInfo &ri) {
          ctx.objects[s.file]->syms[s.index].st_shndx == SHN_ABS;
 }
 
+// Encodes sorted word-aligned addresses as RELR: an address, then bitmaps of
+// the 63 words after it, as long as each window has a relocation. Returns
+// the number of words, which it writes to `out` unless that is null.
+size_t encodeRelr(const uint64_t *addrs, size_t n, uint64_t *out) {
+  size_t words = 0;
+  for (size_t i = 0; i < n;) {
+    uint64_t base = addrs[i++];
+    if (out)
+      out[words] = base;
+    ++words;
+    base += 8;
+    for (;;) {
+      uint64_t bits = 0;
+      while (i < n && addrs[i] >= base && addrs[i] - base < 63 * 8) {
+        bits |= uint64_t(1) << ((addrs[i] - base) / 8);
+        ++i;
+      }
+      if (!bits)
+        break;
+      if (out)
+        out[words] = (bits << 1) | 1;
+      ++words;
+      base += 63 * 8;
+    }
+  }
+  return words;
+}
+
+// Whether a section's relative relocations may be packed: they must be at
+// word-aligned addresses, which an 8-aligned section and offset give.
+bool relrSection(const ObjectFile *o, uint32_t sec) {
+  return ctx.opt.packRelativeRelocs && o->shdrs[sec].sh_addralign >= 8;
+}
+
 // The single relocation classifier used by both scanning and writing.
 RelInfo classify(const ObjectFile *o, const uint8_t *secData,
                  const Elf64_Rela &r) {
@@ -1734,6 +1771,7 @@ void scanRelocations() {
   ctx.pool->forEach(ctx.objects.size(), [&](size_t fi) {
     ObjectFile *o = ctx.objects[fi];
     uint32_t next = base[fi];
+    vector<uint64_t> relrOffsets;
     for (uint32_t sec = 1; sec < o->numShdrs; ++sec) {
       // Debug sections need no dynamic relocations, GOT or PLT entries.
       if (o->secs[sec].osec == 0 || o->secs[sec].live.load() != 1 ||
@@ -1742,6 +1780,8 @@ void scanRelocations() {
       PlacedSection &ss = placedOf(o, sec);
       auto [rels, n] = o->relas(sec);
       const uint8_t *data = o->secData(sec);
+      const bool packs = relrSection(o, sec);
+      relrOffsets.clear();
       ss.kindBase = next;
       uint8_t *kinds = relKinds + next;
       next += n;
@@ -1873,6 +1913,9 @@ void scanRelocations() {
           if (ri.imp) {
             atomicOr(ctx.flags[id], uint16_t(NeedsDynsym));
             ++ss.numSym;
+          } else if (needsDyn && packs && r.r_offset % 8 == 0) {
+            ++ss.numRelr;
+            relrOffsets.push_back(r.r_offset);
           } else if (needsDyn) {
             ++ss.numRel;
           }
@@ -1905,6 +1948,13 @@ void scanRelocations() {
         default:
           break;
         }
+      }
+      // The section's packed relocations encoded on their own bound what
+      // they add to .relr.dyn wherever the section goes.
+      if (!relrOffsets.empty()) {
+        std::sort(relrOffsets.begin(), relrOffsets.end());
+        ss.relrWords = encodeRelr(relrOffsets.data(), relrOffsets.size(),
+                                  nullptr);
       }
     }
   });
@@ -1965,6 +2015,8 @@ int rankOf(const OutputSection *s) {
       return 12;
     if (n == ".gcc_except_table")
       return 13;
+    if (n == ".relr.dyn")
+      return 14;
     return 10;
   }
   if (cls == 1)
@@ -2084,6 +2136,11 @@ struct Layout {
   // relocations end .rela.dyn.
   OutputSection *iplt = nullptr;
   vector<std::pair<const ObjectFile *, uint32_t>> ipltDefs;
+  // Packed relative relocations: the bound the layout reserved and the
+  // encoded words.
+  OutputSection *relrDyn = nullptr;
+  uint64_t relrBound = 0;
+  vector<uint64_t> relrData;
   uint32_t igotSlot = 0;
   bool staticTls = false;
   uint32_t sonameOff = 0;
@@ -3360,35 +3417,54 @@ void buildDynamic() {
         if (L.neededLibs[k] == so)
           file = L.neededOff[k];
       Layout::Verneed vn{file, {}};
-      for (auto &[name, idx] : vers)
+      bool glibc2 = false;
+      for (auto &[name, idx] : vers) {
         vn.aux.push_back({elfHash(name), idx, addStr(name)});
+        glibc2 |= name.rfind("GLIBC_2.", 0) == 0;
+      }
+      // glibc loads an object with DT_RELR only when it needs this version.
+      if (ctx.opt.relrGlibc && glibc2 && so->soname.rfind("libc.so.", 0) == 0)
+        vn.aux.push_back({elfHash("GLIBC_ABI_DT_RELR"), next++,
+                          addStr("GLIBC_ABI_DT_RELR")});
       L.verneeds.push_back(std::move(vn));
     }
   }
 
   // Dynamic relocation counts; slots are assigned after layout.
   {
-    vector<uint64_t> rel(ctx.objects.size()), sym(ctx.objects.size());
+    vector<uint64_t> rel(ctx.objects.size()), sym(ctx.objects.size()),
+        relr(ctx.objects.size());
     ctx.pool->forEach(ctx.objects.size(), [&](size_t fi) {
       const ObjectFile *o = ctx.objects[fi];
       for (uint32_t i = 1; i < o->numShdrs; ++i)
         if (o->secs[i].osec && o->secs[i].live.load() == 1) {
           rel[fi] += placedOf(o, i).numRel;
           sym[fi] += placedOf(o, i).numSym;
+          relr[fi] += placedOf(o, i).relrWords;
         }
     });
     for (size_t fi = 0; fi < rel.size(); ++fi) {
       L.numSecRel += rel[fi];
       L.numSecSym += sym[fi];
+      L.relrBound += relr[fi];
     }
   }
+  // GOT slots are word-aligned: with packing, their relative relocations go
+  // to .relr.dyn.
+  vector<uint64_t> gotRelr;
   for (uint32_t id : got) {
     Symbol::Kind k = ctx.syms[id].kind;
     if (isPreemptible(id))
       ++L.numGotSym;
-    else if (ctx.isPic() && k != Symbol::Undefined && !isAbsoluteId(id))
-      ++L.numGotRel;
+    else if (ctx.isPic() && k != Symbol::Undefined && !isAbsoluteId(id)) {
+      if (ctx.opt.packRelativeRelocs)
+        gotRelr.push_back(8 * uint64_t(ctx.syms[id].got));
+      else
+        ++L.numGotRel;
+    }
   }
+  std::sort(gotRelr.begin(), gotRelr.end());
+  L.relrBound += encodeRelr(gotRelr.data(), gotRelr.size(), nullptr);
   L.numGotSym += gotTp.size() + L.numCopies;
   for (uint32_t id : tlsGd)
     L.numGotSym += isPreemptible(id) ? 2 : 1;
@@ -3439,6 +3515,13 @@ void buildDynamic() {
     L.relaDyn = newSection(".rela.dyn", SHT_RELA, A, 8);
     L.relaDyn->size = numDyn * sizeof(Elf64_Rela);
     L.relaDyn->entsize = sizeof(Elf64_Rela);
+  }
+  // .relr.dyn ends the read-only segment and is sized for the bound; the
+  // exact encoding, known after layout, may leave a gap there.
+  if (L.relrBound) {
+    L.relrDyn = newSection(".relr.dyn", SHT_RELR, A, 8);
+    L.relrDyn->size = 8 * L.relrBound;
+    L.relrDyn->entsize = 8;
   }
   if (!L.ipltDefs.empty()) {
     L.iplt = newSection(".iplt", SHT_PROGBITS, A | SHF_EXECINSTR, 16);
@@ -3533,6 +3616,11 @@ vector<Elf64_Dyn> dynamicEntries() {
     add(DT_RELAENT, sizeof(Elf64_Rela));
     if (L.numRelative)
       add(DT_RELACOUNT, L.numRelative);
+  }
+  if (L.relrDyn) {
+    add(DT_RELR, L.relrDyn->addr);
+    add(DT_RELRSZ, 8 * L.relrData.size());
+    add(DT_RELRENT, 8);
   }
   if (L.relaPlt) {
     add(DT_JMPREL, L.relaPlt->addr);
@@ -3724,6 +3812,60 @@ void prepareComment() {
   L.comment = newSection(".comment", SHT_PROGBITS, SHF_MERGE | SHF_STRINGS, 1);
   L.comment->entsize = 1;
   L.comment->size = L.commentData.size();
+}
+
+// Encodes the packed relative relocations now that their addresses are
+// known: word-aligned relative relocations of 8-aligned sections, as
+// scanning counted them, and relative GOT slots.
+void computeRelr() {
+  if (!L.relrDyn)
+    return;
+  vector<vector<uint64_t>> perFile(ctx.objects.size());
+  ctx.pool->forEach(ctx.objects.size(), [&](size_t fi) {
+    ObjectFile *o = ctx.objects[fi];
+    for (uint32_t sec = 1; sec < o->numShdrs; ++sec) {
+      if (o->secs[sec].osec == 0 || o->secs[sec].live.load() != 1 ||
+          !(o->shdrs[sec].sh_flags & SHF_ALLOC))
+        continue;
+      const PlacedSection &ps = placedOf(o, sec);
+      if (!ps.numRelr)
+        continue;
+      auto [rels, n] = o->relas(sec);
+      const uint8_t *kinds = relKinds + ps.kindBase;
+      for (size_t k = 0; k < n; ++k) {
+        const Elf64_Rela &r = rels[k];
+        if (kinds[k] != K_Abs64 || r.r_offset % 8 != 0)
+          continue;
+        RelInfo ri;
+        const uint32_t si = ELF64_R_SYM(r.r_info);
+        ri.global = si >= o->firstGlobal;
+        if (ri.global) {
+          ri.id = o->nameIds[si - o->firstGlobal];
+          ri.imp = isPreemptible(ri.id);
+        }
+        if (ri.imp ||
+            (ri.global && ctx.syms[ri.id].kind == Symbol::Undefined) ||
+            isAbsolute(o, si, ri))
+          continue;
+        perFile[fi].push_back(ps.va + r.r_offset);
+      }
+    }
+  }, 8);
+  vector<uint64_t> addrs;
+  for (auto &v : perFile)
+    addrs.insert(addrs.end(), v.begin(), v.end());
+  for (uint32_t id : L.gotIds) {
+    const Symbol &s = ctx.syms[id];
+    if (!isPreemptible(id) && s.kind != Symbol::Undefined && !isAbsoluteId(id))
+      addrs.push_back(gotVA(s.got));
+  }
+  std::sort(addrs.begin(), addrs.end());
+  L.relrData.resize(L.relrBound);
+  const size_t words = encodeRelr(addrs.data(), addrs.size(), L.relrData.data());
+  if (words > L.relrBound)
+    fatal("internal error: .relr.dyn exceeds its bound");
+  L.relrData.resize(words);
+  L.relrDyn->size = 8 * words;
 }
 
 void layout() {
@@ -3996,6 +4138,7 @@ void layout() {
   }
 
   mark("symbolVAs");
+  computeRelr();
   // .rela.dyn slots, in output address order.
   uint32_t rel = 0, sym = L.numRelative + L.numGotSym;
   for (OutputSection *os : L.ordered)
@@ -4079,7 +4222,7 @@ Elf64_Rela rela(uint64_t off, uint32_t sym, uint32_t type, int64_t addend) {
 void applyRelocs(const ObjectFile *o, const uint8_t *src, const Elf64_Rela *rels,
                  size_t n, uint8_t *dst, uint64_t base,
                  Elf64_Rela *relOut = nullptr, Elf64_Rela *symOut = nullptr,
-                 const uint8_t *kinds = nullptr) {
+                 const uint8_t *kinds = nullptr, bool packs = false) {
   const uint64_t gotBase = L.gotPlt ? L.gotPlt->addr : 0;
   for (size_t k = 0; k < n; ++k) {
     const Elf64_Rela &r = rels[k];
@@ -4158,7 +4301,9 @@ void applyRelocs(const ObjectFile *o, const uint8_t *src, const Elf64_Rela *rels
           *symOut++ = rela(P, ctx.syms[ri.id].dynsym, R_X86_64_64, A);
         } else if (ctx.isPic() &&
                    !(ri.global && ctx.syms[ri.id].kind == Symbol::Undefined) &&
-                   !isAbsolute(o, si, ri)) {
+                   !isAbsolute(o, si, ri) && !(packs && r.r_offset % 8 == 0)) {
+          // Packed relocations are listed in .relr.dyn; the value written
+          // above is their addend.
           *relOut++ = rela(P, 0, R_X86_64_RELATIVE, S + A);
         }
       }
@@ -4324,7 +4469,8 @@ void writeInputSection(uint8_t *buf, const OutputSection *os, ObjectFile *o,
   }
   auto [rels, n] = o->relas(sec);
   applyRelocs(o, src, rels, n, dst, ss.va, L.relaOut + ss.relBase,
-              L.relaOut + ss.symBase, relKinds + ss.kindBase);
+              L.relaOut + ss.symBase, relKinds + ss.kindBase,
+              relrSection(o, sec));
 }
 
 
@@ -4459,6 +4605,8 @@ void writeSynthetic(uint8_t *buf) {
   }
   if (L.dynstr)
     memcpy(buf + L.dynstr->offset, L.dynstrData.data(), L.dynstrData.size());
+  if (L.relrDyn)
+    memcpy(buf + L.relrDyn->offset, L.relrData.data(), 8 * L.relrData.size());
   // .got and its dynamic relocations
   Elf64_Rela *relative = L.relaOut + L.numSecRel;
   Elf64_Rela *symbolic = L.relaOut + L.numRelative;
@@ -4474,7 +4622,7 @@ void writeSynthetic(uint8_t *buf) {
         w64(g + 8 * s.got, 0);
       } else {
         w64(g + 8 * s.got, s.va);
-        if (ctx.isPic() && !isAbsoluteId(id))
+        if (ctx.isPic() && !isAbsoluteId(id) && !ctx.opt.packRelativeRelocs)
           *relative++ = rela(slotVA, 0, R_X86_64_RELATIVE, s.va);
       }
     }

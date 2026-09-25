@@ -2442,6 +2442,46 @@ pick_address:
   }
 }
 
+TEST_F(LinkerTest, FastPipelinePacksRelativeRelocations) {
+  if (!isLinux())
+    GTEST_SKIP() << "the fast ELF pipeline links Linux executables";
+
+  // A table of pointers needs one relative relocation per entry in a PIE.
+  const fs::path source = tmpFile("fast_relr.c");
+  const fs::path object = tmpFile("fast_relr.o");
+  std::string code = "static int values[200];\nint *table[200] = {";
+  for (int i = 0; i < 200; ++i)
+    code += "&values[" + std::to_string(i) + "], ";
+  code += "};\nint main(void) {\n  for (int i = 0; i < 200; ++i)\n"
+          "    if (table[i] != &values[i]) return 1;\n  return 0;\n}\n";
+  writeFile(source, code);
+  CmdResult compile = ncc({"-fno-lto", "-fPIE", "-c", source.string(), "-o",
+                           object.string()});
+  ASSERT_EQ(compile.exitCode, 0) << compile.err;
+
+  ScopedEnvironmentVariable report("NEVERC_ELF_FASTLINK_TIME", "1");
+  const fs::path image = tmpFile("fast_relr");
+  std::vector<std::string> args = baseLinkArgs();
+  args.insert(args.end(), {"-pie", object.string(),
+                           "-Wl,-z,pack-relative-relocs", "-o",
+                           image.string()});
+  CmdResult link = ncc(args);
+  ASSERT_EQ(link.exitCode, 0) << link.err;
+  EXPECT_EQ(link.err.find("fast pipeline not used"), std::string::npos)
+      << link.err;
+  EXPECT_EQ(exec(image.string(), {}).exitCode, 0);
+
+  llvm::Expected<ELFImageSummary> summary =
+      readELFImageSummary(readFile(image));
+  ASSERT_TRUE(static_cast<bool>(summary))
+      << llvm::toString(summary.takeError()).str().str();
+  ASSERT_EQ(summary->dynamicTags.count(llvm::ELF::DT_RELR), 1u);
+  // 200 table entries pack into a few words instead of 200 RELA entries.
+  EXPECT_LT(summary->dynamicTags[llvm::ELF::DT_RELRSZ], 64u);
+  EXPECT_EQ(summary->dynamicTags.count(llvm::ELF::DT_RELACOUNT), 0u);
+  EXPECT_NE(readFile(image).find("GLIBC_ABI_DT_RELR"), std::string::npos);
+}
+
 TEST_F(LinkerTest, FastPipelineLinksStaticExecutables) {
   if (!isLinux())
     GTEST_SKIP() << "the fast ELF pipeline links Linux executables";

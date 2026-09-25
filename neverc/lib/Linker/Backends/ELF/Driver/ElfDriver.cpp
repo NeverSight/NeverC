@@ -1090,8 +1090,7 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
       {!config->mapFile.empty(), "map file"},
       {config->compressDebugSections != DebugCompressionType::None,
        "debug section compression"},
-      {config->relrPackDynRelocs || config->androidPackDynRelocs,
-       "packed relocations"},
+      {config->androidPackDynRelocs, "Android packed relocations"},
       {!config->symbolOrderingFile.empty() ||
            !config->callGraphOrderingFile.empty(),
        "symbol ordering"},
@@ -1128,6 +1127,7 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
       if (v != "now" && v != "lazy" && v != "relro" && v != "norelro" &&
           v != "noexecstack" && v != "defs" && v != "undefs" &&
           v != "nodelete" && v != "origin" && v != "text" &&
+          v != "pack-relative-relocs" && v != "nopack-relative-relocs" &&
           v != "max-page-size=4096" && v != "common-page-size=4096")
         return decline("-z " + v);
       break;
@@ -1272,6 +1272,8 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
     case OPT_no_mmap_output_file:
       req.mmapOutput = false;
       break;
+    case OPT_pack_dyn_relocs:
+      break;
     case OPT_dependency_file:
       break;
     default:
@@ -1352,6 +1354,8 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
   req.zNow = config->zNow;
   req.zRelro = config->zRelro;
   req.ehFrameHdr = config->ehFrameHdr;
+  req.packRelativeRelocs = config->relrPackDynRelocs;
+  req.relrGlibc = config->relrGlibc;
   req.zNodelete = config->zNodelete;
   req.zOrigin = config->zOrigin;
   req.newDtags = config->enableNewDtags;

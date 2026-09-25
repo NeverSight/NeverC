@@ -41,6 +41,11 @@ struct Request {
   bool zNow = false;
   bool zRelro = false;
   bool ehFrameHdr = false;
+  // Relative relocations of word-aligned places go to .relr.dyn; with
+  // relrGlibc (-z pack-relative-relocs) libc.so gets the version glibc
+  // requires for it.
+  bool packRelativeRelocs = false;
+  bool relrGlibc = false;
   bool zNodelete = false;
   bool zOrigin = false;
   bool newDtags = true; // DT_RUNPATH rather than DT_RPATH
