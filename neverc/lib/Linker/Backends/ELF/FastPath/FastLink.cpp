@@ -1526,15 +1526,22 @@ void scanRelocations() {
         case K_LdToLe:
           ++k;
           break;
-        case K_Abs64:
+        case K_Abs64: {
+          const bool needsDyn =
+              ri.imp || (ctx.isPic() &&
+                         !(ri.global && ctx.syms[id].kind == Symbol::Undefined));
+          // The dynamic loader only writes to writable segments.
+          if (needsDyn && !(o->shdrs[sec].sh_flags & SHF_WRITE))
+            fatal(o->name + ": dynamic relocation in read-only section " +
+                  o->secName(sec));
           if (ri.imp) {
             atomicOr(ctx.flags[id], uint16_t(NeedsDynsym));
             ++ss.numSym;
-          } else if (ctx.isPic() &&
-                     !(ri.global && ctx.syms[id].kind == Symbol::Undefined)) {
+          } else if (needsDyn) {
             ++ss.numRel;
           }
           break;
+        }
         case K_Abs32:
         case K_TpOff32:
         case K_GotOff64:
