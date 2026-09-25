@@ -8019,7 +8019,22 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
       const bool StringParameter =
           First->isLValueReferenceType() &&
           Context.hasSameType(First->getPointeeType(), StringType.withConst());
+      const auto *Primary = Method->getPrimaryTemplate();
+      const auto ViewParameter =
+          First->isLValueReferenceType()
+              ? approvedUtilityStringViewRecord(
+                    S, SM, First->getPointeeType()->getAsCXXRecordDecl(),
+                    Context)
+              : std::optional<UtilityStringViewRecord>();
+      const bool ViewSource =
+          Primary && ViewParameter &&
+          approvedStandardSDKDeclaration(S, SM, Primary) &&
+          cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "string") &&
+          Context.hasSameType(
+              First->getPointeeType(),
+              Context.getRecordType(ViewParameter->Record).withConst());
       if (Context.hasSameType(First, Context.CharTy) || StringParameter ||
+          ViewSource ||
           Context.hasSameType(
               First, Context.getPointerType(Context.CharTy.withConst()))) {
         Expr::EvalResult Evaluated;
@@ -8047,9 +8062,6 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
         Context.hasSameType(Method->getParamDecl(1)->getType(),
                             Context.getSizeType()) &&
         Method->getParamDecl(2)->getType()->isLValueReferenceType() &&
-        Context.hasSameType(
-            Method->getParamDecl(2)->getType()->getPointeeType(),
-            Context.getRecordType(String->Record).withConst()) &&
         Context.hasSameType(Method->getParamDecl(3)->getType(),
                             Context.getSizeType()) &&
         approvedStandardSDKDeclaration(S, SM, Method) &&
@@ -8058,8 +8070,20 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
         Context.hasSameType(Init->getType(), Context.getSizeType()) &&
         !Init->isTypeDependent() && !Init->isValueDependent() &&
         !Init->isInstantiationDependent()) {
+      const auto Source = Method->getParamDecl(2)->getType()->getPointeeType();
+      const auto *Primary = Method->getPrimaryTemplate();
+      const auto View = approvedUtilityStringViewRecord(
+          S, SM, Source->getAsCXXRecordDecl(), Context);
+      const bool ViewSource =
+          Primary && View && approvedStandardSDKDeclaration(S, SM, Primary) &&
+          cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "string") &&
+          Context.hasSameType(Source,
+                              Context.getRecordType(View->Record).withConst());
+      const bool StringSource = Context.hasSameType(
+          Source, Context.getRecordType(String->Record).withConst());
       Expr::EvalResult Evaluated;
-      if (Init->EvaluateAsInt(Evaluated, Context) && Evaluated.Val.isInt() &&
+      if ((StringSource || ViewSource) &&
+          Init->EvaluateAsInt(Evaluated, Context) && Evaluated.Val.isInt() &&
           Evaluated.Val.getInt().isAllOnes())
         return true;
     }
@@ -16828,11 +16852,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           return false;
       return true;
     };
-    auto ViewSource = [&](unsigned SourceIndex, unsigned ArgumentIndex,
-                          bool Slice) {
+    auto ViewParameter = [&](unsigned SourceIndex, unsigned ArgumentIndex) {
       const auto *Primary = Method->getPrimaryTemplate();
-      if (!Primary || Method->getNumParams() != SourceIndex + (Slice ? 3 : 1) ||
-          !approvedStandardSDKDeclaration(S, SM, Primary) ||
+      if (!Primary || !approvedStandardSDKDeclaration(S, SM, Primary) ||
           !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "string"))
         return false;
       const auto Source = Method->getParamDecl(SourceIndex)->getType();
@@ -16840,13 +16862,18 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         return false;
       const auto View = approvedUtilityStringViewRecord(
           S, SM, Source->getPointeeType()->getAsCXXRecordDecl(), Context);
-      if (!View ||
-          !Context.hasSameType(
-              Source->getPointeeType(),
-              Context.getRecordType(View->Record).withConst()) ||
-          !Context.hasSameUnqualifiedType(
-              Call->getArg(ArgumentIndex)->getType(),
-              Context.getRecordType(View->Record)))
+      return View &&
+             Context.hasSameType(
+                 Source->getPointeeType(),
+                 Context.getRecordType(View->Record).withConst()) &&
+             Context.hasSameUnqualifiedType(
+                 Call->getArg(ArgumentIndex)->getType(),
+                 Context.getRecordType(View->Record));
+    };
+    auto ViewSource = [&](unsigned SourceIndex, unsigned ArgumentIndex,
+                          bool Slice) {
+      if (Method->getNumParams() != SourceIndex + (Slice ? 3 : 1) ||
+          !ViewParameter(SourceIndex, ArgumentIndex))
         return false;
       if (!Slice)
         return true;
@@ -16937,6 +16964,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
                                          Context.getRecordType(String->Record)))
         return UtilityOperation::StringCompare;
+      if (ViewParameter(0, 0))
+        return UtilityOperation::StringCompare;
       const auto ConstPointer =
           Context.getPointerType(Context.CharTy.withConst());
       if (Context.hasSameType(Parameter, ConstPointer) &&
@@ -16965,17 +16994,18 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Context.hasSameType(Parameter->getPointeeType(),
                               StringType.withConst()) &&
           Context.hasSameUnqualifiedType(Argument, StringType);
+      const bool ViewArgument = ViewParameter(2, 2);
       const auto Pointer = Context.getPointerType(Context.CharTy.withConst());
       const bool CStringArgument = Context.hasSameType(Parameter, Pointer) &&
                                    Context.hasSameType(Argument, Pointer);
       if (((Method->getNumParams() == 3) &&
-           (StringArgument || CStringArgument)) ||
+           (StringArgument || ViewArgument || CStringArgument)) ||
           ((Method->getNumParams() == 4) && CStringArgument &&
            Context.hasSameType(Method->getParamDecl(3)->getType(),
                                Context.getSizeType()) &&
            Context.hasSameType(Call->getArg(3)->getType(),
                                Context.getSizeType())) ||
-          ((Method->getNumParams() == 5) && StringArgument &&
+          ((Method->getNumParams() == 5) && (StringArgument || ViewArgument) &&
            Context.hasSameType(Method->getParamDecl(3)->getType(),
                                Context.getSizeType()) &&
            Context.hasSameType(Method->getParamDecl(4)->getType(),
@@ -17008,6 +17038,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Context.hasSameType(FirstParameter->getPointeeType(),
                               StringType.withConst()) &&
           Context.hasSameUnqualifiedType(FirstArgument, StringType))
+        return Name == "find" ? UtilityOperation::StringFindSubstring
+                              : UtilityOperation::StringRFindSubstring;
+      if (Method->getNumParams() == 2 && ViewParameter(0, 0))
         return Name == "find" ? UtilityOperation::StringFindSubstring
                               : UtilityOperation::StringRFindSubstring;
       const auto ConstPointer =
@@ -17048,6 +17081,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Context.hasSameType(FirstParameter->getPointeeType(),
                               StringType.withConst()) &&
           Context.hasSameUnqualifiedType(FirstArgument, StringType);
+      const bool ViewNeedle =
+          Method->getNumParams() == 2 && ViewParameter(0, 0);
       const bool Pointer =
           Context.hasSameType(FirstParameter, ConstPointer) &&
           Context.hasSameType(FirstArgument, ConstPointer) &&
@@ -17056,7 +17091,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                 Context.getSizeType()) &&
             Context.hasSameType(Call->getArg(2)->getType(),
                                 Context.getSizeType())));
-      if (Character || StringNeedle || Pointer) {
+      if (Character || StringNeedle || ViewNeedle || Pointer) {
         if (Name == "find_first_of")
           return UtilityOperation::StringFindFirstOf;
         if (Name == "find_last_of")

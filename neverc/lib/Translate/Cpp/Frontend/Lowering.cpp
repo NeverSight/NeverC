@@ -14183,6 +14183,9 @@ class FunctionLowering {
           (Operation == UtilityOperation::StringCStringRelation &&
            !LeftCString) ||
           (SliceComparison && RightValue->getType()->isPointerType());
+      auto RightView = StringComparison && RightValue && !RightCString
+                           ? StringViewFor(RightValue->getType())
+                           : std::optional<UtilityStringViewRecord>();
       auto View = Object && !StringComparison
                       ? StringViewFor(Object->getType())
                       : std::optional<UtilityStringViewRecord>();
@@ -14209,7 +14212,7 @@ class FunctionLowering {
               snapshot(argument(Call->getArg(1), A.Context.getSizeType()), L);
         }
         Expression RightSource;
-        if (RightCString || !StringComparison)
+        if (RightCString || RightView || !StringComparison)
           RightSource = snapshot(expression(RightValue), L);
         else
           RightSource = snapshot(
@@ -14240,6 +14243,11 @@ class FunctionLowering {
               RightData = std::move(Right.first);
               RightSize = std::move(Right.second);
             }
+          } else if (RightView) {
+            RightData = snapshot(
+                fieldStorage(json::Object(RightSource), RightView->Data, L), L);
+            RightSize = snapshot(
+                fieldStorage(std::move(RightSource), RightView->Size, L), L);
           } else {
             auto Right = ReadStringAt(std::move(RightSource), *String);
             RightData = std::move(Right.first);
@@ -14319,19 +14327,26 @@ class FunctionLowering {
                 : snapshot(address(lvalue(LeftValue), LeftValue->getType(), L),
                            L);
         auto RightSource =
-            RightCString
+            (RightCString || RightView)
                 ? snapshot(expression(RightValue), L)
                 : snapshot(
                       address(lvalue(RightValue), RightValue->getType(), L), L);
         auto Left = LeftCString ? ReadCStringAt(std::move(LeftSource))
                                 : ReadStringAt(std::move(LeftSource), *String);
-        auto Right = RightCString
-                         ? ReadCStringAt(std::move(RightSource))
-                         : ReadStringAt(std::move(RightSource), *String);
         LeftData = std::move(Left.first);
         LeftSize = std::move(Left.second);
-        RightData = std::move(Right.first);
-        RightSize = std::move(Right.second);
+        if (RightView) {
+          RightData = snapshot(
+              fieldStorage(json::Object(RightSource), RightView->Data, L), L);
+          RightSize = snapshot(
+              fieldStorage(std::move(RightSource), RightView->Size, L), L);
+        } else {
+          auto Right = RightCString
+                           ? ReadCStringAt(std::move(RightSource))
+                           : ReadStringAt(std::move(RightSource), *String);
+          RightData = std::move(Right.first);
+          RightSize = std::move(Right.second);
+        }
       } else {
         auto LeftSource =
             Member ? snapshot(address(lvalue(Object), Object->getType(), L), L)
@@ -14661,6 +14676,15 @@ class FunctionLowering {
             NeedleData = std::move(Needle.first);
             NeedleSize = std::move(Needle.second);
           }
+        } else if (auto PatternView =
+                       StringViewFor(Call->getArg(0)->getType())) {
+          auto Needle = snapshot(expression(Call->getArg(0)), L);
+          Position =
+              snapshot(argument(Call->getArg(1), A.Context.getSizeType()), L);
+          NeedleData = snapshot(
+              fieldStorage(json::Object(Needle), PatternView->Data, L), L);
+          NeedleSize = snapshot(
+              fieldStorage(std::move(Needle), PatternView->Size, L), L);
         } else {
           const auto *NeedleValue = Call->getArg(0);
           auto NeedleAddress = snapshot(
@@ -14861,12 +14885,16 @@ class FunctionLowering {
           SetData = std::move(Set.first);
           SetSize = std::move(Set.second);
         }
-      } else if (ViewSearch) {
+      } else if (ViewSearch || StringViewFor(Pattern->getType())) {
+        auto PatternView =
+            ViewSearch ? View : StringViewFor(Pattern->getType());
         auto Set = snapshot(expression(Pattern), L);
         Position =
             snapshot(argument(Call->getArg(1), A.Context.getSizeType()), L);
-        SetData = snapshot(fieldStorage(json::Object(Set), View->Data, L), L);
-        SetSize = snapshot(fieldStorage(std::move(Set), View->Size, L), L);
+        SetData =
+            snapshot(fieldStorage(json::Object(Set), PatternView->Data, L), L);
+        SetSize =
+            snapshot(fieldStorage(std::move(Set), PatternView->Size, L), L);
       } else {
         auto SetAddress =
             snapshot(address(lvalue(Pattern), Pattern->getType(), L), L);

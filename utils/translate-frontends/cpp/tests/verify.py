@@ -29510,6 +29510,17 @@ int main() {
                                view_modified[4] == '4' &&
                                view_modified[5] == '0' &&
                                view_modified[14] == '9';
+  std::string_view needle("def");
+  std::string_view choices("az");
+  bool view_search_intact =
+      long_text.compare(borrowed) == 0 &&
+      long_text.compare(3, 3, needle) == 0 &&
+      long_text.compare(3, 3, std::string_view("xdefy"), 1, 3) == 0 &&
+      long_text.find(needle) == 3 && long_text.rfind(needle) == 3 &&
+      long_text.find_first_of(choices) == 0 &&
+      long_text.find_last_of(choices) == 25 &&
+      long_text.find_first_not_of(choices) == 1 &&
+      long_text.find_last_not_of(choices) == 24;
   std::string copied(long_text);
   std::string combined = short_text + long_text;
   std::string prefixed = "!" + long_text;
@@ -29857,7 +29868,7 @@ int main() {
                              *(reverse_long.rend() - 1) == 'a';
   return intact && fill_intact && range_construction_intact &&
          substring_construction_intact && view_interop_intact &&
-         view_modifiers_intact &&
+         view_modifiers_intact && view_search_intact &&
          maximum_intact && shrink_intact &&
          boundary_intact && emptied &&
          assigned.size() == 14 &&

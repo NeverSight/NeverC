@@ -2321,6 +2321,12 @@ clip a selected count to the remaining view bytes and authenticate the pinned
 before they can be overwritten or released. Source and destination positions
 must satisfy the standard in-range preconditions; throwing paths remain outside
 this direct lowering.
+The exact view overloads of `compare`, `find`, `rfind`, `find_first_of`,
+`find_last_of`, `find_first_not_of`, and `find_last_not_of` read the view's
+pointer and length, including embedded NUL bytes. Positional comparisons may
+select a range of the string and view; their pinned `npos` default is checked.
+Searches preserve the pinned zero or `npos` default positions, and comparisons
+order bytes as unsigned characters without allocating.
 Mutable and const `begin`/`end`, plus `cbegin`/`cend`, produce authenticated
 libc++ `__wrap_iter` values for forward traversal and mutable element access.
 The authenticated wrapper also supports `base()`, arrow, subscript, prefix and

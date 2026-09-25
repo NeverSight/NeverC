@@ -53878,6 +53878,86 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringViewComparisonAndSearchRun) {
+  const auto Source = tmpFile("string-view-comparison-search.cpp");
+  const auto Output = tmpFile("string-view-comparison-search.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+#include <string_view>
+int calls;
+std::string_view touch(std::string_view value) {
+  ++calls;
+  return value;
+}
+int main() {
+  {
+    char bytes[]{'a', 'B', 'c', 0, 'd', 'e', 'f', 'a', 'B', 'c'};
+    const std::string text(bytes, 10);
+    std::string_view same(bytes, 10);
+    std::string_view pattern(bytes + 1, 4);
+    std::string_view prefix(bytes, 4);
+    char wrapped[]{'x', 'B', 'c', 0, 'd', 'y'};
+    std::string_view wider(wrapped, 6);
+    if (text.compare(touch(same)) != 0 || calls != 1 ||
+        text.compare(prefix) <= 0 || text.compare(1, 4, pattern) != 0 ||
+        text.compare(1, 4, wider, 1, 4) != 0 ||
+        text.compare(1, 4, wider, 1) >= 0)
+      return 1;
+    if (text.find(touch(pattern)) != 1 || calls != 2 ||
+        text.find(pattern, 2) != std::string::npos ||
+        text.rfind(touch(std::string_view(bytes + 7, 3))) != 7 ||
+        calls != 3 || text.rfind(pattern, 6) != 1)
+      return 2;
+    std::string_view empty;
+    if (text.find(empty) != 0 || text.find(empty, text.size()) != 10 ||
+        text.rfind(empty) != 10 || text.rfind(empty, 0) != 0)
+      return 3;
+    char set_bytes[]{'B', 0};
+    std::string_view set(set_bytes, 2);
+    if (text.find_first_of(touch(set)) != 1 || calls != 4 ||
+        text.find_last_of(set) != 8 ||
+        text.find_first_not_of(set) != 0 ||
+        text.find_last_not_of(touch(set)) != 9 || calls != 5)
+      return 4;
+    if (text.find_first_of(set, 2) != 3 ||
+        text.find_last_of(set, 7) != 3 ||
+        text.find_first_not_of(set, 1) != 2 ||
+        text.find_last_not_of(set, 8) != 7 ||
+        text.find_first_of(empty) != std::string::npos ||
+        text.find_last_of(empty) != std::string::npos ||
+        text.find_first_not_of(empty) != 0 ||
+        text.find_last_not_of(empty) != 9)
+      return 5;
+    char high[]{char(0x80)};
+    char low[]{char(0x7f)};
+    std::string high_text(high, 1);
+    if (high_text.compare(std::string_view(low, 1)) <= 0)
+      return 6;
+  }
+  return allocations == releases ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("string-view-comparison-search" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedIteratorOffsetsRun) {
   const auto Source = tmpFile("wrapped-iterator-offsets.cpp");
   const auto Output = tmpFile("wrapped-iterator-offsets.nc");
