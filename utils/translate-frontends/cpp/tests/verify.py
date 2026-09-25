@@ -29467,6 +29467,26 @@ int main() {
   bool concat_intact = combined.size() == 31 && combined[0] == 'h' &&
                        combined[30] == 'z' && prefixed[0] == '!' &&
                        suffixed[26] == '!';
+  std::string append_source("abcdefghijklmnopqrstuvwxyz");
+  append_source.reserve(80);
+  const char *append_data = append_source.data();
+  auto append_capacity = append_source.capacity();
+  std::string moved_append =
+      static_cast<std::string &&>(append_source) + "!";
+  std::string prepend_source("abcdefghijklmnopqrstuvwxyz");
+  prepend_source.reserve(80);
+  const char *prepend_data = prepend_source.data();
+  auto prepend_capacity = prepend_source.capacity();
+  std::string moved_prepend =
+      "!" + static_cast<std::string &&>(prepend_source);
+  bool rvalue_concat_intact =
+      moved_append.data() == append_data &&
+      moved_append.capacity() == append_capacity &&
+      moved_append.size() == 27 && moved_append[26] == '!' &&
+      append_source.empty() && moved_prepend.data() == prepend_data &&
+      moved_prepend.capacity() == prepend_capacity &&
+      moved_prepend.size() == 27 && moved_prepend[0] == '!' &&
+      prepend_source.empty();
   std::string assigned;
   assigned = copied;
   std::string scalar_assigned;
@@ -29694,7 +29714,7 @@ int main() {
          reassigned.size() == 2 && reassigned[0] == 'a' &&
          reassigned[1] == 'a' &&
          erase_intact && erased.empty() && splice_intact && growth_intact &&
-         concat_intact &&
+         concat_intact && rvalue_concat_intact &&
          scalar_assignment_intact &&
          substring_intact && compare_intact &&
          cstring_compare_intact && positional_compare_intact &&

@@ -17835,6 +17835,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                 StringType.withConst()) &&
             Context.hasSameUnqualifiedType(Argument, StringType))
           return 1;
+        if (Parameter->isRValueReferenceType() &&
+            Context.hasSameType(Parameter->getPointeeType(), StringType) &&
+            Context.hasSameUnqualifiedType(Argument, StringType))
+          return 4;
         if (Context.hasSameType(Parameter, ConstPointer) &&
             Context.hasSameType(Argument, ConstPointer))
           return 2;
@@ -17846,7 +17850,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       const int Left = Kind(0), Right = Kind(1);
       if (Context.hasSameType(Function->getReturnType(), StringType) &&
           Context.hasSameType(Call->getType(), StringType) &&
-          ((Left == 1 && Right >= 1) || (Right == 1 && Left >= 2)))
+          (((Left == 1 || Left == 4) && Right >= 1) ||
+           ((Right == 1 || Right == 4) && Left >= 2)))
         return UtilityOperation::StringConcat;
     }
   }

@@ -54340,6 +54340,228 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringConcatRvalueRun) {
+  const auto Source = tmpFile("string-concat-rvalue.cpp");
+  const auto Output = tmpFile("string-concat-rvalue.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+int main() {
+  const std::string head("PQ");
+  const std::string tail("XY");
+  {
+    std::string source("abcdefghijklmnopqrstuvwxyz");
+    source.reserve(80);
+    const char *data = source.data();
+    Size capacity = source.capacity();
+    int before = allocations;
+    std::string result = static_cast<std::string &&>(source) + tail;
+    if (result != "abcdefghijklmnopqrstuvwxyzXY" || result.data() != data ||
+        result.capacity() != capacity || !source.empty() ||
+        allocations != before)
+      return 1;
+  }
+  {
+    std::string source("abcdefghijklmnopqrstuvwxyz");
+    source.reserve(80);
+    const char *data = source.data();
+    Size capacity = source.capacity();
+    int before = allocations;
+    std::string result = head + static_cast<std::string &&>(source);
+    if (result != "PQabcdefghijklmnopqrstuvwxyz" || result.data() != data ||
+        result.capacity() != capacity || !source.empty() ||
+        allocations != before)
+      return 2;
+  }
+  {
+    std::string source("abcdefghijklmnopqrstuvwxyz");
+    std::string other("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+    source.reserve(80);
+    const char *data = source.data();
+    Size capacity = source.capacity();
+    int before = allocations;
+    std::string result = static_cast<std::string &&>(source) +
+                         static_cast<std::string &&>(other);
+    if (result.size() != 52 || result[0] != 'a' || result[25] != 'z' ||
+        result[26] != 'A' || result[51] != 'Z' || result.data() != data ||
+        result.capacity() != capacity || !source.empty() ||
+        other.size() != 26 || other[0] != 'A' || allocations != before)
+      return 3;
+  }
+  {
+    std::string source("abcdefghijklmnopqrstuvwxyz");
+    source.reserve(80);
+    const char *data = source.data();
+    int before = allocations;
+    std::string result = "PQ" + static_cast<std::string &&>(source);
+    if (result != "PQabcdefghijklmnopqrstuvwxyz" || result.data() != data ||
+        !source.empty() || allocations != before)
+      return 4;
+  }
+  {
+    std::string source("abcdefghijklmnopqrstuvwxyz");
+    source.reserve(80);
+    const char *data = source.data();
+    int before = allocations;
+    std::string result = 'Q' + static_cast<std::string &&>(source);
+    if (result != "Qabcdefghijklmnopqrstuvwxyz" || result.data() != data ||
+        !source.empty() || allocations != before)
+      return 5;
+  }
+  {
+    std::string source("abcdefghijklmnopqrstuvwxyz");
+    source.reserve(80);
+    const char *data = source.data();
+    int before = allocations;
+    std::string result = static_cast<std::string &&>(source) + "PQ";
+    if (result != "abcdefghijklmnopqrstuvwxyzPQ" || result.data() != data ||
+        !source.empty() || allocations != before)
+      return 6;
+  }
+  {
+    std::string source("abcdefghijklmnopqrstuvwxyz");
+    source.reserve(80);
+    const char *data = source.data();
+    int before = allocations;
+    std::string result = static_cast<std::string &&>(source) + 'Q';
+    if (result != "abcdefghijklmnopqrstuvwxyzQ" || result.data() != data ||
+        !source.empty() || allocations != before)
+      return 7;
+  }
+  {
+    std::string source("abcdefghijklmnopqrstuvwxyz");
+    const std::string suffix("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+    const char *old_data = source.data();
+    Size old_capacity = source.capacity();
+    int before = allocations, freed = releases;
+    std::string result = static_cast<std::string &&>(source) + suffix;
+    Size desired = 2 * old_capacity;
+    if (desired < result.size()) desired = result.size();
+    Size expected_capacity = ((desired + 8) / 8) * 8 - 1;
+    if (result.size() != 52 || result.data() == old_data ||
+        result.capacity() != expected_capacity || !source.empty() ||
+        allocations != before + 1 || releases != freed + 1)
+      return 8;
+  }
+  {
+    std::string source("ab");
+    int before = allocations;
+    std::string result = static_cast<std::string &&>(source) + 'c';
+    if (result != "abc" || !source.empty() || allocations != before)
+      return 9;
+  }
+  {
+    std::string source("ab");
+    int before = allocations;
+    std::string result = '!' + static_cast<std::string &&>(source);
+    if (result != "!ab" || !source.empty() || allocations != before)
+      return 19;
+  }
+  {
+    std::string source("abcdefghijklmnopqrstuv");
+    Size short_capacity = source.capacity();
+    int before = allocations;
+    std::string result = static_cast<std::string &&>(source) + 'w';
+    Size expected_capacity = ((2 * short_capacity + 8) / 8) * 8 - 1;
+    if (result.size() != 23 || result.capacity() != expected_capacity ||
+        result[22] != 'w' || !source.empty() || allocations != before + 1)
+      return 16;
+  }
+  {
+    std::string source("abcdefghijklmnopqrstuv");
+    Size short_capacity = source.capacity();
+    int before = allocations;
+    std::string result = 'w' + static_cast<std::string &&>(source);
+    Size expected_capacity = ((2 * short_capacity + 8) / 8) * 8 - 1;
+    if (result.size() != 23 || result.capacity() != expected_capacity ||
+        result[0] != 'w' || result[22] != 'v' || !source.empty() ||
+        allocations != before + 1)
+      return 17;
+  }
+  {
+    const char raw[] = {'X', 0, 'Y'};
+    const std::string suffix(raw, 3);
+    std::string source("ab");
+    std::string result = static_cast<std::string &&>(source) + suffix;
+    if (result.size() != 5 || result[2] != 'X' || result[3] != 0 ||
+        result[4] != 'Y' || !source.empty())
+      return 10;
+  }
+  {
+    std::string source("abcdefghijklmnopqrstuvwxyz");
+    source.reserve(80);
+    const char *data = source.data();
+    int before = allocations;
+    std::string result = source + static_cast<std::string &&>(source);
+    if (result.size() != 52 || result.data() != data || result[0] != 'a' ||
+        result[25] != 'z' || result[26] != 'a' || result[51] != 'z' ||
+        !source.empty() || allocations != before)
+      return 11;
+  }
+  {
+    std::string source("abcdefghijklmnopqrstuvwxyz");
+    source.reserve(80);
+    const char *data = source.data();
+    int before = allocations;
+    std::string result = source.c_str() + static_cast<std::string &&>(source);
+    if (result.size() != 52 || result.data() != data || result[26] != 'a' ||
+        result[51] != 'z' || !source.empty() || allocations != before)
+      return 12;
+  }
+  {
+    std::string source("abcdefghijklmnopqrstuvwxyz");
+    source.reserve(80);
+    const char *data = source.data();
+    int before = allocations;
+    std::string result = (source.c_str() + 3) +
+                         static_cast<std::string &&>(source);
+    if (result.size() != 49 || result.data() != data || result[0] != 'd' ||
+        result[22] != 'z' || result[23] != 'a' || result[48] != 'z' ||
+        !source.empty() || allocations != before)
+      return 18;
+  }
+  {
+    std::string source("abcdefghijklmnopqrstuvwxyz");
+    source.reserve(80);
+    const char *data = source.data();
+    int before = allocations;
+    std::string result = static_cast<std::string &&>(source) + source;
+    if (result.size() != 52 || result.data() != data || result[26] != 'a' ||
+        result[51] != 'z' || !source.empty() || allocations != before)
+      return 13;
+  }
+  {
+    std::string source("abcdefghijklmnopqrstuvwxyz");
+    source.reserve(80);
+    const char *data = source.data();
+    int before = allocations;
+    std::string result = static_cast<std::string &&>(source) + source.c_str();
+    if (result.size() != 52 || result.data() != data || result[26] != 'a' ||
+        result[51] != 'z' || !source.empty() || allocations != before)
+      return 14;
+  }
+  return allocations == releases ? 0 : 15;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-concat-rvalue" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StringSwapRun) {
   const auto Source = tmpFile("string-swap.cpp");
   const auto Output = tmpFile("string-swap.nc");
