@@ -620,6 +620,58 @@ public:
   void writeTo(uint8_t *buf) override {}
 };
 
+// --debug-names: one DWARF 5 name index for the whole output, merged from
+// the .debug_names sections of the inputs, which it replaces.
+class DebugNamesSection final : public SyntheticSection {
+public:
+  // An offset field of an input index: the relocation's target, whose
+  // address in its non-allocated output section is the output value.
+  struct OffsetRef {
+    Symbol *sym = nullptr;
+    int64_t addend = 0;
+  };
+  struct Attribute {
+    uint32_t index; // DW_IDX_*
+    uint32_t form;  // DW_FORM_* in the output
+    uint64_t value; // a unit index, parent entry number or raw value
+  };
+  struct Entry {
+    uint32_t tag;
+    uint32_t abbrev = 0;   // output abbreviation code
+    uint64_t offset = 0;   // output offset in the entry pool
+    SmallVector<Attribute, 4> attributes;
+  };
+  struct Name {
+    StringRef text;
+    uint32_t hash;
+    OffsetRef string;
+    SmallVector<uint32_t, 2> entries; // indices into `entries`
+  };
+
+  DebugNamesSection();
+  template <class ELFT> static DebugNamesSection *create();
+  void writeTo(uint8_t *buf) override;
+  size_t getSize() const override { return size; }
+  bool isNeeded() const override { return !names.empty(); }
+
+private:
+  template <class ELFT> void read(InputSection *sec);
+  void layout();
+
+  SmallVector<OffsetRef, 0> compileUnits, typeUnits;
+  SmallVector<Entry, 0> entries;
+  SmallVector<Name, 0> names;
+  llvm::DenseMap<llvm::CachedHashStringRef, uint32_t> nameIndex;
+  // Abbreviations by their contents, in code order.
+  SmallVector<std::pair<uint32_t, SmallVector<std::pair<uint32_t, uint32_t>, 4>>,
+              0>
+      abbrevs;
+  SmallVector<uint32_t, 0> buckets;
+  uint32_t abbrevTableSize = 0;
+  uint64_t entryPoolSize = 0;
+  size_t size = 0;
+};
+
 class GdbIndexSection final : public SyntheticSection {
 public:
   struct AddressEntry {

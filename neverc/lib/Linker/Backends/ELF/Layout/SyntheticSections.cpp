@@ -21,10 +21,12 @@
 #include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/DebugInfo/DWARF/DWARFDebugPubTable.h"
+#include "llvm/Support/DJB.h"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/LEB128.h"
 #include "llvm/Support/TimeProfiler.h"
 #include <cstdlib>
+#include <map>
 #include <cstring>
 #include <memory>
 #include <type_traits>
@@ -3135,6 +3137,424 @@ void MemtagDescriptors::writeTo(uint8_t *buf) {
 size_t MemtagDescriptors::getSize() const {
   return createMemtagDescriptors(symbols);
 }
+
+// ===----------------------------------------------------------------------===
+// .debug_names
+// ===----------------------------------------------------------------------===
+
+DebugNamesSection::DebugNamesSection()
+    : SyntheticSection(0, SHT_PROGBITS, 4, ".debug_names") {}
+
+template <class ELFT> DebugNamesSection *DebugNamesSection::create() {
+  llvm::TimeTraceScope timeScope("Create merged .debug_names");
+  auto *ret = make<DebugNamesSection>();
+  for (InputSectionBase *s : elfState().inputSections) {
+    auto *isec = dyn_cast<InputSection>(s);
+    if (!isec || !isec->isLive() || isec->name != ".debug_names" ||
+        !isec->file)
+      continue;
+    ret->read<ELFT>(isec);
+    isec->markDead();
+  }
+  ret->layout();
+  return ret;
+}
+
+namespace {
+// The size of a DW_FORM value the merged index can carry through.
+std::optional<unsigned> fixedFormSize(uint32_t form) {
+  switch (form) {
+  case dwarf::DW_FORM_flag_present:
+    return 0;
+  case dwarf::DW_FORM_data1:
+  case dwarf::DW_FORM_ref1:
+  case dwarf::DW_FORM_flag:
+    return 1;
+  case dwarf::DW_FORM_data2:
+  case dwarf::DW_FORM_ref2:
+    return 2;
+  case dwarf::DW_FORM_data4:
+  case dwarf::DW_FORM_ref4:
+    return 4;
+  case dwarf::DW_FORM_data8:
+  case dwarf::DW_FORM_ref8:
+  case dwarf::DW_FORM_ref_sig8:
+    return 8;
+  default:
+    return std::nullopt;
+  }
+}
+} // namespace
+
+// Reads the name indexes of one input section. Offsets into .debug_info and
+// .debug_str are relocated fields; they are kept as their relocation targets
+// and resolved when the output is written.
+template <class ELFT> void DebugNamesSection::read(InputSection *sec) {
+  auto fail = [&](const Twine &msg) {
+    error(toString(sec) + ": --debug-names: " + msg);
+  };
+  ArrayRef<uint8_t> data = sec->contentMaybeDecompress();
+  const ObjFile<ELFT> *file = sec->getFile<ELFT>();
+  const RelsOrRelas<ELFT> rels = sec->relsOrRelas<ELFT>();
+  if (rels.areRelocsRel() && !rels.rels.empty())
+    return fail("REL relocations are not supported");
+  SmallVector<typename ELFT::Rela, 0> relas(rels.relas.begin(),
+                                           rels.relas.end());
+  llvm::stable_sort(relas, [](const auto &a, const auto &b) {
+    return a.r_offset < b.r_offset;
+  });
+  auto fieldRef = [&](uint64_t pos) -> std::optional<OffsetRef> {
+    auto it = llvm::partition_point(
+        relas, [&](const auto &r) { return r.r_offset < pos; });
+    if (it == relas.end() || it->r_offset != pos)
+      return std::nullopt;
+    return OffsetRef{&file->getRelocTargetSym(*it),
+                     static_cast<int64_t>(it->r_addend)};
+  };
+  auto u16 = [&](uint64_t p) { return support::endian::read16le(&data[p]); };
+  auto u32 = [&](uint64_t p) { return support::endian::read32le(&data[p]); };
+
+  for (uint64_t off = 0; off + 4 <= data.size();) {
+    const uint32_t length = u32(off);
+    if (length == 0xffffffff)
+      return fail("DWARF64 name indexes are not supported");
+    const uint64_t end = off + 4 + uint64_t(length);
+    if (end > data.size() || length < 32)
+      return fail("truncated name index");
+    if (u16(off + 4) != 5)
+      return fail("unsupported name index version " + Twine(u16(off + 4)));
+    const uint32_t cuCount = u32(off + 8), tuCount = u32(off + 12),
+                   foreignCount = u32(off + 16), bucketCount = u32(off + 20),
+                   nameCount = u32(off + 24), abbrevSize = u32(off + 28),
+                   augSize = u32(off + 32);
+    if (foreignCount)
+      return fail("foreign type units are not supported");
+    uint64_t p = off + 36 + alignTo(augSize, 4);
+    const uint64_t fixedEnd = p + 4 * (uint64_t(cuCount) + tuCount +
+                                       bucketCount + 3 * uint64_t(nameCount));
+    if (fixedEnd + abbrevSize > end)
+      return fail("truncated name index");
+
+    const uint32_t cuBase = compileUnits.size();
+    // Type units of a discarded COMDAT copy go with their entries.
+    SmallVector<int64_t, 4> tuMap;
+    for (uint32_t i = 0; i < cuCount + tuCount; ++i, p += 4) {
+      std::optional<OffsetRef> ref = fieldRef(p);
+      if (!ref)
+        return fail("unit offset without a relocation");
+      if (i < cuCount) {
+        compileUnits.push_back(*ref);
+        continue;
+      }
+      auto *def = dyn_cast<Defined>(ref->sym);
+      auto *unitSec =
+          def ? dyn_cast_or_null<InputSectionBase>(def->section) : nullptr;
+      if (unitSec && unitSec->isLive()) {
+        tuMap.push_back(typeUnits.size());
+        typeUnits.push_back(*ref);
+      } else {
+        tuMap.push_back(-1);
+      }
+    }
+    p += 4 * uint64_t(bucketCount);
+    const uint64_t hashes = p;
+    if (bucketCount)
+      p += 4 * uint64_t(nameCount);
+    const uint64_t strings = p, entryOffsets = p + 4 * uint64_t(nameCount);
+    const uint64_t abbrevStart = entryOffsets + 4 * uint64_t(nameCount);
+    const uint64_t pool = abbrevStart + abbrevSize;
+
+    // Abbreviations: code, tag, then (index, form) pairs ending in 0, 0.
+    DenseMap<uint64_t, std::pair<uint32_t,
+                                 SmallVector<std::pair<uint32_t, uint32_t>, 4>>>
+        abbrevTable;
+    const uint8_t *q = data.data() + abbrevStart;
+    const uint8_t *qEnd = data.data() + pool;
+    auto uleb = [&](const uint8_t *&cur, const uint8_t *limit) -> uint64_t {
+      unsigned n = 0;
+      const char *err = nullptr;
+      uint64_t v = decodeULEB128(cur, &n, limit, &err);
+      if (err)
+        return cur = limit, 0;
+      cur += n;
+      return v;
+    };
+    while (q < qEnd) {
+      const uint64_t code = uleb(q, qEnd);
+      if (!code)
+        break;
+      auto &abbrev = abbrevTable[code];
+      abbrev.first = uleb(q, qEnd);
+      for (;;) {
+        const uint32_t index = uleb(q, qEnd), form = uleb(q, qEnd);
+        if (!index && !form)
+          break;
+        abbrev.second.push_back({index, form});
+      }
+    }
+
+    // Entries, by their offset in this index's pool.
+    DenseMap<uint64_t, uint32_t> byOffset;
+    SmallVector<std::pair<uint32_t, uint64_t>, 0> parents; // entry, offset
+    const uint8_t *poolEnd = data.data() + end;
+    for (uint32_t k = 0; k < nameCount; ++k) {
+      std::optional<OffsetRef> str = fieldRef(strings + 4 * uint64_t(k));
+      auto *def = str ? dyn_cast<Defined>(str->sym) : nullptr;
+      auto *strSec =
+          def ? dyn_cast_or_null<InputSectionBase>(def->section) : nullptr;
+      if (!strSec)
+        return fail("name without a relocated string");
+      ArrayRef<uint8_t> strData = strSec->contentMaybeDecompress();
+      const uint64_t strOff = def->value + str->addend;
+      if (strOff >= strData.size())
+        return fail("name string out of range");
+      StringRef text(reinterpret_cast<const char *>(strData.data()) + strOff,
+                     strnlen(reinterpret_cast<const char *>(strData.data()) +
+                                 strOff,
+                             strData.size() - strOff));
+      const uint32_t hash = bucketCount ? u32(hashes + 4 * uint64_t(k))
+                                        : caseFoldingDjbHash(text);
+      auto [it, inserted] =
+          nameIndex.try_emplace(CachedHashStringRef(text), names.size());
+      if (inserted)
+        names.push_back({text, hash, *str, {}});
+      Name &name = names[it->second];
+
+      const uint8_t *cur =
+          data.data() + pool + u32(entryOffsets + 4 * uint64_t(k));
+      if (cur >= poolEnd)
+        return fail("entry offset out of range");
+      for (;;) {
+        const uint64_t entryOffset = cur - (data.data() + pool);
+        const uint64_t code = uleb(cur, poolEnd);
+        if (!code)
+          break;
+        if (auto known = byOffset.find(entryOffset); known != byOffset.end()) {
+          // An entry two names share was read already.
+          if (known->second != UINT32_MAX)
+            name.entries.push_back(known->second);
+          auto &abbrev = abbrevTable[code];
+          for (auto [index, form] : abbrev.second) {
+            if (std::optional<unsigned> n = fixedFormSize(form))
+              cur += *n;
+            else
+              uleb(cur, poolEnd);
+          }
+          continue;
+        }
+        auto abbrev = abbrevTable.find(code);
+        if (abbrev == abbrevTable.end())
+          return fail("entry with an unknown abbreviation");
+        Entry e;
+        e.tag = abbrev->second.first;
+        bool hasUnit = false, deadUnit = false;
+        std::optional<uint64_t> parentOffset;
+        for (auto [index, form] : abbrev->second.second) {
+          uint64_t v = 0;
+          if (form == dwarf::DW_FORM_udata || form == dwarf::DW_FORM_ref_udata) {
+            v = uleb(cur, poolEnd);
+          } else if (std::optional<unsigned> n = fixedFormSize(form)) {
+            if (cur + *n > poolEnd)
+              return fail("truncated entry");
+            for (unsigned b = 0; b < *n; ++b)
+              v |= uint64_t(cur[b]) << (8 * b);
+            cur += *n;
+          } else {
+            return fail("unsupported attribute form " + Twine(form));
+          }
+          switch (index) {
+          case dwarf::DW_IDX_compile_unit:
+            if (v >= cuCount)
+              return fail("entry names a missing compile unit");
+            e.attributes.push_back(
+                {index, dwarf::DW_FORM_udata, cuBase + v});
+            hasUnit = true;
+            break;
+          case dwarf::DW_IDX_type_unit:
+            if (v >= tuCount)
+              return fail("entry names a missing type unit");
+            if (tuMap[v] < 0)
+              deadUnit = true;
+            e.attributes.push_back(
+                {index, dwarf::DW_FORM_udata, uint64_t(tuMap[v])});
+            hasUnit = true;
+            break;
+          case dwarf::DW_IDX_die_offset:
+            e.attributes.push_back({index, dwarf::DW_FORM_ref4, v});
+            break;
+          case dwarf::DW_IDX_parent:
+            if (form == dwarf::DW_FORM_flag_present) {
+              e.attributes.push_back({index, form, 0});
+            } else {
+              parentOffset = v;
+              e.attributes.push_back({index, dwarf::DW_FORM_ref4, 0});
+            }
+            break;
+          default:
+            if (form == dwarf::DW_FORM_udata || form == dwarf::DW_FORM_ref_udata)
+              return fail("unsupported attribute " + Twine(index));
+            e.attributes.push_back({index, form, v});
+          }
+        }
+        // An index with a single compile unit leaves it implicit.
+        if (!hasUnit) {
+          if (cuCount != 1)
+            return fail("entry without a unit in a multi-unit index");
+          e.attributes.insert(e.attributes.begin(),
+                              {uint32_t(dwarf::DW_IDX_compile_unit),
+                               dwarf::DW_FORM_udata, cuBase});
+        }
+        if (deadUnit) {
+          byOffset[entryOffset] = UINT32_MAX;
+          continue;
+        }
+        if (parentOffset)
+          parents.push_back({uint32_t(entries.size()), *parentOffset});
+        byOffset[entryOffset] = entries.size();
+        name.entries.push_back(entries.size());
+        entries.push_back(std::move(e));
+      }
+    }
+    // Parents are entries of this index, now numbered in the merged list.
+    for (auto [child, parentOffset] : parents) {
+      auto parent = byOffset.find(parentOffset);
+      if (parent == byOffset.end() || parent->second == UINT32_MAX)
+        return fail("entry with a missing parent");
+      for (Attribute &a : entries[child].attributes)
+        if (a.index == dwarf::DW_IDX_parent)
+          a.value = parent->second;
+    }
+    off = end;
+  }
+}
+
+void DebugNamesSection::layout() {
+  // Names whose entries all described discarded type units go too.
+  llvm::erase_if(names, [](const Name &n) { return n.entries.empty(); });
+  if (names.empty())
+    return;
+  // Names grouped by hash bucket, as the hash table requires.
+  const uint32_t bucketCount = names.size();
+  llvm::stable_sort(names, [&](const Name &a, const Name &b) {
+    return std::make_tuple(a.hash % bucketCount, a.hash, a.text) <
+           std::make_tuple(b.hash % bucketCount, b.hash, b.text);
+  });
+  buckets.assign(bucketCount, 0);
+  for (uint32_t i = 0; i < names.size(); ++i) {
+    uint32_t &b = buckets[names[i].hash % bucketCount];
+    if (!b)
+      b = i + 1;
+  }
+
+  // Abbreviations by tag and attribute list.
+  std::map<std::pair<uint32_t, SmallVector<std::pair<uint32_t, uint32_t>, 4>>,
+           uint32_t>
+      codes;
+  for (Entry &e : entries) {
+    SmallVector<std::pair<uint32_t, uint32_t>, 4> attrs;
+    for (const Attribute &a : e.attributes)
+      attrs.push_back({a.index, a.form});
+    auto [it, inserted] = codes.try_emplace({e.tag, attrs}, abbrevs.size() + 1);
+    if (inserted)
+      abbrevs.push_back({e.tag, attrs});
+    e.abbrev = it->second;
+  }
+  abbrevTableSize = 1; // the terminating 0
+  for (uint32_t code = 1; code <= abbrevs.size(); ++code) {
+    const auto &[tag, attrs] = abbrevs[code - 1];
+    abbrevTableSize += getULEB128Size(code) + getULEB128Size(tag) + 2;
+    for (auto [index, form] : attrs)
+      abbrevTableSize += getULEB128Size(index) + getULEB128Size(form);
+  }
+
+  // The entry pool: each name's entries and a terminating 0.
+  entryPoolSize = 0;
+  for (const Name &name : names) {
+    for (uint32_t i : name.entries) {
+      Entry &e = entries[i];
+      e.offset = entryPoolSize;
+      entryPoolSize += getULEB128Size(e.abbrev);
+      for (const Attribute &a : e.attributes)
+        entryPoolSize += a.form == dwarf::DW_FORM_udata
+                             ? getULEB128Size(a.value)
+                             : *fixedFormSize(a.form);
+    }
+    entryPoolSize += 1;
+  }
+  size = 36 + 4 * (compileUnits.size() + typeUnits.size() + buckets.size() +
+                   3 * names.size()) +
+         abbrevTableSize + entryPoolSize;
+}
+
+void DebugNamesSection::writeTo(uint8_t *buf) {
+  uint8_t *p = buf;
+  auto w16 = [&](uint16_t v) {
+    support::endian::write16le(p, v);
+    p += 2;
+  };
+  auto w32 = [&](uint32_t v) {
+    support::endian::write32le(p, v);
+    p += 4;
+  };
+  w32(size - 4);
+  w16(5); // version
+  w16(0); // padding
+  w32(compileUnits.size());
+  w32(typeUnits.size());
+  w32(0); // foreign type units
+  w32(buckets.size());
+  w32(names.size());
+  w32(abbrevTableSize);
+  w32(0); // augmentation string size
+  for (const OffsetRef &unit : compileUnits)
+    w32(unit.sym->getVA(unit.addend));
+  for (const OffsetRef &unit : typeUnits)
+    w32(unit.sym->getVA(unit.addend));
+  for (uint32_t b : buckets)
+    w32(b);
+  for (const Name &name : names)
+    w32(name.hash);
+  for (const Name &name : names)
+    w32(name.string.sym->getVA(name.string.addend));
+  for (const Name &name : names)
+    w32(entries[name.entries.front()].offset);
+  for (uint32_t code = 1; code <= abbrevs.size(); ++code) {
+    const auto &[tag, attrs] = abbrevs[code - 1];
+    p += encodeULEB128(code, p);
+    p += encodeULEB128(tag, p);
+    for (auto [index, form] : attrs) {
+      p += encodeULEB128(index, p);
+      p += encodeULEB128(form, p);
+    }
+    *p++ = 0;
+    *p++ = 0;
+  }
+  *p++ = 0;
+  for (const Name &name : names) {
+    for (uint32_t i : name.entries) {
+      const Entry &e = entries[i];
+      p += encodeULEB128(e.abbrev, p);
+      for (const Attribute &a : e.attributes) {
+        uint64_t v = a.index == dwarf::DW_IDX_parent &&
+                             a.form == dwarf::DW_FORM_ref4
+                         ? entries[a.value].offset
+                         : a.value;
+        if (a.form == dwarf::DW_FORM_udata) {
+          p += encodeULEB128(v, p);
+          continue;
+        }
+        const unsigned n = *fixedFormSize(a.form);
+        for (unsigned b = 0; b < n; ++b)
+          *p++ = uint8_t(v >> (8 * b));
+      }
+    }
+    *p++ = 0;
+  }
+  assert(uint64_t(p - buf) == size);
+}
+
+template DebugNamesSection *DebugNamesSection::create<ELF64LE>();
+template DebugNamesSection *DebugNamesSection::create<ELF64BE>();
 
 template GdbIndexSection *GdbIndexSection::create<ELF64LE>();
 template GdbIndexSection *GdbIndexSection::create<ELF64BE>();

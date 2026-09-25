@@ -536,6 +536,9 @@ template <class ELFT> void elf::createSyntheticSections() {
       in.got->hasGotOffRel = true;
   }
 
+  if (config->debugNames)
+    add(*DebugNamesSection::create<ELFT>());
+
   if (config->gdbIndex)
     add(*GdbIndexSection::create<ELFT>());
 
@@ -1513,6 +1516,9 @@ void OutputWriter<ELFT>::finalizeAddressDependentContent() {
         changed |= part.memtagDescriptors->updateAllocSize();
     }
 
+    // Input sections leave output sections that overflow their memory
+    // region, which moves everything after them.
+    changed |= script->spillSections();
     const Defined *changedSym = script->assignAddresses();
     if (!changed) {
       // Some symbols may be dependent on section addresses. When we break the

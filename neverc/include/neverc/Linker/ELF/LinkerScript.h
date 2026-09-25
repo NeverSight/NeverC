@@ -325,6 +325,10 @@ public:
 
   bool shouldKeep(InputSectionBase *s);
   const Defined *assignAddresses();
+  // --enable-non-contiguous-regions: moves input sections out of output
+  // sections that overflow their memory region, to later descriptions that
+  // matched them too. Returns whether any moved.
+  bool spillSections();
   void allocateHeaders(SmallVector<PhdrEntry *, 0> &phdrs);
   void processSectionCommands();
   void processSymbolAssignments();
@@ -351,6 +355,17 @@ public:
   bool seenDataAlign = false;
   bool seenRelroEnd = false;
   bool errorOnMissingSection = false;
+
+  // --enable-non-contiguous-regions: for an input section, the later input
+  // section descriptions of other output sections that matched it too, in
+  // script order; the output section of each; and output sections that only
+  // such spills may fill, with the flags those would bring.
+  llvm::DenseMap<InputSectionBase *, SmallVector<InputSectionDescription *, 1>>
+      spillTargets;
+  llvm::DenseMap<const InputSectionDescription *, OutputSection *>
+      descriptionOwner;
+  llvm::DenseMap<const OutputSection *, uint64_t> spillFlags;
+  OutputSection *matchingOwner = nullptr;
   // Missing symbols already reported: addresses are assigned in several
   // passes, each evaluating the same expressions.
   llvm::StringSet<> reportedMissingSymbols;

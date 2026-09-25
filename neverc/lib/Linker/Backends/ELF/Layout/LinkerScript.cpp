@@ -516,8 +516,24 @@ LinkerScript::computeInputSections(const InputSectionDescription *cmd,
       // Skip if the section is dead or has been matched by a previous input
       // section description or a previous pattern.
       InputSectionBase *sec = sections[i];
-      if (!sec->isLive() || sec->parent || seen.contains(i))
+      if (!sec->isLive() || seen.contains(i))
         continue;
+      if (sec->parent) {
+        // A section an earlier output section took may spill here.
+        if (config->enableNonContiguousRegions && matchingOwner &&
+            sec->parent != matchingOwner && pat.sectionPat.match(sec->name) &&
+            cmd->matchesFile(sec->file) && !pat.excludesFile(sec->file) &&
+            (sec->flags & cmd->withFlags) == cmd->withFlags &&
+            (sec->flags & cmd->withoutFlags) == 0) {
+          auto &targets = spillTargets[sec];
+          auto *target = const_cast<InputSectionDescription *>(cmd);
+          if (!llvm::is_contained(targets, target)) {
+            targets.push_back(target);
+            spillFlags[matchingOwner] |= sec->flags;
+          }
+        }
+        continue;
+      }
 
       // Under --emit-relocs the default GNU script captures input reloc
       // sections (e.g. `.rela.dyn : { *(.rela.data) }`). Skip those so we
@@ -583,7 +599,10 @@ LinkerScript::createInputSectionList(OutputSection &outCmd) {
 
   for (SectionCommand *cmd : outCmd.commands) {
     if (auto *isd = dyn_cast<InputSectionDescription>(cmd)) {
+      matchingOwner = &outCmd;
+      descriptionOwner[isd] = &outCmd;
       isd->sectionBases = computeInputSections(isd, elfState().inputSections);
+      matchingOwner = nullptr;
       for (InputSectionBase *s : isd->sectionBases)
         s->parent = &outCmd;
       ret.insert(ret.end(), isd->sectionBases.begin(), isd->sectionBases.end());
@@ -1254,7 +1273,55 @@ bool isDiscardable(const OutputSection &sec) {
 
 bool LinkerScript::isDiscarded(const OutputSection *sec) const {
   return hasSectionsCommand && (getFirstInputSection(sec) == nullptr) &&
-         isDiscardable(*sec);
+         !spillFlags.count(sec) && isDiscardable(*sec);
+}
+
+bool LinkerScript::spillSections() {
+  if (spillTargets.empty())
+    return false;
+  DenseMap<const InputSectionBase *, size_t> inputOrder;
+  auto orderOf = [&](const InputSectionBase *s) {
+    if (inputOrder.empty())
+      for (auto [i, sec] : llvm::enumerate(elfState().inputSections))
+        inputOrder[sec] = i;
+    return inputOrder.lookup(s);
+  };
+  bool spilled = false;
+  for (SectionCommand *base : sectionCommands) {
+    auto *osd = dyn_cast<OutputDesc>(base);
+    if (!osd || !osd->osec.memRegion)
+      continue;
+    OutputSection *osec = &osd->osec;
+    const MemoryRegion *region = osec->memRegion;
+    const uint64_t regionEnd = region->getOrigin() + region->getLength();
+    if (osec->addr + osec->size <= regionEnd)
+      continue;
+    uint64_t excess = osec->addr + osec->size - regionEnd;
+    // The last sections leave first, each to the next description that
+    // matched it, keeping input order there.
+    for (SectionCommand *cmd : llvm::reverse(osec->commands)) {
+      auto *isd = dyn_cast<InputSectionDescription>(cmd);
+      if (!isd)
+        continue;
+      for (size_t i = isd->sections.size(); i-- > 0 && excess;) {
+        InputSection *isec = isd->sections[i];
+        auto it = spillTargets.find(isec);
+        if (it == spillTargets.end() || it->second.empty())
+          continue;
+        InputSectionDescription *target = it->second.front();
+        it->second.erase(it->second.begin());
+        isd->sections.erase(isd->sections.begin() + i);
+        auto pos = llvm::partition_point(
+            target->sections,
+            [&](InputSection *s) { return orderOf(s) < orderOf(isec); });
+        target->sections.insert(pos, isec);
+        isec->parent = descriptionOwner.lookup(target);
+        excess -= std::min<uint64_t>(excess, isec->getSize());
+        spilled = true;
+      }
+    }
+  }
+  return spilled;
 }
 
 namespace {
@@ -1301,6 +1368,11 @@ void LinkerScript::adjustOutputSections() {
           std::max<uint32_t>(sec->addralign, sec->alignExpr().getValue());
 
     bool isEmpty = (getFirstInputSection(sec) == nullptr);
+    // An output section that only spills fill keeps their flags.
+    if (auto spill = spillFlags.find(sec); isEmpty && spill != spillFlags.end()) {
+      isEmpty = false;
+      sec->flags |= spill->second;
+    }
     bool discardable = isEmpty && isDiscardable(*sec);
     // If sec has at least one input section and not discarded, remember its
     // flags to be inherited by subsequent output sections. (sec may contain

@@ -2703,6 +2703,101 @@ pick:
   EXPECT_TRUE(alloc.stderrContains("SHF_ALLOC")) << alloc.err;
 }
 
+TEST_F(LinkerTest, DebugNamesMergesNameIndexes) {
+  if (!isLinux())
+    GTEST_SKIP() << "GNU linker options apply to ELF links";
+
+  const fs::path first = tmpFile("names_first.c");
+  const fs::path second = tmpFile("names_second.c");
+  writeFile(first, "struct point { int x, y; };\n"
+                   "int shared_name(void) { struct point p = {1, 2};\n"
+                   "  return p.x + p.y; }\n");
+  writeFile(second, "struct point { int x, y; };\n"
+                    "int shared_name(void);\n"
+                    "int main(void) { struct point q = {0, 0};\n"
+                    "  return shared_name() - 3 + q.x; }\n");
+  std::vector<std::string> objects;
+  for (const fs::path &source : {first, second}) {
+    fs::path object = source;
+    object.replace_extension(".o");
+    CmdResult compile = ncc({"-fno-lto", "-gdwarf-5", "-gpubnames", "-c",
+                             source.string(), "-o", object.string()});
+    ASSERT_EQ(compile.exitCode, 0) << compile.err;
+    objects.push_back(object.string());
+  }
+  const fs::path image = tmpFile("names_image");
+  std::vector<std::string> args = baseLinkArgs();
+  args.insert(args.end(), objects.begin(), objects.end());
+  args.insert(args.end(), {"-Wl,--debug-names", "-o", image.string()});
+  CmdResult link = ncc(args);
+  ASSERT_EQ(link.exitCode, 0) << link.err;
+  EXPECT_EQ(exec(image.string(), {}).exitCode, 0);
+
+  // One name index over both compile units, with shared names merged.
+  llvm::Expected<ELFSectionImage> names =
+      findELFSectionImage(readFile(image), ".debug_names");
+  ASSERT_TRUE(static_cast<bool>(names))
+      << llvm::toString(names.takeError()).str().str();
+  const std::string &data = names->Contents;
+  ASSERT_GE(data.size(), 36u);
+  auto u32 = [&](size_t at) {
+    return llvm::support::endian::read32le(data.data() + at);
+  };
+  EXPECT_EQ(u32(0) + 4, data.size()) << "a single name index";
+  EXPECT_EQ(u32(8), 2u) << "compile units";
+  // shared_name, point, int and main.
+  EXPECT_EQ(u32(24), 4u) << "names";
+}
+
+TEST_F(LinkerTest, NonContiguousRegionsSpillSections) {
+  if (!isLinux())
+    GTEST_SKIP() << "GNU linker options apply to ELF links";
+
+  const fs::path source = tmpFile("spill.s");
+  const fs::path object = tmpFile("spill.o");
+  const fs::path script = tmpFile("spill.lds");
+  const fs::path image = tmpFile("spill");
+  writeFile(source, R"(
+.section .text.f1,"ax",@progbits
+.globl f1
+f1: .fill 0x20,1,0x90
+.section .text.f2,"ax",@progbits
+.globl f2
+f2: .fill 0x20,1,0x90
+.section .text.f3,"ax",@progbits
+.globl f3
+f3: .fill 0x20,1,0x90
+.section .note.GNU-stack,"",@progbits
+)");
+  writeFile(script, R"(
+MEMORY { A (rx) : ORIGIN = 0x100000, LENGTH = 0x40
+         B (rx) : ORIGIN = 0x200000, LENGTH = 0x1000 }
+SECTIONS {
+  .a : { *(.text.*) } > A
+  .b : { *(.text.*) } > B
+}
+)");
+  CmdResult assemble = assembleELFObject(source, object);
+  ASSERT_EQ(assemble.exitCode, 0) << assemble.err;
+  std::vector<std::string> args = {"--target=x86_64-linux-gnu", "-static",
+                                   "-nostdlib", "-fno-lto",
+                                   "-Wl,--entry=f1",
+                                   "-Wl,-T," + script.string(),
+                                   object.string(), "-o", image.string()};
+  CmdResult overflow = ncc(args);
+  EXPECT_NE(overflow.exitCode, 0);
+  EXPECT_TRUE(overflow.stderrContains("will not fit in region 'A'"))
+      << overflow.err;
+
+  args.insert(args.begin() + 4, "-Wl,--enable-non-contiguous-regions");
+  CmdResult spilled = ncc(args);
+  ASSERT_EQ(spilled.exitCode, 0) << spilled.err;
+  const std::string bytes = readFile(image);
+  EXPECT_EQ(requireELFSymbolAddress(bytes, "f1"), 0x100000u);
+  EXPECT_EQ(requireELFSymbolAddress(bytes, "f2"), 0x100020u);
+  EXPECT_EQ(requireELFSymbolAddress(bytes, "f3"), 0x200000u);
+}
+
 TEST_F(LinkerTest, RelocatableLinkResolvesGroupsOnRequest) {
   if (!isLinux())
     GTEST_SKIP() << "GNU linker options apply to ELF links";
