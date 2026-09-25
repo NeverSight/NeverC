@@ -919,6 +919,14 @@ void RelocationScanner::processAux(RelExpr expr, RelType type, uint64_t offset,
   bool canWrite =
       (sec->flags & SHF_WRITE) || !(config->zText || isa<EhInputSection>(sec));
   if (canWrite) {
+    // --warn-shared-textrel: dyld must write this read-only section.
+    if (config->warnSharedTextrel && config->shared &&
+        !(sec->flags & SHF_WRITE)) {
+      if (!linker::elf::detail::elfRelocationState()
+               .warnedSharedTextrel.exchange(true))
+        warn("creating a DT_TEXTREL in a shared object" +
+             getLocation(*sec, sym, offset));
+    }
     RelType rel = target->getDynRel(type);
     if (oneof<R_GOT>(expr) ||
         (rel == target->symbolicRel && !sym.isPreemptible)) {

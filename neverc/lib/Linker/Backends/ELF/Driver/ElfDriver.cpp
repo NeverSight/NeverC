@@ -556,6 +556,22 @@ bool link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
 
   elfState().driver.run(parsedArgs, driverCfg);
 
+  // --stats reports what the link read and wrote and what it cost.
+  if (config->printStats) {
+    sys::TimePoint<> elapsed;
+    std::chrono::nanoseconds user, system;
+    sys::Process::GetTimeUsage(elapsed, user, system);
+    uint64_t outputSize = 0;
+    sys::fs::file_size(config->outputFile, outputSize);
+    using std::chrono::duration_cast;
+    using std::chrono::milliseconds;
+    message(config->progName + ": " + Twine(elfState().objectFiles.size()) +
+            " object files, " + Twine(elfState().sharedFiles.size()) +
+            " shared libraries, " + Twine(outputSize) + " bytes written; " +
+            Twine(duration_cast<milliseconds>(user).count()) + " ms user, " +
+            Twine(duration_cast<milliseconds>(system).count()) + " ms system");
+  }
+
   if (driverCfg.timeTraceEnabled && TraceProfiler &&
       !config->outputFile.empty())
     checkError(TraceProfiler->neverc::LLVMTimeTraceProfilerOwner::write(
@@ -1256,7 +1272,6 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
     case OPT_ignored_rpath_link_eq:
     case OPT_ignored_secure_plt:
     case OPT_ignored_sort_common:
-    case OPT_ignored_stats:
     case OPT_ignored_warn_execstack:
     case OPT_ignored_warn_once:
     case OPT_ignored_warn_rwx_segments:
@@ -2084,6 +2099,25 @@ void readConfigs(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
   config->zForceIbt = hasZOption(args, "force-ibt");
   config->zGlobal = hasZOption(args, "global");
   config->zGnustack = getZGnuStack(args);
+  config->warnExecstack = args.hasFlag(OPT_ignored_warn_execstack,
+                                       OPT_ignored_no_warn_execstack, true);
+  config->warnRwxSegments = args.hasFlag(
+      OPT_ignored_warn_rwx_segments, OPT_ignored_no_warn_rwx_segments, true);
+  config->warnSharedTextrel = args.hasArg(OPT_ignored_warn_shared_textrel);
+  config->printStats = args.hasArg(OPT_ignored_stats);
+  if (const opt::Arg *arg =
+          args.getLastArg(OPT_ignored_sort_common, OPT_sort_common_eq)) {
+    StringRef order = arg->getOption().matches(OPT_sort_common_eq)
+                          ? StringRef(arg->getValue())
+                          : StringRef("descending");
+    if (order == "descending")
+      config->sortCommon = SortCommonKind::Descending;
+    else if (order == "ascending")
+      config->sortCommon = SortCommonKind::Ascending;
+    else
+      error("--sort-common=: expected ascending or descending, but got " +
+            order);
+  }
   config->zIfuncNoplt = hasZOption(args, "ifunc-noplt");
   config->zInitfirst = hasZOption(args, "initfirst");
   config->zInterpose = hasZOption(args, "interpose");
@@ -2950,21 +2984,30 @@ void writeDependencyFile() {
 namespace {
 void replaceCommonSymbols() {
   llvm::TimeTraceScope timeScope("Replace common symbols");
+  SmallVector<CommonSymbol *, 0> commons;
   for (ELFFileBase *file : elfState().objectFiles) {
     if (!file->hasCommonSyms)
       continue;
-    for (Symbol *sym : file->getGlobalSymbols()) {
-      auto *s = dyn_cast<CommonSymbol>(sym);
-      if (!s)
-        continue;
-
-      auto *bss = make<BssSection>("COMMON", s->size, s->alignment);
-      bss->file = s->file;
-      elfState().inputSections.push_back(bss);
-      Defined(s->file, StringRef(), s->binding, s->stOther, s->type,
-              /*value=*/0, s->size, bss)
-          .overwrite(*s);
-    }
+    for (Symbol *sym : file->getGlobalSymbols())
+      if (auto *s = dyn_cast<CommonSymbol>(sym))
+        commons.push_back(s);
+  }
+  // --sort-common places the commons by alignment, which wastes less space
+  // on padding.
+  if (config->sortCommon != SortCommonKind::None)
+    llvm::stable_sort(commons,
+                      [](const CommonSymbol *a, const CommonSymbol *b) {
+                        return config->sortCommon == SortCommonKind::Descending
+                                   ? a->alignment > b->alignment
+                                   : a->alignment < b->alignment;
+                      });
+  for (CommonSymbol *s : commons) {
+    auto *bss = make<BssSection>("COMMON", s->size, s->alignment);
+    bss->file = s->file;
+    elfState().inputSections.push_back(bss);
+    Defined(s->file, StringRef(), s->binding, s->stOther, s->type,
+            /*value=*/0, s->size, bss)
+        .overwrite(*s);
   }
 }
 } // namespace

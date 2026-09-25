@@ -84,6 +84,9 @@ enum class SeparateSegmentKind { None, Code, Loadable };
 // For -z *stack
 enum class GnuStackKind { None, Exec, NoExec };
 
+// How --sort-common orders common symbols by alignment.
+enum class SortCommonKind { None, Ascending, Descending };
+
 struct SymbolVersion {
   llvm::StringRef name;
   bool hasWildcard;
@@ -283,6 +286,12 @@ struct Config {
   bool zText;
   bool zRetpolineplt;
   bool zWxneeded;
+  // --warn-execstack, --warn-rwx-segments and --warn-shared-textrel.
+  bool warnExecstack = true;
+  bool warnRwxSegments = true;
+  bool warnSharedTextrel = false;
+  bool printStats = false;
+  SortCommonKind sortCommon = SortCommonKind::None;
   DiscardPolicy discard;
   GnuStackKind zGnustack;
   ICFLevel icf;

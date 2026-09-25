@@ -663,7 +663,8 @@ OPTION(prefix_2, "--no-warn-common", no_warn_common, Flag, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0,
        "Do not warn about duplicate common symbols (default)", nullptr, nullptr)
 OPTION(prefix_2, "--no-warn-execstack", ignored_no_warn_execstack, Flag,
-       INVALID, INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
+       INVALID, INVALID, nullptr, 0, DefaultVis, 0,
+       "Do not warn about an executable stack", nullptr, nullptr)
 OPTION(prefix_3, "--no-warn-ifunc-textrel", no_warn_ifunc_textrel, Flag,
        INVALID, INVALID, nullptr, 0, DefaultVis, 0,
        "Do not warn about using ifunc symbols with text relocations (default)",
@@ -672,7 +673,9 @@ OPTION(prefix_2, "--no-warn-mismatch", no_warn_mismatch, Flag, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0,
        "Suppress errors for certain unknown seciton types", nullptr, nullptr)
 OPTION(prefix_2, "--no-warn-rwx-segments", ignored_no_warn_rwx_segments, Flag,
-       INVALID, INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
+       INVALID, INVALID, nullptr, 0, DefaultVis, 0,
+       "Do not warn about segments that are writable and executable", nullptr,
+       nullptr)
 OPTION(prefix_3, "--no-warn-symbol-ordering", no_warn_symbol_ordering, Flag,
        INVALID, INVALID, nullptr, 0, DefaultVis, 0,
        "Do not warn about problems with the symbol ordering file", nullptr,
@@ -979,8 +982,13 @@ OPTION(prefix_2, "--soname=", soname_eq, Joined, INVALID, soname, nullptr, 0,
        DefaultVis, 0, "Set DT_SONAME", nullptr, nullptr)
 OPTION(prefix_2, "--soname", soname, Separate, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_2, "--sort-common=", sort_common_eq, Joined, INVALID, INVALID,
+       nullptr, 0, DefaultVis, 0,
+       "Place common symbols by <order> of alignment: ascending or descending",
+       "<order>", nullptr)
 OPTION(prefix_2, "--sort-common", ignored_sort_common, Flag, INVALID, INVALID,
-       nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
+       nullptr, 0, DefaultVis, 0,
+       "Place common symbols by descending alignment", nullptr, nullptr)
 OPTION(prefix_2, "--sort-section=", sort_section_eq, Joined, INVALID,
        sort_section, nullptr, 0, DefaultVis, 0,
        "Specifies sections sorting rule when linkerscript is used", nullptr,
@@ -1006,7 +1014,8 @@ OPTION(prefix_2, "--start-lib", start_lib, Flag, INVALID, INVALID, nullptr, 0,
 OPTION(prefix_2, "--static", anonymous_1, Flag, INVALID, Bstatic, nullptr, 0,
        DefaultVis, 0, "Alias for --Bstatic", nullptr, nullptr)
 OPTION(prefix_2, "--stats", ignored_stats, Flag, INVALID, INVALID, nullptr, 0,
-       DefaultVis, 0, nullptr, nullptr, nullptr)
+       DefaultVis, 0, "Report the inputs, output size and CPU time of the link",
+       nullptr, nullptr)
 OPTION(prefix_2, "--strip-all", strip_all, Flag, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0, "Strip all symbols. Implies --strip-debug", nullptr,
        nullptr)
@@ -1154,16 +1163,20 @@ OPTION(prefix_2, "--warn-common", warn_common, Flag, INVALID, INVALID, nullptr,
        0, DefaultVis, 0, "Warn about duplicate common symbols", nullptr,
        nullptr)
 OPTION(prefix_2, "--warn-execstack", ignored_warn_execstack, Flag, INVALID,
-       INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
+       INVALID, nullptr, 0, DefaultVis, 0,
+       "Warn about an executable stack (default)", nullptr, nullptr)
 OPTION(prefix_3, "--warn-ifunc-textrel", warn_ifunc_textrel, Flag, INVALID,
        INVALID, nullptr, 0, DefaultVis, 0,
        "Warn about using ifunc symbols with text relocations", nullptr, nullptr)
 OPTION(prefix_2, "--warn-once", ignored_warn_once, Flag, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_2, "--warn-rwx-segments", ignored_warn_rwx_segments, Flag,
-       INVALID, INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
+       INVALID, INVALID, nullptr, 0, DefaultVis, 0,
+       "Warn about segments that are writable and executable (default)",
+       nullptr, nullptr)
 OPTION(prefix_2, "--warn-shared-textrel", ignored_warn_shared_textrel, Flag,
-       INVALID, INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
+       INVALID, INVALID, nullptr, 0, DefaultVis, 0,
+       "Warn when a shared object needs text relocations", nullptr, nullptr)
 OPTION(prefix_3, "--warn-symbol-ordering", warn_symbol_ordering, Flag, INVALID,
        INVALID, nullptr, 0, DefaultVis, 0,
        "Warn about problems with the symbol ordering file (default)", nullptr,

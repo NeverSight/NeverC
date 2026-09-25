@@ -4,6 +4,7 @@
 #include "Linker/Core/Support/LlvmAliases.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
+#include <atomic>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -34,6 +35,8 @@ struct UndefinedDiag {
 struct ELFRelocationState {
   std::vector<UndefinedDiag> undefs;
   std::mutex mutex;
+  // Whether --warn-shared-textrel has warned in this link.
+  std::atomic<bool> warnedSharedTextrel{false};
   // Threads scanning relocations ahead of the regular scan; see
   // startEarlyRelocationScan().
   std::vector<std::thread> earlyScanThreads;

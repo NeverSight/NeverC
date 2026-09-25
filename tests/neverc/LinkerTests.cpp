@@ -3547,6 +3547,85 @@ pick:
       break;
     }
   EXPECT_EQ(firstLoad, 0x10000000u);
+
+  // An executable stack and writable code warn unless told not to.
+  CmdResult execStack = linkDebug({"-Wl,-z,execstack"}, based);
+  ASSERT_EQ(execStack.exitCode, 0) << execStack.err;
+  EXPECT_TRUE(execStack.stderrContains("has an executable stack"))
+      << execStack.err;
+  CmdResult quietStack =
+      linkDebug({"-Wl,-z,execstack", "-Wl,--no-warn-execstack"}, based);
+  ASSERT_EQ(quietStack.exitCode, 0) << quietStack.err;
+  EXPECT_FALSE(quietStack.stderrContains("executable stack")) << quietStack.err;
+  CmdResult stats = linkDebug({"-Wl,--stats"}, based);
+  ASSERT_EQ(stats.exitCode, 0) << stats.err;
+  EXPECT_TRUE(stats.contains("bytes written") ||
+              stats.stderrContains("bytes written"))
+      << stats.out << stats.err;
+
+  const fs::path asmSource = tmpFile("gnu_misc.s");
+  const fs::path asmObject = tmpFile("gnu_misc.o");
+  writeFile(asmSource, R"(
+.comm small,1,1
+.comm large,8,8
+.comm middle,4,4
+.text
+.globl _start, f
+_start:
+  xor %eax, %eax
+  ret
+f:
+  .quad g
+.data
+.globl g
+g:
+  .long 1
+.section .note.GNU-stack,"",@progbits
+)");
+  CmdResult assembled =
+      ncc({"-c", asmSource.string(), "-o", asmObject.string()});
+  ASSERT_EQ(assembled.exitCode, 0) << assembled.err;
+  const fs::path misc = tmpFile("gnu_misc");
+  auto linkMisc = [&](std::vector<std::string> flags) {
+    std::vector<std::string> a = {"-nostdlib", asmObject.string()};
+    a.insert(a.end(), flags.begin(), flags.end());
+    a.insert(a.end(), {"-o", misc.string()});
+    return ncc(a);
+  };
+  CmdResult rwx = linkMisc({"-no-pie", "-Wl,--omagic"});
+  ASSERT_EQ(rwx.exitCode, 0) << rwx.err;
+  EXPECT_TRUE(rwx.stderrContains("RWX permissions")) << rwx.err;
+  CmdResult quietRwx =
+      linkMisc({"-no-pie", "-Wl,--omagic", "-Wl,--no-warn-rwx-segments"});
+  ASSERT_EQ(quietRwx.exitCode, 0) << quietRwx.err;
+  EXPECT_FALSE(quietRwx.stderrContains("RWX")) << quietRwx.err;
+
+  CmdResult textrel =
+      linkMisc({"-shared", "-Wl,-z,notext", "-Wl,--warn-shared-textrel"});
+  ASSERT_EQ(textrel.exitCode, 0) << textrel.err;
+  EXPECT_TRUE(textrel.stderrContains("DT_TEXTREL in a shared object"))
+      << textrel.err;
+
+  // --sort-common places commons by descending alignment by default.
+  auto commonOrder = [&] {
+    auto object = llvm::object::ObjectFile::createObjectFile(
+        llvm::MemoryBufferRef(readFile(misc), "misc"));
+    std::map<uint64_t, std::string> byAddress;
+    if (object)
+      for (const auto &sym : (*object)->symbols()) {
+        llvm::Expected<llvm::StringRef> name = sym.getName();
+        if (name && (*name == "small" || *name == "large" || *name == "middle"))
+          byAddress[llvm::cantFail(sym.getAddress())] = name->str();
+      }
+    std::string order;
+    for (const auto &[address, name] : byAddress)
+      order += name + " ";
+    return order;
+  };
+  ASSERT_EQ(linkMisc({"-no-pie", "-Wl,--sort-common"}).exitCode, 0);
+  EXPECT_EQ(commonOrder(), "large middle small ");
+  ASSERT_EQ(linkMisc({"-no-pie", "-Wl,--sort-common=ascending"}).exitCode, 0);
+  EXPECT_EQ(commonOrder(), "small middle large ");
 }
 
 TEST_F(LinkerTest, DebugNamesMergesNameIndexes) {

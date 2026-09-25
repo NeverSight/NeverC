@@ -1863,6 +1863,20 @@ template <class ELFT> void OutputWriter<ELFT>::prepareLayout() {
     for (PhdrEntry *p : mainPart->phdrs)
       if (p->p_type == PT_TLS)
         elfOut().tlsPhdr = p;
+
+    // --warn-rwx-segments and --warn-execstack, both on by default.
+    if (config->warnRwxSegments)
+      for (Partition &part : partitions)
+        for (PhdrEntry *p : part.phdrs)
+          if (p->p_type == PT_LOAD && (p->p_flags & PF_W) &&
+              (p->p_flags & PF_X)) {
+            warn(config->outputFile + " has a LOAD segment with RWX "
+                                      "permissions");
+            break;
+          }
+    if (config->warnExecstack && config->zGnustack == GnuStackKind::Exec)
+      warn(config->outputFile + " has an executable stack because of -z "
+                                "execstack");
   }
 
   // Some symbols are defined in term of program headers. Now that we
