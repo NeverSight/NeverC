@@ -9223,6 +9223,29 @@ class FunctionLowering {
                               : std::move(Begin),
                           *Reverse);
     }
+    case UtilityOperation::WrapIteratorOffsetLeft: {
+      auto Iterator = approvedUtilityWrapIteratorRecord(
+          A.S, A.Sources, Call->getArg(1)->getType()->getAsCXXRecordDecl(),
+          A.Context);
+      if (!Iterator)
+        reject(L, "wrap iterator offset",
+               "The selected std::__wrap_iter layout is unavailable.");
+      auto Offset = snapshot(expression(Call->getArg(0)), L);
+      auto Value = snapshot(expression(Call->getArg(1)), L);
+      auto Current =
+          snapshot(fieldStorage(json::Object(Value), Iterator->Current, L), L);
+      auto Place = Destination ? std::move(*Destination)
+                               : objectTemporary(Call->getType(), L);
+      Destination.reset();
+      if (Place.getString("type") != type(Call->getType(), L))
+        reject(L, "wrap iterator offset",
+               "The iterator destination type differs from the result.");
+      assign(fieldStorage(json::Object(Place), Iterator->Current, L),
+             binary("+", std::move(Current), std::move(Offset),
+                    type(Iterator->IteratorType, L), L),
+             L);
+      return Place;
+    }
     case UtilityOperation::WrapIteratorEqual:
     case UtilityOperation::WrapIteratorNotEqual:
     case UtilityOperation::WrapIteratorDifference: {
@@ -9262,8 +9285,16 @@ class FunctionLowering {
                       L);
     }
     case UtilityOperation::WrapIteratorDereference:
+    case UtilityOperation::WrapIteratorArrow:
+    case UtilityOperation::WrapIteratorSubscript:
     case UtilityOperation::WrapIteratorPreIncrement:
-    case UtilityOperation::WrapIteratorPreDecrement: {
+    case UtilityOperation::WrapIteratorPreDecrement:
+    case UtilityOperation::WrapIteratorPostIncrement:
+    case UtilityOperation::WrapIteratorPostDecrement:
+    case UtilityOperation::WrapIteratorAddOffset:
+    case UtilityOperation::WrapIteratorSubtractOffset:
+    case UtilityOperation::WrapIteratorAddAssign:
+    case UtilityOperation::WrapIteratorSubtractAssign: {
       const auto *Object = MemberObject();
       auto Iterator = Object ? approvedUtilityWrapIteratorRecord(
                                    A.S, A.Sources,
@@ -9281,6 +9312,63 @@ class FunctionLowering {
         return dereference(
             cast(std::move(Pointer),
                  type(A.Context.getPointerType(Call->getType()), L), L), L);
+      if (Operation == UtilityOperation::WrapIteratorArrow)
+        return snapshot(std::move(Pointer), L);
+      if (Operation == UtilityOperation::WrapIteratorSubscript) {
+        auto Offset = snapshot(expression(Call->getArg(1)), L);
+        return dereference(
+            cast(binary("+", std::move(Pointer), std::move(Offset),
+                        type(Iterator->IteratorType, L), L),
+                 type(A.Context.getPointerType(Call->getType()), L), L),
+            L);
+      }
+      if (Operation == UtilityOperation::WrapIteratorPostIncrement ||
+          Operation == UtilityOperation::WrapIteratorPostDecrement) {
+        snapshot(expression(Call->getArg(1)), L);
+        auto Old = snapshot(Pointer, L);
+        auto Result = Destination ? std::move(*Destination)
+                                  : objectTemporary(Call->getType(), L);
+        Destination.reset();
+        if (Result.getString("type") != type(Call->getType(), L))
+          reject(L, "wrap iterator operation",
+                 "The iterator destination type differs from the result.");
+        assign(fieldStorage(json::Object(Result), Iterator->Current, L),
+               json::Object(Old), L);
+        assign(Pointer,
+               binary(Operation == UtilityOperation::WrapIteratorPostIncrement
+                          ? "+"
+                          : "-",
+                      std::move(Old),
+                      quantity(1, type(A.Context.getPointerDiffType(), L), L),
+                      type(Iterator->IteratorType, L), L),
+               L);
+        return Result;
+      }
+      if (Operation == UtilityOperation::WrapIteratorAddOffset ||
+          Operation == UtilityOperation::WrapIteratorSubtractOffset ||
+          Operation == UtilityOperation::WrapIteratorAddAssign ||
+          Operation == UtilityOperation::WrapIteratorSubtractAssign) {
+        auto Offset = snapshot(expression(Call->getArg(1)), L);
+        const bool Add = Operation == UtilityOperation::WrapIteratorAddOffset ||
+                         Operation == UtilityOperation::WrapIteratorAddAssign;
+        auto Value =
+            binary(Add ? "+" : "-", json::Object(Pointer), std::move(Offset),
+                   type(Iterator->IteratorType, L), L);
+        if (Operation == UtilityOperation::WrapIteratorAddAssign ||
+            Operation == UtilityOperation::WrapIteratorSubtractAssign) {
+          assign(Pointer, std::move(Value), L);
+          return Place;
+        }
+        auto Result = Destination ? std::move(*Destination)
+                                  : objectTemporary(Call->getType(), L);
+        Destination.reset();
+        if (Result.getString("type") != type(Call->getType(), L))
+          reject(L, "wrap iterator operation",
+                 "The iterator destination type differs from the result.");
+        assign(fieldStorage(json::Object(Result), Iterator->Current, L),
+               std::move(Value), L);
+        return Result;
+      }
       assign(Pointer,
              binary(Operation == UtilityOperation::WrapIteratorPreIncrement
                         ? "+"

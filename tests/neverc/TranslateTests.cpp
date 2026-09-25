@@ -53429,6 +53429,82 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2WrappedIteratorOffsetsRun) {
+  const auto Source = tmpFile("wrapped-iterator-offsets.cpp");
+  const auto Output = tmpFile("wrapped-iterator-offsets.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <string>
+#include <vector>
+struct Box { int value; };
+int main() {
+  std::string text("abcdef");
+  auto cursor = text.begin();
+  if (cursor.operator->() != text.data() || cursor[2] != 'c' ||
+      *(cursor + 2) != 'c' || *(2 + cursor) != 'c')
+    return 1;
+  auto middle = cursor + 2;
+  if (*(middle - 1) != 'b' || middle[-1] != 'b')
+    return 2;
+  auto before_increment = middle++;
+  auto before_decrement = middle--;
+  if (*before_increment != 'c' || *before_decrement != 'd' ||
+      *middle != 'c')
+    return 3;
+  auto &added = (middle += 2);
+  if (&added != &middle || *middle != 'e')
+    return 4;
+  auto &subtracted = (middle -= 1);
+  if (&subtracted != &middle || *middle != 'd')
+    return 5;
+  const std::string &constant_text = text;
+  auto constant_cursor = constant_text.cbegin() + 1;
+  if (*constant_cursor != 'b' || constant_cursor[2] != 'd' ||
+      *(2 + constant_cursor) != 'd' ||
+      constant_cursor.operator->() != constant_text.data() + 1)
+    return 6;
+  std::vector<int> values{10, 20, 30, 40};
+  auto vector_cursor = values.begin();
+  if (vector_cursor.operator->() != values.data() ||
+      vector_cursor[2] != 30 || *(1 + vector_cursor) != 20)
+    return 7;
+  auto vector_middle = vector_cursor + 2;
+  if (*(vector_middle - 1) != 20 || *vector_middle++ != 30 ||
+      *vector_middle-- != 40 || *vector_middle != 30)
+    return 8;
+  vector_middle += 1;
+  vector_middle -= 2;
+  if (*vector_middle != 20)
+    return 9;
+  const std::vector<int> &constant_values = values;
+  auto constant_vector_cursor = constant_values.cbegin() + 1;
+  if (constant_vector_cursor[2] != 40 ||
+      *(constant_values.cend() - 1) != 40)
+    return 10;
+  std::vector<Box> boxes{{7}, {9}};
+  auto box_cursor = boxes.begin();
+  if (box_cursor->value != 7 || (box_cursor + 1)->value != 9)
+    return 11;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("wrapped-iterator-offsets" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StringReverseIteratorRun) {
   const auto Source = tmpFile("string-reverse-iterator.cpp");
   const auto Output = tmpFile("string-reverse-iterator.nc");

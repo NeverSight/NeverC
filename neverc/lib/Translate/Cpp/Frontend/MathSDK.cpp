@@ -15836,6 +15836,43 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   const auto *Function = Call->getDirectCallee();
   const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Function);
   if (const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+      Operator && Operator->getOperator() == OO_Plus &&
+      Operator->getNumArgs() == 2 && Function && !Method &&
+      Function->getOverloadedOperator() == OO_Plus &&
+      Function->getNumParams() == 2 && !Function->isVariadic() &&
+      Function->hasBody() && Call->isPRValue() &&
+      approvedUtilityReference(S, SM, Call, Function) &&
+      approvedStandardSDKDeclaration(S, SM, Function) &&
+      cstddefOrigin(S, SM, Function->getLocation(), "libcxx",
+                    "__iterator/wrap_iter.h")) {
+    const auto Iterator = approvedUtilityWrapIteratorRecord(
+        S, SM, Operator->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
+    const auto *Primary = Function->getPrimaryTemplate();
+    const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
+    const auto *Arguments = Function->getTemplateSpecializationArgs();
+    if (Iterator && Primary && Prototype && Prototype->isNothrow() &&
+        Arguments && Arguments->size() == 1 &&
+        Arguments->get(0).getKind() == TemplateArgument::Type &&
+        Context.hasSameType(Arguments->get(0).getAsType(),
+                            Iterator->IteratorType) &&
+        Context.hasSameType(Function->getParamDecl(0)->getType(),
+                            Context.getPointerDiffType()) &&
+        Context.hasSameType(Operator->getArg(0)->getType(),
+                            Context.getPointerDiffType()) &&
+        Context.hasSameType(Function->getParamDecl(1)->getType(),
+                            Context.getRecordType(Iterator->Record)) &&
+        Context.hasSameUnqualifiedType(
+            Operator->getArg(1)->getType(),
+            Context.getRecordType(Iterator->Record)) &&
+        Context.hasSameType(Function->getReturnType(),
+                            Context.getRecordType(Iterator->Record)) &&
+        Context.hasSameType(Call->getType(), Function->getReturnType()) &&
+        approvedStandardSDKDeclaration(S, SM, Primary) &&
+        cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
+                      "__iterator/wrap_iter.h"))
+      return UtilityOperation::WrapIteratorOffsetLeft;
+  }
+  if (const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
       Operator && (Operator->getOperator() == OO_EqualEqual ||
                    Operator->getOperator() == OO_ExclaimEqual ||
                    Operator->getOperator() == OO_Minus) &&
@@ -16307,37 +16344,43 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
     const auto WrapType = Context.getRecordType(Wrapped->Record);
     if (Reference && Object && Prototype && Prototype->isNothrow() &&
-        (Operator ? Operator->getNumArgs() == 1
-                  : MemberCall && Call->getNumArgs() == 0) &&
-        !Method->isStatic() &&
-        !Method->isVariadic() && Method->hasBody() &&
-        Method->getNumParams() == 0 && Method->getRefQualifier() == RQ_None &&
+        (Operator
+             ? Operator->getNumArgs() == Method->getNumParams() + 1
+             : MemberCall && Call->getNumArgs() == Method->getNumParams()) &&
+        !Method->isStatic() && !Method->isVariadic() && Method->hasBody() &&
+        Method->getNumParams() <= 1 && Method->getRefQualifier() == RQ_None &&
         Method->getParent()->getCanonicalDecl() ==
             Wrapped->Record->getCanonicalDecl() &&
         Context.hasSameUnqualifiedType(Object->getType(), WrapType) &&
         approvedStandardSDKDeclaration(S, SM, Method) &&
         cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
-                       "__iterator/wrap_iter.h") &&
+                      "__iterator/wrap_iter.h") &&
         S.owns(SM, Reference->getExprLoc())) {
-      if (MemberCall && Method->getName() == "base" && Method->isConst() &&
-          Call->isPRValue() &&
-          Context.hasSameType(Method->getReturnType(),
-                              Wrapped->IteratorType) &&
+      if (MemberCall && Method->getIdentifier() &&
+          Method->getIdentifier()->getName() == "base" && Method->isConst() &&
+          !Method->getNumParams() && Call->isPRValue() &&
+          Context.hasSameType(Method->getReturnType(), Wrapped->IteratorType) &&
           Context.hasSameType(Call->getType(), Wrapped->IteratorType))
         return UtilityOperation::WrapIteratorBase;
       if (Operator && Method->getOverloadedOperator() == OO_Star &&
-          Method->isConst() &&
-          Call->isLValue() &&
+          Method->isConst() && !Method->getNumParams() && Call->isLValue() &&
           Method->getReturnType()->isLValueReferenceType() &&
           Context.hasSameType(Method->getReturnType()->getPointeeType(),
                               Wrapped->IteratorType->getPointeeType()) &&
           Context.hasSameUnqualifiedType(
               Call->getType(), Wrapped->IteratorType->getPointeeType()))
         return UtilityOperation::WrapIteratorDereference;
-      if (Operator && (Method->getOverloadedOperator() == OO_PlusPlus ||
-                       Method->getOverloadedOperator() == OO_MinusMinus) &&
-          !Method->isConst() && !Object->getType().isConstQualified() &&
-          Call->isLValue() &&
+      if ((Operator || MemberCall) &&
+          Method->getOverloadedOperator() == OO_Arrow && Method->isConst() &&
+          !Method->getNumParams() && Call->isPRValue() &&
+          Context.hasSameType(Method->getReturnType(), Wrapped->IteratorType) &&
+          Context.hasSameType(Call->getType(), Wrapped->IteratorType))
+        return UtilityOperation::WrapIteratorArrow;
+      if (Operator &&
+          (Method->getOverloadedOperator() == OO_PlusPlus ||
+           Method->getOverloadedOperator() == OO_MinusMinus) &&
+          !Method->getNumParams() && !Method->isConst() &&
+          !Object->getType().isConstQualified() && Call->isLValue() &&
           Method->getReturnType()->isLValueReferenceType() &&
           Context.hasSameUnqualifiedType(
               Method->getReturnType()->getPointeeType(), WrapType) &&
@@ -16345,6 +16388,52 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         return Method->getOverloadedOperator() == OO_PlusPlus
                    ? UtilityOperation::WrapIteratorPreIncrement
                    : UtilityOperation::WrapIteratorPreDecrement;
+      if (Operator && Method->getNumParams() == 1 &&
+          Context.hasSameType(Method->getParamDecl(0)->getType(),
+                              Context.IntTy) &&
+          Context.hasSameType(Call->getArg(1)->getType(), Context.IntTy) &&
+          (Method->getOverloadedOperator() == OO_PlusPlus ||
+           Method->getOverloadedOperator() == OO_MinusMinus) &&
+          !Method->isConst() && !Object->getType().isConstQualified() &&
+          Call->isPRValue() &&
+          Context.hasSameType(Method->getReturnType(), WrapType) &&
+          Context.hasSameType(Call->getType(), WrapType))
+        return Method->getOverloadedOperator() == OO_PlusPlus
+                   ? UtilityOperation::WrapIteratorPostIncrement
+                   : UtilityOperation::WrapIteratorPostDecrement;
+      if (Operator && Method->getNumParams() == 1 &&
+          Context.hasSameType(Method->getParamDecl(0)->getType(),
+                              Context.getPointerDiffType()) &&
+          Context.hasSameType(Call->getArg(1)->getType(),
+                              Context.getPointerDiffType())) {
+        if (Method->getOverloadedOperator() == OO_Subscript &&
+            Method->isConst() && Call->isLValue() &&
+            Method->getReturnType()->isLValueReferenceType() &&
+            Context.hasSameType(Method->getReturnType()->getPointeeType(),
+                                Wrapped->IteratorType->getPointeeType()) &&
+            Context.hasSameUnqualifiedType(
+                Call->getType(), Wrapped->IteratorType->getPointeeType()))
+          return UtilityOperation::WrapIteratorSubscript;
+        if (Method->isConst() && Call->isPRValue() &&
+            Context.hasSameType(Method->getReturnType(), WrapType) &&
+            Context.hasSameType(Call->getType(), WrapType)) {
+          if (Method->getOverloadedOperator() == OO_Plus)
+            return UtilityOperation::WrapIteratorAddOffset;
+          if (Method->getOverloadedOperator() == OO_Minus)
+            return UtilityOperation::WrapIteratorSubtractOffset;
+        }
+        if (!Method->isConst() && !Object->getType().isConstQualified() &&
+            Call->isLValue() &&
+            Method->getReturnType()->isLValueReferenceType() &&
+            Context.hasSameType(Method->getReturnType()->getPointeeType(),
+                                WrapType) &&
+            Context.hasSameUnqualifiedType(Call->getType(), WrapType)) {
+          if (Method->getOverloadedOperator() == OO_PlusEqual)
+            return UtilityOperation::WrapIteratorAddAssign;
+          if (Method->getOverloadedOperator() == OO_MinusEqual)
+            return UtilityOperation::WrapIteratorSubtractAssign;
+        }
+      }
     }
     return std::nullopt;
   }

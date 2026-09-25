@@ -709,6 +709,10 @@ their pinned `reverse_iterator` adapter. Its two wrapped pointer fields are
 checked before direct base access, dereference, arrow, movement, offsets,
 subscript, difference or comparison lowering. Raw-pointer reverse iterators
 retain the same path.
+The authenticated forward wrappers directly lower arrow, subscript, prefix and
+postfix increment/decrement, member and left-hand offsets, and compound offset
+assignment. The result of postfix movement retains the old pointer, while
+compound assignment returns the mutated iterator by reference.
 
 The four stream-iterator component headers remain authenticated in the VFS but
 their declarations are disabled until the I/O header closure and runtime
@@ -2296,9 +2300,10 @@ access, mutable and const `front`/`back`, `clear`, `push_back(char)`,
 `reserve()` alias, both `resize` overloads, and destruction.
 Mutable and const `begin`/`end`, plus `cbegin`/`cend`, produce authenticated
 libc++ `__wrap_iter` values for forward traversal and mutable element access.
-The authenticated wrapper also supports `base()`, prefix decrement, equality,
-inequality, same-type iterator difference and mutable-to-const construction,
-shared with vector iterators.
+The authenticated wrapper also supports `base()`, arrow, subscript, prefix and
+postfix increment/decrement, both offset orders, compound offset assignment,
+equality, inequality, same-type iterator difference and mutable-to-const
+construction, shared with vector iterators.
 Mutable and const `rbegin`/`rend`, plus `crbegin`/`crend`, construct checked
 reverse iterators over those wrappers. Matching and const-converting reverse
 construction and assignment, `make_reverse_iterator`, traversal and indexed
@@ -2424,7 +2429,8 @@ Host O0/O2 fixtures check capacity reuse, reallocation, aliased fill arguments,
 maximum size, occupied and empty capacity shrinking,
 `emplace_back` value initialization and returned references, positional
 `emplace` return positions and source aliasing,
-forward/reverse iterator access, iterator base/decrement/equality/difference,
+forward/reverse iterator access, iterator base/arrow/subscript, prefix and
+postfix movement, offsets, compound offsets, equality and difference,
 insert return positions, source aliasing, empty ranges, and insertion from a
 distinct vector; assignment from values, ranges, and lists with capacity reuse
 and growth, plus initializer-list assignment's returned reference and right

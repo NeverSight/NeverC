@@ -28994,12 +28994,20 @@ std::vector<int>::size_type passthrough(std::vector<int>::size_type n) {
 int iterator_access(std::vector<int>& values) {
   auto first = values.begin();
   auto last = values.end();
-  if (first == last) return 0;
+  if (values.size() < 3) return 0;
   --last;
+  auto shifted = first + 1;
+  auto previous = shifted++;
+  shifted--;
+  shifted += 1;
+  shifted -= 1;
+  auto offset_left = 2 + first;
   auto reverse = values.rbegin();
   const std::vector<int>& constant = values;
   auto const_reverse = constant.crbegin();
   return *last + int(last - first) + (last.base() == values.data()) +
+         *previous + shifted[1] + *(offset_left - 1) +
+         (shifted.operator->() == values.data() + 1) +
          *reverse + (reverse.base() == values.end()) +
          (reverse.operator->() == last.base()) +
          int(values.rend() - reverse) +
@@ -29061,7 +29069,7 @@ struct VectorEntry { int key; int value; };
 int record_vector(std::vector<VectorEntry>& values) {
   values.push_back(VectorEntry{1, 2});
   values.emplace_back();
-  return values[0].key + values.back().value;
+  return values.begin()->key + values.back().value;
 }
 struct VectorNested { VectorEntry first; VectorEntry second; };
 int nested_record_vector(std::vector<VectorNested>& values) {
@@ -29647,6 +29655,16 @@ int main() {
                              iterated.end() - iterated.begin() == 3 &&
                              !(iterated.begin() == iterated.end()) &&
                              empty.begin() == empty.end();
+  auto shifted_cursor = iterated.begin() + 1;
+  auto old_cursor = shifted_cursor++;
+  shifted_cursor--;
+  shifted_cursor += 1;
+  shifted_cursor -= 1;
+  bool iterator_offsets = *old_cursor == 'c' &&
+                          shifted_cursor[1] == 'd' &&
+                          *(2 + iterated.begin()) == 'd' &&
+                          *(shifted_cursor - 1) == 'Q' &&
+                          shifted_cursor.operator->() == iterated.data() + 1;
   const std::string &const_iterated = iterated;
   int character_sum = 0;
   for (char character : const_iterated) character_sum += character;
@@ -29729,7 +29747,7 @@ int main() {
          cstring_compare_intact && positional_compare_intact &&
          search_intact && set_search_intact &&
          mutable_iteration && const_iteration && long_iteration &&
-         iterator_arithmetic && forward_conversion &&
+         iterator_arithmetic && iterator_offsets && forward_conversion &&
          reverse_start && reverse_walk &&
          reverse_const_intact && reverse_construction &&
          reverse_long_intact && reverse_standard_iterators &&
