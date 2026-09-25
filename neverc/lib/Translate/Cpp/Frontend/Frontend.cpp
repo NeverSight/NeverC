@@ -10246,11 +10246,13 @@ public:
           approvedUtilityOptionalMetadata(A.S, A.Sources, ConstructionRecord);
       const bool UtilityConstruction =
           Construction &&
-          (approvedFunctionalReferenceConstruction(
-               A.S, A.Sources, Construction, A.Context) ||
+          (approvedFunctionalReferenceConstruction(A.S, A.Sources, Construction,
+                                                   A.Context) ||
            approvedUtilityUniquePtrConstruction(A.S, A.Sources, Construction,
                                                 A.Context) ||
            approvedUtilityStringConstruction(A.S, A.Sources, Construction,
+                                             A.Context) ||
+           approvedUtilityVectorConstruction(A.S, A.Sources, Construction,
                                              A.Context) ||
            approvedUtilityDefaultDeleteConstruction(A.S, A.Sources,
                                                     Construction, A.Context) ||
@@ -10263,8 +10265,8 @@ public:
            UtilityOptionalMetadata ||
            approvedUtilityOptionalConstruction(A.S, A.Sources, Construction,
                                                A.Context) ||
-           approvedUtilityWrapIteratorConstruction(A.S, A.Sources,
-                                                  Construction, A.Context) ||
+           approvedUtilityWrapIteratorConstruction(A.S, A.Sources, Construction,
+                                                   A.Context) ||
            approvedUtilityReverseIteratorConstruction(A.S, A.Sources,
                                                       Construction, A.Context));
       const bool ApprovedUtilityCall =

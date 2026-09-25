@@ -28991,6 +28991,12 @@ static_assert(alignof(std::vector<int>) == alignof(void*));
 std::vector<int>::size_type passthrough(std::vector<int>::size_type n) {
   return n;
 }
+int construct_range(const int* first, const int* last,
+                    const std::vector<int>& source) {
+  std::vector<int> raw(first, last);
+  std::vector<int> wrapped(source.cbegin(), source.cend());
+  return int(raw.size() + wrapped.size());
+}
 int iterator_access(std::vector<int>& values) {
   auto first = values.begin();
   auto last = values.end();
@@ -29102,7 +29108,7 @@ int pointer_record_vector(std::vector<VectorPointer>& values, int& value) {
             vector_dependencies = dependencies
         else:
             assert dependencies == vector_dependencies, target
-        assert len(vector_ir["functions"]) == 18, target
+        assert len(vector_ir["functions"]) == 20, target
     vector_record_boundary_preamble = """\
 using Size = decltype(sizeof(0));
 extern "C" void *malloc(Size);

@@ -4654,6 +4654,32 @@ approvedUtilityVectorConstruction(const State &S, const SourceManager &SM,
         approvedUtilityInitializerListExpression(S, SM, Expression, Context))
       return UtilityVectorConstruction::InitializerList;
   }
+  if (Construction->getNumArgs() == 2 && Constructor->getPrimaryTemplate() &&
+      approvedStandardSDKDeclaration(S, SM,
+                                     Constructor->getPrimaryTemplate()) &&
+      cstddefOrigin(S, SM, Constructor->getPrimaryTemplate()->getLocation(),
+                    "libcxx", "__vector/vector.h")) {
+    const auto FirstType = Constructor->getParamDecl(0)->getType();
+    const auto LastType = Constructor->getParamDecl(1)->getType();
+    const auto Element = Vector->ElementType;
+    const bool RawPointer =
+        Context.hasSameType(FirstType, Context.getPointerType(Element)) ||
+        Context.hasSameType(FirstType,
+                            Context.getPointerType(Element.withConst()));
+    const auto Wrapped = approvedUtilityWrapIteratorRecord(
+        S, SM, FirstType->getAsCXXRecordDecl(), Context);
+    const bool WrappedPointer =
+        Wrapped &&
+        (Context.hasSameType(Wrapped->IteratorType,
+                             Context.getPointerType(Element)) ||
+         Context.hasSameType(Wrapped->IteratorType,
+                             Context.getPointerType(Element.withConst())));
+    if ((RawPointer || WrappedPointer) &&
+        Context.hasSameType(FirstType, LastType) &&
+        Context.hasSameType(Construction->getArg(0)->getType(), FirstType) &&
+        Context.hasSameType(Construction->getArg(1)->getType(), LastType))
+      return UtilityVectorConstruction::Range;
+  }
   if ((Construction->getNumArgs() != 1 && Construction->getNumArgs() != 2) ||
       !Context.hasSameType(Constructor->getParamDecl(0)->getType(),
                            Context.getSizeType()) ||

@@ -1258,8 +1258,15 @@ std::optional<UtilityVectorRecord>
 approvedUtilityVectorRecord(const State &S, const clang::SourceManager &SM,
                             const clang::CXXRecordDecl *Record,
                             const clang::ASTContext &Context);
-enum class UtilityVectorConstruction { Default, Count, CountValue,
-                                       InitializerList, Copy, Move };
+enum class UtilityVectorConstruction {
+  Default,
+  Count,
+  CountValue,
+  Range,
+  InitializerList,
+  Copy,
+  Move
+};
 std::optional<UtilityVectorConstruction>
 approvedUtilityVectorConstruction(const State &S,
                                   const clang::SourceManager &SM,

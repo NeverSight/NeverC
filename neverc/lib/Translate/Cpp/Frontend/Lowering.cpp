@@ -18045,19 +18045,57 @@ class FunctionLowering {
         label(Done, L);
         return;
       }
-      std::optional<Expression> Fill, Input;
+      const auto SizeType = type(A.Context.getSizeType(), L);
+      const auto PointerType = type(Vector->PointerType, L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      std::optional<Expression> Fill, Input, RangeCount;
+      std::optional<QualType> InputType;
       std::optional<UtilityInitializerListExpression> List;
       uint64_t Count = 0;
       if (*Kind == UtilityVectorConstruction::InitializerList) {
-        const auto *Argument = llvm::cast<CXXStdInitializerListExpr>(C->getArg(0));
-        List = approvedUtilityInitializerListExpression(
-            A.S, A.Sources, Argument, A.Context);
+        const auto *Argument =
+            llvm::cast<CXXStdInitializerListExpr>(C->getArg(0));
+        List = approvedUtilityInitializerListExpression(A.S, A.Sources,
+                                                        Argument, A.Context);
         if (!List)
           reject(L, "vector construction",
                  "The checked initializer list backing is unavailable.");
         auto Value = expression(Argument);
-        Input = snapshot(fieldStorage(std::move(Value), List->List.Begin, L), L);
+        Input =
+            snapshot(fieldStorage(std::move(Value), List->List.Begin, L), L);
         Count = List->Size;
+      } else if (*Kind == UtilityVectorConstruction::Range) {
+        const auto FirstType = C->getArg(0)->getType();
+        const auto Wrapped = approvedUtilityWrapIteratorRecord(
+            A.S, A.Sources, FirstType->getAsCXXRecordDecl(), A.Context);
+        Expression RangeEnd;
+        if (Wrapped) {
+          auto First = snapshot(expression(C->getArg(0)), L);
+          auto Last = snapshot(expression(C->getArg(1)), L);
+          InputType = Wrapped->IteratorType;
+          Input =
+              snapshot(fieldStorage(std::move(First), Wrapped->Current, L), L);
+          RangeEnd =
+              snapshot(fieldStorage(std::move(Last), Wrapped->Current, L), L);
+        } else {
+          InputType = FirstType;
+          Input = snapshot(expression(C->getArg(0)), L);
+          RangeEnd = snapshot(expression(C->getArg(1)), L);
+        }
+        RangeCount = temporary(SizeType, L);
+        assign(*RangeCount, quantity(0, SizeType, L), L);
+        const auto Measure = labelName(), Measured = labelName();
+        branch(binary("!=", json::Object(*Input), json::Object(RangeEnd),
+                      "bool", L),
+               Measure, Measured, L);
+        label(Measure, L);
+        assign(*RangeCount,
+               cast(binary("-", json::Object(RangeEnd), json::Object(*Input),
+                           DifferenceType, L),
+                    SizeType, L),
+               L);
+        jump(Measured, L);
+        label(Measured, L);
       } else if (*Kind != UtilityVectorConstruction::Default) {
         Expr::EvalResult Evaluated;
         if (!C->getArg(0)->EvaluateAsInt(Evaluated, A.Context) ||
@@ -18068,19 +18106,28 @@ class FunctionLowering {
         if (*Kind == UtilityVectorConstruction::CountValue)
           Fill = snapshot(expression(C->getArg(1)), L);
       }
-      for (const char *Name : {"nct_vector_begin", "nct_vector_end",
-                               "nct_vector_capacity"})
+      for (const char *Name :
+           {"nct_vector_begin", "nct_vector_end", "nct_vector_capacity"})
         initializeZero(Member(Name), Vector->PointerType, L);
-      if (!Count)
+      if (!Count && !RangeCount)
         return;
-      const auto *Function = A.allocatorHeapFunction(true, Vector->ElementType, L);
-      const auto SizeType = type(A.Context.getSizeType(), L);
-      const auto PointerType = type(Vector->PointerType, L);
-      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const uint64_t Bytes =
-          Count * A.Context.getTypeSizeInChars(Vector->ElementType).getQuantity();
+      const auto EmptyRange = labelName();
+      if (RangeCount) {
+        const auto NonEmpty = labelName();
+        branch(binary("!=", json::Object(*RangeCount), quantity(0, SizeType, L),
+                      "bool", L),
+               NonEmpty, EmptyRange, L);
+        label(NonEmpty, L);
+      }
+      const auto *Function =
+          A.allocatorHeapFunction(true, Vector->ElementType, L);
+      const uint64_t ElementBytes =
+          A.Context.getTypeSizeInChars(Vector->ElementType).getQuantity();
       json::Array Args;
-      Args.push_back(quantity(Bytes, SizeType, L));
+      Args.push_back(RangeCount ? binary("*", json::Object(*RangeCount),
+                                         quantity(ElementBytes, SizeType, L),
+                                         SizeType, L)
+                                : quantity(Count * ElementBytes, SizeType, L));
       chargeCall(Args, L);
       auto Allocation = temporary(type(Function->getReturnType(), L), L);
       Body.push_back(json::Object{{"op", "call"},
@@ -18089,9 +18136,12 @@ class FunctionLowering {
                                   {"target", json::Object(Allocation)},
                                   {"loc", A.loc(L)}});
       auto Begin = snapshot(cast(std::move(Allocation), PointerType, L), L);
-      auto End = snapshot(binary("+", json::Object(Begin),
-                                 quantity(Count, DifferenceType, L),
-                                 PointerType, L), L);
+      auto End = snapshot(
+          binary("+", json::Object(Begin),
+                 RangeCount ? cast(json::Object(*RangeCount), DifferenceType, L)
+                            : quantity(Count, DifferenceType, L),
+                 PointerType, L),
+          L);
       assign(Member("nct_vector_begin"), json::Object(Begin), L);
       assign(Member("nct_vector_end"), json::Object(End), L);
       assign(Member("nct_vector_capacity"), std::move(End), L);
@@ -18100,8 +18150,8 @@ class FunctionLowering {
       const auto Check = labelName(), Advance = labelName(), Done = labelName();
       jump(Check, L);
       label(Check, L);
-      branch(binary("!=", json::Object(Current),
-                    Member("nct_vector_end"), "bool", L),
+      branch(binary("!=", json::Object(Current), Member("nct_vector_end"),
+                    "bool", L),
              Advance, Done, L);
       label(Advance, L);
       if (*Kind == UtilityVectorConstruction::Count) {
@@ -18113,15 +18163,20 @@ class FunctionLowering {
         assign(dereference(json::Object(Current), L),
                dereference(json::Object(*Input), L), L);
         assign(*Input,
-               binary("+", json::Object(*Input),
-                      quantity(1, DifferenceType, L),
-                      type(List->List.Begin->getType(), L), L), L);
+               binary("+", json::Object(*Input), quantity(1, DifferenceType, L),
+                      type(InputType ? *InputType : List->List.Begin->getType(),
+                           L),
+                      L),
+               L);
       }
       assign(Current,
-             binary("+", json::Object(Current),
-                    quantity(1, DifferenceType, L), PointerType, L), L);
+             binary("+", json::Object(Current), quantity(1, DifferenceType, L),
+                    PointerType, L),
+             L);
       jump(Check, L);
       label(Done, L);
+      if (RangeCount)
+        label(EmptyRange, L);
       return;
     }
     if (auto Kind = approvedUtilityStringViewConstruction(A.S, A.Sources, C,

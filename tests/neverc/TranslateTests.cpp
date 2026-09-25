@@ -51472,6 +51472,70 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorRangeConstructionRun) {
+  const auto Source = tmpFile("vector-range-construction.cpp");
+  const auto Output = tmpFile("vector-range-construction.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <vector>
+int first_calls;
+int last_calls;
+int *first(int *value) { ++first_calls; return value; }
+int *last(int *value) { ++last_calls; return value; }
+struct Entry { int key; int value; };
+int main() {
+  int raw[]{1, 2, 3, 4};
+  Entry records[]{{5, 6}, {7, 8}};
+  {
+    std::vector<int> copied(first(raw), last(raw + 4));
+    if (first_calls != 1 || last_calls != 1 || copied.size() != 4 ||
+        copied.capacity() != 4 || copied[0] != 1 || copied[3] != 4)
+      return 1;
+    const int *constant = raw;
+    std::vector<int> const_raw(constant + 1, constant + 3);
+    if (const_raw.size() != 2 || const_raw[0] != 2 || const_raw[1] != 3)
+      return 2;
+    std::vector<int> wrapped(copied.cbegin() + 1, copied.cend());
+    if (wrapped.size() != 3 || wrapped[0] != 2 || wrapped[2] != 4)
+      return 3;
+    std::vector<int> mutable_wrapped(copied.begin(), copied.begin() + 2);
+    if (mutable_wrapped.size() != 2 || mutable_wrapped[0] != 1 ||
+        mutable_wrapped[1] != 2)
+      return 4;
+    int before_empty = allocations;
+    std::vector<int> empty(raw + 2, raw + 2);
+    std::vector<int> empty_wrapped(copied.cend(), copied.cend());
+    if (!empty.empty() || empty.data() != nullptr ||
+        !empty_wrapped.empty() || empty_wrapped.data() != nullptr ||
+        allocations != before_empty)
+      return 5;
+    std::vector<Entry> entries(records, records + 2);
+    if (entries.size() != 2 || entries[0].key != 5 ||
+        entries[1].value != 8 || records[0].key != 5)
+      return 6;
+  }
+  return allocations == releases ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-range-construction" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorAlgorithmSortRun) {
   const auto Source = tmpFile("vector-algorithm-sort.cpp");
   const auto Output = tmpFile("vector-algorithm-sort.nc");

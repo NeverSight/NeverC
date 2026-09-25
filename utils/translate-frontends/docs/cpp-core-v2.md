@@ -2428,7 +2428,8 @@ queries from libc++'s three-pointer layout and resolve its `size_type` alias.
 Authenticated `std::vector<T, std::allocator<T>>` objects admit non-boolean
 integer and floating elements, plus source-owned standard-layout records with
 trivial default/copy/move construction, assignment and destruction. They use
-direct lowering for default, bounded count/fill/list, copy and move
+direct lowering for default, bounded count/fill/list, pointer or wrapped
+iterator range, copy and move
 construction; copy, move and initializer-list assignment; destruction; size,
 capacity, max_size, empty, data, element/front/back access; clear, push/pop;
 zero- or one-argument `emplace_back` with exact element types;
@@ -2448,6 +2449,10 @@ mutable iterator. Assign reuses capacity when possible and replaces storage
 through the selected allocator otherwise. Reserve, insert, and push growth
 preserve existing element values and use the selected allocator, and copy
 construction owns independent storage.
+Range construction accepts matching `T*` or `const T*` endpoints and
+authenticated mutable or const libc++ wrapped iterators. It measures the
+runtime distance once, leaves empty ranges unallocated, and copies elements
+into independent storage. The caller supplies a valid ordered range.
 Host O0/O2 fixtures check capacity reuse, reallocation, aliased fill arguments,
 maximum size, occupied and empty capacity shrinking,
 `emplace_back` value initialization and returned references, positional
