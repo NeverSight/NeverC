@@ -55040,6 +55040,107 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringRangeAssignAndAppendRun) {
+  const auto Source = tmpFile("string-range-modifiers.cpp");
+  const auto Output = tmpFile("string-range-modifiers.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+int main() {
+  {
+    char raw[] = {'?', 'A', 0, 'B', '?'};
+    std::string appended("hi");
+    char *short_data = appended.data();
+    auto &raw_result = appended.append(raw + 1, raw + 4);
+    if (&raw_result != &appended || appended.size() != 5 ||
+        appended[2] != 'A' || appended[3] != 0 || appended[4] != 'B' ||
+        appended.data() != short_data)
+      return 1;
+    auto &empty_result = appended.append(raw + 1, raw + 1);
+    if (&empty_result != &appended || appended.size() != 5 ||
+        appended.data() != short_data)
+      return 2;
+    const std::string donor("xy");
+    appended.append(donor.cbegin(), donor.cend());
+    if (appended.size() != 7 || appended[5] != 'x' || appended[6] != 'y')
+      return 3;
+    appended.append(appended.cbegin() + 2, appended.cbegin() + 5);
+    if (appended.size() != 10 || appended[7] != 'A' ||
+        appended[8] != 0 || appended[9] != 'B' ||
+        appended.data() != short_data)
+      return 4;
+    appended.append(appended.begin(), appended.begin() + 1);
+    if (appended.size() != 11 || appended[10] != 'h')
+      return 5;
+    std::string reserved("abc");
+    reserved.reserve(64);
+    char *reserved_data = reserved.data();
+    Size reserved_capacity = reserved.capacity();
+    reserved.append(reserved.cbegin(), reserved.cend());
+    if (reserved != "abcabc" || reserved.data() != reserved_data ||
+        reserved.capacity() != reserved_capacity)
+      return 6;
+    std::string growth("abcdefghijklmnopqrstuvwxyz");
+    char *old_growth_data = growth.data();
+    growth.append(growth.cbegin() + 1, growth.cend());
+    if (growth != "abcdefghijklmnopqrstuvwxyzbcdefghijklmnopqrstuvwxyz" ||
+        growth.data() == old_growth_data)
+      return 7;
+    std::string assigned("abcdefghijklmnopqrstuvwx");
+    char *assigned_data = assigned.data();
+    auto &raw_assign = assigned.assign(raw + 1, raw + 4);
+    if (&raw_assign != &assigned || assigned.size() != 3 ||
+        assigned[0] != 'A' || assigned[1] != 0 || assigned[2] != 'B' ||
+        assigned.data() != assigned_data)
+      return 8;
+    assigned.assign(donor.cbegin(), donor.cend());
+    if (assigned != "xy" || assigned.data() != assigned_data)
+      return 9;
+    assigned.assign(raw + 1, raw + 1);
+    if (!assigned.empty() || assigned.data() != assigned_data ||
+        assigned.data()[0] != 0)
+      return 10;
+    std::string self("abcdef");
+    char *self_data = self.data();
+    self.assign(self.cbegin() + 2, self.cend() - 1);
+    if (self != "cde" || self.data() != self_data || self.data()[3] != 0)
+      return 11;
+    std::string long_self("abcdefghijklmnopqrstuvwxyz0123456789");
+    long_self.reserve(90);
+    char *long_data = long_self.data();
+    Size long_capacity = long_self.capacity();
+    long_self.assign(long_self.cbegin() + 10, long_self.cbegin() + 26);
+    if (long_self != "klmnopqrstuvwxyz" || long_self.data() != long_data ||
+        long_self.capacity() != long_capacity)
+      return 12;
+    std::string grow_assign("small");
+    char *old_assign_data = grow_assign.data();
+    grow_assign.assign(growth.cbegin(), growth.cend());
+    if (grow_assign != growth || grow_assign.data() == old_assign_data)
+      return 13;
+  }
+  return allocations == releases ? 0 : 14;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-range-modifiers" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StringIteratorEraseRun) {
   const auto Source = tmpFile("string-iterator-erase.cpp");
   const auto Output = tmpFile("string-iterator-erase.nc");

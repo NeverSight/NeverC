@@ -29639,6 +29639,25 @@ int main() {
       iterator_replaced.size() == 4 && iterator_replaced[0] == 'a' &&
       iterator_replaced[1] == 'Z' && iterator_replaced[2] == 0 &&
       iterator_replaced[3] == 'd';
+  char range_bytes[] = {'?', 'A', 0, 'B', '?'};
+  std::string range_appended("hi");
+  auto &range_append_result = range_appended.append(range_bytes + 1,
+                                                    range_bytes + 4);
+  range_appended.append(range_appended.cbegin(),
+                        range_appended.cbegin() + 2);
+  bool range_modifiers_intact = &range_append_result == &range_appended &&
+      range_appended.size() == 7 && range_appended[2] == 'A' &&
+      range_appended[3] == 0 && range_appended[4] == 'B' &&
+      range_appended[5] == 'h';
+  std::string range_assigned("initial");
+  auto &range_assign_result = range_assigned.assign(
+      range_appended.cbegin() + 2, range_appended.cend());
+  range_modifiers_intact = range_modifiers_intact &&
+      &range_assign_result == &range_assigned &&
+      range_assigned.size() == 5 && range_assigned[1] == 0;
+  range_assigned.assign(range_bytes + 1, range_bytes + 4);
+  range_modifiers_intact = range_modifiers_intact &&
+      range_assigned.size() == 3 && range_assigned[2] == 'B';
   std::string spliced("ab");
   spliced.insert(1, "x", 1).insert(0, "!");
   spliced.insert(1, suffix).insert(0, 2, 'q');
@@ -29798,7 +29817,7 @@ int main() {
          reassigned.size() == 2 && reassigned[0] == 'a' &&
          reassigned[1] == 'a' &&
          erase_intact && erased.empty() && iterator_modifiers_intact &&
-         iterator_replace_intact &&
+         iterator_replace_intact && range_modifiers_intact &&
          splice_intact && growth_intact &&
          concat_intact && rvalue_concat_intact && list_intact &&
          scalar_assignment_intact &&

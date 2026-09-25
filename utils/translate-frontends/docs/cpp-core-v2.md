@@ -2313,6 +2313,9 @@ The `append(const char*, size_type)`, `append(const char*)`, and
 directly and return the receiver reference. Pointer and string append copy
 self-referenced source bytes before releasing storage during growth; the
 C-string overload scans to the first NUL.
+`append(first, last)` accepts matching raw character pointers or authenticated
+wrapped character iterators. It preserves embedded NUL bytes, supports empty
+and self-referenced ranges, and returns the receiver reference.
 The `operator+=` overloads for `char`, `const char*`, and `const std::string&`
 reuse those paths and return the receiver reference.
 The one-argument pinned `initializer_list<char>` constructor and the list
@@ -2333,6 +2336,9 @@ The `assign(const char*)`, `assign(const char*, size_type)`,
 `assign(const std::string&)`, and `assign(size_type, char)` overloads reuse
 capacity when possible and return the receiver reference. Pointer assignment
 copies self-referenced bytes before changing size or releasing old storage.
+`assign(first, last)` accepts the same raw and wrapped character ranges,
+including empty and self-referenced ranges. It preserves embedded NUL bytes
+and reuses capacity when the result fits.
 Positional `erase(pos, count)` and its default arguments remove bytes in place,
 retain capacity, and return the receiver reference.
 The `erase(const_iterator)` and `erase(const_iterator, const_iterator)`

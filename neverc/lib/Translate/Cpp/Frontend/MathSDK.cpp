@@ -16464,6 +16464,31 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
              Context.hasSameType(Parameter,
                                  Call->getArg(ArgumentIndex)->getType());
     };
+    auto CharacterRange = [&]() {
+      const auto *Primary = Method->getPrimaryTemplate();
+      if (Method->getNumParams() != 2 || !Primary ||
+          !approvedStandardSDKDeclaration(S, SM, Primary) ||
+          !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "string"))
+        return false;
+      const auto First = Method->getParamDecl(0)->getType();
+      const auto Last = Method->getParamDecl(1)->getType();
+      const auto ConstPointer =
+          Context.getPointerType(Context.CharTy.withConst());
+      const bool RawPointer =
+          Context.hasSameType(First, Context.getPointerType(Context.CharTy)) ||
+          Context.hasSameType(First, ConstPointer);
+      const auto Wrapped = approvedUtilityWrapIteratorRecord(
+          S, SM, First->getAsCXXRecordDecl(), Context);
+      const bool WrappedPointer =
+          Wrapped &&
+          (Context.hasSameType(Wrapped->IteratorType,
+                               Context.getPointerType(Context.CharTy)) ||
+           Context.hasSameType(Wrapped->IteratorType, ConstPointer));
+      return (RawPointer || WrappedPointer) &&
+             Context.hasSameType(First, Last) &&
+             Context.hasSameType(Call->getArg(0)->getType(), First) &&
+             Context.hasSameType(Call->getArg(1)->getType(), Last);
+    };
     if (!Reference || !Object || !Prototype ||
         (!Prototype->isNothrow() && Name != "push_back" && Name != "pop_back" &&
          Name != "reserve" && Name != "resize" && Name != "append" &&
@@ -16995,6 +17020,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                 Context.getSizeType()) &&
             Context.hasSameType(Call->getArg(1)->getType(), Context.CharTy))
           return UtilityOperation::StringAssignFill;
+        if (CharacterRange())
+          return UtilityOperation::StringAssignRange;
       }
     }
     if ((!Operator && Name == "append") || PlusEqual) {
@@ -17048,6 +17075,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Context.hasSameType(Call->getArg(1)->getType(),
                               Context.getSizeType()))
         return UtilityOperation::StringAppendPointer;
+      if (!PlusEqual && CharacterRange())
+        return UtilityOperation::StringAppendRange;
     }
     if (!Operator && !Method->isConst() &&
         !Object->getType().isConstQualified() &&

@@ -9382,6 +9382,7 @@ class FunctionLowering {
     case UtilityOperation::StringAssignCString:
     case UtilityOperation::StringAssignString:
     case UtilityOperation::StringAssignList:
+    case UtilityOperation::StringAssignRange:
     case UtilityOperation::StringAssignFill:
     case UtilityOperation::StringAssignOperatorCString:
     case UtilityOperation::StringAssignOperatorCharacter:
@@ -9498,6 +9499,28 @@ class FunctionLowering {
         jump(Ready, L);
         label(Ready, L);
         SourceArgument = std::move(SourceData);
+      } else if (Operation == UtilityOperation::StringAssignRange) {
+        auto RangePointer = [&](unsigned Index) {
+          const auto *Argument = Call->getArg(Index);
+          auto Value = snapshot(expression(Argument), L);
+          auto Iterator = approvedUtilityWrapIteratorRecord(
+              A.S, A.Sources, Argument->getType()->getAsCXXRecordDecl(),
+              A.Context);
+          return Iterator ? snapshot(fieldStorage(std::move(Value),
+                                                  Iterator->Current, L),
+                                     L)
+                          : Value;
+        };
+        auto FirstRange = RangePointer(0);
+        auto LastRange = RangePointer(1);
+        SourceArgument = temporary(ConstPointerType, L);
+        assign(*SourceArgument,
+               cast(std::move(FirstRange), ConstPointerType, L), L);
+        assign(NewSize,
+               cast(binary("-", cast(std::move(LastRange), ConstPointerType, L),
+                           json::Object(*SourceArgument), DifferenceType, L),
+                    SizeType, L),
+               L);
       } else {
         SourceArgument =
             EarlySource ? std::move(*EarlySource)
@@ -10593,6 +10616,7 @@ class FunctionLowering {
     case UtilityOperation::StringAppendCString:
     case UtilityOperation::StringAppendString:
     case UtilityOperation::StringAppendList:
+    case UtilityOperation::StringAppendRange:
     case UtilityOperation::StringAppendFill:
     case UtilityOperation::StringAppendCharacter:
     case UtilityOperation::StringErase:
@@ -10641,7 +10665,8 @@ class FunctionLowering {
           Operation == UtilityOperation::StringAppendPointer ||
           Operation == UtilityOperation::StringAppendCString ||
           Operation == UtilityOperation::StringAppendString ||
-          Operation == UtilityOperation::StringAppendList;
+          Operation == UtilityOperation::StringAppendList ||
+          Operation == UtilityOperation::StringAppendRange;
       if (Operation == UtilityOperation::StringPushBack || CharacterAppend)
         CharacterArgument =
             snapshot(expression(Call->getArg(ArgumentOffset)), L);
@@ -10652,6 +10677,33 @@ class FunctionLowering {
       if (Operation == UtilityOperation::StringAppendPointer) {
         SourceArgument = snapshot(expression(Call->getArg(0)), L);
         RequestedArgument = snapshot(expression(Call->getArg(1)), L);
+      }
+      if (Operation == UtilityOperation::StringAppendRange) {
+        const auto ConstPointerType =
+            type(A.Context.getPointerType(A.Context.CharTy.withConst()), L);
+        const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+        auto RangePointer = [&](unsigned Index) {
+          const auto *Argument = Call->getArg(Index);
+          auto Value = snapshot(expression(Argument), L);
+          auto Iterator = approvedUtilityWrapIteratorRecord(
+              A.S, A.Sources, Argument->getType()->getAsCXXRecordDecl(),
+              A.Context);
+          return Iterator ? snapshot(fieldStorage(std::move(Value),
+                                                  Iterator->Current, L),
+                                     L)
+                          : Value;
+        };
+        auto FirstRange = RangePointer(0);
+        auto LastRange = RangePointer(1);
+        SourceArgument = temporary(ConstPointerType, L);
+        assign(*SourceArgument,
+               cast(std::move(FirstRange), ConstPointerType, L), L);
+        RequestedArgument = temporary(SizeType, L);
+        assign(*RequestedArgument,
+               cast(binary("-", cast(std::move(LastRange), ConstPointerType, L),
+                           json::Object(*SourceArgument), DifferenceType, L),
+                    SizeType, L),
+               L);
       }
       if (Operation == UtilityOperation::StringAppendCString) {
         SourceArgument =
