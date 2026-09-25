@@ -29477,6 +29477,13 @@ int main() {
   std::string filled(3, 'q');
   bool fill_intact = filled.size() == 3 && filled[0] == 'q' &&
                      filled[2] == 'q' && filled.data()[3] == 0;
+  char constructed_bytes[] = {'a', 0, 'b'};
+  std::string range_constructed(constructed_bytes, constructed_bytes + 3);
+  std::string wrapped_constructed(range_constructed.cbegin(),
+                                  range_constructed.cend());
+  bool range_construction_intact =
+      range_constructed.size() == 3 && range_constructed[1] == 0 &&
+      wrapped_constructed.size() == 3 && wrapped_constructed[2] == 'b';
   std::string copied(long_text);
   std::string combined = short_text + long_text;
   std::string prefixed = "!" + long_text;
@@ -29822,7 +29829,8 @@ int main() {
   const std::string reverse_long("abcdefghijklmnopqrstuvwxyz0123456789");
   bool reverse_long_intact = *reverse_long.rbegin() == '9' &&
                              *(reverse_long.rend() - 1) == 'a';
-  return intact && fill_intact && maximum_intact && shrink_intact &&
+  return intact && fill_intact && range_construction_intact &&
+         maximum_intact && shrink_intact &&
          boundary_intact && emptied &&
          assigned.size() == 14 &&
          assigned[0] == 'x' && assigned[2] == 'a' &&

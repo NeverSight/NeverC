@@ -17796,16 +17796,43 @@ class FunctionLowering {
         auto ShortData = cast(cast(json::Object(SourceAddress), "ptr:void", L),
                               ConstPointerType, L);
         assign(Input,
-               String->AlternateLayout
-                   ? std::move(ShortData)
-                   : binary("+", std::move(ShortData),
-                            quantity(1, DifferenceType, L), ConstPointerType,
-                            L), L);
+               String->AlternateLayout ? std::move(ShortData)
+                                       : binary("+", std::move(ShortData),
+                                                quantity(1, DifferenceType, L),
+                                                ConstPointerType, L),
+               L);
         jump(Ready, L);
         label(Ready, L);
       } else if (*Kind == UtilityStringConstruction::Fill) {
         assign(Length, snapshot(expression(C->getArg(0)), L), L);
         FillCharacter = snapshot(expression(C->getArg(1)), L);
+      } else if (*Kind == UtilityStringConstruction::Range) {
+        auto RangePointer = [&](unsigned Index) {
+          const auto *Argument = C->getArg(Index);
+          auto Value = snapshot(expression(Argument), L);
+          const auto Wrapped = approvedUtilityWrapIteratorRecord(
+              A.S, A.Sources, Argument->getType()->getAsCXXRecordDecl(),
+              A.Context);
+          return Wrapped ? snapshot(fieldStorage(std::move(Value),
+                                                 Wrapped->Current, L),
+                                    L)
+                         : Value;
+        };
+        assign(Input, cast(RangePointer(0), ConstPointerType, L), L);
+        auto RangeEnd = snapshot(cast(RangePointer(1), ConstPointerType, L), L);
+        assign(Length, quantity(0, SizeType, L), L);
+        const auto Measure = labelName(), Measured = labelName();
+        branch(binary("!=", json::Object(Input), json::Object(RangeEnd), "bool",
+                      L),
+               Measure, Measured, L);
+        label(Measure, L);
+        assign(Length,
+               cast(binary("-", json::Object(RangeEnd), json::Object(Input),
+                           DifferenceType, L),
+                    SizeType, L),
+               L);
+        jump(Measured, L);
+        label(Measured, L);
       } else if (*Kind == UtilityStringConstruction::PointerLength) {
         assign(Input, expression(C->getArg(0)), L);
         assign(Length, expression(C->getArg(1)), L);

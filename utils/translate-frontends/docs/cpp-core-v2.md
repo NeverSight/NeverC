@@ -2292,13 +2292,17 @@ LLVM 20.1.8 source bytes and catalog hashes. Clang can fold constant
 `std::string` size and alignment queries and `npos`, and resolve its
 `size_type` alias. Authenticated `std::basic_string<char, std::char_traits<char>,
 std::allocator<char>>` objects now have direct lowering for default,
-`const char*`, pointer-and-length, count-and-character fill, copy and move
-construction; copy and move
-assignment and assignment from `const char*` or `char`; `size`, `length`,
+`const char*`, pointer-and-length, raw or wrapped character range,
+count-and-character fill, copy and move construction; copy and move assignment
+and assignment from `const char*` or `char`; `size`, `length`,
 `capacity`, `max_size`, `empty`, `data`, `c_str`, subscript
 access, mutable and const `front`/`back`, `clear`, `push_back(char)`,
 `pop_back()`, `reserve(size_type)`, `shrink_to_fit()` and its C++17
 `reserve()` alias, both `resize` overloads, and destruction.
+The two-iterator constructor accepts matching `char*` or `const char*`
+endpoints and authenticated mutable or const libc++ wrapped iterators. It
+copies the full valid ordered range, including embedded NUL bytes, into an
+independent string and leaves empty ranges unallocated.
 Mutable and const `begin`/`end`, plus `cbegin`/`cend`, produce authenticated
 libc++ `__wrap_iter` values for forward traversal and mutable element access.
 The authenticated wrapper also supports `base()`, arrow, subscript, prefix and

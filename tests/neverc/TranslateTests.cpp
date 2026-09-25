@@ -53557,6 +53557,74 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringRangeConstructionRun) {
+  const auto Source = tmpFile("string-range-construction.cpp");
+  const auto Output = tmpFile("string-range-construction.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+int first_calls;
+int last_calls;
+char *first(char *value) { ++first_calls; return value; }
+char *last(char *value) { ++last_calls; return value; }
+int main() {
+  char raw[]{'?', 'a', 0, 'b', 'c', '?'};
+  {
+    std::string copied(first(raw + 1), last(raw + 5));
+    if (first_calls != 1 || last_calls != 1 || copied.size() != 4 ||
+        copied[0] != 'a' || copied[1] != 0 || copied[3] != 'c' ||
+        copied.data()[4] != 0 || allocations != 0)
+      return 1;
+    const char *constant = raw;
+    std::string const_copy(constant + 1, constant + 5);
+    if (const_copy.size() != 4 || const_copy[1] != 0 ||
+        const_copy[3] != 'c' || allocations != 0)
+      return 2;
+    std::string source("abcdefghijklmnopqrstuvw");
+    int before = allocations;
+    std::string short_copy(source.cbegin(), source.cbegin() + 22);
+    if (short_copy.size() != 22 || short_copy[0] != 'a' ||
+        short_copy[21] != 'v' || short_copy.data()[22] != 0 ||
+        allocations != before)
+      return 3;
+    std::string long_copy(source.begin(), source.end());
+    if (long_copy.size() != 23 || long_copy[22] != 'w' ||
+        long_copy.data()[23] != 0 || long_copy.data() == source.data() ||
+        allocations != before + 1)
+      return 4;
+    long_copy[0] = 'Z';
+    if (source[0] != 'a' || long_copy[0] != 'Z')
+      return 5;
+    int before_empty = allocations;
+    std::string empty(raw + 2, raw + 2);
+    std::string empty_wrapped(source.cend(), source.cend());
+    if (!empty.empty() || empty.data()[0] != 0 ||
+        !empty_wrapped.empty() || empty_wrapped.data()[0] != 0 ||
+        allocations != before_empty)
+      return 6;
+  }
+  return allocations == releases ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-range-construction" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2WrappedIteratorOffsetsRun) {
   const auto Source = tmpFile("wrapped-iterator-offsets.cpp");
   const auto Output = tmpFile("wrapped-iterator-offsets.nc");

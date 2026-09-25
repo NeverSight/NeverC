@@ -4418,6 +4418,30 @@ approvedUtilityStringConstruction(const State &S, const SourceManager &SM,
       Context.hasSameType(Construction->getArg(1)->getType(),
                           Context.getSizeType()))
     return UtilityStringConstruction::PointerLength;
+  if (Construction->getNumArgs() == 2 && Constructor->getPrimaryTemplate() &&
+      approvedStandardSDKDeclaration(S, SM,
+                                     Constructor->getPrimaryTemplate()) &&
+      cstddefOrigin(S, SM, Constructor->getPrimaryTemplate()->getLocation(),
+                    "libcxx", "string")) {
+    const auto FirstType = Constructor->getParamDecl(0)->getType();
+    const auto LastType = Constructor->getParamDecl(1)->getType();
+    const bool RawPointer =
+        Context.hasSameType(FirstType,
+                            Context.getPointerType(Context.CharTy)) ||
+        Context.hasSameType(FirstType, ConstPointer);
+    const auto Wrapped = approvedUtilityWrapIteratorRecord(
+        S, SM, FirstType->getAsCXXRecordDecl(), Context);
+    const bool WrappedPointer =
+        Wrapped &&
+        (Context.hasSameType(Wrapped->IteratorType,
+                             Context.getPointerType(Context.CharTy)) ||
+         Context.hasSameType(Wrapped->IteratorType, ConstPointer));
+    if ((RawPointer || WrappedPointer) &&
+        Context.hasSameType(FirstType, LastType) &&
+        Context.hasSameType(Construction->getArg(0)->getType(), FirstType) &&
+        Context.hasSameType(Construction->getArg(1)->getType(), LastType))
+      return UtilityStringConstruction::Range;
+  }
   if (Constructor->getNumParams() == 2 && !Constructor->getPrimaryTemplate() &&
       Context.hasSameType(Constructor->getParamDecl(0)->getType(),
                           Context.getSizeType()) &&
