@@ -29133,6 +29133,12 @@ void default_owners() {
   std::vector<std::unique_ptr<int>> pointers(2);
   strings.erase(strings.begin());
   pointers.erase(pointers.begin(), pointers.end());
+  std::string text("a long string moved into a vector slot");
+  strings.insert(strings.begin(), static_cast<std::string&&>(text));
+  strings.emplace(strings.begin());
+  std::unique_ptr<int> owner(new int(7));
+  pointers.insert(pointers.begin(), static_cast<std::unique_ptr<int>&&>(owner));
+  pointers.emplace(pointers.begin());
   strings.clear();
   pointers.clear();
 }
@@ -29215,8 +29221,39 @@ void f(const std::string& value) { std::vector<std::string> values(2, value); }
 """,
         "owning-insert": """\
 #include <string>
-void f(std::vector<std::string>& values, std::string&& value) {
-  values.insert(values.begin(), static_cast<std::string&&>(value));
+void f(std::vector<std::string>& values, const std::string& value) {
+  values.insert(values.begin(), value);
+}
+""",
+        "owning-counted-insert": """\
+#include <string>
+void f(std::vector<std::string>& values, const std::string& value) {
+  values.insert(values.begin(), 2, value);
+}
+""",
+        "owning-range-insert": """\
+#include <string>
+void f(std::vector<std::string>& values,
+       const std::vector<std::string>& source) {
+  values.insert(values.begin(), source.begin(), source.end());
+}
+""",
+        "owning-emplace-lvalue": """\
+#include <string>
+void f(std::vector<std::string>& values, const std::string& value) {
+  values.emplace(values.begin(), value);
+}
+""",
+        "owning-emplace-const-rvalue": """\
+#include <string>
+void f(std::vector<std::string>& values, const std::string& value) {
+  values.emplace(values.begin(), static_cast<const std::string&&>(value));
+}
+""",
+        "owning-emplace-back-const-rvalue": """\
+#include <string>
+void f(std::vector<std::string>& values, const std::string& value) {
+  values.emplace_back(static_cast<const std::string&&>(value));
 }
 """,
     }.items():

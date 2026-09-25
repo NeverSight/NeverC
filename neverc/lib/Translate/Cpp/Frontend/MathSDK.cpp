@@ -17774,8 +17774,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           return UtilityOperation::VectorErase;
       }
     }
-    if (!Vector->OwningElement && !Operator && Name == "insert" &&
-        !Method->isConst() &&
+    if (!Operator && Name == "insert" && !Method->isConst() &&
         !Object->getType().isConstQualified() && Call->isPRValue() &&
         (Method->getNumParams() == 2 || Method->getNumParams() == 3) &&
         Context.hasSameType(Call->getType(), Method->getReturnType())) {
@@ -17801,6 +17800,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
              ValueParameter->isRValueReferenceType() &&
              Context.hasSameType(ValueParameter->getPointeeType(), Element));
         if (ValueReference &&
+            (!Vector->OwningElement ||
+             (Method->getNumParams() == 2 &&
+              ValueParameter->isRValueReferenceType())) &&
             Context.hasSameUnqualifiedType(Call->getArg(ValueIndex)->getType(),
                                            Element) &&
             (Method->getNumParams() == 2 ||
@@ -17809,7 +17811,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
               Context.hasSameType(Call->getArg(1)->getType(),
                                   Context.getSizeType()))))
           return UtilityOperation::VectorInsert;
-        if (Method->getNumParams() == 2 && !Method->getPrimaryTemplate() &&
+        if (!Vector->OwningElement && Method->getNumParams() == 2 &&
+            !Method->getPrimaryTemplate() &&
             Context.hasSameType(Method->getParamDecl(1)->getType(),
                                 Call->getArg(1)->getType())) {
           const auto List = approvedUtilityInitializerListRecord(
@@ -17818,7 +17821,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           if (List && Context.hasSameType(List->ElementType, Element))
             return UtilityOperation::VectorInsertRange;
         }
-        if (Method->getNumParams() == 3 && Method->getPrimaryTemplate() &&
+        if (!Vector->OwningElement && Method->getNumParams() == 3 &&
+            Method->getPrimaryTemplate() &&
             approvedStandardSDKDeclaration(S, SM,
                                            Method->getPrimaryTemplate()) &&
             cstddefOrigin(S, SM, Method->getPrimaryTemplate()->getLocation(),
@@ -17846,8 +17850,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         }
       }
     }
-    if (!Vector->OwningElement && !Operator && Name == "emplace" &&
-        !Method->isConst() && !Object->getType().isConstQualified() &&
+    if (!Operator && Name == "emplace" && !Method->isConst() &&
+        !Object->getType().isConstQualified() &&
         Call->isPRValue() &&
         (Method->getNumParams() == 1 || Method->getNumParams() == 2) &&
         Context.hasSameType(Call->getType(), Method->getReturnType()) &&
@@ -17870,10 +17874,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         if (Method->getNumParams() == 1)
           return UtilityOperation::VectorEmplace;
         const auto Parameter = Method->getParamDecl(1)->getType();
-        if ((Parameter->isLValueReferenceType() ||
+        if (((!Vector->OwningElement && Parameter->isLValueReferenceType()) ||
              Parameter->isRValueReferenceType()) &&
             Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
                                            Element) &&
+            (!Vector->OwningElement ||
+             Context.hasSameType(Parameter->getPointeeType(), Element)) &&
             Context.hasSameUnqualifiedType(Call->getArg(1)->getType(), Element))
           return UtilityOperation::VectorEmplace;
       }
@@ -17962,6 +17968,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            Parameter->isRValueReferenceType()) &&
           Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
                                          Vector->ElementType) &&
+          (!Vector->OwningElement ||
+           Context.hasSameType(Parameter->getPointeeType(),
+                               Vector->ElementType)) &&
           Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
                                          Vector->ElementType))
         return UtilityOperation::VectorEmplaceBack;

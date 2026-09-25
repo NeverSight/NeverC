@@ -53274,6 +53274,84 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorOwningInsertRun) {
+  const auto Source = tmpFile("vector-owning-insert.cpp");
+  const auto Output = tmpFile("vector-owning-insert.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <memory>
+#include <string>
+#include <vector>
+int main() {
+  {
+    std::vector<std::string> values;
+    values.reserve(3);
+    values.push_back(std::string("a first long string owns its allocation"));
+    values.push_back(std::string("a second long string owns its allocation"));
+    std::string donor("a third long string owns its allocation");
+    auto middle = values.insert(values.begin() + 1,
+                                static_cast<std::string&&>(donor));
+    if (!donor.empty() || middle != values.begin() + 1 ||
+        *middle != "a third long string owns its allocation") return 1;
+    auto first = values.insert(values.begin(),
+                               static_cast<std::string&&>(values[2]));
+    if (first != values.begin() || *first !=
+        "a second long string owns its allocation" || !values[3].empty())
+      return 2;
+    auto placed = values.emplace(
+        values.begin() + 2,
+        std::string("a fourth long string owns its allocation"));
+    if (placed != values.begin() + 2 || *placed !=
+        "a fourth long string owns its allocation") return 3;
+    auto empty = values.emplace(values.begin());
+    if (empty != values.begin() || !(*empty).empty() || values.size() != 6)
+      return 4;
+  }
+  {
+    std::vector<std::unique_ptr<int>> values;
+    values.reserve(2);
+    values.push_back(std::unique_ptr<int>(new int(1)));
+    values.push_back(std::unique_ptr<int>(new int(2)));
+    std::unique_ptr<int> donor(new int(3));
+    auto middle = values.insert(values.begin() + 1,
+                                static_cast<std::unique_ptr<int>&&>(donor));
+    if (donor || middle != values.begin() + 1 || *values[0] != 1 ||
+        *values[1] != 3 || *values[2] != 2) return 5;
+    auto first = values.emplace(values.begin(),
+                                std::unique_ptr<int>(new int(4)));
+    if (first != values.begin() || *values[0] != 4 || values.size() != 4)
+      return 6;
+    auto empty = values.emplace(values.begin() + 2);
+    if (empty != values.begin() + 2 || *empty || *values[3] != 3)
+      return 7;
+    std::unique_ptr<int> last(new int(5));
+    auto shifted = values.insert(values.begin() + 1,
+                                 static_cast<std::unique_ptr<int>&&>(last));
+    if (last || shifted != values.begin() + 1 || *values[1] != 5 ||
+        *values[5] != 2 || values.size() != 6) return 8;
+  }
+  return allocations == releases ? 0 : 9;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-owning-insert" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorTrivialRecordRun) {
   const auto Source = tmpFile("vector-trivial-record.cpp");
   const auto Output = tmpFile("vector-trivial-record.nc");

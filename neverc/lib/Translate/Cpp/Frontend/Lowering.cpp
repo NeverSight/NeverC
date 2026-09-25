@@ -11681,11 +11681,25 @@ class FunctionLowering {
                                        : quantity(1, SizeType, L),
                L);
         // Capture a source element before shifting or releasing storage.
-        Value = snapshot(expression(Call->getArg(Call->getNumArgs() - 1)), L);
+        if (Vector->OwningElement) {
+          Value = temporary(type(Vector->ElementType, L), L);
+          transferVectorElement(json::Object(*Value),
+                                lvalue(Call->getArg(Call->getNumArgs() - 1)),
+                                *Vector, L);
+        } else {
+          Value = snapshot(expression(Call->getArg(Call->getNumArgs() - 1)), L);
+        }
       } else if (Operation == UtilityOperation::VectorEmplace) {
         assign(Count, quantity(1, SizeType, L), L);
-        if (Call->getNumArgs() == 2)
-          Value = snapshot(expression(Call->getArg(1)), L);
+        if (Call->getNumArgs() == 2) {
+          if (Vector->OwningElement) {
+            Value = temporary(type(Vector->ElementType, L), L);
+            transferVectorElement(json::Object(*Value), lvalue(Call->getArg(1)),
+                                  *Vector, L);
+          } else {
+            Value = snapshot(expression(Call->getArg(1)), L);
+          }
+        }
       } else {
         Expression RangeBegin;
         if (Call->getNumArgs() == 2) {
@@ -11752,6 +11766,9 @@ class FunctionLowering {
         if (Operation == UtilityOperation::VectorEmplace &&
             Call->getNumArgs() == 1)
           initializeZero(std::move(Target), Vector->ElementType, L);
+        else if (Vector->OwningElement)
+          transferVectorElement(std::move(Target), json::Object(*Value),
+                                *Vector, L);
         else
           assign(std::move(Target), InsertValue(), L);
       };
@@ -11839,8 +11856,12 @@ class FunctionLowering {
              binary("-", json::Object(ShiftTarget),
                     quantity(1, DifferenceType, L), PointerType, L),
              L);
-      assign(dereference(json::Object(ShiftTarget), L),
-             dereference(json::Object(ShiftSource), L), L);
+      transferVectorElement(dereference(json::Object(ShiftTarget), L),
+                            dereference(json::Object(ShiftSource), L), *Vector,
+                            L);
+      if (Vector->OwningElement)
+        destroy(dereference(json::Object(ShiftSource), L),
+                Vector->ElementType, L);
       jump(ShiftCheck, L);
       label(FillInPlace, L);
       auto FillTarget = temporary(PointerType, L);
@@ -11915,8 +11936,12 @@ class FunctionLowering {
                     "bool", L),
              PrefixCopy, PrefixDone, L);
       label(PrefixCopy, L);
-      assign(dereference(json::Object(NewCurrent), L),
-             dereference(json::Object(OldCurrent), L), L);
+      transferVectorElement(dereference(json::Object(NewCurrent), L),
+                            dereference(json::Object(OldCurrent), L), *Vector,
+                            L);
+      if (Vector->OwningElement)
+        destroy(dereference(json::Object(OldCurrent), L), Vector->ElementType,
+                L);
       assign(OldCurrent,
              binary("+", json::Object(OldCurrent),
                     quantity(1, DifferenceType, L), PointerType, L),
@@ -11957,8 +11982,12 @@ class FunctionLowering {
           binary("!=", json::Object(OldCurrent), json::Object(End), "bool", L),
           SuffixCopy, SuffixDone, L);
       label(SuffixCopy, L);
-      assign(dereference(json::Object(NewCurrent), L),
-             dereference(json::Object(OldCurrent), L), L);
+      transferVectorElement(dereference(json::Object(NewCurrent), L),
+                            dereference(json::Object(OldCurrent), L), *Vector,
+                            L);
+      if (Vector->OwningElement)
+        destroy(dereference(json::Object(OldCurrent), L), Vector->ElementType,
+                L);
       assign(OldCurrent,
              binary("+", json::Object(OldCurrent),
                     quantity(1, DifferenceType, L), PointerType, L),
