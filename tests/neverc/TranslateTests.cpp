@@ -53591,6 +53591,77 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringCopyAssignmentGrowthRun) {
+  const auto Source = tmpFile("string-copy-assignment-growth.cpp");
+  const auto Output = tmpFile("string-copy-assignment-growth.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+int main() {
+  {
+    std::string source23("abcdefghijklmnopqrstuvw");
+    std::string target;
+    Size requested = 2 * target.capacity();
+    if (requested < source23.size()) requested = source23.size();
+    target = source23;
+    Size expected = ((requested + 8) / 8) * 8 - 1;
+#if (defined(_LIBCPP_ABI_ALTERNATE_STRING_LAYOUT) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__) || (!defined(_LIBCPP_ABI_ALTERNATE_STRING_LAYOUT) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+    const Size endian_factor = 2;
+#else
+    const Size endian_factor = 1;
+#endif
+    if (expected == sizeof(std::string) - 1) expected += endian_factor;
+    if (target.capacity() != expected || target != source23 ||
+        target.data() == source23.data() || target.data()[23] != 0)
+      return 1;
+    const char *first_data = target.data();
+    int before_allocations = allocations;
+    target = source23;
+    if (target.data() != first_data || allocations != before_allocations)
+      return 2;
+
+    std::string source62("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
+    requested = 2 * target.capacity();
+    if (requested < source62.size()) requested = source62.size();
+    target = source62;
+    expected = ((requested + 8) / 8) * 8 - 1;
+    if (expected == sizeof(std::string) - 1) expected += endian_factor;
+    if (target.capacity() != expected || target != source62 ||
+        target.data() == source62.data() || target.data() == first_data ||
+        target.size() != 62 || target.data()[62] != 0)
+      return 3;
+    before_allocations = allocations;
+    const char *second_data = target.data();
+    target = target;
+    if (target.data() != second_data || allocations != before_allocations ||
+        target[61] != '9')
+      return 4;
+    target[0] = '?';
+    if (source62[0] != 'a' || target[0] != '?') return 5;
+  }
+  return allocations == releases ? 0 : 6;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("string-copy-assignment-growth" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StringCapacityAndClearRun) {
   const auto Source = tmpFile("string-clear.cpp");
   const auto Output = tmpFile("string-clear.nc");
@@ -53774,7 +53845,13 @@ int main() {
       return 9;
     std::string assigned;
     assigned = boundary;
-    if (assigned.capacity() < assigned.size() || assigned != boundary)
+    Size assignment_request = 2 * (sizeof(std::string) - 2);
+    if (assignment_request < boundary.size())
+      assignment_request = boundary.size();
+    Size expected_assignment = ((assignment_request + 8) / 8) * 8 - 1;
+    if (expected_assignment == sizeof(std::string) - 1)
+      expected_assignment += endian_factor;
+    if (assigned.capacity() != expected_assignment || assigned != boundary)
       return 10;
   }
   return allocations == releases ? 0 : 11;

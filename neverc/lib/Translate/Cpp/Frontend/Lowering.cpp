@@ -14588,13 +14588,28 @@ class FunctionLowering {
                               quantity(2, SizeType, L), SizeType, L), L);
           jump(Copy, L);
           label(Grow, L);
+          auto DesiredCapacity = temporary(SizeType, L);
+          assign(DesiredCapacity,
+                 binary("*", json::Object(Capacity), quantity(2, SizeType, L),
+                        SizeType, L),
+                 L);
+          const auto UseSourceSize = labelName(), DesiredReady = labelName();
+          branch(binary(">", json::Object(SourceSize),
+                        json::Object(DesiredCapacity), "bool", L),
+                 UseSourceSize, DesiredReady, L);
+          label(UseSourceSize, L);
+          assign(DesiredCapacity, json::Object(SourceSize), L);
+          jump(DesiredReady, L);
+          label(DesiredReady, L);
           auto AllocationBytes = temporary(SizeType, L);
           assign(AllocationBytes,
-                 binary("*", binary("/", binary("+", json::Object(SourceSize),
-                                                 quantity(8, SizeType, L),
-                                                 SizeType, L),
-                                       quantity(8, SizeType, L), SizeType, L),
-                        quantity(8, SizeType, L), SizeType, L), L);
+                 binary("*",
+                        binary("/",
+                               binary("+", json::Object(DesiredCapacity),
+                                      quantity(8, SizeType, L), SizeType, L),
+                               quantity(8, SizeType, L), SizeType, L),
+                        quantity(8, SizeType, L), SizeType, L),
+                 L);
           const auto Adjust = labelName(), Allocate = labelName();
           branch(binary("==", json::Object(AllocationBytes),
                         quantity(String->ShortCapacity + 2, SizeType, L),

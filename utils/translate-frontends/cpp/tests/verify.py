@@ -29489,6 +29489,20 @@ int main() {
   boundary.reserve(90);
   boundary.shrink_to_fit();
   boundary_intact = boundary_intact && boundary == boundary_slice;
+  std::string growth_target;
+  auto growth_request = 2 * growth_target.capacity();
+  if (growth_request < boundary.size()) growth_request = boundary.size();
+  growth_target = boundary;
+  auto growth_capacity = ((growth_request + 8) / 8) * 8 - 1;
+#if (defined(_LIBCPP_ABI_ALTERNATE_STRING_LAYOUT) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__) || (!defined(_LIBCPP_ABI_ALTERNATE_STRING_LAYOUT) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+  const Size growth_endian_factor = 2;
+#else
+  const Size growth_endian_factor = 1;
+#endif
+  if (growth_capacity == sizeof(std::string) - 1)
+    growth_capacity += growth_endian_factor;
+  bool growth_intact = growth_target.capacity() == growth_capacity &&
+                       growth_target == boundary;
   auto old_capacity = assigned.capacity();
   assigned.clear();
   assigned.push_back('q');
@@ -29668,7 +29682,7 @@ int main() {
          joined[7] == 'e' &&
          reassigned.size() == 2 && reassigned[0] == 'a' &&
          reassigned[1] == 'a' &&
-         erase_intact && erased.empty() && splice_intact &&
+         erase_intact && erased.empty() && splice_intact && growth_intact &&
          substring_intact && compare_intact &&
          cstring_compare_intact && positional_compare_intact &&
          search_intact && set_search_intact &&

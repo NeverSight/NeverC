@@ -2349,9 +2349,11 @@ The frontend checks the pinned libc++ representation before emitting three
 storage words, including the alternate short-string layout selected on Apple
 arm64. Short strings stay inline, while long strings use the selected
 allocation and release functions. Copy construction owns independent storage;
-copy assignment reuses existing capacity when possible. Moves transfer the
-representation and leave the source empty. Clearing, popping, and reducing
-the size through `resize` retain existing capacity and storage.
+copy assignment reuses existing capacity when possible and follows the pinned
+libc++ recommendation of the larger of the new size and twice the old capacity
+when it grows. Moves transfer the representation and leave the source empty.
+Clearing, popping, and reducing the size through `resize` retain existing
+capacity and storage.
 `shrink_to_fit()` follows the pinned libc++ capacity recommendation, copying
 long strings into smaller storage or back to the inline representation.
 The 23-character boundary also uses the selected layout's allocation
