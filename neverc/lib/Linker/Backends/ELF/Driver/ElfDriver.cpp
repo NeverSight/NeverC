@@ -51,6 +51,9 @@
 #include "llvm/Support/TimeProfiler.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
+#if defined(__linux__)
+#include <sched.h>
+#endif
 #include <optional>
 #include <tuple>
 #include <utility>
@@ -2502,6 +2505,98 @@ void configureParallelismForMaterializedInputs(
 } // namespace
 
 namespace {
+// While symbols are resolved in order on the main thread, keeps the main
+// thread's physical core to itself: the main thread stays on its current CPU
+// and the workers helping it leave that core's other hardware threads alone.
+class MainCoreReservation {
+public:
+  void start() {
+#if defined(__linux__)
+    if (!parallelEnabled())
+      return;
+    const int cpu = sched_getcpu();
+    if (cpu < 0 || cpu >= CPU_SETSIZE ||
+        sched_getaffinity(0, sizeof(saved), &saved) != 0)
+      return;
+    cpu_set_t siblings;
+    if (!readSiblings(cpu, siblings) || CPU_COUNT(&siblings) < 2)
+      return;
+    cpu_set_t others;
+    CPU_ZERO(&others);
+    for (int c = 0; c != CPU_SETSIZE; ++c)
+      if (CPU_ISSET(c, &saved) && !CPU_ISSET(c, &siblings))
+        CPU_SET(c, &others);
+    if (CPU_COUNT(&others) == 0)
+      return;
+    cpu_set_t own;
+    CPU_ZERO(&own);
+    CPU_SET(cpu, &own);
+    if (sched_setaffinity(0, sizeof(own), &own) != 0)
+      return;
+    workerMask = others;
+    active = true;
+#endif
+  }
+  void finish() {
+#if defined(__linux__)
+    if (active)
+      sched_setaffinity(0, sizeof(saved), &saved);
+    active = false;
+#endif
+  }
+  ~MainCoreReservation() { finish(); }
+
+  // Runs `fn` on the calling worker away from the reserved core.
+  template <typename Fn> void onWorker(Fn &&fn) const {
+#if defined(__linux__)
+    cpu_set_t previous;
+    const bool restrict = active &&
+                          sched_getaffinity(0, sizeof(previous), &previous) ==
+                              0 &&
+                          sched_setaffinity(0, sizeof(workerMask),
+                                            &workerMask) == 0;
+    fn();
+    if (restrict)
+      sched_setaffinity(0, sizeof(previous), &previous);
+#else
+    fn();
+#endif
+  }
+
+private:
+#if defined(__linux__)
+  static bool readSiblings(int cpu, cpu_set_t &set) {
+    CPU_ZERO(&set);
+    auto buf = MemoryBuffer::getFile(
+        "/sys/devices/system/cpu/cpu" + Twine(cpu) +
+            "/topology/thread_siblings_list",
+        /*IsText=*/true);
+    if (!buf)
+      return false;
+    SmallVector<StringRef, 4> ranges;
+    (*buf)->getBuffer().trim().split(ranges, ',');
+    for (StringRef range : ranges) {
+      auto [lo, hi] = range.split('-');
+      unsigned a, b;
+      if (lo.getAsInteger(10, a))
+        return false;
+      if (hi.empty())
+        b = a;
+      else if (hi.getAsInteger(10, b))
+        return false;
+      for (unsigned c = a; c <= b && c < CPU_SETSIZE; ++c)
+        CPU_SET(c, &set);
+    }
+    return true;
+  }
+  cpu_set_t saved;
+  cpu_set_t workerMask;
+#endif
+  bool active = false;
+};
+} // namespace
+
+namespace {
 template <class ELFT> void tryInternObjFileSymbolNames(InputFile *file) {
   if (auto *so = dyn_cast<SharedFile>(file))
     so->tryPrepareSymbols<ELFT>();
@@ -2517,7 +2612,8 @@ template <class ELFT> void tryInternObjFileSymbolNames(InputFile *file) {
 // that file itself (ObjFile::awaitInternedNames).
 class BackgroundNameInterning {
 public:
-  void start(ArrayRef<InputFile *> inputs);
+  void start(ArrayRef<InputFile *> inputs,
+             const MainCoreReservation *reservation = nullptr);
   void finish();
   ~BackgroundNameInterning() { finish(); }
 
@@ -2527,7 +2623,8 @@ private:
   std::unique_ptr<LinkerTaskGroup> workers;
 };
 
-void BackgroundNameInterning::start(ArrayRef<InputFile *> inputs) {
+void BackgroundNameInterning::start(ArrayRef<InputFile *> inputs,
+                                    const MainCoreReservation *reservation) {
   uint64_t inputBytes = 0;
   size_t numObjects = 0;
   for (InputFile *file : inputs) {
@@ -2574,11 +2671,17 @@ void BackgroundNameInterning::start(ArrayRef<InputFile *> inputs) {
         ELFFileBase::NameInterning::Pending, std::memory_order_relaxed);
   workers = std::make_unique<LinkerTaskGroup>();
   for (unsigned i = 0, e = parallelThreadCount(); i != e; ++i)
-    workers->spawn([this] {
-      for (size_t index = nextObject.fetch_add(1, std::memory_order_relaxed);
-           index < objects.size();
-           index = nextObject.fetch_add(1, std::memory_order_relaxed))
-        dispatchByFormat(tryInternObjFileSymbolNames, objects[index]);
+    workers->spawn([this, reservation] {
+      auto work = [this] {
+        for (size_t index = nextObject.fetch_add(1, std::memory_order_relaxed);
+             index < objects.size();
+             index = nextObject.fetch_add(1, std::memory_order_relaxed))
+          dispatchByFormat(tryInternObjFileSymbolNames, objects[index]);
+      };
+      if (reservation)
+        reservation->onWorker(work);
+      else
+        work();
     });
 }
 
@@ -2588,9 +2691,10 @@ void BackgroundNameInterning::start(ArrayRef<InputFile *> inputs) {
 // the resolving thread; workers pick them up once they are done interning.
 class EarlySectionPreparation {
 public:
-  void start() {
+  void start(const MainCoreReservation *reservation = nullptr) {
     if (!parallelEnabled())
       return;
+    this->reservation = reservation;
     group = std::make_unique<LinkerTaskGroup>();
     elfState().onObjectParsed = [this](ELFFileBase *file) {
       pending.push_back(file);
@@ -2612,14 +2716,21 @@ private:
   void submit() {
     if (pending.empty())
       return;
-    group->spawn([files = std::move(pending)] {
-      for (ELFFileBase *file : files)
-        if (!file->sectionsPrepared.exchange(true, std::memory_order_relaxed))
-          prepareSectionsAndLocals(file, /*ignoreComdats=*/false);
+    group->spawn([files = std::move(pending), r = reservation] {
+      auto work = [&] {
+        for (ELFFileBase *file : files)
+          if (!file->sectionsPrepared.exchange(true, std::memory_order_relaxed))
+            prepareSectionsAndLocals(file, /*ignoreComdats=*/false);
+      };
+      if (r)
+        r->onWorker(work);
+      else
+        work();
     });
     pending.clear();
   }
   static constexpr size_t batchSize = 32;
+  const MainCoreReservation *reservation = nullptr;
   std::vector<ELFFileBase *> pending;
   std::unique_ptr<LinkerTaskGroup> group;
 };
@@ -2709,8 +2820,10 @@ void LinkerDriver::execute(opt::InputArgList &args) {
   // interning every global name is independent per file. For native links
   // large enough to use workers, interning runs on workers ahead of the
   // ordered pass, which then only follows precomputed name slots.
+  MainCoreReservation mainCore;
+  mainCore.start();
   BackgroundNameInterning nameInterning;
-  nameInterning.start(files);
+  nameInterning.start(files, &mainCore);
 
   // Add all files to the symbol table. This will add almost all
   // symbols that we need to the symbol table. This process might
@@ -2719,7 +2832,7 @@ void LinkerDriver::execute(opt::InputArgList &args) {
   {
     llvm::TimeTraceScope timeScope("Parse input files");
     EarlySectionPreparation sectionPreparation;
-    sectionPreparation.start();
+    sectionPreparation.start(&mainCore);
     for (size_t i = 0; i < files.size(); ++i) {
       llvm::TimeTraceScope timeScope("Parse input files", files[i]->getName());
       parseFile(files[i]);
@@ -2728,6 +2841,7 @@ void LinkerDriver::execute(opt::InputArgList &args) {
     // while interning is still thread-safe.
     sectionPreparation.finish();
     nameInterning.finish();
+    mainCore.finish();
   }
 
   config->hasDynSymTab =

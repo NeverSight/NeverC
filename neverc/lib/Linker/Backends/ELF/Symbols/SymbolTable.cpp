@@ -54,17 +54,61 @@ void SymbolTable::wrap(Symbol *sym, Symbol *real, Symbol *wrap) {
 // Symbol lookup & insertion
 // ===----------------------------------------------------------------------===
 
-SymbolNameSlot *SymbolTable::intern(CachedHashStringRef name) {
-  NameShard &shard = shardFor(name);
-  NameShardGuard lock(shard.mutex, concurrentInterning);
-  SymbolNameSlot *&slot = shard.map[name];
-  if (!slot) {
-    slot = new (shard.slots.Allocate()) SymbolNameSlot;
-    slot->symbol = nullptr;
-    slot->size = static_cast<uint32_t>(name.size());
-    slot->comdatOwner = nullptr;
+namespace {
+constexpr size_t fastIndexProbes = 16;
+}
+
+SymbolNameSlot *SymbolTable::findFast(CachedHashStringRef name) const {
+  if (!fastIndex)
+    return nullptr;
+  const uint32_t hash = name.hash();
+  const size_t size = name.size();
+  for (size_t i = hash, n = 0; n != fastIndexProbes; ++i, ++n) {
+    SymbolNameSlot *slot =
+        fastIndex[i & fastIndexMask].load(std::memory_order_acquire);
+    if (!slot)
+      return nullptr;
+    if (slot->hash == hash && slot->size == size &&
+        memcmp(slot->name, name.val().data(), size) == 0)
+      return slot;
   }
-  return slot;
+  return nullptr;
+}
+
+void SymbolTable::publishFast(SymbolNameSlot *slot) {
+  if (!fastIndex)
+    return;
+  for (size_t i = slot->hash, n = 0; n != fastIndexProbes; ++i, ++n) {
+    std::atomic<SymbolNameSlot *> &entry = fastIndex[i & fastIndexMask];
+    SymbolNameSlot *expected = nullptr;
+    if (entry.compare_exchange_strong(expected, slot,
+                                      std::memory_order_release,
+                                      std::memory_order_acquire) ||
+        expected == slot)
+      return;
+  }
+}
+
+SymbolNameSlot *SymbolTable::intern(CachedHashStringRef name) {
+  if (SymbolNameSlot *slot = findFast(name))
+    return slot;
+  SymbolNameSlot *result;
+  {
+    NameShard &shard = shardFor(name);
+    NameShardGuard lock(shard.mutex, concurrentInterning);
+    SymbolNameSlot *&slot = shard.map[name];
+    if (!slot) {
+      slot = new (shard.slots.Allocate()) SymbolNameSlot;
+      slot->symbol = nullptr;
+      slot->size = static_cast<uint32_t>(name.size());
+      slot->hash = name.hash();
+      slot->name = name.val().data();
+      slot->comdatOwner = nullptr;
+    }
+    result = slot;
+  }
+  publishFast(result);
+  return result;
 }
 
 SymbolNameSlot *SymbolTable::lookup(CachedHashStringRef name) {
@@ -75,6 +119,18 @@ SymbolNameSlot *SymbolTable::lookup(CachedHashStringRef name) {
 }
 
 void SymbolTable::reserveNames(size_t expectedNames) {
+  // Room for eight times the expected names keeps probe sequences short; the
+  // index is small enough to stay in the caches.
+  if (!fastIndex) {
+    const size_t capacity =
+        llvm::PowerOf2Ceil(std::max<size_t>(expectedNames * 8, 1 << 16));
+    fastIndex.reset(new std::atomic<SymbolNameSlot *>[capacity]);
+    fastIndexMask = capacity - 1;
+    parallelFor(0, capacity / 4096, [&](size_t i) {
+      for (size_t k = i * 4096, e = k + 4096; k != e; ++k)
+        fastIndex[k].store(nullptr, std::memory_order_relaxed);
+    });
+  }
   const size_t perShard = expectedNames / numNameShards + 1;
   // Sizing all shards touches tens of megabytes; spread it over the workers.
   parallelFor(0, numNameShards,

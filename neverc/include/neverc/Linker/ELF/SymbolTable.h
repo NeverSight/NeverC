@@ -25,6 +25,10 @@ class SharedFile;
 struct SymbolNameSlot {
   Symbol *symbol;
   uint32_t size;
+  // The hash of the name, which `name` spells, for SymbolTable's lock-free
+  // index.
+  uint32_t hash;
+  const char *name;
   // The file whose COMDAT group with this signature prevails, if any.
   const InputFile *comdatOwner;
 };
@@ -167,6 +171,14 @@ private:
     return nameShards[(name.hash() * 0x9E3779B1u) >> (32 - numNameShardBits)];
   }
   std::unique_ptr<NameShard[]> nameShards;
+  // A lock-free index of the slots in nameShards, which lets intern() find
+  // an existing name without taking a shard lock. It only speeds lookups up:
+  // a name missing from it is looked up in its shard. Fixed size; names that
+  // do not fit are left to the shards.
+  std::unique_ptr<std::atomic<SymbolNameSlot *>[]> fastIndex;
+  size_t fastIndexMask = 0;
+  SymbolNameSlot *findFast(llvm::CachedHashStringRef name) const;
+  void publishFast(SymbolNameSlot *slot);
   // Arena for global symbols, looked up once per link rather than per symbol.
   llvm::SpecificBumpPtrAllocator<SymbolUnion> *symbolArena = nullptr;
   SmallVector<Symbol *, 0> symVector;
