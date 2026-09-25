@@ -29612,6 +29612,33 @@ int main() {
   iterator_modifiers_intact = iterator_modifiers_intact &&
       listed_at.base() == iterator_modified.data() + 10 &&
       iterator_modified.size() == 13 && iterator_modified[11] == 0;
+  std::string iterator_replaced("abcd");
+  const char replacement[] = {'X', 0, 'Y'};
+  auto &counted_replace = iterator_replaced.replace(
+      iterator_replaced.cbegin() + 1, iterator_replaced.cbegin() + 3,
+      replacement, 3);
+  bool iterator_replace_intact = &counted_replace == &iterator_replaced &&
+      iterator_replaced.size() == 5 && iterator_replaced[2] == 0;
+  iterator_replaced.replace(iterator_replaced.cbegin() + 1,
+                            iterator_replaced.cbegin() + 4, "Q");
+  iterator_replaced.replace(iterator_replaced.cbegin() + 1,
+                            iterator_replaced.cbegin() + 2, 2, 'R');
+  iterator_replaced.replace(iterator_replaced.cbegin() + 1,
+                            iterator_replaced.cbegin() + 3,
+                            std::string("ST"));
+  iterator_replaced.replace(iterator_replaced.cbegin() + 1,
+                            iterator_replaced.cbegin() + 3,
+                            replacement, replacement + 3);
+  iterator_replaced.replace(iterator_replaced.cbegin() + 1,
+                            iterator_replaced.cbegin() + 4,
+                            iterator_replaced.cbegin(),
+                            iterator_replaced.cbegin() + 1);
+  iterator_replaced.replace(iterator_replaced.cbegin() + 1,
+                            iterator_replaced.cbegin() + 2, {'Z', 0});
+  iterator_replace_intact = iterator_replace_intact &&
+      iterator_replaced.size() == 4 && iterator_replaced[0] == 'a' &&
+      iterator_replaced[1] == 'Z' && iterator_replaced[2] == 0 &&
+      iterator_replaced[3] == 'd';
   std::string spliced("ab");
   spliced.insert(1, "x", 1).insert(0, "!");
   spliced.insert(1, suffix).insert(0, 2, 'q');
@@ -29771,6 +29798,7 @@ int main() {
          reassigned.size() == 2 && reassigned[0] == 'a' &&
          reassigned[1] == 'a' &&
          erase_intact && erased.empty() && iterator_modifiers_intact &&
+         iterator_replace_intact &&
          splice_intact && growth_intact &&
          concat_intact && rvalue_concat_intact && list_intact &&
          scalar_assignment_intact &&

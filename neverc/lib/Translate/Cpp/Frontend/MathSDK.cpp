@@ -16800,6 +16800,86 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         }
       }
     }
+    if (!Operator && Name == "replace" && !Method->isConst() &&
+        !Object->getType().isConstQualified() && Call->isLValue() &&
+        Method->getReturnType()->isLValueReferenceType() &&
+        Context.hasSameType(Method->getReturnType()->getPointeeType(),
+                            Context.getRecordType(String->Record)) &&
+        Context.hasSameType(Call->getType(),
+                            Context.getRecordType(String->Record)) &&
+        (Method->getNumParams() == 3 || Method->getNumParams() == 4)) {
+      bool Positions = true;
+      for (unsigned I = 0; I != 2; ++I) {
+        const auto Parameter = Method->getParamDecl(I)->getType();
+        const auto Iterator = approvedUtilityWrapIteratorRecord(
+            S, SM, Parameter->getAsCXXRecordDecl(), Context);
+        Positions &= Iterator &&
+                     Context.hasSameType(
+                         Iterator->IteratorType,
+                         Context.getPointerType(Context.CharTy.withConst())) &&
+                     Context.hasSameType(Parameter, Call->getArg(I)->getType());
+      }
+      if (Positions) {
+        const auto Source = Method->getParamDecl(2)->getType();
+        const auto Argument = Call->getArg(2)->getType();
+        const auto ConstPointer =
+            Context.getPointerType(Context.CharTy.withConst());
+        if (Method->getNumParams() == 3 && !Method->getPrimaryTemplate()) {
+          if (Source->isLValueReferenceType() &&
+              Context.hasSameType(
+                  Source->getPointeeType(),
+                  Context.getRecordType(String->Record).withConst()) &&
+              Context.hasSameUnqualifiedType(
+                  Argument, Context.getRecordType(String->Record)))
+            return UtilityOperation::StringReplaceIteratorString;
+          if (Context.hasSameType(Source, ConstPointer) &&
+              Context.hasSameType(Argument, ConstPointer))
+            return UtilityOperation::StringReplaceIteratorCString;
+          const auto List = approvedUtilityInitializerListRecord(
+              S, SM, Source->getAsCXXRecordDecl(), Context);
+          if (List && Context.hasSameType(List->ElementType, Context.CharTy) &&
+              Context.hasSameType(Source, Argument))
+            return UtilityOperation::StringReplaceIteratorList;
+        }
+        if (Method->getNumParams() == 4) {
+          const auto Last = Method->getParamDecl(3)->getType();
+          const auto LastArgument = Call->getArg(3)->getType();
+          if (!Method->getPrimaryTemplate()) {
+            if (Context.hasSameType(Source, ConstPointer) &&
+                Context.hasSameType(Argument, ConstPointer) &&
+                Context.hasSameType(Last, Context.getSizeType()) &&
+                Context.hasSameType(LastArgument, Context.getSizeType()))
+              return UtilityOperation::StringReplaceIteratorPointer;
+            if (Context.hasSameType(Source, Context.getSizeType()) &&
+                Context.hasSameType(Argument, Context.getSizeType()) &&
+                Context.hasSameType(Last, Context.CharTy) &&
+                Context.hasSameType(LastArgument, Context.CharTy))
+              return UtilityOperation::StringReplaceIteratorFill;
+          }
+          const auto *Primary = Method->getPrimaryTemplate();
+          if (Primary && approvedStandardSDKDeclaration(S, SM, Primary) &&
+              cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
+                            "string")) {
+            const bool RawPointer =
+                Context.hasSameType(Source,
+                                    Context.getPointerType(Context.CharTy)) ||
+                Context.hasSameType(Source, ConstPointer);
+            const auto Wrapped = approvedUtilityWrapIteratorRecord(
+                S, SM, Source->getAsCXXRecordDecl(), Context);
+            const bool WrappedPointer =
+                Wrapped &&
+                (Context.hasSameType(Wrapped->IteratorType,
+                                     Context.getPointerType(Context.CharTy)) ||
+                 Context.hasSameType(Wrapped->IteratorType, ConstPointer));
+            if ((RawPointer || WrappedPointer) &&
+                Context.hasSameType(Source, Last) &&
+                Context.hasSameType(Source, Argument) &&
+                Context.hasSameType(Last, LastArgument))
+              return UtilityOperation::StringReplaceIteratorRange;
+          }
+        }
+      }
+    }
     if (!Operator && (Name == "insert" || Name == "replace") &&
         !Method->isConst() && !Object->getType().isConstQualified() &&
         Call->isLValue() && Method->getReturnType()->isLValueReferenceType() &&

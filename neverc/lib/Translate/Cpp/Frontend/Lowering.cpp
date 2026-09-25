@@ -9694,7 +9694,13 @@ class FunctionLowering {
     case UtilityOperation::StringReplacePointer:
     case UtilityOperation::StringReplaceCString:
     case UtilityOperation::StringReplaceString:
-    case UtilityOperation::StringReplaceFill: {
+    case UtilityOperation::StringReplaceFill:
+    case UtilityOperation::StringReplaceIteratorPointer:
+    case UtilityOperation::StringReplaceIteratorCString:
+    case UtilityOperation::StringReplaceIteratorString:
+    case UtilityOperation::StringReplaceIteratorFill:
+    case UtilityOperation::StringReplaceIteratorRange:
+    case UtilityOperation::StringReplaceIteratorList: {
       const auto *Object = MemberObject();
       auto String = Object ? StringFor(Object->getType())
                            : std::optional<UtilityStringRecord>();
@@ -9767,7 +9773,20 @@ class FunctionLowering {
           Operation == UtilityOperation::StringReplacePointer ||
           Operation == UtilityOperation::StringReplaceCString ||
           Operation == UtilityOperation::StringReplaceString ||
-          Operation == UtilityOperation::StringReplaceFill;
+          Operation == UtilityOperation::StringReplaceFill ||
+          Operation == UtilityOperation::StringReplaceIteratorPointer ||
+          Operation == UtilityOperation::StringReplaceIteratorCString ||
+          Operation == UtilityOperation::StringReplaceIteratorString ||
+          Operation == UtilityOperation::StringReplaceIteratorFill ||
+          Operation == UtilityOperation::StringReplaceIteratorRange ||
+          Operation == UtilityOperation::StringReplaceIteratorList;
+      const bool IteratorReplace =
+          Operation == UtilityOperation::StringReplaceIteratorPointer ||
+          Operation == UtilityOperation::StringReplaceIteratorCString ||
+          Operation == UtilityOperation::StringReplaceIteratorString ||
+          Operation == UtilityOperation::StringReplaceIteratorFill ||
+          Operation == UtilityOperation::StringReplaceIteratorRange ||
+          Operation == UtilityOperation::StringReplaceIteratorList;
       const bool IteratorInsert =
           Operation == UtilityOperation::StringInsertIteratorCharacter ||
           Operation == UtilityOperation::StringInsertIteratorFill ||
@@ -9776,26 +9795,36 @@ class FunctionLowering {
       const bool Fill =
           Operation == UtilityOperation::StringInsertFill ||
           Operation == UtilityOperation::StringReplaceFill ||
+          Operation == UtilityOperation::StringReplaceIteratorFill ||
           Operation == UtilityOperation::StringInsertIteratorCharacter ||
           Operation == UtilityOperation::StringInsertIteratorFill;
       const unsigned SourceIndex = Replace ? 2 : 1;
       auto Position = temporary(SizeType, L);
       std::optional<Expression> PositionPointer;
-      if (IteratorInsert) {
-        auto Iterator = approvedUtilityWrapIteratorRecord(
-            A.S, A.Sources, Call->getArg(0)->getType()->getAsCXXRecordDecl(),
-            A.Context);
-        if (!Iterator)
-          reject(L, "string insert",
-                 "The selected position iterator layout is unavailable.");
-        auto Value = snapshot(expression(Call->getArg(0)), L);
-        PositionPointer =
-            snapshot(fieldStorage(std::move(Value), Iterator->Current, L), L);
+      std::optional<Expression> ReplaceLastPointer;
+      if (IteratorInsert || IteratorReplace) {
+        auto IteratorPointer = [&](unsigned Index) {
+          const auto *Argument = Call->getArg(Index);
+          auto Iterator = approvedUtilityWrapIteratorRecord(
+              A.S, A.Sources, Argument->getType()->getAsCXXRecordDecl(),
+              A.Context);
+          if (!Iterator)
+            reject(L, "string modification",
+                   "The selected position iterator layout is unavailable.");
+          auto Value = snapshot(expression(Argument), L);
+          return snapshot(fieldStorage(std::move(Value), Iterator->Current, L),
+                          L);
+        };
+        PositionPointer = IteratorPointer(0);
+        if (IteratorReplace)
+          ReplaceLastPointer = IteratorPointer(1);
       } else {
         assign(Position, snapshot(expression(Call->getArg(0)), L), L);
       }
-      auto RemovedArgument = Replace ? snapshot(expression(Call->getArg(1)), L)
-                                     : quantity(0, SizeType, L);
+      auto RemovedArgument = IteratorReplace ? temporary(SizeType, L)
+                             : Replace
+                                 ? snapshot(expression(Call->getArg(1)), L)
+                                 : quantity(0, SizeType, L);
       auto Inserted = temporary(SizeType, L);
       std::optional<Expression> Source, Character;
       if (Operation == UtilityOperation::StringInsertIteratorCharacter) {
@@ -9804,7 +9833,8 @@ class FunctionLowering {
       } else if (Fill) {
         assign(Inserted, snapshot(expression(Call->getArg(SourceIndex)), L), L);
         Character = snapshot(expression(Call->getArg(SourceIndex + 1)), L);
-      } else if (Operation == UtilityOperation::StringInsertIteratorList) {
+      } else if (Operation == UtilityOperation::StringInsertIteratorList ||
+                 Operation == UtilityOperation::StringReplaceIteratorList) {
         const auto *Argument = Call->getArg(SourceIndex);
         auto List = approvedUtilityInitializerListRecord(
             A.S, A.Sources, Argument->getType()->getAsCXXRecordDecl(),
@@ -9819,7 +9849,8 @@ class FunctionLowering {
         Source = temporary(ConstPointerType, L);
         assign(*Source,
                snapshot(fieldStorage(std::move(Value), List->Begin, L), L), L);
-      } else if (Operation == UtilityOperation::StringInsertIteratorRange) {
+      } else if (Operation == UtilityOperation::StringInsertIteratorRange ||
+                 Operation == UtilityOperation::StringReplaceIteratorRange) {
         auto RangePointer = [&](unsigned Index) {
           const auto *Argument = Call->getArg(Index);
           auto Value = snapshot(expression(Argument), L);
@@ -9841,7 +9872,8 @@ class FunctionLowering {
                     SizeType, L),
                L);
       } else if (Operation == UtilityOperation::StringInsertString ||
-                 Operation == UtilityOperation::StringReplaceString) {
+                 Operation == UtilityOperation::StringReplaceString ||
+                 Operation == UtilityOperation::StringReplaceIteratorString) {
         auto Address =
             snapshot(address(lvalue(Call->getArg(SourceIndex)),
                              Call->getArg(SourceIndex)->getType(), L),
@@ -9853,7 +9885,8 @@ class FunctionLowering {
       } else {
         Source = snapshot(expression(Call->getArg(SourceIndex)), L);
         if (Operation == UtilityOperation::StringInsertPointer ||
-            Operation == UtilityOperation::StringReplacePointer) {
+            Operation == UtilityOperation::StringReplacePointer ||
+            Operation == UtilityOperation::StringReplaceIteratorPointer) {
           assign(Inserted,
                  snapshot(expression(Call->getArg(SourceIndex + 1)), L), L);
         } else {
@@ -9927,15 +9960,23 @@ class FunctionLowering {
       jump(Ready, L);
       label(Ready, L);
       std::optional<Expression> FinalData;
-      if (IteratorInsert) {
-        FinalData = temporary(PointerType, L);
-        assign(*FinalData, json::Object(Data), L);
+      if (IteratorInsert || IteratorReplace) {
+        if (IteratorInsert) {
+          FinalData = temporary(PointerType, L);
+          assign(*FinalData, json::Object(Data), L);
+        }
         assign(Position,
                cast(binary("-", json::Object(*PositionPointer),
                            cast(json::Object(Data), ConstPointerType, L),
                            DifferenceType, L),
                     SizeType, L),
                L);
+        if (IteratorReplace)
+          assign(RemovedArgument,
+                 cast(binary("-", json::Object(*ReplaceLastPointer),
+                             json::Object(*PositionPointer), DifferenceType, L),
+                      SizeType, L),
+                 L);
       }
       const auto Valid = labelName(), Done = labelName();
       branch(

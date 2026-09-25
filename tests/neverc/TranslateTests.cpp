@@ -55200,6 +55200,101 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringIteratorReplaceRun) {
+  const auto Source = tmpFile("string-iterator-replace.cpp");
+  const auto Output = tmpFile("string-iterator-replace.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+int main() {
+  {
+    std::string text("abcdef");
+    char *short_data = text.data();
+    auto &by_string = text.replace(text.cbegin() + 1, text.cbegin() + 4,
+                                   std::string("XY"));
+    if (&by_string != &text || text != "aXYef" || text.data() != short_data)
+      return 1;
+    const char counted[] = {'Q', 0, 'R'};
+    auto &by_count = text.replace(text.cbegin() + 1, text.cbegin() + 3,
+                                  counted, 3);
+    if (&by_count != &text || text.size() != 6 || text[1] != 'Q' ||
+        text[2] != 0 || text[3] != 'R' || text[4] != 'e')
+      return 2;
+    std::string cstring("abcd");
+    cstring.replace(cstring.cbegin() + 1, cstring.cbegin() + 3, "ZZ");
+    if (cstring != "aZZd")
+      return 3;
+    std::string fill("abcd");
+    fill.replace(fill.cbegin() + 1, fill.cbegin() + 3, 3, 'X');
+    if (fill != "aXXXd")
+      return 4;
+    std::string listed("abcd");
+    listed.replace(listed.cbegin() + 1, listed.cbegin() + 3, {'X', 0, 'Y'});
+    if (listed.size() != 5 || listed[0] != 'a' || listed[1] != 'X' ||
+        listed[2] != 0 || listed[3] != 'Y' || listed[4] != 'd')
+      return 5;
+    const char raw[] = {'U', 'V'};
+    std::string ranged("abcd");
+    ranged.replace(ranged.cbegin() + 1, ranged.cbegin() + 3,
+                   raw, raw + 2);
+    if (ranged != "aUVd")
+      return 6;
+    const std::string donor("PQ");
+    ranged.replace(ranged.cbegin() + 1, ranged.cbegin() + 3,
+                   donor.cbegin(), donor.cend());
+    if (ranged != "aPQd")
+      return 7;
+    std::string overlap("abcdef");
+    overlap.reserve(32);
+    char *overlap_data = overlap.data();
+    overlap.replace(overlap.cbegin() + 1, overlap.cbegin() + 3,
+                    overlap.cbegin() + 3, overlap.cend());
+    if (overlap != "adefdef" || overlap.data() != overlap_data)
+      return 8;
+    std::string grow("abcdefghijklmnopqrstuvwxyz");
+    char *old_data = grow.data();
+    grow.replace(grow.cbegin() + 1, grow.cbegin() + 2,
+                 grow.cbegin() + 2, grow.cend());
+    if (grow != "acdefghijklmnopqrstuvwxyzcdefghijklmnopqrstuvwxyz" ||
+        grow.data() == old_data)
+      return 9;
+    std::string empty("abc");
+    auto &inserted = empty.replace(empty.cbegin() + 1,
+                                   empty.cbegin() + 1, {'X'});
+    if (&inserted != &empty || empty != "aXbc")
+      return 10;
+    std::string long_text("abcdefghijklmnopqrstuvwxyz0123456789");
+    long_text.reserve(90);
+    char *long_data = long_text.data();
+    Size capacity = long_text.capacity();
+    long_text.replace(long_text.cbegin() + 10,
+                      long_text.cbegin() + 26, std::string("ZZ"));
+    if (long_text != "abcdefghijZZ0123456789" ||
+        long_text.data() != long_data || long_text.capacity() != capacity)
+      return 11;
+  }
+  return allocations == releases ? 0 : 12;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-iterator-replace" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StringInsertAndReplaceRun) {
   const auto Source = tmpFile("string-insert-replace.cpp");
   const auto Output = tmpFile("string-insert-replace.nc");

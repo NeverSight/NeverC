@@ -2349,6 +2349,10 @@ Iterator-position `insert` accepts one character, a counted character fill,
 raw or authenticated wrapped character ranges, and an initializer list. It
 uses the same growth and alias handling and returns a mutable iterator to the
 first inserted character, including the original position for empty input.
+Iterator-range `replace` accepts a string, a C string, a counted pointer,
+a character fill, raw or authenticated wrapped character ranges, and an
+initializer list. It shares positional replacement's capacity reuse, growth,
+and self-reference handling and returns the receiver reference.
 `compare(const std::string&)` and the six string/string relation operators
 compare unsigned bytes lexicographically, then lengths, without allocating.
 `compare(const char*)` and the twelve string/C-string relation overloads scan
