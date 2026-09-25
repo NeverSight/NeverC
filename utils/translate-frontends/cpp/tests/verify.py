@@ -29474,6 +29474,14 @@ std::string_view::size_type find_view_default(std::string_view view,
                                              std::string_view needle) {
   return view.find(needle);
 }
+std::string_view::size_type find_pointer(std::string_view view,
+                                         const char *needle) {
+  return view.find(needle);
+}
+std::string_view::size_type find_counted(std::string_view view,
+                                         const char *needle) {
+  return view.find(needle, 1, 2);
+}
 std::string_view::size_type reverse_find(std::string_view view, char needle,
                                          std::string_view::size_type pos) {
   return view.rfind(needle, pos);
@@ -29491,6 +29499,28 @@ std::string_view::size_type reverse_find_view_default(
     std::string_view view, std::string_view needle) {
   return view.rfind(needle);
 }
+std::string_view::size_type reverse_find_pointer(std::string_view view,
+                                                 const char *needle) {
+  return view.rfind(needle);
+}
+std::string_view::size_type reverse_find_counted(std::string_view view,
+                                                 const char *needle) {
+  return view.rfind(needle, std::string_view::npos, 2);
+}
+std::string_view::size_type first_of(std::string_view view,
+                                      std::string_view set) {
+  return view.find_first_of(set);
+}
+std::string_view::size_type last_of(std::string_view view, const char *set) {
+  return view.find_last_of(set);
+}
+std::string_view::size_type first_not_of(std::string_view view, char value) {
+  return view.find_first_not_of(value);
+}
+std::string_view::size_type last_not_of(std::string_view view,
+                                        const char *set) {
+  return view.find_last_not_of(set, std::string_view::npos, 2);
+}
 char reverse_first(std::string_view view) {
   return view.rbegin() != view.rend() ? *view.crbegin() : 0;
 }
@@ -29503,12 +29533,6 @@ char reverse_first(std::string_view view) {
           "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-string-view-unlowered-member",
           '#include <string_view>\nint f(){std::string_view view("a",1);return view.at(0);}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
-    check("v2-string-view-unlowered-find-pointer",
-          '#include <string_view>\nstd::string_view::size_type f(std::string_view view){return view.find("a",0);}',
-          "TR0203", profile="cpp-core-v2", sdk=True)
-    check("v2-string-view-unlowered-rfind-pointer",
-          '#include <string_view>\nstd::string_view::size_type f(std::string_view view){return view.rfind("a",0);}',
           "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-string-view-quoted", '#include "string_view"\nint f(){return 0;}',
           "TR0201", profile="cpp-core-v2", sdk=True)

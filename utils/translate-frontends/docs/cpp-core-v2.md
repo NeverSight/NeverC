@@ -2208,6 +2208,11 @@ matching byte sequence, while `rfind(char, size_t)` and
 pinned zero or `npos` defaults. Empty patterns and out-of-range positions
 follow libc++'s view-search results. The caller remains responsible for the
 ordinary view lifetime, readable-range and valid-index preconditions.
+Both directional searches also accept zero-terminated and counted `const char*`
+patterns. `find_first_of`, `find_last_of`, `find_first_not_of` and
+`find_last_not_of` accept character, view, zero-terminated and counted pointer
+sets. Their default positions, empty sets, embedded zero bytes in counted
+patterns and reverse clipping follow the pinned view-search semantics.
 `substr(pos, count)` returns another view over the selected byte range, with
 both default arguments and `npos` counts. `copy(char*, count, pos)` writes the
 selected bytes without appending a terminator and returns the copied length.

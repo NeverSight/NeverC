@@ -7758,12 +7758,19 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
         Parameter->getFunctionScopeIndex() == 1 && Index == 1 &&
         !Method->isStatic() && !Method->isVariadic() && Method->isConst() &&
         Method->isConstexpr() && Method->hasBody() && Method->getIdentifier() &&
-        (Method->getName() == "find" || Method->getName() == "rfind") &&
+        (Method->getName() == "find" || Method->getName() == "rfind" ||
+         Method->getName() == "find_first_of" ||
+         Method->getName() == "find_last_of" ||
+         Method->getName() == "find_first_not_of" ||
+         Method->getName() == "find_last_not_of") &&
         Context.hasSameType(Method->getReturnType(), Context.getSizeType()) &&
         (Context.hasSameType(Method->getParamDecl(0)->getType(),
                              Context.CharTy) ||
          Context.hasSameUnqualifiedType(Method->getParamDecl(0)->getType(),
-                                        Context.getRecordType(View->Record))) &&
+                                        Context.getRecordType(View->Record)) ||
+         Context.hasSameType(
+             Method->getParamDecl(0)->getType(),
+             Context.getPointerType(Context.CharTy.withConst()))) &&
         Context.hasSameType(Parameter->getType(), Context.getSizeType()) &&
         approvedStandardSDKDeclaration(S, SM, Method) &&
         cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "string_view") &&
@@ -7774,8 +7781,10 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
       Expr::EvalResult Evaluated;
       if (Init->EvaluateAsInt(Evaluated, Context) && Evaluated.Val.isInt()) {
         const auto &Value = Evaluated.Val.getInt();
-        if ((Method->getName() == "find" && Value == 0) ||
-            (Method->getName() == "rfind" && Value.isAllOnes()))
+        const auto Name = Method->getName();
+        const bool Forward = Name == "find" || Name == "find_first_of" ||
+                             Name == "find_first_not_of";
+        if ((Forward && Value == 0) || (!Forward && Value.isAllOnes()))
           return true;
       }
     }
@@ -17258,24 +17267,50 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                          ViewType) &&
           Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), ViewType))
         return UtilityOperation::StringViewCompare;
-      if ((Name == "find" || Name == "rfind") && Method->getNumParams() == 2 &&
-          Call->getNumArgs() == 2 &&
-          Context.hasSameType(Method->getReturnType(), Context.getSizeType()) &&
+      const bool Search = Name == "find" || Name == "rfind" ||
+                          Name == "find_first_of" || Name == "find_last_of" ||
+                          Name == "find_first_not_of" ||
+                          Name == "find_last_not_of";
+      if (Search &&
+          (Method->getNumParams() == 2 || Method->getNumParams() == 3) &&
+          Context.hasSameType(Result, Context.getSizeType()) &&
           Context.hasSameType(Method->getParamDecl(1)->getType(),
                               Context.getSizeType()) &&
           Context.hasSameType(Call->getArg(1)->getType(),
                               Context.getSizeType())) {
-        if (Context.hasSameType(Method->getParamDecl(0)->getType(),
-                                Context.CharTy) &&
-            Context.hasSameType(Call->getArg(0)->getType(), Context.CharTy))
-          return Name == "find" ? UtilityOperation::StringViewFindCharacter
-                                : UtilityOperation::StringViewRFindCharacter;
-        if (Context.hasSameUnqualifiedType(Method->getParamDecl(0)->getType(),
-                                           ViewType) &&
-            Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
-                                           ViewType))
-          return Name == "find" ? UtilityOperation::StringViewFindView
-                                : UtilityOperation::StringViewRFindView;
+        const auto Parameter = Method->getParamDecl(0)->getType();
+        const auto Argument = Call->getArg(0)->getType();
+        const bool Character = Method->getNumParams() == 2 &&
+                               Context.hasSameType(Parameter, Context.CharTy) &&
+                               Context.hasSameType(Argument, Context.CharTy);
+        const bool View = Method->getNumParams() == 2 &&
+                          Context.hasSameUnqualifiedType(Parameter, ViewType) &&
+                          Context.hasSameUnqualifiedType(Argument, ViewType);
+        const bool Pointer =
+            Context.hasSameType(Parameter, Context.getPointerType(
+                                               Context.CharTy.withConst())) &&
+            Context.hasSameType(
+                Argument, Context.getPointerType(Context.CharTy.withConst())) &&
+            (Method->getNumParams() == 2 ||
+             (Context.hasSameType(Method->getParamDecl(2)->getType(),
+                                  Context.getSizeType()) &&
+              Context.hasSameType(Call->getArg(2)->getType(),
+                                  Context.getSizeType())));
+        if (Character || View || Pointer) {
+          if (Name == "find")
+            return Character ? UtilityOperation::StringViewFindCharacter
+                             : UtilityOperation::StringViewFindView;
+          if (Name == "rfind")
+            return Character ? UtilityOperation::StringViewRFindCharacter
+                             : UtilityOperation::StringViewRFindView;
+          if (Name == "find_first_of")
+            return UtilityOperation::StringViewFindFirstOf;
+          if (Name == "find_last_of")
+            return UtilityOperation::StringViewFindLastOf;
+          if (Name == "find_first_not_of")
+            return UtilityOperation::StringViewFindFirstNotOf;
+          return UtilityOperation::StringViewFindLastNotOf;
+        }
       }
       if (Name == "copy" && Method->getNumParams() == 3 &&
           Context.hasSameType(Result, Context.getSizeType()) &&

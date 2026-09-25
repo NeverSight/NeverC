@@ -15076,6 +15076,81 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringViewSearchOverloadsRun) {
+  const auto Source = tmpFile("string-view-search-overloads.cpp");
+  const auto Output = tmpFile("string-view-search-overloads.nc");
+  writeFile(Source, R"cpp(
+#include <string_view>
+int evaluations;
+const char *pattern() { ++evaluations; return "a"; }
+std::string_view& touch(std::string_view& view) {
+  ++evaluations;
+  return view;
+}
+int main() {
+  const char raw[] = {'a', 0, 'b', 'a', 0, 'c'};
+  std::string_view view(raw, 6);
+  std::string_view set(raw + 1, 2);
+  std::string_view empty;
+  const char counted[] = {0, 'c', 'x'};
+  if (view.find("a") != 0 || view.rfind("a") != 3 ||
+      view.find(raw + 1, 0, 2) != 1 ||
+      view.rfind(raw + 1, std::string_view::npos, 2) != 1 ||
+      view.find("", 6) != 6 || view.rfind("") != 6 ||
+      view.find("a", 4) != std::string_view::npos)
+    return 1;
+  if (view.find_first_of('a') != 0 || view.find_last_of('a') != 3 ||
+      view.find_first_not_of('a') != 1 ||
+      view.find_last_not_of('a') != 5 ||
+      view.find_first_of('a', 4) != std::string_view::npos ||
+      view.find_last_of('a', 2) != 0)
+    return 2;
+  if (view.find_first_of(set) != 1 || view.find_last_of(set) != 4 ||
+      view.find_first_not_of(set) != 0 ||
+      view.find_last_not_of(set) != 5 ||
+      view.find_first_of(set, 2) != 2 ||
+      view.find_last_of(set, 2) != 2)
+    return 3;
+  if (view.find_first_of("ac") != 0 || view.find_last_of("ac") != 5 ||
+      view.find_first_not_of("ac") != 1 ||
+      view.find_last_not_of("ac") != 4 ||
+      view.find_first_of("ac", 4) != 5 ||
+      view.find_last_not_of("ac", 2) != 2)
+    return 4;
+  if (view.find_first_of(counted, 0, 2) != 1 ||
+      view.find_last_of(counted, std::string_view::npos, 2) != 5 ||
+      view.find_first_not_of(counted, 1, 2) != 2 ||
+      view.find_last_not_of(counted, std::string_view::npos, 2) != 3)
+    return 5;
+  if (view.find_first_of(empty) != std::string_view::npos ||
+      view.find_last_of(empty) != std::string_view::npos ||
+      view.find_first_not_of(empty) != 0 ||
+      view.find_last_not_of(empty) != 5 ||
+      empty.find_first_of('a') != std::string_view::npos ||
+      empty.find_last_not_of('a') != std::string_view::npos)
+    return 6;
+  if (touch(view).find(pattern()) != 0 || evaluations != 2 ||
+      touch(view).find_first_of(pattern()) != 0 || evaluations != 4 ||
+      touch(view).find_last_not_of(std::string_view("a")) != 5 ||
+      evaluations != 5)
+    return 7;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("string-view-search-overloads" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StringViewRelationsRunAtBothOptimizations) {
   const auto Source = tmpFile("string-view-relations.cpp");
   const auto Output = tmpFile("string-view-relations.nc");

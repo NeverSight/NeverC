@@ -13134,9 +13134,28 @@ class FunctionLowering {
         Data = std::move(Haystack.first);
         Size = std::move(Haystack.second);
       } else {
-        auto Needle = snapshot(expression(Call->getArg(0)), L);
-        Position =
-            snapshot(argument(Call->getArg(1), A.Context.getSizeType()), L);
+        const auto *Pattern = Call->getArg(0);
+        if (Pattern->getType()->isPointerType()) {
+          auto Pointer = snapshot(expression(Pattern), L);
+          Position =
+              snapshot(argument(Call->getArg(1), A.Context.getSizeType()), L);
+          if (Call->getNumArgs() == 3) {
+            NeedleData = std::move(Pointer);
+            NeedleSize = snapshot(expression(Call->getArg(2)), L);
+          } else {
+            auto Needle = ReadCStringAt(std::move(Pointer));
+            NeedleData = std::move(Needle.first);
+            NeedleSize = std::move(Needle.second);
+          }
+        } else {
+          auto Needle = snapshot(expression(Pattern), L);
+          Position =
+              snapshot(argument(Call->getArg(1), A.Context.getSizeType()), L);
+          NeedleData =
+              snapshot(fieldStorage(json::Object(Needle), View->Data, L), L);
+          NeedleSize =
+              snapshot(fieldStorage(std::move(Needle), View->Size, L), L);
+        }
         Data =
             snapshot(fieldStorage(dereference(json::Object(ObjectAddress), L),
                                   View->Data, L),
@@ -13144,10 +13163,6 @@ class FunctionLowering {
         Size = snapshot(fieldStorage(dereference(std::move(ObjectAddress), L),
                                      View->Size, L),
                         L);
-        NeedleData =
-            snapshot(fieldStorage(json::Object(Needle), View->Data, L), L);
-        NeedleSize =
-            snapshot(fieldStorage(std::move(Needle), View->Size, L), L);
       }
       const auto SizeType = type(Call->getType(), L);
       const unsigned Bits = integerBits(SizeType);
@@ -13253,18 +13268,36 @@ class FunctionLowering {
     case UtilityOperation::StringFindFirstOf:
     case UtilityOperation::StringFindLastOf:
     case UtilityOperation::StringFindFirstNotOf:
-    case UtilityOperation::StringFindLastNotOf: {
-      const bool Reverse = Operation == UtilityOperation::StringFindLastOf ||
-                           Operation == UtilityOperation::StringFindLastNotOf;
+    case UtilityOperation::StringFindLastNotOf:
+    case UtilityOperation::StringViewFindFirstOf:
+    case UtilityOperation::StringViewFindLastOf:
+    case UtilityOperation::StringViewFindFirstNotOf:
+    case UtilityOperation::StringViewFindLastNotOf: {
+      const bool ViewSearch =
+          Operation == UtilityOperation::StringViewFindFirstOf ||
+          Operation == UtilityOperation::StringViewFindLastOf ||
+          Operation == UtilityOperation::StringViewFindFirstNotOf ||
+          Operation == UtilityOperation::StringViewFindLastNotOf;
+      const bool Reverse =
+          Operation == UtilityOperation::StringFindLastOf ||
+          Operation == UtilityOperation::StringFindLastNotOf ||
+          Operation == UtilityOperation::StringViewFindLastOf ||
+          Operation == UtilityOperation::StringViewFindLastNotOf;
       const bool Negated =
           Operation == UtilityOperation::StringFindFirstNotOf ||
-          Operation == UtilityOperation::StringFindLastNotOf;
+          Operation == UtilityOperation::StringFindLastNotOf ||
+          Operation == UtilityOperation::StringViewFindFirstNotOf ||
+          Operation == UtilityOperation::StringViewFindLastNotOf;
       const auto *Object = MemberObject();
-      auto String = Object ? StringFor(Object->getType())
-                           : std::optional<UtilityStringRecord>();
-      if (!Object || !String)
+      auto String = Object && !ViewSearch
+                        ? StringFor(Object->getType())
+                        : std::optional<UtilityStringRecord>();
+      auto View = Object && ViewSearch
+                      ? StringViewFor(Object->getType())
+                      : std::optional<UtilityStringViewRecord>();
+      if (!Object || (ViewSearch ? !View : !String))
         reject(L, "string character-set search",
-               "The selected std::string layout is unavailable.");
+               "The selected string layout is unavailable.");
       auto ObjectAddress =
           snapshot(address(lvalue(Object), Object->getType(), L), L);
       const auto *Pattern = Call->getArg(0);
@@ -13287,6 +13320,12 @@ class FunctionLowering {
           SetData = std::move(Set.first);
           SetSize = std::move(Set.second);
         }
+      } else if (ViewSearch) {
+        auto Set = snapshot(expression(Pattern), L);
+        Position =
+            snapshot(argument(Call->getArg(1), A.Context.getSizeType()), L);
+        SetData = snapshot(fieldStorage(json::Object(Set), View->Data, L), L);
+        SetSize = snapshot(fieldStorage(std::move(Set), View->Size, L), L);
       } else {
         auto SetAddress =
             snapshot(address(lvalue(Pattern), Pattern->getType(), L), L);
@@ -13296,9 +13335,20 @@ class FunctionLowering {
         SetData = std::move(Set.first);
         SetSize = std::move(Set.second);
       }
-      auto Haystack = ReadStringAt(std::move(ObjectAddress), *String);
-      auto Data = std::move(Haystack.first);
-      auto Size = std::move(Haystack.second);
+      Expression Data, Size;
+      if (ViewSearch) {
+        Data =
+            snapshot(fieldStorage(dereference(json::Object(ObjectAddress), L),
+                                  View->Data, L),
+                     L);
+        Size = snapshot(fieldStorage(dereference(std::move(ObjectAddress), L),
+                                     View->Size, L),
+                        L);
+      } else {
+        auto Haystack = ReadStringAt(std::move(ObjectAddress), *String);
+        Data = std::move(Haystack.first);
+        Size = std::move(Haystack.second);
+      }
       const auto SizeType = type(Call->getType(), L);
       const unsigned Bits = integerBits(SizeType);
       const uint64_t NotFound = Bits == 64
