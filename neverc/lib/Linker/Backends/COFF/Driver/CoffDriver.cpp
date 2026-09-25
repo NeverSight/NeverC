@@ -38,6 +38,7 @@
 #include "llvm/Support/VirtualFileSystem.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/Triple.h"
+#include "llvm/Support/GlobPattern.h"
 #include <algorithm>
 #include <memory>
 #include <optional>
@@ -1537,6 +1538,24 @@ void LinkerDriver::run(ArrayRef<const char *> argsArr,
   for (auto *arg : args.filtered(OPT_incl))
     addUndefined(arg->getValue());
 
+  // /STUB: an MS-DOS program to start the image with.
+  if (auto *arg = args.getLastArg(OPT_stub)) {
+    ErrorOr<std::unique_ptr<MemoryBuffer>> mb =
+        MemoryBuffer::getFile(arg->getValue(), /*IsText=*/false,
+                              /*RequiresNullTerminator=*/false);
+    if (!mb) {
+      error("/stub: cannot open " + StringRef(arg->getValue()) + ": " +
+            mb.getError().message());
+    } else if ((*mb)->getBufferSize() < sizeof(object::dos_header) ||
+               !(*mb)->getBuffer().starts_with("MZ")) {
+      error("/stub: " + StringRef(arg->getValue()) +
+            " is not an MS-DOS program");
+    } else {
+      config->dosStub.assign((*mb)->getBuffer().bytes_begin(),
+                             (*mb)->getBuffer().bytes_end());
+    }
+  }
+
   if (auto *arg = args.getLastArg(OPT_implib))
     config->implib = arg->getValue();
   config->noimplib = args.hasArg(OPT_noimplib);
@@ -2013,6 +2032,26 @@ void LinkerDriver::run(ArrayRef<const char *> argsArr,
             addUndefined(arg->getValue());
       }
     } while (run());
+  }
+  // /INCLUDEGLOB keeps every symbol known by now whose name matches, as
+  // /INCLUDE would; archive members defining them are loaded.
+  if (args.hasArg(OPT_includeglob)) {
+    for (auto *arg : args.filtered(OPT_includeglob)) {
+      Expected<GlobPattern> pat = GlobPattern::create(arg->getValue());
+      if (!pat) {
+        error("/includeglob: " + toString(pat.takeError()));
+        continue;
+      }
+      SmallVector<StringRef, 0> matches;
+      ctx.symtab.forEachSymbol([&](Symbol *sym) {
+        if (pat->match(sym->getName()))
+          matches.push_back(sym->getName());
+      });
+      for (StringRef name : matches)
+        addUndefined(name);
+    }
+    while (run())
+      ;
   }
   // Members extracted from here on resolve their names directly.
   ctx.symtab.finishMemberNameInterning();

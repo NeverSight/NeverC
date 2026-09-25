@@ -100,6 +100,8 @@ void forceLazy(Symbol *s) {
   }
   case Symbol::Kind::LazyObjectKind: {
     InputFile *file = cast<LazyObject>(s)->file;
+    // Loading the object parses its definitions, not its lazy index again.
+    file->lazy = false;
     file->ctx.symtab.addFile(file);
     break;
   }

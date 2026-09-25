@@ -113,6 +113,9 @@ struct Configuration {
   bool driverUponly = false;
   bool driverWdm = false;
   bool showSummary = false;
+  // /STUB: the MS-DOS program that starts the image, MZ header included;
+  // empty for the built-in one.
+  std::vector<uint8_t> dosStub;
   bool dontMergeSections = false;
   std::vector<llvm::StringRef> argv;
 

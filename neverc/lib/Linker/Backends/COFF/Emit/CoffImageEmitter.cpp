@@ -82,6 +82,14 @@ const int dosStubSize = sizeof(dos_header) + sizeof(dosProgram);
 static_assert(dosStubSize % 8 == 0, "DOSStub size must be multiple of 8");
 
 namespace {
+// The bytes before the PE signature: the built-in stub or /STUB's program.
+uint64_t stubSize(const Configuration &config) {
+  return config.dosStub.empty() ? dosStubSize
+                                : alignTo(config.dosStub.size(), 8);
+}
+} // namespace
+
+namespace {
 const int numberOfDataDirectory = 16;
 } // namespace
 
@@ -667,7 +675,8 @@ void OutputWriter::writePEChecksum() {
   uint8_t *buf = buffer->getBufferStart();
 
   coff_file_header *coffHeader =
-      reinterpret_cast<coff_file_header *>(buf + dosStubSize + sizeof(PEMagic));
+      reinterpret_cast<coff_file_header *>(buf + stubSize(ctx.config) +
+                                          sizeof(PEMagic));
   pe32plus_header *peHeader = reinterpret_cast<pe32plus_header *>(
       reinterpret_cast<uint8_t *>(coffHeader) + sizeof(coff_file_header));
   const size_t ChecksumOffset =
@@ -1638,7 +1647,8 @@ void OutputWriter::computeAddresses() {
   llvm::TimeTraceScope timeScope("Assign addresses");
   Configuration *config = &ctx.config;
 
-  sizeOfHeaders = dosStubSize + sizeof(PEMagic) + sizeof(coff_file_header) +
+  sizeOfHeaders = stubSize(*config) + sizeof(PEMagic) +
+                  sizeof(coff_file_header) +
                   sizeof(data_directory) * numberOfDataDirectory +
                   sizeof(coff_section) * ctx.outputSections.size();
   sizeOfHeaders += sizeof(pe32plus_header);
@@ -1694,20 +1704,28 @@ template <typename PEHeaderTy> void OutputWriter::writeHeader() {
   Configuration *config = &ctx.config;
   uint8_t *buf = buffer->getBufferStart();
   auto *dos = reinterpret_cast<dos_header *>(buf);
-  buf += sizeof(dos_header);
-  dos->Magic[0] = 'M';
-  dos->Magic[1] = 'Z';
-  dos->UsedBytesInTheLastPage = dosStubSize % 512;
-  dos->FileSizeInPages = 3;
-  dos->HeaderSizeInParagraphs = sizeof(dos_header) / 16;
-  dos->MaximumExtraParagraphs = 0xFFFF;
-  dos->InitialSP = 0xB8;
-  dos->AddressOfRelocationTable = sizeof(dos_header);
-  dos->AddressOfNewExeHeader = dosStubSize;
+  if (!config->dosStub.empty()) {
+    // A /STUB program keeps its own header; only the PE header's offset,
+    // past the program padded to 8 bytes, is written into it.
+    memcpy(buf, config->dosStub.data(), config->dosStub.size());
+    dos->AddressOfNewExeHeader = stubSize(*config);
+    buf += stubSize(*config);
+  } else {
+    buf += sizeof(dos_header);
+    dos->Magic[0] = 'M';
+    dos->Magic[1] = 'Z';
+    dos->UsedBytesInTheLastPage = dosStubSize % 512;
+    dos->FileSizeInPages = 3;
+    dos->HeaderSizeInParagraphs = sizeof(dos_header) / 16;
+    dos->MaximumExtraParagraphs = 0xFFFF;
+    dos->InitialSP = 0xB8;
+    dos->AddressOfRelocationTable = sizeof(dos_header);
+    dos->AddressOfNewExeHeader = dosStubSize;
 
-  // Write DOS program.
-  memcpy(buf, dosProgram, sizeof(dosProgram));
-  buf += sizeof(dosProgram);
+    // Write DOS program.
+    memcpy(buf, dosProgram, sizeof(dosProgram));
+    buf += sizeof(dosProgram);
+  }
 
   // Write PE magic
   memcpy(buf, PEMagic, sizeof(PEMagic));
@@ -2323,7 +2341,7 @@ void OutputWriter::computeContentHash() {
     debugDirectory->setTimeDateStamp(timestamp);
 
   uint8_t *buf = buffer->getBufferStart();
-  buf += dosStubSize + sizeof(PEMagic);
+  buf += stubSize(ctx.config) + sizeof(PEMagic);
   object::coff_file_header *coffHeader =
       reinterpret_cast<coff_file_header *>(buf);
   coffHeader->TimeDateStamp = timestamp;

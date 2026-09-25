@@ -213,6 +213,9 @@ OPTION(prefix_1, "--include=", incl, Joined, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0,
        "Force symbol to be added to symbol table as undefined one", nullptr,
        nullptr)
+OPTION(prefix_1, "--includeglob=", includeglob, Joined, INVALID, INVALID,
+       nullptr, 0, DefaultVis, 0,
+       "Keep every symbol whose name matches the glob", nullptr, nullptr)
 OPTION(prefix_1, "--includeoptional=", include_optional, Joined, INVALID,
        INVALID, nullptr, 0, DefaultVis, 0,
        "Add symbol as undefined, but allow it to remain undefined", nullptr,
@@ -415,6 +418,9 @@ OPTION(prefix_1, "--start-lib", start_lib, Flag, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0,
        "Start group of objects treated as if they were in a library", nullptr,
        nullptr)
+OPTION(prefix_1, "--stub=", stub, Joined, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0, "Replace the MS-DOS stub program with the given file",
+       nullptr, nullptr)
 OPTION(prefix_1, "--subsystem=", subsystem, Joined, INVALID, INVALID, nullptr,
        0, DefaultVis, 0, "Specify subsystem", nullptr, nullptr)
 OPTION(prefix_1, "--summary", summary, Flag, INVALID, INVALID, nullptr, 0,

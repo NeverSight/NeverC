@@ -2868,6 +2868,59 @@ main:
   EXPECT_EQ(exec(image.string(), {}).exitCode, 2);
 }
 
+TEST_F(LinkerTest, MsvcStubAndIncludeGlob) {
+  const std::string target = "--target=x86_64-pc-windows-msvc";
+  auto compile = [&](const std::string &name, const std::string &code) {
+    const fs::path source = tmpFile(name + ".c");
+    const fs::path object = tmpFile(name + ".obj");
+    writeFile(source, code);
+    CmdResult result = ncc({target, "-fno-lto", "-c", source.string(), "-o",
+                            object.string()});
+    EXPECT_EQ(result.exitCode, 0) << result.err;
+    return object.string();
+  };
+  const std::string main = compile("stub_main", "int keep_a(void);\n"
+                                                "int main(void) {\n"
+                                                "  return keep_a(); }\n");
+  const std::string a = compile("stub_keep_a", "int keep_a(void) { return 1; }\n");
+  const std::string b = compile("stub_keep_b", "int keep_b(void) { return 2; }\n");
+  const std::string other = compile("stub_other", "int other(void) { return 3; }\n");
+  const fs::path image = tmpFile("stub.exe");
+  const fs::path map = tmpFile("stub.map");
+
+  // Lazy members before their user load when referenced, and /INCLUDEGLOB
+  // keeps the matching ones.
+  CmdResult link = ncc({target, "-nostdlib", "-Wl,--entry=main",
+                        "-Wl,--start-lib", a, b, other, "-Wl,--end-lib", main,
+                        "-Wl,/includeglob:keep_*", "-Wl,/map:" + map.string(),
+                        "-o", image.string()});
+  ASSERT_EQ(link.exitCode, 0) << link.err;
+  const std::string mapText = readFile(map);
+  EXPECT_NE(mapText.find("keep_b"), std::string::npos) << mapText;
+  EXPECT_EQ(mapText.find("other"), std::string::npos) << mapText;
+
+  // /STUB replaces the MS-DOS program; the PE header follows it.
+  const fs::path stub = tmpFile("stub.bin");
+  std::string program(64, '\0');
+  program[0] = 'M';
+  program[1] = 'Z';
+  program += "custom dos program";
+  writeFile(stub, program);
+  CmdResult stubbed = ncc({target, "-nostdlib", "-Wl,--entry=main", main, a,
+                           "-Wl,/stub:" + stub.string(), "-o", image.string()});
+  ASSERT_EQ(stubbed.exitCode, 0) << stubbed.err;
+  const std::string bytes = readFile(image);
+  const uint32_t peOffset = llvm::support::endian::read32le(bytes.data() + 0x3c);
+  EXPECT_EQ(peOffset, (program.size() + 7) / 8 * 8);
+  EXPECT_EQ(bytes.substr(peOffset, 4), std::string("PE\0\0", 4));
+  EXPECT_NE(bytes.substr(0, peOffset).find("custom dos program"),
+            std::string::npos);
+  CmdResult invalid = ncc({target, "-nostdlib", "-Wl,--entry=main", main, a,
+                           "-Wl,/stub:" + map.string(), "-o", image.string()});
+  EXPECT_NE(invalid.exitCode, 0);
+  EXPECT_TRUE(invalid.stderrContains("not an MS-DOS program")) << invalid.err;
+}
+
 TEST_F(LinkerTest, ThreadCountOptionKeepsOutputBytesOnEveryFormat) {
   struct Format {
     const char *name;
