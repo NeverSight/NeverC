@@ -662,6 +662,8 @@ void checkZOptions(opt::InputArgList &args) {
 // ===----------------------------------------------------------------------===
 
 namespace {
+void writeDependencyFile();
+
 // Links common x86-64 executables on the FastLink pipeline. The command line
 // may only contain options the pipeline implements; anything else, and any
 // input the pipeline declines, falls back to the full backend.
@@ -781,6 +783,8 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
     case OPT_no_mmap_output_file:
       req.mmapOutput = false;
       break;
+    case OPT_dependency_file:
+      break;
     default:
       return decline("option " + arg->getAsString(args));
     }
@@ -805,9 +809,9 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
           return decline("unable to find library -l" + input.path);
         input.path = std::move(*path);
         input.isLibrary = false;
-      } else if (isStatic) {
+      } else {
         // The full backend rejects shared objects in a static section.
-        return decline("input after -Bstatic");
+        input.noShared = isStatic;
       }
       break;
     }
@@ -947,9 +951,18 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
     return true;
   };
 
+  std::vector<std::string> loadedPaths;
+  if (!config->dependencyFile.empty())
+    req.loadedPaths = &loadedPaths;
   std::string reason;
-  if (fastlink::link(req, reason) == fastlink::Status::Linked)
+  if (fastlink::link(req, reason) == fastlink::Status::Linked) {
+    if (!config->dependencyFile.empty()) {
+      for (const std::string &path : loadedPaths)
+        config->dependencyFiles.insert(llvm::CachedHashString(path));
+      writeDependencyFile();
+    }
     return true;
+  }
   log("fast pipeline declined: " + reason);
   return decline(reason);
 }

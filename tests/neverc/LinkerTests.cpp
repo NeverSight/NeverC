@@ -2100,6 +2100,7 @@ extra_value:
   // -Bstatic with -l:file finds the extra object on the search path.
   ScopedEnvironmentVariable report("NEVERC_ELF_FASTLINK_TIME", "1");
   const fs::path image = tmpFile("fast_opts_image");
+  const fs::path depfile = tmpFile("fast_opts_image.d");
   std::vector<std::string> args = baseLinkArgs();
   args.insert(args.end(),
               {"-nostartfiles", "-fgc-sections", "-Wl,-e,begin",
@@ -2111,12 +2112,18 @@ extra_value:
                "-L" + image.parent_path().string(), "-Wl,-Bstatic",
                "-l:fast_opts_extra.o", "-Wl,-Bdynamic", "-Wl,-z,nodelete",
                "-Wl,-z,origin", "-Wl,--disable-new-dtags",
-               "-Wl,-rpath,$ORIGIN", "-o", image.string()});
+               "-Wl,-rpath,$ORIGIN", "-Wl,--dependency-file=" + depfile.string(),
+               "-o", image.string()});
   CmdResult link = ncc(args);
   ASSERT_EQ(link.exitCode, 0) << link.err;
   EXPECT_EQ(link.err.find("fast pipeline not used"), std::string::npos)
       << link.err;
   EXPECT_EQ(exec(image.string(), {}).exitCode, 42);
+  const std::string deps = readFile(depfile);
+  EXPECT_EQ(deps.rfind(image.string() + ":", 0), 0u) << deps;
+  for (const char *name : {"fast_opts_unused.o", "fast_opts_extra.o"})
+    EXPECT_NE(deps.find(tmpFile(name).string()), std::string::npos)
+        << name << " missing from\n" << deps;
 
   llvm::Expected<ELFImageSummary> summary =
       readELFImageSummary(readFile(image));

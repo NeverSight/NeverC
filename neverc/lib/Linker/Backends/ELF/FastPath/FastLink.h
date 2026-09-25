@@ -26,6 +26,7 @@ struct Input {
   bool wholeArchive = false;
   bool asNeeded = false;
   bool lazy = false; // an object between --start-lib and --end-lib
+  bool noShared = false; // given after -Bstatic: shared objects are errors
 };
 
 struct Request {
@@ -91,6 +92,9 @@ struct Request {
   std::function<unsigned(unsigned long long Bytes, unsigned long long Files)>
       selectThreads;
   bool timing = false;  // print phase times to stderr
+  // Receives the path of every file the link reads, linker scripts and the
+  // files they name included, in command-line order.
+  std::vector<std::string> *loadedPaths = nullptr;
 };
 
 enum class Status { Linked, Declined };

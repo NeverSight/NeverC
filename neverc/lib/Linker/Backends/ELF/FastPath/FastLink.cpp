@@ -441,6 +441,7 @@ struct InputSpec {
   bool whole = false;
   bool asNeeded = false;
   bool lazy = false;
+  bool noShared = false;
 };
 
 string findLibrary(const vector<string> &paths, const string &name) {
@@ -528,6 +529,8 @@ void loadInputs(const vector<InputSpec> &specs) {
   vector<InputSpec> flat;
   vector<MappedFile> maps;
   for (const InputSpec &s : specs) {
+    if (ctx.opt.loadedPaths)
+      ctx.opt.loadedPaths->push_back(s.path);
     MappedFile m = mapFile(s.path);
     if (m.size >= 4 && (memcmp(m.data, ELFMAG, 4) == 0 ||
                         memcmp(m.data, "!<ar", 4) == 0)) {
@@ -539,6 +542,8 @@ void loadInputs(const vector<InputSpec> &specs) {
     if (!parseLinkerScript(m, s.asNeeded, sub))
       fatal("unknown file type: " + s.path);
     for (const InputSpec &x : sub) {
+      if (ctx.opt.loadedPaths)
+        ctx.opt.loadedPaths->push_back(x.path);
       flat.push_back(x);
       maps.push_back(mapFile(x.path));
     }
@@ -613,6 +618,8 @@ void loadInputs(const vector<InputSpec> &specs) {
         }
         auto *eh = reinterpret_cast<const Elf64_Ehdr *>(m.data);
         if (eh->e_type == ET_DYN) {
+          if (s.noShared)
+            fatal(s.path + ": shared object after -Bstatic");
           auto *so = new SharedFile;
           so->path = s.path;
           so->data = m.data;
@@ -940,9 +947,13 @@ void resolve() {
       if (so->nameIds[k] != UINT32_MAX && so->dynsyms[k].st_shndx == SHN_UNDEF &&
           ELF64_ST_BIND(so->dynsyms[k].st_info) != STB_WEAK)
         extractFor(so->nameIds[k]);
+  // The entry and -u names are references of their own.
   for (const string &n : ctx.opt.undefined)
     if (uint32_t id = ctx.names->find(n.data(), n.size()); id != UINT32_MAX)
       extractFor(id);
+  if (uint32_t id = ctx.names->find(ctx.opt.entry.data(), ctx.opt.entry.size());
+      id != UINT32_MAX)
+    extractFor(id);
   for (auto &f : found)
     frontier.insert(frontier.end(), f.begin(), f.end()), f.clear();
   while (!frontier.empty()) {
@@ -1234,7 +1245,8 @@ void parseCie(const ObjectFile *o, const uint8_t *d, uint32_t size,
   readUleb(p, e); // augmentation data length
   bool fdePcrel32 = false;
   for (size_t i = 1; i < augLen; ++i) {
-    if (p >= e)
+    const bool hasData = aug[i] == 'R' || aug[i] == 'L' || aug[i] == 'P';
+    if (hasData && p >= e)
       fail();
     switch (aug[i]) {
     case 'R':
@@ -4695,7 +4707,7 @@ void runPipeline() {
   for (const fastlink::Input &in : ctx.opt.inputs)
     specs.push_back({in.isLibrary ? findLibrary(ctx.opt.libPaths, in.path)
                                   : in.path,
-                     in.wholeArchive, in.asNeeded, in.lazy});
+                     in.wholeArchive, in.asNeeded, in.lazy, in.noShared});
   auto t0 = Clock::now();
   auto t = t0;
   double times[8];
