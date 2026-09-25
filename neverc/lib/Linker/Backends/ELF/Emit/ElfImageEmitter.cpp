@@ -1924,6 +1924,42 @@ template <class ELFT> void OutputWriter<ELFT>::prepareLayout() {
   if (!script->hasSectionsCommand)
     fixSectionAlignments();
 
+  // --randomize-section-padding: pad the start of each load segment by a
+  // random amount below the page size, and one input section in sixteen by
+  // its alignment, drawing from a generator the seed makes reproducible.
+  // Only ordinary code and data move; sections with a fixed format, such as
+  // .interp or .init_array, keep their contents intact.
+  if (config->randomizeSectionPadding) {
+    std::mt19937_64 rng(*config->randomizeSectionPadding);
+    PhdrEntry *segment = nullptr;
+    for (OutputSection *os : outputSections) {
+      StringRef n = os->name;
+      const bool ordinary = n.starts_with(".text") || n == ".ltext" ||
+                            n == ".rodata" || n == ".lrodata" || n == ".data" ||
+                            n == ".ldata" || n == ".data.rel.ro" ||
+                            n == ".bss" || n == ".lbss";
+      if (!os->ptLoad || !ordinary)
+        continue;
+      for (SectionCommand *cmd : os->commands) {
+        auto *isd = dyn_cast<InputSectionDescription>(cmd);
+        if (!isd)
+          continue;
+        SmallVector<InputSection *, 0> padded;
+        padded.reserve(isd->sections.size() + 1);
+        if (os->ptLoad != segment) {
+          padded.push_back(make<PaddingSection>(rng() % config->maxPageSize, os));
+          segment = os->ptLoad;
+        }
+        for (InputSection *isec : isd->sections) {
+          if (rng() % 16 == 0)
+            padded.push_back(make<PaddingSection>(isec->addralign, os));
+          padded.push_back(isec);
+        }
+        isd->sections = std::move(padded);
+      }
+    }
+  }
+
   // This is used to:
   // 1) Create "thunks":
   //    Jump instructions in many ISAs have small displacements, and therefore

@@ -610,6 +610,45 @@ namespace {
 bool isBitcode(MemoryBufferRef mb) {
   return identify_magic(mb.getBuffer()) == llvm::file_magic::bitcode;
 }
+
+// With --fat-lto-objects, an object carrying its bitcode in a .llvm.lto
+// section links as that bitcode.
+std::optional<MemoryBufferRef> fatLTOBitcode(MemoryBufferRef mb) {
+  if (!config->fatLTOObjects)
+    return std::nullopt;
+  StringRef buf = mb.getBuffer();
+  if (buf.size() < sizeof(ELF64LE::Ehdr) || buf[EI_CLASS] != ELFCLASS64 ||
+      buf[EI_DATA] != ELFDATA2LSB)
+    return std::nullopt;
+  Expected<ELFFile<ELF64LE>> obj = ELFFile<ELF64LE>::create(buf);
+  if (!obj) {
+    consumeError(obj.takeError());
+    return std::nullopt;
+  }
+  Expected<ELF64LE::ShdrRange> sections = obj->sections();
+  if (!sections) {
+    consumeError(sections.takeError());
+    return std::nullopt;
+  }
+  for (const ELF64LE::Shdr &sec : *sections) {
+    if (sec.sh_type != SHT_LLVM_LTO)
+      continue;
+    Expected<ArrayRef<uint8_t>> contents = obj->getSectionContents(sec);
+    if (!contents) {
+      consumeError(contents.takeError());
+      return std::nullopt;
+    }
+    return MemoryBufferRef(toStringRef(*contents), mb.getBufferIdentifier());
+  }
+  return std::nullopt;
+}
+
+InputFile *createObjOrFatBitcode(MemoryBufferRef mb, StringRef archiveName,
+                                 uint64_t offset, bool lazy) {
+  if (std::optional<MemoryBufferRef> bitcode = fatLTOBitcode(mb))
+    return make<BitcodeFile>(*bitcode, archiveName, offset, lazy);
+  return createObjFile(mb, archiveName, lazy);
+}
 } // namespace
 
 // Opens a file and create a file object. Path has to be resolved already.
@@ -656,7 +695,7 @@ LinkerDriver::AddedFileKind LinkerDriver::addFileAndClassify(StringRef path,
         if (isBitcode(p.first))
           files.push_back(make<BitcodeFile>(p.first, path, p.second, false));
         else
-          files.push_back(createObjFile(p.first, path));
+          files.push_back(createObjOrFatBitcode(p.first, path, p.second, false));
       }
       return AddedFileKind::NotDeduplicable;
     }
@@ -679,7 +718,8 @@ LinkerDriver::AddedFileKind LinkerDriver::addFileAndClassify(StringRef path,
     bool saved = elfInputFileIsInGroup();
     elfInputFileIsInGroup() = true;
     // Members created ahead only need the group id they would have taken.
-    if (!lazyObjects.empty() && lazyObjects.size() == members.size()) {
+    if (!lazyObjects.empty() && lazyObjects.size() == members.size() &&
+        !config->fatLTOObjects) {
       for (ELFFileBase *f : lazyObjects) {
         f->groupId = elfNextGroupId();
         files.push_back(f);
@@ -689,7 +729,7 @@ LinkerDriver::AddedFileKind LinkerDriver::addFileAndClassify(StringRef path,
     for (const std::pair<MemoryBufferRef, uint64_t> &p : members) {
       auto magic = identify_magic(p.first.getBuffer());
       if (magic == file_magic::elf_relocatable) {
-        files.push_back(createObjFile(p.first, path, true));
+        files.push_back(createObjOrFatBitcode(p.first, path, p.second, true));
       } else if (magic == file_magic::bitcode)
         files.push_back(make<BitcodeFile>(p.first, path, p.second, true));
       else {
@@ -728,7 +768,7 @@ LinkerDriver::AddedFileKind LinkerDriver::addFileAndClassify(StringRef path,
     files.push_back(make<BitcodeFile>(mbref, "", 0, inLib));
     break;
   case file_magic::elf_relocatable:
-    files.push_back(createObjFile(mbref, "", inLib));
+    files.push_back(createObjOrFatBitcode(mbref, "", 0, inLib));
     break;
   default:
     error(path + ": unknown file type");

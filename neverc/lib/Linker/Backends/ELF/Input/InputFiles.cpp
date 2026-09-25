@@ -169,6 +169,25 @@ bool elf::isKnownSectionType(uint32_t type, uint64_t flags) {
   return type >= SHT_LOUSER && !(flags & SHF_ALLOC);
 }
 
+bool elf::definesNonCommon(const InputFile *file, StringRef name) {
+  if (const auto *bitcode = dyn_cast<BitcodeFile>(file)) {
+    for (const lto::InputFile::Symbol &sym : bitcode->obj->symbols())
+      if (sym.getName() == name)
+        return !sym.isUndefined() && !sym.isCommon() && !sym.isWeak();
+    return false;
+  }
+  const auto *elfFile = dyn_cast<ELFFileBase>(file);
+  if (!elfFile || elfFile->ekind != ELF64LEKind)
+    return false;
+  const StringRef strtab = elfFile->getStringTable();
+  for (const ELF64LE::Sym &sym : elfFile->getGlobalELFSyms<ELF64LE>())
+    if (sym.st_name < strtab.size() &&
+        StringRef(strtab.data() + sym.st_name) == name)
+      return sym.st_shndx != SHN_UNDEF && sym.st_shndx != SHN_COMMON &&
+             sym.getBinding() == STB_GLOBAL;
+  return false;
+}
+
 // All input object files must be for the same architecture
 // (e.g. it does not make sense to link x86 object files with
 // AArch64 object files.) This function checks for that error.

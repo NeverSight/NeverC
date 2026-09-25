@@ -2569,6 +2569,140 @@ TEST_F(LinkerTest, GnuLinkerFeatureOptions) {
   EXPECT_EQ(accepted.exitCode, 0) << accepted.err;
 }
 
+TEST_F(LinkerTest, GnuLinkerOptionsChangeTheOutput) {
+  if (!isLinux())
+    GTEST_SKIP() << "GNU linker options apply to ELF links";
+
+  // --fortran-common: an archive's real definition replaces a common one.
+  const fs::path commonSource = tmpFile("fc_common.s");
+  const fs::path commonObject = tmpFile("fc_common.o");
+  const fs::path defSource = tmpFile("fc_def.s");
+  const fs::path defObject = tmpFile("fc_def.o");
+  writeFile(commonSource, R"(
+.comm x,4,4
+.text
+.globl main
+main:
+  movl x(%rip), %eax
+  ret
+.section .note.GNU-stack,"",@progbits
+)");
+  writeFile(defSource, R"(
+.data
+.globl x
+x:
+  .long 5
+.section .note.GNU-stack,"",@progbits
+)");
+  for (auto [source, object] : {std::pair{commonSource, commonObject},
+                                std::pair{defSource, defObject}}) {
+    CmdResult assemble = assembleELFObject(source, object);
+    ASSERT_EQ(assemble.exitCode, 0) << assemble.err;
+  }
+  // The definition is a lazy member, as in an archive.
+  const fs::path image = tmpFile("fc_image");
+  auto linkCommon = [&](std::vector<std::string> flags) {
+    std::vector<std::string> args = baseLinkArgs();
+    args.insert(args.end(), {commonObject.string(), "-Wl,--start-lib",
+                             defObject.string(), "-Wl,--end-lib"});
+    args.insert(args.end(), flags.begin(), flags.end());
+    args.insert(args.end(), {"-o", image.string()});
+    return ncc(args);
+  };
+  CmdResult common = linkCommon({});
+  ASSERT_EQ(common.exitCode, 0) << common.err;
+  EXPECT_EQ(exec(image.string(), {}).exitCode, 0);
+  CmdResult fortran = linkCommon({"-Wl,--fortran-common"});
+  ASSERT_EQ(fortran.exitCode, 0) << fortran.err;
+  EXPECT_EQ(exec(image.string(), {}).exitCode, 5);
+
+  // --fat-lto-objects links the bitcode of an object's .llvm.lto section
+  // instead of its machine code.
+  const fs::path bitcodeSource = tmpFile("fat_bitcode.c");
+  const fs::path bitcode = tmpFile("fat_bitcode.bc");
+  writeFile(bitcodeSource, "int pick(void) { return 2; }\n");
+  CmdResult emit = ncc({"-flto", "-c", bitcodeSource.string(), "-o",
+                        bitcode.string()});
+  ASSERT_EQ(emit.exitCode, 0) << emit.err;
+  const fs::path fatSource = tmpFile("fat_object.s");
+  const fs::path fatObject = tmpFile("fat_object.o");
+  writeFile(fatSource, R"(
+.text
+.globl pick
+pick:
+  movl $1, %eax
+  ret
+.section .llvm.lto,"e",@0x6fff4c0c
+.incbin ")" + bitcode.string() + R"("
+.section .note.GNU-stack,"",@progbits
+)");
+  CmdResult assemble = assembleELFObject(fatSource, fatObject);
+  ASSERT_EQ(assemble.exitCode, 0) << assemble.err;
+  const fs::path mainSource = tmpFile("fat_main.c");
+  const fs::path mainObject = tmpFile("fat_main.o");
+  writeFile(mainSource, "int pick(void);\nint main(void) { return pick(); }\n");
+  CmdResult compileMain = ncc({"-fno-lto", "-c", mainSource.string(), "-o",
+                               mainObject.string()});
+  ASSERT_EQ(compileMain.exitCode, 0) << compileMain.err;
+  std::vector<std::string> args = baseLinkArgs();
+  args.insert(args.end(), {mainObject.string(), fatObject.string(), "-o",
+                           image.string()});
+  CmdResult thin = ncc(args);
+  ASSERT_EQ(thin.exitCode, 0) << thin.err;
+  EXPECT_EQ(exec(image.string(), {}).exitCode, 1);
+  args.insert(args.end() - 2, "-Wl,--fat-lto-objects");
+  CmdResult fat = ncc(args);
+  ASSERT_EQ(fat.exitCode, 0) << fat.err;
+  EXPECT_EQ(exec(image.string(), {}).exitCode, 2);
+
+  // --randomize-section-padding moves code reproducibly from its seed.
+  const fs::path debugSource = tmpFile("pad_debug.c");
+  const fs::path debugObject = tmpFile("pad_debug.o");
+  writeFile(debugSource, "int main(void) { return 3; }\n");
+  CmdResult compile = ncc({"-fno-lto", "-g", "-c", debugSource.string(),
+                           "-o", debugObject.string()});
+  ASSERT_EQ(compile.exitCode, 0) << compile.err;
+  auto linkDebug = [&](std::vector<std::string> flags, const fs::path &out) {
+    std::vector<std::string> a = baseLinkArgs();
+    a.push_back(debugObject.string());
+    a.insert(a.end(), flags.begin(), flags.end());
+    a.insert(a.end(), {"-o", out.string()});
+    return ncc(a);
+  };
+  const fs::path plain = tmpFile("pad_plain");
+  const fs::path padded = tmpFile("pad_seed1");
+  const fs::path again = tmpFile("pad_seed1_again");
+  ASSERT_EQ(linkDebug({}, plain).exitCode, 0);
+  ASSERT_EQ(linkDebug({"-Wl,--randomize-section-padding=1"}, padded).exitCode,
+            0);
+  ASSERT_EQ(linkDebug({"-Wl,--randomize-section-padding=1"}, again).exitCode,
+            0);
+  EXPECT_EQ(exec(padded.string(), {}).exitCode, 3);
+  EXPECT_NE(readFile(plain), readFile(padded));
+  EXPECT_EQ(readFile(padded), readFile(again));
+
+  // --compress-sections compresses matching non-allocated sections only.
+  const fs::path compressed = tmpFile("pad_compressed");
+  CmdResult zlib =
+      linkDebug({"-Wl,--compress-sections=.debug_*=zlib"}, compressed);
+  ASSERT_EQ(zlib.exitCode, 0) << zlib.err;
+  auto object = llvm::object::ObjectFile::createObjectFile(
+      llvm::MemoryBufferRef(readFile(compressed), "compressed"));
+  ASSERT_TRUE(static_cast<bool>(object));
+  bool sawCompressedInfo = false;
+  for (const llvm::object::SectionRef &section : (*object)->sections()) {
+    llvm::Expected<llvm::StringRef> name = section.getName();
+    if (name && *name == ".debug_info")
+      sawCompressedInfo =
+          llvm::object::ELFSectionRef(section).getFlags() &
+          llvm::ELF::SHF_COMPRESSED;
+  }
+  EXPECT_TRUE(sawCompressedInfo);
+  CmdResult alloc = linkDebug({"-Wl,--compress-sections=.text=zlib"}, compressed);
+  EXPECT_NE(alloc.exitCode, 0);
+  EXPECT_TRUE(alloc.stderrContains("SHF_ALLOC")) << alloc.err;
+}
+
 TEST_F(LinkerTest, RelocatableLinkResolvesGroupsOnRequest) {
   if (!isLinux())
     GTEST_SKIP() << "GNU linker options apply to ELF links";

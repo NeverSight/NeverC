@@ -19,6 +19,7 @@ struct CompressedData {
   uint32_t numShards = 0;
   uint32_t checksum = 0;
   uint64_t uncompressedSize;
+  llvm::DebugCompressionType type = llvm::DebugCompressionType::None;
 };
 
 // This represents a section in an output file.
@@ -110,13 +111,14 @@ public:
   void sortInitFini();
   void sortCtorsDtors();
 
+  // The bytes that fill gaps: trap instructions in code, else zeros.
+  std::array<uint8_t, 4> getFiller();
+
 private:
   SmallVector<InputSection *, 0> storage;
 
   // Used for implementation of --compress-debug-sections option.
   CompressedData compressed;
-
-  std::array<uint8_t, 4> getFiller();
 };
 
 struct OutputDesc final : SectionCommand {

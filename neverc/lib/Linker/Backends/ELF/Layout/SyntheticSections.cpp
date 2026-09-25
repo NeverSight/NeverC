@@ -2139,6 +2139,21 @@ size_t IBTPltSection::getSize() const {
 
 bool IBTPltSection::isNeeded() const { return in.plt->getNumEntries() > 0; }
 
+PaddingSection::PaddingSection(uint64_t size, OutputSection *parent)
+    : SyntheticSection(SHF_ALLOC,
+                       parent->type == SHT_NOBITS ? SHT_NOBITS : SHT_PROGBITS,
+                       1, ".padding"),
+      size(size) {
+  this->parent = parent;
+}
+
+void PaddingSection::writeTo(uint8_t *buf) {
+  // The output section's filler, such as trap instructions in code.
+  const std::array<uint8_t, 4> filler = getParent()->getFiller();
+  for (uint64_t i = 0; i < size; ++i)
+    buf[i] = filler[(outSecOff + i) % 4];
+}
+
 RelroPaddingSection::RelroPaddingSection()
     : SyntheticSection(SHF_ALLOC | SHF_WRITE, SHT_NOBITS, 1, ".relro_padding") {
 }

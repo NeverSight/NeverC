@@ -636,8 +636,20 @@ void Symbol::resolve(const LazyObject &other) {
   if (!isUndefined()) {
     // See the comment in resolveUndefined(). The map is only populated for
     // --warn-backrefs.
-    if (isDefined() && config->warnBackrefs)
+    if (isDefined() && config->warnBackrefs) {
       elfState().backwardReferences.erase(this);
+    } else if (isCommon() && config->fortranCommon &&
+               definesNonCommon(other.file, getName())) {
+      // Fortran's block data: an archive member's real definition replaces
+      // the common one.
+      if (config->warnBackrefs)
+        elfState().backwardReferences.erase(this);
+      const InputFile *oldFile = file;
+      other.overwrite(*this);
+      other.extract();
+      if (!config->whyExtract.empty())
+        recordWhyExtract(oldFile, *file, *this);
+    }
     return;
   }
 

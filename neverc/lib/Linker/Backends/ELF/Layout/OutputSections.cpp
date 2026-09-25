@@ -350,10 +350,27 @@ template <class ELFT> void OutputSection::maybeCompress() {
   using Elf_Chdr = typename ELFT::Chdr;
   (void)sizeof(Elf_Chdr);
 
-  // Compress only DWARF debug sections.
-  if (config->compressDebugSections == DebugCompressionType::None ||
-      (flags & SHF_ALLOC) || !name.starts_with(".debug_") || size == 0)
+  // DWARF debug sections follow --compress-debug-sections; the last
+  // --compress-sections glob matching the name overrides it.
+  DebugCompressionType ctype = DebugCompressionType::None;
+  unsigned level = 0;
+  if (!(flags & SHF_ALLOC) && name.starts_with(".debug_"))
+    ctype = config->compressDebugSections;
+  for (const auto &[pattern, type, patternLevel] :
+       llvm::reverse(config->compressSections))
+    if (pattern.match(name)) {
+      ctype = type;
+      level = patternLevel;
+      break;
+    }
+  if (ctype == DebugCompressionType::None || size == 0)
     return;
+  if (flags & SHF_ALLOC) {
+    error("--compress-sections: section '" + name +
+          "' with the SHF_ALLOC flag cannot be compressed");
+    return;
+  }
+  compressed.type = ctype;
 
   llvm::TimeTraceScope timeScope("Compress debug sections");
   compressed.uncompressedSize = size;
@@ -368,7 +385,7 @@ template <class ELFT> void OutputSection::maybeCompress() {
   // Use ZSTD's streaming compression API which permits parallel workers working
   // on the stream. See http://facebook.github.io/zstd/zstd_manual.html
   // "Streaming compression - HowTo".
-  if (config->compressDebugSections == DebugCompressionType::Zstd) {
+  if (ctype == DebugCompressionType::Zstd) {
     // Allocate a buffer of half of the input size, and grow it by 1.5x if
     // insufficient.
     compressed.shards = std::make_unique<SmallVector<uint8_t, 0>[]>(1);
@@ -377,6 +394,8 @@ template <class ELFT> void OutputSection::maybeCompress() {
     size_t pos = 0;
 
     ZSTD_CCtx *cctx = ZSTD_createCCtx();
+    if (level)
+      (void)ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, int(level));
     // Ignore error if zstd was not built with ZSTD_MULTITHREAD.
     (void)ZSTD_CCtx_setParameter(
         cctx, ZSTD_c_nbWorkers,
@@ -417,7 +436,8 @@ template <class ELFT> void OutputSection::maybeCompress() {
   // ~15%. We found that level 7 to 9 doesn't make much difference (~1% more
   // compression) while they take significant amount of time (~2x), so level 6
   // seems enough.
-  const int level = config->optimize >= 2 ? 6 : Z_BEST_SPEED;
+  if (!level)
+    level = config->optimize >= 2 ? 6 : Z_BEST_SPEED;
 
   // Split input into 1-MiB shards.
   constexpr size_t shardSize = 1 << 20;
@@ -481,7 +501,7 @@ void OutputSection::writeTo(uint8_t *buf, LinkerTaskGroup &tg) {
     chdr->ch_size = compressed.uncompressedSize;
     chdr->ch_addralign = addralign;
     buf += sizeof(*chdr);
-    if (config->compressDebugSections == DebugCompressionType::Zstd) {
+    if (compressed.type == DebugCompressionType::Zstd) {
       chdr->ch_type = ELFCOMPRESS_ZSTD;
       memcpy(buf, compressed.shards[0].data(), compressed.shards[0].size());
       return;

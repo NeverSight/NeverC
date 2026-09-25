@@ -601,6 +601,18 @@ public:
 // Used to align the end of the PT_GNU_RELRO segment and the associated PT_LOAD
 // segment to a common-page-size boundary. This padding section ensures that all
 // pages in the PT_LOAD segment is covered by at least one section.
+// Filler bytes inside an output section, which --randomize-section-padding
+// places between input sections.
+class PaddingSection final : public SyntheticSection {
+public:
+  PaddingSection(uint64_t size, OutputSection *parent);
+  size_t getSize() const override { return size; }
+  void writeTo(uint8_t *buf) override;
+
+private:
+  uint64_t size;
+};
+
 class RelroPaddingSection final : public SyntheticSection {
 public:
   RelroPaddingSection();

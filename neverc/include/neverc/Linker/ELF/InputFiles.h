@@ -36,6 +36,9 @@ struct SymbolNameSlot;
 // Opens a given file.
 std::optional<MemoryBufferRef> readFile(StringRef path);
 bool isKnownSectionType(uint32_t type, uint64_t flags);
+// Whether a lazy archive member defines `name` other than as a common
+// symbol, so that --fortran-common extracts it over a common definition.
+bool definesNonCommon(const InputFile *file, StringRef name);
 
 // Add symbols in File to the symbol table.
 void parseFile(InputFile *file);
