@@ -1224,6 +1224,7 @@ void ObjFile<ELFT>::initializeSymbols(const object::ELFFile<ELFT> &obj) {
 
   // Perform symbol resolution on non-local symbols.
   SmallVector<unsigned, 32> undefineds;
+  const bool noOverrides = elfState().overrideSymbols.empty();
   for (size_t i = firstGlobal, end = eSyms.size(); i != end; ++i) {
     const Elf_Sym &eSym = eSyms[i];
     uint32_t secIdx = eSym.st_shndx;
@@ -1251,6 +1252,11 @@ void ObjFile<ELFT>::initializeSymbols(const object::ELFFile<ELFT> &obj) {
     }
 
     // Handle global defined symbols. Defined::section will be set in postParse.
+    // Against an existing definition that it does not replace, resolve() only
+    // merges visibility; skip building the candidate in the common case.
+    if (sym->isDefined() && (stOther & 3) == STV_DEFAULT && !sym->traced &&
+        noOverrides && (sym->isGlobal() || binding != STB_GLOBAL))
+      continue;
     sym->resolve(Defined{this, StringRef(), binding, stOther, type, value, size,
                          nullptr});
   }
@@ -1264,8 +1270,12 @@ void ObjFile<ELFT>::initializeSymbols(const object::ELFFile<ELFT> &obj) {
   for (unsigned i : undefineds) {
     const Elf_Sym &eSym = eSyms[i];
     Symbol *sym = symbols[i];
-    sym->resolve(Undefined{this, StringRef(), eSym.getBinding(), eSym.st_other,
-                           eSym.getType()});
+    // A default-visibility reference to a definition changes nothing but the
+    // flags below.
+    if (!(sym->isDefined() && (eSym.st_other & 3) == STV_DEFAULT &&
+          !sym->traced))
+      sym->resolve(Undefined{this, StringRef(), eSym.getBinding(),
+                             eSym.st_other, eSym.getType()});
     sym->isUsedInRegularObj = true;
     sym->referenced = true;
   }
@@ -2287,9 +2297,20 @@ template <class ELFT> void ObjFile<ELFT>::parseLazy() {
   // resolve() may trigger this->extract() if an existing symbol is an undefined
   // symbol. If that happens, this function has served its purpose, and we can
   // exit from the loop early.
+  //
+  // Most names are already defined by the time a member is seen, which makes
+  // resolve() a no-op; skip it for them.
+  const bool noopForDefined = !config->warnBackrefs;
   for (size_t i = firstGlobal, end = eSyms.size(); i != end; ++i) {
     if (eSyms[i].st_shndx == SHN_UNDEF)
       continue;
+    if (globalNameSlots && noopForDefined)
+      if (SymbolNameSlot *slot = globalNameSlots[i - firstGlobal])
+        if (Symbol *sym = slot->symbol;
+            sym && !sym->isUndefined() && !sym->isPlaceholder()) {
+          symbols[i] = sym;
+          continue;
+        }
     symbols[i] = insertGlobalSymbol(i);
     symbols[i]->resolve(LazyObject{*this});
     if (!lazy)
