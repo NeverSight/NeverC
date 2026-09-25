@@ -32,6 +32,7 @@ struct Input {
 struct Request {
   std::string output = "a.out";
   std::string dynamicLinker;
+  bool noDynamicLinker = false; // --no-dynamic-linker, as for -static-pie
   std::vector<std::string> rpaths;
   std::vector<std::string> libPaths;
   std::vector<Input> inputs;

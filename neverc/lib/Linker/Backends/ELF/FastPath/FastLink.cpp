@@ -112,8 +112,18 @@ struct ObjectFile {
   vector<uint32_t> groupIds;   // per group: signature id
   uint32_t commentSec = 0;
   uint32_t addrsigSec = 0;
-  vector<uint32_t> debugSecs; // .debug_* sections, in index order
+  // Non-allocated sections copied to the output, such as .debug_* and
+  // .note.stapsdt, in index order.
+  vector<uint32_t> debugSecs;
   vector<uint32_t> roots; // GC root sections
+  // Local GNU indirect functions that relocations name: their symbol index,
+  // reference flags and IPLT entry.
+  struct LocalIfunc {
+    uint32_t sym;
+    uint16_t flags;
+    uint32_t iplt;
+  };
+  vector<LocalIfunc> localIfuncs;
   SectionState *secs = nullptr;
   std::atomic<uint8_t> live{0};
 
@@ -195,6 +205,11 @@ enum SymFlag : uint16_t {
   DupCandidate = 2048, // has more than one global definition
   Preemptible = 4096,  // bound by the dynamic loader
   NeedsTlsGd = 8192,   // needs a general-dynamic TLS GOT pair
+  // A non-preemptible GNU indirect function: IpltRef when referenced, which
+  // gives it an IPLT entry, and IpltDirect when its address is taken other
+  // than through the GOT, which makes the IPLT entry its address.
+  IpltRef = 16384,
+  IpltDirect = 32768,
 };
 
 constexpr uint64_t None64 = ~0ull;
@@ -212,6 +227,7 @@ struct Symbol {
   uint32_t got = UINT32_MAX, plt = UINT32_MAX, dynsym = 0;
   uint32_t gotTp = UINT32_MAX;
   uint32_t tlsGd = UINT32_MAX; // first slot of the general-dynamic TLS pair
+  uint32_t iplt = UINT32_MAX;  // IPLT entry of an indirect function
   bool copied = false; // shared data copied into the executable
   bool ifunc = false;  // defined as STT_GNU_IFUNC
   bool copyPrimary = false;
@@ -271,10 +287,14 @@ struct Ctx {
   vector<uint32_t> dynsyms;      // name ids in .dynsym order (after null)
   vector<string> needed;
   bool isPic() const { return opt.pie || opt.shared; }
+  // Whether the output has a dynamic symbol table and .dynamic: without
+  // shared libraries, position independence or exports it is static.
+  bool hasDynSymTab = true;
 };
 
 Ctx ctx;
 std::atomic<bool> needsTlsLd{false}; // the module's TLS GOT pair is used
+std::atomic<bool> needsGotBase{false}; // relocations use the GOT's address
 
 inline PlacedSection &placedOf(const ObjectFile *o, uint32_t sec) {
   return ctx.placed[o->secs[sec].placed];
@@ -757,6 +777,12 @@ void initSections(ObjectFile *o, SectionState *secs, uint32_t *relaOf) {
             break;
           if (sh.sh_flags & SHF_COMPRESSED)
             fatal(o->name + ": compressed debug section " + o->secName(i));
+          o->debugSecs.push_back(i);
+          break;
+        }
+        // Other contents and notes are copied as they are, relocated.
+        if ((sh.sh_type == SHT_PROGBITS || sh.sh_type == SHT_NOTE) &&
+            !(sh.sh_flags & SHF_COMPRESSED)) {
           o->debugSecs.push_back(i);
           break;
         }
@@ -1415,13 +1441,35 @@ void markLive() {
       push(d, d->syms[s.index].st_shndx, 0);
     }
   };
-  // __start_/__stop_ references retain __libc_* sections, which only
-  // static glibc links have.
-  for (uint32_t id = 0; id < ctx.numNames; ++id)
-    if (ctx.syms[id].kind == Symbol::Linker &&
-        (ctx.nameStr[id].rfind("__start___libc_", 0) == 0 ||
-         ctx.nameStr[id].rfind("__stop___libc_", 0) == 0))
-      fatal("reference to " + string(ctx.nameStr[id]));
+  // A reached __start_ or __stop_ symbol keeps the __libc_* sections of its
+  // name, which static glibc enumerates that way, as the full backend does
+  // under its default -z start-stop-gc.
+  vector<vector<std::pair<ObjectFile *, uint32_t>>> startStopSecs;
+  vector<uint32_t> startStopOf; // per name id: index + 1, or 0
+  {
+    std::unordered_map<string_view, uint32_t> byName;
+    for (uint32_t id = 0; id < ctx.numNames; ++id) {
+      if (ctx.syms[id].kind != Symbol::Linker)
+        continue;
+      string_view n = ctx.nameStr[id];
+      string_view sec = n.rfind("__start___libc_", 0) == 0 ? n.substr(8)
+                        : n.rfind("__stop___libc_", 0) == 0 ? n.substr(7)
+                                                             : string_view();
+      if (sec.empty())
+        continue;
+      if (startStopOf.empty())
+        startStopOf.assign(ctx.numNames, 0);
+      auto [it, added] = byName.try_emplace(sec, startStopSecs.size());
+      if (added)
+        startStopSecs.emplace_back();
+      startStopOf[id] = it->second + 1;
+    }
+    if (!byName.empty())
+      for (ObjectFile *o : ctx.objects)
+        for (uint32_t i = 1; i < o->numShdrs; ++i)
+          if (auto it = byName.find(o->secName(i)); it != byName.end())
+            startStopSecs[it->second].push_back({o, i});
+  }
   rootName(ctx.opt.entry.c_str());
   for (const string &n : ctx.opt.undefined)
     rootName(n.c_str());
@@ -1445,6 +1493,10 @@ void markLive() {
         continue;
       Target t = symbolSection(o, si);
       push(t.file, t.sec, w);
+      if (!startStopOf.empty() && si >= o->firstGlobal)
+        if (uint32_t k = startStopOf[o->nameIds[si - o->firstGlobal]])
+          for (auto [so, sec] : startStopSecs[k - 1])
+            push(so, sec, w);
     }
     // A group is live or dead as a whole.
     if (uint32_t next = o->secs[sec].groupNext)
@@ -1534,6 +1586,16 @@ struct RelInfo {
   uint32_t id = 0;
 };
 
+// Whether a relocation's symbol is absolute, so that its value does not move
+// with the load address.
+bool isAbsolute(const ObjectFile *o, uint32_t si, const RelInfo &ri) {
+  if (!ri.global)
+    return o->syms[si].st_shndx == SHN_ABS;
+  const Symbol &s = ctx.syms[ri.id];
+  return s.kind == Symbol::Object &&
+         ctx.objects[s.file]->syms[s.index].st_shndx == SHN_ABS;
+}
+
 // The single relocation classifier used by both scanning and writing.
 RelInfo classify(const ObjectFile *o, const uint8_t *secData,
                  const Elf64_Rela &r) {
@@ -1572,6 +1634,8 @@ RelInfo classify(const ObjectFile *o, const uint8_t *secData,
           STT_GNU_IFUNC)
         return ri;
     }
+    if (!ri.global && ELF64_ST_TYPE(o->syms[si].st_info) == STT_GNU_IFUNC)
+      return ri;
     const uint8_t op = secData[r.r_offset - 2], modrm = secData[r.r_offset - 1];
     if (op == 0x8b || (op == 0xff && (modrm == 0x15 || modrm == 0x25)))
       ri.kind = K_GotRelax;
@@ -1685,11 +1749,37 @@ void scanRelocations() {
         const Elf64_Rela &r = rels[k];
         RelInfo ri = classify(o, data, r);
         kinds[k] = ri.kind;
-        // Functions selected at load time need IRELATIVE relocations.
-        if (ri.global ? ctx.syms[ri.id].ifunc
+        // Functions selected at load time are reached through an IPLT entry
+        // whose GOT slot an IRELATIVE relocation fills.
+        if (ri.global ? ctx.syms[ri.id].ifunc && !ri.imp
                       : ELF64_ST_TYPE(o->syms[ELF64_R_SYM(r.r_info)].st_info) ==
-                            STT_GNU_IFUNC)
-          fatal(o->name + ": reference to a GNU indirect function");
+                            STT_GNU_IFUNC) {
+          uint16_t f = 0;
+          switch (ri.kind) {
+          case K_Plt32:
+          case K_GotPc:
+            f = IpltRef;
+            break;
+          case K_Pc32:
+          case K_Pc64:
+          case K_Abs64:
+          case K_Abs32:
+          case K_GotOff64:
+            f = IpltRef | IpltDirect;
+            break;
+          case K_Skip:
+          case K_Size32:
+          case K_Size64:
+            break;
+          default:
+            fatal(o->name + ": unsupported reference to a GNU indirect "
+                            "function in " + o->secName(sec));
+          }
+          if (f && ri.global)
+            atomicOr(ctx.flags[ri.id], f);
+          else if (f)
+            o->localIfuncs.push_back({ELF64_R_SYM(r.r_info), f, UINT32_MAX});
+        }
         if (ri.kind == K_GdToIe || ri.kind == K_GdToLe || ri.kind == K_LdToLe) {
           checkTlsSequence(o, sec, rels, n, k, ri.kind);
           kinds[k + 1] = K_Skip;
@@ -1703,6 +1793,11 @@ void scanRelocations() {
                   o->secName(sec));
         }
         const uint32_t id = ri.id;
+        if (ri.global && ri.kind != K_Skip &&
+            ctx.syms[id].kind == Symbol::Undefined &&
+            (ctx.flags[id].load(std::memory_order_relaxed) & StrongRef) &&
+            ctx.nameStr[id] == "__tls_get_addr")
+          fatal(o->name + ": undefined symbol: __tls_get_addr");
         switch (ri.kind) {
         case K_Pc32:
         case K_Pc64:
@@ -1767,8 +1862,10 @@ void scanRelocations() {
           break;
         case K_Abs64: {
           const bool needsDyn =
-              ri.imp || (ctx.isPic() &&
-                         !(ri.global && ctx.syms[id].kind == Symbol::Undefined));
+              ri.imp ||
+              (ctx.isPic() &&
+               !(ri.global && ctx.syms[id].kind == Symbol::Undefined) &&
+               !isAbsolute(o, ELF64_R_SYM(r.r_info), ri));
           // The dynamic loader only writes to writable segments.
           if (needsDyn && !(o->shdrs[sec].sh_flags & SHF_WRITE))
             fatal(o->name + ": dynamic relocation in read-only section " +
@@ -1781,12 +1878,22 @@ void scanRelocations() {
           }
           break;
         }
+        case K_GotPc32:
+          needsGotBase.store(true, std::memory_order_relaxed);
+          break;
         case K_Abs32:
         case K_TpOff32:
         case K_GotOff64:
+          if (ri.kind == K_GotOff64)
+            needsGotBase.store(true, std::memory_order_relaxed);
           if (ri.kind == K_TpOff32 && ctx.opt.shared)
             fatal(o->name + ": local-exec TLS in a shared library");
-          if (ri.imp && ri.kind == K_Abs32 && !ctx.isPic())
+          // An undefined weak reference in position-dependent code resolves
+          // to 0; there is nothing to copy.
+          if (ri.imp && ri.kind == K_Abs32 && !ctx.isPic() &&
+              ctx.syms[id].kind == Symbol::DynUndef)
+            ;
+          else if (ri.imp && ri.kind == K_Abs32 && !ctx.isPic())
             atomicOr(ctx.flags[id], uint16_t(NeedsCopy | NeedsDynsym));
           else if (ri.imp)
             fatal(o->name + ": non-PIC reference to shared symbol " +
@@ -1861,7 +1968,10 @@ int rankOf(const OutputSection *s) {
     return 10;
   }
   if (cls == 1)
-    return 100 + (n == ".init" ? 0 : n == ".plt" ? 1 : n == ".fini" ? 3 : 2);
+    return 100 + (n == ".init"                   ? 0
+                  : n == ".plt" || n == ".iplt" ? 1
+                  : n == ".fini"                ? 3
+                                                : 2);
   if (cls == 2)
     return 200 + ((s->flags & SHF_TLS) ? (s->type == SHT_NOBITS ? 1 : 0)
                   : n == ".dynamic"    ? 4
@@ -1969,6 +2079,12 @@ struct Layout {
   uint64_t shstrtabOff = 0;
   vector<uint32_t> gotIds, gotTpIds, gotPltIds, tlsGdIds;
   uint32_t tlsLdSlot = UINT32_MAX;
+  // Indirect functions by IPLT entry: the resolver's file and symbol index.
+  // Their GOT slots follow all others, from igotSlot; their IRELATIVE
+  // relocations end .rela.dyn.
+  OutputSection *iplt = nullptr;
+  vector<std::pair<const ObjectFile *, uint32_t>> ipltDefs;
+  uint32_t igotSlot = 0;
   bool staticTls = false;
   uint32_t sonameOff = 0;
 };
@@ -1993,6 +2109,13 @@ OutputSection *newSection(string name, uint32_t type, uint64_t flags,
   return s;
 }
 
+// Whether a global symbol is defined as absolute.
+bool isAbsoluteId(uint32_t id) {
+  const Symbol &s = ctx.syms[id];
+  return s.kind == Symbol::Object &&
+         ctx.objects[s.file]->syms[s.index].st_shndx == SHN_ABS;
+}
+
 uint64_t defVA(const ObjectFile *o, uint32_t si) {
   const Elf64_Sym &s = o->syms[si];
   if (s.st_shndx == SHN_ABS)
@@ -2011,6 +2134,23 @@ uint64_t defVA(const ObjectFile *o, uint32_t si) {
 
 uint64_t pltVA(uint32_t i) { return L.plt->addr + 16 * (i + 1); }
 uint64_t gotVA(uint32_t i) { return L.got->addr + 8 * i; }
+uint64_t ipltVA(uint32_t i) { return L.iplt->addr + 16 * i; }
+
+// The IPLT entry of a referenced local indirect function, or UINT32_MAX.
+uint32_t localIplt(const ObjectFile *o, uint32_t si) {
+  if (o->localIfuncs.empty())
+    return UINT32_MAX;
+  auto it = std::lower_bound(
+      o->localIfuncs.begin(), o->localIfuncs.end(), si,
+      [](const ObjectFile::LocalIfunc &l, uint32_t v) { return l.sym < v; });
+  return it != o->localIfuncs.end() && it->sym == si ? it->iplt : UINT32_MAX;
+}
+
+// Whether a global indirect function's address is its IPLT entry.
+bool canonicalIplt(uint32_t id) {
+  return ctx.syms[id].iplt != UINT32_MAX &&
+         (ctx.flags[id].load(std::memory_order_relaxed) & IpltDirect);
+}
 
 bool isLinkerDefined(string_view n) {
   static const char *const names[] = {
@@ -2993,8 +3133,8 @@ void buildDynamic() {
   const uint32_t n = ctx.numNames;
   assignCopies();
   (void)n;
-  vector<uint32_t> got, gotTp, plt, tlsGd;
-  collectNames<6>({&L.exports, &got, &gotTp, &plt, &L.imports, &tlsGd},
+  vector<uint32_t> got, gotTp, plt, tlsGd, iplt;
+  collectNames<7>({&L.exports, &got, &gotTp, &plt, &L.imports, &tlsGd, &iplt},
                   [](uint32_t id, auto &out) {
     uint16_t f = ctx.flags[id].load(std::memory_order_relaxed);
     const Symbol &s = ctx.syms[id];
@@ -3005,7 +3145,13 @@ void buildDynamic() {
         out[1].push_back(id);
       return;
     }
-    if (f & NeedsGot)
+    // An indirect function reached only through calls and the GOT uses its
+    // IPLT entry's GOT slot; one whose address is taken is the IPLT entry,
+    // and a GOT slot holds that address.
+    const bool ifunc = (f & IpltRef) && s.ifunc && s.kind == Symbol::Object;
+    if (ifunc)
+      out[6].push_back(id);
+    if ((f & NeedsGot) && (!ifunc || (f & IpltDirect)))
       out[1].push_back(id);
     if (f & NeedsGotTp)
       out[2].push_back(id);
@@ -3046,6 +3192,36 @@ void buildDynamic() {
   }
   for (uint32_t i = 0; i < plt.size(); ++i)
     ctx.syms[plt[i]].plt = i;
+  // IPLT entries: global indirect functions by name, then local ones by file
+  // and symbol index.
+  std::sort(iplt.begin(), iplt.end(), byName);
+  for (uint32_t id : iplt) {
+    Symbol &s = ctx.syms[id];
+    s.iplt = L.ipltDefs.size();
+    L.ipltDefs.push_back({ctx.objects[s.file], s.index});
+  }
+  for (ObjectFile *o : ctx.objects) {
+    auto &locals = o->localIfuncs;
+    if (locals.empty())
+      continue;
+    std::sort(locals.begin(), locals.end(),
+              [](const auto &a, const auto &b) { return a.sym < b.sym; });
+    size_t w = 0;
+    for (size_t r = 0; r < locals.size(); ++r) {
+      if (w && locals[w - 1].sym == locals[r].sym) {
+        locals[w - 1].flags |= locals[r].flags;
+        continue;
+      }
+      locals[w++] = locals[r];
+    }
+    locals.resize(w);
+    for (auto &l : locals) {
+      l.iplt = L.ipltDefs.size();
+      L.ipltDefs.push_back({o, l.sym});
+    }
+  }
+  L.igotSlot = slot;
+  slot += L.ipltDefs.size();
 
   // GNU hash: defined symbols follow undefined ones, grouped by bucket.
   L.gnuSymOffset = 1 + L.imports.size();
@@ -3210,7 +3386,7 @@ void buildDynamic() {
     Symbol::Kind k = ctx.syms[id].kind;
     if (isPreemptible(id))
       ++L.numGotSym;
-    else if (ctx.isPic() && k != Symbol::Undefined)
+    else if (ctx.isPic() && k != Symbol::Undefined && !isAbsoluteId(id))
       ++L.numGotRel;
   }
   L.numGotSym += gotTp.size() + L.numCopies;
@@ -3232,14 +3408,16 @@ void buildDynamic() {
     L.buildId = newSection(".note.gnu.build-id", SHT_NOTE, A, 4);
     L.buildId->size = 16 + alignTo(ctx.opt.buildIdSize, 4);
   }
-  L.dynsym = newSection(".dynsym", SHT_DYNSYM, A, 8);
-  L.dynsym->size = idx * sizeof(Elf64_Sym);
-  L.dynsym->entsize = sizeof(Elf64_Sym);
-  L.gnuHashSec = newSection(".gnu.hash", SHT_GNU_HASH, A, 8);
-  L.gnuHashSec->size = 16 + 8 + 4 * L.gnuBuckets + 4 * L.exports.size();
-  L.dynstr = newSection(".dynstr", SHT_STRTAB, A, 1);
-  L.dynstr->size = L.dynstrData.size();
-  if (!L.verneeds.empty() || !L.verdefs.empty()) {
+  if (ctx.hasDynSymTab) {
+    L.dynsym = newSection(".dynsym", SHT_DYNSYM, A, 8);
+    L.dynsym->size = idx * sizeof(Elf64_Sym);
+    L.dynsym->entsize = sizeof(Elf64_Sym);
+    L.gnuHashSec = newSection(".gnu.hash", SHT_GNU_HASH, A, 8);
+    L.gnuHashSec->size = 16 + 8 + 4 * L.gnuBuckets + 4 * L.exports.size();
+    L.dynstr = newSection(".dynstr", SHT_STRTAB, A, 1);
+    L.dynstr->size = L.dynstrData.size();
+  }
+  if (ctx.hasDynSymTab && (!L.verneeds.empty() || !L.verdefs.empty())) {
     L.versym = newSection(".gnu.version", SHT_GNU_versym, A, 2);
     L.versym->size = 2 * L.versyms.size();
     L.versym->entsize = 2;
@@ -3255,11 +3433,16 @@ void buildDynamic() {
       n += 1 + v.aux.size();
     L.verneed->size = 16 * n;
   }
-  size_t numDyn = L.numRelative + L.numGotSym + L.numSecSym;
+  size_t numDyn =
+      L.numRelative + L.numGotSym + L.numSecSym + L.ipltDefs.size();
   if (numDyn) {
     L.relaDyn = newSection(".rela.dyn", SHT_RELA, A, 8);
     L.relaDyn->size = numDyn * sizeof(Elf64_Rela);
     L.relaDyn->entsize = sizeof(Elf64_Rela);
+  }
+  if (!L.ipltDefs.empty()) {
+    L.iplt = newSection(".iplt", SHT_PROGBITS, A | SHF_EXECINSTR, 16);
+    L.iplt->size = 16 * L.ipltDefs.size();
   }
   if (!plt.empty()) {
     L.relaPlt = newSection(".rela.plt", SHT_RELA, A | SHF_INFO_LINK, 8);
@@ -3272,10 +3455,16 @@ void buildDynamic() {
     L.got = newSection(".got", SHT_PROGBITS, A | SHF_WRITE, 8);
     L.got->size = 8 * slot;
   }
-  L.gotPlt = newSection(".got.plt", SHT_PROGBITS, A | SHF_WRITE, 8);
-  L.gotPlt->size = 8 * (3 + plt.size());
-  L.dynamic = newSection(".dynamic", SHT_DYNAMIC, A | SHF_WRITE, 8);
-  L.dynamic->entsize = sizeof(Elf64_Dyn);
+  // A static executable has .got.plt only for references to its address.
+  if (ctx.hasDynSymTab || needsGotBase.load() ||
+      ctx.names->find("_GLOBAL_OFFSET_TABLE_", 21) != UINT32_MAX) {
+    L.gotPlt = newSection(".got.plt", SHT_PROGBITS, A | SHF_WRITE, 8);
+    L.gotPlt->size = 8 * (3 + plt.size());
+  }
+  if (ctx.hasDynSymTab) {
+    L.dynamic = newSection(".dynamic", SHT_DYNAMIC, A | SHF_WRITE, 8);
+    L.dynamic->entsize = sizeof(Elf64_Dyn);
+  }
   L.gotPltIds = std::move(plt);
   L.gotIds = std::move(got);
   L.gotTpIds = std::move(gotTp);
@@ -3544,7 +3733,8 @@ void layout() {
   if (!ctx.opt.stripSymbols)
     prepareSymtab();
   buildDynamic();
-  L.dynamic->size = dynamicEntries().size() * sizeof(Elf64_Dyn);
+  if (L.dynamic)
+    L.dynamic->size = dynamicEntries().size() * sizeof(Elf64_Dyn);
   assignAllOffsets();
 
   mark("offsets");
@@ -3570,7 +3760,8 @@ void layout() {
   classes[0] = 1;
   const bool dyn = L.interp != nullptr;
   size_t phnum = (dyn ? 2 : 0) + classes[0] + classes[1] + classes[2] +
-                 classes[3] + 1 /*DYNAMIC*/ + (relro ? 1 : 0) + 1 /*STACK*/ +
+                 classes[3] + (L.dynamic ? 1 : 0) + (relro ? 1 : 0) +
+                 1 /*STACK*/ +
                  (hasTls ? 1 : 0) + notes + (L.ehHdr ? 1 : 0);
   L.base = ctx.isPic() ? 0 : 0x400000;
   const uint64_t page = 4096;
@@ -3685,8 +3876,9 @@ void layout() {
       }
     addPh(PT_TLS, PF_R, o, L.tlsAddr, fs, L.tlsMemsz, L.tlsAlign);
   }
-  addPh(PT_DYNAMIC, PF_R | PF_W, L.dynamic->offset, L.dynamic->addr,
-        L.dynamic->size, L.dynamic->size, 8);
+  if (L.dynamic)
+    addPh(PT_DYNAMIC, PF_R | PF_W, L.dynamic->offset, L.dynamic->addr,
+          L.dynamic->size, L.dynamic->size, 8);
   if (relro)
     for (const Seg &sg : loads)
       if (sg.cls == 2)
@@ -3740,7 +3932,9 @@ void layout() {
   // Symbol addresses.
   ctx.pool->forEach(ctx.numNames, [&](size_t id) {
     Symbol &s = ctx.syms[id];
-    if (s.kind == Symbol::Object)
+    if (canonicalIplt(id))
+      s.va = ipltVA(s.iplt);
+    else if (s.kind == Symbol::Object)
       s.va = defVA(ctx.objects[s.file], s.index);
     else if (s.copied)
       s.va = L.copyRel->addr + s.copyOff;
@@ -3759,7 +3953,7 @@ void layout() {
     if (n == "__ehdr_start" || n == "__executable_start" || n == "__dso_handle")
       s.va = L.base;
     else if (n == "_DYNAMIC")
-      s.va = L.dynamic->addr;
+      s.va = L.dynamic ? L.dynamic->addr : 0;
     else if (n == "_GLOBAL_OFFSET_TABLE_")
       s.va = L.gotPlt->addr;
     else if (n == "__init_array_start")
@@ -3784,6 +3978,15 @@ void layout() {
       s.va = L.bssStart;
     else if (n == "__GNU_EH_FRAME_HDR")
       s.va = L.ehHdr ? L.ehHdr->addr : 0;
+    // A static executable's startup code applies the IRELATIVE relocations
+    // that end .rela.dyn; elsewhere the range is empty.
+    else if (n == "__rela_iplt_start" || n == "__rela_iplt_end")
+      s.va = L.relaDyn && !L.ipltDefs.empty()
+                 ? L.relaDyn->addr + L.relaDyn->size -
+                       (n == "__rela_iplt_start"
+                            ? L.ipltDefs.size() * sizeof(Elf64_Rela)
+                            : 0)
+                 : L.base;
     else if (n.rfind("__start_", 0) == 0)
       s.va = secAddr(string(n.substr(8)).c_str(), false);
     else if (n.rfind("__stop_", 0) == 0)
@@ -3813,9 +4016,13 @@ inline void w32(uint8_t *p, uint64_t v) {
 inline void w64(uint8_t *p, uint64_t v) { memcpy(p, &v, 8); }
 
 uint64_t symbolVA(const ObjectFile *o, uint32_t si, const RelInfo &ri) {
-  if (!ri.global)
-    return defVA(o, si);
+  if (!ri.global) {
+    uint32_t i = localIplt(o, si);
+    return i != UINT32_MAX ? ipltVA(i) : defVA(o, si);
+  }
   const Symbol &s = ctx.syms[ri.id];
+  if (s.iplt != UINT32_MAX)
+    return ipltVA(s.iplt);
   // Calls to symbols the dynamic loader binds go through the PLT.
   if (ri.imp && !s.copied && s.plt != UINT32_MAX)
     return pltVA(s.plt);
@@ -3873,7 +4080,7 @@ void applyRelocs(const ObjectFile *o, const uint8_t *src, const Elf64_Rela *rels
                  size_t n, uint8_t *dst, uint64_t base,
                  Elf64_Rela *relOut = nullptr, Elf64_Rela *symOut = nullptr,
                  const uint8_t *kinds = nullptr) {
-  const uint64_t gotBase = L.gotPlt->addr;
+  const uint64_t gotBase = L.gotPlt ? L.gotPlt->addr : 0;
   for (size_t k = 0; k < n; ++k) {
     const Elf64_Rela &r = rels[k];
     RelInfo ri;
@@ -3926,9 +4133,12 @@ void applyRelocs(const ObjectFile *o, const uint8_t *src, const Elf64_Rela *rels
       }
       break;
     }
-    case K_GotPc:
-      w32(loc, gotVA(ctx.syms[ri.id].got) + A - P);
+    case K_GotPc: {
+      const Symbol &s = ctx.syms[ri.id];
+      const uint32_t slot = s.got != UINT32_MAX ? s.got : L.igotSlot + s.iplt;
+      w32(loc, gotVA(slot) + A - P);
       break;
+    }
     case K_GotTpPc:
       w32(loc, gotVA(ctx.syms[ri.id].gotTp) + A - P);
       break;
@@ -3947,7 +4157,8 @@ void applyRelocs(const ObjectFile *o, const uint8_t *src, const Elf64_Rela *rels
         } else if (ri.imp) {
           *symOut++ = rela(P, ctx.syms[ri.id].dynsym, R_X86_64_64, A);
         } else if (ctx.isPic() &&
-                   !(ri.global && ctx.syms[ri.id].kind == Symbol::Undefined)) {
+                   !(ri.global && ctx.syms[ri.id].kind == Symbol::Undefined) &&
+                   !isAbsolute(o, si, ri)) {
           *relOut++ = rela(P, 0, R_X86_64_RELATIVE, S + A);
         }
       }
@@ -4023,6 +4234,9 @@ void applyRelocs(const ObjectFile *o, const uint8_t *src, const Elf64_Rela *rels
 void applyDebugRelocs(const ObjectFile *o, uint32_t sec, uint8_t *dst) {
   auto [rels, n] = o->relas(sec);
   const char *name = o->secName(sec);
+  // Debug sections get a tombstone for references to discarded code; other
+  // sections the addend alone, as a discarded symbol's address is 0.
+  const bool isDebug = strncmp(name, ".debug", 6) == 0;
   const uint64_t tombstone =
       strcmp(name, ".debug_loc") == 0 || strcmp(name, ".debug_ranges") == 0;
   for (size_t k = 0; k < n; ++k) {
@@ -4052,6 +4266,10 @@ void applyDebugRelocs(const ObjectFile *o, uint32_t sec, uint8_t *dst) {
         S = mergedAddress(o, ls.st_shndx, A) - A;
     }
     uint8_t *loc = dst + r.r_offset;
+    if (dead && !isDebug) {
+      dead = false;
+      S = 0;
+    }
     switch (type) {
     case R_X86_64_32:
       w32(loc, dead ? tombstone : S + A);
@@ -4128,7 +4346,7 @@ void writeSynthetic(uint8_t *buf) {
       memcpy(p + 16, ctx.opt.buildIdBytes.data(), ctx.opt.buildIdSize);
   }
   // .dynsym
-  {
+  if (L.dynsym) {
     auto *d = reinterpret_cast<Elf64_Sym *>(buf + L.dynsym->offset);
     memset(d, 0, sizeof(Elf64_Sym));
     uint32_t i = 1;
@@ -4178,6 +4396,13 @@ void writeSynthetic(uint8_t *buf) {
         e.st_shndx = SHN_ABS;
       else
         e.st_shndx = L.all[o->secs[os.st_shndx].osec]->shndx;
+      // An indirect function whose address is its IPLT entry is an ordinary
+      // function to the dynamic loader.
+      if (canonicalIplt(id)) {
+        e.st_info = ELF64_ST_INFO(ELF64_ST_BIND(os.st_info), STT_FUNC);
+        e.st_size = 0;
+        e.st_shndx = L.iplt->shndx;
+      }
       ++i;
     }
   }
@@ -4222,7 +4447,7 @@ void writeSynthetic(uint8_t *buf) {
     }
   }
   // .gnu.hash
-  {
+  if (L.gnuHashSec) {
     uint8_t *p = buf + L.gnuHashSec->offset;
     w32(p, L.gnuBuckets);
     w32(p + 4, L.gnuSymOffset);
@@ -4232,7 +4457,8 @@ void writeSynthetic(uint8_t *buf) {
     memcpy(p + 24, L.gnuBucketVals.data(), 4 * L.gnuBuckets);
     memcpy(p + 24 + 4 * L.gnuBuckets, L.gnuChain.data(), 4 * L.gnuChain.size());
   }
-  memcpy(buf + L.dynstr->offset, L.dynstrData.data(), L.dynstrData.size());
+  if (L.dynstr)
+    memcpy(buf + L.dynstr->offset, L.dynstrData.data(), L.dynstrData.size());
   // .got and its dynamic relocations
   Elf64_Rela *relative = L.relaOut + L.numSecRel;
   Elf64_Rela *symbolic = L.relaOut + L.numRelative;
@@ -4248,7 +4474,7 @@ void writeSynthetic(uint8_t *buf) {
         w64(g + 8 * s.got, 0);
       } else {
         w64(g + 8 * s.got, s.va);
-        if (ctx.isPic())
+        if (ctx.isPic() && !isAbsoluteId(id))
           *relative++ = rela(slotVA, 0, R_X86_64_RELATIVE, s.va);
       }
     }
@@ -4291,10 +4517,29 @@ void writeSynthetic(uint8_t *buf) {
   if (relative != L.relaOut + L.numSecRel + L.numGotRel ||
       symbolic != L.relaOut + L.numRelative + L.numGotSym)
     fatal("internal error: .rela.dyn count mismatch");
+  // IPLT entries jump through GOT slots that IRELATIVE relocations set to
+  // the resolvers' results; the dynamic loader or a static executable's
+  // startup code applies them after all others.
+  if (L.iplt) {
+    uint8_t *p = buf + L.iplt->offset;
+    Elf64_Rela *irel =
+        L.relaOut + L.numRelative + L.numGotSym + L.numSecSym;
+    for (uint32_t i = 0; i < L.ipltDefs.size(); ++i) {
+      static const uint8_t entry[16] = {0xff, 0x25, 0,    0,    0,    0,
+                                        0x0f, 0x1f, 0x84, 0,    0,    0,
+                                        0,    0,    0x66, 0x90};
+      const uint64_t slot = gotVA(L.igotSlot + i), ea = ipltVA(i);
+      memcpy(p + 16 * i, entry, 16);
+      w32(p + 16 * i + 2, slot - (ea + 6));
+      w64(buf + L.got->offset + 8 * (L.igotSlot + i), 0);
+      auto [o, si] = L.ipltDefs[i];
+      irel[i] = rela(slot, 0, R_X86_64_IRELATIVE, defVA(o, si));
+    }
+  }
   // .plt, .got.plt, .rela.plt
-  {
+  if (L.gotPlt) {
     uint8_t *gp = buf + L.gotPlt->offset;
-    w64(gp, L.dynamic->addr);
+    w64(gp, L.dynamic ? L.dynamic->addr : 0);
     w64(gp + 8, 0);
     w64(gp + 16, 0);
     if (L.plt) {
@@ -4323,7 +4568,7 @@ void writeSynthetic(uint8_t *buf) {
     }
   }
   // .dynamic
-  {
+  if (L.dynamic) {
     vector<Elf64_Dyn> d = dynamicEntries();
     memcpy(buf + L.dynamic->offset, d.data(), d.size() * sizeof(Elf64_Dyn));
   }
@@ -4413,6 +4658,30 @@ void writeSymtabFile(uint8_t *buf, uint32_t fi) {
     } else {
       e.st_shndx = L.all[o->secs[in.st_shndx].osec]->shndx;
       e.st_value = symtabValue(defVA(o, k), type);
+    }
+    // Indirect functions whose address is their IPLT entry.
+    if (type == STT_GNU_IFUNC) {
+      uint32_t i = UINT32_MAX;
+      if (k < o->firstGlobal) {
+        i = localIplt(o, k);
+        if (i != UINT32_MAX) {
+          auto it = std::lower_bound(
+              o->localIfuncs.begin(), o->localIfuncs.end(), k,
+              [](const ObjectFile::LocalIfunc &l, uint32_t v) {
+                return l.sym < v;
+              });
+          if (!(it->flags & IpltDirect))
+            i = UINT32_MAX;
+        }
+      } else if (canonicalIplt(o->nameIds[k - o->firstGlobal])) {
+        i = ctx.syms[o->nameIds[k - o->firstGlobal]].iplt;
+      }
+      if (i != UINT32_MAX) {
+        e.st_info = ELF64_ST_INFO(bind, STT_FUNC);
+        e.st_value = ipltVA(i);
+        e.st_size = 0;
+        e.st_shndx = L.iplt->shndx;
+      }
     }
   }
 }
@@ -4518,7 +4787,8 @@ void writeHeaders(uint8_t *buf) {
   link(L.verdef, L.dynstr, L.verdefs.size());
   link(L.dynamic, L.dynstr, 0);
   link(L.relaDyn, L.dynsym, 0);
-  link(L.relaPlt, L.dynsym, L.gotPlt->shndx);
+  if (L.relaPlt)
+    link(L.relaPlt, L.dynsym, L.gotPlt->shndx);
   link(L.symtab, L.strtab, L.numLocals);
   Elf64_Shdr &st = sh[L.ordered.size() + 1];
   st = {};
@@ -4652,26 +4922,36 @@ void writeOutput() {
 
 void checkUndefined() {
   STEP("checkUndefined");
-  const bool dynamic = !ctx.opt.dynamicLinker.empty();
   vector<uint32_t> undefined;
   collectNames<1>({&undefined}, [&](uint32_t id, auto &out) {
     Symbol &s = ctx.syms[id];
     if (s.kind != Symbol::Undefined)
       return;
-    if (isLinkerDefined(ctx.nameStr[id])) {
+    // _DYNAMIC exists with .dynamic, and __rela_iplt_start/end only in
+    // position-dependent output, whose startup code applies IRELATIVE.
+    const string_view n = ctx.nameStr[id];
+    if (isLinkerDefined(n) && (ctx.hasDynSymTab || n != "_DYNAMIC") &&
+        (!ctx.isPic() || (n != "__rela_iplt_start" && n != "__rela_iplt_end"))) {
       s.kind = Symbol::Linker;
       return;
     }
     const uint16_t f = ctx.flags[id].load(std::memory_order_relaxed);
-    // Weak references stay dynamic in a dynamically linked output, and so
-    // do all references a shared library leaves to the dynamic loader.
-    if (!(f & HiddenRef) && (dynamic || ctx.opt.shared) &&
+    // Weak references stay dynamic in an output with a dynamic symbol
+    // table, except without a dynamic linker (glibc's -static-pie expects
+    // them absent), and so do all references a shared library leaves to the
+    // dynamic loader.
+    if (!(f & HiddenRef) && ctx.hasDynSymTab &&
         (f & (StrongRef | WeakRef)) &&
-        (!(f & StrongRef) || ctx.opt.allowUndefined)) {
+        (!(f & StrongRef) ? !ctx.opt.noDynamicLinker
+                          : ctx.opt.allowUndefined)) {
       s.kind = Symbol::DynUndef;
       atomicOr(ctx.flags[id], uint16_t(NeedsDynsym));
       return;
     }
+    // Executables rewrite dynamic TLS sequences to access TLS directly,
+    // dropping their __tls_get_addr calls; scanning reports what is left.
+    if ((f & StrongRef) && !ctx.opt.shared && n == "__tls_get_addr")
+      return;
     if (f & StrongRef)
       out[0].push_back(id);
   });
@@ -4717,6 +4997,8 @@ void runPipeline() {
     t = Clock::now();
   };
   loadInputs(specs);
+  ctx.hasDynSymTab =
+      !ctx.shared.empty() || ctx.isPic() || ctx.opt.exportDynamic;
   lap();
   resolve();
   checkUndefined();
@@ -4752,6 +5034,7 @@ void runPipeline() {
 fastlink::Status fastlink::link(const Request &Req, std::string &Reason) {
   ctx = Ctx();
   needsTlsLd = false;
+  needsGotBase = false;
   L = Layout();
   L.all.push_back(new OutputSection); // index 0: not in the output
   relKinds = nullptr;

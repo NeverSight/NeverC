@@ -2378,6 +2378,121 @@ TEST_F(LinkerTest, MsvcLinkerSpellingsAreNormalized) {
   EXPECT_TRUE(dll.stderrContains("pass -shared to the compiler")) << dll.err;
 }
 
+TEST_F(LinkerTest, FastPipelineLinksIndirectFunctions) {
+  if (!isLinux())
+    GTEST_SKIP() << "the fast ELF pipeline links Linux executables";
+
+  // pick is selected at load time; the program calls it, loads it from the
+  // GOT and takes its address, which must be one address everywhere.
+  const fs::path source = tmpFile("fast_ifunc.s");
+  const fs::path object = tmpFile("fast_ifunc.o");
+  writeFile(source, R"(
+.text
+.type impl,@function
+impl:
+  movl $42, %eax
+  ret
+.type resolve,@function
+resolve:
+  leaq impl(%rip), %rax
+  ret
+.globl pick
+.type pick,@gnu_indirect_function
+.set pick, resolve
+
+.globl main
+.type main,@function
+main:
+  call pick
+  cmpl $42, %eax
+  jne 1f
+  movq pick@GOTPCREL(%rip), %rcx
+  call *%rcx
+  cmpl $42, %eax
+  jne 1f
+  leaq pick(%rip), %rcx
+  cmpq pick_address(%rip), %rcx
+  jne 1f
+  xorl %eax, %eax
+  ret
+1:
+  movl $1, %eax
+  ret
+
+.data
+.globl pick_address
+pick_address:
+  .quad pick
+.section .note.GNU-stack,"",@progbits
+)");
+  CmdResult assemble = assembleELFObject(source, object);
+  ASSERT_EQ(assemble.exitCode, 0) << assemble.err;
+
+  ScopedEnvironmentVariable report("NEVERC_ELF_FASTLINK_TIME", "1");
+  for (const char *mode : {"-pie", "-no-pie"}) {
+    SCOPED_TRACE(mode);
+    const fs::path image = tmpFile(std::string("fast_ifunc") + mode);
+    std::vector<std::string> args = baseLinkArgs();
+    args.insert(args.end(), {mode, object.string(), "-o", image.string()});
+    CmdResult link = ncc(args);
+    ASSERT_EQ(link.exitCode, 0) << link.err;
+    EXPECT_EQ(link.err.find("fast pipeline not used"), std::string::npos)
+        << link.err;
+    EXPECT_EQ(exec(image.string(), {}).exitCode, 0);
+  }
+}
+
+TEST_F(LinkerTest, FastPipelineLinksStaticExecutables) {
+  if (!isLinux())
+    GTEST_SKIP() << "the fast ELF pipeline links Linux executables";
+  CmdResult libc = ncc({"-print-file-name=libc.a"});
+  const std::string libcPath =
+      libc.out.substr(0, libc.out.find_last_not_of("\r\n") + 1);
+  if (libc.exitCode != 0 || !fs::exists(libcPath))
+    GTEST_SKIP() << "no static C library";
+
+  // Static glibc selects string functions at startup through IRELATIVE
+  // relocations and runs exit handlers from its __libc_atexit section.
+  const fs::path source = tmpFile("fast_static.c");
+  const fs::path object = tmpFile("fast_static.o");
+  writeFile(source, R"(
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+static _Thread_local int counter = 20;
+static void bye(void) { puts("bye"); }
+int main(void) {
+  char text[32];
+  memset(text, 'x', sizeof text - 1);
+  text[sizeof text - 1] = 0;
+  atexit(bye);
+  printf("%zu %d\n", strlen(text), ++counter);
+  return 0;
+}
+)");
+  CmdResult compile =
+      ncc({"-fno-lto", "-O1", "-c", source.string(), "-o", object.string()});
+  ASSERT_EQ(compile.exitCode, 0) << compile.err;
+
+  ScopedEnvironmentVariable report("NEVERC_ELF_FASTLINK_TIME", "1");
+  for (const char *mode : {"-static", "-static-pie"}) {
+    SCOPED_TRACE(mode);
+    const fs::path image = tmpFile(std::string("fast_static") + mode);
+    CmdResult link =
+        ncc({"-fno-lto", mode, object.string(), "-o", image.string()});
+    ASSERT_EQ(link.exitCode, 0) << link.err;
+    EXPECT_EQ(link.err.find("fast pipeline not used"), std::string::npos)
+        << link.err;
+    CmdResult run = exec(image.string(), {});
+    EXPECT_EQ(run.exitCode, 0) << run.err;
+    EXPECT_EQ(run.out, "31 21\nbye\n");
+    llvm::Expected<bool> dynamic = hasELFSection(readFile(image), ".dynamic");
+    ASSERT_TRUE(static_cast<bool>(dynamic))
+        << llvm::toString(dynamic.takeError()).str().str();
+    EXPECT_EQ(*dynamic, std::string(mode) == "-static-pie");
+  }
+}
+
 TEST_F(LinkerTest, ThreadCountOptionKeepsOutputBytesOnEveryFormat) {
   struct Format {
     const char *name;

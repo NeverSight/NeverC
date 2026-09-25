@@ -918,8 +918,6 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
            (!config->shared &&
             config->unresolvedSymbols == UnresolvedPolicy::Ignore),
        "unresolved symbol policy"},
-      {config->isStatic, "static link"},
-      {config->noDynamicLinker, "--no-dynamic-linker"},
       {config->emitRelocs, "--emit-relocs"},
       {config->trace, "--trace"},
       {config->printGcSections || config->printIcfSections, "section report"},
@@ -968,7 +966,7 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
       StringRef v = arg->getValue();
       if (v != "now" && v != "lazy" && v != "relro" && v != "norelro" &&
           v != "noexecstack" && v != "defs" && v != "undefs" &&
-          v != "nodelete" && v != "origin" &&
+          v != "nodelete" && v != "origin" && v != "text" &&
           v != "max-page-size=4096" && v != "common-page-size=4096")
         return decline("-z " + v);
       break;
@@ -1121,7 +1119,9 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
   }
   // Positional state, as the full backend applies it. Libraries are searched
   // here so that -Bstatic and -l:file follow the full backend's rules.
-  bool asNeeded = false, whole = false, isStatic = false, inLib = false;
+  // -static starts in the static state, as createFiles() does.
+  bool asNeeded = false, whole = false, isStatic = config->isStatic,
+       inLib = false;
   std::vector<std::tuple<bool, bool, bool>> stack;
   size_t next = 0;
   for (auto *arg : args) {
@@ -1183,7 +1183,9 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
   if (req.inputs.empty())
     return false;
   req.output = config->outputFile.empty() ? "a.out" : config->outputFile.str();
-  req.dynamicLinker = config->dynamicLinker.str();
+  req.dynamicLinker =
+      config->noDynamicLinker ? std::string() : config->dynamicLinker.str();
+  req.noDynamicLinker = config->noDynamicLinker;
   req.pie = config->pie;
   req.gcSections = config->gcSections;
   req.zNow = config->zNow;
