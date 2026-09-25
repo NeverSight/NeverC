@@ -1165,10 +1165,23 @@ void OutputWriter::assignSegmentAddresses() {
     for (auto *cs : concatSections)
       cs->finalizeContents();
 
-  // Assign monotonically increasing addresses to each segment.
+  // Assign monotonically increasing addresses to each segment. -segaddr
+  // places a segment, and -segalign aligns every segment further.
   for (OutputSegment *seg : outputSegments) {
     if (seg == linkeditSeg)
       continue;
+    if (auto it = config->segmentAddresses.find(seg->name);
+        it != config->segmentAddresses.end()) {
+      if (it->second < addr)
+        error("-segaddr: " + seg->name + " at 0x" +
+              Twine::utohexstr(it->second) +
+              " overlaps the previous segment, which ends at 0x" +
+              Twine::utohexstr(addr));
+      else
+        addr = it->second;
+    } else if (config->segmentAlign) {
+      addr = alignToPowerOf2(addr, config->segmentAlign);
+    }
     seg->addr = addr;
     layoutSegment(seg);
     fileOff = alignToPowerOf2(fileOff, pageSize);
@@ -1193,6 +1206,11 @@ void OutputWriter::finalizeLinkEdit() {
 
   parallelForEach(active, [](LinkEditSection *s) { s->finalizeContents(); });
 
+  if (auto it = config->segmentAddresses.find(segment_names::linkEdit);
+      it != config->segmentAddresses.end() && it->second >= addr)
+    addr = it->second;
+  else if (config->segmentAlign)
+    addr = alignToPowerOf2(addr, config->segmentAlign);
   linkeditSeg->addr = addr;
   layoutSegment(linkeditSeg);
   linkeditSeg->vmSize = addr - linkeditSeg->addr;

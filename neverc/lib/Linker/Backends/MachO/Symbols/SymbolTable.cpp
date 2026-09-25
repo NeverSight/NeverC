@@ -302,6 +302,30 @@ Symbol *SymbolTable::addUndefined(StringRef name, InputFile *file,
   return s;
 }
 
+namespace {
+// Resolves a tentative definition against a dylib's definition of the same
+// name as -commons asks. Returns whether the dylib's definition is used.
+bool dylibOverridesCommon(StringRef name, const InputFile *object,
+                          const InputFile *dylib) {
+  switch (config->commons) {
+  case CommonsTreatment::IgnoreDylibs:
+    if (config->warnCommons)
+      warn("tentative definition of '" + name + "' in " + toString(object) +
+           " is used instead of the definition in " + toString(dylib) +
+           " [-warn_commons]");
+    return false;
+  case CommonsTreatment::UseDylibs:
+    return true;
+  case CommonsTreatment::Error:
+    error("tentative definition of '" + name + "' in " + toString(object) +
+          " conflicts with the definition in " + toString(dylib) +
+          " [-commons error]");
+    return false;
+  }
+  llvm_unreachable("unknown -commons treatment");
+}
+} // namespace
+
 Symbol *SymbolTable::addCommon(StringRef name, InputFile *file, uint64_t size,
                                uint32_t align, bool isPrivateExtern) {
   auto [s, wasInserted] = insert(name, file);
@@ -312,6 +336,14 @@ Symbol *SymbolTable::addCommon(StringRef name, InputFile *file, uint64_t size,
         return s;
     } else if (isa<Defined>(s)) {
       return s;
+    } else if (auto *dysym = dyn_cast<DylibSymbol>(s)) {
+      // The object uses its tentative definition, so a dylib definition
+      // used in its place is referenced.
+      if (dysym->getFile() &&
+          dylibOverridesCommon(name, file, dysym->getFile())) {
+        dysym->reference(RefState::Strong);
+        return s;
+      }
     }
     // Common symbols take priority over all non-Defined symbols, so in case of
     // a name conflict, we fall through to the replaceSymbol() call below.
@@ -338,7 +370,13 @@ Symbol *SymbolTable::addDylib(StringRef name, DylibFile *file, bool isWeakDef,
   }
 
   bool isDynamicLookup = file == nullptr;
-  if (wasInserted || isa<Undefined>(s) ||
+  bool replacesCommon = false;
+  if (auto *common = dyn_cast<CommonSymbol>(s); common && file) {
+    replacesCommon = dylibOverridesCommon(name, common->getFile(), file);
+    if (replacesCommon)
+      refState = RefState::Strong;
+  }
+  if (wasInserted || isa<Undefined>(s) || replacesCommon ||
       (isa<DylibSymbol>(s) &&
        ((!isWeakDef && s->isWeakDef()) ||
         (!isDynamicLookup && cast<DylibSymbol>(s)->isDynamicLookup())))) {

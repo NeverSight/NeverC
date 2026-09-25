@@ -243,7 +243,7 @@ OPTION(prefix_2, "--color-diagnostics", color_diagnostics, Flag, grp_neverc_ext,
        INVALID, nullptr, 0, DefaultVis, 0,
        "Alias for --color-diagnostics=always", nullptr, nullptr)
 OPTION(prefix_3, "-commons", commons, Separate, grp_resolve, INVALID, nullptr,
-       HelpHidden, DefaultVis, 0,
+       0, DefaultVis, 0,
        "Resolve tentative definitions in dylibs according to <treatment>: "
        "ignore_dylibs, use_dylibs, error (default is ignore_dylibs)",
        "<treatment>", nullptr)
@@ -354,8 +354,7 @@ OPTION(prefix_3, "-dylinker", dylinker, Flag, grp_kind, INVALID, nullptr,
        "Produce a dylinker only used when building dyld", nullptr, nullptr)
 OPTION(prefix_3, "-dynamic", dynamic, Flag, grp_kind, INVALID, nullptr, 0,
        DefaultVis, 0, "Link dynamically (default)", nullptr, nullptr)
-OPTION(prefix_3, "-d", d, Flag, grp_object, INVALID, nullptr, HelpHidden,
-       DefaultVis, 0,
+OPTION(prefix_3, "-d", d, Flag, grp_object, INVALID, nullptr, 0, DefaultVis, 0,
        "Force tentative into real definitions for common symbols", nullptr,
        nullptr)
 OPTION(prefix_1, "--encryptable", encryptable, Flag, grp_undocumented, INVALID,
@@ -681,7 +680,7 @@ OPTION(prefix_3, "-mark_dead_strippable_dylib", anonymous_329, Flag, INVALID,
        mark_dead_strippable_dylib, nullptr, 0, DefaultVis, 0,
        "Alias for --mark-dead-strippable-dylib", nullptr, nullptr)
 OPTION(prefix_3, "-max_default_common_align", max_default_common_align,
-       Separate, grp_rare, INVALID, nullptr, HelpHidden, DefaultVis, 0,
+       Separate, grp_rare, INVALID, nullptr, 0, DefaultVis, 0,
        "Reduce maximum alignment for common symbols to a hex power-of-2 "
        "<boundary>",
        "<boundary>", nullptr)
@@ -818,7 +817,7 @@ OPTION(prefix_3, "-no_arch_warnings", no_arch_warnings, Flag, grp_rare, INVALID,
        "-arch option",
        nullptr, nullptr)
 OPTION(prefix_3, "-no_branch_islands", no_branch_islands, Flag, grp_opts,
-       INVALID, nullptr, HelpHidden, DefaultVis, 0,
+       INVALID, nullptr, 0, DefaultVis, 0,
        "Disable infra for branches beyond the maximum branch distance.",
        nullptr, nullptr)
 OPTION(prefix_3, "-no_compact_linkedit", no_compact_linkedit, Flag,
@@ -1077,8 +1076,8 @@ OPTION(prefix_2, "--print-symbol-order=", print_symbol_order_eq, Joined,
        "specified file",
        nullptr, nullptr)
 OPTION(prefix_3, "-print_statistics", print_statistics, Flag, grp_introspect,
-       INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "Log the linker's memory and CPU usage", nullptr, nullptr)
+       INVALID, nullptr, 0, DefaultVis, 0,
+       "Log the linker's CPU time and peak memory usage", nullptr, nullptr)
 OPTION(prefix_3, "-private_bundle", private_bundle, Flag, grp_obsolete, INVALID,
        nullptr, HelpHidden, DefaultVis, 0,
        "This option is obsolete in the native linker", nullptr, nullptr)
@@ -1117,7 +1116,7 @@ OPTION(prefix_3, "-reexport_library", anonymous_349, Separate, INVALID,
        reexport_library, nullptr, 0, DefaultVis, 0,
        "Alias for --reexport-library", "<path>", nullptr)
 OPTION(prefix_3, "-reexported_symbols_list", reexported_symbols_list, Separate,
-       grp_resolve, INVALID, nullptr, HelpHidden, DefaultVis, 0,
+       grp_resolve, INVALID, nullptr, 0, DefaultVis, 0,
        "Symbols from dependent dylibs specified in <file> are reexported by "
        "this dylib",
        "<file>", nullptr)
@@ -1214,13 +1213,13 @@ OPTION(prefix_3, "-seg_page_size", seg_page_size, MultiArg, grp_rare, INVALID,
        "multiple of its page size",
        "<segment> <size>", nullptr)
 OPTION(
-    prefix_3, "-segaddr", segaddr, MultiArg, grp_rare, INVALID, nullptr,
-    HelpHidden, DefaultVis, 2,
+    prefix_3, "-segaddr", segaddr, MultiArg, grp_rare, INVALID, nullptr, 0,
+    DefaultVis, 2,
     "Specify the starting hex <address> at a 4KiB page boundary for <segment>",
     "<segment> <address>", nullptr)
-OPTION(prefix_3, "-segalign", segalign, Separate, grp_rare, INVALID, nullptr,
-       HelpHidden, DefaultVis, 0,
-       "Align all segments to hex power-of-2 <boundary>", "<boundary>", nullptr)
+OPTION(prefix_3, "-segalign", segalign, Separate, grp_rare, INVALID, nullptr, 0,
+       DefaultVis, 0, "Align all segments to hex power-of-2 <boundary>",
+       "<boundary>", nullptr)
 OPTION(prefix_3, "-segcreate", segcreate, MultiArg, grp_content, sectcreate,
        nullptr, 0, DefaultVis, 3, "Alias for -sectcreate",
        "<segment> <section> <file>", nullptr)
@@ -1418,8 +1417,8 @@ OPTION(prefix_3, "-verbose_optimization_hints", verbose_optimization_hints,
 OPTION(prefix_2, "--verbose", verbose, Flag, grp_neverc_ext, INVALID, nullptr,
        0, DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_3, "-version_details", version_details, Flag, grp_rare, INVALID,
-       nullptr, HelpHidden, DefaultVis, 0,
-       "Print the linker version in JSON form", nullptr, nullptr)
+       nullptr, 0, DefaultVis, 0, "Print the linker version in JSON form",
+       nullptr, nullptr)
 OPTION(prefix_3, "-version_load_command", version_load_command, Flag,
        grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
        "This option is undocumented in the native linker", nullptr, nullptr)
@@ -1437,7 +1436,7 @@ OPTION(prefix_2, "--warn-dylib-install-name", warn_dylib_install_name, Flag,
        grp_neverc_ext, INVALID, nullptr, 0, DefaultVis, 0,
        "Warn on -install_name if -dylib is not passed", nullptr, nullptr)
 OPTION(prefix_3, "-warn_commons", warn_commons, Flag, grp_rare, INVALID,
-       nullptr, HelpHidden, DefaultVis, 0,
+       nullptr, 0, DefaultVis, 0,
        "Warn when a tentative definition in an object file matches an external "
        "symbol in a dylib, which often means \\\"extern\\\" is missing from a "
        "variable declaration in a header file",

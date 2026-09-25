@@ -65,6 +65,12 @@ bool TextOutputSection::needsThunks() const {
   if (isecAddr - addr + in.stubs->getSize() <=
       std::min(target->backwardBranchRange, target->forwardBranchRange))
     return false;
+  if (config->noBranchIslands) {
+    error(parent->name + "," + name +
+          " spans more than a branch can reach "
+          "and -no_branch_islands forbids branch islands");
+    return false;
+  }
   // Yes, this program is large enough to need thunks.
   for (ConcatInputSection *isec : inputs) {
     for (Reloc &r : isec->relocs) {

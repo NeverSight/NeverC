@@ -844,6 +844,14 @@ macho::Symbol *createAbsolute(const NList &sym, InputFile *file, StringRef name,
                        /*isReferencedDynamically=*/false,
                        sym.n_desc & N_NO_DEAD_STRIP);
 }
+// A tentative definition without an explicit alignment is aligned to its
+// size rounded up to a power of two, at most -max_default_common_align.
+uint32_t commonAlignment(uint64_t size, uint16_t desc) {
+  if (GET_COMM_ALIGN(desc))
+    return 1u << GET_COMM_ALIGN(desc);
+  return std::min<uint64_t>(llvm::PowerOf2Ceil(std::max<uint64_t>(size, 1)),
+                            config->maxDefaultCommonAlign);
+}
 } // namespace
 
 template <class NList>
@@ -857,7 +865,7 @@ macho::Symbol *ObjFile::parseNonSectionSymbol(const NList &sym,
     return sym.n_value == 0
                ? symtab->addUndefined(name, this, sym.n_desc & N_WEAK_REF)
                : symtab->addCommon(name, this, sym.n_value,
-                                   1 << GET_COMM_ALIGN(sym.n_desc),
+                                   commonAlignment(sym.n_value, sym.n_desc),
                                    isPrivateExtern);
   case N_ABS:
     return createAbsolute(sym, this, name, forceHidden);

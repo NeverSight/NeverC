@@ -35,9 +35,13 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/Process.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/TimeProfiler.h"
 #include "llvm/TextAPI/PackedVersion.h"
+#if !defined(_WIN32)
+#include <sys/resource.h>
+#endif
 
 #include "neverc/Foundation/Core/Version.h"
 #include "neverc/Merge/Merger.h"
@@ -1756,6 +1760,12 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
     message(neverc::getNeverCFullVersion());
     return true;
   }
+  if (args.hasArg(OPT_version_details)) {
+    linker::outs() << "{\"version\":\""
+                   << StringRef(neverc::getNeverCFullVersion())
+                   << "\",\"architectures\":[\"arm64\",\"x86_64\"]}\n";
+    return true;
+  }
 
   if (driverCfg.timeTraceEnabled && !TraceProfiler) {
     TraceProfiler.emplace(driverCfg.timeTraceGranularity,
@@ -1926,6 +1936,60 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
   config->clientName = args.getLastArgValue(OPT_client_name);
   config->executablePath = args.getLastArgValue(OPT_executable_path);
   config->initFunction = args.getLastArgValue(OPT_init);
+  config->noBranchIslands = args.hasArg(OPT_no_branch_islands);
+  // Linked images always define their tentative definitions; a relocatable
+  // output keeps them tentative.
+  if (const Arg *arg = args.getLastArg(OPT_d);
+      arg && config->outputType == MH_OBJECT)
+    warn(arg->getAsString(args) +
+         ": relocatable output keeps tentative "
+         "definitions; the option has no effect with -r");
+  config->warnCommons = args.hasArg(OPT_warn_commons);
+  config->printStatistics = args.hasArg(OPT_print_statistics);
+  if (const Arg *arg = args.getLastArg(OPT_commons)) {
+    std::optional<CommonsTreatment> treatment =
+        StringSwitch<std::optional<CommonsTreatment>>(arg->getValue())
+            .Case("ignore_dylibs", CommonsTreatment::IgnoreDylibs)
+            .Case("use_dylibs", CommonsTreatment::UseDylibs)
+            .Case("error", CommonsTreatment::Error)
+            .Default(std::nullopt);
+    if (treatment)
+      config->commons = *treatment;
+    else
+      error(arg->getAsString(args) +
+            ": expected ignore_dylibs, use_dylibs or error");
+  }
+  if (const Arg *arg = args.getLastArg(OPT_max_default_common_align)) {
+    config->maxDefaultCommonAlign =
+        args::getHex(args, OPT_max_default_common_align, 0);
+    if (!isPowerOf2_64(config->maxDefaultCommonAlign))
+      error(arg->getAsString(args) + ": alignment must be a power of 2");
+  }
+  if (const Arg *arg = args.getLastArg(OPT_segalign)) {
+    config->segmentAlign = args::getHex(args, OPT_segalign, 0);
+    if (!isPowerOf2_64(config->segmentAlign) ||
+        config->segmentAlign < target->getPageSize())
+      error(arg->getAsString(args) + ": alignment must be a power of 2 and " +
+            "at least the page size (0x" +
+            Twine::utohexstr(target->getPageSize()) + ")");
+  }
+  for (const Arg *arg : args.filtered(OPT_segaddr)) {
+    uint64_t address = 0;
+    StringRef value = arg->getValue(1);
+    value.consume_front_insensitive("0x");
+    if (value.getAsInteger(16, address) ||
+        !isAligned(Align(target->getPageSize()), address))
+      error(arg->getAsString(args) + ": expected a hex address that is a " +
+            "multiple of the page size (0x" +
+            Twine::utohexstr(target->getPageSize()) + ")");
+    else
+      config->segmentAddresses[arg->getValue(0)] = address;
+  }
+  for (const Arg *arg : args.filtered(OPT_reexported_symbols_list)) {
+    if (config->outputType != MH_DYLIB)
+      error(arg->getAsString(args) + ": only valid with -dylib");
+    parseSymbolPatternsFile(arg, config->reexportedSymbols);
+  }
   if (!config->initFunction.empty() && config->outputType != MH_DYLIB)
     error("-init: only valid with -dylib");
 
@@ -2244,6 +2308,12 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
     if (didCompileBitcodeFiles)
       handleExplicitExports();
     replaceCommonSymbols();
+    // -reexported_symbols_list re-exports these dependent dylib symbols.
+    if (!config->reexportedSymbols.empty())
+      for (Symbol *sym : symtab->getSymbols())
+        if (auto *dysym = dyn_cast<DylibSymbol>(sym))
+          if (config->reexportedSymbols.match(dysym->getName()))
+            dysym->shouldReexport = true;
 
     if (config->outputType == MH_OBJECT) {
       {
@@ -2324,6 +2394,35 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
   if (errorCount() != 0 || config->strictAutoLink)
     for (const auto &warning : missingAutolinkWarnings)
       warn(warning);
+
+  if (config->printStatistics) {
+    size_t objects = 0, dylibs = 0;
+    for (const InputFile *file : inputFiles) {
+      objects += isa<ObjFile>(file) && !file->lazy;
+      dylibs += isa<DylibFile>(file);
+    }
+    sys::TimePoint<> elapsed;
+    std::chrono::nanoseconds user, system;
+    sys::Process::GetTimeUsage(elapsed, user, system);
+    using std::chrono::duration_cast;
+    using std::chrono::milliseconds;
+    std::string peak;
+#if !defined(_WIN32)
+    struct rusage usage = {};
+    getrusage(RUSAGE_SELF, &usage);
+#ifdef __APPLE__
+    const uint64_t peakKiB = uint64_t(usage.ru_maxrss) >> 10;
+#else
+    const uint64_t peakKiB = uint64_t(usage.ru_maxrss);
+#endif
+    peak = (", " + Twine(peakKiB >> 10) + " MiB peak memory").str();
+#endif
+    message("statistics: " + Twine(objects) + " object files, " +
+            Twine(dylibs) + " dylibs, " + Twine(symtab->getSymbols().size()) +
+            " symbols; " + Twine(duration_cast<milliseconds>(user).count()) +
+            " ms user, " + Twine(duration_cast<milliseconds>(system).count()) +
+            " ms system" + peak);
+  }
 
   WriteTrace(config->outputFile);
   return errorCount() == 0;

@@ -2538,6 +2538,123 @@ TEST_F(LinkerTest, NativeMachOOptionsChangeTheOutput) {
   }
 }
 
+TEST_F(LinkerTest, NativeMachOLayoutAndResolutionOptions) {
+  const std::string target = "--target=arm64-apple-macos13";
+  const fs::path libSource = tmpFile("macho_res_lib.c");
+  const fs::path libObject = tmpFile("macho_res_lib.o");
+  const fs::path library = tmpFile("libmachores.dylib");
+  const fs::path wrapper = tmpFile("libmachowrap.dylib");
+  const fs::path mainSource = tmpFile("macho_res_main.c");
+  const fs::path mainObject = tmpFile("macho_res_main.o");
+  const fs::path reexports = tmpFile("macho_res_reexports.txt");
+  const fs::path image = tmpFile("macho_res_main");
+  writeFile(libSource, "int shared_common = 5;\n"
+                       "int lib_fn(void) { return 7; }\n");
+  writeFile(mainSource, "int shared_common;\n"
+                        "int main(void) { return shared_common; }\n");
+  writeFile(reexports, "_lib_fn\n");
+  CmdResult compileLib = ncc(
+      {target, "-fno-lto", "-c", libSource.string(), "-o", libObject.string()});
+  ASSERT_EQ(compileLib.exitCode, 0) << compileLib.err;
+  CmdResult compileMain = ncc({target, "-fno-lto", "-fcommon", "-c",
+                               mainSource.string(), "-o", mainObject.string()});
+  ASSERT_EQ(compileMain.exitCode, 0) << compileMain.err;
+  CmdResult dylib = ncc({target, "-nostdlib", "-dynamiclib", libObject.string(),
+                         "-o", library.string()});
+  ASSERT_EQ(dylib.exitCode, 0) << dylib.err;
+
+  std::string bytes;
+  auto open = [&](const fs::path &path)
+      -> std::unique_ptr<llvm::object::MachOObjectFile> {
+    bytes = readFile(path);
+    auto object = llvm::object::MachOObjectFile::create(
+        llvm::MemoryBufferRef(bytes, path.string()), /*IsLittleEndian=*/true,
+        /*Is64Bits=*/true);
+    EXPECT_TRUE(static_cast<bool>(object))
+        << llvm::toString(object.takeError()).str().str();
+    return object ? std::move(*object) : nullptr;
+  };
+  auto linkMain = [&](std::vector<std::string> flags) {
+    std::vector<std::string> args = {target, "-nostdlib", "-Wl,-e,_main",
+                                     mainObject.string(), library.string()};
+    args.insert(args.end(), flags.begin(), flags.end());
+    args.insert(args.end(), {"-o", image.string()});
+    return ncc(args);
+  };
+  auto segments = [&] {
+    std::map<std::string, uint64_t> addresses;
+    if (auto macho = open(image))
+      for (const auto &command : macho->load_commands())
+        if (command.C.cmd == llvm::MachO::LC_SEGMENT_64) {
+          auto seg = macho->getSegment64LoadCommand(command);
+          addresses[std::string(seg.segname,
+                                strnlen(seg.segname, sizeof(seg.segname)))] =
+              seg.vmaddr;
+        }
+    return addresses;
+  };
+  auto commonIsDefined = [&] {
+    auto macho = open(image);
+    for (const auto &sym : macho->symbols())
+      if (llvm::cantFail(sym.getName()) == "_shared_common")
+        return !(llvm::cantFail(sym.getFlags()) &
+                 llvm::object::SymbolRef::SF_Undefined);
+    ADD_FAILURE() << "_shared_common is missing";
+    return false;
+  };
+
+  // The object's tentative definition wins by default; -warn_commons says so.
+  CmdResult common = linkMain({"-Wl,-warn_commons"});
+  ASSERT_EQ(common.exitCode, 0) << common.err;
+  EXPECT_TRUE(common.stderrContains("tentative definition of '_shared_common'"))
+      << common.err;
+  EXPECT_TRUE(commonIsDefined());
+  CmdResult useDylib = linkMain({"-Wl,-commons,use_dylibs"});
+  ASSERT_EQ(useDylib.exitCode, 0) << useDylib.err;
+  EXPECT_FALSE(commonIsDefined());
+  CmdResult commonError = linkMain({"-Wl,-commons,error"});
+  EXPECT_NE(commonError.exitCode, 0);
+  EXPECT_TRUE(commonError.stderrContains("[-commons error]"))
+      << commonError.err;
+
+  CmdResult placed = linkMain({"-Wl,-segaddr,__DATA,0x200000000"});
+  ASSERT_EQ(placed.exitCode, 0) << placed.err;
+  EXPECT_EQ(segments()["__DATA"], 0x200000000u);
+  CmdResult aligned = linkMain({"-Wl,-segalign,0x100000"});
+  ASSERT_EQ(aligned.exitCode, 0) << aligned.err;
+  for (const auto &[name, address] : segments())
+    EXPECT_EQ(address % 0x100000, 0u) << name;
+  CmdResult overlap = linkMain({"-Wl,-segaddr,__DATA,0x4000"});
+  EXPECT_NE(overlap.exitCode, 0);
+  EXPECT_TRUE(overlap.stderrContains("overlaps the previous segment"))
+      << overlap.err;
+
+  CmdResult stats = linkMain({"-Wl,-print_statistics"});
+  ASSERT_EQ(stats.exitCode, 0) << stats.err;
+  EXPECT_TRUE(stats.contains("statistics: 1 object files, 1 dylibs"))
+      << stats.out;
+  CmdResult version = linkMain({"-Wl,-version_details"});
+  ASSERT_EQ(version.exitCode, 0) << version.err;
+  EXPECT_TRUE(version.contains("\"architectures\":[\"arm64\",\"x86_64\"]"))
+      << version.out;
+
+  // A dylib re-exports the listed symbols of the dylibs it links.
+  CmdResult wrap = ncc({target, "-nostdlib", "-dynamiclib", library.string(),
+                        "-Wl,-reexported_symbols_list," + reexports.string(),
+                        "-o", wrapper.string()});
+  ASSERT_EQ(wrap.exitCode, 0) << wrap.err;
+  auto macho = open(wrapper);
+  ASSERT_NE(macho, nullptr);
+  llvm::Error err = llvm::Error::success();
+  bool reexported = false;
+  for (const auto &entry : macho->exports(err))
+    if (entry.name() == "_lib_fn")
+      reexported = entry.flags() & llvm::MachO::EXPORT_SYMBOL_FLAGS_REEXPORT;
+  ASSERT_FALSE(static_cast<bool>(err))
+      << llvm::toString(std::move(err)).str().str();
+  EXPECT_TRUE(reexported);
+}
+
 TEST_F(LinkerTest, MsvcLinkerSpellingsAreNormalized) {
   const std::string target = "--target=x86_64-pc-windows-msvc";
   const fs::path source = tmpFile("msvc_opts.c");

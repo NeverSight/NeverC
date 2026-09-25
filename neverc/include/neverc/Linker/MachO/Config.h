@@ -93,6 +93,14 @@ public:
   bool match(llvm::StringRef symbolName) const;
 };
 
+// How a tentative definition in an object file and a definition of the same
+// name in a dylib resolve (-commons).
+enum class CommonsTreatment {
+  IgnoreDylibs,
+  UseDylibs,
+  Error,
+};
+
 enum class SymtabPresence {
   All,
   None,
@@ -213,6 +221,16 @@ struct Configuration {
   bool warnWeakExports = false;
   bool whatsLoaded = false;
   bool dedupSymbolStrings = true;
+  bool noBranchIslands = false;
+  bool warnCommons = false;
+  bool printStatistics = false;
+  CommonsTreatment commons = CommonsTreatment::IgnoreDylibs;
+  // Alignment bound of tentative definitions without an explicit alignment.
+  uint64_t maxDefaultCommonAlign = 0x8000;
+  // Minimum alignment of segment addresses, and fixed segment addresses.
+  uint64_t segmentAlign = 0;
+  llvm::DenseMap<llvm::StringRef, uint64_t> segmentAddresses;
+  SymbolPatterns reexportedSymbols;
 
   llvm::StringRef osoPrefix;
 
