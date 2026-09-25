@@ -2310,6 +2310,10 @@ self-referenced source bytes before releasing storage during growth; the
 C-string overload scans to the first NUL.
 The `operator+=` overloads for `char`, `const char*`, and `const std::string&`
 reuse those paths and return the receiver reference.
+The five `operator+` overloads taking only const string references, C strings
+or characters create an independent result with the pinned capacity
+recommendation. Counted string operands preserve embedded NUL bytes. The
+distinct rvalue string overloads still require their storage-reuse lowering.
 Member `swap` and `std::swap` exchange the authenticated representation words
 without allocating and preserve each long string's buffer ownership.
 The `assign(const char*)`, `assign(const char*, size_type)`,
@@ -2366,7 +2370,8 @@ reserving, and appending grow storage when needed. Host O0/O2 fixtures
 exercise both representations, embedded NUL, mutable and const access,
 target-specific `max_size` values, copy and move, push/pop,
 resize/reserve/shrink-to-fit, fill, pointer and string append with self-reference,
-the three `operator+=` overloads, four `assign` overloads, positional erase,
+the three `operator+=` overloads, five lvalue `operator+` forms, four `assign`
+overloads, positional erase,
 four positional `insert` and four positional `replace` overloads, member/free
 swap, comparison, forward/reverse and character-set search,
 short and long string iteration with mutable, const and reverse iterators,

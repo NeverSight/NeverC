@@ -893,6 +893,7 @@ enum class UtilityOperation {
   StringReplaceFill,
   StringCopy,
   StringSubstr,
+  StringConcat,
   StringMemberSwap,
   StringSwap,
   StringCompare,

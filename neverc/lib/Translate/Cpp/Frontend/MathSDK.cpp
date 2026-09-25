@@ -17816,6 +17816,40 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   const llvm::StringRef Name = Function->getIdentifier()
                                    ? Function->getIdentifier()->getName()
                                    : llvm::StringRef();
+  if (Origin->Path == "string" && Function->isOverloadedOperator() &&
+      Function->getOverloadedOperator() == OO_Plus && Call->getNumArgs() == 2 &&
+      Function->getNumParams() == 2 && Call->isPRValue() &&
+      (!isa<CXXOperatorCallExpr>(Call) ||
+       cast<CXXOperatorCallExpr>(Call)->getOperator() == OO_Plus)) {
+    const auto String = approvedUtilityStringRecord(
+        S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
+    if (String) {
+      const auto StringType = Context.getRecordType(String->Record);
+      const auto ConstPointer =
+          Context.getPointerType(Context.CharTy.withConst());
+      auto Kind = [&](unsigned Index) {
+        const auto Parameter = Function->getParamDecl(Index)->getType();
+        const auto Argument = Call->getArg(Index)->getType();
+        if (Parameter->isLValueReferenceType() &&
+            Context.hasSameType(Parameter->getPointeeType(),
+                                StringType.withConst()) &&
+            Context.hasSameUnqualifiedType(Argument, StringType))
+          return 1;
+        if (Context.hasSameType(Parameter, ConstPointer) &&
+            Context.hasSameType(Argument, ConstPointer))
+          return 2;
+        if (Context.hasSameType(Parameter, Context.CharTy) &&
+            Context.hasSameType(Argument, Context.CharTy))
+          return 3;
+        return 0;
+      };
+      const int Left = Kind(0), Right = Kind(1);
+      if (Context.hasSameType(Function->getReturnType(), StringType) &&
+          Context.hasSameType(Call->getType(), StringType) &&
+          ((Left == 1 && Right >= 1) || (Right == 1 && Left >= 2)))
+        return UtilityOperation::StringConcat;
+    }
+  }
   if (Origin->Path == "__vector/swap.h" && Name == "swap" &&
       Function->isInlined() && Call->getNumArgs() == 2 &&
       Function->getNumParams() == 2 &&

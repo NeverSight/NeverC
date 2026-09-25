@@ -29461,6 +29461,12 @@ int main() {
   std::string short_text("hello");
   std::string long_text("abcdefghijklmnopqrstuvwxyz");
   std::string copied(long_text);
+  std::string combined = short_text + long_text;
+  std::string prefixed = "!" + long_text;
+  std::string suffixed = long_text + '!';
+  bool concat_intact = combined.size() == 31 && combined[0] == 'h' &&
+                       combined[30] == 'z' && prefixed[0] == '!' &&
+                       suffixed[26] == '!';
   std::string assigned;
   assigned = copied;
   std::string scalar_assigned;
@@ -29688,6 +29694,7 @@ int main() {
          reassigned.size() == 2 && reassigned[0] == 'a' &&
          reassigned[1] == 'a' &&
          erase_intact && erased.empty() && splice_intact && growth_intact &&
+         concat_intact &&
          scalar_assignment_intact &&
          substring_intact && compare_intact &&
          cstring_compare_intact && positional_compare_intact &&

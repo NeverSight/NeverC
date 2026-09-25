@@ -54250,6 +54250,96 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringConcatLvalueRun) {
+  const auto Source = tmpFile("string-concat-lvalue.cpp");
+  const auto Output = tmpFile("string-concat-lvalue.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+int main() {
+  {
+    const char raw[] = {'a', 0, 'b'};
+    const std::string left(raw, 3);
+    const std::string right("XY");
+    std::string both = left + right;
+    if (both.size() != 5 || both[0] != 'a' || both[1] != 0 ||
+        both[2] != 'b' || both[3] != 'X' || both[4] != 'Y' ||
+        both.data()[5] != 0 || allocations != 0)
+      return 1;
+    std::string pointer_left = "pre" + left;
+    std::string character_left = '?' + left;
+    std::string pointer_right = left + "post";
+    std::string character_right = left + '!';
+    if (pointer_left.size() != 6 || pointer_left[3] != 'a' ||
+        pointer_left[4] != 0 || pointer_left[5] != 'b' ||
+        character_left.size() != 4 || character_left[0] != '?' ||
+        character_left[2] != 0 || pointer_right.size() != 7 ||
+        pointer_right[1] != 0 || pointer_right[6] != 't' ||
+        character_right.size() != 4 || character_right[1] != 0 ||
+        character_right[3] != '!' || allocations != 0)
+      return 2;
+    std::string explicit_call = std::operator+(left, right);
+    if (explicit_call != both || allocations != 0) return 3;
+
+    const std::string long_left("abcdefghijklmnopqrstuvwxyz");
+    const std::string long_right("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+    const char *left_data = long_left.data();
+    const char *right_data = long_right.data();
+    std::string joined = long_left + long_right;
+    const Size expected_capacity = ((Size(52) + 8) / 8) * 8 - 1;
+    if (joined.size() != 52 || joined.capacity() != expected_capacity ||
+        joined[0] != 'a' || joined[25] != 'z' || joined[26] != 'A' ||
+        joined[51] != 'Z' || joined.data()[52] != 0 ||
+        joined.data() == left_data || joined.data() == right_data ||
+        allocations != 3)
+      return 4;
+    joined[0] = '?';
+    if (long_left[0] != 'a' || long_right[0] != 'A') return 5;
+    std::string prefix = "!" + long_right;
+    std::string suffix = long_left + "!";
+    std::string character_prefix = '!' + long_right;
+    std::string character_suffix = long_left + '!';
+    if (prefix.size() != 27 || prefix[0] != '!' || prefix[26] != 'Z' ||
+        suffix.size() != 27 || suffix[0] != 'a' || suffix[26] != '!' ||
+        character_prefix != prefix || character_suffix != suffix)
+      return 6;
+
+    const std::string boundary_source("abcdefghijklmnopqrstuv");
+    std::string boundary = boundary_source + '!';
+    Size expected_boundary = ((Size(23) + 8) / 8) * 8 - 1;
+#if (defined(_LIBCPP_ABI_ALTERNATE_STRING_LAYOUT) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__) || (!defined(_LIBCPP_ABI_ALTERNATE_STRING_LAYOUT) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+    const Size endian_factor = 2;
+#else
+    const Size endian_factor = 1;
+#endif
+    if (expected_boundary == sizeof(std::string) - 1)
+      expected_boundary += endian_factor;
+    if (boundary.size() != 23 || boundary.capacity() != expected_boundary ||
+        boundary[22] != '!' || boundary.data()[23] != 0)
+      return 7;
+  }
+  return allocations == releases ? 0 : 8;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-concat-lvalue" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StringSwapRun) {
   const auto Source = tmpFile("string-swap.cpp");
   const auto Output = tmpFile("string-swap.nc");
