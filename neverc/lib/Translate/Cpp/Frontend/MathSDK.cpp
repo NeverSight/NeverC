@@ -16759,6 +16759,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       if (Name == "pop_back" && !Method->getNumParams() &&
           !Call->getNumArgs())
         return UtilityOperation::StringPopBack;
+      if ((Name == "shrink_to_fit" || Name == "reserve") &&
+          !Method->getNumParams() && !Call->getNumArgs())
+        return UtilityOperation::StringShrinkToFit;
       if (Name == "reserve" && Method->getNumParams() == 1 &&
           Call->getNumArgs() == 1 &&
           Context.hasSameType(Method->getParamDecl(0)->getType(),

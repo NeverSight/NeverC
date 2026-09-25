@@ -869,6 +869,7 @@ enum class UtilityOperation {
   StringPushBack,
   StringPopBack,
   StringReserve,
+  StringShrinkToFit,
   StringResize,
   StringAppendPointer,
   StringAppendCString,

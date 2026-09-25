@@ -53684,6 +53684,115 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringShrinkToFitRun) {
+  const auto Source = tmpFile("string-shrink-to-fit.cpp");
+  const auto Output = tmpFile("string-shrink-to-fit.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int calls;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+std::string &touch(std::string &value) { ++calls; return value; }
+int main() {
+  {
+    std::string short_text("abc");
+    const char *short_data = short_text.data();
+    short_text.shrink_to_fit();
+    if (short_text.data() != short_data || short_text.capacity() !=
+        sizeof(std::string) - 2 || allocations != 0 || releases != 0)
+      return 1;
+
+    std::string long_text("abcdefghijklmnopqrstuvwxyz0123456789");
+    const Size initial_capacity = long_text.capacity();
+    long_text.reserve(80);
+    const char *reserved_data = long_text.data();
+    int before_allocations = allocations;
+    int before_releases = releases;
+    touch(long_text).shrink_to_fit();
+    if (calls != 1 || long_text.capacity() != initial_capacity ||
+        long_text.data() == reserved_data || long_text.size() != 36 ||
+        long_text[0] != 'a' || long_text[35] != '9' ||
+        long_text.c_str()[36] != 0 ||
+        allocations != before_allocations + 1 ||
+        releases != before_releases + 1)
+      return 2;
+    const char *shrunk_data = long_text.data();
+    long_text.shrink_to_fit();
+    if (long_text.data() != shrunk_data ||
+        allocations != before_allocations + 1 ||
+        releases != before_releases + 1)
+      return 3;
+    long_text.resize(5);
+    long_text.shrink_to_fit();
+    if (long_text != "abcde" || long_text.data() == shrunk_data ||
+        long_text.capacity() != sizeof(std::string) - 2 ||
+        long_text.data()[5] != 0 || allocations != before_allocations + 1 ||
+        releases != before_releases + 2)
+      return 4;
+
+    std::string empty;
+    empty.reserve(64);
+    before_allocations = allocations;
+    before_releases = releases;
+    empty.shrink_to_fit();
+    if (!empty.empty() || empty.capacity() != sizeof(std::string) - 2 ||
+        empty.data()[0] != 0 || allocations != before_allocations ||
+        releases != before_releases + 1)
+      return 5;
+
+    std::string boundary("abcdefghijklmnopqrstuvw");
+    const Size boundary_capacity = boundary.capacity();
+    Size expected_boundary_capacity = ((Size(23) + 8) / 8) * 8 - 1;
+#if (defined(_LIBCPP_ABI_ALTERNATE_STRING_LAYOUT) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__) || (!defined(_LIBCPP_ABI_ALTERNATE_STRING_LAYOUT) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+    const Size endian_factor = 2;
+#else
+    const Size endian_factor = 1;
+#endif
+    if (expected_boundary_capacity == sizeof(std::string) - 1)
+      expected_boundary_capacity += endian_factor;
+    if (boundary_capacity != expected_boundary_capacity)
+      return 6;
+    boundary.reserve(90);
+    boundary.shrink_to_fit();
+    if (boundary.size() != 23 ||
+        boundary.capacity() != expected_boundary_capacity ||
+        boundary[22] != 'w' || boundary.data()[23] != 0)
+      return 7;
+    boundary.reserve(100);
+    boundary.reserve();
+    if (boundary.capacity() != boundary_capacity || boundary[0] != 'a' ||
+        boundary[22] != 'w')
+      return 8;
+    std::string sliced_source("?abcdefghijklmnopqrstuvw!");
+    std::string sliced = sliced_source.substr(1, 23);
+    if (sliced.capacity() != expected_boundary_capacity || sliced != boundary)
+      return 9;
+    std::string assigned;
+    assigned = boundary;
+    if (assigned.capacity() < assigned.size() || assigned != boundary)
+      return 10;
+  }
+  return allocations == releases ? 0 : 11;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-shrink-to-fit" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StringPushAndPopRun) {
   const auto Source = tmpFile("string-push-pop.cpp");
   const auto Output = tmpFile("string-push-pop.nc");

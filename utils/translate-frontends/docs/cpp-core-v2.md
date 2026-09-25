@@ -2291,7 +2291,8 @@ std::allocator<char>>` objects now have direct lowering for default,
 `const char*`, pointer-and-length, copy and move construction; copy and move
 assignment; `size`, `length`, `capacity`, `max_size`, `empty`, `data`, `c_str`, subscript
 access, mutable and const `front`/`back`, `clear`, `push_back(char)`,
-`pop_back()`, `reserve(size_type)`, both `resize` overloads, and destruction.
+`pop_back()`, `reserve(size_type)`, `shrink_to_fit()` and its C++17
+`reserve()` alias, both `resize` overloads, and destruction.
 Mutable and const `begin`/`end`, plus `cbegin`/`cend`, produce authenticated
 libc++ `__wrap_iter` values for forward traversal and mutable element access.
 The authenticated wrapper also supports `base()`, prefix decrement, equality,
@@ -2349,12 +2350,16 @@ storage words, including the alternate short-string layout selected on Apple
 arm64. Short strings stay inline, while long strings use the selected
 allocation and release functions. Copy construction owns independent storage;
 copy assignment reuses existing capacity when possible. Moves transfer the
-representation and leave the source empty. Clearing, popping, and shrinking
-retain existing capacity and storage. Pushing, resizing, reserving, and
-appending grow storage when needed. Host O0/O2 fixtures exercise both
-representations, embedded NUL, mutable and const access, target-specific
-`max_size` values, copy and move,
-push/pop, resize/reserve, fill, pointer and string append with self-reference,
+representation and leave the source empty. Clearing, popping, and reducing
+the size through `resize` retain existing capacity and storage.
+`shrink_to_fit()` follows the pinned libc++ capacity recommendation, copying
+long strings into smaller storage or back to the inline representation.
+The 23-character boundary also uses the selected layout's allocation
+adjustment during construction and substring creation. Pushing, resizing,
+reserving, and appending grow storage when needed. Host O0/O2 fixtures
+exercise both representations, embedded NUL, mutable and const access,
+target-specific `max_size` values, copy and move, push/pop,
+resize/reserve/shrink-to-fit, fill, pointer and string append with self-reference,
 the three `operator+=` overloads, four `assign` overloads, positional erase,
 four positional `insert` and four positional `replace` overloads, member/free
 swap, comparison, forward/reverse and character-set search,

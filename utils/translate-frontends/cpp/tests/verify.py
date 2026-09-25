@@ -29472,6 +29472,23 @@ int main() {
          copied.empty() && moved.empty();
   bool maximum_intact = empty.max_size() > empty.capacity() &&
                         empty.max_size() == long_text.max_size();
+  std::string shrinkable("abcdefghijklmnopqrstuvwxyz");
+  auto minimum_capacity = shrinkable.capacity();
+  shrinkable.reserve(80);
+  shrinkable.shrink_to_fit();
+  bool shrink_intact = shrinkable.capacity() == minimum_capacity &&
+                       shrinkable.size() == 26 && shrinkable[25] == 'z';
+  shrinkable.resize(2);
+  shrinkable.reserve();
+  shrink_intact = shrink_intact && shrinkable == "ab" &&
+                  shrinkable.capacity() == sizeof(std::string) - 2;
+  std::string boundary("abcdefghijklmnopqrstuvw");
+  std::string boundary_source("?abcdefghijklmnopqrstuvw!");
+  std::string boundary_slice = boundary_source.substr(1, 23);
+  bool boundary_intact = boundary_slice == boundary;
+  boundary.reserve(90);
+  boundary.shrink_to_fit();
+  boundary_intact = boundary_intact && boundary == boundary_slice;
   auto old_capacity = assigned.capacity();
   assigned.clear();
   assigned.push_back('q');
@@ -29640,7 +29657,8 @@ int main() {
   const std::string reverse_long("abcdefghijklmnopqrstuvwxyz0123456789");
   bool reverse_long_intact = *reverse_long.rbegin() == '9' &&
                              *(reverse_long.rend() - 1) == 'a';
-  return intact && maximum_intact && emptied && assigned.size() == 14 &&
+  return intact && maximum_intact && shrink_intact && boundary_intact && emptied &&
+         assigned.size() == 14 &&
          assigned[0] == 'x' && assigned[2] == 'a' &&
          assigned[3] == 'b' && assigned[4] == 'c' && assigned[5] == 'd' &&
          assigned[6] == 'e' && assigned[7] == 'x' &&
