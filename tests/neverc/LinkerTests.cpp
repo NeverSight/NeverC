@@ -1718,6 +1718,73 @@ int main(void) {
   EXPECT_EQ(exec(parallelExe.string(), {}).exitCode, 23);
 }
 
+TEST_F(LinkerTest, FastPipelineLinksNativeExecutables) {
+  if (!isLinux())
+    GTEST_SKIP() << "the fast ELF pipeline links Linux executables";
+
+  const fs::path mainSource = tmpFile("fast_main.c");
+  const fs::path libSource = tmpFile("fast_lib.c");
+  writeFile(mainSource, R"(
+#include <stdio.h>
+#include <stdlib.h>
+extern _Thread_local int counter;
+int lib_step(int);
+static int constructed;
+__attribute__((constructor)) static void init(void) { constructed = 5; }
+int main(void) {
+  char *heap = malloc(32);
+  snprintf(heap, 32, "%d", lib_step(3) + constructed);
+  int ok = atoi(heap) == 12 && counter == 1;
+  free(heap);
+  return ok ? 23 : 1;
+}
+)");
+  writeFile(libSource, R"(
+_Thread_local int counter;
+int unused_fn(int x) { return x * 7; }
+int lib_step(int x) { ++counter; return x + 4; }
+)");
+  const fs::path mainObject = tmpFile("fast_main.o");
+  const fs::path libObject = tmpFile("fast_lib.o");
+  for (auto [source, object] :
+       {std::pair{mainSource, mainObject}, std::pair{libSource, libObject}}) {
+    std::vector<std::string> args = baseLinkArgs();
+    args.insert(args.end(), {"-O1", "-ffunction-sections", "-fdata-sections",
+                             "-c", source.string(), "-o", object.string()});
+    CmdResult compile = ncc(args);
+    ASSERT_EQ(compile.exitCode, 0) << compile.err;
+  }
+
+  auto link = [&](const std::string &threads, const fs::path &output) {
+    std::vector<std::string> args = baseLinkArgs();
+    args.insert(args.end(), {"-fgc-sections", "-fbuild-id=sha1",
+                             "-Wl,--threads=" + threads, mainObject.string(),
+                             libObject.string(), "-o", output.string()});
+    return ncc(args);
+  };
+
+  ScopedEnvironmentVariable report("NEVERC_ELF_FASTLINK_TIME", "1");
+  const fs::path serialExe = tmpFile("fast_serial");
+  const fs::path parallelExe = tmpFile("fast_parallel");
+  CmdResult serial = link("1", serialExe);
+  ASSERT_EQ(serial.exitCode, 0) << serial.err;
+  EXPECT_EQ(serial.err.find("fast pipeline not used"), std::string::npos)
+      << serial.err;
+  EXPECT_NE(serial.err.find(" total "), std::string::npos) << serial.err;
+  CmdResult parallel = link("8", parallelExe);
+  ASSERT_EQ(parallel.exitCode, 0) << parallel.err;
+  EXPECT_TRUE(readFile(serialExe) == readFile(parallelExe))
+      << "--threads changed the fast pipeline's output bytes";
+  EXPECT_EQ(exec(serialExe.string(), {}).exitCode, 23);
+
+  // The full backend links the same inputs to an equivalent program.
+  ScopedEnvironmentVariable disable("NEVERC_ELF_FASTLINK", "0");
+  const fs::path fullExe = tmpFile("fast_full");
+  CmdResult full = link("8", fullExe);
+  ASSERT_EQ(full.exitCode, 0) << full.err;
+  EXPECT_EQ(exec(fullExe.string(), {}).exitCode, 23);
+}
+
 TEST_F(LinkerTest, ThreadCountOptionKeepsOutputBytesOnEveryFormat) {
   struct Format {
     const char *name;

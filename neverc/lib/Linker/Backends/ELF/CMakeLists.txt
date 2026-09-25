@@ -40,6 +40,9 @@ linker_declare_backend(
     Driver/ElfCommandLine.cpp
     Driver/ElfDriver.cpp
 
+    # Parallel pipeline for common x86-64 executable links.
+    FastPath/FastLink.cpp
+
     # Input ingestion and link-time code generation.
     Input/InputFiles.cpp
     Input/InputSection.cpp
@@ -92,3 +95,8 @@ target_include_directories(linkerELF PRIVATE
   ${NEVERC_SOURCE_DIR}/lib/Plugin
   ${NEVERC_SOURCE_DIR}/lib/Plugin/Link
 )
+
+# The fast pipeline reports declined links by throwing inside its own
+# worker pool; nothing escapes FastLink.cpp.
+set_source_files_properties(FastPath/FastLink.cpp PROPERTIES
+  COMPILE_OPTIONS "-fexceptions")

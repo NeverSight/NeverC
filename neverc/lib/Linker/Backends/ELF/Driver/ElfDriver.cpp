@@ -1,5 +1,6 @@
 #include "Driver/ELFInputWorkload.h"
 #include "ELF/ELFLinkGraphAdapter.h"
+#include "FastPath/FastLink.h"
 #include "Link/LinkPhaseExecutor.h"
 #include "Linker/Core/Driver/ArgList.h"
 #include "Linker/Core/Driver/Dispatcher.h"
@@ -32,6 +33,7 @@
 #include "neverc/Foundation/AndroidKernelReleasePublisher.h"
 #include "neverc/Foundation/Core/OutputCoordinator.h"
 #include "neverc/Foundation/Core/OutputTransaction.h"
+#include "neverc/Invoke/InMemoryFileStore.h"
 #include "neverc/Merge/Merger.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SetVector.h"
@@ -658,6 +660,181 @@ void checkZOptions(opt::InputArgList &args) {
 // Top-level entry: option parsing & pipeline dispatch
 // ===----------------------------------------------------------------------===
 
+namespace {
+// Links common x86-64 executables on the FastLink pipeline. The command line
+// may only contain options the pipeline implements; anything else, and any
+// input the pipeline declines, falls back to the full backend.
+bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
+  const bool report = getenv("NEVERC_ELF_FASTLINK_TIME") != nullptr;
+  auto decline = [&](const Twine &why) {
+    if (report)
+      llvm::errs() << "fast pipeline not used: " << why << "\n";
+    return false;
+  };
+  // The pipeline leaves its memory to process teardown.
+  if (!driverCfg.releaseStateAtExit)
+    return decline("state is released after the link");
+  if (const char *env = getenv("NEVERC_ELF_FASTLINK"); env && *env == '0')
+    return false;
+  if (driverCfg.executionHooks || driverCfg.pluginSession ||
+      driverCfg.pluginTask || !driverCfg.nevercPluginPaths.empty() ||
+      driverCfg.timeTraceEnabled || errorHandler().verbose ||
+      !driverCfg.sysroot.empty())
+    return decline("driver configuration");
+  const std::pair<bool, const char *> unsupported[] = {
+      {config->relocatable, "-r"},
+      {config->shared, "-shared"},
+      {config->isStatic, "static link"},
+      {config->exportDynamic, "--export-dynamic"},
+      {config->noDynamicLinker, "--no-dynamic-linker"},
+      {config->emitRelocs, "--emit-relocs"},
+      {config->trace, "--trace"},
+      {config->printGcSections || config->printIcfSections, "section report"},
+      {config->sysvHash || !config->gnuHash, "hash style"},
+      {config->icf != ICFLevel::None, "--icf"},
+      {config->discard == DiscardPolicy::None, "--discard-none"},
+      {config->strip != StripPolicy::None, "--strip"},
+      {!config->mapFile.empty(), "map file"},
+      {config->compressDebugSections != DebugCompressionType::None,
+       "debug section compression"},
+      {config->relrPackDynRelocs || config->androidPackDynRelocs,
+       "packed relocations"},
+      {!config->symbolOrderingFile.empty() ||
+           !config->callGraphOrderingFile.empty(),
+       "symbol ordering"},
+      {config->emachine != EM_NONE && config->emachine != EM_X86_64,
+       "target machine"},
+      {config->ekind != ELFNoneKind && config->ekind != ELF64LEKind,
+       "ELF kind"},
+      {config->buildId == BuildIdStyle::Uuid, "--build-id=uuid"},
+  };
+  for (auto [bad, what] : unsupported)
+    if (bad)
+      return decline(what);
+
+  fastlink::Request req;
+  for (auto *arg : args) {
+    switch (arg->getOption().getID()) {
+    case OPT_INPUT:
+      req.inputs.push_back({arg->getValue(), false, false, false});
+      break;
+    case OPT_library:
+      req.inputs.push_back({arg->getValue(), true, false, false});
+      break;
+    case OPT_library_path:
+      req.libPaths.push_back(arg->getValue());
+      break;
+    case OPT_rpath:
+      req.rpaths.push_back(arg->getValue());
+      break;
+    case OPT_z: {
+      StringRef v = arg->getValue();
+      if (v != "now" && v != "relro" && v != "noexecstack")
+        return decline("-z " + v);
+      break;
+    }
+    case OPT_as_needed:
+    case OPT_no_as_needed:
+    case OPT_whole_archive:
+    case OPT_no_whole_archive:
+    case OPT_push_state:
+    case OPT_pop_state:
+    case OPT_threads_eq:
+    case OPT_fork:
+    case OPT_no_fork:
+      break;
+    case OPT_no_mmap_output_file:
+      req.mmapOutput = false;
+      break;
+    default:
+      return decline("option " + arg->getAsString(args));
+    }
+  }
+  // Positional state, as the full backend applies it.
+  bool asNeeded = false, whole = false;
+  std::vector<std::pair<bool, bool>> stack;
+  size_t next = 0;
+  for (auto *arg : args) {
+    switch (arg->getOption().getID()) {
+    case OPT_INPUT:
+    case OPT_library:
+      req.inputs[next].asNeeded = asNeeded;
+      req.inputs[next].wholeArchive = whole;
+      ++next;
+      break;
+    case OPT_as_needed:
+      asNeeded = true;
+      break;
+    case OPT_no_as_needed:
+      asNeeded = false;
+      break;
+    case OPT_whole_archive:
+      whole = true;
+      break;
+    case OPT_no_whole_archive:
+      whole = false;
+      break;
+    case OPT_push_state:
+      stack.emplace_back(asNeeded, whole);
+      break;
+    case OPT_pop_state:
+      if (stack.empty())
+        return false;
+      std::tie(asNeeded, whole) = stack.back();
+      stack.pop_back();
+      break;
+    }
+  }
+  if (req.inputs.empty())
+    return false;
+  req.output = config->outputFile.empty() ? "a.out" : config->outputFile.str();
+  req.dynamicLinker = config->dynamicLinker.str();
+  req.pie = config->pie;
+  req.gcSections = config->gcSections;
+  req.zNow = config->zNow;
+  req.zRelro = config->zRelro;
+  req.ehFrameHdr = config->ehFrameHdr;
+  switch (config->buildId) {
+  case BuildIdStyle::Fast:
+    req.buildIdSize = 8;
+    break;
+  case BuildIdStyle::Md5:
+    req.buildIdSize = 16;
+    break;
+  case BuildIdStyle::Sha1:
+    req.buildIdSize = 20;
+    break;
+  case BuildIdStyle::Hexstring:
+    req.buildIdBytes.assign(config->buildIdVector.begin(),
+                            config->buildIdVector.end());
+    break;
+  case BuildIdStyle::None:
+  case BuildIdStyle::Uuid:
+    break;
+  }
+  req.discardLocals = config->discard == DiscardPolicy::All;
+  if (auto *arg = args.getLastArg(OPT_threads_eq))
+    to_integer(arg->getValue(), req.threads);
+  req.timing = report;
+  req.openFile = [](const std::string &path, const unsigned char *&data,
+                    size_t &size) {
+    std::optional<MemoryBufferRef> mb =
+        neverc::InMemoryFileStore::instance().tryGet(path);
+    if (!mb)
+      return false;
+    data = mb->getBuffer().bytes_begin();
+    size = mb->getBufferSize();
+    return true;
+  };
+
+  std::string reason;
+  if (fastlink::link(req, reason) == fastlink::Status::Linked)
+    return true;
+  log("fast pipeline declined: " + reason);
+  return decline(reason);
+}
+} // namespace
+
 void LinkerDriver::run(ArrayRef<const char *> argsArr,
                        const LinkerDriverConfig &driverCfg) {
   ELFOptTable parser;
@@ -668,6 +845,8 @@ void LinkerDriver::run(ArrayRef<const char *> argsArr,
   checkZOptions(args);
 
   readConfigs(args, driverCfg);
+  if (errorCount() == 0 && tryFastLink(args, driverCfg))
+    return;
 
   {
     llvm::TimeTraceScope timeScope("ExecuteLinker");
