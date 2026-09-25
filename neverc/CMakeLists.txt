@@ -521,11 +521,21 @@ target_link_libraries(neverc PRIVATE ${LINKER_ENABLED_BACKEND_LIBS})
 # that default to PIE still link a position-independent executable, which
 # makes every start apply ~360K relative relocations (several milliseconds per
 # invocation). Link the executable non-PIE to match how it was compiled.
+include(CheckLinkerFlag)
 if(NOT LLVM_ENABLE_PIC AND NOT WIN32 AND NOT APPLE)
-  include(CheckLinkerFlag)
   check_linker_flag(CXX "-no-pie" NEVERC_LINKER_SUPPORTS_NO_PIE)
   if(NEVERC_LINKER_SUPPORTS_NO_PIE)
     target_link_options(neverc PRIVATE -no-pie)
+  endif()
+endif()
+# Static initializers are compiled into .text.startup sections. Keeping them
+# together lets every start fault in a few pages of startup code instead of
+# pages all over .text.
+if(NOT WIN32 AND NOT APPLE)
+  check_linker_flag(CXX "-Wl,-z,keep-text-section-prefix"
+                    NEVERC_LINKER_SUPPORTS_KEEP_TEXT_SECTION_PREFIX)
+  if(NEVERC_LINKER_SUPPORTS_KEEP_TEXT_SECTION_PREFIX)
+    target_link_options(neverc PRIVATE "-Wl,-z,keep-text-section-prefix")
   endif()
 endif()
 foreach(_linker_backend IN LISTS LINKER_ENABLED_BACKEND_LIBS)
