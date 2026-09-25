@@ -29236,6 +29236,11 @@ int main() {
                                 compared <= "abc" && "abc" <= compared &&
                                 compared >= "abc" && "abc" >= compared &&
                                 compared.compare("abc") == 0;
+  bool positional_compare_intact =
+      compared.compare(1, 2, compared_same) > 0 &&
+      compared.compare(1, 2, compared_same, 1) == 0 &&
+      compared.compare(1, 2, "bc") == 0 &&
+      compared.compare(1, 2, "bcd", 2) == 0;
   const std::string searched("ababa");
   const std::string pattern("aba");
   const char embedded_pattern[] = {'b', 0, 'a'};
@@ -29351,7 +29356,8 @@ int main() {
          reassigned[1] == 'a' &&
          erase_intact && erased.empty() && splice_intact &&
          substring_intact && compare_intact &&
-         cstring_compare_intact && search_intact && set_search_intact &&
+         cstring_compare_intact && positional_compare_intact &&
+         search_intact && set_search_intact &&
          mutable_iteration && const_iteration && long_iteration &&
          iterator_arithmetic && forward_conversion &&
          reverse_start && reverse_walk &&
@@ -29449,6 +29455,18 @@ std::string_view::size_type copy_slice(std::string_view view, char *out) {
 }
 int compare(std::string_view left, std::string_view right) {
   return left.compare(right);
+}
+int compare_pointer(std::string_view left, const char *right) {
+  return left.compare(right);
+}
+int compare_slice(std::string_view left, std::string_view right) {
+  return left.compare(1, 2, right);
+}
+int compare_both_slices(std::string_view left, std::string_view right) {
+  return left.compare(1, 2, right, 1, 2);
+}
+int compare_counted(std::string_view left, const char *right) {
+  return left.compare(1, 2, right, 2);
 }
 bool relations(std::string_view left, std::string_view right) {
   return left == right || left != right || left < right ||

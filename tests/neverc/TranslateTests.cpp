@@ -53858,6 +53858,82 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2StringAndViewPositionalComparisonRun) {
+  const auto Source = tmpFile("string-positional-compare.cpp");
+  const auto Output = tmpFile("string-positional-compare.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <string>
+#include <string_view>
+int evaluations;
+Size position() { ++evaluations; return 1; }
+Size count() { ++evaluations; return 3; }
+const char *pattern(const char *p) { ++evaluations; return p; }
+int main() {
+  const char raw[] = {'a', 0, 'b', 'c', 'd'};
+  std::string_view view(raw, 5);
+  std::string_view middle(raw + 1, 3);
+  if (view.compare("a") <= 0 || view.compare(0, 1, "a") != 0 ||
+      view.compare(1, 3, middle) != 0 ||
+      view.compare(1, 3, view, 1, 3) != 0 ||
+      view.compare(1, 2, middle, 0, 3) >= 0 ||
+      view.compare(1, 3, raw + 1, 3) != 0 ||
+      view.compare(1, 3, raw + 1) <= 0 ||
+      view.compare(4, 99, "d") != 0 || view.compare(5, 2, "") != 0)
+    return 1;
+  if (view.compare(position(), count(), pattern(raw + 1), 3) != 0 ||
+      evaluations != 3)
+    return 2;
+
+  std::string text(raw, 5);
+  std::string other(raw + 1, 3);
+  if (text.compare(1, 3, other) != 0 ||
+      text.compare(1, 4, text, 1) != 0 ||
+      text.compare(1, 2, other, 0, 3) >= 0 ||
+      text.compare(0, 1, "a") != 0 ||
+      text.compare(1, 3, raw + 1, 3) != 0 ||
+      text.compare(1, 3, raw + 1) <= 0 ||
+      text.compare(4, 99, "d") != 0 ||
+      text.compare(5, 1, "") != 0)
+    return 3;
+  if (text.compare(position(), count(), pattern(raw + 1), 3) != 0 ||
+      evaluations != 6)
+    return 4;
+  const char high[] = {static_cast<char>(0x80)};
+  const char low[] = {'z'};
+  if (std::string_view(high, 1).compare(0, 1, low, 1) <= 0 ||
+      std::string(high, 1).compare(0, 1, low, 1) <= 0)
+    return 5;
+  std::string long_text("abcdefghijklmnopqrstuvwxyz0123456789");
+  std::string long_suffix("defghijklmnopqrstuvwxyz0123456789");
+  std::string_view long_view(long_text.data(), long_text.size());
+  std::string_view suffix_view(long_suffix.data(), long_suffix.size());
+  if (long_text.compare(3, 99, long_suffix) != 0 ||
+      long_text.compare(3, 99, long_text, 3) != 0 ||
+      long_text.compare(3, 5, "defghxxx", 5) != 0 ||
+      long_view.compare(3, 99, suffix_view) != 0 ||
+      long_view.compare(3, 5, "defghxxx", 5) != 0)
+    return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-positional-compare" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StringComparisonRun) {
   const auto Source = tmpFile("string-comparison.cpp");
   const auto Output = tmpFile("string-comparison.nc");

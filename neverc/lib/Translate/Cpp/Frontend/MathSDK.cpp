@@ -7706,6 +7706,36 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
         }
       }
     }
+    if (Default && Parameter && Owner && String && Prototype &&
+        Owner->getCanonicalDecl() == Method->getCanonicalDecl() &&
+        Method->getNumParams() == 5 && Index == 4 &&
+        Parameter == Method->getParamDecl(4) &&
+        Parameter->getFunctionScopeIndex() == 4 && !Method->isStatic() &&
+        !Method->isVariadic() && Method->isConst() && Method->getIdentifier() &&
+        Method->getName() == "compare" &&
+        Context.hasSameType(Method->getReturnType(), Context.IntTy) &&
+        Context.hasSameType(Parameter->getType(), Context.getSizeType()) &&
+        Context.hasSameType(Method->getParamDecl(0)->getType(),
+                            Context.getSizeType()) &&
+        Context.hasSameType(Method->getParamDecl(1)->getType(),
+                            Context.getSizeType()) &&
+        Method->getParamDecl(2)->getType()->isLValueReferenceType() &&
+        Context.hasSameType(
+            Method->getParamDecl(2)->getType()->getPointeeType(),
+            Context.getRecordType(String->Record).withConst()) &&
+        Context.hasSameType(Method->getParamDecl(3)->getType(),
+                            Context.getSizeType()) &&
+        approvedStandardSDKDeclaration(S, SM, Method) &&
+        cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "string") &&
+        S.owns(SM, Default->getExprLoc()) && Init &&
+        Context.hasSameType(Init->getType(), Context.getSizeType()) &&
+        !Init->isTypeDependent() && !Init->isValueDependent() &&
+        !Init->isInstantiationDependent()) {
+      Expr::EvalResult Evaluated;
+      if (Init->EvaluateAsInt(Evaluated, Context) && Evaluated.Val.isInt() &&
+          Evaluated.Val.getInt().isAllOnes())
+        return true;
+    }
     const auto View =
         approvedUtilityStringViewRecord(S, SM, Method->getParent(), Context);
     if (Default && Parameter && Owner && Prototype && (String || View) &&
@@ -16331,7 +16361,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
          Name != "reserve" && Name != "resize" && Name != "append" &&
          Name != "assign" && Name != "erase" && Name != "insert" &&
          Name != "replace" && Name != "copy" && Name != "substr" &&
-         !PlusEqual) ||
+         Name != "compare" && !PlusEqual) ||
         Method->isStatic() || Method->isVariadic() ||
         (!Method->hasBody() && Name != "push_back" && Name != "reserve" &&
          Name != "resize" && Name != "append" && Name != "assign" &&
@@ -16396,6 +16426,49 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       if (Context.hasSameType(Parameter, ConstPointer) &&
           Context.hasSameType(Call->getArg(0)->getType(), ConstPointer))
         return UtilityOperation::StringCompareCString;
+    }
+    if (!Operator && Name == "compare" && Method->isConst() &&
+        Call->isPRValue() &&
+        Context.hasSameType(Method->getReturnType(), Context.IntTy) &&
+        Context.hasSameType(Call->getType(), Context.IntTy) &&
+        (Method->getNumParams() == 3 || Method->getNumParams() == 4 ||
+         Method->getNumParams() == 5) &&
+        Context.hasSameType(Method->getParamDecl(0)->getType(),
+                            Context.getSizeType()) &&
+        Context.hasSameType(Method->getParamDecl(1)->getType(),
+                            Context.getSizeType()) &&
+        Context.hasSameType(Call->getArg(0)->getType(),
+                            Context.getSizeType()) &&
+        Context.hasSameType(Call->getArg(1)->getType(),
+                            Context.getSizeType())) {
+      const auto Parameter = Method->getParamDecl(2)->getType();
+      const auto Argument = Call->getArg(2)->getType();
+      const auto StringType = Context.getRecordType(String->Record);
+      const bool StringArgument =
+          Parameter->isLValueReferenceType() &&
+          Context.hasSameType(Parameter->getPointeeType(),
+                              StringType.withConst()) &&
+          Context.hasSameUnqualifiedType(Argument, StringType);
+      const auto Pointer = Context.getPointerType(Context.CharTy.withConst());
+      const bool CStringArgument = Context.hasSameType(Parameter, Pointer) &&
+                                   Context.hasSameType(Argument, Pointer);
+      if (((Method->getNumParams() == 3) &&
+           (StringArgument || CStringArgument)) ||
+          ((Method->getNumParams() == 4) && CStringArgument &&
+           Context.hasSameType(Method->getParamDecl(3)->getType(),
+                               Context.getSizeType()) &&
+           Context.hasSameType(Call->getArg(3)->getType(),
+                               Context.getSizeType())) ||
+          ((Method->getNumParams() == 5) && StringArgument &&
+           Context.hasSameType(Method->getParamDecl(3)->getType(),
+                               Context.getSizeType()) &&
+           Context.hasSameType(Method->getParamDecl(4)->getType(),
+                               Context.getSizeType()) &&
+           Context.hasSameType(Call->getArg(3)->getType(),
+                               Context.getSizeType()) &&
+           Context.hasSameType(Call->getArg(4)->getType(),
+                               Context.getSizeType())))
+        return UtilityOperation::StringCompareSlice;
     }
     if (!Operator && (Name == "find" || Name == "rfind") && Method->isConst() &&
         Call->isPRValue() &&
@@ -17176,7 +17249,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                      ? Method->getIdentifier()->getName()
                                      : llvm::StringRef();
     if (!Reference || !Object || !Prototype ||
-        (!Prototype->isNothrow() && Name != "copy" && Name != "substr") ||
+        (!Prototype->isNothrow() && Name != "copy" && Name != "substr" &&
+         Name != "compare") ||
         Method->isStatic() || Method->isVariadic() ||
         Call->getNumArgs() != Method->getNumParams() + Offset ||
         (!Method->isConstexpr() && Name != "copy") || !Method->hasBody() ||
@@ -17267,6 +17341,47 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                          ViewType) &&
           Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), ViewType))
         return UtilityOperation::StringViewCompare;
+      if (Name == "compare" && Context.hasSameType(Result, Context.IntTy)) {
+        const auto Count = Method->getNumParams();
+        if (Count == 1 &&
+            Context.hasSameType(Method->getParamDecl(0)->getType(), Pointer) &&
+            Context.hasSameType(Call->getArg(0)->getType(), Pointer))
+          return UtilityOperation::StringViewCompareSlice;
+        if ((Count == 3 || Count == 4 || Count == 5) &&
+            Context.hasSameType(Method->getParamDecl(0)->getType(),
+                                Context.getSizeType()) &&
+            Context.hasSameType(Method->getParamDecl(1)->getType(),
+                                Context.getSizeType()) &&
+            Context.hasSameType(Call->getArg(0)->getType(),
+                                Context.getSizeType()) &&
+            Context.hasSameType(Call->getArg(1)->getType(),
+                                Context.getSizeType())) {
+          const auto Parameter = Method->getParamDecl(2)->getType();
+          const auto Argument = Call->getArg(2)->getType();
+          const bool ViewArgument =
+              Context.hasSameUnqualifiedType(Parameter, ViewType) &&
+              Context.hasSameUnqualifiedType(Argument, ViewType);
+          const bool CStringArgument =
+              Context.hasSameType(Parameter, Pointer) &&
+              Context.hasSameType(Argument, Pointer);
+          if ((Count == 3 && (ViewArgument || CStringArgument)) ||
+              (Count == 4 && CStringArgument &&
+               Context.hasSameType(Method->getParamDecl(3)->getType(),
+                                   Context.getSizeType()) &&
+               Context.hasSameType(Call->getArg(3)->getType(),
+                                   Context.getSizeType())) ||
+              (Count == 5 && ViewArgument &&
+               Context.hasSameType(Method->getParamDecl(3)->getType(),
+                                   Context.getSizeType()) &&
+               Context.hasSameType(Method->getParamDecl(4)->getType(),
+                                   Context.getSizeType()) &&
+               Context.hasSameType(Call->getArg(3)->getType(),
+                                   Context.getSizeType()) &&
+               Context.hasSameType(Call->getArg(4)->getType(),
+                                   Context.getSizeType())))
+            return UtilityOperation::StringViewCompareSlice;
+        }
+      }
       const bool Search = Name == "find" || Name == "rfind" ||
                           Name == "find_first_of" || Name == "find_last_of" ||
                           Name == "find_first_not_of" ||

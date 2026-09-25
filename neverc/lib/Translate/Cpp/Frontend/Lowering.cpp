@@ -12723,6 +12723,7 @@ class FunctionLowering {
     }
     case UtilityOperation::StringCompare:
     case UtilityOperation::StringCompareCString:
+    case UtilityOperation::StringCompareSlice:
     case UtilityOperation::StringCStringRelation:
     case UtilityOperation::StringEqual:
     case UtilityOperation::StringNotEqual:
@@ -12731,15 +12732,21 @@ class FunctionLowering {
     case UtilityOperation::StringLessEqual:
     case UtilityOperation::StringGreaterEqual:
     case UtilityOperation::StringViewCompare:
+    case UtilityOperation::StringViewCompareSlice:
     case UtilityOperation::StringViewEqual:
     case UtilityOperation::StringViewNotEqual:
     case UtilityOperation::StringViewLess:
     case UtilityOperation::StringViewGreater:
     case UtilityOperation::StringViewLessEqual:
     case UtilityOperation::StringViewGreaterEqual: {
+      const bool SliceComparison =
+          Operation == UtilityOperation::StringCompareSlice ||
+          Operation == UtilityOperation::StringViewCompareSlice;
+      const bool Positional = SliceComparison && Call->getNumArgs() >= 3;
       const bool StringComparison =
           Operation == UtilityOperation::StringCompare ||
           Operation == UtilityOperation::StringCompareCString ||
+          Operation == UtilityOperation::StringCompareSlice ||
           Operation == UtilityOperation::StringCStringRelation ||
           Operation == UtilityOperation::StringEqual ||
           Operation == UtilityOperation::StringNotEqual ||
@@ -12749,17 +12756,20 @@ class FunctionLowering {
           Operation == UtilityOperation::StringGreaterEqual;
       const bool Member = Operation == UtilityOperation::StringCompare ||
                           Operation == UtilityOperation::StringCompareCString ||
-                          Operation == UtilityOperation::StringViewCompare;
+                          Operation == UtilityOperation::StringCompareSlice ||
+                          Operation == UtilityOperation::StringViewCompare ||
+                          Operation == UtilityOperation::StringViewCompareSlice;
       const auto *Object = Member ? MemberObject() : Call->getArg(0);
       const auto *LeftValue = Object;
-      const auto *RightValue = Call->getArg(Member ? 0 : 1);
+      const auto *RightValue = Call->getArg(Member ? (Positional ? 2 : 0) : 1);
       const bool LeftCString =
           Operation == UtilityOperation::StringCStringRelation && LeftValue &&
           LeftValue->getType()->isPointerType();
       const bool RightCString =
           Operation == UtilityOperation::StringCompareCString ||
           (Operation == UtilityOperation::StringCStringRelation &&
-           !LeftCString);
+           !LeftCString) ||
+          (SliceComparison && RightValue->getType()->isPointerType());
       auto View = Object && !StringComparison
                       ? StringViewFor(Object->getType())
                       : std::optional<UtilityStringViewRecord>();
@@ -12771,7 +12781,125 @@ class FunctionLowering {
         reject(L, "string comparison",
                "The selected std::string layout is unavailable.");
       Expression LeftData, LeftSize, RightData, RightSize;
-      if (StringComparison) {
+      if (SliceComparison) {
+        const auto SizeType = type(A.Context.getSizeType(), L);
+        const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+        const auto PointerType =
+            type(A.Context.getPointerType(A.Context.CharTy.withConst()), L);
+        auto LeftSource =
+            snapshot(address(lvalue(Object), Object->getType(), L), L);
+        Expression LeftPosition, LeftCount;
+        if (Positional) {
+          LeftPosition =
+              snapshot(argument(Call->getArg(0), A.Context.getSizeType()), L);
+          LeftCount =
+              snapshot(argument(Call->getArg(1), A.Context.getSizeType()), L);
+        }
+        Expression RightSource;
+        if (RightCString || !StringComparison)
+          RightSource = snapshot(expression(RightValue), L);
+        else
+          RightSource = snapshot(
+              address(lvalue(RightValue), RightValue->getType(), L), L);
+        const bool RightSubstring = Call->getNumArgs() == 5;
+        const bool CountedPointer =
+            Positional && RightCString && Call->getNumArgs() == 4;
+        Expression RightPosition, RightCount;
+        if (RightSubstring) {
+          RightPosition =
+              snapshot(argument(Call->getArg(3), A.Context.getSizeType()), L);
+          RightCount =
+              snapshot(argument(Call->getArg(4), A.Context.getSizeType()), L);
+        } else if (CountedPointer) {
+          RightCount =
+              snapshot(argument(Call->getArg(3), A.Context.getSizeType()), L);
+        }
+        if (StringComparison) {
+          auto Left = ReadStringAt(std::move(LeftSource), *String);
+          LeftData = std::move(Left.first);
+          LeftSize = std::move(Left.second);
+          if (RightCString) {
+            if (CountedPointer) {
+              RightData = std::move(RightSource);
+              RightSize = std::move(RightCount);
+            } else {
+              auto Right = ReadCStringAt(std::move(RightSource));
+              RightData = std::move(Right.first);
+              RightSize = std::move(Right.second);
+            }
+          } else {
+            auto Right = ReadStringAt(std::move(RightSource), *String);
+            RightData = std::move(Right.first);
+            RightSize = std::move(Right.second);
+          }
+        } else {
+          LeftData =
+              snapshot(fieldStorage(dereference(json::Object(LeftSource), L),
+                                    View->Data, L),
+                       L);
+          LeftSize =
+              snapshot(fieldStorage(dereference(std::move(LeftSource), L),
+                                    View->Size, L),
+                       L);
+          if (RightCString) {
+            if (CountedPointer) {
+              RightData = std::move(RightSource);
+              RightSize = std::move(RightCount);
+            } else {
+              auto Right = ReadCStringAt(std::move(RightSource));
+              RightData = std::move(Right.first);
+              RightSize = std::move(Right.second);
+            }
+          } else {
+            RightData = snapshot(
+                fieldStorage(json::Object(RightSource), View->Data, L), L);
+            RightSize = snapshot(
+                fieldStorage(std::move(RightSource), View->Size, L), L);
+          }
+        }
+        auto Clip = [&](Expression &Data, Expression &Size,
+                        const Expression &Position,
+                        const Expression &Requested) {
+          const auto Valid = labelName(), Invalid = labelName();
+          const auto Limit = labelName(), LengthReady = labelName();
+          const auto Offset = labelName(), Done = labelName();
+          branch(binary("<=", json::Object(Position), json::Object(Size),
+                        "bool", L),
+                 Valid, Invalid, L);
+          label(Valid, L);
+          auto Remaining = temporary(SizeType, L);
+          assign(Remaining,
+                 binary("-", json::Object(Size), json::Object(Position),
+                        SizeType, L),
+                 L);
+          branch(binary("<", json::Object(Requested), json::Object(Remaining),
+                        "bool", L),
+                 Limit, LengthReady, L);
+          label(Limit, L);
+          assign(Remaining, json::Object(Requested), L);
+          jump(LengthReady, L);
+          label(LengthReady, L);
+          assign(Size, json::Object(Remaining), L);
+          branch(binary("!=", json::Object(Position), quantity(0, SizeType, L),
+                        "bool", L),
+                 Offset, Done, L);
+          label(Offset, L);
+          assign(Data,
+                 binary("+", json::Object(Data),
+                        cast(json::Object(Position), DifferenceType, L),
+                        PointerType, L),
+                 L);
+          jump(Done, L);
+          label(Invalid, L);
+          assign(Size, quantity(0, SizeType, L), L);
+          jump(Done, L);
+          label(Done, L);
+        };
+        if (Positional)
+          Clip(LeftData, LeftSize, LeftPosition, LeftCount);
+        if (RightSubstring)
+          Clip(RightData, RightSize, RightPosition, RightCount);
+      } else if (StringComparison) {
         auto LeftSource =
             LeftCString
                 ? snapshot(expression(LeftValue), L)

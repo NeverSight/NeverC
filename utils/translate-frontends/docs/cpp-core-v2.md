@@ -2201,6 +2201,9 @@ receiver and argument is evaluated once. `rbegin()`, `crbegin()`, `rend()` and
 compares unsigned character values lexicographically, including embedded zero
 bytes. The six free `==`, `!=`, `<`, `>`, `<=` and `>=` operators use the same
 ordering and accept the pinned view's ordinary implicit pointer construction.
+The remaining non-template `compare` overloads accept a C string or selected
+ranges of either view, including a counted pointer range. They clamp requested
+range lengths and use the same unsigned-byte ordering without allocating.
 `find(char, size_t)` and its zero-position default return the first
 matching offset or `npos`. `find(string_view, size_t)` searches for the first
 matching byte sequence, while `rfind(char, size_t)` and
@@ -2270,11 +2273,16 @@ or releasing the original storage.
 compare unsigned bytes lexicographically, then lengths, without allocating.
 `compare(const char*)` and the twelve string/C-string relation overloads scan
 the zero-terminated argument once and use the same byte comparison.
+Positional `compare` overloads select a range from the receiver and compare it
+with a whole or selected string range, a C string, or a counted pointer range.
+The second string range accepts the pinned default `npos` length. They reuse
+the unsigned-byte comparison without allocating.
 `substr(pos, count)` creates independently owned short or long storage from
 the selected range; `copy(char*, count, pos)` copies bytes without a terminator
 and reports the copied length. Both accept their pinned default arguments and
-clamp counts to the available suffix. Throwing out-of-range paths remain
-outside the direct lowering boundary.
+clamp counts to the available suffix. Positional comparison also clamps range
+lengths. Throwing out-of-range paths remain outside the direct lowering
+boundary.
 The `find` and `rfind` overloads for `char`, `const std::string&`,
 `const char*`, and `(const char*, position, count)` search without allocating.
 They honor default positions, `npos`, embedded NUL in counted patterns, and
