@@ -51700,6 +51700,14 @@ int main() {
       !std::binary_search(values.cbegin(), values.cend(), needle) ||
       std::binary_search(values.cbegin(), values.cend(), 5))
     return 3;
+  auto bounds = std::equal_range(values.cbegin(), values.cend(), needle);
+  if (bounds.first != expected_lower || bounds.second != expected_upper)
+    return 12;
+  auto extrema = std::minmax_element(values.cbegin(), values.cend());
+  auto last_value = values.cend();
+  --last_value;
+  if (extrema.first != values.cbegin() || extrema.second != last_value)
+    return 13;
   if (!std::is_sorted(values.cbegin(), values.cend()) ||
       std::is_sorted_until(values.begin(), values.end()) != values.end())
     return 4;
@@ -51715,6 +51723,23 @@ int main() {
       std::is_sorted_until(descending_values.begin(), descending_values.end(),
                            std::greater<int>{}) != descending_values.end())
     return 5;
+  auto descending_bounds = std::equal_range(
+      descending_values.begin(), descending_values.end(), 7,
+      std::greater<int>{});
+  auto descending_extrema = std::minmax_element(
+      descending_values.begin(), descending_values.end(), descending);
+  auto first_seven = descending_values.begin();
+  ++first_seven;
+  auto after_sevens = first_seven;
+  ++after_sevens;
+  ++after_sevens;
+  auto last_descending = descending_values.end();
+  --last_descending;
+  if (descending_bounds.first != first_seven ||
+      descending_bounds.second != after_sevens ||
+      descending_extrema.first != descending_values.begin() ||
+      descending_extrema.second != last_descending)
+    return 14;
   auto inversion = values.begin();
   ++inversion;
   ++inversion;
@@ -51744,6 +51769,13 @@ int main() {
       !std::binary_search(word.begin(), word.end(), 'd') ||
       !std::is_sorted(word.begin(), word.end()))
     return 10;
+  auto letters = std::equal_range(word.begin(), word.end(), 'b');
+  auto second_letter = word.begin();
+  ++second_letter;
+  auto fourth_letter = word.end();
+  --fourth_letter;
+  if (letters.first != second_letter || letters.second != fourth_letter)
+    return 15;
   std::vector<int> empty;
   if (std::min_element(empty.begin(), empty.end()) != empty.end() ||
       std::max_element(empty.begin(), empty.end()) != empty.end() ||
@@ -51755,6 +51787,22 @@ int main() {
       !std::is_heap(empty.begin(), empty.end()) ||
       std::is_heap_until(empty.begin(), empty.end()) != empty.end())
     return 11;
+  auto empty_bounds = std::equal_range(empty.begin(), empty.end(), 1);
+  auto empty_extrema = std::minmax_element(empty.begin(), empty.end());
+  if (empty_bounds.first != empty.end() ||
+      empty_bounds.second != empty.end() ||
+      empty_extrema.first != empty.end() ||
+      empty_extrema.second != empty.end())
+    return 16;
+  std::vector<int> ties{4, 1, 1, 4};
+  auto tied_extrema = std::minmax_element(ties.begin(), ties.end());
+  auto first_minimum = ties.begin();
+  ++first_minimum;
+  auto last_maximum = ties.end();
+  --last_maximum;
+  if (tied_extrema.first != first_minimum ||
+      tied_extrema.second != last_maximum)
+    return 17;
   return 0;
 }
 )cpp");

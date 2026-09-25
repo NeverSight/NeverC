@@ -2110,6 +2110,17 @@ class FunctionLowering {
              std::move(Pointer), L);
       return Place;
     };
+    auto AlgorithmPairIteratorField = [&](Expression Place,
+                                          const FieldDecl *Field,
+                                          unsigned IteratorIndex) {
+      auto Member = fieldStorage(std::move(Place), Field, L);
+      const auto Wrapped = approvedUtilityWrapIteratorRecord(
+          A.S, A.Sources,
+          Call->getArg(IteratorIndex)->getType()->getAsCXXRecordDecl(),
+          A.Context);
+      return Wrapped ? fieldStorage(std::move(Member), Wrapped->Current, L)
+                     : Member;
+    };
     auto ReverseFor = [&](QualType Type) {
       return approvedUtilityReverseIteratorRecord(
           A.S, A.Sources, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(),
@@ -5395,15 +5406,17 @@ class FunctionLowering {
       return Output;
     }
     case UtilityOperation::AlgorithmEqualRange: {
-      auto RangeFirst = snapshot(expression(Call->getArg(0)), L);
-      auto RangeLast = snapshot(expression(Call->getArg(1)), L);
+      auto FirstRange = AlgorithmRangeValue(0);
+      auto LastRange = AlgorithmRangeValue(1);
+      auto RangeFirst = std::move(FirstRange.first);
+      auto RangeLast = std::move(LastRange.first);
       auto ValueAddress = snapshot(
           address(lvalue(Call->getArg(2)), Call->getArg(2)->getType(), L), L);
       std::optional<Expression> Comparator;
       std::optional<FunctionalOperationInfo> SDKForward;
       std::optional<FunctionalOperationInfo> SDKReverse;
       if (Call->getNumArgs() == 4) {
-        const auto Element = Call->getArg(0)->getType()->getPointeeType();
+        const auto Element = FirstRange.second->getPointeeType();
         const auto Value = Call->getArg(2)->getType();
         SDKForward = captureRangeSDKComparator(Call, 3, Element, Value);
         if (SDKForward) {
@@ -5419,7 +5432,7 @@ class FunctionLowering {
       std::optional<std::string> DefaultComparisonType;
       if (!Comparator && !SDKForward) {
         auto Common = utilityScalarComparisonType(
-            A.Context, Call->getArg(0)->getType()->getPointeeType(),
+            A.Context, FirstRange.second->getPointeeType(),
             Call->getArg(2)->getType(), true);
         if (!Common)
           reject(L, "algorithm equal_range",
@@ -5440,7 +5453,7 @@ class FunctionLowering {
                       L);
       };
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto PointerType = type(FirstRange.second, L);
       auto Bound = [&](const Expression &Start, const Expression &End,
                        bool Upper) {
         auto First = snapshot(json::Object(Start), L);
@@ -5497,8 +5510,10 @@ class FunctionLowering {
         reject(
             L, "algorithm equal_range",
             "The std::equal_range destination type differs from its result.");
-      assign(fieldStorage(json::Object(Place), Pair->First, L), Lower, L);
-      assign(fieldStorage(json::Object(Place), Pair->Second, L), Upper, L);
+      assign(AlgorithmPairIteratorField(json::Object(Place), Pair->First, 0),
+             Lower, L);
+      assign(AlgorithmPairIteratorField(json::Object(Place), Pair->Second, 0),
+             Upper, L);
       return Place;
     }
     case UtilityOperation::AlgorithmLexicographicalCompare: {
@@ -5966,12 +5981,14 @@ class FunctionLowering {
       return Place;
     }
     case UtilityOperation::AlgorithmMinmaxElement: {
-      auto First = snapshot(expression(Call->getArg(0)), L);
-      auto Last = snapshot(expression(Call->getArg(1)), L);
+      auto FirstRange = AlgorithmRangeValue(0);
+      auto LastRange = AlgorithmRangeValue(1);
+      auto First = std::move(FirstRange.first);
+      auto Last = std::move(LastRange.first);
       std::optional<Expression> Comparator;
       std::optional<FunctionalOperationInfo> SDKComparator;
       if (Call->getNumArgs() == 3) {
-        const auto Element = Call->getArg(0)->getType()->getPointeeType();
+        const auto Element = FirstRange.second->getPointeeType();
         SDKComparator = captureRangeSDKComparator(Call, 2, Element, Element);
         if (!SDKComparator)
           Comparator = snapshot(expression(Call->getArg(2)), L);
@@ -5990,7 +6007,7 @@ class FunctionLowering {
       auto Maximum = snapshot(json::Object(First), L);
       auto Current = snapshot(json::Object(First), L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const auto PointerType = type(Call->getArg(0)->getType(), L);
+      const auto PointerType = type(FirstRange.second, L);
       auto Next = temporary(PointerType, L);
       auto Lower = temporary(PointerType, L);
       auto Upper = temporary(PointerType, L);
@@ -6095,8 +6112,10 @@ class FunctionLowering {
         reject(L, "algorithm minmax_element",
                "The std::minmax_element destination type differs from its "
                "result.");
-      assign(fieldStorage(json::Object(Place), Pair->First, L), Minimum, L);
-      assign(fieldStorage(json::Object(Place), Pair->Second, L), Maximum, L);
+      assign(AlgorithmPairIteratorField(json::Object(Place), Pair->First, 0),
+             Minimum, L);
+      assign(AlgorithmPairIteratorField(json::Object(Place), Pair->Second, 0),
+             Maximum, L);
       return Place;
     }
     case UtilityOperation::AlgorithmIsHeap:

@@ -19948,16 +19948,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (Origin->Path == "__algorithm/equal_range.h" && Name == "equal_range" &&
       (Call->getNumArgs() == 3 || Call->getNumArgs() == 4) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      AlgorithmRangePointerParameter(0) &&
+      AlgorithmRangePointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
-      AlgorithmScalarValueParameter(2, 0) &&
+      AlgorithmRangeValueParameter(2, 0) &&
       Same(Call->getType(), Function->getReturnType())) {
-    if (!((Call->getNumArgs() == 3 && AlgorithmOrderedPointerParameter(0) &&
-           AlgorithmOrderedValueParameter(2, 0)) ||
+    if (!((Call->getNumArgs() == 3 && AlgorithmOrderedRangeParameter(0) &&
+           AlgorithmOrderedRangeValueParameter(2, 0)) ||
           (Call->getNumArgs() == 4 &&
-           AlgorithmBinaryComparisonValueParameter(3, 0, 2, false) &&
-           AlgorithmBinaryComparisonValueParameter(3, 0, 2, true))))
+           AlgorithmRangeComparisonValueParameter(3, 0, 2, false) &&
+           AlgorithmRangeComparisonValueParameter(3, 0, 2, true))))
       return std::nullopt;
     auto Pair = approvedUtilityPairRecord(
         S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);
@@ -20076,13 +20077,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Name == "minmax_element" &&
       (Call->getNumArgs() == 2 || Call->getNumArgs() == 3) &&
       Function->getNumParams() == Call->getNumArgs() && Call->isPRValue() &&
-      AlgorithmPointerParameter(0) && AlgorithmPointerParameter(1) &&
+      AlgorithmRangePointerParameter(0) &&
+      AlgorithmRangePointerParameter(1) &&
       Same(Function->getParamDecl(0)->getType(),
            Function->getParamDecl(1)->getType()) &&
       Same(Call->getType(), Function->getReturnType()) &&
-      ((Call->getNumArgs() == 2 && AlgorithmOrderedPointerParameter(0)) ||
+      ((Call->getNumArgs() == 2 && AlgorithmOrderedRangeParameter(0)) ||
        (Call->getNumArgs() == 3 &&
-        AlgorithmBinaryComparisonParameter(2, 0, 0)))) {
+        AlgorithmRangeComparisonParameter(2, 0)))) {
     auto Pair = approvedUtilityPairRecord(
         S, SM, Function->getReturnType()->getAsCXXRecordDecl(), Context);
     if (Pair &&

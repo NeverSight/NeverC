@@ -29237,6 +29237,7 @@ void reverse_string(std::string& value) {
 #include <algorithm>
 #include <functional>
 #include <string>
+#include <utility>
 #include <vector>
 bool descending_int(int left, int right) { return left > right; }
 std::vector<int>::iterator minimum(std::vector<int>& values) {
@@ -29251,6 +29252,16 @@ std::vector<int>::const_iterator lower(const std::vector<int>& values,
 }
 std::vector<int>::iterator upper(std::vector<int>& values, int needle) {
   return std::upper_bound(values.begin(), values.end(), needle,
+                          std::greater<int>{});
+}
+std::pair<std::vector<int>::const_iterator,
+          std::vector<int>::const_iterator>
+bounds(const std::vector<int>& values, short needle) {
+  return std::equal_range(values.cbegin(), values.cend(), needle);
+}
+std::pair<std::vector<int>::iterator, std::vector<int>::iterator>
+reverse_bounds(std::vector<int>& values, int needle) {
+  return std::equal_range(values.begin(), values.end(), needle,
                           std::greater<int>{});
 }
 bool present(const std::vector<int>& values, int needle) {
@@ -29270,6 +29281,10 @@ std::vector<int>::iterator heap_until(std::vector<int>& values) {
   return std::is_heap_until(values.begin(), values.end(),
                             std::greater<int>{});
 }
+std::pair<std::vector<int>::iterator, std::vector<int>::iterator>
+extrema(std::vector<int>& values) {
+  return std::minmax_element(values.begin(), values.end(), descending_int);
+}
 std::string::iterator letter(std::string& value) {
   return std::lower_bound(value.begin(), value.end(), 'c');
 }
@@ -29285,14 +29300,20 @@ std::string::iterator letter(std::string& value) {
               target=target, sdk=True)
     for name, operation in {
         "min-element": "return std::min_element(values.begin(),values.end());",
+        "minmax-element": "return std::minmax_element(values.begin(),values.end());",
         "lower-bound": "return std::lower_bound(values.begin(),values.end(),Entry{});",
+        "equal-range": "return std::equal_range(values.begin(),values.end(),Entry{});",
         "is-sorted": "return std::is_sorted(values.begin(),values.end());",
         "is-heap": "return std::is_heap(values.begin(),values.end());",
     }.items():
-        result_type = "std::vector<Entry>::iterator" if name in (
-            "min-element", "lower-bound") else "bool"
+        result_type = ("std::pair<std::vector<Entry>::iterator,"
+                       "std::vector<Entry>::iterator>" if name in (
+                           "minmax-element", "equal-range") else
+                       "std::vector<Entry>::iterator" if name in (
+                           "min-element", "lower-bound") else "bool")
         check("v2-wrapped-ordered-query-" + name + "-record",
-              '#include <algorithm>\n#include <vector>\nstruct Entry{int value;};'
+              '#include <algorithm>\n#include <utility>\n#include <vector>\n'
+              'struct Entry{int value;};'
               'bool operator<(Entry a,Entry b){return a.value<b.value;}'
               + result_type + ' f(std::vector<Entry>& values){'
               + operation + '}', "TR0203", profile="cpp-core-v2", sdk=True)
