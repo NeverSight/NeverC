@@ -592,8 +592,10 @@ void initSections(ObjectFile *o, SectionState *secs, uint32_t *relaOf) {
         }
         if (strcmp(o->secName(i), ".note.GNU-stack") == 0)
           break;
-        fatal(o->name + ": non-allocated section " + o->secName(i));
+        [[fallthrough]];
       default:
+        if (ctx.opt.stripDebug && strncmp(o->secName(i), ".debug", 6) == 0)
+          break;
         fatal(o->name + ": non-allocated section " + o->secName(i));
       }
     } else if (sh.sh_type == SHT_X86_64_UNWIND ||
@@ -2885,7 +2887,8 @@ void layout() {
   markTime = Clock::now();
   layoutEhFrame();
   prepareComment();
-  prepareSymtab();
+  if (!ctx.opt.stripSymbols)
+    prepareSymtab();
   buildDynamic();
   L.dynamic->size = dynamicEntries().size() * sizeof(Elf64_Dyn);
   assignAllOffsets();
@@ -3812,7 +3815,7 @@ void writeOutput() {
     for (auto m : os->members)
       chunks.push_back({os, m});
   const size_t nc = chunks.size(), no = L.ehFrame ? ctx.objects.size() : 0;
-  const size_t ns = ctx.objects.size();
+  const size_t ns = L.symtab ? ctx.objects.size() : 0;
   ctx.pool->forEach(nc + 4 + no + ns, [&](size_t i) {
     if (i == nc + 3 + no + ns)
       zeroGaps(buf);
@@ -3821,7 +3824,8 @@ void writeOutput() {
     else if (i == nc + 1)
       writeHeaders(buf);
     else if (i == nc + 2) {
-      writeSymtabEnds(buf);
+      if (L.symtab)
+        writeSymtabEnds(buf);
       memcpy(buf + L.comment->offset, L.commentData.data(),
              L.commentData.size());
     } else if (i >= nc + 3 + no)

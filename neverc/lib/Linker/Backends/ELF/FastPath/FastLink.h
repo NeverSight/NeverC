@@ -44,6 +44,8 @@ struct Request {
   std::vector<unsigned char> buildIdBytes;
   bool discardLocals = false; // omit the inputs' local symbols from .symtab
   bool mmapOutput = true;     // write the output through a shared mapping
+  bool stripSymbols = false;  // omit .symtab and .strtab
+  bool stripDebug = false;    // omit the inputs' debug sections
   // Identical code folding: 0 none, 1 sections whose address is not taken,
   // 2 all code and the data whose address is not taken.
   unsigned icf = 0;

@@ -694,7 +694,6 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
       {config->icf != ICFLevel::None && config->ignoreDataAddressEquality,
        "--ignore-data-address-equality"},
       {config->discard == DiscardPolicy::None, "--discard-none"},
-      {config->strip != StripPolicy::None, "--strip"},
       {!config->mapFile.empty(), "map file"},
       {config->compressDebugSections != DebugCompressionType::None,
        "debug section compression"},
@@ -814,6 +813,8 @@ bool tryFastLink(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
     break;
   }
   req.discardLocals = config->discard == DiscardPolicy::All;
+  req.stripSymbols = config->strip == StripPolicy::All;
+  req.stripDebug = config->strip != StripPolicy::None;
   req.icf = config->icf == ICFLevel::Safe  ? 1
             : config->icf == ICFLevel::All ? 2
                                            : 0;
