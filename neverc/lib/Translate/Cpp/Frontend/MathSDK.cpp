@@ -2796,6 +2796,20 @@ static bool utilityPairValue(const State &S, const SourceManager &SM,
                              const ASTContext &Context, QualType Type,
                              unsigned Depth = 0);
 
+static bool utilityPairSourceOwnedValue(const State &S, const SourceManager &SM,
+                                        const ASTContext &Context,
+                                        QualType Type) {
+  if (Type.isNull() || Type->isReferenceType() || Type.isConstQualified() ||
+      Type.isVolatileQualified() || Type.isRestrictQualified() ||
+      Type.getAddressSpace() != LangAS::Default ||
+      utilityPairValue(S, SM, Context, Type))
+    return false;
+  const auto *Record = Type->getAsCXXRecordDecl();
+  Record = Record ? Record->getDefinition() : nullptr;
+  return Record && S.owns(SM, Record->getLocation()) &&
+         utilityArrayStorableValue(S, SM, Context, Type);
+}
+
 bool approvedUtilityPairMetadata(const State &S, const SourceManager &SM,
                                  const CXXRecordDecl *Record) {
   const auto *Specialization =
@@ -2863,7 +2877,8 @@ static std::optional<UtilityPairRecord> approvedUtilityPairRecordImpl(
         if (!supportedFunctionalReferenceValue(S, SM, Context,
                                                Type->getPointeeType()))
           return std::nullopt;
-      } else if (!utilityPairValue(S, SM, Context, Type)) {
+      } else if (!utilityPairValue(S, SM, Context, Type) &&
+                 !utilityPairSourceOwnedValue(S, SM, Context, Type)) {
         return std::nullopt;
       }
     }
@@ -2958,10 +2973,107 @@ static bool utilityPairAssignableValue(const State &S,
                                     Depth + 1);
 }
 
-std::optional<UtilityPairConstruction>
-approvedUtilityPairConstruction(const State &S, const SourceManager &SM,
-                                const CXXConstructExpr *Construction,
-                                const ASTContext &Context) {
+static const Expr *functionalInvokeStrippedExpression(const Expr *Expression);
+static bool approvedFunctionalForwardingCall(const State &S,
+                                             const SourceManager &SM,
+                                             const Expr *Expression,
+                                             const ParmVarDecl *Parameter);
+
+static std::optional<std::vector<const CXXConstructExpr *>>
+approvedUtilityPairSelectedCopies(const State &S, const SourceManager &SM,
+                                  const CXXConstructExpr *Construction,
+                                  const UtilityPairRecord &Pair,
+                                  const ASTContext &Context) {
+  std::vector<const CXXConstructExpr *> Copies(2, nullptr);
+  const FieldDecl *Fields[] = {Pair.First, Pair.Second};
+  bool Owned = false;
+  for (const auto *Field : Fields)
+    if (!Field->getType()->isReferenceType() &&
+        !utilityPairValue(S, SM, Context, Field->getType())) {
+      if (!utilityPairSourceOwnedValue(S, SM, Context, Field->getType()))
+        return std::nullopt;
+      Owned = true;
+    }
+  if (!Owned)
+    return Copies;
+
+  const auto *Constructor =
+      Construction ? dyn_cast_or_null<CXXConstructorDecl>(
+                         Construction->getConstructor()->getDefinition())
+                   : nullptr;
+  const auto *Body =
+      Constructor ? dyn_cast_or_null<CompoundStmt>(Constructor->getBody())
+                  : nullptr;
+  if (!Constructor || !Body || !Body->body_empty() ||
+      Constructor->getParent()->getCanonicalDecl() !=
+          Pair.Record->getCanonicalDecl() ||
+      Constructor->getNumParams() != 2 || Construction->getNumArgs() != 2 ||
+      !approvedStandardSDKDeclaration(S, SM, Constructor) ||
+      !cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx",
+                     "__utility/pair.h"))
+    return std::nullopt;
+  unsigned Initializers = 0;
+  for (const auto *Initializer : Constructor->inits())
+    if (!Initializer->isMemberInitializer() ||
+        (Initializer->getMember() != Pair.First &&
+         Initializer->getMember() != Pair.Second))
+      return std::nullopt;
+    else
+      ++Initializers;
+  if (Initializers != 2)
+    return std::nullopt;
+
+  for (unsigned I = 0; I != 2; ++I) {
+    const auto Element = Fields[I]->getType();
+    if (Element->isReferenceType() || utilityPairValue(S, SM, Context, Element))
+      continue;
+    const CXXConstructExpr *Copy = nullptr;
+    for (const auto *Initializer : Constructor->inits())
+      if (Initializer->getMember() == Fields[I]) {
+        if (Copy)
+          return std::nullopt;
+        Copy = dyn_cast_or_null<CXXConstructExpr>(
+            functionalInvokeStrippedExpression(Initializer->getInit()));
+      }
+    const auto *Selected = Copy ? Copy->getConstructor() : nullptr;
+    const auto *Source =
+        Copy && Copy->getNumArgs() == 1 ? Copy->getArg(0) : nullptr;
+    const auto Parameter = Selected && Selected->getNumParams() == 1
+                               ? Selected->getParamDecl(0)->getType()
+                               : QualType();
+    const auto *Direct =
+        Source ? dyn_cast<DeclRefExpr>(Source->IgnoreParenImpCasts()) : nullptr;
+    if (!Selected || !Source || Parameter.isNull() ||
+        !Parameter->isReferenceType() || !Selected->isCopyOrMoveConstructor() ||
+        !supportedConstructor(Selected) ||
+        (!Selected->isTrivial() && !Selected->hasBody()) ||
+        Selected->getParent()->getCanonicalDecl() !=
+            Element->getAsCXXRecordDecl()->getCanonicalDecl() ||
+        !S.owns(SM, Selected->getLocation()) ||
+        !Context.hasSameUnqualifiedType(Copy->getType(), Element) ||
+        !Context.hasSameUnqualifiedType(Source->getType(), Element) ||
+        !Context.hasSameType(Parameter->getPointeeType(), Source->getType()) ||
+        !(Direct && Direct->getDecl() == Constructor->getParamDecl(I)) &&
+            !approvedFunctionalForwardingCall(S, SM, Source,
+                                              Constructor->getParamDecl(I)))
+      return std::nullopt;
+    const auto *Argument = Construction->getArg(I);
+    if (!Context.hasSameUnqualifiedType(Argument->getType(), Element) ||
+        (Argument->getType().isConstQualified() &&
+         !Source->getType().isConstQualified()) ||
+        (Argument->isLValue() && !Source->isLValue()) ||
+        (!Argument->isLValue() && Source->isLValue() &&
+         !Constructor->getParamDecl(I)->getType()->isLValueReferenceType()))
+      return std::nullopt;
+    Copies[I] = Copy;
+  }
+  return Copies;
+}
+
+std::optional<UtilityPairConstruction> approvedUtilityPairConstruction(
+    const State &S, const SourceManager &SM,
+    const CXXConstructExpr *Construction, const ASTContext &Context,
+    std::vector<const CXXConstructExpr *> *SelectedCopies) {
   if (!Construction || Construction->isTypeDependent() ||
       Construction->isValueDependent() ||
       Construction->isInstantiationDependent() ||
@@ -2983,6 +3095,11 @@ approvedUtilityPairConstruction(const State &S, const SourceManager &SM,
         S, SM, Construction->getType()->getAsCXXRecordDecl(), Context);
     MixedReferencePair = Pair.has_value();
   }
+  const bool OwnedElements =
+      Pair && ((!Pair->First->getType()->isReferenceType() &&
+                !utilityPairValue(S, SM, Context, Pair->First->getType())) ||
+               (!Pair->Second->getType()->isReferenceType() &&
+                !utilityPairValue(S, SM, Context, Pair->Second->getType())));
   if (!Constructor || !Pair || Constructor->isVariadic() ||
       Constructor->getParent()->getCanonicalDecl() !=
           Pair->Record->getCanonicalDecl() ||
@@ -2990,14 +3107,16 @@ approvedUtilityPairConstruction(const State &S, const SourceManager &SM,
       !approvedStandardSDKDeclaration(S, SM, Constructor) ||
       !cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx",
                      "__utility/pair.h") ||
-      (!ReferencePair && !MixedReferencePair &&
+      (!ReferencePair && !MixedReferencePair && !OwnedElements &&
        (!utilityPairValue(S, SM, Context, Pair->First->getType()) ||
-        !utilityPairValue(S, SM, Context, Pair->Second->getType()))))
+        !utilityPairValue(S, SM, Context, Pair->Second->getType()))) ||
+      (OwnedElements && Construction->getNumArgs() != 2))
     return std::nullopt;
-  if (!Construction->getNumArgs() && Constructor->isDefaultConstructor() &&
-      !ReferencePair && !MixedReferencePair)
+  if (!OwnedElements && !Construction->getNumArgs() &&
+      Constructor->isDefaultConstructor() && !ReferencePair &&
+      !MixedReferencePair)
     return UtilityPairConstruction::Default;
-  if (Construction->getNumArgs() == 1 &&
+  if (!OwnedElements && Construction->getNumArgs() == 1 &&
       Constructor->isCopyOrMoveConstructor() && Constructor->isDefaulted() &&
       Constructor->isTrivial())
     return UtilityPairConstruction::CopyOrMove;
@@ -3017,12 +3136,12 @@ approvedUtilityPairConstruction(const State &S, const SourceManager &SM,
     SourcePair = approvedUtilityMixedReferencePairRecord(
         S, SM, Construction->getArg(0)->getType()->getAsCXXRecordDecl(),
         Context);
-  if (SourcePair && Primary && Constructor->hasBody() &&
+  if (!OwnedElements && SourcePair && Primary && Constructor->hasBody() &&
       SourcePair->Record->getCanonicalDecl() !=
           Pair->Record->getCanonicalDecl() &&
       approvedStandardSDKDeclaration(S, SM, Primary) &&
       cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
-                     "__utility/pair.h")) {
+                    "__utility/pair.h")) {
     const auto Parameter = Constructor->getParamDecl(0)->getType();
     if (!Parameter->isReferenceType() ||
         Parameter->getPointeeType().isVolatileQualified() ||
@@ -3070,6 +3189,10 @@ approvedUtilityPairConstruction(const State &S, const SourceManager &SM,
       approvedStandardSDKDeclaration(S, SM, Primary) &&
       cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
                      "__utility/pair.h")) {
+    auto Copies =
+        approvedUtilityPairSelectedCopies(S, SM, Construction, *Pair, Context);
+    if (!Copies)
+      return std::nullopt;
     for (unsigned I = 0; I != 2; ++I) {
       const auto Parameter = Constructor->getParamDecl(I)->getType();
       const auto Element =
@@ -3098,7 +3221,11 @@ approvedUtilityPairConstruction(const State &S, const SourceManager &SM,
               : Context.hasSameUnqualifiedType(Argument, Element);
       if (!Convertible)
         return std::nullopt;
+      if (!utilityPairValue(S, SM, Context, Element) && !(*Copies)[I])
+        return std::nullopt;
     }
+    if (SelectedCopies)
+      *SelectedCopies = std::move(*Copies);
     return UtilityPairConstruction::Elements;
   }
   return std::nullopt;
@@ -9170,6 +9297,80 @@ static bool approvedFunctionalForwardingCall(
          approvedStandardSDKDeclaration(S, SM, Reference->getDecl()) &&
          cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
                        "__utility/forward.h");
+}
+
+std::optional<std::vector<const CXXConstructExpr *>>
+approvedUtilityMakePairSelectedCopies(const State &S, const SourceManager &SM,
+                                      const CallExpr *Call,
+                                      const UtilityPairRecord &Pair,
+                                      const ASTContext &Context) {
+  if (!Call || Call->getNumArgs() != 2)
+    return std::nullopt;
+  const FieldDecl *Fields[] = {Pair.First, Pair.Second};
+  bool Owned = false;
+  for (const auto *Field : Fields)
+    Owned |= !Field->getType()->isReferenceType() &&
+             !utilityPairValue(S, SM, Context, Field->getType());
+  if (!Owned)
+    return std::vector<const CXXConstructExpr *>(2, nullptr);
+
+  const auto *Function = Call->getDirectCallee();
+  const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+  const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+  const auto *Body =
+      Function ? dyn_cast_or_null<CompoundStmt>(Function->getBody()) : nullptr;
+  const auto Origin =
+      Primary ? S.sdkFile(SM, Primary->getLocation()) : std::nullopt;
+  const auto *Return = Body && Body->size() == 1
+                           ? dyn_cast<ReturnStmt>(*Body->body_begin())
+                           : nullptr;
+  const auto *Construction =
+      Return ? dyn_cast_or_null<CXXConstructExpr>(
+                   functionalInvokeStrippedExpression(Return->getRetValue()))
+             : nullptr;
+  const auto *Constructor =
+      Construction ? Construction->getConstructor() : nullptr;
+  const auto *ConstructorPrimary =
+      Constructor ? Constructor->getPrimaryTemplate() : nullptr;
+  if (!Function || !Primary || !Pattern || !Pattern->hasBody() || !Body ||
+      !Return || !Construction || !Constructor || !ConstructorPrimary ||
+      !Function->isInlined() || !Function->isConstexpr() ||
+      !Constructor->hasBody() || !Origin || Origin->Root != "libcxx" ||
+      Origin->Path != "__utility/pair.h" || Construction->getNumArgs() != 2 ||
+      !Context.hasSameType(Construction->getType(),
+                           Context.getRecordType(Pair.Record)) ||
+      !approvedStandardSDKDeclaration(S, SM, Function) ||
+      !approvedStandardSDKDeclaration(S, SM, Primary) ||
+      !approvedStandardSDKDeclaration(S, SM, Pattern) ||
+      !approvedStandardSDKDeclaration(S, SM, Constructor) ||
+      !approvedStandardSDKDeclaration(S, SM, ConstructorPrimary) ||
+      !cstddefOrigin(S, SM, ConstructorPrimary->getLocation(), "libcxx",
+                     "__utility/pair.h"))
+    return std::nullopt;
+  for (unsigned I = 0; I != 2; ++I)
+    if (!approvedFunctionalForwardingCall(S, SM, Construction->getArg(I),
+                                          Function->getParamDecl(I)))
+      return std::nullopt;
+
+  auto Copies =
+      approvedUtilityPairSelectedCopies(S, SM, Construction, Pair, Context);
+  if (!Copies)
+    return std::nullopt;
+  for (unsigned I = 0; I != 2; ++I) {
+    const auto Element = Fields[I]->getType();
+    if (Element->isReferenceType() || utilityPairValue(S, SM, Context, Element))
+      continue;
+    const auto *Copy = (*Copies)[I];
+    const auto *SelectedSource = Copy ? Copy->getArg(0) : nullptr;
+    const auto *Source = Call->getArg(I);
+    if (!SelectedSource ||
+        !Context.hasSameUnqualifiedType(Source->getType(), Element) ||
+        SelectedSource->isLValue() != Source->isLValue() ||
+        (Source->getType().isConstQualified() &&
+         !SelectedSource->getType().isConstQualified()))
+      return std::nullopt;
+  }
+  return Copies;
 }
 
 std::optional<std::vector<const CXXConstructExpr *>>
@@ -22197,22 +22398,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType())) {
     auto Pair = approvedUtilityPairRecord(
         S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
-    bool ReferencePair = false;
-    if (!Pair) {
+    if (!Pair)
       Pair = approvedUtilityReferencePairRecord(
           S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
-      ReferencePair = Pair.has_value();
-    }
-    bool MixedReferencePair = false;
-    if (!Pair) {
+    if (!Pair)
       Pair = approvedUtilityMixedReferencePairRecord(
           S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
-      MixedReferencePair = Pair.has_value();
-    }
-    if (!Pair ||
-        (!ReferencePair && !MixedReferencePair &&
-         (!utilityPairValue(S, SM, Context, Pair->First->getType()) ||
-          !utilityPairValue(S, SM, Context, Pair->Second->getType()))))
+    if (!Pair)
+      return std::nullopt;
+    const auto Copies =
+        approvedUtilityMakePairSelectedCopies(S, SM, Call, *Pair, Context);
+    if (!Copies)
       return std::nullopt;
     for (unsigned I = 0; I != 2; ++I) {
       auto Parameter = Function->getParamDecl(I)->getType();
@@ -22229,7 +22425,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
             !Context.hasSameType(Wrapper->ReferentType,
                                  Element->getPointeeType()))
           return std::nullopt;
-      } else if (!utilityPairValue(S, SM, Context, Element)) {
+      } else if (!utilityPairValue(S, SM, Context, Element) && !(*Copies)[I]) {
         return std::nullopt;
       }
     }

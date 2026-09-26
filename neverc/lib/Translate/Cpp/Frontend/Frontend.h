@@ -1083,11 +1083,17 @@ std::optional<UtilityPairRecord> approvedUtilityReferencePairRecord(
 std::optional<UtilityPairRecord> approvedUtilityMixedReferencePairRecord(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
-std::optional<UtilityPairConstruction>
-approvedUtilityPairConstruction(const State &S,
-                                const clang::SourceManager &SM,
-                                const clang::CXXConstructExpr *Construction,
-                                const clang::ASTContext &Context);
+std::optional<UtilityPairConstruction> approvedUtilityPairConstruction(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction,
+    const clang::ASTContext &Context,
+    std::vector<const clang::CXXConstructExpr *> *SelectedCopies = nullptr);
+std::optional<std::vector<const clang::CXXConstructExpr *>>
+approvedUtilityMakePairSelectedCopies(const State &S,
+                                      const clang::SourceManager &SM,
+                                      const clang::CallExpr *Call,
+                                      const UtilityPairRecord &Pair,
+                                      const clang::ASTContext &Context);
 std::optional<UtilityPairRecord>
 approvedUtilityPairAssignment(const State &S,
                               const clang::SourceManager &SM,

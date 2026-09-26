@@ -7886,11 +7886,28 @@ class FunctionLowering {
       if (Place.getString("type") != type(Call->getType(), L))
         reject(L, "utility make_pair",
                "The std::make_pair destination type differs from its result.");
+      const auto Copies = approvedUtilityMakePairSelectedCopies(
+          A.S, A.Sources, Call, *Pair, A.Context);
+      if (!Copies || Copies->size() != 2)
+        reject(
+            L, "utility make_pair",
+            "The selected std::make_pair element construction is unavailable.");
       for (unsigned I = 0; I != 2; ++I) {
         const auto *Field = I ? Pair->Second : Pair->First;
         if (!Field->getType()->isReferenceType()) {
-          initialize(fieldStorage(json::Object(Place), Field, L),
-                     Call->getArg(I), L);
+          const auto *Copy = (*Copies)[I];
+          if (Copy) {
+            const auto *Constructor = Copy->getConstructor();
+            const auto Referent =
+                Constructor->getParamDecl(0)->getType()->getPointeeType();
+            constructMemorySource(
+                fieldStorage(json::Object(Place), Field, L), Field->getType(),
+                Constructor,
+                snapshot(address(lvalue(Call->getArg(I)), Referent, L), L), L);
+          } else {
+            initialize(fieldStorage(json::Object(Place), Field, L),
+                       Call->getArg(I), L);
+          }
           continue;
         }
         const auto Wrapper = approvedFunctionalReferenceRecord(
@@ -18122,8 +18139,9 @@ class FunctionLowering {
       assign(std::move(Place), A.zero(T, L), L);
       return;
     }
-    if (auto Kind = approvedUtilityPairConstruction(
-            A.S, A.Sources, C, A.Context)) {
+    std::vector<const CXXConstructExpr *> PairCopies;
+    if (auto Kind = approvedUtilityPairConstruction(A.S, A.Sources, C,
+                                                    A.Context, &PairCopies)) {
       auto Pair = approvedUtilityPairRecord(
           A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context);
       if (!Pair)
@@ -18148,7 +18166,14 @@ class FunctionLowering {
           const auto *Field = I ? Pair->Second : Pair->First;
           if (Field->getType()->isReferenceType())
             assign(Member(Field), bind(C->getArg(I), Field->getType()), L);
-          else if (recordValue(Field->getType()))
+          else if (PairCopies.size() == 2 && PairCopies[I]) {
+            const auto *Constructor = PairCopies[I]->getConstructor();
+            const auto Referent =
+                Constructor->getParamDecl(0)->getType()->getPointeeType();
+            constructMemorySource(
+                Member(Field), Field->getType(), Constructor,
+                snapshot(address(lvalue(C->getArg(I)), Referent, L), L), L);
+          } else if (recordValue(Field->getType()))
             initialize(Member(Field), C->getArg(I), L);
           else
             assign(Member(Field),

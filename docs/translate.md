@@ -130,6 +130,12 @@ swapping, comparison, `make_pair` and `get`. Tuple metadata and
 `integer_sequence::size()` remain compile-time values. The authenticated
 87-file closure adds no libc++ runtime dependency; standard-function addresses
 remain rejected.
+Direct element-wise pair construction and `std::make_pair` also admit
+source-owned nontrivial standard-layout record fields when the selected pinned
+pair initializer constructs each such field through its source-owned copy or
+move constructor. The factory's forwarding chain is authenticated. Pair
+fields are destroyed in reverse order; whole-pair copy/move construction,
+pair assignment and swap involving these fields remain outside this boundary.
 Reference-valued pairs additionally support exact compatible direct
 construction, same-type copy/move construction and index- or unique-type
 `get`; same-type assignment writes through their stored bindings without

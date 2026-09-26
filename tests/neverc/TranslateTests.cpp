@@ -30378,6 +30378,88 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2MakePairOwnedElementsCopyMoveAndMixedReferences) {
+  const auto Source = tmpFile("make-pair-owned-elements.cpp");
+  const auto Output = tmpFile("make-pair-owned-elements.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <utility>
+int alive = 0;
+int copies = 0;
+int moves = 0;
+int deaths = 0;
+int order = 0;
+bool recording = false;
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) { ++alive; }
+  Item(const Item& other) noexcept : value(other.value) {
+    ++copies;
+    ++alive;
+  }
+  Item(Item&& other) noexcept : value(other.value) {
+    other.value = -1;
+    ++moves;
+    ++alive;
+  }
+  ~Item() noexcept {
+    if (recording && value > 0) order = order * 10 + value;
+    ++deaths;
+    --alive;
+  }
+};
+int main() {
+  Item mutable_item(2);
+  const Item fixed_item(3);
+  int target = 7;
+  {
+    auto copied = std::make_pair(mutable_item, 10);
+    auto fixed = std::make_pair(11, fixed_item);
+    auto moved = std::make_pair(std::move(mutable_item), Item(4));
+    auto mixed_first = std::make_pair(std::ref(target), fixed_item);
+    auto mixed_second = std::make_pair(fixed_item, std::ref(target));
+    std::pair<Item, int> direct(fixed_item, 12);
+    std::pair<int, Item> direct_second(13, std::move(moved.second));
+    if (copies != 5 || moves != 3 || deaths != 1 || alive != 10 ||
+        mutable_item.value != -1 || moved.second.value != -1 ||
+        copied.first.value != 2 || copied.second != 10 ||
+        fixed.first != 11 || fixed.second.value != 3 ||
+        moved.first.value != 2 || mixed_first.first != 7 ||
+        mixed_first.second.value != 3 ||
+        mixed_second.first.value != 3 || mixed_second.second != 7 ||
+        direct.first.value != 3 || direct.second != 12 ||
+        direct_second.first != 13 || direct_second.second.value != 4)
+      return 1;
+    mixed_first.first = 11;
+    if (target != 11 || mixed_second.second != 11) return 2;
+    {
+      auto ordered = std::make_pair(Item(8), Item(9));
+      if (ordered.first.value != 8 || ordered.second.value != 9 ||
+          copies != 5 || moves != 5 || deaths != 3 || alive != 12)
+        return 3;
+      recording = true;
+    }
+    recording = false;
+    if (order != 98 || deaths != 5 || alive != 10) return 4;
+  }
+  return copies == 5 && moves == 5 && deaths == 13 && alive == 2 &&
+                 target == 11
+             ? 0
+             : 5;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("make-pair-owned-elements" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2PairArrayApplyRequiresPinnedOperations) {
   struct Rejection {
     const char *Name;
