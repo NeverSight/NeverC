@@ -18248,6 +18248,15 @@ class FunctionLowering {
           }
           if (SourceField->getType()->isReferenceType())
             Value = dereference(std::move(Value), L);
+          if (PairCopies.size() == 2 && PairCopies[I]) {
+            const auto *Selected = PairCopies[I]->getConstructor();
+            const auto Referent =
+                Selected->getParamDecl(0)->getType()->getPointeeType();
+            constructMemorySource(
+                Member(DestinationField), DestinationField->getType(), Selected,
+                snapshot(address(std::move(Value), Referent, L), L), L);
+            continue;
+          }
           if (recordValue(DestinationField->getType()))
             assign(Member(DestinationField), std::move(Value), L);
           else

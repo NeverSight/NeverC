@@ -204,7 +204,11 @@ field is a `ref`/`cref` referent. Fields are constructed in declaration order
 and destroyed in reverse order. Same-type whole-pair copy/move construction
 also proves the defaulted pair constructor's field sources and exact selected
 element copy/move constructors. A reference field keeps its binding across
-whole-pair copies and moves. Converting construction, pair assignment and swap
+whole-pair copies and moves. Converting construction from another admitted
+pair also proves the pinned pair constructor's owned-field projections and exact
+selected source-owned copy/move constructor for each owned destination field.
+Value and reference sources preserve their checked cv and value categories;
+reference destination fields keep their bindings. Pair assignment and swap
 involving these owned fields remain outside this boundary.
 
 Authenticated `std::reference_wrapper` values are admitted in ordinary

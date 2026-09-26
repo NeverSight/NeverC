@@ -137,8 +137,11 @@ move constructor. The factory's forwarding chain is authenticated. Pair
 fields are destroyed in reverse order. Same-type whole-pair copy/move also
 authenticates the defaulted pair constructor's member initializers and selected
 source-owned element constructors; reference fields keep their bindings. Pair
-converting construction, assignment and swap involving these fields remain
-outside this boundary.
+converting construction from another admitted pair also selects and proves
+each owned field's source-owned copy or move constructor. Value and reference
+sources retain their checked cv and value categories; reference destination
+fields retain their bindings. Pair assignment and swap involving owned fields
+remain outside this boundary.
 Reference-valued pairs additionally support exact compatible direct
 construction, same-type copy/move construction and index- or unique-type
 `get`; same-type assignment writes through their stored bindings without

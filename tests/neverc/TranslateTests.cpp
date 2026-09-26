@@ -30553,6 +30553,95 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2OwnedPairConvertingCopyMoveAndReferences) {
+  const auto Source = tmpFile("owned-pair-converting.cpp");
+  const auto Output = tmpFile("owned-pair-converting.nc");
+  writeFile(Source, R"cpp(#include <utility>
+int alive = 0;
+int copies = 0;
+int moves = 0;
+int deaths = 0;
+int effects = 0;
+int order = 0;
+bool recording = false;
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) { ++alive; }
+  Item(const Item& other) noexcept : value(other.value) {
+    ++copies;
+    ++alive;
+  }
+  Item(Item&& other) noexcept : value(other.value) {
+    other.value = -1;
+    ++moves;
+    ++alive;
+  }
+  ~Item() noexcept {
+    if (recording && value > 0) order = order * 10 + value;
+    ++deaths;
+    --alive;
+  }
+};
+using Source = std::pair<Item, short>;
+Source& select(Source& source) {
+  ++effects;
+  return source;
+}
+int main() {
+  Item first(2);
+  Item second(3);
+  int target = 7;
+  {
+    Source source(first, short(4));
+    std::pair<Item, long> copied(select(source));
+    std::pair<Item, long> moved(std::move(source));
+    const Source constant(second, short(5));
+    std::pair<Item, long> const_moved(std::move(constant));
+    std::pair<Item&, short> references(second, short(6));
+    std::pair<Item, long> from_references(references);
+    std::pair<Item&, int&> mixed_source(second, target);
+    std::pair<Item, const int&> mixed(mixed_source);
+    std::pair<Item, const int&> mixed_move(std::move(mixed_source));
+    if (effects != 1 || copies != 7 || moves != 1 || deaths || alive != 10 ||
+        source.first.value != -1 || copied.first.value != 2 ||
+        copied.second != 4 || moved.first.value != 2 || moved.second != 4 ||
+        const_moved.first.value != 3 || const_moved.second != 5 ||
+        from_references.first.value != 3 || from_references.second != 6 ||
+        mixed.first.value != 3 || mixed_move.first.value != 3 ||
+        &mixed.second != &target || &mixed_move.second != &target)
+      return 1;
+    std::pair<Item&, Item&> both_references(first, second);
+    {
+      std::pair<Item, Item> both(both_references);
+      if (copies != 9 || alive != 12 || both.first.value != 2 ||
+          both.second.value != 3)
+        return 2;
+      recording = true;
+    }
+    recording = false;
+    if (order != 32 || deaths != 2 || alive != 10) return 3;
+    target = 11;
+    if (mixed.second != 11 || mixed_move.second != 11) return 4;
+  }
+  return copies == 9 && moves == 1 && deaths == 10 && alive == 2 &&
+                 effects == 1
+             ? 0
+             : 5;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("owned-pair-converting" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2PairArrayApplyRequiresPinnedOperations) {
   struct Rejection {
     const char *Name;
