@@ -1440,14 +1440,6 @@ void rejected_swap(Value& left, Value& right) { left.swap(right); }
 using Value = std::array<volatile int, 0>;
 void rejected_swap(Value& left, Value& right) { left.swap(right); }
 """, 'TR0201'),
-        ('zero-array-nontrivial-element', """\
-#include <array>
-#include <functional>
-#include <utility>
-struct Row { Row() {} int value; };
-using Value = std::array<Row, 0>;
-void rejected_swap(Value& left, Value& right) { left.swap(right); }
-""", 'TR0203'),
         ('array-internal-range-specialization', """\
 #include <array>
 #include <utility>
@@ -3479,6 +3471,45 @@ extern "C" int array_composition() {
     for target in sdk_targets:
         check("v2-array-composition-" + target, array_composition_source,
               profile="cpp-core-v2", target=target, sdk=True)
+    array_owned_source = """\
+#include <array>
+#include <tuple>
+int constructions;
+int destructions;
+int order;
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) { ++constructions; }
+  ~Item() noexcept { ++destructions; order = order * 10 + value; }
+};
+using Empty = std::array<Item, 0>;
+Empty &identity(Empty &value) { return value; }
+extern "C" int array_owned() {
+  {
+    std::array<std::array<Item, 2>, 2> nested{{
+        std::array<Item, 2>{{Item(1), Item(2)}},
+        std::array<Item, 2>{{Item(3), Item(4)}}}};
+    Empty empty{}, another{};
+    empty.swap(another);
+    auto nested_refs = std::tie(nested);
+    auto empty_refs = std::tie(empty);
+    static_assert(__is_same(decltype(identity(empty)), Empty &));
+    if (nested[1][0].value != 3 || empty.size() != 0 ||
+        &std::get<0>(nested_refs) != &nested ||
+        &std::get<0>(empty_refs) != &empty ||
+        constructions != 4 || destructions != 0)
+      return 1;
+  }
+  return constructions == 4 && destructions == 4 && order == 4321 ? 0 : 2;
+}
+"""
+    for target in sdk_targets:
+        array_owned = check("v2-array-owned-" + target, array_owned_source,
+                            profile="cpp-core-v2", target=target, sdk=True)
+        assert any(function["name"] == "array_owned"
+                   for function in array_owned["functions"]), array_owned
+        assert not [node for node in walk(array_owned["functions"])
+                    if node.get("op") == "mapped_call"], array_owned
     array_zero_source = """\
 #include <array>
 struct Point { int x; int y; };
@@ -3552,8 +3583,8 @@ extern "C" int array_zero() {
         ("zero-subscript",
          '#include <array>\nint main(){std::array<int,0>a{};return a[0];}',
          "TR0203"),
-        ("nontrivial-element",
-         '#include <array>\nstruct R{int n;~R(){}};int main(){std::array<R,2>a{{{1},{2}}};return a[0].n;}',
+        ("nontrivial-element-copy",
+         '#include <array>\nstruct R{int n;explicit R(int v):n(v){}R(const R&o):n(o.n){}~R(){}};int main(){std::array<R,2>a{{R(1),R(2)}};std::array<R,2>b=a;return b[0].n;}',
          "TR0203"),
         ("record-comparison",
          '#include <array>\nstruct R{int n;};bool operator==(const R&a,const R&b){return a.n==b.n;}int main(){std::array<R,2>a{{{1},{2}}},b=a;return a==b;}',
@@ -4074,9 +4105,6 @@ int main() {
         ('record-element-erased-pointer',
          '#include <array>\nint object=0;template<auto V>using Erased=int;struct Element{Erased<&object> value;};\nusing Row = std::array<Element,2>;\nRow& identity(Row& row){return row;}\nint probe(Row& row){static_assert(__is_same(decltype(identity(row)),Row&));return 0;}\nint main(){return 0;}\n',
          'TR0201'),
-        ('nontrivial-element-zero',
-         '#include <array>\nstruct Element{int value;~Element(){}};\nusing Row = std::array<Element,0>;\nRow& identity(Row& row){return row;}\nint probe(Row& row){static_assert(__is_same(decltype(identity(row)),Row&));return 0;}\nint main(){return 0;}\n',
-         'TR0203'),
         ('volatile-element-zero',
          '#include <array>\n\nusing Row = std::array<volatile int,0>;\nRow& identity(Row& row){return row;}\nint probe(Row& row){static_assert(__is_same(decltype(identity(row)),Row&));return 0;}\nint main(){return 0;}\n',
          'TR0201'),
@@ -4427,12 +4455,6 @@ int main() {
         ('volatile-element-zero',
          '#include <array>\n#include <tuple>\nextern "C" void probe() {\n  std::array<volatile int, 0> row{};\n  auto refs = std::tie(row);\n}\n',
          'TR0201'),
-        ('nontrivial-element',
-         '#include <array>\n#include <tuple>\nstruct Item { int value; ~Item() {} };\nextern "C" void probe() {\n  std::array<Item, 1> row{{{1}}};\n  auto refs = std::tie(row);\n}\n',
-         'TR0203'),
-        ('nontrivial-element-zero',
-         '#include <array>\n#include <tuple>\nstruct Item { int value; ~Item() {} };\nextern "C" void probe() {\n  std::array<Item, 0> row{};\n  auto refs = std::tie(row);\n}\n',
-         'TR0203'),
         ('by-value-callback-parameter',
          '#include <array>\n#include <tuple>\nusing Row = std::array<int, 2>;\nint by_value(Row row) { return row[0]; }\nextern "C" int probe() {\n  return std::apply(by_value, std::make_tuple(Row{{1, 2}}));\n}\n',
          'TR0203'),

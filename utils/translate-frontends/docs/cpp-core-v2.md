@@ -503,16 +503,20 @@ The protocol exposes that inaccessible storage as one synthetic `T` carrier so
 the generated record preserves the native size and alignment without exposing
 or operating on libc++ internals. `T` may be an admitted integral or enum
 scalar up to 64 bits, `float`, `double`, `nullptr_t`, or a non-function object
-pointer, a source-owned trivial standard-layout record, or another admitted
-`std::array`; `N` is limited to 65536. Nested arrays and record arrays retain
-their recursive field layout and ordinary aggregate access.
+pointer, a source-owned standard-layout record with checked construction and
+destruction, or another admitted `std::array`; `N` is limited to 65536. Record
+elements may have nontrivial constructors or destructors. Nested arrays and
+record arrays retain their recursive field layout and ordinary aggregate access.
 
 `size`, `max_size`, `empty`, `data`, `begin`, `end`, `cbegin`, `cend`, indexed
 access, `front`, `back`, compile-time in-range `at`, forward and reverse range
 access, `fill`, member and free `swap`, all six C++17 comparisons and
 index-based `get` lower directly to existing array, pointer, assignment and
-control-flow operations. Aggregate initialization, trivial copy/move
-construction and copy/move assignment retain ordinary value semantics.
+control-flow operations when the selected element operation is admitted.
+Aggregate initialization, selected trivial copy/move construction and
+trivial copy/move assignment retain ordinary value semantics, including for
+record elements with nontrivial destruction. User-provided nontrivial element
+copy/move operations are not admitted through the array.
 `tuple_size` and `tuple_element` remain checked compile-time metadata.
 
 An array can also supply the element pack to `std::apply` through the
@@ -551,8 +555,9 @@ array referents retain their full-expression lifetime. These reference forms
 include authenticated nested arrays and zero-length arrays; zero-length storage
 remains inaccessible. By-value SDK callback parameters and results, including
 `std::array` values, remain outside the callable boundary. Volatile array objects
-or elements, nontrivial element records, and user-defined `std::array`
-specializations are rejected even when reached through a reference.
+or elements and user-defined `std::array` specializations are rejected even
+when reached through a reference. Each operation on a nontrivial record
+element still needs its own source-owned operation proof.
 
 Type queries that need array layout use the authenticated specialization's
 shape while retaining the original element and source-expression dependencies.
@@ -573,11 +578,13 @@ callee reference; it does not authorize an independent SDK function address,
 other SDK callees or out-of-range element access.
 
 Aggregate-initialized local arrays and array temporaries preserve initializer
-and destruction dependencies. Their authenticated implicit trivial destructor
+and destruction dependencies. Their authenticated implicit destructor
 recursively consumes the original element destruction source, even for zero
-extents, while ordinary temporary lifetimes remain unchanged. Trivial source
-element destructors may have a checked `noexcept(false)` specification; the
-array's inferred specification retains that source dependency. SDK construction
+extents, while ordinary temporary lifetimes remain unchanged. Source-owned
+nontrivial element destructors run in reverse element order; a zero extent
+constructs and destroys no elements. Trivial source element destructors may
+have a checked `noexcept(false)` specification; the array's inferred
+specification retains that source dependency. SDK construction
 and nothrow-destruction query roots still require their separate operation
 proofs, and elements such as `std::byte` still need SDK enum-source evidence.
 
@@ -585,8 +592,8 @@ The standalone authenticated closure contains 217 libc++/resource files on all
 eight supported targets and contains no platform headers. Generated programs do
 not call or link libc++ for these operations. Comparisons recursively preserve
 row-major lexicographic order when every leaf element is scalar. Nontrivial
-record elements, record comparisons, dynamic or out-of-range `at`, function
-addresses, quoted `"array"`, user shadows and forged declarations remain
+element copy/move operations, record comparisons, dynamic or out-of-range `at`,
+function addresses, quoted `"array"`, user shadows and forged declarations remain
 outside this boundary.
 
 ## Initializer-list views from `<initializer_list>`

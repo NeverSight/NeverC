@@ -2735,12 +2735,30 @@ static bool utilityArrayValue(const State &S, const SourceManager &SM,
   const auto *Record = Type->getAsCXXRecordDecl();
   if (!Record)
     return false;
-  if (approvedUtilityArrayMetadata(S, SM, Record))
-    return approvedUtilityArrayRecord(S, SM, Record, Context).has_value();
+  if (approvedUtilityArrayMetadata(S, SM, Record)) {
+    const auto Array = approvedUtilityArrayRecord(S, SM, Record, Context);
+    return Array && utilityArrayValue(S, SM, Context, Array->ElementType);
+  }
   Record = Record->getDefinition();
   return Record && S.owns(SM, Record->getLocation()) && !Record->isUnion() &&
          Record->isStandardLayout() && Record->isTrivial() &&
          Record->hasTrivialDestructor();
+}
+
+static bool utilityArrayStorableValue(const State &S, const SourceManager &SM,
+                                     const ASTContext &Context, QualType Type) {
+  if (utilityArrayValue(S, SM, Context, Type))
+    return true;
+  Type = Type.getUnqualifiedType();
+  const auto *Record = Type->getAsCXXRecordDecl();
+  if (!Record)
+    return false;
+  if (approvedUtilityArrayMetadata(S, SM, Record))
+    return approvedUtilityArrayRecord(S, SM, Record, Context).has_value();
+  Record = Record->getDefinition();
+  return Record && !Record->isInvalidDecl() && !Record->isDependentContext() &&
+         S.owns(SM, Record->getLocation()) && !Record->isUnion() &&
+         Record->isStandardLayout();
 }
 
 static bool utilityArrayTriviallyAssignable(const ASTContext &Context,
@@ -3848,7 +3866,7 @@ approvedUtilityArrayRecord(const State &S, const SourceManager &SM,
       Elements->getAccess() != AS_public || Elements->isBitField() ||
       Elements->isMutable() || !Array || Element.isNull() ||
       !Element->isObjectType() || Element->isIncompleteType() ||
-      !utilityArrayValue(S, SM, Context, Element) ||
+      !utilityArrayStorableValue(S, SM, Context, Element) ||
       !approvedStandardSDKDeclaration(S, SM, Elements) ||
       !cstddefOrigin(S, SM, Elements->getLocation(), "libcxx", "array"))
     return std::nullopt;

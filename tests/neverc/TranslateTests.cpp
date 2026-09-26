@@ -28671,13 +28671,6 @@ void rejected_swap(Value& left, Value& right) { left.swap(right); }
 using Value = std::array<volatile int, 0>;
 void rejected_swap(Value& left, Value& right) { left.swap(right); }
 )cpp", "TR0201"},
-    {"zero-array-nontrivial-element", R"cpp(#include <array>
-#include <functional>
-#include <utility>
-struct Row { Row() {} int value; };
-using Value = std::array<Row, 0>;
-void rejected_swap(Value& left, Value& right) { left.swap(right); }
-)cpp", "TR0203"},
     {"array-internal-range-specialization", R"cpp(#include <array>
 #include <utility>
 struct Row { int value; };
@@ -31380,22 +31373,6 @@ extern "C" void probe() {
   auto refs = std::tie(row);
 }
 )cpp", "TR0201"},
-      {"nontrivial-element", R"cpp(#include <array>
-#include <tuple>
-struct Item { int value; ~Item() {} };
-extern "C" void probe() {
-  std::array<Item, 1> row{{{1}}};
-  auto refs = std::tie(row);
-}
-)cpp", "TR0203"},
-      {"nontrivial-element-zero", R"cpp(#include <array>
-#include <tuple>
-struct Item { int value; ~Item() {} };
-extern "C" void probe() {
-  std::array<Item, 0> row{};
-  auto refs = std::tie(row);
-}
-)cpp", "TR0203"},
       {"by-value-callback-parameter", R"cpp(#include <array>
 #include <tuple>
 using Row = std::array<int, 2>;
@@ -31719,6 +31696,93 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ArrayNontrivialRecordLifetimeRun) {
+  const auto Source = tmpFile("array-nontrivial-record.cpp");
+  const auto Output = tmpFile("array-nontrivial-record.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+int constructions;
+int destructions;
+int order;
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) { ++constructions; }
+  ~Item() noexcept { ++destructions; order = order * 10 + value; }
+};
+int main() {
+  {
+    std::array<Item, 2> values{{Item(3), Item(5)}};
+    std::array<Item, 2> copied = values;
+    if (constructions != 2 || destructions != 0 || values.size() != 2 ||
+        values.front().value != 3 || std::get<1>(values).value != 5 ||
+        values.data() != values.begin() || copied.back().value != 5)
+      return 1;
+  }
+  return constructions == 2 && destructions == 4 && order == 5353 ? 0 : 2;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("array-nontrivial-record" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ArrayNestedNontrivialRecordLifetimeRun) {
+  const auto Source = tmpFile("array-nested-nontrivial-record.cpp");
+  const auto Output = tmpFile("array-nested-nontrivial-record.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <tuple>
+int constructions;
+int destructions;
+int order;
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) { ++constructions; }
+  ~Item() noexcept { ++destructions; order = order * 10 + value; }
+};
+using Empty = std::array<Item, 0>;
+Empty &identity(Empty &value) { return value; }
+int main() {
+  {
+    std::array<std::array<Item, 2>, 2> nested{{
+        std::array<Item, 2>{{Item(1), Item(2)}},
+        std::array<Item, 2>{{Item(3), Item(4)}}}};
+    Empty empty{}, another{};
+    empty.swap(another);
+    auto nested_refs = std::tie(nested);
+    auto empty_refs = std::tie(empty);
+    static_assert(__is_same(decltype(identity(empty)), Empty &));
+    if (nested[1][0].value != 3 || empty.size() != 0 ||
+        &std::get<0>(nested_refs) != &nested ||
+        &std::get<0>(empty_refs) != &empty ||
+        constructions != 4 || destructions != 0)
+      return 1;
+  }
+  return constructions == 4 && destructions == 4 && order == 4321 ? 0 : 2;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("array-nested-nontrivial-record" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ArrayRequiresPinnedOperations) {
   struct Rejection {
     const char *Name;
@@ -31733,9 +31797,10 @@ TEST_F(TranslateTest, CoreV2ArrayRequiresPinnedOperations) {
       {"zero-subscript",
        "#include <array>\nint main(){std::array<int,0>a{};return a[0];}",
        "TR0203"},
-      {"nontrivial-element",
-       "#include <array>\nstruct R{int n;~R(){}};int main(){"
-       "std::array<R,2>a{{{1},{2}}};return a[0].n;}",
+      {"nontrivial-element-copy",
+       "#include <array>\nstruct R{int n;explicit R(int v):n(v){}"
+       "R(const R&o):n(o.n){}~R(){}};int main(){"
+       "std::array<R,2>a{{R(1),R(2)}};std::array<R,2>b=a;return b[0].n;}",
        "TR0203"},
       {"record-comparison",
        "#include <array>\nstruct R{int n;};bool operator==(const R&a,const "
@@ -32709,13 +32774,6 @@ Row& identity(Row& row){return row;}
 int probe(Row& row){static_assert(__is_same(decltype(identity(row)),Row&));return 0;}
 int main(){return 0;}
 )cpp", "TR0201"},
-      {"nontrivial-element-zero", R"cpp(#include <array>
-struct Element{int value;~Element(){}};
-using Row = std::array<Element,0>;
-Row& identity(Row& row){return row;}
-int probe(Row& row){static_assert(__is_same(decltype(identity(row)),Row&));return 0;}
-int main(){return 0;}
-)cpp", "TR0203"},
       {"volatile-element-zero", R"cpp(#include <array>
 
 using Row = std::array<volatile int,0>;
