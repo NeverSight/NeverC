@@ -8649,12 +8649,14 @@ approvedUtilityTupleCatSelectedCopies(
         return std::nullopt;
       HelperReturn = Candidate;
     }
-  const auto *Cast = dyn_cast_or_null<CXXFunctionalCastExpr>(
-      HelperReturn ? functionalInvokeStrippedExpression(
-                         HelperReturn->getRetValue())
-                   : nullptr);
-  const auto *TupleConstruction = dyn_cast_or_null<CXXConstructExpr>(
-      Cast ? functionalInvokeStrippedExpression(Cast->getSubExpr()) : nullptr);
+  const auto *Selected = HelperReturn
+                             ? functionalInvokeStrippedExpression(
+                                   HelperReturn->getRetValue())
+                             : nullptr;
+  if (const auto *Cast = dyn_cast_or_null<CXXFunctionalCastExpr>(Selected))
+    Selected = functionalInvokeStrippedExpression(Cast->getSubExpr());
+  const auto *TupleConstruction =
+      dyn_cast_or_null<CXXConstructExpr>(Selected);
   const auto *TupleConstructor = TupleConstruction
                                      ? dyn_cast_or_null<CXXConstructorDecl>(
                                            TupleConstruction->getConstructor()

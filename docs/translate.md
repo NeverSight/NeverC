@@ -214,7 +214,10 @@ before lowering to a scalar operation, member projection or ordinary call.
 Exact `tuple_cat` accepts zero arguments or value, reference and mixed-reference
 tuple/pair sources plus scalar and recursively composite arrays, evaluates all
 sources once before reading their elements, and constructs the exact
-concatenated tuple directly while preserving reference bindings.
+concatenated tuple directly while preserving reference bindings. Nontrivial
+source-owned standard-layout array elements use the copy or move constructor
+selected by the pinned libc++ result construction; their result tuple destroys
+elements in reverse order.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#value-tuples-from-tuple).
 
 Authenticated `std::array` objects, including zero-length and nested arrays,
@@ -224,8 +227,10 @@ member-pointer and `mem_fn` call forms. Reference parameters and results retain
 object identity, qualification and temporary lifetime; assignment through tuple
 or pair bindings writes array values without rebinding. Callable definitions
 retain their source-owned checks. By-value SDK callback parameters/results,
-volatile or nontrivial array elements and user `std::array` specializations
-remain excluded.
+volatile array elements and user `std::array` specializations remain excluded.
+Source-owned nontrivial standard-layout elements may be forwarded by reference
+or copied into source-owned by-value callbacks and `tuple_cat` results through
+their selected constructors; other owning tuple operations remain restricted.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#fixed-value-arrays-from-array).
 
 Array layout also supplies authenticated evidence for type queries, including
