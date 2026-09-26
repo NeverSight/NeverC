@@ -3553,6 +3553,12 @@ approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
       !approvedStandardSDKDeclaration(S, SM, Constructor) ||
       !cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx", "tuple"))
     return std::nullopt;
+  // Source-owned elements enter a tuple only through the selected tuple_cat
+  // construction chain, which supplies their exact copy/move operations.
+  for (const auto *Element : Tuple->Elements)
+    if (!Element->getType()->isReferenceType() &&
+        !utilityTupleValue(S, SM, Context, Element->getType()))
+      return std::nullopt;
   if (!Construction->getNumArgs() && Constructor->isDefaultConstructor()) {
     if (ReferenceTuple || MixedReferenceTuple ||
         (Tuple->Elements.empty() &&
@@ -8735,9 +8741,11 @@ approvedUtilityTupleCatSelectedCopies(
           !S.owns(SM, Constructor->getLocation()) ||
           !Context.hasSameUnqualifiedType(Copy->getType(), Element) ||
           !Context.hasSameUnqualifiedType(Argument->getType(), Element) ||
+          !Context.hasSameType(Parameter->getPointeeType(),
+                               Argument->getType()) ||
           Argument->isLValue() != Call->getArg(SourceIndex)->isLValue() ||
-          Argument->getType().isConstQualified() !=
-              Call->getArg(SourceIndex)->getType().isConstQualified())
+          (Call->getArg(SourceIndex)->getType().isConstQualified() &&
+           !Argument->getType().isConstQualified()))
         return std::nullopt;
       Copies[ResultIndex] = Copy;
     }
@@ -12089,6 +12097,10 @@ approvedUtilityTupleSwapBody(const State &S, const SourceManager &SM,
           Method->getParamDecl(0)->getType(),
           Context.getLValueReferenceType(Context.getRecordType(Tuple->Record))))
     return false;
+  for (const auto *Element : Tuple->Elements)
+    if (!Element->getType()->isReferenceType() &&
+        !utilityTupleValue(S, SM, Context, Element->getType()))
+      return false;
   // tuple<> is an authenticated explicit SDK class specialization. It has no
   // instantiated member pattern and performs no element operation.
   if (Tuple->Elements.empty()) {

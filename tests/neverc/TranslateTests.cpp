@@ -29999,37 +29999,66 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2ArrayOwnedTupleCatCopiesRemainUnsupported) {
-  struct Rejection {
-    const char *Name;
-    const char *Source;
-  };
-  const Rejection Cases[] = {
-      {"tuple-cat-copy", R"cpp(#include <array>
+TEST_F(TranslateTest, CoreV2ArrayOwnedTupleCatCopiesAndDestroys) {
+  const auto Source = tmpFile("array-owned-tuple-cat-copies.cpp");
+  const auto Output = tmpFile("array-owned-tuple-cat-copies.nc");
+  writeFile(Source, R"cpp(#include <array>
 #include <tuple>
+#include <utility>
+int alive = 0;
+int copies = 0;
+int moves = 0;
+int deaths = 0;
+int order = 0;
 struct Item {
   int value;
-  explicit Item(int n) noexcept : value(n) {}
-  Item(const Item& other) noexcept : value(other.value) {}
-  ~Item() noexcept {}
+  explicit Item(int n) noexcept : value(n) { ++alive; }
+  Item(const Item& other) noexcept : value(other.value) {
+    ++copies;
+    ++alive;
+  }
+  Item(Item&& other) noexcept : value(other.value) {
+    other.value = -1;
+    ++moves;
+    ++alive;
+  }
+  ~Item() noexcept {
+    if (deaths < 4) order = order * 10 + value;
+    ++deaths;
+    --alive;
+  }
 };
 int main() {
-  std::array<Item, 1> values{{Item(7)}};
-  auto copied = std::tuple_cat(values);
-  return std::get<0>(copied).value;
+  std::array<Item, 0> empty{};
+  std::array<Item, 2> first{{Item(2), Item(3)}};
+  const std::array<Item, 1> second{{Item(4)}};
+  std::array<Item, 1> third{{Item(5)}};
+  if (alive != 4 || copies || moves || deaths) return 1;
+  {
+    auto joined = std::tuple_cat(empty, first, second, std::move(third));
+    if (std::get<0>(joined).value != 2 ||
+        std::get<1>(joined).value != 3 ||
+        std::get<2>(joined).value != 4 ||
+        std::get<3>(joined).value != 5) return 2;
+    if (copies != 3 || moves != 1 || deaths || alive != 8) return 3;
+  }
+  if (copies != 3 || moves != 1 || deaths != 4 || alive != 4 ||
+      order != 5432 || first[0].value != 2 || first[1].value != 3 ||
+      second[0].value != 4 || third[0].value != -1) return 4;
+  return 0;
 }
-)cpp"}};
-  for (const auto &Case : Cases) {
-    SCOPED_TRACE(Case.Name);
-    const auto Source =
-        tmpFile(std::string("array-owned-") + Case.Name + ".cpp");
-    const auto Output =
-        tmpFile(std::string("array-owned-") + Case.Name + ".nc");
-    writeFile(Source, Case.Source);
-    expectCode(translate(Source,
-                         {"--profile", "cpp-core-v2", "-o", Output.string()}),
-               "TR0203");
-    expectNoArtifacts(Output);
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("array-owned-tuple-cat-copies" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
   }
 }
 
