@@ -1064,6 +1064,15 @@ struct UtilityPairRecord {
   const clang::CXXRecordDecl *Record;
   const clang::FieldDecl *First, *Second;
 };
+struct UtilityOwnedSwapOperations {
+  const clang::CXXConstructorDecl *Constructor;
+  const clang::CXXMethodDecl *FirstAssignment, *SecondAssignment;
+};
+std::optional<UtilityOwnedSwapOperations>
+approvedUtilityOwnedSwap(const State &S, const clang::SourceManager &SM,
+                         const clang::FunctionDecl *Function,
+                         clang::QualType Type,
+                         const clang::ASTContext &Context);
 bool approvedUtilityPairMetadata(const State &S,
                                  const clang::SourceManager &SM,
                                  const clang::CXXRecordDecl *Record);

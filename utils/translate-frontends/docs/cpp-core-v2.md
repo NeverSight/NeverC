@@ -212,7 +212,10 @@ reference destination fields keep their bindings. Same-type and compatible
 heterogeneous pair assignment proves the pinned pair body's two field writes,
 return and selected source-owned field assignments. Assignment writes owned
 fields or referents in first-then-second order without rebinding references.
-Pair swap involving these owned fields remains outside this boundary.
+Member and free pair swap accept nontrivial source-owned fields when the pinned
+swap selects supported move construction and assignments. They invoke those
+operations for each field in order, then destroy its temporary. Reference
+fields keep their bindings, including self-swap.
 
 Authenticated `std::reference_wrapper` values are admitted in ordinary
 and mixed pair value fields, including nested pairs. Direct, same-type
@@ -221,8 +224,9 @@ binding. Assignment copies that binding into the destination wrapper,
 and member/free swap exchanges bindings only when the selected element
 operations are exact implicit instantiations of the pinned SDK swap. Nested
 pair and array dispatch is authenticated recursively; selected move functions
-must also come from the pinned SDK and copy/move construction and assignment
-must be trivial. These operations do not assign the referred-to objects.
+must also come from the pinned SDK. Source-owned nontrivial pair fields use
+their selected move operations; the remaining wrapper operations use trivial
+construction and assignment and do not assign the referred-to objects.
 Every supported pair and array swap requires the selected-operation proof,
 including source-record leaves, reference and mixed pairs, and nested arrays.
 Array swap authenticates its data projections, range loop, iterator adapters,

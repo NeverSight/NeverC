@@ -28512,6 +28512,18 @@ int main() {
 TEST_F(TranslateTest, CoreV2PairArraySwapRequiresPinnedElementOperations) {
   struct Rejection { const char *Name; const char *Source; const char *Code; };
   const Rejection Cases[] = {
+    {"pair-owned-element-swap-specialization", R"cpp(#include <utility>
+struct Row {
+  int value;
+  Row(Row&& other) noexcept : value(other.value) {}
+  Row& operator=(Row&& other) noexcept { value = other.value; return *this; }
+};
+namespace std { inline namespace __1 {
+template<> void swap<Row>(Row&, Row&) noexcept {}
+} }
+using Value = std::pair<Row, int>;
+void rejected_swap(Value& left, Value& right) { left.swap(right); }
+)cpp", "TR0201"},
     {"pair-record-adl-member", R"cpp(#include <array>
 #include <functional>
 #include <utility>
@@ -30734,6 +30746,82 @@ int main() {
   for (const std::string &Optimization : {"-O0", "-O2"}) {
     SCOPED_TRACE(Optimization);
     const auto Executable = tmpFile("owned-pair-assignment" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OwnedPairSwapCallsSelectedOperations) {
+  const auto Source = tmpFile("owned-pair-swap.cpp");
+  const auto Output = tmpFile("owned-pair-swap.nc");
+  writeFile(Source, R"cpp(#include <utility>
+int events[32];
+int event_count;
+void note(int value) { events[event_count++] = value; }
+bool matches(const int* expected, int count) {
+  if (event_count != count) return false;
+  for (int i = 0; i != count; ++i)
+    if (events[i] != expected[i]) return false;
+  return true;
+}
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) {}
+  Item(const Item& other) noexcept : value(other.value) {}
+  Item(Item&& other) noexcept : value(other.value) {
+    note(10 + value);
+    other.value = -1;
+  }
+  Item& operator=(Item&& other) noexcept {
+    note(20 + other.value);
+    value = other.value;
+    other.value = -1;
+    return *this;
+  }
+  ~Item() noexcept { note(30 + value); }
+};
+int main() {
+  std::pair<Item, Item> left(Item(1), Item(2));
+  std::pair<Item, Item> right(Item(3), Item(4));
+  event_count = 0;
+  left.swap(right);
+  const int member[] = {11, 23, 21, 29, 12, 24, 22, 29};
+  if (!matches(member, 8) || left.first.value != 3 ||
+      left.second.value != 4 || right.first.value != 1 ||
+      right.second.value != 2)
+    return 1;
+  event_count = 0;
+  std::swap(left, right);
+  const int free_swap[] = {13, 21, 23, 29, 14, 22, 24, 29};
+  if (!matches(free_swap, 8) || left.first.value != 1 ||
+      right.second.value != 4)
+    return 2;
+  Item first(5), second(6);
+  std::pair<Item&, int> ref_left(first, 1), ref_right(second, 2);
+  event_count = 0;
+  ref_left.swap(ref_right);
+  const int reference[] = {15, 26, 25, 29};
+  if (!matches(reference, 4) || &ref_left.first != &first ||
+      &ref_right.first != &second || first.value != 6 ||
+      second.value != 5 || ref_left.second != 2 || ref_right.second != 1)
+    return 3;
+  event_count = 0;
+  std::swap(ref_left, ref_left);
+  const int self_swap[] = {16, 19, 26, 29};
+  return matches(self_swap, 4) && first.value == 6 &&
+                 &ref_left.first == &first && ref_left.second == 2
+             ? 0
+             : 4;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("owned-pair-swap" + Optimization);
     auto Compile = compileGenerated(Output, Executable, Optimization);
     ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
     auto Run = exec(Executable.string(), {});

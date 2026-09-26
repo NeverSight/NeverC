@@ -1636,6 +1636,66 @@ class FunctionLowering {
     return fieldStorage(std::move(Base), Info.Field, L);
   }
 
+  bool swapOwnedPairFields(Expression LeftAddress, Expression RightAddress,
+                           const UtilityPairRecord &Pair,
+                           const CXXMethodDecl *Method, SourceLocation L) {
+    const auto *Body =
+        Method ? dyn_cast_or_null<CompoundStmt>(Method->getBody()) : nullptr;
+    if (!Body || Body->size() != 3)
+      reject(L, "utility pair swap",
+             "The selected pair swap body is unavailable.");
+    auto Statement = Body->body_begin();
+    ++Statement; // The pinned member's using std::swap declaration.
+    const FieldDecl *Fields[] = {Pair.First, Pair.Second};
+    std::optional<UtilityOwnedSwapOperations> Owned[2];
+    for (unsigned I = 0; I != 2; ++I) {
+      const auto *Selected = dyn_cast<CallExpr>(*Statement++);
+      if (!Selected)
+        reject(L, "utility pair swap", "A selected field swap is unavailable.");
+      auto Element = Fields[I]->getType();
+      if (Element->isReferenceType())
+        Element = Element->getPointeeType();
+      Owned[I] = approvedUtilityOwnedSwap(
+          A.S, A.Sources, Selected->getDirectCallee(), Element, A.Context);
+    }
+    if (!Owned[0] && !Owned[1])
+      return false;
+    auto Left = dereference(std::move(LeftAddress), L);
+    auto Right = dereference(std::move(RightAddress), L);
+    for (unsigned I = 0; I != 2; ++I) {
+      auto LeftValue = fieldStorage(json::Object(Left), Fields[I], L);
+      auto RightValue = fieldStorage(json::Object(Right), Fields[I], L);
+      auto Element = Fields[I]->getType();
+      if (Element->isReferenceType()) {
+        LeftValue = dereference(std::move(LeftValue), L);
+        RightValue = dereference(std::move(RightValue), L);
+        Element = Element->getPointeeType();
+      }
+      if (!Owned[I]) {
+        auto OldLeft = snapshot(json::Object(LeftValue), L);
+        auto OldRight = snapshot(json::Object(RightValue), L);
+        assign(std::move(LeftValue), std::move(OldRight), L);
+        assign(std::move(RightValue), std::move(OldLeft), L);
+        continue;
+      }
+      auto LeftPointer = snapshot(address(std::move(LeftValue), Element, L), L);
+      auto RightPointer =
+          snapshot(address(std::move(RightValue), Element, L), L);
+      auto Temporary = objectTemporary(Element, L);
+      constructMemorySource(json::Object(Temporary), Element,
+                            Owned[I]->Constructor, json::Object(LeftPointer),
+                            L);
+      assignMemorySource(dereference(json::Object(LeftPointer), L), Element,
+                         Owned[I]->FirstAssignment,
+                         dereference(json::Object(RightPointer), L), L);
+      assignMemorySource(dereference(json::Object(RightPointer), L), Element,
+                         Owned[I]->SecondAssignment, json::Object(Temporary),
+                         L);
+      destroy(std::move(Temporary), Element, L);
+    }
+    return true;
+  }
+
   Expression utilityOperation(const CallExpr *Call, UtilityOperation Operation,
                               std::optional<Expression> Destination) {
     auto L = Call->getExprLoc();
@@ -8452,6 +8512,30 @@ class FunctionLowering {
           address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
       auto RightAddress = snapshot(
           address(lvalue(Call->getArg(1)), Call->getArg(1)->getType(), L), L);
+      if (Operation == UtilityOperation::PairSwap) {
+        auto Pair = approvedUtilityPairRecord(
+            A.S, A.Sources, Call->getArg(0)->getType()->getAsCXXRecordDecl(),
+            A.Context);
+        if (!Pair)
+          Pair = approvedUtilityReferencePairRecord(
+              A.S, A.Sources, Call->getArg(0)->getType()->getAsCXXRecordDecl(),
+              A.Context);
+        if (!Pair)
+          Pair = approvedUtilityMixedReferencePairRecord(
+              A.S, A.Sources, Call->getArg(0)->getType()->getAsCXXRecordDecl(),
+              A.Context);
+        const auto *Body =
+            dyn_cast_or_null<CompoundStmt>(Call->getDirectCallee()->getBody());
+        const auto *Delegation =
+            Body && Body->size() == 1
+                ? dyn_cast<CXXMemberCallExpr>(*Body->body_begin())
+                : nullptr;
+        if (Pair && Delegation &&
+            swapOwnedPairFields(json::Object(LeftAddress),
+                                json::Object(RightAddress), *Pair,
+                                Delegation->getMethodDecl(), L))
+          return {};
+      }
       const auto ReferenceTuple =
           Operation == UtilityOperation::TupleSwap
               ? approvedUtilityReferenceTupleRecord(
@@ -8517,6 +8601,23 @@ class FunctionLowering {
           snapshot(address(lvalue(Object), Object->getType(), L), L);
       auto RightAddress = snapshot(
           address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
+      if (Operation == UtilityOperation::PairMemberSwap) {
+        auto Pair = approvedUtilityPairRecord(
+            A.S, A.Sources, Object->getType()->getAsCXXRecordDecl(), A.Context);
+        if (!Pair)
+          Pair = approvedUtilityReferencePairRecord(
+              A.S, A.Sources, Object->getType()->getAsCXXRecordDecl(),
+              A.Context);
+        if (!Pair)
+          Pair = approvedUtilityMixedReferencePairRecord(
+              A.S, A.Sources, Object->getType()->getAsCXXRecordDecl(),
+              A.Context);
+        if (Pair &&
+            swapOwnedPairFields(
+                json::Object(LeftAddress), json::Object(RightAddress), *Pair,
+                llvm::cast<CXXMethodDecl>(Call->getDirectCallee()), L))
+          return {};
+      }
       const auto ReferenceTuple =
           Operation == UtilityOperation::TupleMemberSwap
               ? approvedUtilityReferenceTupleRecord(

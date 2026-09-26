@@ -11979,6 +11979,116 @@ static bool utilitySwapTrivialBody(const State &S, const SourceManager &SM,
   return true;
 }
 
+std::optional<UtilityOwnedSwapOperations>
+approvedUtilityOwnedSwap(const State &S, const SourceManager &SM,
+                         const FunctionDecl *Function, QualType Type,
+                         const ASTContext &Context) {
+  if (Type.isNull())
+    return std::nullopt;
+  if (Type->isReferenceType())
+    Type = Type->getPointeeType();
+  const auto *Arguments =
+      Function ? Function->getTemplateSpecializationArgs() : nullptr;
+  const auto *Body =
+      Function ? dyn_cast_or_null<CompoundStmt>(Function->getBody()) : nullptr;
+  if (!utilityPairSourceOwnedValue(S, SM, Context, Type) ||
+      !utilitySwapSDKFunction(S, SM, Function, "swap", "__utility/swap.h") ||
+      !Function->getReturnType()->isVoidType() ||
+      Function->getNumParams() != 2 || !Arguments || Arguments->size() != 1 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Arguments->get(0).getAsType(), Type) || !Body ||
+      Body->size() != 3)
+    return std::nullopt;
+  const auto Reference = Context.getLValueReferenceType(Type);
+  for (const auto *Parameter : Function->parameters())
+    if (!Context.hasSameType(Parameter->getType(), Reference))
+      return std::nullopt;
+
+  auto Statement = Body->body_begin();
+  const auto *Declaration = dyn_cast<DeclStmt>(*Statement++);
+  const auto *Temporary = Declaration && Declaration->isSingleDecl()
+                              ? dyn_cast<VarDecl>(Declaration->getSingleDecl())
+                              : nullptr;
+  const auto *Construction =
+      Temporary && Temporary->getInit()
+          ? dyn_cast_or_null<CXXConstructExpr>(
+                functionalInvokeStrippedExpression(Temporary->getInit()))
+          : nullptr;
+  const auto *Constructor =
+      Construction ? Construction->getConstructor() : nullptr;
+  if (!Temporary || !Context.hasSameType(Temporary->getType(), Type) ||
+      !Construction || Construction->getNumArgs() != 1 || !Constructor ||
+      !Constructor->isMoveConstructor() || !supportedConstructor(Constructor) ||
+      (!Constructor->isTrivial() && !Constructor->hasBody()) ||
+      !S.owns(SM, Constructor->getLocation()) ||
+      Constructor->getParent()->getCanonicalDecl() !=
+          Type->getAsCXXRecordDecl()->getCanonicalDecl() ||
+      !Context.hasSameType(Constructor->getParamDecl(0)->getType(),
+                           Context.getRValueReferenceType(Type)))
+    return std::nullopt;
+
+  auto SelectedMove = [&](const Expr *Expression, const ValueDecl *Source) {
+    const auto *Move = dyn_cast_or_null<CallExpr>(
+        functionalInvokeStrippedExpression(Expression));
+    const auto *Selected = Move ? Move->getDirectCallee() : nullptr;
+    const auto *MoveArguments =
+        Selected ? Selected->getTemplateSpecializationArgs() : nullptr;
+    const auto *Argument =
+        Move && Move->getNumArgs() == 1
+            ? dyn_cast_or_null<DeclRefExpr>(
+                  functionalInvokeStrippedExpression(Move->getArg(0)))
+            : nullptr;
+    return Selected && Move->getNumArgs() == 1 && Argument &&
+           Argument->getDecl() == Source &&
+           utilitySwapSDKFunction(S, SM, Selected, "move",
+                                  "__utility/move.h") &&
+           Selected->getNumParams() == 1 && MoveArguments &&
+           MoveArguments->size() == 1 &&
+           MoveArguments->get(0).getKind() == TemplateArgument::Type &&
+           Context.hasSameType(MoveArguments->get(0).getAsType(), Reference) &&
+           Context.hasSameType(Selected->getParamDecl(0)->getType(),
+                               Reference) &&
+           Context.hasSameType(Selected->getReturnType(),
+                               Context.getRValueReferenceType(Type)) &&
+           Context.hasSameType(Move->getType(), Type) && Move->isXValue();
+  };
+  if (!SelectedMove(Construction->getArg(0), Function->getParamDecl(0)))
+    return std::nullopt;
+
+  const CXXMethodDecl *Assignments[2] = {};
+  const ValueDecl *Destinations[] = {Function->getParamDecl(0),
+                                     Function->getParamDecl(1)};
+  const ValueDecl *Sources[] = {Function->getParamDecl(1), Temporary};
+  for (unsigned I = 0; I != 2; ++I) {
+    const auto *Operation = dyn_cast<CXXOperatorCallExpr>(*Statement++);
+    const auto *Method =
+        Operation
+            ? dyn_cast_or_null<CXXMethodDecl>(Operation->getDirectCallee())
+            : nullptr;
+    const auto *Destination =
+        Operation && Operation->getNumArgs() == 2
+            ? dyn_cast_or_null<DeclRefExpr>(
+                  functionalInvokeStrippedExpression(Operation->getArg(0)))
+            : nullptr;
+    if (!Operation || Operation->getOperator() != OO_Equal || !Method ||
+        !Destination || Destination->getDecl() != Destinations[I] ||
+        !SelectedMove(Operation->getArg(1), Sources[I]) ||
+        !Method->isMoveAssignmentOperator() || !supportedAssignment(Method) ||
+        (!Method->isTrivial() && !Method->hasBody()) ||
+        !S.owns(SM, Method->getLocation()) || Method->getNumParams() != 1 ||
+        Method->getParent()->getCanonicalDecl() !=
+            Type->getAsCXXRecordDecl()->getCanonicalDecl() ||
+        !Context.hasSameType(Method->getParamDecl(0)->getType(),
+                             Context.getRValueReferenceType(Type)) ||
+        !Context.hasSameType(Operation->getType(), Type) ||
+        !Operation->isLValue())
+      return std::nullopt;
+    Assignments[I] = Method;
+  }
+  return UtilityOwnedSwapOperations{Constructor, Assignments[0],
+                                    Assignments[1]};
+}
+
 // Authenticate a concrete SDK member and every declaration used to obtain its
 // template pattern. Signature, receiver and body semantics are checked by the
 // owning operation below, including static members and member templates.
@@ -12194,10 +12304,17 @@ approvedUtilityPairSwapBody(const State &S, const SourceManager &SM,
     return false;
   for (const auto *Field : {Pair->First, Pair->Second}) {
     const auto *Call = dyn_cast<CallExpr>(*Statement++);
+    auto Element = Field->getType();
+    if (Element->isReferenceType())
+      Element = Element->getPointeeType();
     if (!Call || Call->getNumArgs() != 2 ||
-        !approvedUtilityPairElementSwap(S, SM, Call->getDirectCallee(),
-                                        Field->getType(), Context, Depth + 1,
-                                        Proof))
+        !(utilityPairSourceOwnedValue(S, SM, Context, Element)
+              ? approvedUtilityOwnedSwap(S, SM, Call->getDirectCallee(),
+                                         Element, Context)
+                    .has_value()
+              : approvedUtilityPairElementSwap(S, SM, Call->getDirectCallee(),
+                                               Field->getType(), Context,
+                                               Depth + 1, Proof)))
       return false;
     const auto *Left = dyn_cast_or_null<MemberExpr>(
         functionalInvokeStrippedExpression(Call->getArg(0)));
@@ -19654,10 +19771,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                       "__utility/pair.h") &&
         S.owns(SM, Reference->getExprLoc()) &&
         (ReferencePair || MixedReferencePair ||
-         (utilityPairValue(S, SM, Context, FirstType) &&
-          utilityPairValue(S, SM, Context, SecondType))) &&
-        utilityPairAssignableValue(S, SM, Context, FirstType) &&
-        utilityPairAssignableValue(S, SM, Context, SecondType) &&
+         ((utilityPairValue(S, SM, Context, FirstType) ||
+           utilityPairSourceOwnedValue(S, SM, Context, FirstType)) &&
+          (utilityPairValue(S, SM, Context, SecondType) ||
+           utilityPairSourceOwnedValue(S, SM, Context, SecondType)))) &&
+        (utilityPairAssignableValue(S, SM, Context, FirstType) ||
+         utilityPairSourceOwnedValue(S, SM, Context, FirstType)) &&
+        (utilityPairAssignableValue(S, SM, Context, SecondType) ||
+         utilityPairSourceOwnedValue(S, SM, Context, SecondType)) &&
         Context.hasSameUnqualifiedType(
             MemberCall->getImplicitObjectArgument()->getType(),
             Context.getRecordType(Pair->Record)) &&
@@ -23327,10 +23448,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         RightType->isLValueReferenceType() && Left && Right &&
         Left->Record->getCanonicalDecl() == Right->Record->getCanonicalDecl() &&
         (ReferencePair || MixedReferencePair ||
-         (utilityPairValue(S, SM, Context, FirstType) &&
-          utilityPairValue(S, SM, Context, SecondType))) &&
-        utilityPairAssignableValue(S, SM, Context, FirstType) &&
-        utilityPairAssignableValue(S, SM, Context, SecondType) &&
+         ((utilityPairValue(S, SM, Context, FirstType) ||
+           utilityPairSourceOwnedValue(S, SM, Context, FirstType)) &&
+          (utilityPairValue(S, SM, Context, SecondType) ||
+           utilityPairSourceOwnedValue(S, SM, Context, SecondType)))) &&
+        (utilityPairAssignableValue(S, SM, Context, FirstType) ||
+         utilityPairSourceOwnedValue(S, SM, Context, FirstType)) &&
+        (utilityPairAssignableValue(S, SM, Context, SecondType) ||
+         utilityPairSourceOwnedValue(S, SM, Context, SecondType)) &&
         Same(Call->getArg(0)->getType(), LeftType->getPointeeType()) &&
         Same(Call->getArg(1)->getType(), RightType->getPointeeType()))
       if (approvedUtilityPairElementSwap(

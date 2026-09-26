@@ -143,7 +143,10 @@ sources retain their checked cv and value categories; reference destination
 fields retain their bindings. Same-type and compatible heterogeneous pair
 assignment also proves the pinned pair body and invokes each selected
 source-owned field assignment in order, including writes through reference
-fields. Pair swap involving owned fields remains outside this boundary.
+fields. Member and free pair swap also accept nontrivial source-owned fields
+when the pinned swap selects supported move construction and assignments.
+They destroy each swap temporary; reference fields keep their bindings,
+including self-swap.
 Reference-valued pairs additionally support exact compatible direct
 construction, same-type copy/move construction and index- or unique-type
 `get`; same-type assignment writes through their stored bindings without
