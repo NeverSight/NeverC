@@ -10199,6 +10199,43 @@ approvedUtilityTupleApplyDispatch(const State &S, const SourceManager &SM,
                                    DispatchFunction, Operation};
 }
 
+const CXXConstructExpr *approvedUtilityTupleApplySelectedCopy(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    unsigned Index, QualType Parameter, const ASTContext &Context) {
+  const auto Apply = approvedUtilityTupleApplyDispatch(S, SM, Call, Context);
+  const auto *Operation =
+      Apply ? dyn_cast<CallExpr>(Apply->Operation) : nullptr;
+  const unsigned Offset = isa_and_nonnull<CXXOperatorCallExpr>(Operation) ? 1 : 0;
+  if (!Apply || !Apply->Tuple.ArrayElements ||
+      Index >= Apply->Tuple.size() || !Operation ||
+      Operation->getNumArgs() != Apply->Tuple.size() + Offset ||
+      Parameter.isNull() || !Parameter->isRecordType() ||
+      !Context.hasSameUnqualifiedType(Apply->Tuple.elementType(Index),
+                                      Parameter))
+    return nullptr;
+  const auto *Argument = Operation->getArg(Index + Offset);
+  const auto *Construction = dyn_cast_or_null<CXXConstructExpr>(
+      functionalInvokeStrippedExpression(Argument));
+  if (!Construction || !approvedFunctionalInvokeArgumentFlow(
+                           S, SM, Argument,
+                           Apply->DispatchFunction->getParamDecl(Index + 1),
+                           Parameter, Context))
+    return nullptr;
+  const auto *Constructor = Construction->getConstructor();
+  const auto Source = Constructor->getParamDecl(0)->getType();
+  const auto *SelectedSource = Construction->getArg(0);
+  const auto *ForwardedGet = Apply->Dispatch->getArg(Index + 1);
+  if (!Source->isReferenceType() ||
+      !Context.hasSameType(Source->getPointeeType(),
+                           SelectedSource->getType()) ||
+      !Context.hasSameUnqualifiedType(SelectedSource->getType(),
+                                      Apply->Tuple.elementType(Index)) ||
+      SelectedSource->isLValue() != ForwardedGet->isLValue() ||
+      SelectedSource->isXValue() != ForwardedGet->isXValue())
+    return nullptr;
+  return Construction;
+}
+
 std::optional<FunctionalMemberInvokeCall>
 approvedUtilityTupleApplyUserCall(const State &S, const SourceManager &SM,
                                   const CallExpr *Call,
@@ -10281,8 +10318,11 @@ approvedUtilityTupleApplyUserCall(const State &S, const SourceManager &SM,
                    ParameterReferent.isConstQualified() ||
                    !TupleArgument.isConstQualified());
     } else {
-      Supported = supportedFunctionalByValue(S, SM, Context, Parameter) &&
-                  functionalMemberValueConversion(Context, Element, Parameter);
+      Supported =
+          (supportedFunctionalByValue(S, SM, Context, Parameter) ||
+           approvedUtilityTupleApplySelectedCopy(S, SM, Call, I, Parameter,
+                                                 Context)) &&
+          functionalMemberValueConversion(Context, Element, Parameter);
     }
     if (!Supported ||
         !approvedFunctionalInvokeArgumentFlow(
@@ -21978,12 +22018,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                           utilityScalar(Context, Parameter) &&
                           utilityScalarDirectConversion(Context, Element,
                                                         Parameter);
-      const bool Record = Element->isRecordType() &&
-                          Parameter->isRecordType() &&
-                          supportedFunctionalByValue(
-                              S, SM, Context, Parameter) &&
-                          utilityTupleDirectConversion(S, SM, Context, Element,
-                                                       Parameter);
+      const bool Record =
+          Element->isRecordType() && Parameter->isRecordType() &&
+          ((supportedFunctionalByValue(S, SM, Context, Parameter) &&
+            utilityTupleDirectConversion(S, SM, Context, Element, Parameter)) ||
+           approvedUtilityTupleApplySelectedCopy(S, SM, Call, I, Parameter,
+                                                 Context));
       if (!Scalar && !Record)
         return std::nullopt;
     }

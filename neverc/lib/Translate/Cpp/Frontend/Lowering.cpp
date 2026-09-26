@@ -8312,11 +8312,20 @@ class FunctionLowering {
           Arguments.push_back(
               snapshot(cast(std::move(Pointer), type(Parameter, L), L), L));
         } else if (recordValue(Parameter)) {
-          // Record elements are admitted here only when their copy is trivial.
-          // Still create the independent by-value parameter object required by
-          // the ordinary callback ABI instead of aliasing tuple-like storage.
           auto Place = objectTemporary(Parameter, L);
-          assign(Place, std::move(Element), L);
+          if (const auto *Copy = approvedUtilityTupleApplySelectedCopy(
+                  A.S, A.Sources, Call, I, Parameter, A.Context)) {
+            const auto Source =
+                Copy->getConstructor()->getParamDecl(0)->getType()
+                    ->getPointeeType();
+            constructMemorySource(
+                Place, Parameter, Copy->getConstructor(),
+                snapshot(address(std::move(Element), Source, L), L), L);
+          } else {
+            // Trivially copyable tuple elements still need an independent
+            // callback parameter, rather than an alias into tuple storage.
+            assign(Place, std::move(Element), L);
+          }
           Arguments.push_back(snapshot(
               address(std::move(Place), Parameter.getUnqualifiedType(), L), L));
         } else {

@@ -29850,23 +29850,75 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2ArrayOwnedTupleLikeCopiesRemainUnsupported) {
+TEST_F(TranslateTest, CoreV2ArrayOwnedApplySelectedCopiesRunAtBothOptimizations) {
+  const auto Source = tmpFile("array-owned-apply-selected-copies.cpp");
+  const auto Output = tmpFile("array-owned-apply-selected-copies.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <tuple>
+#include <utility>
+int copies;
+int moves;
+int deaths;
+int alive;
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) { ++alive; }
+  Item(const Item& other) noexcept : value(other.value) {
+    ++copies;
+    ++alive;
+  }
+  Item(Item&& other) noexcept : value(other.value) {
+    ++moves;
+    ++alive;
+  }
+  ~Item() noexcept { ++deaths; --alive; }
+};
+int read(Item first, Item second) {
+  const int result = first.value * 10 + second.value;
+  first.value = 90;
+  second.value = 91;
+  return result;
+}
+struct Reader {
+  int operator()(Item first, Item second) const {
+    return read(std::move(first), std::move(second));
+  }
+};
+int main() {
+  std::array<Item, 2> row{{Item(2), Item(3)}};
+  const std::array<Item, 2> constant{{Item(4), Item(5)}};
+  Reader reader;
+  if (std::apply(read, row) != 23 || copies != 2 || moves != 0 ||
+      deaths != 2 || alive != 4) return 1;
+  if (std::apply(reader, constant) != 45 || copies != 4 || moves != 2 ||
+      deaths != 6 || alive != 4) return 2;
+  if (std::apply(read, std::move(row)) != 23 || copies != 4 || moves != 4 ||
+      deaths != 8 || alive != 4) return 3;
+  return row[0].value == 2 && row[1].value == 3 &&
+         constant[0].value == 4 && constant[1].value == 5 ? 0 : 4;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("array-owned-apply-selected-copies" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ArrayOwnedTupleCatCopiesRemainUnsupported) {
   struct Rejection {
     const char *Name;
     const char *Source;
   };
   const Rejection Cases[] = {
-      {"apply-by-value", R"cpp(#include <array>
-#include <tuple>
-struct Item {
-  int value;
-  explicit Item(int n) noexcept : value(n) {}
-  Item(const Item& other) noexcept : value(other.value) {}
-  ~Item() noexcept {}
-};
-int read(Item item) { return item.value; }
-int main() { std::array<Item, 1> values{{Item(7)}}; return std::apply(read, values); }
-)cpp"},
       {"tuple-cat-copy", R"cpp(#include <array>
 #include <tuple>
 struct Item {

@@ -390,6 +390,10 @@ approvedUtilityTupleApplyUserCall(const State &S,
                                   const clang::SourceManager &SM,
                                   const clang::CallExpr *Call,
                                   const clang::ASTContext &Context);
+const clang::CXXConstructExpr *approvedUtilityTupleApplySelectedCopy(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *Call, unsigned Index, clang::QualType Parameter,
+    const clang::ASTContext &Context);
 struct UtilityTupleApplyObjectOperation {
   FunctionalOperationInfo Operation;
   const clang::CXXMethodDecl *Method;
