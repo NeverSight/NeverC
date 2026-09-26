@@ -7992,10 +7992,11 @@ class FunctionLowering {
             continue;
           auto Storage =
               fieldStorage(json::Object(Sources[I]), Source.ArrayElements, L);
+          const auto Pointee = Call->getArg(I)->getType().isConstQualified()
+                                   ? Source.ArrayElementType.withConst()
+                                   : Source.ArrayElementType;
           auto Pointer = decay(std::move(Storage),
-                               type(A.Context.getPointerType(
-                                        Source.ArrayElementType.withConst()),
-                                    L),
+                               type(A.Context.getPointerType(Pointee), L),
                                L);
           for (uint64_t N = 0; N < Source.ArraySize; ++N) {
             auto Element = index(json::Object(Pointer),
