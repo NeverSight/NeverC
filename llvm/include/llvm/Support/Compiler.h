@@ -274,7 +274,10 @@
 #endif
 
 /// NEVERC_FLATTEN - Request that all calls within a function be inlined.
-#if __has_attribute(flatten)
+/// Clang inlines the calls the function makes. GCC also inlines the calls of
+/// what it inlines, transitively, which on a large recursive function such as
+/// the constant evaluator does not finish, so it does not get the request.
+#if __has_attribute(flatten) && defined(__clang__)
 #define NEVERC_FLATTEN __attribute__((flatten))
 #else
 #define NEVERC_FLATTEN
