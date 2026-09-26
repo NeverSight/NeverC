@@ -12523,6 +12523,10 @@ class FunctionLowering {
               RightVector->Record->getCanonicalDecl())
         reject(L, "vector comparison",
                "The selected std::vector layout is unavailable.");
+      auto String = StringFor(LeftVector->ElementType);
+      if (LeftVector->OwningElement && !String)
+        reject(L, "vector comparison",
+               "Only pinned std::string owning elements can be compared.");
       const auto PointerType = type(LeftVector->PointerType, L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       auto LeftAddress = snapshot(
@@ -12555,6 +12559,74 @@ class FunctionLowering {
                       quantity(1, DifferenceType, L), PointerType, L),
                L);
       };
+      auto CompareStrings = [&]() -> Expression {
+        auto Left = ReadStringAt(json::Object(LeftCurrent), *String);
+        auto Right = ReadStringAt(json::Object(RightCurrent), *String);
+        const auto SizeType = type(A.Context.getSizeType(), L);
+        auto Position = temporary(SizeType, L);
+        auto Order = temporary("int", L);
+        assign(Position, quantity(0, SizeType, L), L);
+        const auto CheckLeftByte = labelName(), CheckRightByte = labelName();
+        const auto CompareByte = labelName(), DifferentByte = labelName();
+        const auto AdvanceByte = labelName(), CompareSizes = labelName();
+        const auto CheckGreater = labelName(), Less = labelName();
+        const auto Greater = labelName(), Equal = labelName();
+        const auto Compared = labelName();
+        jump(CheckLeftByte, L);
+        label(CheckLeftByte, L);
+        branch(binary("<", json::Object(Position), json::Object(Left.second),
+                      "bool", L),
+               CheckRightByte, CompareSizes, L);
+        label(CheckRightByte, L);
+        branch(binary("<", json::Object(Position), json::Object(Right.second),
+                      "bool", L),
+               CompareByte, CompareSizes, L);
+        label(CompareByte, L);
+        auto LeftByte = snapshot(
+            cast(index(json::Object(Left.first), json::Object(Position),
+                       type(A.Context.CharTy, L), L),
+                 "u8", L),
+            L);
+        auto RightByte = snapshot(
+            cast(index(json::Object(Right.first), json::Object(Position),
+                       type(A.Context.CharTy, L), L),
+                 "u8", L),
+            L);
+        branch(binary("!=", json::Object(LeftByte), json::Object(RightByte),
+                      "bool", L),
+               DifferentByte, AdvanceByte, L);
+        label(DifferentByte, L);
+        branch(binary("<", std::move(LeftByte), std::move(RightByte), "bool", L),
+               Less, Greater, L);
+        label(AdvanceByte, L);
+        assign(Position,
+               binary("+", json::Object(Position), quantity(1, SizeType, L),
+                      SizeType, L),
+               L);
+        jump(CheckLeftByte, L);
+        label(CompareSizes, L);
+        branch(binary("<", json::Object(Left.second),
+                      json::Object(Right.second), "bool", L),
+               Less, CheckGreater, L);
+        label(CheckGreater, L);
+        branch(binary(">", json::Object(Left.second),
+                      json::Object(Right.second), "bool", L),
+               Greater, Equal, L);
+        label(Less, L);
+        assign(Order,
+               binary("-", quantity(0, "int", L), quantity(1, "int", L),
+                      "int", L),
+               L);
+        jump(Compared, L);
+        label(Greater, L);
+        assign(Order, quantity(1, "int", L), L);
+        jump(Compared, L);
+        label(Equal, L);
+        assign(Order, quantity(0, "int", L), L);
+        jump(Compared, L);
+        label(Compared, L);
+        return Order;
+      };
       auto Result = temporary("bool", L);
       const auto CheckLeft = labelName(), CheckRight = labelName();
       const auto Compare = labelName(), Next = labelName();
@@ -12574,13 +12646,20 @@ class FunctionLowering {
                       "bool", L),
                Compare, Different, L);
         label(Compare, L);
-        auto LeftElement =
-            snapshot(dereference(json::Object(LeftCurrent), L), L);
-        auto RightElement =
-            snapshot(dereference(json::Object(RightCurrent), L), L);
-        branch(binary("==", std::move(LeftElement), std::move(RightElement),
-                      "bool", L),
-               Next, Different, L);
+        if (String) {
+          auto Order = CompareStrings();
+          branch(binary("==", std::move(Order), quantity(0, "int", L), "bool",
+                        L),
+                 Next, Different, L);
+        } else {
+          auto LeftElement =
+              snapshot(dereference(json::Object(LeftCurrent), L), L);
+          auto RightElement =
+              snapshot(dereference(json::Object(RightCurrent), L), L);
+          branch(binary("==", std::move(LeftElement), std::move(RightElement),
+                        "bool", L),
+                 Next, Different, L);
+        }
         label(Next, L);
         Advance();
         jump(CheckLeft, L);
@@ -12610,16 +12689,27 @@ class FunctionLowering {
                     "bool", L),
              Compare, Greater, L);
       label(Compare, L);
-      auto LeftElement = snapshot(dereference(json::Object(LeftCurrent), L), L);
-      auto RightElement =
-          snapshot(dereference(json::Object(RightCurrent), L), L);
-      branch(binary("<", json::Object(LeftElement), json::Object(RightElement),
-                    "bool", L),
-             Less, CheckGreater, L);
-      label(CheckGreater, L);
-      branch(binary("<", std::move(RightElement), std::move(LeftElement),
-                    "bool", L),
-             Greater, Next, L);
+      if (String) {
+        auto Order = CompareStrings();
+        branch(binary("<", json::Object(Order), quantity(0, "int", L), "bool",
+                      L),
+               Less, CheckGreater, L);
+        label(CheckGreater, L);
+        branch(binary(">", std::move(Order), quantity(0, "int", L), "bool", L),
+               Greater, Next, L);
+      } else {
+        auto LeftElement =
+            snapshot(dereference(json::Object(LeftCurrent), L), L);
+        auto RightElement =
+            snapshot(dereference(json::Object(RightCurrent), L), L);
+        branch(binary("<", json::Object(LeftElement),
+                      json::Object(RightElement), "bool", L),
+               Less, CheckGreater, L);
+        label(CheckGreater, L);
+        branch(binary("<", std::move(RightElement), std::move(LeftElement),
+                      "bool", L),
+               Greater, Next, L);
+      }
       label(Next, L);
       Advance();
       jump(CheckLeft, L);

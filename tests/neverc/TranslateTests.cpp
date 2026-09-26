@@ -53007,6 +53007,100 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorOwningRelationsRun) {
+  const auto Source = tmpFile("vector-owning-relations.cpp");
+  const auto Output = tmpFile("vector-owning-relations.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int observations;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+#include <vector>
+bool relations(const std::vector<std::string>& left,
+               const std::vector<std::string>& right,
+               bool equal, bool different, bool less, bool greater,
+               bool less_equal, bool greater_equal) {
+  return (left == right) == equal && (left != right) == different &&
+         (left < right) == less && (left > right) == greater &&
+         (left <= right) == less_equal &&
+         (left >= right) == greater_equal;
+}
+const std::vector<std::string>& observe(
+    const std::vector<std::string>& value) {
+  ++observations;
+  return value;
+}
+int main() {
+  {
+    std::string longText("a long string with separately allocated contents");
+    std::vector<std::string> empty;
+    std::vector<std::string> prefix{std::string("a"), longText};
+    std::vector<std::string> longer{std::string("a"), longText,
+                                    std::string("z")};
+    std::vector<std::string> equal(prefix);
+    std::vector<std::string> changed{std::string("a"),
+                                     std::string("a long string with separately allocated contentt")};
+    if (prefix[1].data() == equal[1].data() ||
+        !relations(empty, empty, true, false, false, false, true, true) ||
+        !relations(empty, prefix, false, true, true, false, true, false) ||
+        !relations(prefix, empty, false, true, false, true, false, true))
+      return 1;
+    if (!relations(prefix, longer, false, true, true, false, true, false) ||
+        !relations(longer, prefix, false, true, false, true, false, true) ||
+        !relations(prefix, equal, true, false, false, false, true, true) ||
+        !relations(prefix, changed, false, true, true, false, true, false))
+      return 2;
+    std::vector<std::string> shortWord{std::string("ab")};
+    std::vector<std::string> longWord{std::string("abc")};
+    if (!relations(shortWord, longWord, false, true, true, false, true, false))
+      return 3;
+    char leftBytes[]{'a', 0, 'b'};
+    char rightBytes[]{'a', 0, 'c'};
+    std::string leftNul(leftBytes, 3);
+    std::string rightNul(rightBytes, 3);
+    std::vector<std::string> nulLeft(1, leftNul);
+    std::vector<std::string> nulRight(1, rightNul);
+    if (!relations(nulLeft, nulRight, false, true, true, false, true, false))
+      return 4;
+    char lowByte[]{char(0x7f)};
+    char highByte[]{char(0x80)};
+    std::string low(lowByte, 1);
+    std::string high(highByte, 1);
+    std::vector<std::string> lowVector(1, low);
+    std::vector<std::string> highVector(1, high);
+    if (!relations(lowVector, highVector, false, true, true, false, true, false))
+      return 5;
+    int before = allocations;
+    if (!(observe(prefix) < observe(longer)) || observations != 2 ||
+        allocations != before)
+      return 6;
+    if (!(std::vector<std::string>{std::string("a")} <
+          std::vector<std::string>{std::string("b")}) ||
+        std::vector<std::string>{std::string("a")} ==
+          std::vector<std::string>{std::string("b")})
+      return 7;
+  }
+  return allocations == releases ? 0 : 8;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-owning-relations" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorObjectPointersRun) {
   const auto Source = tmpFile("vector-object-pointers.cpp");
   const auto Output = tmpFile("vector-object-pointers.nc");

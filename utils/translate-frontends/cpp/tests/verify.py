@@ -29181,6 +29181,11 @@ void copy_strings(const std::vector<std::string>& source,
   destination.emplace(destination.begin(),
                       static_cast<const std::string&&>(source[0]));
 }
+bool compare_strings(const std::vector<std::string>& left,
+                     const std::vector<std::string>& right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
+}
 void move_pointers(std::vector<std::unique_ptr<int>>& values,
                    std::unique_ptr<int>&& value) {
   values.push_back(static_cast<std::unique_ptr<int>&&>(value));
@@ -29223,6 +29228,13 @@ bool operator==(const Entry& left, const Entry& right) {
   return left.value == right.value;
 }
 int main() { std::vector<Entry> left, right; return left == right; }
+""",
+        "owning-pointer-comparison": """\
+#include <memory>
+bool f(const std::vector<std::unique_ptr<int>>& left,
+       const std::vector<std::unique_ptr<int>>& right) {
+  return left == right;
+}
 """,
         "unique-pointer-copy": """\
 #include <memory>

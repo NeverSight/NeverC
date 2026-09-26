@@ -18692,11 +18692,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       }
       const bool Arithmetic = Left->ElementType->isIntegerType() ||
                               Left->ElementType->isFloatingType();
+      const bool StringElement = approvedUtilityStringRecord(
+          S, SM, Left->ElementType->getAsCXXRecordDecl(), Context).has_value();
       const bool PointerEquality =
           Left->ElementType->isObjectPointerType() &&
           (Operator->getOperator() == OO_EqualEqual ||
            Operator->getOperator() == OO_ExclaimEqual);
-      if (Matching && (Arithmetic || PointerEquality))
+      if (Matching && (Arithmetic || StringElement || PointerEquality))
         switch (Operator->getOperator()) {
         case OO_EqualEqual:
         case OO_ExclaimEqual:

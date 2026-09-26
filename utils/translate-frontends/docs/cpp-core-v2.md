@@ -2522,8 +2522,10 @@ with capacity reuse. Initializer-list and raw-pointer or pinned wrapped-iterator
 ranges also deep-copy string elements for construction, assignment and insertion.
 Host fixtures cover list-backed temporary destruction, destination capacity
 reuse and growth, empty ranges, and independent string allocations.
+All six vector/vector comparisons use element-wise byte content and lexicographic
+ordering for pinned string elements, including embedded zero and high-bit bytes.
 Unique-pointer elements remain noncopyable. Other positional emplacement and
-vector comparisons remain outside the owning-element boundary. Other
+unique-pointer vector comparisons remain outside the owning-element boundary. Other
 nontrivial record elements, other allocators, remaining vector methods, and
 throwing allocation or length-error paths remain unsupported. Quoted and shadow
 headers remain rejected.
