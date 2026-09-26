@@ -21,6 +21,8 @@
 #include "llvm/Support/LEB128.h"
 #include "llvm/Support/xxhash.h"
 
+#include <map>
+
 #if defined(__APPLE__)
 #include <sys/mman.h>
 
@@ -2598,6 +2600,17 @@ void DofSection::writeTo(uint8_t *buf) const {
   write32le(rh + 8, 1); // probes
 }
 
+void DofSection::forEachFunctionAddress(
+    function_ref<void(uint64_t field, uint64_t function)> fn) const {
+  if (probes.empty())
+    return;
+  // The probes follow the header, the section headers and the string table.
+  const uint64_t probesOffset =
+      alignTo(alignTo(dofHdrSize + 8 * dofSecHdrSize, 8) + strtab.size(), 8);
+  for (size_t i = 0; i < probes.size(); ++i)
+    fn(addr + probesOffset + i * dofProbeSize, probes[i].function->getVA());
+}
+
 void DtraceSupport::patchSites(uint8_t *buf) const {
   for (const DofSection *section : sections)
     for (const DtraceSite &site : section->sites) {
@@ -2628,4 +2641,390 @@ void DtraceSupport::patchSites(uint8_t *buf) const {
                             : (tail ? probeRet : probeNop),
              5);
     }
+}
+
+// ===----------------------------------------------------------------------===
+// Split segment information
+// ===----------------------------------------------------------------------===
+
+namespace {
+// Reference kinds of the version 2 format.
+enum : uint8_t {
+  splitSegV2Format = 0x7f,
+  adjPointer64 = 0x02,
+  adjDelta32 = 0x03,
+  adjDelta64 = 0x04,
+  adjArm64Adrp = 0x05,
+  adjArm64Off12 = 0x06,
+  adjArm64Br26 = 0x07,
+  adjImageOff32 = 0x0c,
+};
+} // namespace
+
+SplitSegInfoSection::SplitSegInfoSection()
+    : LinkEditSection(segment_names::linkEdit, "__split_seg_info") {}
+
+void SplitSegInfoSection::finalizeContents() {
+  // Sections are numbered in load command order from 1; 0 is the header.
+  struct Placed {
+    uint64_t addr, size;
+    uint32_t index;
+  };
+  SmallVector<Placed, 0> placed;
+  uint32_t index = 0;
+  for (const OutputSegment *seg : outputSegments)
+    for (const OutputSection *osec : seg->getSections())
+      if (!osec->isHidden())
+        placed.push_back({osec->addr, osec->getSize(), ++index});
+  llvm::sort(placed,
+             [](const Placed &a, const Placed &b) { return a.addr < b.addr; });
+  auto locate =
+      [&](uint64_t va) -> std::optional<std::pair<uint32_t, uint64_t>> {
+    auto it = llvm::upper_bound(
+        placed, va, [](uint64_t v, const Placed &p) { return v < p.addr; });
+    if (it != placed.begin()) {
+      const Placed &p = *std::prev(it);
+      // A reference may name the end of a section.
+      if (va <= p.addr + p.size)
+        return std::make_pair(p.index, va - p.addr);
+    }
+    if (va >= in.header->addr && va < in.header->addr + in.header->getSize())
+      return std::make_pair(0u, va - in.header->addr);
+    return std::nullopt;
+  };
+
+  std::map<
+      uint8_t,
+      std::map<uint32_t,
+               std::map<uint32_t, std::map<uint64_t, std::vector<uint64_t>>>>>
+      refs;
+  // Relative references matter only between sections; absolute ones always.
+  auto add = [&](uint8_t kind, uint64_t from, uint64_t to) {
+    std::optional<std::pair<uint32_t, uint64_t>> f = locate(from),
+                                                 t = locate(to);
+    if (!f || !t)
+      return;
+    if (kind != adjPointer64 && kind != adjImageOff32 && f->first == t->first)
+      return;
+    refs[kind][f->first][t->first][t->second].push_back(f->second);
+  };
+
+  const bool arm64 = config->arch() == AK_arm64;
+  // Where a relocation leads within the image, if it does.
+  auto targetOf = [&](const Reloc &r) -> std::optional<uint64_t> {
+    if (const auto *sym = r.referent.dyn_cast<Symbol *>()) {
+      if (target->hasAttr(r.type, RelocAttrBits::BRANCH))
+        return sym->resolveBranchVA();
+      if (target->hasAttr(r.type, RelocAttrBits::GOT))
+        return sym->resolveGotVA();
+      if (target->hasAttr(r.type, RelocAttrBits::TLV))
+        return sym->resolveTlvVA();
+      const auto *defined = dyn_cast<Defined>(sym);
+      if (!defined || defined->isAbsolute())
+        return std::nullopt;
+      return defined->getVA() + r.addend;
+    }
+    const auto *isec = r.referent.get<InputSection *>();
+    if (::shouldOmitFromOutput(const_cast<InputSection *>(isec)))
+      return std::nullopt;
+    return isec->getVA(r.addend);
+  };
+  auto visit = [&](ConcatInputSection *isec) {
+    if (isec->shouldOmitFromOutput())
+      return;
+    for (size_t i = 0; i < isec->relocs.size(); ++i) {
+      const Reloc &r = isec->relocs[i];
+      const uint64_t from = isec->InputSection::getVA(r.offset);
+      if (target->hasAttr(r.type, RelocAttrBits::SUBTRAHEND)) {
+        const Reloc &minuend = isec->relocs[++i];
+        if (std::optional<uint64_t> to = targetOf(minuend))
+          add(r.length == 3 ? adjDelta64 : adjDelta32, from, *to);
+        continue;
+      }
+      std::optional<uint64_t> to = targetOf(r);
+      if (!to)
+        continue;
+      if (!r.pcrel && r.length == 3 && r.type == target->unsignedRelocType) {
+        add(adjPointer64, from, *to);
+      } else if (arm64) {
+        switch (r.type) {
+        case ARM64_RELOC_BRANCH26:
+          add(adjArm64Br26, from, *to);
+          break;
+        case ARM64_RELOC_PAGE21:
+        case ARM64_RELOC_GOT_LOAD_PAGE21:
+        case ARM64_RELOC_TLVP_LOAD_PAGE21:
+          add(adjArm64Adrp, from, *to);
+          break;
+        case ARM64_RELOC_PAGEOFF12:
+        case ARM64_RELOC_GOT_LOAD_PAGEOFF12:
+        case ARM64_RELOC_TLVP_LOAD_PAGEOFF12:
+          add(adjArm64Off12, from, *to);
+          break;
+        case ARM64_RELOC_POINTER_TO_GOT:
+          if (r.pcrel)
+            add(adjDelta32, from, *to);
+          break;
+        default:
+          break;
+        }
+      } else if (r.pcrel && r.length == 2) {
+        add(adjDelta32, from, *to);
+      }
+    }
+  };
+  for (const OutputSegment *seg : outputSegments)
+    for (const OutputSection *osec : seg->getSections())
+      if (const auto *concat = dyn_cast<ConcatOutputSection>(osec)) {
+        for (ConcatInputSection *isec : concat->inputs)
+          visit(isec);
+        for (ConcatInputSection *thunk : concat->getThunks())
+          visit(thunk);
+      }
+
+  // Stubs load their pointers.
+  for (const auto &[i, sym] : llvm::enumerate(in.stubs->getEntries())) {
+    const uint64_t stub = in.stubs->addr + i * target->stubSize;
+    const uint64_t pointer =
+        config->emitChainedFixups ? sym->getGotVA() : sym->getLazyPtrVA();
+    if (arm64) {
+      add(adjArm64Adrp, stub, pointer);
+      add(adjArm64Off12, stub + 4, pointer);
+    } else {
+      add(adjDelta32, stub + 2, pointer);
+    }
+  }
+  // The stub helper's header reaches the image's dyld slot and the binder.
+  if (in.stubHelper && in.stubHelper->isNeeded() &&
+      in.stubHelper->dyldPrivate && in.stubHelper->stubBinder) {
+    const uint64_t helper = in.stubHelper->addr;
+    const uint64_t cache = in.stubHelper->dyldPrivate->getVA();
+    const uint64_t binder = in.stubHelper->stubBinder->getGotVA();
+    if (arm64) {
+      add(adjArm64Adrp, helper, cache);
+      add(adjArm64Off12, helper + 4, cache);
+      add(adjArm64Adrp, helper + 12, binder);
+      add(adjArm64Off12, helper + 16, binder);
+    } else {
+      add(adjDelta32, helper + 3, cache);
+      add(adjDelta32, helper + 11, binder);
+    }
+  }
+  // Pointers to definitions in the image.
+  for (const NonLazyPointerSectionBase *pointers :
+       {static_cast<const NonLazyPointerSectionBase *>(in.got),
+        static_cast<const NonLazyPointerSectionBase *>(in.tlvPointers)})
+    for (const auto &[i, sym] : llvm::enumerate(pointers->getEntries()))
+      if (const auto *defined = dyn_cast<Defined>(sym))
+        add(adjPointer64, pointers->addr + i * target->wordSize,
+            defined->getVA());
+  if (in.lazyPointers)
+    for (const auto &[i, sym] : llvm::enumerate(in.stubs->getEntries())) {
+      const uint64_t slot = in.lazyPointers->addr + i * target->wordSize;
+      if (const auto *dysym = dyn_cast<DylibSymbol>(sym)) {
+        if (dysym->hasStubsHelper())
+          add(adjPointer64, slot,
+              in.stubHelper->addr + target->stubHelperHeaderSize +
+                  dysym->stubsHelperIndex * target->stubHelperEntrySize);
+      } else {
+        add(adjPointer64, slot, sym->getVA());
+      }
+    }
+  // Initializer offsets from the image base.
+  if (in.initOffsets->isNeeded()) {
+    uint64_t base = in.initOffsets->addr;
+    for (const ConcatInputSection *isec : in.initOffsets->inputs()) {
+      for (const Reloc &r : isec->relocs)
+        if (const auto *sym = r.referent.dyn_cast<Symbol *>())
+          add(adjImageOff32, base + 4 * (r.offset >> target->p2WordSize),
+              sym->getVA());
+      base += 4 * isec->relocs.size();
+    }
+  }
+  // Objective-C stubs and selector references.
+  if (in.objcSelRefs)
+    for (const auto &[i, name] :
+         llvm::enumerate(in.objcSelRefs->getNameOffsets()))
+      add(adjPointer64, in.objcSelRefs->addr + 8 * i,
+          in.objcMethNames->addr + name);
+  if (in.objcStubs && in.objcStubs->isNeeded() &&
+      !isa<Undefined>(in.objcStubs->msgSend)) {
+    const uint64_t size = in.objcStubs->stubSize();
+    for (const auto &[i, selRef] :
+         llvm::enumerate(in.objcStubs->getSelRefOffsets())) {
+      const uint64_t stub = in.objcStubs->addr + i * size;
+      const uint64_t ref = in.objcSelRefs->addr + selRef;
+      if (!arm64) {
+        add(adjDelta32, stub + 3, ref);
+        add(adjDelta32, stub + 9, in.objcStubs->msgSend->getGotVA());
+        continue;
+      }
+      add(adjArm64Adrp, stub, ref);
+      add(adjArm64Off12, stub + 4, ref);
+      if (config->objcStubsSmall) {
+        add(adjArm64Br26, stub + 8, in.objcStubs->msgSend->getVA());
+      } else {
+        const uint64_t got = in.objcStubs->msgSend->getGotVA();
+        add(adjArm64Adrp, stub + 8, got);
+        add(adjArm64Off12, stub + 12, got);
+      }
+    }
+  }
+  // DOF records functions relative to itself.
+  if (in.dtrace)
+    for (const DofSection *dof : in.dtrace->sections)
+      dof->forEachFunctionAddress([&](uint64_t field, uint64_t function) {
+        add(adjDelta64, field, function);
+      });
+
+  // The encoding: the format byte, then by kind, source section, target
+  // section and target offset, the source offsets, offsets as deltas.
+  contents.clear();
+  raw_svector_ostream os(contents);
+  os << char(splitSegV2Format);
+  encodeULEB128(refs.size(), os);
+  for (auto &[kind, fromSections] : refs) {
+    encodeULEB128(kind, os);
+    encodeULEB128(fromSections.size(), os);
+    for (auto &[from, toSections] : fromSections) {
+      encodeULEB128(from, os);
+      encodeULEB128(toSections.size(), os);
+      for (auto &[to, toOffsets] : toSections) {
+        encodeULEB128(to, os);
+        encodeULEB128(toOffsets.size(), os);
+        uint64_t lastTo = 0;
+        for (auto &[toOffset, fromOffsets] : toOffsets) {
+          encodeULEB128(toOffset - lastTo, os);
+          lastTo = toOffset;
+          llvm::sort(fromOffsets);
+          encodeULEB128(fromOffsets.size(), os);
+          uint64_t lastFrom = 0;
+          for (uint64_t fromOffset : fromOffsets) {
+            encodeULEB128(fromOffset - lastFrom, os);
+            lastFrom = fromOffset;
+          }
+        }
+      }
+    }
+  }
+  while (contents.size() % target->wordSize)
+    contents.push_back(0);
+}
+
+void SplitSegInfoSection::writeTo(uint8_t *buf) const {
+  memcpy(buf, contents.data(), contents.size());
+}
+
+// ===----------------------------------------------------------------------===
+// Relocations kept in the output
+// ===----------------------------------------------------------------------===
+
+KeptRelocsSection::KeptRelocsSection()
+    : LinkEditSection(segment_names::linkEdit, "__kept_relocs") {}
+
+void KeptRelocsSection::finalizeContents() {
+  // Sections are numbered in load command order from 1.
+  struct Placed {
+    uint64_t addr, size;
+    uint32_t index;
+  };
+  SmallVector<Placed, 0> placed;
+  uint32_t index = 0;
+  for (const OutputSegment *seg : outputSegments)
+    for (const OutputSection *osec : seg->getSections())
+      if (!osec->isHidden())
+        placed.push_back({osec->addr, osec->getSize(), ++index});
+  auto sectionOf = [&](uint64_t va) -> uint32_t {
+    for (const Placed &p : placed)
+      if (va >= p.addr && va <= p.addr + p.size)
+        return p.index;
+    return 0;
+  };
+  const bool arm64 = config->arch() == AK_arm64;
+  contents.clear();
+  ranges.clear();
+  auto emit = [&](uint32_t address, uint32_t symbolnum, bool pcrel,
+                  uint8_t length, bool external, uint8_t type) {
+    char record[8];
+    support::endian::write32le(record, address);
+    support::endian::write32le(
+        record + 4, (symbolnum & 0xffffff) | (uint32_t(pcrel) << 24) |
+                        (uint32_t(length) << 25) | (uint32_t(external) << 27) |
+                        (uint32_t(type) << 28));
+    contents.append(record, record + 8);
+  };
+  // The symbol table index of a reference's target, if it has one.
+  auto symbolIndex = [](const Reloc &r) -> std::optional<uint32_t> {
+    const auto *sym = r.referent.dyn_cast<Symbol *>();
+    if (!sym || sym->symtabIndex == UINT32_MAX)
+      return std::nullopt;
+    return sym->symtabIndex;
+  };
+  auto localTarget = [&](const Reloc &r) -> uint32_t {
+    if (const auto *sym = r.referent.dyn_cast<Symbol *>()) {
+      const auto *d = dyn_cast<Defined>(sym);
+      return d && !d->isAbsolute() ? sectionOf(d->getVA() + r.addend) : 0;
+    }
+    auto *isec = r.referent.dyn_cast<InputSection *>();
+    if (!isec || ::shouldOmitFromOutput(isec))
+      return 0;
+    return sectionOf(isec->getVA(r.addend));
+  };
+
+  for (const OutputSegment *seg : outputSegments)
+    for (const OutputSection *osec : seg->getSections()) {
+      const auto *concat = dyn_cast<ConcatOutputSection>(osec);
+      if (!concat || osec->isHidden())
+        continue;
+      const uint32_t begin = contents.size();
+      auto visit = [&](ConcatInputSection *isec) {
+        if (isec->shouldOmitFromOutput())
+          return;
+        for (size_t i = 0; i < isec->relocs.size(); ++i) {
+          const Reloc &r = isec->relocs[i];
+          const uint32_t address = isec->outSecOff + r.offset;
+          if (target->hasAttr(r.type, RelocAttrBits::SUBTRAHEND)) {
+            const Reloc &minuend = isec->relocs[++i];
+            std::optional<uint32_t> from = symbolIndex(r);
+            std::optional<uint32_t> to = symbolIndex(minuend);
+            const uint32_t toSection = localTarget(minuend);
+            if (!from || (!to && (arm64 || !toSection)))
+              continue;
+            emit(address, *from, false, r.length, true, r.type);
+            if (to)
+              emit(address, *to, false, minuend.length, true, minuend.type);
+            else
+              emit(address, toSection, false, minuend.length, false,
+                   minuend.type);
+            continue;
+          }
+          const bool pointer = !r.pcrel && r.type == target->unsignedRelocType;
+          const uint32_t section = localTarget(r);
+          if ((pointer || !arm64) && section &&
+              !(r.referent.dyn_cast<Symbol *>() &&
+                needsBinding(r.referent.dyn_cast<Symbol *>()))) {
+            emit(address, section, r.pcrel, r.length, false, r.type);
+            continue;
+          }
+          std::optional<uint32_t> symbol = symbolIndex(r);
+          if (!symbol)
+            continue;
+          if (arm64 && r.addend && !pointer)
+            emit(address, uint32_t(r.addend), false, 2, false,
+                 ARM64_RELOC_ADDEND);
+          emit(address, *symbol, r.pcrel, r.length, true, r.type);
+        }
+      };
+      for (ConcatInputSection *isec : concat->inputs)
+        visit(isec);
+      for (ConcatInputSection *thunk : concat->getThunks())
+        visit(thunk);
+      const uint32_t count = (contents.size() - begin) / 8;
+      if (count)
+        ranges[osec] = {begin, count};
+    }
+}
+
+void KeptRelocsSection::writeTo(uint8_t *buf) const {
+  memcpy(buf, contents.data(), contents.size());
 }

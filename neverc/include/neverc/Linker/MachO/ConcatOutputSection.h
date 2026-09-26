@@ -43,6 +43,9 @@ public:
 
   static ConcatOutputSection *getOrCreateForInput(const InputSection *);
 
+  // The branch-range thunks among the inputs, which only text has.
+  virtual llvm::ArrayRef<ConcatInputSection *> getThunks() const { return {}; }
+
   std::vector<ConcatInputSection *> inputs;
 
 protected:
@@ -63,6 +66,10 @@ public:
   void finalize() override;
   bool needsThunks() const;
   void writeTo(uint8_t *buf) const override;
+
+  llvm::ArrayRef<ConcatInputSection *> getThunks() const override {
+    return thunks;
+  }
 
 private:
   uint64_t estimateStubsInRangeVA(size_t callIdx) const;

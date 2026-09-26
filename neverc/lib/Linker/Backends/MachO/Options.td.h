@@ -109,11 +109,11 @@ OPTION(prefix_3, "-add_linker_option", add_linker_option, Separate,
 OPTION(prefix_3, "-add_source_version", add_source_version, Flag,
        grp_undocumented, INVALID, nullptr, 0, DefaultVis, 0,
        "Emit an LC_SOURCE_VERSION load command", nullptr, nullptr)
-OPTION(
-    prefix_3, "-add_split_seg_info", add_split_seg_info, Flag, grp_undocumented,
-    INVALID, nullptr, HelpHidden, DefaultVis, 0,
-    "NeverC does not emit split segment information for the dyld shared cache",
-    nullptr, nullptr)
+OPTION(prefix_3, "-add_split_seg_info", add_split_seg_info, Flag,
+       grp_undocumented, INVALID, nullptr, 0, DefaultVis, 0,
+       "Emit LC_SEGMENT_SPLIT_INFO, the references the dyld shared cache "
+       "builder adjusts",
+       nullptr, nullptr)
 OPTION(prefix_1, "--adhoc-codesign", adhoc_codesign, Flag, grp_rare, INVALID,
        nullptr, 0, DefaultVis, 0,
        "Write an ad-hoc code signature to the output file (default for arm64 "
@@ -614,7 +614,8 @@ OPTION(prefix_3, "-keep_private_externs", keep_private_externs, Flag,
        grp_object, INVALID, nullptr, 0, DefaultVis, 0,
        "Keep private external symbols with -r (always done)", nullptr, nullptr)
 OPTION(prefix_3, "-keep_relocs", keep_relocs, Flag, grp_rare, INVALID, nullptr,
-       HelpHidden, DefaultVis, 0, "linked images carry no section relocations",
+       0, DefaultVis, 0,
+       "Keep relocation records in the output's sections, which dyld ignores",
        nullptr, nullptr)
 OPTION(
     prefix_3, "-kext_objects_dir", kext_objects_dir, Separate, grp_undocumented,

@@ -3009,7 +3009,7 @@ TEST_F(LinkerTest, NativeMachOBindingAndLoadingOptions) {
   EXPECT_TRUE(chainedSelf);
 }
 
-TEST_F(LinkerTest, NativeMachOLayoutHintsAndUnsupportedOptions) {
+TEST_F(LinkerTest, NativeMachOLayoutHintsAndObsoleteOptions) {
   const std::string target = "--target=arm64-apple-macos13";
   const fs::path dir = tmpFile("macho_hints_dir");
   fs::create_directories(dir);
@@ -3180,12 +3180,6 @@ _main:
     EXPECT_FALSE(main);
   }
 
-  // Options that cannot apply say why.
-  CmdResult unsupported = link({"-Wl,-add_split_seg_info"});
-  EXPECT_EQ(unsupported.exitCode, 0) << unsupported.err;
-  EXPECT_TRUE(unsupported.stderrContains(
-      "is not supported and has no effect: NeverC does not emit split"))
-      << unsupported.err;
   CmdResult obsolete = link({"-Wl,-read_only_stubs"});
   EXPECT_EQ(obsolete.exitCode, 0) << obsolete.err;
   EXPECT_TRUE(obsolete.stderrContains("-read_only_stubs' is obsolete"))
@@ -3892,6 +3886,157 @@ l_catlist:
     EXPECT_EQ(cstring(pointer(properties + 8)), "size");
     EXPECT_EQ(llvm::support::endian::read32le(read(category + 56, 4).data()),
               64u);
+  }
+}
+
+TEST_F(LinkerTest, NativeMachOSplitSegInfo) {
+  const std::string target = "--target=arm64-apple-macos13";
+  const fs::path dir = tmpFile("macho_split_seg_dir");
+  fs::create_directories(dir);
+  const fs::path extSource = dir / "ext.c";
+  const fs::path ext = dir / "libext.dylib";
+  const fs::path source = dir / "use.c";
+  const fs::path object = dir / "use.o";
+  const fs::path dylib = dir / "libuse.dylib";
+  writeFile(extSource, "int ext_fn(void) { return 1; }\n");
+  writeFile(source, "int ext_fn(void);\n"
+                    "int counter = 5;\n"
+                    "int *counter_ptr = &counter;\n"
+                    "int use(void) { return counter + ext_fn(); }\n");
+  ASSERT_EQ(ncc({target, "-nostdlib", "-dynamiclib", extSource.string(), "-o",
+                 ext.string()})
+                .exitCode,
+            0);
+  CmdResult compile = ncc({target, "-fno-lto", "-O1", "-c", source.string(),
+                           "-o", object.string()});
+  ASSERT_EQ(compile.exitCode, 0) << compile.err;
+  CmdResult link =
+      ncc({target, "-nostdlib", "-dynamiclib", object.string(), ext.string(),
+           "-Wl,-add_split_seg_info", "-o", dylib.string()});
+  ASSERT_EQ(link.exitCode, 0) << link.err;
+  EXPECT_FALSE(link.stderrContains("not supported")) << link.err;
+
+  const std::string bytes = readFile(dylib);
+  auto macho = llvm::object::MachOObjectFile::create(
+      llvm::MemoryBufferRef(bytes, dylib.string()), /*IsLittleEndian=*/true,
+      /*Is64Bits=*/true);
+  ASSERT_TRUE(static_cast<bool>(macho))
+      << llvm::toString(macho.takeError()).str().str();
+  // Sections by their split segment index: in load command order, from 1.
+  std::vector<std::string> sections = {"<header>"};
+  llvm::StringRef info;
+  for (const auto &command : (*macho)->load_commands()) {
+    if (command.C.cmd == llvm::MachO::LC_SEGMENT_64) {
+      auto seg = (*macho)->getSegment64LoadCommand(command);
+      for (unsigned s = 0; s < seg.nsects; ++s)
+        sections.push_back((*macho)->getSection64(command, s).sectname);
+    }
+    if (command.C.cmd == llvm::MachO::LC_SEGMENT_SPLIT_INFO) {
+      auto data = (*macho)->getLinkeditDataLoadCommand(command);
+      info = llvm::StringRef(bytes).substr(data.dataoff, data.datasize);
+    }
+  }
+  ASSERT_FALSE(info.empty());
+  ASSERT_EQ(uint8_t(info[0]), 0x7f);
+
+  // Decode "kind from->to" for every reference.
+  std::set<std::string> refs;
+  size_t pos = 1;
+  auto uleb = [&] {
+    unsigned n = 0;
+    uint64_t v = llvm::decodeULEB128(
+        reinterpret_cast<const uint8_t *>(info.data()) + pos, &n);
+    pos += n;
+    return v;
+  };
+  for (uint64_t kinds = uleb(); kinds--;) {
+    const uint64_t kind = uleb();
+    for (uint64_t froms = uleb(); froms--;) {
+      const uint64_t from = uleb();
+      for (uint64_t tos = uleb(); tos--;) {
+        const uint64_t to = uleb();
+        for (uint64_t toOffsets = uleb(); toOffsets--;) {
+          uleb();
+          for (uint64_t fromOffsets = uleb(); fromOffsets--;)
+            uleb();
+        }
+        refs.insert(std::to_string(kind) + " " + sections[from] + "->" +
+                    sections[to]);
+      }
+    }
+  }
+  // Data pointers, the code's page-relative loads, its call to a stub, and
+  // the stub's load of its GOT slot.
+  EXPECT_TRUE(refs.count("2 __data->__data"));
+  EXPECT_TRUE(refs.count("5 __text->__data"));
+  EXPECT_TRUE(refs.count("6 __text->__data"));
+  EXPECT_TRUE(refs.count("7 __text->__stubs"));
+  EXPECT_TRUE(refs.count("5 __stubs->__got"));
+  EXPECT_TRUE(refs.count("6 __stubs->__got"));
+}
+
+TEST_F(LinkerTest, NativeMachOKeepRelocs) {
+  for (const char *arch : {"arm64", "x86_64"}) {
+    SCOPED_TRACE(arch);
+    const std::string target =
+        std::string("--target=") + arch + "-apple-macos13";
+    const fs::path dir = tmpFile(std::string("macho_keep_relocs_") + arch);
+    fs::create_directories(dir);
+    const fs::path extSource = dir / "ext.c";
+    const fs::path ext = dir / "libext.dylib";
+    const fs::path source = dir / "use.c";
+    const fs::path object = dir / "use.o";
+    const fs::path dylib = dir / "libuse.dylib";
+    writeFile(extSource, "int ext_fn(void) { return 1; }\n");
+    writeFile(source, "int ext_fn(void);\n"
+                      "int counter = 5;\n"
+                      "int *counter_ptr = &counter;\n"
+                      "int use(void) { return counter + ext_fn(); }\n");
+    ASSERT_EQ(ncc({target, "-nostdlib", "-dynamiclib", extSource.string(), "-o",
+                   ext.string()})
+                  .exitCode,
+              0);
+    CmdResult compile = ncc({target, "-fno-lto", "-O1", "-c", source.string(),
+                             "-o", object.string()});
+    ASSERT_EQ(compile.exitCode, 0) << compile.err;
+    CmdResult link =
+        ncc({target, "-nostdlib", "-dynamiclib", object.string(), ext.string(),
+             "-Wl,-keep_relocs", "-o", dylib.string()});
+    ASSERT_EQ(link.exitCode, 0) << link.err;
+
+    const std::string bytes = readFile(dylib);
+    auto macho = llvm::object::MachOObjectFile::create(
+        llvm::MemoryBufferRef(bytes, dylib.string()), /*IsLittleEndian=*/true,
+        /*Is64Bits=*/true);
+    ASSERT_TRUE(static_cast<bool>(macho))
+        << llvm::toString(macho.takeError()).str().str();
+    std::map<std::string, std::vector<std::pair<uint32_t, uint32_t>>> records;
+    for (const auto &command : (*macho)->load_commands()) {
+      if (command.C.cmd != llvm::MachO::LC_SEGMENT_64)
+        continue;
+      auto seg = (*macho)->getSegment64LoadCommand(command);
+      for (unsigned s = 0; s < seg.nsects; ++s) {
+        auto section = (*macho)->getSection64(command, s);
+        for (uint32_t r = 0; r < section.nreloc; ++r) {
+          const char *record = bytes.data() + section.reloff + 8 * r;
+          records[section.sectname].push_back(
+              {llvm::support::endian::read32le(record),
+               llvm::support::endian::read32le(record + 4)});
+        }
+      }
+    }
+    // The code keeps its reference to the dylib's function, by symbol.
+    ASSERT_TRUE(records.count("__text"));
+    bool externalCall = false;
+    for (const auto &[address, info] : records["__text"])
+      externalCall |= (info >> 27 & 1) && (info >> 24 & 1);
+    EXPECT_TRUE(externalCall);
+    // The data pointer is a section-based 8-byte UNSIGNED record.
+    ASSERT_EQ(records["__data"].size(), 1u);
+    const uint32_t info = records["__data"][0].second;
+    EXPECT_EQ(info >> 27 & 1, 0u);
+    EXPECT_EQ(info >> 25 & 3, 3u);
+    EXPECT_EQ(info >> 28, 0u);
   }
 }
 

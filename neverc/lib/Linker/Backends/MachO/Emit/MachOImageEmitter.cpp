@@ -226,6 +226,26 @@ private:
   Symbol *sym;
 };
 
+class LCSplitSegInfo final : public LoadCommand {
+public:
+  explicit LCSplitSegInfo(SplitSegInfoSection *section) : section(section) {}
+
+  uint32_t getSize() const override {
+    return sizeof(llvm_macho::linkedit_data_command);
+  }
+
+  void writeTo(uint8_t *buf) const override {
+    auto *c = reinterpret_cast<llvm_macho::linkedit_data_command *>(buf);
+    c->cmd = LC_SEGMENT_SPLIT_INFO;
+    c->cmdsize = getSize();
+    c->dataoff = section->fileOff;
+    c->datasize = section->getFileSize();
+  }
+
+private:
+  SplitSegInfoSection *section;
+};
+
 class LCFunctionStarts final : public LoadCommand {
 public:
   explicit LCFunctionStarts(FunctionStartsSection *functionStartsSection)
@@ -344,6 +364,11 @@ public:
       sectHdr->size = osec->getSize();
       sectHdr->reserved1 = osec->reserved1;
       sectHdr->reserved2 = osec->reserved2;
+      if (in.keptRelocs)
+        if (auto [offset, count] = in.keptRelocs->recordsOf(osec); count) {
+          sectHdr->reloff = in.keptRelocs->fileOff + offset;
+          sectHdr->nreloc = count;
+        }
     }
   }
 
@@ -1129,6 +1154,8 @@ template <class LP> void OutputWriter::assembleLoadCommands() {
 
   if (funcStarts)
     in.header->addLoadCommand(make<LCFunctionStarts>(funcStarts));
+  if (in.splitSegInfo)
+    in.header->addLoadCommand(make<LCSplitSegInfo>(in.splitSegInfo));
   if (dataInCode)
     in.header->addLoadCommand(make<LCDataInCode>(dataInCode));
   if (codesig)
@@ -1331,11 +1358,15 @@ void OutputWriter::finalizeLinkEdit() {
         (LinkEditSection *)in.weakBinding, (LinkEditSection *)in.lazyBinding,
         (LinkEditSection *)in.exports, (LinkEditSection *)in.chainedFixups,
         (LinkEditSection *)symtabSec, (LinkEditSection *)indirectSec,
-        (LinkEditSection *)dataInCode, (LinkEditSection *)funcStarts})
+        (LinkEditSection *)dataInCode, (LinkEditSection *)funcStarts,
+        (LinkEditSection *)in.splitSegInfo})
     if (s)
       active.push_back(s);
 
   parallelForEach(active, [](LinkEditSection *s) { s->finalizeContents(); });
+  // The kept relocations name symbols by their final indices.
+  if (in.keptRelocs)
+    in.keptRelocs->finalizeContents();
 
   if (auto it = config->segmentAddresses.find(segment_names::linkEdit);
       it != config->segmentAddresses.end() && it->second >= addr)

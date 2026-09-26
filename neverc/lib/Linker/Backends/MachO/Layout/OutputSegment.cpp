@@ -164,6 +164,8 @@ int sectionOrder(OutputSection *osec) {
         .Case(section_names::lazyBinding, -7)
         .Case(section_names::export_, -6)
         .Case(section_names::functionStarts, -5)
+        .Case("__split_seg_info", -5)
+        .Case("__kept_relocs", -12)
         .Case(section_names::dataInCode, -4)
         .Case(section_names::symbolTable, -3)
         .Case(section_names::indirectSymbolTable, -2)

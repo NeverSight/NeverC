@@ -305,6 +305,8 @@ struct Configuration {
       movedSections;
   bool objcRelativeMethodLists = false;
   bool objcCategoryMerging = false;
+  bool addSplitSegInfo = false;
+  bool keepRelocs = false;
   SymbolPatterns interposableSymbols;
 
   llvm::StringRef osoPrefix;

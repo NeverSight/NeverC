@@ -767,6 +767,10 @@ public:
   uint64_t getSize() const override { return size; }
   bool isNeeded() const override { return size != 0; }
   void writeTo(uint8_t *buf) const override;
+  // Calls fn with the address of each function-relative address field and
+  // the function's address.
+  void forEachFunctionAddress(
+      llvm::function_ref<void(uint64_t field, uint64_t function)> fn) const;
 
   llvm::StringRef provider;
   uint32_t attrs[5];
@@ -789,6 +793,43 @@ struct DtraceSupport {
   std::vector<DofSection *> sections;
   // Rewrites the calls of the sites that stay in the output.
   void patchSites(uint8_t *buf) const;
+};
+
+// -add_split_seg_info: LC_SEGMENT_SPLIT_INFO, version 2, lists the references
+// the dyld shared cache builder adjusts when it moves sections apart: of
+// which kind, from which section and offset, to which section and offset.
+class SplitSegInfoSection final : public LinkEditSection {
+public:
+  SplitSegInfoSection();
+  void finalizeContents() override;
+  uint64_t getRawSize() const override { return contents.size(); }
+  void writeTo(uint8_t *buf) const override;
+
+private:
+  llvm::SmallVector<char, 0> contents;
+};
+
+// -keep_relocs: the output's sections keep relocation records, which dyld
+// ignores and kernel tools read. References within the image become
+// section-based pointers where the format allows, and the others name
+// their targets in the symbol table; references to targets the symbol table
+// does not name are left out.
+class KeptRelocsSection final : public LinkEditSection {
+public:
+  KeptRelocsSection();
+  // Runs after the symbol table has its indices.
+  void finalizeContents() override;
+  uint64_t getRawSize() const override { return contents.size(); }
+  void writeTo(uint8_t *buf) const override;
+  // The offset in this section of an output section's records, and their
+  // count.
+  std::pair<uint32_t, uint32_t> recordsOf(const OutputSection *osec) const {
+    return ranges.lookup(osec);
+  }
+
+private:
+  llvm::SmallVector<char, 0> contents;
+  llvm::DenseMap<const OutputSection *, std::pair<uint32_t, uint32_t>> ranges;
 };
 
 // The starts of the image's fixup chains in a section, for loaders without
@@ -837,6 +878,7 @@ public:
   // Registers the rebases of the references once they are all added.
   void setUp();
   void writeTo(uint8_t *buf) const override;
+  llvm::ArrayRef<uint64_t> getNameOffsets() const { return nameOffsets; }
 
 private:
   std::vector<uint64_t> nameOffsets;
@@ -857,9 +899,10 @@ public:
 
   static constexpr llvm::StringLiteral symbolPrefix = "_objc_msgSend$";
   Symbol *msgSend = nullptr;
+  uint64_t stubSize() const;
+  llvm::ArrayRef<uint64_t> getSelRefOffsets() const { return selRefOffsets; }
 
 private:
-  uint64_t stubSize() const;
   std::vector<uint64_t> selRefOffsets;
 };
 
@@ -887,6 +930,8 @@ struct InStruct {
   ObjCStubsSection *objcStubs = nullptr;
   ChainStartsSection *chainStarts = nullptr;
   DtraceSupport *dtrace = nullptr;
+  SplitSegInfoSection *splitSegInfo = nullptr;
+  KeptRelocsSection *keptRelocs = nullptr;
 };
 
 InStruct &machoIn();

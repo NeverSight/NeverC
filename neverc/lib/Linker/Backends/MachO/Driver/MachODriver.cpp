@@ -2789,6 +2789,8 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
   config->textExec = args.hasArg(OPT_text_exec);
   config->noNewMain = args.hasArg(OPT_no_new_main);
   config->noCompactUnwind = args.hasArg(OPT_no_compact_unwind);
+  config->addSplitSegInfo = args.hasArg(OPT_add_split_seg_info);
+  config->keepRelocs = args.hasArg(OPT_keep_relocs);
   config->objcCategoryMerging = args.hasFlag(
       OPT_objc_category_merging, OPT_no_objc_category_merging, false);
   config->objcRelativeMethodLists = args.hasFlag(
@@ -3277,6 +3279,10 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
                                /*isWeakRef=*/false);
 
     createSyntheticSections();
+    if (config->addSplitSegInfo)
+      in.splitSegInfo = make<SplitSegInfoSection>();
+    if (config->keepRelocs)
+      in.keptRelocs = make<KeptRelocsSection>();
     if (config->emitChainedFixups &&
         (config->fixupChainsSection || config->threadedStartsSection))
       in.chainStarts = make<ChainStartsSection>(config->threadedStartsSection);
