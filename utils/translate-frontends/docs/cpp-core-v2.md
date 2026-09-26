@@ -311,6 +311,13 @@ member and free `swap`, `tuple_size`, `tuple_element`, and index-based or
 unique-type `std::get` use the same authenticated records. `get` preserves
 const and lvalue/rvalue reference categories; type selection requires exactly
 one matching element, as in C++17.
+Direct element-wise construction may also store source-owned nontrivial
+standard-layout records. Each selected libc++ tuple, implementation and leaf
+initializer must identify an admitted source-owned copy or move constructor,
+with the original element type, cv qualification and value category. The tuple
+constructs each field in place and destroys owned fields in reverse order.
+Default, whole-tuple copy/move, converting and assignment operations on such
+records remain outside this boundary.
 
 Member and free tuple swap authenticate the concrete SDK delegation through
 `__tuple_impl`, each indexed `__tuple_leaf`, its exact value projection and the
@@ -417,7 +424,7 @@ Each source element and corresponding callback parameter must be admitted
 scalars connected by a checked direct scalar conversion, or the same complete
 source-owned standard-layout record type that is trivially copyable and
 destructible, passed by value; the result may be `void`, an admitted scalar,
-or a complete source-owned record value. Nonempty `std::array` sources also
+or a complete source-owned record value. Nonempty `std::array` and `std::tuple` sources also
 admit source-owned nontrivial record elements by value when the actual callback
 selects a checked copy or move constructor. Exact lvalue- or rvalue-reference
 parameters and results are also admitted for supported scalar, object-pointer,
@@ -475,9 +482,10 @@ standard-layout `T` also qualify when the pinned libc++ result construction
 selects an admitted copy or move constructor for every owned element. The
 result tuple constructs those elements in its final storage and destroys them
 in reverse index order. Constness and the array expression's value category
-remain part of the selected-constructor proof. Other owning tuple
-constructions, assignments and swaps still require their existing trivial
-element boundary.
+remain part of the selected-constructor proof. Owned tuples built this way or
+by direct element-wise construction can be concatenated again and supply
+`apply` callbacks. Whole-tuple copy/move, converting construction, assignment
+and swap still require their existing trivial element boundary.
 
 Two-element tuples also accept admitted scalar or composite `std::pair<U, V>`
 lvalues and rvalues for construction and assignment under the same per-element
@@ -495,9 +503,9 @@ leaf. Generated programs contain no tuple helper calls and do not link libc++.
 
 The standalone empty tuple remains supported, but empty-base-optimized record
 or tuple elements do not have the authenticated one-field leaf representation
-and remain rejected. Nontrivial records, `long double`, function pointers and
-source-record comparisons also remain outside this surface. Apply calls with
-unsupported callable objects, nontrivial record parameters, volatile references,
+and remain rejected. `long double`, function pointers and source-record
+comparisons also remain outside this surface. Apply calls with
+unsupported callable objects, volatile references,
 or variadic callbacks
 remain rejected. Quoted includes, user shadows,
 standard-function addresses and forged declarations remain rejected.

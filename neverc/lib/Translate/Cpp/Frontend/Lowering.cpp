@@ -18197,8 +18197,9 @@ class FunctionLowering {
       reject(L, "utility pair construction",
              "Unknown approved std::pair construction.");
     }
-    if (auto Kind =
-            approvedUtilityTupleConstruction(A.S, A.Sources, C, A.Context)) {
+    std::vector<const CXXConstructExpr *> TupleSelectedCopies;
+    if (auto Kind = approvedUtilityTupleConstruction(
+            A.S, A.Sources, C, A.Context, &TupleSelectedCopies)) {
       auto Tuple = approvedUtilityTupleRecord(
           A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context);
       if (!Tuple)
@@ -18219,14 +18220,25 @@ class FunctionLowering {
           initializeZero(Member(Element), Element->getType(), L);
         return;
       case UtilityTupleConstruction::Elements:
-        if (C->getNumArgs() != Tuple->Elements.size())
+        if (C->getNumArgs() != Tuple->Elements.size() ||
+            (!TupleSelectedCopies.empty() &&
+             TupleSelectedCopies.size() != Tuple->Elements.size()))
           reject(L, "utility tuple construction",
                  "The constructor and tuple element counts differ.");
         for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
           if (Tuple->Elements[I]->getType()->isReferenceType())
             assign(Member(Tuple->Elements[I]),
                    bind(C->getArg(I), Tuple->Elements[I]->getType()), L);
-          else if (recordValue(Tuple->Elements[I]->getType()))
+          else if (!TupleSelectedCopies.empty() && TupleSelectedCopies[I]) {
+            const auto *Constructor =
+                TupleSelectedCopies[I]->getConstructor();
+            const auto Referent =
+                Constructor->getParamDecl(0)->getType()->getPointeeType();
+            constructMemorySource(
+                Member(Tuple->Elements[I]), Tuple->Elements[I]->getType(),
+                Constructor,
+                snapshot(address(lvalue(C->getArg(I)), Referent, L), L), L);
+          } else if (recordValue(Tuple->Elements[I]->getType()))
             initialize(Member(Tuple->Elements[I]), C->getArg(I), L);
           else
             assign(Member(Tuple->Elements[I]),

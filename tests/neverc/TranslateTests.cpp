@@ -30220,6 +30220,78 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2OwnedTupleDirectElementsCopyMoveAndCompose) {
+  const auto Source = tmpFile("owned-tuple-direct-elements.cpp");
+  const auto Output = tmpFile("owned-tuple-direct-elements.nc");
+  writeFile(Source, R"cpp(#include <tuple>
+#include <utility>
+int alive = 0;
+int copies = 0;
+int moves = 0;
+int deaths = 0;
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) { ++alive; }
+  Item(const Item& other) noexcept : value(other.value) {
+    ++copies;
+    ++alive;
+  }
+  Item(Item&& other) noexcept : value(other.value) {
+    other.value = -1;
+    ++moves;
+    ++alive;
+  }
+  ~Item() noexcept { ++deaths; --alive; }
+};
+int inspect(const Item& item) { return item.value; }
+int main() {
+  Item mutable_item(2);
+  const Item fixed_item(3);
+  int target = 7;
+  {
+    std::tuple<Item> copied(mutable_item);
+    std::tuple<Item> fixed(fixed_item);
+    std::tuple<Item> moved(std::move(mutable_item));
+    std::tuple<Item> temporary{Item(4)};
+    std::tuple<Item, int&> mixed{fixed_item, target};
+    if (copies != 3 || moves != 2 || deaths != 1 || alive != 7 ||
+        mutable_item.value != -1 ||
+        std::get<0>(copied).value != 2 ||
+        std::get<0>(fixed).value != 3 ||
+        std::get<0>(moved).value != 2 ||
+        std::get<0>(temporary).value != 4 ||
+        std::get<0>(mixed).value != 3 ||
+        std::get<1>(mixed) != 7) return 1;
+    {
+      auto again = std::tuple_cat(copied);
+      if (std::apply(inspect, again) != 2 || copies != 4 ||
+          moves != 2 || deaths != 1 || alive != 8) return 2;
+      std::get<1>(mixed) = 9;
+      if (target != 9) return 3;
+    }
+    if (copies != 4 || moves != 2 || deaths != 2 || alive != 7)
+      return 4;
+  }
+  return copies == 4 && moves == 2 && deaths == 7 && alive == 2 &&
+                 fixed_item.value == 3
+             ? 0
+             : 5;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("owned-tuple-direct-elements" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2PairArrayApplyRequiresPinnedOperations) {
   struct Rejection {
     const char *Name;
