@@ -7913,6 +7913,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
     if (!CheckedConstructions.insert(C).second)
       return;
     const auto *Constructor = C->getConstructor();
+    const CXXConstructorDecl *ArrayElementConstructor = nullptr;
     if (A.S.coreV2() &&
         (approvedFunctionalObjectConstruction(A.S, A.Sources, C, A.Context) ||
          approvedFunctionalReferenceConstruction(A.S, A.Sources, C,
@@ -7925,13 +7926,14 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
          approvedUtilityAllocatorConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityPairConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityTupleConstruction(A.S, A.Sources, C, A.Context) ||
-         approvedUtilityArrayConstruction(A.S, A.Sources, C, A.Context) ||
+         approvedUtilityArrayConstruction(A.S, A.Sources, C, A.Context,
+                                          &ArrayElementConstructor) ||
          approvedUtilityInitializerListConstruction(A.S, A.Sources, C,
                                                     A.Context) ||
          approvedUtilityStringViewConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityOptionalConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityWrapIteratorConstruction(A.S, A.Sources, C,
-                                                A.Context) ||
+                                                 A.Context) ||
          approvedUtilityReverseIteratorConstruction(A.S, A.Sources, C,
                                                     A.Context))) {
       for (unsigned I = 0; I < C->getNumArgs() &&
@@ -7940,6 +7942,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
         if (Constructor->getParamDecl(I)->getType()->isReferenceType())
           checkBinding(C->getArg(I), true);
       }
+      if (ArrayElementConstructor &&
+          defaultedCopyOrMoveConstructor(ArrayElementConstructor))
+        queueGenerated(ArrayElementConstructor, L);
       return;
     }
     if (A.S.coreV2() && concreteMemberFunctionTemplate(Constructor))

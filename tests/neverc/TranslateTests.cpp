@@ -32882,6 +32882,148 @@ void rejected(std::array<Item, 2>& out, const std::array<Item, 2>& in) {
   expectNoArtifacts(Output);
 }
 
+TEST_F(TranslateTest, CoreV2ArrayOwnedElementConstructionRun) {
+  const auto Source = tmpFile("array-owned-construction.cpp");
+  const auto Output = tmpFile("array-owned-construction.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <utility>
+int events[32];
+int event_count;
+int reads;
+void note(int value) { events[event_count++] = value; }
+bool matches(const int* expected, int count) {
+  if (event_count != count) return false;
+  for (int i = 0; i != count; ++i)
+    if (events[i] != expected[i]) return false;
+  return true;
+}
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) {}
+  Item(const Item& other) noexcept : value(other.value + 10) {
+    note(100 + other.value);
+  }
+  Item(Item&& other) noexcept : value(other.value + 20) {
+    note(200 + other.value);
+  }
+  ~Item() { note(300 + value); }
+};
+struct CopyOnly {
+  int value;
+  explicit CopyOnly(int n) noexcept : value(n) {}
+  CopyOnly(const CopyOnly& other) noexcept : value(other.value + 30) {
+    note(400 + other.value);
+  }
+};
+struct Inner {
+  int value;
+  explicit Inner(int n) noexcept : value(n) {}
+  Inner(const Inner& other) noexcept : value(other.value + 40) {
+    note(500 + other.value);
+  }
+};
+struct Defaulted {
+  Inner inner;
+  explicit Defaulted(int n) noexcept : inner(n) {}
+  Defaulted(const Defaulted&) = default;
+};
+using Row = std::array<Item, 3>;
+Row& selected(Row& row) { ++reads; return row; }
+int main() {
+  Row source{{Item(1), Item(2), Item(3)}};
+  event_count = 0;
+  {
+    Row copy = selected(source);
+    const int copied[] = {101, 102, 103};
+    if (reads != 1 || !matches(copied, 3) || copy[0].value != 11 ||
+        copy[1].value != 12 || copy[2].value != 13)
+      return 1;
+    event_count = 0;
+  }
+  const int copy_destroyed[] = {313, 312, 311};
+  if (!matches(copy_destroyed, 3)) return 2;
+  event_count = 0;
+  {
+    const Row& view = source;
+    const Row const_copy = view;
+    const int copied[] = {101, 102, 103};
+    if (!matches(copied, 3) || const_copy[0].value != 11 ||
+        const_copy[2].value != 13)
+      return 7;
+    event_count = 0;
+  }
+  if (!matches(copy_destroyed, 3)) return 8;
+  event_count = 0;
+  {
+    Row moved = std::move(selected(source));
+    const int moved_events[] = {201, 202, 203};
+    if (reads != 2 || !matches(moved_events, 3) || moved[0].value != 21 ||
+        moved[1].value != 22 || moved[2].value != 23)
+      return 3;
+    event_count = 0;
+  }
+  const int move_destroyed[] = {323, 322, 321};
+  if (!matches(move_destroyed, 3)) return 4;
+  event_count = 0;
+  {
+    Row temporary = std::move(Row{{Item(4), Item(5), Item(6)}});
+    const int temporary_events[] = {204, 205, 206, 306, 305, 304};
+    if (!matches(temporary_events, 6) || temporary[0].value != 24 ||
+        temporary[1].value != 25 || temporary[2].value != 26)
+      return 9;
+    event_count = 0;
+  }
+  const int temporary_destroyed[] = {326, 325, 324};
+  if (!matches(temporary_destroyed, 3)) return 10;
+  std::array<CopyOnly, 2> fallback_source{{CopyOnly(4), CopyOnly(5)}};
+  event_count = 0;
+  std::array<CopyOnly, 2> fallback = std::move(fallback_source);
+  const int fallback_events[] = {404, 405};
+  if (!matches(fallback_events, 2) || fallback[0].value != 34 ||
+      fallback[1].value != 35)
+    return 5;
+  std::array<Defaulted, 2> default_source{{Defaulted(6), Defaulted(7)}};
+  event_count = 0;
+  std::array<Defaulted, 2> default_copy = default_source;
+  const int default_events[] = {506, 507};
+  if (!matches(default_events, 2) || default_copy[0].inner.value != 46 ||
+      default_copy[1].inner.value != 47)
+    return 6;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("array-owned-construction" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ArrayOwnedElementConstructionRequiresSource) {
+  const auto Source = tmpFile("array-owned-construction-unsupported.cpp");
+  const auto Output = tmpFile("array-owned-construction-unsupported.nc");
+  writeFile(Source, R"cpp(#include <array>
+struct Item {
+  int value;
+  Item(const Item& other, int extra = 7) noexcept
+      : value(other.value + extra) {}
+};
+void rejected(const std::array<Item, 2>& source) {
+  std::array<Item, 2> target = source;
+}
+)cpp");
+  expectCode(
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()}),
+      "TR0203");
+  expectNoArtifacts(Output);
+}
+
 TEST_F(TranslateTest, CoreV2ArrayOperationsRunAtBothOptimizations) {
   const auto Source = tmpFile("array.cpp");
   const auto Output = tmpFile("array.nc");

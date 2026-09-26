@@ -4516,7 +4516,10 @@ approvedUtilityArrayRecord(const State &S, const SourceManager &SM,
 
 bool approvedUtilityArrayConstruction(const State &S, const SourceManager &SM,
                                       const CXXConstructExpr *Construction,
-                                      const ASTContext &Context) {
+                                      const ASTContext &Context,
+                                      const CXXConstructorDecl **Selected) {
+  if (Selected)
+    *Selected = nullptr;
   if (!Construction || Construction->isTypeDependent() ||
       Construction->isValueDependent() ||
       Construction->isInstantiationDependent() ||
@@ -4526,14 +4529,103 @@ bool approvedUtilityArrayConstruction(const State &S, const SourceManager &SM,
   const auto Array = approvedUtilityArrayRecord(
       S, SM, Construction->getType()->getAsCXXRecordDecl(), Context);
   if (!Constructor || !Array || !Constructor->isImplicit() ||
-      !Constructor->isTrivial() || Constructor->isVariadic() ||
+      Constructor->isVariadic() ||
       Constructor->getParent()->getCanonicalDecl() !=
           Array->Record->getCanonicalDecl() ||
       Construction->getNumArgs() != Constructor->getNumParams())
     return false;
-  return (!Construction->getNumArgs() && Constructor->isDefaultConstructor()) ||
-         (Construction->getNumArgs() == 1 &&
-          Constructor->isCopyOrMoveConstructor());
+  if (!Construction->getNumArgs())
+    return Constructor->isTrivial() && Constructor->isDefaultConstructor();
+  if (Construction->getNumArgs() != 1 ||
+      !Constructor->isCopyOrMoveConstructor())
+    return false;
+  if (Constructor->isTrivial())
+    return true;
+
+  // The implicitly defaulted constructor must copy or move the sole array
+  // field through Clang's indexed initializer, selecting one source element
+  // constructor for every destination element.
+  if (!Constructor->isDefaulted() || !Array->Size ||
+      !utilityPairSourceOwnedValue(S, SM, Context, Array->ElementType) ||
+      Constructor->getNumCtorInitializers() != 1 ||
+      !Constructor->getParamDecl(0)->getType()->isReferenceType())
+    return false;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Constructor->getBody());
+  const auto *Initializer = *Constructor->init_begin();
+  const auto *Loop = Initializer && Initializer->getInit()
+                         ? dyn_cast<ArrayInitLoopExpr>(
+                               Initializer->getInit()->IgnoreParenImpCasts())
+                         : nullptr;
+  const auto *Common = Loop ? Loop->getCommonExpr() : nullptr;
+  const auto *Source = Common && Common->getSourceExpr()
+                           ? dyn_cast_or_null<MemberExpr>(
+                                 Common->getSourceExpr()->IgnoreParenImpCasts())
+                           : nullptr;
+  const auto *Element = Loop ? dyn_cast<CXXConstructExpr>(
+                                   Loop->getSubExpr()->IgnoreParenImpCasts())
+                             : nullptr;
+  const auto *ElementConstructor =
+      Element ? Element->getConstructor() : nullptr;
+  const auto *Argument = Element && Element->getNumArgs() == 1
+                             ? dyn_cast<ArraySubscriptExpr>(
+                                   Element->getArg(0)->IgnoreParenImpCasts())
+                             : nullptr;
+  const auto *ElementSource =
+      Argument ? dyn_cast<OpaqueValueExpr>(
+                     Argument->getBase()->IgnoreParenImpCasts())
+               : nullptr;
+  const auto *Index = Argument ? dyn_cast<ArrayInitIndexExpr>(
+                                     Argument->getIdx()->IgnoreParenImpCasts())
+                               : nullptr;
+  const bool Moving = Constructor->isMoveConstructor();
+  const Expr *SourceBase = Source ? Source->getBase()->IgnoreParens() : nullptr;
+  if (Moving) {
+    const auto *Cast = dyn_cast_or_null<CXXStaticCastExpr>(SourceBase);
+    if (!Cast || Cast->getCastKind() != CK_NoOp || !Cast->isXValue() ||
+        !Context.hasSameUnqualifiedType(Cast->getType(),
+                                        Context.getRecordType(Array->Record)))
+      return false;
+    SourceBase = Cast->getSubExpr()->IgnoreParenImpCasts();
+  }
+  const auto *SourceParameter = dyn_cast_or_null<DeclRefExpr>(SourceBase);
+  if (!Body || Body->size() || !Initializer->isMemberInitializer() ||
+      Initializer->getMember()->getCanonicalDecl() !=
+          Array->Elements->getCanonicalDecl() ||
+      !Loop ||
+      !Context.hasSameType(Loop->getType(), Array->Elements->getType()) ||
+      Loop->getArraySize().getLimitedValue(Array->Size + 1) != Array->Size ||
+      !Common || !Source || Common->getValueKind() != Source->getValueKind() ||
+      !Context.hasSameType(Common->getType(), Source->getType()) ||
+      !Context.hasSameUnqualifiedType(Source->getType(),
+                                      Array->Elements->getType()) ||
+      Source->getMemberDecl()->getCanonicalDecl() !=
+          Array->Elements->getCanonicalDecl() ||
+      Source->isArrow() || !SourceParameter ||
+      SourceParameter->getDecl() != Constructor->getParamDecl(0) || !Element ||
+      Element->getConstructionKind() != CXXConstructionKind::Complete ||
+      !Context.hasSameUnqualifiedType(Element->getType(), Array->ElementType) ||
+      !ElementConstructor || !ElementConstructor->isCopyOrMoveConstructor() ||
+      !supportedConstructor(ElementConstructor) ||
+      (!ElementConstructor->isTrivial() && !ElementConstructor->hasBody()) ||
+      !S.owns(SM, ElementConstructor->getLocation()) ||
+      ElementConstructor->getParent()->getCanonicalDecl() !=
+          Array->ElementType->getAsCXXRecordDecl()->getCanonicalDecl() ||
+      ElementConstructor->getNumParams() != 1 ||
+      !ElementConstructor->getParamDecl(0)->getType()->isReferenceType() ||
+      (!Context.hasSameType(
+           ElementConstructor->getParamDecl(0)->getType()->getPointeeType(),
+           Array->ElementType) &&
+       !Context.hasSameType(
+           ElementConstructor->getParamDecl(0)->getType()->getPointeeType(),
+           Array->ElementType.withConst())) ||
+      !Argument || !ElementSource || ElementSource != Common || !Index ||
+      !Context.hasSameType(Index->getType(), Context.getSizeType()) ||
+      Index->getExprLoc().isValid() ||
+      !Context.hasSameUnqualifiedType(Argument->getType(), Array->ElementType))
+    return false;
+  if (Selected)
+    *Selected = ElementConstructor;
+  return true;
 }
 
 std::optional<UtilityArrayRecord>

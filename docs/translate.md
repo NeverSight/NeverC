@@ -270,6 +270,10 @@ elements when the pinned fill chain selects a supported copy assignment. Each
 write reads its bound source at that point, including an aliased array element.
 Defaulted `std::array` copy/move assignment also runs the selected source-owned
 element assignment in index order when Clang generates that exact array loop.
+Defaulted `std::array` copy/move construction likewise runs the selected
+source-owned element constructor in index order when Clang generates its
+single-field array initializer. The source array is evaluated once; a move
+may select an element copy constructor.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#fixed-value-arrays-from-array).
 
 Array layout also supplies authenticated evidence for type queries, including

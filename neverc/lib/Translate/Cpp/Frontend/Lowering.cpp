@@ -19592,6 +19592,61 @@ class FunctionLowering {
         initializeZero(Place, T, L);
       }
     };
+    const CXXConstructorDecl *ArrayElementConstructor = nullptr;
+    if (approvedUtilityArrayConstruction(A.S, A.Sources, C, A.Context,
+                                         &ArrayElementConstructor) &&
+        ArrayElementConstructor) {
+      auto Array = approvedUtilityArrayRecord(
+          A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context);
+      if (!Array)
+        reject(L, "utility array construction",
+               "The selected std::array layout is unavailable.");
+      auto SourceAddress = snapshot(
+          address(lvalue(C->getArg(0)), C->getArg(0)->getType(), L), L);
+      const auto SourceElement = ArrayElementConstructor->getParamDecl(0)
+                                         ->getType()
+                                         ->getPointeeType()
+                                         .isConstQualified()
+                                     ? Array->ElementType.withConst()
+                                     : Array->ElementType;
+      const auto SourcePointer =
+          type(A.Context.getPointerType(SourceElement), L);
+      const auto ElementPointer =
+          type(A.Context.getPointerType(Array->ElementType), L);
+      auto SourceElements =
+          snapshot(decay(fieldStorage(dereference(std::move(SourceAddress), L),
+                                      Array->Elements, L),
+                         SourcePointer, L),
+                   L);
+      auto DestinationElements =
+          snapshot(decay(fieldStorage(std::move(Place), Array->Elements, L),
+                         ElementPointer, L),
+                   L);
+      const auto SizeType = type(A.Context.getSizeType(), L);
+      auto Position = temporary(SizeType, L);
+      assign(Position, quantity(0, SizeType, L), L);
+      const auto Check = labelName(), Copy = labelName(), End = labelName();
+      jump(Check, L);
+      label(Check, L);
+      branch(binary("<", json::Object(Position),
+                    quantity(Array->Size, SizeType, L), "bool", L),
+             Copy, End, L);
+      label(Copy, L);
+      constructMemorySource(
+          index(json::Object(DestinationElements), json::Object(Position),
+                type(Array->ElementType, L), L),
+          Array->ElementType, ArrayElementConstructor,
+          address(index(json::Object(SourceElements), json::Object(Position),
+                        type(Array->ElementType, L), L),
+                  SourceElement, L),
+          L);
+      assign(Position,
+             binary("+", json::Object(Position), one(SizeType, L), SizeType, L),
+             L);
+      jump(Check, L);
+      label(End, L);
+      return;
+    }
     if (Constructor->isImplicit() && Constructor->isTrivial()) {
       if (Constructor->isCopyOrMoveConstructor() && C->getNumArgs() == 1) {
         auto Source = expression(C->getArg(0));

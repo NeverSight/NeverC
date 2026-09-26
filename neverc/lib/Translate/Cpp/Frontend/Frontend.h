@@ -1189,10 +1189,11 @@ std::optional<UtilityArrayRecord>
 approvedUtilityArrayRecord(const State &S, const clang::SourceManager &SM,
                            const clang::CXXRecordDecl *Record,
                            const clang::ASTContext &Context);
-bool approvedUtilityArrayConstruction(const State &S,
-                                      const clang::SourceManager &SM,
-                                      const clang::CXXConstructExpr *Construction,
-                                      const clang::ASTContext &Context);
+bool approvedUtilityArrayConstruction(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction,
+    const clang::ASTContext &Context,
+    const clang::CXXConstructorDecl **Selected = nullptr);
 std::optional<UtilityArrayRecord>
 approvedUtilityArrayAssignment(const State &S, const clang::SourceManager &SM,
                                const clang::CXXOperatorCallExpr *Assignment,
