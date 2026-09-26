@@ -470,6 +470,14 @@ Mutable or const lvalues and materialized temporaries are accepted. Each source
 expression is evaluated once, all source addresses are captured before any
 element is read, and fields are copied in concatenation order without a libc++
 tuple-cat helper.
+Nonempty `std::array<T, N>` sources with source-owned nontrivial
+standard-layout `T` also qualify when the pinned libc++ result construction
+selects an admitted copy or move constructor for every owned element. The
+result tuple constructs those elements in its final storage and destroys them
+in reverse index order. Constness and the array expression's value category
+remain part of the selected-constructor proof. Other owning tuple
+constructions, assignments and swaps still require their existing trivial
+element boundary.
 
 Two-element tuples also accept admitted scalar or composite `std::pair<U, V>`
 lvalues and rvalues for construction and assignment under the same per-element
@@ -517,8 +525,8 @@ index-based `get` lower directly to existing array, pointer, assignment and
 control-flow operations when the selected element operation is admitted.
 Aggregate initialization, selected trivial copy/move construction and
 trivial copy/move assignment retain ordinary value semantics, including for
-record elements with nontrivial destruction. User-provided nontrivial element
-copy/move operations are not admitted through the array.
+record elements with nontrivial destruction. Direct `std::array` copy/move
+operations do not yet admit user-provided nontrivial element constructors.
 `tuple_size` and `tuple_element` remain checked compile-time metadata.
 
 An array can also supply the element pack to `std::apply` through the
@@ -535,7 +543,8 @@ copy or move constructor, then destroy them with the ordinary parameter
 lifetime. Named functions, source-owned function objects, `ref`/`cref`
 wrappers, member functions and `mem_fn` adapters use this path. The selected
 `get`, callback signature, forwarding and array lifetime remain checked.
-Nonempty `tuple_cat` copies of these elements remain outside this boundary.
+Nonempty `tuple_cat` copies and moves of these elements use the selected
+source-owned constructor and the result tuple's owned-element lifetime.
 For zero-length arrays, `std::apply` passes no elements and `std::tuple_cat`
 contributes no elements. A source-owned nontrivial standard-layout record
 element is admitted in these empty packs because neither operation copies,

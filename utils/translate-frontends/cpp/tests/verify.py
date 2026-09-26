@@ -2524,25 +2524,32 @@ int main() {
                      profile="cpp-core-v2", target=target, sdk=True)
         check_pair_array_apply(data)
 
-    for name, source in (
-        ("tuple-cat-copy", """\
+    array_owned_tuple_cat_source = """\
 #include <array>
 #include <tuple>
+#include <utility>
 struct Item {
   int value;
   explicit Item(int n) noexcept : value(n) {}
   Item(const Item& other) noexcept : value(other.value) {}
+  Item(Item&& other) noexcept : value(other.value) {}
   ~Item() noexcept {}
 };
 int main() {
-  std::array<Item, 1> values{{Item(7)}};
-  auto copied = std::tuple_cat(values);
-  return std::get<0>(copied).value;
+  std::array<Item, 0> empty{};
+  std::array<Item, 1> first{{Item(7)}};
+  const std::array<Item, 1> second{{Item(8)}};
+  std::array<Item, 1> third{{Item(9)}};
+  auto copied = std::tuple_cat(empty, first, second, std::move(third));
+  return std::get<0>(copied).value + std::get<1>(copied).value +
+         std::get<2>(copied).value;
 }
-"""),
-    ):
-        check("v2-array-owned-apply-reject-" + name, source, "TR0203",
-              profile="cpp-core-v2", sdk=True)
+"""
+    for target in sdk_targets:
+        data = check("v2-array-owned-tuple-cat-" + target,
+                     array_owned_tuple_cat_source, profile="cpp-core-v2",
+                     target=target, sdk=True)
+        check_pair_array_apply(data)
 
     for name, source, code in (
 

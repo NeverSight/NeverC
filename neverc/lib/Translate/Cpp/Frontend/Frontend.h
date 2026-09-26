@@ -1168,8 +1168,8 @@ struct UtilityTupleLikeSource {
     return ArrayElements ? ArrayElementType : Elements[Index]->getType();
   }
 };
-// Only apply may relax array element value admission; its selected callback
-// must separately prove every element argument.
+// apply and tuple_cat may relax array element value admission. Their selected
+// callback or result construction must separately prove every owned element.
 std::optional<UtilityTupleLikeSource>
 approvedUtilityTupleLikeSource(const State &S, const clang::SourceManager &SM,
                                clang::QualType Type,
@@ -1190,6 +1190,7 @@ const clang::TypedefNameDecl *approvedUtilityTupleLikeElementTrait(
 struct UtilityTupleCatCall {
   UtilityTupleRecord Result;
   std::vector<UtilityTupleLikeSource> Sources;
+  std::vector<const clang::CXXConstructExpr *> SelectedCopies;
 };
 std::optional<UtilityTupleCatCall>
 approvedUtilityTupleCatCall(const State &S, const clang::SourceManager &SM,
