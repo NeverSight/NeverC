@@ -30229,6 +30229,7 @@ int alive = 0;
 int copies = 0;
 int moves = 0;
 int deaths = 0;
+int plain_deaths = 0;
 struct Item {
   int value;
   explicit Item(int n) noexcept : value(n) { ++alive; }
@@ -30242,6 +30243,10 @@ struct Item {
     ++alive;
   }
   ~Item() noexcept { ++deaths; --alive; }
+};
+struct Plain {
+  int value;
+  ~Plain() noexcept { ++plain_deaths; }
 };
 int inspect(const Item& item) { return item.value; }
 int main() {
@@ -30272,10 +30277,16 @@ int main() {
     if (copies != 4 || moves != 2 || deaths != 2 || alive != 7)
       return 4;
   }
+  {
+    std::tuple<Plain, int> plain{Plain{6}, 7};
+    if (std::get<0>(plain).value != 6 || std::get<1>(plain) != 7 ||
+        plain_deaths != 1) return 5;
+  }
   return copies == 4 && moves == 2 && deaths == 7 && alive == 2 &&
+                 plain_deaths == 2 &&
                  fixed_item.value == 3
              ? 0
-             : 5;
+             : 6;
 }
 )cpp");
   auto Result =
@@ -31507,10 +31518,11 @@ TEST_F(TranslateTest, CoreV2TupleRequiresPinnedOperations) {
   };
   const Rejection Cases[] = {
       {"quoted", "#include \"tuple\"\nint main(){return 0;}", "TR0201"},
-      {"nontrivial-record",
-       "#include <tuple>\nstruct R{int n;~R(){}};int main(){"
-       "std::tuple<R,int>v{R{1},2};return std::get<0>(v).n;}",
-       "TR0201"},
+      {"nontrivial-whole-copy",
+       "#include <tuple>\nstruct R{int n;R(int x):n(x){}"
+       "R(const R&x):n(x.n){}~R(){}};int main(){R r(1);"
+       "std::tuple<R>a(r);std::tuple<R>b(a);return std::get<0>(b).n;}",
+       "TR0203"},
       {"empty-record",
        "#include <tuple>\nstruct E{};int main(){std::tuple<E>v{E{}};"
        "return sizeof(v);}",

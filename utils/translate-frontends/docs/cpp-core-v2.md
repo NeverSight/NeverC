@@ -288,7 +288,7 @@ Core v2 accepts the exact top-level angled `<tuple>` entry from the pinned
 embedded VFS. Its authenticated 98-file libc++/resource closure is identical on
 all eight supported targets and contains no platform headers. A retained
 `std::tuple<T...>` may be empty or contain up to 64 admitted values. Elements
-may be admitted scalars, source-owned nonempty trivial standard-layout records,
+may be admitted scalars, source-owned nonempty standard-layout records,
 authenticated `std::reference_wrapper` values, admitted `std::array` values,
 recursively admitted `std::pair` values, or nonempty nested tuples. For
 nonempty tuples, the frontend authenticates libc++'s private `__base_` field,
