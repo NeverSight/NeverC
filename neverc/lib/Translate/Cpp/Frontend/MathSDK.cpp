@@ -10322,7 +10322,7 @@ approvedUtilityTupleApplyDispatch(const State &S, const SourceManager &SM,
            : nullptr;
   auto Tuple = Call && Call->getNumArgs() == 2
                    ? approvedUtilityTupleLikeSource(
-                         S, SM, Call->getArg(1)->getType(), Context, true)
+                         S, SM, Call->getArg(1)->getType(), Context, true, true)
                    : std::nullopt;
   if (!Call || Call->getNumArgs() != 2 || !Function || !Primary || !Pattern ||
       !Origin || Origin->Root != "libcxx" || Origin->Path != "tuple" ||
@@ -10461,8 +10461,7 @@ const CXXConstructExpr *approvedUtilityTupleApplySelectedCopy(
   const auto *Operation =
       Apply ? dyn_cast<CallExpr>(Apply->Operation) : nullptr;
   const unsigned Offset = isa_and_nonnull<CXXOperatorCallExpr>(Operation) ? 1 : 0;
-  if (!Apply || !Apply->Tuple.ArrayElements ||
-      Index >= Apply->Tuple.size() || !Operation ||
+  if (!Apply || Index >= Apply->Tuple.size() || !Operation ||
       Operation->getNumArgs() != Apply->Tuple.size() + Offset ||
       Parameter.isNull() || !Parameter->isRecordType() ||
       !Context.hasSameUnqualifiedType(Apply->Tuple.elementType(Index),
@@ -22218,7 +22217,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto CallableParameter = Function->getParamDecl(0)->getType();
     const auto TupleParameter = Function->getParamDecl(1)->getType();
     const auto Tuple = approvedUtilityTupleLikeSource(
-        S, SM, Call->getArg(1)->getType(), Context, true);
+        S, SM, Call->getArg(1)->getType(), Context, true, true);
     const auto Result =
         Prototype ? Prototype->getReturnType()
                   : UserCallable ? UserCallable->Method->getReturnType()

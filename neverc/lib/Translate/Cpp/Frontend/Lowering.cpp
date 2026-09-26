@@ -8048,7 +8048,7 @@ class FunctionLowering {
     }
     case UtilityOperation::TupleApply: {
       const auto Tuple = approvedUtilityTupleLikeSource(
-          A.S, A.Sources, Call->getArg(1)->getType(), A.Context, true);
+          A.S, A.Sources, Call->getArg(1)->getType(), A.Context, true, true);
       if (!Tuple)
         reject(L, "utility tuple apply",
                "The selected tuple-like storage is unavailable.");

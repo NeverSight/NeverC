@@ -30147,6 +30147,79 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ApplyOwnedTupleSourcesForwardAndCopy) {
+  const auto Source = tmpFile("apply-owned-tuple-sources.cpp");
+  const auto Output = tmpFile("apply-owned-tuple-sources.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <tuple>
+#include <utility>
+int alive = 0;
+int copies = 0;
+int moves = 0;
+int deaths = 0;
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) { ++alive; }
+  Item(const Item& other) noexcept : value(other.value) {
+    ++copies;
+    ++alive;
+  }
+  Item(Item&& other) noexcept : value(other.value) {
+    other.value = -1;
+    ++moves;
+    ++alive;
+  }
+  ~Item() noexcept { ++deaths; --alive; }
+};
+int inspect(const Item& first, Item& second) {
+  return first.value * 10 + second.value;
+}
+int inspect_const(const Item& first, const Item& second) {
+  return first.value * 10 + second.value;
+}
+int consume(Item first, Item second) {
+  return first.value * 10 + second.value;
+}
+int main() {
+  std::array<Item, 2> row{{Item(2), Item(3)}};
+  {
+    auto tuple = std::tuple_cat(row);
+    const auto fixed = std::tuple_cat(row);
+    if (copies != 4 || moves || deaths || alive != 6) return 1;
+    if (std::apply(inspect, tuple) != 23 ||
+        std::apply(inspect_const, fixed) != 23 ||
+        copies != 4 || deaths || alive != 6) return 2;
+    if (std::apply(consume, tuple) != 23 ||
+        copies != 6 || moves || deaths != 2 || alive != 6) return 3;
+    if (std::apply(consume, std::move(tuple)) != 23 ||
+        copies != 6 || moves != 2 || deaths != 4 || alive != 6 ||
+        std::get<0>(tuple).value != -1 ||
+        std::get<1>(tuple).value != -1) return 4;
+    if (std::apply(consume, fixed) != 23 ||
+        copies != 8 || moves != 2 || deaths != 6 || alive != 6) return 5;
+    const int temporary_result = std::apply(consume, std::tuple_cat(row));
+    if (temporary_result != 23 ||
+        copies != 10 || moves != 4 || deaths != 10 || alive != 6) return 6;
+  }
+  return copies == 10 && moves == 4 && deaths == 14 && alive == 2
+             ? 0
+             : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("apply-owned-tuple-sources" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2PairArrayApplyRequiresPinnedOperations) {
   struct Rejection {
     const char *Name;

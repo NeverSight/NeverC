@@ -548,7 +548,9 @@ source-owned constructor and the result tuple's owned-element lifetime. An
 owned result tuple may be an input to another `tuple_cat`: its field types,
 selected element constructors, source value categories and reverse cleanup
 are checked at each concatenation. Reference fields continue to bind their
-original referents.
+original referents. The same owned tuple may be an `apply` source: authenticated
+`get` and selected callback constructors preserve reference, copy and move
+semantics for lvalue, const and rvalue tuples, including materialized results.
 For zero-length arrays, `std::apply` passes no elements and `std::tuple_cat`
 contributes no elements. A source-owned nontrivial standard-layout record
 element is admitted in these empty packs because neither operation copies,
