@@ -29913,6 +29913,78 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ArrayOwnedApplyAdapterCopiesRunAtBothOptimizations) {
+  const auto Source = tmpFile("array-owned-apply-adapter-copies.cpp");
+  const auto Output = tmpFile("array-owned-apply-adapter-copies.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <functional>
+#include <tuple>
+int copies;
+int deaths;
+int alive;
+int calls;
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) { ++alive; }
+  Item(const Item& other) noexcept : value(other.value) {
+    ++copies;
+    ++alive;
+  }
+  ~Item() noexcept { ++deaths; --alive; }
+  int combine(Item other) const {
+    ++calls;
+    const int result = value * 10 + other.value;
+    other.value = 99;
+    return result;
+  }
+};
+int read(Item first, Item second) {
+  ++calls;
+  const int result = first.value * 10 + second.value;
+  first.value = 88;
+  second.value = 99;
+  return result;
+}
+struct Reader {
+  int operator()(Item first, Item second) const {
+    ++calls;
+    return first.value * 10 + second.value;
+  }
+};
+int main() {
+  std::array<Item, 2> values{{Item(2), Item(3)}};
+  const std::array<Item, 2> constant{{Item(2), Item(3)}};
+  Reader reader;
+  auto function = std::ref(read);
+  auto object = std::cref(reader);
+  auto member = std::mem_fn(&Item::combine);
+  if (std::apply(function, values) != 23 || copies != 2 ||
+      deaths != 2 || alive != 4) return 1;
+  if (std::apply(object, constant) != 23 || copies != 4 ||
+      deaths != 4 || alive != 4) return 2;
+  if (std::apply(&Item::combine, values) != 23 || copies != 5 ||
+      deaths != 5 || alive != 4) return 3;
+  if (std::apply(member, constant) != 23 || copies != 6 ||
+      deaths != 6 || alive != 4 || calls != 4) return 4;
+  return values[0].value == 2 && values[1].value == 3 &&
+         constant[0].value == 2 && constant[1].value == 3 ? 0 : 5;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("array-owned-apply-adapter-copies" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ArrayOwnedTupleCatCopiesRemainUnsupported) {
   struct Rejection {
     const char *Name;

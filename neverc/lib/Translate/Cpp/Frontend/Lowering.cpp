@@ -8035,6 +8035,23 @@ class FunctionLowering {
                      quantity(Index, type(A.Context.getSizeType(), L), L),
                      type(Element, L), L);
       };
+      auto ApplyRecordArgument = [&](Expression Element, QualType Parameter,
+                                     const CXXConstructExpr *Copy) {
+        auto Place = objectTemporary(Parameter, L);
+        if (Copy) {
+          const auto Source =
+              Copy->getConstructor()->getParamDecl(0)->getType()
+                  ->getPointeeType();
+          constructMemorySource(
+              Place, Parameter, Copy->getConstructor(),
+              snapshot(address(std::move(Element), Source, L), L), L);
+        } else {
+          // Even a trivial copy creates an independent callback parameter.
+          assign(Place, std::move(Element), L);
+        }
+        return snapshot(
+            address(std::move(Place), Parameter.getUnqualifiedType(), L), L);
+      };
       auto CallableType = Call->getArg(0)->getType();
       const auto MemberCallable = approvedUtilityTupleApplyMemberCall(
           A.S, A.Sources, Call, A.Context);
@@ -8094,11 +8111,12 @@ class FunctionLowering {
               Arguments.push_back(snapshot(
                   cast(std::move(Pointer), type(Parameter, L), L), L));
             } else if (recordValue(Parameter)) {
-              auto Place = objectTemporary(Parameter, L);
-              assign(Place, std::move(Element), L);
-              Arguments.push_back(snapshot(
-                  address(std::move(Place), Parameter.getUnqualifiedType(), L),
-                  L));
+              const auto *Copy =
+                  I < MemberCallable->SelectedCopies.size()
+                      ? MemberCallable->SelectedCopies[I]
+                      : nullptr;
+              Arguments.push_back(ApplyRecordArgument(
+                  std::move(Element), Parameter, Copy));
             } else {
               Arguments.push_back(
                   cast(std::move(Element), type(Parameter, L), L));
@@ -8189,11 +8207,12 @@ class FunctionLowering {
             Arguments.push_back(
                 snapshot(cast(std::move(Pointer), type(Parameter, L), L), L));
           } else if (recordValue(Parameter)) {
-            auto Place = objectTemporary(Parameter, L);
-            assign(Place, std::move(Element), L);
-            Arguments.push_back(snapshot(
-                address(std::move(Place), Parameter.getUnqualifiedType(), L),
-                L));
+            const auto *Copy =
+                I < ReferenceCallable->SelectedCopies.size()
+                    ? ReferenceCallable->SelectedCopies[I]
+                    : nullptr;
+            Arguments.push_back(ApplyRecordArgument(
+                std::move(Element), Parameter, Copy));
           } else {
             Arguments.push_back(
                 cast(std::move(Element), type(Parameter, L), L));
@@ -8312,22 +8331,10 @@ class FunctionLowering {
           Arguments.push_back(
               snapshot(cast(std::move(Pointer), type(Parameter, L), L), L));
         } else if (recordValue(Parameter)) {
-          auto Place = objectTemporary(Parameter, L);
-          if (const auto *Copy = approvedUtilityTupleApplySelectedCopy(
-                  A.S, A.Sources, Call, I, Parameter, A.Context)) {
-            const auto Source =
-                Copy->getConstructor()->getParamDecl(0)->getType()
-                    ->getPointeeType();
-            constructMemorySource(
-                Place, Parameter, Copy->getConstructor(),
-                snapshot(address(std::move(Element), Source, L), L), L);
-          } else {
-            // Trivially copyable tuple elements still need an independent
-            // callback parameter, rather than an alias into tuple storage.
-            assign(Place, std::move(Element), L);
-          }
-          Arguments.push_back(snapshot(
-              address(std::move(Place), Parameter.getUnqualifiedType(), L), L));
+          const auto *Copy = approvedUtilityTupleApplySelectedCopy(
+              A.S, A.Sources, Call, I, Parameter, A.Context);
+          Arguments.push_back(
+              ApplyRecordArgument(std::move(Element), Parameter, Copy));
         } else {
           Arguments.push_back(cast(std::move(Element), type(Parameter, L), L));
         }

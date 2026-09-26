@@ -8936,6 +8936,30 @@ static bool approvedFunctionalInvokeArgumentFlow(
          functionalInvokeParameterReference(Construction->getArg(0), Parameter);
 }
 
+static const CXXConstructExpr *functionalInvokeSelectedCopy(
+    const State &S, const SourceManager &SM, const Expr *Argument,
+    const ParmVarDecl *ForwardedParameter, QualType Target,
+    const Expr *ForwardedSource, const ASTContext &Context) {
+  const auto *Construction = dyn_cast_or_null<CXXConstructExpr>(
+      functionalInvokeStrippedExpression(Argument));
+  if (!Construction || !ForwardedSource ||
+      !approvedFunctionalInvokeArgumentFlow(
+          S, SM, Argument, ForwardedParameter, Target, Context))
+    return nullptr;
+  const auto *Constructor = Construction->getConstructor();
+  const auto Source = Constructor->getParamDecl(0)->getType();
+  const auto *SelectedSource = Construction->getArg(0);
+  if (!Source->isReferenceType() ||
+      !Context.hasSameType(Source->getPointeeType(),
+                           SelectedSource->getType()) ||
+      !Context.hasSameUnqualifiedType(SelectedSource->getType(),
+                                      ForwardedSource->getType()) ||
+      SelectedSource->isLValue() != ForwardedSource->isLValue() ||
+      SelectedSource->isXValue() != ForwardedSource->isXValue())
+    return nullptr;
+  return Construction;
+}
+
 static bool supportedFunctionalMemberValue(const ASTContext &Context,
                                            QualType Type) {
   return supportedFunctionalCallableValue(Type, Context) ||
@@ -9390,7 +9414,8 @@ static std::optional<FunctionalMemberInvokeCall>
 approvedFunctionalMemberInvokeCallImpl(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context,
-    std::optional<FunctionalMemberDispatch> PreparedDispatch = std::nullopt) {
+    std::optional<FunctionalMemberDispatch> PreparedDispatch = std::nullopt,
+    bool AllowSelectedCopies = false) {
   if (!Call || Call->getNumArgs() < 2)
     return std::nullopt;
   const bool HasPreparedDispatch = PreparedDispatch.has_value();
@@ -9469,6 +9494,7 @@ approvedFunctionalMemberInvokeCallImpl(
           : nullptr;
   const BinaryOperator *MemberOperation = nullptr;
   const CXXMemberCallExpr *MemberCall = nullptr;
+  std::vector<const CXXConstructExpr *> SelectedCopies;
   if (Method) {
     MemberCall = dyn_cast_or_null<CXXMemberCallExpr>(Operation);
     MemberOperation =
@@ -9522,17 +9548,26 @@ approvedFunctionalMemberInvokeCallImpl(
                 !supportedFunctionalResult(S, SM, Context, Result))) ||
         !MemberCall || MemberCall->getNumArgs() != Method->getNumParams())
       return std::nullopt;
+    SelectedCopies.resize(Method->getNumParams(), nullptr);
     for (unsigned I = 0; I < Method->getNumParams(); ++I) {
       const auto Parameter = Method->getParamDecl(I)->getType();
       const auto *ArgumentExpression = Call->getArg(I + 2);
       const auto Argument = ArgumentExpression->getType();
+      const auto *Copy =
+          AllowSelectedCopies && !Parameter->isReferenceType()
+              ? functionalInvokeSelectedCopy(
+                    S, SM, MemberCall->getArg(I),
+                    DispatchFunction->getParamDecl(I + 2), Parameter,
+                    ArgumentExpression, Context)
+              : nullptr;
       bool Supported = false;
       if (Parameter->isReferenceType()) {
         Supported = supportedFunctionalInvokeReferenceArgument(
             S, SM, Context, Parameter, ArgumentExpression);
       } else {
         Supported = !Parameter->isReferenceType() &&
-                    supportedFunctionalByValue(S, SM, Context, Parameter) &&
+                    (supportedFunctionalByValue(S, SM, Context, Parameter) ||
+                     Copy) &&
                     functionalMemberValueConversion(Context, Argument,
                                                     Parameter);
       }
@@ -9541,6 +9576,7 @@ approvedFunctionalMemberInvokeCallImpl(
               S, SM, MemberCall->getArg(I),
               DispatchFunction->getParamDecl(I + 2), Parameter, Context))
         return std::nullopt;
+      SelectedCopies[I] = Copy;
     }
   } else {
     const auto FieldType = Field->getType();
@@ -9567,7 +9603,7 @@ approvedFunctionalMemberInvokeCallImpl(
                                     MemberDispatch ? MemberDispatch->Adapter
                                                    : nullptr,
                                     std::move(ObjectWrapper),
-                                    ObjectIsPointer};
+                                    ObjectIsPointer, std::move(SelectedCopies)};
 }
 
 std::optional<FunctionalMemberInvokeCall>
@@ -10213,27 +10249,10 @@ const CXXConstructExpr *approvedUtilityTupleApplySelectedCopy(
       !Context.hasSameUnqualifiedType(Apply->Tuple.elementType(Index),
                                       Parameter))
     return nullptr;
-  const auto *Argument = Operation->getArg(Index + Offset);
-  const auto *Construction = dyn_cast_or_null<CXXConstructExpr>(
-      functionalInvokeStrippedExpression(Argument));
-  if (!Construction || !approvedFunctionalInvokeArgumentFlow(
-                           S, SM, Argument,
-                           Apply->DispatchFunction->getParamDecl(Index + 1),
-                           Parameter, Context))
-    return nullptr;
-  const auto *Constructor = Construction->getConstructor();
-  const auto Source = Constructor->getParamDecl(0)->getType();
-  const auto *SelectedSource = Construction->getArg(0);
-  const auto *ForwardedGet = Apply->Dispatch->getArg(Index + 1);
-  if (!Source->isReferenceType() ||
-      !Context.hasSameType(Source->getPointeeType(),
-                           SelectedSource->getType()) ||
-      !Context.hasSameUnqualifiedType(SelectedSource->getType(),
-                                      Apply->Tuple.elementType(Index)) ||
-      SelectedSource->isLValue() != ForwardedGet->isLValue() ||
-      SelectedSource->isXValue() != ForwardedGet->isXValue())
-    return nullptr;
-  return Construction;
+  return functionalInvokeSelectedCopy(
+      S, SM, Operation->getArg(Index + Offset),
+      Apply->DispatchFunction->getParamDecl(Index + 1), Parameter,
+      Apply->Dispatch->getArg(Index + 1), Context);
 }
 
 std::optional<FunctionalMemberInvokeCall>
@@ -10420,7 +10439,7 @@ approvedUtilityTupleApplyMemberCall(const State &S, const SourceManager &SM,
     return std::nullopt;
   Dispatch->Adapter = UseAdapter;
   auto Member = approvedFunctionalMemberInvokeCallImpl(
-      S, SM, Invoked, Context, std::move(Dispatch));
+      S, SM, Invoked, Context, std::move(Dispatch), true);
   if (!Member || Invoked->getNumArgs() != Apply->Tuple.size() + 1)
     return std::nullopt;
   for (unsigned I = 0; I < Apply->Tuple.size(); ++I) {
@@ -10430,6 +10449,15 @@ approvedUtilityTupleApplyMemberCall(const State &S, const SourceManager &SM,
     if (!Context.hasSameUnqualifiedType(Element,
                                         Invoked->getArg(I + 1)->getType()))
       return std::nullopt;
+    if (I && Member->Method) {
+      const auto Parameter = Member->Method->getParamDecl(I - 1)->getType();
+      if (!Parameter->isReferenceType() &&
+          !supportedFunctionalByValue(S, SM, Context, Parameter) &&
+          (!Apply->Tuple.ArrayElements ||
+           Member->SelectedCopies.size() != Member->Method->getNumParams() ||
+           !Member->SelectedCopies[I - 1]))
+        return std::nullopt;
+    }
   }
   return Member;
 }
@@ -10437,7 +10465,8 @@ approvedUtilityTupleApplyMemberCall(const State &S, const SourceManager &SM,
 static std::optional<FunctionalReferenceInvokeCall>
 approvedFunctionalReferenceDirectInvoke(
     const State &S, const SourceManager &SM, const CallExpr *Call,
-    const ASTContext &Context, bool RequireOwnedReference) {
+    const ASTContext &Context, bool RequireOwnedReference,
+    bool AllowSelectedCopies = false) {
   const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
   const auto *Method =
       dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);
@@ -10646,24 +10675,36 @@ approvedFunctionalReferenceDirectInvoke(
             : Call->isPRValue() &&
                   Context.hasSameType(Result, Call->getType()) &&
                   supportedFunctionalResult(S, SM, Context, Result);
+    std::vector<const CXXConstructExpr *> SelectedCopies(
+        OperationMethod->getNumParams(), nullptr);
     for (unsigned I = 0; Supported && I < OperationMethod->getNumParams(); ++I) {
       const auto Parameter = OperationMethod->getParamDecl(I)->getType();
       const auto *ArgumentExpression = Call->getArg(I + 1);
+      const auto *Copy =
+          AllowSelectedCopies && !Parameter->isReferenceType() &&
+                  !supportedFunctionalByValue(S, SM, Context, Parameter)
+              ? functionalInvokeSelectedCopy(
+                    S, SM, OperationCall->getArg(I + 1),
+                    DispatchFunction->getParamDecl(I + 1), Parameter,
+                    ArgumentExpression, Context)
+              : nullptr;
       Supported =
           (Parameter->isReferenceType()
                ? supportedFunctionalInvokeReferenceArgument(
                      S, SM, Context, Parameter, ArgumentExpression)
-               : supportedFunctionalByValue(S, SM, Context, Parameter) &&
+               : (supportedFunctionalByValue(S, SM, Context, Parameter) ||
+                  Copy) &&
                      functionalMemberValueConversion(
                          Context, ArgumentExpression->getType(), Parameter)) &&
           approvedFunctionalInvokeArgumentFlow(
               S, SM, OperationCall->getArg(I + 1),
               DispatchFunction->getParamDecl(I + 1), Parameter, Context);
+      SelectedCopies[I] = Copy;
     }
     if (Supported)
       return FunctionalReferenceInvokeCall{
           *Wrapper, FunctionalReferenceInvokeKind::UserFunctionObject, {},
-          std::nullopt, OperationMethod};
+          std::nullopt, OperationMethod, std::move(SelectedCopies)};
   }
 
   const bool FunctionReferent = Wrapper->ReferentType->isFunctionType();
@@ -10686,20 +10727,32 @@ approvedFunctionalReferenceDirectInvoke(
            : !supportedFunctionalResult(S, SM, Context,
                                         Call->getType())))
     return std::nullopt;
+  std::vector<const CXXConstructExpr *> SelectedCopies(
+      Prototype->getNumParams(), nullptr);
   for (unsigned I = 0; I < Prototype->getNumParams(); ++I) {
     const auto Parameter = Prototype->getParamType(I);
     const auto *ArgumentExpression = Call->getArg(I + 1);
     const auto Argument = ArgumentExpression->getType();
+    const auto *Copy =
+        AllowSelectedCopies && !Parameter->isReferenceType() &&
+                !supportedFunctionalByValue(S, SM, Context, Parameter)
+            ? functionalInvokeSelectedCopy(
+                  S, SM, Indirect->getArg(I),
+                  DispatchFunction->getParamDecl(I + 1), Parameter,
+                  ArgumentExpression, Context)
+            : nullptr;
     const bool Supported =
         Parameter->isReferenceType()
             ? supportedFunctionalInvokeReferenceArgument(S, SM, Context, Parameter,
                                                          ArgumentExpression)
             : !Parameter->isReferenceType() &&
-                  supportedFunctionalByValue(S, SM, Context, Parameter) &&
+                  (supportedFunctionalByValue(S, SM, Context, Parameter) ||
+                   Copy) &&
                   functionalMemberValueConversion(Context, Argument,
                                                   Parameter);
     if (!Supported)
       return std::nullopt;
+    SelectedCopies[I] = Copy;
   }
   return FunctionalReferenceInvokeCall{
       *Wrapper,
@@ -10707,7 +10760,8 @@ approvedFunctionalReferenceDirectInvoke(
                        : FunctionalReferenceInvokeKind::FunctionPointer,
       PointerType,
       std::nullopt,
-      nullptr};
+      nullptr,
+      std::move(SelectedCopies)};
 }
 
 std::optional<FunctionalReferenceInvokeCall>
@@ -10806,7 +10860,7 @@ approvedUtilityTupleApplyReferenceCall(const State &S,
     return std::nullopt;
   const auto *Operation = dyn_cast_or_null<CallExpr>(Apply->Operation);
   auto Reference = approvedFunctionalReferenceDirectInvoke(
-      S, SM, Operation, Context, false);
+      S, SM, Operation, Context, false, true);
   const auto *WrapperRecord =
       Call->getArg(0)->getType()->getAsCXXRecordDecl();
   if (!Operation || !Reference || !WrapperRecord ||
@@ -10874,8 +10928,13 @@ approvedUtilityTupleApplyReferenceCall(const State &S,
                    Referent.isConstQualified() ||
                    !TupleArgument.isConstQualified());
     } else {
-      Supported = supportedFunctionalByValue(S, SM, Context, Target) &&
-                  functionalMemberValueConversion(Context, Element, Target);
+      Supported =
+          (supportedFunctionalByValue(S, SM, Context, Target) ||
+           (Apply->Tuple.ArrayElements &&
+            Reference->SelectedCopies.size() == Arity &&
+            Reference->SelectedCopies[I] &&
+            Context.hasSameUnqualifiedType(Element, Target))) &&
+          functionalMemberValueConversion(Context, Element, Target);
     }
     if (!Supported)
       return std::nullopt;

@@ -365,6 +365,7 @@ struct FunctionalReferenceInvokeCall {
   clang::QualType FunctionPointerType;
   std::optional<FunctionalOperationInfo> Operation;
   const clang::CXXMethodDecl *Method;
+  std::vector<const clang::CXXConstructExpr *> SelectedCopies;
 };
 std::optional<FunctionalReferenceInvokeCall>
 approvedFunctionalReferenceInvokeCall(
@@ -379,6 +380,7 @@ struct FunctionalMemberInvokeCall {
   const clang::CallExpr *ErasedAdapter;
   std::optional<FunctionalReferenceRecord> ObjectWrapper;
   bool ObjectIsPointer;
+  std::vector<const clang::CXXConstructExpr *> SelectedCopies;
 };
 std::optional<FunctionalMemberInvokeCall>
 approvedFunctionalUserInvokeCall(const State &S,
