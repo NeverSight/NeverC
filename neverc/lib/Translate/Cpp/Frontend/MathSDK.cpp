@@ -12157,6 +12157,8 @@ struct UtilitySwapProofContext {
   // proof may be reused only at an equal or shallower depth; reusing it deeper
   // could skip a descendant that must fail the existing depth-64 boundary.
   llvm::DenseMap<Key, unsigned> Completed;
+  bool AllowOwnedLeaf = false;
+  std::optional<UtilityOwnedSwapOperations> OwnedLeaf;
 };
 
 static bool approvedUtilityOptionalSwapBody(
@@ -12233,12 +12235,21 @@ approvedUtilityPairElementSwapImpl(const State &S, const SourceManager &SM,
     if (!Context.hasSameType(Parameter->getType(), Reference))
       return false;
   const auto *Arguments = Function->getTemplateSpecializationArgs();
-  if (utilitySwapSDKFunction(S, SM, Function, "swap", "__utility/swap.h"))
-    return Arguments && Arguments->size() == 1 &&
-           Arguments->get(0).getKind() == TemplateArgument::Type &&
-           Context.hasSameType(Arguments->get(0).getAsType(), Type) &&
-           utilityPairAssignableValue(S, SM, Context, Type) &&
+  if (utilitySwapSDKFunction(S, SM, Function, "swap", "__utility/swap.h")) {
+    if (!Arguments || Arguments->size() != 1 ||
+        Arguments->get(0).getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Arguments->get(0).getAsType(), Type))
+      return false;
+    if (Proof && Proof->AllowOwnedLeaf) {
+      auto Owned = approvedUtilityOwnedSwap(S, SM, Function, Type, Context);
+      if (Owned) {
+        Proof->OwnedLeaf = *Owned;
+        return true;
+      }
+    }
+    return utilityPairAssignableValue(S, SM, Context, Type) &&
            utilitySwapTrivialBody(S, SM, Function->getBody(), Type, Context);
+  }
 
   // Container overloads must delegate the original operands to the matching
   // member. Its proof follows the selected element swaps, including ADL.
@@ -12689,7 +12700,8 @@ approvedUtilityArraySwapBody(const State &S, const SourceManager &SM,
                            Context.getLValueReferenceType(
                                Context.getRecordType(Array->Record))) ||
       (Array->Size
-           ? !utilityArrayTriviallyAssignable(Context, Array->ElementType)
+           ? (!utilityArrayTriviallyAssignable(Context, Array->ElementType) &&
+              !utilityPairSourceOwnedValue(S, SM, Context, Array->ElementType))
            : Array->ElementType.isConstQualified()))
     return false;
   if (!Array->Size) {
@@ -12710,15 +12722,31 @@ approvedUtilityArraySwapBody(const State &S, const SourceManager &SM,
       End ? dyn_cast<SubstNonTypeTemplateParmExpr>(End->getRHS()) : nullptr;
   const auto *Size =
       Extent ? dyn_cast<IntegerLiteral>(Extent->getReplacement()) : nullptr;
-  return Call && Call->getNumArgs() == 3 && End && End->getOpcode() == BO_Add &&
-         Size && Size->getValue() == Array->Size &&
-         utilitySwapArrayData(S, SM, Call->getArg(0), *Array, nullptr,
-                              Context) &&
-         utilitySwapArrayData(S, SM, End->getLHS(), *Array, nullptr, Context) &&
-         utilitySwapArrayData(S, SM, Call->getArg(2), *Array,
-                              Method->getParamDecl(0), Context) &&
-         utilitySwapRanges(S, SM, Call->getDirectCallee(), Array->ElementType,
-                           Context, Depth, Proof);
+  if (!Call || Call->getNumArgs() != 3 || !End || End->getOpcode() != BO_Add ||
+      !Size || Size->getValue() != Array->Size ||
+      !utilitySwapArrayData(S, SM, Call->getArg(0), *Array, nullptr, Context) ||
+      !utilitySwapArrayData(S, SM, End->getLHS(), *Array, nullptr, Context) ||
+      !utilitySwapArrayData(S, SM, Call->getArg(2), *Array,
+                            Method->getParamDecl(0), Context))
+    return false;
+  const bool Previous = Proof->AllowOwnedLeaf;
+  Proof->AllowOwnedLeaf =
+      utilityPairSourceOwnedValue(S, SM, Context, Array->ElementType);
+  const bool Valid =
+      utilitySwapRanges(S, SM, Call->getDirectCallee(), Array->ElementType,
+                        Context, Depth, Proof);
+  Proof->AllowOwnedLeaf = Previous;
+  return Valid;
+}
+
+std::optional<UtilityOwnedSwapOperations>
+approvedUtilityArrayOwnedSwap(const State &S, const SourceManager &SM,
+                              const CXXMethodDecl *Method,
+                              const ASTContext &Context) {
+  UtilitySwapProofContext Proof;
+  return approvedUtilityArraySwapBody(S, SM, Method, Context, 0, &Proof)
+             ? Proof.OwnedLeaf
+             : std::nullopt;
 }
 
 static const Stmt *utilityCompositeSwapOnlyStatement(const Stmt *Statement) {
@@ -19623,7 +19651,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Call->getNumArgs() == 1 && Method->getReturnType()->isVoidType() &&
         !Object->getType().isConstQualified() &&
         (Array->Size
-             ? utilityArrayTriviallyAssignable(Context, Array->ElementType)
+             ? (utilityArrayTriviallyAssignable(Context, Array->ElementType) ||
+                utilityPairSourceOwnedValue(S, SM, Context, Array->ElementType))
              : !Array->ElementType.isConstQualified())) {
       auto Parameter = Method->getParamDecl(0)->getType();
       if (Parameter->isLValueReferenceType() &&
@@ -23302,7 +23331,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         RightType->isLValueReferenceType() && Left && Right &&
         Left->Record->getCanonicalDecl() == Right->Record->getCanonicalDecl() &&
         (Left->Size
-             ? utilityArrayTriviallyAssignable(Context, Left->ElementType)
+             ? (utilityArrayTriviallyAssignable(Context, Left->ElementType) ||
+                utilityPairSourceOwnedValue(S, SM, Context, Left->ElementType))
              : !Left->ElementType.isConstQualified()) &&
         Same(Call->getArg(0)->getType(), LeftType->getPointeeType()) &&
         Same(Call->getArg(1)->getType(), RightType->getPointeeType()) &&
@@ -23388,11 +23418,15 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if (Left->isLValueReferenceType() && Right->isLValueReferenceType() &&
         !Left->getPointeeType().isConstQualified() &&
         !Left->getPointeeType().isVolatileQualified() &&
-        utilityScalar(Context, Left->getPointeeType()) &&
         Same(Left->getPointeeType(), Right->getPointeeType()) &&
         Same(Call->getArg(0)->getType(), Left->getPointeeType()) &&
-        Same(Call->getArg(1)->getType(), Right->getPointeeType()))
-      return UtilityOperation::Swap;
+        Same(Call->getArg(1)->getType(), Right->getPointeeType())) {
+      if (utilityScalar(Context, Left->getPointeeType()))
+        return UtilityOperation::Swap;
+      if (approvedUtilityOwnedSwap(S, SM, Function, Left->getPointeeType(),
+                                   Context))
+        return UtilityOperation::OwnedSwap;
+    }
   }
   if (Origin->Path == "__utility/pair.h" && Name == "swap" &&
       Call->getNumArgs() == 2 && Function->getReturnType()->isVoidType()) {

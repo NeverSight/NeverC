@@ -676,6 +676,7 @@ enum class UtilityOperation {
   MemoryUninitializedMoveN,
   Exchange,
   Swap,
+  OwnedSwap,
   MakePair,
   PairSwap,
   PairMemberSwap,
@@ -1073,6 +1074,10 @@ approvedUtilityOwnedSwap(const State &S, const clang::SourceManager &SM,
                          const clang::FunctionDecl *Function,
                          clang::QualType Type,
                          const clang::ASTContext &Context);
+std::optional<UtilityOwnedSwapOperations>
+approvedUtilityArrayOwnedSwap(const State &S, const clang::SourceManager &SM,
+                              const clang::CXXMethodDecl *Method,
+                              const clang::ASTContext &Context);
 bool approvedUtilityPairMetadata(const State &S,
                                  const clang::SourceManager &SM,
                                  const clang::CXXRecordDecl *Record);

@@ -1636,6 +1636,23 @@ class FunctionLowering {
     return fieldStorage(std::move(Base), Info.Field, L);
   }
 
+  void swapOwnedValues(Expression LeftValue, Expression RightValue,
+                       QualType Element,
+                       const UtilityOwnedSwapOperations &Selected,
+                       SourceLocation L) {
+    auto LeftPointer = snapshot(address(std::move(LeftValue), Element, L), L);
+    auto RightPointer = snapshot(address(std::move(RightValue), Element, L), L);
+    auto Temporary = objectTemporary(Element, L);
+    constructMemorySource(json::Object(Temporary), Element,
+                          Selected.Constructor, json::Object(LeftPointer), L);
+    assignMemorySource(dereference(json::Object(LeftPointer), L), Element,
+                       Selected.FirstAssignment,
+                       dereference(json::Object(RightPointer), L), L);
+    assignMemorySource(dereference(json::Object(RightPointer), L), Element,
+                       Selected.SecondAssignment, json::Object(Temporary), L);
+    destroy(std::move(Temporary), Element, L);
+  }
+
   bool swapOwnedPairFields(Expression LeftAddress, Expression RightAddress,
                            const UtilityPairRecord &Pair,
                            const CXXMethodDecl *Method, SourceLocation L) {
@@ -1678,20 +1695,8 @@ class FunctionLowering {
         assign(std::move(RightValue), std::move(OldLeft), L);
         continue;
       }
-      auto LeftPointer = snapshot(address(std::move(LeftValue), Element, L), L);
-      auto RightPointer =
-          snapshot(address(std::move(RightValue), Element, L), L);
-      auto Temporary = objectTemporary(Element, L);
-      constructMemorySource(json::Object(Temporary), Element,
-                            Owned[I]->Constructor, json::Object(LeftPointer),
-                            L);
-      assignMemorySource(dereference(json::Object(LeftPointer), L), Element,
-                         Owned[I]->FirstAssignment,
-                         dereference(json::Object(RightPointer), L), L);
-      assignMemorySource(dereference(json::Object(RightPointer), L), Element,
-                         Owned[I]->SecondAssignment, json::Object(Temporary),
-                         L);
-      destroy(std::move(Temporary), Element, L);
+      swapOwnedValues(std::move(LeftValue), std::move(RightValue), Element,
+                      *Owned[I], L);
     }
     return true;
   }
@@ -3502,6 +3507,22 @@ class FunctionLowering {
       auto OldRight = snapshot(Right, L);
       assign(Left, std::move(OldRight), L);
       assign(Right, std::move(OldLeft), L);
+      return {};
+    }
+    case UtilityOperation::OwnedSwap: {
+      const auto Element = Call->getArg(0)->getType();
+      const auto Selected = approvedUtilityOwnedSwap(
+          A.S, A.Sources, Call->getDirectCallee(), Element, A.Context);
+      if (!Selected)
+        reject(L, "utility owned swap",
+               "The selected source-owned swap operations are unavailable.");
+      auto LeftAddress =
+          snapshot(address(lvalue(Call->getArg(0)), Element, L), L);
+      auto RightAddress =
+          snapshot(address(lvalue(Call->getArg(1)), Element, L), L);
+      swapOwnedValues(dereference(std::move(LeftAddress), L),
+                      dereference(std::move(RightAddress), L), Element,
+                      *Selected, L);
       return {};
     }
     case UtilityOperation::NumericIota: {
@@ -15649,6 +15670,42 @@ class FunctionLowering {
           address(lvalue(RightSource), RightSource->getType(), L), L);
       if (!Array->Size)
         return {};
+      const auto *Method =
+          dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
+      if (!Method) {
+        const auto *Body =
+            dyn_cast_or_null<CompoundStmt>(Call->getDirectCallee()->getBody());
+        const auto *Delegation =
+            Body && Body->size() == 1
+                ? dyn_cast<CXXMemberCallExpr>(*Body->body_begin())
+                : nullptr;
+        Method = Delegation ? Delegation->getMethodDecl() : nullptr;
+      }
+      if (!Method)
+        reject(L, "utility array swap",
+               "The selected std::array swap method is unavailable.");
+      if (auto Selected = approvedUtilityArrayOwnedSwap(A.S, A.Sources, Method,
+                                                        A.Context)) {
+        const auto SizeType = type(A.Context.getSizeType(), L);
+        for (uint64_t I = 0; I < Array->Size; ++I) {
+          A.chargeExpansion(1, L);
+          auto Index = quantity(I, SizeType, L);
+          auto Left =
+              ArrayElement(dereference(json::Object(LeftAddress), L), *Array,
+                           json::Object(Index), Array->ElementType);
+          auto Right =
+              ArrayElement(dereference(json::Object(RightAddress), L), *Array,
+                           std::move(Index), Array->ElementType);
+          swapOwnedValues(std::move(Left), std::move(Right), Array->ElementType,
+                          *Selected, L);
+        }
+        return {};
+      }
+      const auto *ElementRecord = Array->ElementType->getAsCXXRecordDecl();
+      if (ElementRecord && (!ElementRecord->hasTrivialCopyAssignment() ||
+                            !ElementRecord->hasTrivialDestructor()))
+        reject(L, "utility array swap",
+               "The selected owned element swap is unavailable.");
       auto OldLeft = snapshot(dereference(json::Object(LeftAddress), L), L);
       auto OldRight = snapshot(dereference(json::Object(RightAddress), L), L);
       assign(dereference(std::move(LeftAddress), L), std::move(OldRight), L);

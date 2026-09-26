@@ -28512,6 +28512,30 @@ int main() {
 TEST_F(TranslateTest, CoreV2PairArraySwapRequiresPinnedElementOperations) {
   struct Rejection { const char *Name; const char *Source; const char *Code; };
   const Rejection Cases[] = {
+    {"direct-owned-swap-specialization", R"cpp(#include <utility>
+struct Row {
+  int value;
+  Row(Row&& other) noexcept : value(other.value) {}
+  Row& operator=(Row&& other) noexcept { value = other.value; return *this; }
+};
+namespace std { inline namespace __1 {
+template<> void swap<Row>(Row&, Row&) noexcept {}
+} }
+void rejected_swap(Row& left, Row& right) { std::swap(left, right); }
+)cpp", "TR0201"},
+    {"array-owned-element-swap-specialization", R"cpp(#include <array>
+#include <utility>
+struct Row {
+  int value;
+  Row(Row&& other) noexcept : value(other.value) {}
+  Row& operator=(Row&& other) noexcept { value = other.value; return *this; }
+};
+namespace std { inline namespace __1 {
+template<> void swap<Row>(Row&, Row&) noexcept {}
+} }
+using Value = std::array<Row, 1>;
+void rejected_swap(Value& left, Value& right) { left.swap(right); }
+)cpp", "TR0201"},
     {"pair-owned-element-swap-specialization", R"cpp(#include <utility>
 struct Row {
   int value;
@@ -30822,6 +30846,83 @@ int main() {
   for (const std::string &Optimization : {"-O0", "-O2"}) {
     SCOPED_TRACE(Optimization);
     const auto Executable = tmpFile("owned-pair-swap" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OwnedArrayAndScalarSwapCallsSelectedOperations) {
+  const auto Source = tmpFile("owned-array-swap.cpp");
+  const auto Output = tmpFile("owned-array-swap.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <utility>
+int events[32];
+int event_count;
+int reads;
+void note(int value) { events[event_count++] = value; }
+bool matches(const int* expected, int count) {
+  if (event_count != count) return false;
+  for (int i = 0; i != count; ++i)
+    if (events[i] != expected[i]) return false;
+  return true;
+}
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) {}
+  Item(const Item& other) noexcept : value(other.value) {}
+  Item(Item&& other) noexcept : value(other.value) {
+    note(10 + value);
+    other.value = -1;
+  }
+  Item& operator=(Item&& other) noexcept {
+    note(20 + other.value);
+    value = other.value;
+    other.value = -1;
+    return *this;
+  }
+  ~Item() noexcept { note(30 + value); }
+};
+using Row = std::array<Item, 2>;
+Row& select(Row& value) { ++reads; return value; }
+int main() {
+  Item first(5), second(6);
+  event_count = 0;
+  std::swap(first, second);
+  const int direct[] = {15, 26, 25, 29};
+  if (!matches(direct, 4) || first.value != 6 || second.value != 5)
+    return 1;
+  Row left{{Item(1), Item(2)}}, right{{Item(3), Item(4)}};
+  event_count = 0;
+  left.swap(right);
+  const int member[] = {11, 23, 21, 29, 12, 24, 22, 29};
+  if (!matches(member, 8) || left[0].value != 3 || left[1].value != 4 ||
+      right[0].value != 1 || right[1].value != 2)
+    return 2;
+  event_count = 0;
+  std::swap(select(left), select(right));
+  const int free_swap[] = {13, 21, 23, 29, 14, 22, 24, 29};
+  if (!matches(free_swap, 8) || reads != 2 || left[0].value != 1 ||
+      right[1].value != 4)
+    return 3;
+  event_count = 0;
+  left.swap(left);
+  const int self_swap[] = {11, 19, 21, 29, 12, 19, 22, 29};
+  if (!matches(self_swap, 8) || left[0].value != 1 || left[1].value != 2)
+    return 4;
+  std::array<Item, 0> empty_left{}, empty_right{};
+  event_count = 0;
+  std::swap(empty_left, empty_right);
+  return event_count == 0 ? 0 : 5;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("owned-array-swap" + Optimization);
     auto Compile = compileGenerated(Output, Executable, Optimization);
     ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
     auto Run = exec(Executable.string(), {});

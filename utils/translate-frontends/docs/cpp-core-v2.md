@@ -184,6 +184,10 @@ VFS. `std::move`, `std::forward`, `std::move_if_noexcept`, `std::as_const`,
 reference and assignment operations. The selected function must be the exact
 pinned libc++ declaration and must be called directly; function addresses,
 forged declarations and array overloads are rejected.
+Exact generic `std::swap` of a source-owned nontrivial standard-layout record
+also invokes the selected supported move constructor and two move assignments,
+then destroys the temporary. Both arguments are evaluated once, including
+self-swap. User ADL swaps and source specializations remain rejected.
 
 `std::pair` supports default, value, converting and copy/move construction,
 copy/move assignment, member and free `swap`, `std::make_pair`, index-based
@@ -560,6 +564,11 @@ trivial copy/move assignment retain ordinary value semantics, including for
 record elements with nontrivial destruction. Direct `std::array` copy/move
 operations do not yet admit user-provided nontrivial element constructors.
 `tuple_size` and `tuple_element` remain checked compile-time metadata.
+Member and free array swap also admit source-owned nontrivial record elements
+when the pinned `swap_ranges` and `iter_swap` chain selects supported move
+construction and assignments. Each element swap destroys its temporary before
+the next element; zero-length arrays instantiate no element swap. User ADL
+swaps and source specializations remain rejected.
 
 An array can also supply the element pack to `std::apply` through the
 [checked tuple, pair and array callable boundary](#value-tuples-from-tuple).

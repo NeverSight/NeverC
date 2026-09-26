@@ -124,8 +124,10 @@ supported targets.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#memory-header-from-memory).
 
 Core v2 also accepts the pinned `<utility>` header. Scalar `move`, `forward`,
-`move_if_noexcept`, `as_const`, `exchange` and `swap` lower directly, as do
-scalar or recursively admitted composite `std::pair` construction, assignment,
+`move_if_noexcept`, `as_const`, `exchange` and `swap` lower directly. Exact
+generic swaps of source-owned records invoke selected supported move
+construction, assignments and temporary destruction. Scalar or recursively
+admitted composite `std::pair` construction, assignment,
 swapping, comparison, `make_pair` and `get`. Tuple metadata and
 `integer_sequence::size()` remain compile-time values. The authenticated
 87-file closure adds no libc++ runtime dependency; standard-function addresses
@@ -259,6 +261,10 @@ Source-owned nontrivial standard-layout elements may be forwarded by reference
 or copied into source-owned by-value callbacks and `tuple_cat` results through
 their selected constructors. The resulting tuple can be concatenated again or
 used as an `apply` source; other owning tuple operations remain restricted.
+Member/free array swap also admits these elements when the pinned iterator
+chain selects supported source-owned move operations. Each element's swap
+temporary is destroyed before the next element; empty arrays perform no
+element operation.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#fixed-value-arrays-from-array).
 
 Array layout also supplies authenticated evidence for type queries, including
