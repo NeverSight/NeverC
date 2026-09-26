@@ -2487,10 +2487,12 @@ int main() {
 #include <array>
 #include <functional>
 #include <tuple>
+#include <utility>
 struct Item {
   int value;
   explicit Item(int n) noexcept : value(n) {}
   Item(const Item& other) noexcept : value(other.value) {}
+  Item(Item&& other) noexcept : value(other.value) {}
   ~Item() noexcept {}
   int combine(Item other) const { return value * 10 + other.value; }
 };
@@ -2509,7 +2511,11 @@ int main() {
   auto object = std::cref(reader);
   auto member = std::mem_fn(&Item::combine);
   return std::apply(function, values) + std::apply(object, values) +
-         std::apply(&Item::combine, values) + std::apply(member, values);
+         std::apply(&Item::combine, values) + std::apply(member, values) +
+         std::apply(function, std::move(values)) +
+         std::apply(object, std::move(values)) +
+         std::apply(&Item::combine, std::move(values)) +
+         std::apply(member, std::move(values));
 }
 """
     for target in sdk_targets:

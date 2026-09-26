@@ -29920,7 +29920,9 @@ TEST_F(TranslateTest, CoreV2ArrayOwnedApplyAdapterCopiesRunAtBothOptimizations) 
 #include <array>
 #include <functional>
 #include <tuple>
+#include <utility>
 int copies;
+int moves;
 int deaths;
 int alive;
 int calls;
@@ -29929,6 +29931,10 @@ struct Item {
   explicit Item(int n) noexcept : value(n) { ++alive; }
   Item(const Item& other) noexcept : value(other.value) {
     ++copies;
+    ++alive;
+  }
+  Item(Item&& other) noexcept : value(other.value) {
+    ++moves;
     ++alive;
   }
   ~Item() noexcept { ++deaths; --alive; }
@@ -29967,8 +29973,16 @@ int main() {
       deaths != 5 || alive != 4) return 3;
   if (std::apply(member, constant) != 23 || copies != 6 ||
       deaths != 6 || alive != 4 || calls != 4) return 4;
+  if (std::apply(function, std::move(values)) != 23 || moves != 2 ||
+      deaths != 8 || alive != 4) return 5;
+  if (std::apply(object, std::move(values)) != 23 || moves != 4 ||
+      deaths != 10 || alive != 4) return 6;
+  if (std::apply(&Item::combine, std::move(values)) != 23 || moves != 5 ||
+      deaths != 11 || alive != 4) return 7;
+  if (std::apply(member, std::move(values)) != 23 || moves != 6 ||
+      copies != 6 || deaths != 12 || alive != 4 || calls != 8) return 8;
   return values[0].value == 2 && values[1].value == 3 &&
-         constant[0].value == 2 && constant[1].value == 3 ? 0 : 5;
+         constant[0].value == 2 && constant[1].value == 3 ? 0 : 9;
 }
 )cpp");
   auto Result =
