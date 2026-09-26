@@ -2262,7 +2262,6 @@ void ObjCStubsSection::setUp() {
   } else {
     in.got->addEntry(msgSend);
   }
-  in.objcSelRefs->setUp();
 }
 
 void ObjCStubsSection::writeTo(uint8_t *buf) const {

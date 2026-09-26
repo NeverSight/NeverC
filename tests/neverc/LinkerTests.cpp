@@ -3597,6 +3597,110 @@ TEST_F(LinkerTest, NativeMachOProbesAndInternalOptions) {
   EXPECT_TRUE(fs::exists(kextObjects / "demo.kext.o"));
 }
 
+TEST_F(LinkerTest, NativeMachOObjCRelativeMethodLists) {
+  const std::string target = "--target=arm64-apple-macos13";
+  const fs::path dir = tmpFile("macho_methlist_dir");
+  fs::create_directories(dir);
+  const fs::path source = dir / "list.s";
+  const fs::path object = dir / "list.o";
+  const fs::path image = dir / "list";
+  writeFile(source, R"(
+.section __TEXT,__text,regular,pure_instructions
+.p2align 2
+"-[Foo bar]":
+  ret
+"-[Foo baz]":
+  ret
+.globl _main
+_main:
+  mov w0, #0
+  ret
+.section __TEXT,__objc_methname,cstring_literals
+l_name0: .asciz "bar"
+l_name1: .asciz "baz"
+.section __TEXT,__objc_methtype,cstring_literals
+l_type0: .asciz "v16@0:8"
+.section __DATA,__objc_const
+.p2align 3
+__OBJC_$_INSTANCE_METHODS_Foo:
+  .long 24
+  .long 2
+  .quad l_name0
+  .quad l_type0
+  .quad "-[Foo bar]"
+  .quad l_name1
+  .quad l_type0
+  .quad "-[Foo baz]"
+.section __DATA,__objc_data
+.p2align 3
+.globl _list_ref
+_list_ref:
+  .quad __OBJC_$_INSTANCE_METHODS_Foo
+.subsections_via_symbols
+)");
+  CmdResult assemble =
+      ncc({target, "-c", source.string(), "-o", object.string()});
+  ASSERT_EQ(assemble.exitCode, 0) << assemble.err;
+  CmdResult link =
+      ncc({target, "-nostdlib", "-Wl,-e,_main", object.string(),
+           "-Wl,-objc_relative_method_lists", "-o", image.string()});
+  ASSERT_EQ(link.exitCode, 0) << link.err;
+
+  const std::string bytes = readFile(image);
+  auto macho = llvm::object::MachOObjectFile::create(
+      llvm::MemoryBufferRef(bytes, image.string()), /*IsLittleEndian=*/true,
+      /*Is64Bits=*/true);
+  ASSERT_TRUE(static_cast<bool>(macho))
+      << llvm::toString(macho.takeError()).str().str();
+  struct Section {
+    uint64_t addr;
+    std::string contents;
+  };
+  std::map<std::string, Section> sections;
+  for (const auto &section : (*macho)->sections())
+    sections[llvm::cantFail(section.getName()).str()] = {
+        section.getAddress(), llvm::cantFail(section.getContents()).str()};
+  ASSERT_TRUE(sections.count("__objc_methlist"));
+  auto read = [&](uint64_t va, size_t size) -> std::string {
+    for (const auto &[name, section] : sections)
+      if (va >= section.addr &&
+          va + size <= section.addr + section.contents.size())
+        return section.contents.substr(va - section.addr, size);
+    ADD_FAILURE() << "no section holds 0x" << std::hex << va;
+    return std::string(size, '\0');
+  };
+  auto cstring = [&](uint64_t va) { return std::string(read(va, 3).c_str()); };
+  // Chained rebases keep the target in the low 36 bits.
+  auto pointer = [&](uint64_t va) {
+    return llvm::support::endian::read64le(read(va, 8).data()) &
+           ((uint64_t(1) << 36) - 1);
+  };
+
+  const Section &list = sections["__objc_methlist"];
+  ASSERT_EQ(list.contents.size(), 8u + 2u * 12u);
+  EXPECT_EQ(llvm::support::endian::read32le(list.contents.data()), 0x8000000cu);
+  EXPECT_EQ(llvm::support::endian::read32le(list.contents.data() + 4), 2u);
+  const uint64_t textAddr = sections["__text"].addr;
+  const char *names[] = {"bar", "baz"};
+  for (int m = 0; m < 2; ++m) {
+    const uint64_t entry = list.addr + 8 + 12 * m;
+    auto field = [&](int f) {
+      return int32_t(llvm::support::endian::read32le(list.contents.data() + 8 +
+                                                     12 * m + 4 * f));
+    };
+    // The name leads to a selector reference to the name.
+    EXPECT_EQ(cstring(pointer(entry + field(0))), names[m]);
+    EXPECT_EQ(std::string(read(entry + 4 + field(1), 7)), "v16@0:8");
+    EXPECT_EQ(entry + 8 + field(2), textAddr + 4 * m);
+  }
+  // References to the list follow it.
+  uint64_t listRef = 0;
+  for (const auto &sym : (*macho)->symbols())
+    if (llvm::cantFail(sym.getName()) == "_list_ref")
+      listRef = llvm::cantFail(sym.getAddress());
+  EXPECT_EQ(pointer(listRef), list.addr);
+}
+
 TEST_F(LinkerTest, MsvcLinkerSpellingsAreNormalized) {
   const std::string target = "--target=x86_64-pc-windows-msvc";
   const fs::path source = tmpFile("msvc_opts.c");

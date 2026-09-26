@@ -298,9 +298,12 @@ struct Configuration {
   llvm::DenseMap<llvm::CachedHashStringRef, uint32_t> exportedSymbolsOrder;
   WeakReferenceMismatches weakReferenceMismatches =
       WeakReferenceMismatches::NonWeak;
-  // Sections -move_to_ro_segment and -move_to_rw_segment send to another
-  // segment.
-  llvm::DenseMap<const InputSection *, llvm::StringRef> movedSections;
+  // Sections laid out in another (segment, section) than their own:
+  // -move_to_ro_segment, -move_to_rw_segment and relative method lists.
+  llvm::DenseMap<const InputSection *,
+                 std::pair<llvm::StringRef, llvm::StringRef>>
+      movedSections;
+  bool objcRelativeMethodLists = false;
   SymbolPatterns interposableSymbols;
 
   llvm::StringRef osoPrefix;

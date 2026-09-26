@@ -1539,6 +1539,8 @@ template <class LP> void OutputWriter::run() {
   scanRelocations();
   if (in.objcStubs)
     in.objcStubs->setUp();
+  if (in.objcSelRefs)
+    in.objcSelRefs->setUp();
   checkNativeOptionConstraints();
   if (in.initOffsets->isNeeded())
     in.initOffsets->setUp();

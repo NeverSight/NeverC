@@ -366,8 +366,9 @@ ConcatOutputSection *
 ConcatOutputSection::getOrCreateForInput(const InputSection *isec) {
   NamePair names = maybeRenameSection({isec->getSegName(), isec->getName()});
   if (!config->movedSections.empty())
-    if (StringRef seg = config->movedSections.lookup(isec); !seg.empty())
-      names.first = seg;
+    if (auto it = config->movedSections.find(isec);
+        it != config->movedSections.end())
+      names = it->second;
   // -merge_zero_fill_sections gathers __DATA's zero-fill sections.
   if (config->mergeZeroFillSections && names.first == segment_names::data &&
       sectionType(isec->getFlags()) == S_ZEROFILL)

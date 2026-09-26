@@ -872,6 +872,134 @@ void writeKextObjects() {
     error("-kext_objects_dir: cannot merge the kext's objects into " + path);
 }
 
+// -objc_relative_method_lists: each method list's 24-byte entries (name,
+// types and implementation pointers) become 12-byte offsets from the entry
+// fields, and the list moves to __TEXT,__objc_methlist. A name offset leads
+// to a selector reference rather than to the name.
+void createRelativeMethodLists() {
+  constexpr uint32_t pointerListEntSize = 24, relativeEntSize = 12,
+                     relativeFlag = 0x80000000;
+  const bool macOS11 =
+      config->platform() != PLATFORM_MACOS ||
+      config->platformInfo.target.MinDeployment >= VersionTuple(11, 0);
+  if (!macOS11) {
+    warn("-objc_relative_method_lists: the Objective-C runtime reads relative "
+         "method lists from macOS 11; the lists stay as they are");
+    return;
+  }
+  static constexpr StringLiteral listPrefixes[] = {
+      "__OBJC_$_INSTANCE_METHODS_", "__OBJC_$_CLASS_METHODS_",
+      "__OBJC_$_CATEGORY_INSTANCE_METHODS_",
+      "__OBJC_$_CATEGORY_CLASS_METHODS_"};
+  DenseMap<CachedHashStringRef, uint64_t> selRefs;
+  auto stringAt = [](const Reloc &r) -> std::optional<StringRef> {
+    uint64_t offset = r.addend;
+    const InputSection *isec = nullptr;
+    if (const auto *sym = r.referent.dyn_cast<Symbol *>()) {
+      const auto *d = dyn_cast<Defined>(sym);
+      if (!d || !d->isec)
+        return std::nullopt;
+      isec = d->isec;
+      offset += d->value;
+    } else {
+      isec = r.referent.get<InputSection *>();
+    }
+    if (const auto *cstrings = dyn_cast<CStringInputSection>(isec))
+      return cstrings->getStringRefAtOffset(offset);
+    return std::nullopt;
+  };
+  for (const InputFile *file : inputFiles) {
+    const auto *obj = dyn_cast<ObjFile>(file);
+    if (!obj)
+      continue;
+    for (const Section *section : obj->sections) {
+      if (section->name != "__objc_const")
+        continue;
+      for (const Subsection &subsection : section->subsections) {
+        auto *isec = dyn_cast<ConcatInputSection>(subsection.isec);
+        if (!isec || isec->data.size() < 8)
+          continue;
+        // The list's symbol starts the section, beside section symbols.
+        Defined *list = nullptr;
+        for (Defined *sym : isec->symbols)
+          if (sym->value == 0 &&
+              llvm::any_of(listPrefixes, [&](StringRef prefix) {
+                return sym->getName().starts_with(prefix);
+              }))
+            list = sym;
+        if (!list)
+          continue;
+        const uint32_t entSize =
+            support::endian::read32le(isec->data.data()) & 0xffff;
+        const uint32_t count = support::endian::read32le(isec->data.data() + 4);
+        if (entSize != pointerListEntSize ||
+            isec->data.size() != 8 + uint64_t(count) * pointerListEntSize)
+          continue;
+
+        // The references of each entry's three fields, by field.
+        SmallVector<std::array<const Reloc *, 3>, 8> fields(count);
+        bool representable = true;
+        for (const Reloc &r : isec->relocs) {
+          if (r.offset < 8 || r.length != 3 ||
+              r.type != target->unsignedRelocType) {
+            representable = false;
+            break;
+          }
+          fields[(r.offset - 8) / pointerListEntSize]
+                [(r.offset - 8) % pointerListEntSize / 8] = &r;
+        }
+        if (!representable)
+          continue;
+
+        // Selector references for the method names.
+        if (!in.objcSelRefs) {
+          in.objcMethNames = make<ObjCMethNameSection>();
+          in.objcSelRefs = make<ObjCSelRefsSection>();
+        }
+        std::vector<Reloc> relocs;
+        uint8_t *data = bAlloc().Allocate<uint8_t>(8 + count * relativeEntSize);
+        memset(data, 0, 8 + count * relativeEntSize);
+        support::endian::write32le(data, relativeEntSize | relativeFlag);
+        support::endian::write32le(data + 4, count);
+        // field - list = (target + addend - fieldOffset) - list.
+        auto addDelta = [&](uint64_t fieldOffset,
+                            PointerUnion<Symbol *, InputSection *> referent,
+                            int64_t addend) {
+          relocs.push_back({target->subtractorRelocType, false, 2,
+                            uint32_t(fieldOffset), 0, list});
+          relocs.push_back({target->unsignedRelocType, false, 2,
+                            uint32_t(fieldOffset),
+                            addend - int64_t(fieldOffset), referent});
+        };
+        for (uint32_t m = 0; m < count; ++m) {
+          const uint64_t entry = 8 + uint64_t(m) * relativeEntSize;
+          if (const Reloc *name = fields[m][0]) {
+            std::optional<StringRef> selector = stringAt(*name);
+            if (!selector) {
+              error(toString(isec) + ": method name is not a string");
+              continue;
+            }
+            auto [it, inserted] =
+                selRefs.try_emplace(CachedHashStringRef(*selector), 0);
+            if (inserted)
+              it->second =
+                  in.objcSelRefs->addRef(in.objcMethNames->addName(*selector));
+            addDelta(entry, in.objcSelRefs->isec, it->second);
+          }
+          for (int f = 1; f < 3; ++f)
+            if (const Reloc *field = fields[m][f])
+              addDelta(entry + 4 * f, field->referent, field->addend);
+        }
+        isec->data = {data, 8 + count * relativeEntSize};
+        isec->relocs = std::move(relocs);
+        isec->align = std::max<uint32_t>(isec->align, 4);
+        isec->keepUnique = true;
+        config->movedSections[isec] = {segment_names::text, "__objc_methlist"};
+      }
+    }
+  }
+}
+
 // DTrace static probes: the probe and is-enabled symbols name calls that
 // become nops or return 0, and the stability and typedef symbols describe
 // the providers. None of them is defined anywhere.
@@ -1718,7 +1846,8 @@ void moveSymbolsToSegments(const InputArgList &args) {
             defined->isec->getSegName() == segment_names::text;
         if (fromReadOnly != readOnly)
           continue;
-        config->movedSections[defined->isec] = segment;
+        config->movedSections[defined->isec] = {segment,
+                                                defined->isec->getName()};
         if (config->traceSymbolLayout)
           message(Twine(arg->getSpelling()) + ": " + toString(*defined) +
                   " moves from " + defined->isec->getSegName() + "," +
@@ -2394,6 +2523,8 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
   config->textExec = args.hasArg(OPT_text_exec);
   config->noNewMain = args.hasArg(OPT_no_new_main);
   config->noCompactUnwind = args.hasArg(OPT_no_compact_unwind);
+  config->objcRelativeMethodLists = args.hasFlag(
+      OPT_objc_relative_method_lists, OPT_no_objc_relative_method_lists, false);
   for (const Arg *arg : args.filtered(OPT_force_symbol_weak))
     config->forceWeakSymbols.insert(arg->getValue());
   for (const Arg *arg : args.filtered(OPT_force_symbol_not_weak))
@@ -2908,6 +3039,8 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
       handleExplicitExports();
     replaceCommonSymbols();
     createObjCStubs();
+    if (config->objcRelativeMethodLists)
+      createRelativeMethodLists();
     createDtraceProbes();
     // -reexported_symbols_list re-exports these dependent dylib symbols.
     if (!config->reexportedSymbols.empty())

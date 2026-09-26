@@ -907,9 +907,8 @@ OPTION(prefix_3, "-no_objc_category_merging", no_objc_category_merging, Flag,
        "Do not merge Objective-C categories (always done)", nullptr, nullptr)
 OPTION(prefix_3, "-no_objc_relative_method_lists",
        no_objc_relative_method_lists, Flag, grp_undocumented, INVALID, nullptr,
-       0, DefaultVis, 0,
-       "Keep traditional Objective-C method lists (always done)", nullptr,
-       nullptr)
+       0, DefaultVis, 0, "Keep Objective-C method lists as pointers (default)",
+       nullptr, nullptr)
 OPTION(prefix_3, "-no_order_data", no_order_data, Flag, grp_opts, INVALID,
        nullptr, 0, DefaultVis, 0,
        "Disable default reordering of global data accessed at launch time",
@@ -1011,8 +1010,10 @@ OPTION(prefix_3, "-objc_gc", objc_gc, Flag, grp_obsolete, INVALID, nullptr,
        "This option is obsolete: Objective-C garbage collection is gone",
        nullptr, nullptr)
 OPTION(prefix_3, "-objc_relative_method_lists", objc_relative_method_lists,
-       Flag, grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "Objective-C optimizations are not supported", nullptr, nullptr)
+       Flag, grp_undocumented, INVALID, nullptr, 0, DefaultVis, 0,
+       "Store Objective-C method lists as 12-byte relative entries in "
+       "__TEXT,__objc_methlist",
+       nullptr, nullptr)
 OPTION(prefix_3, "-objc_stubs_fast", objc_stubs_fast, Flag, grp_rare, INVALID,
        nullptr, 0, DefaultVis, 0,
        "Emit 32-byte Objective-C message send stubs that load _objc_msgSend "
