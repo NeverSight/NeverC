@@ -2452,19 +2452,38 @@ int main() {
                      target=target, sdk=True)
         check_pair_array_apply(data)
 
-    for name, source in (
-        ("apply-by-value", """\
+    array_owned_apply_copies_source = """\
 #include <array>
 #include <tuple>
+#include <utility>
 struct Item {
   int value;
   explicit Item(int n) noexcept : value(n) {}
   Item(const Item& other) noexcept : value(other.value) {}
+  Item(Item&& other) noexcept : value(other.value) {}
   ~Item() noexcept {}
 };
-int read(Item item) { return item.value; }
-int main() { std::array<Item, 1> values{{Item(7)}}; return std::apply(read, values); }
-"""),
+int read(Item first, Item second) { return first.value + second.value; }
+struct Reader {
+  int operator()(Item first, Item second) const {
+    return first.value + second.value;
+  }
+};
+int main() {
+  std::array<Item, 2> values{{Item(2), Item(3)}};
+  const std::array<Item, 2> constant{{Item(4), Item(5)}};
+  Reader reader;
+  return std::apply(read, values) + std::apply(reader, constant) +
+         std::apply(read, std::move(values));
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-array-owned-apply-copies-" + target,
+                     array_owned_apply_copies_source, profile="cpp-core-v2",
+                     target=target, sdk=True)
+        check_pair_array_apply(data)
+
+    for name, source in (
         ("tuple-cat-copy", """\
 #include <array>
 #include <tuple>
