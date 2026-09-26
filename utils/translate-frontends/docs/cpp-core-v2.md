@@ -417,7 +417,9 @@ Each source element and corresponding callback parameter must be admitted
 scalars connected by a checked direct scalar conversion, or the same complete
 source-owned standard-layout record type that is trivially copyable and
 destructible, passed by value; the result may be `void`, an admitted scalar,
-or a complete source-owned record value. Exact lvalue- or rvalue-reference
+or a complete source-owned record value. Nonempty `std::array` sources also
+admit source-owned nontrivial record elements by value when the actual callback
+selects a checked copy or move constructor. Exact lvalue- or rvalue-reference
 parameters and results are also admitted for supported scalar, object-pointer,
 function-pointer, complete fixed-array, authenticated `std::array` and
 source-owned record referents. A `const T&` callback parameter also binds an
@@ -527,11 +529,13 @@ be passed by admitted reference forms, while by-value SDK callback parameters
 and results remain excluded.
 For nonempty arrays of source-owned nontrivial standard-layout records,
 `std::apply` also forwards elements to compatible lvalue, const-lvalue and
-rvalue reference callback parameters. Named functions and source-owned function
-objects retain element identity and perform no implicit element copy. The
-selected `get`, callback signature and array lifetime remain checked.
-By-value callbacks and nonempty `tuple_cat` copies of these elements remain
-outside this boundary.
+rvalue reference callback parameters without copying. Exact by-value callback
+parameters construct independent objects through the selected source-owned
+copy or move constructor, then destroy them with the ordinary parameter
+lifetime. Named functions, source-owned function objects, `ref`/`cref`
+wrappers, member functions and `mem_fn` adapters use this path. The selected
+`get`, callback signature, forwarding and array lifetime remain checked.
+Nonempty `tuple_cat` copies of these elements remain outside this boundary.
 For zero-length arrays, `std::apply` passes no elements and `std::tuple_cat`
 contributes no elements. A source-owned nontrivial standard-layout record
 element is admitted in these empty packs because neither operation copies,
