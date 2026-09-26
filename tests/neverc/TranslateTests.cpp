@@ -53101,6 +53101,140 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorPointerRelationsRun) {
+  const auto Source = tmpFile("vector-pointer-relations.cpp");
+  const auto Output = tmpFile("vector-pointer-relations.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int observations;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <memory>
+#include <vector>
+using Owner = std::unique_ptr<int>;
+using Owners = std::vector<Owner>;
+bool relations(const Owners &left, const Owners &right,
+               bool equal, bool different, bool less, bool greater,
+               bool less_equal, bool greater_equal) {
+  return (left == right) == equal && (left != right) == different &&
+         (left < right) == less && (left > right) == greater &&
+         (left <= right) == less_equal &&
+         (left >= right) == greater_equal;
+}
+const Owners &observe(const Owners &value) {
+  ++observations;
+  return value;
+}
+int main() {
+  {
+    Owners empty;
+    Owners prefix(1);
+    Owners longer(2);
+    if (!relations(empty, empty, true, false, false, false, true, true) ||
+        !relations(empty, prefix, false, true, true, false, true, false) ||
+        !relations(prefix, empty, false, true, false, true, false, true) ||
+        !relations(prefix, longer, false, true, true, false, true, false))
+      return 1;
+    prefix[0].reset(new int(7));
+    longer[0].reset(new int(11));
+    bool less = prefix[0] < longer[0];
+    bool greater = longer[0] < prefix[0];
+    if (!relations(prefix, longer, false, true, less, greater,
+                   less, greater) ||
+        !relations(prefix, prefix, true, false, false, false, true, true))
+      return 2;
+    int before = allocations;
+    if ((observe(prefix) < observe(longer)) != less ||
+        observations != 2 || allocations != before)
+      return 3;
+  }
+  {
+    int values[2]{1, 2};
+    std::vector<int *> lower;
+    std::vector<int *> higher;
+    lower.push_back(&values[0]);
+    higher.push_back(&values[1]);
+    if (!(lower < higher) || lower > higher || !(lower <= higher) ||
+        lower >= higher || lower == higher || !(lower != higher) ||
+        !(higher > lower) || higher < lower || !(higher >= lower) ||
+        higher <= lower)
+      return 4;
+    std::vector<void *> void_lower;
+    std::vector<void *> void_higher;
+    void_lower.push_back(&values[0]);
+    void_higher.push_back(&values[1]);
+    if (void_lower == void_higher || !(void_lower != void_higher) ||
+        !(void_lower == void_lower))
+      return 6;
+  }
+  return allocations == releases ? 0 : 5;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-pointer-relations" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+  const auto VoidOrderSource = tmpFile("vector-void-order.cpp");
+  const auto VoidOrderOutput = tmpFile("vector-void-order.nc");
+  writeFile(VoidOrderSource, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <vector>
+int main() {
+  std::vector<void *> left, right;
+  return left < right;
+}
+)cpp");
+  auto VoidOrderResult = translate(
+      VoidOrderSource, {"--profile", "cpp-core-v2", "-o", VoidOrderOutput.string()});
+  EXPECT_NE(VoidOrderResult.exitCode, 0);
+  EXPECT_NE(VoidOrderResult.err.find("TR0203"), std::string::npos)
+      << VoidOrderResult.err;
+  EXPECT_EQ(VoidOrderResult.err.find("TR0301"), std::string::npos)
+      << VoidOrderResult.err;
+}
+
+TEST_F(TranslateTest, CoreV2VectorCustomOwnerRelationRejected) {
+  const auto Source = tmpFile("vector-custom-owner-relation.cpp");
+  const auto Output = tmpFile("vector-custom-owner-relation.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <memory>
+#include <vector>
+namespace custom {
+struct Deleter { void operator()(int *) noexcept {} };
+using Owner = std::unique_ptr<int, Deleter>;
+bool operator==(const Owner &, const Owner &) { return false; }
+}
+int main() {
+  std::vector<custom::Owner> left(1), right(1);
+  return left == right;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  EXPECT_NE(Result.exitCode, 0);
+  EXPECT_NE(Result.err.find("TR0203"), std::string::npos) << Result.err;
+}
+
 TEST_F(TranslateTest, CoreV2VectorObjectPointersRun) {
   const auto Source = tmpFile("vector-object-pointers.cpp");
   const auto Output = tmpFile("vector-object-pointers.nc");

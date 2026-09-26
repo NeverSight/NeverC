@@ -18708,11 +18708,21 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                               Left->ElementType->isFloatingType();
       const bool StringElement = approvedUtilityStringRecord(
           S, SM, Left->ElementType->getAsCXXRecordDecl(), Context).has_value();
-      const bool PointerEquality =
+      const auto UniquePointer = approvedUtilityUniquePtrRecord(
+          S, SM, Left->ElementType->getAsCXXRecordDecl(), Context);
+      // A source type or deleter namespace can add an operator found by ADL
+      // inside libc++'s dependent element comparison.
+      const bool UniquePointerElement =
+          UniquePointer && !UniquePointer->CustomDeleter &&
+          Context.getBaseElementType(UniquePointer->ElementType)
+              ->isBuiltinType();
+      const bool Equality = Operator->getOperator() == OO_EqualEqual ||
+                            Operator->getOperator() == OO_ExclaimEqual;
+      const bool PointerElement =
           Left->ElementType->isObjectPointerType() &&
-          (Operator->getOperator() == OO_EqualEqual ||
-           Operator->getOperator() == OO_ExclaimEqual);
-      if (Matching && (Arithmetic || StringElement || PointerEquality))
+          (Equality || !Left->ElementType->getPointeeType()->isIncompleteType());
+      if (Matching && (Arithmetic || StringElement || UniquePointerElement ||
+                       PointerElement))
         switch (Operator->getOperator()) {
         case OO_EqualEqual:
         case OO_ExclaimEqual:

@@ -29186,6 +29186,19 @@ bool compare_strings(const std::vector<std::string>& left,
   return left == right || left != right || left < right ||
          left > right || left <= right || left >= right;
 }
+bool compare_pointers(const std::vector<int*>& left,
+                      const std::vector<int*>& right,
+                      const std::vector<void*>& opaque_left,
+                      const std::vector<void*>& opaque_right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right ||
+         opaque_left == opaque_right || opaque_left != opaque_right;
+}
+bool compare_owners(const std::vector<std::unique_ptr<int>>& left,
+                    const std::vector<std::unique_ptr<int>>& right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
+}
 void move_pointers(std::vector<std::unique_ptr<int>>& values,
                    std::unique_ptr<int>&& value) {
   values.push_back(static_cast<std::unique_ptr<int>&&>(value));

@@ -12554,9 +12554,12 @@ class FunctionLowering {
         reject(L, "vector comparison",
                "The selected std::vector layout is unavailable.");
       auto String = StringFor(LeftVector->ElementType);
-      if (LeftVector->OwningElement && !String)
+      auto Unique = approvedUtilityUniquePtrRecord(
+          A.S, A.Sources, LeftVector->ElementType->getAsCXXRecordDecl(),
+          A.Context);
+      if (LeftVector->OwningElement && !String && !Unique)
         reject(L, "vector comparison",
-               "Only pinned std::string owning elements can be compared.");
+               "The selected owning element comparison is unavailable.");
       const auto PointerType = type(LeftVector->PointerType, L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       auto LeftAddress = snapshot(
@@ -12588,6 +12591,11 @@ class FunctionLowering {
                binary("+", json::Object(RightCurrent),
                       quantity(1, DifferenceType, L), PointerType, L),
                L);
+      };
+      auto ComparableElement = [&](Expression Current) {
+        auto Value = dereference(std::move(Current), L);
+        return Unique ? snapshot(UniquePtrMember(std::move(Value), *Unique), L)
+                      : snapshot(std::move(Value), L);
       };
       auto CompareStrings = [&]() -> Expression {
         auto Left = ReadStringAt(json::Object(LeftCurrent), *String);
@@ -12682,10 +12690,8 @@ class FunctionLowering {
                         L),
                  Next, Different, L);
         } else {
-          auto LeftElement =
-              snapshot(dereference(json::Object(LeftCurrent), L), L);
-          auto RightElement =
-              snapshot(dereference(json::Object(RightCurrent), L), L);
+          auto LeftElement = ComparableElement(json::Object(LeftCurrent));
+          auto RightElement = ComparableElement(json::Object(RightCurrent));
           branch(binary("==", std::move(LeftElement), std::move(RightElement),
                         "bool", L),
                  Next, Different, L);
@@ -12728,10 +12734,8 @@ class FunctionLowering {
         branch(binary(">", std::move(Order), quantity(0, "int", L), "bool", L),
                Greater, Next, L);
       } else {
-        auto LeftElement =
-            snapshot(dereference(json::Object(LeftCurrent), L), L);
-        auto RightElement =
-            snapshot(dereference(json::Object(RightCurrent), L), L);
+        auto LeftElement = ComparableElement(json::Object(LeftCurrent));
+        auto RightElement = ComparableElement(json::Object(RightCurrent));
         branch(binary("<", json::Object(LeftElement),
                       json::Object(RightElement), "bool", L),
                Less, CheckGreater, L);

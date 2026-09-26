@@ -2470,10 +2470,10 @@ reserve/resize/shrink_to_fit; lvalue/rvalue, counted-value, pointer and wrapped 
 range, and initializer-list `insert`; zero- or one-argument positional
 `emplace` with exact element types; counted-value, pointer and wrapped
 iterator range, and initializer-list `assign`; single-position and range
-`erase`; member/free swap; all six vector/vector comparison operators for
-arithmetic elements; and vector equality and inequality for object pointers.
-Function pointer elements and ordered vector comparison for pointer elements
-remain outside this boundary.
+`erase`; member/free swap; and all six vector/vector comparison operators for
+arithmetic and complete object-pointer elements. Object pointers to incomplete
+types and `void *` support equality and inequality only. Function pointer
+elements remain outside this boundary.
 Insert and positional emplace return mutable iterators. Single-value insertion
 and emplace preserve aliased element inputs;
 they shift in place when capacity permits and otherwise move storage through
@@ -2529,10 +2529,16 @@ Host fixtures cover list-backed temporary destruction, destination capacity
 reuse and growth, empty ranges, and independent string allocations.
 All six vector/vector comparisons use element-wise byte content and lexicographic
 ordering for pinned string elements, including embedded zero and high-bit bytes.
-Unique-pointer elements remain noncopyable. Other positional emplacement and
-unique-pointer vector comparisons remain outside the owning-element boundary. Other
-nontrivial record elements, other allocators, remaining vector methods, and
-throwing allocation or length-error paths remain unsupported. Quoted and shadow
+They also compare admitted `std::unique_ptr` elements with the pinned default
+deleter and a built-in base pointee type by their stored raw pointers. Pointer
+and unique-pointer ordering uses the profile's selected native address order;
+prefix and equal-length rules remain lexicographic. Source-associated element
+or deleter namespaces can select a different comparison by ADL, so those
+unique-pointer specializations remain outside this comparison boundary.
+Unique-pointer elements remain noncopyable. Other positional emplacement
+remains unsupported. Nontrivial record elements, other allocators, remaining
+vector methods, and throwing allocation or length-error paths remain
+unsupported. Quoted and shadow
 headers remain rejected.
 
 ## Dynamic local static initialization
