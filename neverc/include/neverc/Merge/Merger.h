@@ -30,6 +30,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include <string>
+#include <vector>
 
 namespace neverc {
 struct AndroidKernelReleaseSymbolMap;
@@ -114,6 +115,10 @@ struct Options {
   /// Without it an input with a section group is refused, as groups cannot
   /// survive section merging.
   bool resolveGroups = false;
+
+  /// Mach-O: LC_LINKER_OPTION commands to add, each a list of arguments,
+  /// after the distinct ones the inputs carry, which are kept.
+  std::vector<std::vector<std::string>> machoLinkerOptions;
 
   /// Emulate the small part of the Android kernel module linker script that
   /// is a loader ABI rather than ordinary section folding.  The final ET_REL

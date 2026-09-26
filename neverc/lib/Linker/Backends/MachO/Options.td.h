@@ -102,9 +102,10 @@ OPTION(prefix_3, "-add_ast_path", anonymous_300, Separate, INVALID,
 OPTION(prefix_3, "-add_empty_section", anonymous_301, MultiArg, INVALID,
        add_empty_section, nullptr, 0, DefaultVis, 2,
        "Alias for --add-empty-section", "<segment> <section>", nullptr)
-OPTION(prefix_3, "-add_linker_option", add_linker_option, Flag,
-       grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "it is an undocumented option of the native linker", nullptr, nullptr)
+OPTION(prefix_3, "-add_linker_option", add_linker_option, Separate,
+       grp_undocumented, INVALID, nullptr, 0, DefaultVis, 0,
+       "Add an LC_LINKER_OPTION load command with <option> to a -r output",
+       "<option>", nullptr)
 OPTION(prefix_3, "-add_source_version", add_source_version, Flag,
        grp_undocumented, INVALID, nullptr, 0, DefaultVis, 0,
        "Emit an LC_SOURCE_VERSION load command", nullptr, nullptr)
@@ -140,8 +141,8 @@ OPTION(prefix_3, "-allow_heap_execute", allow_heap_execute, Flag, grp_rare,
        "On i386, allow any page to execute code", nullptr, nullptr)
 OPTION(prefix_3, "-allow_simulator_linking_to_macosx_dylibs",
        allow_simulator_linking_to_macosx_dylibs, Flag, grp_undocumented,
-       INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "it is an undocumented option of the native linker", nullptr, nullptr)
+       INVALID, nullptr, 0, DefaultVis, 0,
+       "Let a simulator image link macOS dylibs", nullptr, nullptr)
 OPTION(prefix_3, "-allow_stack_execute", allow_stack_execute, Flag, grp_main,
        INVALID, nullptr, 0, DefaultVis, 0, "Mark stack segment as executable",
        nullptr, nullptr)
@@ -230,9 +231,10 @@ OPTION(prefix_3, "-b", b, Flag, grp_obsolete, INVALID, nullptr, HelpHidden,
 OPTION(prefix_2, "--call-graph-profile-sort", call_graph_profile_sort, Flag,
        grp_neverc_ext, INVALID, nullptr, 0, DefaultVis, 0,
        "Reorder sections with call graph profile (default)", nullptr, nullptr)
-OPTION(prefix_3, "-classic_linker", classic_linker, Flag, grp_undocumented,
+OPTION(prefix_3, "-classic_linker", classic_linker, Flag, grp_ignored_silently,
        INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "it is an undocumented option of the native linker", nullptr, nullptr)
+       "Select the classic linker implementation; NeverC has one linker",
+       nullptr, nullptr)
 OPTION(prefix_3, "-client_name", client_name, Separate, grp_rare, INVALID,
        nullptr, 0, DefaultVis, 0,
        "Specifies a <name> this client should match with the -allowable_client "
@@ -289,8 +291,10 @@ OPTION(prefix_3, "-dead_strip_dylibs", anonymous_312, Flag, INVALID,
 OPTION(prefix_3, "-dead_strip", dead_strip, Flag, grp_opts, INVALID, nullptr, 0,
        DefaultVis, 0, "Remove unreachable functions and data", nullptr, nullptr)
 OPTION(prefix_3, "-debug_snapshot", debug_snapshot, Flag, grp_undocumented,
-       INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "it is an undocumented option of the native linker", nullptr, nullptr)
+       INVALID, nullptr, 0, DefaultVis, 0,
+       "Write the link command and copies of its inputs to <output>.snapshot "
+       "in the -snapshot_dir directory",
+       nullptr, nullptr)
 OPTION(prefix_3, "-debug_variant", debug_variant, Flag, grp_ignored_silently,
        INVALID, nullptr, HelpHidden, DefaultVis, 0,
        "Do not warn about issues that are only problems for binaries shipping "
@@ -322,8 +326,10 @@ OPTION(prefix_3, "-driverkit_version_min", driverkit_version_min, Separate,
        grp_version, INVALID, nullptr, 0, DefaultVis, 0,
        "Oldest DriverKit version for which linked output is usable",
        "<version>", nullptr)
-OPTION(prefix_3, "-dtrace", dtrace, Separate, grp_content, INVALID, nullptr,
-       HelpHidden, DefaultVis, 0, "DTrace static probes are not supported",
+OPTION(prefix_3, "-dtrace", dtrace, Separate, grp_content, INVALID, nullptr, 0,
+       DefaultVis, 0,
+       "Enable DTrace static probes (always done); the probe symbols carry the "
+       "types, so <script> is only checked to exist",
        "<script>", nullptr)
 OPTION(prefix_1, "--dyld-env", dyld_env, Separate, grp_rare, INVALID, nullptr,
        0, DefaultVis, 0, "Specifies a LC_DYLD_ENVIRONMENT variable value pair.",
@@ -427,8 +433,10 @@ OPTION(prefix_1, "--fixup-chains", fixup_chains, Flag, grp_undocumented,
        INVALID, nullptr, 0, DefaultVis, 0, "Emit chained fixups", nullptr,
        nullptr)
 OPTION(prefix_3, "-fixup_chains_section", fixup_chains_section, Flag,
-       grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "it is an undocumented option of the native linker", nullptr, nullptr)
+       grp_undocumented, INVALID, nullptr, 0, DefaultVis, 0,
+       "Also describe the fixup chains in __TEXT,__chain_starts, for loaders "
+       "without dyld",
+       nullptr, nullptr)
 OPTION(prefix_3, "-fixup_chains", anonymous_319, Flag, INVALID, fixup_chains,
        nullptr, 0, DefaultVis, 0, "Alias for --fixup-chains", nullptr, nullptr)
 OPTION(prefix_1, "--flat-namespace", flat_namespace, Flag, grp_resolve, INVALID,
@@ -464,15 +472,17 @@ OPTION(prefix_3, "-force_load_swift_libs", force_load_swift_libs, Flag,
        nullptr, nullptr)
 OPTION(prefix_3, "-force_load", anonymous_321, Separate, INVALID, force_load,
        nullptr, 0, DefaultVis, 0, "Alias for --force-load", "<path>", nullptr)
-OPTION(prefix_3, "-force_symbol_not_weak", force_symbol_not_weak, Flag,
-       grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "it is an undocumented option of the native linker", nullptr, nullptr)
-OPTION(prefix_3, "-force_symbol_weak", force_symbol_weak, Flag,
-       grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "it is an undocumented option of the native linker", nullptr, nullptr)
+OPTION(prefix_3, "-force_symbol_not_weak", force_symbol_not_weak, Separate,
+       grp_undocumented, INVALID, nullptr, 0, DefaultVis, 0,
+       "Export <symbol> as a non-weak definition", "<symbol>", nullptr)
+OPTION(prefix_3, "-force_symbol_weak", force_symbol_weak, Separate,
+       grp_undocumented, INVALID, nullptr, 0, DefaultVis, 0,
+       "Export <symbol> as a weak definition", "<symbol>", nullptr)
 OPTION(prefix_3, "-force_symbols_coalesce_list", force_symbols_coalesce_list,
-       Flag, grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "it is an undocumented option of the native linker", nullptr, nullptr)
+       Separate, grp_undocumented, INVALID, nullptr, 0, DefaultVis, 0,
+       "Keep the first definition of each symbol listed in <file> instead of "
+       "reporting duplicates",
+       "<file>", nullptr)
 OPTION(prefix_3, "-force_symbols_not_weak_list", force_symbols_not_weak_list,
        Separate, grp_undocumented, INVALID, nullptr, 0, DefaultVis, 0,
        "Export the definitions listed in <file> as non-weak", "<file>",
@@ -590,9 +600,11 @@ OPTION(prefix_3, "-iosmac_version_min", iosmac_version_min, Separate,
 OPTION(prefix_3, "-iphoneos_version_min", iphoneos_version_min, Separate,
        grp_version, ios_version_min, nullptr, HelpHidden, DefaultVis, 0,
        "Alias for -ios_version_min", "<version>", nullptr)
-OPTION(prefix_3, "-i", i, Flag, grp_undocumented, INVALID, nullptr, HelpHidden,
-       DefaultVis, 0, "it is an undocumented option of the native linker",
-       nullptr, nullptr)
+OPTION(
+    prefix_3, "-i", i, Joined, grp_undocumented, INVALID, nullptr, 0,
+    DefaultVis, 0,
+    "Define <definition> as an alias of <indirect>, the older form of -alias",
+    "<definition>:<indirect>", nullptr)
 OPTION(
     prefix_3, "-keep_dwarf_unwind", keep_dwarf_unwind, Flag, grp_undocumented,
     INVALID, nullptr, 0, DefaultVis, 0,
@@ -604,9 +616,11 @@ OPTION(prefix_3, "-keep_private_externs", keep_private_externs, Flag,
 OPTION(prefix_3, "-keep_relocs", keep_relocs, Flag, grp_rare, INVALID, nullptr,
        HelpHidden, DefaultVis, 0, "linked images carry no section relocations",
        nullptr, nullptr)
-OPTION(prefix_3, "-kext_objects_dir", kext_objects_dir, Flag, grp_undocumented,
-       INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "kernel extensions are not supported", nullptr, nullptr)
+OPTION(
+    prefix_3, "-kext_objects_dir", kext_objects_dir, Separate, grp_undocumented,
+    INVALID, nullptr, 0, DefaultVis, 0,
+    "With -kext, also write the kext's objects, merged, to <path>/<output>.o",
+    "<path>", nullptr)
 OPTION(prefix_3, "-kexts_use_stubs", kexts_use_stubs, Flag, grp_undocumented,
        INVALID, nullptr, 0, DefaultVis, 0,
        "Call through stubs from kernel extensions (always done)", nullptr,
@@ -881,8 +895,8 @@ OPTION(
     "Keep only the __eh_frame entries compact unwind cannot express (default)",
     nullptr, nullptr)
 OPTION(prefix_3, "-no_kext_objects", no_kext_objects, Flag, grp_undocumented,
-       INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "kernel extensions are not supported", nullptr, nullptr)
+       INVALID, nullptr, 0, DefaultVis, 0,
+       "Do not write the objects -kext_objects_dir asks for", nullptr, nullptr)
 OPTION(prefix_3, "-no_new_main", no_new_main, Flag, grp_undocumented, INVALID,
        nullptr, 0, DefaultVis, 0,
        "Start an executable through LC_UNIXTHREAD at the entry point instead "
@@ -1257,8 +1271,9 @@ OPTION(prefix_3, "-setuid_safe", setuid_safe, Flag, grp_rare, INVALID, nullptr,
        0, DefaultVis, 0, "Set the MH_SETUID_SAFE bit in the mach-o header",
        nullptr, nullptr)
 OPTION(prefix_3, "-simulator_support", simulator_support, Flag,
-       grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "it is an undocumented option of the native linker", nullptr, nullptr)
+       grp_undocumented, INVALID, nullptr, 0, DefaultVis, 0,
+       "Mark a dylib as usable by simulator processes (MH_SIM_SUPPORT)",
+       nullptr, nullptr)
 OPTION(prefix_3, "-single_module", single_module, Flag, grp_deprecated, INVALID,
        nullptr, HelpHidden, DefaultVis, 0,
        "Unnecessary option: this is already the default", nullptr, nullptr)
@@ -1268,9 +1283,10 @@ OPTION(prefix_3, "-Si", Si, Flag, grp_obsolete, INVALID, nullptr, HelpHidden,
 OPTION(prefix_3, "-slow_stubs", slow_stubs, Flag, grp_obsolete, INVALID,
        nullptr, HelpHidden, DefaultVis, 0,
        "This option is obsolete in the native linker", nullptr, nullptr)
-OPTION(prefix_3, "-snapshot_dir", snapshot_dir, Flag, grp_undocumented, INVALID,
-       nullptr, HelpHidden, DefaultVis, 0,
-       "it is an undocumented option of the native linker", nullptr, nullptr)
+OPTION(prefix_3, "-snapshot_dir", snapshot_dir, Separate, grp_undocumented,
+       INVALID, nullptr, 0, DefaultVis, 0,
+       "Directory for -debug_snapshot (default: the output's directory)",
+       "<path>", nullptr)
 OPTION(prefix_3, "-Sn", Sn, Flag, grp_obsolete, INVALID, nullptr, HelpHidden,
        DefaultVis, 0, "This option is obsolete in the native linker", nullptr,
        nullptr)
@@ -1328,8 +1344,10 @@ OPTION(prefix_3, "-text_exec", text_exec, Flag, grp_rare, INVALID, nullptr, 0,
        "Rename __segment TEXT to __TEXT_EXEC for sections __text and __stubs",
        nullptr, nullptr)
 OPTION(prefix_3, "-threaded_starts_section", threaded_starts_section, Flag,
-       grp_undocumented, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "it is an undocumented option of the native linker", nullptr, nullptr)
+       grp_undocumented, INVALID, nullptr, 0, DefaultVis, 0,
+       "Describe the fixup chains in __TEXT,__thread_starts, the threaded "
+       "rebase form kernels use",
+       nullptr, nullptr)
 OPTION(prefix_2, "--threads=", threads_eq, Joined, grp_neverc_ext, INVALID,
        nullptr, 0, DefaultVis, 0,
        "Number of worker threads; 1 disables multi-threading (default: "

@@ -785,6 +785,213 @@ bool compileBitcodeFiles() {
   return !compiled.empty();
 }
 
+// -debug_snapshot: copies the link's inputs and records its command in
+// <snapshot dir>/<output>.snapshot, so that the link can be rerun elsewhere.
+void writeDebugSnapshot(ArrayRef<const char *> argv) {
+  SmallString<256> dir(config->snapshotDir.empty()
+                           ? sys::path::parent_path(config->outputFile)
+                           : config->snapshotDir);
+  if (dir.empty())
+    dir = ".";
+  sys::path::append(dir, sys::path::filename(config->outputFile) + ".snapshot");
+  sys::fs::remove_directories(dir, /*IgnoreErrors=*/true);
+  SmallString<256> inputsDir(dir);
+  sys::path::append(inputsDir, "inputs");
+  if (std::error_code ec = sys::fs::create_directories(inputsDir)) {
+    error("-debug_snapshot: cannot create " + inputsDir + ": " + ec.message());
+    return;
+  }
+
+  std::string map;
+  SetVector<StringRef> copied;
+  for (const InputFile *file : inputFiles) {
+    StringRef path = file->getName();
+    if (const auto *obj = dyn_cast<ObjFile>(file);
+        obj && !obj->archiveName.empty())
+      path = obj->archiveName;
+    else if (!sys::fs::exists(path))
+      path = path.take_until([](char c) { return c == '('; });
+    if (path.empty() || !sys::fs::is_regular_file(path) || !copied.insert(path))
+      continue;
+    SmallString<256> copy(inputsDir);
+    sys::path::append(copy,
+                      Twine(copied.size()) + "-" + sys::path::filename(path));
+    if (std::error_code ec = sys::fs::copy_file(path, copy))
+      error("-debug_snapshot: cannot copy " + path + ": " + ec.message());
+    map += (sys::path::filename(copy) + " " + path + "\n").str();
+  }
+
+  std::string command;
+  for (const char *arg : argv) {
+    StringRef s(arg);
+    command += s.find_first_of(" \t\"'") == StringRef::npos
+                   ? s.str()
+                   : ("'" + s + "'").str();
+    command += ' ';
+  }
+  command.back() = '\n';
+  auto write = [&](StringRef name, StringRef contents) {
+    SmallString<256> path(dir);
+    sys::path::append(path, name);
+    std::error_code ec;
+    raw_fd_ostream os(path, ec, sys::fs::OF_Text);
+    if (ec)
+      error("-debug_snapshot: cannot write " + path + ": " + ec.message());
+    else
+      os << contents;
+  };
+  write("link_command", command);
+  write("inputs.txt", map);
+}
+
+// -kext_objects_dir: a kext link also writes its objects, merged into one
+// relocatable object, for linking the kext again later.
+void writeKextObjects() {
+  SmallVector<StringRef, 32> buffers;
+  for (const InputFile *file : inputFiles)
+    if (isa<ObjFile>(file) && !file->lazy)
+      buffers.push_back(file->mb.getBuffer());
+  SmallString<256> path(config->kextObjectsDir);
+  sys::path::append(path, sys::path::filename(config->outputFile) + ".o");
+  if (std::error_code ec =
+          sys::fs::create_directories(config->kextObjectsDir)) {
+    error("-kext_objects_dir: cannot create " + config->kextObjectsDir + ": " +
+          ec.message());
+    return;
+  }
+  std::error_code ec;
+  raw_fd_ostream out(path, ec, sys::fs::OF_None);
+  if (ec) {
+    error("-kext_objects_dir: cannot open " + path + ": " + ec.message());
+    return;
+  }
+  neverc::merge::Options mergeOpts;
+  mergeOpts.pureC = true;
+  if (!neverc::merge::mergeObjects(buffers, out, neverc::merge::Format::MachO64,
+                                   mergeOpts))
+    error("-kext_objects_dir: cannot merge the kext's objects into " + path);
+}
+
+// DTrace static probes: the probe and is-enabled symbols name calls that
+// become nops or return 0, and the stability and typedef symbols describe
+// the providers. None of them is defined anywhere.
+void createDtraceProbes() {
+  constexpr StringLiteral probePrefix = "___dtrace_probe$",
+                          enabledPrefix = "___dtrace_isenabled$",
+                          stabilityPrefix = "___dtrace_stability$",
+                          typedefsPrefix = "___dtrace_typedefs$";
+  struct ProbeRef {
+    StringRef provider, name;
+    bool isEnabled;
+    SmallVector<std::string, 2> argTypes;
+  };
+  DenseMap<Symbol *, ProbeRef> refs;
+  MapVector<StringRef, std::array<uint32_t, 5>> providers;
+  auto defaultAttrs = [] {
+    // Internal stability, unknown dependency class.
+    constexpr uint32_t attr = (1u << 24) | (1u << 16) | (1u << 8);
+    return std::array<uint32_t, 5>{attr, attr, attr, attr, attr};
+  };
+  SmallVector<Symbol *> symbols;
+  for (Symbol *sym : symtab->getSymbols())
+    if (isa<Undefined>(sym) && sym->getName().starts_with("___dtrace_"))
+      symbols.push_back(sym);
+  for (Symbol *sym : symbols) {
+    StringRef name = sym->getName();
+    SmallVector<StringRef, 8> parts;
+    if (name.starts_with(probePrefix) || name.starts_with(enabledPrefix)) {
+      const bool isEnabled = name.starts_with(enabledPrefix);
+      name.drop_front(isEnabled ? enabledPrefix.size() : probePrefix.size())
+          .split(parts, '$');
+      if (parts.size() < 3) {
+        error("malformed DTrace probe symbol: " + name);
+        continue;
+      }
+      ProbeRef ref{parts[0], "", isEnabled, {}};
+      // Probe names spell '-' as "__".
+      std::string probe = parts[1].str();
+      for (size_t pos; (pos = probe.find("__")) != std::string::npos;)
+        probe.replace(pos, 2, "-");
+      ref.name = saver().save(probe);
+      // Argument types follow the version, hex encoded.
+      for (StringRef hex : ArrayRef<StringRef>(parts).drop_front(3)) {
+        std::string type;
+        for (size_t k = 0; k + 1 < hex.size(); k += 2) {
+          unsigned c = 0;
+          hex.substr(k, 2).getAsInteger(16, c);
+          type.push_back(char(c));
+        }
+        ref.argTypes.push_back(type);
+      }
+      providers.try_emplace(ref.provider, defaultAttrs());
+      refs[sym] = std::move(ref);
+    } else if (name.starts_with(stabilityPrefix)) {
+      // <provider>$v1$ then provider, module, function, name and argument
+      // attributes, three numbers each.
+      name.drop_front(stabilityPrefix.size()).split(parts, '$');
+      std::array<uint32_t, 5> attrs = defaultAttrs();
+      if (parts.size() >= 3) {
+        SmallVector<StringRef, 15> numbers;
+        parts[2].split(numbers, '_');
+        if (numbers.size() == 15)
+          for (int a = 0; a < 5; ++a) {
+            unsigned n = 0, d = 0, c = 0;
+            numbers[3 * a].getAsInteger(10, n);
+            numbers[3 * a + 1].getAsInteger(10, d);
+            numbers[3 * a + 2].getAsInteger(10, c);
+            attrs[a] = (n << 24) | (d << 16) | (c << 8);
+          }
+      }
+      providers[parts[0]] = attrs;
+    } else if (!name.starts_with(typedefsPrefix)) {
+      continue;
+    }
+    symtab
+        ->addDefined(sym->getName(), /*file=*/nullptr, /*isec=*/nullptr,
+                     /*value=*/0, /*size=*/0, /*isWeakDef=*/false,
+                     /*isPrivateExtern=*/true,
+                     /*isReferencedDynamically=*/false,
+                     /*noDeadStrip=*/false, /*isWeakDefCanBeHidden=*/false)
+        ->includeInSymtab = false;
+  }
+  if (refs.empty())
+    return;
+
+  in.dtrace = make<DtraceSupport>();
+  DenseMap<StringRef, DofSection *> sections;
+  for (auto &[provider, attrs] : providers)
+    sections[provider] = in.dtrace->sections.emplace_back(
+        make<DofSection>(provider, attrs.data()));
+  for (const InputFile *file : inputFiles) {
+    const auto *obj = dyn_cast<ObjFile>(file);
+    if (!obj)
+      continue;
+    for (const Section *section : obj->sections)
+      for (const Subsection &subsection : section->subsections) {
+        auto *isec = dyn_cast<ConcatInputSection>(subsection.isec);
+        if (!isec)
+          continue;
+        llvm::erase_if(isec->relocs, [&](const Reloc &r) {
+          auto *sym = r.referent.dyn_cast<Symbol *>();
+          auto it = sym ? refs.find(sym) : refs.end();
+          if (it == refs.end())
+            return false;
+          if (!target->hasAttr(r.type, RelocAttrBits::BRANCH)) {
+            error(toString(isec) + ": " + sym->getName() +
+                  " must be called, not referenced");
+            return false;
+          }
+          const ProbeRef &ref = it->second;
+          sections[ref.provider]->sites.push_back(
+              {isec, r.offset, ref.isEnabled, ref.name, ref.argTypes});
+          // Folding functions would merge different probes.
+          isec->keepUnique = true;
+          return true;
+        });
+      }
+  }
+}
+
 // Defines each `_objc_msgSend$<selector>` that nothing else defines as a
 // stub that sends the selector through _objc_msgSend.
 void createObjCStubs() {
@@ -1251,10 +1458,17 @@ bool dataConstDefault() {
 
 bool shouldEmitChainedFixups(const InputArgList &args) {
   const Arg *arg = args.getLastArg(OPT_fixup_chains, OPT_no_fixup_chains);
-  if (arg && arg->getOption().matches(OPT_no_fixup_chains))
+  // The chain starts sections describe chained fixups.
+  const bool startsSection =
+      config->fixupChainsSection || config->threadedStartsSection;
+  if (arg && arg->getOption().matches(OPT_no_fixup_chains)) {
+    if (startsSection)
+      error("-fixup_chains_section and -threaded_starts_section need "
+            "chained fixups, which -no_fixup_chains turns off");
     return false;
+  }
 
-  bool isRequested = arg != nullptr;
+  bool isRequested = arg != nullptr || startsSection;
 
   // Version numbers taken from the Xcode 13.3 release notes.
   PlatformType platform = config->platformInfo.target.Platform;
@@ -2116,6 +2330,14 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
       args.hasFlag(OPT_function_starts, OPT_no_function_starts, true);
   config->emitDataInCodeInfo =
       args.hasFlag(OPT_data_in_code_info, OPT_no_data_in_code_info, true);
+  config->fixupChainsSection = args.hasArg(OPT_fixup_chains_section);
+  config->threadedStartsSection = args.hasArg(OPT_threaded_starts_section);
+  if (config->fixupChainsSection && config->threadedStartsSection)
+    error("-fixup_chains_section and -threaded_starts_section describe the "
+          "same chains in different forms; pass one of them");
+  config->simulatorSupport = args.hasArg(OPT_simulator_support);
+  config->allowSimulatorLinkingToMacOSDylibs =
+      args.hasArg(OPT_allow_simulator_linking_to_macosx_dylibs);
   config->emitChainedFixups = shouldEmitChainedFixups(args);
   config->emitInitOffsets =
       config->emitChainedFixups || args.hasArg(OPT_init_offsets);
@@ -2172,6 +2394,31 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
   config->textExec = args.hasArg(OPT_text_exec);
   config->noNewMain = args.hasArg(OPT_no_new_main);
   config->noCompactUnwind = args.hasArg(OPT_no_compact_unwind);
+  for (const Arg *arg : args.filtered(OPT_force_symbol_weak))
+    config->forceWeakSymbols.insert(arg->getValue());
+  for (const Arg *arg : args.filtered(OPT_force_symbol_not_weak))
+    config->forceNotWeakSymbols.insert(arg->getValue());
+  for (const Arg *arg : args.filtered(OPT_force_symbols_coalesce_list))
+    parseSymbolPatternsFile(arg, config->forceCoalesceSymbols);
+  // -i<definition>:<indirect> is the older spelling of -alias.
+  for (const Arg *arg : args.filtered(OPT_i)) {
+    auto [definition, indirect] = StringRef(arg->getValue()).split(':');
+    if (definition.empty() || indirect.empty())
+      error(arg->getAsString(args) + ": expected -i<definition>:<indirect>");
+    else
+      config->aliasedSymbols.push_back({indirect, definition});
+  }
+  if (const Arg *arg = args.getLastArg(OPT_dtrace))
+    if (!sys::fs::exists(arg->getValue()))
+      error(arg->getAsString(args) + ": no such file");
+  config->debugSnapshot = args.hasArg(OPT_debug_snapshot);
+  config->snapshotDir = args.getLastArgValue(OPT_snapshot_dir);
+  if (!args.hasArg(OPT_no_kext_objects))
+    config->kextObjectsDir = args.getLastArgValue(OPT_kext_objects_dir);
+  if (!config->kextObjectsDir.empty() && config->outputType != MH_KEXT_BUNDLE)
+    warn("-kext_objects_dir: has no effect without -kext");
+  if (args.hasArg(OPT_add_linker_option) && config->outputType != MH_OBJECT)
+    warn("-add_linker_option: has no effect without -r");
   if (const Arg *arg =
           args.getLastArg(OPT_objc_stubs_fast, OPT_objc_stubs_small)) {
     config->objcStubsSmall = arg->getOption().matches(OPT_objc_stubs_small);
@@ -2597,6 +2844,8 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
     beginMemberNameInterning();
     createFiles(args, driverCfg.threadCount);
     finishMemberNameInterning();
+    if (config->debugSnapshot)
+      writeDebugSnapshot(argsArr);
     // A tiny direct set may still discover a large auto-linked archive below.
     // Select a parallel budget now when justified, but do not permanently
     // lock an automatic one-thread result until those late inputs are known.
@@ -2629,6 +2878,9 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
                                /*isWeakRef=*/false);
 
     createSyntheticSections();
+    if (config->emitChainedFixups &&
+        (config->fixupChainsSection || config->threadedStartsSection))
+      in.chainStarts = make<ChainStartsSection>(config->threadedStartsSection);
     if (config->textExec)
       in.stubs->segname = "__TEXT_EXEC";
     createSyntheticSymbols();
@@ -2656,6 +2908,7 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
       handleExplicitExports();
     replaceCommonSymbols();
     createObjCStubs();
+    createDtraceProbes();
     // -reexported_symbols_list re-exports these dependent dylib symbols.
     if (!config->reexportedSymbols.empty())
       for (Symbol *sym : symtab->getSymbols())
@@ -2673,6 +2926,12 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
 
         neverc::merge::Options mergeOpts;
         mergeOpts.pureC = true;
+        // -add_linker_option records auto-link options in the object.
+        for (const Arg *arg : args.filtered(OPT_add_linker_option)) {
+          SmallVector<StringRef> parts;
+          StringRef(arg->getValue()).split(parts, ' ', -1, false);
+          mergeOpts.machoLinkerOptions.emplace_back(parts.begin(), parts.end());
+        }
 
         std::error_code ec;
         raw_fd_ostream out(config->outputFile, ec, sys::fs::OF_None);
@@ -2734,6 +2993,9 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
     }
 
     writeOutput<LP64>();
+    if (config->outputType == MH_KEXT_BUNDLE &&
+        !config->kextObjectsDir.empty() && errorCount() == 0)
+      writeKextObjects();
 
     depTracker->write(inputFiles, config->outputFile);
     return false;

@@ -824,6 +824,11 @@ void OutputWriter::checkNativeOptionConstraints() {
     else if (in.initOffsets->isNeeded())
       error("-no_inits: the image has static initializers");
   }
+  // The threaded format has no binds.
+  if (config->threadedStartsSection && in.chainedFixups &&
+      in.chainedFixups->hasBindings())
+    error("-threaded_starts_section: the image binds to other images, which "
+          "threaded chains cannot express");
   // Nothing binds a preloaded image or dyld to a dylib.
   if (config->outputType == MH_PRELOAD || config->outputType == MH_DYLINKER)
     for (const Symbol *sym : symtab->getSymbols())
@@ -1470,6 +1475,9 @@ void OutputWriter::patchFixupChains() {
   parallelForEach(ranges, [&](const PageRange &range) {
     uint8_t *buf = buffer->getBufferStart() + range.seg->fileOff;
     for (size_t i = range.begin + 1; i < range.end; ++i) {
+      // The threaded format ends a chain where the next fixup is too far.
+      if (!ChainStartsSection::continuesChain(loc, i))
+        continue;
       uint64_t offset = loc[i].offset - loc[i - 1].offset;
       if (offset < target->wordSize || offset % stride != 0) {
         error(loc[i].isec->getSegName() + "," + loc[i].isec->getName() +
@@ -1496,6 +1504,8 @@ void OutputWriter::writeImage() {
   if (errorCount())
     return;
   writeSections();
+  if (in.dtrace)
+    in.dtrace->patchSites(buffer->getBufferStart());
 
   // ARM64 hints (__TEXT) and fixup chains (__DATA) touch disjoint
   // regions; always overlap when both are needed.
@@ -1540,6 +1550,10 @@ template <class LP> void OutputWriter::run() {
 
   if (in.stubHelper && in.stubHelper->isNeeded())
     in.stubHelper->setUp();
+
+  if (in.dtrace)
+    for (DofSection *section : in.dtrace->sections)
+      section->prepare();
 
   // Phase 2: layout computation.
   buildOutputLayout<LP>();

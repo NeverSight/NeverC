@@ -279,6 +279,18 @@ struct Configuration {
   bool noCompactUnwind = false;
   // -objc_stubs_small: 12-byte Objective-C stubs instead of 32-byte ones.
   bool objcStubsSmall = false;
+  // -force_symbols_coalesce_list: symbols whose duplicate definitions are
+  // coalesced, keeping the first.
+  SymbolPatterns forceCoalesceSymbols;
+  // -debug_snapshot writes the link's command and inputs under snapshotDir.
+  bool debugSnapshot = false;
+  llvm::StringRef snapshotDir;
+  // -kext_objects_dir: where a kext link also writes its objects, merged.
+  llvm::StringRef kextObjectsDir;
+  bool simulatorSupport = false;
+  bool allowSimulatorLinkingToMacOSDylibs = false;
+  bool fixupChainsSection = false;
+  bool threadedStartsSection = false;
   // -segment_order and -section_order for -preload images.
   std::vector<llvm::StringRef> segmentOrder;
   llvm::DenseMap<llvm::StringRef, std::vector<llvm::StringRef>> sectionOrder;

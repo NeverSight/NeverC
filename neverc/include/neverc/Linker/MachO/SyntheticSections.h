@@ -712,6 +712,7 @@ public:
 
   bool hasWeakBinding() const { return hasWeakBind; }
   bool hasNonWeakDefinition() const { return hasNonWeakDef; }
+  bool hasBindings() const { return !bindings.empty(); }
 
 private:
   // Location::offset initially stores the offset within an InputSection, but
@@ -744,6 +745,70 @@ private:
 
 void writeChainedRebase(uint8_t *buf, uint64_t targetVA);
 void writeChainedFixup(uint8_t *buf, const Symbol *sym, int64_t addend);
+
+// DTrace static probes. Calls to `___dtrace_probe$<provider>$<name>$v1$<arg
+// types>` become nops and calls to `___dtrace_isenabled$<provider>$<name>$v1`
+// return 0; a __TEXT,__dof_<provider> section per provider describes the
+// probe sites in DOF, which dyld registers with DTrace.
+struct DtraceSite {
+  ConcatInputSection *isec;
+  // Offset in isec of the relocated field of the call.
+  uint64_t offset;
+  bool isEnabled;
+  llvm::StringRef name;
+  llvm::SmallVector<std::string, 2> argTypes;
+};
+
+class DofSection final : public SyntheticSection {
+public:
+  DofSection(llvm::StringRef provider, const uint32_t attrs[5]);
+  // Lays out the DOF for the sites that stay in the output.
+  void prepare();
+  uint64_t getSize() const override { return size; }
+  bool isNeeded() const override { return size != 0; }
+  void writeTo(uint8_t *buf) const override;
+
+  llvm::StringRef provider;
+  uint32_t attrs[5];
+  std::vector<DtraceSite> sites;
+
+private:
+  // A probe of the DOF: one probe name in one function.
+  struct Probe {
+    const Defined *function;
+    llvm::StringRef name;
+    llvm::SmallVector<std::string, 2> argTypes;
+    llvm::SmallVector<uint32_t, 2> offsets, enabledOffsets;
+  };
+  std::vector<Probe> probes;
+  std::string strtab;
+  uint64_t size = 0;
+};
+
+struct DtraceSupport {
+  std::vector<DofSection *> sections;
+  // Rewrites the calls of the sites that stay in the output.
+  void patchSites(uint8_t *buf) const;
+};
+
+// The starts of the image's fixup chains in a section, for loaders without
+// dyld: __chain_starts (-fixup_chains_section) holds a
+// dyld_chained_starts_offsets, and __thread_starts (-threaded_starts_section)
+// a stride flag followed by the chain starts, in the threaded rebase format
+// kernels use.
+class ChainStartsSection final : public SyntheticSection {
+public:
+  explicit ChainStartsSection(bool threaded);
+  uint64_t getSize() const override;
+  void writeTo(uint8_t *buf) const override;
+
+  // Whether the fixup at locations[i] continues the chain of the one before
+  // it; locations must be in their final, segment-relative order.
+  static bool continuesChain(const std::vector<Location> &locations, size_t i);
+
+private:
+  bool threaded;
+};
 
 // Stubs for `_objc_msgSend$<selector>` references: each loads its selector
 // reference and jumps to _objc_msgSend. They come with the selector names
@@ -820,6 +885,8 @@ struct InStruct {
   ObjCMethNameSection *objcMethNames = nullptr;
   ObjCSelRefsSection *objcSelRefs = nullptr;
   ObjCStubsSection *objcStubs = nullptr;
+  ChainStartsSection *chainStarts = nullptr;
+  DtraceSupport *dtrace = nullptr;
 };
 
 InStruct &machoIn();

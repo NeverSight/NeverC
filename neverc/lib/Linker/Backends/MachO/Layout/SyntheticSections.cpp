@@ -146,6 +146,9 @@ void MachHeaderSection::writeTo(uint8_t *buf) const {
   if (config->forceFlatNamespace)
     hdr->flags |= MH_FORCE_FLAT;
 
+  if (config->simulatorSupport)
+    hdr->flags |= MH_SIM_SUPPORT;
+
   if (config->rootSafe)
     hdr->flags |= MH_ROOT_SAFE;
 
@@ -2296,4 +2299,334 @@ void ObjCStubsSection::writeTo(uint8_t *buf) const {
     words[4] = 0xd61f0200;
     words[5] = words[6] = words[7] = 0xd4200020; // brk #1
   }
+}
+
+// ===----------------------------------------------------------------------===
+// Fixup chain starts for loaders without dyld
+// ===----------------------------------------------------------------------===
+
+ChainStartsSection::ChainStartsSection(bool threaded)
+    : SyntheticSection(segment_names::text,
+                       threaded ? "__thread_starts" : "__chain_starts"),
+      threaded(threaded) {
+  align = 4;
+}
+
+// A chain continues within a page. The threaded format has 11 bits for the
+// distance to the next fixup, in 4-byte units, where chained fixups have 12.
+bool ChainStartsSection::continuesChain(const std::vector<Location> &locations,
+                                        size_t i) {
+  if (i == 0)
+    return false;
+  const Location &prev = locations[i - 1], &cur = locations[i];
+  const uint64_t pageSize = target->getPageSize();
+  if (prev.isec->parent->parent != cur.isec->parent->parent ||
+      prev.offset / pageSize != cur.offset / pageSize)
+    return false;
+  return !config->threadedStartsSection ||
+         (cur.offset - prev.offset) / 4 < (1u << 11);
+}
+
+// Sized for a chain per fixup; the section is laid out before the chains
+// are known, and the counts say how many starts there are.
+uint64_t ChainStartsSection::getSize() const {
+  const uint64_t starts =
+      std::max<size_t>(1, in.chainedFixups->getLocations().size());
+  return (threaded ? 4 : 8) + 4 * starts;
+}
+
+void ChainStartsSection::writeTo(uint8_t *buf) const {
+  const std::vector<Location> &locations = in.chainedFixups->getLocations();
+  SmallVector<uint32_t, 0> starts;
+  for (size_t i = 0; i < locations.size(); ++i)
+    if (!continuesChain(locations, i))
+      starts.push_back(locations[i].isec->parent->parent->addr +
+                       locations[i].offset - in.header->addr);
+  auto *words = reinterpret_cast<uint32_t *>(buf);
+  const size_t capacity = (getSize() - (threaded ? 4 : 8)) / 4;
+  if (threaded) {
+    // Bit 0 clear: the chains step in 4-byte units. Unused slots are
+    // 0xffffffff.
+    words[0] = 0;
+    for (size_t i = 0; i < capacity; ++i)
+      write32le(&words[1 + i], i < starts.size() ? starts[i] : 0xffffffff);
+    return;
+  }
+  write32le(&words[0], DYLD_CHAINED_PTR_64);
+  write32le(&words[1], starts.size());
+  for (size_t i = 0; i < starts.size(); ++i)
+    write32le(&words[2 + i], starts[i]);
+}
+
+// ===----------------------------------------------------------------------===
+// DTrace static probes
+// ===----------------------------------------------------------------------===
+
+namespace {
+// DOF, the format DTrace registers probes from.
+constexpr uint32_t dofSectStrtab = 8, dofSectProbes = 16, dofSectPrargs = 17,
+                   dofSectProffs = 18, dofSectPrenoffs = 26,
+                   dofSectProvider = 15, dofSectReltab = 10,
+                   dofSectUrelhdr = 12;
+constexpr uint32_t dofSecfLoad = 1, dofReloSetx = 1;
+constexpr uint32_t dofHdrSize = 64, dofSecHdrSize = 32, dofProbeSize = 48,
+                   dofProviderSize = 44, dofRelodescSize = 24,
+                   dofRelohdrSize = 12;
+
+// The function a site is in: the last symbol at or before it.
+const Defined *functionOf(const DtraceSite &site) {
+  const Defined *best = nullptr;
+  for (const Defined *d : site.isec->symbols)
+    if (d->value <= site.offset && (!best || d->value >= best->value))
+      best = d;
+  return best;
+}
+
+// Offset of the call instruction; on x86_64 the relocated field follows the
+// opcode byte.
+uint64_t callOffset(const DtraceSite &site) {
+  return config->arch() == AK_arm64 ? site.offset : site.offset - 1;
+}
+} // namespace
+
+DofSection::DofSection(StringRef provider, const uint32_t providerAttrs[5])
+    : SyntheticSection(
+          segment_names::text,
+          saver().save(("__dof_" + provider).str().substr(0, 16)).data()),
+      provider(provider) {
+  flags = S_DTRACE_DOF;
+  align = 8;
+  std::copy(providerAttrs, providerAttrs + 5, attrs);
+}
+
+void DofSection::prepare() {
+  probes.clear();
+  strtab.assign(1, '\0');
+  auto addString = [&](StringRef s) {
+    uint32_t offset = strtab.size();
+    strtab.append(s.data(), s.size());
+    strtab.push_back('\0');
+    return offset;
+  };
+  // Probe names and argument types, from any site of the probe.
+  DenseMap<std::pair<const Defined *, StringRef>, size_t> index;
+  for (const DtraceSite &site : sites) {
+    if (site.isec->shouldOmitFromOutput())
+      continue;
+    const Defined *function = functionOf(site);
+    if (!function) {
+      error("DTrace probe site in " + toString(site.isec) +
+            " is not in a function");
+      continue;
+    }
+    auto [it, inserted] =
+        index.try_emplace({function, site.name}, probes.size());
+    if (inserted)
+      probes.push_back({function, site.name, {}, {}, {}});
+    Probe &probe = probes[it->second];
+    const uint32_t offset = callOffset(site) - function->value;
+    (site.isEnabled ? probe.enabledOffsets : probe.offsets).push_back(offset);
+    if (!site.isEnabled && probe.argTypes.empty())
+      probe.argTypes = site.argTypes;
+  }
+  if (probes.empty()) {
+    size = 0;
+    return;
+  }
+  addString(provider);
+  for (Probe &probe : probes) {
+    addString(probe.function->getName().drop_front(
+        probe.function->getName().starts_with("_") ? 1 : 0));
+    addString(probe.name);
+    for (const std::string &type : probe.argTypes)
+      addString(type);
+  }
+  size_t offsets = 0, enabledOffsets = 0, args = 0;
+  for (const Probe &probe : probes) {
+    offsets += probe.offsets.size();
+    enabledOffsets += probe.enabledOffsets.size();
+    args += probe.argTypes.size();
+  }
+  // Header, 8 section headers, then the sections, each aligned to 8.
+  size = dofHdrSize + 8 * dofSecHdrSize;
+  for (uint64_t part :
+       {uint64_t(strtab.size()), uint64_t(dofProbeSize * probes.size()),
+        uint64_t(std::max<size_t>(args, 1)),
+        uint64_t(4 * std::max<size_t>(offsets, 1)),
+        uint64_t(4 * std::max<size_t>(enabledOffsets, 1)),
+        uint64_t(dofProviderSize), uint64_t(dofRelodescSize * probes.size()),
+        uint64_t(dofRelohdrSize)})
+    size = alignTo(size, 8) + part;
+  size = alignTo(size, 8);
+}
+
+void DofSection::writeTo(uint8_t *buf) const {
+  if (probes.empty())
+    return;
+  // Recompute the string offsets the way prepare() laid them out.
+  uint32_t nextString = 1;
+  auto take = [&](StringRef s) {
+    uint32_t offset = nextString;
+    nextString += s.size() + 1;
+    return offset;
+  };
+  const uint32_t providerName = take(provider);
+  struct Strings {
+    uint32_t func, name, args;
+  };
+  SmallVector<Strings, 0> strings;
+  for (const Probe &probe : probes) {
+    Strings s;
+    StringRef func = probe.function->getName();
+    s.func = take(func.drop_front(func.starts_with("_") ? 1 : 0));
+    s.name = take(probe.name);
+    s.args = nextString;
+    for (const std::string &type : probe.argTypes)
+      take(type);
+    if (probe.argTypes.empty())
+      s.args = 0;
+    strings.push_back(s);
+  }
+
+  // Section contents, in order: strtab, probes, prargs, proffs, prenoffs,
+  // provider, reltab, urelhdr.
+  struct Part {
+    uint32_t type, align, entsize;
+    uint64_t offset = 0, size = 0;
+  } parts[8] = {{dofSectStrtab, 1, 0},
+                {dofSectProbes, 8, dofProbeSize},
+                {dofSectPrargs, 1, 1},
+                {dofSectProffs, 4, 4},
+                {dofSectPrenoffs, 4, 4},
+                {dofSectProvider, 4, 0},
+                {dofSectReltab, 8, dofRelodescSize},
+                {dofSectUrelhdr, 4, 0}};
+  size_t offsets = 0, enabledOffsets = 0, args = 0;
+  for (const Probe &probe : probes) {
+    offsets += probe.offsets.size();
+    enabledOffsets += probe.enabledOffsets.size();
+    args += probe.argTypes.size();
+  }
+  const uint64_t partSizes[8] = {strtab.size(),
+                                 dofProbeSize * probes.size(),
+                                 std::max<size_t>(args, 1),
+                                 4 * std::max<size_t>(offsets, 1),
+                                 4 * std::max<size_t>(enabledOffsets, 1),
+                                 dofProviderSize,
+                                 dofRelodescSize * probes.size(),
+                                 dofRelohdrSize};
+  uint64_t cursor = dofHdrSize + 8 * dofSecHdrSize;
+  for (int i = 0; i < 8; ++i) {
+    cursor = alignTo(cursor, 8);
+    parts[i].offset = cursor;
+    parts[i].size = partSizes[i];
+    cursor += partSizes[i];
+  }
+
+  // Header.
+  memset(buf, 0, getSize());
+  const uint8_t ident[10] = {0x7f,
+                             'D',
+                             'O',
+                             'F',
+                             /*LP64*/ 2,
+                             /*LSB*/ 1,
+                             /*DOF version*/ 2,
+                             /*DIF version*/ 2,
+                             /*DIF registers*/ 8,
+                             /*DIF tuple registers*/ 8};
+  memcpy(buf, ident, sizeof(ident));
+  write32le(buf + 20, dofHdrSize);
+  write32le(buf + 24, dofSecHdrSize);
+  write32le(buf + 28, 8);
+  write64le(buf + 32, dofHdrSize);
+  write64le(buf + 40, getSize());
+  write64le(buf + 48, getSize());
+  for (int i = 0; i < 8; ++i) {
+    uint8_t *sec = buf + dofHdrSize + i * dofSecHdrSize;
+    write32le(sec, parts[i].type);
+    write32le(sec + 4, parts[i].align);
+    write32le(sec + 8, dofSecfLoad);
+    write32le(sec + 12, parts[i].entsize);
+    write64le(sec + 16, parts[i].offset);
+    write64le(sec + 24, parts[i].size);
+  }
+
+  memcpy(buf + parts[0].offset, strtab.data(), strtab.size());
+  uint32_t offIdx = 0, enOffIdx = 0, argIdx = 0;
+  for (size_t i = 0; i < probes.size(); ++i) {
+    const Probe &probe = probes[i];
+    uint8_t *p = buf + parts[1].offset + i * dofProbeSize;
+    // The function's address relative to this section; the relocation below
+    // adds the address dyld registers the section at.
+    write64le(p, probe.function->getVA() - addr);
+    write32le(p + 8, strings[i].func);
+    write32le(p + 12, strings[i].name);
+    write32le(p + 16, strings[i].args);
+    write32le(p + 20, strings[i].args);
+    write32le(p + 24, argIdx);
+    write32le(p + 28, offIdx);
+    p[32] = probe.argTypes.size();
+    p[33] = probe.argTypes.size();
+    write16le(p + 34, probe.offsets.size());
+    write32le(p + 36, enOffIdx);
+    write16le(p + 40, probe.enabledOffsets.size());
+    for (size_t a = 0; a < probe.argTypes.size(); ++a)
+      buf[parts[2].offset + argIdx + a] = a;
+    for (uint32_t off : probe.offsets)
+      write32le(buf + parts[3].offset + 4 * offIdx++, off);
+    for (uint32_t off : probe.enabledOffsets)
+      write32le(buf + parts[4].offset + 4 * enOffIdx++, off);
+    argIdx += probe.argTypes.size();
+    // Relocate dofpr_addr by the section's address.
+    uint8_t *rel = buf + parts[6].offset + i * dofRelodescSize;
+    write32le(rel, strings[i].func);
+    write32le(rel + 4, dofReloSetx);
+    write64le(rel + 8, i * dofProbeSize);
+  }
+  uint8_t *pv = buf + parts[5].offset;
+  write32le(pv, 0);      // strtab
+  write32le(pv + 4, 1);  // probes
+  write32le(pv + 8, 2);  // prargs
+  write32le(pv + 12, 3); // proffs
+  write32le(pv + 16, providerName);
+  for (int a = 0; a < 5; ++a)
+    write32le(pv + 20 + 4 * a, attrs[a]);
+  write32le(pv + 40, 4); // prenoffs
+  uint8_t *rh = buf + parts[7].offset;
+  write32le(rh, 0);     // strtab
+  write32le(rh + 4, 6); // reltab
+  write32le(rh + 8, 1); // probes
+}
+
+void DtraceSupport::patchSites(uint8_t *buf) const {
+  for (const DofSection *section : sections)
+    for (const DtraceSite &site : section->sites) {
+      if (site.isec->shouldOmitFromOutput())
+        continue;
+      uint8_t *loc = buf + site.isec->parent->fileOff +
+                     site.isec->getOffset(callOffset(site));
+      if (config->arch() == AK_arm64) {
+        // A tail call (b) of a probe returns instead.
+        const bool tail = (read32le(loc) & 0xfc000000) == 0x14000000;
+        if (site.isEnabled && tail) {
+          error(toString(site.isec) +
+                ": a DTrace is-enabled check cannot be a tail call");
+          continue;
+        }
+        write32le(loc, site.isEnabled ? 0xd2800000   // mov x0, #0
+                       : tail         ? 0xd65f03c0   // ret
+                                      : 0xd503201f); // nop
+        continue;
+      }
+      const bool tail = loc[0] == 0xe9;
+      static const uint8_t probeNop[5] = {0x0f, 0x1f, 0x44, 0x00, 0x00};
+      static const uint8_t probeRet[5] = {0xc3, 0x0f, 0x1f, 0x40, 0x00};
+      static const uint8_t enabled[5] = {0x33, 0xc0, 0x90, 0x90, 0x90};
+      static const uint8_t enabledRet[5] = {0x33, 0xc0, 0xc3, 0x90, 0x90};
+      memcpy(loc,
+             site.isEnabled ? (tail ? enabledRet : enabled)
+                            : (tail ? probeRet : probeNop),
+             5);
+    }
 }

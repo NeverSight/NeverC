@@ -3181,10 +3181,10 @@ _main:
   }
 
   // Options that cannot apply say why.
-  CmdResult unsupported = link({"-Wl,-dtrace,probes.d"});
+  CmdResult unsupported = link({"-Wl,-add_split_seg_info"});
   EXPECT_EQ(unsupported.exitCode, 0) << unsupported.err;
   EXPECT_TRUE(unsupported.stderrContains(
-      "is not supported and has no effect: DTrace static probes"))
+      "is not supported and has no effect: NeverC does not emit split"))
       << unsupported.err;
   CmdResult obsolete = link({"-Wl,-read_only_stubs"});
   EXPECT_EQ(obsolete.exitCode, 0) << obsolete.err;
@@ -3405,6 +3405,196 @@ TEST_F(LinkerTest, NativeMachOObjCStubs) {
       << missing.err;
   EXPECT_TRUE(missing.stderrContains("Objective-C message send stubs"))
       << missing.err;
+}
+
+TEST_F(LinkerTest, NativeMachOProbesAndInternalOptions) {
+  const std::string target = "--target=arm64-apple-macos13";
+  const fs::path dir = tmpFile("macho_probes_dir");
+  fs::create_directories(dir);
+  auto compile = [&](const std::string &name, const std::string &source) {
+    const fs::path src = dir / (name + ".c");
+    const fs::path obj = dir / (name + ".o");
+    writeFile(src, source);
+    CmdResult result = ncc(
+        {target, "-fno-lto", "-O1", "-c", src.string(), "-o", obj.string()});
+    EXPECT_EQ(result.exitCode, 0) << result.err;
+    return obj;
+  };
+  const fs::path probes = compile(
+      "probes",
+      "extern void __dtrace_probe$foo$bar__baz$v1$696e74(int);\n"
+      "extern int __dtrace_isenabled$foo$bar__baz$v1(void);\n"
+      "int work(int x) {\n"
+      "  if (__dtrace_isenabled$foo$bar__baz$v1()) {\n"
+      "    __asm__ volatile(\".reference ___dtrace_typedefs$foo$v2\");\n"
+      "    __dtrace_probe$foo$bar__baz$v1$696e74(x);\n"
+      "    __asm__ volatile(\".reference "
+      "___dtrace_stability$foo$v1$1_0_0_1_0_0_1_0_0_1_0_0_1_0_0\");\n"
+      "  }\n"
+      "  return x + 1;\n"
+      "}\n");
+  const fs::path main =
+      compile("main", "int work(int);\n"
+                      "int dup_fn(void) { return 1; }\n"
+                      "int target_int = 3;\n"
+                      "int *pointer = &target_int;\n"
+                      "int main(void) { return work(dup_fn()); }\n");
+  const fs::path dup = compile("dup", "int dup_fn(void) { return 2; }\n");
+  const fs::path image = dir / "image";
+  std::string bytes;
+  auto open = [&](const fs::path &path)
+      -> std::unique_ptr<llvm::object::MachOObjectFile> {
+    bytes = readFile(path);
+    auto file = llvm::object::MachOObjectFile::create(
+        llvm::MemoryBufferRef(bytes, path.string()), /*IsLittleEndian=*/true,
+        /*Is64Bits=*/true);
+    EXPECT_TRUE(static_cast<bool>(file))
+        << llvm::toString(file.takeError()).str().str();
+    return file ? std::move(*file) : nullptr;
+  };
+  auto link = [&](std::vector<std::string> flags) {
+    std::vector<std::string> args = {target, "-nostdlib", main.string(),
+                                     probes.string()};
+    args.insert(args.end(), flags.begin(), flags.end());
+    args.insert(args.end(), {"-o", image.string()});
+    return ncc(args);
+  };
+  auto sectionContents = [&](llvm::StringRef name) -> std::string {
+    auto macho = open(image);
+    if (macho)
+      for (const auto &section : macho->sections())
+        if (llvm::cantFail(section.getName()) == name)
+          return llvm::cantFail(section.getContents()).str();
+    return "";
+  };
+
+  // DTrace probe calls become a nop and `mov x0, #0`, and __dof_foo
+  // describes them.
+  CmdResult dtrace = link({});
+  ASSERT_EQ(dtrace.exitCode, 0) << dtrace.err;
+  {
+    auto macho = open(image);
+    ASSERT_NE(macho, nullptr);
+    uint64_t workAddr = 0;
+    for (const auto &sym : macho->symbols())
+      if (llvm::cantFail(sym.getName()) == "_work")
+        workAddr = llvm::cantFail(sym.getAddress());
+    std::string text;
+    uint64_t textAddr = 0;
+    for (const auto &section : macho->sections())
+      if (llvm::cantFail(section.getName()) == "__text") {
+        text = llvm::cantFail(section.getContents()).str();
+        textAddr = section.getAddress();
+      }
+    unsigned nops = 0, zeroes = 0, calls = 0;
+    for (uint64_t off = workAddr - textAddr; off + 4 <= text.size(); off += 4) {
+      uint32_t insn = llvm::support::endian::read32le(text.data() + off);
+      nops += insn == 0xd503201f;
+      zeroes += insn == 0xd2800000;
+      calls += (insn & 0xfc000000) == 0x94000000;
+      if (insn == 0xd65f03c0) // ret
+        break;
+    }
+    EXPECT_EQ(nops, 1u);
+    EXPECT_EQ(zeroes, 1u);
+    EXPECT_EQ(calls, 0u);
+  }
+  const std::string dof = sectionContents("__dof_foo");
+  ASSERT_GE(dof.size(), 64u);
+  EXPECT_EQ(dof.substr(0, 4), "\x7f"
+                              "DOF");
+  EXPECT_NE(dof.find(std::string("bar-baz\0", 8)), std::string::npos);
+  EXPECT_NE(dof.find(std::string("int\0", 4)), std::string::npos);
+
+  // -force_symbols_coalesce_list keeps the first of duplicate definitions.
+  const fs::path coalesce = dir / "coalesce.txt";
+  writeFile(coalesce, "_dup_fn\n");
+  CmdResult duplicate = link({dup.string()});
+  EXPECT_NE(duplicate.exitCode, 0);
+  CmdResult coalesced = link(
+      {dup.string(), "-Wl,-force_symbols_coalesce_list," + coalesce.string()});
+  EXPECT_EQ(coalesced.exitCode, 0) << coalesced.err;
+
+  // -i<definition>:<indirect> defines an alias.
+  CmdResult alias = link({"-Wl,-i_work_alias:_work"});
+  ASSERT_EQ(alias.exitCode, 0) << alias.err;
+  {
+    auto macho = open(image);
+    ASSERT_NE(macho, nullptr);
+    bool found = false;
+    for (const auto &sym : macho->symbols())
+      found |= llvm::cantFail(sym.getName()) == "_work_alias";
+    EXPECT_TRUE(found);
+  }
+
+  // -debug_snapshot records the command and copies the inputs.
+  const fs::path snapshots = dir / "snapshots";
+  CmdResult snapshot =
+      link({"-Wl,-debug_snapshot", "-Wl,-snapshot_dir," + snapshots.string()});
+  ASSERT_EQ(snapshot.exitCode, 0) << snapshot.err;
+  EXPECT_TRUE(fs::exists(snapshots / "image.snapshot" / "link_command"));
+  EXPECT_TRUE(fs::exists(snapshots / "image.snapshot" / "inputs" / "1-main.o"));
+
+  // The chain starts sections record where the fixup chains begin.
+  CmdResult chainStarts = link({"-Wl,-fixup_chains_section"});
+  ASSERT_EQ(chainStarts.exitCode, 0) << chainStarts.err;
+  const std::string chains = sectionContents("__chain_starts");
+  ASSERT_GE(chains.size(), 12u);
+  EXPECT_EQ(llvm::support::endian::read32le(chains.data()),
+            uint32_t(llvm::MachO::DYLD_CHAINED_PTR_64));
+  EXPECT_EQ(llvm::support::endian::read32le(chains.data() + 4), 1u);
+  CmdResult threadStarts = link({"-Wl,-threaded_starts_section"});
+  ASSERT_EQ(threadStarts.exitCode, 0) << threadStarts.err;
+  const std::string threads = sectionContents("__thread_starts");
+  ASSERT_GE(threads.size(), 8u);
+  EXPECT_EQ(llvm::support::endian::read32le(threads.data()), 0u);
+  EXPECT_EQ(llvm::support::endian::read32le(threads.data() + 4),
+            llvm::support::endian::read32le(chains.data() + 8));
+
+  // -add_linker_option adds auto-link options to -r output.
+  const fs::path relocatable = dir / "merged.o";
+  CmdResult merged =
+      ncc({target, "-r", "-nostdlib", dup.string(),
+           "-Wl,-add_linker_option,-lfoo", "-o", relocatable.string()});
+  ASSERT_EQ(merged.exitCode, 0) << merged.err;
+  {
+    auto macho = open(relocatable);
+    ASSERT_NE(macho, nullptr);
+    bool option = false;
+    for (const auto &command : macho->load_commands())
+      option |= command.C.cmd == llvm::MachO::LC_LINKER_OPTION;
+    EXPECT_TRUE(option);
+  }
+
+  // -simulator_support marks a dylib for simulator processes, and
+  // -force_symbol_weak exports one symbol as weak.
+  const fs::path dylib = dir / "libsim.dylib";
+  CmdResult sim = ncc({target, "-nostdlib", "-dynamiclib", dup.string(),
+                       "-Wl,-simulator_support",
+                       "-Wl,-force_symbol_weak,_dup_fn", "-o", dylib.string()});
+  ASSERT_EQ(sim.exitCode, 0) << sim.err;
+  {
+    auto macho = open(dylib);
+    ASSERT_NE(macho, nullptr);
+    EXPECT_TRUE(macho->getHeader64().flags & llvm::MachO::MH_SIM_SUPPORT);
+    llvm::Error err = llvm::Error::success();
+    bool weak = false;
+    for (const auto &entry : macho->exports(err))
+      if (entry.name() == "_dup_fn")
+        weak = entry.flags() & llvm::MachO::EXPORT_SYMBOL_FLAGS_WEAK_DEFINITION;
+    ASSERT_FALSE(static_cast<bool>(err))
+        << llvm::toString(std::move(err)).str().str();
+    EXPECT_TRUE(weak);
+  }
+
+  // -kext_objects_dir also writes a kext's objects, merged.
+  const fs::path kextObjects = dir / "kext_objects";
+  CmdResult kext =
+      ncc({target, "-nostdlib", "-bundle", dup.string(), "-Wl,-kext",
+           "-Wl,-kext_objects_dir," + kextObjects.string(), "-o",
+           (dir / "demo.kext").string()});
+  ASSERT_EQ(kext.exitCode, 0) << kext.err;
+  EXPECT_TRUE(fs::exists(kextObjects / "demo.kext.o"));
 }
 
 TEST_F(LinkerTest, MsvcLinkerSpellingsAreNormalized) {

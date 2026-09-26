@@ -201,6 +201,17 @@ Defined *SymbolTable::addDefined(StringRef name, InputFile *file,
             transplantSymbolsAtOffset(concatIsec, isec, defined, defined->value,
                                       value);
         }
+      } else if (!config->forceCoalesceSymbols.empty() &&
+                 config->forceCoalesceSymbols.match(name)) {
+        // -force_symbols_coalesce_list keeps the first definition, as for a
+        // weak one.
+        if (auto concatIsec = dyn_cast_or_null<ConcatInputSection>(isec)) {
+          concatIsec->wasCoalesced = true;
+          if (defined->isec)
+            transplantSymbolsAtOffset(concatIsec, defined->isec,
+                                      /*skip=*/nullptr, value, defined->value);
+        }
+        return defined;
       } else {
         std::string srcLoc1 = defined->getSourceLocation();
         std::string srcLoc2 = isec ? isec->getSourceLocation(value) : "";

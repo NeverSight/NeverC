@@ -136,6 +136,7 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   };
   StringMap<MachOSymDedup> ExtNameToIdx;
 
+  std::vector<std::vector<std::string>> LinkerOptions;
   for (unsigned p = 0; p < Buffers.size(); ++p) {
     if (Buffers[p].empty())
       continue;
@@ -210,6 +211,24 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
                 "architecture "
              << InputHeader.cputype << "; refusing to merge\n";
       return false;
+    }
+
+    // Auto-link requests survive the merge, once each.
+    for (const auto &Command : Obj.load_commands()) {
+      if (Command.C.cmd != MO::LC_LINKER_OPTION ||
+          Command.C.cmdsize < sizeof(MO::linker_option_command))
+        continue;
+      auto Option = Obj.getLinkerOptionLoadCommand(Command);
+      std::vector<std::string> Args;
+      StringRef Rest(Command.Ptr + sizeof(MO::linker_option_command),
+                     Command.C.cmdsize - sizeof(MO::linker_option_command));
+      for (uint32_t k = 0; k < Option.count && !Rest.empty(); ++k) {
+        StringRef Arg = Rest.take_until([](char c) { return c == '\0'; });
+        Args.push_back(Arg.str());
+        Rest = Rest.drop_front(std::min(Rest.size(), Arg.size() + 1));
+      }
+      if (!llvm::is_contained(LinkerOptions, Args))
+        LinkerOptions.push_back(std::move(Args));
     }
 
     if (!HaveArch) {
@@ -621,7 +640,20 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       sizeof(MO::segment_command_64) + NSects * sizeof(MO::section_64);
   uint32_t SymTabCmdSize = sizeof(MO::symtab_command);
   uint32_t DySymTabCmdSize = sizeof(MO::dysymtab_command);
-  uint32_t LoadCmdsSize = SegCmdSize + SymTabCmdSize + DySymTabCmdSize;
+  for (const std::vector<std::string> &Args : Opts.machoLinkerOptions)
+    if (!llvm::is_contained(LinkerOptions, Args))
+      LinkerOptions.push_back(Args);
+  auto linkerOptionSize = [](const std::vector<std::string> &Args) {
+    uint32_t Size = sizeof(MO::linker_option_command);
+    for (const std::string &Arg : Args)
+      Size += Arg.size() + 1;
+    return alignTo(Size, 8);
+  };
+  uint32_t LinkerOptionsSize = 0;
+  for (const std::vector<std::string> &Args : LinkerOptions)
+    LinkerOptionsSize += linkerOptionSize(Args);
+  uint32_t LoadCmdsSize =
+      SegCmdSize + SymTabCmdSize + DySymTabCmdSize + LinkerOptionsSize;
   uint32_t DataStart = HeaderSize + LoadCmdsSize;
 
   uint64_t CurOff = DataStart;
@@ -762,7 +794,7 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   MH->cputype = CPUType;
   MH->cpusubtype = CPUSubType;
   MH->filetype = MO::MH_OBJECT;
-  MH->ncmds = 3;
+  MH->ncmds = 3 + LinkerOptions.size();
   MH->sizeofcmds = LoadCmdsSize;
   MH->flags = MO::MH_SUBSECTIONS_VIA_SYMBOLS;
   MH->reserved = 0;
@@ -827,6 +859,20 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   DyCmd->nextdefsym = NExtDefSym;
   DyCmd->iundefsym = NLocalSym + NExtDefSym;
   DyCmd->nundefsym = NUndefSym;
+
+  Cmd += DySymTabCmdSize;
+  for (const std::vector<std::string> &Args : LinkerOptions) {
+    auto *OptCmd = reinterpret_cast<MO::linker_option_command *>(Cmd);
+    OptCmd->cmd = MO::LC_LINKER_OPTION;
+    OptCmd->cmdsize = linkerOptionSize(Args);
+    OptCmd->count = Args.size();
+    char *Str = Cmd + sizeof(MO::linker_option_command);
+    for (const std::string &Arg : Args) {
+      memcpy(Str, Arg.data(), Arg.size());
+      Str += Arg.size() + 1;
+    }
+    Cmd += OptCmd->cmdsize;
+  }
 
   for (unsigned i = 0; i < NSects; ++i) {
     // Zerofill sections have no on-disk data; do not copy anything.

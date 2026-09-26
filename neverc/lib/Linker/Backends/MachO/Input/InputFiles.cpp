@@ -131,6 +131,25 @@ bool checkCompatibility(const InputFile *input) {
   auto it = find_if(platformInfos, [&](const PlatformInfo &info) {
     return info.target.Platform == config->platform();
   });
+  // A simulator may use the macOS dylibs that allow it (MH_SIM_SUPPORT), or
+  // any with -allow_simulator_linking_to_macosx_dylibs.
+  if (it == platformInfos.end() && isa<DylibFile>(input) &&
+      config->platform() == PLATFORM_IOSSIMULATOR) {
+    it = find_if(platformInfos, [](const PlatformInfo &info) {
+      return info.target.Platform == PLATFORM_MACOS;
+    });
+    bool simSupport = false;
+    if (identify_magic(input->mb.getBuffer()) ==
+        file_magic::macho_dynamically_linked_shared_lib)
+      simSupport = reinterpret_cast<const llvm_macho::mach_header *>(
+                       input->mb.getBufferStart())
+                       ->flags &
+                   llvm_macho::MH_SIM_SUPPORT;
+    if (it != platformInfos.end() &&
+        (config->allowSimulatorLinkingToMacOSDylibs || simSupport))
+      return true;
+    it = platformInfos.end();
+  }
   if (it == platformInfos.end()) {
     std::string platformNames;
     raw_string_ostream os(platformNames);
