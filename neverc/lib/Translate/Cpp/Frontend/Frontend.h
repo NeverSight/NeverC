@@ -365,6 +365,7 @@ struct FunctionalReferenceInvokeCall {
   clang::QualType FunctionPointerType;
   std::optional<FunctionalOperationInfo> Operation;
   const clang::CXXMethodDecl *Method;
+  std::vector<const clang::CXXConstructExpr *> SelectedCopies;
 };
 std::optional<FunctionalReferenceInvokeCall>
 approvedFunctionalReferenceInvokeCall(
@@ -379,6 +380,7 @@ struct FunctionalMemberInvokeCall {
   const clang::CallExpr *ErasedAdapter;
   std::optional<FunctionalReferenceRecord> ObjectWrapper;
   bool ObjectIsPointer;
+  std::vector<const clang::CXXConstructExpr *> SelectedCopies;
 };
 std::optional<FunctionalMemberInvokeCall>
 approvedFunctionalUserInvokeCall(const State &S,
@@ -390,6 +392,10 @@ approvedUtilityTupleApplyUserCall(const State &S,
                                   const clang::SourceManager &SM,
                                   const clang::CallExpr *Call,
                                   const clang::ASTContext &Context);
+const clang::CXXConstructExpr *approvedUtilityTupleApplySelectedCopy(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *Call, unsigned Index, clang::QualType Parameter,
+    const clang::ASTContext &Context);
 struct UtilityTupleApplyObjectOperation {
   FunctionalOperationInfo Operation;
   const clang::CXXMethodDecl *Method;
@@ -854,10 +860,12 @@ enum class UtilityOperation {
   InitializerListRBegin,
   InitializerListREnd,
   StringSize,
+  StringGetAllocator,
   StringCapacity,
   StringMaxSize,
   StringEmpty,
   StringData,
+  StringToView,
   StringBegin,
   StringEnd,
   StringRBegin,
@@ -874,6 +882,9 @@ enum class UtilityOperation {
   StringAppendPointer,
   StringAppendCString,
   StringAppendString,
+  StringAppendStringSlice,
+  StringAppendView,
+  StringAppendViewSlice,
   StringAppendList,
   StringAppendRange,
   StringAppendFill,
@@ -881,6 +892,9 @@ enum class UtilityOperation {
   StringAssignPointer,
   StringAssignCString,
   StringAssignString,
+  StringAssignStringSlice,
+  StringAssignView,
+  StringAssignViewSlice,
   StringAssignList,
   StringAssignRange,
   StringAssignFill,
@@ -892,6 +906,9 @@ enum class UtilityOperation {
   StringInsertPointer,
   StringInsertCString,
   StringInsertString,
+  StringInsertStringSlice,
+  StringInsertView,
+  StringInsertViewSlice,
   StringInsertFill,
   StringInsertIteratorCharacter,
   StringInsertIteratorFill,
@@ -900,6 +917,9 @@ enum class UtilityOperation {
   StringReplacePointer,
   StringReplaceCString,
   StringReplaceString,
+  StringReplaceStringSlice,
+  StringReplaceView,
+  StringReplaceViewSlice,
   StringReplaceFill,
   StringReplaceIteratorPointer,
   StringReplaceIteratorCString,
@@ -932,6 +952,7 @@ enum class UtilityOperation {
   StringFindLastNotOf,
   StringViewSize,
   VectorSize,
+  VectorGetAllocator,
   VectorCapacity,
   VectorMaxSize,
   VectorEmpty,
@@ -1147,10 +1168,13 @@ struct UtilityTupleLikeSource {
     return ArrayElements ? ArrayElementType : Elements[Index]->getType();
   }
 };
+// Only apply may relax array element value admission; its selected callback
+// must separately prove every element argument.
 std::optional<UtilityTupleLikeSource>
 approvedUtilityTupleLikeSource(const State &S, const clang::SourceManager &SM,
                                clang::QualType Type,
-                               const clang::ASTContext &Context);
+                               const clang::ASTContext &Context,
+                               bool AllowNontrivialArrayElements = false);
 bool approvedUtilityTupleLikeGet(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Get,
     clang::QualType Parameter, const UtilityTupleLikeSource &Tuple,
@@ -1226,9 +1250,14 @@ enum class UtilityStringConstruction {
   Default,
   CString,
   PointerLength,
+  Range,
+  Fill,
   InitializerList,
   Copy,
   Move,
+  Substring,
+  View,
+  ViewSubstring,
 };
 std::optional<UtilityStringConstruction>
 approvedUtilityStringConstruction(const State &S,
@@ -1248,13 +1277,21 @@ bool approvedUtilityStringDestructor(const State &S,
 struct UtilityVectorRecord {
   const clang::CXXRecordDecl *Record;
   clang::QualType ElementType, PointerType;
+  bool OwningElement;
 };
 std::optional<UtilityVectorRecord>
 approvedUtilityVectorRecord(const State &S, const clang::SourceManager &SM,
                             const clang::CXXRecordDecl *Record,
                             const clang::ASTContext &Context);
-enum class UtilityVectorConstruction { Default, Count, CountValue,
-                                       InitializerList, Copy, Move };
+enum class UtilityVectorConstruction {
+  Default,
+  Count,
+  CountValue,
+  Range,
+  InitializerList,
+  Copy,
+  Move
+};
 std::optional<UtilityVectorConstruction>
 approvedUtilityVectorConstruction(const State &S,
                                   const clang::SourceManager &SM,

@@ -381,6 +381,25 @@ static bool supportedFunctionalScalar(QualType Type,
          Type->isSpecificBuiltinType(BuiltinType::Double);
 }
 
+static bool supportedFunctionalPointerComparison(llvm::StringRef Name,
+                                                 QualType Type,
+                                                 const ASTContext &Context) {
+  const bool Equality = Name == "equal_to" || Name == "not_equal_to";
+  const bool Ordered = Name == "less" || Name == "greater" ||
+                       Name == "less_equal" || Name == "greater_equal";
+  if ((!Equality && !Ordered) || Type.isNull() || Type->isReferenceType() ||
+      Type.hasQualifiers() || !Type->isPointerType() ||
+      Type->isFunctionPointerType())
+    return false;
+  const auto Pointee = Type->getPointeeType();
+  return !Pointee.isVolatileQualified() && !Pointee.isRestrictQualified() &&
+         Pointee.getAddressSpace() == LangAS::Default &&
+         ((Pointee->isObjectType() && !Pointee->isIncompleteType()) ||
+          (Equality && Pointee->isVoidType())) &&
+         Context.getTypeSize(Type) == Context.getTypeSize(Context.VoidPtrTy) &&
+         Context.getTypeAlign(Type) == Context.getTypeAlign(Context.VoidPtrTy);
+}
+
 static bool supportedFunctionalCallableValue(QualType Type,
                                              const ASTContext &Context) {
   return supportedFunctionalScalar(Type, Context) ||
@@ -705,17 +724,19 @@ approvedFunctionalObjectRecord(const State &S, const SourceManager &SM,
                        "__functional/operations.h"))
       return std::nullopt;
   } else if (!(supportedFunctionalScalar(ValueType, Context) ||
+               supportedFunctionalPointerComparison(Name, ValueType, Context) ||
                ((Name == "equal_to" || Name == "not_equal_to" ||
-                 Name == "less" || Name == "greater" ||
-                 Name == "less_equal" || Name == "greater_equal" ||
-                 Name == "logical_and" || Name == "logical_or" ||
-                 Name == "logical_not") &&
+                 Name == "less" || Name == "greater" || Name == "less_equal" ||
+                 Name == "greater_equal" || Name == "logical_and" ||
+                 Name == "logical_or" || Name == "logical_not") &&
                 !ValueType.isNull() && ValueType.isConstQualified() &&
                 !ValueType.isVolatileQualified() &&
                 !ValueType.isRestrictQualified() &&
                 ValueType.getAddressSpace() == LangAS::Default &&
-                supportedFunctionalScalar(ValueType.getUnqualifiedType(),
-                                          Context))) ||
+                (supportedFunctionalScalar(ValueType.getUnqualifiedType(),
+                                           Context) ||
+                 supportedFunctionalPointerComparison(
+                     Name, ValueType.getUnqualifiedType(), Context)))) ||
              (integralFunctionalObject(Definition->getName()) &&
               !ValueType->isIntegralType(Context))) {
     return std::nullopt;
@@ -801,6 +822,24 @@ static bool supportedFunctionalByValue(const State &S,
          !Definition->isInvalidDecl() && Definition->isStandardLayout() &&
          Definition->isTriviallyCopyable() &&
          Definition->hasTrivialDestructor() &&
+         S.owns(SM, Definition->getLocation());
+}
+
+// Storing a function or member pointer only records its signature. The
+// selected copy/move expression is checked separately when a call is lowered.
+static bool supportedFunctionalStoredSignatureValue(
+    const State &S, const SourceManager &SM, const ASTContext &Context,
+    QualType Type) {
+  if (supportedFunctionalByValue(S, SM, Context, Type))
+    return true;
+  if (Type.isNull() || Type->isReferenceType() || Type->isArrayType() ||
+      Type.isVolatileQualified() || Type.isRestrictQualified() ||
+      Type.getAddressSpace() != LangAS::Default)
+    return false;
+  const auto *Record = Type->getAsCXXRecordDecl();
+  const auto *Definition = Record ? Record->getDefinition() : nullptr;
+  return Definition && !Definition->isUnion() &&
+         !Definition->isInvalidDecl() && Definition->isStandardLayout() &&
          S.owns(SM, Definition->getLocation());
 }
 
@@ -898,7 +937,8 @@ std::optional<FunctionalReferenceRecord> approvedFunctionalReferenceRecord(
       if (Parameter->isReferenceType()
               ? !supportedFunctionalReferenceValue(S, SM, Context,
                                                    Parameter->getPointeeType())
-              : !supportedFunctionalByValue(S, SM, Context, Parameter))
+              : !supportedFunctionalStoredSignatureValue(S, SM, Context,
+                                                        Parameter))
         return std::nullopt;
   }
   const auto PointerType = Context.getPointerType(Referent);
@@ -1748,10 +1788,13 @@ static std::optional<FunctionalOperationInfo> approvedFunctionalOperationImpl(
     if (Type.isNull())
       return false;
     Type = Type.getNonReferenceType();
-    if (Type.isVolatileQualified())
+    if (Type.isVolatileQualified() || Type.isRestrictQualified() ||
+        Type.getAddressSpace() != LangAS::Default)
       return false;
     Type = Type.getUnqualifiedType();
-    return (Type->isIntegralType(Context) && Context.getTypeSize(Type) <= 64) ||
+    return supportedFunctionalPointerComparison(Record->getName(), Type,
+                                                Context) ||
+           (Type->isIntegralType(Context) && Context.getTypeSize(Type) <= 64) ||
            Type->isSpecificBuiltinType(BuiltinType::Float) ||
            Type->isSpecificBuiltinType(BuiltinType::Double);
   };
@@ -2711,12 +2754,30 @@ static bool utilityArrayValue(const State &S, const SourceManager &SM,
   const auto *Record = Type->getAsCXXRecordDecl();
   if (!Record)
     return false;
-  if (approvedUtilityArrayMetadata(S, SM, Record))
-    return approvedUtilityArrayRecord(S, SM, Record, Context).has_value();
+  if (approvedUtilityArrayMetadata(S, SM, Record)) {
+    const auto Array = approvedUtilityArrayRecord(S, SM, Record, Context);
+    return Array && utilityArrayValue(S, SM, Context, Array->ElementType);
+  }
   Record = Record->getDefinition();
   return Record && S.owns(SM, Record->getLocation()) && !Record->isUnion() &&
          Record->isStandardLayout() && Record->isTrivial() &&
          Record->hasTrivialDestructor();
+}
+
+static bool utilityArrayStorableValue(const State &S, const SourceManager &SM,
+                                     const ASTContext &Context, QualType Type) {
+  if (utilityArrayValue(S, SM, Context, Type))
+    return true;
+  Type = Type.getUnqualifiedType();
+  const auto *Record = Type->getAsCXXRecordDecl();
+  if (!Record)
+    return false;
+  if (approvedUtilityArrayMetadata(S, SM, Record))
+    return approvedUtilityArrayRecord(S, SM, Record, Context).has_value();
+  Record = Record->getDefinition();
+  return Record && !Record->isInvalidDecl() && !Record->isDependentContext() &&
+         S.owns(SM, Record->getLocation()) && !Record->isUnion() &&
+         Record->isStandardLayout();
 }
 
 static bool utilityArrayTriviallyAssignable(const ASTContext &Context,
@@ -3824,7 +3885,7 @@ approvedUtilityArrayRecord(const State &S, const SourceManager &SM,
       Elements->getAccess() != AS_public || Elements->isBitField() ||
       Elements->isMutable() || !Array || Element.isNull() ||
       !Element->isObjectType() || Element->isIncompleteType() ||
-      !utilityArrayValue(S, SM, Context, Element) ||
+      !utilityArrayStorableValue(S, SM, Context, Element) ||
       !approvedStandardSDKDeclaration(S, SM, Elements) ||
       !cstddefOrigin(S, SM, Elements->getLocation(), "libcxx", "array"))
     return std::nullopt;
@@ -4395,6 +4456,103 @@ approvedUtilityStringConstruction(const State &S, const SourceManager &SM,
         Context.hasSameType(Parameter->getPointeeType(), StringType))
       return UtilityStringConstruction::Move;
   }
+  if ((Constructor->getNumParams() == 3 || Constructor->getNumParams() == 4) &&
+      !Constructor->getPrimaryTemplate()) {
+    const unsigned AllocatorIndex = Constructor->getNumParams() - 1;
+    const auto StringType = Context.getRecordType(String->Record);
+    const auto SourceType = Constructor->getParamDecl(0)->getType();
+    const auto AllocatorType =
+        Constructor->getParamDecl(AllocatorIndex)->getType();
+    const auto *Default =
+        dyn_cast<CXXDefaultArgExpr>(Construction->getArg(AllocatorIndex));
+    const auto *DefaultInit = selectedDefaultArgument(Default, Context);
+    const auto *DefaultParameter = Default ? Default->getParam() : nullptr;
+    std::optional<UtilityAllocatorRecord> Allocator;
+    if (AllocatorType->isLValueReferenceType())
+      Allocator = approvedUtilityAllocatorRecord(
+          S, SM, AllocatorType->getPointeeType()->getAsCXXRecordDecl(),
+          Context);
+    if (SourceType->isLValueReferenceType() &&
+        Context.hasSameType(SourceType->getPointeeType(),
+                            StringType.withConst()) &&
+        Context.hasSameType(Construction->getArg(0)->getType(),
+                            StringType.withConst()) &&
+        Context.hasSameType(Constructor->getParamDecl(1)->getType(),
+                            Context.getSizeType()) &&
+        Context.hasSameType(Construction->getArg(1)->getType(),
+                            Context.getSizeType()) &&
+        (AllocatorIndex == 2 ||
+         (Context.hasSameType(Constructor->getParamDecl(2)->getType(),
+                              Context.getSizeType()) &&
+          Context.hasSameType(Construction->getArg(2)->getType(),
+                              Context.getSizeType()))) &&
+        AllocatorType->isLValueReferenceType() && Allocator &&
+        Context.hasSameType(Allocator->ElementType, Context.CharTy) &&
+        Context.hasSameType(
+            AllocatorType->getPointeeType(),
+            Context.getRecordType(Allocator->Record).withConst()) &&
+        Default && DefaultInit && DefaultParameter &&
+        DefaultParameter == Constructor->getParamDecl(AllocatorIndex) &&
+        DefaultParameter->getFunctionScopeIndex() == AllocatorIndex &&
+        cstddefOrigin(S, SM, DefaultInit->getExprLoc(), "libcxx", "string"))
+      return UtilityStringConstruction::Substring;
+  }
+  if (const auto *Primary = Constructor->getPrimaryTemplate();
+      Primary &&
+      (Constructor->getNumParams() == 1 || Constructor->getNumParams() == 2 ||
+       Constructor->getNumParams() == 4) &&
+      approvedStandardSDKDeclaration(S, SM, Primary) &&
+      cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "string")) {
+    const auto SourceType = Constructor->getParamDecl(0)->getType();
+    std::optional<UtilityStringViewRecord> View;
+    if (SourceType->isLValueReferenceType())
+      View = approvedUtilityStringViewRecord(
+          S, SM, SourceType->getPointeeType()->getAsCXXRecordDecl(), Context);
+    if (View &&
+        Context.hasSameType(SourceType->getPointeeType(),
+                            Context.getRecordType(View->Record).withConst()) &&
+        Context.hasSameType(Construction->getArg(0)->getType(),
+                            Context.getRecordType(View->Record).withConst())) {
+      const unsigned Count = Constructor->getNumParams();
+      if (Count == 1)
+        return UtilityStringConstruction::View;
+      const unsigned AllocatorIndex = Count - 1;
+      const auto AllocatorType =
+          Constructor->getParamDecl(AllocatorIndex)->getType();
+      std::optional<UtilityAllocatorRecord> Allocator;
+      if (AllocatorType->isLValueReferenceType())
+        Allocator = approvedUtilityAllocatorRecord(
+            S, SM, AllocatorType->getPointeeType()->getAsCXXRecordDecl(),
+            Context);
+      const auto *Default =
+          dyn_cast<CXXDefaultArgExpr>(Construction->getArg(AllocatorIndex));
+      const auto *DefaultInit = selectedDefaultArgument(Default, Context);
+      if (Allocator &&
+          Context.hasSameType(Allocator->ElementType, Context.CharTy) &&
+          Context.hasSameType(
+              AllocatorType->getPointeeType(),
+              Context.getRecordType(Allocator->Record).withConst()) &&
+          Context.hasSameType(Construction->getArg(AllocatorIndex)->getType(),
+                              AllocatorType->getPointeeType()) &&
+          (!Default ||
+           (DefaultInit &&
+            Default->getParam() == Constructor->getParamDecl(AllocatorIndex) &&
+            cstddefOrigin(S, SM, DefaultInit->getExprLoc(), "libcxx",
+                          "string")))) {
+        if (Count == 2)
+          return UtilityStringConstruction::View;
+        if (Context.hasSameType(Constructor->getParamDecl(1)->getType(),
+                                Context.getSizeType()) &&
+            Context.hasSameType(Constructor->getParamDecl(2)->getType(),
+                                Context.getSizeType()) &&
+            Context.hasSameType(Construction->getArg(1)->getType(),
+                                Context.getSizeType()) &&
+            Context.hasSameType(Construction->getArg(2)->getType(),
+                                Context.getSizeType()))
+          return UtilityStringConstruction::ViewSubstring;
+      }
+    }
+  }
   if (Constructor->getNumParams() == 1) {
     const auto Parameter = Constructor->getParamDecl(0)->getType();
     const auto List = approvedUtilityInitializerListRecord(
@@ -4418,6 +4576,39 @@ approvedUtilityStringConstruction(const State &S, const SourceManager &SM,
       Context.hasSameType(Construction->getArg(1)->getType(),
                           Context.getSizeType()))
     return UtilityStringConstruction::PointerLength;
+  if (Construction->getNumArgs() == 2 && Constructor->getPrimaryTemplate() &&
+      approvedStandardSDKDeclaration(S, SM,
+                                     Constructor->getPrimaryTemplate()) &&
+      cstddefOrigin(S, SM, Constructor->getPrimaryTemplate()->getLocation(),
+                    "libcxx", "string")) {
+    const auto FirstType = Constructor->getParamDecl(0)->getType();
+    const auto LastType = Constructor->getParamDecl(1)->getType();
+    const bool RawPointer =
+        Context.hasSameType(FirstType,
+                            Context.getPointerType(Context.CharTy)) ||
+        Context.hasSameType(FirstType, ConstPointer);
+    const auto Wrapped = approvedUtilityWrapIteratorRecord(
+        S, SM, FirstType->getAsCXXRecordDecl(), Context);
+    const bool WrappedPointer =
+        Wrapped &&
+        (Context.hasSameType(Wrapped->IteratorType,
+                             Context.getPointerType(Context.CharTy)) ||
+         Context.hasSameType(Wrapped->IteratorType, ConstPointer));
+    if ((RawPointer || WrappedPointer) &&
+        Context.hasSameType(FirstType, LastType) &&
+        Context.hasSameType(Construction->getArg(0)->getType(), FirstType) &&
+        Context.hasSameType(Construction->getArg(1)->getType(), LastType))
+      return UtilityStringConstruction::Range;
+  }
+  if (Constructor->getNumParams() == 2 && !Constructor->getPrimaryTemplate() &&
+      Context.hasSameType(Constructor->getParamDecl(0)->getType(),
+                          Context.getSizeType()) &&
+      Context.hasSameType(Construction->getArg(0)->getType(),
+                          Context.getSizeType()) &&
+      Context.hasSameType(Constructor->getParamDecl(1)->getType(),
+                          Context.CharTy) &&
+      Context.hasSameType(Construction->getArg(1)->getType(), Context.CharTy))
+    return UtilityStringConstruction::Fill;
   return std::nullopt;
 }
 
@@ -4519,10 +4710,15 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
       ElementRecord->hasTrivialCopyAssignment() &&
       ElementRecord->hasTrivialMoveAssignment() &&
       ElementRecord->hasTrivialDestructor();
+  const bool OwningElement =
+      ElementRecord &&
+      (approvedUtilityStringRecord(S, SM, ElementRecord, Context) ||
+       approvedUtilityUniquePtrRecord(S, SM, ElementRecord, Context));
   if (Element.isNull() || Element.isConstQualified() ||
       Element.isVolatileQualified() || Element->isBooleanType() ||
       !(Element->isIntegerType() || Element->isFloatingType() ||
-        TrivialSourceRecord) ||
+        Element->isObjectPointerType() || TrivialSourceRecord ||
+        OwningElement) ||
       Element->isIncompleteType())
     return std::nullopt;
   const auto Pointer = Context.getPointerType(Element);
@@ -4590,7 +4786,7 @@ approvedUtilityVectorRecord(const State &S, const SourceManager &SM,
       uint64_t(Layout.getAlignment().getQuantity()) * 8 !=
           Context.getTypeAlign(Pointer))
     return std::nullopt;
-  return UtilityVectorRecord{Vector, Element, Pointer};
+  return UtilityVectorRecord{Vector, Element, Pointer, OwningElement};
 }
 
 std::optional<UtilityVectorConstruction>
@@ -4614,6 +4810,8 @@ approvedUtilityVectorConstruction(const State &S, const SourceManager &SM,
       !cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx",
                      "__vector/vector.h"))
     return std::nullopt;
+  const bool CopyableString = approvedUtilityStringRecord(
+      S, SM, Vector->ElementType->getAsCXXRecordDecl(), Context).has_value();
   if (Constructor->isDefaultConstructor() && !Construction->getNumArgs())
     return UtilityVectorConstruction::Default;
   if (Construction->getNumArgs() == 1 &&
@@ -4622,7 +4820,10 @@ approvedUtilityVectorConstruction(const State &S, const SourceManager &SM,
                                      Construction->getType())) {
     const auto Parameter = Constructor->getParamDecl(0)->getType();
     const auto VectorType = Context.getRecordType(Vector->Record);
-    if (Constructor->isCopyConstructor() &&
+    if ((!Vector->OwningElement ||
+         approvedUtilityStringRecord(
+             S, SM, Vector->ElementType->getAsCXXRecordDecl(), Context)) &&
+        Constructor->isCopyConstructor() &&
         Parameter->isLValueReferenceType() &&
         Context.hasSameType(Parameter->getPointeeType(),
                             VectorType.withConst()))
@@ -4638,12 +4839,39 @@ approvedUtilityVectorConstruction(const State &S, const SourceManager &SM,
         Context);
     const auto *Expression =
         dyn_cast<CXXStdInitializerListExpr>(Construction->getArg(0));
-    if (List && Expression &&
+    if ((!Vector->OwningElement || CopyableString) && List && Expression &&
         Context.hasSameType(List->ElementType, Vector->ElementType) &&
         Context.hasSameUnqualifiedType(Construction->getArg(0)->getType(),
                                        Context.getRecordType(List->Record)) &&
         approvedUtilityInitializerListExpression(S, SM, Expression, Context))
       return UtilityVectorConstruction::InitializerList;
+  }
+  if (Construction->getNumArgs() == 2 && Constructor->getPrimaryTemplate() &&
+      approvedStandardSDKDeclaration(S, SM,
+                                     Constructor->getPrimaryTemplate()) &&
+      cstddefOrigin(S, SM, Constructor->getPrimaryTemplate()->getLocation(),
+                    "libcxx", "__vector/vector.h")) {
+    const auto FirstType = Constructor->getParamDecl(0)->getType();
+    const auto LastType = Constructor->getParamDecl(1)->getType();
+    const auto Element = Vector->ElementType;
+    const bool RawPointer =
+        Context.hasSameType(FirstType, Context.getPointerType(Element)) ||
+        Context.hasSameType(FirstType,
+                            Context.getPointerType(Element.withConst()));
+    const auto Wrapped = approvedUtilityWrapIteratorRecord(
+        S, SM, FirstType->getAsCXXRecordDecl(), Context);
+    const bool WrappedPointer =
+        Wrapped &&
+        (Context.hasSameType(Wrapped->IteratorType,
+                             Context.getPointerType(Element)) ||
+         Context.hasSameType(Wrapped->IteratorType,
+                             Context.getPointerType(Element.withConst())));
+    if ((!Vector->OwningElement || CopyableString) &&
+        (RawPointer || WrappedPointer) &&
+        Context.hasSameType(FirstType, LastType) &&
+        Context.hasSameType(Construction->getArg(0)->getType(), FirstType) &&
+        Context.hasSameType(Construction->getArg(1)->getType(), LastType))
+      return UtilityVectorConstruction::Range;
   }
   if ((Construction->getNumArgs() != 1 && Construction->getNumArgs() != 2) ||
       !Context.hasSameType(Constructor->getParamDecl(0)->getType(),
@@ -4659,6 +4887,8 @@ approvedUtilityVectorConstruction(const State &S, const SourceManager &SM,
     return std::nullopt;
   if (Construction->getNumArgs() == 1)
     return UtilityVectorConstruction::Count;
+  if (Vector->OwningElement && !CopyableString)
+    return std::nullopt;
   const auto FillType = Constructor->getParamDecl(1)->getType();
   if (!FillType->isLValueReferenceType() ||
       !FillType->getPointeeType().isConstQualified() ||
@@ -4708,10 +4938,12 @@ approvedUtilityVectorAssignment(const State &S, const SourceManager &SM,
       !Context.hasSameUnqualifiedType(Assignment->getArg(1)->getType(),
                                       VectorType))
     return std::nullopt;
-  if (Method->isCopyAssignmentOperator() &&
+  if ((!Vector->OwningElement ||
+       approvedUtilityStringRecord(
+           S, SM, Vector->ElementType->getAsCXXRecordDecl(), Context)) &&
+      Method->isCopyAssignmentOperator() &&
       Parameter->isLValueReferenceType() &&
-      Context.hasSameType(Parameter->getPointeeType(),
-                          VectorType.withConst()))
+      Context.hasSameType(Parameter->getPointeeType(), VectorType.withConst()))
     return UtilityVectorAssignment::Copy;
   if (Method->isMoveAssignmentOperator() &&
       Parameter->isRValueReferenceType() &&
@@ -7613,6 +7845,81 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
       Parameter ? dyn_cast<FunctionDecl>(Parameter->getDeclContext()) : nullptr;
   if (const auto *Constructor =
           dyn_cast_or_null<CXXConstructorDecl>(Function)) {
+    const auto String =
+        approvedUtilityStringRecord(S, SM, Constructor->getParent(), Context);
+    const auto *StringInit = selectedDefaultArgument(Default, Context);
+    if (Default && Parameter && Owner && String && StringInit &&
+        (Constructor->getNumParams() == 3 ||
+         Constructor->getNumParams() == 4) &&
+        Index == Constructor->getNumParams() - 1 &&
+        Parameter == Constructor->getParamDecl(Index) &&
+        Parameter->getFunctionScopeIndex() == Index &&
+        Owner->getCanonicalDecl() == Constructor->getCanonicalDecl() &&
+        !Constructor->getPrimaryTemplate() && !Constructor->isVariadic() &&
+        Constructor->hasBody() &&
+        approvedStandardSDKDeclaration(S, SM, Constructor) &&
+        cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx", "string") &&
+        cstddefOrigin(S, SM, StringInit->getExprLoc(), "libcxx", "string")) {
+      const auto StringType = Context.getRecordType(String->Record);
+      const auto SourceType = Constructor->getParamDecl(0)->getType();
+      const auto AllocatorType = Parameter->getType();
+      std::optional<UtilityAllocatorRecord> Allocator;
+      if (AllocatorType->isLValueReferenceType())
+        Allocator = approvedUtilityAllocatorRecord(
+            S, SM, AllocatorType->getPointeeType()->getAsCXXRecordDecl(),
+            Context);
+      if (SourceType->isLValueReferenceType() &&
+          Context.hasSameType(SourceType->getPointeeType(),
+                              StringType.withConst()) &&
+          Context.hasSameType(Constructor->getParamDecl(1)->getType(),
+                              Context.getSizeType()) &&
+          (Index == 2 ||
+           Context.hasSameType(Constructor->getParamDecl(2)->getType(),
+                               Context.getSizeType())) &&
+          Allocator &&
+          Context.hasSameType(Allocator->ElementType, Context.CharTy) &&
+          Context.hasSameType(
+              AllocatorType->getPointeeType(),
+              Context.getRecordType(Allocator->Record).withConst()))
+        return true;
+    }
+    const auto *ViewPrimary = Constructor->getPrimaryTemplate();
+    if (Default && Parameter && Owner && String && StringInit && ViewPrimary &&
+        Constructor->getNumParams() == 4 && Index == 3 &&
+        Parameter == Constructor->getParamDecl(3) &&
+        Parameter->getFunctionScopeIndex() == 3 &&
+        Owner->getCanonicalDecl() == Constructor->getCanonicalDecl() &&
+        !Constructor->isVariadic() && Constructor->hasBody() &&
+        approvedStandardSDKDeclaration(S, SM, Constructor) &&
+        approvedStandardSDKDeclaration(S, SM, ViewPrimary) &&
+        cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx", "string") &&
+        cstddefOrigin(S, SM, ViewPrimary->getLocation(), "libcxx", "string") &&
+        cstddefOrigin(S, SM, StringInit->getExprLoc(), "libcxx", "string")) {
+      const auto SourceType = Constructor->getParamDecl(0)->getType();
+      const auto AllocatorType = Parameter->getType();
+      std::optional<UtilityStringViewRecord> View;
+      if (SourceType->isLValueReferenceType())
+        View = approvedUtilityStringViewRecord(
+            S, SM, SourceType->getPointeeType()->getAsCXXRecordDecl(), Context);
+      std::optional<UtilityAllocatorRecord> Allocator;
+      if (AllocatorType->isLValueReferenceType())
+        Allocator = approvedUtilityAllocatorRecord(
+            S, SM, AllocatorType->getPointeeType()->getAsCXXRecordDecl(),
+            Context);
+      if (View && Allocator &&
+          Context.hasSameType(
+              SourceType->getPointeeType(),
+              Context.getRecordType(View->Record).withConst()) &&
+          Context.hasSameType(Constructor->getParamDecl(1)->getType(),
+                              Context.getSizeType()) &&
+          Context.hasSameType(Constructor->getParamDecl(2)->getType(),
+                              Context.getSizeType()) &&
+          Context.hasSameType(Allocator->ElementType, Context.CharTy) &&
+          Context.hasSameType(
+              AllocatorType->getPointeeType(),
+              Context.getRecordType(Allocator->Record).withConst()))
+        return true;
+    }
     const auto Deleter = approvedUtilityDefaultDeleteRecord(
         S, SM, Constructor->getParent(), Context);
     const auto *Primary = Constructor->getPrimaryTemplate();
@@ -7676,6 +7983,94 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
       }
     }
     if (Default && Parameter && Owner && String && Prototype &&
+        Owner->getCanonicalDecl() == Method->getCanonicalDecl() &&
+        !Method->getPrimaryTemplate() && !Method->isStatic() &&
+        !Method->isVariadic() && !Method->isConst() &&
+        Method->getIdentifier() &&
+        Method->getReturnType()->isLValueReferenceType() &&
+        Context.hasSameType(Method->getReturnType()->getPointeeType(),
+                            Context.getRecordType(String->Record)) &&
+        approvedStandardSDKDeclaration(S, SM, Method) &&
+        cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "string") &&
+        S.owns(SM, Default->getExprLoc()) && Init &&
+        Context.hasSameType(Init->getType(), Context.getSizeType()) &&
+        !Init->isTypeDependent() && !Init->isValueDependent() &&
+        !Init->isInstantiationDependent()) {
+      const auto Name = Method->getName();
+      const unsigned SourceIndex = Name == "append" || Name == "assign" ? 0
+                                   : Name == "insert"                   ? 1
+                                   : Name == "replace"                  ? 2
+                                                                        : 3;
+      if (SourceIndex < 3 && Method->getNumParams() == SourceIndex + 3 &&
+          Index == SourceIndex + 2 &&
+          Parameter == Method->getParamDecl(Index) &&
+          Parameter->getFunctionScopeIndex() == Index &&
+          Context.hasSameType(Parameter->getType(), Context.getSizeType()) &&
+          Context.hasSameType(Method->getParamDecl(SourceIndex + 1)->getType(),
+                              Context.getSizeType())) {
+        const auto Source = Method->getParamDecl(SourceIndex)->getType();
+        bool Shape = Source->isLValueReferenceType() &&
+                     Context.hasSameType(
+                         Source->getPointeeType(),
+                         Context.getRecordType(String->Record).withConst());
+        for (unsigned I = 0; I < SourceIndex; ++I)
+          Shape &= Context.hasSameType(Method->getParamDecl(I)->getType(),
+                                       Context.getSizeType());
+        Expr::EvalResult Evaluated;
+        if (Shape && Init->EvaluateAsInt(Evaluated, Context) &&
+            Evaluated.Val.isInt() && Evaluated.Val.getInt().isAllOnes())
+          return true;
+      }
+    }
+    const auto *ViewPrimary = Method->getPrimaryTemplate();
+    if (Default && Parameter && Owner && String && Prototype && ViewPrimary &&
+        Owner->getCanonicalDecl() == Method->getCanonicalDecl() &&
+        !Method->isStatic() && !Method->isVariadic() && !Method->isConst() &&
+        Method->getIdentifier() &&
+        Method->getReturnType()->isLValueReferenceType() &&
+        Context.hasSameType(Method->getReturnType()->getPointeeType(),
+                            Context.getRecordType(String->Record)) &&
+        approvedStandardSDKDeclaration(S, SM, Method) &&
+        approvedStandardSDKDeclaration(S, SM, ViewPrimary) &&
+        cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "string") &&
+        cstddefOrigin(S, SM, ViewPrimary->getLocation(), "libcxx", "string") &&
+        S.owns(SM, Default->getExprLoc()) && Init &&
+        Context.hasSameType(Init->getType(), Context.getSizeType()) &&
+        !Init->isTypeDependent() && !Init->isValueDependent() &&
+        !Init->isInstantiationDependent()) {
+      const auto Name = Method->getName();
+      const unsigned SourceIndex = Name == "append" || Name == "assign" ? 0
+                                   : Name == "insert"                   ? 1
+                                   : Name == "replace"                  ? 2
+                                                                        : 3;
+      if (SourceIndex < 3 && Method->getNumParams() == SourceIndex + 3 &&
+          Index == SourceIndex + 2 &&
+          Parameter == Method->getParamDecl(Index) &&
+          Parameter->getFunctionScopeIndex() == Index &&
+          Context.hasSameType(Parameter->getType(), Context.getSizeType()) &&
+          Context.hasSameType(Method->getParamDecl(SourceIndex + 1)->getType(),
+                              Context.getSizeType())) {
+        const auto Source = Method->getParamDecl(SourceIndex)->getType();
+        const auto View =
+            Source->isLValueReferenceType()
+                ? approvedUtilityStringViewRecord(
+                      S, SM, Source->getPointeeType()->getAsCXXRecordDecl(),
+                      Context)
+                : std::optional<UtilityStringViewRecord>();
+        bool Shape =
+            View && Context.hasSameType(
+                        Source->getPointeeType(),
+                        Context.getRecordType(View->Record).withConst());
+        for (unsigned I = 0; I < SourceIndex; ++I)
+          Shape &= Context.hasSameType(Method->getParamDecl(I)->getType(),
+                                       Context.getSizeType());
+        Expr::EvalResult Evaluated;
+        if (Shape && Init->EvaluateAsInt(Evaluated, Context) &&
+            Evaluated.Val.isInt() && Evaluated.Val.getInt().isAllOnes())
+          return true;
+      }
+    }
+    if (Default && Parameter && Owner && String && Prototype &&
         Prototype->isNothrow() &&
         Owner->getCanonicalDecl() == Method->getCanonicalDecl() &&
         Method->getNumParams() == 2 && Index == 1 &&
@@ -7700,7 +8095,22 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
       const bool StringParameter =
           First->isLValueReferenceType() &&
           Context.hasSameType(First->getPointeeType(), StringType.withConst());
+      const auto *Primary = Method->getPrimaryTemplate();
+      const auto ViewParameter =
+          First->isLValueReferenceType()
+              ? approvedUtilityStringViewRecord(
+                    S, SM, First->getPointeeType()->getAsCXXRecordDecl(),
+                    Context)
+              : std::optional<UtilityStringViewRecord>();
+      const bool ViewSource =
+          Primary && ViewParameter &&
+          approvedStandardSDKDeclaration(S, SM, Primary) &&
+          cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "string") &&
+          Context.hasSameType(
+              First->getPointeeType(),
+              Context.getRecordType(ViewParameter->Record).withConst());
       if (Context.hasSameType(First, Context.CharTy) || StringParameter ||
+          ViewSource ||
           Context.hasSameType(
               First, Context.getPointerType(Context.CharTy.withConst()))) {
         Expr::EvalResult Evaluated;
@@ -7728,9 +8138,6 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
         Context.hasSameType(Method->getParamDecl(1)->getType(),
                             Context.getSizeType()) &&
         Method->getParamDecl(2)->getType()->isLValueReferenceType() &&
-        Context.hasSameType(
-            Method->getParamDecl(2)->getType()->getPointeeType(),
-            Context.getRecordType(String->Record).withConst()) &&
         Context.hasSameType(Method->getParamDecl(3)->getType(),
                             Context.getSizeType()) &&
         approvedStandardSDKDeclaration(S, SM, Method) &&
@@ -7739,8 +8146,20 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
         Context.hasSameType(Init->getType(), Context.getSizeType()) &&
         !Init->isTypeDependent() && !Init->isValueDependent() &&
         !Init->isInstantiationDependent()) {
+      const auto Source = Method->getParamDecl(2)->getType()->getPointeeType();
+      const auto *Primary = Method->getPrimaryTemplate();
+      const auto View = approvedUtilityStringViewRecord(
+          S, SM, Source->getAsCXXRecordDecl(), Context);
+      const bool ViewSource =
+          Primary && View && approvedStandardSDKDeclaration(S, SM, Primary) &&
+          cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "string") &&
+          Context.hasSameType(Source,
+                              Context.getRecordType(View->Record).withConst());
+      const bool StringSource = Context.hasSameType(
+          Source, Context.getRecordType(String->Record).withConst());
       Expr::EvalResult Evaluated;
-      if (Init->EvaluateAsInt(Evaluated, Context) && Evaluated.Val.isInt() &&
+      if ((StringSource || ViewSource) &&
+          Init->EvaluateAsInt(Evaluated, Context) && Evaluated.Val.isInt() &&
           Evaluated.Val.getInt().isAllOnes())
         return true;
     }
@@ -7889,7 +8308,8 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
 
 std::optional<UtilityTupleLikeSource>
 approvedUtilityTupleLikeSource(const State &S, const SourceManager &SM,
-                               QualType Type, const ASTContext &Context) {
+                               QualType Type, const ASTContext &Context,
+                               bool AllowNontrivialArrayElements) {
   if (Type.isNull() || Type.isVolatileQualified() || Type.isRestrictQualified() ||
       Type.getAddressSpace() != LangAS::Default)
     return std::nullopt;
@@ -7931,7 +8351,10 @@ approvedUtilityTupleLikeSource(const State &S, const SourceManager &SM,
     return UtilityTupleLikeSource{{Pair->First, Pair->Second}, nullptr, {}, 0};
   }
   if (const auto Array = approvedUtilityArrayRecord(S, SM, Record, Context)) {
-    if (!utilityTupleValue(S, SM, Context, Array->ElementType))
+    // apply can forward source-owned elements by reference, while tuple_cat
+    // constructs independent values. Both still require the pinned layout.
+    if (Array->Size && !AllowNontrivialArrayElements &&
+        !utilityTupleValue(S, SM, Context, Array->ElementType))
       return std::nullopt;
     return UtilityTupleLikeSource{
         {}, Array->Elements, Array->ElementType, Array->Size};
@@ -8220,7 +8643,8 @@ static bool supportedFunctionalStoredMember(const State &S,
           !supportedFunctionalReferenceValue(S, SM, Context,
                                              ParameterReferent))
         return false;
-    } else if (!supportedFunctionalByValue(S, SM, Context, Type)) {
+    } else if (!supportedFunctionalStoredSignatureValue(S, SM, Context,
+                                                        Type)) {
       return false;
     }
   }
@@ -8530,6 +8954,30 @@ static bool approvedFunctionalInvokeArgumentFlow(
          S.owns(SM, Constructor->getLocation()) &&
          Context.hasSameUnqualifiedType(Construction->getType(), Target) &&
          functionalInvokeParameterReference(Construction->getArg(0), Parameter);
+}
+
+static const CXXConstructExpr *functionalInvokeSelectedCopy(
+    const State &S, const SourceManager &SM, const Expr *Argument,
+    const ParmVarDecl *ForwardedParameter, QualType Target,
+    const Expr *ForwardedSource, const ASTContext &Context) {
+  const auto *Construction = dyn_cast_or_null<CXXConstructExpr>(
+      functionalInvokeStrippedExpression(Argument));
+  if (!Construction || !ForwardedSource ||
+      !approvedFunctionalInvokeArgumentFlow(
+          S, SM, Argument, ForwardedParameter, Target, Context))
+    return nullptr;
+  const auto *Constructor = Construction->getConstructor();
+  const auto Source = Constructor->getParamDecl(0)->getType();
+  const auto *SelectedSource = Construction->getArg(0);
+  if (!Source->isReferenceType() ||
+      !Context.hasSameType(Source->getPointeeType(),
+                           SelectedSource->getType()) ||
+      !Context.hasSameUnqualifiedType(SelectedSource->getType(),
+                                      ForwardedSource->getType()) ||
+      SelectedSource->isLValue() != ForwardedSource->isLValue() ||
+      SelectedSource->isXValue() != ForwardedSource->isXValue())
+    return nullptr;
+  return Construction;
 }
 
 static bool supportedFunctionalMemberValue(const ASTContext &Context,
@@ -8986,7 +9434,8 @@ static std::optional<FunctionalMemberInvokeCall>
 approvedFunctionalMemberInvokeCallImpl(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context,
-    std::optional<FunctionalMemberDispatch> PreparedDispatch = std::nullopt) {
+    std::optional<FunctionalMemberDispatch> PreparedDispatch = std::nullopt,
+    bool AllowSelectedCopies = false) {
   if (!Call || Call->getNumArgs() < 2)
     return std::nullopt;
   const bool HasPreparedDispatch = PreparedDispatch.has_value();
@@ -9065,6 +9514,7 @@ approvedFunctionalMemberInvokeCallImpl(
           : nullptr;
   const BinaryOperator *MemberOperation = nullptr;
   const CXXMemberCallExpr *MemberCall = nullptr;
+  std::vector<const CXXConstructExpr *> SelectedCopies;
   if (Method) {
     MemberCall = dyn_cast_or_null<CXXMemberCallExpr>(Operation);
     MemberOperation =
@@ -9118,17 +9568,26 @@ approvedFunctionalMemberInvokeCallImpl(
                 !supportedFunctionalResult(S, SM, Context, Result))) ||
         !MemberCall || MemberCall->getNumArgs() != Method->getNumParams())
       return std::nullopt;
+    SelectedCopies.resize(Method->getNumParams(), nullptr);
     for (unsigned I = 0; I < Method->getNumParams(); ++I) {
       const auto Parameter = Method->getParamDecl(I)->getType();
       const auto *ArgumentExpression = Call->getArg(I + 2);
       const auto Argument = ArgumentExpression->getType();
+      const auto *Copy =
+          AllowSelectedCopies && !Parameter->isReferenceType()
+              ? functionalInvokeSelectedCopy(
+                    S, SM, MemberCall->getArg(I),
+                    DispatchFunction->getParamDecl(I + 2), Parameter,
+                    ArgumentExpression, Context)
+              : nullptr;
       bool Supported = false;
       if (Parameter->isReferenceType()) {
         Supported = supportedFunctionalInvokeReferenceArgument(
             S, SM, Context, Parameter, ArgumentExpression);
       } else {
         Supported = !Parameter->isReferenceType() &&
-                    supportedFunctionalByValue(S, SM, Context, Parameter) &&
+                    (supportedFunctionalByValue(S, SM, Context, Parameter) ||
+                     Copy) &&
                     functionalMemberValueConversion(Context, Argument,
                                                     Parameter);
       }
@@ -9137,6 +9596,7 @@ approvedFunctionalMemberInvokeCallImpl(
               S, SM, MemberCall->getArg(I),
               DispatchFunction->getParamDecl(I + 2), Parameter, Context))
         return std::nullopt;
+      SelectedCopies[I] = Copy;
     }
   } else {
     const auto FieldType = Field->getType();
@@ -9163,7 +9623,7 @@ approvedFunctionalMemberInvokeCallImpl(
                                     MemberDispatch ? MemberDispatch->Adapter
                                                    : nullptr,
                                     std::move(ObjectWrapper),
-                                    ObjectIsPointer};
+                                    ObjectIsPointer, std::move(SelectedCopies)};
 }
 
 std::optional<FunctionalMemberInvokeCall>
@@ -9663,7 +10123,7 @@ approvedUtilityTupleApplyDispatch(const State &S, const SourceManager &SM,
            : nullptr;
   auto Tuple = Call && Call->getNumArgs() == 2
                    ? approvedUtilityTupleLikeSource(
-                         S, SM, Call->getArg(1)->getType(), Context)
+                         S, SM, Call->getArg(1)->getType(), Context, true)
                    : std::nullopt;
   if (!Call || Call->getNumArgs() != 2 || !Function || !Primary || !Pattern ||
       !Origin || Origin->Root != "libcxx" || Origin->Path != "tuple" ||
@@ -9795,6 +10255,26 @@ approvedUtilityTupleApplyDispatch(const State &S, const SourceManager &SM,
                                    DispatchFunction, Operation};
 }
 
+const CXXConstructExpr *approvedUtilityTupleApplySelectedCopy(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    unsigned Index, QualType Parameter, const ASTContext &Context) {
+  const auto Apply = approvedUtilityTupleApplyDispatch(S, SM, Call, Context);
+  const auto *Operation =
+      Apply ? dyn_cast<CallExpr>(Apply->Operation) : nullptr;
+  const unsigned Offset = isa_and_nonnull<CXXOperatorCallExpr>(Operation) ? 1 : 0;
+  if (!Apply || !Apply->Tuple.ArrayElements ||
+      Index >= Apply->Tuple.size() || !Operation ||
+      Operation->getNumArgs() != Apply->Tuple.size() + Offset ||
+      Parameter.isNull() || !Parameter->isRecordType() ||
+      !Context.hasSameUnqualifiedType(Apply->Tuple.elementType(Index),
+                                      Parameter))
+    return nullptr;
+  return functionalInvokeSelectedCopy(
+      S, SM, Operation->getArg(Index + Offset),
+      Apply->DispatchFunction->getParamDecl(Index + 1), Parameter,
+      Apply->Dispatch->getArg(Index + 1), Context);
+}
+
 std::optional<FunctionalMemberInvokeCall>
 approvedUtilityTupleApplyUserCall(const State &S, const SourceManager &SM,
                                   const CallExpr *Call,
@@ -9877,8 +10357,11 @@ approvedUtilityTupleApplyUserCall(const State &S, const SourceManager &SM,
                    ParameterReferent.isConstQualified() ||
                    !TupleArgument.isConstQualified());
     } else {
-      Supported = supportedFunctionalByValue(S, SM, Context, Parameter) &&
-                  functionalMemberValueConversion(Context, Element, Parameter);
+      Supported =
+          (supportedFunctionalByValue(S, SM, Context, Parameter) ||
+           approvedUtilityTupleApplySelectedCopy(S, SM, Call, I, Parameter,
+                                                 Context)) &&
+          functionalMemberValueConversion(Context, Element, Parameter);
     }
     if (!Supported ||
         !approvedFunctionalInvokeArgumentFlow(
@@ -9976,7 +10459,7 @@ approvedUtilityTupleApplyMemberCall(const State &S, const SourceManager &SM,
     return std::nullopt;
   Dispatch->Adapter = UseAdapter;
   auto Member = approvedFunctionalMemberInvokeCallImpl(
-      S, SM, Invoked, Context, std::move(Dispatch));
+      S, SM, Invoked, Context, std::move(Dispatch), true);
   if (!Member || Invoked->getNumArgs() != Apply->Tuple.size() + 1)
     return std::nullopt;
   for (unsigned I = 0; I < Apply->Tuple.size(); ++I) {
@@ -9986,6 +10469,15 @@ approvedUtilityTupleApplyMemberCall(const State &S, const SourceManager &SM,
     if (!Context.hasSameUnqualifiedType(Element,
                                         Invoked->getArg(I + 1)->getType()))
       return std::nullopt;
+    if (I && Member->Method) {
+      const auto Parameter = Member->Method->getParamDecl(I - 1)->getType();
+      if (!Parameter->isReferenceType() &&
+          !supportedFunctionalByValue(S, SM, Context, Parameter) &&
+          (!Apply->Tuple.ArrayElements ||
+           Member->SelectedCopies.size() != Member->Method->getNumParams() ||
+           !Member->SelectedCopies[I - 1]))
+        return std::nullopt;
+    }
   }
   return Member;
 }
@@ -9993,7 +10485,8 @@ approvedUtilityTupleApplyMemberCall(const State &S, const SourceManager &SM,
 static std::optional<FunctionalReferenceInvokeCall>
 approvedFunctionalReferenceDirectInvoke(
     const State &S, const SourceManager &SM, const CallExpr *Call,
-    const ASTContext &Context, bool RequireOwnedReference) {
+    const ASTContext &Context, bool RequireOwnedReference,
+    bool AllowSelectedCopies = false) {
   const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
   const auto *Method =
       dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);
@@ -10202,24 +10695,36 @@ approvedFunctionalReferenceDirectInvoke(
             : Call->isPRValue() &&
                   Context.hasSameType(Result, Call->getType()) &&
                   supportedFunctionalResult(S, SM, Context, Result);
+    std::vector<const CXXConstructExpr *> SelectedCopies(
+        OperationMethod->getNumParams(), nullptr);
     for (unsigned I = 0; Supported && I < OperationMethod->getNumParams(); ++I) {
       const auto Parameter = OperationMethod->getParamDecl(I)->getType();
       const auto *ArgumentExpression = Call->getArg(I + 1);
+      const auto *Copy =
+          AllowSelectedCopies && !Parameter->isReferenceType() &&
+                  !supportedFunctionalByValue(S, SM, Context, Parameter)
+              ? functionalInvokeSelectedCopy(
+                    S, SM, OperationCall->getArg(I + 1),
+                    DispatchFunction->getParamDecl(I + 1), Parameter,
+                    ArgumentExpression, Context)
+              : nullptr;
       Supported =
           (Parameter->isReferenceType()
                ? supportedFunctionalInvokeReferenceArgument(
                      S, SM, Context, Parameter, ArgumentExpression)
-               : supportedFunctionalByValue(S, SM, Context, Parameter) &&
+               : (supportedFunctionalByValue(S, SM, Context, Parameter) ||
+                  Copy) &&
                      functionalMemberValueConversion(
                          Context, ArgumentExpression->getType(), Parameter)) &&
           approvedFunctionalInvokeArgumentFlow(
               S, SM, OperationCall->getArg(I + 1),
               DispatchFunction->getParamDecl(I + 1), Parameter, Context);
+      SelectedCopies[I] = Copy;
     }
     if (Supported)
       return FunctionalReferenceInvokeCall{
           *Wrapper, FunctionalReferenceInvokeKind::UserFunctionObject, {},
-          std::nullopt, OperationMethod};
+          std::nullopt, OperationMethod, std::move(SelectedCopies)};
   }
 
   const bool FunctionReferent = Wrapper->ReferentType->isFunctionType();
@@ -10242,20 +10747,32 @@ approvedFunctionalReferenceDirectInvoke(
            : !supportedFunctionalResult(S, SM, Context,
                                         Call->getType())))
     return std::nullopt;
+  std::vector<const CXXConstructExpr *> SelectedCopies(
+      Prototype->getNumParams(), nullptr);
   for (unsigned I = 0; I < Prototype->getNumParams(); ++I) {
     const auto Parameter = Prototype->getParamType(I);
     const auto *ArgumentExpression = Call->getArg(I + 1);
     const auto Argument = ArgumentExpression->getType();
+    const auto *Copy =
+        AllowSelectedCopies && !Parameter->isReferenceType() &&
+                !supportedFunctionalByValue(S, SM, Context, Parameter)
+            ? functionalInvokeSelectedCopy(
+                  S, SM, Indirect->getArg(I),
+                  DispatchFunction->getParamDecl(I + 1), Parameter,
+                  ArgumentExpression, Context)
+            : nullptr;
     const bool Supported =
         Parameter->isReferenceType()
             ? supportedFunctionalInvokeReferenceArgument(S, SM, Context, Parameter,
                                                          ArgumentExpression)
             : !Parameter->isReferenceType() &&
-                  supportedFunctionalByValue(S, SM, Context, Parameter) &&
+                  (supportedFunctionalByValue(S, SM, Context, Parameter) ||
+                   Copy) &&
                   functionalMemberValueConversion(Context, Argument,
                                                   Parameter);
     if (!Supported)
       return std::nullopt;
+    SelectedCopies[I] = Copy;
   }
   return FunctionalReferenceInvokeCall{
       *Wrapper,
@@ -10263,7 +10780,8 @@ approvedFunctionalReferenceDirectInvoke(
                        : FunctionalReferenceInvokeKind::FunctionPointer,
       PointerType,
       std::nullopt,
-      nullptr};
+      nullptr,
+      std::move(SelectedCopies)};
 }
 
 std::optional<FunctionalReferenceInvokeCall>
@@ -10362,7 +10880,7 @@ approvedUtilityTupleApplyReferenceCall(const State &S,
     return std::nullopt;
   const auto *Operation = dyn_cast_or_null<CallExpr>(Apply->Operation);
   auto Reference = approvedFunctionalReferenceDirectInvoke(
-      S, SM, Operation, Context, false);
+      S, SM, Operation, Context, false, true);
   const auto *WrapperRecord =
       Call->getArg(0)->getType()->getAsCXXRecordDecl();
   if (!Operation || !Reference || !WrapperRecord ||
@@ -10430,8 +10948,13 @@ approvedUtilityTupleApplyReferenceCall(const State &S,
                    Referent.isConstQualified() ||
                    !TupleArgument.isConstQualified());
     } else {
-      Supported = supportedFunctionalByValue(S, SM, Context, Target) &&
-                  functionalMemberValueConversion(Context, Element, Target);
+      Supported =
+          (supportedFunctionalByValue(S, SM, Context, Target) ||
+           (Apply->Tuple.ArrayElements &&
+            Reference->SelectedCopies.size() == Arity &&
+            Reference->SelectedCopies[I] &&
+            Context.hasSameUnqualifiedType(Element, Target))) &&
+          functionalMemberValueConversion(Context, Element, Target);
     }
     if (!Supported)
       return std::nullopt;
@@ -16489,6 +17012,60 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
              Context.hasSameType(Call->getArg(0)->getType(), First) &&
              Context.hasSameType(Call->getArg(1)->getType(), Last);
     };
+    auto StringSlice = [&](unsigned SourceIndex) {
+      if (Method->getPrimaryTemplate() ||
+          Method->getNumParams() != SourceIndex + 3)
+        return false;
+      const auto Source = Method->getParamDecl(SourceIndex)->getType();
+      const auto StringType = Context.getRecordType(String->Record);
+      if (!Source->isLValueReferenceType() ||
+          !Context.hasSameType(Source->getPointeeType(),
+                               StringType.withConst()) ||
+          !Context.hasSameUnqualifiedType(Call->getArg(SourceIndex)->getType(),
+                                          StringType))
+        return false;
+      for (unsigned I = SourceIndex + 1; I != SourceIndex + 3; ++I)
+        if (!Context.hasSameType(Method->getParamDecl(I)->getType(),
+                                 Context.getSizeType()) ||
+            !Context.hasSameType(Call->getArg(I)->getType(),
+                                 Context.getSizeType()))
+          return false;
+      return true;
+    };
+    auto ViewParameter = [&](unsigned SourceIndex, unsigned ArgumentIndex) {
+      const auto *Primary = Method->getPrimaryTemplate();
+      if (!Primary || !approvedStandardSDKDeclaration(S, SM, Primary) ||
+          !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx", "string"))
+        return false;
+      const auto Source = Method->getParamDecl(SourceIndex)->getType();
+      if (!Source->isLValueReferenceType())
+        return false;
+      const auto View = approvedUtilityStringViewRecord(
+          S, SM, Source->getPointeeType()->getAsCXXRecordDecl(), Context);
+      return View &&
+             Context.hasSameType(
+                 Source->getPointeeType(),
+                 Context.getRecordType(View->Record).withConst()) &&
+             Context.hasSameUnqualifiedType(
+                 Call->getArg(ArgumentIndex)->getType(),
+                 Context.getRecordType(View->Record));
+    };
+    auto ViewSource = [&](unsigned SourceIndex, unsigned ArgumentIndex,
+                          bool Slice) {
+      if (Method->getNumParams() != SourceIndex + (Slice ? 3 : 1) ||
+          !ViewParameter(SourceIndex, ArgumentIndex))
+        return false;
+      if (!Slice)
+        return true;
+      for (unsigned I = SourceIndex + 1; I != SourceIndex + 3; ++I)
+        if (!Context.hasSameType(Method->getParamDecl(I)->getType(),
+                                 Context.getSizeType()) ||
+            !Context.hasSameType(
+                Call->getArg(ArgumentIndex + I - SourceIndex)->getType(),
+                Context.getSizeType()))
+          return false;
+      return true;
+    };
     if (!Reference || !Object || !Prototype ||
         (!Prototype->isNothrow() && Name != "push_back" && Name != "pop_back" &&
          Name != "reserve" && Name != "resize" && Name != "append" &&
@@ -16511,11 +17088,27 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         Call->getNumArgs() != Method->getNumParams() + Offset ||
         !approvedStandardSDKDeclaration(S, SM, Method) ||
         !cstddefOrigin(S, SM, Method->getLocation(), "libcxx", "string") ||
-        !S.owns(SM, Reference->getExprLoc()))
+        (!S.owns(SM, Reference->getExprLoc()) &&
+         !(isa<CXXConversionDecl>(Method) &&
+           Reference->getExprLoc().isInvalid() &&
+           S.owns(SM, Call->getExprLoc()))))
       return std::nullopt;
+    if (!Operator && isa<CXXConversionDecl>(Method) && Method->isConst() &&
+        !Method->getNumParams() && !Call->getNumArgs() && Call->isPRValue() &&
+        Context.hasSameType(Call->getType(), Method->getReturnType()) &&
+        approvedUtilityStringViewRecord(
+            S, SM, Method->getReturnType()->getAsCXXRecordDecl(), Context))
+      return UtilityOperation::StringToView;
     if (!Operator && Method->isConst() && !Method->getNumParams() &&
         Call->isPRValue() &&
         Context.hasSameType(Call->getType(), Method->getReturnType())) {
+      if (Name == "get_allocator") {
+        const auto Allocator = approvedUtilityAllocatorRecord(
+            S, SM, Method->getReturnType()->getAsCXXRecordDecl(), Context);
+        if (Allocator &&
+            Context.hasSameType(Allocator->ElementType, Context.CharTy))
+          return UtilityOperation::StringGetAllocator;
+      }
       if ((Name == "size" || Name == "length") &&
           Context.hasSameType(Method->getReturnType(), Context.getSizeType()))
         return UtilityOperation::StringSize;
@@ -16558,6 +17151,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
                                          Context.getRecordType(String->Record)))
         return UtilityOperation::StringCompare;
+      if (ViewParameter(0, 0))
+        return UtilityOperation::StringCompare;
       const auto ConstPointer =
           Context.getPointerType(Context.CharTy.withConst());
       if (Context.hasSameType(Parameter, ConstPointer) &&
@@ -16586,17 +17181,18 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Context.hasSameType(Parameter->getPointeeType(),
                               StringType.withConst()) &&
           Context.hasSameUnqualifiedType(Argument, StringType);
+      const bool ViewArgument = ViewParameter(2, 2);
       const auto Pointer = Context.getPointerType(Context.CharTy.withConst());
       const bool CStringArgument = Context.hasSameType(Parameter, Pointer) &&
                                    Context.hasSameType(Argument, Pointer);
       if (((Method->getNumParams() == 3) &&
-           (StringArgument || CStringArgument)) ||
+           (StringArgument || ViewArgument || CStringArgument)) ||
           ((Method->getNumParams() == 4) && CStringArgument &&
            Context.hasSameType(Method->getParamDecl(3)->getType(),
                                Context.getSizeType()) &&
            Context.hasSameType(Call->getArg(3)->getType(),
                                Context.getSizeType())) ||
-          ((Method->getNumParams() == 5) && StringArgument &&
+          ((Method->getNumParams() == 5) && (StringArgument || ViewArgument) &&
            Context.hasSameType(Method->getParamDecl(3)->getType(),
                                Context.getSizeType()) &&
            Context.hasSameType(Method->getParamDecl(4)->getType(),
@@ -16629,6 +17225,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Context.hasSameType(FirstParameter->getPointeeType(),
                               StringType.withConst()) &&
           Context.hasSameUnqualifiedType(FirstArgument, StringType))
+        return Name == "find" ? UtilityOperation::StringFindSubstring
+                              : UtilityOperation::StringRFindSubstring;
+      if (Method->getNumParams() == 2 && ViewParameter(0, 0))
         return Name == "find" ? UtilityOperation::StringFindSubstring
                               : UtilityOperation::StringRFindSubstring;
       const auto ConstPointer =
@@ -16669,6 +17268,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Context.hasSameType(FirstParameter->getPointeeType(),
                               StringType.withConst()) &&
           Context.hasSameUnqualifiedType(FirstArgument, StringType);
+      const bool ViewNeedle =
+          Method->getNumParams() == 2 && ViewParameter(0, 0);
       const bool Pointer =
           Context.hasSameType(FirstParameter, ConstPointer) &&
           Context.hasSameType(FirstArgument, ConstPointer) &&
@@ -16677,7 +17278,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                 Context.getSizeType()) &&
             Context.hasSameType(Call->getArg(2)->getType(),
                                 Context.getSizeType())));
-      if (Character || StringNeedle || Pointer) {
+      if (Character || StringNeedle || ViewNeedle || Pointer) {
         if (Name == "find_first_of")
           return UtilityOperation::StringFindFirstOf;
         if (Name == "find_last_of")
@@ -16915,7 +17516,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       const bool Replace = Name == "replace";
       const unsigned SourceIndex = Replace ? 2 : 1;
       if ((Method->getNumParams() == SourceIndex + 1 ||
-           Method->getNumParams() == SourceIndex + 2) &&
+           Method->getNumParams() == SourceIndex + 2 ||
+           Method->getNumParams() == SourceIndex + 3) &&
           Context.hasSameType(Method->getParamDecl(0)->getType(),
                               Context.getSizeType()) &&
           Context.hasSameType(Call->getArg(0)->getType(),
@@ -16924,6 +17526,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                             Context.getSizeType()) &&
                         Context.hasSameType(Call->getArg(1)->getType(),
                                             Context.getSizeType())))) {
+        if (StringSlice(SourceIndex))
+          return Replace ? UtilityOperation::StringReplaceStringSlice
+                         : UtilityOperation::StringInsertStringSlice;
+        if (ViewSource(SourceIndex, SourceIndex, true))
+          return Replace ? UtilityOperation::StringReplaceViewSlice
+                         : UtilityOperation::StringInsertViewSlice;
         const auto FirstParameter =
             Method->getParamDecl(SourceIndex)->getType();
         const auto FirstArgument = Call->getArg(SourceIndex)->getType();
@@ -16931,6 +17539,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
             Context.getPointerType(Context.CharTy.withConst());
         const auto StringType = Context.getRecordType(String->Record);
         if (Method->getNumParams() == SourceIndex + 1) {
+          if (ViewSource(SourceIndex, SourceIndex, false))
+            return Replace ? UtilityOperation::StringReplaceView
+                           : UtilityOperation::StringInsertView;
           if (Context.hasSameType(FirstParameter, ConstPointer) &&
               Context.hasSameType(FirstArgument, ConstPointer))
             return Replace ? UtilityOperation::StringReplaceCString
@@ -16982,9 +17593,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     }
     if (!Operator && Name == "assign" && !Method->isConst() &&
         !Object->getType().isConstQualified() &&
-        (Method->getNumParams() == 1 || Method->getNumParams() == 2) &&
-        Call->isLValue() &&
-        Method->getReturnType()->isLValueReferenceType() &&
+        (Method->getNumParams() == 1 || Method->getNumParams() == 2 ||
+         Method->getNumParams() == 3) &&
+        Call->isLValue() && Method->getReturnType()->isLValueReferenceType() &&
         Context.hasSameType(Method->getReturnType()->getPointeeType(),
                             Context.getRecordType(String->Record)) &&
         Context.hasSameType(Call->getType(),
@@ -17006,6 +17617,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         return UtilityOperation::StringAssignString;
       if (Method->getNumParams() == 1 && ListArgument(0, 0))
         return UtilityOperation::StringAssignList;
+      if (ViewSource(0, 0, false))
+        return UtilityOperation::StringAssignView;
+      if (StringSlice(0))
+        return UtilityOperation::StringAssignStringSlice;
+      if (ViewSource(0, 0, true))
+        return UtilityOperation::StringAssignViewSlice;
       if (Method->getNumParams() == 2) {
         const auto SecondParameter = Method->getParamDecl(1)->getType();
         if (Context.hasSameType(FirstParameter, ConstPointer) &&
@@ -17027,9 +17644,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if ((!Operator && Name == "append") || PlusEqual) {
       const unsigned Argument = PlusEqual ? 1 : 0;
       if (Method->isConst() || Object->getType().isConstQualified() ||
-          (PlusEqual ? Method->getNumParams() != 1
-                     : Method->getNumParams() != 1 &&
-                           Method->getNumParams() != 2) ||
+          (PlusEqual
+               ? Method->getNumParams() != 1
+               : Method->getNumParams() != 1 && Method->getNumParams() != 2 &&
+                     Method->getNumParams() != 3) ||
           Call->getNumArgs() != Method->getNumParams() + Offset ||
           !Call->isLValue() ||
           !Method->getReturnType()->isLValueReferenceType() ||
@@ -17060,6 +17678,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         return UtilityOperation::StringAppendString;
       if (Method->getNumParams() == 1 && ListArgument(0, Argument))
         return UtilityOperation::StringAppendList;
+      if (ViewSource(0, Argument, false))
+        return UtilityOperation::StringAppendView;
+      if (!PlusEqual && StringSlice(0))
+        return UtilityOperation::StringAppendStringSlice;
+      if (!PlusEqual && ViewSource(0, 0, true))
+        return UtilityOperation::StringAppendViewSlice;
       if (Method->getNumParams() != 2)
         return std::nullopt;
       const auto SecondParameter = Method->getParamDecl(1)->getType();
@@ -17212,9 +17836,18 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                        "__vector/vector.h") ||
         !S.owns(SM, Reference->getExprLoc()))
       return std::nullopt;
+    const bool CopyableString = approvedUtilityStringRecord(
+        S, SM, Vector->ElementType->getAsCXXRecordDecl(), Context).has_value();
     if (!Operator && !Method->getNumParams() && Method->isConst() &&
         Call->isPRValue() &&
         Context.hasSameType(Call->getType(), Method->getReturnType())) {
+      if (Name == "get_allocator") {
+        const auto Allocator = approvedUtilityAllocatorRecord(
+            S, SM, Method->getReturnType()->getAsCXXRecordDecl(), Context);
+        if (Allocator &&
+            Context.hasSameType(Allocator->ElementType, Vector->ElementType))
+          return UtilityOperation::VectorGetAllocator;
+      }
       if (Context.hasSameType(Method->getReturnType(), Context.getSizeType())) {
         if (Name == "size")
           return UtilityOperation::VectorSize;
@@ -17357,6 +17990,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
              ValueParameter->isRValueReferenceType() &&
              Context.hasSameType(ValueParameter->getPointeeType(), Element));
         if (ValueReference &&
+            (!Vector->OwningElement || CopyableString ||
+             (Method->getNumParams() == 2 &&
+              ValueParameter->isRValueReferenceType())) &&
             Context.hasSameUnqualifiedType(Call->getArg(ValueIndex)->getType(),
                                            Element) &&
             (Method->getNumParams() == 2 ||
@@ -17365,7 +18001,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
               Context.hasSameType(Call->getArg(1)->getType(),
                                   Context.getSizeType()))))
           return UtilityOperation::VectorInsert;
-        if (Method->getNumParams() == 2 && !Method->getPrimaryTemplate() &&
+        if ((!Vector->OwningElement || CopyableString) &&
+            Method->getNumParams() == 2 &&
+            !Method->getPrimaryTemplate() &&
             Context.hasSameType(Method->getParamDecl(1)->getType(),
                                 Call->getArg(1)->getType())) {
           const auto List = approvedUtilityInitializerListRecord(
@@ -17374,7 +18012,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           if (List && Context.hasSameType(List->ElementType, Element))
             return UtilityOperation::VectorInsertRange;
         }
-        if (Method->getNumParams() == 3 && Method->getPrimaryTemplate() &&
+        if ((!Vector->OwningElement || CopyableString) &&
+            Method->getNumParams() == 3 &&
+            Method->getPrimaryTemplate() &&
             approvedStandardSDKDeclaration(S, SM,
                                            Method->getPrimaryTemplate()) &&
             cstddefOrigin(S, SM, Method->getPrimaryTemplate()->getLocation(),
@@ -17403,7 +18043,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       }
     }
     if (!Operator && Name == "emplace" && !Method->isConst() &&
-        !Object->getType().isConstQualified() && Call->isPRValue() &&
+        !Object->getType().isConstQualified() &&
+        Call->isPRValue() &&
         (Method->getNumParams() == 1 || Method->getNumParams() == 2) &&
         Context.hasSameType(Call->getType(), Method->getReturnType()) &&
         Method->getPrimaryTemplate() &&
@@ -17425,16 +18066,21 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         if (Method->getNumParams() == 1)
           return UtilityOperation::VectorEmplace;
         const auto Parameter = Method->getParamDecl(1)->getType();
-        if ((Parameter->isLValueReferenceType() ||
+        if ((((!Vector->OwningElement || CopyableString) &&
+              Parameter->isLValueReferenceType()) ||
              Parameter->isRValueReferenceType()) &&
             Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
                                            Element) &&
+            (!Vector->OwningElement ||
+             Context.hasSameType(Parameter->getPointeeType(), Element) ||
+             CopyableString) &&
             Context.hasSameUnqualifiedType(Call->getArg(1)->getType(), Element))
           return UtilityOperation::VectorEmplace;
       }
     }
-    if (Operator && Method->getOverloadedOperator() == OO_Equal &&
-        !Method->isConst() && !Object->getType().isConstQualified() &&
+    if ((!Vector->OwningElement || CopyableString) && Operator &&
+        Method->getOverloadedOperator() == OO_Equal && !Method->isConst() &&
+        !Object->getType().isConstQualified() &&
         !Method->getPrimaryTemplate() && Method->getNumParams() == 1 &&
         Call->isLValue() && Method->getReturnType()->isLValueReferenceType()) {
       const auto VectorType = Context.getRecordType(Vector->Record);
@@ -17448,8 +18094,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Context.hasSameUnqualifiedType(Call->getType(), VectorType))
         return UtilityOperation::VectorAssignList;
     }
-    if (!Operator && Name == "assign" && !Method->isConst() &&
-        !Object->getType().isConstQualified() &&
+    if ((!Vector->OwningElement || CopyableString) && !Operator &&
+        Name == "assign" &&
+        !Method->isConst() && !Object->getType().isConstQualified() &&
         Method->getReturnType()->isVoidType() &&
         Call->getType()->isVoidType()) {
       const auto Element = Vector->ElementType;
@@ -17464,7 +18111,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
             Context.hasSameUnqualifiedType(Call->getArg(1)->getType(), Element))
           return UtilityOperation::VectorAssignFill;
       }
-      if (Method->getNumParams() == 1 && !Method->getPrimaryTemplate() &&
+      if ((!Vector->OwningElement || CopyableString) &&
+          Method->getNumParams() == 1 &&
+          !Method->getPrimaryTemplate() &&
           Context.hasSameType(Method->getParamDecl(0)->getType(),
                               Call->getArg(0)->getType())) {
         const auto List = approvedUtilityInitializerListRecord(
@@ -17473,7 +18122,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         if (List && Context.hasSameType(List->ElementType, Element))
           return UtilityOperation::VectorAssignRange;
       }
-      if (Method->getNumParams() == 2 && Method->getPrimaryTemplate() &&
+      if ((!Vector->OwningElement || CopyableString) &&
+          Method->getNumParams() == 2 &&
+          Method->getPrimaryTemplate() &&
           approvedStandardSDKDeclaration(S, SM, Method->getPrimaryTemplate()) &&
           cstddefOrigin(S, SM, Method->getPrimaryTemplate()->getLocation(),
                         "libcxx", "__vector/vector.h")) {
@@ -17512,10 +18163,15 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       if (!Method->getNumParams())
         return UtilityOperation::VectorEmplaceBack;
       const auto Parameter = Method->getParamDecl(0)->getType();
-      if ((Parameter->isLValueReferenceType() ||
+      if ((((!Vector->OwningElement || CopyableString) &&
+            Parameter->isLValueReferenceType()) ||
            Parameter->isRValueReferenceType()) &&
           Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
                                          Vector->ElementType) &&
+          (!Vector->OwningElement ||
+           Context.hasSameType(Parameter->getPointeeType(),
+                               Vector->ElementType) ||
+           CopyableString) &&
           Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
                                          Vector->ElementType))
         return UtilityOperation::VectorEmplaceBack;
@@ -17542,7 +18198,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         if (Method->getNumParams() == 1)
           return UtilityOperation::VectorResize;
         const auto Parameter = Method->getParamDecl(1)->getType();
-        if (Parameter->isLValueReferenceType() &&
+        if ((!Vector->OwningElement || CopyableString) &&
+            Parameter->isLValueReferenceType() &&
             Context.hasSameType(Parameter->getPointeeType(),
                                 Vector->ElementType.withConst()) &&
             Context.hasSameUnqualifiedType(Call->getArg(1)->getType(),
@@ -17563,7 +18220,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
             Parameter->isRValueReferenceType() &&
             Context.hasSameType(Parameter->getPointeeType(),
                                 Vector->ElementType);
-        if ((Copy || Move) &&
+        if ((((!Vector->OwningElement || CopyableString) && Copy) || Move) &&
             Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
                                            Vector->ElementType))
           return UtilityOperation::VectorPushBack;
@@ -18212,8 +18869,25 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                     Context.hasSameUnqualifiedType(Call->getArg(I)->getType(),
                                                    VectorType);
       }
-      if (Matching && (Left->ElementType->isIntegerType() ||
-                       Left->ElementType->isFloatingType()))
+      const bool Arithmetic = Left->ElementType->isIntegerType() ||
+                              Left->ElementType->isFloatingType();
+      const bool StringElement = approvedUtilityStringRecord(
+          S, SM, Left->ElementType->getAsCXXRecordDecl(), Context).has_value();
+      const auto UniquePointer = approvedUtilityUniquePtrRecord(
+          S, SM, Left->ElementType->getAsCXXRecordDecl(), Context);
+      // A source type or deleter namespace can add an operator found by ADL
+      // inside libc++'s dependent element comparison.
+      const bool UniquePointerElement =
+          UniquePointer && !UniquePointer->CustomDeleter &&
+          Context.getBaseElementType(UniquePointer->ElementType)
+              ->isBuiltinType();
+      const bool Equality = Operator->getOperator() == OO_EqualEqual ||
+                            Operator->getOperator() == OO_ExclaimEqual;
+      const bool PointerElement =
+          Left->ElementType->isObjectPointerType() &&
+          (Equality || !Left->ElementType->getPointeeType()->isIncompleteType());
+      if (Matching && (Arithmetic || StringElement || UniquePointerElement ||
+                       PointerElement))
         switch (Operator->getOperator()) {
         case OO_EqualEqual:
         case OO_ExclaimEqual:
@@ -21341,7 +22015,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto CallableParameter = Function->getParamDecl(0)->getType();
     const auto TupleParameter = Function->getParamDecl(1)->getType();
     const auto Tuple = approvedUtilityTupleLikeSource(
-        S, SM, Call->getArg(1)->getType(), Context);
+        S, SM, Call->getArg(1)->getType(), Context, true);
     const auto Result =
         Prototype ? Prototype->getReturnType()
                   : UserCallable ? UserCallable->Method->getReturnType()
@@ -21423,12 +22097,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                           utilityScalar(Context, Parameter) &&
                           utilityScalarDirectConversion(Context, Element,
                                                         Parameter);
-      const bool Record = Element->isRecordType() &&
-                          Parameter->isRecordType() &&
-                          supportedFunctionalByValue(
-                              S, SM, Context, Parameter) &&
-                          utilityTupleDirectConversion(S, SM, Context, Element,
-                                                       Parameter);
+      const bool Record =
+          Element->isRecordType() && Parameter->isRecordType() &&
+          ((supportedFunctionalByValue(S, SM, Context, Parameter) &&
+            utilityTupleDirectConversion(S, SM, Context, Element, Parameter)) ||
+           approvedUtilityTupleApplySelectedCopy(S, SM, Call, I, Parameter,
+                                                 Context));
       if (!Scalar && !Record)
         return std::nullopt;
     }

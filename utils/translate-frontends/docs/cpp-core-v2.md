@@ -417,7 +417,9 @@ Each source element and corresponding callback parameter must be admitted
 scalars connected by a checked direct scalar conversion, or the same complete
 source-owned standard-layout record type that is trivially copyable and
 destructible, passed by value; the result may be `void`, an admitted scalar,
-or a complete source-owned record value. Exact lvalue- or rvalue-reference
+or a complete source-owned record value. Nonempty `std::array` sources also
+admit source-owned nontrivial record elements by value when the actual callback
+selects a checked copy or move constructor. Exact lvalue- or rvalue-reference
 parameters and results are also admitted for supported scalar, object-pointer,
 function-pointer, complete fixed-array, authenticated `std::array` and
 source-owned record referents. A `const T&` callback parameter also binds an
@@ -503,16 +505,20 @@ The protocol exposes that inaccessible storage as one synthetic `T` carrier so
 the generated record preserves the native size and alignment without exposing
 or operating on libc++ internals. `T` may be an admitted integral or enum
 scalar up to 64 bits, `float`, `double`, `nullptr_t`, or a non-function object
-pointer, a source-owned trivial standard-layout record, or another admitted
-`std::array`; `N` is limited to 65536. Nested arrays and record arrays retain
-their recursive field layout and ordinary aggregate access.
+pointer, a source-owned standard-layout record with checked construction and
+destruction, or another admitted `std::array`; `N` is limited to 65536. Record
+elements may have nontrivial constructors or destructors. Nested arrays and
+record arrays retain their recursive field layout and ordinary aggregate access.
 
 `size`, `max_size`, `empty`, `data`, `begin`, `end`, `cbegin`, `cend`, indexed
 access, `front`, `back`, compile-time in-range `at`, forward and reverse range
 access, `fill`, member and free `swap`, all six C++17 comparisons and
 index-based `get` lower directly to existing array, pointer, assignment and
-control-flow operations. Aggregate initialization, trivial copy/move
-construction and copy/move assignment retain ordinary value semantics.
+control-flow operations when the selected element operation is admitted.
+Aggregate initialization, selected trivial copy/move construction and
+trivial copy/move assignment retain ordinary value semantics, including for
+record elements with nontrivial destruction. User-provided nontrivial element
+copy/move operations are not admitted through the array.
 `tuple_size` and `tuple_element` remain checked compile-time metadata.
 
 An array can also supply the element pack to `std::apply` through the
@@ -521,6 +527,21 @@ Mutable and const lvalues, rvalues, zero-length arrays and nested arrays retain
 the documented element and callback restrictions; nested SDK array values may
 be passed by admitted reference forms, while by-value SDK callback parameters
 and results remain excluded.
+For nonempty arrays of source-owned nontrivial standard-layout records,
+`std::apply` also forwards elements to compatible lvalue, const-lvalue and
+rvalue reference callback parameters without copying. Exact by-value callback
+parameters construct independent objects through the selected source-owned
+copy or move constructor, then destroy them with the ordinary parameter
+lifetime. Named functions, source-owned function objects, `ref`/`cref`
+wrappers, member functions and `mem_fn` adapters use this path. The selected
+`get`, callback signature, forwarding and array lifetime remain checked.
+Nonempty `tuple_cat` copies of these elements remain outside this boundary.
+For zero-length arrays, `std::apply` passes no elements and `std::tuple_cat`
+contributes no elements. A source-owned nontrivial standard-layout record
+element is admitted in these empty packs because neither operation copies,
+constructs or destroys an element. Array layout and the original element
+source remain checked, and the array expression and zero-argument callback
+retain their ordinary evaluation effects.
 
 For `std::array<T, 0>`, capacity is zero, `empty()` is true, and libc++'s
 `data()` plus every forward or reverse iterator base is null. `fill` and swap
@@ -551,8 +572,9 @@ array referents retain their full-expression lifetime. These reference forms
 include authenticated nested arrays and zero-length arrays; zero-length storage
 remains inaccessible. By-value SDK callback parameters and results, including
 `std::array` values, remain outside the callable boundary. Volatile array objects
-or elements, nontrivial element records, and user-defined `std::array`
-specializations are rejected even when reached through a reference.
+or elements and user-defined `std::array` specializations are rejected even
+when reached through a reference. Each operation on a nontrivial record
+element still needs its own source-owned operation proof.
 
 Type queries that need array layout use the authenticated specialization's
 shape while retaining the original element and source-expression dependencies.
@@ -573,11 +595,13 @@ callee reference; it does not authorize an independent SDK function address,
 other SDK callees or out-of-range element access.
 
 Aggregate-initialized local arrays and array temporaries preserve initializer
-and destruction dependencies. Their authenticated implicit trivial destructor
+and destruction dependencies. Their authenticated implicit destructor
 recursively consumes the original element destruction source, even for zero
-extents, while ordinary temporary lifetimes remain unchanged. Trivial source
-element destructors may have a checked `noexcept(false)` specification; the
-array's inferred specification retains that source dependency. SDK construction
+extents, while ordinary temporary lifetimes remain unchanged. Source-owned
+nontrivial element destructors run in reverse element order; a zero extent
+constructs and destroys no elements. Trivial source element destructors may
+have a checked `noexcept(false)` specification; the array's inferred
+specification retains that source dependency. SDK construction
 and nothrow-destruction query roots still require their separate operation
 proofs, and elements such as `std::byte` still need SDK enum-source evidence.
 
@@ -585,8 +609,8 @@ The standalone authenticated closure contains 217 libc++/resource files on all
 eight supported targets and contains no platform headers. Generated programs do
 not call or link libc++ for these operations. Comparisons recursively preserve
 row-major lexicographic order when every leaf element is scalar. Nontrivial
-record elements, record comparisons, dynamic or out-of-range `at`, function
-addresses, quoted `"array"`, user shadows and forged declarations remain
+element copy/move operations, record comparisons, dynamic or out-of-range `at`,
+function addresses, quoted `"array"`, user shadows and forged declarations remain
 outside this boundary.
 
 ## Initializer-list views from `<initializer_list>`
@@ -1306,9 +1330,19 @@ operator body before emitting scalar IR. Narrow integers use C++ integer
 promotion and typed specializations convert the result back to their selected
 type. Both function arguments are captured once before a logical result is
 formed, preserving the eager argument evaluation of a function call.
+The six comparison objects also admit non-volatile complete object pointers in
+typed or transparent calls. Equality and inequality additionally admit `void *`;
+ordered comparisons require complete object pointees. Pointers to incomplete
+object types remain outside the core-v2 type boundary.
+Typed pointer objects retain their exact parameter conversions, while
+transparent calls retain Clang's selected common pointer type. The generated
+comparison uses the same verified pointer boundary as ordinary scalar
+comparisons, including the profile's native address order for complete object
+pointers.
 The nine comparison and logical objects also accept a top-level `const` on
-their typed scalar template argument. Their selected operator still returns
-`bool`, with the same input conversion and one-time argument evaluation.
+their typed scalar or admitted pointer template argument. Their selected
+operator still returns `bool`, with the same input conversion and one-time
+argument evaluation.
 
 The exact empty specializations may also be stored in local or global objects,
 passed by value, and trivially default/copy/move constructed or copy/move
@@ -1868,9 +1902,10 @@ three-way `nth_element` partition still terminates directly on equivalent
 values. Unsupported callbacks and record elements remain rejected.
 
 The three-argument `std::sort` overload also accepts the same authenticated
-standard comparison objects as the heap algorithms. Its checked heap lowering
-applies the selected scalar `operator()` operation directly, preserving the
-object argument's single evaluation and the comparator's ordering.
+standard comparison objects as the heap algorithms, including comparison
+objects for complete object pointers. Its checked heap lowering applies the
+selected scalar `operator()` operation directly, preserving the object
+argument's single evaluation and the comparator's ordering.
 
 The comparator overloads of `std::partial_sort`, `std::partial_sort_copy` and
 `std::nth_element` accept these authenticated typed or transparent standard
@@ -2292,12 +2327,41 @@ LLVM 20.1.8 source bytes and catalog hashes. Clang can fold constant
 `std::string` size and alignment queries and `npos`, and resolve its
 `size_type` alias. Authenticated `std::basic_string<char, std::char_traits<char>,
 std::allocator<char>>` objects now have direct lowering for default,
-`const char*`, pointer-and-length, copy and move construction; copy and move
-assignment and assignment from `const char*` or `char`; `size`, `length`,
-`capacity`, `max_size`, `empty`, `data`, `c_str`, subscript
+`const char*`, pointer-and-length, raw or wrapped character range,
+count-and-character fill, copy, move, string-source substring, and
+`std::string_view` construction; copy and move assignment
+and assignment from `const char*` or `char`; `size`, `length`,
+`capacity`, `max_size`, `empty`, `get_allocator()`, `data`, `c_str`, subscript
 access, mutable and const `front`/`back`, `clear`, `push_back(char)`,
 `pop_back()`, `reserve(size_type)`, `shrink_to_fit()` and its C++17
 `reserve()` alias, both `resize` overloads, and destruction.
+The two-iterator constructor accepts matching `char*` or `const char*`
+endpoints and authenticated mutable or const libc++ wrapped iterators. It
+copies the full valid ordered range, including embedded NUL bytes, into an
+independent string and leaves empty ranges unallocated.
+The two string-source substring constructors select a suffix or a counted
+range from an existing string. They clamp the requested count to the available
+suffix, copy embedded NUL bytes, and allocate independent storage when needed.
+The allocator argument must be the pinned default allocator expression.
+The exact conversion to `std::string_view` borrows the string's current data
+and length, including embedded NUL bytes. A view cannot outlive the string or
+remain in use after a mutation that invalidates its data pointer. Constructors
+from the exact `char` string view copy either the whole view or a selected
+counted range into independent storage. They accept the pinned default or an
+explicit `std::allocator<char>` where the selected overload provides one.
+The exact C++17 view overloads of `append`, `assign`, `operator+=`, positional
+`insert`, and positional `replace` read the view once. Their slice overloads
+clip a selected count to the remaining view bytes and authenticate the pinned
+`npos` default. The existing modifier paths copy overlapping receiver bytes
+before they can be overwritten or released. Source and destination positions
+must satisfy the standard in-range preconditions; throwing paths remain outside
+this direct lowering.
+The exact view overloads of `compare`, `find`, `rfind`, `find_first_of`,
+`find_last_of`, `find_first_not_of`, and `find_last_not_of` read the view's
+pointer and length, including embedded NUL bytes. Positional comparisons may
+select a range of the string and view; their pinned `npos` default is checked.
+Searches preserve the pinned zero or `npos` default positions, and comparisons
+order bytes as unsigned characters without allocating.
 Mutable and const `begin`/`end`, plus `cbegin`/`cend`, produce authenticated
 libc++ `__wrap_iter` values for forward traversal and mutable element access.
 The authenticated wrapper also supports `base()`, arrow, subscript, prefix and
@@ -2339,6 +2403,11 @@ copies self-referenced bytes before changing size or releasing old storage.
 `assign(first, last)` accepts the same raw and wrapped character ranges,
 including empty and self-referenced ranges. It preserves embedded NUL bytes
 and reuses capacity when the result fits.
+The string-source slice overloads of `append`, `assign`, positional `insert`,
+and positional `replace` accept a source offset and count, including the
+default `npos` count. For valid source offsets they copy at most the remaining
+characters, preserve embedded NUL bytes, and handle self-reference with the
+same capacity reuse and growth paths as their whole-string overloads.
 Positional `erase(pos, count)` and its default arguments remove bytes in place,
 retain capacity, and return the receiver reference.
 The `erase(const_iterator)` and `erase(const_iterator, const_iterator)`
@@ -2383,7 +2452,9 @@ empty character sets.
 The frontend checks the pinned libc++ representation before emitting three
 storage words, including the alternate short-string layout selected on Apple
 arm64. Short strings stay inline, while long strings use the selected
-allocation and release functions. Copy construction owns independent storage;
+allocation and release functions. `get_allocator()` returns the authenticated
+empty `std::allocator<char>` value after evaluating its receiver once,
+without changing string storage. Copy construction owns independent storage;
 copy assignment reuses existing capacity when possible and follows the pinned
 libc++ recommendation of the larger of the new size and twice the old capacity
 when it grows. Moves transfer the representation and leave the source empty.
@@ -2420,11 +2491,14 @@ retain their LLVM 20.1.8 source bytes and catalog hashes. For the default
 allocator specialization, Clang can fold `std::vector<int>` size and alignment
 queries from libc++'s three-pointer layout and resolve its `size_type` alias.
 Authenticated `std::vector<T, std::allocator<T>>` objects admit non-boolean
-integer and floating elements, plus source-owned standard-layout records with
-trivial default/copy/move construction, assignment and destruction. They use
-direct lowering for default, bounded count/fill/list, copy and move
+integer and floating elements, object and void pointer elements, plus
+source-owned standard-layout records with trivial default/copy/move
+construction, assignment and destruction. They use
+direct lowering for default, bounded count/fill/list, pointer or wrapped
+iterator range, copy and move
 construction; copy, move and initializer-list assignment; destruction; size,
-capacity, max_size, empty, data, element/front/back access; clear, push/pop;
+capacity, max_size, empty, get_allocator, data, element/front/back access;
+clear, push/pop;
 zero- or one-argument `emplace_back` with exact element types;
 begin/end, cbegin/cend, rbegin/rend, crbegin/crend and const iteration;
 reserve/resize/shrink_to_fit; lvalue/rvalue, counted-value, pointer and wrapped iterator
@@ -2432,7 +2506,9 @@ range, and initializer-list `insert`; zero- or one-argument positional
 `emplace` with exact element types; counted-value, pointer and wrapped
 iterator range, and initializer-list `assign`; single-position and range
 `erase`; member/free swap; and all six vector/vector comparison operators for
-arithmetic elements.
+arithmetic and complete object-pointer elements. `void *` elements support
+equality and inequality only. Pointers to incomplete object types and function
+pointer elements remain outside this boundary.
 Insert and positional emplace return mutable iterators. Single-value insertion
 and emplace preserve aliased element inputs;
 they shift in place when capacity permits and otherwise move storage through
@@ -2442,6 +2518,12 @@ mutable iterator. Assign reuses capacity when possible and replaces storage
 through the selected allocator otherwise. Reserve, insert, and push growth
 preserve existing element values and use the selected allocator, and copy
 construction owns independent storage.
+Range construction accepts matching `T*` or `const T*` endpoints and
+authenticated mutable or const libc++ wrapped iterators. It measures the
+runtime distance once, leaves empty ranges unallocated, and copies elements
+into independent storage. The caller supplies a valid ordered range.
+`get_allocator()` evaluates its receiver once and returns an authenticated
+empty `std::allocator<T>` for the admitted element type.
 Host O0/O2 fixtures check capacity reuse, reallocation, aliased fill arguments,
 maximum size, occupied and empty capacity shrinking,
 `emplace_back` value initialization and returned references, positional
@@ -2457,9 +2539,42 @@ lexicographic ordering, empty and prefix ranges, signed and floating elements,
 single evaluation of operands, and the pinned NaN behavior.
 Trivial-record fixtures cover construction, growth with an aliased source,
 access, insert/erase, fill/list/range assignment, copy/move, resize and swap.
-Nontrivial record elements, other allocators, remaining vector methods, and
-throwing allocation or length-error paths remain unsupported. Quoted and
-shadow headers remain rejected.
+The exact pinned `std::string` and admitted `std::unique_ptr<T, D>` records also
+work as owning elements. Default and bounded count construction value-initialize
+them; move construction and assignment transfer vector storage. `push_back(T&&)`,
+`emplace_back()`, and `emplace_back(T&&)` accept exact owning elements. Growth,
+`reserve`, and `shrink_to_fit` transfer each element and leave the old storage
+empty before release. Single and range `erase` destroy removed elements and move
+survivors into the vacated slots. `clear`, `pop_back`, shrinking `resize`, move
+assignment, and vector destruction destroy removed elements in reverse order.
+Single-rvalue `insert` and positional `emplace` with zero arguments or
+one nonconst rvalue transfer shifted elements in place or into grown storage
+and return the new position. Owning element fixtures check long string and
+pointer ownership, aliasing moves, insertion, growth, shrinking, move assignment
+and release under O0/O2. Exact pinned string elements also support deep-copy
+vector construction and assignment, including self-assignment and capacity reuse.
+Their lvalue and const-rvalue inputs to `push_back`, `emplace_back`, `insert`,
+and positional `emplace` copy before vector storage moves or grows.
+Bounded fill construction, `resize(count, value)`, `assign(count, value)`, and
+counted `insert` also deep-copy string elements. Host fixtures cover values
+referenced from the same vector for resize, counted insertion, and assignment
+with capacity reuse. Initializer-list and raw-pointer or pinned wrapped-iterator
+ranges also deep-copy string elements for construction, assignment and insertion.
+Host fixtures cover list-backed temporary destruction, destination capacity
+reuse and growth, empty ranges, and independent string allocations.
+All six vector/vector comparisons use element-wise byte content and lexicographic
+ordering for pinned string elements, including embedded zero and high-bit bytes.
+They also compare admitted `std::unique_ptr` elements with the pinned default
+deleter and a built-in base pointee type by their stored raw pointers. Pointer
+and unique-pointer ordering uses the profile's selected native address order;
+prefix and equal-length rules remain lexicographic. Source-associated element
+or deleter namespaces can select a different comparison by ADL, so those
+unique-pointer specializations remain outside this comparison boundary.
+Unique-pointer elements remain noncopyable. Other positional emplacement
+remains unsupported. Nontrivial record elements, other allocators, remaining
+vector methods, and throwing allocation or length-error paths remain
+unsupported. Quoted and shadow
+headers remain rejected.
 
 ## Dynamic local static initialization
 

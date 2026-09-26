@@ -2585,14 +2585,13 @@ static bool inlineTemplateDefaultingSource(Adapter &A, const FunctionDecl *Funct
          Method->getTemplateInstantiationPattern() == Origin;
 }
 
-// The pinned array owns only an implicit trivial destructor. Its original
-// element source, rather than SDK implementation TypeLocs, proves destruction.
+// The pinned array owns only an implicit destructor. Its original element
+// source, rather than SDK implementation TypeLocs, proves destruction.
 static std::optional<UtilityArrayRecord>
 utilityArrayDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
   const auto Array = approvedUtilityArrayRecord(
       A.S, A.Sources, Record, A.Context);
-  if (!Array || !Array->Record->hasTrivialDestructor() ||
-      Array->Record->hasUserDeclaredDestructor())
+  if (!Array || Array->Record->hasUserDeclaredDestructor())
     return std::nullopt;
   const auto *Destructor = Array->Record->getDestructor();
   // A nested zero-array element can have a complete layout without Sema ever
@@ -2603,7 +2602,7 @@ utilityArrayDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
     A.chargeExpansion(1, Declaration->getLocation());
     const auto *Method = cast<CXXDestructorDecl>(Declaration);
     if (!Method->isImplicit() || !Method->isDefaulted() ||
-        !Method->isTrivial() || Method->isInvalidDecl() || Method->isDeleted() ||
+        Method->isInvalidDecl() || Method->isDeleted() ||
         Method->isVirtual() || Method->isVariadic() || Method->getNumParams() ||
         Method->getAccess() != AS_public || Method->getTypeSourceInfo() ||
         Method->getLexicalDeclContext() != Method->getParent() ||
@@ -4731,7 +4730,7 @@ bool Adapter::requireUtilityArray(const CXXRecordDecl *Record,
   auto Array = approvedUtilityArrayRecord(S, Sources, Record, Context);
   if (!Array) {
     reject(Location, "standard library record",
-           "Only the pinned trivial-value std::array<T, N> layout is "
+           "Only the pinned supported-element std::array<T, N> layout is "
            "admitted.",
            "TR0203");
     return false;
@@ -4830,8 +4829,8 @@ bool Adapter::requireUtilityVector(const CXXRecordDecl *Record,
   const auto Vector = approvedUtilityVectorRecord(S, Sources, Record, Context);
   if (!Vector) {
     reject(Location, "standard library record",
-           "Only the pinned arithmetic or trivial source-record "
-           "std::vector layout is admitted.",
+           "Only pinned scalar, trivial source-record, std::string and "
+           "std::unique_ptr element vector layouts are admitted.",
            "TR0203");
     return false;
   }
@@ -10246,11 +10245,13 @@ public:
           approvedUtilityOptionalMetadata(A.S, A.Sources, ConstructionRecord);
       const bool UtilityConstruction =
           Construction &&
-          (approvedFunctionalReferenceConstruction(
-               A.S, A.Sources, Construction, A.Context) ||
+          (approvedFunctionalReferenceConstruction(A.S, A.Sources, Construction,
+                                                   A.Context) ||
            approvedUtilityUniquePtrConstruction(A.S, A.Sources, Construction,
                                                 A.Context) ||
            approvedUtilityStringConstruction(A.S, A.Sources, Construction,
+                                             A.Context) ||
+           approvedUtilityVectorConstruction(A.S, A.Sources, Construction,
                                              A.Context) ||
            approvedUtilityDefaultDeleteConstruction(A.S, A.Sources,
                                                     Construction, A.Context) ||
@@ -10263,8 +10264,8 @@ public:
            UtilityOptionalMetadata ||
            approvedUtilityOptionalConstruction(A.S, A.Sources, Construction,
                                                A.Context) ||
-           approvedUtilityWrapIteratorConstruction(A.S, A.Sources,
-                                                  Construction, A.Context) ||
+           approvedUtilityWrapIteratorConstruction(A.S, A.Sources, Construction,
+                                                   A.Context) ||
            approvedUtilityReverseIteratorConstruction(A.S, A.Sources,
                                                       Construction, A.Context));
       const bool ApprovedUtilityCall =

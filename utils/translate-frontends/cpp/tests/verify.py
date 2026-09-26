@@ -1440,14 +1440,6 @@ void rejected_swap(Value& left, Value& right) { left.swap(right); }
 using Value = std::array<volatile int, 0>;
 void rejected_swap(Value& left, Value& right) { left.swap(right); }
 """, 'TR0201'),
-        ('zero-array-nontrivial-element', """\
-#include <array>
-#include <functional>
-#include <utility>
-struct Row { Row() {} int value; };
-using Value = std::array<Row, 0>;
-void rejected_swap(Value& left, Value& right) { left.swap(right); }
-""", 'TR0203'),
         ('array-internal-range-specialization', """\
 #include <array>
 #include <utility>
@@ -2369,6 +2361,188 @@ int main() {
                                   target=target, sdk=True)
             check_pair_array_apply(target_result)
 
+    array_zero_owned_apply_source = """\
+#include <array>
+#include <tuple>
+int selected;
+int called;
+int constructed;
+int destroyed;
+struct Item {
+  int value;
+  Item() noexcept : value(++constructed) {}
+  ~Item() noexcept { ++destroyed; }
+};
+using Empty = std::array<Item, 0>;
+Empty& choose(Empty& value) { ++selected; return value; }
+int empty() { ++called; return 17; }
+int main() {
+  Empty value{};
+  if (std::apply(empty, choose(value)) != 17 || selected != 1 || called != 1)
+    return 1;
+  const Empty& view = value;
+  if (std::apply(empty, view) != 17 || called != 2)
+    return 2;
+  auto joined = std::tuple_cat(choose(value));
+  static_assert(std::tuple_size<decltype(joined)>::value == 0);
+  if (selected != 2 || constructed != 0 || destroyed != 0)
+    return 3;
+  if (std::apply(empty, Empty{}) != 17 || called != 3)
+    return 4;
+  return constructed == 0 && destroyed == 0 ? 0 : 5;
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-array-zero-owned-apply-" + target,
+                     array_zero_owned_apply_source, profile="cpp-core-v2",
+                     target=target, sdk=True)
+        check_pair_array_apply(data)
+
+    array_owned_apply_references_source = """\
+#include <array>
+#include <tuple>
+int constructions;
+int copies;
+int destructions;
+int order;
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) { ++constructions; }
+  Item(const Item& other) noexcept : value(other.value) { ++copies; }
+  ~Item() noexcept { ++destructions; order = order * 10 + value; }
+};
+int mutate(Item& first, const Item& second) {
+  first.value += second.value;
+  return first.value;
+}
+int inspect(const Item& first, const Item& second) {
+  return first.value + second.value;
+}
+int move_refs(Item&& first, Item&& second) {
+  first.value += second.value;
+  return first.value;
+}
+struct Reader {
+  int operator()(const Item& first, const Item& second) const {
+    return first.value + second.value;
+  }
+};
+int main() {
+  {
+    std::array<Item, 2> values{{Item(2), Item(3)}};
+    if (std::apply(mutate, values) != 5 || copies != 0)
+      return 1;
+    const auto& view = values;
+    if (std::apply(inspect, view) != 8 ||
+        std::apply(Reader{}, view) != 8 || copies != 0)
+      return 2;
+    if (std::apply(move_refs, static_cast<std::array<Item, 2>&&>(values)) != 8 ||
+        copies != 0)
+      return 3;
+  }
+  return constructions == 2 && copies == 0 && destructions == 2 &&
+                 order == 38
+             ? 0
+             : 4;
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-array-owned-apply-references-" + target,
+                     array_owned_apply_references_source, profile="cpp-core-v2",
+                     target=target, sdk=True)
+        check_pair_array_apply(data)
+
+    array_owned_apply_copies_source = """\
+#include <array>
+#include <tuple>
+#include <utility>
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) {}
+  Item(const Item& other) noexcept : value(other.value) {}
+  Item(Item&& other) noexcept : value(other.value) {}
+  ~Item() noexcept {}
+};
+int read(Item first, Item second) { return first.value + second.value; }
+struct Reader {
+  int operator()(Item first, Item second) const {
+    return first.value + second.value;
+  }
+};
+int main() {
+  std::array<Item, 2> values{{Item(2), Item(3)}};
+  const std::array<Item, 2> constant{{Item(4), Item(5)}};
+  Reader reader;
+  return std::apply(read, values) + std::apply(reader, constant) +
+         std::apply(read, std::move(values));
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-array-owned-apply-copies-" + target,
+                     array_owned_apply_copies_source, profile="cpp-core-v2",
+                     target=target, sdk=True)
+        check_pair_array_apply(data)
+
+    array_owned_apply_adapter_copies_source = """\
+#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) {}
+  Item(const Item& other) noexcept : value(other.value) {}
+  Item(Item&& other) noexcept : value(other.value) {}
+  ~Item() noexcept {}
+  int combine(Item other) const { return value * 10 + other.value; }
+};
+int read(Item first, Item second) {
+  return first.value * 10 + second.value;
+}
+struct Reader {
+  int operator()(Item first, Item second) const {
+    return first.value * 10 + second.value;
+  }
+};
+int main() {
+  std::array<Item, 2> values{{Item(2), Item(3)}};
+  Reader reader;
+  auto function = std::ref(read);
+  auto object = std::cref(reader);
+  auto member = std::mem_fn(&Item::combine);
+  return std::apply(function, values) + std::apply(object, values) +
+         std::apply(&Item::combine, values) + std::apply(member, values) +
+         std::apply(function, std::move(values)) +
+         std::apply(object, std::move(values)) +
+         std::apply(&Item::combine, std::move(values)) +
+         std::apply(member, std::move(values));
+}
+"""
+    for target in sdk_targets:
+        data = check("v2-array-owned-apply-adapter-copies-" + target,
+                     array_owned_apply_adapter_copies_source,
+                     profile="cpp-core-v2", target=target, sdk=True)
+        check_pair_array_apply(data)
+
+    for name, source in (
+        ("tuple-cat-copy", """\
+#include <array>
+#include <tuple>
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) {}
+  Item(const Item& other) noexcept : value(other.value) {}
+  ~Item() noexcept {}
+};
+int main() {
+  std::array<Item, 1> values{{Item(7)}};
+  auto copied = std::tuple_cat(values);
+  return std::get<0>(copied).value;
+}
+"""),
+    ):
+        check("v2-array-owned-apply-reject-" + name, source, "TR0203",
+              profile="cpp-core-v2", sdk=True)
 
     for name, source, code in (
 
@@ -2376,9 +2550,9 @@ int main() {
          '#include <array>\n#include <functional>\n#include <tuple>\n#include <utility>\nint empty() { return 1; }\nint main() { std::array<volatile int, 0> a{}; return std::apply(empty, a); }\n',
          'TR0201'),
 
-        ('zero-nontrivial-element',
-         '#include <array>\n#include <functional>\n#include <tuple>\n#include <utility>\nstruct Item { int value; ~Item() {} };\nint empty() { return 1; }\nint main() { std::array<Item, 0> a{}; return std::apply(empty, a); }\n',
-         'TR0203'),
+        ('zero-hidden-element-source',
+         '#include <array>\n#include <tuple>\nstruct Item { int values[(sizeof(long double), 2)]; ~Item() noexcept {} };\nint empty() { return 0; }\nint main() { std::array<Item, 0> array{}; return std::apply(empty, array); }\n',
+         'TR0201'),
 
         ('array-wrapper-receiver',
          '#include <array>\n#include <functional>\n#include <tuple>\n#include <utility>\nstruct Box { int value; int read() const { return value; } };\nint main() { Box b{1}; std::array<std::reference_wrapper<Box>, 1> a{{std::ref(b)}}; return std::apply(&Box::read, a); }\n',
@@ -3479,6 +3653,45 @@ extern "C" int array_composition() {
     for target in sdk_targets:
         check("v2-array-composition-" + target, array_composition_source,
               profile="cpp-core-v2", target=target, sdk=True)
+    array_owned_source = """\
+#include <array>
+#include <tuple>
+int constructions;
+int destructions;
+int order;
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) { ++constructions; }
+  ~Item() noexcept { ++destructions; order = order * 10 + value; }
+};
+using Empty = std::array<Item, 0>;
+Empty &identity(Empty &value) { return value; }
+extern "C" int array_owned() {
+  {
+    std::array<std::array<Item, 2>, 2> nested{{
+        std::array<Item, 2>{{Item(1), Item(2)}},
+        std::array<Item, 2>{{Item(3), Item(4)}}}};
+    Empty empty{}, another{};
+    empty.swap(another);
+    auto nested_refs = std::tie(nested);
+    auto empty_refs = std::tie(empty);
+    static_assert(__is_same(decltype(identity(empty)), Empty &));
+    if (nested[1][0].value != 3 || empty.size() != 0 ||
+        &std::get<0>(nested_refs) != &nested ||
+        &std::get<0>(empty_refs) != &empty ||
+        constructions != 4 || destructions != 0)
+      return 1;
+  }
+  return constructions == 4 && destructions == 4 && order == 4321 ? 0 : 2;
+}
+"""
+    for target in sdk_targets:
+        array_owned = check("v2-array-owned-" + target, array_owned_source,
+                            profile="cpp-core-v2", target=target, sdk=True)
+        assert any(function["name"] == "array_owned"
+                   for function in array_owned["functions"]), array_owned
+        assert not [node for node in walk(array_owned["functions"])
+                    if node.get("op") == "mapped_call"], array_owned
     array_zero_source = """\
 #include <array>
 struct Point { int x; int y; };
@@ -3552,8 +3765,8 @@ extern "C" int array_zero() {
         ("zero-subscript",
          '#include <array>\nint main(){std::array<int,0>a{};return a[0];}',
          "TR0203"),
-        ("nontrivial-element",
-         '#include <array>\nstruct R{int n;~R(){}};int main(){std::array<R,2>a{{{1},{2}}};return a[0].n;}',
+        ("nontrivial-element-copy",
+         '#include <array>\nstruct R{int n;explicit R(int v):n(v){}R(const R&o):n(o.n){}~R(){}};int main(){std::array<R,2>a{{R(1),R(2)}};std::array<R,2>b=a;return b[0].n;}',
          "TR0203"),
         ("record-comparison",
          '#include <array>\nstruct R{int n;};bool operator==(const R&a,const R&b){return a.n==b.n;}int main(){std::array<R,2>a{{{1},{2}}},b=a;return a==b;}',
@@ -4074,9 +4287,6 @@ int main() {
         ('record-element-erased-pointer',
          '#include <array>\nint object=0;template<auto V>using Erased=int;struct Element{Erased<&object> value;};\nusing Row = std::array<Element,2>;\nRow& identity(Row& row){return row;}\nint probe(Row& row){static_assert(__is_same(decltype(identity(row)),Row&));return 0;}\nint main(){return 0;}\n',
          'TR0201'),
-        ('nontrivial-element-zero',
-         '#include <array>\nstruct Element{int value;~Element(){}};\nusing Row = std::array<Element,0>;\nRow& identity(Row& row){return row;}\nint probe(Row& row){static_assert(__is_same(decltype(identity(row)),Row&));return 0;}\nint main(){return 0;}\n',
-         'TR0203'),
         ('volatile-element-zero',
          '#include <array>\n\nusing Row = std::array<volatile int,0>;\nRow& identity(Row& row){return row;}\nint probe(Row& row){static_assert(__is_same(decltype(identity(row)),Row&));return 0;}\nint main(){return 0;}\n',
          'TR0201'),
@@ -4427,12 +4637,6 @@ int main() {
         ('volatile-element-zero',
          '#include <array>\n#include <tuple>\nextern "C" void probe() {\n  std::array<volatile int, 0> row{};\n  auto refs = std::tie(row);\n}\n',
          'TR0201'),
-        ('nontrivial-element',
-         '#include <array>\n#include <tuple>\nstruct Item { int value; ~Item() {} };\nextern "C" void probe() {\n  std::array<Item, 1> row{{{1}}};\n  auto refs = std::tie(row);\n}\n',
-         'TR0203'),
-        ('nontrivial-element-zero',
-         '#include <array>\n#include <tuple>\nstruct Item { int value; ~Item() {} };\nextern "C" void probe() {\n  std::array<Item, 0> row{};\n  auto refs = std::tie(row);\n}\n',
-         'TR0203'),
         ('by-value-callback-parameter',
          '#include <array>\n#include <tuple>\nusing Row = std::array<int, 2>;\nint by_value(Row row) { return row[0]; }\nextern "C" int probe() {\n  return std::apply(by_value, std::make_tuple(Row{{1, 2}}));\n}\n',
          'TR0203'),
@@ -6182,6 +6386,45 @@ extern "C" int functional_operations(int a, int b) {
         check("v2-functional-typed-operations-" + target,
               functional_operations_source, profile="cpp-core-v2",
               target=target, sdk=True)
+    functional_pointer_source = """\
+#include <algorithm>
+#include <functional>
+extern "C" bool functional_pointer_comparisons(int *first, int *last,
+                                                const int *qualified,
+                                                void *opaque) {
+  std::less<int *> less;
+  return less(first, last) && std::greater<int *>{}(last, first) &&
+         std::less_equal<int *>{}(first, last) &&
+         std::greater_equal<int *>{}(last, first) &&
+         std::equal_to<int *>{}(first, first) &&
+         std::not_equal_to<int *>{}(first, last) &&
+         std::less<>{}(first, qualified) &&
+         std::greater<>{}(qualified, first) &&
+         std::less_equal<>{}(first, last) &&
+         std::greater_equal<>{}(last, first) &&
+         std::equal_to<>{}(first, first) &&
+         std::not_equal_to<>{}(first, last) &&
+         std::equal_to<void *>{}(opaque, first) &&
+         std::not_equal_to<void *>{}(opaque, last) &&
+         std::invoke(less, first, last);
+}
+extern "C" bool functional_sort_pointers(int *first, int *middle,
+                                          int *last) {
+  int *values[3]{last, first, middle};
+  std::sort(values, values + 3, std::less<int *>{});
+  return values[0] == first && values[1] == middle && values[2] == last;
+}
+"""
+    check("v2-functional-pointer-comparisons", functional_pointer_source,
+          profile="cpp-core-v2", sdk=True)
+    for target in sdk_targets:
+        check("v2-functional-pointer-comparisons-" + target,
+              functional_pointer_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-functional-void-pointer-order",
+          '#include <functional>\nextern "C" bool compare(void *a, void *b) {'
+          'return std::less<void *>{}(a, b);}', "TR0203",
+          profile="cpp-core-v2", sdk=True)
     functional_transparent_source = """\
 #include <functional>
 extern "C" unsigned functional_transparent(int a, unsigned b) {
@@ -28991,6 +29234,12 @@ static_assert(alignof(std::vector<int>) == alignof(void*));
 std::vector<int>::size_type passthrough(std::vector<int>::size_type n) {
   return n;
 }
+int construct_range(const int* first, const int* last,
+                    const std::vector<int>& source) {
+  std::vector<int> raw(first, last);
+  std::vector<int> wrapped(source.cbegin(), source.cend());
+  return int(raw.size() + wrapped.size());
+}
 int iterator_access(std::vector<int>& values) {
   auto first = values.begin();
   auto last = values.end();
@@ -29086,6 +29335,16 @@ int pointer_record_vector(std::vector<VectorPointer>& values, int& value) {
   values.push_back(VectorPointer{&value, 4});
   return *values[0].pointer + values[0].tag;
 }
+int object_pointer_vector(int& value) {
+  std::vector<int*> values;
+  values.push_back(&value);
+  values.emplace_back();
+  values[1] = values[0];
+  void* address = &value;
+  std::vector<void*> opaque;
+  opaque.push_back(address);
+  return values.size() == 2 && values[1] == &value && opaque[0] == address;
+}
 """
     vector_dependencies = None
     for target in sdk_targets:
@@ -29102,7 +29361,105 @@ int pointer_record_vector(std::vector<VectorPointer>& values, int& value) {
             vector_dependencies = dependencies
         else:
             assert dependencies == vector_dependencies, target
-        assert len(vector_ir["functions"]) == 18, target
+        assert len(vector_ir["functions"]) == 23, target
+    vector_owning_source = """\
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <memory>
+#include <string>
+#include <vector>
+void default_owners() {
+  std::vector<std::string> strings(2);
+  std::vector<std::unique_ptr<int>> pointers(2);
+  strings.erase(strings.begin());
+  pointers.erase(pointers.begin(), pointers.end());
+  std::string text("a long string moved into a vector slot");
+  strings.insert(strings.begin(), static_cast<std::string&&>(text));
+  strings.emplace(strings.begin());
+  std::unique_ptr<int> owner(new int(7));
+  pointers.insert(pointers.begin(), static_cast<std::unique_ptr<int>&&>(owner));
+  pointers.emplace(pointers.begin());
+  strings.clear();
+  pointers.clear();
+}
+void move_strings(std::vector<std::string>& values, std::string&& value) {
+  values.push_back(static_cast<std::string&&>(value));
+  values.emplace_back();
+  values.emplace_back(static_cast<std::string&&>(values[0]));
+  values.reserve(8);
+  values.shrink_to_fit();
+  values.resize(2);
+  values.pop_back();
+  std::vector<std::string> moved(static_cast<std::vector<std::string>&&>(values));
+  values = static_cast<std::vector<std::string>&&>(moved);
+  values.clear();
+}
+void copy_strings(const std::vector<std::string>& source,
+                  std::vector<std::string>& destination) {
+  std::vector<std::string> copy(source);
+  std::vector<std::string> filled(2, source[0]);
+  std::vector<std::string> listed{source[0], source[0]};
+  std::vector<std::string> ranged(source.cbegin(), source.cend());
+  std::vector<std::string> raw(source.data(), source.data() + source.size());
+  destination = source;
+  destination.resize(5, source[0]);
+  destination.assign(3, source[0]);
+  destination.assign({source[0], source[0]});
+  destination = {source[0]};
+  destination.assign(source.cbegin(), source.cend());
+  destination.assign(source.data(), source.data() + source.size());
+  destination.insert(destination.begin(), 2, source[0]);
+  destination.insert(destination.cbegin(), {source[0]});
+  destination.insert(destination.cend(), source.cbegin(), source.cend());
+  destination.insert(destination.cend(), source.data(),
+                     source.data() + source.size());
+  destination.push_back(source[0]);
+  destination.emplace_back(source[0]);
+  destination.emplace_back(static_cast<const std::string&&>(source[0]));
+  destination.insert(destination.begin(), source[0]);
+  destination.emplace(destination.begin(), source[0]);
+  destination.emplace(destination.begin(),
+                      static_cast<const std::string&&>(source[0]));
+}
+bool compare_strings(const std::vector<std::string>& left,
+                     const std::vector<std::string>& right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
+}
+bool compare_pointers(const std::vector<int*>& left,
+                      const std::vector<int*>& right,
+                      const std::vector<void*>& opaque_left,
+                      const std::vector<void*>& opaque_right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right ||
+         opaque_left == opaque_right || opaque_left != opaque_right;
+}
+bool compare_owners(const std::vector<std::unique_ptr<int>>& left,
+                    const std::vector<std::unique_ptr<int>>& right) {
+  return left == right || left != right || left < right ||
+         left > right || left <= right || left >= right;
+}
+void move_pointers(std::vector<std::unique_ptr<int>>& values,
+                   std::unique_ptr<int>&& value) {
+  values.push_back(static_cast<std::unique_ptr<int>&&>(value));
+  values.emplace_back();
+  values.emplace_back(static_cast<std::unique_ptr<int>&&>(values[0]));
+  values.reserve(8);
+  values.shrink_to_fit();
+  values.resize(2);
+  values.pop_back();
+  std::vector<std::unique_ptr<int>> moved(
+      static_cast<std::vector<std::unique_ptr<int>>&&>(values));
+  values = static_cast<std::vector<std::unique_ptr<int>>&&>(moved);
+  values.clear();
+}
+"""
+    for target in sdk_targets:
+        check("v2-vector-owning-" + target, vector_owning_source,
+              profile="cpp-core-v2", target=target, sdk=True)
     vector_record_boundary_preamble = """\
 using Size = decltype(sizeof(0));
 extern "C" void *malloc(Size);
@@ -29128,11 +29485,115 @@ bool operator==(const Entry& left, const Entry& right) {
 }
 int main() { std::vector<Entry> left, right; return left == right; }
 """,
+        "owning-pointer-comparison": """\
+#include <memory>
+bool f(const std::vector<std::unique_ptr<int>>& left,
+       const std::vector<std::unique_ptr<int>>& right) {
+  return left == right;
+}
+""",
+        "unique-pointer-copy": """\
+#include <memory>
+int f(const std::vector<std::unique_ptr<int>>& source) {
+  std::vector<std::unique_ptr<int>> target(source);
+  return target.size();
+}
+""",
+        "unique-pointer-copy-assignment": """\
+#include <memory>
+void f(std::vector<std::unique_ptr<int>>& values,
+       const std::vector<std::unique_ptr<int>>& source) { values = source; }
+""",
+        "unique-pointer-lvalue-push": """\
+#include <memory>
+void f(std::vector<std::unique_ptr<int>>& values,
+       const std::unique_ptr<int>& value) { values.push_back(value); }
+""",
+        "unique-pointer-lvalue-insert": """\
+#include <memory>
+void f(std::vector<std::unique_ptr<int>>& values,
+       const std::unique_ptr<int>& value) {
+  values.insert(values.begin(), value);
+}
+""",
+        "unique-pointer-lvalue-emplace": """\
+#include <memory>
+void f(std::vector<std::unique_ptr<int>>& values,
+       const std::unique_ptr<int>& value) {
+  values.emplace(values.begin(), value);
+}
+""",
+        "unique-pointer-lvalue-emplace-back": """\
+#include <memory>
+void f(std::vector<std::unique_ptr<int>>& values,
+       const std::unique_ptr<int>& value) { values.emplace_back(value); }
+""",
+        "unique-pointer-fill": """\
+#include <memory>
+void f(const std::unique_ptr<int>& value) {
+  std::vector<std::unique_ptr<int>> values(2, value);
+}
+""",
+        "unique-pointer-resize-fill": """\
+#include <memory>
+void f(std::vector<std::unique_ptr<int>>& values,
+       const std::unique_ptr<int>& value) { values.resize(2, value); }
+""",
+        "unique-pointer-assign-fill": """\
+#include <memory>
+void f(std::vector<std::unique_ptr<int>>& values,
+       const std::unique_ptr<int>& value) { values.assign(2, value); }
+""",
+        "unique-pointer-counted-insert": """\
+#include <memory>
+void f(std::vector<std::unique_ptr<int>>& values,
+       const std::unique_ptr<int>& value) {
+  values.insert(values.begin(), 2, value);
+}
+""",
+        "unique-pointer-list-construct": """\
+#include <memory>
+void f(std::unique_ptr<int>& value) {
+  std::vector<std::unique_ptr<int>> values{
+      static_cast<std::unique_ptr<int>&&>(value)};
+}
+""",
+        "unique-pointer-range-construct": """\
+#include <memory>
+void f(const std::vector<std::unique_ptr<int>>& source) {
+  std::vector<std::unique_ptr<int>> values(source.begin(), source.end());
+}
+""",
+        "unique-pointer-range-assign": """\
+#include <memory>
+void f(std::vector<std::unique_ptr<int>>& values,
+       const std::vector<std::unique_ptr<int>>& source) {
+  values.assign(source.begin(), source.end());
+}
+""",
+        "unique-pointer-range-insert": """\
+#include <memory>
+void f(std::vector<std::unique_ptr<int>>& values,
+       const std::vector<std::unique_ptr<int>>& source) {
+  values.insert(values.begin(), source.begin(), source.end());
+}
+""",
     }.items():
         check("v2-vector-" + name, vector_record_boundary_preamble + source,
-              "TR0203", profile="cpp-core-v2", sdk=True)
+              "TR0202" if name.startswith("unique-pointer-") else "TR0203",
+              profile="cpp-core-v2", sdk=True)
     check("v2-vector-runtime-object",
           '#include <vector>\nint f(){std::vector<int> v;return v.size();}',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-vector-function-pointer",
+          vector_record_boundary_preamble +
+          'void callback() {}\nint f() { std::vector<void (*)()> values; '
+          'values.push_back(&callback); return values.size(); }',
+          "TR0203", profile="cpp-core-v2", sdk=True)
+    check("v2-vector-pointer-order",
+          vector_record_boundary_preamble +
+          'bool f(const std::vector<int*>& left, '
+          'const std::vector<int*>& right) { return left < right; }',
           "TR0203", profile="cpp-core-v2", sdk=True)
     check("v2-vector-quoted", '#include "vector"\nint f(){return 0;}',
           "TR0201", profile="cpp-core-v2", sdk=True)
@@ -29457,6 +29918,25 @@ std::string::size_type passthrough(std::string::size_type n) {
         else:
             assert dependencies == string_dependencies, target
         assert len(string_ir["functions"]) == 1, target
+    container_allocator_source = """\
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <string>
+#include <vector>
+std::allocator<int> vector_allocator(const std::vector<int>& values) {
+  return values.get_allocator();
+}
+std::allocator<char> string_allocator(const std::string& value) {
+  return value.get_allocator();
+}
+"""
+    for target in sdk_targets:
+        check("v2-container-get-allocator-" + target,
+              container_allocator_source, profile="cpp-core-v2",
+              target=target, sdk=True)
     string_runtime_source = """\
 using Size = decltype(sizeof(0));
 extern "C" void *malloc(Size);
@@ -29464,10 +29944,57 @@ extern "C" void free(void *);
 void *operator new(Size n) { return malloc(n); }
 void operator delete(void *p) noexcept { free(p); }
 #include <string>
+#include <string_view>
 int main() {
   std::string empty;
   std::string short_text("hello");
   std::string long_text("abcdefghijklmnopqrstuvwxyz");
+  std::string filled(3, 'q');
+  bool fill_intact = filled.size() == 3 && filled[0] == 'q' &&
+                     filled[2] == 'q' && filled.data()[3] == 0;
+  char constructed_bytes[] = {'a', 0, 'b'};
+  std::string range_constructed(constructed_bytes, constructed_bytes + 3);
+  std::string wrapped_constructed(range_constructed.cbegin(),
+                                  range_constructed.cend());
+  bool range_construction_intact =
+      range_constructed.size() == 3 && range_constructed[1] == 0 &&
+      wrapped_constructed.size() == 3 && wrapped_constructed[2] == 'b';
+  std::string substring_suffix(range_constructed, 1);
+  std::string substring_counted(long_text, 1, 23);
+  bool substring_construction_intact =
+      substring_suffix.size() == 2 && substring_suffix[0] == 0 &&
+      substring_suffix[1] == 'b' && substring_counted.size() == 23 &&
+      substring_counted[0] == 'b' && substring_counted[22] == 'x';
+  std::string_view borrowed = long_text;
+  std::string view_copy(borrowed);
+  std::string view_slice(borrowed, 1, 23);
+  bool view_interop_intact = borrowed.data() == long_text.data() &&
+                             view_copy.size() == 26 && view_copy[25] == 'z' &&
+                             view_slice.size() == 23 && view_slice[0] == 'b' &&
+                             view_slice[22] == 'x';
+  std::string_view digits("0123456789");
+  std::string view_modified("a");
+  view_modified.append(digits);
+  view_modified.assign(digits, 2, 3);
+  view_modified.insert(1, digits, 5, 2);
+  view_modified.replace(1, 2, digits, 7, 2);
+  view_modified += digits;
+  bool view_modifiers_intact = view_modified.size() == 15 &&
+                               view_modified[0] == '2' &&
+                               view_modified[4] == '4' &&
+                               view_modified[5] == '0' &&
+                               view_modified[14] == '9';
+  std::string_view needle("def");
+  std::string_view choices("az");
+  bool view_search_intact =
+      long_text.compare(borrowed) == 0 &&
+      long_text.compare(3, 3, needle) == 0 &&
+      long_text.compare(3, 3, std::string_view("xdefy"), 1, 3) == 0 &&
+      long_text.find(needle) == 3 && long_text.rfind(needle) == 3 &&
+      long_text.find_first_of(choices) == 0 &&
+      long_text.find_last_of(choices) == 25 &&
+      long_text.find_first_not_of(choices) == 1 &&
+      long_text.find_last_not_of(choices) == 24;
   std::string copied(long_text);
   std::string combined = short_text + long_text;
   std::string prefixed = "!" + long_text;
@@ -29658,6 +30185,14 @@ int main() {
   range_assigned.assign(range_bytes + 1, range_bytes + 4);
   range_modifiers_intact = range_modifiers_intact &&
       range_assigned.size() == 3 && range_assigned[2] == 'B';
+  const std::string slice_source("ab\\0cdef", 7);
+  std::string sliced("x");
+  sliced.append(slice_source, 1, 3);
+  bool object_slices_intact = sliced.size() == 4 && sliced[2] == 0;
+  sliced.assign(slice_source, 4);
+  sliced.insert(1, slice_source, 1, 2);
+  sliced.replace(1, 2, slice_source, 4);
+  object_slices_intact = object_slices_intact && sliced == "ddefef";
   std::string spliced("ab");
   spliced.insert(1, "x", 1).insert(0, "!");
   spliced.insert(1, suffix).insert(0, 2, 'q');
@@ -29805,7 +30340,11 @@ int main() {
   const std::string reverse_long("abcdefghijklmnopqrstuvwxyz0123456789");
   bool reverse_long_intact = *reverse_long.rbegin() == '9' &&
                              *(reverse_long.rend() - 1) == 'a';
-  return intact && maximum_intact && shrink_intact && boundary_intact && emptied &&
+  return intact && fill_intact && range_construction_intact &&
+         substring_construction_intact && view_interop_intact &&
+         view_modifiers_intact && view_search_intact &&
+         maximum_intact && shrink_intact &&
+         boundary_intact && emptied &&
          assigned.size() == 14 &&
          assigned[0] == 'x' && assigned[2] == 'a' &&
          assigned[3] == 'b' && assigned[4] == 'c' && assigned[5] == 'd' &&
@@ -29818,6 +30357,7 @@ int main() {
          reassigned[1] == 'a' &&
          erase_intact && erased.empty() && iterator_modifiers_intact &&
          iterator_replace_intact && range_modifiers_intact &&
+         object_slices_intact &&
          splice_intact && growth_intact &&
          concat_intact && rvalue_concat_intact && list_intact &&
          scalar_assignment_intact &&

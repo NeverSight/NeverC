@@ -28671,13 +28671,6 @@ void rejected_swap(Value& left, Value& right) { left.swap(right); }
 using Value = std::array<volatile int, 0>;
 void rejected_swap(Value& left, Value& right) { left.swap(right); }
 )cpp", "TR0201"},
-    {"zero-array-nontrivial-element", R"cpp(#include <array>
-#include <functional>
-#include <utility>
-struct Row { Row() {} int value; };
-using Value = std::array<Row, 0>;
-void rejected_swap(Value& left, Value& right) { left.swap(right); }
-)cpp", "TR0203"},
     {"array-internal-range-specialization", R"cpp(#include <array>
 #include <utility>
 struct Row { int value; };
@@ -29745,6 +29738,301 @@ int main(){const std::array<int,2> values{{2,3}};return std::apply(std::ref(add)
   }
 }
 
+TEST_F(TranslateTest, CoreV2EmptyArrayNontrivialApplyAndTupleCatRun) {
+  const auto Source = tmpFile("array-zero-owned-apply.cpp");
+  const auto Output = tmpFile("array-zero-owned-apply.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <tuple>
+int selected;
+int called;
+int constructed;
+int destroyed;
+struct Item {
+  int value;
+  Item() noexcept : value(++constructed) {}
+  ~Item() noexcept { ++destroyed; }
+};
+using Empty = std::array<Item, 0>;
+Empty& choose(Empty& value) { ++selected; return value; }
+int empty() { ++called; return 17; }
+int main() {
+  Empty value{};
+  if (std::apply(empty, choose(value)) != 17 || selected != 1 || called != 1)
+    return 1;
+  const Empty& view = value;
+  if (std::apply(empty, view) != 17 || called != 2)
+    return 2;
+  auto joined = std::tuple_cat(choose(value));
+  static_assert(std::tuple_size<decltype(joined)>::value == 0);
+  if (selected != 2 || constructed != 0 || destroyed != 0)
+    return 3;
+  if (std::apply(empty, Empty{}) != 17 || called != 3)
+    return 4;
+  return constructed == 0 && destroyed == 0 ? 0 : 5;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("array-zero-owned-apply" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ArrayNontrivialApplyReferencesRun) {
+  const auto Source = tmpFile("array-owned-apply-references.cpp");
+  const auto Output = tmpFile("array-owned-apply-references.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <tuple>
+int constructions;
+int copies;
+int destructions;
+int order;
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) { ++constructions; }
+  Item(const Item& other) noexcept : value(other.value) { ++copies; }
+  ~Item() noexcept { ++destructions; order = order * 10 + value; }
+};
+int mutate(Item& first, const Item& second) {
+  first.value += second.value;
+  return first.value;
+}
+int inspect(const Item& first, const Item& second) {
+  return first.value + second.value;
+}
+int move_refs(Item&& first, Item&& second) {
+  first.value += second.value;
+  return first.value;
+}
+struct Reader {
+  int operator()(const Item& first, const Item& second) const {
+    return first.value + second.value;
+  }
+};
+int main() {
+  {
+    std::array<Item, 2> values{{Item(2), Item(3)}};
+    if (std::apply(mutate, values) != 5 || copies != 0)
+      return 1;
+    const auto& view = values;
+    if (std::apply(inspect, view) != 8 ||
+        std::apply(Reader{}, view) != 8 || copies != 0)
+      return 2;
+    if (std::apply(move_refs, static_cast<std::array<Item, 2>&&>(values)) != 8 ||
+        copies != 0)
+      return 3;
+  }
+  return constructions == 2 && copies == 0 && destructions == 2 &&
+                 order == 38
+             ? 0
+             : 4;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("array-owned-apply-references" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ArrayOwnedApplySelectedCopiesRunAtBothOptimizations) {
+  const auto Source = tmpFile("array-owned-apply-selected-copies.cpp");
+  const auto Output = tmpFile("array-owned-apply-selected-copies.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <tuple>
+#include <utility>
+int copies;
+int moves;
+int deaths;
+int alive;
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) { ++alive; }
+  Item(const Item& other) noexcept : value(other.value) {
+    ++copies;
+    ++alive;
+  }
+  Item(Item&& other) noexcept : value(other.value) {
+    ++moves;
+    ++alive;
+  }
+  ~Item() noexcept { ++deaths; --alive; }
+};
+int read(Item first, Item second) {
+  const int result = first.value * 10 + second.value;
+  first.value = 90;
+  second.value = 91;
+  return result;
+}
+struct Reader {
+  int operator()(Item first, Item second) const {
+    return read(std::move(first), std::move(second));
+  }
+};
+int main() {
+  std::array<Item, 2> row{{Item(2), Item(3)}};
+  const std::array<Item, 2> constant{{Item(4), Item(5)}};
+  Reader reader;
+  if (std::apply(read, row) != 23 || copies != 2 || moves != 0 ||
+      deaths != 2 || alive != 4) return 1;
+  if (std::apply(reader, constant) != 45 || copies != 4 || moves != 2 ||
+      deaths != 6 || alive != 4) return 2;
+  if (std::apply(read, std::move(row)) != 23 || copies != 4 || moves != 4 ||
+      deaths != 8 || alive != 4) return 3;
+  return row[0].value == 2 && row[1].value == 3 &&
+         constant[0].value == 4 && constant[1].value == 5 ? 0 : 4;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("array-owned-apply-selected-copies" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ArrayOwnedApplyAdapterCopiesRunAtBothOptimizations) {
+  const auto Source = tmpFile("array-owned-apply-adapter-copies.cpp");
+  const auto Output = tmpFile("array-owned-apply-adapter-copies.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <functional>
+#include <tuple>
+#include <utility>
+int copies;
+int moves;
+int deaths;
+int alive;
+int calls;
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) { ++alive; }
+  Item(const Item& other) noexcept : value(other.value) {
+    ++copies;
+    ++alive;
+  }
+  Item(Item&& other) noexcept : value(other.value) {
+    ++moves;
+    ++alive;
+  }
+  ~Item() noexcept { ++deaths; --alive; }
+  int combine(Item other) const {
+    ++calls;
+    const int result = value * 10 + other.value;
+    other.value = 99;
+    return result;
+  }
+};
+int read(Item first, Item second) {
+  ++calls;
+  const int result = first.value * 10 + second.value;
+  first.value = 88;
+  second.value = 99;
+  return result;
+}
+struct Reader {
+  int operator()(Item first, Item second) const {
+    ++calls;
+    return first.value * 10 + second.value;
+  }
+};
+int main() {
+  std::array<Item, 2> values{{Item(2), Item(3)}};
+  const std::array<Item, 2> constant{{Item(2), Item(3)}};
+  Reader reader;
+  auto function = std::ref(read);
+  auto object = std::cref(reader);
+  auto member = std::mem_fn(&Item::combine);
+  if (std::apply(function, values) != 23 || copies != 2 ||
+      deaths != 2 || alive != 4) return 1;
+  if (std::apply(object, constant) != 23 || copies != 4 ||
+      deaths != 4 || alive != 4) return 2;
+  if (std::apply(&Item::combine, values) != 23 || copies != 5 ||
+      deaths != 5 || alive != 4) return 3;
+  if (std::apply(member, constant) != 23 || copies != 6 ||
+      deaths != 6 || alive != 4 || calls != 4) return 4;
+  if (std::apply(function, std::move(values)) != 23 || moves != 2 ||
+      deaths != 8 || alive != 4) return 5;
+  if (std::apply(object, std::move(values)) != 23 || moves != 4 ||
+      deaths != 10 || alive != 4) return 6;
+  if (std::apply(&Item::combine, std::move(values)) != 23 || moves != 5 ||
+      deaths != 11 || alive != 4) return 7;
+  if (std::apply(member, std::move(values)) != 23 || moves != 6 ||
+      copies != 6 || deaths != 12 || alive != 4 || calls != 8) return 8;
+  return values[0].value == 2 && values[1].value == 3 &&
+         constant[0].value == 2 && constant[1].value == 3 ? 0 : 9;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("array-owned-apply-adapter-copies" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ArrayOwnedTupleCatCopiesRemainUnsupported) {
+  struct Rejection {
+    const char *Name;
+    const char *Source;
+  };
+  const Rejection Cases[] = {
+      {"tuple-cat-copy", R"cpp(#include <array>
+#include <tuple>
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) {}
+  Item(const Item& other) noexcept : value(other.value) {}
+  ~Item() noexcept {}
+};
+int main() {
+  std::array<Item, 1> values{{Item(7)}};
+  auto copied = std::tuple_cat(values);
+  return std::get<0>(copied).value;
+}
+)cpp"}};
+  for (const auto &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const auto Source =
+        tmpFile(std::string("array-owned-") + Case.Name + ".cpp");
+    const auto Output =
+        tmpFile(std::string("array-owned-") + Case.Name + ".nc");
+    writeFile(Source, Case.Source);
+    expectCode(translate(Source,
+                         {"--profile", "cpp-core-v2", "-o", Output.string()}),
+               "TR0203");
+    expectNoArtifacts(Output);
+  }
+}
+
 TEST_F(TranslateTest, CoreV2PairArrayApplyRequiresPinnedOperations) {
   struct Rejection {
     const char *Name;
@@ -29761,14 +30049,12 @@ int empty() { return 1; }
 int main() { std::array<volatile int, 0> a{}; return std::apply(empty, a); }
 )cpp", "TR0201"},
 
-      {"zero-nontrivial-element", R"cpp(#include <array>
-#include <functional>
+      {"zero-hidden-element-source", R"cpp(#include <array>
 #include <tuple>
-#include <utility>
-struct Item { int value; ~Item() {} };
-int empty() { return 1; }
-int main() { std::array<Item, 0> a{}; return std::apply(empty, a); }
-)cpp", "TR0203"},
+struct Item { int values[(sizeof(long double), 2)]; ~Item() noexcept {} };
+int empty() { return 0; }
+int main() { std::array<Item, 0> array{}; return std::apply(empty, array); }
+)cpp", "TR0201"},
 
       {"array-wrapper-receiver", R"cpp(#include <array>
 #include <functional>
@@ -31380,22 +31666,6 @@ extern "C" void probe() {
   auto refs = std::tie(row);
 }
 )cpp", "TR0201"},
-      {"nontrivial-element", R"cpp(#include <array>
-#include <tuple>
-struct Item { int value; ~Item() {} };
-extern "C" void probe() {
-  std::array<Item, 1> row{{{1}}};
-  auto refs = std::tie(row);
-}
-)cpp", "TR0203"},
-      {"nontrivial-element-zero", R"cpp(#include <array>
-#include <tuple>
-struct Item { int value; ~Item() {} };
-extern "C" void probe() {
-  std::array<Item, 0> row{};
-  auto refs = std::tie(row);
-}
-)cpp", "TR0203"},
       {"by-value-callback-parameter", R"cpp(#include <array>
 #include <tuple>
 using Row = std::array<int, 2>;
@@ -31719,6 +31989,93 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ArrayNontrivialRecordLifetimeRun) {
+  const auto Source = tmpFile("array-nontrivial-record.cpp");
+  const auto Output = tmpFile("array-nontrivial-record.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+int constructions;
+int destructions;
+int order;
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) { ++constructions; }
+  ~Item() noexcept { ++destructions; order = order * 10 + value; }
+};
+int main() {
+  {
+    std::array<Item, 2> values{{Item(3), Item(5)}};
+    std::array<Item, 2> copied = values;
+    if (constructions != 2 || destructions != 0 || values.size() != 2 ||
+        values.front().value != 3 || std::get<1>(values).value != 5 ||
+        values.data() != values.begin() || copied.back().value != 5)
+      return 1;
+  }
+  return constructions == 2 && destructions == 4 && order == 5353 ? 0 : 2;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("array-nontrivial-record" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ArrayNestedNontrivialRecordLifetimeRun) {
+  const auto Source = tmpFile("array-nested-nontrivial-record.cpp");
+  const auto Output = tmpFile("array-nested-nontrivial-record.nc");
+  writeFile(Source, R"cpp(
+#include <array>
+#include <tuple>
+int constructions;
+int destructions;
+int order;
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) { ++constructions; }
+  ~Item() noexcept { ++destructions; order = order * 10 + value; }
+};
+using Empty = std::array<Item, 0>;
+Empty &identity(Empty &value) { return value; }
+int main() {
+  {
+    std::array<std::array<Item, 2>, 2> nested{{
+        std::array<Item, 2>{{Item(1), Item(2)}},
+        std::array<Item, 2>{{Item(3), Item(4)}}}};
+    Empty empty{}, another{};
+    empty.swap(another);
+    auto nested_refs = std::tie(nested);
+    auto empty_refs = std::tie(empty);
+    static_assert(__is_same(decltype(identity(empty)), Empty &));
+    if (nested[1][0].value != 3 || empty.size() != 0 ||
+        &std::get<0>(nested_refs) != &nested ||
+        &std::get<0>(empty_refs) != &empty ||
+        constructions != 4 || destructions != 0)
+      return 1;
+  }
+  return constructions == 4 && destructions == 4 && order == 4321 ? 0 : 2;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("array-nested-nontrivial-record" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2ArrayRequiresPinnedOperations) {
   struct Rejection {
     const char *Name;
@@ -31733,9 +32090,10 @@ TEST_F(TranslateTest, CoreV2ArrayRequiresPinnedOperations) {
       {"zero-subscript",
        "#include <array>\nint main(){std::array<int,0>a{};return a[0];}",
        "TR0203"},
-      {"nontrivial-element",
-       "#include <array>\nstruct R{int n;~R(){}};int main(){"
-       "std::array<R,2>a{{{1},{2}}};return a[0].n;}",
+      {"nontrivial-element-copy",
+       "#include <array>\nstruct R{int n;explicit R(int v):n(v){}"
+       "R(const R&o):n(o.n){}~R(){}};int main(){"
+       "std::array<R,2>a{{R(1),R(2)}};std::array<R,2>b=a;return b[0].n;}",
        "TR0203"},
       {"record-comparison",
        "#include <array>\nstruct R{int n;};bool operator==(const R&a,const "
@@ -32709,13 +33067,6 @@ Row& identity(Row& row){return row;}
 int probe(Row& row){static_assert(__is_same(decltype(identity(row)),Row&));return 0;}
 int main(){return 0;}
 )cpp", "TR0201"},
-      {"nontrivial-element-zero", R"cpp(#include <array>
-struct Element{int value;~Element(){}};
-using Row = std::array<Element,0>;
-Row& identity(Row& row){return row;}
-int probe(Row& row){static_assert(__is_same(decltype(identity(row)),Row&));return 0;}
-int main(){return 0;}
-)cpp", "TR0203"},
       {"volatile-element-zero", R"cpp(#include <array>
 
 using Row = std::array<volatile int,0>;
@@ -49190,6 +49541,80 @@ int main() {
 }
 
 TEST_F(TranslateTest,
+       CoreV2FunctionalPointerComparisonsRunAtBothOptimizations) {
+  const auto Source = tmpFile("functional-pointer-comparisons.cpp");
+  const auto Output = tmpFile("functional-pointer-comparisons.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int evaluations;
+int *observe(int *value) { ++evaluations; return value; }
+int main() {
+  int values[3]{1, 2, 3};
+  int *first = &values[0];
+  int *last = &values[2];
+  const int *const_last = last;
+  std::less<int *> less;
+  if (!less(first, last) || std::greater<int *>{}(first, last) ||
+      !std::less_equal<int *>{}(first, first) ||
+      !std::greater_equal<int *>{}(last, first) ||
+      std::equal_to<int *>{}(first, last) ||
+      !std::not_equal_to<int *>{}(first, last) ||
+      !std::less<int *const>{}(first, last))
+    return 1;
+  if (!std::less<>{}(first, const_last) ||
+      !std::greater<>{}(const_last, first) ||
+      !std::less_equal<>{}(first, first) ||
+      !std::greater_equal<>{}(last, first) ||
+      !std::equal_to<>{}(first, first) ||
+      !std::not_equal_to<>{}(first, last))
+    return 2;
+  void *opaque = first;
+  if (!std::equal_to<void *>{}(opaque, first) ||
+      std::not_equal_to<void *>{}(opaque, first) ||
+      !std::equal_to<>{}(opaque, first) ||
+      std::equal_to<int *>{}(first, nullptr))
+    return 3;
+  if (!std::invoke(less, first, last) ||
+      !std::less<int *>{}(observe(first), observe(last)) ||
+      evaluations != 2)
+    return 4;
+  int *pointers[3]{last, first, &values[1]};
+  std::sort(pointers, pointers + 3, less);
+  if (pointers[0] != first || pointers[1] != &values[1] ||
+      pointers[2] != last)
+    return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-pointer-comparisons" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+  const auto VoidOrderSource = tmpFile("functional-void-order.cpp");
+  const auto VoidOrderOutput = tmpFile("functional-void-order.nc");
+  writeFile(VoidOrderSource, R"cpp(
+#include <functional>
+extern "C" bool order_void(void *left, void *right) {
+  return std::less<void *>{}(left, right);
+}
+)cpp");
+  auto VoidOrder = translate(VoidOrderSource, {"--profile", "cpp-core-v2", "-o",
+                                               VoidOrderOutput.string()});
+  EXPECT_NE(VoidOrder.exitCode, 0);
+  EXPECT_NE(VoidOrder.err.find("TR0203"), std::string::npos) << VoidOrder.err;
+  EXPECT_EQ(VoidOrder.err.find("TR0301"), std::string::npos) << VoidOrder.err;
+}
+
+TEST_F(TranslateTest,
        CoreV2FunctionalTransparentFunctionObjectsRunAtBothOptimizations) {
   const auto Source = tmpFile("functional-transparent-objects.cpp");
   const auto Output = tmpFile("functional-transparent-objects.nc");
@@ -51472,6 +51897,70 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorRangeConstructionRun) {
+  const auto Source = tmpFile("vector-range-construction.cpp");
+  const auto Output = tmpFile("vector-range-construction.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <vector>
+int first_calls;
+int last_calls;
+int *first(int *value) { ++first_calls; return value; }
+int *last(int *value) { ++last_calls; return value; }
+struct Entry { int key; int value; };
+int main() {
+  int raw[]{1, 2, 3, 4};
+  Entry records[]{{5, 6}, {7, 8}};
+  {
+    std::vector<int> copied(first(raw), last(raw + 4));
+    if (first_calls != 1 || last_calls != 1 || copied.size() != 4 ||
+        copied.capacity() != 4 || copied[0] != 1 || copied[3] != 4)
+      return 1;
+    const int *constant = raw;
+    std::vector<int> const_raw(constant + 1, constant + 3);
+    if (const_raw.size() != 2 || const_raw[0] != 2 || const_raw[1] != 3)
+      return 2;
+    std::vector<int> wrapped(copied.cbegin() + 1, copied.cend());
+    if (wrapped.size() != 3 || wrapped[0] != 2 || wrapped[2] != 4)
+      return 3;
+    std::vector<int> mutable_wrapped(copied.begin(), copied.begin() + 2);
+    if (mutable_wrapped.size() != 2 || mutable_wrapped[0] != 1 ||
+        mutable_wrapped[1] != 2)
+      return 4;
+    int before_empty = allocations;
+    std::vector<int> empty(raw + 2, raw + 2);
+    std::vector<int> empty_wrapped(copied.cend(), copied.cend());
+    if (!empty.empty() || empty.data() != nullptr ||
+        !empty_wrapped.empty() || empty_wrapped.data() != nullptr ||
+        allocations != before_empty)
+      return 5;
+    std::vector<Entry> entries(records, records + 2);
+    if (entries.size() != 2 || entries[0].key != 5 ||
+        entries[1].value != 8 || records[0].key != 5)
+      return 6;
+  }
+  return allocations == releases ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-range-construction" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorAlgorithmSortRun) {
   const auto Source = tmpFile("vector-algorithm-sort.cpp");
   const auto Output = tmpFile("vector-algorithm-sort.nc");
@@ -52943,6 +53432,847 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VectorOwningRelationsRun) {
+  const auto Source = tmpFile("vector-owning-relations.cpp");
+  const auto Output = tmpFile("vector-owning-relations.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int observations;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+#include <vector>
+bool relations(const std::vector<std::string>& left,
+               const std::vector<std::string>& right,
+               bool equal, bool different, bool less, bool greater,
+               bool less_equal, bool greater_equal) {
+  return (left == right) == equal && (left != right) == different &&
+         (left < right) == less && (left > right) == greater &&
+         (left <= right) == less_equal &&
+         (left >= right) == greater_equal;
+}
+const std::vector<std::string>& observe(
+    const std::vector<std::string>& value) {
+  ++observations;
+  return value;
+}
+int main() {
+  {
+    std::string longText("a long string with separately allocated contents");
+    std::vector<std::string> empty;
+    std::vector<std::string> prefix{std::string("a"), longText};
+    std::vector<std::string> longer{std::string("a"), longText,
+                                    std::string("z")};
+    std::vector<std::string> equal(prefix);
+    std::vector<std::string> changed{std::string("a"),
+                                     std::string("a long string with separately allocated contentt")};
+    if (prefix[1].data() == equal[1].data() ||
+        !relations(empty, empty, true, false, false, false, true, true) ||
+        !relations(empty, prefix, false, true, true, false, true, false) ||
+        !relations(prefix, empty, false, true, false, true, false, true))
+      return 1;
+    if (!relations(prefix, longer, false, true, true, false, true, false) ||
+        !relations(longer, prefix, false, true, false, true, false, true) ||
+        !relations(prefix, equal, true, false, false, false, true, true) ||
+        !relations(prefix, changed, false, true, true, false, true, false))
+      return 2;
+    std::vector<std::string> shortWord{std::string("ab")};
+    std::vector<std::string> longWord{std::string("abc")};
+    if (!relations(shortWord, longWord, false, true, true, false, true, false))
+      return 3;
+    char leftBytes[]{'a', 0, 'b'};
+    char rightBytes[]{'a', 0, 'c'};
+    std::string leftNul(leftBytes, 3);
+    std::string rightNul(rightBytes, 3);
+    std::vector<std::string> nulLeft(1, leftNul);
+    std::vector<std::string> nulRight(1, rightNul);
+    if (!relations(nulLeft, nulRight, false, true, true, false, true, false))
+      return 4;
+    char lowByte[]{char(0x7f)};
+    char highByte[]{char(0x80)};
+    std::string low(lowByte, 1);
+    std::string high(highByte, 1);
+    std::vector<std::string> lowVector(1, low);
+    std::vector<std::string> highVector(1, high);
+    if (!relations(lowVector, highVector, false, true, true, false, true, false))
+      return 5;
+    int before = allocations;
+    if (!(observe(prefix) < observe(longer)) || observations != 2 ||
+        allocations != before)
+      return 6;
+    if (!(std::vector<std::string>{std::string("a")} <
+          std::vector<std::string>{std::string("b")}) ||
+        std::vector<std::string>{std::string("a")} ==
+          std::vector<std::string>{std::string("b")})
+      return 7;
+  }
+  return allocations == releases ? 0 : 8;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-owning-relations" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorPointerRelationsRun) {
+  const auto Source = tmpFile("vector-pointer-relations.cpp");
+  const auto Output = tmpFile("vector-pointer-relations.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+int observations;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <memory>
+#include <vector>
+using Owner = std::unique_ptr<int>;
+using Owners = std::vector<Owner>;
+bool relations(const Owners &left, const Owners &right,
+               bool equal, bool different, bool less, bool greater,
+               bool less_equal, bool greater_equal) {
+  return (left == right) == equal && (left != right) == different &&
+         (left < right) == less && (left > right) == greater &&
+         (left <= right) == less_equal &&
+         (left >= right) == greater_equal;
+}
+const Owners &observe(const Owners &value) {
+  ++observations;
+  return value;
+}
+int main() {
+  {
+    Owners empty;
+    Owners prefix(1);
+    Owners longer(2);
+    if (!relations(empty, empty, true, false, false, false, true, true) ||
+        !relations(empty, prefix, false, true, true, false, true, false) ||
+        !relations(prefix, empty, false, true, false, true, false, true) ||
+        !relations(prefix, longer, false, true, true, false, true, false))
+      return 1;
+    prefix[0].reset(new int(7));
+    longer[0].reset(new int(11));
+    bool less = prefix[0] < longer[0];
+    bool greater = longer[0] < prefix[0];
+    if (!relations(prefix, longer, false, true, less, greater,
+                   less, greater) ||
+        !relations(prefix, prefix, true, false, false, false, true, true))
+      return 2;
+    int before = allocations;
+    if ((observe(prefix) < observe(longer)) != less ||
+        observations != 2 || allocations != before)
+      return 3;
+  }
+  {
+    int values[2]{1, 2};
+    std::vector<int *> lower;
+    std::vector<int *> higher;
+    lower.push_back(&values[0]);
+    higher.push_back(&values[1]);
+    if (!(lower < higher) || lower > higher || !(lower <= higher) ||
+        lower >= higher || lower == higher || !(lower != higher) ||
+        !(higher > lower) || higher < lower || !(higher >= lower) ||
+        higher <= lower)
+      return 4;
+    std::vector<void *> void_lower;
+    std::vector<void *> void_higher;
+    void_lower.push_back(&values[0]);
+    void_higher.push_back(&values[1]);
+    if (void_lower == void_higher || !(void_lower != void_higher) ||
+        !(void_lower == void_lower))
+      return 6;
+  }
+  return allocations == releases ? 0 : 5;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-pointer-relations" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+  const auto VoidOrderSource = tmpFile("vector-void-order.cpp");
+  const auto VoidOrderOutput = tmpFile("vector-void-order.nc");
+  writeFile(VoidOrderSource, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <vector>
+int main() {
+  std::vector<void *> left, right;
+  return left < right;
+}
+)cpp");
+  auto VoidOrderResult = translate(
+      VoidOrderSource, {"--profile", "cpp-core-v2", "-o", VoidOrderOutput.string()});
+  EXPECT_NE(VoidOrderResult.exitCode, 0);
+  EXPECT_NE(VoidOrderResult.err.find("TR0203"), std::string::npos)
+      << VoidOrderResult.err;
+  EXPECT_EQ(VoidOrderResult.err.find("TR0301"), std::string::npos)
+      << VoidOrderResult.err;
+}
+
+TEST_F(TranslateTest, CoreV2VectorCustomOwnerRelationRejected) {
+  const auto Source = tmpFile("vector-custom-owner-relation.cpp");
+  const auto Output = tmpFile("vector-custom-owner-relation.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <memory>
+#include <vector>
+namespace custom {
+struct Deleter { void operator()(int *) noexcept {} };
+using Owner = std::unique_ptr<int, Deleter>;
+bool operator==(const Owner &, const Owner &) { return false; }
+}
+int main() {
+  std::vector<custom::Owner> left(1), right(1);
+  return left == right;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  EXPECT_NE(Result.exitCode, 0);
+  EXPECT_NE(Result.err.find("TR0203"), std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2VectorObjectPointersRun) {
+  const auto Source = tmpFile("vector-object-pointers.cpp");
+  const auto Output = tmpFile("vector-object-pointers.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <vector>
+struct Node { int value; };
+int main() {
+  int values[4] = {10, 20, 30, 40};
+  Node node{7};
+  {
+    std::vector<int *> pointers;
+    if (!pointers.empty() || pointers.data() != nullptr)
+      return 1;
+    pointers.emplace_back();
+    if (pointers.front() != nullptr)
+      return 2;
+    pointers[0] = &values[0];
+    pointers.push_back(&values[1]);
+    pointers.push_back(&values[2]);
+    pointers.shrink_to_fit();
+    pointers.push_back(pointers[0]);
+    if (pointers.size() != 4 || pointers[3] != &values[0])
+      return 3;
+    pointers.reserve(12);
+    auto inserted = pointers.insert(pointers.cbegin() + 1, &values[3]);
+    if (*inserted != &values[3] || pointers[2] != &values[1])
+      return 4;
+    pointers.erase(pointers.cbegin() + 1);
+    pointers.resize(6);
+    if (pointers[4] != nullptr || pointers[5] != nullptr)
+      return 5;
+    pointers.resize(4);
+    const std::vector<int *> &view = pointers;
+    if (*view.cbegin() != &values[0] || view.back() != &values[0])
+      return 6;
+    std::vector<int *> copy(view);
+    if (copy != view || !(copy == view) || copy.data() == view.data())
+      return 7;
+    std::vector<int *> moved(static_cast<std::vector<int *> &&>(copy));
+    if (!copy.empty() || moved != view)
+      return 8;
+    moved.assign({&values[3], &values[2]});
+    if (moved.size() != 2 || *moved.front() != 40)
+      return 9;
+    std::vector<const int *> constants{&values[0], &values[1]};
+    if (*constants.back() != 20)
+      return 10;
+    std::vector<Node *> nodes;
+    nodes.push_back(&node);
+    if (nodes[0]->value != 7)
+      return 11;
+    void *address = &values[0];
+    std::vector<void *> opaque;
+    opaque.push_back(address);
+    if (opaque[0] != address)
+      return 12;
+  }
+  return allocations == releases ? 0 : 13;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-object-pointers" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorOwningStringsRun) {
+  const auto Source = tmpFile("vector-owning-strings.cpp");
+  const auto Output = tmpFile("vector-owning-strings.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+#include <vector>
+int main() {
+  {
+    std::string original("the original long string owns a heap allocation");
+    std::vector<std::string> values(2);
+    if (values.size() != 2 || !values[0].empty()) return 1;
+    values[0] = "a second long string with its own allocation";
+    values.push_back(static_cast<std::string&&>(original));
+    if (!original.empty() || values[2] !=
+        "the original long string owns a heap allocation") return 2;
+    values.reserve(8);
+    if (values[0] != "a second long string with its own allocation") return 3;
+    values.emplace_back(static_cast<std::string&&>(values[0]));
+    if (!values[0].empty() || values[3] !=
+        "a second long string with its own allocation") return 4;
+    values.shrink_to_fit();
+    values.push_back(static_cast<std::string&&>(values[2]));
+    if (!values[2].empty() || values[4] !=
+        "the original long string owns a heap allocation") return 5;
+    values.resize(7);
+    if (!values[5].empty() || !values[6].empty()) return 6;
+    values.resize(3);
+    values.pop_back();
+    if (values.size() != 2) return 7;
+    std::vector<std::string> moved(
+        static_cast<std::vector<std::string>&&>(values));
+    if (!values.empty() || moved.size() != 2) return 8;
+    std::vector<std::string> assigned;
+    assigned.emplace_back();
+    assigned[0] = "another owned long string before move assignment";
+    assigned = static_cast<std::vector<std::string>&&>(moved);
+    if (!moved.empty() || assigned.size() != 2) return 9;
+    assigned.clear();
+    if (!assigned.empty()) return 10;
+    assigned.push_back(std::string("a temporary long string owns its allocation"));
+    if (assigned.size() != 1 || assigned[0] !=
+        "a temporary long string owns its allocation") return 12;
+  }
+  return allocations == releases ? 0 : 11;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-owning-strings" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorOwningPointersRun) {
+  const auto Source = tmpFile("vector-owning-pointers.cpp");
+  const auto Output = tmpFile("vector-owning-pointers.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <memory>
+#include <vector>
+int main() {
+  {
+    std::vector<std::unique_ptr<int>> values(2);
+    if (values.size() != 2 || values[0] || values[1]) return 1;
+    std::unique_ptr<int> first(new int(7));
+    values.push_back(static_cast<std::unique_ptr<int>&&>(first));
+    if (first || *values[2] != 7) return 2;
+    values.reserve(8);
+    if (*values[2] != 7) return 3;
+    values.emplace_back();
+    if (values[3]) return 4;
+    values[0] = std::unique_ptr<int>(new int(9));
+    values.shrink_to_fit();
+    values.push_back(static_cast<std::unique_ptr<int>&&>(values[0]));
+    if (values[0] || *values[4] != 9) return 5;
+    values.resize(6);
+    if (values[5]) return 6;
+    values.resize(3);
+    if (values.size() != 3 || *values[2] != 7) return 7;
+    std::vector<std::unique_ptr<int>> moved(
+        static_cast<std::vector<std::unique_ptr<int>>&&>(values));
+    if (!values.empty() || moved.size() != 3) return 8;
+    std::vector<std::unique_ptr<int>> assigned;
+    assigned.emplace_back();
+    assigned[0] = std::unique_ptr<int>(new int(11));
+    assigned = static_cast<std::vector<std::unique_ptr<int>>&&>(moved);
+    if (!moved.empty() || assigned.size() != 3) return 9;
+    assigned.clear();
+    if (!assigned.empty()) return 10;
+    assigned.push_back(std::unique_ptr<int>(new int(13)));
+    if (assigned.size() != 1 || *assigned[0] != 13) return 12;
+  }
+  return allocations == releases ? 0 : 11;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-owning-pointers" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorOwningFillRun) {
+  const auto Source = tmpFile("vector-owning-fill.cpp");
+  const auto Output = tmpFile("vector-owning-fill.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+#include <vector>
+int main() {
+  {
+    std::string donor("a long fill value owns its separate allocation");
+    std::vector<std::string> values(3, donor);
+    if (values.size() != 3 || values[0] != donor ||
+        values[0].data() == donor.data() ||
+        values[0].data() == values[1].data()) return 1;
+    values.reserve(6);
+    values.resize(5, values[0]);
+    if (values.size() != 5 || values[4] != donor ||
+        values[4].data() == values[0].data()) return 2;
+    values.resize(9, values[1]);
+    if (values.size() != 9 || values[8] != donor ||
+        values[8].data() == values[1].data()) return 3;
+    values.resize(2, donor);
+    if (values.size() != 2 || values[1] != donor) return 4;
+    values.assign(4, values[0]);
+    if (values.size() != 4 || values[3] != donor ||
+        values[3].data() == values[0].data()) return 5;
+    auto wanted = values.capacity() + 2;
+    values.assign(wanted, donor);
+    if (values.size() != wanted || values[0] != donor ||
+        values[0].data() == values[1].data()) return 6;
+    auto inserted = values.insert(values.begin() + 1, 2, values[0]);
+    if (inserted != values.begin() + 1 || values.size() != wanted + 2 ||
+        *inserted != donor || (*inserted).data() == values[0].data())
+      return 7;
+    values.reserve(values.size() + 5);
+    auto more = values.insert(values.begin() + 2, 3, donor);
+    if (more != values.begin() + 2 || values.size() != wanted + 5 ||
+        *more != donor || (*more).data() == donor.data()) return 8;
+    auto inPlace = values.insert(values.begin() + 1, 2, values[3]);
+    if (inPlace != values.begin() + 1 || values.size() != wanted + 7 ||
+        *inPlace != donor || (*inPlace).data() == values[5].data())
+      return 9;
+    auto unchanged = values.insert(values.begin(), 0, donor);
+    if (unchanged != values.begin() || values.size() != wanted + 7)
+      return 10;
+    values.assign(0, donor);
+    if (!values.empty() || donor.empty()) return 11;
+    std::vector<std::string> none(0, donor);
+    if (!none.empty()) return 12;
+    std::string shortValue("short");
+    std::vector<std::string> small(2, shortValue);
+    if (small.size() != 2 || small[0] != "short" || small[1] != "short")
+      return 13;
+  }
+  return allocations == releases ? 0 : 14;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-owning-fill" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorOwningRangesRun) {
+  const auto Source = tmpFile("vector-owning-ranges.cpp");
+  const auto Output = tmpFile("vector-owning-ranges.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+#include <vector>
+int main() {
+  {
+    std::string first("a long first string with separate heap storage");
+    std::string second("another long string with separate heap storage");
+    std::vector<std::string> listed{first, second};
+    if (listed.size() != 2 || listed[0] != first || listed[1] != second ||
+        listed[0].data() == first.data() ||
+        listed[0].data() == listed[1].data()) return 1;
+    std::vector<std::string> ranged(listed.cbegin(), listed.cend());
+    std::vector<std::string> raw(listed.data(), listed.data() + 2);
+    if (ranged.size() != 2 || raw.size() != 2 || ranged[0] != first ||
+        raw[1] != second || ranged[0].data() == listed[0].data() ||
+        raw[1].data() == listed[1].data()) return 2;
+    std::vector<std::string> values(1, first);
+    values.reserve(12);
+    auto storage = values.data();
+    values.assign({second, first});
+    if (values.data() != storage || values.size() != 2 ||
+        values[0] != second || values[1] != first ||
+        values[0].data() == second.data()) return 3;
+    values = {values[1], values[0]};
+    if (values.data() != storage || values[0] != first ||
+        values[1] != second || values[0].data() == first.data()) return 4;
+    values.assign(ranged.cbegin(), ranged.cend());
+    if (values.data() != storage || values.size() != 2 ||
+        values[0] != first || values[1] != second ||
+        values[0].data() == ranged[0].data()) return 5;
+    values.assign(listed.data(), listed.data() + 2);
+    if (values.data() != storage || values[0] != first ||
+        values[1] != second || values[1].data() == listed[1].data()) return 6;
+    auto listInsert = values.insert(values.cbegin() + 1, {second, first});
+    if (listInsert != values.begin() + 1 || values.data() != storage ||
+        values.size() != 4 || values[1] != second || values[2] != first ||
+        values[1].data() == second.data()) return 7;
+    auto pointerInsert = values.insert(values.cend(), listed.data(),
+                                       listed.data() + 2);
+    if (pointerInsert != values.begin() + 4 || values.data() != storage ||
+        values.size() != 6 || values[4] != first || values[5] != second ||
+        values[4].data() == listed[0].data()) return 8;
+    std::initializer_list<std::string> none;
+    auto unchanged = values.insert(values.cbegin(), none);
+    if (unchanged != values.begin() || values.size() != 6) return 9;
+    values.assign({});
+    if (!values.empty() || values.data() != storage) return 10;
+    std::vector<std::string> tight{first, second};
+    auto old = tight.data();
+    auto grown = tight.insert(tight.cbegin() + 1,
+                              ranged.cbegin(), ranged.cend());
+    if (grown != tight.begin() + 1 || tight.data() == old ||
+        tight.size() != 4 || tight[0] != first || tight[1] != first ||
+        tight[2] != second || tight[3] != second ||
+        tight[1].data() == ranged[0].data()) return 11;
+    std::vector<std::string> fresh;
+    fresh.assign(ranged.cbegin(), ranged.cend());
+    if (fresh.size() != 2 || fresh[0] != first || fresh[1] != second) return 12;
+    auto endInsert = fresh.insert(fresh.cend(), {first});
+    if (endInsert != fresh.begin() + 2 || fresh.size() != 3 ||
+        fresh[2] != first || fresh[2].data() == first.data()) return 13;
+  }
+  return allocations == releases ? 0 : 14;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-owning-ranges" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorOwningCopyRun) {
+  const auto Source = tmpFile("vector-owning-copy.cpp");
+  const auto Output = tmpFile("vector-owning-copy.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+#include <vector>
+int main() {
+  {
+    std::vector<std::string> source;
+    source.reserve(6);
+    source.push_back(std::string("a first long string owns heap storage"));
+    source.push_back(std::string("short"));
+    const char embedded[] = "a third long string \0with a NUL suffix";
+    source.push_back(std::string(embedded, sizeof(embedded) - 1));
+    source[0].reserve(128);
+    std::vector<std::string> copied(source);
+    if (copied.size() != 3 || copied[0] != source[0] ||
+        copied[1] != "short" || copied[2] != source[2] ||
+        copied[2].size() != sizeof(embedded) - 1 ||
+        copied[0].data() == source[0].data()) return 1;
+    source[0][0] = 'X';
+    copied[2][0] = 'Y';
+    if (copied[0][0] != 'a' || source[2][0] != 'a') return 2;
+
+    std::vector<std::string> reused;
+    reused.reserve(6);
+    reused.push_back(std::string("a prior long string must be released"));
+    reused.push_back(std::string("another prior long string must be released"));
+    auto capacity = reused.capacity();
+    reused = source;
+    if (reused.capacity() != capacity || reused.size() != 3 ||
+        reused[0] != source[0] || reused[0].data() == source[0].data())
+      return 3;
+    reused = reused;
+    if (reused.size() != 3 || reused[2] != source[2]) return 4;
+    source.clear();
+    if (reused[0][0] != 'X' || reused[2][0] != 'a') return 5;
+
+    std::vector<std::string> growing;
+    growing.push_back(std::string("the old growing target owns an allocation"));
+    growing = copied;
+    if (growing.size() != 3 || growing[2] != copied[2] ||
+        growing[2].data() == copied[2].data()) return 6;
+    std::vector<std::string> empty;
+    std::vector<std::string> emptyCopy(empty);
+    if (!emptyCopy.empty()) return 7;
+    growing = empty;
+    if (!growing.empty()) return 8;
+
+    std::vector<std::string> appended;
+    appended.reserve(1);
+    appended.push_back(std::string("a long string copied during vector growth"));
+    appended.push_back(appended[0]);
+    if (appended.size() != 2 || appended[0] != appended[1] ||
+        appended[0].data() == appended[1].data()) return 10;
+    appended.emplace_back(appended[0]);
+    const std::string& frozen = appended[0];
+    appended.emplace_back(static_cast<const std::string&&>(frozen));
+    if (appended.size() != 4 || appended[0] != appended[3] ||
+        appended[0].data() == appended[3].data()) return 11;
+
+    std::vector<std::string> positioned;
+    positioned.reserve(4);
+    positioned.push_back(std::string("an original long string stays owned"));
+    positioned.push_back(std::string("tail"));
+    std::string donor("a separate long string stays owned by its donor");
+    auto inside = positioned.insert(positioned.begin() + 1, donor);
+    if (inside != positioned.begin() + 1 || *inside != donor ||
+        (*inside).data() == donor.data()) return 12;
+    auto alias = positioned.insert(positioned.begin(), positioned[0]);
+    if (alias != positioned.begin() || *alias != positioned[1] ||
+        (*alias).data() == positioned[1].data()) return 13;
+    auto placed = positioned.emplace(positioned.begin() + 2, donor);
+    if (placed != positioned.begin() + 2 || *placed != donor ||
+        (*placed).data() == donor.data() || positioned.size() != 5)
+      return 14;
+    auto copiedRvalue = positioned.emplace(
+        positioned.end(), static_cast<const std::string&&>(donor));
+    if (copiedRvalue != positioned.end() - 1 || *copiedRvalue != donor ||
+        (*copiedRvalue).data() == donor.data()) return 15;
+  }
+  return allocations == releases ? 0 : 16;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-owning-copy" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorOwningEraseRun) {
+  const auto Source = tmpFile("vector-owning-erase.cpp");
+  const auto Output = tmpFile("vector-owning-erase.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <memory>
+#include <string>
+#include <vector>
+int main() {
+  {
+    std::vector<std::string> values;
+    values.push_back(std::string("a first long string allocation to release"));
+    values.push_back(std::string("a second long string allocation to release"));
+    values.push_back(std::string("a third long string allocation to release"));
+    auto unchanged = values.erase(values.begin(), values.begin());
+    if (unchanged != values.begin() || values.size() != 3) return 1;
+    auto shifted = values.erase(values.begin() + 1);
+    if (shifted != values.begin() + 1 || *shifted !=
+        "a third long string allocation to release") return 2;
+    auto first = values.erase(values.begin(), values.begin() + 1);
+    if (first != values.begin() || values.size() != 1 || *first !=
+        "a third long string allocation to release") return 3;
+    values.erase(values.begin());
+    if (!values.empty()) return 4;
+  }
+  {
+    std::vector<std::unique_ptr<int>> values;
+    values.push_back(std::unique_ptr<int>(new int(1)));
+    values.push_back(std::unique_ptr<int>(new int(2)));
+    values.push_back(std::unique_ptr<int>(new int(3)));
+    values.push_back(std::unique_ptr<int>(new int(4)));
+    auto shifted = values.erase(values.begin() + 1, values.begin() + 3);
+    if (shifted != values.begin() + 1 || values.size() != 2 ||
+        *values[0] != 1 || *values[1] != 4) return 5;
+    values.erase(values.begin());
+    if (values.size() != 1 || *values[0] != 4) return 6;
+    values.clear();
+  }
+  return allocations == releases ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-owning-erase" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VectorOwningInsertRun) {
+  const auto Source = tmpFile("vector-owning-insert.cpp");
+  const auto Output = tmpFile("vector-owning-insert.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <memory>
+#include <string>
+#include <vector>
+int main() {
+  {
+    std::vector<std::string> values;
+    values.reserve(3);
+    values.push_back(std::string("a first long string owns its allocation"));
+    values.push_back(std::string("a second long string owns its allocation"));
+    std::string donor("a third long string owns its allocation");
+    auto middle = values.insert(values.begin() + 1,
+                                static_cast<std::string&&>(donor));
+    if (!donor.empty() || middle != values.begin() + 1 ||
+        *middle != "a third long string owns its allocation") return 1;
+    auto first = values.insert(values.begin(),
+                               static_cast<std::string&&>(values[2]));
+    if (first != values.begin() || *first !=
+        "a second long string owns its allocation" || !values[3].empty())
+      return 2;
+    auto placed = values.emplace(
+        values.begin() + 2,
+        std::string("a fourth long string owns its allocation"));
+    if (placed != values.begin() + 2 || *placed !=
+        "a fourth long string owns its allocation") return 3;
+    auto empty = values.emplace(values.begin());
+    if (empty != values.begin() || !(*empty).empty() || values.size() != 6)
+      return 4;
+  }
+  {
+    std::vector<std::unique_ptr<int>> values;
+    values.reserve(2);
+    values.push_back(std::unique_ptr<int>(new int(1)));
+    values.push_back(std::unique_ptr<int>(new int(2)));
+    std::unique_ptr<int> donor(new int(3));
+    auto middle = values.insert(values.begin() + 1,
+                                static_cast<std::unique_ptr<int>&&>(donor));
+    if (donor || middle != values.begin() + 1 || *values[0] != 1 ||
+        *values[1] != 3 || *values[2] != 2) return 5;
+    auto first = values.emplace(values.begin(),
+                                std::unique_ptr<int>(new int(4)));
+    if (first != values.begin() || *values[0] != 4 || values.size() != 4)
+      return 6;
+    auto empty = values.emplace(values.begin() + 2);
+    if (empty != values.begin() + 2 || *empty || *values[3] != 3)
+      return 7;
+    std::unique_ptr<int> last(new int(5));
+    auto shifted = values.insert(values.begin() + 1,
+                                 static_cast<std::unique_ptr<int>&&>(last));
+    if (last || shifted != values.begin() + 1 || *values[1] != 5 ||
+        *values[5] != 2 || values.size() != 6) return 8;
+  }
+  return allocations == releases ? 0 : 9;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("vector-owning-insert" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2VectorTrivialRecordRun) {
   const auto Source = tmpFile("vector-trivial-record.cpp");
   const auto Output = tmpFile("vector-trivial-record.nc");
@@ -53352,6 +54682,80 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ContainerGetAllocatorRun) {
+  const auto Source = tmpFile("container-get-allocator.cpp");
+  const auto Output = tmpFile("container-get-allocator.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <memory>
+#include <string>
+#include <vector>
+int vector_calls;
+int string_calls;
+std::vector<int> &select_vector(std::vector<int> &value) {
+  ++vector_calls;
+  return value;
+}
+std::string &select_string(std::string &value) {
+  ++string_calls;
+  return value;
+}
+int main() {
+  std::vector<int> numbers{3, 5};
+  std::string text("letters");
+  const std::vector<int> &constant_numbers = numbers;
+  const std::string &constant_text = text;
+  int *number_data = numbers.data();
+  const char *text_data = text.data();
+  int before = allocations;
+  std::allocator<int> numbers_allocator =
+      select_vector(numbers).get_allocator();
+  std::allocator<char> text_allocator =
+      select_string(text).get_allocator();
+  std::allocator<int> const_numbers_allocator =
+      constant_numbers.get_allocator();
+  std::allocator<char> const_text_allocator =
+      constant_text.get_allocator();
+  if (vector_calls != 1 || string_calls != 1 || allocations != before ||
+      numbers.data() != number_data || text.data() != text_data ||
+      !(numbers_allocator == const_numbers_allocator) ||
+      !(text_allocator == const_text_allocator))
+    return 1;
+  int *values = numbers_allocator.allocate(2);
+  values[0] = 7;
+  values[1] = 11;
+  if (values[0] + values[1] != 18)
+    return 2;
+  numbers_allocator.deallocate(values, 2);
+  char *bytes = text_allocator.allocate(3);
+  bytes[0] = 'a';
+  bytes[1] = 'b';
+  bytes[2] = 0;
+  if (bytes[0] != 'a' || bytes[1] != 'b' || bytes[2] != 0)
+    return 3;
+  text_allocator.deallocate(bytes, 3);
+  return allocations == before + 2 && releases == 2 ? 0 : 4;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("container-get-allocator" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StringConstructionAccessAndLifetimeRun) {
   const auto Source = tmpFile("string-lifetime.cpp");
   const auto Output = tmpFile("string-lifetime.nc");
@@ -53422,6 +54826,471 @@ int main() {
   for (const std::string &Optimization : {"-O0", "-O2"}) {
     SCOPED_TRACE(Optimization);
     const auto Executable = tmpFile("string-lifetime" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StringFillConstructionRun) {
+  const auto Source = tmpFile("string-fill-construction.cpp");
+  const auto Output = tmpFile("string-fill-construction.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+int count_calls;
+int character_calls;
+Size three() { ++count_calls; return 3; }
+char zero() { ++character_calls; return 0; }
+int main() {
+  {
+    Size count = 0;
+    std::string empty(count, 'x');
+    if (!empty.empty() || empty.data()[0] != 0 || allocations != 0)
+      return 1;
+    std::string short_text(4, 'a');
+    if (short_text.size() != 4 || short_text[0] != 'a' ||
+        short_text[3] != 'a' || short_text.data()[4] != 0 ||
+        allocations != 0)
+      return 2;
+    std::string boundary(22, 'b');
+    if (boundary.size() != 22 || boundary[0] != 'b' ||
+        boundary[21] != 'b' || boundary.data()[22] != 0 ||
+        allocations != 0)
+      return 3;
+    std::string long_text(23, 'c');
+    if (long_text.size() != 23 || long_text[0] != 'c' ||
+        long_text[22] != 'c' || long_text.data()[23] != 0 ||
+        allocations != 1)
+      return 4;
+    std::string longer(40, 'd');
+    if (longer.size() != 40 || longer[0] != 'd' ||
+        longer[39] != 'd' || longer.data()[40] != 0 ||
+        allocations != 2)
+      return 5;
+    std::string embedded(three(), zero());
+    if (count_calls != 1 || character_calls != 1 ||
+        embedded.size() != 3 || embedded[0] != 0 ||
+        embedded[2] != 0 || embedded.data()[3] != 0)
+      return 6;
+  }
+  return allocations == releases ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-fill-construction" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StringRangeConstructionRun) {
+  const auto Source = tmpFile("string-range-construction.cpp");
+  const auto Output = tmpFile("string-range-construction.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+int first_calls;
+int last_calls;
+char *first(char *value) { ++first_calls; return value; }
+char *last(char *value) { ++last_calls; return value; }
+int main() {
+  char raw[]{'?', 'a', 0, 'b', 'c', '?'};
+  {
+    std::string copied(first(raw + 1), last(raw + 5));
+    if (first_calls != 1 || last_calls != 1 || copied.size() != 4 ||
+        copied[0] != 'a' || copied[1] != 0 || copied[3] != 'c' ||
+        copied.data()[4] != 0 || allocations != 0)
+      return 1;
+    const char *constant = raw;
+    std::string const_copy(constant + 1, constant + 5);
+    if (const_copy.size() != 4 || const_copy[1] != 0 ||
+        const_copy[3] != 'c' || allocations != 0)
+      return 2;
+    std::string source("abcdefghijklmnopqrstuvw");
+    int before = allocations;
+    std::string short_copy(source.cbegin(), source.cbegin() + 22);
+    if (short_copy.size() != 22 || short_copy[0] != 'a' ||
+        short_copy[21] != 'v' || short_copy.data()[22] != 0 ||
+        allocations != before)
+      return 3;
+    std::string long_copy(source.begin(), source.end());
+    if (long_copy.size() != 23 || long_copy[22] != 'w' ||
+        long_copy.data()[23] != 0 || long_copy.data() == source.data() ||
+        allocations != before + 1)
+      return 4;
+    long_copy[0] = 'Z';
+    if (source[0] != 'a' || long_copy[0] != 'Z')
+      return 5;
+    int before_empty = allocations;
+    std::string empty(raw + 2, raw + 2);
+    std::string empty_wrapped(source.cend(), source.cend());
+    if (!empty.empty() || empty.data()[0] != 0 ||
+        !empty_wrapped.empty() || empty_wrapped.data()[0] != 0 ||
+        allocations != before_empty)
+      return 6;
+  }
+  return allocations == releases ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-range-construction" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StringSubstringConstructionRun) {
+  const auto Source = tmpFile("string-substring-construction.cpp");
+  const auto Output = tmpFile("string-substring-construction.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+int source_calls;
+int position_calls;
+int count_calls;
+const std::string &source(const std::string &value) {
+  ++source_calls;
+  return value;
+}
+Size position() { ++position_calls; return 1; }
+Size count() { ++count_calls; return 4; }
+int main() {
+  char bytes[]{'?', 'a', 0, 'b', 'c', '?'};
+  {
+    std::string original(bytes, 6);
+    std::string selected(source(original), position(), count());
+    if (source_calls != 1 || position_calls != 1 || count_calls != 1 ||
+        selected.size() != 4 || selected[0] != 'a' || selected[1] != 0 ||
+        selected[3] != 'c' || selected.data()[4] != 0 || allocations != 0)
+      return 1;
+    std::string suffix(original, 2);
+    if (suffix.size() != 4 || suffix[0] != 0 || suffix[3] != '?' ||
+        allocations != 0)
+      return 2;
+    std::string temporary_slice(std::string("pqrst"), 1, 3);
+    if (temporary_slice.size() != 3 || temporary_slice[0] != 'q' ||
+        temporary_slice[2] != 's' || allocations != 0)
+      return 8;
+    std::string long_source("abcdefghijklmnopqrstuvwxyz");
+    int before = allocations;
+    std::string long_slice(long_source, 1, 23);
+    if (long_slice.size() != 23 || long_slice[0] != 'b' ||
+        long_slice[22] != 'x' || long_slice.data()[23] != 0 ||
+        long_slice.data() == long_source.data() || allocations != before + 1)
+      return 3;
+    std::string long_suffix(long_source, 2);
+    if (long_suffix.size() != 24 || long_suffix[0] != 'c' ||
+        long_suffix[23] != 'z' || allocations != before + 2)
+      return 4;
+    long_slice[0] = 'Z';
+    if (long_source[1] != 'b' || long_slice[0] != 'Z')
+      return 5;
+    std::string clamped(long_source, 23, std::string::npos);
+    std::string empty(long_source, long_source.size());
+    if (clamped.size() != 3 || clamped[0] != 'x' ||
+        clamped[2] != 'z' || !empty.empty() || empty.data()[0] != 0 ||
+        allocations != before + 2)
+      return 6;
+  }
+  return allocations == releases ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("string-substring-construction" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StringViewInteropRun) {
+  const auto Source = tmpFile("string-view-interop.cpp");
+  const auto Output = tmpFile("string-view-interop.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+#include <string_view>
+int string_calls;
+int view_calls;
+const std::string &touch(const std::string &source) {
+  ++string_calls;
+  return source;
+}
+std::string_view touch(std::string_view source) {
+  ++view_calls;
+  return source;
+}
+int main() {
+  char bytes[]{'a', 0, 'b', 'c'};
+  {
+    std::string short_source(bytes, 4);
+    std::string_view short_view = touch(short_source);
+    if (string_calls != 1 || short_view.size() != 4 ||
+        short_view.data() != short_source.data() || short_view[1] != 0 ||
+        allocations != 0)
+      return 1;
+    std::string short_copy(touch(short_view));
+    std::string with_allocator(short_view, std::allocator<char>{});
+    if (view_calls != 1 || short_copy.size() != 4 ||
+        short_copy.data() == short_view.data() || short_copy[1] != 0 ||
+        with_allocator.size() != 4 || with_allocator[3] != 'c' ||
+        allocations != 0)
+      return 2;
+    short_source[0] = 'Z';
+    if (short_view[0] != 'Z' || short_copy[0] != 'a')
+      return 3;
+    std::string long_source("abcdefghijklmnopqrstuvwxyz");
+    std::string_view long_view = long_source;
+    int before = allocations;
+    std::string long_copy(long_view);
+    std::string long_slice(long_view, 1, 23);
+    if (long_view.data() != long_source.data() ||
+        long_copy.size() != 26 || long_copy[25] != 'z' ||
+        long_copy.data() == long_view.data() || long_slice.size() != 23 ||
+        long_slice[0] != 'b' || long_slice[22] != 'x' ||
+        allocations != before + 2)
+      return 4;
+    std::string clipped(long_view, 23, std::string::npos);
+    std::string explicit_slice(long_view, 2, 22, std::allocator<char>{});
+    std::string empty(std::string_view{});
+    std::string empty_slice(std::string_view{}, 0, 0);
+    if (clipped.size() != 3 || clipped[0] != 'x' ||
+        clipped[2] != 'z' || explicit_slice.size() != 22 ||
+        explicit_slice[0] != 'c' || explicit_slice[21] != 'x' ||
+        !empty.empty() || empty.data()[0] != 0 ||
+        !empty_slice.empty() || empty_slice.data()[0] != 0 ||
+        allocations != before + 2)
+      return 5;
+  }
+  return allocations == releases ? 0 : 6;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-view-interop" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StringViewModifiersRun) {
+  const auto Source = tmpFile("string-view-modifiers.cpp");
+  const auto Output = tmpFile("string-view-modifiers.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+#include <string_view>
+int view_calls;
+std::string_view touch_view(std::string_view value) {
+  ++view_calls;
+  return value;
+}
+int main() {
+  {
+    std::string grown("abcdefghijklmnop");
+    std::string_view alias(grown.data() + 4, 8);
+    grown.append(touch_view(alias));
+    if (view_calls != 1 || grown.size() != 24 || grown[0] != 'a' ||
+        grown[16] != 'e' || grown[23] != 'l')
+      return 1;
+    std::string assigned("abcdefghijklmnopqrstuvwxyz");
+    std::string_view inside(assigned.data() + 4, 8);
+    assigned.assign(touch_view(inside));
+    if (view_calls != 2 || assigned != "efghijkl")
+      return 2;
+    char embedded[]{'C', 0, 'D'};
+    std::string plus("AB");
+    plus += touch_view(std::string_view(embedded, 3));
+    if (view_calls != 3 || plus.size() != 5 || plus[0] != 'A' ||
+        plus[2] != 'C' || plus[3] != 0 || plus[4] != 'D')
+      return 3;
+    std::string inserted("0123456789");
+    std::string_view insert_alias(inserted.data() + 2, 4);
+    inserted.insert(1, touch_view(insert_alias));
+    if (view_calls != 4 || inserted != "02345123456789")
+      return 4;
+    std::string replaced("abcdefghijklmnopqrstuvwx");
+    std::string_view replace_alias(replaced.data() + 5, 6);
+    replaced.replace(2, 4, touch_view(replace_alias));
+    if (view_calls != 5 || replaced.size() != 26 || replaced[0] != 'a' ||
+        replaced[2] != 'f' || replaced[7] != 'k' ||
+        replaced[8] != 'g' || replaced[25] != 'x')
+      return 5;
+    std::string_view digits("0123456789");
+    std::string sliced("base");
+    sliced.append(digits, 2, 3);
+    if (sliced != "base234")
+      return 6;
+    sliced.assign(digits, 5);
+    if (sliced != "56789")
+      return 7;
+    sliced.insert(2, digits, 1, 3);
+    if (sliced != "56123789")
+      return 8;
+    sliced.replace(1, 4, digits, 6, 2);
+    if (sliced != "567789")
+      return 9;
+    sliced.append(digits, 9);
+    sliced.insert(0, digits, 8);
+    sliced.replace(0, 2, digits, 9);
+    if (sliced != "95677899")
+      return 10;
+    std::string empty("x");
+    empty.assign(std::string_view{});
+    empty.append(std::string_view{});
+    empty.insert(0, std::string_view{});
+    empty.replace(0, 0, std::string_view{});
+    empty.append(std::string_view{}, 0);
+    empty.assign(std::string_view{}, 0, 0);
+    empty.insert(0, std::string_view{}, 0);
+    empty.replace(0, 0, std::string_view{}, 0, 0);
+    if (!empty.empty())
+      return 11;
+  }
+  return allocations == releases ? 0 : 12;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-view-modifiers" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StringViewComparisonAndSearchRun) {
+  const auto Source = tmpFile("string-view-comparison-search.cpp");
+  const auto Output = tmpFile("string-view-comparison-search.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+#include <string_view>
+int calls;
+std::string_view touch(std::string_view value) {
+  ++calls;
+  return value;
+}
+int main() {
+  {
+    char bytes[]{'a', 'B', 'c', 0, 'd', 'e', 'f', 'a', 'B', 'c'};
+    const std::string text(bytes, 10);
+    std::string_view same(bytes, 10);
+    std::string_view pattern(bytes + 1, 4);
+    std::string_view prefix(bytes, 4);
+    char wrapped[]{'x', 'B', 'c', 0, 'd', 'y'};
+    std::string_view wider(wrapped, 6);
+    if (text.compare(touch(same)) != 0 || calls != 1 ||
+        text.compare(prefix) <= 0 || text.compare(1, 4, pattern) != 0 ||
+        text.compare(1, 4, wider, 1, 4) != 0 ||
+        text.compare(1, 4, wider, 1) >= 0)
+      return 1;
+    if (text.find(touch(pattern)) != 1 || calls != 2 ||
+        text.find(pattern, 2) != std::string::npos ||
+        text.rfind(touch(std::string_view(bytes + 7, 3))) != 7 ||
+        calls != 3 || text.rfind(pattern, 6) != 1)
+      return 2;
+    std::string_view empty;
+    if (text.find(empty) != 0 || text.find(empty, text.size()) != 10 ||
+        text.rfind(empty) != 10 || text.rfind(empty, 0) != 0)
+      return 3;
+    char set_bytes[]{'B', 0};
+    std::string_view set(set_bytes, 2);
+    if (text.find_first_of(touch(set)) != 1 || calls != 4 ||
+        text.find_last_of(set) != 8 ||
+        text.find_first_not_of(set) != 0 ||
+        text.find_last_not_of(touch(set)) != 9 || calls != 5)
+      return 4;
+    if (text.find_first_of(set, 2) != 3 ||
+        text.find_last_of(set, 7) != 3 ||
+        text.find_first_not_of(set, 1) != 2 ||
+        text.find_last_not_of(set, 8) != 7 ||
+        text.find_first_of(empty) != std::string::npos ||
+        text.find_last_of(empty) != std::string::npos ||
+        text.find_first_not_of(empty) != 0 ||
+        text.find_last_not_of(empty) != 9)
+      return 5;
+    char high[]{char(0x80)};
+    char low[]{char(0x7f)};
+    std::string high_text(high, 1);
+    if (high_text.compare(std::string_view(low, 1)) <= 0)
+      return 6;
+  }
+  return allocations == releases ? 0 : 7;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("string-view-comparison-search" + Optimization);
     auto Compile = compileGenerated(Output, Executable, Optimization);
     ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
     auto Run = exec(Executable.string(), {});
@@ -55033,6 +56902,134 @@ int main() {
   for (const std::string &Optimization : {"-O0", "-O2"}) {
     SCOPED_TRACE(Optimization);
     const auto Executable = tmpFile("string-erase" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2StringObjectSliceModifiersRun) {
+  const auto Source = tmpFile("string-object-slices.cpp");
+  const auto Output = tmpFile("string-object-slices.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <string>
+int main() {
+  {
+    const std::string source("ab\0cdef", 7);
+    std::string appended("X");
+    char *short_data = appended.data();
+    auto &first_append = appended.append(source, 1, 4);
+    if (&first_append != &appended || appended.size() != 5 ||
+        appended[0] != 'X' || appended[1] != 'b' ||
+        appended[2] != 0 || appended[3] != 'c' || appended[4] != 'd' ||
+        appended.data() != short_data)
+      return 1;
+    appended.append(source, 5);
+    if (appended.size() != 7 || appended[5] != 'e' || appended[6] != 'f')
+      return 2;
+    appended.append(source, source.size(), 10);
+    if (appended.size() != 7 || appended.data() != short_data)
+      return 3;
+    std::string alias("abcdefghij");
+    alias.reserve(40);
+    char *alias_data = alias.data();
+    alias.append(alias, 2, 4);
+    if (alias != "abcdefghijcdef" || alias.data() != alias_data)
+      return 4;
+    std::string growth("abcdefghijklmnopqrstuvwxyz");
+    char *old_growth = growth.data();
+    growth.append(growth, 3);
+    if (growth != "abcdefghijklmnopqrstuvwxyzdefghijklmnopqrstuvwxyz" ||
+        growth.data() == old_growth)
+      return 5;
+    std::string assigned("abcdefghijklmnopqrstuvwxyz");
+    assigned.reserve(80);
+    char *assigned_data = assigned.data();
+    Size assigned_capacity = assigned.capacity();
+    auto &first_assign = assigned.assign(source, 1, 4);
+    if (&first_assign != &assigned || assigned.size() != 4 ||
+        assigned[0] != 'b' || assigned[1] != 0 ||
+        assigned[2] != 'c' || assigned[3] != 'd' ||
+        assigned.data() != assigned_data ||
+        assigned.capacity() != assigned_capacity)
+      return 6;
+    assigned.assign(source, 5);
+    if (assigned != "ef" || assigned.data() != assigned_data)
+      return 7;
+    std::string self_assign("abcdef");
+    char *self_data = self_assign.data();
+    self_assign.assign(self_assign, 2, 3);
+    if (self_assign != "cde" || self_assign.data() != self_data)
+      return 8;
+    std::string grow_assign("x");
+    char *old_assign = grow_assign.data();
+    grow_assign.assign(growth, 3);
+    if (grow_assign.size() != growth.size() - 3 ||
+        grow_assign[0] != growth[3] || grow_assign.data() == old_assign)
+      return 9;
+    std::string inserted("ACE");
+    auto &first_insert = inserted.insert(1, source, 1, 4);
+    if (&first_insert != &inserted || inserted.size() != 7 ||
+        inserted[0] != 'A' || inserted[1] != 'b' || inserted[2] != 0 ||
+        inserted[3] != 'c' || inserted[4] != 'd' ||
+        inserted[5] != 'C' || inserted[6] != 'E')
+      return 10;
+    inserted.insert(1, source, 5);
+    if (inserted.size() != 9 || inserted[1] != 'e' || inserted[2] != 'f' ||
+        inserted[4] != 0)
+      return 11;
+    std::string self_insert("abcd");
+    self_insert.reserve(32);
+    char *insert_data = self_insert.data();
+    self_insert.insert(1, self_insert, 2, 2);
+    if (self_insert != "acdbcd" || self_insert.data() != insert_data)
+      return 12;
+    std::string grow_insert("abcdefghijklmnopqrstuvwxyz");
+    char *old_insert = grow_insert.data();
+    grow_insert.insert(1, grow_insert, 2);
+    if (grow_insert != "acdefghijklmnopqrstuvwxyzbcdefghijklmnopqrstuvwxyz" ||
+        grow_insert.data() == old_insert)
+      return 13;
+    std::string replaced("abcdef");
+    auto &first_replace = replaced.replace(1, 3, source, 1, 4);
+    if (&first_replace != &replaced || replaced.size() != 7 ||
+        replaced[0] != 'a' || replaced[1] != 'b' || replaced[2] != 0 ||
+        replaced[3] != 'c' || replaced[4] != 'd' ||
+        replaced[5] != 'e' || replaced[6] != 'f')
+      return 14;
+    replaced.replace(1, 4, source, 5);
+    if (replaced != "aefef")
+      return 15;
+    std::string self_replace("abcdef");
+    self_replace.reserve(32);
+    char *replace_data = self_replace.data();
+    self_replace.replace(1, 2, self_replace, 3, 3);
+    if (self_replace != "adefdef" || self_replace.data() != replace_data)
+      return 16;
+    std::string grow_replace("abcdefghijklmnopqrstuvwxyz");
+    char *old_replace = grow_replace.data();
+    grow_replace.replace(1, 1, grow_replace, 2);
+    if (grow_replace != "acdefghijklmnopqrstuvwxyzcdefghijklmnopqrstuvwxyz" ||
+        grow_replace.data() == old_replace)
+      return 17;
+  }
+  return allocations == releases ? 0 : 18;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("string-object-slices" + Optimization);
     auto Compile = compileGenerated(Output, Executable, Optimization);
     ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
     auto Run = exec(Executable.string(), {});

@@ -1724,6 +1724,83 @@ class FunctionLowering {
       return std::pair<Expression, Expression>{std::move(Data),
                                                std::move(Size)};
     };
+    auto SliceStringBytes = [&](Expression Data, Expression Size,
+                                Expression Position, Expression Requested) {
+      const auto SizeType = type(A.Context.getSizeType(), L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      const auto ConstPointerType =
+          type(A.Context.getPointerType(A.Context.CharTy.withConst()), L);
+      auto Length = temporary(SizeType, L);
+      const auto InRange = labelName(), OutOfRange = labelName(),
+                 UseCount = labelName(), UseRemaining = labelName(),
+                 Ready = labelName();
+      branch(
+          binary("<=", json::Object(Position), json::Object(Size), "bool", L),
+          InRange, OutOfRange, L);
+      label(InRange, L);
+      auto Remaining = temporary(SizeType, L);
+      assign(
+          Remaining,
+          binary("-", json::Object(Size), json::Object(Position), SizeType, L),
+          L);
+      branch(binary("<", json::Object(Requested), json::Object(Remaining),
+                    "bool", L),
+             UseCount, UseRemaining, L);
+      label(UseCount, L);
+      assign(Length, json::Object(Requested), L);
+      jump(Ready, L);
+      label(UseRemaining, L);
+      assign(Length, json::Object(Remaining), L);
+      jump(Ready, L);
+      label(OutOfRange, L);
+      assign(Position, json::Object(Size), L);
+      assign(Length, quantity(0, SizeType, L), L);
+      jump(Ready, L);
+      label(Ready, L);
+      const auto Offset = labelName(), Positioned = labelName();
+      branch(binary("!=", json::Object(Position), quantity(0, SizeType, L),
+                    "bool", L),
+             Offset, Positioned, L);
+      label(Offset, L);
+      assign(Data,
+             binary("+", json::Object(Data),
+                    cast(json::Object(Position), DifferenceType, L),
+                    ConstPointerType, L),
+             L);
+      jump(Positioned, L);
+      label(Positioned, L);
+      return std::pair<Expression, Expression>{std::move(Data),
+                                               std::move(Length)};
+    };
+    auto ReadStringSlice = [&](Expression Address,
+                               const UtilityStringRecord &String,
+                               Expression Position, Expression Requested) {
+      auto [Data, Size] = ReadStringAt(std::move(Address), String);
+      return SliceStringBytes(std::move(Data), std::move(Size),
+                              std::move(Position), std::move(Requested));
+    };
+    auto ReadStringViewAt = [&](unsigned Index) {
+      const auto *Argument = Call->getArg(Index);
+      const auto View = approvedUtilityStringViewRecord(
+          A.S, A.Sources, Argument->getType()->getAsCXXRecordDecl(), A.Context);
+      if (!View)
+        reject(L, "string view source",
+               "The selected std::string_view layout is unavailable.");
+      auto Value = snapshot(expression(Argument), L);
+      auto Data = snapshot(fieldStorage(json::Object(Value), View->Data, L), L);
+      auto Size = snapshot(fieldStorage(std::move(Value), View->Size, L), L);
+      return std::pair<Expression, Expression>{std::move(Data),
+                                               std::move(Size)};
+    };
+    auto StringSliceArgument = [&](unsigned Index) {
+      const auto *Argument = Call->getArg(Index);
+      if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Argument))
+        Argument = selectedDefaultArgument(Default, A.Context);
+      if (!Argument)
+        reject(L, "string slice",
+               "The selected string slice argument is unavailable.");
+      return snapshot(expression(Argument), L);
+    };
     auto ReadCStringAt = [&](Expression Data) {
       const auto SizeType = type(A.Context.getSizeType(), L);
       const auto PointerType =
@@ -3142,6 +3219,36 @@ class FunctionLowering {
       Destination.reset();
       if (Place.getString("type") != type(Call->getType(), L))
         reject(L, "allocator traits copy selection",
+               "The destination type differs from the allocator result.");
+      assign(json::Object(Place), A.zero(Call->getType(), L), L);
+      return Place;
+    }
+    case UtilityOperation::StringGetAllocator:
+    case UtilityOperation::VectorGetAllocator: {
+      const auto *Object = MemberObject();
+      const auto Allocator = approvedUtilityAllocatorRecord(
+          A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+      if (!Object || !Allocator)
+        reject(L, "container allocator",
+               "The selected container or allocator layout is unavailable.");
+      if (Operation == UtilityOperation::StringGetAllocator) {
+        if (!StringFor(Object->getType()) ||
+            !A.Context.hasSameType(Allocator->ElementType, A.Context.CharTy))
+          reject(L, "container allocator",
+                 "The selected std::string allocator is unavailable.");
+      } else {
+        const auto Vector = VectorFor(Object->getType());
+        if (!Vector ||
+            !A.Context.hasSameType(Allocator->ElementType, Vector->ElementType))
+          reject(L, "container allocator",
+                 "The selected std::vector allocator is unavailable.");
+      }
+      snapshot(address(lvalue(Object), Object->getType(), L), L);
+      auto Place = Destination ? std::move(*Destination)
+                               : objectTemporary(Call->getType(), L);
+      Destination.reset();
+      if (Place.getString("type") != type(Call->getType(), L))
+        reject(L, "container allocator",
                "The destination type differs from the allocator result.");
       assign(json::Object(Place), A.zero(Call->getType(), L), L);
       return Place;
@@ -7908,7 +8015,7 @@ class FunctionLowering {
     }
     case UtilityOperation::TupleApply: {
       const auto Tuple = approvedUtilityTupleLikeSource(
-          A.S, A.Sources, Call->getArg(1)->getType(), A.Context);
+          A.S, A.Sources, Call->getArg(1)->getType(), A.Context, true);
       if (!Tuple)
         reject(L, "utility tuple apply",
                "The selected tuple-like storage is unavailable.");
@@ -7927,6 +8034,23 @@ class FunctionLowering {
         return index(std::move(Pointer),
                      quantity(Index, type(A.Context.getSizeType(), L), L),
                      type(Element, L), L);
+      };
+      auto ApplyRecordArgument = [&](Expression Element, QualType Parameter,
+                                     const CXXConstructExpr *Copy) {
+        auto Place = objectTemporary(Parameter, L);
+        if (Copy) {
+          const auto Source =
+              Copy->getConstructor()->getParamDecl(0)->getType()
+                  ->getPointeeType();
+          constructMemorySource(
+              Place, Parameter, Copy->getConstructor(),
+              snapshot(address(std::move(Element), Source, L), L), L);
+        } else {
+          // Even a trivial copy creates an independent callback parameter.
+          assign(Place, std::move(Element), L);
+        }
+        return snapshot(
+            address(std::move(Place), Parameter.getUnqualifiedType(), L), L);
       };
       auto CallableType = Call->getArg(0)->getType();
       const auto MemberCallable = approvedUtilityTupleApplyMemberCall(
@@ -7987,11 +8111,12 @@ class FunctionLowering {
               Arguments.push_back(snapshot(
                   cast(std::move(Pointer), type(Parameter, L), L), L));
             } else if (recordValue(Parameter)) {
-              auto Place = objectTemporary(Parameter, L);
-              assign(Place, std::move(Element), L);
-              Arguments.push_back(snapshot(
-                  address(std::move(Place), Parameter.getUnqualifiedType(), L),
-                  L));
+              const auto *Copy =
+                  I < MemberCallable->SelectedCopies.size()
+                      ? MemberCallable->SelectedCopies[I]
+                      : nullptr;
+              Arguments.push_back(ApplyRecordArgument(
+                  std::move(Element), Parameter, Copy));
             } else {
               Arguments.push_back(
                   cast(std::move(Element), type(Parameter, L), L));
@@ -8082,11 +8207,12 @@ class FunctionLowering {
             Arguments.push_back(
                 snapshot(cast(std::move(Pointer), type(Parameter, L), L), L));
           } else if (recordValue(Parameter)) {
-            auto Place = objectTemporary(Parameter, L);
-            assign(Place, std::move(Element), L);
-            Arguments.push_back(snapshot(
-                address(std::move(Place), Parameter.getUnqualifiedType(), L),
-                L));
+            const auto *Copy =
+                I < ReferenceCallable->SelectedCopies.size()
+                    ? ReferenceCallable->SelectedCopies[I]
+                    : nullptr;
+            Arguments.push_back(ApplyRecordArgument(
+                std::move(Element), Parameter, Copy));
           } else {
             Arguments.push_back(
                 cast(std::move(Element), type(Parameter, L), L));
@@ -8205,13 +8331,10 @@ class FunctionLowering {
           Arguments.push_back(
               snapshot(cast(std::move(Pointer), type(Parameter, L), L), L));
         } else if (recordValue(Parameter)) {
-          // Record elements are admitted here only when their copy is trivial.
-          // Still create the independent by-value parameter object required by
-          // the ordinary callback ABI instead of aliasing tuple-like storage.
-          auto Place = objectTemporary(Parameter, L);
-          assign(Place, std::move(Element), L);
-          Arguments.push_back(snapshot(
-              address(std::move(Place), Parameter.getUnqualifiedType(), L), L));
+          const auto *Copy = approvedUtilityTupleApplySelectedCopy(
+              A.S, A.Sources, Call, I, Parameter, A.Context);
+          Arguments.push_back(
+              ApplyRecordArgument(std::move(Element), Parameter, Copy));
         } else {
           Arguments.push_back(cast(std::move(Element), type(Parameter, L), L));
         }
@@ -9381,6 +9504,9 @@ class FunctionLowering {
     case UtilityOperation::StringAssignPointer:
     case UtilityOperation::StringAssignCString:
     case UtilityOperation::StringAssignString:
+    case UtilityOperation::StringAssignStringSlice:
+    case UtilityOperation::StringAssignView:
+    case UtilityOperation::StringAssignViewSlice:
     case UtilityOperation::StringAssignList:
     case UtilityOperation::StringAssignRange:
     case UtilityOperation::StringAssignFill:
@@ -9472,6 +9598,30 @@ class FunctionLowering {
                L);
         SourceArgument =
             snapshot(fieldStorage(std::move(ListValue), List->Begin, L), L);
+      } else if (Operation == UtilityOperation::StringAssignStringSlice) {
+        auto SourceAddress = snapshot(
+            address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
+        auto Position = StringSliceArgument(1);
+        auto Requested = StringSliceArgument(2);
+        auto [Bytes, Length] =
+            ReadStringSlice(std::move(SourceAddress), *String,
+                            std::move(Position), std::move(Requested));
+        SourceArgument = std::move(Bytes);
+        assign(NewSize, std::move(Length), L);
+      } else if (Operation == UtilityOperation::StringAssignView ||
+                 Operation == UtilityOperation::StringAssignViewSlice) {
+        auto [Bytes, Length] = ReadStringViewAt(0);
+        if (Operation == UtilityOperation::StringAssignViewSlice) {
+          auto Position = StringSliceArgument(1);
+          auto Requested = StringSliceArgument(2);
+          auto Sliced =
+              SliceStringBytes(std::move(Bytes), std::move(Length),
+                               std::move(Position), std::move(Requested));
+          Bytes = std::move(Sliced.first);
+          Length = std::move(Sliced.second);
+        }
+        SourceArgument = std::move(Bytes);
+        assign(NewSize, std::move(Length), L);
       } else if (Operation == UtilityOperation::StringAssignString) {
         auto SourceAddress = snapshot(
             address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L),
@@ -9709,6 +9859,9 @@ class FunctionLowering {
     case UtilityOperation::StringInsertPointer:
     case UtilityOperation::StringInsertCString:
     case UtilityOperation::StringInsertString:
+    case UtilityOperation::StringInsertStringSlice:
+    case UtilityOperation::StringInsertView:
+    case UtilityOperation::StringInsertViewSlice:
     case UtilityOperation::StringInsertFill:
     case UtilityOperation::StringInsertIteratorCharacter:
     case UtilityOperation::StringInsertIteratorFill:
@@ -9717,6 +9870,9 @@ class FunctionLowering {
     case UtilityOperation::StringReplacePointer:
     case UtilityOperation::StringReplaceCString:
     case UtilityOperation::StringReplaceString:
+    case UtilityOperation::StringReplaceStringSlice:
+    case UtilityOperation::StringReplaceView:
+    case UtilityOperation::StringReplaceViewSlice:
     case UtilityOperation::StringReplaceFill:
     case UtilityOperation::StringReplaceIteratorPointer:
     case UtilityOperation::StringReplaceIteratorCString:
@@ -9796,6 +9952,9 @@ class FunctionLowering {
           Operation == UtilityOperation::StringReplacePointer ||
           Operation == UtilityOperation::StringReplaceCString ||
           Operation == UtilityOperation::StringReplaceString ||
+          Operation == UtilityOperation::StringReplaceStringSlice ||
+          Operation == UtilityOperation::StringReplaceView ||
+          Operation == UtilityOperation::StringReplaceViewSlice ||
           Operation == UtilityOperation::StringReplaceFill ||
           Operation == UtilityOperation::StringReplaceIteratorPointer ||
           Operation == UtilityOperation::StringReplaceIteratorCString ||
@@ -9894,6 +10053,37 @@ class FunctionLowering {
                            json::Object(*Source), DifferenceType, L),
                     SizeType, L),
                L);
+      } else if (Operation == UtilityOperation::StringInsertStringSlice ||
+                 Operation == UtilityOperation::StringReplaceStringSlice) {
+        const auto *Argument = Call->getArg(SourceIndex);
+        auto Address =
+            snapshot(address(lvalue(Argument), Argument->getType(), L), L);
+        auto Position = StringSliceArgument(SourceIndex + 1);
+        auto Requested = StringSliceArgument(SourceIndex + 2);
+        auto [Bytes, Length] =
+            ReadStringSlice(std::move(Address), *String, std::move(Position),
+                            std::move(Requested));
+        Source = temporary(ConstPointerType, L);
+        assign(*Source, std::move(Bytes), L);
+        assign(Inserted, std::move(Length), L);
+      } else if (Operation == UtilityOperation::StringInsertView ||
+                 Operation == UtilityOperation::StringInsertViewSlice ||
+                 Operation == UtilityOperation::StringReplaceView ||
+                 Operation == UtilityOperation::StringReplaceViewSlice) {
+        auto [Bytes, Length] = ReadStringViewAt(SourceIndex);
+        if (Operation == UtilityOperation::StringInsertViewSlice ||
+            Operation == UtilityOperation::StringReplaceViewSlice) {
+          auto ViewPosition = StringSliceArgument(SourceIndex + 1);
+          auto Requested = StringSliceArgument(SourceIndex + 2);
+          auto Sliced =
+              SliceStringBytes(std::move(Bytes), std::move(Length),
+                               std::move(ViewPosition), std::move(Requested));
+          Bytes = std::move(Sliced.first);
+          Length = std::move(Sliced.second);
+        }
+        Source = temporary(ConstPointerType, L);
+        assign(*Source, std::move(Bytes), L);
+        assign(Inserted, std::move(Length), L);
       } else if (Operation == UtilityOperation::StringInsertString ||
                  Operation == UtilityOperation::StringReplaceString ||
                  Operation == UtilityOperation::StringReplaceIteratorString) {
@@ -10615,6 +10805,9 @@ class FunctionLowering {
     case UtilityOperation::StringAppendPointer:
     case UtilityOperation::StringAppendCString:
     case UtilityOperation::StringAppendString:
+    case UtilityOperation::StringAppendStringSlice:
+    case UtilityOperation::StringAppendView:
+    case UtilityOperation::StringAppendViewSlice:
     case UtilityOperation::StringAppendList:
     case UtilityOperation::StringAppendRange:
     case UtilityOperation::StringAppendFill:
@@ -10665,6 +10858,9 @@ class FunctionLowering {
           Operation == UtilityOperation::StringAppendPointer ||
           Operation == UtilityOperation::StringAppendCString ||
           Operation == UtilityOperation::StringAppendString ||
+          Operation == UtilityOperation::StringAppendStringSlice ||
+          Operation == UtilityOperation::StringAppendView ||
+          Operation == UtilityOperation::StringAppendViewSlice ||
           Operation == UtilityOperation::StringAppendList ||
           Operation == UtilityOperation::StringAppendRange;
       if (Operation == UtilityOperation::StringPushBack || CharacterAppend)
@@ -10805,6 +11001,32 @@ class FunctionLowering {
         label(Ready, L);
         RequestedArgument = std::move(SourceSize);
         SourceArgument = std::move(SourceData);
+      }
+      if (Operation == UtilityOperation::StringAppendStringSlice) {
+        auto SourceAddress = snapshot(
+            address(lvalue(Call->getArg(0)), Call->getArg(0)->getType(), L), L);
+        auto Position = StringSliceArgument(1);
+        auto Requested = StringSliceArgument(2);
+        auto [Bytes, Length] =
+            ReadStringSlice(std::move(SourceAddress), *String,
+                            std::move(Position), std::move(Requested));
+        SourceArgument = std::move(Bytes);
+        RequestedArgument = std::move(Length);
+      }
+      if (Operation == UtilityOperation::StringAppendView ||
+          Operation == UtilityOperation::StringAppendViewSlice) {
+        auto [Bytes, Length] = ReadStringViewAt(ArgumentOffset);
+        if (Operation == UtilityOperation::StringAppendViewSlice) {
+          auto Position = StringSliceArgument(1);
+          auto Requested = StringSliceArgument(2);
+          auto Sliced =
+              SliceStringBytes(std::move(Bytes), std::move(Length),
+                               std::move(Position), std::move(Requested));
+          Bytes = std::move(Sliced.first);
+          Length = std::move(Sliced.second);
+        }
+        SourceArgument = std::move(Bytes);
+        RequestedArgument = std::move(Length);
       }
       if (Operation == UtilityOperation::StringAppendList) {
         const auto *Argument = Call->getArg(ArgumentOffset);
@@ -11498,6 +11720,7 @@ class FunctionLowering {
       auto Count = temporary(SizeType, L);
       std::optional<Expression> Value;
       std::optional<Expression> RangeCurrent;
+      QualType RangeElementType;
       std::string RangePointerType = ConstPointerType;
       if (Operation == UtilityOperation::VectorInsert) {
         assign(Count,
@@ -11505,11 +11728,54 @@ class FunctionLowering {
                                        : quantity(1, SizeType, L),
                L);
         // Capture a source element before shifting or releasing storage.
-        Value = snapshot(expression(Call->getArg(Call->getNumArgs() - 1)), L);
+        if (Vector->OwningElement) {
+          Value = temporary(type(Vector->ElementType, L), L);
+          initializeZero(json::Object(*Value), Vector->ElementType, L);
+          const unsigned ValueIndex = Call->getNumArgs() - 1;
+          const auto *Argument = Call->getArg(ValueIndex);
+          const auto Parameter = Call->getDirectCallee()
+                                     ->getParamDecl(ValueIndex)
+                                     ->getType();
+          auto SourceAddress = snapshot(
+              address(lvalue(Argument), Argument->getType(), L), L);
+          const auto Capture = labelName(), Captured = labelName();
+          branch(binary("!=", json::Object(Count), quantity(0, SizeType, L),
+                        "bool", L), Capture, Captured, L);
+          label(Capture, L);
+          if (Parameter->isRValueReferenceType())
+            transferVectorElement(json::Object(*Value),
+                                  dereference(json::Object(SourceAddress), L),
+                                  *Vector, L);
+          else
+            copyVectorStringElement(
+                json::Object(*Value),
+                dereference(json::Object(SourceAddress), L), *Vector, L,
+                Argument->getType());
+          jump(Captured, L);
+          label(Captured, L);
+        } else {
+          Value = snapshot(expression(Call->getArg(Call->getNumArgs() - 1)), L);
+        }
       } else if (Operation == UtilityOperation::VectorEmplace) {
         assign(Count, quantity(1, SizeType, L), L);
-        if (Call->getNumArgs() == 2)
-          Value = snapshot(expression(Call->getArg(1)), L);
+        if (Call->getNumArgs() == 2) {
+          if (Vector->OwningElement) {
+            Value = temporary(type(Vector->ElementType, L), L);
+            const auto *Argument = Call->getArg(1);
+            const auto Parameter =
+                Call->getDirectCallee()->getParamDecl(1)->getType();
+            if (Parameter->isRValueReferenceType() &&
+                A.Context.hasSameType(Parameter->getPointeeType(),
+                                      Vector->ElementType))
+              transferVectorElement(json::Object(*Value), lvalue(Argument),
+                                    *Vector, L);
+            else
+              copyVectorStringElement(json::Object(*Value), lvalue(Argument),
+                                      *Vector, L, Argument->getType());
+          } else {
+            Value = snapshot(expression(Call->getArg(1)), L);
+          }
+        }
       } else {
         Expression RangeBegin;
         if (Call->getNumArgs() == 2) {
@@ -11521,6 +11787,7 @@ class FunctionLowering {
                    "The selected initializer-list layout is unavailable.");
           auto ListValue = snapshot(expression(Call->getArg(1)), L);
           RangePointerType = type(List->Begin->getType(), L);
+          RangeElementType = Vector->ElementType.withConst();
           RangeBegin = snapshot(
               fieldStorage(json::Object(ListValue), List->Begin, L), L);
           assign(Count, fieldStorage(std::move(ListValue), List->Size, L), L);
@@ -11533,12 +11800,14 @@ class FunctionLowering {
             auto FirstValue = snapshot(expression(Call->getArg(1)), L);
             auto LastValue = snapshot(expression(Call->getArg(2)), L);
             RangePointerType = type(Wrapped->IteratorType, L);
+            RangeElementType = Wrapped->IteratorType->getPointeeType();
             RangeBegin = snapshot(
                 fieldStorage(std::move(FirstValue), Wrapped->Current, L), L);
             RangeEnd = snapshot(
                 fieldStorage(std::move(LastValue), Wrapped->Current, L), L);
           } else {
             RangePointerType = type(SourceType, L);
+            RangeElementType = SourceType->getPointeeType();
             RangeBegin = snapshot(expression(Call->getArg(1)), L);
             RangeEnd = snapshot(expression(Call->getArg(2)), L);
           }
@@ -11576,7 +11845,25 @@ class FunctionLowering {
         if (Operation == UtilityOperation::VectorEmplace &&
             Call->getNumArgs() == 1)
           initializeZero(std::move(Target), Vector->ElementType, L);
-        else
+        else if (Vector->OwningElement) {
+          if (Operation == UtilityOperation::VectorInsertRange) {
+            auto Source = snapshot(json::Object(*RangeCurrent), L);
+            assign(*RangeCurrent,
+                   binary("+", json::Object(*RangeCurrent),
+                          quantity(1, DifferenceType, L), RangePointerType,
+                          L),
+                   L);
+            copyVectorStringElement(std::move(Target),
+                                    dereference(std::move(Source), L), *Vector,
+                                    L, RangeElementType);
+          } else if (Operation == UtilityOperation::VectorInsert &&
+              Call->getNumArgs() == 3)
+            copyVectorStringElement(std::move(Target), json::Object(*Value),
+                                    *Vector, L);
+          else
+            transferVectorElement(std::move(Target), json::Object(*Value),
+                                  *Vector, L);
+        } else
           assign(std::move(Target), InsertValue(), L);
       };
       auto Member = [&](const char *Name) {
@@ -11663,8 +11950,12 @@ class FunctionLowering {
              binary("-", json::Object(ShiftTarget),
                     quantity(1, DifferenceType, L), PointerType, L),
              L);
-      assign(dereference(json::Object(ShiftTarget), L),
-             dereference(json::Object(ShiftSource), L), L);
+      transferVectorElement(dereference(json::Object(ShiftTarget), L),
+                            dereference(json::Object(ShiftSource), L), *Vector,
+                            L);
+      if (Vector->OwningElement)
+        destroy(dereference(json::Object(ShiftSource), L),
+                Vector->ElementType, L);
       jump(ShiftCheck, L);
       label(FillInPlace, L);
       auto FillTarget = temporary(PointerType, L);
@@ -11739,8 +12030,12 @@ class FunctionLowering {
                     "bool", L),
              PrefixCopy, PrefixDone, L);
       label(PrefixCopy, L);
-      assign(dereference(json::Object(NewCurrent), L),
-             dereference(json::Object(OldCurrent), L), L);
+      transferVectorElement(dereference(json::Object(NewCurrent), L),
+                            dereference(json::Object(OldCurrent), L), *Vector,
+                            L);
+      if (Vector->OwningElement)
+        destroy(dereference(json::Object(OldCurrent), L), Vector->ElementType,
+                L);
       assign(OldCurrent,
              binary("+", json::Object(OldCurrent),
                     quantity(1, DifferenceType, L), PointerType, L),
@@ -11781,8 +12076,12 @@ class FunctionLowering {
           binary("!=", json::Object(OldCurrent), json::Object(End), "bool", L),
           SuffixCopy, SuffixDone, L);
       label(SuffixCopy, L);
-      assign(dereference(json::Object(NewCurrent), L),
-             dereference(json::Object(OldCurrent), L), L);
+      transferVectorElement(dereference(json::Object(NewCurrent), L),
+                            dereference(json::Object(OldCurrent), L), *Vector,
+                            L);
+      if (Vector->OwningElement)
+        destroy(dereference(json::Object(OldCurrent), L), Vector->ElementType,
+                L);
       assign(OldCurrent,
              binary("+", json::Object(OldCurrent),
                     quantity(1, DifferenceType, L), PointerType, L),
@@ -11820,6 +12119,8 @@ class FunctionLowering {
                                   {"loc", A.loc(L)}});
       jump(Done, L);
       label(Done, L);
+      if (Vector->OwningElement && Value)
+        destroy(json::Object(*Value), Vector->ElementType, L);
       auto Place = Destination ? std::move(*Destination)
                                : objectTemporary(Call->getType(), L);
       Destination.reset();
@@ -11858,12 +12159,30 @@ class FunctionLowering {
           A.Context.getTypeSizeInChars(Vector->ElementType).getQuantity();
       auto Count = temporary(SizeType, L);
       std::optional<Expression> Value;
+      std::optional<Expression> FillAddress;
       std::optional<Expression> RangeCurrent;
+      QualType RangeElementType;
       std::string RangePointerType = ConstPointerType;
       if (Operation == UtilityOperation::VectorAssignFill) {
         assign(Count, expression(Call->getArg(0)), L);
         // Capture an element that may reside in storage replaced by assign.
-        Value = snapshot(expression(Call->getArg(1)), L);
+        if (Vector->OwningElement) {
+          FillAddress = snapshot(address(lvalue(Call->getArg(1)),
+                                         Call->getArg(1)->getType(), L), L);
+          Value = temporary(type(Vector->ElementType, L), L);
+          initializeZero(json::Object(*Value), Vector->ElementType, L);
+          const auto Capture = labelName(), Captured = labelName();
+          branch(binary("!=", json::Object(Count), quantity(0, SizeType, L),
+                        "bool", L), Capture, Captured, L);
+          label(Capture, L);
+          copyVectorStringElement(json::Object(*Value),
+                                  dereference(json::Object(*FillAddress), L),
+                                  *Vector, L, Call->getArg(1)->getType());
+          jump(Captured, L);
+          label(Captured, L);
+        } else {
+          Value = snapshot(expression(Call->getArg(1)), L);
+        }
       } else {
         Expression RangeBegin;
         if (Operation == UtilityOperation::VectorAssignList ||
@@ -11880,6 +12199,7 @@ class FunctionLowering {
                                ? json::Object(*OperatorListValue)
                                : snapshot(expression(ListArgument), L);
           RangePointerType = type(List->Begin->getType(), L);
+          RangeElementType = Vector->ElementType.withConst();
           RangeBegin = snapshot(
               fieldStorage(json::Object(ListValue), List->Begin, L), L);
           assign(Count, fieldStorage(std::move(ListValue), List->Size, L), L);
@@ -11892,12 +12212,14 @@ class FunctionLowering {
             auto FirstValue = snapshot(expression(Call->getArg(0)), L);
             auto LastValue = snapshot(expression(Call->getArg(1)), L);
             RangePointerType = type(Wrapped->IteratorType, L);
+            RangeElementType = Wrapped->IteratorType->getPointeeType();
             RangeBegin = snapshot(
                 fieldStorage(std::move(FirstValue), Wrapped->Current, L), L);
             RangeEnd = snapshot(
                 fieldStorage(std::move(LastValue), Wrapped->Current, L), L);
           } else {
             RangePointerType = type(SourceType, L);
+            RangeElementType = SourceType->getPointeeType();
             RangeBegin = snapshot(expression(Call->getArg(0)), L);
             RangeEnd = snapshot(expression(Call->getArg(1)), L);
           }
@@ -11931,6 +12253,24 @@ class FunctionLowering {
                L);
         return Current;
       };
+      auto CopyOwnedValue = [&](Expression Target) {
+        if (Value) {
+          copyVectorStringElement(std::move(Target), json::Object(*Value),
+                                  *Vector, L);
+          return;
+        }
+        if (!RangeCurrent || RangeElementType.isNull())
+          reject(L, "vector assign",
+                 "The selected owning source range is unavailable.");
+        auto Source = snapshot(json::Object(*RangeCurrent), L);
+        assign(*RangeCurrent,
+               binary("+", json::Object(*RangeCurrent),
+                      quantity(1, DifferenceType, L), RangePointerType, L),
+               L);
+        copyVectorStringElement(std::move(Target),
+                                dereference(std::move(Source), L), *Vector, L,
+                                RangeElementType);
+      };
       auto Member = [&](const char *Name) {
         return Expression{
             {"kind", "member"},
@@ -11958,6 +12298,12 @@ class FunctionLowering {
           binary("<=", json::Object(Count), json::Object(Capacity), "bool", L),
           Reuse, Grow, L);
       label(Reuse, L);
+      if (Vector->OwningElement) {
+        auto OldEnd = snapshot(Member("nct_vector_end"), L);
+        destroyVectorElements(json::Object(Begin), std::move(OldEnd), *Vector,
+                              L);
+        assign(Member("nct_vector_end"), json::Object(Begin), L);
+      }
       auto Current = temporary(PointerType, L);
       assign(Current, json::Object(Begin), L);
       auto Index = temporary(SizeType, L);
@@ -11969,7 +12315,10 @@ class FunctionLowering {
       branch(binary("<", json::Object(Index), json::Object(Count), "bool", L),
              ReuseFill, ReuseDone, L);
       label(ReuseFill, L);
-      assign(dereference(json::Object(Current), L), NextValue(), L);
+      if (Vector->OwningElement)
+        CopyOwnedValue(dereference(json::Object(Current), L));
+      else
+        assign(dereference(json::Object(Current), L), NextValue(), L);
       assign(Current,
              binary("+", json::Object(Current), quantity(1, DifferenceType, L),
                     PointerType, L),
@@ -12008,7 +12357,10 @@ class FunctionLowering {
           binary("<", json::Object(GrowIndex), json::Object(Count), "bool", L),
           GrowFill, GrowDone, L);
       label(GrowFill, L);
-      assign(dereference(json::Object(NewCurrent), L), NextValue(), L);
+      if (Vector->OwningElement)
+        CopyOwnedValue(dereference(json::Object(NewCurrent), L));
+      else
+        assign(dereference(json::Object(NewCurrent), L), NextValue(), L);
       assign(NewCurrent,
              binary("+", json::Object(NewCurrent),
                     quantity(1, DifferenceType, L), PointerType, L),
@@ -12022,6 +12374,11 @@ class FunctionLowering {
       const auto Release = labelName(), Commit = labelName();
       branch(cast(json::Object(Begin), "bool", L), Release, Commit, L);
       label(Release, L);
+      if (Vector->OwningElement) {
+        auto OldEnd = snapshot(Member("nct_vector_end"), L);
+        destroyVectorElements(json::Object(Begin), std::move(OldEnd), *Vector,
+                              L);
+      }
       const auto *Delete =
           A.allocatorHeapFunction(false, Vector->ElementType, L);
       json::Array DeleteArgs;
@@ -12044,6 +12401,8 @@ class FunctionLowering {
       assign(Member("nct_vector_capacity"), json::Object(NewCurrent), L);
       jump(Done, L);
       label(Done, L);
+      if (FillAddress)
+        destroy(json::Object(*Value), Vector->ElementType, L);
       if (Operation == UtilityOperation::VectorAssignList)
         return dereference(json::Object(Receiver), L);
       return {};
@@ -12126,6 +12485,8 @@ class FunctionLowering {
                       quantity(1, DifferenceType, L), PointerType, L),
                L);
       }
+      destroyVectorElements(json::Object(Position), json::Object(Source),
+                            *Vector, L);
       auto Target = temporary(PointerType, L);
       assign(Target, json::Object(Position), L);
       const auto Check = labelName();
@@ -12134,8 +12495,10 @@ class FunctionLowering {
       branch(binary("!=", json::Object(Source), json::Object(End), "bool", L),
              Copy, Finish, L);
       label(Copy, L);
-      assign(dereference(json::Object(Target), L),
-             dereference(json::Object(Source), L), L);
+      transferVectorElement(dereference(json::Object(Target), L),
+                            dereference(json::Object(Source), L), *Vector, L);
+      if (Vector->OwningElement)
+        destroy(dereference(json::Object(Source), L), Vector->ElementType, L);
       assign(Target,
              binary("+", json::Object(Target), quantity(1, DifferenceType, L),
                     PointerType, L),
@@ -12206,6 +12569,13 @@ class FunctionLowering {
               RightVector->Record->getCanonicalDecl())
         reject(L, "vector comparison",
                "The selected std::vector layout is unavailable.");
+      auto String = StringFor(LeftVector->ElementType);
+      auto Unique = approvedUtilityUniquePtrRecord(
+          A.S, A.Sources, LeftVector->ElementType->getAsCXXRecordDecl(),
+          A.Context);
+      if (LeftVector->OwningElement && !String && !Unique)
+        reject(L, "vector comparison",
+               "The selected owning element comparison is unavailable.");
       const auto PointerType = type(LeftVector->PointerType, L);
       const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
       auto LeftAddress = snapshot(
@@ -12238,6 +12608,79 @@ class FunctionLowering {
                       quantity(1, DifferenceType, L), PointerType, L),
                L);
       };
+      auto ComparableElement = [&](Expression Current) {
+        auto Value = dereference(std::move(Current), L);
+        return Unique ? snapshot(UniquePtrMember(std::move(Value), *Unique), L)
+                      : snapshot(std::move(Value), L);
+      };
+      auto CompareStrings = [&]() -> Expression {
+        auto Left = ReadStringAt(json::Object(LeftCurrent), *String);
+        auto Right = ReadStringAt(json::Object(RightCurrent), *String);
+        const auto SizeType = type(A.Context.getSizeType(), L);
+        auto Position = temporary(SizeType, L);
+        auto Order = temporary("int", L);
+        assign(Position, quantity(0, SizeType, L), L);
+        const auto CheckLeftByte = labelName(), CheckRightByte = labelName();
+        const auto CompareByte = labelName(), DifferentByte = labelName();
+        const auto AdvanceByte = labelName(), CompareSizes = labelName();
+        const auto CheckGreater = labelName(), Less = labelName();
+        const auto Greater = labelName(), Equal = labelName();
+        const auto Compared = labelName();
+        jump(CheckLeftByte, L);
+        label(CheckLeftByte, L);
+        branch(binary("<", json::Object(Position), json::Object(Left.second),
+                      "bool", L),
+               CheckRightByte, CompareSizes, L);
+        label(CheckRightByte, L);
+        branch(binary("<", json::Object(Position), json::Object(Right.second),
+                      "bool", L),
+               CompareByte, CompareSizes, L);
+        label(CompareByte, L);
+        auto LeftByte = snapshot(
+            cast(index(json::Object(Left.first), json::Object(Position),
+                       type(A.Context.CharTy, L), L),
+                 "u8", L),
+            L);
+        auto RightByte = snapshot(
+            cast(index(json::Object(Right.first), json::Object(Position),
+                       type(A.Context.CharTy, L), L),
+                 "u8", L),
+            L);
+        branch(binary("!=", json::Object(LeftByte), json::Object(RightByte),
+                      "bool", L),
+               DifferentByte, AdvanceByte, L);
+        label(DifferentByte, L);
+        branch(binary("<", std::move(LeftByte), std::move(RightByte), "bool", L),
+               Less, Greater, L);
+        label(AdvanceByte, L);
+        assign(Position,
+               binary("+", json::Object(Position), quantity(1, SizeType, L),
+                      SizeType, L),
+               L);
+        jump(CheckLeftByte, L);
+        label(CompareSizes, L);
+        branch(binary("<", json::Object(Left.second),
+                      json::Object(Right.second), "bool", L),
+               Less, CheckGreater, L);
+        label(CheckGreater, L);
+        branch(binary(">", json::Object(Left.second),
+                      json::Object(Right.second), "bool", L),
+               Greater, Equal, L);
+        label(Less, L);
+        assign(Order,
+               binary("-", quantity(0, "int", L), quantity(1, "int", L),
+                      "int", L),
+               L);
+        jump(Compared, L);
+        label(Greater, L);
+        assign(Order, quantity(1, "int", L), L);
+        jump(Compared, L);
+        label(Equal, L);
+        assign(Order, quantity(0, "int", L), L);
+        jump(Compared, L);
+        label(Compared, L);
+        return Order;
+      };
       auto Result = temporary("bool", L);
       const auto CheckLeft = labelName(), CheckRight = labelName();
       const auto Compare = labelName(), Next = labelName();
@@ -12257,13 +12700,18 @@ class FunctionLowering {
                       "bool", L),
                Compare, Different, L);
         label(Compare, L);
-        auto LeftElement =
-            snapshot(dereference(json::Object(LeftCurrent), L), L);
-        auto RightElement =
-            snapshot(dereference(json::Object(RightCurrent), L), L);
-        branch(binary("==", std::move(LeftElement), std::move(RightElement),
-                      "bool", L),
-               Next, Different, L);
+        if (String) {
+          auto Order = CompareStrings();
+          branch(binary("==", std::move(Order), quantity(0, "int", L), "bool",
+                        L),
+                 Next, Different, L);
+        } else {
+          auto LeftElement = ComparableElement(json::Object(LeftCurrent));
+          auto RightElement = ComparableElement(json::Object(RightCurrent));
+          branch(binary("==", std::move(LeftElement), std::move(RightElement),
+                        "bool", L),
+                 Next, Different, L);
+        }
         label(Next, L);
         Advance();
         jump(CheckLeft, L);
@@ -12293,16 +12741,25 @@ class FunctionLowering {
                     "bool", L),
              Compare, Greater, L);
       label(Compare, L);
-      auto LeftElement = snapshot(dereference(json::Object(LeftCurrent), L), L);
-      auto RightElement =
-          snapshot(dereference(json::Object(RightCurrent), L), L);
-      branch(binary("<", json::Object(LeftElement), json::Object(RightElement),
-                    "bool", L),
-             Less, CheckGreater, L);
-      label(CheckGreater, L);
-      branch(binary("<", std::move(RightElement), std::move(LeftElement),
-                    "bool", L),
-             Greater, Next, L);
+      if (String) {
+        auto Order = CompareStrings();
+        branch(binary("<", json::Object(Order), quantity(0, "int", L), "bool",
+                      L),
+               Less, CheckGreater, L);
+        label(CheckGreater, L);
+        branch(binary(">", std::move(Order), quantity(0, "int", L), "bool", L),
+               Greater, Next, L);
+      } else {
+        auto LeftElement = ComparableElement(json::Object(LeftCurrent));
+        auto RightElement = ComparableElement(json::Object(RightCurrent));
+        branch(binary("<", json::Object(LeftElement),
+                      json::Object(RightElement), "bool", L),
+               Less, CheckGreater, L);
+        label(CheckGreater, L);
+        branch(binary("<", std::move(RightElement), std::move(LeftElement),
+                      "bool", L),
+               Greater, Next, L);
+      }
       label(Next, L);
       Advance();
       jump(CheckLeft, L);
@@ -12384,7 +12841,11 @@ class FunctionLowering {
       };
       auto Begin = Member("nct_vector_begin");
       if (Operation == UtilityOperation::VectorClear) {
-        assign(Member("nct_vector_end"), std::move(Begin), L);
+        auto First = snapshot(std::move(Begin), L);
+        destroyVectorElements(json::Object(First),
+                              snapshot(Member("nct_vector_end"), L), *Vector,
+                              L);
+        assign(Member("nct_vector_end"), std::move(First), L);
         return {};
       }
       if (Operation == UtilityOperation::VectorData)
@@ -12486,14 +12947,34 @@ class FunctionLowering {
       const auto SizeType = type(A.Context.getSizeType(), L);
       if (Operation == UtilityOperation::VectorPopBack) {
         auto End = Member("nct_vector_end");
-        assign(End, binary("-", json::Object(End),
-                           quantity(1, DifferenceType, L), PointerType, L), L);
+        auto NewEnd =
+            snapshot(binary("-", json::Object(End),
+                            quantity(1, DifferenceType, L), PointerType, L),
+                     L);
+        destroy(dereference(json::Object(NewEnd), L), Vector->ElementType, L);
+        assign(End, std::move(NewEnd), L);
         return {};
       }
       // The argument may refer to an element invalidated by growth.
       std::optional<Expression> Value;
-      if (Call->getNumArgs())
-        Value = snapshot(expression(Call->getArg(0)), L);
+      if (Call->getNumArgs()) {
+        if (Vector->OwningElement) {
+          Value = temporary(type(Vector->ElementType, L), L);
+          const auto *Argument = Call->getArg(0);
+          const auto Parameter =
+              Call->getDirectCallee()->getParamDecl(0)->getType();
+          if (Parameter->isRValueReferenceType() &&
+              A.Context.hasSameType(Parameter->getPointeeType(),
+                                    Vector->ElementType))
+            transferVectorElement(json::Object(*Value), lvalue(Argument),
+                                  *Vector, L);
+          else
+            copyVectorStringElement(json::Object(*Value), lvalue(Argument),
+                                    *Vector, L, Argument->getType());
+        } else {
+          Value = snapshot(expression(Call->getArg(0)), L);
+        }
+      }
       auto Begin = snapshot(Member("nct_vector_begin"), L);
       auto End = snapshot(Member("nct_vector_end"), L);
       auto Capacity = snapshot(Member("nct_vector_capacity"), L);
@@ -12502,7 +12983,8 @@ class FunctionLowering {
              Append, Grow, L);
       label(Append, L);
       if (Value)
-        assign(dereference(json::Object(End), L), json::Object(*Value), L);
+        transferVectorElement(dereference(json::Object(End), L),
+                              json::Object(*Value), *Vector, L);
       else
         initializeZero(dereference(json::Object(End), L), Vector->ElementType,
                        L);
@@ -12558,8 +13040,12 @@ class FunctionLowering {
       branch(binary("!=", json::Object(OldCurrent), json::Object(End),
                     "bool", L), Copy, Finish, L);
       label(Copy, L);
-      assign(dereference(json::Object(NewCurrent), L),
-             dereference(json::Object(OldCurrent), L), L);
+      transferVectorElement(dereference(json::Object(NewCurrent), L),
+                            dereference(json::Object(OldCurrent), L), *Vector,
+                            L);
+      if (Vector->OwningElement)
+        destroy(dereference(json::Object(OldCurrent), L), Vector->ElementType,
+                L);
       assign(OldCurrent,
              binary("+", json::Object(OldCurrent),
                     quantity(1, DifferenceType, L), PointerType, L), L);
@@ -12569,8 +13055,8 @@ class FunctionLowering {
       jump(Check, L);
       label(Finish, L);
       if (Value)
-        assign(dereference(json::Object(NewCurrent), L), json::Object(*Value),
-               L);
+        transferVectorElement(dereference(json::Object(NewCurrent), L),
+                              json::Object(*Value), *Vector, L);
       else
         initializeZero(dereference(json::Object(NewCurrent), L),
                        Vector->ElementType, L);
@@ -12691,8 +13177,12 @@ class FunctionLowering {
           binary("!=", json::Object(OldCurrent), json::Object(End), "bool", L),
           Copy, Copied, L);
       label(Copy, L);
-      assign(dereference(json::Object(NewEnd), L),
-             dereference(json::Object(OldCurrent), L), L);
+      transferVectorElement(dereference(json::Object(NewEnd), L),
+                            dereference(json::Object(OldCurrent), L), *Vector,
+                            L);
+      if (Vector->OwningElement)
+        destroy(dereference(json::Object(OldCurrent), L), Vector->ElementType,
+                L);
       assign(OldCurrent,
              binary("+", json::Object(OldCurrent),
                     quantity(1, DifferenceType, L), PointerType, L),
@@ -12745,8 +13235,17 @@ class FunctionLowering {
           snapshot(address(lvalue(Object), Object->getType(), L), L);
       auto Requested = snapshot(expression(Call->getArg(0)), L);
       std::optional<Expression> FillValue;
-      if (Operation == UtilityOperation::VectorResizeFill)
-        FillValue = snapshot(expression(Call->getArg(1)), L);
+      std::optional<Expression> FillAddress;
+      if (Operation == UtilityOperation::VectorResizeFill) {
+        if (Vector->OwningElement) {
+          FillAddress = snapshot(address(lvalue(Call->getArg(1)),
+                                         Call->getArg(1)->getType(), L), L);
+          FillValue = temporary(type(Vector->ElementType, L), L);
+          initializeZero(json::Object(*FillValue), Vector->ElementType, L);
+        } else {
+          FillValue = snapshot(expression(Call->getArg(1)), L);
+        }
+      }
       auto Member = [&](const char *Name) {
         return Expression{{"kind", "member"},
                           {"type", type(Vector->PointerType, L)},
@@ -12801,19 +13300,29 @@ class FunctionLowering {
         branch(binary("==", json::Object(Requested),
                       quantity(0, SizeType, L), "bool", L), Zero, Nonzero, L);
         label(Zero, L);
+        destroyVectorElements(json::Object(Begin), json::Object(End), *Vector,
+                              L);
         assign(Member("nct_vector_end"), json::Object(Begin), L);
         jump(Done, L);
         label(Nonzero, L);
-        assign(Member("nct_vector_end"),
-               binary("+", json::Object(Begin),
-                      cast(json::Object(Requested), DifferenceType, L),
-                      PointerType, L), L);
+        auto KeptEnd =
+            snapshot(binary("+", json::Object(Begin),
+                            cast(json::Object(Requested), DifferenceType, L),
+                            PointerType, L),
+                     L);
+        destroyVectorElements(json::Object(KeptEnd), json::Object(End), *Vector,
+                              L);
+        assign(Member("nct_vector_end"), std::move(KeptEnd), L);
         jump(Done, L);
         label(Expand, L);
         const auto AfterEqual = labelName();
         branch(binary("==", json::Object(Requested), json::Object(Size),
                       "bool", L), Done, AfterEqual, L);
         label(AfterEqual, L);
+        if (FillAddress)
+          copyVectorStringElement(json::Object(*FillValue),
+                                  dereference(json::Object(*FillAddress), L),
+                                  *Vector, L, Call->getArg(1)->getType());
         const auto Existing = labelName(), Grow = labelName();
         branch(binary("<=", json::Object(Requested), json::Object(Capacity),
                       "bool", L), Existing, Grow, L);
@@ -12864,8 +13373,12 @@ class FunctionLowering {
       branch(binary("!=", json::Object(SourceCurrent), json::Object(End),
                     "bool", L), Copy, Copied, L);
       label(Copy, L);
-      assign(dereference(json::Object(TargetCurrent), L),
-             dereference(json::Object(SourceCurrent), L), L);
+      transferVectorElement(dereference(json::Object(TargetCurrent), L),
+                            dereference(json::Object(SourceCurrent), L),
+                            *Vector, L);
+      if (Vector->OwningElement)
+        destroy(dereference(json::Object(SourceCurrent), L),
+                Vector->ElementType, L);
       assign(SourceCurrent,
              binary("+", json::Object(SourceCurrent),
                     quantity(1, DifferenceType, L), PointerType, L), L);
@@ -12887,12 +13400,17 @@ class FunctionLowering {
       branch(binary("!=", json::Object(TargetCurrent), json::Object(TargetEnd),
                     "bool", L), Append, Filled, L);
       label(Append, L);
-      if (FillValue)
-        assign(dereference(json::Object(TargetCurrent), L),
-               json::Object(*FillValue), L);
-      else
+      if (FillValue) {
+        if (Vector->OwningElement)
+          copyVectorStringElement(dereference(json::Object(TargetCurrent), L),
+                                  json::Object(*FillValue), *Vector, L);
+        else
+          assign(dereference(json::Object(TargetCurrent), L),
+                 json::Object(*FillValue), L);
+      } else {
         initializeZero(dereference(json::Object(TargetCurrent), L),
                        Vector->ElementType, L);
+      }
       assign(TargetCurrent,
              binary("+", json::Object(TargetCurrent),
                     quantity(1, DifferenceType, L), PointerType, L), L);
@@ -12933,6 +13451,8 @@ class FunctionLowering {
                     PointerType, L), L);
       jump(Done, L);
       label(Done, L);
+      if (FillAddress)
+        destroy(json::Object(*FillValue), Vector->ElementType, L);
       return {};
     }
     case UtilityOperation::StringConcat: {
@@ -13396,6 +13916,30 @@ class FunctionLowering {
       CopySpan(std::move(RightData), std::move(RightSize));
       assign(dereference(std::move(Target), L),
              quantity(0, type(A.Context.CharTy, L), L), L);
+      return Place;
+    }
+    case UtilityOperation::StringToView: {
+      const auto *Object = MemberObject();
+      auto String = Object ? StringFor(Object->getType())
+                           : std::optional<UtilityStringRecord>();
+      auto View = approvedUtilityStringViewRecord(
+          A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+      if (!Object || !String || !View)
+        reject(L, "string view conversion",
+               "The selected string or string-view layout is unavailable.");
+      auto Receiver =
+          snapshot(address(lvalue(Object), Object->getType(), L), L);
+      auto [Data, Size] = ReadStringAt(std::move(Receiver), *String);
+      auto Place = Destination ? std::move(*Destination)
+                               : objectTemporary(Call->getType(), L);
+      Destination.reset();
+      if (Place.getString("type") != type(Call->getType(), L))
+        reject(L, "string view conversion",
+               "The conversion destination type differs from the result.");
+      assign(fieldStorage(json::Object(Place), View->Data, L), std::move(Data),
+             L);
+      assign(fieldStorage(json::Object(Place), View->Size, L), std::move(Size),
+             L);
       return Place;
     }
     case UtilityOperation::StringSubstr: {
@@ -13983,6 +14527,9 @@ class FunctionLowering {
           (Operation == UtilityOperation::StringCStringRelation &&
            !LeftCString) ||
           (SliceComparison && RightValue->getType()->isPointerType());
+      auto RightView = StringComparison && RightValue && !RightCString
+                           ? StringViewFor(RightValue->getType())
+                           : std::optional<UtilityStringViewRecord>();
       auto View = Object && !StringComparison
                       ? StringViewFor(Object->getType())
                       : std::optional<UtilityStringViewRecord>();
@@ -14009,7 +14556,7 @@ class FunctionLowering {
               snapshot(argument(Call->getArg(1), A.Context.getSizeType()), L);
         }
         Expression RightSource;
-        if (RightCString || !StringComparison)
+        if (RightCString || RightView || !StringComparison)
           RightSource = snapshot(expression(RightValue), L);
         else
           RightSource = snapshot(
@@ -14040,6 +14587,11 @@ class FunctionLowering {
               RightData = std::move(Right.first);
               RightSize = std::move(Right.second);
             }
+          } else if (RightView) {
+            RightData = snapshot(
+                fieldStorage(json::Object(RightSource), RightView->Data, L), L);
+            RightSize = snapshot(
+                fieldStorage(std::move(RightSource), RightView->Size, L), L);
           } else {
             auto Right = ReadStringAt(std::move(RightSource), *String);
             RightData = std::move(Right.first);
@@ -14119,19 +14671,26 @@ class FunctionLowering {
                 : snapshot(address(lvalue(LeftValue), LeftValue->getType(), L),
                            L);
         auto RightSource =
-            RightCString
+            (RightCString || RightView)
                 ? snapshot(expression(RightValue), L)
                 : snapshot(
                       address(lvalue(RightValue), RightValue->getType(), L), L);
         auto Left = LeftCString ? ReadCStringAt(std::move(LeftSource))
                                 : ReadStringAt(std::move(LeftSource), *String);
-        auto Right = RightCString
-                         ? ReadCStringAt(std::move(RightSource))
-                         : ReadStringAt(std::move(RightSource), *String);
         LeftData = std::move(Left.first);
         LeftSize = std::move(Left.second);
-        RightData = std::move(Right.first);
-        RightSize = std::move(Right.second);
+        if (RightView) {
+          RightData = snapshot(
+              fieldStorage(json::Object(RightSource), RightView->Data, L), L);
+          RightSize = snapshot(
+              fieldStorage(std::move(RightSource), RightView->Size, L), L);
+        } else {
+          auto Right = RightCString
+                           ? ReadCStringAt(std::move(RightSource))
+                           : ReadStringAt(std::move(RightSource), *String);
+          RightData = std::move(Right.first);
+          RightSize = std::move(Right.second);
+        }
       } else {
         auto LeftSource =
             Member ? snapshot(address(lvalue(Object), Object->getType(), L), L)
@@ -14461,6 +15020,15 @@ class FunctionLowering {
             NeedleData = std::move(Needle.first);
             NeedleSize = std::move(Needle.second);
           }
+        } else if (auto PatternView =
+                       StringViewFor(Call->getArg(0)->getType())) {
+          auto Needle = snapshot(expression(Call->getArg(0)), L);
+          Position =
+              snapshot(argument(Call->getArg(1), A.Context.getSizeType()), L);
+          NeedleData = snapshot(
+              fieldStorage(json::Object(Needle), PatternView->Data, L), L);
+          NeedleSize = snapshot(
+              fieldStorage(std::move(Needle), PatternView->Size, L), L);
         } else {
           const auto *NeedleValue = Call->getArg(0);
           auto NeedleAddress = snapshot(
@@ -14661,12 +15229,16 @@ class FunctionLowering {
           SetData = std::move(Set.first);
           SetSize = std::move(Set.second);
         }
-      } else if (ViewSearch) {
+      } else if (ViewSearch || StringViewFor(Pattern->getType())) {
+        auto PatternView =
+            ViewSearch ? View : StringViewFor(Pattern->getType());
         auto Set = snapshot(expression(Pattern), L);
         Position =
             snapshot(argument(Call->getArg(1), A.Context.getSizeType()), L);
-        SetData = snapshot(fieldStorage(json::Object(Set), View->Data, L), L);
-        SetSize = snapshot(fieldStorage(std::move(Set), View->Size, L), L);
+        SetData =
+            snapshot(fieldStorage(json::Object(Set), PatternView->Data, L), L);
+        SetSize =
+            snapshot(fieldStorage(std::move(Set), PatternView->Size, L), L);
       } else {
         auto SetAddress =
             snapshot(address(lvalue(Pattern), Pattern->getType(), L), L);
@@ -15585,6 +16157,9 @@ class FunctionLowering {
         };
         auto Release = [&] {
           auto Begin = snapshot(LeftMember("nct_vector_begin"), L);
+          auto End = snapshot(LeftMember("nct_vector_end"), L);
+          destroyVectorElements(json::Object(Begin), std::move(End), *Vector,
+                                L);
           const auto Deallocate = labelName(), Done = labelName();
           branch(cast(json::Object(Begin), "bool", L), Deallocate, Done, L);
           label(Deallocate, L);
@@ -15642,6 +16217,12 @@ class FunctionLowering {
                       "bool", L), Reuse, Grow, L);
         auto NewBegin = temporary(PointerType, L);
         label(Reuse, L);
+        if (Vector->OwningElement) {
+          auto TargetEnd = snapshot(LeftMember("nct_vector_end"), L);
+          destroyVectorElements(json::Object(TargetBegin), std::move(TargetEnd),
+                                *Vector, L);
+          assign(LeftMember("nct_vector_end"), json::Object(TargetBegin), L);
+        }
         assign(NewBegin, std::move(TargetBegin), L);
         jump(Fill, L);
         label(Grow, L);
@@ -15690,8 +16271,13 @@ class FunctionLowering {
         branch(binary("!=", json::Object(SourceCurrent), json::Object(SourceEnd),
                       "bool", L), Advance, Finish, L);
         label(Advance, L);
-        assign(dereference(json::Object(TargetCurrent), L),
-               dereference(json::Object(SourceCurrent), L), L);
+        if (Vector->OwningElement)
+          copyVectorStringElement(dereference(json::Object(TargetCurrent), L),
+                                  dereference(json::Object(SourceCurrent), L),
+                                  *Vector, L);
+        else
+          assign(dereference(json::Object(TargetCurrent), L),
+                 dereference(json::Object(SourceCurrent), L), L);
         assign(SourceCurrent,
                binary("+", json::Object(SourceCurrent),
                       quantity(1, DifferenceType, L), PointerType, L), L);
@@ -16868,6 +17454,157 @@ class FunctionLowering {
                                 {"args", std::move(Args)},
                                 {"loc", A.loc(L)}});
   }
+  void copyVectorStringElement(Expression To, Expression From,
+                               const UtilityVectorRecord &Vector,
+                               SourceLocation L, QualType SourceType = {}) {
+    auto String = approvedUtilityStringRecord(
+        A.S, A.Sources, Vector.ElementType->getAsCXXRecordDecl(), A.Context);
+    if (!String)
+      reject(L, "vector string copy",
+             "Only the pinned std::string owns copyable vector storage.");
+    const auto SizeType = type(A.Context.getSizeType(), L);
+    const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+    const auto PointerType = type(String->PointerType, L);
+    const auto ConstPointerType =
+        type(A.Context.getPointerType(A.Context.CharTy.withConst()), L);
+    auto Source = snapshot(address(std::move(From),
+                                   SourceType.isNull() ? Vector.ElementType
+                                                       : SourceType,
+                                   L), L);
+    auto Target = snapshot(address(std::move(To), Vector.ElementType, L), L);
+    auto WordType = [&](const char *Name) {
+      const bool PointerWord = String->AlternateLayout
+                                   ? llvm::StringRef(Name) == "nct_string_word0"
+                                   : llvm::StringRef(Name) == "nct_string_word2";
+      return PointerWord ? String->PointerType : A.Context.getSizeType();
+    };
+    auto Word = [&](const Expression &Address, const char *Name) {
+      return Expression{{"kind", "member"},
+                        {"type", type(WordType(Name), L)},
+                        {"name", Name},
+                        {"args", json::Array{dereference(json::Object(Address), L)}},
+                        {"loc", A.loc(L)}};
+    };
+    const char *FlagName =
+        String->AlternateLayout ? "nct_string_word2" : "nct_string_word0";
+    const char *PointerName =
+        String->AlternateLayout ? "nct_string_word0" : "nct_string_word2";
+    const auto LongFlag =
+        String->AlternateLayout
+            ? uint64_t(1)
+                  << (A.Context.getTypeSize(A.Context.getSizeType()) - 1)
+            : uint64_t(1);
+    auto Flag = snapshot(Word(Source, FlagName), L);
+    assign(dereference(json::Object(Target), L),
+           dereference(json::Object(Source), L), L);
+    const auto Long = labelName(), Done = labelName();
+    branch(binary("!=", binary("&", json::Object(Flag),
+                                quantity(LongFlag, SizeType, L), SizeType, L),
+                  quantity(0, SizeType, L), "bool", L),
+           Long, Done, L);
+    label(Long, L);
+    auto Length = snapshot(Word(Source, "nct_string_word1"), L);
+    auto AllocationBytes = temporary(SizeType, L);
+    assign(AllocationBytes,
+           binary("*", binary("/", binary("+", json::Object(Length),
+                                           quantity(8, SizeType, L), SizeType,
+                                           L),
+                                 quantity(8, SizeType, L), SizeType, L),
+                  quantity(8, SizeType, L), SizeType, L),
+           L);
+    const auto Adjust = labelName(), Allocate = labelName();
+    branch(binary("==", json::Object(AllocationBytes),
+                  quantity(String->ShortCapacity + 2, SizeType, L), "bool", L),
+           Adjust, Allocate, L);
+    label(Adjust, L);
+    assign(AllocationBytes,
+           binary("+", json::Object(AllocationBytes),
+                  quantity(String->AlternateLayout ? 1 : 2, SizeType, L),
+                  SizeType, L),
+           L);
+    jump(Allocate, L);
+    label(Allocate, L);
+    const auto *New = A.allocatorHeapFunction(true, A.Context.CharTy, L);
+    json::Array Args;
+    Args.push_back(json::Object(AllocationBytes));
+    chargeCall(Args, L);
+    auto Allocation = temporary(type(New->getReturnType(), L), L);
+    Body.push_back(json::Object{{"op", "call"},
+                                {"callee", A.name(New)},
+                                {"args", std::move(Args)},
+                                {"target", json::Object(Allocation)},
+                                {"loc", A.loc(L)}});
+    auto Data = snapshot(cast(std::move(Allocation), PointerType, L), L);
+    assign(Word(Target, PointerName), json::Object(Data), L);
+    assign(Word(Target, FlagName),
+           binary("|", json::Object(AllocationBytes),
+                  quantity(LongFlag, SizeType, L), SizeType, L),
+           L);
+    auto SourceData = snapshot(cast(Word(Source, PointerName),
+                                    ConstPointerType, L), L);
+    auto SourceCurrent = temporary(ConstPointerType, L);
+    auto TargetCurrent = temporary(PointerType, L);
+    auto Index = temporary(SizeType, L);
+    assign(SourceCurrent, std::move(SourceData), L);
+    assign(TargetCurrent, std::move(Data), L);
+    assign(Index, quantity(0, SizeType, L), L);
+    const auto Check = labelName(), Copy = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("<=", json::Object(Index), json::Object(Length), "bool", L),
+           Copy, Done, L);
+    label(Copy, L);
+    assign(dereference(json::Object(TargetCurrent), L),
+           dereference(json::Object(SourceCurrent), L), L);
+    assign(SourceCurrent,
+           binary("+", json::Object(SourceCurrent),
+                  quantity(1, DifferenceType, L), ConstPointerType, L), L);
+    assign(TargetCurrent,
+           binary("+", json::Object(TargetCurrent),
+                  quantity(1, DifferenceType, L), PointerType, L), L);
+    assign(Index,
+           binary("+", json::Object(Index), quantity(1, SizeType, L),
+                  SizeType, L),
+           L);
+    jump(Check, L);
+    label(Done, L);
+  }
+
+  void transferVectorElement(Expression To, Expression From,
+                             const UtilityVectorRecord &Vector,
+                             SourceLocation L) {
+    if (!Vector.OwningElement) {
+      assign(std::move(To), std::move(From), L);
+      return;
+    }
+    auto Source = snapshot(address(std::move(From), Vector.ElementType, L), L);
+    assign(std::move(To), dereference(json::Object(Source), L), L);
+    initializeZero(dereference(std::move(Source), L), Vector.ElementType, L);
+  }
+  void destroyVectorElements(Expression Begin, Expression End,
+                             const UtilityVectorRecord &Vector,
+                             SourceLocation L) {
+    if (!Vector.OwningElement)
+      return;
+    const auto PointerType = type(Vector.PointerType, L);
+    const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+    auto Current = temporary(PointerType, L);
+    assign(Current, std::move(End), L);
+    auto First = snapshot(std::move(Begin), L);
+    const auto Check = labelName(), Drop = labelName(), Done = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("!=", json::Object(Current), json::Object(First), "bool", L),
+           Drop, Done, L);
+    label(Drop, L);
+    assign(Current,
+           binary("-", json::Object(Current), quantity(1, DifferenceType, L),
+                  PointerType, L),
+           L);
+    destroy(dereference(json::Object(Current), L), Vector.ElementType, L);
+    jump(Check, L);
+    label(Done, L);
+  }
   void own(Expression Place, QualType T, SourceLocation L, CleanupFrame &Frame) {
     if (!A.S.coreV2() || !needsDestruction(T))
       return;
@@ -17625,8 +18362,10 @@ class FunctionLowering {
       }
       auto Input = temporary(ConstPointerType, L);
       auto Length = temporary(SizeType, L);
+      std::optional<Expression> FillCharacter;
       if (*Kind == UtilityStringConstruction::Copy ||
-          *Kind == UtilityStringConstruction::Move) {
+          *Kind == UtilityStringConstruction::Move ||
+          *Kind == UtilityStringConstruction::Substring) {
         auto SourceAddress = snapshot(
             address(lvalue(C->getArg(0)), C->getArg(0)->getType(), L), L);
         auto SourceWord = [&](const char *Name) {
@@ -17703,13 +18442,57 @@ class FunctionLowering {
         auto ShortData = cast(cast(json::Object(SourceAddress), "ptr:void", L),
                               ConstPointerType, L);
         assign(Input,
-               String->AlternateLayout
-                   ? std::move(ShortData)
-                   : binary("+", std::move(ShortData),
-                            quantity(1, DifferenceType, L), ConstPointerType,
-                            L), L);
+               String->AlternateLayout ? std::move(ShortData)
+                                       : binary("+", std::move(ShortData),
+                                                quantity(1, DifferenceType, L),
+                                                ConstPointerType, L),
+               L);
         jump(Ready, L);
         label(Ready, L);
+      } else if (*Kind == UtilityStringConstruction::View ||
+                 *Kind == UtilityStringConstruction::ViewSubstring) {
+        auto View = approvedUtilityStringViewRecord(
+            A.S, A.Sources, C->getArg(0)->getType()->getAsCXXRecordDecl(),
+            A.Context);
+        if (!View)
+          reject(L, "string construction",
+                 "The selected std::string_view layout is unavailable.");
+        auto Source = snapshot(expression(C->getArg(0)), L);
+        assign(Input, fieldStorage(json::Object(Source), View->Data, L), L);
+        assign(Length, fieldStorage(std::move(Source), View->Size, L), L);
+        if (C->getNumArgs() == 2 ||
+            (C->getNumArgs() == 4 && !isa<CXXDefaultArgExpr>(C->getArg(3))))
+          snapshot(expression(C->getArg(C->getNumArgs() - 1)), L);
+      } else if (*Kind == UtilityStringConstruction::Fill) {
+        assign(Length, snapshot(expression(C->getArg(0)), L), L);
+        FillCharacter = snapshot(expression(C->getArg(1)), L);
+      } else if (*Kind == UtilityStringConstruction::Range) {
+        auto RangePointer = [&](unsigned Index) {
+          const auto *Argument = C->getArg(Index);
+          auto Value = snapshot(expression(Argument), L);
+          const auto Wrapped = approvedUtilityWrapIteratorRecord(
+              A.S, A.Sources, Argument->getType()->getAsCXXRecordDecl(),
+              A.Context);
+          return Wrapped ? snapshot(fieldStorage(std::move(Value),
+                                                 Wrapped->Current, L),
+                                    L)
+                         : Value;
+        };
+        assign(Input, cast(RangePointer(0), ConstPointerType, L), L);
+        auto RangeEnd = snapshot(cast(RangePointer(1), ConstPointerType, L), L);
+        assign(Length, quantity(0, SizeType, L), L);
+        const auto Measure = labelName(), Measured = labelName();
+        branch(binary("!=", json::Object(Input), json::Object(RangeEnd), "bool",
+                      L),
+               Measure, Measured, L);
+        label(Measure, L);
+        assign(Length,
+               cast(binary("-", json::Object(RangeEnd), json::Object(Input),
+                           DifferenceType, L),
+                    SizeType, L),
+               L);
+        jump(Measured, L);
+        label(Measured, L);
       } else if (*Kind == UtilityStringConstruction::PointerLength) {
         assign(Input, expression(C->getArg(0)), L);
         assign(Length, expression(C->getArg(1)), L);
@@ -17743,6 +18526,51 @@ class FunctionLowering {
                       quantity(1, DifferenceType, L), ConstPointerType, L), L);
         jump(Check, L);
         label(Scanned, L);
+      }
+      if (*Kind == UtilityStringConstruction::Substring ||
+          *Kind == UtilityStringConstruction::ViewSubstring) {
+        auto Position = snapshot(expression(C->getArg(1)), L);
+        std::optional<Expression> Requested;
+        if (C->getNumArgs() == 4)
+          Requested = snapshot(expression(C->getArg(2)), L);
+        const auto InRange = labelName(), OutOfRange = labelName(),
+                   Positioned = labelName();
+        branch(binary("<=", json::Object(Position), json::Object(Length),
+                      "bool", L),
+               InRange, OutOfRange, L);
+        label(InRange, L);
+        auto Remaining = snapshot(binary("-", json::Object(Length),
+                                         json::Object(Position), SizeType, L),
+                                  L);
+        if (Requested) {
+          const auto UseRequested = labelName(), UseRemaining = labelName();
+          branch(binary("<", json::Object(*Requested), json::Object(Remaining),
+                        "bool", L),
+                 UseRequested, UseRemaining, L);
+          label(UseRequested, L);
+          assign(Length, json::Object(*Requested), L);
+          jump(Positioned, L);
+          label(UseRemaining, L);
+        }
+        assign(Length, json::Object(Remaining), L);
+        jump(Positioned, L);
+        label(OutOfRange, L);
+        assign(Position, json::Object(Length), L);
+        assign(Length, quantity(0, SizeType, L), L);
+        jump(Positioned, L);
+        label(Positioned, L);
+        const auto Offset = labelName(), Ready = labelName();
+        branch(binary("!=", json::Object(Position), quantity(0, SizeType, L),
+                      "bool", L),
+               Offset, Ready, L);
+        label(Offset, L);
+        assign(Input,
+               binary("+", json::Object(Input),
+                      cast(json::Object(Position), DifferenceType, L),
+                      ConstPointerType, L),
+               L);
+        jump(Ready, L);
+        label(Ready, L);
       }
       for (const char *Name : {"nct_string_word0", "nct_string_word1",
                                "nct_string_word2"})
@@ -17822,23 +18650,30 @@ class FunctionLowering {
       auto SourceCurrent = temporary(ConstPointerType, L);
       auto TargetCurrent = temporary(PointerType, L);
       auto Count = temporary(SizeType, L);
-      assign(SourceCurrent, std::move(Input), L);
+      if (!FillCharacter)
+        assign(SourceCurrent, std::move(Input), L);
       assign(TargetCurrent, json::Object(Data), L);
       assign(Count, quantity(0, SizeType, L), L);
-      const auto CopyCheck = labelName(), Advance = labelName(), Finish = labelName();
+      const auto CopyCheck = labelName(), Advance = labelName(),
+                 Finish = labelName();
       jump(CopyCheck, L);
       label(CopyCheck, L);
       branch(binary("<", json::Object(Count), json::Object(Length), "bool", L),
              Advance, Finish, L);
       label(Advance, L);
       assign(dereference(json::Object(TargetCurrent), L),
-             dereference(json::Object(SourceCurrent), L), L);
-      assign(SourceCurrent,
-             binary("+", json::Object(SourceCurrent),
-                    quantity(1, DifferenceType, L), ConstPointerType, L), L);
+             FillCharacter ? json::Object(*FillCharacter)
+                           : dereference(json::Object(SourceCurrent), L),
+             L);
+      if (!FillCharacter)
+        assign(SourceCurrent,
+               binary("+", json::Object(SourceCurrent),
+                      quantity(1, DifferenceType, L), ConstPointerType, L),
+               L);
       assign(TargetCurrent,
              binary("+", json::Object(TargetCurrent),
-                    quantity(1, DifferenceType, L), PointerType, L), L);
+                    quantity(1, DifferenceType, L), PointerType, L),
+             L);
       assign(Count,
              binary("+", json::Object(Count), quantity(1, SizeType, L),
                     SizeType, L), L);
@@ -17930,8 +18765,13 @@ class FunctionLowering {
         branch(binary("!=", json::Object(SourceCurrent), json::Object(OldEnd),
                       "bool", L), Advance, Done, L);
         label(Advance, L);
-        assign(dereference(json::Object(TargetCurrent), L),
-               dereference(json::Object(SourceCurrent), L), L);
+        if (Vector->OwningElement)
+          copyVectorStringElement(dereference(json::Object(TargetCurrent), L),
+                                  dereference(json::Object(SourceCurrent), L),
+                                  *Vector, L);
+        else
+          assign(dereference(json::Object(TargetCurrent), L),
+                 dereference(json::Object(SourceCurrent), L), L);
         assign(SourceCurrent,
                binary("+", json::Object(SourceCurrent),
                       quantity(1, DifferenceType, L), PointerType, L), L);
@@ -17942,19 +18782,61 @@ class FunctionLowering {
         label(Done, L);
         return;
       }
-      std::optional<Expression> Fill, Input;
+      const auto SizeType = type(A.Context.getSizeType(), L);
+      const auto PointerType = type(Vector->PointerType, L);
+      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
+      std::optional<Expression> Fill, Input, RangeCount;
+      std::optional<QualType> InputType;
+      QualType InputElementType;
       std::optional<UtilityInitializerListExpression> List;
       uint64_t Count = 0;
       if (*Kind == UtilityVectorConstruction::InitializerList) {
-        const auto *Argument = llvm::cast<CXXStdInitializerListExpr>(C->getArg(0));
-        List = approvedUtilityInitializerListExpression(
-            A.S, A.Sources, Argument, A.Context);
+        const auto *Argument =
+            llvm::cast<CXXStdInitializerListExpr>(C->getArg(0));
+        List = approvedUtilityInitializerListExpression(A.S, A.Sources,
+                                                        Argument, A.Context);
         if (!List)
           reject(L, "vector construction",
                  "The checked initializer list backing is unavailable.");
         auto Value = expression(Argument);
-        Input = snapshot(fieldStorage(std::move(Value), List->List.Begin, L), L);
+        Input =
+            snapshot(fieldStorage(std::move(Value), List->List.Begin, L), L);
+        InputElementType = Vector->ElementType.withConst();
         Count = List->Size;
+      } else if (*Kind == UtilityVectorConstruction::Range) {
+        const auto FirstType = C->getArg(0)->getType();
+        const auto Wrapped = approvedUtilityWrapIteratorRecord(
+            A.S, A.Sources, FirstType->getAsCXXRecordDecl(), A.Context);
+        Expression RangeEnd;
+        if (Wrapped) {
+          auto First = snapshot(expression(C->getArg(0)), L);
+          auto Last = snapshot(expression(C->getArg(1)), L);
+          InputType = Wrapped->IteratorType;
+          InputElementType = Wrapped->IteratorType->getPointeeType();
+          Input =
+              snapshot(fieldStorage(std::move(First), Wrapped->Current, L), L);
+          RangeEnd =
+              snapshot(fieldStorage(std::move(Last), Wrapped->Current, L), L);
+        } else {
+          InputType = FirstType;
+          InputElementType = FirstType->getPointeeType();
+          Input = snapshot(expression(C->getArg(0)), L);
+          RangeEnd = snapshot(expression(C->getArg(1)), L);
+        }
+        RangeCount = temporary(SizeType, L);
+        assign(*RangeCount, quantity(0, SizeType, L), L);
+        const auto Measure = labelName(), Measured = labelName();
+        branch(binary("!=", json::Object(*Input), json::Object(RangeEnd),
+                      "bool", L),
+               Measure, Measured, L);
+        label(Measure, L);
+        assign(*RangeCount,
+               cast(binary("-", json::Object(RangeEnd), json::Object(*Input),
+                           DifferenceType, L),
+                    SizeType, L),
+               L);
+        jump(Measured, L);
+        label(Measured, L);
       } else if (*Kind != UtilityVectorConstruction::Default) {
         Expr::EvalResult Evaluated;
         if (!C->getArg(0)->EvaluateAsInt(Evaluated, A.Context) ||
@@ -17962,22 +18844,36 @@ class FunctionLowering {
           reject(L, "vector construction",
                  "A checked element count is required.");
         Count = Evaluated.Val.getInt().getLimitedValue(65537);
-        if (*Kind == UtilityVectorConstruction::CountValue)
-          Fill = snapshot(expression(C->getArg(1)), L);
+        if (*Kind == UtilityVectorConstruction::CountValue) {
+          if (Vector->OwningElement)
+            Fill = snapshot(address(lvalue(C->getArg(1)),
+                                    C->getArg(1)->getType(), L), L);
+          else
+            Fill = snapshot(expression(C->getArg(1)), L);
+        }
       }
-      for (const char *Name : {"nct_vector_begin", "nct_vector_end",
-                               "nct_vector_capacity"})
+      for (const char *Name :
+           {"nct_vector_begin", "nct_vector_end", "nct_vector_capacity"})
         initializeZero(Member(Name), Vector->PointerType, L);
-      if (!Count)
+      if (!Count && !RangeCount)
         return;
-      const auto *Function = A.allocatorHeapFunction(true, Vector->ElementType, L);
-      const auto SizeType = type(A.Context.getSizeType(), L);
-      const auto PointerType = type(Vector->PointerType, L);
-      const auto DifferenceType = type(A.Context.getPointerDiffType(), L);
-      const uint64_t Bytes =
-          Count * A.Context.getTypeSizeInChars(Vector->ElementType).getQuantity();
+      const auto EmptyRange = labelName();
+      if (RangeCount) {
+        const auto NonEmpty = labelName();
+        branch(binary("!=", json::Object(*RangeCount), quantity(0, SizeType, L),
+                      "bool", L),
+               NonEmpty, EmptyRange, L);
+        label(NonEmpty, L);
+      }
+      const auto *Function =
+          A.allocatorHeapFunction(true, Vector->ElementType, L);
+      const uint64_t ElementBytes =
+          A.Context.getTypeSizeInChars(Vector->ElementType).getQuantity();
       json::Array Args;
-      Args.push_back(quantity(Bytes, SizeType, L));
+      Args.push_back(RangeCount ? binary("*", json::Object(*RangeCount),
+                                         quantity(ElementBytes, SizeType, L),
+                                         SizeType, L)
+                                : quantity(Count * ElementBytes, SizeType, L));
       chargeCall(Args, L);
       auto Allocation = temporary(type(Function->getReturnType(), L), L);
       Body.push_back(json::Object{{"op", "call"},
@@ -17986,9 +18882,12 @@ class FunctionLowering {
                                   {"target", json::Object(Allocation)},
                                   {"loc", A.loc(L)}});
       auto Begin = snapshot(cast(std::move(Allocation), PointerType, L), L);
-      auto End = snapshot(binary("+", json::Object(Begin),
-                                 quantity(Count, DifferenceType, L),
-                                 PointerType, L), L);
+      auto End = snapshot(
+          binary("+", json::Object(Begin),
+                 RangeCount ? cast(json::Object(*RangeCount), DifferenceType, L)
+                            : quantity(Count, DifferenceType, L),
+                 PointerType, L),
+          L);
       assign(Member("nct_vector_begin"), json::Object(Begin), L);
       assign(Member("nct_vector_end"), json::Object(End), L);
       assign(Member("nct_vector_capacity"), std::move(End), L);
@@ -17997,28 +18896,43 @@ class FunctionLowering {
       const auto Check = labelName(), Advance = labelName(), Done = labelName();
       jump(Check, L);
       label(Check, L);
-      branch(binary("!=", json::Object(Current),
-                    Member("nct_vector_end"), "bool", L),
+      branch(binary("!=", json::Object(Current), Member("nct_vector_end"),
+                    "bool", L),
              Advance, Done, L);
       label(Advance, L);
       if (*Kind == UtilityVectorConstruction::Count) {
         initializeZero(dereference(json::Object(Current), L),
                        Vector->ElementType, L);
       } else if (*Kind == UtilityVectorConstruction::CountValue) {
-        assign(dereference(json::Object(Current), L), json::Object(*Fill), L);
+        if (Vector->OwningElement)
+          copyVectorStringElement(dereference(json::Object(Current), L),
+                                  dereference(json::Object(*Fill), L), *Vector,
+                                  L, C->getArg(1)->getType());
+        else
+          assign(dereference(json::Object(Current), L), json::Object(*Fill), L);
       } else {
-        assign(dereference(json::Object(Current), L),
-               dereference(json::Object(*Input), L), L);
+        if (Vector->OwningElement)
+          copyVectorStringElement(dereference(json::Object(Current), L),
+                                  dereference(json::Object(*Input), L),
+                                  *Vector, L, InputElementType);
+        else
+          assign(dereference(json::Object(Current), L),
+                 dereference(json::Object(*Input), L), L);
         assign(*Input,
-               binary("+", json::Object(*Input),
-                      quantity(1, DifferenceType, L),
-                      type(List->List.Begin->getType(), L), L), L);
+               binary("+", json::Object(*Input), quantity(1, DifferenceType, L),
+                      type(InputType ? *InputType : List->List.Begin->getType(),
+                           L),
+                      L),
+               L);
       }
       assign(Current,
-             binary("+", json::Object(Current),
-                    quantity(1, DifferenceType, L), PointerType, L), L);
+             binary("+", json::Object(Current), quantity(1, DifferenceType, L),
+                    PointerType, L),
+             L);
       jump(Check, L);
       label(Done, L);
+      if (RangeCount)
+        label(EmptyRange, L);
       return;
     }
     if (auto Kind = approvedUtilityStringViewConstruction(A.S, A.Sources, C,
@@ -19352,6 +20266,8 @@ public:
                             {"loc", A.loc(L)}};
         };
         auto Begin = snapshot(Member("nct_vector_begin"), L);
+        auto End = snapshot(Member("nct_vector_end"), L);
+        destroyVectorElements(json::Object(Begin), std::move(End), *Vector, L);
         const auto *Deallocate =
             A.allocatorHeapFunction(false, Vector->ElementType, L);
         const auto Release = labelName(), Done = labelName();
