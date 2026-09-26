@@ -16937,6 +16937,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if (!Operator && Method->isConst() && !Method->getNumParams() &&
         Call->isPRValue() &&
         Context.hasSameType(Call->getType(), Method->getReturnType())) {
+      if (Name == "get_allocator") {
+        const auto Allocator = approvedUtilityAllocatorRecord(
+            S, SM, Method->getReturnType()->getAsCXXRecordDecl(), Context);
+        if (Allocator &&
+            Context.hasSameType(Allocator->ElementType, Context.CharTy))
+          return UtilityOperation::StringGetAllocator;
+      }
       if ((Name == "size" || Name == "length") &&
           Context.hasSameType(Method->getReturnType(), Context.getSizeType()))
         return UtilityOperation::StringSize;
@@ -17669,6 +17676,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     if (!Operator && !Method->getNumParams() && Method->isConst() &&
         Call->isPRValue() &&
         Context.hasSameType(Call->getType(), Method->getReturnType())) {
+      if (Name == "get_allocator") {
+        const auto Allocator = approvedUtilityAllocatorRecord(
+            S, SM, Method->getReturnType()->getAsCXXRecordDecl(), Context);
+        if (Allocator &&
+            Context.hasSameType(Allocator->ElementType, Vector->ElementType))
+          return UtilityOperation::VectorGetAllocator;
+      }
       if (Context.hasSameType(Method->getReturnType(), Context.getSizeType())) {
         if (Name == "size")
           return UtilityOperation::VectorSize;

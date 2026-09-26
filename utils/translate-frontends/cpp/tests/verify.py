@@ -29662,6 +29662,25 @@ std::string::size_type passthrough(std::string::size_type n) {
         else:
             assert dependencies == string_dependencies, target
         assert len(string_ir["functions"]) == 1, target
+    container_allocator_source = """\
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+void *operator new(Size n) { return malloc(n); }
+void operator delete(void *p) noexcept { free(p); }
+#include <string>
+#include <vector>
+std::allocator<int> vector_allocator(const std::vector<int>& values) {
+  return values.get_allocator();
+}
+std::allocator<char> string_allocator(const std::string& value) {
+  return value.get_allocator();
+}
+"""
+    for target in sdk_targets:
+        check("v2-container-get-allocator-" + target,
+              container_allocator_source, profile="cpp-core-v2",
+              target=target, sdk=True)
     string_runtime_source = """\
 using Size = decltype(sizeof(0));
 extern "C" void *malloc(Size);

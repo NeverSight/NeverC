@@ -3223,6 +3223,36 @@ class FunctionLowering {
       assign(json::Object(Place), A.zero(Call->getType(), L), L);
       return Place;
     }
+    case UtilityOperation::StringGetAllocator:
+    case UtilityOperation::VectorGetAllocator: {
+      const auto *Object = MemberObject();
+      const auto Allocator = approvedUtilityAllocatorRecord(
+          A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context);
+      if (!Object || !Allocator)
+        reject(L, "container allocator",
+               "The selected container or allocator layout is unavailable.");
+      if (Operation == UtilityOperation::StringGetAllocator) {
+        if (!StringFor(Object->getType()) ||
+            !A.Context.hasSameType(Allocator->ElementType, A.Context.CharTy))
+          reject(L, "container allocator",
+                 "The selected std::string allocator is unavailable.");
+      } else {
+        const auto Vector = VectorFor(Object->getType());
+        if (!Vector ||
+            !A.Context.hasSameType(Allocator->ElementType, Vector->ElementType))
+          reject(L, "container allocator",
+                 "The selected std::vector allocator is unavailable.");
+      }
+      snapshot(address(lvalue(Object), Object->getType(), L), L);
+      auto Place = Destination ? std::move(*Destination)
+                               : objectTemporary(Call->getType(), L);
+      Destination.reset();
+      if (Place.getString("type") != type(Call->getType(), L))
+        reject(L, "container allocator",
+               "The destination type differs from the allocator result.");
+      assign(json::Object(Place), A.zero(Call->getType(), L), L);
+      return Place;
+    }
     case UtilityOperation::MemoryAllocatorEqual:
     case UtilityOperation::MemoryAllocatorNotEqual:
       if (Call->getNumArgs() != 2)

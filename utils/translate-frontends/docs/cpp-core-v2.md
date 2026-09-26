@@ -2296,7 +2296,7 @@ std::allocator<char>>` objects now have direct lowering for default,
 count-and-character fill, copy, move, string-source substring, and
 `std::string_view` construction; copy and move assignment
 and assignment from `const char*` or `char`; `size`, `length`,
-`capacity`, `max_size`, `empty`, `data`, `c_str`, subscript
+`capacity`, `max_size`, `empty`, `get_allocator()`, `data`, `c_str`, subscript
 access, mutable and const `front`/`back`, `clear`, `push_back(char)`,
 `pop_back()`, `reserve(size_type)`, `shrink_to_fit()` and its C++17
 `reserve()` alias, both `resize` overloads, and destruction.
@@ -2417,7 +2417,9 @@ empty character sets.
 The frontend checks the pinned libc++ representation before emitting three
 storage words, including the alternate short-string layout selected on Apple
 arm64. Short strings stay inline, while long strings use the selected
-allocation and release functions. Copy construction owns independent storage;
+allocation and release functions. `get_allocator()` returns the authenticated
+empty `std::allocator<char>` value after evaluating its receiver once,
+without changing string storage. Copy construction owns independent storage;
 copy assignment reuses existing capacity when possible and follows the pinned
 libc++ recommendation of the larger of the new size and twice the old capacity
 when it grows. Moves transfer the representation and leave the source empty.
@@ -2460,7 +2462,8 @@ construction, assignment and destruction. They use
 direct lowering for default, bounded count/fill/list, pointer or wrapped
 iterator range, copy and move
 construction; copy, move and initializer-list assignment; destruction; size,
-capacity, max_size, empty, data, element/front/back access; clear, push/pop;
+capacity, max_size, empty, get_allocator, data, element/front/back access;
+clear, push/pop;
 zero- or one-argument `emplace_back` with exact element types;
 begin/end, cbegin/cend, rbegin/rend, crbegin/crend and const iteration;
 reserve/resize/shrink_to_fit; lvalue/rvalue, counted-value, pointer and wrapped iterator
@@ -2484,6 +2487,8 @@ Range construction accepts matching `T*` or `const T*` endpoints and
 authenticated mutable or const libc++ wrapped iterators. It measures the
 runtime distance once, leaves empty ranges unallocated, and copies elements
 into independent storage. The caller supplies a valid ordered range.
+`get_allocator()` evaluates its receiver once and returns an authenticated
+empty `std::allocator<T>` for the admitted element type.
 Host O0/O2 fixtures check capacity reuse, reallocation, aliased fill arguments,
 maximum size, occupied and empty capacity shrinking,
 `emplace_back` value initialization and returned references, positional

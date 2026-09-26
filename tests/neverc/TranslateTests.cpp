@@ -54123,6 +54123,80 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2ContainerGetAllocatorRun) {
+  const auto Source = tmpFile("container-get-allocator.cpp");
+  const auto Output = tmpFile("container-get-allocator.nc");
+  writeFile(Source, R"cpp(
+using Size = decltype(sizeof(0));
+extern "C" void *malloc(Size);
+extern "C" void free(void *);
+int allocations;
+int releases;
+void *operator new(Size n) { ++allocations; return malloc(n); }
+void operator delete(void *p) noexcept { ++releases; free(p); }
+#include <memory>
+#include <string>
+#include <vector>
+int vector_calls;
+int string_calls;
+std::vector<int> &select_vector(std::vector<int> &value) {
+  ++vector_calls;
+  return value;
+}
+std::string &select_string(std::string &value) {
+  ++string_calls;
+  return value;
+}
+int main() {
+  std::vector<int> numbers{3, 5};
+  std::string text("letters");
+  const std::vector<int> &constant_numbers = numbers;
+  const std::string &constant_text = text;
+  int *number_data = numbers.data();
+  const char *text_data = text.data();
+  int before = allocations;
+  std::allocator<int> numbers_allocator =
+      select_vector(numbers).get_allocator();
+  std::allocator<char> text_allocator =
+      select_string(text).get_allocator();
+  std::allocator<int> const_numbers_allocator =
+      constant_numbers.get_allocator();
+  std::allocator<char> const_text_allocator =
+      constant_text.get_allocator();
+  if (vector_calls != 1 || string_calls != 1 || allocations != before ||
+      numbers.data() != number_data || text.data() != text_data ||
+      !(numbers_allocator == const_numbers_allocator) ||
+      !(text_allocator == const_text_allocator))
+    return 1;
+  int *values = numbers_allocator.allocate(2);
+  values[0] = 7;
+  values[1] = 11;
+  if (values[0] + values[1] != 18)
+    return 2;
+  numbers_allocator.deallocate(values, 2);
+  char *bytes = text_allocator.allocate(3);
+  bytes[0] = 'a';
+  bytes[1] = 'b';
+  bytes[2] = 0;
+  if (bytes[0] != 'a' || bytes[1] != 'b' || bytes[2] != 0)
+    return 3;
+  text_allocator.deallocate(bytes, 3);
+  return allocations == before + 2 && releases == 2 ? 0 : 4;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("container-get-allocator" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2StringConstructionAccessAndLifetimeRun) {
   const auto Source = tmpFile("string-lifetime.cpp");
   const auto Output = tmpFile("string-lifetime.nc");
