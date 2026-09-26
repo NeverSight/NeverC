@@ -15674,8 +15674,10 @@ class FunctionLowering {
         assign(Left, std::move(Right), L);
         return Left;
       }
+      std::vector<const CXXOperatorCallExpr *> PairAssignments;
       if (auto Pair = approvedUtilityPairAssignment(
-              A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call), A.Context)) {
+              A.S, A.Sources, dyn_cast<CXXOperatorCallExpr>(Call), A.Context,
+              &PairAssignments)) {
         if (Destination)
           reject(L, "utility pair assignment",
                  "std::pair assignment cannot initialize a record result.");
@@ -15687,8 +15689,9 @@ class FunctionLowering {
         auto Right = dereference(std::move(RightAddress), L);
         if (Pair->First->getType()->isReferenceType() ||
             Pair->Second->getType()->isReferenceType() ||
+            PairAssignments.size() == 2 ||
             !A.Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),
-                                             Call->getArg(1)->getType())) {
+                                              Call->getArg(1)->getType())) {
           auto SourcePair = approvedUtilityPairRecord(
               A.S, A.Sources,
               Call->getArg(1)->getType()->getAsCXXRecordDecl(), A.Context);
@@ -15718,6 +15721,13 @@ class FunctionLowering {
                 DestinationField->getType()->isReferenceType()
                     ? DestinationField->getType()->getPointeeType()
                     : DestinationField->getType();
+            if (PairAssignments.size() == 2 && PairAssignments[I]) {
+              const auto *Method = dyn_cast_or_null<CXXMethodDecl>(
+                  PairAssignments[I]->getDirectCallee());
+              assignMemorySource(std::move(Destination), DestinationType,
+                                 Method, std::move(Value), L);
+              continue;
+            }
             if (recordValue(DestinationType))
               assign(std::move(Destination), std::move(Value), L);
             else
@@ -17827,6 +17837,38 @@ class FunctionLowering {
                                 {"callee", A.name(Constructor)},
                                 {"args", std::move(Args)},
                                 {"loc", A.loc(L)}});
+  }
+  void assignMemorySource(Expression Place, QualType T,
+                          const CXXMethodDecl *Method, Expression Source,
+                          SourceLocation L) {
+    if (!Method || !T->isRecordType() ||
+        T->getAsCXXRecordDecl()->getCanonicalDecl() !=
+            Method->getParent()->getCanonicalDecl() ||
+        Place.getString("type") != type(T, L) || !supportedAssignment(Method) ||
+        Method->getNumParams() != 1)
+      reject(L, "memory assignment",
+             "Selected assignment and destination types differ.");
+    if (Method->isTrivial()) {
+      assign(std::move(Place), std::move(Source), L);
+      return;
+    }
+    if (!Method->hasBody())
+      reject(L, "memory assignment", "Unsupported selected source assignment.");
+    const auto Parameter = Method->getParamDecl(0)->getType();
+    const auto Referent = Parameter->getPointeeType();
+    json::Array Args;
+    Args.push_back(snapshot(
+        cast(address(Place, T, L), type(Method->getThisType(), L), L), L));
+    Args.push_back(snapshot(
+        cast(address(std::move(Source), Referent, L), type(Parameter, L), L),
+        L));
+    chargeCall(Args, L);
+    Body.push_back(json::Object{
+        {"op", "call"},
+        {"callee", A.name(Method)},
+        {"args", std::move(Args)},
+        {"target", temporary(type(Method->getReturnType(), L, true), L)},
+        {"loc", A.loc(L)}});
   }
   bool recordValue(QualType T) const {
     return A.S.coreV2() && T->isRecordType();

@@ -3477,10 +3477,149 @@ std::optional<UtilityPairConstruction> approvedUtilityPairConstruction(
   return std::nullopt;
 }
 
-std::optional<UtilityPairRecord>
-approvedUtilityPairAssignment(const State &S, const SourceManager &SM,
-                              const CXXOperatorCallExpr *Assignment,
-                              const ASTContext &Context) {
+static std::optional<std::vector<const CXXOperatorCallExpr *>>
+approvedUtilityPairSelectedAssignments(const State &S, const SourceManager &SM,
+                                       const CXXOperatorCallExpr *Assignment,
+                                       const UtilityPairRecord &Pair,
+                                       const UtilityPairRecord &SourcePair,
+                                       const ASTContext &Context) {
+  const auto *Method =
+      Assignment
+          ? dyn_cast_or_null<CXXMethodDecl>(Assignment->getDirectCallee())
+          : nullptr;
+  const auto *Body =
+      Method ? dyn_cast_or_null<CompoundStmt>(Method->getBody()) : nullptr;
+  const auto *SourceParameter =
+      Method && Method->getNumParams() == 1 ? Method->getParamDecl(0) : nullptr;
+  const auto Parameter =
+      SourceParameter ? SourceParameter->getType() : QualType();
+  if (!Method || !Body || Body->size() != 3 || !SourceParameter ||
+      !Parameter->isReferenceType() ||
+      Parameter->getPointeeType().isVolatileQualified() ||
+      Method->getParent()->getCanonicalDecl() !=
+          Pair.Record->getCanonicalDecl() ||
+      !Context.hasSameUnqualifiedType(
+          Parameter->getPointeeType(),
+          Context.getRecordType(SourcePair.Record)) ||
+      !approvedStandardSDKDeclaration(S, SM, Method) ||
+      !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
+                     "__utility/pair.h"))
+    return std::nullopt;
+  auto Statement = Body->body_begin();
+  const Stmt *Fields[] = {*Statement++, *Statement++};
+  const auto *Return = dyn_cast<ReturnStmt>(*Statement);
+  const auto *Deref =
+      Return ? dyn_cast_or_null<UnaryOperator>(
+                   functionalInvokeStrippedExpression(Return->getRetValue()))
+             : nullptr;
+  if (!Deref || Deref->getOpcode() != UO_Deref ||
+      !isa<CXXThisExpr>(
+          functionalInvokeStrippedExpression(Deref->getSubExpr())))
+    return std::nullopt;
+
+  const FieldDecl *DestinationFields[] = {Pair.First, Pair.Second};
+  const FieldDecl *SourceFields[] = {SourcePair.First, SourcePair.Second};
+  std::vector<const CXXOperatorCallExpr *> SelectedAssignments(2, nullptr);
+  for (unsigned I = 0; I != 2; ++I) {
+    const auto *Expression =
+        functionalInvokeStrippedExpression(dyn_cast<Expr>(Fields[I]));
+    const auto *Call = dyn_cast_or_null<CXXOperatorCallExpr>(Expression);
+    const auto *Binary = dyn_cast_or_null<BinaryOperator>(Expression);
+    const Expr *Left = nullptr;
+    const Expr *Right = nullptr;
+    if (Call && Call->getOperator() == OO_Equal && Call->getNumArgs() == 2) {
+      Left = Call->getArg(0);
+      Right = Call->getArg(1);
+    } else if (Binary && Binary->getOpcode() == BO_Assign) {
+      Left = Binary->getLHS();
+      Right = Binary->getRHS();
+    } else {
+      return std::nullopt;
+    }
+    const auto *Destination =
+        dyn_cast_or_null<MemberExpr>(functionalInvokeStrippedExpression(Left));
+    const auto *Receiver =
+        Destination
+            ? dyn_cast_or_null<CXXThisExpr>(
+                  functionalInvokeStrippedExpression(Destination->getBase()))
+            : nullptr;
+    if (!Destination || Destination->getMemberDecl() != DestinationFields[I] ||
+        !Destination->isArrow() || !Receiver)
+      return std::nullopt;
+
+    const Expr *Source = functionalInvokeStrippedExpression(Right);
+    const auto *Forward = dyn_cast_or_null<CallExpr>(Source);
+    if (Forward) {
+      const auto *Function = Forward->getDirectCallee();
+      const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+      const auto *Reference =
+          dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Forward));
+      if (!Function || !Primary || !Reference || Forward->getNumArgs() != 1 ||
+          !Function->getIdentifier() || Function->getName() != "forward" ||
+          !approvedStandardSDKDeclaration(S, SM, Function) ||
+          !approvedStandardSDKDeclaration(S, SM, Primary) ||
+          !approvedStandardSDKDeclaration(S, SM, Reference->getDecl()) ||
+          !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
+                         "__utility/forward.h"))
+        return std::nullopt;
+      Source = functionalInvokeStrippedExpression(Forward->getArg(0));
+    }
+    const auto *SourceMember = dyn_cast_or_null<MemberExpr>(Source);
+    const auto *SourceBase =
+        SourceMember
+            ? dyn_cast_or_null<DeclRefExpr>(
+                  functionalInvokeStrippedExpression(SourceMember->getBase()))
+            : nullptr;
+    if (!SourceMember || SourceMember->getMemberDecl() != SourceFields[I] ||
+        SourceMember->isArrow() || !SourceBase ||
+        SourceBase->getDecl() != SourceParameter ||
+        static_cast<bool>(Forward) != Parameter->isRValueReferenceType())
+      return std::nullopt;
+
+    auto DestinationType = DestinationFields[I]->getType();
+    if (DestinationType->isReferenceType())
+      DestinationType = DestinationType->getPointeeType();
+    if (utilityPairAssignableValue(S, SM, Context, DestinationType))
+      continue;
+    if (!utilityPairSourceOwnedValue(S, SM, Context, DestinationType) || !Call)
+      return std::nullopt;
+    const auto *Selected =
+        dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee());
+    const auto *SelectedParameter = Selected && Selected->getNumParams() == 1
+                                        ? Selected->getParamDecl(0)
+                                        : nullptr;
+    const auto SelectedType =
+        SelectedParameter ? SelectedParameter->getType() : QualType();
+    const auto SourceType = SourceFields[I]->getType();
+    const auto SourceValue = SourceType->isReferenceType()
+                                 ? SourceType->getPointeeType()
+                                 : SourceType;
+    const bool SourceLValue = !Parameter->isRValueReferenceType() ||
+                              SourceType->isLValueReferenceType();
+    if (!Selected || !SelectedParameter || SelectedType.isNull() ||
+        !SelectedType->isReferenceType() || !supportedAssignment(Selected) ||
+        (!Selected->isTrivial() && !Selected->hasBody()) ||
+        Selected->getParent()->getCanonicalDecl() !=
+            DestinationType->getAsCXXRecordDecl()->getCanonicalDecl() ||
+        !S.owns(SM, Selected->getLocation()) ||
+        !Context.hasSameUnqualifiedType(Left->getType(), DestinationType) ||
+        !Context.hasSameUnqualifiedType(Right->getType(), DestinationType) ||
+        !Context.hasSameUnqualifiedType(SourceValue, DestinationType) ||
+        !Context.hasSameType(SelectedType->getPointeeType(),
+                             Right->getType()) ||
+        !Right->getType().isAtLeastAsQualifiedAs(SourceMember->getType(),
+                                                 Context) ||
+        Right->isLValue() != SourceLValue || Right->isXValue() == SourceLValue)
+      return std::nullopt;
+    SelectedAssignments[I] = Call;
+  }
+  return SelectedAssignments;
+}
+
+std::optional<UtilityPairRecord> approvedUtilityPairAssignment(
+    const State &S, const SourceManager &SM,
+    const CXXOperatorCallExpr *Assignment, const ASTContext &Context,
+    std::vector<const CXXOperatorCallExpr *> *SelectedAssignments) {
   if (!Assignment || Assignment->isTypeDependent() ||
       Assignment->isValueDependent() ||
       Assignment->isInstantiationDependent() ||
@@ -3509,17 +3648,23 @@ approvedUtilityPairAssignment(const State &S, const SourceManager &SM,
     FirstType = FirstType->getPointeeType();
   if (!SecondType.isNull() && SecondType->isReferenceType())
     SecondType = SecondType->getPointeeType();
+  const bool OwnedElements =
+      Pair && (!utilityPairAssignableValue(S, SM, Context, FirstType) ||
+               !utilityPairAssignableValue(S, SM, Context, SecondType));
+  auto Assignable = [&](QualType Type) {
+    return utilityPairAssignableValue(S, SM, Context, Type) ||
+           utilityPairSourceOwnedValue(S, SM, Context, Type);
+  };
   if (!Method || !Pair || Method->isStatic() || Method->isVariadic() ||
       Method->getNumParams() != 1 ||
       Method->getOverloadedOperator() != OO_Equal || !Method->hasBody() ||
       !approvedStandardSDKDeclaration(S, SM, Method) ||
       !cstddefOrigin(S, SM, Method->getLocation(), "libcxx",
                      "__utility/pair.h") ||
-      (!ReferencePair && !MixedReferencePair &&
+      (!ReferencePair && !MixedReferencePair && !OwnedElements &&
        (!utilityPairValue(S, SM, Context, FirstType) ||
         !utilityPairValue(S, SM, Context, SecondType))) ||
-      !utilityPairAssignableValue(S, SM, Context, FirstType) ||
-      !utilityPairAssignableValue(S, SM, Context, SecondType))
+      !Assignable(FirstType) || !Assignable(SecondType))
     return std::nullopt;
   const auto Parameter = Method->getParamDecl(0)->getType();
   const auto Result = Method->getReturnType();
@@ -3532,8 +3677,17 @@ approvedUtilityPairAssignment(const State &S, const SourceManager &SM,
     return std::nullopt;
   if (Context.hasSameUnqualifiedType(Parameter->getPointeeType(), PairType) &&
       Context.hasSameUnqualifiedType(Assignment->getArg(1)->getType(),
-                                     PairType))
+                                     PairType)) {
+    if (OwnedElements) {
+      auto Selected = approvedUtilityPairSelectedAssignments(
+          S, SM, Assignment, *Pair, *Pair, Context);
+      if (!Selected)
+        return std::nullopt;
+      if (SelectedAssignments)
+        *SelectedAssignments = std::move(*Selected);
+    }
     return Pair;
+  }
   if (Parameter->getPointeeType().isVolatileQualified())
     return std::nullopt;
   auto SourcePair = approvedUtilityPairRecord(
@@ -3573,6 +3727,14 @@ approvedUtilityPairAssignment(const State &S, const SourceManager &SM,
             : Context.hasSameUnqualifiedType(SourceValue, DestinationValue);
     if (!Convertible)
       return std::nullopt;
+  }
+  if (OwnedElements) {
+    auto Selected = approvedUtilityPairSelectedAssignments(
+        S, SM, Assignment, *Pair, *SourcePair, Context);
+    if (!Selected)
+      return std::nullopt;
+    if (SelectedAssignments)
+      *SelectedAssignments = std::move(*Selected);
   }
   return Pair;
 }

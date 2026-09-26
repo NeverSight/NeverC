@@ -208,8 +208,11 @@ whole-pair copies and moves. Converting construction from another admitted
 pair also proves the pinned pair constructor's owned-field projections and exact
 selected source-owned copy/move constructor for each owned destination field.
 Value and reference sources preserve their checked cv and value categories;
-reference destination fields keep their bindings. Pair assignment and swap
-involving these owned fields remain outside this boundary.
+reference destination fields keep their bindings. Same-type and compatible
+heterogeneous pair assignment proves the pinned pair body's two field writes,
+return and selected source-owned field assignments. Assignment writes owned
+fields or referents in first-then-second order without rebinding references.
+Pair swap involving these owned fields remains outside this boundary.
 
 Authenticated `std::reference_wrapper` values are admitted in ordinary
 and mixed pair value fields, including nested pairs. Direct, same-type

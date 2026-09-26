@@ -30642,6 +30642,105 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2OwnedPairAssignmentCallsSelectedOperations) {
+  const auto Source = tmpFile("owned-pair-assignment.cpp");
+  const auto Output = tmpFile("owned-pair-assignment.nc");
+  writeFile(Source, R"cpp(#include <utility>
+int copy_assigns = 0;
+int move_assigns = 0;
+int order = 0;
+int effects = 0;
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) {}
+  Item(const Item& other) noexcept : value(other.value) {}
+  Item(Item&& other) noexcept : value(other.value) { other.value = -1; }
+  Item& operator=(const Item& other) noexcept {
+    ++copy_assigns;
+    order = order * 10 + other.value;
+    value = other.value;
+    return *this;
+  }
+  Item& operator=(Item&& other) noexcept {
+    ++move_assigns;
+    order = order * 10 + other.value;
+    value = other.value;
+    other.value = -1;
+    return *this;
+  }
+  ~Item() noexcept {}
+};
+std::pair<Item, int>& select_left(std::pair<Item, int>& value) {
+  effects = effects * 10 + 2;
+  return value;
+}
+const std::pair<Item, int>& select_right(
+    const std::pair<Item, int>& value) {
+  effects = effects * 10 + 1;
+  return value;
+}
+int main() {
+  Item referenced(9);
+  std::pair<Item, int> left(Item(1), 2);
+  std::pair<Item, int> right(Item(3), 4);
+  select_left(left) = select_right(right);
+  if (effects != 12 || copy_assigns != 1 || move_assigns ||
+      order != 3 || left.first.value != 3 || left.second != 4)
+    return 1;
+  left = std::move(right);
+  if (copy_assigns != 1 || move_assigns != 1 || order != 33 ||
+      left.first.value != 3 || right.first.value != -1)
+    return 2;
+  std::pair<Item, short> other(Item(5), short(6));
+  left = other;
+  if (copy_assigns != 2 || order != 335 ||
+      left.first.value != 5 || left.second != 6)
+    return 3;
+  left = std::move(other);
+  if (move_assigns != 2 || order != 3355 || other.first.value != -1)
+    return 4;
+  std::pair<Item&, int> reference_destination(referenced, 0);
+  reference_destination = left;
+  if (copy_assigns != 3 || order != 33555 || referenced.value != 5 ||
+      reference_destination.second != 6 ||
+      &reference_destination.first != &referenced)
+    return 5;
+  std::pair<Item&, short> reference_source(referenced, short(7));
+  auto& result = (left = reference_source);
+  if (&result != &left || copy_assigns != 4 || order != 335555 ||
+      left.first.value != 5 || left.second != 7)
+    return 6;
+  std::pair<Item, Item> both_left(Item(1), Item(2));
+  std::pair<Item, Item> both_right(Item(7), Item(8));
+  order = 0;
+  both_left = both_right;
+  if (copy_assigns != 6 || order != 78 ||
+      both_left.first.value != 7 || both_left.second.value != 8)
+    return 7;
+  both_left = std::move(both_right);
+  if (move_assigns != 4 || order != 7878 ||
+      both_right.first.value != -1 || both_right.second.value != -1)
+    return 8;
+  left = left;
+  return copy_assigns == 7 && move_assigns == 4 && order == 78785 &&
+                 left.first.value == 5 && left.second == 7
+             ? 0
+             : 9;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("owned-pair-assignment" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2PairArrayApplyRequiresPinnedOperations) {
   struct Rejection {
     const char *Name;

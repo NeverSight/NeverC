@@ -140,8 +140,10 @@ source-owned element constructors; reference fields keep their bindings. Pair
 converting construction from another admitted pair also selects and proves
 each owned field's source-owned copy or move constructor. Value and reference
 sources retain their checked cv and value categories; reference destination
-fields retain their bindings. Pair assignment and swap involving owned fields
-remain outside this boundary.
+fields retain their bindings. Same-type and compatible heterogeneous pair
+assignment also proves the pinned pair body and invokes each selected
+source-owned field assignment in order, including writes through reference
+fields. Pair swap involving owned fields remains outside this boundary.
 Reference-valued pairs additionally support exact compatible direct
 construction, same-type copy/move construction and index- or unique-type
 `get`; same-type assignment writes through their stored bindings without

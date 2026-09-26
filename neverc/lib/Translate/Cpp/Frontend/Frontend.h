@@ -1095,11 +1095,12 @@ approvedUtilityMakePairSelectedCopies(const State &S,
                                       const clang::CallExpr *Call,
                                       const UtilityPairRecord &Pair,
                                       const clang::ASTContext &Context);
-std::optional<UtilityPairRecord>
-approvedUtilityPairAssignment(const State &S,
-                              const clang::SourceManager &SM,
-                              const clang::CXXOperatorCallExpr *Assignment,
-                              const clang::ASTContext &Context);
+std::optional<UtilityPairRecord> approvedUtilityPairAssignment(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CXXOperatorCallExpr *Assignment,
+    const clang::ASTContext &Context,
+    std::vector<const clang::CXXOperatorCallExpr *> *SelectedAssignments =
+        nullptr);
 struct UtilityTupleRecord {
   const clang::CXXRecordDecl *Record;
   std::vector<const clang::FieldDecl *> Elements;
