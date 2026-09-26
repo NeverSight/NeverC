@@ -1306,9 +1306,19 @@ operator body before emitting scalar IR. Narrow integers use C++ integer
 promotion and typed specializations convert the result back to their selected
 type. Both function arguments are captured once before a logical result is
 formed, preserving the eager argument evaluation of a function call.
+The six comparison objects also admit non-volatile complete object pointers in
+typed or transparent calls. Equality and inequality additionally admit `void *`;
+ordered comparisons require complete object pointees. Pointers to incomplete
+object types remain outside the core-v2 type boundary.
+Typed pointer objects retain their exact parameter conversions, while
+transparent calls retain Clang's selected common pointer type. The generated
+comparison uses the same verified pointer boundary as ordinary scalar
+comparisons, including the profile's native address order for complete object
+pointers.
 The nine comparison and logical objects also accept a top-level `const` on
-their typed scalar template argument. Their selected operator still returns
-`bool`, with the same input conversion and one-time argument evaluation.
+their typed scalar or admitted pointer template argument. Their selected
+operator still returns `bool`, with the same input conversion and one-time
+argument evaluation.
 
 The exact empty specializations may also be stored in local or global objects,
 passed by value, and trivially default/copy/move constructed or copy/move
@@ -1868,9 +1878,10 @@ three-way `nth_element` partition still terminates directly on equivalent
 values. Unsupported callbacks and record elements remain rejected.
 
 The three-argument `std::sort` overload also accepts the same authenticated
-standard comparison objects as the heap algorithms. Its checked heap lowering
-applies the selected scalar `operator()` operation directly, preserving the
-object argument's single evaluation and the comparator's ordering.
+standard comparison objects as the heap algorithms, including comparison
+objects for complete object pointers. Its checked heap lowering applies the
+selected scalar `operator()` operation directly, preserving the object
+argument's single evaluation and the comparator's ordering.
 
 The comparator overloads of `std::partial_sort`, `std::partial_sort_copy` and
 `std::nth_element` accept these authenticated typed or transparent standard
@@ -2471,9 +2482,9 @@ range, and initializer-list `insert`; zero- or one-argument positional
 `emplace` with exact element types; counted-value, pointer and wrapped
 iterator range, and initializer-list `assign`; single-position and range
 `erase`; member/free swap; and all six vector/vector comparison operators for
-arithmetic and complete object-pointer elements. Object pointers to incomplete
-types and `void *` support equality and inequality only. Function pointer
-elements remain outside this boundary.
+arithmetic and complete object-pointer elements. `void *` elements support
+equality and inequality only. Pointers to incomplete object types and function
+pointer elements remain outside this boundary.
 Insert and positional emplace return mutable iterators. Single-value insertion
 and emplace preserve aliased element inputs;
 they shift in place when capacity permits and otherwise move storage through

@@ -381,6 +381,25 @@ static bool supportedFunctionalScalar(QualType Type,
          Type->isSpecificBuiltinType(BuiltinType::Double);
 }
 
+static bool supportedFunctionalPointerComparison(llvm::StringRef Name,
+                                                 QualType Type,
+                                                 const ASTContext &Context) {
+  const bool Equality = Name == "equal_to" || Name == "not_equal_to";
+  const bool Ordered = Name == "less" || Name == "greater" ||
+                       Name == "less_equal" || Name == "greater_equal";
+  if ((!Equality && !Ordered) || Type.isNull() || Type->isReferenceType() ||
+      Type.hasQualifiers() || !Type->isPointerType() ||
+      Type->isFunctionPointerType())
+    return false;
+  const auto Pointee = Type->getPointeeType();
+  return !Pointee.isVolatileQualified() && !Pointee.isRestrictQualified() &&
+         Pointee.getAddressSpace() == LangAS::Default &&
+         ((Pointee->isObjectType() && !Pointee->isIncompleteType()) ||
+          (Equality && Pointee->isVoidType())) &&
+         Context.getTypeSize(Type) == Context.getTypeSize(Context.VoidPtrTy) &&
+         Context.getTypeAlign(Type) == Context.getTypeAlign(Context.VoidPtrTy);
+}
+
 static bool supportedFunctionalCallableValue(QualType Type,
                                              const ASTContext &Context) {
   return supportedFunctionalScalar(Type, Context) ||
@@ -705,17 +724,19 @@ approvedFunctionalObjectRecord(const State &S, const SourceManager &SM,
                        "__functional/operations.h"))
       return std::nullopt;
   } else if (!(supportedFunctionalScalar(ValueType, Context) ||
+               supportedFunctionalPointerComparison(Name, ValueType, Context) ||
                ((Name == "equal_to" || Name == "not_equal_to" ||
-                 Name == "less" || Name == "greater" ||
-                 Name == "less_equal" || Name == "greater_equal" ||
-                 Name == "logical_and" || Name == "logical_or" ||
-                 Name == "logical_not") &&
+                 Name == "less" || Name == "greater" || Name == "less_equal" ||
+                 Name == "greater_equal" || Name == "logical_and" ||
+                 Name == "logical_or" || Name == "logical_not") &&
                 !ValueType.isNull() && ValueType.isConstQualified() &&
                 !ValueType.isVolatileQualified() &&
                 !ValueType.isRestrictQualified() &&
                 ValueType.getAddressSpace() == LangAS::Default &&
-                supportedFunctionalScalar(ValueType.getUnqualifiedType(),
-                                          Context))) ||
+                (supportedFunctionalScalar(ValueType.getUnqualifiedType(),
+                                           Context) ||
+                 supportedFunctionalPointerComparison(
+                     Name, ValueType.getUnqualifiedType(), Context)))) ||
              (integralFunctionalObject(Definition->getName()) &&
               !ValueType->isIntegralType(Context))) {
     return std::nullopt;
@@ -1748,10 +1769,13 @@ static std::optional<FunctionalOperationInfo> approvedFunctionalOperationImpl(
     if (Type.isNull())
       return false;
     Type = Type.getNonReferenceType();
-    if (Type.isVolatileQualified())
+    if (Type.isVolatileQualified() || Type.isRestrictQualified() ||
+        Type.getAddressSpace() != LangAS::Default)
       return false;
     Type = Type.getUnqualifiedType();
-    return (Type->isIntegralType(Context) && Context.getTypeSize(Type) <= 64) ||
+    return supportedFunctionalPointerComparison(Record->getName(), Type,
+                                                Context) ||
+           (Type->isIntegralType(Context) && Context.getTypeSize(Type) <= 64) ||
            Type->isSpecificBuiltinType(BuiltinType::Float) ||
            Type->isSpecificBuiltinType(BuiltinType::Double);
   };

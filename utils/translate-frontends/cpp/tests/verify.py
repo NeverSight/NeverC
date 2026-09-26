@@ -6182,6 +6182,45 @@ extern "C" int functional_operations(int a, int b) {
         check("v2-functional-typed-operations-" + target,
               functional_operations_source, profile="cpp-core-v2",
               target=target, sdk=True)
+    functional_pointer_source = """\
+#include <algorithm>
+#include <functional>
+extern "C" bool functional_pointer_comparisons(int *first, int *last,
+                                                const int *qualified,
+                                                void *opaque) {
+  std::less<int *> less;
+  return less(first, last) && std::greater<int *>{}(last, first) &&
+         std::less_equal<int *>{}(first, last) &&
+         std::greater_equal<int *>{}(last, first) &&
+         std::equal_to<int *>{}(first, first) &&
+         std::not_equal_to<int *>{}(first, last) &&
+         std::less<>{}(first, qualified) &&
+         std::greater<>{}(qualified, first) &&
+         std::less_equal<>{}(first, last) &&
+         std::greater_equal<>{}(last, first) &&
+         std::equal_to<>{}(first, first) &&
+         std::not_equal_to<>{}(first, last) &&
+         std::equal_to<void *>{}(opaque, first) &&
+         std::not_equal_to<void *>{}(opaque, last) &&
+         std::invoke(less, first, last);
+}
+extern "C" bool functional_sort_pointers(int *first, int *middle,
+                                          int *last) {
+  int *values[3]{last, first, middle};
+  std::sort(values, values + 3, std::less<int *>{});
+  return values[0] == first && values[1] == middle && values[2] == last;
+}
+"""
+    check("v2-functional-pointer-comparisons", functional_pointer_source,
+          profile="cpp-core-v2", sdk=True)
+    for target in sdk_targets:
+        check("v2-functional-pointer-comparisons-" + target,
+              functional_pointer_source, profile="cpp-core-v2",
+              target=target, sdk=True)
+    check("v2-functional-void-pointer-order",
+          '#include <functional>\nextern "C" bool compare(void *a, void *b) {'
+          'return std::less<void *>{}(a, b);}', "TR0203",
+          profile="cpp-core-v2", sdk=True)
     functional_transparent_source = """\
 #include <functional>
 extern "C" unsigned functional_transparent(int a, unsigned b) {

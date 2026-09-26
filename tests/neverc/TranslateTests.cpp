@@ -49190,6 +49190,80 @@ int main() {
 }
 
 TEST_F(TranslateTest,
+       CoreV2FunctionalPointerComparisonsRunAtBothOptimizations) {
+  const auto Source = tmpFile("functional-pointer-comparisons.cpp");
+  const auto Output = tmpFile("functional-pointer-comparisons.nc");
+  writeFile(Source, R"cpp(
+#include <algorithm>
+#include <functional>
+int evaluations;
+int *observe(int *value) { ++evaluations; return value; }
+int main() {
+  int values[3]{1, 2, 3};
+  int *first = &values[0];
+  int *last = &values[2];
+  const int *const_last = last;
+  std::less<int *> less;
+  if (!less(first, last) || std::greater<int *>{}(first, last) ||
+      !std::less_equal<int *>{}(first, first) ||
+      !std::greater_equal<int *>{}(last, first) ||
+      std::equal_to<int *>{}(first, last) ||
+      !std::not_equal_to<int *>{}(first, last) ||
+      !std::less<int *const>{}(first, last))
+    return 1;
+  if (!std::less<>{}(first, const_last) ||
+      !std::greater<>{}(const_last, first) ||
+      !std::less_equal<>{}(first, first) ||
+      !std::greater_equal<>{}(last, first) ||
+      !std::equal_to<>{}(first, first) ||
+      !std::not_equal_to<>{}(first, last))
+    return 2;
+  void *opaque = first;
+  if (!std::equal_to<void *>{}(opaque, first) ||
+      std::not_equal_to<void *>{}(opaque, first) ||
+      !std::equal_to<>{}(opaque, first) ||
+      std::equal_to<int *>{}(first, nullptr))
+    return 3;
+  if (!std::invoke(less, first, last) ||
+      !std::less<int *>{}(observe(first), observe(last)) ||
+      evaluations != 2)
+    return 4;
+  int *pointers[3]{last, first, &values[1]};
+  std::sort(pointers, pointers + 3, less);
+  if (pointers[0] != first || pointers[1] != &values[1] ||
+      pointers[2] != last)
+    return 5;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("functional-pointer-comparisons" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+  const auto VoidOrderSource = tmpFile("functional-void-order.cpp");
+  const auto VoidOrderOutput = tmpFile("functional-void-order.nc");
+  writeFile(VoidOrderSource, R"cpp(
+#include <functional>
+extern "C" bool order_void(void *left, void *right) {
+  return std::less<void *>{}(left, right);
+}
+)cpp");
+  auto VoidOrder = translate(VoidOrderSource, {"--profile", "cpp-core-v2", "-o",
+                                               VoidOrderOutput.string()});
+  EXPECT_NE(VoidOrder.exitCode, 0);
+  EXPECT_NE(VoidOrder.err.find("TR0203"), std::string::npos) << VoidOrder.err;
+  EXPECT_EQ(VoidOrder.err.find("TR0301"), std::string::npos) << VoidOrder.err;
+}
+
+TEST_F(TranslateTest,
        CoreV2FunctionalTransparentFunctionObjectsRunAtBothOptimizations) {
   const auto Source = tmpFile("functional-transparent-objects.cpp");
   const auto Output = tmpFile("functional-transparent-objects.nc");
