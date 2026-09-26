@@ -1124,6 +1124,11 @@ approvedUtilityTupleConstruction(const State &S, const clang::SourceManager &SM,
                                  const clang::ASTContext &Context,
                                  std::vector<const clang::CXXConstructExpr *>
                                      *SelectedCopies = nullptr);
+std::optional<std::vector<const clang::CXXConstructExpr *>>
+approvedUtilityMakeTupleSelectedCopies(
+    const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *Call, const UtilityTupleRecord &Tuple,
+    const clang::ASTContext &Context);
 enum class UtilityTupleAssignment {
   CopyOrMove,
   Converting,

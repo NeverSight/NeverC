@@ -9172,6 +9172,84 @@ static bool approvedFunctionalForwardingCall(
                        "__utility/forward.h");
 }
 
+std::optional<std::vector<const CXXConstructExpr *>>
+approvedUtilityMakeTupleSelectedCopies(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const UtilityTupleRecord &Tuple, const ASTContext &Context) {
+  if (!Call || Call->getNumArgs() != Tuple.Elements.size())
+    return std::nullopt;
+  bool NeedsCopies = false;
+  for (const auto *Element : Tuple.Elements)
+    NeedsCopies |= !Element->getType()->isReferenceType() &&
+                   !utilityTupleValue(S, SM, Context, Element->getType());
+  if (!NeedsCopies)
+    return std::vector<const CXXConstructExpr *>{};
+
+  const auto *Function = Call->getDirectCallee();
+  const auto *Primary = Function ? Function->getPrimaryTemplate() : nullptr;
+  const auto *Pattern = Primary ? Primary->getTemplatedDecl() : nullptr;
+  const auto *Body = Function
+                         ? dyn_cast_or_null<CompoundStmt>(Function->getBody())
+                         : nullptr;
+  const auto Origin = Primary ? S.sdkFile(SM, Primary->getLocation())
+                              : std::nullopt;
+  const auto *Return = Body && Body->size() == 1
+                           ? dyn_cast<ReturnStmt>(*Body->body_begin())
+                           : nullptr;
+  const auto *Selected = Return
+                             ? functionalInvokeStrippedExpression(
+                                   Return->getRetValue())
+                             : nullptr;
+  if (const auto *Cast = dyn_cast_or_null<CXXFunctionalCastExpr>(Selected))
+    Selected = functionalInvokeStrippedExpression(Cast->getSubExpr());
+  const auto *Construction = dyn_cast_or_null<CXXConstructExpr>(Selected);
+  const auto *Constructor =
+      Construction ? Construction->getConstructor() : nullptr;
+  const auto *ConstructorPrimary =
+      Constructor ? Constructor->getPrimaryTemplate() : nullptr;
+  if (!Function || !Primary || !Pattern || !Pattern->hasBody() || !Body ||
+      !Return || !Construction || !Constructor || !ConstructorPrimary ||
+      !Function->isInlined() || !Function->isConstexpr() ||
+      !Constructor->hasBody() || !Origin || Origin->Root != "libcxx" ||
+      Origin->Path != "tuple" ||
+      Construction->getNumArgs() != Call->getNumArgs() ||
+      !Context.hasSameType(Construction->getType(),
+                           Context.getRecordType(Tuple.Record)) ||
+      !approvedStandardSDKDeclaration(S, SM, Function) ||
+      !approvedStandardSDKDeclaration(S, SM, Primary) ||
+      !approvedStandardSDKDeclaration(S, SM, Pattern) ||
+      !approvedStandardSDKDeclaration(S, SM, Constructor) ||
+      !approvedStandardSDKDeclaration(S, SM, ConstructorPrimary) ||
+      !cstddefOrigin(S, SM, ConstructorPrimary->getLocation(), "libcxx",
+                     "tuple"))
+    return std::nullopt;
+  for (unsigned I = 0; I < Call->getNumArgs(); ++I)
+    if (!approvedFunctionalForwardingCall(
+            S, SM, Construction->getArg(I), Function->getParamDecl(I)))
+      return std::nullopt;
+
+  auto Copies = approvedUtilityTupleSelectedCopies(
+      S, SM, Construction, Tuple, Context);
+  if (!Copies)
+    return std::nullopt;
+  for (unsigned I = 0; I < Tuple.Elements.size(); ++I) {
+    const auto Element = Tuple.Elements[I]->getType();
+    if (Element->isReferenceType() ||
+        utilityTupleValue(S, SM, Context, Element))
+      continue;
+    const auto *Copy = (*Copies)[I];
+    const auto *Argument = Copy ? Copy->getArg(0) : nullptr;
+    const auto *Source = Call->getArg(I);
+    if (!Argument || !Context.hasSameUnqualifiedType(Source->getType(),
+                                                      Element) ||
+        Argument->isLValue() != Source->isLValue() ||
+        (Source->getType().isConstQualified() &&
+         !Argument->getType().isConstQualified()))
+      return std::nullopt;
+  }
+  return Copies;
+}
+
 static bool approvedFunctionalInvokeArgumentFlow(
     const State &S, const SourceManager &SM, const Expr *Expression,
     const ParmVarDecl *Parameter, QualType Target,
@@ -22166,6 +22244,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
     if (!Tuple || Call->getNumArgs() != Tuple->Elements.size())
       return std::nullopt;
+    const auto Copies = approvedUtilityMakeTupleSelectedCopies(
+        S, SM, Call, *Tuple, Context);
+    if (!Copies)
+      return std::nullopt;
     for (unsigned I = 0; I < Call->getNumArgs(); ++I) {
       auto Parameter = Function->getParamDecl(I)->getType();
       if (!Parameter->isReferenceType() ||
@@ -22181,7 +22263,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
                                  Element->getPointeeType()))
           return std::nullopt;
       } else if (!utilityTupleDirectConversion(
-                     S, SM, Context, Call->getArg(I)->getType(), Element)) {
+                     S, SM, Context, Call->getArg(I)->getType(), Element) &&
+                 (Copies->empty() || !(*Copies)[I])) {
         return std::nullopt;
       }
     }

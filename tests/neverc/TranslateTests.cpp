@@ -30303,6 +30303,81 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2MakeTupleOwnedElementsCopyMoveAndCompose) {
+  const auto Source = tmpFile("make-tuple-owned-elements.cpp");
+  const auto Output = tmpFile("make-tuple-owned-elements.nc");
+  writeFile(Source, R"cpp(#include <functional>
+#include <tuple>
+#include <utility>
+int alive = 0;
+int copies = 0;
+int moves = 0;
+int deaths = 0;
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) { ++alive; }
+  Item(const Item& other) noexcept : value(other.value) {
+    ++copies;
+    ++alive;
+  }
+  Item(Item&& other) noexcept : value(other.value) {
+    other.value = -1;
+    ++moves;
+    ++alive;
+  }
+  ~Item() noexcept { ++deaths; --alive; }
+};
+int inspect(const Item& first, const Item& second, int& number) {
+  return first.value * 100 + second.value * 10 + number;
+}
+int main() {
+  Item mutable_item(2);
+  const Item fixed_item(3);
+  int target = 7;
+  {
+    auto copied = std::make_tuple(mutable_item);
+    auto fixed = std::make_tuple(fixed_item);
+    auto moved = std::make_tuple(std::move(mutable_item));
+    auto temporary = std::make_tuple(Item(4));
+    auto mixed = std::make_tuple(fixed_item, std::ref(target));
+    if (copies != 3 || moves != 2 || deaths != 1 || alive != 7 ||
+        mutable_item.value != -1 ||
+        std::get<0>(copied).value != 2 ||
+        std::get<0>(fixed).value != 3 ||
+        std::get<0>(moved).value != 2 ||
+        std::get<0>(temporary).value != 4 ||
+        std::get<0>(mixed).value != 3 ||
+        std::get<1>(mixed) != 7) return 1;
+    {
+      auto joined = std::tuple_cat(copied, mixed);
+      if (std::apply(inspect, joined) != 237 || copies != 5 ||
+          moves != 2 || deaths != 1 || alive != 9) return 2;
+      std::get<2>(joined) = 9;
+      if (target != 9 || std::get<1>(mixed) != 9) return 3;
+    }
+    if (copies != 5 || moves != 2 || deaths != 3 || alive != 7)
+      return 4;
+  }
+  return copies == 5 && moves == 2 && deaths == 8 && alive == 2 &&
+                 target == 9
+             ? 0
+             : 5;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("make-tuple-owned-elements" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2PairArrayApplyRequiresPinnedOperations) {
   struct Rejection {
     const char *Name;

@@ -311,11 +311,13 @@ member and free `swap`, `tuple_size`, `tuple_element`, and index-based or
 unique-type `std::get` use the same authenticated records. `get` preserves
 const and lvalue/rvalue reference categories; type selection requires exactly
 one matching element, as in C++17.
-Direct element-wise construction may also store source-owned nontrivial
-standard-layout records. Each selected libc++ tuple, implementation and leaf
-initializer must identify an admitted source-owned copy or move constructor,
-with the original element type, cv qualification and value category. The tuple
-constructs each field in place and destroys owned fields in reverse order.
+Direct element-wise construction and `std::make_tuple` may also store
+source-owned nontrivial standard-layout records. Each selected libc++ tuple,
+implementation and leaf initializer must identify an admitted source-owned
+copy or move constructor, with the original element type, cv qualification and
+value category. The factory must forward each argument into that selected
+constructor; owned elements can share a result with `ref`/`cref` elements. The
+tuple constructs each field in place and destroys owned fields in reverse order.
 Default, whole-tuple copy/move, converting and assignment operations on such
 records remain outside this boundary.
 

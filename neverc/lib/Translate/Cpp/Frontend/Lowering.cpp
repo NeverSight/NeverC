@@ -7922,11 +7922,28 @@ class FunctionLowering {
       if (Call->getNumArgs() != Tuple->Elements.size())
         reject(L, "utility make_tuple",
                "The std::make_tuple element count differs from its result.");
+      const auto Copies = approvedUtilityMakeTupleSelectedCopies(
+          A.S, A.Sources, Call, *Tuple, A.Context);
+      if (!Copies ||
+          (!Copies->empty() && Copies->size() != Tuple->Elements.size()))
+        reject(L, "utility make_tuple",
+               "The selected std::make_tuple element construction is unavailable.");
       for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
         const auto *Field = Tuple->Elements[I];
         if (!Field->getType()->isReferenceType()) {
-          initialize(fieldStorage(json::Object(Place), Field, L),
-                     Call->getArg(I), L);
+          const auto *Copy = Copies->empty() ? nullptr : (*Copies)[I];
+          if (Copy) {
+            const auto *Constructor = Copy->getConstructor();
+            const auto Referent =
+                Constructor->getParamDecl(0)->getType()->getPointeeType();
+            constructMemorySource(
+                fieldStorage(json::Object(Place), Field, L), Field->getType(),
+                Constructor,
+                snapshot(address(lvalue(Call->getArg(I)), Referent, L), L), L);
+          } else {
+            initialize(fieldStorage(json::Object(Place), Field, L),
+                       Call->getArg(I), L);
+          }
           continue;
         }
         const auto Wrapper = approvedFunctionalReferenceRecord(
