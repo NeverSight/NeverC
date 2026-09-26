@@ -8327,7 +8327,8 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
 std::optional<UtilityTupleLikeSource>
 approvedUtilityTupleLikeSource(const State &S, const SourceManager &SM,
                                QualType Type, const ASTContext &Context,
-                               bool AllowNontrivialArrayElements) {
+                               bool AllowNontrivialArrayElements,
+                               bool AllowNontrivialTupleElements) {
   if (Type.isNull() || Type.isVolatileQualified() || Type.isRestrictQualified() ||
       Type.getAddressSpace() != LangAS::Default)
     return std::nullopt;
@@ -8339,7 +8340,8 @@ approvedUtilityTupleLikeSource(const State &S, const SourceManager &SM,
     Tuple = approvedUtilityMixedReferenceTupleRecord(S, SM, Record, Context);
   if (Tuple) {
     for (const auto *Element : Tuple->Elements)
-      if (!Element->getType()->isReferenceType() &&
+      if (!AllowNontrivialTupleElements &&
+          !Element->getType()->isReferenceType() &&
           !utilityTupleValue(S, SM, Context, Element->getType()))
         return std::nullopt;
     return UtilityTupleLikeSource{Tuple->Elements, nullptr, {}, 0};
@@ -8437,7 +8439,7 @@ approvedUtilityTupleCatCall(const State &S, const SourceManager &SM,
                              Call->getArg(I)->getType()))
       return std::nullopt;
     auto Source = approvedUtilityTupleLikeSource(
-        S, SM, Call->getArg(I)->getType(), Context, true);
+        S, SM, Call->getArg(I)->getType(), Context, true, true);
     if (!Source)
       return std::nullopt;
     const uint64_t SourceSize = Source->size();
@@ -8698,8 +8700,7 @@ approvedUtilityTupleCatSelectedCopies(
       if (Element->isReferenceType() ||
           utilityTupleValue(S, SM, Context, Element))
         continue;
-      if (!Source.ArrayElements ||
-          !Context.hasSameType(Source.ArrayElementType, Element))
+      if (!Context.hasSameType(Source.elementType(N), Element))
         return std::nullopt;
       const CXXConstructorDecl *LeafConstructor = nullptr;
       for (const auto *Initializer : ImplConstructor->inits()) {

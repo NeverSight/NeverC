@@ -217,7 +217,9 @@ sources once before reading their elements, and constructs the exact
 concatenated tuple directly while preserving reference bindings. Nontrivial
 source-owned standard-layout array elements use the copy or move constructor
 selected by the pinned libc++ result construction; their result tuple destroys
-elements in reverse order.
+elements in reverse order. Such result tuples can themselves supply owned
+elements to another `tuple_cat`. This preserves lvalue copies, rvalue moves,
+reference bindings and temporary cleanup through nested concatenation.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#value-tuples-from-tuple).
 
 Authenticated `std::array` objects, including zero-length and nested arrays,
@@ -230,7 +232,8 @@ retain their source-owned checks. By-value SDK callback parameters/results,
 volatile array elements and user `std::array` specializations remain excluded.
 Source-owned nontrivial standard-layout elements may be forwarded by reference
 or copied into source-owned by-value callbacks and `tuple_cat` results through
-their selected constructors; other owning tuple operations remain restricted.
+their selected constructors. The resulting tuple can be concatenated again;
+other owning tuple operations remain restricted.
 [C++17](../utils/translate-frontends/docs/cpp-core-v2.md#fixed-value-arrays-from-array).
 
 Array layout also supplies authenticated evidence for type queries, including

@@ -8021,10 +8021,25 @@ class FunctionLowering {
           }
           continue;
         }
-        for (const auto *Element : Source.Elements)
-          assign(fieldStorage(json::Object(Place),
-                              Cat->Result.Elements[ResultIndex++], L),
-                 fieldStorage(json::Object(Sources[I]), Element, L), L);
+        for (const auto *Element : Source.Elements) {
+          auto Field = fieldStorage(json::Object(Sources[I]), Element, L);
+          auto Destination = fieldStorage(
+              json::Object(Place), Cat->Result.Elements[ResultIndex], L);
+          const auto *Copy = Cat->SelectedCopies.empty()
+                                 ? nullptr
+                                 : Cat->SelectedCopies[ResultIndex];
+          if (Copy) {
+            const auto *Constructor = Copy->getConstructor();
+            const auto Referent =
+                Constructor->getParamDecl(0)->getType()->getPointeeType();
+            constructMemorySource(
+                std::move(Destination), Element->getType(), Constructor,
+                snapshot(address(std::move(Field), Referent, L), L), L);
+          } else {
+            assign(std::move(Destination), std::move(Field), L);
+          }
+          ++ResultIndex;
+        }
       }
       if (ResultIndex != Cat->Result.Elements.size())
         reject(L, "utility tuple cat",

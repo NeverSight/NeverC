@@ -30062,6 +30062,91 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2TupleCatOwnedTupleSourcesCopyMoveAndDestroy) {
+  const auto Source = tmpFile("tuple-cat-owned-tuple-sources.cpp");
+  const auto Output = tmpFile("tuple-cat-owned-tuple-sources.nc");
+  writeFile(Source, R"cpp(#include <array>
+#include <tuple>
+#include <utility>
+int alive = 0;
+int copies = 0;
+int moves = 0;
+int deaths = 0;
+int order = 0;
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) { ++alive; }
+  Item(const Item& other) noexcept : value(other.value) {
+    ++copies;
+    ++alive;
+  }
+  Item(Item&& other) noexcept : value(other.value) {
+    other.value = -1;
+    ++moves;
+    ++alive;
+  }
+  ~Item() noexcept {
+    if (value >= 0) order = order * 10 + value;
+    ++deaths;
+    --alive;
+  }
+};
+int main() {
+  std::array<Item, 2> row{{Item(2), Item(3)}};
+  const std::array<Item, 1> fixed{{Item(4)}};
+  int target = 7;
+  {
+    auto first = std::tuple_cat(row, std::tie(target));
+    if (copies != 2 || moves || deaths || alive != 5) return 1;
+    {
+      auto second = std::tuple_cat(first, fixed);
+      if (copies != 5 || moves || deaths || alive != 8 ||
+          std::get<0>(second).value != 2 ||
+          std::get<1>(second).value != 3 ||
+          std::get<2>(second) != 7 ||
+          std::get<3>(second).value != 4) return 2;
+      std::get<2>(second) = 9;
+      if (target != 9 || std::get<2>(first) != 9) return 3;
+    }
+    if (deaths != 3 || alive != 5 || order != 432) return 4;
+    {
+      auto third = std::tuple_cat(std::move(first));
+      if (copies != 5 || moves != 2 || deaths != 3 || alive != 7 ||
+          std::get<0>(third).value != 2 ||
+          std::get<1>(third).value != 3 ||
+          std::get<2>(third) != 9 ||
+          std::get<0>(first).value != -1 ||
+          std::get<1>(first).value != -1) return 5;
+    }
+    if (deaths != 5 || alive != 5 || order != 43232) return 6;
+  }
+  if (deaths != 7 || alive != 3 || order != 43232) return 7;
+  {
+    auto nested = std::tuple_cat(std::tuple_cat(row));
+    if (copies != 7 || moves != 4 || deaths != 9 || alive != 5 ||
+        std::get<0>(nested).value != 2 ||
+        std::get<1>(nested).value != 3) return 8;
+  }
+  return copies == 7 && moves == 4 && deaths == 11 && alive == 3 &&
+                 order == 4323232
+             ? 0
+             : 9;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("tuple-cat-owned-tuple-sources" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 TEST_F(TranslateTest, CoreV2PairArrayApplyRequiresPinnedOperations) {
   struct Rejection {
     const char *Name;
