@@ -904,7 +904,7 @@ OPTION(prefix_3, "-no_new_main", no_new_main, Flag, grp_undocumented, INVALID,
        nullptr, nullptr)
 OPTION(prefix_3, "-no_objc_category_merging", no_objc_category_merging, Flag,
        grp_neverc_ext, INVALID, nullptr, 0, DefaultVis, 0,
-       "Do not merge Objective-C categories (always done)", nullptr, nullptr)
+       "Keep each Objective-C category (default)", nullptr, nullptr)
 OPTION(prefix_3, "-no_objc_relative_method_lists",
        no_objc_relative_method_lists, Flag, grp_undocumented, INVALID, nullptr,
        0, DefaultVis, 0, "Keep Objective-C method lists as pointers (default)",
@@ -995,8 +995,9 @@ OPTION(prefix_3, "-objc_abi_version", objc_abi_version, Separate,
        "This option only applies to i386 in the native linker", nullptr,
        nullptr)
 OPTION(prefix_3, "-objc_category_merging", objc_category_merging, Flag,
-       grp_neverc_ext, INVALID, nullptr, HelpHidden, DefaultVis, 0,
-       "Objective-C optimizations are not supported", nullptr, nullptr)
+       grp_neverc_ext, INVALID, nullptr, 0, DefaultVis, 0,
+       "Merge the Objective-C categories of each class into one", nullptr,
+       nullptr)
 OPTION(prefix_3, "-objc_gc_compaction", objc_gc_compaction, Flag, grp_obsolete,
        INVALID, nullptr, HelpHidden, DefaultVis, 0,
        "This option is obsolete: Objective-C garbage collection is gone",

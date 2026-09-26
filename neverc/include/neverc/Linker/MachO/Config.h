@@ -304,6 +304,7 @@ struct Configuration {
                  std::pair<llvm::StringRef, llvm::StringRef>>
       movedSections;
   bool objcRelativeMethodLists = false;
+  bool objcCategoryMerging = false;
   SymbolPatterns interposableSymbols;
 
   llvm::StringRef osoPrefix;

@@ -872,6 +872,272 @@ void writeKextObjects() {
     error("-kext_objects_dir: cannot merge the kext's objects into " + path);
 }
 
+// -objc_category_merging: the categories of one class in __objc_catlist
+// become one category, whose method, protocol and property lists join
+// theirs, later categories first, as the runtime would attach them. The
+// merged category takes the first one's place in __objc_catlist. Categories
+// with +load (__objc_nlcatlist) keep their own.
+void mergeObjCCategories() {
+  constexpr uint64_t categorySize = 64;
+  // Where a pointer leads: an input section and an offset in it.
+  auto targetOf =
+      [](const Reloc &r) -> std::pair<ConcatInputSection *, uint64_t> {
+    if (const auto *sym = r.referent.dyn_cast<Symbol *>()) {
+      const auto *d = dyn_cast<Defined>(sym);
+      if (!d || !d->isec)
+        return {nullptr, 0};
+      return {dyn_cast<ConcatInputSection>(d->isec), d->value + r.addend};
+    }
+    return {dyn_cast<ConcatInputSection>(r.referent.get<InputSection *>()),
+            uint64_t(r.addend)};
+  };
+  auto stringOf = [](const Reloc &r) -> StringRef {
+    if (const auto *d =
+            dyn_cast_or_null<Defined>(r.referent.dyn_cast<Symbol *>());
+        d && d->isec)
+      if (const auto *cstrings = dyn_cast<CStringInputSection>(d->isec))
+        return cstrings->getStringRefAtOffset(d->value + r.addend);
+    if (const auto *isec = r.referent.dyn_cast<InputSection *>())
+      if (const auto *cstrings = dyn_cast<CStringInputSection>(isec))
+        return cstrings->getStringRefAtOffset(r.addend);
+    return "";
+  };
+  auto isPointer = [](const Reloc &r) {
+    return r.length == 3 && !r.pcrel && r.type == target->unsignedRelocType;
+  };
+  struct Category {
+    ConcatInputSection *isec;
+    ConcatInputSection *catlist;
+    uint64_t entry;
+    std::array<const Reloc *, 7> fields{};
+  };
+  SmallVector<Category, 0> categories;
+  DenseSet<const InputSection *> withLoad;
+  for (const InputFile *file : inputFiles) {
+    const auto *obj = dyn_cast<ObjFile>(file);
+    if (!obj)
+      continue;
+    for (const Section *section : obj->sections) {
+      const bool nonLazy = section->name == "__objc_nlcatlist";
+      if (section->name != "__objc_catlist" && !nonLazy)
+        continue;
+      for (const Subsection &subsection : section->subsections) {
+        auto *catlist = dyn_cast<ConcatInputSection>(subsection.isec);
+        if (!catlist)
+          continue;
+        for (const Reloc &r : catlist->relocs) {
+          auto [isec, offset] = targetOf(r);
+          if (!isec)
+            continue;
+          if (nonLazy) {
+            withLoad.insert(isec);
+            continue;
+          }
+          if (!isPointer(r) || offset != 0 ||
+              isec->data.size() != categorySize ||
+              support::endian::read32le(isec->data.data() + 56) != categorySize)
+            continue;
+          Category category{isec, catlist, r.offset};
+          bool valid = true;
+          for (const Reloc &field : isec->relocs) {
+            if (!isPointer(field) || field.offset % 8 || field.offset >= 56) {
+              valid = false;
+              break;
+            }
+            category.fields[field.offset / 8] = &field;
+          }
+          if (valid && category.fields[0] && category.fields[1])
+            categories.push_back(category);
+        }
+      }
+    }
+  }
+
+  // Categories by class, in __objc_catlist order.
+  MapVector<std::pair<const void *, int64_t>, SmallVector<size_t, 2>> byClass;
+  for (size_t i = 0; i < categories.size(); ++i) {
+    if (withLoad.contains(categories[i].isec))
+      continue;
+    const Reloc *cls = categories[i].fields[1];
+    byClass[{cls->referent.getOpaqueValue(), cls->addend}].push_back(i);
+  }
+
+  // A list's header size and entry size, and whether its header is a 64-bit
+  // count (protocol lists) or an entry size and a count.
+  struct ListKind {
+    uint32_t headerSize, entrySize;
+    bool countOnly;
+  };
+  auto listKind = [](int field) {
+    return field == 2 || field == 3 ? ListKind{8, 24, false}
+           : field == 4             ? ListKind{8, 8, true}
+                                    : ListKind{8, 16, false};
+  };
+  // A list of the category, if it is one the merge can read.
+  auto listOf = [&](const Category &category,
+                    int field) -> std::optional<ConcatInputSection *> {
+    const Reloc *r = category.fields[field];
+    if (!r)
+      return nullptr;
+    const ListKind kind = listKind(field);
+    auto [isec, offset] = targetOf(*r);
+    if (!isec || offset != 0 || isec->data.size() < kind.headerSize)
+      return std::nullopt;
+    const uint8_t *data = isec->data.data();
+    const uint64_t count = kind.countOnly ? support::endian::read64le(data)
+                                          : support::endian::read32le(data + 4);
+    if ((!kind.countOnly &&
+         (support::endian::read32le(data) & 0xffff) != kind.entrySize) ||
+        isec->data.size() != kind.headerSize + count * kind.entrySize)
+      return std::nullopt;
+    for (const Reloc &entry : isec->relocs)
+      if (!isPointer(entry) || entry.offset < kind.headerSize)
+        return std::nullopt;
+    return isec;
+  };
+
+  DenseMap<ConcatInputSection *, DenseSet<uint64_t>> removedEntries;
+  for (auto &[cls, members] : byClass) {
+    if (members.size() < 2)
+      continue;
+    // Every list of every category must be readable.
+    SmallVector<std::array<ConcatInputSection *, 7>, 2> lists;
+    bool mergeable = true;
+    for (size_t index : members) {
+      std::array<ConcatInputSection *, 7> fieldLists{};
+      for (int field = 2; field < 7 && mergeable; ++field) {
+        std::optional<ConcatInputSection *> list =
+            listOf(categories[index], field);
+        if (!list)
+          mergeable = false;
+        else
+          fieldLists[field] = *list;
+      }
+      lists.push_back(fieldLists);
+    }
+    if (!mergeable)
+      continue;
+
+    const Category &first = categories[members.front()];
+    // The merged structures join the first category's section.
+    Section *homeSection = nullptr;
+    for (Section *section : cast<ObjFile>(first.isec->getFile())->sections)
+      for (const Subsection &subsection : section->subsections)
+        if (subsection.isec == first.isec)
+          homeSection = section;
+    if (!homeSection)
+      continue;
+    Section &home = *homeSection;
+    uint64_t nextOffset = 0;
+    for (const Subsection &subsection : home.subsections)
+      nextOffset = std::max<uint64_t>(
+          nextOffset, subsection.offset + subsection.isec->getSize());
+    auto addSection = [&](ArrayRef<uint8_t> data, std::vector<Reloc> relocs) {
+      auto *isec = make<ConcatInputSection>(home, data, /*align=*/8);
+      isec->relocs = std::move(relocs);
+      nextOffset = alignTo(nextOffset, 8);
+      home.subsections.push_back({nextOffset, isec});
+      nextOffset += data.size();
+      return isec;
+    };
+
+    // The merged lists, the later categories' entries first.
+    std::array<ConcatInputSection *, 7> merged{};
+    for (int field = 2; field < 7; ++field) {
+      const ListKind kind = listKind(field);
+      uint64_t count = 0;
+      for (const auto &fieldLists : lists)
+        if (ConcatInputSection *list = fieldLists[field])
+          count += (list->data.size() - kind.headerSize) / kind.entrySize;
+      if (count == 0)
+        continue;
+      const uint64_t size = kind.headerSize + count * kind.entrySize;
+      uint8_t *data = bAlloc().Allocate<uint8_t>(size);
+      memset(data, 0, size);
+      if (kind.countOnly) {
+        support::endian::write64le(data, count);
+      } else {
+        support::endian::write32le(data, kind.entrySize);
+        support::endian::write32le(data + 4, count);
+      }
+      std::vector<Reloc> relocs;
+      uint64_t next = kind.headerSize;
+      for (auto it = lists.rbegin(); it != lists.rend(); ++it) {
+        ConcatInputSection *list = (*it)[field];
+        if (!list)
+          continue;
+        for (const Reloc &entry : list->relocs) {
+          Reloc copy = entry;
+          copy.offset = next + entry.offset - kind.headerSize;
+          relocs.push_back(copy);
+        }
+        next += list->data.size() - kind.headerSize;
+      }
+      merged[field] = addSection({data, size}, std::move(relocs));
+    }
+
+    // The merged category, named after its members.
+    std::string name;
+    for (size_t index : members)
+      name += (name.empty() ? "" : "|") +
+              stringOf(*categories[index].fields[0]).str();
+    if (!in.objcMethNames) {
+      in.objcMethNames = make<ObjCMethNameSection>();
+      in.objcSelRefs = make<ObjCSelRefsSection>();
+    }
+    const uint64_t nameOffset = in.objcMethNames->addName(saver().save(name));
+    uint8_t *data = bAlloc().Allocate<uint8_t>(categorySize);
+    memset(data, 0, categorySize);
+    support::endian::write32le(data + 56, categorySize);
+    std::vector<Reloc> relocs;
+    Reloc pointer = *first.fields[0];
+    pointer.offset = 0;
+    pointer.referent = in.objcMethNames->isec;
+    pointer.addend = nameOffset;
+    relocs.push_back(pointer);
+    Reloc clsRef = *first.fields[1];
+    clsRef.offset = 8;
+    relocs.push_back(clsRef);
+    for (int field = 2; field < 7; ++field)
+      if (merged[field]) {
+        pointer.offset = 8 * field;
+        pointer.referent = merged[field];
+        pointer.addend = 0;
+        relocs.push_back(pointer);
+      }
+    ConcatInputSection *category = addSection({data, categorySize}, relocs);
+
+    // __objc_catlist lists the merged category once.
+    for (Reloc &r : first.catlist->relocs)
+      if (r.offset == first.entry) {
+        r.referent = category;
+        r.addend = 0;
+      }
+    for (size_t k = 1; k < members.size(); ++k)
+      removedEntries[categories[members[k]].catlist].insert(
+          categories[members[k]].entry);
+  }
+
+  // Drop the merged-away entries from their lists.
+  for (auto &[catlist, entries] : removedEntries) {
+    const uint64_t size = catlist->data.size() - 8 * entries.size();
+    uint8_t *data = bAlloc().Allocate<uint8_t>(size);
+    memset(data, 0, size);
+    std::vector<Reloc> relocs;
+    for (const Reloc &r : catlist->relocs) {
+      if (entries.contains(r.offset))
+        continue;
+      Reloc copy = r;
+      copy.offset -= 8 * llvm::count_if(entries, [&](uint64_t removed) {
+                       return removed < r.offset;
+                     });
+      relocs.push_back(copy);
+    }
+    catlist->data = {data, size};
+    catlist->relocs = std::move(relocs);
+  }
+}
+
 // -objc_relative_method_lists: each method list's 24-byte entries (name,
 // types and implementation pointers) become 12-byte offsets from the entry
 // fields, and the list moves to __TEXT,__objc_methlist. A name offset leads
@@ -2523,6 +2789,8 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
   config->textExec = args.hasArg(OPT_text_exec);
   config->noNewMain = args.hasArg(OPT_no_new_main);
   config->noCompactUnwind = args.hasArg(OPT_no_compact_unwind);
+  config->objcCategoryMerging = args.hasFlag(
+      OPT_objc_category_merging, OPT_no_objc_category_merging, false);
   config->objcRelativeMethodLists = args.hasFlag(
       OPT_objc_relative_method_lists, OPT_no_objc_relative_method_lists, false);
   for (const Arg *arg : args.filtered(OPT_force_symbol_weak))
@@ -3039,6 +3307,8 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
       handleExplicitExports();
     replaceCommonSymbols();
     createObjCStubs();
+    if (config->objcCategoryMerging)
+      mergeObjCCategories();
     if (config->objcRelativeMethodLists)
       createRelativeMethodLists();
     createDtraceProbes();

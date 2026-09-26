@@ -3701,6 +3701,200 @@ _list_ref:
   EXPECT_EQ(pointer(listRef), list.addr);
 }
 
+TEST_F(LinkerTest, NativeMachOObjCCategoryMerging) {
+  const std::string target = "--target=arm64-apple-macos13";
+  const fs::path dir = tmpFile("macho_categories_dir");
+  fs::create_directories(dir);
+  // Two categories of one class, in two objects; the second has a property.
+  const std::pair<const char *, const char *> sources[] = {
+      {"a", R"(.section __TEXT,__text,regular,pure_instructions
+.p2align 2
+"-[Foo(A) a]":
+  ret
+.globl _main
+_main:
+  mov w0, #0
+  ret
+.section __TEXT,__objc_classname,cstring_literals
+l_catA: .asciz "A"
+.section __TEXT,__objc_methname,cstring_literals
+l_a: .asciz "a"
+.section __TEXT,__objc_methtype,cstring_literals
+l_t: .asciz "v16@0:8"
+.section __DATA,__objc_data
+.p2align 3
+.globl _OBJC_CLASS_$_Foo
+_OBJC_CLASS_$_Foo:
+  .quad 0, 0, 0, 0, 0
+.section __DATA,__objc_const
+.p2align 3
+__OBJC_$_CATEGORY_INSTANCE_METHODS_Foo_$_A:
+  .long 24
+  .long 1
+  .quad l_a
+  .quad l_t
+  .quad "-[Foo(A) a]"
+.p2align 3
+__OBJC_$_CATEGORY_Foo_$_A:
+  .quad l_catA
+  .quad _OBJC_CLASS_$_Foo
+  .quad __OBJC_$_CATEGORY_INSTANCE_METHODS_Foo_$_A
+  .quad 0
+  .quad 0
+  .quad 0
+  .quad 0
+  .long 64
+  .space 4
+.section __DATA,__objc_catlist,regular,no_dead_strip
+.p2align 3
+l_catlist:
+  .quad __OBJC_$_CATEGORY_Foo_$_A
+.subsections_via_symbols
+)"},
+      {"b", R"(.section __TEXT,__text,regular,pure_instructions
+.p2align 2
+"-[Foo(B) b]":
+  ret
+.section __TEXT,__objc_classname,cstring_literals
+l_catB: .asciz "B"
+.section __TEXT,__objc_methname,cstring_literals
+l_b: .asciz "b"
+l_pname: .asciz "size"
+.section __TEXT,__objc_methtype,cstring_literals
+l_t: .asciz "v16@0:8"
+l_pattr: .asciz "Tq,R"
+.section __DATA,__objc_const
+.p2align 3
+__OBJC_$_CATEGORY_INSTANCE_METHODS_Foo_$_B:
+  .long 24
+  .long 1
+  .quad l_b
+  .quad l_t
+  .quad "-[Foo(B) b]"
+.p2align 3
+__OBJC_$_PROP_LIST_Foo_$_B:
+  .long 16
+  .long 1
+  .quad l_pname
+  .quad l_pattr
+.p2align 3
+__OBJC_$_CATEGORY_Foo_$_B:
+  .quad l_catB
+  .quad _OBJC_CLASS_$_Foo
+  .quad __OBJC_$_CATEGORY_INSTANCE_METHODS_Foo_$_B
+  .quad 0
+  .quad 0
+  .quad __OBJC_$_PROP_LIST_Foo_$_B
+  .quad 0
+  .long 64
+  .space 4
+.section __DATA,__objc_catlist,regular,no_dead_strip
+.p2align 3
+l_catlist:
+  .quad __OBJC_$_CATEGORY_Foo_$_B
+.subsections_via_symbols
+)"}};
+  std::vector<std::string> objects;
+  for (const auto &[name, text] : sources) {
+    const fs::path source = dir / (std::string(name) + ".s");
+    const fs::path object = dir / (std::string(name) + ".o");
+    writeFile(source, text);
+    CmdResult assemble =
+        ncc({target, "-c", source.string(), "-o", object.string()});
+    ASSERT_EQ(assemble.exitCode, 0) << assemble.err;
+    objects.push_back(object.string());
+  }
+  const fs::path image = dir / "image";
+
+  std::string bytes;
+  struct Section {
+    uint64_t addr;
+    std::string contents;
+  };
+  std::vector<std::pair<std::string, Section>> sections;
+  auto link = [&](std::vector<std::string> flags) {
+    std::vector<std::string> args = {target, "-nostdlib", "-Wl,-e,_main"};
+    args.insert(args.end(), objects.begin(), objects.end());
+    args.insert(args.end(), flags.begin(), flags.end());
+    args.insert(args.end(), {"-o", image.string()});
+    CmdResult result = ncc(args);
+    EXPECT_EQ(result.exitCode, 0) << result.err;
+    sections.clear();
+    bytes = readFile(image);
+    auto macho = llvm::object::MachOObjectFile::create(
+        llvm::MemoryBufferRef(bytes, image.string()), /*IsLittleEndian=*/true,
+        /*Is64Bits=*/true);
+    if (!macho) {
+      ADD_FAILURE() << llvm::toString(macho.takeError()).str().str();
+      return;
+    }
+    for (const auto &section : (*macho)->sections())
+      sections.push_back({llvm::cantFail(section.getName()).str(),
+                          {section.getAddress(),
+                           llvm::cantFail(section.getContents()).str()}});
+  };
+  auto read = [&](uint64_t va, size_t size) -> std::string {
+    for (const auto &[name, section] : sections)
+      if (va >= section.addr &&
+          va + size <= section.addr + section.contents.size())
+        return section.contents.substr(va - section.addr, size);
+    ADD_FAILURE() << "no section holds 0x" << std::hex << va;
+    return std::string(size, '\0');
+  };
+  // Chained rebases keep the target in the low 36 bits.
+  auto pointer = [&](uint64_t va) {
+    return llvm::support::endian::read64le(read(va, 8).data()) &
+           ((uint64_t(1) << 36) - 1);
+  };
+  auto cstring = [&](uint64_t va) -> std::string {
+    for (const auto &[name, section] : sections)
+      if (va >= section.addr && va < section.addr + section.contents.size())
+        return section.contents.c_str() + (va - section.addr);
+    ADD_FAILURE() << "no section holds 0x" << std::hex << va;
+    return "";
+  };
+  auto catlist = [&]() -> const Section & {
+    for (const auto &[name, section] : sections)
+      if (name == "__objc_catlist")
+        return section;
+    static const Section none{};
+    ADD_FAILURE() << "no __objc_catlist";
+    return none;
+  };
+  auto methods = [&](uint64_t list) {
+    std::vector<std::string> names;
+    const uint32_t count =
+        llvm::support::endian::read32le(read(list + 4, 4).data());
+    for (uint32_t m = 0; m < count; ++m)
+      names.push_back(cstring(pointer(list + 8 + 24 * m)));
+    return names;
+  };
+
+  link({});
+  EXPECT_EQ(catlist().contents.size(), 16u);
+
+  for (bool deadStrip : {false, true}) {
+    SCOPED_TRACE(deadStrip ? "dead stripped" : "kept");
+    std::vector<std::string> flags = {"-Wl,-objc_category_merging"};
+    if (deadStrip)
+      flags.push_back("-Wl,-dead_strip");
+    link(flags);
+    ASSERT_EQ(catlist().contents.size(), 8u);
+    const uint64_t category = pointer(catlist().addr);
+    EXPECT_EQ(cstring(pointer(category)), "A|B");
+    // The later category's methods come first, as the runtime attaches them.
+    EXPECT_EQ(methods(pointer(category + 16)),
+              (std::vector<std::string>{"b", "a"}));
+    const uint64_t properties = pointer(category + 40);
+    ASSERT_NE(properties, 0u);
+    EXPECT_EQ(llvm::support::endian::read32le(read(properties + 4, 4).data()),
+              1u);
+    EXPECT_EQ(cstring(pointer(properties + 8)), "size");
+    EXPECT_EQ(llvm::support::endian::read32le(read(category + 56, 4).data()),
+              64u);
+  }
+}
+
 TEST_F(LinkerTest, MsvcLinkerSpellingsAreNormalized) {
   const std::string target = "--target=x86_64-pc-windows-msvc";
   const fs::path source = tmpFile("msvc_opts.c");
