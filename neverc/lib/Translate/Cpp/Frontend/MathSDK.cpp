@@ -8403,6 +8403,8 @@ approvedUtilityTupleLikeSource(const State &S, const SourceManager &SM,
   return std::nullopt;
 }
 
+static const Expr *functionalInvokeStrippedExpression(const Expr *Expression);
+
 static std::optional<std::vector<const CXXConstructExpr *>>
 approvedUtilityTupleSelectedCopies(
     const State &S, const SourceManager &SM,
@@ -8594,9 +8596,6 @@ approvedUtilityTupleCatCall(const State &S, const SourceManager &SM,
   }
   return Approved;
 }
-
-static const Expr *functionalInvokeStrippedExpression(
-    const Expr *Expression);
 
 static const CallExpr *approvedFunctionalInvokeDispatch(
     const State &S, const SourceManager &SM, const CallExpr *Call,
