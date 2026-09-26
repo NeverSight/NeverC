@@ -201,8 +201,14 @@ Direct element-wise construction and `std::make_tuple` also admit source-owned
 nontrivial standard-layout records when the selected libc++ leaf copy or move
 constructor matches the supplied source and value category. The factory
 authenticates forwarding into that constructor, including mixed owned values
-and `ref`/`cref` elements. Their tuple fields are destroyed in reverse order;
-other owning tuple constructors remain restricted.
+and `ref`/`cref` elements. Same-type whole-tuple copy/move construction also
+accepts these owned records when the defaulted libc++ tuple, implementation,
+and leaf constructors select supported source-owned element constructors.
+Mixed scalar and reference elements retain their values and bindings, and an
+rvalue may select an element's copy constructor when no move is available.
+The source tuple is evaluated once; owned fields are constructed in element
+order and destroyed in reverse order. Other owning tuple constructors remain
+restricted.
 Ordinary value tuples may likewise copy or convert referent values from
 all-reference or mixed tuple/pair sources during construction and assignment.
 Assignment stores independent values in element order and returns the

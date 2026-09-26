@@ -30098,6 +30098,137 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2OwnedTupleWholeCopyMoveAndReferenceBinding) {
+  const auto Source = tmpFile("owned-tuple-whole-copy-move.cpp");
+  const auto Output = tmpFile("owned-tuple-whole-copy-move.nc");
+  writeFile(Source, R"cpp(#include <tuple>
+#include <utility>
+int events[32];
+int count = 0;
+int alive = 0;
+int pick_calls = 0;
+bool recording = false;
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) { ++alive; }
+  Item(const Item& other) noexcept : value(other.value) {
+    if (recording) events[count++] = 100 + value;
+    ++alive;
+  }
+  Item(Item&& other) noexcept : value(other.value) {
+    if (recording) events[count++] = 200 + value;
+    other.value = -value;
+    ++alive;
+  }
+  ~Item() noexcept {
+    if (recording) events[count++] = 300 + value;
+    --alive;
+  }
+};
+using Group = std::tuple<Item, int, Item&, Item>;
+Group& pick(Group& value) { ++pick_calls; return value; }
+int fallback_copies = 0;
+struct CopyOnly {
+  int value;
+  explicit CopyOnly(int n) noexcept : value(n) {}
+  CopyOnly(const CopyOnly& other) noexcept : value(other.value) { ++fallback_copies; }
+};
+struct Nested {
+  Item item;
+  explicit Nested(int n) noexcept : item(n) {}
+  Nested(const Nested&) noexcept = default;
+  Nested(Nested&&) noexcept = default;
+};
+int main() {
+  Item target(7);
+  Group source{Item(1), 5, target, Item(2)};
+  if (alive != 3) return 1;
+  count = 0;
+  recording = true;
+  {
+    Group copied = pick(source);
+    Group moved = std::move(pick(source));
+    if (pick_calls != 2 || count != 4 ||
+        events[0] != 101 || events[1] != 102 ||
+        events[2] != 201 || events[3] != 202 ||
+        std::get<0>(copied).value != 1 || std::get<3>(moved).value != 2 ||
+        std::get<1>(copied) != 5 || std::get<1>(moved) != 5 ||
+        std::get<0>(source).value != -1 || std::get<3>(source).value != -2 ||
+        alive != 7) return 2;
+    std::get<2>(copied).value = 9;
+    if (target.value != 9 || std::get<2>(moved).value != 9 ||
+        std::get<2>(source).value != 9) return 3;
+  }
+  if (count != 8 || events[4] != 302 || events[5] != 301 ||
+      events[6] != 302 || events[7] != 301 || alive != 3) return 4;
+  recording = false;
+  CopyOnly seed(4);
+  std::tuple<CopyOnly> original(seed);
+  const int baseline = fallback_copies;
+  std::tuple<CopyOnly> fallback(std::move(original));
+  if (fallback_copies != baseline + 1 || std::get<0>(fallback).value != 4) return 5;
+  {
+    Nested seed(6);
+    std::tuple<Nested> original_nested(seed);
+    const int baseline_alive = alive;
+    count = 0;
+    recording = true;
+    {
+      std::tuple<Nested> nested_copy = original_nested;
+      std::tuple<Nested> nested_move = std::move(original_nested);
+      if (count != 2 || events[0] != 106 || events[1] != 206 ||
+          std::get<0>(nested_copy).item.value != 6 ||
+          std::get<0>(nested_move).item.value != 6 ||
+          std::get<0>(original_nested).item.value != -6 ||
+          alive != baseline_alive + 2) return 6;
+    }
+    recording = false;
+    if (alive != baseline_alive) return 7;
+  }
+  if (alive != 3) return 8;
+  return 0;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable =
+        tmpFile("owned-tuple-whole-copy-move" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OwnedTupleWholeCopyRejectsDefaultArgumentEffects) {
+  const auto Source = tmpFile("owned-tuple-whole-copy-default-argument.cpp");
+  const auto Output = tmpFile("owned-tuple-whole-copy-default-argument.nc");
+  writeFile(Source, R"cpp(#include <tuple>
+#include <utility>
+int defaults = 0;
+int default_mark() { ++defaults; return 0; }
+struct Item {
+  int value;
+  explicit Item(int n) noexcept : value(n) {}
+  Item(const Item& other, int = default_mark()) noexcept : value(other.value) {}
+  Item(Item&& other) noexcept : value(other.value) {}
+};
+int main() {
+  Item value(7);
+  std::tuple<Item> source(std::move(value));
+  std::tuple<Item> copied = source;
+  return std::get<0>(copied).value == 7 && defaults == 1 ? 0 : 1;
+}
+)cpp");
+  auto Result =
+      translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  expectCode(Result, "TR0203");
+  expectNoArtifacts(Output);
+}
+
 TEST_F(TranslateTest, CoreV2TupleCatOwnedTupleSourcesCopyMoveAndDestroy) {
   const auto Source = tmpFile("tuple-cat-owned-tuple-sources.cpp");
   const auto Output = tmpFile("tuple-cat-owned-tuple-sources.nc");

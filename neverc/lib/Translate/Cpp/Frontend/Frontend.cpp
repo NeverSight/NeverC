@@ -7914,6 +7914,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       return;
     const auto *Constructor = C->getConstructor();
     const CXXConstructorDecl *ArrayElementConstructor = nullptr;
+    std::vector<const CXXConstructExpr *> TupleSelectedCopies;
     if (A.S.coreV2() &&
         (approvedFunctionalObjectConstruction(A.S, A.Sources, C, A.Context) ||
          approvedFunctionalReferenceConstruction(A.S, A.Sources, C,
@@ -7925,7 +7926,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
                                                   A.Context) ||
          approvedUtilityAllocatorConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityPairConstruction(A.S, A.Sources, C, A.Context) ||
-         approvedUtilityTupleConstruction(A.S, A.Sources, C, A.Context) ||
+         approvedUtilityTupleConstruction(A.S, A.Sources, C, A.Context,
+                                          &TupleSelectedCopies) ||
          approvedUtilityArrayConstruction(A.S, A.Sources, C, A.Context,
                                           &ArrayElementConstructor) ||
          approvedUtilityInitializerListConstruction(A.S, A.Sources, C,
@@ -7945,6 +7947,9 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
       if (ArrayElementConstructor &&
           defaultedCopyOrMoveConstructor(ArrayElementConstructor))
         queueGenerated(ArrayElementConstructor, L);
+      for (const auto *Copy : TupleSelectedCopies)
+        if (Copy && defaultedCopyOrMoveConstructor(Copy->getConstructor()))
+          queueGenerated(Copy->getConstructor(), L);
       return;
     }
     if (A.S.coreV2() && concreteMemberFunctionTemplate(Constructor))

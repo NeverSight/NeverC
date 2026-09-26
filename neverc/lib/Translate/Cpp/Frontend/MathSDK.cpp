@@ -4063,6 +4063,220 @@ approvedUtilityTupleSelectedCopies(
     const CXXConstructExpr *Construction, const UtilityTupleRecord &Tuple,
     const ASTContext &Context);
 
+static bool utilityTupleGeneratedSource(const Expr *Expression,
+                                        const ParmVarDecl *Parameter,
+                                        const ASTContext &Context) {
+  if (!Expression || !Parameter || !Parameter->getType()->isReferenceType())
+    return false;
+  Expression = Expression->IgnoreParens();
+  if (Parameter->getType()->isRValueReferenceType()) {
+    const auto *Cast = dyn_cast<CXXStaticCastExpr>(Expression);
+    if (!Cast || Cast->getCastKind() != CK_NoOp || !Cast->isXValue() ||
+        !Context.hasSameUnqualifiedType(Cast->getType(),
+                                        Parameter->getType()->getPointeeType()))
+      return false;
+    Expression = Cast->getSubExpr()->IgnoreParenImpCasts();
+  }
+  const auto *Reference =
+      dyn_cast<DeclRefExpr>(Expression->IgnoreParenImpCasts());
+  return Reference && Reference->getDecl() == Parameter;
+}
+
+static const MemberExpr *
+utilityTupleGeneratedMember(const Expr *Expression, const FieldDecl *Field,
+                            const ParmVarDecl *Parameter,
+                            const ASTContext &Context) {
+  const auto *Member =
+      Expression && Field && Parameter
+          ? dyn_cast<MemberExpr>(Expression->IgnoreParenImpCasts())
+          : nullptr;
+  if (!Member || Member->isArrow() ||
+      Member->getMemberDecl()->getCanonicalDecl() !=
+          Field->getCanonicalDecl() ||
+      !utilityTupleGeneratedSource(Member->getBase(), Parameter, Context))
+    return nullptr;
+  const auto FieldType = Field->getType();
+  const auto SourceType = Parameter->getType()->getPointeeType();
+  if (FieldType->isReferenceType())
+    return Member->isLValue() &&
+                   Context.hasSameType(Member->getType(),
+                                       FieldType->getPointeeType())
+               ? Member
+               : nullptr;
+  const auto Expected =
+      SourceType.isConstQualified() ? FieldType.withConst() : FieldType;
+  return Context.hasSameType(Member->getType(), Expected) &&
+                 Member->isXValue() ==
+                     Parameter->getType()->isRValueReferenceType()
+             ? Member
+             : nullptr;
+}
+
+static std::optional<std::vector<const CXXConstructExpr *>>
+approvedUtilityTupleSelectedWholeCopies(const State &S, const SourceManager &SM,
+                                        const CXXConstructExpr *Construction,
+                                        const UtilityTupleRecord &Tuple,
+                                        const ASTContext &Context) {
+  // A defaulted tuple constructor reaches each element through __base_,
+  // __tuple_impl's leaf bases, and the leaf's __value_ member. Prove every
+  // generated step before replacing that chain with direct field construction.
+  if (!Construction || Tuple.Elements.empty() ||
+      Construction->getNumArgs() != 1)
+    return std::nullopt;
+  const auto *SelectedTuple = Construction->getConstructor();
+  const auto *TupleConstructor =
+      SelectedTuple
+          ? dyn_cast_or_null<CXXConstructorDecl>(SelectedTuple->getDefinition())
+          : nullptr;
+  auto Generated = [&](const CXXConstructorDecl *Constructor,
+                       const CXXRecordDecl *Record) {
+    const auto *Body =
+        Constructor ? dyn_cast_or_null<CompoundStmt>(Constructor->getBody())
+                    : nullptr;
+    const auto *Parameter = Constructor && Constructor->getNumParams() == 1
+                                ? Constructor->getParamDecl(0)
+                                : nullptr;
+    const auto Type = Parameter ? Parameter->getType() : QualType();
+    const auto RecordType = Record ? Context.getRecordType(Record) : QualType();
+    return Record && Body && Body->body_empty() && Constructor->isDefaulted() &&
+           Constructor->isCopyOrMoveConstructor() &&
+           Constructor->getParent()->getCanonicalDecl() ==
+               Record->getCanonicalDecl() &&
+           approvedStandardSDKDeclaration(S, SM, Constructor) &&
+           cstddefOrigin(S, SM, Constructor->getLocation(), "libcxx",
+                         "tuple") &&
+           !Type.isNull() &&
+           (Constructor->isMoveConstructor()
+                ? Type->isRValueReferenceType() &&
+                      Context.hasSameType(Type->getPointeeType(), RecordType)
+                : Type->isLValueReferenceType() &&
+                      Context.hasSameType(Type->getPointeeType(),
+                                          RecordType.withConst()));
+  };
+  if (!Generated(TupleConstructor, Tuple.Record) ||
+      TupleConstructor->getNumCtorInitializers() != 1 ||
+      !Context.hasSameUnqualifiedType(Construction->getArg(0)->getType(),
+                                      Context.getRecordType(Tuple.Record)))
+    return std::nullopt;
+  auto Fields = Tuple.Record->fields();
+  const auto *BaseField =
+      Fields.begin() == Fields.end() ? nullptr : *Fields.begin();
+  const auto *Impl =
+      BaseField ? BaseField->getType()->getAsCXXRecordDecl() : nullptr;
+  const auto *TupleInitializer = *TupleConstructor->init_begin();
+  const auto *ImplCall =
+      TupleInitializer && TupleInitializer->getInit()
+          ? dyn_cast<CXXConstructExpr>(
+                TupleInitializer->getInit()->IgnoreParenImpCasts())
+          : nullptr;
+  const auto *SelectedImpl = ImplCall ? ImplCall->getConstructor() : nullptr;
+  const auto *ImplConstructor =
+      SelectedImpl
+          ? dyn_cast_or_null<CXXConstructorDecl>(SelectedImpl->getDefinition())
+          : nullptr;
+  if (!BaseField || !Impl || !TupleInitializer ||
+      !TupleInitializer->isMemberInitializer() ||
+      TupleInitializer->getMember() != BaseField || !ImplCall ||
+      ImplCall->getNumArgs() != 1 ||
+      !Context.hasSameType(ImplCall->getType(), BaseField->getType()) ||
+      !utilityTupleGeneratedMember(ImplCall->getArg(0), BaseField,
+                                   TupleConstructor->getParamDecl(0),
+                                   Context) ||
+      !Generated(ImplConstructor, Impl) ||
+      ImplConstructor->getNumCtorInitializers() != Tuple.Elements.size())
+    return std::nullopt;
+
+  std::vector<const CXXConstructExpr *> Copies(Tuple.Elements.size(), nullptr);
+  unsigned Index = 0;
+  for (const auto *Initializer : ImplConstructor->inits()) {
+    const auto *Field = Tuple.Elements[Index];
+    const auto *Leaf = dyn_cast<CXXRecordDecl>(Field->getParent());
+    if (!Leaf)
+      return std::nullopt;
+    const auto *BaseType = Initializer->isBaseInitializer()
+                               ? Initializer->getBaseClass()
+                               : nullptr;
+    const auto *Base = BaseType ? BaseType->getAsCXXRecordDecl() : nullptr;
+    const auto *LeafCall =
+        Initializer->getInit()
+            ? dyn_cast<CXXConstructExpr>(
+                  Initializer->getInit()->IgnoreParenImpCasts())
+            : nullptr;
+    const auto *SelectedLeaf = LeafCall ? LeafCall->getConstructor() : nullptr;
+    const auto *LeafConstructor = SelectedLeaf
+                                      ? dyn_cast_or_null<CXXConstructorDecl>(
+                                            SelectedLeaf->getDefinition())
+                                      : nullptr;
+    const auto *BaseCast =
+        LeafCall && LeafCall->getNumArgs() == 1
+            ? dyn_cast<ImplicitCastExpr>(LeafCall->getArg(0)->IgnoreParens())
+            : nullptr;
+    const auto LeafType = Leaf ? Context.getRecordType(Leaf) : QualType();
+    const auto ImplSource =
+        ImplConstructor->getParamDecl(0)->getType()->getPointeeType();
+    const auto ExpectedLeaf =
+        ImplSource.isConstQualified() ? LeafType.withConst() : LeafType;
+    if (!Leaf || !Base ||
+        Base->getCanonicalDecl() != Leaf->getCanonicalDecl() || !LeafCall ||
+        !Context.hasSameType(LeafCall->getType(), LeafType) || !BaseCast ||
+        BaseCast->getCastKind() != CK_UncheckedDerivedToBase ||
+        !Context.hasSameType(BaseCast->getType(), ExpectedLeaf) ||
+        BaseCast->isXValue() != ImplConstructor->getParamDecl(0)
+                                    ->getType()
+                                    ->isRValueReferenceType() ||
+        !utilityTupleGeneratedSource(BaseCast->getSubExpr(),
+                                     ImplConstructor->getParamDecl(0),
+                                     Context) ||
+        !Generated(LeafConstructor, Leaf) ||
+        LeafConstructor->getNumCtorInitializers() != 1)
+      return std::nullopt;
+
+    const auto *LeafInitializer = *LeafConstructor->init_begin();
+    if (!LeafInitializer || !LeafInitializer->isMemberInitializer() ||
+        LeafInitializer->getMember() != Field || !LeafInitializer->getInit())
+      return std::nullopt;
+    const auto *Element = LeafInitializer->getInit()->IgnoreParenImpCasts();
+    const bool Owned = !Field->getType()->isReferenceType() &&
+                       !utilityTupleValue(S, SM, Context, Field->getType());
+    const auto *Copy = dyn_cast<CXXConstructExpr>(Element);
+    const auto *Source = utilityTupleGeneratedMember(
+        Copy && Copy->getNumArgs() == 1 ? Copy->getArg(0) : Element, Field,
+        LeafConstructor->getParamDecl(0), Context);
+    if (!Source)
+      return std::nullopt;
+    if (Owned) {
+      const auto *Selected = Copy ? Copy->getConstructor() : nullptr;
+      const auto Referent =
+          Selected && Selected->getNumParams() == 1
+              ? Selected->getParamDecl(0)->getType()->getPointeeType()
+              : QualType();
+      if (!Copy || Copy->getNumArgs() != 1 || !Selected ||
+          Copy->getConstructionKind() != CXXConstructionKind::Complete ||
+          !Selected->isCopyOrMoveConstructor() ||
+          !supportedConstructor(Selected) ||
+          (!Selected->isTrivial() && !Selected->hasBody()) ||
+          !S.owns(SM, Selected->getLocation()) ||
+          Selected->getParent()->getCanonicalDecl() !=
+              Field->getType()->getAsCXXRecordDecl()->getCanonicalDecl() ||
+          !Context.hasSameType(Copy->getType(), Field->getType()) ||
+          Referent.isNull() ||
+          (!Context.hasSameType(Referent, Field->getType()) &&
+           !Context.hasSameType(Referent, Field->getType().withConst())))
+        return std::nullopt;
+      Copies[Index] = Copy;
+    } else if (!LeafConstructor->isTrivial() ||
+               (Copy &&
+                (Copy->getNumArgs() != 1 ||
+                 !Copy->getConstructor()->isCopyOrMoveConstructor() ||
+                 !Copy->getConstructor()->isTrivial() ||
+                 !Context.hasSameType(Copy->getType(), Field->getType())))) {
+      return std::nullopt;
+    }
+    ++Index;
+  }
+  return Copies;
+}
+
 std::optional<UtilityTupleConstruction>
 approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
                                  const CXXConstructExpr *Construction,
@@ -4115,6 +4329,16 @@ approvedUtilityTupleConstruction(const State &S, const SourceManager &SM,
       Context.hasSameUnqualifiedType(Construction->getArg(0)->getType(),
                                      Construction->getType()))
     return UtilityTupleConstruction::CopyOrMove;
+  if (OwnedElements && Construction->getNumArgs() == 1 &&
+      Constructor->isCopyOrMoveConstructor() && Constructor->isDefaulted()) {
+    auto Copies = approvedUtilityTupleSelectedWholeCopies(S, SM, Construction,
+                                                          *Tuple, Context);
+    if (!Copies)
+      return std::nullopt;
+    if (SelectedCopies)
+      *SelectedCopies = std::move(*Copies);
+    return UtilityTupleConstruction::OwnedCopyOrMove;
+  }
   const auto *Primary = Constructor->getPrimaryTemplate();
   auto SourceTuple =
       Construction->getNumArgs() == 1

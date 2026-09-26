@@ -18627,6 +18627,29 @@ class FunctionLowering {
       case UtilityTupleConstruction::CopyOrMove:
         assign(std::move(Place), expression(C->getArg(0)), L);
         return;
+      case UtilityTupleConstruction::OwnedCopyOrMove: {
+        if (TupleSelectedCopies.size() != Tuple->Elements.size())
+          reject(L, "utility tuple construction",
+                 "The selected tuple element constructors are unavailable.");
+        auto SourceAddress = snapshot(
+            address(lvalue(C->getArg(0)), C->getArg(0)->getType(), L), L);
+        auto Source = dereference(std::move(SourceAddress), L);
+        for (unsigned I = 0; I < Tuple->Elements.size(); ++I) {
+          const auto *Field = Tuple->Elements[I];
+          auto Value = fieldStorage(json::Object(Source), Field, L);
+          if (const auto *Copy = TupleSelectedCopies[I]) {
+            const auto *Selected = Copy->getConstructor();
+            const auto Referent =
+                Selected->getParamDecl(0)->getType()->getPointeeType();
+            constructMemorySource(
+                Member(Field), Field->getType(), Selected,
+                snapshot(address(std::move(Value), Referent, L), L), L);
+          } else {
+            assign(Member(Field), std::move(Value), L);
+          }
+        }
+        return;
+      }
       case UtilityTupleConstruction::Converting: {
         auto SourceTuple = approvedUtilityTupleRecord(
             A.S, A.Sources, C->getArg(0)->getType()->getAsCXXRecordDecl(),

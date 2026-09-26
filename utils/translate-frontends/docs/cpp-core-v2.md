@@ -512,8 +512,14 @@ result tuple constructs those elements in its final storage and destroys them
 in reverse index order. Constness and the array expression's value category
 remain part of the selected-constructor proof. Owned tuples built this way or
 by direct element-wise construction can be concatenated again and supply
-`apply` callbacks. Whole-tuple copy/move, converting construction, assignment
-and swap still require their existing trivial element boundary.
+`apply` callbacks. Same-type whole-tuple copy/move construction also admits
+source-owned nontrivial elements when the defaulted libc++ tuple, implementation
+and leaf constructors prove the selected source-owned copy or move constructor
+for every owned field. Scalar values are copied and reference bindings remain
+unchanged; the source expression is evaluated once. An rvalue element may
+select its copy constructor when it has no move constructor. Converting
+construction, assignment and swap still require their existing trivial element
+boundary.
 
 Two-element tuples also accept admitted scalar or composite `std::pair<U, V>`
 lvalues and rvalues for construction and assignment under the same per-element

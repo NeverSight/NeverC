@@ -1153,6 +1153,7 @@ enum class UtilityTupleConstruction {
   Default,
   Elements,
   CopyOrMove,
+  OwnedCopyOrMove,
   Converting,
   Pair,
 };
